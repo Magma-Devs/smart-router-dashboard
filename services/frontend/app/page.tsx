@@ -19,7 +19,7 @@ export default function Home() {
     "api-url",
     "http://localhost:8000/api/metrics/last_minutes?query=lava_provider_overall_health_breakdown",
   )
-  const [refreshInterval, setRefreshInterval] = useLocalStorage("refresh-interval", "30")
+  const [refreshInterval, setRefreshInterval] = useLocalStorage("refresh-interval", "60")
   const [data, setData] = useState<ProcessedMetric[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)

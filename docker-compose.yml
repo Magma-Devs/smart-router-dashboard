@@ -1,34 +1,32 @@
 version: "3.8"
 
 services:
-  # backend:
+  # frontend:
   #   build:
-  #     context: ./services/backend
+  #     context: ./services/frontend
   #     dockerfile: Dockerfile
-  #   volumes:
-  #     - ./services/backend:/app
-  #     - ${KUBECONFIG_PATH:-~/.kube/config}:/root/.kube/config:ro
+  #   ports:
+  #     - "3000:3000"
   #   environment:
-  #     - DEBUG=true
-  #     - LOG_LEVEL=DEBUG
-  #     - PROMETHEUS_URL=http://prometheus.lava.infra:1234
-  #   extra_hosts:
-  #     - "prometheus.lava.infra:127.0.0.1"
-  #   network_mode: "host"
-  
-  frontend:
+  #     - NODE_ENV=production
+  #   restart: unless-stopped
+  #   # For development, you can uncomment these lines to enable hot reloading
+  #   # volumes:
+  #   #   - ./:/app
+  #   #   - /app/node_modules
+  #   #   - /app/.next
+
+  backend:
     build:
-      context: ./services/frontend
+      context: ./services/backend
       dockerfile: Dockerfile
-    ports:
-      - "3000:3000"
+    volumes:
+      - ./services/backend:/app
+      - ${KUBECONFIG_PATH:-~/.kube/config}:/root/.kube/config:ro
     environment:
-      - NODE_ENV=production
-    restart: unless-stopped
-    # For development, you can uncomment these lines to enable hot reloading
-    # volumes:
-    #   - ./:/app
-    #   - /app/node_modules
-    #   - /app/.next
-
-
+      - DEBUG=true
+      - LOG_LEVEL=DEBUG
+      - PROMETHEUS_URL=http://prometheus.lava.infra:1234
+    extra_hosts:
+      - "prometheus.lava.infra:127.0.0.1"
+    network_mode: "host"

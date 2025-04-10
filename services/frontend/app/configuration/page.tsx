@@ -21,7 +21,7 @@ export default function ConfigurationPage() {
     "api-url",
     "http://localhost:8000/api/metrics/last_minutes?query=lava_provider_overall_health_breakdown",
   )
-  const [refreshInterval, setRefreshInterval] = useLocalStorage("refresh-interval", "30")
+  const [refreshInterval, setRefreshInterval] = useLocalStorage("refresh-interval", "60")
   const [inputValue, setInputValue] = useState(apiUrl)
   const [isPreviewEnvironment, setIsPreviewEnvironment] = useState(false)
 

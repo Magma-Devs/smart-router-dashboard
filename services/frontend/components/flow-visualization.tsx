@@ -1,5 +1,6 @@
 "use client"
 
+<<<<<<< HEAD
 import { useMemo } from "react"
 import type { ProcessedMetric } from "@/lib/types"
 import { User, Server, Database, CheckCircle, XCircle } from "lucide-react"
@@ -110,10 +111,56 @@ export function FlowVisualization({ data }: FlowVisualizationProps) {
           </div>
         </div>
       </div>
+=======
+import { useEffect, useMemo, useState } from "react"
+import { Check, Network, Server, User, X, ChevronDown, ChevronRight } from "lucide-react"
+import { cn } from "@/lib/utils"
+import ReactFlow, {
+  Background,
+  Controls,
+  Handle,
+  Position,
+  ReactFlowProvider,
+  Edge,
+  Node,
+  useReactFlow,
+  useNodesState,
+  getRectOfNodes,
+} from "reactflow"
+import "reactflow/dist/style.css"
+
+interface FlowVisualizationProps {
+  data: any
+}
+
+interface Provider {
+  interface: string
+  healthy: boolean
+}
+
+interface Consumer {
+  name: string
+  healthy: boolean
+}
+
+type Providers = {
+  [key: string]: Provider[]
+}
+
+function UserNode({ data }: { data: any }) {
+  return (
+    <div className="px-4 py-2 shadow-lg rounded-lg border bg-background min-w-44">
+      <div className="flex items-center gap-2">
+        <User className="h-4 w-4" />
+        <div className="font-medium">User</div>
+      </div>
+      <Handle type="source" position={Position.Right} className="!bg-muted-foreground" />
+>>>>>>> 793562b (Add Dashboard)
     </div>
   )
 }
 
+<<<<<<< HEAD
 // Update the node components to be more compact
 function UserNode() {
   return (
@@ -156,3 +203,331 @@ function ProviderNode({ label, apiInterface, isHealthy }: { label: string; apiIn
     </div>
   )
 }
+=======
+function ConsumerNode({ data }: { data: { label: string; healthy: boolean } }) {
+  return (
+    <div
+      className={cn(
+        "px-4 py-2 shadow-lg rounded-lg border bg-background min-w-44",
+        data.healthy ? "border-green-200" : "border-red-200"
+      )}
+    >
+      <Handle type="target" position={Position.Left} className="!bg-muted-foreground" />
+      <div className="flex items-center gap-2">
+        <Network className="h-4 w-4" />
+        <div className="flex flex-col">
+          <span className="font-medium">{data.label}</span>
+          <span className="text-xs text-muted-foreground">Consumer</span>
+        </div>
+        {data.healthy ? (
+          <Check className="h-4 w-4 text-green-500 ml-auto" />
+        ) : (
+          <X className="h-4 w-4 text-red-500 ml-auto" />
+        )}
+      </div>
+      <Handle type="source" position={Position.Right} className="!bg-muted-foreground" />
+    </div>
+  )
+}
+
+function ProviderNode({ data }: { data: { label: string; interface: string; healthy: boolean } }) {
+  return (
+    <div
+      className={cn(
+        "px-4 py-2 shadow-lg rounded-lg border bg-background min-w-44",
+        data.healthy ? "border-green-200" : "border-red-200"
+      )}
+    >
+      <Handle type="target" position={Position.Left} className="!bg-muted-foreground" />
+      <div className="flex items-center gap-2">
+        <Server className="h-4 w-4" />
+        <div className="flex flex-col">
+          <span className="font-medium">{data.label}</span>
+          <span className="text-xs text-muted-foreground">{data.interface}</span>
+        </div>
+        {data.healthy ? (
+          <Check className="h-4 w-4 text-green-500 ml-auto" />
+        ) : (
+          <X className="h-4 w-4 text-red-500 ml-auto" />
+        )}
+      </div>
+    </div>
+  )
+}
+
+function ProviderGroupNode({ data }: { data: { label: string; providers: Provider[]; isExpanded: boolean; onToggle: () => void } }) {
+  return (
+    <div
+      className={cn(
+        "px-4 py-2 shadow-lg rounded-lg border bg-background min-w-44",
+        data.providers.some(p => !p.healthy) ? "border-red-200" : "border-green-200"
+      )}
+    >
+      <Handle type="target" position={Position.Left} className="!bg-muted-foreground" />
+      <div className="flex items-center gap-2">
+        <Server className="h-4 w-4" />
+        <div className="flex flex-col">
+          <span className="font-medium">{data.label}</span>
+          <span className="text-xs text-muted-foreground">{data.providers.length} providers</span>
+        </div>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            data.onToggle();
+          }}
+          className="ml-auto p-1 hover:bg-muted rounded"
+        >
+          {data.isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+const nodeTypes = {
+  user: UserNode,
+  consumer: ConsumerNode,
+  provider: ProviderNode,
+  providerGroup: ProviderGroupNode,
+}
+
+function FlowInner() {
+  const [containerHeight, setContainerHeight] = useState(800);
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+  const [nodes, setNodes] = useNodesState([]);
+  const [edges, setEdges] = useState<Edge[]>([]);
+
+  useEffect(() => {
+    // Mock data
+    const consumers: Consumer[] = [
+      { name: "NEAR", healthy: true },
+      { name: "ETH", healthy: true },
+      { name: "BTC", healthy: false },
+      { name: "SOL", healthy: true },
+      { name: "LAVA", healthy: true },
+    ];
+
+    const providers: Providers = {
+      NEAR: [
+        { interface: "jsonrpc", healthy: true },
+        { interface: "grpc", healthy: true },
+        { interface: "rest", healthy: false },
+      ],
+      ETH: [
+        { interface: "grpc", healthy: true },
+        { interface: "rest", healthy: true },
+        { interface: "jsonrpc", healthy: true },
+        { interface: "websocket", healthy: false },
+        { interface: "quicknode", healthy: true },
+      ],
+      BTC: [
+        { interface: "anker", healthy: false },
+        { interface: "core-lightning", healthy: true }
+      ],
+      SOL: [
+        { interface: "jsonrpc", healthy: false },
+        { interface: "rest", healthy: true },
+        { interface: "websocket", healthy: true },
+      ],
+      LAVA: [
+        { interface: "grpc", healthy: true },
+        { interface: "rest", healthy: true },
+        { interface: "jsonrpc", healthy: true },
+        { interface: "websocket", healthy: true },
+      ],
+    };
+
+    const newNodes: Node[] = [];
+    const newEdges: Edge[] = [];
+
+    const leftPadding = 50;
+    const horizontalGap = 300;
+    
+    // Use a very large gap between consumers to prevent any overlap
+    const consumerGap = 600;
+    
+    // Add user node
+    newNodes.push({
+      id: "user",
+      type: "user",
+      position: { x: leftPadding, y: (consumers.length * consumerGap) / 2 },
+      data: {},
+    });
+
+    // Add consumer and provider nodes
+    consumers.forEach((consumer, index) => {
+      const consumerId = `consumer-${consumer.name}`;
+      const consumerX = leftPadding + horizontalGap;
+      const consumerY = index * consumerGap;
+
+      // Add consumer node
+      newNodes.push({
+        id: consumerId,
+        type: "consumer",
+        position: { x: consumerX, y: consumerY },
+        data: { label: consumer.name, healthy: consumer.healthy },
+      });
+
+      // Add edge from user to consumer
+      newEdges.push({
+        id: `edge-user-${consumerId}`,
+        source: "user",
+        target: consumerId,
+        animated: consumer.healthy,
+        style: consumer.healthy
+          ? {
+              stroke: "green",
+              strokeDasharray: "5 5",
+              animation: "dashdraw 0.5s linear infinite",
+            }
+          : { stroke: "red" },
+      });
+
+      const consumerProviders = providers[consumer.name];
+      const isExpanded = expandedGroups[consumerId] || false;
+
+      if (consumerProviders.length > 2 && !isExpanded) {
+        // Create a group node
+        const groupId = `group-${consumerId}`;
+        newNodes.push({
+          id: groupId,
+          type: "providerGroup",
+          position: {
+            x: consumerX + horizontalGap,
+            y: consumerY,
+          },
+          data: {
+            label: consumer.name,
+            providers: consumerProviders,
+            isExpanded,
+            onToggle: () => {
+              setExpandedGroups(prev => ({
+                ...prev,
+                [consumerId]: !prev[consumerId]
+              }));
+            }
+          },
+        });
+
+        newEdges.push({
+          id: `edge-${consumerId}-${groupId}`,
+          source: consumerId,
+          target: groupId,
+          animated: consumer.healthy,
+          style: consumer.healthy
+            ? {
+                stroke: "green",
+                strokeDasharray: "5 5",
+                animation: "dashdraw 0.5s linear infinite",
+              }
+            : { stroke: "red" },
+        });
+      } else {
+        // HORIZONTAL layout - providers in a row
+        const providerHorizontalSpacing = 170; // Space between providers horizontally
+        const sortedProviders = [...consumerProviders].sort((a, b) => 
+          a.interface.localeCompare(b.interface)
+        );
+        
+        // Calculate total width to center the row
+        const totalWidth = sortedProviders.length * providerHorizontalSpacing;
+        const startX = consumerX + horizontalGap - (totalWidth / 2) + (providerHorizontalSpacing / 2);
+        
+        sortedProviders.forEach((provider, providerIndex) => {
+          const providerId = `provider-${consumer.name}-${provider.interface}`;
+          const providerX = startX + (providerIndex * providerHorizontalSpacing);
+          
+          newNodes.push({
+            id: providerId,
+            type: "provider",
+            position: {
+              x: providerX,
+              y: consumerY,
+            },
+            data: {
+              label: consumer.name,
+              interface: provider.interface,
+              healthy: provider.healthy,
+            },
+          });
+
+          newEdges.push({
+            id: `edge-${consumerId}-${providerId}`,
+            source: consumerId,
+            target: providerId,
+            animated: provider.healthy,
+            style: provider.healthy
+              ? {
+                  stroke: "green",
+                  strokeDasharray: "5 5",
+                  animation: "dashdraw 0.5s linear infinite",
+                }
+              : { stroke: "red" },
+          });
+        });
+      }
+    });
+
+    setNodes(newNodes);
+    setEdges(newEdges);
+  }, [setNodes, expandedGroups]);
+
+  useEffect(() => {
+    if (nodes.length > 0) {
+      const bounds = getRectOfNodes(nodes);
+      const verticalPadding = 40;
+      const totalHeight = Math.max(600, bounds.height + (verticalPadding * 2));
+      setContainerHeight(totalHeight);
+    }
+  }, [nodes]);
+
+  return (
+    <div className="border rounded-lg w-full" style={{ height: containerHeight }}>
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        nodeTypes={nodeTypes}
+        className="bg-muted/10"
+        defaultViewport={{ x: 0, y: 0, zoom: 1 }}
+        defaultEdgeOptions={{
+          type: "smoothstep",
+          style: { strokeWidth: 2 },
+        }}
+        minZoom={0.5}
+        maxZoom={1.2}
+        fitView
+        fitViewOptions={{
+          padding: 100,
+          minZoom: 1,
+          maxZoom: 1.2,
+          includeHiddenNodes: true,
+        }}
+      >
+        <Background />
+        <Controls />
+      </ReactFlow>
+
+      <style>{`
+        @keyframes dashdraw {
+          0% {
+            stroke-dashoffset: 10;
+          }
+          100% {
+            stroke-dashoffset: 0;
+          }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+export function FlowVisualization({ data }: FlowVisualizationProps) {
+  return (
+    <div className="space-y-4 w-full">
+      <ReactFlowProvider>
+        <FlowInner />
+      </ReactFlowProvider>
+    </div>
+  );
+} 
+>>>>>>> 793562b (Add Dashboard)
