@@ -18,10 +18,12 @@ services:
 
   backend:
     build:
-      context: ./services/backend
+      context: ./backend
       dockerfile: Dockerfile
     volumes:
-      - ./services/backend:/app
+      - ./backend:/app
+      - ../../values:/app/helm-values
+      - ../../scripts:/app/scripts
       - ${KUBECONFIG_PATH:-~/.kube/config}:/root/.kube/config:ro
     environment:
       - DEBUG=true

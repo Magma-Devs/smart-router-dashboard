@@ -3,7 +3,7 @@
 import Link from "next/link"
 import Image from "next/image"
 import { usePathname } from "next/navigation"
-import { Settings } from "lucide-react"
+import { Settings, Wand2, LayoutDashboard } from "lucide-react"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -28,21 +28,31 @@ export function NavBar() {
         </div>
         <div className="flex items-center space-x-4 flex-1">
           <nav className="flex items-center space-x-2">
-            <Link href="/" passHref>
+            <Link href="/">
               <Button
                 variant={pathname === "/" ? "default" : "ghost"}
-                className={cn("text-sm font-medium transition-colors")}
+                className="flex items-center gap-1.5"
               >
+                <LayoutDashboard className="h-4 w-4" />
                 Dashboard
               </Button>
             </Link>
-            <Link href="/configuration" passHref>
+            <Link href="/wizard">
+              <Button
+                variant={pathname === "/wizard" ? "default" : "ghost"}
+                className="flex items-center gap-1.5"
+              >
+                <Wand2 className="h-4 w-4" />
+                Configuration Wizard
+              </Button>
+            </Link>
+            <Link href="/configuration">
               <Button
                 variant={pathname === "/configuration" ? "default" : "ghost"}
-                className={cn("text-sm font-medium transition-colors")}
+                className="flex items-center gap-1.5"
               >
-                <Settings className="mr-2 h-4 w-4" />
-                Configuration
+                <Settings className="h-4 w-4" />
+                Settings
               </Button>
             </Link>
           </nav>

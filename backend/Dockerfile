@@ -4,9 +4,12 @@ WORKDIR /app
 
 # Install kubectl and helm
 RUN apt-get update && \
-    apt-get install -y curl apt-transport-https gnupg && \
+    apt-get install -y git curl apt-transport-https gnupg && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
+
+# Install helm
+RUN curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 
 # Copy requirements first for better caching
 COPY requirements.txt .

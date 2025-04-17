@@ -1,12 +1,16 @@
 from pydantic import BaseModel
 from typing import Dict, List, Any, Optional
 
+
 class HelmValues(BaseModel):
     """Model for Helm chart values"""
+
     values: Dict[str, Any]
+
 
 class HelmRelease(BaseModel):
     """Model for a Helm release"""
+
     name: str
     namespace: str
     revision: str
@@ -15,9 +19,11 @@ class HelmRelease(BaseModel):
     chart: str
     app_version: Optional[str] = None
 
+
 class HelmDeployment(BaseModel):
     """Model for a Helm deployment configuration"""
+
     namespace: str
     release_name: str
     chart: str
-    values_file: str 
+    values_file: str

@@ -62,7 +62,12 @@ export default function ConfigurationPage() {
 
   return (
     <div className="container mx-auto px-4 py-6 max-w-7xl">
-      <h1 className="text-3xl font-bold mb-6">Configuration Settings</h1>
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold">Settings</h1>
+        <p className="text-muted-foreground">
+          Configure your dashboard settings and preferences.
+        </p>
+      </div>
 
       {isPreviewEnvironment && (
         <Alert className="mb-6">
