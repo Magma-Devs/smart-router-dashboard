@@ -47,6 +47,7 @@ class KubernetesService:
                 "--namespace",
                 namespace,
                 "--create-namespace",
+                "--recreate-pods",
             ]
 
             result = subprocess.run(cmd, check=True, capture_output=True, text=True)

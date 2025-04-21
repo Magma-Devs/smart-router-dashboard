@@ -10,7 +10,7 @@ interface Config {
 
 export function useConfig() {
   // Use the same local storage keys as the configuration page
-  const [apiHost, setApiHost] = useLocalStorage<string>("api-host", "http://localhost:8000")
+  const [apiHost, setApiHost] = useLocalStorage<string>("api-host", "http://dashboard-api.lava.infra:8080")
   const [refreshInterval, setRefreshInterval] = useLocalStorage<number>("refresh-interval", 60)
 
   useEffect(() => {
@@ -31,7 +31,7 @@ export function useConfig() {
 
   const resetConfig = () => {
     console.log("Resetting config to defaults")
-    setApiHost("http://localhost:8000")
+    setApiHost("http://dashboard-api.lava.infra:8080")
     setRefreshInterval(60)
   }
 
@@ -39,13 +39,13 @@ export function useConfig() {
   useEffect(() => {
     if (!apiHost) {
       console.log("Initializing empty API host")
-      setApiHost("http://localhost:8000")
+      setApiHost("http://dashboard-api.lava.infra:8080")
     }
   }, [apiHost, setApiHost])
 
   return {
     config: {
-      apiEndpoint: apiHost || "http://localhost:8000",
+      apiEndpoint: apiHost || "http://dashboard-api.lava.infra:8080",
       refreshInterval: typeof refreshInterval === 'string' ? parseInt(refreshInterval, 10) : refreshInterval,
     },
     updateApiEndpoint,

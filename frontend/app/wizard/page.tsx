@@ -57,6 +57,7 @@ interface Provider {
   interfaces: ProviderInterface[]
 }
 
+type Step = 1 | 2 | 3
 const steps = [
   { id: 1, title: "Add Consumers", description: "Configure your consumers" },
   { id: 2, title: "Add Providers", description: "Configure providers for each consumer" },
@@ -135,7 +136,8 @@ const ProviderCard = ({ providerName, interfaces, consumerIndex }: ProviderCardP
 const useProviderNameUpdate = (consumers: Consumer[], setConsumers: React.Dispatch<React.SetStateAction<Consumer[]>>) => {
   const [localProviderName, setLocalProviderName] = useState<string>("")
   const [currentProviderKey, setCurrentProviderKey] = useState<string>("")
-  const debouncedName = useDebounce(localProviderName, 300)
+  const debouncedName = useDebounce(localProviderName, 1000)
+  const { toast } = useToast()
 
   useEffect(() => {
     if (debouncedName && currentProviderKey) {
@@ -145,6 +147,17 @@ const useProviderNameUpdate = (consumers: Consumer[], setConsumers: React.Dispat
   }, [debouncedName, currentProviderKey])
 
   const updateProviderName = useCallback((consumerIndex: number, oldName: string, newName: string) => {
+    // Validate provider name
+    const providerNameRegex = /^[a-zA-Z0-9_-]{3,}$/
+    if (!providerNameRegex.test(newName)) {
+      toast({
+        title: "Invalid provider name",
+        description: "Provider name must be at least 3 characters long and contain only letters, numbers, hyphens, and underscores.",
+        variant: "destructive"
+      })
+      return
+    }
+
     setConsumers((prevConsumers: Consumer[]) => {
       const newConsumers = [...prevConsumers]
       const consumer = newConsumers[consumerIndex]
@@ -157,7 +170,7 @@ const useProviderNameUpdate = (consumers: Consumer[], setConsumers: React.Dispat
             providers: [{
               ...iface.providers[0],
               name: newName,
-              url: `${newName}.lava-infra.svc.cluster.local:2200`
+              url: `${newName}-provider.lava-infra.svc.cluster.local:2200`
             }]
           }
         }
@@ -172,7 +185,7 @@ const useProviderNameUpdate = (consumers: Consumer[], setConsumers: React.Dispat
 
       return newConsumers
     })
-  }, [setConsumers])
+  }, [setConsumers, toast])
 
   const handleProviderNameChange = useCallback((consumerIndex: number, providerName: string, newName: string) => {
     setLocalProviderName(newName)
@@ -181,6 +194,7 @@ const useProviderNameUpdate = (consumers: Consumer[], setConsumers: React.Dispat
 
   return {
     localProviderName,
+    setLocalProviderName,
     handleProviderNameChange
   }
 }
@@ -208,7 +222,7 @@ const getAvailableInterfaces = (chainValue: string) => {
 export default function WizardPage() {
   const [selectedOption, setSelectedOption] = useState<'edit' | 'new' | null>(null)
   const [hoveredCard, setHoveredCard] = useState<'edit' | 'new' | null>(null)
-  const [step, setStep] = useState(1)
+  const [step, setStep] = useState<Step>(1)
   const [consumers, setConsumers] = useState<Consumer[]>([])
   const [currentConsumerIndex, setCurrentConsumerIndex] = useState(0)
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -222,7 +236,7 @@ export default function WizardPage() {
   const formRef = useRef<HTMLDivElement>(null)
   const { config } = useConfig()
   const [expandedProviders, setExpandedProviders] = useState<Record<string, boolean>>({})
-  const { localProviderName, handleProviderNameChange } = useProviderNameUpdate(consumers, setConsumers)
+  const { localProviderName, setLocalProviderName, handleProviderNameChange } = useProviderNameUpdate(consumers, setConsumers)
   const [showConfig, setShowConfig] = useState(false)
   const [finalConfig, setFinalConfig] = useState<string>("")
 
@@ -424,20 +438,31 @@ export default function WizardPage() {
 
   const addProvider = (consumerIndex: number) => {
     const newConsumers = [...consumers]
-    const basePort = 2000
-    const currentPort = basePort + (newConsumers[consumerIndex].interfaces.length)
     
-    // Generate a unique provider ID for the URL only
-    const providerId = `provider-${Date.now()}`
+    // Find the highest port number used across all consumers
+    const highestPort = newConsumers.reduce((maxPort, consumer) => {
+      const consumerMaxPort = consumer.interfaces.reduce((port, iface) => 
+        Math.max(port, iface.port), 0)
+      return Math.max(maxPort, consumerMaxPort)
+    }, 1999) // Start from 1999 so first port will be 2000
+    
+    // Get the chain name and count existing providers for this chain
+    const chainName = newConsumers[consumerIndex].name
+    const providerCount = newConsumers[consumerIndex].interfaces
+      .filter(iface => iface.providers[0]?.name?.startsWith(`${chainName}-`))
+      .length
+    
+    // Generate default provider name
+    const defaultProviderName = `${chainName}-${providerCount}`
     
     // Create a new interface with a new provider
     newConsumers[consumerIndex].interfaces.push({
       name: [interfaces[0].value], // Always use the first interface type for new providers
-      port: currentPort,
+      port: highestPort + 1, // Use the next available port
       addons: [],
       providers: [{
-        name: "", // Start with empty name
-        url: `${providerId}.lava-infra.svc.cluster.local:2200`,
+        name: defaultProviderName, // Use the generated default name
+        url: `${defaultProviderName}-provider.lava-infra.svc.cluster.local:2200`,
         nodes: [{
           endpoint: "",
           type: "full",
@@ -452,8 +477,11 @@ export default function WizardPage() {
       newExpandedProviders[key] = false
     })
     // Expand only the new provider
-    newExpandedProviders[""] = true // Use empty string as key for new provider
+    newExpandedProviders[defaultProviderName] = true
     setExpandedProviders(newExpandedProviders)
+    
+    // Reset the local provider name state
+    setLocalProviderName("")
     
     setConsumers(newConsumers)
     setErrors({} as Record<string, string>)
@@ -834,9 +862,9 @@ export default function WizardPage() {
                 <motion.div
                   className={cn(
                     "flex h-8 w-8 items-center justify-center rounded-full border-2",
-                    step > s.id
+                    Number(step) > s.id
                       ? "border-primary bg-primary text-primary-foreground"
-                      : step === s.id
+                      : Number(step) === s.id
                       ? "border-primary bg-primary/10 text-primary"
                       : "border-muted bg-background text-muted-foreground"
                   )}
@@ -844,9 +872,9 @@ export default function WizardPage() {
                   animate={{ scale: 1, opacity: 1 }}
                   transition={{ duration: 0.3, delay: index * 0.1 }}
                 >
-                  {step > s.id ? (
+                  {Number(step) > s.id ? (
                     <CheckCircle2 className="h-5 w-5" />
-                  ) : step === s.id ? (
+                  ) : Number(step) === s.id ? (
                     <Circle className="h-5 w-5" />
                   ) : (
                     <Circle className="h-5 w-5" />
@@ -855,7 +883,7 @@ export default function WizardPage() {
                 <motion.span
                   className={cn(
                     "mt-2 text-sm font-medium",
-                    step >= s.id ? "text-foreground" : "text-muted-foreground"
+                    Number(step) >= s.id ? "text-foreground" : "text-muted-foreground"
                   )}
                   initial={{ y: 20, opacity: 0 }}
                   animate={{ y: 0, opacity: 1 }}
@@ -953,11 +981,11 @@ export default function WizardPage() {
               >
                 <Card className="shadow-lg">
                   <CardHeader>
-                    <CardTitle>{steps[step - 1].title}</CardTitle>
-                    <CardDescription>{steps[step - 1].description}</CardDescription>
+                    <CardTitle>{steps[Number(step) - 1].title}</CardTitle>
+                    <CardDescription>{steps[Number(step) - 1].description}</CardDescription>
                   </CardHeader>
                   <CardContent>
-                    {step === 1 && (
+                    {Number(step) === 1 && (
                       <motion.div
                         className="space-y-6"
                         initial={{ opacity: 0, x: -20 }}
@@ -1051,7 +1079,7 @@ export default function WizardPage() {
                       </motion.div>
                     )}
 
-                    {step === 2 && (
+                    {Number(step) === 2 && (
                       <motion.div
                         className="space-y-6"
                         initial={{ opacity: 0, x: -20 }}
@@ -1207,7 +1235,7 @@ export default function WizardPage() {
                                             
                                             handleProviderNameChange(currentConsumerIndex, providerName, newName)
                                           }}
-                                          placeholder="Enter provider name (required)"
+                                          placeholder="Enter provider name (alphanumeric, hyphens, underscores, min 3 chars)"
                                           className={cn(
                                             errors[`provider-name-${currentConsumerIndex}-${providerName}`] && "border-destructive",
                                             !providerName && "border-yellow-500"
@@ -1456,7 +1484,7 @@ export default function WizardPage() {
                       </motion.div>
                     )}
 
-                    {step === 3 && (
+                    {Number(step) === 3 && (
                       <motion.div
                         className="space-y-6"
                         initial={{ opacity: 0, x: -20 }}
@@ -1517,7 +1545,7 @@ export default function WizardPage() {
                           <Button
                             variant="outline"
                             onClick={prevStep}
-                            disabled={step === 1}
+                            disabled={Number(step) === 1}
                             className="w-32"
                           >
                             <ChevronLeft className="mr-2 h-4 w-4" />
@@ -1525,11 +1553,9 @@ export default function WizardPage() {
                           </Button>
                           <Button
                             onClick={nextStep}
-                            disabled={
-                              (step === 1 && consumers.length === 0) ||
-                              (step === 2 && consumers[currentConsumerIndex]?.interfaces.length === 0) ||
-                              isSubmitting
-                            }
+                            disabled={(Number(step) === 1 && consumers.length === 0) ||
+                              (Number(step) === 2 && consumers[currentConsumerIndex]?.interfaces.length === 0) ||
+                              isSubmitting}
                             className="w-32 bg-primary hover:bg-primary/90"
                           >
                             {isSubmitting ? (
@@ -1537,7 +1563,7 @@ export default function WizardPage() {
                                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                                 Saving...
                               </>
-                            ) : step === 3 ? (
+                            ) : Number(step) === 3 ? (
                               "Complete"
                             ) : (
                               "Next"
