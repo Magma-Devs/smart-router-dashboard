@@ -16,6 +16,19 @@ services:
   #   #   - /app/node_modules
   #   #   - /app/.next
 
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./backend/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      # - ./ssl:/etc/nginx/ssl  # Uncomment for SSL
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - dashboard-network
+
   backend:
     build:
       context: ./backend
@@ -31,4 +44,10 @@ services:
       - PROMETHEUS_URL=http://prometheus.lava.infra:1234
     extra_hosts:
       - "prometheus.lava.infra:127.0.0.1"
-    network_mode: "host"
+    restart: unless-stopped
+    networks:
+      - dashboard-network
+
+networks:
+  dashboard-network:
+    driver: bridge
