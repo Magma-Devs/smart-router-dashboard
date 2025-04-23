@@ -23,6 +23,9 @@ const nextConfig = {
     unoptimized: true,
   },
   output: 'standalone',
+  env: {
+    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || 'https://dashboard-api.lava.infra:8443',
+  },
 }
 
 if (userConfig) {

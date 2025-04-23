@@ -217,6 +217,18 @@ async def update_configuration(config: ConfigurationUpdate):
                 values_file=provider_path,
             )
 
+            # Label ServiceMonitors for Prometheus discovery
+            kubernetes_service.label_servicemonitor(
+                name="consumer",
+                namespace="lava-infra",
+                labels={"release": "kube-prom-stack"},
+            )
+            kubernetes_service.label_servicemonitor(
+                name="provider",
+                namespace="lava-infra",
+                labels={"release": "kube-prom-stack"},
+            )
+
         except Exception as e:
             raise HTTPException(
                 status_code=500, detail=f"Error applying helm templates: {str(e)}"

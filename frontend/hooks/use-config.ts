@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useLocalStorage } from "./use-local-storage"
+import { useLocalStorage } from "@/hooks/use-local-storage"
 
 interface Config {
   apiEndpoint: string
@@ -9,8 +9,7 @@ interface Config {
 }
 
 export function useConfig() {
-  // Use the same local storage keys as the configuration page
-  const [apiHost, setApiHost] = useLocalStorage<string>("api-host", "http://dashboard-api.lava.infra:8080")
+  const [apiHost, setApiHost] = useLocalStorage<string>("api-host", process.env.NEXT_PUBLIC_API_URL || "https://dashboard-api.lava.infra:8443")
   const [refreshInterval, setRefreshInterval] = useLocalStorage<number>("refresh-interval", 60)
 
   useEffect(() => {
@@ -31,7 +30,7 @@ export function useConfig() {
 
   const resetConfig = () => {
     console.log("Resetting config to defaults")
-    setApiHost("http://dashboard-api.lava.infra:8080")
+    setApiHost(process.env.NEXT_PUBLIC_API_URL || "https://dashboard-api.lava.infra:8443")
     setRefreshInterval(60)
   }
 
@@ -39,17 +38,19 @@ export function useConfig() {
   useEffect(() => {
     if (!apiHost) {
       console.log("Initializing empty API host")
-      setApiHost("http://dashboard-api.lava.infra:8080")
+      setApiHost(process.env.NEXT_PUBLIC_API_URL || "https://dashboard-api.lava.infra:8443")
     }
   }, [apiHost, setApiHost])
 
   return {
     config: {
-      apiEndpoint: apiHost || "http://dashboard-api.lava.infra:8080",
+      apiEndpoint: apiHost || process.env.NEXT_PUBLIC_API_URL || "https://dashboard-api.lava.infra:8443",
       refreshInterval: typeof refreshInterval === 'string' ? parseInt(refreshInterval, 10) : refreshInterval,
     },
     updateApiEndpoint,
     updateRefreshInterval,
     resetConfig,
+    apiHost,
+    setApiHost,
   }
 } 
