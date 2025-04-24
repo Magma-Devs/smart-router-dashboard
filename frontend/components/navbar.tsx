@@ -16,7 +16,7 @@ export function Navbar() {
       <div className="flex h-14 items-center">
         <div className="flex items-center gap-2 font-medium">
           <Activity className="h-5 w-5" />
-          <span>Lava Infra Manager</span>
+          <span>Lava Smart Router</span>
         </div>
         <div className="ml-8 flex items-center space-x-1">
           <Link href="/">

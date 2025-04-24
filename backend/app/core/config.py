@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 class Settings(BaseSettings):
     API_V1_STR: str = "/api"
-    PROJECT_NAME: str = "Lava Infra ManagerDashboard"
+    PROJECT_NAME: str = "Lava Smart Router Dashboard"
 
     # Prometheus settings
     PROMETHEUS_URL: str = os.getenv("PROMETHEUS_URL", "http://prometheus.lava.infra")
@@ -63,6 +63,7 @@ class Settings(BaseSettings):
     PROMETHEUS_RETRIES: int = int(os.getenv("PROMETHEUS_RETRIES", "3"))
     PROMETHEUS_RETRY_DELAY: float = float(os.getenv("PROMETHEUS_RETRY_DELAY", "0.5"))
     PROMETHEUS_TIMEOUT: int = int(os.getenv("PROMETHEUS_TIMEOUT", "10"))
+    PROMETHEUS_VERIFY_SSL: bool = not os.getenv("DEBUG", "False").lower() == "true"  # Verify SSL unless in debug mode
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -72,6 +73,7 @@ class Settings(BaseSettings):
             logging.getLogger().setLevel(logging.DEBUG)
             logger.debug("Debug mode enabled")
             logger.debug(f"Prometheus URL: {self.PROMETHEUS_URL}")
+            logger.debug(f"Prometheus SSL verification: {self.PROMETHEUS_VERIFY_SSL}")
 
         # Validate Prometheus connection on startup
         if not self.validate_prometheus_connection():
@@ -87,7 +89,9 @@ class Settings(BaseSettings):
 
         try:
             response = requests.get(
-                f"{self.PROMETHEUS_URL}/-/healthy", timeout=self.PROMETHEUS_TIMEOUT
+                f"{self.PROMETHEUS_URL}/-/healthy", 
+                timeout=self.PROMETHEUS_TIMEOUT,
+                verify=self.PROMETHEUS_VERIFY_SSL
             )
             return response.status_code == 200
         except RequestException as e:

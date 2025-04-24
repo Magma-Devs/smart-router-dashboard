@@ -27,6 +27,8 @@ interface FlowVisualizationProps {
 // Types for the flow visualization
 interface Consumer {
   name: string
+  label: string
+  icon?: string
   healthy: boolean
 }
 
@@ -49,6 +51,15 @@ interface ServiceGroup {
   interfaces: Set<string> // Track unique interfaces in this service
 }
 
+function MixedHealthIndicator() {
+  return (
+    <div className="relative w-4 h-4">
+      <Check className="absolute h-4 w-4 text-orange-500" style={{ clipPath: 'inset(0 50% 0 0)' }} />
+      <X className="absolute h-4 w-4 text-orange-500" style={{ clipPath: 'inset(0 0 0 50%)' }} />
+    </div>
+  )
+}
+
 function UserNode({ data }: { data: any }) {
   return (
     <div className="px-4 py-2 shadow-lg rounded-lg border bg-background min-w-44">
@@ -61,22 +72,26 @@ function UserNode({ data }: { data: any }) {
   )
 }
 
-function ConsumerNode({ data }: { data: { label: string; healthy: boolean; hasExpandedProviders?: boolean; onToggleExpand?: () => void; hasMultipleProviders?: boolean } }) {
+function ConsumerNode({ data }: { data: { label: string; healthy: boolean; hasExpandedProviders?: boolean; onToggleExpand?: () => void; hasMultipleProviders?: boolean; icon?: string; hasMixedHealth?: boolean; width?: number } }) {
   return (
     <div
       className={cn(
-        "px-4 py-2 shadow-lg rounded-lg border bg-background min-w-44",
-        data.healthy ? "border-green-200" : "border-red-200"
+        "px-4 py-2 shadow-lg rounded-lg border bg-background",
+        data.healthy ? "border-green-200" : data.hasMixedHealth ? "border-orange-200" : "border-red-200"
       )}
+      style={{ width: data.width ? `${data.width}px` : 'auto' }}
     >
       <Handle type="target" position={Position.Left} className="!bg-muted-foreground" />
       <div className="flex items-center gap-2">
-        <Network className="h-4 w-4" />
-        <div className="flex flex-col">
+        {data.icon ? (
+          <img src={data.icon} alt={data.label} className="w-4 h-4 flex-shrink-0" />
+        ) : (
+          <Network className="h-4 w-4 flex-shrink-0" />
+        )}
+        <div className="flex flex-col whitespace-nowrap">
           <span className="font-medium">{data.label}</span>
-          <span className="text-xs text-muted-foreground">Consumer</span>
         </div>
-        <div className="flex items-center ml-auto">
+        <div className="flex items-center ml-auto flex-shrink-0">
           {data.hasMultipleProviders && (
             <button
               onClick={(e) => {
@@ -93,11 +108,13 @@ function ConsumerNode({ data }: { data: { label: string; healthy: boolean; hasEx
               )}
             </button>
           )}
-        {data.healthy ? (
+          {data.healthy ? (
             <Check className="h-4 w-4 text-green-500" />
-        ) : (
+          ) : data.hasMixedHealth ? (
+            <MixedHealthIndicator />
+          ) : (
             <X className="h-4 w-4 text-red-500" />
-        )}
+          )}
         </div>
       </div>
       <Handle type="source" position={Position.Right} className="!bg-muted-foreground" />
@@ -174,7 +191,7 @@ function ProviderGroupNode({ data }: { data: { label: string; providers: Provide
   interfacesByHealth.unhealthy.sort()
   
   // Determine if interfaces should be shown
-  const showInterfaces = data.isExpanded
+  const showInterfaces = true
   // Set max height for the interface list
   const maxListHeight = 150
 
@@ -202,7 +219,7 @@ function ProviderGroupNode({ data }: { data: { label: string; providers: Provide
               ) : (
                 <ChevronDown className="h-3 w-3" />
               )}
-              <span>Provider {interfaceCount > 1 ? `(${interfaceCount} interfaces)` : ""}</span>
+              <span>Interfaces {interfaceCount > 1 ? `(${interfaceCount} interfaces)` : ""}</span>
             </span>
           </div>
           <div className="ml-auto flex items-center gap-1">
@@ -251,16 +268,12 @@ function ProviderGroupNode({ data }: { data: { label: string; providers: Provide
   )
 }
 
-// Update the ProviderCountNode to remove "-provider" from titles
-function ProviderCountNode({ data }: { data: { consumer: string; count: number; onExpand: () => void; isHealthy: boolean } }) {
-  // Clean up consumer name by removing "-provider" substring
-  const displayConsumer = data.consumer.replace(/-provider/g, "")
-
+function ProviderCountNode({ data }: { data: { consumer: string; count: number; onExpand: () => void; isHealthy: boolean; healthyCount?: number; hasMixedHealth?: boolean } }) {
   return (
     <div
       className={cn(
         "px-4 py-2 shadow-lg rounded-lg border bg-background cursor-pointer",
-        data.isHealthy ? "border-green-200" : "border-red-200"
+        data.isHealthy ? "border-green-200" : data.hasMixedHealth ? "border-orange-200" : "border-red-200"
       )}
       onClick={data.onExpand}
     >
@@ -271,15 +284,19 @@ function ProviderCountNode({ data }: { data: { consumer: string; count: number; 
           <ChevronRight className="h-3 w-3 absolute -bottom-1 -right-1" />
         </div>
         <div className="flex flex-col">
-          <span className="font-medium">{displayConsumer}</span>
+          <span className="font-medium">
+            {data.healthyCount !== undefined ? `${data.healthyCount}/${data.count}` : data.count} {data.count === 1 ? "Provider" : "Providers"}
+          </span>
           <span className="text-xs text-muted-foreground flex items-center gap-1">
             <ChevronDown className="h-3 w-3" />
-            <span>{data.count} {data.count === 1 ? "Provider" : "Providers"}</span>
+            <span>Expand</span>
           </span>
         </div>
         <div className="ml-auto">
           {data.isHealthy ? (
             <Check className="h-4 w-4 text-green-500" />
+          ) : data.hasMixedHealth ? (
+            <MixedHealthIndicator />
           ) : (
             <X className="h-4 w-4 text-red-500" />
           )}
@@ -526,7 +543,14 @@ function FlowInner({ apiData, isAllExpanded }: { apiData: any; isAllExpanded: bo
       
       // Create consumers and empty provider arrays
       uniqueSpecs.forEach((spec: string) => {
-        consumers.push({ name: spec, healthy: true })
+        // Find the result that has the label for this spec
+        const result = results.find((r: any) => r.metric?.spec === spec)
+        consumers.push({ 
+          name: spec, 
+          label: result?.metric?.label || spec, // Use the label from the API data
+          icon: result?.metric?.icon, // Use the icon from the API data
+          healthy: true 
+        })
         providers[spec] = []
       })
       
@@ -575,26 +599,30 @@ function FlowInner({ apiData, isAllExpanded }: { apiData: any; isAllExpanded: bo
       })
     } else {
       // Fallback to sample data if API format is not recognized
-      consumers.push(
-      { name: "NEAR", healthy: true },
-      { name: "ETH", healthy: true },
-      { name: "BTC", healthy: false },
-      { name: "SOL", healthy: true },
-        { name: "LAVA", healthy: true }
-      )
+      const sampleData = [
+        { name: "near", label: "NEAR Mainnet", healthy: true },
+        { name: "eth1", label: "Ethereum Mainnet", healthy: true },
+        { name: "btc", label: "Bitcoin", healthy: false },
+        { name: "solana", label: "Solana Mainnet", healthy: true },
+        { name: "lava", label: "Lava Mainnet", healthy: true }
+      ]
+      
+      sampleData.forEach(item => {
+        consumers.push(item)
+      })
 
-      providers['NEAR'] = [{ interface: "lava", apiInterface: "lava", healthy: true, service: "lava" }]
-      providers['ETH'] = [
+      providers['near'] = [{ interface: "lava", apiInterface: "lava", healthy: true, service: "lava" }]
+      providers['eth1'] = [
         { interface: "quicknodes", apiInterface: "quicknodes", healthy: true, service: "quicknodes" },
         { interface: "anker", apiInterface: "anker", healthy: true, service: "anker" },        
       ]
-      providers['BTC'] = [{ interface: "anker", apiInterface: "anker", healthy: false, service: "anker" }]
-      providers['SOL'] = [
+      providers['btc'] = [{ interface: "anker", apiInterface: "anker", healthy: false, service: "anker" }]
+      providers['solana'] = [
         { interface: "lava", apiInterface: "lava", healthy: false, service: "lava" },
         { interface: "anker", apiInterface: "anker", healthy: true, service: "anker" },
         { interface: "anker2", apiInterface: "anker2", healthy: true, service: "anker" },
       ]
-      providers['LAVA'] = [
+      providers['lava'] = [
         { interface: "anker", apiInterface: "anker", healthy: true, service: "anker" }, 
         { interface: "anker2", apiInterface: "anker2", healthy: true, service: "anker" }, 
         { interface: "anker3", apiInterface: "anker3", healthy: true, service: "anker" },
@@ -605,11 +633,23 @@ function FlowInner({ apiData, isAllExpanded }: { apiData: any; isAllExpanded: bo
     const nodes: Node[] = []
     const edges: Edge[] = []
 
-    const sidesPadding = 40
-    const horizontalGap = 250
-    const providerVerticalGap = 180 // Increased vertical gap for better spacing
-    const serviceGroupGap = 100 // Gap between service groups
+    const sidesPadding = 0
+    const horizontalGap = 400
+    const providerVerticalGap = 180
+    const serviceGroupGap = 100
     
+    // Calculate the max width needed for consumer nodes
+    const maxLabelLength = consumers.reduce((max, consumer) => 
+      Math.max(max, consumer.label.length), 0)
+    
+    // Base width + character width estimate * longest label + padding
+    const baseWidth = 80 // Base width for icons and padding
+    const charWidth = 10 // Approximate width of a character
+    const consumerNodeWidth = baseWidth + (maxLabelLength * charWidth)
+    
+    // Apply a minimum width constraint
+    const finalConsumerNodeWidth = Math.max(200, consumerNodeWidth)
+
     // Create a map of expanded states for consumers and service groups
     const expandedConsumers = new Set<string>()
     const expandedServiceGroups = new Set<string>()
@@ -694,35 +734,6 @@ function FlowInner({ apiData, isAllExpanded }: { apiData: any; isAllExpanded: bo
       })
     })
     
-    // Calculate the max width needed for provider nodes
-    // First, get all unique service names and interface names
-    const allServiceNames = new Set<string>()
-    const allInterfaceNames = new Set<string>()
-    
-    consumers.forEach(consumer => {
-      const consumerProviders = providers[consumer.name] || []
-      consumerProviders.forEach(provider => {
-        allServiceNames.add(provider.service || '')
-        allInterfaceNames.add(provider.apiInterface || provider.interface)
-      })
-    })
-    
-    // Estimate the width based on the longest service and interface names
-    const maxServiceNameLength = Array.from(allServiceNames).reduce((max, name) => 
-      name.length > max ? name.length : max, 0)
-    const maxInterfaceNameLength = Array.from(allInterfaceNames).reduce((max, name) => 
-      name.length > max ? name.length : max, 0)
-    
-    // Calculate approximate width in pixels (this is an estimation)
-    // Base width + character width estimate * longest name + padding
-    const baseWidth = 60 // Base width for icons and padding
-    const charWidth = 8 // Approximate width of a character
-    const maxLabelWidth = Math.max(maxServiceNameLength, maxInterfaceNameLength)
-    const providerNodeWidth = baseWidth + (maxLabelWidth * charWidth)
-    
-    // Apply a minimum width constraint
-    const finalProviderNodeWidth = Math.max(180, providerNodeWidth)
-
     // Calculate total height needed
     let totalHeight = 0
     const consumerSectionHeights: Record<string, number> = {}
@@ -807,7 +818,7 @@ function FlowInner({ apiData, isAllExpanded }: { apiData: any; isAllExpanded: bo
       const consumerY = consumerYPositions[consumer.name]
       const isConsumerExpanded = expandedConsumers.has(consumer.name)
       const serviceGroups = serviceGroupsByConsumer[consumer.name]
-      const hasMultipleProviders = serviceGroups.reduce((total, group) => total + group.providers.length, 0) > 2 // Changed threshold to >2
+      const hasMultipleProviders = serviceGroups.reduce((total, group) => total + group.providers.length, 0) > 2
       
       // Add consumer node
       nodes.push({
@@ -815,10 +826,13 @@ function FlowInner({ apiData, isAllExpanded }: { apiData: any; isAllExpanded: bo
         type: "consumer",
         position: { x: consumerX, y: consumerY },
         data: { 
-          label: consumer.name, 
+          label: consumer.label,
+          icon: consumer.icon,
           healthy: consumer.healthy,
           hasExpandedProviders: isConsumerExpanded,
           hasMultipleProviders: hasMultipleProviders,
+          hasMixedHealth: serviceGroups.some(group => group.anyHealthy) && serviceGroups.some(group => !group.allHealthy),
+          width: finalConsumerNodeWidth,
           onToggleExpand: hasMultipleProviders ? () => {
             setExpandedGroups(prev => {
               const newState = { ...prev }
@@ -835,10 +849,16 @@ function FlowInner({ apiData, isAllExpanded }: { apiData: any; isAllExpanded: bo
         id: `edge-user-${consumerId}`,
         source: "user",
         target: consumerId,
-        animated: consumer.healthy,
-        style: consumer.healthy
+        animated: consumer.healthy || serviceGroups.some(group => group.anyHealthy),
+        style: consumer.healthy && serviceGroups.every(group => group.allHealthy)
           ? {
               stroke: "green",
+              strokeDasharray: "5 5",
+              animation: "dashdraw 0.5s linear infinite",
+            }
+          : serviceGroups.some(group => group.anyHealthy)
+          ? {
+              stroke: "orange",
               strokeDasharray: "5 5",
               animation: "dashdraw 0.5s linear infinite",
             }
@@ -866,7 +886,7 @@ function FlowInner({ apiData, isAllExpanded }: { apiData: any; isAllExpanded: bo
               providers: group.providers,
               interfaces: group.interfaces,
               isExpanded: isServiceExpanded,
-              maxWidth: finalProviderNodeWidth,
+              maxWidth: finalConsumerNodeWidth,
               onToggle: () => {
                 setExpandedGroups(prev => {
                   const newState = { ...prev }
@@ -884,10 +904,16 @@ function FlowInner({ apiData, isAllExpanded }: { apiData: any; isAllExpanded: bo
             source: consumerId,
             target: serviceId,
             type: "smoothstep",
-            animated: consumer.healthy && group.anyHealthy,
-            style: consumer.healthy && group.anyHealthy
+            animated: group.anyHealthy,
+            style: group.allHealthy
               ? {
                   stroke: "green",
+                  strokeDasharray: "5 5",
+                  animation: "dashdraw 0.5s linear infinite",
+                }
+              : group.anyHealthy
+              ? {
+                  stroke: "orange",
                   strokeDasharray: "5 5",
                   animation: "dashdraw 0.5s linear infinite",
                 }
@@ -900,9 +926,11 @@ function FlowInner({ apiData, isAllExpanded }: { apiData: any; isAllExpanded: bo
         const providerCountX = consumerX + horizontalGap
         const providerCountY = consumerY
         
-        // Calculate total provider count
+        // Calculate total provider count and healthy count
         const totalProviders = serviceGroups.reduce((total, group) => 
           total + group.interfaces.size, 0)
+        const healthyProviders = serviceGroups.reduce((total, group) => 
+          total + group.providers.filter(p => p.healthy).length, 0)
         
         // Calculate if any providers are unhealthy
         const anyUnhealthy = serviceGroups.some(group => 
@@ -917,7 +945,9 @@ function FlowInner({ apiData, isAllExpanded }: { apiData: any; isAllExpanded: bo
           data: {
             consumer: consumer.name,
             count: totalProviders,
+            healthyCount: healthyProviders,
             isHealthy: !anyUnhealthy,
+            hasMixedHealth: healthyProviders > 0 && healthyProviders < totalProviders,
             onExpand: () => {
               setExpandedGroups(prev => {
                 const newState = { ...prev }
@@ -935,10 +965,16 @@ function FlowInner({ apiData, isAllExpanded }: { apiData: any; isAllExpanded: bo
           source: consumerId,
           target: providerCountNodeId,
           type: "smoothstep",
-          animated: consumer.healthy,
-          style: consumer.healthy
+          animated: !anyUnhealthy || (anyUnhealthy && serviceGroups.some(group => group.anyHealthy)),
+          style: !anyUnhealthy
             ? {
                 stroke: "green",
+                strokeDasharray: "5 5",
+                animation: "dashdraw 0.5s linear infinite",
+              }
+            : serviceGroups.some(group => group.anyHealthy)
+            ? {
+                stroke: "orange",
                 strokeDasharray: "5 5",
                 animation: "dashdraw 0.5s linear infinite",
               }
@@ -968,7 +1004,7 @@ function FlowInner({ apiData, isAllExpanded }: { apiData: any; isAllExpanded: bo
         edges={edges}
         nodeTypes={nodeTypes}
         className="bg-muted/10"
-        defaultViewport={{ x: 0, y: 0, zoom: 1 }}
+        defaultViewport={{ x: -20, y: 0, zoom: 1 }}
         defaultEdgeOptions={{
           type: "smoothstep",
           style: { strokeWidth: 2 },

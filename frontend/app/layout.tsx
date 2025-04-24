@@ -8,7 +8,7 @@ import { ThemeProvider } from "@/components/theme-provider"
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "Lava Infra Manager Dashboard",
+  title: "Lava Smart Router",
   description: "Real-time monitoring of Lava infrastructure health and uptime",
   icons: {
     icon: [

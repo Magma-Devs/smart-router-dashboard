@@ -42,7 +42,13 @@ export default function ConfigurationPage() {
       return
     }
 
-    updateApiEndpoint(inputValue)
+    // Ensure the endpoint has a protocol
+    let endpoint = inputValue.trim()
+    if (!endpoint.startsWith('http://') && !endpoint.startsWith('https://')) {
+      endpoint = `http://${endpoint}`
+    }
+
+    updateApiEndpoint(endpoint)
     toast({
       title: "Configuration saved",
       description: "Your API host has been updated successfully",

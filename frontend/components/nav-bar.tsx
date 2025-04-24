@@ -23,7 +23,7 @@ export function NavBar() {
               height={24}
               className="h-6 w-6"
             />
-            <span className="font-bold">Lava Infra Manager</span>
+            <span className="font-bold">Lava Smart Router</span>
           </Link>
         </div>
         <div className="flex items-center space-x-4 flex-1">

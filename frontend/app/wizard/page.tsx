@@ -6,15 +6,9 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ChevronLeft, ChevronRight, Plus, Trash2, CheckCircle2, Circle, AlertCircle, HelpCircle, Check, Loader2, Settings, PlusCircle, ArrowRight } from "lucide-react"
+import { ChevronLeft, ChevronRight, Plus, Trash2, CheckCircle2, Circle, AlertCircle, Check, Loader2, Settings, PlusCircle, ArrowRight } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { motion, AnimatePresence, useAnimation } from "framer-motion"
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { useToast } from "@/components/ui/use-toast"
 import { Progress } from "@/components/ui/progress"
@@ -59,20 +53,10 @@ interface Provider {
 
 type Step = 1 | 2 | 3
 const steps = [
-  { id: 1, title: "Add Consumers", description: "Configure your consumers" },
-  { id: 2, title: "Add Providers", description: "Configure providers for each consumer" },
+  { id: 1, title: "Add Chains", description: "Configure your chains" },
+  { id: 2, title: "Add Providers", description: "Configure providers for each chain" },
   { id: 3, title: "Review", description: "Review your configuration" },
 ]
-
-const fieldTooltips = {
-  consumerName: "Enter a unique name for your consumer. This will be used to identify it in the system.",
-  consumerInterfaces: "Configure the interfaces and their providers for this consumer.",
-  interfaceName: "Enter the name of the interface (e.g., jsonrpc, rest).",
-  interfacePort: "Enter the port number for this interface.",
-  interfaceAddons: "Select any additional features or addons for this interface.",
-  providerName: "Enter a unique name for your provider.",
-  providerUrl: "Enter the URL endpoint for this provider."
-}
 
 const interfaces = [
   { value: "jsonrpc", label: "JSON-RPC", color: "bg-blue-500" },
@@ -93,11 +77,12 @@ const ProviderCard = ({ providerName, interfaces, consumerIndex }: ProviderCardP
       <div className="flex items-center gap-2">
         <h5 className="font-medium">Provider: {providerName}</h5>
         <span className="text-sm text-muted-foreground">
-          {interfaces[0].providers[0]?.url}
         </span>
       </div>
       <div className="flex flex-wrap gap-2">
-        {interfaces.map((iface, idx) => (
+        {interfaces.map((iface, idx) => {
+          const provider = iface.providers.find(p => p.name === providerName)
+          return (
           <div 
             key={idx}
             className="flex flex-col gap-1 p-3 bg-muted/50 rounded-lg"
@@ -118,16 +103,14 @@ const ProviderCard = ({ providerName, interfaces, consumerIndex }: ProviderCardP
                 </span>
               ))}
             </div>
+              {provider?.nodes?.[0]?.endpoint && (
             <div className="text-sm text-muted-foreground">
-              Port: {iface.port}
-            </div>
-            {iface.providers[0]?.nodes?.[0]?.endpoint && (
-              <div className="text-sm text-muted-foreground">
-                Endpoint: {iface.providers[0].nodes[0].endpoint}
+                  Endpoint: {provider.nodes[0].endpoint}
               </div>
             )}
           </div>
-        ))}
+          )
+        })}
       </div>
     </div>
   )
@@ -262,35 +245,50 @@ export default function WizardPage() {
           
           // Transform the API data into our internal format
           const transformedConsumers = Object.entries(data.consumers).map(([chainId, consumer]: [string, any]) => {
-            // Get the corresponding provider data for this chain
-            const providerData = data.providers[chainId]?.[0] || {}
+            // Get all providers for this chain - it's an array in data.providers[chainId]
+            const chainProviders = Array.isArray(data.providers[chainId]) ? data.providers[chainId] : []
+            
+            // Group providers by their name first
+            const providerMap = new Map()
+            chainProviders.forEach((provider: any) => {
+              if (!providerMap.has(provider.name)) {
+                providerMap.set(provider.name, {
+                  name: provider.name,
+                  url: `${provider.name}-provider.lava-infra.svc.cluster.local:2200`,
+                  nodes: []
+                })
+              }
+            })
             
             return {
               name: chainId,
               interfaces: consumer.interfaces.map((iface: any) => {
-                // Find the matching provider interface
-                const providerInterface = providerData.interfaces?.find(
-                  (pi: any) => pi.name === iface.name
+                // Find providers that support this interface
+                const matchingProviders = chainProviders.filter((p: any) => 
+                  p.interfaces.some((pi: any) => pi.name === iface.name)
                 )
-                
+
+                // Get the nodes for each matching provider
+                const providers = matchingProviders.map((provider: any) => {
+                  const providerInterface = provider.interfaces.find((pi: any) => pi.name === iface.name)
+                  const providerData = providerMap.get(provider.name)
                 return {
-                  name: ensureArray(iface.name),
+                    ...providerData,
+                    nodes: providerInterface?.nodes || []
+                  }
+                })
+
+                return {
+                  name: [iface.name],
                   port: iface.port,
                   addons: iface.addons,
-                  providers: iface.providers.map((provider: any) => ({
-                    name: provider.name,
-                    url: provider.url,
-                    nodes: providerInterface?.nodes?.map((node: any) => ({
-                      endpoint: node.endpoint,
-                      type: node.type,
-                      addons: node.addons
-                    })) || []
-                  }))
+                  providers: providers
                 }
               })
             }
           })
           
+          console.log('Transformed consumers:', transformedConsumers)
           setConsumers(transformedConsumers)
           setStep(1)
           setCurrentConsumerIndex(0)
@@ -941,22 +939,20 @@ export default function WizardPage() {
                                 })()}
                               </h4>
                               
-                              {Object.entries(
-                                consumer.interfaces.reduce((acc, iface) => {
-                                  const providerName = iface.providers[0]?.name || "Unnamed Provider"
-                                  if (!acc[providerName]) {
-                                    acc[providerName] = []
-                                  }
-                                  acc[providerName].push(iface)
-                                  return acc
-                                }, {} as Record<string, ConsumerInterface[]>)
-                              ).map(([providerName, providerInterfaces]) => (
+                              {consumer.interfaces.map((iface, ifaceIndex) => (
+                                <div key={ifaceIndex} className="space-y-4">
+                                  <h5 className="font-medium">
+                                    Interface: {iface.name.join(", ")}
+                                  </h5>
+                                  {iface.providers.map((provider, providerIndex) => (
                                 <ProviderCard
-                                  key={providerName}
-                                  providerName={providerName}
-                                  interfaces={providerInterfaces}
+                                      key={providerIndex}
+                                      providerName={provider.name}
+                                      interfaces={[iface]}
                                   consumerIndex={index}
                                 />
+                                  ))}
+                                </div>
                               ))}
                             </div>
                           </Card>
@@ -993,10 +989,9 @@ export default function WizardPage() {
                         exit={{ opacity: 0, x: 20 }}
                       >
                         <div className="flex items-center justify-between">
-                          <h3 className="text-lg font-medium">Add Consumers</h3>
                           <Button onClick={addConsumer} className="bg-primary hover:bg-primary/90">
                             <Plus className="mr-2 h-4 w-4" />
-                            Add Consumer
+                            Add Chain
                           </Button>
                         </div>
                         {consumers.map((consumer, index) => (
@@ -1009,26 +1004,12 @@ export default function WizardPage() {
                             <Card className="p-6 border-primary/20">
                               <div className="space-y-4">
                                 <div className="flex items-center justify-between">
-                                  <h4 className="font-medium">Consumer {index + 1}</h4>
+                                  <h4 className="font-medium">Chain {index + 1}</h4>
                                   <Button variant="ghost" size="sm" onClick={() => removeConsumer(index)}>
                                     <Trash2 className="h-4 w-4 text-destructive" />
                                   </Button>
                                 </div>
-                                <div className="grid grid-cols-2 gap-4">
                                   <div className="space-y-2">
-                                    <div className="flex items-center gap-2">
-                                      <Label htmlFor={`consumer-chain-${index}`}>Chain</Label>
-                                      <TooltipProvider>
-                                        <Tooltip>
-                                          <TooltipTrigger>
-                                            <HelpCircle className="h-4 w-4 text-muted-foreground" />
-                                          </TooltipTrigger>
-                                          <TooltipContent>
-                                            <p>{fieldTooltips.consumerInterfaces}</p>
-                                          </TooltipContent>
-                                        </Tooltip>
-                                      </TooltipProvider>
-                                    </div>
                                     <Select
                                       value={consumer.name}
                                       onValueChange={(value) => {
@@ -1060,7 +1041,6 @@ export default function WizardPage() {
                                         {errors[`consumer-name-${index}`]}
                                       </div>
                                     )}
-                                  </div>
                                 </div>
                               </div>
                             </Card>
@@ -1089,16 +1069,17 @@ export default function WizardPage() {
                         <div className="flex items-center justify-between">
                           <div className="space-y-1">
                             <h3 className="text-lg font-medium">
-                              Configure Providers for <span className="text-primary font-bold">{consumers[currentConsumerIndex]?.name}</span>
+                              Configure Providers for <span className="text-primary font-bold">
                               {(() => {
                                 const chain = chains.find(c => c.value === consumers[currentConsumerIndex]?.name);
                                 return chain ? (
-                                  <> ({chain.label} <img src={chain.icon} alt={chain.label} className="w-4 h-4 inline-block ml-1" />)</>
+                                  <> {chain.label} <img src={chain.icon} alt={chain.label} className="w-4 h-4 inline-block ml-1" /></>
                                 ) : '';
                               })()}
+                              </span>
                             </h3>
                             <p className="text-sm text-muted-foreground">
-                              Add and configure providers to handle requests for this consumer
+                              Add and configure providers to handle requests for this chain
                             </p>
                           </div>
                           <Button 
@@ -1140,17 +1121,7 @@ export default function WizardPage() {
                                     <div className="space-y-1">
                                       <h4 className="font-medium text-lg">Provider{providerName ? `: ${providerName}` : ""}</h4>
                                       <div className="flex flex-col gap-1">
-                                        <p className="text-sm text-muted-foreground">
-                                          For consumer: <span className="text-primary font-medium">
-                                            {consumers[currentConsumerIndex]?.name}
-                                            {(() => {
-                                              const chain = chains.find(c => c.value === consumers[currentConsumerIndex]?.name);
-                                              return chain ? (
-                                                <> ({chain.label} <img src={chain.icon} alt={chain.label} className="w-4 h-4 inline-block ml-1" />)</>
-                                              ) : '';
-                                            })()}
-                                          </span>
-                                        </p>
+
                                         <div className="flex flex-wrap gap-1 mt-1">
                                           {interfaceGroup.map(({ iface }) => (
                                             <span 
@@ -1259,25 +1230,17 @@ export default function WizardPage() {
                                         >
                                           <Card className="p-4 border-muted">
                                             <div className="space-y-4">
+                                              <div className="space-y-2">
                                               <div className="flex items-center justify-between">
                                                 <div>
-                                                  <h4 className="font-medium">
-                                                    Interface <span className={cn(
-                                                      "font-bold",
-                                                      hasInterfaceType(iface.name, "jsonrpc") && "text-blue-500",
-                                                      hasInterfaceType(iface.name, "tendermintrpc") && "text-green-500",
-                                                      hasInterfaceType(iface.name, "rest") && "text-purple-500",
-                                                      hasInterfaceType(iface.name, "grpc") && "text-orange-500"
-                                                    )}>{getInterfaceName(iface.name)}</span>
-                                                  </h4>
+                                                  <Label>Interface Types</Label>
                                                 </div>
                                                 <Button variant="ghost" size="sm" onClick={() => removeProvider(currentConsumerIndex, index)}>
                                                   <Trash2 className="h-4 w-4 text-destructive" />
                                                 </Button>
                                               </div>
 
-                                              <div className="space-y-2">
-                                                <Label>Interface Types</Label>
+                                                
                                                 <div className="flex flex-wrap gap-2">
                                                   {getAvailableInterfaces(consumers[currentConsumerIndex].name).map((interfaceType) => {
                                                     // Check if this interface type is already used by other interfaces of the same provider
@@ -1510,22 +1473,20 @@ export default function WizardPage() {
                                   })()}
                                 </h4>
                                 
-                                {Object.entries(
-                                  consumer.interfaces.reduce((acc, iface) => {
-                                    const providerName = iface.providers[0]?.name || "Unnamed Provider"
-                                    if (!acc[providerName]) {
-                                      acc[providerName] = []
-                                    }
-                                    acc[providerName].push(iface)
-                                    return acc
-                                  }, {} as Record<string, ConsumerInterface[]>)
-                                ).map(([providerName, providerInterfaces]) => (
+                                {consumer.interfaces.map((iface, ifaceIndex) => (
+                                  <div key={ifaceIndex} className="space-y-4">
+                                    <h5 className="font-medium">
+                                      Interface: {iface.name.join(", ")}
+                                    </h5>
+                                    {iface.providers.map((provider, providerIndex) => (
                                   <ProviderCard
-                                    key={providerName}
-                                    providerName={providerName}
-                                    interfaces={providerInterfaces}
+                                        key={providerIndex}
+                                        providerName={provider.name}
+                                        interfaces={[iface]}
                                     consumerIndex={index}
                                   />
+                                    ))}
+                                  </div>
                                 ))}
                               </div>
                             </Card>
@@ -1641,31 +1602,27 @@ export default function WizardPage() {
                         <Card className="p-6 border-primary/20">
                           <div className="space-y-4">
                             <h4 className="font-medium text-lg">
-                              {consumer.name}
+                              <span className="text-primary font-bold">
                               {(() => {
                                 const chain = chains.find(c => c.value === consumer.name);
                                 return chain ? (
-                                  <> ({chain.label} <img src={chain.icon} alt={chain.label} className="w-4 h-4 inline-block ml-1" />)</>
+                                  <> {chain.label} <img src={chain.icon} alt={chain.label} className="w-4 h-4 inline-block ml-1" /></>
                                 ) : '';
                               })()}
+                              </span>
                             </h4>
                             
-                            {Object.entries(
-                              consumer.interfaces.reduce((acc, iface) => {
-                                const providerName = iface.providers[0]?.name || "Unnamed Provider"
-                                if (!acc[providerName]) {
-                                  acc[providerName] = []
-                                }
-                                acc[providerName].push(iface)
-                                return acc
-                              }, {} as Record<string, ConsumerInterface[]>)
-                            ).map(([providerName, providerInterfaces]) => (
+                            {consumer.interfaces.map((iface, ifaceIndex) => (
+                              <div key={ifaceIndex} className="space-y-4">
+                                {iface.providers.map((provider, providerIndex) => (
                               <ProviderCard
-                                key={providerName}
-                                providerName={providerName}
-                                interfaces={providerInterfaces}
+                                    key={providerIndex}
+                                    providerName={provider.name}
+                                    interfaces={[iface]}
                                 consumerIndex={index}
                               />
+                                ))}
+                              </div>
                             ))}
                           </div>
                         </Card>

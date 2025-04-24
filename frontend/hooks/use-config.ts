@@ -9,12 +9,20 @@ interface Config {
 }
 
 export function useConfig() {
-  const [apiHost, setApiHost] = useLocalStorage<string>("api-host", process.env.NEXT_PUBLIC_API_URL || "https://dashboard-api.lava.infra:8443")
+  // Initialize with the environment variable or null
+  const [apiHost, setApiHost] = useLocalStorage<string | null>("api-host", process.env.NEXT_PUBLIC_API_URL || null)
   const [refreshInterval, setRefreshInterval] = useLocalStorage<number>("refresh-interval", 60)
 
+  // Initialize the API host only once if it's null
   useEffect(() => {
-    console.log("Config initialized with:", { apiHost, refreshInterval })
-  }, [apiHost, refreshInterval])
+    if (apiHost === null) {
+      const defaultEndpoint = process.env.NEXT_PUBLIC_API_URL
+      if (defaultEndpoint) {
+        console.log("Initializing API host with environment variable:", defaultEndpoint)
+        setApiHost(defaultEndpoint)
+      }
+    }
+  }, [apiHost, setApiHost])
 
   const updateApiEndpoint = (value: string) => {
     console.log("Updating API endpoint to:", value)
@@ -30,21 +38,16 @@ export function useConfig() {
 
   const resetConfig = () => {
     console.log("Resetting config to defaults")
-    setApiHost(process.env.NEXT_PUBLIC_API_URL || "https://dashboard-api.lava.infra:8443")
+    const defaultEndpoint = process.env.NEXT_PUBLIC_API_URL
+    if (defaultEndpoint) {
+      setApiHost(defaultEndpoint)
+    }
     setRefreshInterval(60)
   }
 
-  // Initialize the API host if it's empty
-  useEffect(() => {
-    if (!apiHost) {
-      console.log("Initializing empty API host")
-      setApiHost(process.env.NEXT_PUBLIC_API_URL || "https://dashboard-api.lava.infra:8443")
-    }
-  }, [apiHost, setApiHost])
-
   return {
     config: {
-      apiEndpoint: apiHost || process.env.NEXT_PUBLIC_API_URL || "https://dashboard-api.lava.infra:8443",
+      apiEndpoint: apiHost || process.env.NEXT_PUBLIC_API_URL || "",
       refreshInterval: typeof refreshInterval === 'string' ? parseInt(refreshInterval, 10) : refreshInterval,
     },
     updateApiEndpoint,

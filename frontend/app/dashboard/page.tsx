@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import Link from "next/link"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { chains } from "@/app/config/chains"
 
 interface DashboardData {
   flow: any; // Replace with proper type if available
@@ -72,6 +73,26 @@ export default function Dashboard() {
       
       const flowData = await flowResponse.json()
       console.log("Flow data received:", flowData)
+
+      // Map the chain labels if we have valid data
+      if (flowData?.status === 'success' && flowData.data?.result) {
+        flowData.data.result = flowData.data.result.map((result: any) => {
+          if (result.metric?.spec) {
+            const chain = chains.find(c => c.value.toLowerCase() === result.metric.spec.toLowerCase())
+            if (chain) {
+              return {
+                ...result,
+                metric: {
+                  ...result.metric,
+                  label: chain.label, // Add the label to the metric
+                  icon: chain.icon // Add the icon to the metric
+                }
+              }
+            }
+          }
+          return result
+        })
+      }
       
       // Fetch metrics data
       console.log("Fetching metrics data")
@@ -236,7 +257,7 @@ export default function Dashboard() {
           <CardHeader>
             <CardTitle>System Flow Visualization</CardTitle>
             <CardDescription>
-              Visualizing the health status between Users, Consumers, and Providers
+              Visualizing the health status between Users, Chains, and Providers
             </CardDescription>
           </CardHeader>
           <CardContent className="p-0 overflow-hidden">

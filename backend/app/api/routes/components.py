@@ -47,19 +47,64 @@ class ConfigurationUpdate(BaseModel):
     providers: Dict[str, List[ProviderConfig]]
 
 
+def convert_memory_to_gb(memory_str: str) -> float:
+    """Convert memory string (e.g., '0.5Gi', '500Mi') to GB"""
+    if not memory_str:
+        return 0.0
+    
+    memory_str = memory_str.lower()
+    if 'gi' in memory_str:
+        return float(memory_str.replace('gi', ''))
+    elif 'mi' in memory_str:
+        return float(memory_str.replace('mi', '')) / 1024
+    elif 'ki' in memory_str:
+        return float(memory_str.replace('ki', '')) / (1024 * 1024)
+    else:
+        return float(memory_str) / (1024 * 1024 * 1024)  # Assume bytes if no unit
+
+
+def convert_cpu_to_cores(cpu_str: str) -> float:
+    """Convert CPU string (e.g., '500m', '0.5') to cores"""
+    if not cpu_str:
+        return 0.0
+    
+    cpu_str = cpu_str.lower()
+    if 'm' in cpu_str:
+        return float(cpu_str.replace('m', '')) / 1000
+    else:
+        return float(cpu_str)
+
+
+
 @router.get("/")
 async def get_configuration():
     """Get the current configuration for consumers and providers"""
     try:
         values_dir = settings.HELM_VALUES_DIR
-        config = {"consumers": {}, "providers": {}}
+        config = {
+            "consumers": {},
+            "providers": {},
+            "resource_limits": {
+                "server": {"cpu": 0, "memory": 0},
+                "per_consumer": {"cpu": 0, "memory": 0},
+                "per_provider": {"cpu": 0, "memory": 0}
+            }
+        }
 
-        # First read provider values to build provider map
+        # First read provider values to build provider map and get single provider resources
         provider_path = os.path.join(values_dir, "core", "provider.values.yml")
         if os.path.exists(provider_path):
             with open(provider_path, "r") as f:
                 provider_data = yaml.safe_load(f)
                 if "chains" in provider_data:
+                    # Get resources for a single provider (assuming all providers have same resources)
+                    if "resources" in provider_data and "requests" in provider_data["resources"]:
+                        resources = provider_data["resources"]["requests"]
+                        if "cpu" in resources:
+                            config["resource_limits"]["per_consumer"]["cpu"] = convert_cpu_to_cores(resources["cpu"])
+                        if "memory" in resources:
+                            config["resource_limits"]["per_consumer"]["memory"] = convert_memory_to_gb(resources["memory"])
+
                     for chain in provider_data["chains"]:
                         chain_id = chain["id"]
                         if chain_id not in config["providers"]:
@@ -77,7 +122,7 @@ async def get_configuration():
                                 provider_interface["nodes"].append(
                                     {
                                         "endpoint": node["endpoint"],
-                                        "type": node["type"],
+                                        "type": node.get("type", "full"),
                                         "addons": node.get("addons", []),
                                     }
                                 )
@@ -86,12 +131,20 @@ async def get_configuration():
 
                         config["providers"][chain_id].append(provider)
 
-        # Read consumer values
+        # Read consumer values to get single consumer resources
         consumer_path = os.path.join(values_dir, "core", "consumer.values.yml")
         if os.path.exists(consumer_path):
             with open(consumer_path, "r") as f:
                 consumer_data = yaml.safe_load(f)
                 if "chains" in consumer_data:
+                    # Get resources for a single consumer (assuming all consumers have same resources)
+                    if "resources" in consumer_data and "requests" in consumer_data["resources"]:
+                        resources = consumer_data["resources"]["requests"]
+                        if "cpu" in resources:
+                            config["resource_limits"]["per_consumer"]["cpu"] = convert_cpu_to_cores(resources["cpu"])
+                        if "memory" in resources:
+                            config["resource_limits"]["per_consumer"]["memory"] = convert_memory_to_gb(resources["memory"])
+
                     for chain_id, chain_data in consumer_data["chains"].items():
                         consumer = {"interfaces": []}
 
@@ -117,6 +170,14 @@ async def get_configuration():
                             consumer["interfaces"].append(interface_config)
 
                         config["consumers"][chain_id] = consumer
+
+        # Get server resources from Kubernetes
+        try:
+            node_info = kubernetes_service.get_node_resources()
+            config["resource_limits"]["server"]["cpu"] = node_info["cpu"]
+            config["resource_limits"]["server"]["memory"] = node_info["memory"]
+        except Exception as e:
+            print(f"Warning: Could not get server resources: {str(e)}")
 
         return config
     except Exception as e:

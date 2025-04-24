@@ -58,17 +58,13 @@ export default function LiveTestPage() {
   useEffect(() => {
     const fetchChains = async () => {
       if (!config.apiEndpoint) {
-        setError("API endpoint not configured")
         setIsFetching(false)
         return
       }
 
-      // Ensure HTTPS
-      const apiEndpoint = config.apiEndpoint.replace(/^http:/, 'https:')
-
       try {
-        console.log("Fetching from:", `${apiEndpoint}/api/components/`)
-        const response = await fetch(`${apiEndpoint}/api/components/`)
+        console.log("Fetching from:", `${config.apiEndpoint}/api/components/`)
+        const response = await fetch(`${config.apiEndpoint}/api/components/`)
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`)
         }
@@ -99,8 +95,8 @@ export default function LiveTestPage() {
 
   useEffect(() => {
     if (selectedChain && selectedInterface) {
-      // Ensure HTTPS
-      const apiEndpoint = "https://lava.infra:8443"
+      // Use the configured API endpoint
+      const apiEndpoint = config.apiEndpoint
 
       // Get the chain type and its interface command
       const chain = chains.find(c => c.value === selectedChain)
@@ -113,7 +109,7 @@ export default function LiveTestPage() {
       if (!interfaceCommand) return
 
       const hostHeader = `${selectedChain}-${selectedInterface}.lava.infra`
-      const cmd = `curl -X POST -H "X-Host: ${hostHeader}" -H "Content-Type: application/json" ${apiEndpoint} -d '${interfaceCommand}'`
+      const cmd = `curl -X POST -H "X-Host: ${hostHeader}" -H "Content-Type: application/json" https://lava.infra:8443 -d '${interfaceCommand}'`
       setCurlCommand(cmd)
     }
   }, [selectedChain, selectedInterface, config.apiEndpoint])
@@ -130,9 +126,6 @@ export default function LiveTestPage() {
 
     setIsLoading(true)
     try {
-      // Ensure HTTPS
-      const apiEndpoint = "https://lava.infra:8443"
-
       // Get the chain type and its interface command
       const chain = chains.find(c => c.value === selectedChain)
       if (!chain) throw new Error("Chain not found")
@@ -144,7 +137,7 @@ export default function LiveTestPage() {
       if (!interfaceCommand) throw new Error("Interface command not found")
 
       const hostHeader = `${selectedChain}-${selectedInterface}.lava.infra`
-      const response = await fetch(apiEndpoint, {
+      const response = await fetch("https://lava.infra:8443", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

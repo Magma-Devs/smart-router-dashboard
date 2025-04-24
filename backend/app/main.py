@@ -4,8 +4,8 @@ from app.api.routes import metrics, components
 from app.core.config import settings
 
 app = FastAPI(
-    title="Lava Infra Manager Dashboard API",
-    description="Backend API for Lava Infra Manager Dashboard with Prometheus metrics and Helm management",
+    title="Lava Smart Router Dashboard API",
+    description="Backend API for Lava Smart Router Dashboard with Prometheus metrics and Helm management",
     version="0.1.0",
 )
 
@@ -31,7 +31,7 @@ async def health_check():
 @app.get("/api")
 async def root():
     return {
-        "message": "Welcome to Lava Infra Manager Dashboard API",
+        "message": "Welcome to Lava Smart Router Dashboard API",
         "docs_url": "/docs",
         "version": app.version,
     }
