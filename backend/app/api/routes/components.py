@@ -11,40 +11,28 @@ router = APIRouter()
 
 class ProviderNode(BaseModel):
     endpoint: str
-    type: str
-    addons: List[str]
-
-
-class ProviderInterface(BaseModel):
-    name: str
-    nodes: List[ProviderNode]
-
-
-class ProviderConfig(BaseModel):
-    name: str
-    interfaces: List[ProviderInterface]
+    type: str = "full"
 
 
 class ConsumerProvider(BaseModel):
     name: str
     url: str
+    nodes: List[ProviderNode]
 
 
 class ConsumerInterface(BaseModel):
     name: str
     port: int
-    addons: List[str]
     providers: List[ConsumerProvider]
 
 
 class ConsumerConfig(BaseModel):
-    name: Optional[str] = None
+    addons: List[str]
     interfaces: List[ConsumerInterface]
 
 
 class ConfigurationUpdate(BaseModel):
     consumers: Dict[str, ConsumerConfig]
-    providers: Dict[str, List[ProviderConfig]]
 
 
 def convert_memory_to_gb(memory_str: str) -> float:
@@ -75,7 +63,6 @@ def convert_cpu_to_cores(cpu_str: str) -> float:
         return float(cpu_str)
 
 
-
 @router.get("/")
 async def get_configuration():
     """Get the current configuration for consumers and providers"""
@@ -83,53 +70,12 @@ async def get_configuration():
         values_dir = settings.HELM_VALUES_DIR
         config = {
             "consumers": {},
-            "providers": {},
             "resource_limits": {
                 "server": {"cpu": 0, "memory": 0},
                 "per_consumer": {"cpu": 0, "memory": 0},
                 "per_provider": {"cpu": 0, "memory": 0}
             }
         }
-
-        # First read provider values to build provider map and get single provider resources
-        provider_path = os.path.join(values_dir, "core", "provider.values.yml")
-        if os.path.exists(provider_path):
-            with open(provider_path, "r") as f:
-                provider_data = yaml.safe_load(f)
-                if "chains" in provider_data:
-                    # Get resources for a single provider (assuming all providers have same resources)
-                    if "resources" in provider_data and "requests" in provider_data["resources"]:
-                        resources = provider_data["resources"]["requests"]
-                        if "cpu" in resources:
-                            config["resource_limits"]["per_consumer"]["cpu"] = convert_cpu_to_cores(resources["cpu"])
-                        if "memory" in resources:
-                            config["resource_limits"]["per_consumer"]["memory"] = convert_memory_to_gb(resources["memory"])
-
-                    for chain in provider_data["chains"]:
-                        chain_id = chain["id"]
-                        if chain_id not in config["providers"]:
-                            config["providers"][chain_id] = []
-
-                        provider = {"name": chain["name"], "interfaces": []}
-
-                        for interface in chain.get("interfaces", []):
-                            provider_interface = {
-                                "name": interface["interface"],
-                                "nodes": [],
-                            }
-
-                            for node in interface.get("nodes", []):
-                                provider_interface["nodes"].append(
-                                    {
-                                        "endpoint": node["endpoint"],
-                                        "type": node.get("type", "full"),
-                                        "addons": node.get("addons", []),
-                                    }
-                                )
-
-                            provider["interfaces"].append(provider_interface)
-
-                        config["providers"][chain_id].append(provider)
 
         # Read consumer values to get single consumer resources
         consumer_path = os.path.join(values_dir, "core", "consumer.values.yml")
@@ -163,9 +109,33 @@ async def get_configuration():
                                     "-provider", ""
                                 )
 
-                                interface_config["providers"].append(
-                                    {"name": provider_name, "url": provider_url}
-                                )
+                                # Get provider nodes from provider values
+                                provider_path = os.path.join(values_dir, "core", "provider.values.yml")
+                                provider_nodes = []
+                                provider_addons = []
+                                if os.path.exists(provider_path):
+                                    with open(provider_path, "r") as pf:
+                                        provider_data = yaml.safe_load(pf)
+                                        if "chains" in provider_data:
+                                            for chain in provider_data["chains"]:
+                                                if chain["name"] == provider_name:
+                                                    for iface in chain.get("interfaces", []):
+                                                        for node in iface.get("nodes", []):
+                                                            provider_nodes.append({
+                                                                "endpoint": node["endpoint"],
+                                                                "type": node.get("type", "full"),
+                                                                "addons": node.get("addons", [])
+                                                            })
+                                                            # Collect addons from nodes
+                                                            if "addons" in node:
+                                                                provider_addons.extend(node["addons"])
+
+                                interface_config["providers"].append({
+                                    "name": provider_name,
+                                    "url": provider_url,
+                                    "addons": list(set(provider_addons)),  # Remove duplicates
+                                    "nodes": provider_nodes
+                                })
 
                             consumer["interfaces"].append(interface_config)
 
@@ -200,28 +170,24 @@ async def update_configuration(config: ConfigurationUpdate):
 
             # Update chains in provider data
             provider_data["chains"] = []
-            for chain_id, providers in config.providers.items():
-                for provider in providers:
-                    chain_config = {
-                        "name": provider.name,
-                        "id": chain_id,
-                        "interfaces": [],
-                    }
-
-                    for interface in provider.interfaces:
-                        interface_config = {"interface": interface.name, "nodes": []}
-
-                        for node in interface.nodes:
-                            node_config = {
-                                "endpoint": node.endpoint,
-                                "type": node.type,
-                                "addons": node.addons,
-                            }
-                            interface_config["nodes"].append(node_config)
-
-                        chain_config["interfaces"].append(interface_config)
-
-                    provider_data["chains"].append(chain_config)
+            for chain_id, consumer in config.consumers.items():
+                for interface in consumer.interfaces:
+                    for provider in interface.providers:
+                        chain_config = {
+                            "name": provider.name,
+                            "id": chain_id,
+                            "interfaces": [{
+                                "interface": interface.name,
+                                "nodes": [
+                                    {
+                                        "endpoint": node.endpoint,
+                                        "type": node.type,
+                                        "addons": consumer.addons  # Propagate consumer addons to provider nodes
+                                    } for node in provider.nodes
+                                ]
+                            }]
+                        }
+                        provider_data["chains"].append(chain_config)
 
             # Write updated provider values
             with open(provider_path, "w") as f:
@@ -236,13 +202,15 @@ async def update_configuration(config: ConfigurationUpdate):
             # Update chains in consumer data
             consumer_data["chains"] = {}
             for chain_id, consumer in config.consumers.items():
-                chain_config = {"name": consumer.name, "interfaces": []}
+                chain_config = {
+                    "interfaces": []
+                }
 
                 for interface in consumer.interfaces:
                     interface_config = {
                         "interface": interface.name,
                         "port": interface.port,
-                        "addons": interface.addons,
+                        "addons": consumer.addons,  # Propagate consumer addons to interface
                         "staticProviders": [],
                     }
 

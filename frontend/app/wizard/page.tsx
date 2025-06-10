@@ -24,10 +24,10 @@ interface ConsumerInterface {
   providers: {
     name: string
     url: string
+    addons: string[]
     nodes: {
       endpoint: string
       type: string
-      addons: string[]
     }[]
   }[]
 }
@@ -42,7 +42,6 @@ interface ProviderInterface {
   nodes: {
     endpoint: string
     type: string
-    addons: string[]
   }[]
 }
 
@@ -245,46 +244,47 @@ export default function WizardPage() {
           
           // Transform the API data into our internal format
           const transformedConsumers = Object.entries(data.consumers).map(([chainId, consumer]: [string, any]) => {
-            // Get all providers for this chain - it's an array in data.providers[chainId]
-            const chainProviders = Array.isArray(data.providers[chainId]) ? data.providers[chainId] : []
+            // Group interfaces by name only
+            const interfaceMap = new Map<string, any>()
             
-            // Group providers by their name first
-            const providerMap = new Map()
-            chainProviders.forEach((provider: any) => {
-              if (!providerMap.has(provider.name)) {
-                providerMap.set(provider.name, {
-                  name: provider.name,
-                  url: `${provider.name}-provider.lava-infra.svc.cluster.local:2200`,
-                  nodes: []
+            consumer.interfaces.forEach((iface: any) => {
+              const interfaceName = iface.name
+              if (!interfaceMap.has(interfaceName)) {
+                // Initialize the interface with the first occurrence's port and addons
+                interfaceMap.set(interfaceName, {
+                  name: [interfaceName],
+                  port: iface.port,
+                  addons: iface.addons || [],
+                  providers: []
                 })
               }
+              
+              // Add all providers from this interface to the grouped interface
+              iface.providers.forEach((provider: any) => {
+                const existingInterface = interfaceMap.get(interfaceName)
+                // Check if this provider already exists
+                const existingProviderIndex = existingInterface.providers.findIndex(
+                  (p: any) => p.name === provider.name
+                )
+                
+                if (existingProviderIndex === -1) {
+                  // Add new provider
+                  existingInterface.providers.push({
+                    name: provider.name,
+                    url: provider.url,
+                    addons: provider.addons || [],
+                    nodes: provider.nodes.map((node: any) => ({
+                      endpoint: node.endpoint,
+                      type: node.type,
+                    }))
+                  })
+                }
+              })
             })
             
             return {
               name: chainId,
-              interfaces: consumer.interfaces.map((iface: any) => {
-                // Find providers that support this interface
-                const matchingProviders = chainProviders.filter((p: any) => 
-                  p.interfaces.some((pi: any) => pi.name === iface.name)
-                )
-
-                // Get the nodes for each matching provider
-                const providers = matchingProviders.map((provider: any) => {
-                  const providerInterface = provider.interfaces.find((pi: any) => pi.name === iface.name)
-                  const providerData = providerMap.get(provider.name)
-                return {
-                    ...providerData,
-                    nodes: providerInterface?.nodes || []
-                  }
-                })
-
-                return {
-                  name: [iface.name],
-                  port: iface.port,
-                  addons: iface.addons,
-                  providers: providers
-                }
-              })
+              interfaces: Array.from(interfaceMap.values())
             }
           })
           
@@ -455,16 +455,16 @@ export default function WizardPage() {
     
     // Create a new interface with a new provider
     newConsumers[consumerIndex].interfaces.push({
-      name: [interfaces[0].value], // Always use the first interface type for new providers
+      name: [], // Don't set a default interface type
       port: highestPort + 1, // Use the next available port
-      addons: [],
+      addons: ["archive", "debug"], // Always include both addons
       providers: [{
         name: defaultProviderName, // Use the generated default name
         url: `${defaultProviderName}-provider.lava-infra.svc.cluster.local:2200`,
+        addons: ["archive", "debug"], // Always include both addons
         nodes: [{
           endpoint: "",
-          type: "full",
-          addons: []
+          type: "full"
         }]
       }]
     })
@@ -486,13 +486,12 @@ export default function WizardPage() {
     controls.start({ scale: [1, 1.05, 1], transition: { duration: 0.3 } })
   }
 
-  const addInterfaceToProvider = (consumerIndex: number, interfaceIndex: number) => {
+  const addInterfaceToProvider = (consumerIndex: number, interfaceIndex: number, providerName: string) => {
     const newConsumers = [...consumers]
     const currentInterface = newConsumers[consumerIndex].interfaces[interfaceIndex]
-    const providerName = currentInterface.providers[0]?.name || ""
     
     // Get the chain's supported interfaces
-    const chain = chains.find(c => c.value === consumers[consumerIndex].name)
+    const chain = chains.find(c => c.value === newConsumers[consumerIndex].name)
     const supportedInterfaces = chain?.supportedInterfaces || []
     
     // Get all used interface types for this provider
@@ -500,16 +499,16 @@ export default function WizardPage() {
       .filter(iface => iface.providers[0]?.name === providerName)
       .map(iface => iface.name[0])
     
-    // Find the first unused interface type that is supported by the chain
+    // Find the first available supported interface that hasn't been used
     const availableInterface = interfaces.find(iface => 
-      !usedInterfaceTypes.includes(iface.value) && 
-      supportedInterfaces.includes(iface.value)
+      supportedInterfaces.includes(iface.value) && 
+      !usedInterfaceTypes.includes(iface.value)
     )
     
     if (!availableInterface) {
       toast({
         title: "No available interfaces",
-        description: "All supported interface types have been used for this provider.",
+        description: "All supported interface types are already configured for this provider.",
         variant: "destructive"
       })
       return
@@ -519,20 +518,21 @@ export default function WizardPage() {
     const newInterface = {
       name: [availableInterface.value],
       port: currentInterface.port + 1,
-      addons: [],
+      addons: ["archive", "debug"], // Always include both addons
       providers: [{
         name: providerName,
         url: currentInterface.providers[0].url,
+        addons: ["archive", "debug"], // Always include both addons
         nodes: [{
           endpoint: "",
-          type: "full",
-          addons: []
+          type: "full"
         }]
       }]
     }
     
     // Insert the new interface right after the current one
     newConsumers[consumerIndex].interfaces.splice(interfaceIndex + 1, 0, newInterface)
+    
     setConsumers(newConsumers)
     setErrors({} as Record<string, string>)
   }
@@ -568,40 +568,52 @@ export default function WizardPage() {
   const generateFinalConfig = useCallback(() => {
     const config: any = {
       consumers: {},
-      providers: {}
     }
 
     // Process consumers
     consumers.forEach(consumer => {
-      config.consumers[consumer.name] = {
-        name: consumer.name,
-        interfaces: consumer.interfaces.map(iface => ({
-          name: iface.name[0],
-          port: iface.port,
-          addons: iface.addons,
-          providers: iface.providers.map(provider => ({
-            name: provider.name,
-            url: provider.url
-          }))
-        }))
-      }
+      // Create a map to store interfaces by name
+      const interfaceMap = new Map()
 
-      // Process providers
-      config.providers[consumer.name] = consumer.interfaces.map(iface => ({
-        name: iface.providers[0].name,
-        interfaces: [{
-          name: iface.name[0],
-          nodes: iface.providers[0].nodes.map(node => ({
+      // First pass: collect all interfaces and their providers
+      consumer.interfaces.forEach(iface => {
+        const interfaceName = iface.name[0]
+        if (!interfaceMap.has(interfaceName)) {
+          interfaceMap.set(interfaceName, {
+            name: interfaceName,
+            port: iface.port,
+            providers: []
+          })
+        }
+        
+        // Add providers to the existing interface
+        const existingInterface = interfaceMap.get(interfaceName)
+        existingInterface.providers.push(...iface.providers.map(provider => ({
+          name: provider.name,
+          url: provider.url,
+          nodes: provider.nodes.map(node => ({
             endpoint: node.endpoint,
-            type: node.type,
-            addons: node.addons
+            type: "full" // Always set type to "full"
           }))
-        }]
-      }))
+        })))
+      })
+
+      // Add the consumer with combined interfaces
+      config.consumers[consumer.name] = {
+        addons: ["archive", "debug"], // Move addons to consumer level
+        interfaces: Array.from(interfaceMap.values())
+      }
     })
 
     return JSON.stringify(config, null, 2)
   }, [consumers])
+
+  // Update the useEffect to set the final config when consumers change
+  useEffect(() => {
+    if (step === 3) {
+      setFinalConfig(generateFinalConfig())
+    }
+  }, [step, consumers, generateFinalConfig])
 
   const handleComplete = useCallback(async () => {
     setIsSubmitting(true)
@@ -939,21 +951,23 @@ export default function WizardPage() {
                                 })()}
                               </h4>
                               
-                              {consumer.interfaces.map((iface, ifaceIndex) => (
-                                <div key={ifaceIndex} className="space-y-4">
-                                  <h5 className="font-medium">
-                                    Interface: {iface.name.join(", ")}
-                                  </h5>
-                                  {iface.providers.map((provider, providerIndex) => (
-                                <ProviderCard
-                                      key={providerIndex}
-                                      providerName={provider.name}
-                                      interfaces={[iface]}
-                                  consumerIndex={index}
-                                />
-                                  ))}
-                                </div>
-                              ))}
+                              {/* Get unique providers across all interfaces */}
+                              {Array.from(new Set(consumer.interfaces.flatMap(iface => 
+                                iface.providers.map(p => p.name)
+                              ))).map(providerName => {
+                                // Get all interfaces that have this provider
+                                const providerInterfaces = consumer.interfaces.filter(iface => 
+                                  iface.providers.some(p => p.name === providerName)
+                                );
+                                return (
+                                  <ProviderCard
+                                    key={providerName}
+                                    providerName={providerName}
+                                    interfaces={providerInterfaces}
+                                    consumerIndex={index}
+                                  />
+                                );
+                              })}
                             </div>
                           </Card>
                         </motion.div>
@@ -1094,11 +1108,15 @@ export default function WizardPage() {
                         {/* Group interfaces by provider */}
                         {Object.entries(
                           consumers[currentConsumerIndex]?.interfaces.reduce((acc, iface, index) => {
-                            const providerName = iface.providers[0]?.name || ""
-                            if (!acc[providerName]) {
-                              acc[providerName] = []
-                            }
-                            acc[providerName].push({ iface, index })
+                            // Get all providers for this interface
+                            iface.providers.forEach(provider => {
+                              const providerName = provider.name
+                              if (!acc[providerName]) {
+                                acc[providerName] = []
+                              }
+                              // Add this interface to the provider's group
+                              acc[providerName].push({ iface, index })
+                            })
                             return acc
                           }, {} as Record<string, { iface: ConsumerInterface; index: number }[]>)
                         ).map(([providerName, interfaceGroup]) => {
@@ -1121,7 +1139,6 @@ export default function WizardPage() {
                                     <div className="space-y-1">
                                       <h4 className="font-medium text-lg">Provider{providerName ? `: ${providerName}` : ""}</h4>
                                       <div className="flex flex-col gap-1">
-
                                         <div className="flex flex-wrap gap-1 mt-1">
                                           {interfaceGroup.map(({ iface }) => (
                                             <span 
@@ -1153,7 +1170,7 @@ export default function WizardPage() {
                                       </Button>
                                       <Button 
                                         variant="ghost" 
-                                        size="sm" 
+                                        size="sm"
                                         onClick={(e) => {
                                           e.stopPropagation();
                                           // Remove all interfaces associated with this provider
@@ -1194,33 +1211,21 @@ export default function WizardPage() {
                                                   return acc
                                                 }, {} as Record<string, boolean>)
                                             ).includes(newName)
-                                            
+
                                             if (isNameUsed) {
                                               toast({
-                                                title: "Provider name already used",
-                                                description: "Please choose a unique name for this provider.",
+                                                title: "Name already in use",
+                                                description: "This provider name is already being used by another provider.",
                                                 variant: "destructive"
                                               })
                                               return
                                             }
-                                            
+
                                             handleProviderNameChange(currentConsumerIndex, providerName, newName)
                                           }}
-                                          placeholder="Enter provider name (alphanumeric, hyphens, underscores, min 3 chars)"
-                                          className={cn(
-                                            errors[`provider-name-${currentConsumerIndex}-${providerName}`] && "border-destructive",
-                                            !providerName && "border-yellow-500"
-                                          )}
                                         />
-                                        {!providerName && (
-                                          <div className="flex items-center gap-1 text-sm text-yellow-600">
-                                            <AlertCircle className="h-4 w-4" />
-                                            Provider name is required
-                                          </div>
-                                        )}
                                       </div>
-                                      
-                                      {/* Interfaces for this provider */}
+
                                       {interfaceGroup.map(({ iface, index }) => (
                                         <motion.div
                                           key={index}
@@ -1231,16 +1236,15 @@ export default function WizardPage() {
                                           <Card className="p-4 border-muted">
                                             <div className="space-y-4">
                                               <div className="space-y-2">
-                                              <div className="flex items-center justify-between">
-                                                <div>
-                                                  <Label>Interface Types</Label>
+                                                <div className="flex items-center justify-between">
+                                                  <div>
+                                                    <Label>Interface Types</Label>
+                                                  </div>
+                                                  <Button variant="ghost" size="sm" onClick={() => removeProvider(currentConsumerIndex, index)}>
+                                                    <Trash2 className="h-4 w-4 text-destructive" />
+                                                  </Button>
                                                 </div>
-                                                <Button variant="ghost" size="sm" onClick={() => removeProvider(currentConsumerIndex, index)}>
-                                                  <Trash2 className="h-4 w-4 text-destructive" />
-                                                </Button>
-                                              </div>
 
-                                                
                                                 <div className="flex flex-wrap gap-2">
                                                   {getAvailableInterfaces(consumers[currentConsumerIndex].name).map((interfaceType) => {
                                                     // Check if this interface type is already used by other interfaces of the same provider
@@ -1276,118 +1280,27 @@ export default function WizardPage() {
                                                     )
                                                   })}
                                                 </div>
-                                                {errors[`interface-types-${currentConsumerIndex}-${index}`] && (
-                                                  <div className="flex items-center gap-1 text-sm text-destructive">
-                                                    <AlertCircle className="h-4 w-4" />
-                                                    {errors[`interface-types-${currentConsumerIndex}-${index}`]}
-                                                  </div>
-                                                )}
                                               </div>
 
                                               <div className="space-y-2">
-                                                <Label>Node Configuration</Label>
-                                                <div className="space-y-4 p-4 bg-muted/50 rounded-lg">
-                                                  <div className="space-y-2">
-                                                    <Label htmlFor={`node-endpoint-${currentConsumerIndex}-${index}-${index}`}>Endpoint</Label>
-                                                    <Input
-                                                      id={`node-endpoint-${currentConsumerIndex}-${index}-${index}`}
-                                                      value={iface.providers[0]?.nodes?.[0]?.endpoint || ""}
-                                                      onChange={(e) => {
-                                                        const newConsumers = [...consumers]
-                                                        const currentProvider = newConsumers[currentConsumerIndex].interfaces[index].providers[0]
-                                                        
-                                                        if (!currentProvider.nodes) {
-                                                          currentProvider.nodes = [{
-                                                            endpoint: e.target.value,
-                                                            type: "full",
-                                                            addons: []
-                                                          }]
-                                                        } else {
-                                                          currentProvider.nodes[0].endpoint = e.target.value
-                                                        }
-                                                        
-                                                        setConsumers(newConsumers)
-                                                      }}
-                                                      placeholder="Enter your node endpoint (e.g. https://near.lava.build:443)"
-                                                      className={cn(errors[`node-endpoint-${currentConsumerIndex}-${index}-${index}`] && "border-destructive")}
-                                                    />
-                                                    {errors[`node-endpoint-${currentConsumerIndex}-${index}-${index}`] && (
-                                                      <div className="flex items-center gap-1 text-sm text-destructive">
-                                                        <AlertCircle className="h-4 w-4" />
-                                                        {errors[`node-endpoint-${currentConsumerIndex}-${index}-${index}`]}
-                                                      </div>
-                                                    )}
-                                                  </div>
-
-                                                  <div className="space-y-2">
-                                                    <Label htmlFor={`node-type-${currentConsumerIndex}-${index}-${index}`}>Type</Label>
-                                                    <Select
-                                                      value={iface.providers[0]?.nodes?.[0]?.type || "full"}
-                                                      onValueChange={(value) => {
-                                                        const newConsumers = [...consumers]
-                                                        const currentProvider = newConsumers[currentConsumerIndex].interfaces[index].providers[0]
-                                                        
-                                                        if (!currentProvider.nodes) {
-                                                          currentProvider.nodes = [{
-                                                            endpoint: "",
-                                                            type: value,
-                                                            addons: []
-                                                          }]
-                                                        } else {
-                                                          currentProvider.nodes[0].type = value
-                                                        }
-                                                        
-                                                        setConsumers(newConsumers)
-                                                      }}
-                                                    >
-                                                      <SelectTrigger>
-                                                        <SelectValue placeholder="Select node type" />
-                                                      </SelectTrigger>
-                                                      <SelectContent>
-                                                        <SelectItem value="full">Full</SelectItem>
-                                                        <SelectItem value="debug">Debug</SelectItem>
-                                                      </SelectContent>
-                                                    </Select>
-                                                  </div>
-
-                                                  <div className="space-y-2">
-                                                    <Label>Addons</Label>
-                                                    <div className="flex flex-wrap gap-2">
-                                                      {["archive", "debug"].map((addon) => (
-                                                        <div key={addon} className="flex items-center space-x-2">
-                                                          <Checkbox
-                                                            id={`node-addon-${currentConsumerIndex}-${index}-${index}-${addon}`}
-                                                            checked={iface.providers[0]?.nodes?.[0]?.addons?.includes(addon) || false}
-                                                            onCheckedChange={(checked) => {
-                                                              const newConsumers = [...consumers]
-                                                              const currentProvider = newConsumers[currentConsumerIndex].interfaces[index].providers[0]
-                                                              
-                                                              if (!currentProvider.nodes) {
-                                                                currentProvider.nodes = [{
-                                                                  endpoint: "",
-                                                                  type: "debug",
-                                                                  addons: checked ? [addon] : []
-                                                                }]
-                                                              } else {
-                                                                const currentAddons = currentProvider.nodes[0].addons || []
-                                                                if (checked) {
-                                                                  currentProvider.nodes[0].addons = [...currentAddons, addon]
-                                                                } else {
-                                                                  currentProvider.nodes[0].addons = currentAddons.filter(a => a !== addon)
-                                                                }
-                                                              }
-                                                              
-                                                              setConsumers(newConsumers)
-                                                            }}
-                                                          />
-                                                          <Label htmlFor={`node-addon-${currentConsumerIndex}-${index}-${index}-${addon}`} className="text-sm font-normal">
-                                                            {addon}
-                                                          </Label>
-                                                        </div>
-                                                      ))}
-                                                    </div>
-                                                  </div>
-                                                </div>
+                                                <Label>Node Endpoint</Label>
+                                                <Input
+                                                  value={iface.providers[0]?.nodes[0]?.endpoint || ""}
+                                                  onChange={(e) => {
+                                                    const newConsumers = [...consumers];
+                                                    const currentProvider = newConsumers[currentConsumerIndex].interfaces[index].providers[0];
+                                                    if (!currentProvider.nodes[0]) {
+                                                      currentProvider.nodes = [{
+                                                        endpoint: e.target.value,
+                                                        type: "full"
+                                                      }]
+                                                    } else {
+                                                      currentProvider.nodes[0].endpoint = e.target.value
+                                                    }
+                                                    
+                                                    setConsumers(newConsumers)
+                                                  }}
+                                                />
                                               </div>
                                             </div>
                                           </Card>
@@ -1418,7 +1331,7 @@ export default function WizardPage() {
                                             onClick={() => {
                                               // Find the last interface index for this provider
                                               const lastInterfaceIndex = interfaceGroup[interfaceGroup.length - 1].index;
-                                              addInterfaceToProvider(currentConsumerIndex, lastInterfaceIndex);
+                                              addInterfaceToProvider(currentConsumerIndex, lastInterfaceIndex, providerName);
                                             }}
                                             className="w-full"
                                           >
@@ -1434,7 +1347,15 @@ export default function WizardPage() {
                             </motion.div>
                           )
                         })}
-                        <div className="mt-8 flex justify-end">
+                        <div className="mt-8 flex justify-between">
+                          <Button
+                            variant="outline"
+                            onClick={prevStep}
+                            className="w-32"
+                          >
+                            <ChevronLeft className="mr-2 h-4 w-4" />
+                            Previous
+                          </Button>
                           <Button
                             onClick={nextStep}
                             disabled={consumers[currentConsumerIndex]?.interfaces.length === 0}
@@ -1464,30 +1385,33 @@ export default function WizardPage() {
                             <Card className="p-6 border-primary/20">
                               <div className="space-y-4">
                                 <h4 className="font-medium text-lg">
-                                  {consumer.name}
+                                  <span className="text-primary font-bold">
                                   {(() => {
                                     const chain = chains.find(c => c.value === consumer.name);
                                     return chain ? (
-                                      <> ({chain.label} <img src={chain.icon} alt={chain.label} className="w-4 h-4 inline-block ml-1" />)</>
+                                      <> {chain.label} <img src={chain.icon} alt={chain.label} className="w-4 h-4 inline-block ml-1" /></>
                                     ) : '';
                                   })()}
+                                  </span>
                                 </h4>
-                                
-                                {consumer.interfaces.map((iface, ifaceIndex) => (
-                                  <div key={ifaceIndex} className="space-y-4">
-                                    <h5 className="font-medium">
-                                      Interface: {iface.name.join(", ")}
-                                    </h5>
-                                    {iface.providers.map((provider, providerIndex) => (
-                                  <ProviderCard
-                                        key={providerIndex}
-                                        providerName={provider.name}
-                                        interfaces={[iface]}
-                                    consumerIndex={index}
-                                  />
-                                    ))}
-                                  </div>
-                                ))}
+
+                                {/* Get unique providers across all interfaces */}
+                                {Array.from(new Set(consumer.interfaces.flatMap(iface => 
+                                  iface.providers.map(p => p.name)
+                                ))).map(providerName => {
+                                  // Get all interfaces that have this provider
+                                  const providerInterfaces = consumer.interfaces.filter(iface => 
+                                    iface.providers.some(p => p.name === providerName)
+                                  );
+                                  return (
+                                    <ProviderCard
+                                      key={providerName}
+                                      providerName={providerName}
+                                      interfaces={providerInterfaces}
+                                      consumerIndex={index}
+                                    />
+                                  );
+                                })}
                               </div>
                             </Card>
                           </motion.div>
@@ -1495,9 +1419,41 @@ export default function WizardPage() {
 
                         <Card className="p-6 border-primary/20">
                           <div className="space-y-4">
-                            <h4 className="font-medium text-lg">Configuration Preview</h4>
+                            <div className="flex items-center justify-between">
+                              <h4 className="font-medium text-lg">Configuration Preview</h4>
+                              <div className="flex items-center gap-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(generateFinalConfig())
+                                    toast({
+                                      title: "Copied to clipboard",
+                                      description: "Configuration has been copied to your clipboard.",
+                                    })
+                                  }}
+                                >
+                                  <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    width="16"
+                                    height="16"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    className="mr-2"
+                                  >
+                                    <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+                                    <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+                                  </svg>
+                                  Copy
+                                </Button>
+                              </div>
+                            </div>
                             <pre className="bg-muted p-4 rounded-lg overflow-auto max-h-[500px]">
-                              <code>{generateFinalConfig()}</code>
+                              <code>{finalConfig}</code>
                             </pre>
                           </div>
                         </Card>
@@ -1612,18 +1568,23 @@ export default function WizardPage() {
                               </span>
                             </h4>
                             
-                            {consumer.interfaces.map((iface, ifaceIndex) => (
-                              <div key={ifaceIndex} className="space-y-4">
-                                {iface.providers.map((provider, providerIndex) => (
-                              <ProviderCard
-                                    key={providerIndex}
-                                    providerName={provider.name}
-                                    interfaces={[iface]}
-                                consumerIndex={index}
-                              />
-                                ))}
-                              </div>
-                            ))}
+                            {/* Get unique providers across all interfaces */}
+                            {Array.from(new Set(consumer.interfaces.flatMap(iface => 
+                              iface.providers.map(p => p.name)
+                            ))).map(providerName => {
+                              // Get all interfaces that have this provider
+                              const providerInterfaces = consumer.interfaces.filter(iface => 
+                                iface.providers.some(p => p.name === providerName)
+                              );
+                              return (
+                                <ProviderCard
+                                  key={providerName}
+                                  providerName={providerName}
+                                  interfaces={providerInterfaces}
+                                  consumerIndex={index}
+                                />
+                              );
+                            })}
                           </div>
                         </Card>
                       </motion.div>

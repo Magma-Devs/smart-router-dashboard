@@ -1,15 +1,15 @@
 version: "3.8"
 
 services:
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    environment:
-      - NODE_ENV=production
-      - NEXT_PUBLIC_API_URL=https://dashboard-api.lava.infra:8443
-    network_mode: host
-    restart: unless-stopped
+  # frontend:
+  #   build:
+  #     context: ./frontend
+  #     dockerfile: Dockerfile
+  #   environment:
+  #     - NODE_ENV=production
+  #     - NEXT_PUBLIC_API_URL=https://dashboard-api.lava.infra:8443
+  #   network_mode: host
+  #   restart: unless-stopped
   backend:
     build:
       context: ./backend
@@ -23,8 +23,5 @@ services:
       - DEBUG=true
       - LOG_LEVEL=DEBUG
       - PROMETHEUS_URL=http://prometheus.lava.infra:80
-    extra_hosts:
-      - "prometheus.lava.infra:127.0.0.1"
-      - "grafana.lava.infra:127.0.0.1"
     network_mode: host
     restart: unless-stopped
