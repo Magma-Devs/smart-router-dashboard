@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes import metrics, components
 from app.core.config import settings
+from app.tasks import schedule_metrics_s3_upload
 
 app = FastAPI(
     title="Lava Smart Router Dashboard API",
@@ -21,6 +22,10 @@ app.add_middleware(
 # Include routers
 app.include_router(metrics.router, prefix="/api/metrics", tags=["metrics"])
 app.include_router(components.router, prefix="/api/components", tags=["components"])
+
+
+if settings.IS_SEND_METRICS_TO_S3:
+    schedule_metrics_s3_upload()
 
 
 @app.get("/api/health")

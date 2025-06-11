@@ -11,6 +11,8 @@ logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
+    TENANT_ID: str = os.getenv("TENANT_ID", "default")
+
     API_V1_STR: str = "/api"
     PROJECT_NAME: str = "Lava Smart Router Dashboard"
 
@@ -64,6 +66,15 @@ class Settings(BaseSettings):
     PROMETHEUS_RETRY_DELAY: float = float(os.getenv("PROMETHEUS_RETRY_DELAY", "0.5"))
     PROMETHEUS_TIMEOUT: int = int(os.getenv("PROMETHEUS_TIMEOUT", "10"))
     PROMETHEUS_VERIFY_SSL: bool = not os.getenv("DEBUG", "False").lower() == "true"  # Verify SSL unless in debug mode
+
+    # Metrics Settings
+    IS_SEND_METRICS_TO_S3: bool = os.getenv("IS_SEND_METRICS_TO_S3", False)
+
+    # S3 settings
+    S3_BUCKET: Optional[str] = os.getenv("S3_BUCKET", "smart-router-output-metrics")
+    S3_ACCESS_KEY: Optional[str] = os.getenv("S3_ACCESS_KEY")
+    S3_SECRET_KEY: Optional[str] = os.getenv("S3_SECRET_KEY")
+    S3_REGION: str = os.getenv("S3_REGION", "us-east-1")
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

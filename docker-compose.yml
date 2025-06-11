@@ -25,6 +25,12 @@ services:
       - DEBUG=true
       - LOG_LEVEL=DEBUG
       - PROMETHEUS_URL=http://prometheus.lava.infra:80
+      - TENANT_ID=default
+      - IS_SEND_METRICS_TO_S3=true
+      - S3_BUCKET=smart-router-output-metrics
+      - S3_ACCESS_KEY=REDACTED_AWS_ACCESS_KEY
+      - S3_SECRET_KEY=REDACTED_AWS_SECRET_KEY
+      - S3_REGION=us-east-1
     extra_hosts:
       - "prometheus.lava.infra:127.0.0.1"
       - "grafana.lava.infra:127.0.0.1"
