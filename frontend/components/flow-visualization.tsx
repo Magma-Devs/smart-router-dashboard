@@ -11,12 +11,10 @@ import ReactFlow, {
   ReactFlowProvider,
   Edge,
   Node,
-  useReactFlow,
   useNodesInitialized,
   useStore,
   getRectOfNodes,
 } from "reactflow"
-import type { NodeChange, NodePositionChange } from "reactflow"
 import "reactflow/dist/style.css"
 import React from "react"
 
@@ -637,6 +635,9 @@ function FlowInner({ apiData, isAllExpanded }: { apiData: any; isAllExpanded: bo
     const horizontalGap = 400
     const providerVerticalGap = 180
     const serviceGroupGap = 100
+    
+    // Sort consumers alphabetically by name
+    consumers.sort((a, b) => a.name.localeCompare(b.name))
     
     // Calculate the max width needed for consumer nodes
     const maxLabelLength = consumers.reduce((max, consumer) => 

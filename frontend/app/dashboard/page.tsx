@@ -118,7 +118,8 @@ export default function Dashboard() {
       }
 
       // Fetch total requests data
-      const requestsEndpoint = `${config.apiEndpoint}/api/metrics/last_minutes?query=lava_consumer_total_relays_serviced&minutes=${minutes}&step=1s`
+      const query = encodeURIComponent('sum(lava_provider_total_relays_serviced) by (spec, service)')
+      const requestsEndpoint = `${config.apiEndpoint}/api/metrics/last_minutes?query=${query}&minutes=${minutes}&step=1s`
       console.log("Fetching requests data from:", requestsEndpoint)
       const requestsResponse = await fetch(requestsEndpoint)
       

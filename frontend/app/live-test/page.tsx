@@ -108,8 +108,12 @@ export default function LiveTestPage() {
       const interfaceCommand = chainType.interfaces[selectedInterface]
       if (!interfaceCommand) return
 
-      const hostHeader = `${selectedChain}-${selectedInterface}.lava.infra`
-      const cmd = `curl -X POST -H "X-Host: ${hostHeader}" -H "Content-Type: application/json" https://lava.infra:8443 -d '${interfaceCommand}'`
+      const domain = process.env.NEXT_PUBLIC_DOMAIN || 'lava.infra'
+      const port = process.env.NEXT_PUBLIC_PORT || '8443'
+      const hostHeader = `${selectedChain}-${selectedInterface}.${domain}`
+      const cmd = selectedInterface === "rest" 
+        ? `curl -X GET -H "X-Host: ${hostHeader}" https://${domain}:${port}${JSON.parse(interfaceCommand).path}`
+        : `curl -X POST -H "X-Host: ${hostHeader}" -H "Content-Type: application/json" https://${domain}:${port} -d '${interfaceCommand}'`
       setCurlCommand(cmd)
     }
   }, [selectedChain, selectedInterface, config.apiEndpoint])
@@ -136,14 +140,16 @@ export default function LiveTestPage() {
       const interfaceCommand = chainType.interfaces[selectedInterface]
       if (!interfaceCommand) throw new Error("Interface command not found")
 
-      const hostHeader = `${selectedChain}-${selectedInterface}.lava.infra`
-      const response = await fetch("https://lava.infra:8443", {
-        method: "POST",
+      const domain = process.env.NEXT_PUBLIC_DOMAIN || 'lava.infra'
+      const port = process.env.NEXT_PUBLIC_PORT || '8443'
+      const hostHeader = `${selectedChain}-${selectedInterface}.${domain}`
+      const response = await fetch(`https://${domain}:${port}${selectedInterface === "rest" ? JSON.parse(interfaceCommand).path : ''}`, {
+        method: selectedInterface === "rest" ? "GET" : "POST",
         headers: {
           "Content-Type": "application/json",
           "X-Host": hostHeader,
         },
-        body: interfaceCommand,
+        body: selectedInterface === "rest" ? undefined : interfaceCommand,
       })
 
       const data = await response.json()
@@ -315,7 +321,7 @@ export default function LiveTestPage() {
                 </Button>
               </CardHeader>
               <CardContent>
-                <pre className="rounded-lg bg-muted p-4 font-mono text-sm overflow-auto max-h-[400px]">
+                <pre className="rounded-lg bg-muted p-4 font-mono text-sm overflow-x-auto whitespace-pre-wrap break-all">
                   {response}
                 </pre>
               </CardContent>
