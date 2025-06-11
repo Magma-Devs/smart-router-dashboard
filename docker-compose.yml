@@ -5,11 +5,11 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    environment:
-      - NODE_ENV=production
-      - NEXT_PUBLIC_API_URL=https://dashboard-api.lava.infra:8443
-      - NEXT_PUBLIC_DOMAIN=lava.infra
-      - NEXT_PUBLIC_PORT=8443
+      args:
+        - NODE_ENV=production
+        - NEXT_PUBLIC_API_URL=https://dashboard-api.lava.infra:8443
+        - NEXT_PUBLIC_DOMAIN=lava.infra
+        - NEXT_PUBLIC_PORT=8443
     network_mode: host
     restart: unless-stopped
   backend:
