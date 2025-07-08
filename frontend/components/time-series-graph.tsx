@@ -126,7 +126,7 @@ export function TimeSeriesGraph({ data, onRefresh, title = "Total Requests Serve
   };
 
   // Get unique specs for the selector
-  const specs = useMemo(() => Array.from(new Set(data?.data?.result?.map(item => item.metric.spec) ?? [])), [data]);
+  const specs = useMemo(() => Array.from(new Set(data?.data?.result?.map(item => item.metric.spec) ?? [])).sort((a, b) => a.localeCompare(b)), [data]);
 
   // Get unique providers for the selected spec
   const providers = useMemo(() => {
