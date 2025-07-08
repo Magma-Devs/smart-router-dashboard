@@ -25,6 +25,8 @@ export const chains: Chain[] = [
   { value: "eth1", label: "Ethereum Mainnet", icon: "https://info-mainnet.lavanet.xyz/icons/ethereum.svg", type: "evm", supportedInterfaces: ["jsonrpc"] },
   { value: "sep1", label: "Ethereum Sepolia", icon: "https://info-mainnet.lavanet.xyz/icons/ethereum.svg", type: "evm", supportedInterfaces: ["jsonrpc"] },
   { value: "hol1", label: "Ethereum Holesky", icon: "https://info-mainnet.lavanet.xyz/icons/ethereum.svg", type: "evm", supportedInterfaces: ["jsonrpc"] },
+  { value: "hyperliquid", label: "Hyperliquid Mainnet", icon: "https://info-mainnet.lavanet.xyz/icons/HL-green.svg", type: "evm", supportedInterfaces: ["jsonrpc"] },
+  { value: "hyperliquidt", label: "Hyperliquid Testnet", icon: "https://info-mainnet.lavanet.xyz/icons/HL-green.svg", type: "evm", supportedInterfaces: ["jsonrpc"] },
   { value: "evmos", label: "Evmos Mainnet", icon: "https://info-mainnet.lavanet.xyz/icons/evmos.svg", type: "cosmos", supportedInterfaces: ["rest", "tendermintrpc", "jsonrpc", "grpc"] },
   { value: "evmost", label: "Evmos Testnet", icon: "https://info-mainnet.lavanet.xyz/icons/evmos.svg", type: "cosmos", supportedInterfaces: ["rest", "tendermintrpc", "jsonrpc", "grpc"] },
   { value: "ftm250", label: "Fantom Mainnet", icon: "https://info-mainnet.lavanet.xyz/icons/fantom.svg", type: "evm", supportedInterfaces: ["jsonrpc"] },
