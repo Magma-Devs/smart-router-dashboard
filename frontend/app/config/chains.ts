@@ -18,6 +18,8 @@ export const chains: Chain[] = [
   { value: "bases", label: "Base Sepolia", icon: "https://info-mainnet.lavanet.xyz/icons/base.svg", type: "evm", supportedInterfaces: ["jsonrpc"] },
   { value: "blast", label: "Blast Mainnet", icon: "https://info-mainnet.lavanet.xyz/icons/blast.svg", type: "evm", supportedInterfaces: ["jsonrpc"] },
   { value: "blastsp", label: "Blast Sepolia", icon: "https://info-mainnet.lavanet.xyz/icons/blast.svg", type: "evm", supportedInterfaces: ["jsonrpc"] },
+  { value: "bsc", label: "Binance Smart Chain Mainnet", icon: "https://info.lavanet.xyz/icons/binance-smart-chain.svg", type: "evm", supportedInterfaces: ["jsonrpc"] },
+  { value: "bsct", label: "Binance Smart Chain Testnet", icon: "https://info.lavanet.xyz/icons/binance-smart-chain.svg", type: "evm", supportedInterfaces: ["jsonrpc"] },
   { value: "celo", label: "Celo Mainnet", icon: "https://info-mainnet.lavanet.xyz/icons/celo.svg", type: "evm", supportedInterfaces: ["jsonrpc"] },
   { value: "alfajores", label: "Celo Alfajores", icon: "https://info-mainnet.lavanet.xyz/icons/celo.svg", type: "evm", supportedInterfaces: ["jsonrpc"] },
   { value: "cosmoshub", label: "Cosmos Hub Mainnet", icon: "https://info-mainnet.lavanet.xyz/icons/cosmos-hub.svg", type: "cosmos", supportedInterfaces: ["rest", "tendermintrpc", "grpc"] },
@@ -50,5 +52,5 @@ export const chains: Chain[] = [
   { value: "strgz", label: "Stargaze Mainnet", icon: "https://info-mainnet.lavanet.xyz/icons/stargaze.svg", type: "cosmos", supportedInterfaces: ["rest", "tendermintrpc", "grpc"] },
   { value: "strgzt", label: "Stargaze Testnet", icon: "https://info-mainnet.lavanet.xyz/icons/stargaze.svg", type: "cosmos", supportedInterfaces: ["rest", "tendermintrpc", "grpc"] },
   { value: "strk", label: "Starknet Mainnet", icon: "https://info-mainnet.lavanet.xyz/icons/starknet.svg", type: "starknet", supportedInterfaces: ["jsonrpc"] },
-  { value: "strks", label: "Starknet Sepolia", icon: "https://info-mainnet.lavanet.xyz/icons/starknet.svg", type: "starknet", supportedInterfaces: ["jsonrpc"] }
+  { value: "strks", label: "Starknet Sepolia", icon: "https://info-mainnet.lavanet.xyz/icons/starknet.svg", type: "starknet", supportedInterfaces: ["jsonrpc"] },
 ]; 
