@@ -1,10 +1,11 @@
-from fastapi import APIRouter, HTTPException, Body
+from fastapi import APIRouter, HTTPException, Body, Depends
 from typing import Dict, List, Any, Optional
 import yaml
 import os
 from app.core.config import settings
 from app.services.kubernetes import kubernetes_service
 from pydantic import BaseModel
+from app.core.auth import get_current_user
 
 router = APIRouter()
 
@@ -64,7 +65,7 @@ def convert_cpu_to_cores(cpu_str: str) -> float:
 
 
 @router.get("/")
-async def get_configuration():
+async def get_configuration(current_user: str = Depends(get_current_user)):
     """Get the current configuration for consumers and providers"""
     try:
         values_dir = settings.HELM_VALUES_DIR

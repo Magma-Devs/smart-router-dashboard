@@ -16,6 +16,7 @@ import { useConfig } from "@/hooks/use-config"
 import { Checkbox } from "@/components/ui/checkbox"
 import { useDebounce } from "@/hooks/use-debounce"
 import { chains } from "@/app/config/chains"
+import { ProtectedRoute } from "@/components/protected-route"
 
 interface ConsumerInterface {
   name: string[]
@@ -707,7 +708,8 @@ export default function WizardPage() {
   }
 
   return (
-    <div className="container mx-auto px-4 py-12 max-w-7xl">
+    <ProtectedRoute>
+      <div className="container mx-auto px-4 py-12 max-w-7xl">
       {!selectedOption ? (
         <>
           <motion.div 
@@ -1596,6 +1598,7 @@ export default function WizardPage() {
           </Card>
         </div>
       )}
-    </div>
+      </div>
+    </ProtectedRoute>
   )
 } 

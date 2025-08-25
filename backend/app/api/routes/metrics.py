@@ -1,13 +1,14 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 from app.services.prometheus import prometheus_service
+from app.core.auth import get_current_user
 
 router = APIRouter()
 
 
 @router.get("/")
-async def get_default_metrics():
+async def get_default_metrics(current_user: str = Depends(get_current_user)):
     """Get data for all default metrics"""
     try:
         metrics = await prometheus_service.get_default_metrics()
@@ -21,7 +22,8 @@ async def query_metrics(
     query: str,
     start: Optional[datetime] = None,
     end: Optional[datetime] = None,
-    step: str = "15s"
+    step: str = "15s",
+    current_user: str = Depends(get_current_user)
 ):
     """Query Prometheus metrics"""
     try:
@@ -43,7 +45,8 @@ async def query_metrics(
 
 @router.get("/instant")
 async def instant_query(
-    query: str = Query(..., description="Prometheus query expression")
+    query: str = Query(..., description="Prometheus query expression"),
+    current_user: str = Depends(get_current_user)
 ):
     """Execute an instant Prometheus query"""
     try:

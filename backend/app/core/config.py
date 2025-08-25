@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api"
     PROJECT_NAME: str = "Lava Smart Router Dashboard"
 
+    # Authentication settings
+    AUTH_USERNAME: str = os.getenv("AUTH_USERNAME", "admin")
+    AUTH_PASSWORD: str = os.getenv("AUTH_PASSWORD", "password")
+
     # Prometheus settings
     PROMETHEUS_URL: str = os.getenv("PROMETHEUS_URL", "http://prometheus.lava.infra")
 
@@ -86,11 +90,12 @@ class Settings(BaseSettings):
             logger.debug(f"Prometheus URL: {self.PROMETHEUS_URL}")
             logger.debug(f"Prometheus SSL verification: {self.PROMETHEUS_VERIFY_SSL}")
 
-        # Validate Prometheus connection on startup
-        if not self.validate_prometheus_connection():
-            raise ConnectionError(
-                f"Could not connect to Prometheus at {self.PROMETHEUS_URL}"
-            )
+        else:
+            # Validate Prometheus connection on startup
+            if not self.validate_prometheus_connection():
+                raise ConnectionError(
+                    f"Could not connect to Prometheus at {self.PROMETHEUS_URL}"
+                )
 
     # Add connection validation method
     def validate_prometheus_connection(self) -> bool:
