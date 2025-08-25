@@ -11,6 +11,7 @@ import { Copy, Loader2 } from "lucide-react"
 import { chains } from "@/app/config/chains"
 import { cn } from "@/lib/utils"
 import { chainTypes } from "@/app/config/chain-types"
+import { ProtectedRoute } from "@/components/protected-route"
 
 interface Interface {
   name: string
@@ -175,7 +176,8 @@ export default function LiveTestPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background p-6">
+    <ProtectedRoute>
+      <div className="min-h-screen bg-background p-6">
       <div className="mx-auto max-w-[1200px] space-y-6">
         <div className="space-y-2">
           <h1 className="text-3xl font-bold tracking-tight">Live Test</h1>
@@ -330,6 +332,7 @@ export default function LiveTestPage() {
         </div>
       </div>
       <Toaster />
-    </div>
+      </div>
+    </ProtectedRoute>
   )
 } 

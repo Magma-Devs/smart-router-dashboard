@@ -4,6 +4,7 @@ import { Inter } from "next/font/google"
 import "./globals.css"
 import { NavBar } from "@/components/nav-bar"
 import { ThemeProvider } from "@/components/theme-provider"
+import { AuthProvider } from "@/lib/auth-context"
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -35,15 +36,14 @@ export default function RootLayout({
       </head>
       <body className={inter.className}>
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
-          <div className="relative min-h-screen flex flex-col">
-            <NavBar />
-            <main className="flex-1">{children}</main>
-          </div>
+          <AuthProvider>
+            <div className="relative min-h-screen flex flex-col">
+              <NavBar />
+              <main className="flex-1">{children}</main>
+            </div>
+          </AuthProvider>
         </ThemeProvider>
       </body>
     </html>
   )
 }
-
-
-import './globals.css'

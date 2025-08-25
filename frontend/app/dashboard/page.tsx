@@ -12,10 +12,40 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import Link from "next/link"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { chains } from "@/app/config/chains"
+import { ProtectedRoute } from "@/components/protected-route"
+import { apiClient } from "@/lib/api-client"
+
+// Prometheus API response types
+interface PrometheusMetric {
+  spec?: string;
+  [key: string]: any;
+}
+
+interface PrometheusResult {
+  metric: PrometheusMetric;
+  values?: [number, string][];
+  value?: [number, string];
+  [key: string]: any;
+}
+
+interface PrometheusData {
+  resultType: string;
+  result: PrometheusResult[];
+}
+
+interface PrometheusResponse {
+  status: 'success' | 'error';
+  data?: PrometheusData;
+  errorType?: string;
+  error?: string;
+}
 
 interface DashboardData {
-  flow: any; // Replace with proper type if available
-  metrics: any; // Replace with proper type if available
+  flow: PrometheusResponse | null;
+  metrics: {
+    requests: PrometheusResponse | null;
+    latency: PrometheusResponse | null;
+  } | null;
 }
 
 export default function Dashboard() {
@@ -63,22 +93,17 @@ export default function Dashboard() {
       }
       
       // Fetch flow visualization data using the metrics endpoint
-      const flowEndpoint = `${config.apiEndpoint}/api/metrics/last_minutes?query=lava_provider_overall_health_breakdown&minutes=1&step=1`
+      const flowEndpoint = `/api/metrics/last_minutes?query=lava_provider_overall_health_breakdown&minutes=1&step=1`
       console.log("Fetching flow data from:", flowEndpoint)
-      const flowResponse = await fetch(flowEndpoint)
-      
-      if (!flowResponse.ok) {
-        throw new Error(`API returned status ${flowResponse.status}`)
-      }
-      
-      const flowData = await flowResponse.json()
+      const flowData: PrometheusResponse = await apiClient.get(flowEndpoint)
       console.log("Flow data received:", flowData)
 
       // Map the chain labels if we have valid data
       if (flowData?.status === 'success' && flowData.data?.result) {
-        flowData.data.result = flowData.data.result.map((result: any) => {
-          if (result.metric?.spec) {
-            const chain = chains.find(c => c.value.toLowerCase() === result.metric.spec.toLowerCase())
+        flowData.data.result = flowData.data.result.map((result: PrometheusResult) => {
+          const spec = result.metric?.spec;
+          if (spec) {
+            const chain = chains.find(c => c.value.toLowerCase() === spec.toLowerCase())
             if (chain) {
               return {
                 ...result,
@@ -119,27 +144,15 @@ export default function Dashboard() {
 
       // Fetch total requests data
       const query = encodeURIComponent('sum(lava_provider_total_relays_serviced) by (spec, service)')
-      const requestsEndpoint = `${config.apiEndpoint}/api/metrics/last_minutes?query=${query}&minutes=${minutes}&step=1s`
+      const requestsEndpoint = `/api/metrics/last_minutes?query=${query}&minutes=${minutes}&step=1s`
       console.log("Fetching requests data from:", requestsEndpoint)
-      const requestsResponse = await fetch(requestsEndpoint)
-      
-      if (!requestsResponse.ok) {
-        throw new Error(`Requests API returned status ${requestsResponse.status}`)
-      }
-      
-      const requestsData = await requestsResponse.json()
+      const requestsData: PrometheusResponse = await apiClient.get(requestsEndpoint)
       console.log("Requests data received:", requestsData)
 
       // Fetch average latency data
-      const latencyEndpoint = `${config.apiEndpoint}/api/metrics/last_minutes?query=lava_consumer_average_latency_in_milliseconds&minutes=${minutes}&step=1s`
+      const latencyEndpoint = `/api/metrics/last_minutes?query=lava_consumer_average_latency_in_milliseconds&minutes=${minutes}&step=1s`
       console.log("Fetching latency data from:", latencyEndpoint)
-      const latencyResponse = await fetch(latencyEndpoint)
-      
-      if (!latencyResponse.ok) {
-        throw new Error(`Latency API returned status ${latencyResponse.status}`)
-      }
-      
-      const latencyData = await latencyResponse.json()
+      const latencyData: PrometheusResponse = await apiClient.get(latencyEndpoint)
       console.log("Latency data received:", latencyData)
       
       setData(prevData => ({
@@ -200,112 +213,114 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="container mx-auto px-4 py-6 max-w-7xl">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold">Dashboard</h1>
+    <ProtectedRoute>
+      <div className="container mx-auto px-4 py-6 max-w-7xl">
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold">Dashboard</h1>
           {lastUpdated && (
             <p className="text-sm text-muted-foreground mt-1">
               Last updated: {lastUpdated.toLocaleTimeString()}
             </p>
           )}
-      </div>
-      <div className="flex flex-wrap items-end justify-between mb-6 gap-4">
-        <div className="flex flex-col">
+        </div>
+        <div className="flex flex-wrap items-end justify-between mb-6 gap-4">
+          <div className="flex flex-col">
 
 
+          </div>
+          
+          <div className="flex items-center gap-2">
+            <Select 
+              value={config.refreshInterval.toString()} 
+              onValueChange={handleRefreshIntervalChange}
+            >
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Auto-refresh every" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="1">1 second</SelectItem>
+                <SelectItem value="5">5 seconds</SelectItem>
+                <SelectItem value="10">10 seconds</SelectItem>
+                <SelectItem value="30">30 seconds</SelectItem>
+                <SelectItem value="60">1 minute</SelectItem>
+                <SelectItem value="300">5 minutes</SelectItem>
+              </SelectContent>
+            </Select>
+            
+            <Button 
+              variant="outline" 
+              size="icon" 
+              onClick={handleManualRefresh} 
+              disabled={loading}
+              title="Refresh now"
+            >
+              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            </Button>
+          </div>
         </div>
         
-        <div className="flex items-center gap-2">
-          <Select 
-            value={config.refreshInterval.toString()} 
-            onValueChange={handleRefreshIntervalChange}
-          >
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Auto-refresh every" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="1">1 second</SelectItem>
-              <SelectItem value="5">5 seconds</SelectItem>
-              <SelectItem value="10">10 seconds</SelectItem>
-              <SelectItem value="30">30 seconds</SelectItem>
-              <SelectItem value="60">1 minute</SelectItem>
-              <SelectItem value="300">5 minutes</SelectItem>
-            </SelectContent>
-          </Select>
-          
-          <Button 
-            variant="outline" 
-            size="icon" 
-            onClick={handleManualRefresh} 
-            disabled={loading}
-            title="Refresh now"
-          >
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-          </Button>
+        {error && (
+          <Alert variant="destructive" className="mb-6">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>Error</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+        
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>System Flow Visualization</CardTitle>
+              <CardDescription>
+                Visualizing the health status between Users, Chains, and Providers
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-0 overflow-hidden">
+              {renderContent() || (data?.flow?.data && <FlowVisualization key="flow-visualization" data={data.flow} />)}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Metrics</CardTitle>
+              <CardDescription>
+                Time series data showing system performance metrics
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Tabs defaultValue="requests" className="w-full">
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="requests">Total Requests Served</TabsTrigger>
+                  <TabsTrigger value="latency">Average Latency</TabsTrigger>
+                </TabsList>
+                <TabsContent value="requests" className="mt-4">
+                  <div className="h-[400px] w-full">
+                    {renderContent("h-[400px]") || (data?.metrics?.requests?.data && (
+                      <TimeSeriesGraph 
+                        data={data.metrics.requests as any} 
+                        onRefresh={fetchMetricsData} 
+                        title="Total Requests Served"
+                      />
+                    ))}
+                  </div>
+                </TabsContent>
+                <TabsContent value="latency" className="mt-4">
+                  <div className="h-[400px] w-full">
+                    {renderContent("h-[400px]") || (data?.metrics?.latency?.data && (
+                      <TimeSeriesGraph 
+                        data={data.metrics.latency as any} 
+                        onRefresh={fetchMetricsData} 
+                        title="Average Latency"
+                        isLatency={true}
+                      />
+                    ))}
+                  </div>
+                </TabsContent>
+              </Tabs>
+            </CardContent>
+          </Card>
         </div>
       </div>
-      
-      {error && (
-        <Alert variant="destructive" className="mb-6">
-          <AlertTriangle className="h-4 w-4" />
-          <AlertTitle>Error</AlertTitle>
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-      
-      <div className="space-y-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>System Flow Visualization</CardTitle>
-            <CardDescription>
-              Visualizing the health status between Users, Chains, and Providers
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="p-0 overflow-hidden">
-            {renderContent() || (data?.flow && <FlowVisualization key="flow-visualization" data={data.flow} />)}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Metrics</CardTitle>
-            <CardDescription>
-              Time series data showing system performance metrics
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Tabs defaultValue="requests" className="w-full">
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="requests">Total Requests Served</TabsTrigger>
-                <TabsTrigger value="latency">Average Latency</TabsTrigger>
-              </TabsList>
-              <TabsContent value="requests" className="mt-4">
-                <div className="h-[400px] w-full">
-                  {renderContent("h-[400px]") || (data?.metrics?.requests && (
-                    <TimeSeriesGraph 
-                      data={data.metrics.requests} 
-                      onRefresh={fetchMetricsData} 
-                      title="Total Requests Served"
-                    />
-                  ))}
-                </div>
-              </TabsContent>
-              <TabsContent value="latency" className="mt-4">
-                <div className="h-[400px] w-full">
-                  {renderContent("h-[400px]") || (data?.metrics?.latency && (
-                    <TimeSeriesGraph 
-                      data={data.metrics.latency} 
-                      onRefresh={fetchMetricsData} 
-                      title="Average Latency"
-                      isLatency={true}
-                    />
-                  ))}
-                </div>
-              </TabsContent>
-            </Tabs>
-          </CardContent>
-        </Card>
-      </div>
-    </div>
+    </ProtectedRoute>
   )
 } 

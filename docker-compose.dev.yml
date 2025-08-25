@@ -7,9 +7,9 @@ services:
       dockerfile: Dockerfile
       args:
         NODE_ENV: production
-        NEXT_PUBLIC_API_URL: https://dashboard-api.lava.infra:8443
-        NEXT_PUBLIC_DOMAIN: lava.infra
-        NEXT_PUBLIC_PORT: 8443
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+        NEXT_PUBLIC_DOMAIN: localhost
+        NEXT_PUBLIC_PORT: 8000
     network_mode: host
     restart: unless-stopped
   backend:
@@ -22,19 +22,16 @@ services:
       - ../../scripts:/app/scripts
       - ${KUBECONFIG_PATH:-~/.kube/config}:/root/.kube/config:ro
     environment:
-      - DEBUG=false
+      - DEBUG=true
       - LOG_LEVEL=DEBUG
       - PROMETHEUS_URL=http://prometheus.lava.infra:80
       - TENANT_ID=default
-      - IS_SEND_METRICS_TO_S3=true
-      - S3_BUCKET=smart-router-output-metrics
-      - S3_ACCESS_KEY=AKIAXWVQLKJZSRZJG4WJ
-      - S3_SECRET_KEY=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
-      - S3_REGION=us-east-1
+      - IS_SEND_METRICS_TO_S3=false
       - AUTH_USERNAME=admin
       - AUTH_PASSWORD=password
     extra_hosts:
       - "prometheus.lava.infra:127.0.0.1"
+      
       - "grafana.lava.infra:127.0.0.1"
     network_mode: host
     restart: unless-stopped

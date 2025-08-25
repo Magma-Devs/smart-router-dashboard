@@ -14,6 +14,7 @@ import { Toaster } from "@/components/ui/toaster"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Info } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { ProtectedRoute } from "@/components/protected-route"
 
 export default function ConfigurationPage() {
   const router = useRouter()
@@ -67,9 +68,10 @@ export default function ConfigurationPage() {
   }
 
   return (
-    <div className="container mx-auto px-4 py-6 max-w-7xl">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold">Settings</h1>
+    <ProtectedRoute>
+      <div className="container mx-auto px-4 py-6 max-w-7xl">
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold">Settings</h1>
         <p className="text-muted-foreground">
           Configure your dashboard settings and preferences.
         </p>
@@ -119,6 +121,7 @@ export default function ConfigurationPage() {
         </form>
       </Card>
       <Toaster />
-    </div>
+      </div>
+    </ProtectedRoute>
   )
 }
