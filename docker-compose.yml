@@ -33,7 +33,7 @@ services:
       - S3_REGION=us-east-1
       - AUTH_USERNAME=admin
       - AUTH_PASSWORD=password
-      - CORS_ORIGINS=["https://dashboard.lavapro.xyz","https://lavapro.xyz"]
+      - CORS_ORIGINS=["https://dashboard.lavapro.xyz:8443","https://dashboard-api.lavapro.xyz:8443"]
     extra_hosts:
       - "prometheus.lavapro.xyz:127.0.0.1"
       - "grafana.lavapro.xyz:127.0.0.1"
