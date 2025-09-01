@@ -33,6 +33,7 @@ services:
       - S3_REGION=us-east-1
       - AUTH_USERNAME=admin
       - AUTH_PASSWORD=password
+      - CORS_ORIGINS=["https://dashboard.lava.infra","https://lava.infra"]
     extra_hosts:
       - "prometheus.lava.infra:127.0.0.1"
       - "grafana.lava.infra:127.0.0.1"

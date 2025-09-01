@@ -1,8 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.responses import JSONResponse
-from app.core.auth import get_current_user, verify_form_credentials, LoginRequest
-from app.core.config import settings
 import logging
+
+from fastapi import APIRouter, Depends
+
+from app.core.auth import LoginRequest, get_current_user, verify_form_credentials
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ async def login(login_request: LoginRequest):
         "message": "Authentication successful",
         "username": username,
         "credentials": credentials,
-        "status": "authenticated"
+        "status": "authenticated",
     }
 
 
@@ -32,7 +32,7 @@ async def logout(current_user: str = Depends(get_current_user)):
     return {
         "message": "Logout successful",
         "username": current_user,
-        "status": "logged_out"
+        "status": "logged_out",
     }
 
 
@@ -41,10 +41,7 @@ async def get_current_user_info(current_user: str = Depends(get_current_user)):
     """
     Get current user information.
     """
-    return {
-        "username": current_user,
-        "authenticated": True
-    }
+    return {"username": current_user, "authenticated": True}
 
 
 @router.get("/status")
@@ -55,7 +52,7 @@ async def auth_status():
     return {
         "authentication_required": True,
         "auth_type": "Form-based with session",
-        "message": "All endpoints require authentication"
+        "message": "All endpoints require authentication",
     }
 
 

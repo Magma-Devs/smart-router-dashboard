@@ -1,3 +1,3 @@
-from .routes import metrics, components
+from .routes import components, metrics
 
 __all__ = ["metrics", "components"]

@@ -1,11 +1,11 @@
-from fastapi import APIRouter, HTTPException, Body, Depends
-from typing import Dict, List, Any, Optional
-import yaml
-import os
-from app.core.config import settings
-from app.services.kubernetes import kubernetes_service
+from typing import Dict, List
+
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+
 from app.core.auth import get_current_user
+from app.services.configuration import ConfigurationService, configuration_service
+from app.services.kubernetes import KubernetesService, kubernetes_service
 
 router = APIRouter()
 
@@ -36,115 +36,56 @@ class ConfigurationUpdate(BaseModel):
     consumers: Dict[str, ConsumerConfig]
 
 
-def convert_memory_to_gb(memory_str: str) -> float:
-    """Convert memory string (e.g., '0.5Gi', '500Mi') to GB"""
-    if not memory_str:
-        return 0.0
-    
-    memory_str = memory_str.lower()
-    if 'gi' in memory_str:
-        return float(memory_str.replace('gi', ''))
-    elif 'mi' in memory_str:
-        return float(memory_str.replace('mi', '')) / 1024
-    elif 'ki' in memory_str:
-        return float(memory_str.replace('ki', '')) / (1024 * 1024)
-    else:
-        return float(memory_str) / (1024 * 1024 * 1024)  # Assume bytes if no unit
+# Utility functions moved to app.core.utils
 
 
-def convert_cpu_to_cores(cpu_str: str) -> float:
-    """Convert CPU string (e.g., '500m', '0.5') to cores"""
-    if not cpu_str:
-        return 0.0
-    
-    cpu_str = cpu_str.lower()
-    if 'm' in cpu_str:
-        return float(cpu_str.replace('m', '')) / 1000
-    else:
-        return float(cpu_str)
+def get_configuration_service() -> ConfigurationService:
+    """Dependency accessor for ConfigurationService."""
+    return configuration_service
+
+
+def get_kubernetes_service() -> KubernetesService:
+    """Dependency accessor for KubernetesService."""
+    return kubernetes_service
 
 
 @router.get("/")
-async def get_configuration(current_user: str = Depends(get_current_user)):
+async def get_configuration(
+    current_user: str = Depends(get_current_user),
+    config_service: ConfigurationService = Depends(get_configuration_service),
+    k8s_service: KubernetesService = Depends(get_kubernetes_service),
+):
     """Get the current configuration for consumers and providers"""
     try:
-        values_dir = settings.HELM_VALUES_DIR
         config = {
             "consumers": {},
             "resource_limits": {
                 "server": {"cpu": 0, "memory": 0},
                 "per_consumer": {"cpu": 0, "memory": 0},
-                "per_provider": {"cpu": 0, "memory": 0}
-            }
+                "per_provider": {"cpu": 0, "memory": 0},
+            },
         }
 
         # Read consumer values to get single consumer resources
-        consumer_path = os.path.join(values_dir, "core", "consumer.values.yml")
-        if os.path.exists(consumer_path):
-            with open(consumer_path, "r") as f:
-                consumer_data = yaml.safe_load(f)
-                if "chains" in consumer_data:
-                    # Get resources for a single consumer (assuming all consumers have same resources)
-                    if "resources" in consumer_data and "requests" in consumer_data["resources"]:
-                        resources = consumer_data["resources"]["requests"]
-                        if "cpu" in resources:
-                            config["resource_limits"]["per_consumer"]["cpu"] = convert_cpu_to_cores(resources["cpu"])
-                        if "memory" in resources:
-                            config["resource_limits"]["per_consumer"]["memory"] = convert_memory_to_gb(resources["memory"])
+        consumer_path = f"{config_service.values_dir}/core/consumer.values.yml"
+        consumer_data = config_service.read_yaml_file(consumer_path)
 
-                    for chain_id, chain_data in consumer_data["chains"].items():
-                        consumer = {"interfaces": []}
+        if consumer_data and "chains" in consumer_data:
+            # Get resources for a single consumer (assuming all consumers have same resources)
+            resources = config_service.get_consumer_resources(consumer_data)
+            config["resource_limits"]["per_consumer"]["cpu"] = resources["cpu"]
+            config["resource_limits"]["per_consumer"]["memory"] = resources["memory"]
 
-                        for interface in chain_data.get("interfaces", []):
-                            interface_config = {
-                                "name": interface["interface"],
-                                "port": interface["port"],
-                                "addons": interface.get("addons", []),
-                                "providers": [],
-                            }
-
-                            for provider in interface.get("staticProviders", []):
-                                # Extract provider name from URL
-                                provider_url = provider["url"]
-                                provider_name = provider_url.split(".")[0].replace(
-                                    "-provider", ""
-                                )
-
-                                # Get provider nodes from provider values
-                                provider_path = os.path.join(values_dir, "core", "provider.values.yml")
-                                provider_nodes = []
-                                provider_addons = []
-                                if os.path.exists(provider_path):
-                                    with open(provider_path, "r") as pf:
-                                        provider_data = yaml.safe_load(pf)
-                                        if "chains" in provider_data:
-                                            for chain in provider_data["chains"]:
-                                                if chain["name"] == provider_name:
-                                                    for iface in chain.get("interfaces", []):
-                                                        for node in iface.get("nodes", []):
-                                                            provider_nodes.append({
-                                                                "endpoint": node["endpoint"],
-                                                                "type": node.get("type", "full"),
-                                                                "addons": node.get("addons", [])
-                                                            })
-                                                            # Collect addons from nodes
-                                                            if "addons" in node:
-                                                                provider_addons.extend(node["addons"])
-
-                                interface_config["providers"].append({
-                                    "name": provider_name,
-                                    "url": provider_url,
-                                    "addons": list(set(provider_addons)),  # Remove duplicates
-                                    "nodes": provider_nodes
-                                })
-
-                            consumer["interfaces"].append(interface_config)
-
-                        config["consumers"][chain_id] = consumer
+            # Build consumer configurations
+            for chain_id, chain_data in consumer_data["chains"].items():
+                consumer_config = config_service.build_consumer_config(
+                    chain_id, chain_data
+                )
+                config["consumers"][chain_id] = consumer_config
 
         # Get server resources from Kubernetes
         try:
-            node_info = kubernetes_service.get_node_resources()
+            node_info = k8s_service.get_node_resources()
             config["resource_limits"]["server"]["cpu"] = node_info["cpu"]
             config["resource_limits"]["server"]["memory"] = node_info["memory"]
         except Exception as e:
@@ -158,102 +99,75 @@ async def get_configuration(current_user: str = Depends(get_current_user)):
 
 
 @router.post("/")
-async def update_configuration(config: ConfigurationUpdate):
+async def update_configuration(
+    config: ConfigurationUpdate,
+    config_service: ConfigurationService = Depends(get_configuration_service),
+    k8s_service: KubernetesService = Depends(get_kubernetes_service),
+):
     """Update the configuration for consumers and providers"""
     try:
-        values_dir = settings.HELM_VALUES_DIR
-
-        # Update provider values
-        provider_path = os.path.join(values_dir, "core", "provider.values.yml")
-        if os.path.exists(provider_path):
-            with open(provider_path, "r") as f:
-                provider_data = yaml.safe_load(f)
-
-            # Update chains in provider data
-            provider_data["chains"] = []
-            for chain_id, consumer in config.consumers.items():
-                for interface in consumer.interfaces:
-                    for provider in interface.providers:
-                        chain_config = {
-                            "name": provider.name,
-                            "id": chain_id,
-                            "interfaces": [{
-                                "interface": interface.name,
-                                "nodes": [
-                                    {
-                                        "endpoint": node.endpoint,
-                                        "type": node.type,
-                                        "addons": consumer.addons  # Propagate consumer addons to provider nodes
-                                    } for node in provider.nodes
-                                ]
-                            }]
+        # Convert Pydantic model to dict for service
+        config_dict = {
+            "consumers": {
+                chain_id: {
+                    "addons": consumer.addons,
+                    "interfaces": [
+                        {
+                            "name": interface.name,
+                            "port": interface.port,
+                            "providers": [
+                                {
+                                    "name": provider.name,
+                                    "url": provider.url,
+                                    "nodes": [
+                                        {
+                                            "endpoint": node.endpoint,
+                                            "type": node.type,
+                                        }
+                                        for node in provider.nodes
+                                    ],
+                                }
+                                for provider in interface.providers
+                            ],
                         }
-                        provider_data["chains"].append(chain_config)
-
-            # Write updated provider values
-            with open(provider_path, "w") as f:
-                yaml.dump(provider_data, f, default_flow_style=False)
-
-        # Update consumer values
-        consumer_path = os.path.join(values_dir, "core", "consumer.values.yml")
-        if os.path.exists(consumer_path):
-            with open(consumer_path, "r") as f:
-                consumer_data = yaml.safe_load(f)
-
-            # Update chains in consumer data
-            consumer_data["chains"] = {}
-            for chain_id, consumer in config.consumers.items():
-                chain_config = {
-                    "interfaces": []
+                        for interface in consumer.interfaces
+                    ],
                 }
+                for chain_id, consumer in config.consumers.items()
+            }
+        }
 
-                for interface in consumer.interfaces:
-                    interface_config = {
-                        "interface": interface.name,
-                        "port": interface.port,
-                        "addons": consumer.addons,  # Propagate consumer addons to interface
-                        "staticProviders": [],
-                    }
-
-                    for provider in interface.providers:
-                        provider_config = {"url": provider.url}
-                        interface_config["staticProviders"].append(provider_config)
-
-                    chain_config["interfaces"].append(interface_config)
-
-                consumer_data["chains"][chain_id] = chain_config
-
-            # Write updated consumer values
-            with open(consumer_path, "w") as f:
-                yaml.dump(consumer_data, f, default_flow_style=False)
+        # Update configuration files using service
+        config_service.update_provider_values(config_dict)
+        config_service.update_consumer_values(config_dict)
 
         # Apply Helm releases using Kubernetes service
         try:
             # Apply consumer HelmRelease
-            kubernetes_service.apply_helm_release(
+            k8s_service.apply_helm_release(
                 name="consumer",
                 namespace="lava-infra",
                 chart="lavanet/consumer",
                 version="0.5.x",
-                values_file=consumer_path,
+                values_file=f"{config_service.values_dir}/core/consumer.values.yml",
             )
 
             # Apply provider HelmRelease
-            kubernetes_service.apply_helm_release(
+            k8s_service.apply_helm_release(
                 name="provider",
                 namespace="lava-infra",
                 chart="lavanet/provider",
                 version="0.5.x",
-                values_file=provider_path,
+                values_file=f"{config_service.values_dir}/core/provider.values.yml",
             )
 
             # Label ServiceMonitors for Prometheus discovery
-            kubernetes_service.label_servicemonitor(
+            k8s_service.label_servicemonitor(
                 name="consumer",
                 namespace="lava-infra",
                 labels={"release": "kube-prom-stack"},
             )
-            kubernetes_service.label_servicemonitor(
+            k8s_service.label_servicemonitor(
                 name="provider",
                 namespace="lava-infra",
                 labels={"release": "kube-prom-stack"},

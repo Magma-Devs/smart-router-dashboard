@@ -1,4 +1,3 @@
-from . import metrics
-from . import components
+from . import components, metrics
 
 __all__ = ["metrics", "components"]

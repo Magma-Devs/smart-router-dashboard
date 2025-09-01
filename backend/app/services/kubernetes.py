@@ -1,6 +1,5 @@
 import subprocess
-from typing import Dict, Any
-from app.core.config import settings
+from typing import Dict
 
 
 class KubernetesService:
@@ -12,7 +11,13 @@ class KubernetesService:
         try:
             # Add lavanet repo if not already added
             subprocess.run(
-                ["helm", "repo", "add", "lavanet", "https://lavanet.github.io/helm-charts"],
+                [
+                    "helm",
+                    "repo",
+                    "add",
+                    "lavanet",
+                    "https://lavanet.github.io/helm-charts",
+                ],
                 check=True,
                 capture_output=True,
                 text=True,
@@ -59,21 +64,30 @@ class KubernetesService:
         except Exception as e:
             raise Exception(f"Error applying Helm chart {name}: {str(e)}")
 
-    def label_servicemonitor(self, name: str, namespace: str = "lava-infra", labels: Dict[str, str] = None) -> None:
+    def label_servicemonitor(
+        self, name: str, namespace: str = "lava-infra", labels: Dict[str, str] = None
+    ) -> None:
         """Label a ServiceMonitor for Prometheus discovery"""
         if labels is None:
             labels = {"release": "kube-prom-stack"}
-            
+
         try:
             # Convert labels dict to kubectl format
             label_args = []
             for key, value in labels.items():
                 label_args.extend([f"{key}={value}"])
-            
+
             # Build and execute kubectl command
-            cmd = ["kubectl", "label", "servicemonitor", name, "-n", namespace] + label_args
+            cmd = [
+                "kubectl",
+                "label",
+                "servicemonitor",
+                name,
+                "-n",
+                namespace,
+            ] + label_args
             subprocess.run(cmd, check=True, capture_output=True, text=True)
-            
+
         except subprocess.CalledProcessError as e:
             raise Exception(f"Failed to label ServiceMonitor {name}: {str(e)}")
 

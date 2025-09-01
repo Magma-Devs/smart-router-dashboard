@@ -1,7 +1,8 @@
+from datetime import datetime, timedelta
+from typing import Any, Dict, Optional
+
 import httpx
 
-from datetime import datetime, timedelta
-from typing import Dict, List, Any, Optional
 from app.core.config import settings
 
 
@@ -43,6 +44,14 @@ class PrometheusService:
             response.raise_for_status()
             return response.json()
 
+    async def get_metric_range(
+        self, query: str, start: str, end: str, step: str
+    ) -> Dict[str, Any]:
+        """Compatibility wrapper matching route usage (ISO timestamps -> range query)."""
+        start_dt = datetime.fromisoformat(start)
+        end_dt = datetime.fromisoformat(end)
+        return await self.query_range(query, start_dt, end_dt, step)
+
     async def get_metric_data_for_chart(
         self, query_expr: str, hours: int = 1, step: str = "15s"
     ) -> Dict[str, Any]:
@@ -53,101 +62,74 @@ class PrometheusService:
         result = await self.query_range(query_expr, start_time, end_time, step)
 
         # Process the result for charting
-        chart_data = self._process_result_for_chart(result)
+        chart_data = process_result_for_chart(result)
         return chart_data
 
-    def _process_result_for_chart(self, result: Dict[str, Any]) -> Dict[str, Any]:
-        """Process Prometheus result for chart display"""
-        processed_data = {"datasets": [], "labels": []}
 
-        if result["status"] != "success" or "data" not in result:
-            return processed_data
+def process_result_for_chart(result: Dict[str, Any]) -> Dict[str, Any]:
+    """Process Prometheus result for chart display (pure function)."""
+    processed_data = {"datasets": [], "labels": []}
 
-        result_data = result["data"]
-        if "result" not in result_data or not result_data["result"]:
-            return processed_data
-
-        # Get all timestamps for x-axis
-        all_timestamps = set()
-        for series in result_data["result"]:
-            for point in series["values"]:
-                all_timestamps.add(point[0])
-
-        # Sort timestamps
-        timestamps = sorted(list(all_timestamps))
-        processed_data["labels"] = [
-            datetime.fromtimestamp(ts).strftime("%H:%M:%S") for ts in timestamps
-        ]
-
-        # Process each series
-        for series in result_data["result"]:
-            # Create a label from metric labels
-            metric = series["metric"]
-            label = ""
-
-            if "namespace" in metric and "pod" in metric:
-                label = f"{metric['namespace']}/{metric['pod']}"
-            elif "namespace" in metric:
-                label = metric["namespace"]
-            elif "pod" in metric:
-                label = metric["pod"]
-            elif "name" in metric:
-                label = metric["name"]
-            elif "job" in metric:
-                label = metric["job"]
-            else:
-                # Use all available labels
-                label_parts = []
-                for k, v in metric.items():
-                    if k != "__name__":
-                        label_parts.append(f"{k}={v}")
-                label = ", ".join(label_parts)
-
-            # Create a map of timestamp to value for this series
-            ts_to_value = {point[0]: float(point[1]) for point in series["values"]}
-
-            # Create the data array with values for each timestamp
-            data = []
-            for ts in timestamps:
-                if ts in ts_to_value:
-                    data.append(ts_to_value[ts])
-                else:
-                    data.append(None)  # Use null for missing values
-
-            # Add the dataset
-            processed_data["datasets"].append(
-                {"label": label, "data": data, "fill": False, "borderWidth": 2}
-            )
-
+    if result.get("status") != "success" or "data" not in result:
         return processed_data
 
-    async def get_default_metrics(self) -> List[Dict[str, Any]]:
-        """Get data for all default metrics"""
-        metrics_data = []
+    result_data = result["data"]
+    if "result" not in result_data or not result_data["result"]:
+        return processed_data
 
-        for metric in settings.DEFAULT_METRICS:
-            try:
-                data = await self.get_metric_data_for_chart(metric["query"])
-                metrics_data.append(
-                    {
-                        "name": metric["name"],
-                        "type": metric["type"],
-                        "query": metric["query"],
-                        "data": data,
-                    }
-                )
-            except Exception as e:
-                metrics_data.append(
-                    {
-                        "name": metric["name"],
-                        "type": metric["type"],
-                        "query": metric["query"],
-                        "error": str(e),
-                        "data": {"datasets": [], "labels": []},
-                    }
-                )
+    # Get all timestamps for x-axis
+    all_timestamps = set()
+    for series in result_data["result"]:
+        for point in series.get("values", []):
+            all_timestamps.add(point[0])
 
-        return metrics_data
+    # Sort timestamps
+    timestamps = sorted(list(all_timestamps))
+    processed_data["labels"] = [
+        datetime.fromtimestamp(ts).strftime("%H:%M:%S") for ts in timestamps
+    ]
+
+    # Process each series
+    for series in result_data["result"]:
+        # Create a label from metric labels
+        metric = series.get("metric", {})
+        label = ""
+
+        if "namespace" in metric and "pod" in metric:
+            label = f"{metric['namespace']}/{metric['pod']}"
+        elif "namespace" in metric:
+            label = metric["namespace"]
+        elif "pod" in metric:
+            label = metric["pod"]
+        elif "name" in metric:
+            label = metric["name"]
+        elif "job" in metric:
+            label = metric["job"]
+        else:
+            # Use all available labels
+            label_parts = []
+            for k, v in metric.items():
+                if k != "__name__":
+                    label_parts.append(f"{k}={v}")
+            label = ", ".join(label_parts)
+
+        # Create a map of timestamp to value for this series
+        ts_to_value = {point[0]: float(point[1]) for point in series.get("values", [])}
+
+        # Create the data array with values for each timestamp
+        data = []
+        for ts in timestamps:
+            if ts in ts_to_value:
+                data.append(ts_to_value[ts])
+            else:
+                data.append(None)  # Use null for missing values
+
+        # Add the dataset
+        processed_data["datasets"].append(
+            {"label": label, "data": data, "fill": False, "borderWidth": 2}
+        )
+
+    return processed_data
 
 
 prometheus_service = PrometheusService()
