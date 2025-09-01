@@ -17,6 +17,8 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
     volumes:
       - ./backend:/app
       - ../../values:/app/helm-values
@@ -30,8 +32,7 @@ services:
       - IS_SEND_METRICS_TO_S3=false
       - AUTH_USERNAME=admin
       - AUTH_PASSWORD=password
-    ports:
-      - "8000:8000"
+      - CORS_ORIGINS=["http://localhost:3000","http://127.0.0.1:3000","http://0.0.0.0:3000"]
     extra_hosts:
       - "prometheus.lava.infra:127.0.0.1"
       - "grafana.lava.infra:127.0.0.1"

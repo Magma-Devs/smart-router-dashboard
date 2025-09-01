@@ -1,20 +1,24 @@
+"""
+Main FastAPI application for the Lava Smart Router Dashboard API.
+"""
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.routes import metrics, components, auth
-from app.core.config import settings
+
+from app.api.routes import auth, components, metrics
 from app.core.auth import AuthMiddleware
+from app.core.config import settings
 from app.tasks import schedule_metrics_s3_upload
 
 app = FastAPI(
-    title="Lava Smart Router Dashboard API",
+    title=settings.project_name,
     description="Backend API for Lava Smart Router Dashboard with Prometheus metrics and Helm management",
     version="0.1.0",
 )
 
-# Configure CORS - Must be first to handle preflight requests
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, replace with specific origins
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -30,21 +34,23 @@ app.include_router(metrics.router, prefix="/api/metrics", tags=["metrics"])
 app.include_router(components.router, prefix="/api/components", tags=["components"])
 
 
-if settings.IS_SEND_METRICS_TO_S3:
+if settings.is_send_metrics_to_s3:
     schedule_metrics_s3_upload()
 
 
 @app.get("/api/health")
 async def health_check():
+    """Health check endpoint."""
     return {"status": "healthy"}
 
 
 @app.get("/api")
 async def root():
+    """Root endpoint with API information."""
     return {
-        "message": "Welcome to Lava Smart Router Dashboard API",
+        "message": f"Welcome to {settings.project_name} API",
         "docs_url": "/docs",
         "version": app.version,
         "authentication_required": True,
+        "features": ["authentication", "metrics", "components"],
     }
-
