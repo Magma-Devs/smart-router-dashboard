@@ -12,6 +12,7 @@ import { chains } from "@/app/config/chains"
 import { cn } from "@/lib/utils"
 import { chainTypes } from "@/app/config/chain-types"
 import { ProtectedRoute } from "@/components/protected-route"
+import { apiClient } from "@/lib/api-client"
 
 interface Interface {
   name: string
@@ -64,12 +65,8 @@ export default function LiveTestPage() {
       }
 
       try {
-        console.log("Fetching from:", `${config.apiEndpoint}/api/components/`)
-        const response = await fetch(`${config.apiEndpoint}/api/components/`)
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`)
-        }
-        const data: ApiResponse = await response.json()
+        console.log("Fetching from:", `/api/components/`)
+        const data: ApiResponse = await apiClient.get(`/api/components/`)
         console.log("API Response:", data)
         
         // Get configured chains and their interfaces
