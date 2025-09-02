@@ -2,7 +2,6 @@
 Configuration settings for the Smart Router Dashboard API.
 """
 
-import os
 from typing import Dict, List, Optional, Union
 from functools import lru_cache
 

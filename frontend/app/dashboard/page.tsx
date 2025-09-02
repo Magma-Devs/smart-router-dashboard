@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { FlowVisualization } from "@/components/flow-visualization"
 import { TimeSeriesGraph } from "@/components/time-series-graph"
+import { SummarySection } from "@/components/summary-section"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { AlertTriangle, Settings, RefreshCw } from "lucide-react"
 import { useConfig } from "@/hooks/use-config"
@@ -228,8 +229,21 @@ export default function Dashboard() {
 
 
           </div>
+        </div>
+        
+        {error && (
+          <Alert variant="destructive" className="mb-6">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>Error</AlertTitle>
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+        
+        <div className="space-y-6">
+          <SummarySection />
           
-          <div className="flex items-center gap-2">
+          {/* Time Controls Section */}
+          <div className="flex items-center justify-end gap-2">
             <Select 
               value={config.refreshInterval.toString()} 
               onValueChange={handleRefreshIntervalChange}
@@ -257,17 +271,7 @@ export default function Dashboard() {
               <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             </Button>
           </div>
-        </div>
-        
-        {error && (
-          <Alert variant="destructive" className="mb-6">
-            <AlertTriangle className="h-4 w-4" />
-            <AlertTitle>Error</AlertTitle>
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
-        
-        <div className="space-y-6">
+          
           <Card>
             <CardHeader>
               <CardTitle>System Flow Visualization</CardTitle>
@@ -280,7 +284,7 @@ export default function Dashboard() {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card data-section="metrics">
             <CardHeader>
               <CardTitle>Metrics</CardTitle>
               <CardDescription>

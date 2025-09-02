@@ -3,6 +3,7 @@ import logging
 from fastapi import APIRouter, Depends
 
 from app.core.auth import LoginRequest, get_current_user, verify_form_credentials
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
