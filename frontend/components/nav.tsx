@@ -23,15 +23,6 @@ export function Nav() {
           </a>
           <nav className="flex items-center space-x-6 text-sm font-medium">
             <a
-              href="/configuration"
-              className={cn(
-                "transition-colors hover:text-foreground/80",
-                "text-foreground"
-              )}
-            >
-              Configuration Wizard
-            </a>
-            <a
               href="/live-test"
               className={cn(
                 "transition-colors hover:text-foreground/80",

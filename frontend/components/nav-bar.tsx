@@ -3,11 +3,12 @@
 import Link from "next/link"
 import Image from "next/image"
 import { usePathname } from "next/navigation"
-import { Settings, Wand2, LayoutDashboard, Zap, LogOut, User } from "lucide-react"
+import { Settings, LayoutDashboard, Zap, LogOut, User, Wand2 } from "lucide-react"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/lib/auth-context"
+import { useDebug } from "@/hooks/use-debug"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,6 +21,7 @@ import {
 export function NavBar() {
   const pathname = usePathname()
   const { isAuthenticated, username, logout } = useAuth()
+  const { debugMode } = useDebug()
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -48,15 +50,6 @@ export function NavBar() {
                   Dashboard
                 </Button>
               </Link>
-              <Link href="/wizard">
-                <Button
-                  variant={pathname === "/wizard" ? "default" : "ghost"}
-                  className="flex items-center gap-1.5"
-                >
-                  <Wand2 className="h-4 w-4" />
-                  Configuration Wizard
-                </Button>
-              </Link>
               <Link href="/live-test">
                 <Button
                   variant={pathname === "/live-test" ? "default" : "ghost"}
@@ -75,6 +68,17 @@ export function NavBar() {
                   Settings
                 </Button>
               </Link>
+              {debugMode && (
+                <Link href="/wizard">
+                  <Button
+                    variant={pathname === "/wizard" ? "default" : "ghost"}
+                    className="flex items-center gap-1.5"
+                  >
+                    <Wand2 className="h-4 w-4" />
+                    Configuration Wizard
+                  </Button>
+                </Link>
+              )}
             </nav>
           )}
         </div>

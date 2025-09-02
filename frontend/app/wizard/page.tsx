@@ -13,6 +13,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { useToast } from "@/components/ui/use-toast"
 import { Progress } from "@/components/ui/progress"
 import { useConfig } from "@/hooks/use-config"
+import { useDebug } from "@/hooks/use-debug"
 import { Checkbox } from "@/components/ui/checkbox"
 import { useDebounce } from "@/hooks/use-debounce"
 import { chains } from "@/app/config/chains"
@@ -203,6 +204,7 @@ const getAvailableInterfaces = (chainValue: string) => {
 };
 
 export default function WizardPage() {
+  const { debugMode, isLoading: debugLoading } = useDebug()
   const [selectedOption, setSelectedOption] = useState<'edit' | 'new' | null>(null)
   const [hoveredCard, setHoveredCard] = useState<'edit' | 'new' | null>(null)
   const [step, setStep] = useState<Step>(1)
@@ -222,6 +224,51 @@ export default function WizardPage() {
   const { localProviderName, setLocalProviderName, handleProviderNameChange } = useProviderNameUpdate(consumers, setConsumers)
   const [showConfig, setShowConfig] = useState(false)
   const [finalConfig, setFinalConfig] = useState<string>("")
+
+  // Show loading while checking debug status
+  if (debugLoading) {
+    return (
+      <ProtectedRoute>
+        <div className="container mx-auto px-4 py-12 max-w-7xl">
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <span className="ml-2 text-muted-foreground">Loading...</span>
+          </div>
+        </div>
+      </ProtectedRoute>
+    )
+  }
+
+  // Show access denied if debug mode is disabled
+  if (!debugMode) {
+    return (
+      <ProtectedRoute>
+        <div className="container mx-auto px-4 py-12 max-w-7xl">
+          <Card className="max-w-2xl mx-auto">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <AlertCircle className="h-6 w-6 text-destructive" />
+                Access Denied
+              </CardTitle>
+              <CardDescription>
+                The Configuration Wizard is only available in debug mode.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Alert>
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>Debug Mode Required</AlertTitle>
+                <AlertDescription>
+                  This feature is only available when DEBUG=True in the backend configuration.
+                  Please contact your administrator to enable debug mode if you need access to this feature.
+                </AlertDescription>
+              </Alert>
+            </CardContent>
+          </Card>
+        </div>
+      </ProtectedRoute>
+    )
+  }
 
   // Load current configuration when edit is selected
   useEffect(() => {
