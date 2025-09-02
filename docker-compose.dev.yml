@@ -10,7 +10,8 @@ services:
         NEXT_PUBLIC_API_URL: http://localhost:8000
         NEXT_PUBLIC_DOMAIN: localhost
         NEXT_PUBLIC_PORT: 8000
-    network_mode: host
+    ports:
+      - "3000:3000"
     restart: unless-stopped
   backend:
     build:
@@ -29,9 +30,9 @@ services:
       - IS_SEND_METRICS_TO_S3=false
       - AUTH_USERNAME=admin
       - AUTH_PASSWORD=password
+    ports:
+      - "8000:8000"
     extra_hosts:
       - "prometheus.lava.infra:127.0.0.1"
-      
       - "grafana.lava.infra:127.0.0.1"
-    network_mode: host
     restart: unless-stopped

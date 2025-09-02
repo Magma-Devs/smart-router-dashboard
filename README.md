@@ -6,7 +6,7 @@ A comprehensive dashboard for monitoring and managing Lava infrastructure with a
 
 - **Authentication**: HTTP Basic Authentication with configurable credentials
 - **Real-time Metrics**: Prometheus integration for infrastructure monitoring
-- **Configuration Management**: Helm values management and configuration wizard
+- **Configuration Management**: Helm values management (and configuration wizard in DEBUG mode)
 - **Live Testing**: Test your chain configurations in real-time
 - **Responsive UI**: Modern Next.js frontend with Tailwind CSS
 

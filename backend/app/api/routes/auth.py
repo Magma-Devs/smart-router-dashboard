@@ -57,3 +57,14 @@ async def auth_status():
         "auth_type": "Form-based with session",
         "message": "All endpoints require authentication"
     }
+
+
+@router.get("/debug-status")
+async def debug_status():
+    """
+    Get debug mode status (public endpoint).
+    """
+    return {
+        "debug_mode": settings.DEBUG,
+        "message": "Debug mode status"
+    }
