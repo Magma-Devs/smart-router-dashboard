@@ -1,5 +1,5 @@
 """
-Custom exceptions for the Lava Smart Router Dashboard API.
+Custom exceptions for the Smart Router Dashboard API.
 """
 
 from typing import Optional

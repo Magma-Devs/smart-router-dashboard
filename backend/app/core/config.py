@@ -1,5 +1,5 @@
 """
-Configuration settings for the Lava Smart Router Dashboard API.
+Configuration settings for the Smart Router Dashboard API.
 """
 
 import os
@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     tenant_id: str = Field(default=DEFAULT_TENANT_ID, description="Tenant identifier")
     api_v1_str: str = Field(default="/api", description="API version string")
     project_name: str = Field(
-        default="Lava Smart Router Dashboard", description="Project name"
+        default="Smart Router Dashboard", description="Project name"
     )
 
     # Authentication settings

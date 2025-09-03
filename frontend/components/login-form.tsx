@@ -57,8 +57,8 @@ export const LoginForm: React.FC = () => {
             >
               <div className="w-16 h-16 bg-primary rounded-xl flex items-center justify-center shadow-md relative">
                 <Image
-                  src="/lava-icon.png"
-                  alt="Lava Logo"
+                  src="/magma-icon.png"
+                  alt="Magma Devs Logo"
                   width={32}
                   height={32}
                   className="w-8 h-8"
@@ -82,7 +82,7 @@ export const LoginForm: React.FC = () => {
                 transition={{ delay: 0.4 }}
               >
                 <CardDescription className="text-lg text-gray-600 dark:text-gray-300">
-                  Access your Lava Smart Router Dashboard
+                  Access your Smart Router Dashboard
                 </CardDescription>
               </motion.div>
             </div>

@@ -1,1 +1,1 @@
-# Tests package for Lava Smart Router Dashboard API
+# Tests package for Smart Router Dashboard API

@@ -2,7 +2,7 @@
   "name": "lava-infra-manager-dashboard",
   "version": "0.1.0",
   "private": true,
-  "description": "A dashboard for monitoring Lava infrastructure health and uptime",
+  "description": "A dashboard for monitoring Smart Router infrastructure health and uptime",
   "scripts": {
     "dev": "next dev",
     "build": "next build",

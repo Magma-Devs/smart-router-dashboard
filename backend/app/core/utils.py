@@ -1,5 +1,5 @@
 """
-Utility functions for the Lava Smart Router Dashboard API.
+Utility functions for the Smart Router Dashboard API.
 """
 
 from typing import Dict, List, Optional

@@ -29,13 +29,13 @@ export function NavBar() {
         <div className="mr-4 flex">
           <Link href="/" className="flex items-center space-x-2">
             <Image
-              src="/lava-icon.png"
-              alt="Lava Logo"
-              width={24}
+              src="/magma-logo.png"
+              alt="Magma Devs Logo"
+              width={120}
               height={24}
-              className="h-6 w-6"
+              className="h-6 w-auto"
             />
-            <span className="font-bold">Lava Smart Router</span>
+            <span className="font-poppins font-bold text-lg">Smart Router</span>
           </Link>
         </div>
         <div className="flex items-center space-x-4 flex-1">

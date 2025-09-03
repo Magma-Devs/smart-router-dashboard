@@ -1,5 +1,5 @@
 """
-Logging configuration for the Lava Smart Router Dashboard API.
+Logging configuration for the Smart Router Dashboard API.
 """
 
 import logging

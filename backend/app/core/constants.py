@@ -1,12 +1,12 @@
 """
-Constants used throughout the Lava Smart Router Dashboard API.
+Constants used throughout the Smart Router Dashboard API.
 """
 
 from typing import List, Dict
 
 # API Configuration
 API_V1_STR = "/api"
-PROJECT_NAME = "Lava Smart Router Dashboard"
+PROJECT_NAME = "Smart Router Dashboard"
 
 # Default Values
 DEFAULT_TENANT_ID = "default"

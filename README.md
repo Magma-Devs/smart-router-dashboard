@@ -1,6 +1,6 @@
-# Lava Smart Router Dashboard
+# Smart Router Dashboard
 
-A comprehensive dashboard for monitoring and managing Lava infrastructure with authentication.
+A comprehensive dashboard for monitoring and managing Smart Router infrastructure with authentication.
 
 ## Features
 
