@@ -1,5 +1,5 @@
 """
-Main FastAPI application for the Lava Smart Router Dashboard API.
+Main FastAPI application for the Smart Router Dashboard API.
 """
 
 from fastapi import FastAPI
@@ -12,7 +12,7 @@ from app.tasks import schedule_metrics_s3_upload
 
 app = FastAPI(
     title=settings.project_name,
-    description="Backend API for Lava Smart Router Dashboard with Prometheus metrics and Helm management",
+    description="Backend API for Smart Router Dashboard with Prometheus metrics and Helm management",
     version="0.1.0",
 )
 
