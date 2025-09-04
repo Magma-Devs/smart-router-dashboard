@@ -35,7 +35,7 @@ export function NavBar() {
               height={24}
               className="h-6 w-auto"
             />
-            <span className="font-poppins font-bold text-lg">Smart Router</span>
+            <span className="font-outfit font-bold text-lg tracking-tight">Smart Router</span>
           </Link>
         </div>
         <div className="flex items-center space-x-4 flex-1">
