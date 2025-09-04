@@ -1,6 +1,6 @@
 import type React from "react"
 import type { Metadata } from "next"
-import { Inter, Poppins } from "next/font/google"
+import { Inter, Poppins, JetBrains_Mono, Outfit } from "next/font/google"
 import "./globals.css"
 import { NavBar } from "@/components/nav-bar"
 import { ThemeProvider } from "@/components/theme-provider"
@@ -11,6 +11,16 @@ const poppins = Poppins({
   subsets: ["latin"],
   weight: ["400", "500", "600", "700"],
   variable: "--font-poppins"
+})
+const outfit = Outfit({ 
+  subsets: ["latin"],
+  weight: ["300", "400", "500", "600", "700", "800"],
+  variable: "--font-outfit"
+})
+const jetbrainsMono = JetBrains_Mono({ 
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-jetbrains-mono"
 })
 
 export const metadata: Metadata = {
@@ -39,7 +49,7 @@ export default function RootLayout({
       <head>
         <link rel="icon" href="/magma-icon.png" sizes="any" />
       </head>
-      <body className={`${inter.className} ${poppins.variable}`}>
+      <body className={`${outfit.className} ${poppins.variable} ${jetbrainsMono.variable}`}>
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           <AuthProvider>
             <div className="relative min-h-screen flex flex-col">

@@ -12,6 +12,9 @@ const config: Config = {
   	extend: {
   		fontFamily: {
   			poppins: ['var(--font-poppins)', 'sans-serif'],
+  			outfit: ['var(--font-outfit)', 'sans-serif'],
+  			'jetbrains-mono': ['var(--font-jetbrains-mono)', 'monospace'],
+  			sans: ['var(--font-outfit)', 'system-ui', 'sans-serif'],
   		},
   		colors: {
   			background: 'hsl(var(--background))',
