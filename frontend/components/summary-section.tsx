@@ -12,54 +12,12 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { chains } from "@/app/config/chains"
+import { chains, getChainLabel, getChainIcon } from "@/app/config/chains"
+import { calculateUptime, calculateFreshness, calculateReachability, calculateLatency } from "@/utils/metricsCalculations"
 import { apiClient } from "@/lib/api-client"
 import { useConfig } from "@/hooks/use-config"
+import { PrometheusResponse, KPIData, KPICardProps } from "@/types/metrics"
 
-// ============================================================================
-// TYPE DEFINITIONS
-// ============================================================================
-
-interface PrometheusMetric {
-  spec?: string
-  provider?: string
-  qos_metric?: string
-  apiInterface?: string
-  container?: string
-  instance?: string
-}
-
-interface PrometheusResult {
-  metric: PrometheusMetric
-  values: [number, string][]
-}
-
-interface PrometheusResponse {
-  status: string
-  data: {
-    result: PrometheusResult[]
-  }
-}
-
-interface KPIData {
-  uptime: string
-  freshness: string
-  reachability: string
-  latency: string
-}
-
-interface KPICardProps {
-  title: string
-  value: string
-  color: "green" | "orange" | "red"
-  showInfo?: boolean
-  tooltipText?: string
-  isLoading?: boolean
-}
-
-// ============================================================================
-// UTILITY FUNCTIONS
-// ============================================================================
 
 const extractSpecsFromConsumerData = (data: unknown): string[] => {
   if (!data || typeof data !== 'object') {
@@ -86,222 +44,8 @@ const extractSpecsFromConsumerData = (data: unknown): string[] => {
   return Array.from(specs)
 }
 
-const calculateUptime = (healthData: unknown, targetChain: string): string => {
-  if (!healthData || typeof healthData !== 'object') {
-    return "N/A"
-  }
-  
-  const data = healthData as { status?: string; data?: { result?: unknown[] } }
-  if (data?.status !== "success" || !data.data?.result) {
-    return "N/A"
-  }
-  
-  const results = data.data.result as Array<{
-    metric?: { spec?: string }
-    values?: [number, string][]
-  }>
-  
-  if (results.length === 0) {
-    return "N/A"
-  }
-  
-  let totalHealthyTime = 0
-  let totalTime = 0
-  
-  results.forEach((result) => {
-    const spec = result.metric?.spec
-    
-    // For "all chains", process all results
-    if (targetChain === "all") {
-      // Process all results without spec filtering
-    } else {
-      // For specific chains, we need a spec field
-      if (!spec) {
-        return
-      }
-      
-      // Filter by target chain
-      if (spec.toLowerCase() !== targetChain.toLowerCase()) {
-        return
-      }
-    }
-    
-    const values = result.values || []
-    values.forEach(([timestamp, value]) => {
-      const isConsumerHealthy = value === "1"
-      totalTime++
-      if (isConsumerHealthy) {
-        totalHealthyTime++
-      }
-    })
-  })
-  
-  const uptimePercentage = totalTime > 0 ? (totalHealthyTime / totalTime) * 100 : 0
-  
-  // Format as float unless it's a whole number
-  return uptimePercentage % 1 === 0 
-    ? `${Math.round(uptimePercentage)}%` 
-    : `${uptimePercentage.toFixed(1)}%`
-}
 
-const calculateFreshness = (freshnessData: unknown): string => {
-  if (!freshnessData || typeof freshnessData !== 'object') {
-    return "N/A"
-  }
-  
-  const data = freshnessData as { status?: string; data?: { result?: unknown[] } }
-  if (data?.status !== "success" || !data.data?.result) {
-    return "N/A"
-  }
-  
-  const results = data.data.result as Array<{
-    metric?: { spec?: string; qos_metric?: string }
-    values?: [number, string][]
-  }>
-  
-  if (results.length === 0) {
-    return "N/A"
-  }
-  
-  let totalFreshness = 0
-  let totalSamples = 0
-  
-  results.forEach((result) => {
-    const values = result.values || []
-    values.forEach(([timestamp, value]) => {
-      const freshnessValue = parseFloat(value)
-      if (!isNaN(freshnessValue)) {
-        totalFreshness += freshnessValue
-        totalSamples++
-      }
-    })
-  })
-  
-  const averageFreshness = totalSamples > 0 ? (totalFreshness / totalSamples) * 100 : 0
-  
-  // Format as float unless it's a whole number
-  return averageFreshness % 1 === 0 
-    ? `${Math.round(averageFreshness)}%` 
-    : `${averageFreshness.toFixed(1)}%`
-}
 
-const calculateReachability = (consumersData: unknown, providersData: unknown, targetChain: string): string => {
-  if (!consumersData || typeof consumersData !== 'object' ||
-      !providersData || typeof providersData !== 'object') {
-    return "N/A"
-  }
-  
-  const consumersPrometheusData = consumersData as { status?: string; data?: { result?: unknown[] } }
-  const providersPrometheusData = providersData as { status?: string; data?: { result?: unknown[] } }
-  
-  if (consumersPrometheusData?.status !== "success" || !consumersPrometheusData.data?.result ||
-      providersPrometheusData?.status !== "success" || !providersPrometheusData.data?.result) {
-    return "N/A"
-  }
-  
-  // Get all specs from consumer data
-  const specs = extractSpecsFromConsumerData(consumersData)
-  const filteredSpecs = targetChain === "all" 
-    ? specs 
-    : specs.filter(spec => spec.toLowerCase() === targetChain.toLowerCase())
-  
-  if (filteredSpecs.length === 0) {
-    return "N/A"
-  }
-  
-  const results = providersPrometheusData.data.result as Array<{
-    metric?: { provider?: string; spec?: string }
-    values?: [number, string][]
-  }>
-  
-  // Calculate reachability for each consumer
-  const consumerReachabilities: number[] = []
-  
-  filteredSpecs.forEach((spec) => {
-    // Count providers for this consumer
-    const consumerProviders = results.filter(result => result.metric?.spec === spec)
-    
-    if (consumerProviders.length === 0) {
-      consumerReachabilities.push(0)
-      return
-    }
-    
-    // Count healthy providers
-    let healthyProviders = 0
-    consumerProviders.forEach((providerResult) => {
-      const values = providerResult.values || []
-      if (values.length > 0) {
-        const latestValue = values[values.length - 1]
-        const healthValue = parseFloat(latestValue[1])
-        if (healthValue === 1) {
-          healthyProviders++
-        }
-      }
-    })
-    
-    const reachabilityScore = (healthyProviders / consumerProviders.length) * 100
-    consumerReachabilities.push(reachabilityScore)
-  })
-  
-  if (consumerReachabilities.length === 0) {
-    return "N/A"
-  }
-  
-  // Average all consumer reachability scores
-  const averageReachability = consumerReachabilities.reduce((sum, reachability) => sum + reachability, 0) / consumerReachabilities.length
-  
-  // Format as float unless it's a whole number
-  return averageReachability % 1 === 0 
-    ? `${Math.round(averageReachability)}%` 
-    : `${averageReachability.toFixed(1)}%`
-}
-
-const calculateLatency = (latencyData: unknown, targetChain: string): string => {
-  if (!latencyData || typeof latencyData !== 'object') {
-    return "N/A"
-  }
-  
-  const data = latencyData as { status?: string; data?: { result?: unknown[] } }
-  if (data?.status !== "success" || !data.data?.result) {
-    return "N/A"
-  }
-  
-  const results = data.data.result as Array<{
-    metric?: { spec?: string }
-    values?: [number, string][]
-  }>
-  
-  if (results.length === 0) return "N/A"
-  
-  let totalLatency = 0
-  let totalSamples = 0
-  
-  results.forEach((result) => {
-    const spec = result.metric?.spec
-    if (!spec) return
-    
-    // Filter by target chain if not "all"
-    if (targetChain !== "all" && spec.toLowerCase() !== targetChain.toLowerCase()) {
-      return
-    }
-    
-    const values = result.values || []
-    values.forEach(([timestamp, value]) => {
-      const latencyMs = parseFloat(value)
-      if (!isNaN(latencyMs)) {
-        totalLatency += latencyMs
-        totalSamples++
-      }
-    })
-  })
-  
-  const averageLatency = totalSamples > 0 ? totalLatency / totalSamples : 0
-  return averageLatency > 0 ? `${Math.round(averageLatency)}ms` : "N/A"
-}
-
-// ============================================================================
-// COLOR UTILITY FUNCTIONS
-// ============================================================================
 
 const getUptimeColor = (value: string): "green" | "orange" | "red" => {
   if (value === "Error" || value === "N/A") return "red"
@@ -339,9 +83,6 @@ const getLatencyColor = (value: string): "green" | "orange" | "red" => {
   return "red"
 }
 
-// ============================================================================
-// KPI CARD COMPONENT
-// ============================================================================
 
 function KPICard({ title, value, color, showInfo = false, tooltipText, isLoading = false }: KPICardProps) {
   const colorClasses = {
@@ -382,9 +123,6 @@ function KPICard({ title, value, color, showInfo = false, tooltipText, isLoading
   )
 }
 
-// ============================================================================
-// MAIN COMPONENT
-// ============================================================================
 
 export function SummarySection() {
   const { config } = useConfig()
@@ -402,13 +140,12 @@ export function SummarySection() {
   const [demoMode, setDemoMode] = useState<boolean>(false)
   const demoModeRef = useRef(demoMode)
 
-  // Mock data generators
   const generateMockData = useCallback((chainValue: string): KPIData => {
     const baseValues = chainValue === "all" ? {
-      uptime: Math.random() * 3 + 97, // 97-100%
-      freshness: Math.random() * 8 + 92, // 92-100%
-      reachability: Math.random() * 6 + 94, // 94-100%
-      latency: Math.random() * 200 + 100 // 100-300ms
+      uptime: Math.random() * 3 + 97,
+      freshness: Math.random() * 8 + 92,
+      reachability: Math.random() * 6 + 94,
+      latency: Math.random() * 200 + 100
     } : {
       uptime: Math.random() * 5 + 95,
       freshness: Math.random() * 10 + 90,
@@ -425,10 +162,6 @@ export function SummarySection() {
   }, [])
 
 
-
-
-
-  // Effect for demo mode - fast randomized cycling through all colors
   useEffect(() => {
     demoModeRef.current = demoMode
     
@@ -437,11 +170,10 @@ export function SummarySection() {
     }
 
     const generateRandomDemoData = (): KPIData => {
-      // Generate random values that will trigger different colors
-      const randomUptime = Math.random() * 8 + 92 // 92-100% (green, orange, red)
-      const randomFreshness = Math.random() * 22 + 78 // 78-100% (green, orange, red)
-      const randomReachability = Math.random() * 18 + 82 // 82-100% (green, orange, red)
-      const randomLatency = Math.random() * 550 + 50 // 50-600ms (green, orange, red)
+      const randomUptime = Math.random() * 8 + 92
+      const randomFreshness = Math.random() * 22 + 78
+      const randomReachability = Math.random() * 18 + 82
+      const randomLatency = Math.random() * 550 + 50
 
       return {
         uptime: `${randomUptime.toFixed(1)}%`,
@@ -452,7 +184,6 @@ export function SummarySection() {
     }
 
     const cycleDemoData = async () => {
-      // Check if demo mode is still active using ref
       if (!demoModeRef.current) {
         return
       }
@@ -460,10 +191,8 @@ export function SummarySection() {
       const newDemoData = generateRandomDemoData()
       setKpiData(newDemoData)
       
-      // Wait 800ms-1.5s before next cycle (much faster!)
       await new Promise(resolve => setTimeout(resolve, 800 + Math.random() * 700))
       
-      // Continue cycling if still in demo mode
       if (demoModeRef.current) {
         cycleDemoData()
       }
@@ -472,7 +201,6 @@ export function SummarySection() {
     cycleDemoData()
   }, [demoMode])
 
-  // Unified data fetching function
   const fetchKPIData = useCallback(async (chainValue: string, timeWindowMinutes: number) => {
     setIsLoading(true)
     
@@ -502,7 +230,6 @@ export function SummarySection() {
       const stepSize = timeWindowMinutes <= 60 ? 1 : timeWindowMinutes <= 240 ? 5 : 15
       const timeRange = timeWindowMinutes <= 60 ? "1m" : timeWindowMinutes <= 240 ? "5m" : "15m"
 
-      // Fetch all required metrics in parallel
       const [consumersData, providersData, freshnessData, latencyData] = await Promise.all([
         apiClient.get<PrometheusResponse>(`/api/metrics/last_minutes?query=${encodeURIComponent("lava_consumer_overall_health_breakdown")}&minutes=${timeWindowMinutes}&step=${stepSize}`),
         apiClient.get<PrometheusResponse>(`/api/metrics/last_minutes?query=${encodeURIComponent("lava_provider_overall_health_breakdown")}&minutes=${timeWindowMinutes}&step=${stepSize}`),
@@ -510,7 +237,6 @@ export function SummarySection() {
         apiClient.get<PrometheusResponse>(`/api/metrics/last_minutes?query=${encodeURIComponent(`avg_over_time(lava_consumer_average_latency_in_milliseconds[${timeRange}])`)}&minutes=${timeWindowMinutes}&step=${stepSize}`)
       ])
 
-      // Calculate all KPIs
       const calculatedData: KPIData = {
         uptime: calculateUptime(consumersData, chainValue),
         freshness: calculateFreshness(freshnessData),
@@ -532,7 +258,6 @@ export function SummarySection() {
     }
   }, [config.apiEndpoint, generateMockData])
 
-  // Fetch available chains
   useEffect(() => {
     const fetchAvailableChains = async () => {
       if (!config.apiEndpoint) {
@@ -556,16 +281,13 @@ export function SummarySection() {
     fetchKPIData("all", timeWindow)
   }, [config.apiEndpoint, fetchKPIData, timeWindow])
 
-  // Keyboard shortcut for demo mode
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      // Demo mode toggle: Ctrl+Shift+D
       if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key === 'D') {
         event.preventDefault()
         const newDemoMode = !demoMode
         setDemoMode(newDemoMode)
         
-        // If exiting demo mode, fetch real live data
         if (!newDemoMode) {
           fetchKPIData(selectedChain, timeWindow)
         }
@@ -576,18 +298,6 @@ export function SummarySection() {
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [demoMode, selectedChain, timeWindow, fetchKPIData])
 
-  // Helper functions
-  const getChainLabel = (specValue: string) => {
-    const chain = chains.find(c => c.value.toLowerCase() === specValue.toLowerCase())
-    return chain ? chain.label : specValue
-  }
-
-  const getChainIcon = (specValue: string) => {
-    const chain = chains.find(c => c.value.toLowerCase() === specValue.toLowerCase())
-    return chain ? chain.icon : ''
-  }
-
-  // Event handlers
   const handleChainSelect = (chainValue: string) => {
     setSelectedChain(chainValue)
     fetchKPIData(chainValue, timeWindow)
@@ -604,7 +314,7 @@ export function SummarySection() {
   }
 
   const handleScrollToMetrics = () => {
-    const metricsSection = document.querySelector('[data-section="metrics"]')
+    const metricsSection = document.querySelector('[data-section="in-depth-metrics"]')
     if (metricsSection) {
       metricsSection.scrollIntoView({ behavior: 'smooth' })
     }

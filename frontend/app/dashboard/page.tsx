@@ -3,15 +3,14 @@
 import { useEffect, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { FlowVisualization } from "@/components/flow-visualization"
-import { TimeSeriesGraph } from "@/components/time-series-graph"
 import { SummarySection } from "@/components/summary-section"
+import { InDepthMetrics } from "@/components/in-depth-metrics"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { AlertTriangle, Settings, RefreshCw } from "lucide-react"
 import { useConfig } from "@/hooks/use-config"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import Link from "next/link"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { chains } from "@/app/config/chains"
 import { ProtectedRoute } from "@/components/protected-route"
 import { apiClient } from "@/lib/api-client"
@@ -43,10 +42,6 @@ interface PrometheusResponse {
 
 interface DashboardData {
   flow: PrometheusResponse | null;
-  metrics: {
-    requests: PrometheusResponse | null;
-    latency: PrometheusResponse | null;
-  } | null;
 }
 
 export default function Dashboard() {
@@ -120,14 +115,9 @@ export default function Dashboard() {
         })
       }
       
-      // Fetch metrics data
-      console.log("Fetching metrics data")
-      await fetchMetricsData()
-      
-      setData(prevData => ({
-        flow: flowData,
-        metrics: prevData?.metrics || null
-      }))
+      setData({
+        flow: flowData
+      })
     } catch (err) {
       console.error("Error fetching data:", err)
       setError(`Failed to connect to API: ${err instanceof Error ? err.message : 'Unknown error'}`)
@@ -136,38 +126,6 @@ export default function Dashboard() {
     }
   }
 
-  const fetchMetricsData = async (minutes: number = 15) => {
-    try {
-      if (!config.apiEndpoint) {
-        console.error("No API endpoint configured")
-        return
-      }
-
-      // Fetch total requests data
-      const query = encodeURIComponent('sum(lava_provider_total_relays_serviced) by (spec, service)')
-      const requestsEndpoint = `/api/metrics/last_minutes?query=${query}&minutes=${minutes}&step=1s`
-      console.log("Fetching requests data from:", requestsEndpoint)
-      const requestsData: PrometheusResponse = await apiClient.get(requestsEndpoint)
-      console.log("Requests data received:", requestsData)
-
-      // Fetch average latency data
-      const latencyEndpoint = `/api/metrics/last_minutes?query=lava_consumer_average_latency_in_milliseconds&minutes=${minutes}&step=1s`
-      console.log("Fetching latency data from:", latencyEndpoint)
-      const latencyData: PrometheusResponse = await apiClient.get(latencyEndpoint)
-      console.log("Latency data received:", latencyData)
-      
-      setData(prevData => ({
-        flow: prevData?.flow || null,
-        metrics: {
-          requests: requestsData,
-          latency: latencyData
-        }
-      }))
-      setLastUpdated(new Date())
-    } catch (err) {
-      console.error("Error fetching metrics data:", err)
-    }
-  }
 
   // Handle refresh interval change
   const handleRefreshIntervalChange = (value: string) => {
@@ -284,45 +242,7 @@ export default function Dashboard() {
             </CardContent>
           </Card>
 
-          <Card data-section="metrics">
-            <CardHeader>
-              <CardTitle>Metrics</CardTitle>
-              <CardDescription>
-                Time series data showing system performance metrics
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Tabs defaultValue="requests" className="w-full">
-                <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger value="requests">Total Requests Served</TabsTrigger>
-                  <TabsTrigger value="latency">Average Latency</TabsTrigger>
-                </TabsList>
-                <TabsContent value="requests" className="mt-4">
-                  <div className="h-[400px] w-full">
-                    {renderContent("h-[400px]") || (data?.metrics?.requests?.data && (
-                      <TimeSeriesGraph 
-                        data={data.metrics.requests as any} 
-                        onRefresh={fetchMetricsData} 
-                        title="Total Requests Served"
-                      />
-                    ))}
-                  </div>
-                </TabsContent>
-                <TabsContent value="latency" className="mt-4">
-                  <div className="h-[400px] w-full">
-                    {renderContent("h-[400px]") || (data?.metrics?.latency?.data && (
-                      <TimeSeriesGraph 
-                        data={data.metrics.latency as any} 
-                        onRefresh={fetchMetricsData} 
-                        title="Average Latency"
-                        isLatency={true}
-                      />
-                    ))}
-                  </div>
-                </TabsContent>
-              </Tabs>
-            </CardContent>
-          </Card>
+          <InDepthMetrics />
         </div>
       </div>
     </ProtectedRoute>
