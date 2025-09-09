@@ -53,4 +53,34 @@ export const chains: Chain[] = [
   { value: "strgzt", label: "Stargaze Testnet", icon: "https://info-mainnet.lavanet.xyz/icons/stargaze.svg", type: "cosmos", supportedInterfaces: ["rest", "tendermintrpc", "grpc"] },
   { value: "strk", label: "Starknet Mainnet", icon: "https://info-mainnet.lavanet.xyz/icons/starknet.svg", type: "starknet", supportedInterfaces: ["jsonrpc"] },
   { value: "strks", label: "Starknet Sepolia", icon: "https://info-mainnet.lavanet.xyz/icons/starknet.svg", type: "starknet", supportedInterfaces: ["jsonrpc"] },
-]; 
+];
+
+/**
+ * Maps chain values to their display labels
+ * @param chainValue - The chain value (e.g., "eth1", "near", "arbitrum")
+ * @returns The display label (e.g., "Ethereum Mainnet", "NEAR Mainnet", "Arbitrum Mainnet")
+ */
+export const getChainLabel = (chainValue: string): string => {
+  const chain = chains.find(c => c.value === chainValue)
+  return chain ? chain.label : chainValue
+}
+
+/**
+ * Maps chain labels back to their values
+ * @param chainLabel - The chain label (e.g., "Ethereum Mainnet", "NEAR Mainnet")
+ * @returns The chain value (e.g., "eth1", "near")
+ */
+export const getChainValue = (chainLabel: string): string => {
+  const chain = chains.find(c => c.label === chainLabel)
+  return chain ? chain.value : chainLabel
+}
+
+/**
+ * Gets the icon URL for a chain value
+ * @param chainValue - The chain value (e.g., "eth1", "near", "arbitrum")
+ * @returns The icon URL or empty string if not found
+ */
+export const getChainIcon = (chainValue: string): string => {
+  const chain = chains.find(c => c.value.toLowerCase() === chainValue.toLowerCase())
+  return chain ? chain.icon : ''
+} 

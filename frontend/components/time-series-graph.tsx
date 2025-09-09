@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useRouter, useSearchParams } from "next/navigation"
 import { RefreshCw } from "lucide-react"
-import { chains } from "@/app/config/chains"
+import { chains, getChainLabel, getChainIcon } from "@/app/config/chains"
 import { TooltipProps } from 'recharts';
 import type { NameType, ValueType } from 'recharts/types/component/DefaultTooltipContent';
 
@@ -67,18 +67,6 @@ export function TimeSeriesGraph({ data, onRefresh, title = "Total Requests Serve
 
   const handleProviderChange = (provider: string) => {
     setSelectedProvider(provider);
-  };
-
-  // Helper function to get chain label from spec value
-  const getChainLabel = (specValue: string) => {
-    const chain = chains.find(c => c.value.toLowerCase() === specValue.toLowerCase());
-    return chain ? chain.label : specValue;
-  };
-
-  // Helper function to get chain icon from spec value
-  const getChainIcon = (specValue: string) => {
-    const chain = chains.find(c => c.value.toLowerCase() === specValue.toLowerCase());
-    return chain ? chain.icon : '';
   };
 
   // Custom tooltip content component
