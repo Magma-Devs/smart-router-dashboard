@@ -138,15 +138,6 @@ npm run lint
 npm run type-check
 ```
 
-### **Demo Mode**
-For development, testing, and demonstrations, the app includes a fast demo mode:
-
-1. **Enable**: Press `Ctrl+Shift+D` (or `Cmd+Shift+D` on Mac)
-2. **Features**:
-   - Fast randomized updates (800ms-1.5s)
-   - Cycles through all color states (green, orange, red)
-   - Perfect for demonstrations and testing
-   - Shows all KPI variations dynamically
 
 ## 🔧 Configuration
 

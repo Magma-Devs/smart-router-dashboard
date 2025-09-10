@@ -43,8 +43,10 @@ class TestConfigurationService:
             "chains": [
                 {
                     "name": "lava",
+                    "id": "eth1",
                     "interfaces": [
                         {
+                            "interface": "jsonrpc",
                             "nodes": [
                                 {
                                     "endpoint": "https://node1.lava.infra",
@@ -56,7 +58,7 @@ class TestConfigurationService:
                                     "type": "archive",
                                     "addons": ["addon2"],
                                 },
-                            ]
+                            ],
                         }
                     ],
                 }
@@ -227,9 +229,9 @@ class TestConfigurationService:
             assert "chains" in written_data
             assert len(written_data["chains"]) == 1
 
-            chain = written_data["chains"][0]
-            assert chain["name"] == "provider1"
-            assert chain["id"] == "chain1"
+            provider = written_data["chains"][0]
+            assert provider["name"] == "provider1"
+            assert provider["id"] == "chain1"
 
     def test_update_consumer_values(self):
         """Test updating consumer values file."""
@@ -273,3 +275,16 @@ class TestConfigurationService:
             assert interface["port"] == 8080
             assert interface["addons"] == ["addon1", "addon2"]
             assert len(interface["staticProviders"]) == 1
+
+    def test_write_yaml_file_io_error(self):
+        """Test write_yaml_file with IO error."""
+        from unittest.mock import patch, mock_open
+
+        # Mock makedirs and open to raise IOError
+        with patch("os.makedirs"), patch("builtins.open", mock_open()) as mock_file:
+            mock_file.side_effect = IOError("Permission denied")
+
+            with pytest.raises(
+                ValueError, match="Error writing YAML file.*Permission denied"
+            ):
+                self.service.write_yaml_file("/test/path/test.yml", {"test": "data"})

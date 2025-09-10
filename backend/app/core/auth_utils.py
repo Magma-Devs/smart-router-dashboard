@@ -1,5 +1,4 @@
 from base64 import b64decode, b64encode
-from typing import Tuple
 
 BASIC_PREFIX = "Basic "
 
@@ -9,7 +8,7 @@ def build_basic_credentials(username: str, password: str) -> str:
     return f"{BASIC_PREFIX}{token}"
 
 
-def parse_basic_credentials(auth_header: str) -> Tuple[str, str]:
+def parse_basic_credentials(auth_header: str) -> tuple[str, str]:
     if not auth_header or not auth_header.startswith(BASIC_PREFIX):
         raise ValueError("Missing or invalid Authorization header")
     try:

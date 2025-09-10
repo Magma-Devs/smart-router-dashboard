@@ -2,8 +2,6 @@
 Constants used throughout the Smart Router Dashboard API.
 """
 
-from typing import List, Dict
-
 # API Configuration
 API_V1_STR = "/api"
 PROJECT_NAME = "Smart Router Dashboard"
@@ -27,7 +25,7 @@ DEFAULT_LOG_LEVEL = "INFO"
 DEFAULT_LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
 # Default Metrics Queries
-DEFAULT_METRICS: List[Dict[str, str]] = [
+DEFAULT_METRICS: list[dict[str, str]] = [
     {
         "name": "CPU Usage",
         "query": 'sum(rate(container_cpu_usage_seconds_total{namespace=~"lava|observability"}[5m])) by (namespace, pod)',

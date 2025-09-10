@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -6,7 +6,7 @@ from pydantic import BaseModel
 class HelmValues(BaseModel):
     """Model for Helm chart values"""
 
-    values: Dict[str, Any]
+    values: dict[str, Any]
 
 
 class HelmRelease(BaseModel):
@@ -18,7 +18,7 @@ class HelmRelease(BaseModel):
     updated: str
     status: str
     chart: str
-    app_version: Optional[str] = None
+    app_version: str | None = None
 
 
 class HelmDeployment(BaseModel):

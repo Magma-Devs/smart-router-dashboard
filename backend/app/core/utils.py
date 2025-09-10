@@ -2,8 +2,6 @@
 Utility functions for the Smart Router Dashboard API.
 """
 
-from typing import Dict, List, Optional
-
 
 def convert_memory_to_gb(memory_str: str) -> float:
     """
@@ -93,7 +91,7 @@ def extract_provider_name_from_url(provider_url: str) -> str:
     return domain_part.replace("-provider", "")
 
 
-def remove_duplicate_addons(addons: List[str]) -> List[str]:
+def remove_duplicate_addons(addons: list[str]) -> list[str]:
     """
     Remove duplicate addons while preserving order.
 

@@ -1,5 +1,3 @@
-from typing import Dict, List
-
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
@@ -18,22 +16,22 @@ class ProviderNode(BaseModel):
 class ConsumerProvider(BaseModel):
     name: str
     url: str
-    nodes: List[ProviderNode]
+    nodes: list[ProviderNode]
 
 
 class ConsumerInterface(BaseModel):
     name: str
     port: int
-    providers: List[ConsumerProvider]
+    providers: list[ConsumerProvider]
 
 
 class ConsumerConfig(BaseModel):
-    addons: List[str]
-    interfaces: List[ConsumerInterface]
+    addons: list[str]
+    interfaces: list[ConsumerInterface]
 
 
 class ConfigurationUpdate(BaseModel):
-    consumers: Dict[str, ConsumerConfig]
+    consumers: dict[str, ConsumerConfig]
 
 
 # Utility functions moved to app.core.utils

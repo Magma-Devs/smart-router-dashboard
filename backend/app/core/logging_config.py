@@ -3,14 +3,13 @@ Logging configuration for the Smart Router Dashboard API.
 """
 
 import logging
-from typing import Optional
 
 from .constants import DEFAULT_LOG_LEVEL, DEFAULT_LOG_FORMAT
 
 
 def setup_logging(
-    level: Optional[str] = None,
-    format_string: Optional[str] = None,
+    level: str | None = None,
+    format_string: str | None = None,
     debug_mode: bool = False,
 ) -> None:
     """
