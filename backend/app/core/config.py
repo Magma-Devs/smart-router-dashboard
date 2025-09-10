@@ -2,7 +2,6 @@
 Configuration settings for the Smart Router Dashboard API.
 """
 
-from typing import Dict, List, Optional, Union
 from functools import lru_cache
 
 from pydantic import Field, field_validator
@@ -61,10 +60,10 @@ class Settings(BaseSettings):
     )
 
     # Kubernetes settings
-    kubernetes_api_url: Optional[str] = Field(
+    kubernetes_api_url: str | None = Field(
         default=None, description="Kubernetes API URL"
     )
-    kubeconfig_path: Optional[str] = Field(
+    kubeconfig_path: str | None = Field(
         default=None, description="Path to kubeconfig file"
     )
 
@@ -74,15 +73,15 @@ class Settings(BaseSettings):
     )
 
     # S3 settings
-    s3_bucket: Optional[str] = Field(
+    s3_bucket: str | None = Field(
         default=DEFAULT_S3_BUCKET, description="S3 bucket for metrics storage"
     )
-    s3_access_key: Optional[str] = Field(default=None, description="S3 access key")
-    s3_secret_key: Optional[str] = Field(default=None, description="S3 secret key")
+    s3_access_key: str | None = Field(default=None, description="S3 access key")
+    s3_secret_key: str | None = Field(default=None, description="S3 secret key")
     s3_region: str = Field(default=DEFAULT_S3_REGION, description="S3 region")
 
     # CORS settings
-    cors_origins: List[str] = Field(default=["*"], description="Allowed CORS origins")
+    cors_origins: list[str] = Field(default=["*"], description="Allowed CORS origins")
 
     # Feature flags
     debug: bool = Field(default=False, description="Enable debug mode")
@@ -94,7 +93,7 @@ class Settings(BaseSettings):
     log_level: str = Field(default="INFO", description="Logging level")
 
     # Default metrics queries
-    default_metrics: List[Dict[str, str]] = Field(
+    default_metrics: list[dict[str, str]] = Field(
         default=DEFAULT_METRICS, description="Default Prometheus metrics"
     )
 
@@ -133,7 +132,7 @@ class Settings(BaseSettings):
 
     @field_validator("cors_origins")
     @classmethod
-    def validate_cors_origins(cls, v: List[str]) -> List[str]:
+    def validate_cors_origins(cls, v: list[str]) -> list[str]:
         """Validate CORS origins format."""
         if not isinstance(v, list):
             raise ValueError("CORS origins must be a list")
@@ -221,7 +220,7 @@ class Settings(BaseSettings):
                 raise PrometheusConnectionError(error_msg)
             return False
 
-    def get_prometheus_config(self) -> Dict[str, Union[str, int, float, bool]]:
+    def get_prometheus_config(self) -> dict[str, str | int | float | bool]:
         """Get Prometheus configuration as a dictionary."""
         return {
             "url": self.prometheus_url,
@@ -231,7 +230,7 @@ class Settings(BaseSettings):
             "verify_ssl": self.prometheus_verify_ssl,
         }
 
-    def get_s3_config(self) -> Dict[str, Optional[str]]:
+    def get_s3_config(self) -> dict[str, str | None]:
         """Get S3 configuration as a dictionary."""
         return {
             "bucket": self.s3_bucket,

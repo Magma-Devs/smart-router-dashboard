@@ -5,7 +5,7 @@ Pure functions for metrics upload functionality.
 import json
 import urllib.parse
 from datetime import datetime, timezone
-from typing import Any, Dict, Protocol
+from typing import Any, Protocol
 
 
 class S3Client(Protocol):
@@ -13,7 +13,7 @@ class S3Client(Protocol):
 
     def put_object(
         self, Bucket: str, Key: str, Body: str, ContentType: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Put object to S3 bucket."""
         ...
 

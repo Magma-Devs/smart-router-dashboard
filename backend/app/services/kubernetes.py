@@ -1,5 +1,4 @@
 import subprocess
-from typing import Dict
 
 
 class KubernetesService:
@@ -65,7 +64,10 @@ class KubernetesService:
             raise Exception(f"Error applying Helm chart {name}: {str(e)}")
 
     def label_servicemonitor(
-        self, name: str, namespace: str = "lava-infra", labels: Dict[str, str] = None
+        self,
+        name: str,
+        namespace: str = "lava-infra",
+        labels: dict[str, str] | None = None,
     ) -> None:
         """Label a ServiceMonitor for Prometheus discovery"""
         if labels is None:

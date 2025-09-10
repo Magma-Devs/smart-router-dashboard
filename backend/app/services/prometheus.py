@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from typing import Any, Dict, Optional
+from typing import Any
 
 import httpx
 
@@ -12,7 +12,7 @@ class PrometheusService:
         self.query_url = f"{base_url}/api/v1/query"
         self.range_query_url = f"{base_url}/api/v1/query_range"
 
-    async def query(self, query_expr: str) -> Dict[str, Any]:
+    async def query(self, query_expr: str) -> dict[str, Any]:
         """Execute an instant query against Prometheus"""
         async with httpx.AsyncClient(verify=settings.PROMETHEUS_VERIFY_SSL) as client:
             response = await client.get(self.query_url, params={"query": query_expr})
@@ -22,10 +22,10 @@ class PrometheusService:
     async def query_range(
         self,
         query_expr: str,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
         step: str = "15s",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Execute a range query against Prometheus"""
         if not start_time:
             start_time = datetime.now() - timedelta(hours=1)
@@ -46,7 +46,7 @@ class PrometheusService:
 
     async def get_metric_range(
         self, query: str, start: str, end: str, step: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Compatibility wrapper matching route usage (ISO timestamps -> range query)."""
         start_dt = datetime.fromisoformat(start)
         end_dt = datetime.fromisoformat(end)
@@ -54,7 +54,7 @@ class PrometheusService:
 
     async def get_metric_data_for_chart(
         self, query_expr: str, hours: int = 1, step: str = "15s"
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Get formatted metric data for charts"""
         end_time = datetime.now()
         start_time = end_time - timedelta(hours=hours)
@@ -66,7 +66,7 @@ class PrometheusService:
         return chart_data
 
 
-def process_result_for_chart(result: Dict[str, Any]) -> Dict[str, Any]:
+def process_result_for_chart(result: dict[str, Any]) -> dict[str, Any]:
     """Process Prometheus result for chart display (pure function)."""
     processed_data = {"datasets": [], "labels": []}
 

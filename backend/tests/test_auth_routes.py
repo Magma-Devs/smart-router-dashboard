@@ -88,3 +88,14 @@ def test_logout_success():
     )
     assert r.status_code == 200
     assert r.json()["status"] == "logged_out"
+
+
+def test_debug_status():
+    """Test debug status endpoint."""
+    response = client.get("/api/auth/debug-status")
+    assert response.status_code == 200
+    data = response.json()
+    assert "debug_mode" in data
+    assert "message" in data
+    assert data["message"] == "Debug mode status"
+    assert isinstance(data["debug_mode"], bool)

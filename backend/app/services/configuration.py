@@ -3,7 +3,7 @@ Configuration service for managing Helm values and configuration files.
 """
 
 import os
-from typing import Dict, List, Optional, Any
+from typing import Any
 
 import yaml
 
@@ -17,9 +17,19 @@ from app.core.utils import (
 
 
 class ConfigurationService:
-    """Service for managing configuration files and Helm values."""
+    """
+    Service for managing configuration files and Helm values.
 
-    def __init__(self, values_dir: Optional[str] = None):
+    This service provides functionality to read, write, and manipulate
+    YAML configuration files, particularly Helm values files for
+    consumer and provider configurations. It handles resource parsing,
+    configuration building, and file operations with proper error handling.
+
+    Attributes:
+        values_dir (str): Directory path containing Helm values files
+    """
+
+    def __init__(self, values_dir: str | None = None):
         """
         Initialize configuration service.
 
@@ -28,7 +38,7 @@ class ConfigurationService:
         """
         self.values_dir = values_dir or settings.helm_values_dir
 
-    def read_yaml_file(self, file_path: str) -> Optional[Dict[str, Any]]:
+    def read_yaml_file(self, file_path: str) -> dict[str, Any] | None:
         """
         Read and parse a YAML file.
 
@@ -47,7 +57,7 @@ class ConfigurationService:
         except (yaml.YAMLError, IOError) as e:
             raise ValueError(f"Error reading YAML file {file_path}: {str(e)}")
 
-    def write_yaml_file(self, file_path: str, data: Dict[str, Any]) -> None:
+    def write_yaml_file(self, file_path: str, data: dict[str, Any]) -> None:
         """
         Write data to a YAML file.
 
@@ -64,7 +74,7 @@ class ConfigurationService:
         except IOError as e:
             raise ValueError(f"Error writing YAML file {file_path}: {str(e)}")
 
-    def get_consumer_resources(self, consumer_data: Dict[str, Any]) -> Dict[str, float]:
+    def get_consumer_resources(self, consumer_data: dict[str, Any]) -> dict[str, float]:
         """
         Extract resource limits from consumer data.
 
@@ -86,8 +96,8 @@ class ConfigurationService:
         return resources
 
     def build_consumer_config(
-        self, chain_id: str, chain_data: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, chain_id: str, chain_data: dict[str, Any]
+    ) -> dict[str, Any]:
         """
         Build consumer configuration from chain data.
 
@@ -116,7 +126,7 @@ class ConfigurationService:
 
         return consumer
 
-    def _build_provider_config(self, provider: Dict[str, Any]) -> Dict[str, Any]:
+    def _build_provider_config(self, provider: dict[str, Any]) -> dict[str, Any]:
         """
         Build provider configuration from provider data.
 
@@ -136,9 +146,9 @@ class ConfigurationService:
 
         provider_data = self.read_yaml_file(provider_path)
         if provider_data and "chains" in provider_data:
-            for chain in provider_data["chains"]:
-                if chain["name"] == provider_name:
-                    for iface in chain.get("interfaces", []):
+            for provider in provider_data["chains"]:
+                if provider["name"] == provider_name:
+                    for iface in provider.get("interfaces", []):
                         for node in iface.get("nodes", []):
                             node_config = {
                                 "endpoint": node["endpoint"],
@@ -158,22 +168,29 @@ class ConfigurationService:
             "nodes": provider_nodes,
         }
 
-    def update_provider_values(self, config: Dict[str, Any]) -> None:
+    def update_provider_values(self, config: dict[str, Any]) -> None:
         """
         Update provider values file with new configuration.
 
+        This method rebuilds the provider.values.yml file based on the provided
+        configuration data. It extracts provider information from consumer
+        configurations and creates provider entries with chain_id references.
+
         Args:
-            config: New configuration data
+            config: New configuration data containing consumers and their providers
+
+        Raises:
+            ValueError: If there's an error writing the YAML file
         """
         provider_path = os.path.join(self.values_dir, "core", "provider.values.yml")
         provider_data = self.read_yaml_file(provider_path) or {}
 
-        # Update chains in provider data
+        # Update providers in provider data
         provider_data["chains"] = []
         for chain_id, consumer in config["consumers"].items():
             for interface in consumer["interfaces"]:
                 for provider in interface["providers"]:
-                    chain_config = {
+                    provider_config = {
                         "name": provider["name"],
                         "id": chain_id,
                         "interfaces": [
@@ -190,11 +207,11 @@ class ConfigurationService:
                             }
                         ],
                     }
-                    provider_data["chains"].append(chain_config)
+                    provider_data["chains"].append(provider_config)
 
         self.write_yaml_file(provider_path, provider_data)
 
-    def update_consumer_values(self, config: Dict[str, Any]) -> None:
+    def update_consumer_values(self, config: dict[str, Any]) -> None:
         """
         Update consumer values file with new configuration.
 

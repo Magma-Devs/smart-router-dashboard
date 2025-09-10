@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react"
 import { Check, Network, Server, User, X, ChevronDown, ChevronRight, ChevronUp } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { getChainLabel, getChainIcon } from "@/app/config/chains"
+import { ChainsToProvidersResponse, ChainInfo } from "@/types/metrics"
 import ReactFlow, {
   Background,
   Controls,
@@ -18,8 +20,9 @@ import ReactFlow, {
 import "reactflow/dist/style.css"
 import React from "react"
 
+
 interface FlowVisualizationProps {
-  data: any
+  data: ChainsToProvidersResponse
 }
 
 // Types for the flow visualization
@@ -352,34 +355,14 @@ function FlowInner({ apiData, isAllExpanded }: { apiData: any; isAllExpanded: bo
       const consumerKeys: string[] = []
       const serviceGroupKeys: string[] = []
       
-      if (apiData?.status === 'success' && apiData.data?.result) {
-        // Extract keys from API data
-        const uniqueSpecs = new Set<string>()
-        const servicesBySpec: Record<string, Set<string>> = {}
-        
-        apiData.data.result.forEach((result: any) => {
-          if (result.metric?.spec) {
-            const spec = result.metric.spec
-            uniqueSpecs.add(spec)
-            
-            if (!servicesBySpec[spec]) {
-              servicesBySpec[spec] = new Set<string>()
-            }
-            
-            const service = result.metric?.service || result.metric?.job || "unknown"
-            servicesBySpec[spec].add(service)
-          }
-        })
-        
-        // Create keys for all consumers and service groups
-        uniqueSpecs.forEach(spec => {
-          consumerKeys.push(`consumer-${spec}`)
+      if (apiData?.chains) {
+        // Extract keys from new API data
+        apiData.chains.forEach((chain: ChainInfo) => {
+          consumerKeys.push(`consumer-${chain.chain_id}`)
           
-          if (servicesBySpec[spec]) {
-            servicesBySpec[spec].forEach(service => {
-              serviceGroupKeys.push(`service-group-${spec}-${service}`)
-            })
-          }
+          chain.providers.forEach(provider => {
+            serviceGroupKeys.push(`service-group-${chain.chain_id}-${provider.name}`)
+          })
         })
       } else {
         // For sample data
@@ -418,44 +401,20 @@ function FlowInner({ apiData, isAllExpanded }: { apiData: any; isAllExpanded: bo
     if (apiData) {
       const newExpandedState: Record<string, boolean> = {}
       
-      // Check if data follows the expected Prometheus format
-      if (apiData?.status === 'success' && apiData.data?.result) {
+      // Check if data follows the new chains-to-providers format
+      if (apiData?.chains) {
         // Extract unique consumer names and service providers
-        const uniqueSpecs = new Set<string>()
-        const servicesBySpec: Record<string, Set<string>> = {}
-        const providerCountBySpec: Record<string, number> = {}
-        
-        apiData.data.result.forEach((result: any) => {
-          if (result.metric?.spec) {
-            const spec = result.metric.spec
-            uniqueSpecs.add(spec)
-            
-            // Track services for this spec
-            if (!servicesBySpec[spec]) {
-              servicesBySpec[spec] = new Set<string>()
-              providerCountBySpec[spec] = 0
-            }
-            
-            const service = result.metric?.service || result.metric?.job || "unknown"
-            servicesBySpec[spec].add(service)
-            providerCountBySpec[spec]++
-          }
-        })
-        
-        // Set default states for new consumers and service groups
-        uniqueSpecs.forEach((spec: string) => {
-          const consumerKey = `consumer-${spec}`
+        apiData.chains.forEach((chain: ChainInfo) => {
+          const consumerKey = `consumer-${chain.chain_id}`
           // Always collapse by default
           newExpandedState[consumerKey] = false
           
           // Set service groups to expanded by default (for when consumer is expanded)
-          if (servicesBySpec[spec]) {
-            servicesBySpec[spec].forEach(service => {
-              const serviceKey = `service-group-${spec}-${service}`
-              // Always expand interfaces (service groups) by default
-              newExpandedState[serviceKey] = true
-            })
-          }
+          chain.providers.forEach(provider => {
+            const serviceKey = `service-group-${chain.chain_id}-${provider.name}`
+            // Always expand interfaces (service groups) by default
+            newExpandedState[serviceKey] = true
+          })
         })
       } else {
         // For sample data
@@ -527,73 +486,24 @@ function FlowInner({ apiData, isAllExpanded }: { apiData: any; isAllExpanded: bo
     const consumers: Consumer[] = []
     const providers: Providers = {}
     
-    // Detect if we have Prometheus API response format
-    if (apiData && apiData.status === 'success' && apiData.data?.result) {
-      const results = apiData.data.result
-      
-      // First pass: Identify unique consumers (specs)
-      const uniqueSpecs = new Set<string>()
-      results.forEach((result: any) => {
-        if (result.metric?.spec) {
-          uniqueSpecs.add(result.metric.spec)
-        }
-      })
-      
-      // Create consumers and empty provider arrays
-      uniqueSpecs.forEach((spec: string) => {
-        // Find the result that has the label for this spec
-        const result = results.find((r: any) => r.metric?.spec === spec)
-        consumers.push({ 
-          name: spec, 
-          label: result?.metric?.label || spec, // Use the label from the API data
-          icon: result?.metric?.icon, // Use the icon from the API data
-          healthy: true 
+    // Process the new chains-to-providers API format
+    if (apiData && apiData.chains) {
+      apiData.chains.forEach((chain: ChainInfo) => {
+        // Create consumer from chain data using proper labels and icons from chains.ts
+        consumers.push({
+          name: chain.chain_id,
+          label: getChainLabel(chain.chain_id),
+          icon: getChainIcon(chain.chain_id),
+          healthy: chain.consumer_health
         })
-        providers[spec] = []
-      })
-      
-      // Second pass: Map providers to consumers
-      results.forEach((result: any) => {
-        const spec = result.metric?.spec
-        if (!spec) return
         
-        // Determine if provider is healthy based on latest value
-        const values = result.values || []
-        const lastValue = values.length > 0 ? values[values.length - 1][1] : "0"
-        const isHealthy = lastValue === "1"
-        
-        // Get unique identifier for this provider
-        const apiInterface = result.metric?.apiInterface || "unknown"
-        const service = result.metric?.service || result.metric?.job || "unknown"
-        const instance = result.metric?.instance || ""
-        
-        // Create a unique provider interface name with service as the main identifier
-        const interfaceName = `${service}:${apiInterface}${instance ? `:${instance.split(':')[0]}` : ''}`
-        
-        // Add to providers, avoiding duplicates
-        const existingProviderIndex = providers[spec].findIndex(
-          p => p.interface === interfaceName
-        )
-        
-        if (existingProviderIndex === -1) {
-          providers[spec].push({
-            interface: interfaceName,
-            apiInterface: apiInterface,
-            healthy: isHealthy,
-            service: service
-          })
-        } else {
-          // Update existing provider if it exists
-          providers[spec][existingProviderIndex].healthy = isHealthy
-        }
-        
-        // Update consumer health based on provider health
-        if (!isHealthy) {
-          const consumerIndex = consumers.findIndex(c => c.name === spec)
-          if (consumerIndex !== -1) {
-            consumers[consumerIndex].healthy = false
-          }
-        }
+        // Create providers for this chain
+        providers[chain.chain_id] = chain.providers.map(provider => ({
+          interface: `${provider.name}:${provider.interface}`,
+          apiInterface: provider.interface,
+          healthy: provider.health_status,
+          service: provider.name
+        }))
       })
     } else {
       // Fallback to sample data if API format is not recognized

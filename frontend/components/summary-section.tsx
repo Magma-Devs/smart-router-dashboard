@@ -1,52 +1,43 @@
 "use client"
 
-import { useState, useEffect, useCallback, useRef } from "react"
+// React imports
+import { useState, useEffect, useCallback } from "react"
+import Image from "next/image"
+
+// UI component imports
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { ChevronDown, Info, Globe, RefreshCw } from "lucide-react"
-import Image from "next/image"
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+
+// Application imports
 import { chains, getChainLabel, getChainIcon } from "@/app/config/chains"
-import { calculateUptime, calculateFreshness, calculateReachability, calculateLatency } from "@/utils/metricsCalculations"
-import { apiClient } from "@/lib/api-client"
 import { useConfig } from "@/hooks/use-config"
-import { PrometheusResponse, KPIData, KPICardProps } from "@/types/metrics"
+import { KPIData, KPICardProps } from "@/types/metrics"
+import { MetricsService, ChainMetrics } from "@/services/metricsService"
+import { TIME_FRAMES, DEFAULT_TIME_FRAME } from "@/constants/timeFrames"
+
+/**
+ * Type definitions for API responses
+ */
 
 
-const extractSpecsFromConsumerData = (data: unknown): string[] => {
-  if (!data || typeof data !== 'object') {
-    return []
-  }
-  
-  const prometheusData = data as { status?: string; data?: { result?: unknown[] } }
-  if (prometheusData?.status !== "success" || !prometheusData.data?.result) {
-    return []
-  }
-  
-  const results = prometheusData.data.result as Array<{
-    metric?: { spec?: string }
-  }>
-  
-  const specs = new Set<string>()
-  results.forEach((result) => {
-    const spec = result.metric?.spec
-    if (spec) {
-      specs.add(spec)
-    }
-  })
-  
-  return Array.from(specs)
-}
+/**
+ * Color determination functions for KPI metrics
+ * These functions determine the visual status (green/orange/red) based on metric values
+ */
 
-
-
-
+/**
+ * Determines color for uptime metrics based on percentage thresholds.
+ * @param value - The uptime value as a string (e.g., "99.5%")
+ * @returns Color classification: "green" (≥99.5%), "orange" (≥95%), "red" (<95%)
+ */
 const getUptimeColor = (value: string): "green" | "orange" | "red" => {
   if (value === "Error" || value === "N/A") return "red"
   const numericValue = parseFloat(value.replace('%', ''))
@@ -56,6 +47,11 @@ const getUptimeColor = (value: string): "green" | "orange" | "red" => {
   return "red"
 }
 
+/**
+ * Determines color for freshness metrics based on percentage thresholds.
+ * @param value - The freshness value as a string (e.g., "95.0%")
+ * @returns Color classification: "green" (≥95%), "orange" (≥85%), "red" (<85%)
+ */
 const getFreshnessColor = (value: string): "green" | "orange" | "red" => {
   if (value === "Error" || value === "N/A") return "red"
   const numericValue = parseFloat(value.replace('%', ''))
@@ -65,6 +61,11 @@ const getFreshnessColor = (value: string): "green" | "orange" | "red" => {
   return "red"
 }
 
+/**
+ * Determines color for reachability metrics based on percentage thresholds.
+ * @param value - The reachability value as a string (e.g., "90.0%")
+ * @returns Color classification: "green" (≥95%), "orange" (≥85%), "red" (<85%)
+ */
 const getReachabilityColor = (value: string): "green" | "orange" | "red" => {
   if (value === "Error" || value === "N/A") return "red"
   const numericValue = parseFloat(value.replace('%', ''))
@@ -74,6 +75,11 @@ const getReachabilityColor = (value: string): "green" | "orange" | "red" => {
   return "red"
 }
 
+/**
+ * Determines color for latency metrics based on millisecond thresholds.
+ * @param value - The latency value as a string (e.g., "150ms")
+ * @returns Color classification: "green" (≤200ms), "orange" (≤500ms), "red" (>500ms)
+ */
 const getLatencyColor = (value: string): "green" | "orange" | "red" => {
   if (value === "Error" || value === "N/A") return "red"
   const numericValue = parseFloat(value.replace('ms', ''))
@@ -83,12 +89,17 @@ const getLatencyColor = (value: string): "green" | "orange" | "red" => {
   return "red"
 }
 
-
-function KPICard({ title, value, color, showInfo = false, tooltipText, isLoading = false }: KPICardProps) {
+/**
+ * KPI Card component that displays individual metric values with color-coded status.
+ * 
+ * @param props - KPICardProps containing title, value, color, and optional tooltip
+ * @returns JSX.Element A card displaying the KPI metric
+ */
+function KPICard({ title, value, color, tooltip, isLoading, showInfo, tooltipText }: KPICardProps) {
   const colorClasses = {
-    green: "text-green-500",
-    orange: "text-orange-500", 
-    red: "text-red-500"
+    green: "text-green-600",
+    orange: "text-orange-600", 
+    red: "text-red-600"
   }
 
   return (
@@ -103,7 +114,7 @@ function KPICard({ title, value, color, showInfo = false, tooltipText, isLoading
                   <Info className="h-3 w-3 text-muted-foreground" />
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>{tooltipText}</p>
+                  <p className="max-w-xs text-xs">{tooltipText}</p>
                 </TooltipContent>
               </Tooltip>
             )}
@@ -123,8 +134,25 @@ function KPICard({ title, value, color, showInfo = false, tooltipText, isLoading
   )
 }
 
+/**
+ * Component props interface
+ */
+interface SummarySectionProps {}
 
-export function SummarySection() {
+/**
+ * Summary Section component that displays key performance indicators (KPIs) for the selected chain.
+ * 
+ * Features:
+ * - Chain selection dropdown
+ * - Real-time KPI metrics (uptime, freshness, reachability, latency)
+ * - Time window selection
+ * - Automatic data refresh
+ * - Color-coded status indicators
+ * 
+ * @returns JSX.Element The complete summary section with KPI cards
+ */
+export function SummarySection({}: SummarySectionProps) {
+  // Configuration and state management
   const { config } = useConfig()
   const [availableChains, setAvailableChains] = useState<string[]>([])
   const [selectedChain, setSelectedChain] = useState<string>("all")
@@ -136,72 +164,16 @@ export function SummarySection() {
     latency: "N/A"
   })
   const [isLoading, setIsLoading] = useState(false)
-  const [timeWindow, setTimeWindow] = useState<number>(60)
-  const [demoMode, setDemoMode] = useState<boolean>(false)
-  const demoModeRef = useRef(demoMode)
+  const [selectedTimeFrame, setSelectedTimeFrame] = useState<string>(DEFAULT_TIME_FRAME)
 
-  const generateMockData = useCallback((chainValue: string): KPIData => {
-    const baseValues = chainValue === "all" ? {
-      uptime: Math.random() * 3 + 97,
-      freshness: Math.random() * 8 + 92,
-      reachability: Math.random() * 6 + 94,
-      latency: Math.random() * 200 + 100
-    } : {
-      uptime: Math.random() * 5 + 95,
-      freshness: Math.random() * 10 + 90,
-      reachability: Math.random() * 8 + 92,
-      latency: Math.random() * 300 + 50
-    }
-
-    return {
-      uptime: `${baseValues.uptime.toFixed(1)}%`,
-      freshness: `${baseValues.freshness.toFixed(1)}%`,
-      reachability: `${baseValues.reachability.toFixed(1)}%`,
-      latency: `${Math.round(baseValues.latency)}ms`
-    }
-  }, [])
-
-
-  useEffect(() => {
-    demoModeRef.current = demoMode
-    
-    if (!demoMode) {
-      return
-    }
-
-    const generateRandomDemoData = (): KPIData => {
-      const randomUptime = Math.random() * 8 + 92
-      const randomFreshness = Math.random() * 22 + 78
-      const randomReachability = Math.random() * 18 + 82
-      const randomLatency = Math.random() * 550 + 50
-
-      return {
-        uptime: `${randomUptime.toFixed(1)}%`,
-        freshness: `${randomFreshness.toFixed(1)}%`,
-        reachability: `${randomReachability.toFixed(1)}%`,
-        latency: `${Math.round(randomLatency)}ms`
-      }
-    }
-
-    const cycleDemoData = async () => {
-      if (!demoModeRef.current) {
-        return
-      }
-      
-      const newDemoData = generateRandomDemoData()
-      setKpiData(newDemoData)
-      
-      await new Promise(resolve => setTimeout(resolve, 800 + Math.random() * 700))
-      
-      if (demoModeRef.current) {
-        cycleDemoData()
-      }
-    }
-
-    cycleDemoData()
-  }, [demoMode])
-
-  const fetchKPIData = useCallback(async (chainValue: string, timeWindowMinutes: number) => {
+  /**
+   * Fetches KPI data for the specified chain and time frame.
+   * Handles both individual chain data and aggregated "all chains" data.
+   * 
+   * @param chainValue - The chain identifier or "all" for aggregated data
+   * @param timeFrame - Time frame string (e.g., "1h", "30m") for the metrics query
+   */
+  const fetchKPIData = useCallback(async (chainValue: string, timeFrame: string) => {
     setIsLoading(true)
     
     if (!config.apiEndpoint) {
@@ -215,49 +187,48 @@ export function SummarySection() {
       return
     }
 
-    if (!config.apiEndpoint) {
-      setKpiData({
-        uptime: "Error",
-        freshness: "Error",
-        reachability: "Error",
-        latency: "Error"
-      })
-      setIsLoading(false)
-      return
-    }
-
     try {
+      // Convert time frame string to minutes
+      const timeWindowMinutes = MetricsService.convertTimeFrameToMinutes(timeFrame)
       const stepSize = timeWindowMinutes <= 60 ? 1 : timeWindowMinutes <= 240 ? 5 : 15
-      const timeRange = timeWindowMinutes <= 60 ? "1m" : timeWindowMinutes <= 240 ? "5m" : "15m"
 
-      const [consumersData, providersData, freshnessData, latencyData] = await Promise.all([
-        apiClient.get<PrometheusResponse>(`/api/metrics/last_minutes?query=${encodeURIComponent("lava_consumer_overall_health_breakdown")}&minutes=${timeWindowMinutes}&step=${stepSize}`),
-        apiClient.get<PrometheusResponse>(`/api/metrics/last_minutes?query=${encodeURIComponent("lava_provider_overall_health_breakdown")}&minutes=${timeWindowMinutes}&step=${stepSize}`),
-        apiClient.get<PrometheusResponse>(`/api/metrics/last_minutes?query=${encodeURIComponent("avg(lava_consumer_qos_metrics{qos_metric=\"sync/freshness\"})")}&minutes=${timeWindowMinutes}&step=${stepSize}`),
-        apiClient.get<PrometheusResponse>(`/api/metrics/last_minutes?query=${encodeURIComponent(`avg_over_time(lava_consumer_average_latency_in_milliseconds[${timeRange}])`)}&minutes=${timeWindowMinutes}&step=${stepSize}`)
-      ])
-
-      const calculatedData: KPIData = {
-        uptime: calculateUptime(consumersData, chainValue),
-        freshness: calculateFreshness(freshnessData),
-        reachability: calculateReachability(consumersData, providersData, chainValue),
-        latency: calculateLatency(latencyData, chainValue)
+      let chainMetrics: ChainMetrics
+      
+      if (chainValue === "all") {
+        // For "all chains", use the avg data from the backend
+        const chainsResponse = await MetricsService.fetchMetricsForAllChains(timeWindowMinutes, stepSize)
+        chainMetrics = chainsResponse.avg
+      } else {
+        // For specific chain, fetch individual chain data
+        const chainResponse = await MetricsService.fetchMetricsForChain(chainValue, timeWindowMinutes, stepSize)
+        chainMetrics = chainResponse
       }
 
-      setKpiData(calculatedData)
+      // Update KPI data with formatted values
+      setKpiData({
+        uptime: MetricsService.formatPercentage(chainMetrics.uptime),
+        freshness: MetricsService.formatPercentage(chainMetrics.freshness),
+        reachability: MetricsService.formatPercentage(chainMetrics.reachability), // Now using real provider reachability
+        latency: MetricsService.formatLatency(chainMetrics.latency_in_ms)
+      })
     } catch (error) {
-      console.error("Error fetching KPI data:", error)
+      console.error('Error fetching KPI data:', error)
       setKpiData({
         uptime: "Error",
-        freshness: "Error",
+        freshness: "Error", 
         reachability: "Error",
         latency: "Error"
       })
     } finally {
       setIsLoading(false)
     }
-  }, [config.apiEndpoint, generateMockData])
+  }, [config.apiEndpoint])
 
+  /**
+   * Fetches available chains from the metrics API.
+   * Populates the chain selection dropdown with chains that have actual metrics data.
+   * This is more efficient and accurate than using the components API.
+   */
   useEffect(() => {
     const fetchAvailableChains = async () => {
       if (!config.apiEndpoint) {
@@ -266,55 +237,57 @@ export function SummarySection() {
 
       setIsLoadingChains(true)
       try {
-        const data: unknown = await apiClient.get(`/api/components/`)
-        const configuredChains = Object.keys((data as { consumers?: Record<string, unknown> }).consumers || {})
-        setAvailableChains(configuredChains)
+        // Use a minimal time window (1 minute) just to get available chains
+        const chainsResponse = await MetricsService.fetchMetricsForAllChains(1, 1)
+        const chainKeys = Object.keys(chainsResponse.chains)
+        setAvailableChains(chainKeys)
       } catch (error) {
-        console.error("Error fetching chains:", error)
-        setAvailableChains(chains.map(chain => chain.value))
+        console.error('Error fetching available chains:', error)
+        setAvailableChains([])
       } finally {
         setIsLoadingChains(false)
       }
     }
 
     fetchAvailableChains()
-    fetchKPIData("all", timeWindow)
-  }, [config.apiEndpoint, fetchKPIData, timeWindow])
+    fetchKPIData("all", selectedTimeFrame)
+  }, [config.apiEndpoint, fetchKPIData, selectedTimeFrame])
 
+  /**
+   * Effect to trigger data fetch when parameters change.
+   */
   useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key === 'D') {
-        event.preventDefault()
-        const newDemoMode = !demoMode
-        setDemoMode(newDemoMode)
-        
-        if (!newDemoMode) {
-          fetchKPIData(selectedChain, timeWindow)
-        }
-      }
-    }
+    fetchKPIData(selectedChain, selectedTimeFrame)
+  }, [selectedChain, selectedTimeFrame, fetchKPIData])
 
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [demoMode, selectedChain, timeWindow, fetchKPIData])
-
+  /**
+   * Handles chain selection change from the dropdown.
+   * @param chainValue - The selected chain identifier
+   */
   const handleChainSelect = (chainValue: string) => {
     setSelectedChain(chainValue)
-    fetchKPIData(chainValue, timeWindow)
+    fetchKPIData(chainValue, selectedTimeFrame)
   }
 
-  const handleTimeWindowChange = (minutes: string) => {
-    const newTimeWindow = parseInt(minutes, 10)
-    setTimeWindow(newTimeWindow)
-    fetchKPIData(selectedChain, newTimeWindow)
+  /**
+   * Handles time frame selection change.
+   * @param value - The selected time frame string (e.g., "1h", "30m")
+   */
+  const handleTimeFrameChange = (value: string) => {
+    setSelectedTimeFrame(value)
+    fetchKPIData(selectedChain, value)
   }
 
+  /**
+   * Handles manual refresh button click.
+   * Triggers immediate data refresh for current selection.
+   */
   const handleRefresh = () => {
-    fetchKPIData(selectedChain, timeWindow)
+    fetchKPIData(selectedChain, selectedTimeFrame)
   }
 
   const handleScrollToMetrics = () => {
-    const metricsSection = document.querySelector('[data-section="in-depth-metrics"]')
+    const metricsSection = document.querySelector('[data-section="metrics"]')
     if (metricsSection) {
       metricsSection.scrollIntoView({ behavior: 'smooth' })
     }
@@ -324,95 +297,79 @@ export function SummarySection() {
     <TooltipProvider>
       <Card className="mb-6">
         <CardContent className="p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">Summary</h2>
-          
-          <div className="flex items-center gap-3">
-            <Select
-              value={selectedChain}
-              onValueChange={handleChainSelect}
-              disabled={isLoadingChains}
-            >
-              <SelectTrigger className="w-[280px]">
-                <div className="flex items-center gap-2 flex-1 min-w-0">
-                  {selectedChain !== "all" && (
-                    <Image
-                      src={getChainIcon(selectedChain)}
-                      alt={getChainLabel(selectedChain)}
-                      width={16}
-                      height={16}
-                      className="w-4 h-4 flex-shrink-0"
-                    />
-                  )}
-                  <span className="truncate">
-                    {selectedChain === "all" ? "All Chains" : getChainLabel(selectedChain)}
-                  </span>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold">Summary</h2>
+        
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Chain Selection */}
+          <Select 
+            value={selectedChain} 
+            onValueChange={handleChainSelect}
+            disabled={isLoadingChains}
+          >
+            <SelectTrigger className="w-[200px]">
+              <SelectValue placeholder={isLoadingChains ? "Loading..." : "Select chain"} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">
+                <div className="flex items-center gap-2">
+                  <Globe className="h-4 w-4" />
+                  All Chains
                 </div>
-              </SelectTrigger>
-              <SelectContent className="max-h-[300px]">
-                <SelectItem value="all">
-                  <div className="flex items-center gap-2">
-                    <Globe className="h-4 w-4" />
-                    All Chains
-                  </div>
-                </SelectItem>
-                {availableChains.map((chainValue) => (
+              </SelectItem>
+              {availableChains.map((chainValue) => {
+                const chainConfig = chains.find(c => c.value === chainValue)
+                const label = chainConfig ? chainConfig.label : getChainLabel(chainValue)
+                const icon = chainConfig ? chainConfig.icon : getChainIcon(chainValue)
+                
+                return (
                   <SelectItem key={chainValue} value={chainValue}>
                     <div className="flex items-center gap-2">
-                      <Image
-                        src={getChainIcon(chainValue)}
-                        alt={getChainLabel(chainValue)}
-                        width={16}
-                        height={16}
-                        className="w-4 h-4"
-                      />
-                      {getChainLabel(chainValue)}
+                      {icon && (
+                        <Image
+                          src={icon}
+                          alt={label}
+                          width={16}
+                          height={16}
+                          className="rounded-full"
+                        />
+                      )}
+                      {label}
                     </div>
                   </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+                )
+              })}
+            </SelectContent>
+          </Select>
 
-            <Select
-              value={timeWindow.toString()}
-              onValueChange={handleTimeWindowChange}
-            >
-              <SelectTrigger className="w-[120px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="5">5 minutes</SelectItem>
-                <SelectItem value="15">15 minutes</SelectItem>
-                <SelectItem value="30">30 minutes</SelectItem>
-                <SelectItem value="60">1 hour</SelectItem>
-                <SelectItem value="240">4 hours</SelectItem>
-                <SelectItem value="1440">24 hours</SelectItem>
-              </SelectContent>
-            </Select>
+          {/* Time Frame Selection */}
+          <Select value={selectedTimeFrame} onValueChange={handleTimeFrameChange}>
+            <SelectTrigger className="w-[140px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {TIME_FRAMES.map((timeFrame) => (
+                <SelectItem key={timeFrame.value} value={timeFrame.value}>
+                  {timeFrame.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
-            {demoMode && (
-              <Button
-                variant="default"
-                size="sm"
-                className="flex items-center gap-2 bg-gradient-to-r from-green-500 via-orange-500 to-red-500 text-white font-bold"
-              >
-                <span className="animate-pulse">⚡</span>
-                Live Demo
-              </Button>
-            )}
-
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleRefresh}
-              disabled={isLoading}
-              className="p-2"
-            >
-              <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
-            </Button>
-          </div>
+          {/* Refresh Button */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRefresh}
+            disabled={isLoading}
+            title="Refresh metrics"
+          >
+            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+          </Button>
         </div>
-          
+      </div>
+
+            
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
             <KPICard 
               title="Uptime" 

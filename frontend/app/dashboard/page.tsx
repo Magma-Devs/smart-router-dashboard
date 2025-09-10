@@ -1,38 +1,53 @@
 "use client"
 
+// React imports
 import { useEffect, useState } from "react"
+import Link from "next/link"
+
+// UI component imports
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Button } from "@/components/ui/button"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { AlertTriangle, Settings, RefreshCw } from "lucide-react"
+
+// Application component imports
 import { FlowVisualization } from "@/components/flow-visualization"
 import { SummarySection } from "@/components/summary-section"
 import { InDepthMetrics } from "@/components/in-depth-metrics"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { AlertTriangle, Settings, RefreshCw } from "lucide-react"
-import { useConfig } from "@/hooks/use-config"
-import { Button } from "@/components/ui/button"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import Link from "next/link"
-import { chains } from "@/app/config/chains"
 import { ProtectedRoute } from "@/components/protected-route"
-import { apiClient } from "@/lib/api-client"
 
-// Prometheus API response types
+// Hook and utility imports
+import { useConfig } from "@/hooks/use-config"
+import { apiClient } from "@/lib/api-client"
+import { chains } from "@/app/config/chains"
+import { ChainsToProvidersResponse } from "@/types/metrics"
+
+/**
+ * Type definitions for Prometheus API responses
+ */
+
+/** Represents a Prometheus metric with optional spec and dynamic properties */
 interface PrometheusMetric {
   spec?: string;
   [key: string]: any;
 }
 
+/** Represents a single result from Prometheus query */
 interface PrometheusResult {
   metric: PrometheusMetric;
-  values?: [number, string][];
-  value?: [number, string];
+  values?: [number, string][];  // For range queries
+  value?: [number, string];     // For instant queries
   [key: string]: any;
 }
 
+/** Container for Prometheus query results */
 interface PrometheusData {
   resultType: string;
   result: PrometheusResult[];
 }
 
+/** Complete Prometheus API response */
 interface PrometheusResponse {
   status: 'success' | 'error';
   data?: PrometheusData;
@@ -40,44 +55,62 @@ interface PrometheusResponse {
   error?: string;
 }
 
+
+/** Dashboard data structure containing flow visualization data */
 interface DashboardData {
-  flow: PrometheusResponse | null;
+  flow: ChainsToProvidersResponse | null;
 }
 
+/**
+ * Main Dashboard component that displays system metrics and health status.
+ * 
+ * Features:
+ * - Real-time metrics visualization
+ * - Configurable refresh intervals
+ * - System flow visualization
+ * - Summary KPI section
+ * - In-depth metrics analysis
+ * 
+ * @returns JSX.Element The complete dashboard interface
+ */
 export default function Dashboard() {
+  // State management
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const { config, updateRefreshInterval } = useConfig()
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
+  
+  // Configuration hook
+  const { config, updateRefreshInterval } = useConfig()
 
+  /**
+   * Effect to initialize data fetching and set up automatic refresh polling.
+   * Runs when API endpoint or refresh interval changes.
+   */
   useEffect(() => {
-    console.log("Initializing dashboard with config:", config)
     if (config.apiEndpoint) {
-      console.log("Fetching data with API endpoint:", config.apiEndpoint)
       fetchData()
     } else {
-      console.log("No API endpoint configured")
       setError("No API endpoint configured. Please set up an API endpoint in the configuration page.")
       setLoading(false)
     }
     
     // Set up polling based on refresh interval
     const intervalMs = (config.refreshInterval || 60) * 1000
-    console.log("Setting up refresh interval:", intervalMs, "ms")
     const interval = setInterval(() => {
-      console.log("Auto-refreshing data")
       fetchData()
     }, intervalMs)
     
     return () => {
-      console.log("Cleaning up dashboard")
       clearInterval(interval)
     }
   }, [config.apiEndpoint, config.refreshInterval])
 
+  /**
+   * Fetches dashboard data from the API endpoint.
+   * Handles flow visualization data and maps chain labels.
+   */
   const fetchData = async () => {
-    console.log("Starting data fetch")
     setLoading(true)
     setError(null)
     
@@ -88,36 +121,14 @@ export default function Dashboard() {
         return
       }
       
-      // Fetch flow visualization data using the metrics endpoint
-      const flowEndpoint = `/api/metrics/last_minutes?query=lava_provider_overall_health_breakdown&minutes=1&step=1`
-      console.log("Fetching flow data from:", flowEndpoint)
-      const flowData: PrometheusResponse = await apiClient.get(flowEndpoint)
-      console.log("Flow data received:", flowData)
-
-      // Map the chain labels if we have valid data
-      if (flowData?.status === 'success' && flowData.data?.result) {
-        flowData.data.result = flowData.data.result.map((result: PrometheusResult) => {
-          const spec = result.metric?.spec;
-          if (spec) {
-            const chain = chains.find(c => c.value.toLowerCase() === spec.toLowerCase())
-            if (chain) {
-              return {
-                ...result,
-                metric: {
-                  ...result.metric,
-                  label: chain.label, // Add the label to the metric
-                  icon: chain.icon // Add the icon to the metric
-                }
-              }
-            }
-          }
-          return result
-        })
-      }
+      // Fetch flow visualization data using the new chains-to-providers endpoint
+      const flowEndpoint = `/api/metrics/chains-to-providers?minutes=1&step=1`
+      const flowData = await apiClient.get<ChainsToProvidersResponse>(flowEndpoint)
       
       setData({
         flow: flowData
       })
+      setLastUpdated(new Date())
     } catch (err) {
       console.error("Error fetching data:", err)
       setError(`Failed to connect to API: ${err instanceof Error ? err.message : 'Unknown error'}`)
@@ -126,19 +137,28 @@ export default function Dashboard() {
     }
   }
 
-
-  // Handle refresh interval change
+  /**
+   * Handles refresh interval change from the UI select component.
+   * @param value - The new refresh interval in seconds as a string
+   */
   const handleRefreshIntervalChange = (value: string) => {
     const numValue = parseInt(value, 10)
     updateRefreshInterval(numValue)
   }
 
-  // Handle manual refresh
+  /**
+   * Handles manual refresh button click.
+   * Triggers immediate data fetch.
+   */
   const handleManualRefresh = () => {
     fetchData()
   }
 
-  // Loading and error content for visualization components
+  /**
+   * Renders loading, error, or empty states for visualization components.
+   * @param height - CSS height class for the container
+   * @returns JSX.Element | null
+   */
   const renderContent = (height = "h-96") => {
     if (loading) {
       return (
@@ -181,12 +201,6 @@ export default function Dashboard() {
               Last updated: {lastUpdated.toLocaleTimeString()}
             </p>
           )}
-        </div>
-        <div className="flex flex-wrap items-end justify-between mb-6 gap-4">
-          <div className="flex flex-col">
-
-
-          </div>
         </div>
         
         {error && (
@@ -238,7 +252,7 @@ export default function Dashboard() {
               </CardDescription>
             </CardHeader>
             <CardContent className="p-0 overflow-hidden">
-              {renderContent() || (data?.flow?.data && <FlowVisualization key="flow-visualization" data={data.flow} />)}
+              {renderContent() || (data?.flow?.chains && <FlowVisualization key="flow-visualization" data={data.flow} />)}
             </CardContent>
           </Card>
 
@@ -247,4 +261,4 @@ export default function Dashboard() {
       </div>
     </ProtectedRoute>
   )
-} 
+}

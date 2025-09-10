@@ -2,13 +2,11 @@
 Custom exceptions for the Smart Router Dashboard API.
 """
 
-from typing import Optional
-
 
 class DashboardException(Exception):
     """Base exception for all dashboard-related errors."""
 
-    def __init__(self, message: str, details: Optional[dict] = None):
+    def __init__(self, message: str, details: dict | None = None):
         super().__init__(message)
         self.message = message
         self.details = details or {}

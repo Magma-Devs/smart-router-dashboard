@@ -298,3 +298,15 @@ class TestSettingsIntegration:
         assert "http://localhost:3000" in settings.cors_origins
         assert "http://127.0.0.1:3000" in settings.cors_origins
         assert "https://app.example.com" in settings.cors_origins
+
+    def test_cors_origins_validation_not_list(self):
+        """Test CORS origins validation with non-list input."""
+        with pytest.raises(ValueError, match="CORS origins must be a list"):
+            Settings.validate_cors_origins("not_a_list")
+
+    def test_cors_origins_validation_non_string_item(self):
+        """Test CORS origins validation with non-string items."""
+        with pytest.raises(ValueError, match="Each CORS origin must be a string"):
+            Settings.validate_cors_origins(
+                ["http://valid.com", 123, "https://another.com"]
+            )
