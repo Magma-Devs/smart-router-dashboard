@@ -2,12 +2,7 @@
 
 import { ChevronUp, ChevronDown } from 'lucide-react';
 import { ProviderMetrics, ChainMetrics, SortField, SortDirection } from '@/types/metrics';
-import {
-  getUptimeColor,
-  getReachabilityColor,
-  getLatencyColor,
-  getDataFreshnessColor,
-} from '@/utils/colors';
+import { getUptimeColor, getReachabilityColor, getLatencyColor } from '@/utils/colors';
 
 interface MetricsTableProps {
   data: ProviderMetrics[] | ChainMetrics[];
@@ -67,7 +62,6 @@ export function MetricsTable({
             <th className='text-left p-3 font-medium'>Traffic</th>
             <th className='text-left p-3 font-medium'>Uptime</th>
             <th className='text-left p-3 font-medium'>Latency</th>
-            <th className='text-left p-3 font-medium'>Data Freshness</th>
           </tr>
         </thead>
         <tbody>
@@ -76,7 +70,6 @@ export function MetricsTable({
             const name = isProvider ? item.provider : item.chain;
             const uptime = item.uptime;
             const latency = item.latency;
-            const dataFreshness = isProvider ? item.sync : item.freshness;
 
             return (
               <tr key={index} className='border-b hover:bg-muted/50'>
@@ -88,7 +81,6 @@ export function MetricsTable({
                   {uptime}
                 </td>
                 <td className={`p-3 ${getLatencyColor(latency)}`}>{latency}</td>
-                <td className={`p-3 ${getDataFreshnessColor(dataFreshness)}`}>{dataFreshness}</td>
               </tr>
             );
           })}

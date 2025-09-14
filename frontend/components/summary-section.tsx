@@ -23,12 +23,7 @@ import { useConfig } from '@/hooks/use-config';
 import { KPIData, KPICardProps } from '@/types/metrics';
 import { MetricsService, ChainMetrics } from '@/services/metricsService';
 import { TIME_FRAMES, DEFAULT_TIME_FRAME } from '@/constants/timeFrames';
-import {
-  getUptimeColorName,
-  getFreshnessColorName,
-  getReachabilityColorName,
-  getLatencyColorName,
-} from '@/utils/colors';
+import { getUptimeColorName, getReachabilityColorName, getLatencyColorName } from '@/utils/colors';
 
 /**
  * KPI Card component that displays individual metric values with color-coded status.
@@ -83,7 +78,7 @@ interface SummarySectionProps {}
  *
  * Features:
  * - Chain selection dropdown
- * - Real-time KPI metrics (uptime, freshness, reachability, latency)
+ * - Real-time KPI metrics (uptime, reachability, latency)
  * - Time window selection
  * - Automatic data refresh
  * - Color-coded status indicators
@@ -98,7 +93,6 @@ export function SummarySection({}: SummarySectionProps) {
   const [isLoadingChains, setIsLoadingChains] = useState(false);
   const [kpiData, setKpiData] = useState<KPIData>({
     uptime: 'N/A',
-    freshness: 'N/A',
     reachability: 'N/A',
     latency: 'N/A',
   });
@@ -119,7 +113,6 @@ export function SummarySection({}: SummarySectionProps) {
       if (!config.apiEndpoint) {
         setKpiData({
           uptime: 'Error',
-          freshness: 'Error',
           reachability: 'Error',
           latency: 'Error',
         });
@@ -154,7 +147,6 @@ export function SummarySection({}: SummarySectionProps) {
         // Update KPI data with formatted values
         setKpiData({
           uptime: MetricsService.formatPercentage(chainMetrics.uptime),
-          freshness: MetricsService.formatPercentage(chainMetrics.freshness),
           reachability: MetricsService.formatPercentage(chainMetrics.reachability), // Now using real provider reachability
           latency: MetricsService.formatLatency(chainMetrics.latency_in_ms),
         });
@@ -162,7 +154,6 @@ export function SummarySection({}: SummarySectionProps) {
         console.error('Error fetching KPI data:', error);
         setKpiData({
           uptime: 'Error',
-          freshness: 'Error',
           reachability: 'Error',
           latency: 'Error',
         });
@@ -318,7 +309,7 @@ export function SummarySection({}: SummarySectionProps) {
             </div>
           </div>
 
-          <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4'>
+          <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4'>
             <KPICard
               title='Uptime'
               value={kpiData.uptime}
@@ -337,12 +328,6 @@ export function SummarySection({}: SummarySectionProps) {
               title='Latency'
               value={kpiData.latency}
               color={getLatencyColorName(kpiData.latency)}
-              isLoading={isLoading}
-            />
-            <KPICard
-              title='Data Freshness'
-              value={kpiData.freshness}
-              color={getFreshnessColorName(kpiData.freshness)}
               isLoading={isLoading}
             />
           </div>

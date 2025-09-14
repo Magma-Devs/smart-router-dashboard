@@ -22,7 +22,6 @@ from app.api.routes.metrics import ChainsToProvidersResponse
 from app.api.routes.metrics import (
     get_prometheus_service,
     calculate_uptime_percentage,
-    calculate_freshness_percentage,
     calculate_latency_ms,
     calculate_requests_per_day,
     calculate_provider_uptime_percentage,
@@ -235,25 +234,6 @@ class TestCalculationFunctions:
         assert calculate_uptime_percentage({}, "ethereum") == 0.0
         assert calculate_uptime_percentage({"status": "error"}, "ethereum") == 0.0
 
-    def test_calculate_freshness_percentage_success(self):
-        """Test freshness calculation with valid data."""
-        freshness_data = {
-            "status": "success",
-            "data": {
-                "result": [
-                    {
-                        "values": [
-                            ["1640995200", "0.95"],
-                            ["1640995260", "0.98"],
-                            ["1640995320", "0.92"],
-                        ]
-                    }
-                ]
-            },
-        }
-        result = calculate_freshness_percentage(freshness_data)
-        assert result == 95.0  # (0.95 + 0.98 + 0.92) / 3 * 100
-
     def test_calculate_latency_ms_success(self):
         """Test latency calculation with valid data."""
         latency_data = {
@@ -319,7 +299,6 @@ class TestNewEndpoints:
         mock_get_chains.return_value = ["ethereum", "bitcoin"]
         mock_fetch_data.return_value = (
             {"status": "success", "data": {"result": []}},  # consumers_data
-            {"status": "success", "data": {"result": []}},  # freshness_data
             {"status": "success", "data": {"result": []}},  # latency_data
             {"status": "success", "data": {"result": []}},  # chain_traffic_data
             {"status": "success", "data": {"result": []}},  # provider_health_data
@@ -339,7 +318,6 @@ class TestNewEndpoints:
         assert "bitcoin" in data["chains"]
         assert "uptime" in data["chains"]["ethereum"]
         assert "latency_in_ms" in data["chains"]["ethereum"]
-        assert "freshness" in data["chains"]["ethereum"]
         assert "requests_per_day" in data["chains"]["ethereum"]
 
         app.dependency_overrides.pop(get_prometheus_service, None)
@@ -360,7 +338,6 @@ class TestChainsToProvidersEndpoint:
         mock_get_providers.return_value = ["eth-lava", "cosmoshub-lava"]
         mock_fetch_data.return_value = (
             {"status": "success", "data": {"result": []}},  # consumers_data
-            {"status": "success", "data": {"result": []}},  # freshness_data
             {"status": "success", "data": {"result": []}},  # latency_data
             {"status": "success", "data": {"result": []}},  # chain_traffic_data
             {"status": "success", "data": {"result": []}},  # provider_health_data
@@ -434,7 +411,6 @@ class TestChainsToProvidersEndpoint:
 
         mock_fetch_data.return_value = (
             {"status": "success", "data": {"result": []}},  # consumers_data
-            {"status": "success", "data": {"result": []}},  # freshness_data
             {"status": "success", "data": {"result": []}},  # latency_data
             {"status": "success", "data": {"result": []}},  # chain_traffic_data
             mock_provider_health_data,  # provider_health_data
@@ -495,7 +471,6 @@ class TestChainsToProvidersEndpoint:
         mock_get_providers.return_value = ["eth-lava"]
         mock_fetch_data.return_value = (
             {"status": "success", "data": {"result": []}},  # consumers_data
-            {"status": "success", "data": {"result": []}},  # freshness_data
             {"status": "success", "data": {"result": []}},  # latency_data
             {"status": "success", "data": {"result": []}},  # chain_traffic_data
             {"status": "success", "data": {"result": []}},  # provider_health_data

@@ -15,7 +15,6 @@ export interface ChainMetrics {
   traffic: string; // req/day
   uptime: string; // percentage
   latency: string; // single value
-  freshness: string; // percentage
 }
 
 export interface MetricsData {
@@ -31,7 +30,6 @@ export type SortDirection = 'asc' | 'desc';
 
 export interface KPIData {
   uptime: string;
-  freshness: string;
   reachability: string;
   latency: string;
 }

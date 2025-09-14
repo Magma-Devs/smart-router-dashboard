@@ -20,7 +20,6 @@ T = TypeVar("T")
 class ChainMetrics(BaseModel):
     uptime: float
     latency_in_ms: int
-    freshness: float
     reachability: float  # Percentage of healthy providers for this chain
     requests_per_day: int
 
@@ -28,7 +27,6 @@ class ChainMetrics(BaseModel):
 class ProviderMetrics(BaseModel):
     uptime: float
     latency_in_ms: int | None  # Providers don't have latency metrics
-    freshness: float
     requests_per_day: int
 
 
@@ -50,7 +48,6 @@ router = APIRouter()
 PROMETHEUS_QUERIES = {
     "consumer_health": "lava_consumer_overall_health_breakdown",
     "provider_health": "lava_provider_overall_health_breakdown",
-    "freshness": 'lava_consumer_qos_metrics{qos_metric="sync/freshness"}',
     "consumer_traffic": "lava_consumer_total_relays_serviced",
     "provider_traffic": "lava_provider_total_relays_serviced",
 }
@@ -204,9 +201,7 @@ def get_available_providers() -> list[str]:
 
 async def fetch_chain_metrics_data(
     svc: PrometheusService, time_window_minutes: int, step_size: int
-) -> tuple[
-    dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]
-]:
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
     """Fetch all required metrics data for chains in parallel."""
     time_range = f"{time_window_minutes}m"
     end_time = datetime.now()
@@ -214,19 +209,12 @@ async def fetch_chain_metrics_data(
 
     (
         consumers_data,
-        freshness_data,
         latency_data,
         chain_traffic_data,
         provider_health_data,
     ) = await asyncio.gather(
         svc.query_range(
             PROMETHEUS_QUERIES["consumer_health"],
-            start_time,
-            end_time,
-            f"{step_size}s",
-        ),
-        svc.query_range(
-            PROMETHEUS_QUERIES["freshness"],
             start_time,
             end_time,
             f"{step_size}s",
@@ -253,7 +241,6 @@ async def fetch_chain_metrics_data(
 
     return (
         consumers_data,
-        freshness_data,
         latency_data,
         chain_traffic_data,
         provider_health_data,
@@ -262,20 +249,14 @@ async def fetch_chain_metrics_data(
 
 async def fetch_provider_metrics_data(
     svc: PrometheusService, time_window_minutes: int, step_size: int
-) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+) -> tuple[dict[str, Any], dict[str, Any]]:
     """Fetch all required metrics data for providers in parallel."""
     end_time = datetime.now()
     start_time = end_time - timedelta(minutes=time_window_minutes)
 
-    providers_data, freshness_data, provider_traffic_data = await asyncio.gather(
+    providers_data, provider_traffic_data = await asyncio.gather(
         svc.query_range(
             PROMETHEUS_QUERIES["provider_health"],
-            start_time,
-            end_time,
-            f"{step_size}s",
-        ),
-        svc.query_range(
-            PROMETHEUS_QUERIES["freshness"],
             start_time,
             end_time,
             f"{step_size}s",
@@ -288,7 +269,7 @@ async def fetch_provider_metrics_data(
         ),
     )
 
-    return providers_data, freshness_data, provider_traffic_data
+    return providers_data, provider_traffic_data
 
 
 # Calculation utilities moved from frontend
@@ -327,26 +308,6 @@ def calculate_uptime_percentage(
                 total_healthy_time += 1
 
     return (total_healthy_time / total_time * 100) if total_time > 0 else 0.0
-
-
-@validate_prometheus_data
-def calculate_freshness_percentage(freshness_data: dict[str, Any]) -> float:
-    """Calculate freshness percentage from freshness data"""
-    results = freshness_data["data"]["result"]
-    total_freshness = 0
-    total_samples = 0
-
-    for result in results:
-        values = result.get("values", [])
-        for timestamp, value in values:
-            try:
-                freshness_value = float(value)
-                total_freshness += freshness_value
-                total_samples += 1
-            except (ValueError, TypeError):
-                continue
-
-    return (total_freshness / total_samples * 100) if total_samples > 0 else 0.0
 
 
 @validate_prometheus_data
@@ -481,45 +442,6 @@ def calculate_provider_uptime_percentage(
                 continue
 
     return (total_healthy_time / total_time) if total_time > 0 else 0.0
-
-
-@validate_prometheus_data
-def calculate_provider_freshness_percentage(
-    freshness_data: dict[str, Any], target_provider: str
-) -> float:
-    """Calculate freshness percentage for a specific provider from QoS metrics"""
-    results = freshness_data["data"]["result"]
-    total_freshness = 0
-    total_samples = 0
-
-    for result in results:
-        service = result.get("metric", {}).get("service")
-        qos_metric = result.get("metric", {}).get("qos_metric")
-
-        # Filter by sync/freshness metric first
-        if not qos_metric or qos_metric != "sync/freshness":
-            continue
-
-        # For freshness, we need to match by chain/spec rather than provider
-        # Extract chain from targetProvider (e.g., "cosmoshub-lava" -> "cosmoshub")
-        target_chain = target_provider.split("-")[0]
-
-        # Check if service matches the chain (e.g., "cosmoshub-consumer" matches "cosmoshub")
-        service_matches = service and service.lower().startswith(target_chain.lower())
-
-        if not service_matches:
-            continue
-
-        values = result.get("values", [])
-        for timestamp, value in values:
-            try:
-                freshness_value = float(value)
-                total_freshness += freshness_value
-                total_samples += 1
-            except (ValueError, TypeError):
-                continue
-
-    return (total_freshness / total_samples * 100) if total_samples > 0 else 0.0
 
 
 @validate_prometheus_data
@@ -702,7 +624,6 @@ async def get_chains_metrics(
         # Fetch all required metrics in parallel
         (
             consumers_data,
-            freshness_data,
             latency_data,
             chain_traffic_data,
             provider_health_data,
@@ -717,7 +638,6 @@ async def get_chains_metrics(
             chains_data[chain_id] = ChainMetrics(
                 uptime=calculate_uptime_percentage(consumers_data, chain_id),
                 latency_in_ms=calculate_latency_ms(latency_data, chain_id),
-                freshness=calculate_freshness_percentage(freshness_data),
                 reachability=calculate_chain_reachability_percentage(
                     provider_health_data, chain_providers
                 ),
@@ -734,7 +654,6 @@ async def get_chains_metrics(
             # Extract values for statistics
             uptimes = [chain.uptime for chain in all_chains]
             latencies = [chain.latency_in_ms for chain in all_chains]
-            freshnesses = [chain.freshness for chain in all_chains]
             reachabilities = [chain.reachability for chain in all_chains]
             requests = [chain.requests_per_day for chain in all_chains]
 
@@ -742,7 +661,6 @@ async def get_chains_metrics(
             avg_metrics = ChainMetrics(
                 uptime=round(sum(uptimes) / total_chains, 2),
                 latency_in_ms=int(round(sum(latencies) / total_chains)),
-                freshness=round(sum(freshnesses) / total_chains, 2),
                 reachability=round(sum(reachabilities) / total_chains, 2),
                 requests_per_day=sum(requests),
             )
@@ -751,7 +669,6 @@ async def get_chains_metrics(
             p90_metrics = ChainMetrics(
                 uptime=round(statistics.quantiles(uptimes, n=10)[8], 2),
                 latency_in_ms=int(round(statistics.quantiles(latencies, n=10)[8])),
-                freshness=round(statistics.quantiles(freshnesses, n=10)[8], 2),
                 reachability=round(statistics.quantiles(reachabilities, n=10)[8], 2),
                 requests_per_day=round(statistics.quantiles(requests, n=10)[8]),
             )
@@ -759,14 +676,12 @@ async def get_chains_metrics(
             avg_metrics = ChainMetrics(
                 uptime=0.0,
                 latency_in_ms=0,
-                freshness=0.0,
                 reachability=0.0,
                 requests_per_day=0,
             )
             p90_metrics = ChainMetrics(
                 uptime=0.0,
                 latency_in_ms=0,
-                freshness=0.0,
                 reachability=0.0,
                 requests_per_day=0,
             )
@@ -809,7 +724,6 @@ async def get_chain_metrics(
         # Fetch all required metrics in parallel
         (
             consumers_data,
-            freshness_data,
             latency_data,
             chain_traffic_data,
             provider_health_data,
@@ -822,7 +736,6 @@ async def get_chain_metrics(
         chain_metrics = {
             "uptime": calculate_uptime_percentage(consumers_data, chain_id),
             "latency_in_ms": calculate_latency_ms(latency_data, chain_id),
-            "freshness": calculate_freshness_percentage(freshness_data),
             "reachability": calculate_chain_reachability_percentage(
                 provider_health_data, chain_providers
             ),
@@ -874,10 +787,8 @@ async def get_providers_metrics(
         adaptive_step_size = calculate_adaptive_step_size(time_window_minutes)
 
         # Fetch all required metrics in parallel
-        providers_data, freshness_data, provider_traffic_data = (
-            await fetch_provider_metrics_data(
-                svc, time_window_minutes, adaptive_step_size
-            )
+        providers_data, provider_traffic_data = await fetch_provider_metrics_data(
+            svc, time_window_minutes, adaptive_step_size
         )
 
         # Calculate metrics for each provider
@@ -888,9 +799,6 @@ async def get_providers_metrics(
                     providers_data, provider_id
                 ),
                 latency_in_ms=None,  # Providers don't have latency metrics
-                freshness=calculate_provider_freshness_percentage(
-                    freshness_data, provider_id
-                ),
                 requests_per_day=calculate_provider_requests_per_day(
                     provider_traffic_data, provider_id
                 ),
@@ -903,14 +811,12 @@ async def get_providers_metrics(
         if total_providers > 0:
             # Extract values for statistics
             uptimes = [provider.uptime for provider in all_providers]
-            freshnesses = [provider.freshness for provider in all_providers]
             requests = [provider.requests_per_day for provider in all_providers]
 
             # Create average metrics (no latency for providers)
             avg_metrics = ProviderMetrics(
                 uptime=round(sum(uptimes) / total_providers, 2),
                 latency_in_ms=None,  # Providers don't have latency metrics
-                freshness=round(sum(freshnesses) / total_providers, 2),
                 requests_per_day=sum(requests),
             )
 
@@ -918,15 +824,14 @@ async def get_providers_metrics(
             p90_metrics = ProviderMetrics(
                 uptime=round(statistics.quantiles(uptimes, n=10)[8], 2),
                 latency_in_ms=None,  # Providers don't have latency metrics
-                freshness=round(statistics.quantiles(freshnesses, n=10)[8], 2),
                 requests_per_day=round(statistics.quantiles(requests, n=10)[8]),
             )
         else:
             avg_metrics = ProviderMetrics(
-                uptime=0.0, latency_in_ms=None, freshness=0.0, requests_per_day=0
+                uptime=0.0, latency_in_ms=None, requests_per_day=0
             )
             p90_metrics = ProviderMetrics(
-                uptime=0.0, latency_in_ms=None, freshness=0.0, requests_per_day=0
+                uptime=0.0, latency_in_ms=None, requests_per_day=0
             )
 
         return ProvidersResponse(
@@ -967,19 +872,14 @@ async def get_provider_metrics(
         adaptive_step_size = calculate_adaptive_step_size(time_window_minutes)
 
         # Fetch all required metrics in parallel
-        providers_data, freshness_data, provider_traffic_data = (
-            await fetch_provider_metrics_data(
-                svc, time_window_minutes, adaptive_step_size
-            )
+        providers_data, provider_traffic_data = await fetch_provider_metrics_data(
+            svc, time_window_minutes, adaptive_step_size
         )
 
         # Calculate metrics for the specific provider
         provider_metrics = {
             "uptime": calculate_provider_uptime_percentage(providers_data, provider_id),
             "latency_in_ms": None,  # Providers don't have latency metrics
-            "freshness": calculate_provider_freshness_percentage(
-                freshness_data, provider_id
-            ),
             "requests_per_day": calculate_provider_requests_per_day(
                 provider_traffic_data, provider_id
             ),
@@ -1045,7 +945,6 @@ async def get_chains_to_providers(
         # Fetch all required metrics in parallel
         (
             consumers_data,
-            freshness_data,
             latency_data,
             chain_traffic_data,
             provider_health_data,

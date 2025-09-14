@@ -127,7 +127,6 @@ export function InDepthMetrics({}: InDepthMetricsProps) {
             ),
             uptime: MetricsService.formatPercentage(chainsResponse.chains[chainValue].uptime),
             latency: MetricsService.formatLatency(chainsResponse.chains[chainValue].latency_in_ms),
-            freshness: MetricsService.formatPercentage(chainsResponse.chains[chainValue].freshness),
           })),
           providers: providersFromApi.map(providerValue => ({
             provider: providerValue,
@@ -141,8 +140,8 @@ export function InDepthMetrics({}: InDepthMetricsProps) {
               providersResponse.providers[providerValue].latency_in_ms,
             ),
             sync: MetricsService.formatPercentage(
-              providersResponse.providers[providerValue].freshness,
-            ), // Using freshness as proxy for sync
+              providersResponse.providers[providerValue].uptime,
+            ), // Using uptime as proxy for sync
           })),
           selectedChain: 'All Chains',
           selectedProvider: 'All Providers',
