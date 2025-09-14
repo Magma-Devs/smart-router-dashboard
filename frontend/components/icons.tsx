@@ -135,7 +135,7 @@ import {
   Sunrise,
   Sunset,
   Server as Logo,
-} from "lucide-react"
+} from 'lucide-react';
 
 export const Icons = {
   menu: Menu,
@@ -274,4 +274,4 @@ export const Icons = {
   sunrise: Sunrise,
   sunset: Sunset,
   logo: Logo,
-} 
+};

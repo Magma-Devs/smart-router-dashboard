@@ -89,7 +89,9 @@ environment:
 - `POST /api/auth/login` - User login
 - `POST /api/auth/logout` - User logout
 - `GET /api/auth/me` - Current user info
-- `GET /api/metrics/*` - All metrics endpoints
+- `GET /api/metrics/chains` - Chain metrics and KPIs
+- `GET /api/metrics/chains-to-providers` - Chain-to-provider mapping with health data
+- `GET /api/metrics/providers` - Provider metrics
 - `GET /api/components/*` - All component endpoints
 
 ## Security Features
@@ -152,16 +154,28 @@ async def your_endpoint(current_user: str = Depends(get_current_user)):
 
 The backend is built with FastAPI and includes:
 
-- Authentication middleware
-- Protected route decorators
-- Comprehensive error handling
-- Prometheus integration
+- **Authentication middleware**: HTTP Basic Auth with session management
+- **Protected route decorators**: Secure endpoint access control
+- **Comprehensive error handling**: Detailed error responses and logging
+- **Prometheus integration**: Real-time metrics collection and monitoring
+- **Type-safe APIs**: Pydantic models for request/response validation
+- **Test coverage**: Comprehensive test suite with dataclass validation
 
 ### Frontend Development
 
 The frontend is built with Next.js and includes:
 
-- Authentication context
-- Protected route components
-- Automatic API client with auth headers
-- Responsive UI components
+- **Authentication context**: Global auth state management
+- **Protected route components**: Automatic redirect for unauthorized access
+- **Automatic API client**: Auth headers included in all requests
+- **Responsive UI components**: Modern design with Tailwind CSS
+- **Type safety**: Full TypeScript integration with shared type definitions
+- **Flow visualization**: Interactive React Flow diagrams for system monitoring
+
+### Code Quality Improvements
+
+- **Shared Types**: Consolidated API types in `/types/metrics.ts`
+- **No Duplication**: Eliminated duplicate type definitions across components
+- **Better Testing**: Dataclass-based validation instead of manual assertions
+- **Import Organization**: Proper import structure and organization
+- **Type Safety**: End-to-end type safety from backend to frontend

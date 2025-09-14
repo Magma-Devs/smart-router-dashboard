@@ -1,30 +1,30 @@
 // Types for the API response
 export interface MetricsResponse {
-  status: string
+  status: string;
   data: {
-    resultType: string
-    result: MetricResult[]
-  }
+    resultType: string;
+    result: MetricResult[];
+  };
 }
 
 export interface MetricResult {
   metric: {
-    __name__: string
-    apiInterface: string
-    spec: string
-    [key: string]: string
-  }
-  values: [number, string][]
+    __name__: string;
+    apiInterface: string;
+    spec: string;
+    [key: string]: string;
+  };
+  values: [number, string][];
 }
 
 // Processed data types
 export interface ProcessedMetric {
-  spec: string
-  apiInterface: string
-  values: TimeSeriesPoint[]
+  spec: string;
+  apiInterface: string;
+  values: TimeSeriesPoint[];
 }
 
 export interface TimeSeriesPoint {
-  timestamp: number
-  value: number
+  timestamp: number;
+  value: number;
 }

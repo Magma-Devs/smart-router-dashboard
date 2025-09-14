@@ -1,16 +1,31 @@
-"use client"
+'use client';
 
-import { useState, useMemo } from "react"
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts"
-import { format } from "date-fns"
-import type { ProcessedMetric } from "@/lib/types"
-import { Button } from "@/components/ui/button"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Label } from "@/components/ui/label"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { useRouter, useSearchParams } from "next/navigation"
-import { RefreshCw } from "lucide-react"
-import { chains, getChainLabel, getChainIcon } from "@/app/config/chains"
+import { useState, useMemo } from 'react';
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from 'recharts';
+import { format } from 'date-fns';
+import type { ProcessedMetric } from '@/lib/types';
+import { Button } from '@/components/ui/button';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { RefreshCw } from 'lucide-react';
+import { chains, getChainLabel, getChainIcon } from '@/app/config/chains';
 import { TooltipProps } from 'recharts';
 import type { NameType, ValueType } from 'recharts/types/component/DefaultTooltipContent';
 
@@ -41,10 +56,15 @@ interface TimeSeriesGraphProps {
   isLatency?: boolean;
 }
 
-export function TimeSeriesGraph({ data, onRefresh, title = "Total Requests Served Per Chain", isLatency = false }: TimeSeriesGraphProps) {
+export function TimeSeriesGraph({
+  data,
+  onRefresh,
+  title = 'Total Requests Served Per Chain',
+  isLatency = false,
+}: TimeSeriesGraphProps) {
   const [timeRange, setTimeRange] = useState(15);
-  const [selectedSpec, setSelectedSpec] = useState<string>("all");
-  const [selectedProvider, setSelectedProvider] = useState<string>("all");
+  const [selectedSpec, setSelectedSpec] = useState<string>('all');
+  const [selectedProvider, setSelectedProvider] = useState<string>('all');
 
   const handleTimeRangeChange = (value: string) => {
     const minutes = parseInt(value, 10);
@@ -62,7 +82,7 @@ export function TimeSeriesGraph({ data, onRefresh, title = "Total Requests Serve
 
   const handleSpecChange = (spec: string) => {
     setSelectedSpec(spec);
-    setSelectedProvider("all"); // Reset provider when chain changes
+    setSelectedProvider('all'); // Reset provider when chain changes
   };
 
   const handleProviderChange = (provider: string) => {
@@ -70,24 +90,33 @@ export function TimeSeriesGraph({ data, onRefresh, title = "Total Requests Serve
   };
 
   // Custom tooltip content component
-  const CustomTooltip = ({ active, payload, label, maxWidth = 440 }: TooltipProps<ValueType, NameType> & { maxWidth?: number }) => {
+  const CustomTooltip = ({
+    active,
+    payload,
+    label,
+    maxWidth = 440,
+  }: TooltipProps<ValueType, NameType> & { maxWidth?: number }) => {
     if (!active || !payload || payload.length === 0) return null;
     // Determine if we are in provider mode (selectedSpec !== 'all' && !isLatency)
     const isProviderMode = selectedSpec !== 'all' && !isLatency;
     return (
-      <div style={{
-        backgroundColor: 'rgb(24, 24, 27)',
-        border: '1px solid rgb(63, 63, 70)',
-        borderRadius: '0.5rem',
-        padding: '0.75rem',
-        color: 'rgb(244, 244, 245)',
-        width: maxWidth,
-        minWidth: 320,
-        maxWidth: maxWidth,
-        wordBreak: 'break-all',
-        whiteSpace: 'pre-line',
-      }}>
-        <div style={{ color: 'rgb(161, 161, 170)', marginBottom: '0.5rem', fontSize: '0.875rem' }}>{`Time: ${label}`}</div>
+      <div
+        style={{
+          backgroundColor: 'rgb(24, 24, 27)',
+          border: '1px solid rgb(63, 63, 70)',
+          borderRadius: '0.5rem',
+          padding: '0.75rem',
+          color: 'rgb(244, 244, 245)',
+          width: maxWidth,
+          minWidth: 320,
+          maxWidth: maxWidth,
+          wordBreak: 'break-all',
+          whiteSpace: 'pre-line',
+        }}
+      >
+        <div
+          style={{ color: 'rgb(161, 161, 170)', marginBottom: '0.5rem', fontSize: '0.875rem' }}
+        >{`Time: ${label}`}</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           {payload.map((entry: any) => {
             const chain = chains.find(c => c.label === entry.name);
@@ -99,12 +128,44 @@ export function TimeSeriesGraph({ data, onRefresh, title = "Total Requests Serve
             // Use the color from colorMap if available
             const color = colorMap.get(entry.name) || 'rgb(244, 244, 245)';
             return (
-              <div key={entry.name} style={{ display: 'grid', gridTemplateColumns: isProviderMode ? '1fr 120px' : '24px 1fr 120px', alignItems: 'center', minWidth: 0 }}>
+              <div
+                key={entry.name}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: isProviderMode ? '1fr 120px' : '24px 1fr 120px',
+                  alignItems: 'center',
+                  minWidth: 0,
+                }}
+              >
                 {!isProviderMode && (
-                  <img src={icon} alt={entry.name} style={{ width: 16, height: 16, marginRight: 8, justifySelf: 'center' }} />
+                  <img
+                    src={icon}
+                    alt={entry.name}
+                    style={{ width: 16, height: 16, marginRight: 8, justifySelf: 'center' }}
+                  />
                 )}
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginRight: 8, color }}>{entry.name}</span>
-                <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontFeatureSettings: '"tnum"', overflowWrap: 'break-word', color }}>{formattedValue}</span>
+                <span
+                  style={{
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    marginRight: 8,
+                    color,
+                  }}
+                >
+                  {entry.name}
+                </span>
+                <span
+                  style={{
+                    textAlign: 'right',
+                    fontVariantNumeric: 'tabular-nums',
+                    fontFeatureSettings: '"tnum"',
+                    overflowWrap: 'break-word',
+                    color,
+                  }}
+                >
+                  {formattedValue}
+                </span>
               </div>
             );
           })}
@@ -114,14 +175,20 @@ export function TimeSeriesGraph({ data, onRefresh, title = "Total Requests Serve
   };
 
   // Get unique specs for the selector
-  const specs = useMemo(() => Array.from(new Set(data?.data?.result?.map(item => item.metric.spec) ?? [])).sort((a, b) => a.localeCompare(b)), [data]);
+  const specs = useMemo(
+    () =>
+      Array.from(new Set(data?.data?.result?.map(item => item.metric.spec) ?? [])).sort((a, b) =>
+        a.localeCompare(b),
+      ),
+    [data],
+  );
 
   // Get unique providers for the selected spec
   const providers = useMemo(() => {
     if (!data?.data?.result) return [];
-    if (selectedSpec === "all") return [];
+    if (selectedSpec === 'all') return [];
     const filtered = data.data.result.filter(item => item.metric.spec === selectedSpec);
-    return ["all", ...Array.from(new Set(filtered.map(item => item.metric.service)))];
+    return ['all', ...Array.from(new Set(filtered.map(item => item.metric.service)))];
   }, [data, selectedSpec]);
 
   let chartData: any[] = [];
@@ -165,7 +232,9 @@ export function TimeSeriesGraph({ data, onRefresh, title = "Total Requests Serve
       });
     });
     // Build chartData
-    const allTimestamps = Array.from(new Set(Object.values(chainMap).flatMap(obj => Object.keys(obj)))).sort();
+    const allTimestamps = Array.from(
+      new Set(Object.values(chainMap).flatMap(obj => Object.keys(obj))),
+    ).sort();
     chartData = allTimestamps.map(ts => {
       const row: any = { timestamp: ts };
       Object.keys(chainMap).forEach(spec => {
@@ -175,7 +244,7 @@ export function TimeSeriesGraph({ data, onRefresh, title = "Total Requests Serve
     });
     legendNames = Object.keys(chainMap).map(getChainLabel);
     legendNames.forEach((name, idx) => colorMap.set(name, palette[idx % palette.length]));
-  } else if (selectedSpec === "all") {
+  } else if (selectedSpec === 'all') {
     // Aggregate by chain (sum all providers for each chain)
     const chainMap: Record<string, { [timestamp: string]: number }> = {};
     (data?.data?.result ?? []).forEach(series => {
@@ -187,7 +256,9 @@ export function TimeSeriesGraph({ data, onRefresh, title = "Total Requests Serve
       });
     });
     // Build chartData
-    const allTimestamps = Array.from(new Set(Object.values(chainMap).flatMap(obj => Object.keys(obj)))).sort();
+    const allTimestamps = Array.from(
+      new Set(Object.values(chainMap).flatMap(obj => Object.keys(obj))),
+    ).sort();
     chartData = allTimestamps.map(ts => {
       const row: any = { timestamp: ts };
       Object.keys(chainMap).forEach(spec => {
@@ -199,7 +270,11 @@ export function TimeSeriesGraph({ data, onRefresh, title = "Total Requests Serve
     legendNames.forEach((name, idx) => colorMap.set(name, palette[idx % palette.length]));
   } else {
     // Show breakdown by provider for the selected chain (requests only)
-    const filtered = (data?.data?.result ?? []).filter(item => item.metric.spec === selectedSpec && (selectedProvider === "all" || item.metric.service === selectedProvider));
+    const filtered = (data?.data?.result ?? []).filter(
+      item =>
+        item.metric.spec === selectedSpec &&
+        (selectedProvider === 'all' || item.metric.service === selectedProvider),
+    );
     legendNames = Array.from(new Set(filtered.map(item => item.metric.service)));
     legendNames.forEach((name, idx) => colorMap.set(name, palette[idx % palette.length]));
     // Build chartData
@@ -212,7 +287,9 @@ export function TimeSeriesGraph({ data, onRefresh, title = "Total Requests Serve
         providerMap[provider][ts] = parseFloat(value);
       });
     });
-    const allTimestamps = Array.from(new Set(Object.values(providerMap).flatMap(obj => Object.keys(obj)))).sort();
+    const allTimestamps = Array.from(
+      new Set(Object.values(providerMap).flatMap(obj => Object.keys(obj))),
+    ).sort();
     chartData = allTimestamps.map(ts => {
       const row: any = { timestamp: ts };
       legendNames.forEach(provider => {
@@ -224,106 +301,87 @@ export function TimeSeriesGraph({ data, onRefresh, title = "Total Requests Serve
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
+      <CardHeader className='flex flex-row items-center justify-between'>
         <CardTitle>{title}</CardTitle>
-        <div className="flex items-center space-x-4">
-          {selectedSpec !== "all" && !isLatency && (
+        <div className='flex items-center space-x-4'>
+          {selectedSpec !== 'all' && !isLatency && (
             <Select value={selectedProvider} onValueChange={handleProviderChange}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Select Provider" />
+              <SelectTrigger className='w-[180px]'>
+                <SelectValue placeholder='Select Provider' />
               </SelectTrigger>
               <SelectContent>
-                {providers.map((provider) => (
+                {providers.map(provider => (
                   <SelectItem key={provider} value={provider}>
-                    {provider === "all" ? "All Providers" : provider}
+                    {provider === 'all' ? 'All Providers' : provider}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           )}
           <Select value={selectedSpec} onValueChange={handleSpecChange}>
-            <SelectTrigger className="w-[240px]">
-              <SelectValue placeholder="Select Chain" />
+            <SelectTrigger className='w-[240px]'>
+              <SelectValue placeholder='Select Chain' />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Chains</SelectItem>
-              {specs.map((spec) => (
+              <SelectItem value='all'>All Chains</SelectItem>
+              {specs.map(spec => (
                 <SelectItem key={spec} value={spec}>
-                  <div className="flex items-center gap-2">
-                    <img 
-                      src={getChainIcon(spec)} 
-                      alt={getChainLabel(spec)} 
-                      className="w-4 h-4"
-                    />
+                  <div className='flex items-center gap-2'>
+                    <img src={getChainIcon(spec)} alt={getChainLabel(spec)} className='w-4 h-4' />
                     {getChainLabel(spec)}
                   </div>
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
-          <div className="flex space-x-2">
-            <Button 
-              variant={timeRange === 5 ? "default" : "outline"} 
-              onClick={() => handleTimeRangeChange("5")}
-              size="sm"
+          <div className='flex space-x-2'>
+            <Button
+              variant={timeRange === 5 ? 'default' : 'outline'}
+              onClick={() => handleTimeRangeChange('5')}
+              size='sm'
             >
               5m
             </Button>
-            <Button 
-              variant={timeRange === 15 ? "default" : "outline"} 
-              onClick={() => handleTimeRangeChange("15")}
-              size="sm"
+            <Button
+              variant={timeRange === 15 ? 'default' : 'outline'}
+              onClick={() => handleTimeRangeChange('15')}
+              size='sm'
             >
               15m
             </Button>
-            <Button 
-              variant={timeRange === 30 ? "default" : "outline"} 
-              onClick={() => handleTimeRangeChange("30")}
-              size="sm"
+            <Button
+              variant={timeRange === 30 ? 'default' : 'outline'}
+              onClick={() => handleTimeRangeChange('30')}
+              size='sm'
             >
               30m
             </Button>
-            <Button 
-              variant={timeRange === 60 ? "default" : "outline"} 
-              onClick={() => handleTimeRangeChange("60")}
-              size="sm"
+            <Button
+              variant={timeRange === 60 ? 'default' : 'outline'}
+              onClick={() => handleTimeRangeChange('60')}
+              size='sm'
             >
               1h
             </Button>
           </div>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={handleRefresh}
-            className="ml-2"
-          >
-            <RefreshCw className="h-4 w-4" />
+          <Button variant='outline' size='sm' onClick={handleRefresh} className='ml-2'>
+            <RefreshCw className='h-4 w-4' />
           </Button>
         </div>
       </CardHeader>
       <CardContent>
-        <div className="h-[300px]">
-          <ResponsiveContainer width="100%" height="100%">
+        <div className='h-[300px]'>
+          <ResponsiveContainer width='100%' height='100%'>
             <LineChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis 
-                dataKey="timestamp" 
-                tick={{ fontSize: 12 }}
-                interval="preserveStartEnd"
-              />
+              <CartesianGrid strokeDasharray='3 3' />
+              <XAxis dataKey='timestamp' tick={{ fontSize: 12 }} interval='preserveStartEnd' />
               <YAxis />
-              <Tooltip 
-                content={<CustomTooltip maxWidth={440} />}
-              />
-              <Legend 
-                verticalAlign="bottom" 
-                height={36}
-                formatter={(value) => value}
-              />
-              {legendNames.map((name) => (
+              <Tooltip content={<CustomTooltip maxWidth={440} />} />
+              <Legend verticalAlign='bottom' height={36} formatter={value => value} />
+              {legendNames.map(name => (
                 <Line
                   key={name}
-                  type="monotone"
+                  type='monotone'
                   dataKey={name}
                   stroke={colorMap.get(name) || `hsl(${Math.random() * 360}, 70%, 50%)`}
                   dot={false}

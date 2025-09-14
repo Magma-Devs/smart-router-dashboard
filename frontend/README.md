@@ -5,18 +5,21 @@ A modern React/Next.js frontend application for monitoring and managing Smart Ro
 ## 🚀 Features
 
 ### **Real-Time Monitoring**
+
 - **KPI Dashboard**: Live monitoring of Uptime, Latency, Data Freshness, and Reachability
 - **System Flow Visualization**: Interactive visualization of consumer-provider relationships
 - **Multi-Chain Support**: Monitor individual chains or all chains simultaneously
 - **Time Window Selection**: View metrics for 5 minutes to 24 hours
 
 ### **Advanced Analytics**
+
 - **Prometheus Integration**: Real-time data from Prometheus metrics
 - **Color-Coded KPIs**: Visual indicators for performance status (Green/Orange/Red)
 - **Mock Data Mode**: Development and testing with simulated data
 - **Auto-refresh**: Configurable refresh intervals
 
 ### **User Experience**
+
 - **Responsive Design**: Works seamlessly on desktop and mobile
 - **Dark/Light Theme**: Modern UI with theme support
 - **Keyboard Shortcuts**: Quick access to features (Ctrl+Shift+M for mock toggle)
@@ -25,6 +28,7 @@ A modern React/Next.js frontend application for monitoring and managing Smart Ro
 ## 🏗️ Architecture
 
 ### **Technology Stack**
+
 - **Framework**: Next.js 14 with App Router
 - **Language**: TypeScript
 - **Styling**: Tailwind CSS
@@ -34,6 +38,7 @@ A modern React/Next.js frontend application for monitoring and managing Smart Ro
 - **Icons**: Lucide React
 
 ### **Project Structure**
+
 ```
 frontend/
 ├── app/                          # Next.js App Router
@@ -63,14 +68,16 @@ frontend/
 ## 📊 KPI Metrics
 
 ### **Uptime**
+
 - **Metric**: `lava_consumer_overall_health_breakdown`
 - **Calculation**: Percentage of healthy consumer timestamps
-- **Thresholds**: 
+- **Thresholds**:
   - 🟢 Green: ≥99.5%
   - 🟠 Orange: 95-99.4%
   - 🔴 Red: <95%
 
 ### **Latency**
+
 - **Metric**: `lava_consumer_average_latency_in_milliseconds`
 - **Calculation**: Average response time across consumers
 - **Thresholds**:
@@ -79,6 +86,7 @@ frontend/
   - 🔴 Red: >500ms
 
 ### **Data Freshness**
+
 - **Metric**: `lava_consumer_qos_metrics{qos_metric="sync/freshness"}`
 - **Calculation**: Average data freshness percentage (scaled 0-100)
 - **Thresholds**:
@@ -87,6 +95,7 @@ frontend/
   - 🔴 Red: <85%
 
 ### **Reachability**
+
 - **Metrics**: `lava_consumer_overall_health_breakdown` + `lava_provider_overall_health_breakdown`
 - **Calculation**: Average percentage of healthy providers per consumer
 - **Thresholds**:
@@ -97,11 +106,13 @@ frontend/
 ## 🛠️ Development
 
 ### **Prerequisites**
-- Node.js 18+ 
+
+- Node.js 18+
 - npm or yarn
 - Backend API running (see backend README)
 
 ### **Installation**
+
 ```bash
 # Install dependencies
 npm install
@@ -112,6 +123,7 @@ cp .env.example .env.local
 ```
 
 ### **Environment Variables**
+
 ```env
 # API Configuration
 NEXT_PUBLIC_API_URL=https://your-api-endpoint.com
@@ -121,6 +133,7 @@ NODE_ENV=development
 ```
 
 ### **Development Commands**
+
 ```bash
 # Start development server
 npm run dev
@@ -138,10 +151,10 @@ npm run lint
 npm run type-check
 ```
 
-
 ## 🔧 Configuration
 
 ### **API Endpoint Configuration**
+
 The frontend connects to the backend API for real-time data. Configure the endpoint in:
 
 1. **Environment Variable**: `NEXT_PUBLIC_API_URL`
@@ -149,19 +162,23 @@ The frontend connects to the backend API for real-time data. Configure the endpo
 3. **Local Storage**: Persisted user preferences
 
 ### **Chain Configuration**
+
 Chains are defined in `app/config/chains.ts`:
+
 ```typescript
 export const chains = [
-  { value: "ETH1", label: "Ethereum Mainnet", icon: "/images/ethereum.svg" },
-  { value: "COSMOS", label: "Cosmos Hub", icon: "/images/cosmos.svg" },
+  { value: 'ETH1', label: 'Ethereum Mainnet', icon: '/images/ethereum.svg' },
+  { value: 'COSMOS', label: 'Cosmos Hub', icon: '/images/cosmos.svg' },
   // ... more chains
-]
+];
 ```
 
 ### **Time Windows**
+
 Available time windows for metrics:
+
 - 5 minutes
-- 15 minutes  
+- 15 minutes
 - 30 minutes
 - 1 hour
 - 4 hours
@@ -170,10 +187,12 @@ Available time windows for metrics:
 ## 🎨 UI Components
 
 ### **KPICard Component**
+
 Reusable card component for displaying metrics:
+
 ```typescript
-<KPICard 
-  title="Uptime" 
+<KPICard
+  title="Uptime"
   value="98.5%"
   color="green"
   isLoading={false}
@@ -181,7 +200,9 @@ Reusable card component for displaying metrics:
 ```
 
 ### **Summary Section**
+
 Main dashboard component with:
+
 - Chain selection dropdown
 - Time window selector
 - Mock data toggle
@@ -189,7 +210,9 @@ Main dashboard component with:
 - KPI cards grid
 
 ### **Flow Visualization**
+
 Interactive system flow diagram showing:
+
 - Consumer health status
 - Provider health status
 - Connection lines
@@ -198,6 +221,7 @@ Interactive system flow diagram showing:
 ## 🔌 API Integration
 
 ### **Prometheus Queries**
+
 The frontend makes the following Prometheus queries:
 
 1. **Consumer Health**: `lava_consumer_overall_health_breakdown`
@@ -206,6 +230,7 @@ The frontend makes the following Prometheus queries:
 4. **Latency**: `avg_over_time(lava_consumer_average_latency_in_milliseconds[1m])`
 
 ### **API Endpoints**
+
 - `GET /api/metrics/last_minutes` - Fetch Prometheus metrics
 - `GET /api/components/` - Get available chains
 - `GET /api/auth/debug-status` - Authentication status
@@ -213,6 +238,7 @@ The frontend makes the following Prometheus queries:
 ## 🚀 Deployment
 
 ### **Build Process**
+
 ```bash
 # Install dependencies
 npm install
@@ -225,6 +251,7 @@ npm start
 ```
 
 ### **Docker Deployment**
+
 ```dockerfile
 FROM node:18-alpine
 WORKDIR /app
@@ -237,7 +264,9 @@ CMD ["npm", "start"]
 ```
 
 ### **Environment Configuration**
+
 Ensure the following environment variables are set:
+
 - `NEXT_PUBLIC_API_URL` - Backend API endpoint
 - `NODE_ENV` - Environment (production/development)
 
@@ -246,36 +275,43 @@ Ensure the following environment variables are set:
 ### **Common Issues**
 
 **CORS Errors**
+
 - Ensure backend CORS is configured for frontend domain
 - Check API endpoint configuration
 
 **No Data Loading**
+
 - Verify API endpoint is accessible
 - Check network connectivity
 - Enable mock data mode for testing
 
 **Build Errors**
+
 - Clear `.next` cache: `rm -rf .next`
 - Reinstall dependencies: `rm -rf node_modules && npm install`
 
 ### **Debug Mode**
+
 Enable debug logging by setting `NODE_ENV=development` and checking browser console for detailed error messages.
 
 ## 🤝 Contributing
 
 ### **Code Style**
+
 - Use TypeScript for all new code
 - Follow ESLint configuration
 - Use Prettier for formatting
 - Write meaningful commit messages
 
 ### **Component Guidelines**
+
 - Use functional components with hooks
 - Implement proper TypeScript interfaces
 - Add loading and error states
 - Make components reusable
 
 ### **Testing**
+
 - Test components in isolation
 - Verify API integration
 - Test responsive design
