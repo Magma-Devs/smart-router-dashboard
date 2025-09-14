@@ -23,7 +23,7 @@ from app.api.routes.metrics import (
     get_prometheus_service,
     calculate_uptime_percentage,
     calculate_latency_ms,
-    calculate_requests_per_day,
+    calculate_requests_in_time_window,
     calculate_provider_uptime_percentage,
     calculate_consumer_latest_block_number,
     calculate_provider_latest_block_number,
@@ -269,8 +269,30 @@ class TestCalculationFunctions:
                 ]
             },
         }
-        result = calculate_requests_per_day(traffic_data, "ethereum")
-        assert result == 1200  # Latest value
+        result = calculate_requests_in_time_window(traffic_data, "ethereum")
+        assert result == 200  # Sum of increments: (1200 - 1000) = 200
+
+    def test_calculate_requests_in_time_window_with_counter_reset(self):
+        """Test requests calculation with counter reset handling."""
+        traffic_data = {
+            "status": "success",
+            "data": {
+                "result": [
+                    {
+                        "metric": {"spec": "ethereum"},
+                        "values": [
+                            ["1640995200", "1000"],
+                            ["1640995260", "1200"],
+                            ["1640995320", "100"],  # Counter reset
+                            ["1640995380", "300"],  # Increment after reset
+                        ],
+                    }
+                ]
+            },
+        }
+        result = calculate_requests_in_time_window(traffic_data, "ethereum")
+        # Should handle counter reset: (1200-1000) + 1200 (reset) + (300-100) = 1600
+        assert result == 1600
 
     def test_calculate_provider_uptime_percentage_success(self):
         """Test provider uptime calculation with valid data."""
@@ -322,7 +344,7 @@ class TestNewEndpoints:
         assert "bitcoin" in data["chains"]
         assert "uptime" in data["chains"]["ethereum"]
         assert "latency_in_ms" in data["chains"]["ethereum"]
-        assert "requests_per_day" in data["chains"]["ethereum"]
+        assert "requests_in_window" in data["chains"]["ethereum"]
 
         app.dependency_overrides.pop(get_prometheus_service, None)
 
