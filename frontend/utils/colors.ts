@@ -43,14 +43,6 @@ export const getLatencyColor = (value: string): string => {
   return 'text-red-500';
 };
 
-export const getDataFreshnessColor = (value: string): string => {
-  const num = parseValue(value, '%');
-  if (num === -1) return 'text-red-500';
-  if (num >= REACHABILITY_GREEN) return 'text-green-500';
-  if (num >= REACHABILITY_ORANGE) return 'text-orange-500';
-  return 'text-red-500';
-};
-
 // Color functions that return color names for KPI cards
 export const getUptimeColorName = (value: string): 'green' | 'orange' | 'red' => {
   const num = parseValue(value, '%');
@@ -73,14 +65,6 @@ export const getLatencyColorName = (value: string): 'green' | 'orange' | 'red' =
   if (num === -1) return 'red';
   if (num <= LATENCY_GREEN) return 'green';
   if (num <= LATENCY_ORANGE) return 'orange';
-  return 'red';
-};
-
-export const getFreshnessColorName = (value: string): 'green' | 'orange' | 'red' => {
-  const num = parseValue(value, '%');
-  if (num === -1) return 'red';
-  if (num >= REACHABILITY_GREEN) return 'green';
-  if (num >= REACHABILITY_ORANGE) return 'orange';
   return 'red';
 };
 

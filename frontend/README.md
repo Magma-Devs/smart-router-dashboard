@@ -6,7 +6,7 @@ A modern React/Next.js frontend application for monitoring and managing Smart Ro
 
 ### **Real-Time Monitoring**
 
-- **KPI Dashboard**: Live monitoring of Uptime, Latency, Data Freshness, and Reachability
+- **KPI Dashboard**: Live monitoring of Uptime, Latency, and Reachability
 - **System Flow Visualization**: Interactive visualization of consumer-provider relationships
 - **Multi-Chain Support**: Monitor individual chains or all chains simultaneously
 - **Time Window Selection**: View metrics for 5 minutes to 24 hours
@@ -84,15 +84,6 @@ frontend/
   - 🟢 Green: ≤200ms
   - 🟠 Orange: 201-500ms
   - 🔴 Red: >500ms
-
-### **Data Freshness**
-
-- **Metric**: `lava_consumer_qos_metrics{qos_metric="sync/freshness"}`
-- **Calculation**: Average data freshness percentage (scaled 0-100)
-- **Thresholds**:
-  - 🟢 Green: ≥95%
-  - 🟠 Orange: 85-94.9%
-  - 🔴 Red: <85%
 
 ### **Reachability**
 
@@ -226,8 +217,7 @@ The frontend makes the following Prometheus queries:
 
 1. **Consumer Health**: `lava_consumer_overall_health_breakdown`
 2. **Provider Health**: `lava_provider_overall_health_breakdown`
-3. **Data Freshness**: `avg(lava_consumer_qos_metrics{qos_metric="sync/freshness"})`
-4. **Latency**: `avg_over_time(lava_consumer_average_latency_in_milliseconds[1m])`
+3. **Latency**: `avg_over_time(lava_consumer_average_latency_in_milliseconds[1m])`
 
 ### **API Endpoints**
 

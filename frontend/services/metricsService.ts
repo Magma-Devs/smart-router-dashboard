@@ -16,7 +16,6 @@ import { apiClient } from '@/lib/api-client';
 export interface ChainMetrics {
   uptime: number; // Uptime percentage (0-100)
   latency_in_ms: number; // Average latency in milliseconds
-  freshness: number; // Data freshness percentage (0-100)
   reachability: number; // Provider reachability percentage (0-100)
   requests_per_day: number; // Number of requests per day
 }
@@ -25,7 +24,6 @@ export interface ChainMetrics {
 export interface ProviderMetrics {
   uptime: number; // Uptime percentage (0-100)
   latency_in_ms: number | null; // Average latency in milliseconds (null for providers)
-  freshness: number; // Data freshness percentage (0-100)
   requests_per_day: number; // Number of requests per day
 }
 
@@ -279,13 +277,11 @@ export class MetricsService {
   static formatChainMetrics(metrics: ChainMetrics): {
     uptime: string;
     latency: string;
-    freshness: string;
     traffic: string;
   } {
     return {
       uptime: this.formatPercentage(metrics.uptime),
       latency: this.formatLatency(metrics.latency_in_ms),
-      freshness: this.formatPercentage(metrics.freshness),
       traffic: this.formatTraffic(metrics.requests_per_day),
     };
   }
@@ -300,13 +296,11 @@ export class MetricsService {
   static formatProviderMetrics(metrics: ProviderMetrics): {
     uptime: string;
     latency: string;
-    freshness: string;
     traffic: string;
   } {
     return {
       uptime: this.formatPercentage(metrics.uptime),
       latency: this.formatLatency(metrics.latency_in_ms),
-      freshness: this.formatPercentage(metrics.freshness),
       traffic: this.formatTraffic(metrics.requests_per_day),
     };
   }
