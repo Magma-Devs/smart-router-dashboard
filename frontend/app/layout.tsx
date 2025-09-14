@@ -5,6 +5,7 @@ import './globals.css';
 import { NavBar } from '@/components/nav-bar';
 import { ThemeProvider } from 'next-themes';
 import { AuthProvider } from '@/lib/auth-context';
+import { Toaster } from '@/components/ui/toaster';
 
 const inter = Inter({ subsets: ['latin'] });
 const poppins = Poppins({
@@ -56,6 +57,7 @@ export default function RootLayout({
               <NavBar />
               <main className='flex-1'>{children}</main>
             </div>
+            <Toaster />
           </AuthProvider>
         </ThemeProvider>
       </body>

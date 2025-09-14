@@ -10,10 +10,12 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronUp,
+  Copy,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getChainLabel, getChainIcon } from '@/app/config/chains';
 import { ChainsToProvidersResponse, ChainInfo } from '@/types/metrics';
+import { useToast } from '@/components/ui/use-toast';
 import ReactFlow, {
   Background,
   Controls,
@@ -39,6 +41,7 @@ interface Consumer {
   label: string;
   icon?: string;
   healthy: boolean;
+  consumerUrl?: string;
 }
 
 interface Provider {
@@ -72,6 +75,7 @@ function MixedHealthIndicator() {
   );
 }
 
+
 function UserNode({ data }: { data: any }) {
   return (
     <div className='px-4 py-2 shadow-lg rounded-lg border bg-background min-w-44'>
@@ -96,6 +100,8 @@ function ConsumerNode({
     icon?: string;
     hasMixedHealth?: boolean;
     width?: number;
+    consumerUrl?: string;
+    onCopyUrl?: (url: string) => void;
   };
 }) {
   return (
@@ -117,8 +123,25 @@ function ConsumerNode({
         ) : (
           <Network className='h-4 w-4 flex-shrink-0' />
         )}
-        <div className='flex flex-col whitespace-nowrap'>
-          <span className='font-medium'>{data.label}</span>
+        <div className='flex flex-col flex-1 min-w-0'>
+          <span className='font-medium whitespace-nowrap'>{data.label}</span>
+          {data.consumerUrl && (
+            <div className='flex items-center gap-1 mt-1 min-w-0'>
+              <span className='text-xs text-muted-foreground font-mono break-all'>{data.consumerUrl}</span>
+              <button
+                onClick={e => {
+                  e.stopPropagation();
+                  if (data.onCopyUrl && data.consumerUrl) {
+                    data.onCopyUrl(data.consumerUrl);
+                  }
+                }}
+                className='p-0.5 hover:bg-muted rounded flex-shrink-0'
+                title='Copy URL'
+              >
+                <Copy className='h-3 w-3 text-gray-500' />
+              </button>
+            </div>
+          )}
         </div>
         <div className='flex items-center ml-auto flex-shrink-0'>
           {data.hasMultipleProviders && (
@@ -401,6 +424,23 @@ function FlowInner({
   const nodesInitialized = useNodesInitialized();
   const renderedNodes = useStore((state: any) => state.nodes);
   const [containerHeight, setContainerHeight] = useState(800);
+  const { toast } = useToast();
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      toast({
+        title: "URL Copied",
+        description: "Consumer endpoint URL copied to clipboard",
+      });
+    }).catch(err => {
+      console.error('Failed to copy URL:', err);
+      toast({
+        title: "Copy Failed",
+        description: "Failed to copy URL to clipboard",
+        variant: "destructive",
+      });
+    });
+  };
 
   // Get previous expansion state from localStorage
   useEffect(() => {
@@ -575,6 +615,7 @@ function FlowInner({
           label: getChainLabel(chain.chain_id),
           icon: getChainIcon(chain.chain_id),
           healthy: chain.consumer_health,
+          consumerUrl: chain.consumer_url,
         });
 
         // Create providers for this chain
@@ -631,26 +672,25 @@ function FlowInner({
     const edges: Edge[] = [];
 
     const sidesPadding = 0;
-    const horizontalGap = 400;
-    const providerVerticalGap = 180;
-    const serviceGroupGap = 100;
+    const horizontalGap = 500; // Increased gap to center consumers between user and providers
+    const providerVerticalGap = 120; // Reduced vertical spacing
 
     // Sort consumers alphabetically by name
     consumers.sort((a, b) => a.name.localeCompare(b.name));
 
-    // Calculate the max width needed for consumer nodes
-    const maxLabelLength = consumers.reduce(
-      (max, consumer) => Math.max(max, consumer.label.length),
-      0,
-    );
-
-    // Base width + character width estimate * longest label + padding
-    const baseWidth = 80; // Base width for icons and padding
-    const charWidth = 10; // Approximate width of a character
-    const consumerNodeWidth = baseWidth + maxLabelLength * charWidth;
-
-    // Apply a minimum width constraint
-    const finalConsumerNodeWidth = Math.max(200, consumerNodeWidth);
+    // Function to calculate individual consumer width based on its content
+    const calculateConsumerWidth = (consumer: Consumer) => {
+      const baseWidth = 80; // Base width for icons and padding
+      const charWidth = 8; // Approximate width of a character
+      const urlCharWidth = 6; // Smaller for monospace font
+      const labelLength = consumer.label.length;
+      const urlLength = consumer.consumerUrl?.length || 0;
+      
+      const calculatedWidth = baseWidth + labelLength * charWidth + urlLength * urlCharWidth + 50; // Extra padding for copy button
+      
+      // Apply reasonable width constraints - not too wide, not too narrow
+      return Math.min(Math.max(200, calculatedWidth), 400);
+    };
 
     // Create a map of expanded states for consumers and service groups
     const expandedConsumers = new Set<string>();
@@ -754,7 +794,7 @@ function FlowInner({
           const isServiceExpanded = expandedServiceGroups.has(`${consumer.name}-${group.service}`);
           // Calculate height based on whether service is expanded and how many interfaces it has
           const nodeHeight = calculateNodeHeight(group, isServiceExpanded);
-          consumerHeight += nodeHeight + 60; // Increased padding between nodes
+          consumerHeight += nodeHeight + 40; // Reduced padding between nodes
         });
       } else {
         // Just one row for the collapsed consumer
@@ -797,7 +837,7 @@ function FlowInner({
           const nodeHeight = calculateNodeHeight(group, isServiceExpanded);
 
           // Move to next position with appropriate spacing
-          serviceY += nodeHeight + 60; // Increased padding between nodes
+          serviceY += nodeHeight + 40; // Reduced padding between nodes
         });
       }
 
@@ -819,12 +859,15 @@ function FlowInner({
     // Add consumer and provider nodes
     consumers.forEach(consumer => {
       const consumerId = `consumer-${consumer.name}`;
-      const consumerX = sidesPadding + horizontalGap;
+      const consumerX = sidesPadding + horizontalGap - 50; // Moved slightly left to center better
       const consumerY = consumerYPositions[consumer.name];
       const isConsumerExpanded = expandedConsumers.has(consumer.name);
       const serviceGroups = serviceGroupsByConsumer[consumer.name];
       const hasMultipleProviders =
         serviceGroups.reduce((total, group) => total + group.providers.length, 0) > 2;
+
+      // Calculate individual width for this consumer
+      const consumerWidth = calculateConsumerWidth(consumer);
 
       // Add consumer node
       nodes.push({
@@ -840,7 +883,9 @@ function FlowInner({
           hasMixedHealth:
             serviceGroups.some(group => group.anyHealthy) &&
             serviceGroups.some(group => !group.allHealthy),
-          width: finalConsumerNodeWidth,
+          width: consumerWidth,
+          consumerUrl: consumer.consumerUrl,
+          onCopyUrl: copyToClipboard,
           onToggleExpand: hasMultipleProviders
             ? () => {
                 setExpandedGroups(prev => {
@@ -897,7 +942,7 @@ function FlowInner({
               providers: group.providers,
               interfaces: group.interfaces,
               isExpanded: isServiceExpanded,
-              maxWidth: finalConsumerNodeWidth,
+              maxWidth: consumerWidth,
               onToggle: () => {
                 setExpandedGroups(prev => {
                   const newState = { ...prev };
