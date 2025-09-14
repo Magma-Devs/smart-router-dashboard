@@ -8,12 +8,12 @@ const UPTIME_GREEN = 99.5;
 const UPTIME_ORANGE = 95;
 const REACHABILITY_GREEN = 95;
 const REACHABILITY_ORANGE = 85;
-const LATENCY_GREEN = 200;
+const LATENCY_GREEN = 300;
 const LATENCY_ORANGE = 500;
 
 // Helper function to parse numeric values
 const parseValue = (value: string, unit: string): number => {
-  if (value === 'Error' || value === 'N/A') return -1;
+  if (value === 'Error' || value === 'N/A' || value === 'Coming Soon') return -1;
   const numericValue = parseFloat(value.replace(unit, ''));
   return isNaN(numericValue) ? -1 : numericValue;
 };

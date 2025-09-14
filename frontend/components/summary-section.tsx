@@ -23,71 +23,12 @@ import { useConfig } from '@/hooks/use-config';
 import { KPIData, KPICardProps } from '@/types/metrics';
 import { MetricsService, ChainMetrics } from '@/services/metricsService';
 import { TIME_FRAMES, DEFAULT_TIME_FRAME } from '@/constants/timeFrames';
-
-/**
- * Type definitions for API responses
- */
-
-/**
- * Color determination functions for KPI metrics
- * These functions determine the visual status (green/orange/red) based on metric values
- */
-
-/**
- * Determines color for uptime metrics based on percentage thresholds.
- * @param value - The uptime value as a string (e.g., "99.5%")
- * @returns Color classification: "green" (≥99.5%), "orange" (≥95%), "red" (<95%)
- */
-const getUptimeColor = (value: string): 'green' | 'orange' | 'red' => {
-  if (value === 'Error' || value === 'N/A') return 'red';
-  const numericValue = parseFloat(value.replace('%', ''));
-  if (isNaN(numericValue)) return 'red';
-  if (numericValue >= 99.5) return 'green';
-  if (numericValue >= 95) return 'orange';
-  return 'red';
-};
-
-/**
- * Determines color for freshness metrics based on percentage thresholds.
- * @param value - The freshness value as a string (e.g., "95.0%")
- * @returns Color classification: "green" (≥95%), "orange" (≥85%), "red" (<85%)
- */
-const getFreshnessColor = (value: string): 'green' | 'orange' | 'red' => {
-  if (value === 'Error' || value === 'N/A') return 'red';
-  const numericValue = parseFloat(value.replace('%', ''));
-  if (isNaN(numericValue)) return 'red';
-  if (numericValue >= 95) return 'green';
-  if (numericValue >= 85) return 'orange';
-  return 'red';
-};
-
-/**
- * Determines color for reachability metrics based on percentage thresholds.
- * @param value - The reachability value as a string (e.g., "90.0%")
- * @returns Color classification: "green" (≥95%), "orange" (≥85%), "red" (<85%)
- */
-const getReachabilityColor = (value: string): 'green' | 'orange' | 'red' => {
-  if (value === 'Error' || value === 'N/A') return 'red';
-  const numericValue = parseFloat(value.replace('%', ''));
-  if (isNaN(numericValue)) return 'red';
-  if (numericValue >= 95) return 'green';
-  if (numericValue >= 85) return 'orange';
-  return 'red';
-};
-
-/**
- * Determines color for latency metrics based on millisecond thresholds.
- * @param value - The latency value as a string (e.g., "150ms")
- * @returns Color classification: "green" (≤200ms), "orange" (≤500ms), "red" (>500ms)
- */
-const getLatencyColor = (value: string): 'green' | 'orange' | 'red' => {
-  if (value === 'Error' || value === 'N/A') return 'red';
-  const numericValue = parseFloat(value.replace('ms', ''));
-  if (isNaN(numericValue)) return 'red';
-  if (numericValue <= 200) return 'green';
-  if (numericValue <= 500) return 'orange';
-  return 'red';
-};
+import {
+  getUptimeColorName,
+  getFreshnessColorName,
+  getReachabilityColorName,
+  getLatencyColorName,
+} from '@/utils/colors';
 
 /**
  * KPI Card component that displays individual metric values with color-coded status.
@@ -355,7 +296,7 @@ export function SummarySection({}: SummarySectionProps) {
                 <SelectTrigger className='w-[140px]'>
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className='max-h-[15rem]'>
                   {TIME_FRAMES.map(timeFrame => (
                     <SelectItem key={timeFrame.value} value={timeFrame.value}>
                       {timeFrame.label}
@@ -381,13 +322,13 @@ export function SummarySection({}: SummarySectionProps) {
             <KPICard
               title='Uptime'
               value={kpiData.uptime}
-              color={getUptimeColor(kpiData.uptime)}
+              color={getUptimeColorName(kpiData.uptime)}
               isLoading={isLoading}
             />
             <KPICard
               title='Reachability'
               value={kpiData.reachability}
-              color={getReachabilityColor(kpiData.reachability)}
+              color={getReachabilityColorName(kpiData.reachability)}
               isLoading={isLoading}
               showInfo={true}
               tooltipText='Percentage of healthy providers available to each consumer. Unlike Uptime (consumer health), this measures provider availability. High uptime can be maintained even with lower reachability if available providers handle the load.'
@@ -395,13 +336,13 @@ export function SummarySection({}: SummarySectionProps) {
             <KPICard
               title='Latency'
               value={kpiData.latency}
-              color={getLatencyColor(kpiData.latency)}
+              color={getLatencyColorName(kpiData.latency)}
               isLoading={isLoading}
             />
             <KPICard
               title='Data Freshness'
               value={kpiData.freshness}
-              color={getFreshnessColor(kpiData.freshness)}
+              color={getFreshnessColorName(kpiData.freshness)}
               isLoading={isLoading}
             />
           </div>
