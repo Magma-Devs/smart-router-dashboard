@@ -5,7 +5,7 @@ class ApiClient {
     const credentials = sessionStorage.getItem('auth_credentials');
     if (credentials) {
       return {
-        'Authorization': `Basic ${credentials}`,
+        Authorization: `Basic ${credentials}`,
         'Content-Type': 'application/json',
       };
     }
@@ -14,13 +14,10 @@ class ApiClient {
     };
   }
 
-  async request<T>(
-    endpoint: string,
-    options: RequestInit = {}
-  ): Promise<T> {
+  async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const url = `${API_URL}${endpoint}`;
     const headers = this.getAuthHeaders();
-    
+
     const config: RequestInit = {
       ...options,
       headers: {
@@ -32,7 +29,7 @@ class ApiClient {
 
     try {
       const response = await fetch(url, config);
-      
+
       if (response.status === 401) {
         // Clear invalid credentials and redirect to login
         sessionStorage.removeItem('auth_credentials');
@@ -40,7 +37,7 @@ class ApiClient {
         window.dispatchEvent(new CustomEvent('auth-failed'));
         throw new Error('Authentication failed');
       }
-      
+
       if (!response.ok) {
         let errorMessage = `HTTP error! status: ${response.status}`;
         try {
@@ -53,7 +50,7 @@ class ApiClient {
         }
         throw new Error(errorMessage);
       }
-      
+
       return await response.json();
     } catch (error) {
       console.error('API request failed:', error);

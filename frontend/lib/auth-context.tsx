@@ -58,12 +58,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       const response = await fetch(`${API_URL}/api/auth/me`, {
         headers: {
-          'Authorization': `Basic ${savedCredentials}`,
+          Authorization: `Basic ${savedCredentials}`,
           'Content-Type': 'application/json',
         },
         credentials: 'include',
       });
-      
+
       if (response.ok) {
         const data = await response.json();
         setIsAuthenticated(true);
@@ -87,7 +87,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const login = async (username: string, password: string): Promise<boolean> => {
     try {
       setLoading(true);
-      
+
       const response = await fetch(`${API_URL}/api/auth/login`, {
         method: 'POST',
         headers: {
@@ -101,10 +101,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         const data = await response.json();
         setIsAuthenticated(true);
         setUsername(data.username);
-        
+
         // Store credentials returned from backend for future requests
         sessionStorage.setItem('auth_credentials', data.credentials);
-        
+
         return true;
       } else {
         setIsAuthenticated(false);
@@ -125,7 +125,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     setIsAuthenticated(false);
     setUsername(null);
     sessionStorage.removeItem('auth_credentials');
-    
+
     // Call logout endpoint
     fetch(`${API_URL}/api/auth/logout`, {
       method: 'POST',
@@ -141,9 +141,5 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     loading,
   };
 
-  return (
-    <AuthContext.Provider value={value}>
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
