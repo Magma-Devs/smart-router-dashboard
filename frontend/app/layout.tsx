@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { Inter, Poppins, JetBrains_Mono, Outfit } from 'next/font/google';
 import './globals.css';
 import { NavBar } from '@/components/nav-bar';
-import { ThemeProvider } from '@/components/theme-provider';
+import { ThemeProvider } from 'next-themes';
 import { AuthProvider } from '@/lib/auth-context';
 
 const inter = Inter({ subsets: ['latin'] });
@@ -46,8 +46,9 @@ export default function RootLayout({
       <body className={`${outfit.className} ${poppins.variable} ${jetbrainsMono.variable}`}>
         <ThemeProvider
           attribute='class'
-          defaultTheme='system'
-          enableSystem
+          defaultTheme='dark'
+          forcedTheme='dark'
+          enableSystem={false}
           disableTransitionOnChange
         >
           <AuthProvider>

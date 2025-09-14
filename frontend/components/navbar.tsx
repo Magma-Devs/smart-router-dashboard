@@ -2,14 +2,12 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Activity, Settings, Sun, Moon } from 'lucide-react';
-import { useTheme } from 'next-themes';
+import { Activity, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 export function Navbar() {
   const pathname = usePathname();
-  const { theme, setTheme } = useTheme();
 
   return (
     <nav className='border-b px-4'>
@@ -30,15 +28,6 @@ export function Navbar() {
               Configuration
             </Button>
           </Link>
-        </div>
-        <div className='ml-auto'>
-          <Button
-            variant='ghost'
-            size='icon'
-            onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
-          >
-            {theme === 'light' ? <Moon className='h-5 w-5' /> : <Sun className='h-5 w-5' />}
-          </Button>
         </div>
       </div>
     </nav>

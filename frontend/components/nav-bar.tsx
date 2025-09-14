@@ -4,7 +4,6 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { Settings, LayoutDashboard, Zap, LogOut, User, Wand2 } from 'lucide-react';
-import { ThemeToggle } from '@/components/theme-toggle';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/auth-context';
@@ -101,7 +100,6 @@ export function NavBar() {
               </DropdownMenuContent>
             </DropdownMenu>
           )}
-          <ThemeToggle />
         </div>
       </div>
     </header>
