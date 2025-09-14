@@ -244,7 +244,7 @@ export function InDepthMetrics({}: InDepthMetricsProps) {
               <SelectTrigger className='w-[140px]'>
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className='max-h-[15rem]'>
                 {TIME_FRAMES.map(timeFrame => (
                   <SelectItem key={timeFrame.value} value={timeFrame.value}>
                     {timeFrame.label}

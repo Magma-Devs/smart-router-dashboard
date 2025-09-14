@@ -229,16 +229,16 @@ export class MetricsService {
    * Formats latency value for display.
    *
    * @param latencyMs - Latency in milliseconds (null for providers without latency data)
-   * @returns Formatted latency string with unit or "N/A" if null
+   * @returns Formatted latency string with unit or "Coming Soon" if null
    *
    * @example
    * ```typescript
    * MetricsService.formatLatency(150)  // Returns "150ms"
-   * MetricsService.formatLatency(null) // Returns "N/A"
+   * MetricsService.formatLatency(null) // Returns "Coming Soon"
    * ```
    */
   static formatLatency(latencyMs: number | null): string {
-    if (latencyMs === null) return 'N/A';
+    if (latencyMs === null) return 'Coming Soon';
     return `${Math.round(latencyMs)}ms`;
   }
 
