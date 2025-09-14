@@ -5,16 +5,15 @@
 export interface ProviderMetrics {
   provider: string;
   latest_block: string; // latest block number
-  traffic: string; // req/day
+  traffic: string; // requests in time window
   uptime: string; // percentage
   latency: string; // single value
-  sync: string; // percentage
 }
 
 export interface ChainMetrics {
   chain: string;
   latest_block: string; // latest block number
-  traffic: string; // req/day
+  traffic: string; // requests in time window
   uptime: string; // percentage
   latency: string; // single value
 }

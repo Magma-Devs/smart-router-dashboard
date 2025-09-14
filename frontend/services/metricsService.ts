@@ -17,7 +17,7 @@ export interface ChainMetrics {
   uptime: number; // Uptime percentage (0-100)
   latency_in_ms: number; // Average latency in milliseconds
   reachability: number; // Provider reachability percentage (0-100)
-  requests_per_day: number; // Number of requests per day
+  requests_in_window: number; // Number of requests in time window
   latest_block: number; // Latest block number
 }
 
@@ -25,7 +25,7 @@ export interface ChainMetrics {
 export interface ProviderMetrics {
   uptime: number; // Uptime percentage (0-100)
   latency_in_ms: number | null; // Average latency in milliseconds (null for providers)
-  requests_per_day: number; // Number of requests per day
+  requests_in_window: number; // Number of requests in time window
   latest_block: number; // Latest block number
 }
 
@@ -243,25 +243,27 @@ export class MetricsService {
   }
 
   /**
-   * Formats traffic/requests per day for display.
+   * Formats traffic/requests in time window for display.
    *
-   * @param requestsPerDay - Number of requests per day
-   * @returns Formatted traffic string with appropriate unit
+   * @param requestsInWindow - Number of requests in the time window
+   * @returns Formatted traffic string with appropriate unit (no label)
    *
    * @example
    * ```typescript
-   * MetricsService.formatTraffic(1500000)   // Returns "1.5M req/day"
-   * MetricsService.formatTraffic(500000)    // Returns "500.0K req/day"
-   * MetricsService.formatTraffic(1500)      // Returns "1500 req/day"
+   * MetricsService.formatTraffic(1500000)   // Returns "1.5M"
+   * MetricsService.formatTraffic(500000)    // Returns "500K"
+   * MetricsService.formatTraffic(1500)      // Returns "1500"
    * ```
    */
-  static formatTraffic(requestsPerDay: number): string {
-    if (requestsPerDay >= 1000000) {
-      return `${(requestsPerDay / 1000000).toFixed(1)}M req/day`;
-    } else if (requestsPerDay >= 1000) {
-      return `${(requestsPerDay / 1000).toFixed(1)}K req/day`;
+  static formatTraffic(requestsInWindow: number): string {
+    if (requestsInWindow >= 1000000) {
+      const millions = requestsInWindow / 1000000;
+      return millions % 1 === 0 ? `${Math.round(millions)}M` : `${millions.toFixed(1)}M`;
+    } else if (requestsInWindow >= 1000) {
+      const thousands = requestsInWindow / 1000;
+      return thousands % 1 === 0 ? `${Math.round(thousands)}K` : `${thousands.toFixed(1)}K`;
     } else {
-      return `${requestsPerDay} req/day`;
+      return `${requestsInWindow}`;
     }
   }
 
@@ -295,7 +297,7 @@ export class MetricsService {
     return {
       uptime: this.formatPercentage(metrics.uptime),
       latency: this.formatLatency(metrics.latency_in_ms),
-      traffic: this.formatTraffic(metrics.requests_per_day),
+      traffic: this.formatTraffic(metrics.requests_in_window),
       latest_block: this.formatLatestBlock(metrics.latest_block),
     };
   }
@@ -315,7 +317,7 @@ export class MetricsService {
     return {
       uptime: this.formatPercentage(metrics.uptime),
       latency: this.formatLatency(metrics.latency_in_ms),
-      traffic: this.formatTraffic(metrics.requests_per_day),
+      traffic: this.formatTraffic(metrics.requests_in_window),
     };
   }
 }

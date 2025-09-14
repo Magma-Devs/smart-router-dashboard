@@ -126,7 +126,7 @@ export function InDepthMetrics({}: InDepthMetricsProps) {
               chainsResponse.chains[chainValue].latest_block,
             ),
             traffic: MetricsService.formatTraffic(
-              chainsResponse.chains[chainValue].requests_per_day,
+              chainsResponse.chains[chainValue].requests_in_window,
             ),
             uptime: MetricsService.formatPercentage(chainsResponse.chains[chainValue].uptime),
             latency: MetricsService.formatLatency(chainsResponse.chains[chainValue].latency_in_ms),
@@ -137,7 +137,7 @@ export function InDepthMetrics({}: InDepthMetricsProps) {
               providersResponse.providers[providerValue].latest_block,
             ),
             traffic: MetricsService.formatTraffic(
-              providersResponse.providers[providerValue].requests_per_day,
+              providersResponse.providers[providerValue].requests_in_window,
             ),
             uptime: MetricsService.formatPercentage(
               providersResponse.providers[providerValue].uptime,
@@ -145,9 +145,6 @@ export function InDepthMetrics({}: InDepthMetricsProps) {
             latency: MetricsService.formatLatency(
               providersResponse.providers[providerValue].latency_in_ms,
             ),
-            sync: MetricsService.formatPercentage(
-              providersResponse.providers[providerValue].uptime,
-            ), // Using uptime as proxy for sync
           })),
           selectedChain: 'All Chains',
           selectedProvider: 'All Providers',

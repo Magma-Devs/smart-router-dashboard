@@ -21,14 +21,14 @@ class ChainMetrics(BaseModel):
     uptime: float
     latency_in_ms: int
     reachability: float  # Percentage of healthy providers for this chain
-    requests_per_day: int
+    requests_in_window: int
     latest_block: int
 
 
 class ProviderMetrics(BaseModel):
     uptime: float
     latency_in_ms: int | None  # Providers don't have latency metrics
-    requests_per_day: int
+    requests_in_window: int
     latest_block: int
 
 
@@ -375,8 +375,10 @@ def calculate_latency_ms(latency_data: dict[str, Any], target_chain: str) -> int
 
 
 @validate_prometheus_data
-def calculate_requests_per_day(traffic_data: dict[str, Any], target_chain: str) -> int:
-    """Calculate requests per day for a specific chain"""
+def calculate_requests_in_time_window(
+    traffic_data: dict[str, Any], target_chain: str
+) -> int:
+    """Calculate total requests within the time window for a specific chain"""
     results = traffic_data["data"]["result"]
     total_relays = 0
 
@@ -388,15 +390,36 @@ def calculate_requests_per_day(traffic_data: dict[str, Any], target_chain: str) 
             continue
 
         values = result.get("values", [])
-        if values:
-            # Get the latest value (most recent)
-            latest_value = values[-1]
+
+        if len(values) >= 2:
+            # Calculate the total incremental requests in the time window
+            # Handle counter resets by summing all positive increments
             try:
-                relays_value = float(latest_value[1])
+                relays_in_window = 0
+                previous_value = float(values[0][1])
+
+                for i in range(1, len(values)):
+                    current_value = float(values[i][1])
+                    increment = current_value - previous_value
+
+                    # Handle counter resets (negative increments)
+                    if increment < 0:
+                        # Counter reset detected, add the previous value
+                        relays_in_window += previous_value
+
+                    relays_in_window += max(0, increment)
+                    previous_value = current_value
+
+                total_relays += relays_in_window
+            except (ValueError, TypeError, IndexError):
+                continue
+        elif len(values) == 1:
+            # If only one value, use it as is (edge case for very short time windows)
+            try:
+                relays_value = float(values[0][1])
                 total_relays += relays_value
             except (ValueError, TypeError, IndexError):
                 continue
-
     return int(total_relays)
 
 
@@ -543,15 +566,16 @@ def calculate_provider_uptime_percentage(
 
 
 @validate_prometheus_data
-def calculate_provider_requests_per_day(
+def calculate_provider_requests_in_time_window(
     provider_traffic_data: dict[str, Any], target_provider: str
 ) -> int:
-    """Calculate requests per day for a specific provider"""
+    """Calculate total requests within the time window for a specific provider"""
     results = provider_traffic_data["data"]["result"]
     total_relays = 0
 
     for result in results:
         service = result.get("metric", {}).get("service")
+
         if not service:
             continue
 
@@ -565,15 +589,36 @@ def calculate_provider_requests_per_day(
             continue
 
         values = result.get("values", [])
-        if values:
-            # Get the latest value (most recent)
-            latest_value = values[-1]
+
+        if len(values) >= 2:
+            # Calculate the total incremental requests in the time window
+            # Handle counter resets by summing all positive increments
             try:
-                relays_value = float(latest_value[1])
+                relays_in_window = 0
+                previous_value = float(values[0][1])
+
+                for i in range(1, len(values)):
+                    current_value = float(values[i][1])
+                    increment = current_value - previous_value
+
+                    # Handle counter resets (negative increments)
+                    if increment < 0:
+                        # Counter reset detected, add the previous value
+                        relays_in_window += previous_value
+
+                    relays_in_window += max(0, increment)
+                    previous_value = current_value
+
+                total_relays += relays_in_window
+            except (ValueError, TypeError, IndexError):
+                continue
+        elif len(values) == 1:
+            # If only one value, use it as is (edge case for very short time windows)
+            try:
+                relays_value = float(values[0][1])
                 total_relays += relays_value
             except (ValueError, TypeError, IndexError):
                 continue
-
     return int(total_relays)
 
 
@@ -704,14 +749,14 @@ async def get_chains_metrics(
                     uptime=0.0,
                     latency_in_ms=0,
                     reachability=0.0,
-                    requests_per_day=0,
+                    requests_in_window=0,
                     latest_block=0,
                 ),
                 p90=ChainMetrics(
                     uptime=0.0,
                     latency_in_ms=0,
                     reachability=0.0,
-                    requests_per_day=0,
+                    requests_in_window=0,
                     latest_block=0,
                 ),
             )
@@ -741,7 +786,7 @@ async def get_chains_metrics(
                 reachability=calculate_chain_reachability_percentage(
                     provider_health_data, chain_providers
                 ),
-                requests_per_day=calculate_requests_per_day(
+                requests_in_window=calculate_requests_in_time_window(
                     chain_traffic_data, chain_id
                 ),
                 latest_block=calculate_consumer_latest_block_number(
@@ -758,14 +803,14 @@ async def get_chains_metrics(
             uptimes = [chain.uptime for chain in all_chains]
             latencies = [chain.latency_in_ms for chain in all_chains]
             reachabilities = [chain.reachability for chain in all_chains]
-            requests = [chain.requests_per_day for chain in all_chains]
+            requests = [chain.requests_in_window for chain in all_chains]
 
             # Create average metrics
             avg_metrics = ChainMetrics(
                 uptime=round(sum(uptimes) / total_chains, 2),
                 latency_in_ms=int(round(sum(latencies) / total_chains)),
                 reachability=round(sum(reachabilities) / total_chains, 2),
-                requests_per_day=sum(requests),
+                requests_in_window=sum(requests),
                 latest_block=0,  # No average for latest block
             )
 
@@ -774,7 +819,7 @@ async def get_chains_metrics(
                 uptime=round(statistics.quantiles(uptimes, n=10)[8], 2),
                 latency_in_ms=int(round(statistics.quantiles(latencies, n=10)[8])),
                 reachability=round(statistics.quantiles(reachabilities, n=10)[8], 2),
-                requests_per_day=round(statistics.quantiles(requests, n=10)[8]),
+                requests_in_window=round(statistics.quantiles(requests, n=10)[8]),
                 latest_block=0,  # No p90 for latest block
             )
         else:
@@ -782,14 +827,14 @@ async def get_chains_metrics(
                 uptime=0.0,
                 latency_in_ms=0,
                 reachability=0.0,
-                requests_per_day=0,
+                requests_in_window=0,
                 latest_block=0,
             )
             p90_metrics = ChainMetrics(
                 uptime=0.0,
                 latency_in_ms=0,
                 reachability=0.0,
-                requests_per_day=0,
+                requests_in_window=0,
                 latest_block=0,
             )
 
@@ -848,7 +893,7 @@ async def get_chain_metrics(
             "reachability": calculate_chain_reachability_percentage(
                 provider_health_data, chain_providers
             ),
-            "requests_per_day": calculate_requests_per_day(
+            "requests_in_window": calculate_requests_in_time_window(
                 chain_traffic_data, chain_id
             ),
             "latest_block": calculate_consumer_latest_block_number(
@@ -913,7 +958,7 @@ async def get_providers_metrics(
                     providers_data, provider_id
                 ),
                 latency_in_ms=None,  # Providers don't have latency metrics
-                requests_per_day=calculate_provider_requests_per_day(
+                requests_in_window=calculate_provider_requests_in_time_window(
                     provider_traffic_data, provider_id
                 ),
                 latest_block=calculate_provider_latest_block_number(
@@ -928,13 +973,13 @@ async def get_providers_metrics(
         if total_providers > 0:
             # Extract values for statistics
             uptimes = [provider.uptime for provider in all_providers]
-            requests = [provider.requests_per_day for provider in all_providers]
+            requests = [provider.requests_in_window for provider in all_providers]
 
             # Create average metrics (no latency for providers)
             avg_metrics = ProviderMetrics(
                 uptime=round(sum(uptimes) / total_providers, 2),
                 latency_in_ms=None,  # Providers don't have latency metrics
-                requests_per_day=sum(requests),
+                requests_in_window=sum(requests),
                 latest_block=0,  # No average for latest block
             )
 
@@ -942,15 +987,15 @@ async def get_providers_metrics(
             p90_metrics = ProviderMetrics(
                 uptime=round(statistics.quantiles(uptimes, n=10)[8], 2),
                 latency_in_ms=None,  # Providers don't have latency metrics
-                requests_per_day=round(statistics.quantiles(requests, n=10)[8]),
+                requests_in_window=round(statistics.quantiles(requests, n=10)[8]),
                 latest_block=0,  # No p90 for latest block
             )
         else:
             avg_metrics = ProviderMetrics(
-                uptime=0.0, latency_in_ms=None, requests_per_day=0, latest_block=0
+                uptime=0.0, latency_in_ms=None, requests_in_window=0, latest_block=0
             )
             p90_metrics = ProviderMetrics(
-                uptime=0.0, latency_in_ms=None, requests_per_day=0, latest_block=0
+                uptime=0.0, latency_in_ms=None, requests_in_window=0, latest_block=0
             )
 
         return ProvidersResponse(
@@ -999,7 +1044,7 @@ async def get_provider_metrics(
         provider_metrics = {
             "uptime": calculate_provider_uptime_percentage(providers_data, provider_id),
             "latency_in_ms": None,  # Providers don't have latency metrics
-            "requests_per_day": calculate_provider_requests_per_day(
+            "requests_in_window": calculate_provider_requests_in_time_window(
                 provider_traffic_data, provider_id
             ),
         }
