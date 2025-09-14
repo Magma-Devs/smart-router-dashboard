@@ -22,12 +22,14 @@ class ChainMetrics(BaseModel):
     latency_in_ms: int
     reachability: float  # Percentage of healthy providers for this chain
     requests_per_day: int
+    latest_block: int
 
 
 class ProviderMetrics(BaseModel):
     uptime: float
     latency_in_ms: int | None  # Providers don't have latency metrics
     requests_per_day: int
+    latest_block: int
 
 
 class ChainsResponse(BaseModel):
@@ -50,6 +52,9 @@ PROMETHEUS_QUERIES = {
     "provider_health": "lava_provider_overall_health_breakdown",
     "consumer_traffic": "lava_consumer_total_relays_serviced",
     "provider_traffic": "lava_provider_total_relays_serviced",
+    "consumer_latest_block": "lava_consumer_latest_provider_block",
+    "provider_latest_block": "lava_latest_block",
+    "consumer_latency": "lava_consumer_average_latency_in_milliseconds",
 }
 
 # Default values
@@ -201,7 +206,14 @@ def get_available_providers() -> list[str]:
 
 async def fetch_chain_metrics_data(
     svc: PrometheusService, time_window_minutes: int, step_size: int
-) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
+) -> tuple[
+    dict[str, Any],
+    dict[str, Any],
+    dict[str, Any],
+    dict[str, Any],
+    dict[str, Any],
+    dict[str, Any],
+]:
     """Fetch all required metrics data for chains in parallel."""
     time_range = f"{time_window_minutes}m"
     end_time = datetime.now()
@@ -212,6 +224,8 @@ async def fetch_chain_metrics_data(
         latency_data,
         chain_traffic_data,
         provider_health_data,
+        consumer_latest_block_data,
+        provider_latest_block_data,
     ) = await asyncio.gather(
         svc.query_range(
             PROMETHEUS_QUERIES["consumer_health"],
@@ -220,7 +234,7 @@ async def fetch_chain_metrics_data(
             f"{step_size}s",
         ),
         svc.query_range(
-            f"avg_over_time(lava_consumer_average_latency_in_milliseconds[{time_range}])",
+            f"avg_over_time({PROMETHEUS_QUERIES['consumer_latency']}[{time_range}])",
             start_time,
             end_time,
             f"{step_size}s",
@@ -237,6 +251,18 @@ async def fetch_chain_metrics_data(
             end_time,
             f"{step_size}s",
         ),
+        svc.query_range(
+            PROMETHEUS_QUERIES["consumer_latest_block"],
+            start_time,
+            end_time,
+            f"{step_size}s",
+        ),
+        svc.query_range(
+            PROMETHEUS_QUERIES["provider_latest_block"],
+            start_time,
+            end_time,
+            f"{step_size}s",
+        ),
     )
 
     return (
@@ -244,32 +270,42 @@ async def fetch_chain_metrics_data(
         latency_data,
         chain_traffic_data,
         provider_health_data,
+        consumer_latest_block_data,
+        provider_latest_block_data,
     )
 
 
 async def fetch_provider_metrics_data(
     svc: PrometheusService, time_window_minutes: int, step_size: int
-) -> tuple[dict[str, Any], dict[str, Any]]:
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     """Fetch all required metrics data for providers in parallel."""
     end_time = datetime.now()
     start_time = end_time - timedelta(minutes=time_window_minutes)
 
-    providers_data, provider_traffic_data = await asyncio.gather(
-        svc.query_range(
-            PROMETHEUS_QUERIES["provider_health"],
-            start_time,
-            end_time,
-            f"{step_size}s",
-        ),
-        svc.query_range(
-            PROMETHEUS_QUERIES["provider_traffic"],
-            start_time,
-            end_time,
-            f"{step_size}s",
-        ),
+    providers_data, provider_traffic_data, provider_latest_block_data = (
+        await asyncio.gather(
+            svc.query_range(
+                PROMETHEUS_QUERIES["provider_health"],
+                start_time,
+                end_time,
+                f"{step_size}s",
+            ),
+            svc.query_range(
+                PROMETHEUS_QUERIES["provider_traffic"],
+                start_time,
+                end_time,
+                f"{step_size}s",
+            ),
+            svc.query_range(
+                PROMETHEUS_QUERIES["provider_latest_block"],
+                start_time,
+                end_time,
+                f"{step_size}s",
+            ),
+        )
     )
 
-    return providers_data, provider_traffic_data
+    return providers_data, provider_traffic_data, provider_latest_block_data
 
 
 # Calculation utilities moved from frontend
@@ -362,6 +398,68 @@ def calculate_requests_per_day(traffic_data: dict[str, Any], target_chain: str) 
                 continue
 
     return int(total_relays)
+
+
+@validate_prometheus_data
+def calculate_consumer_latest_block_number(
+    block_data: dict[str, Any], target_chain: str
+) -> int:
+    """Calculate the latest block number for a specific chain from consumer data"""
+    results = block_data["data"]["result"]
+    latest_block = 0
+
+    for result in results:
+        spec = result.get("metric", {}).get("spec")
+
+        # Filter by target chain (consumer query only needs spec)
+        if not spec or spec.lower() != target_chain.lower():
+            continue
+
+        values = result.get("values", [])
+        if values:
+            # Get the latest value (most recent)
+            latest_value = values[-1]
+            try:
+                block_value = float(latest_value[1])
+                latest_block = max(latest_block, int(block_value))
+            except (ValueError, TypeError, IndexError):
+                continue
+
+    return latest_block
+
+
+@validate_prometheus_data
+def calculate_provider_latest_block_number(
+    block_data: dict[str, Any], target_provider: str
+) -> int:
+    """Calculate the latest block number for a specific provider"""
+    results = block_data["data"]["result"]
+    latest_block = 0
+
+    for result in results:
+        service = result.get("metric", {}).get("service")
+
+        # Filter by target provider (provider query needs service field)
+        # The service field contains the provider name with "-provider" suffix
+        if not service or not service.endswith("-provider"):
+            continue
+
+        # Extract provider name by removing "-provider" suffix
+        provider_name = service.replace("-provider", "")
+        if provider_name.lower() != target_provider.lower():
+            continue
+
+        values = result.get("values", [])
+        if values:
+            # Get the latest value (most recent)
+            latest_value = values[-1]
+            try:
+                block_value = float(latest_value[1])
+                latest_block = max(latest_block, int(block_value))
+            except (ValueError, TypeError, IndexError):
+                continue
+
+    return latest_block
 
 
 @validate_prometheus_data
@@ -605,16 +703,16 @@ async def get_chains_metrics(
                 avg=ChainMetrics(
                     uptime=0.0,
                     latency_in_ms=0,
-                    freshness=0.0,
                     reachability=0.0,
                     requests_per_day=0,
+                    latest_block=0,
                 ),
                 p90=ChainMetrics(
                     uptime=0.0,
                     latency_in_ms=0,
-                    freshness=0.0,
                     reachability=0.0,
                     requests_per_day=0,
+                    latest_block=0,
                 ),
             )
 
@@ -627,6 +725,8 @@ async def get_chains_metrics(
             latency_data,
             chain_traffic_data,
             provider_health_data,
+            consumer_latest_block_data,
+            provider_latest_block_data,
         ) = await fetch_chain_metrics_data(svc, time_window_minutes, adaptive_step_size)
 
         # Calculate metrics for each chain
@@ -643,6 +743,9 @@ async def get_chains_metrics(
                 ),
                 requests_per_day=calculate_requests_per_day(
                     chain_traffic_data, chain_id
+                ),
+                latest_block=calculate_consumer_latest_block_number(
+                    consumer_latest_block_data, chain_id
                 ),
             )
 
@@ -663,6 +766,7 @@ async def get_chains_metrics(
                 latency_in_ms=int(round(sum(latencies) / total_chains)),
                 reachability=round(sum(reachabilities) / total_chains, 2),
                 requests_per_day=sum(requests),
+                latest_block=0,  # No average for latest block
             )
 
             # Create 90th percentile metrics
@@ -671,6 +775,7 @@ async def get_chains_metrics(
                 latency_in_ms=int(round(statistics.quantiles(latencies, n=10)[8])),
                 reachability=round(statistics.quantiles(reachabilities, n=10)[8], 2),
                 requests_per_day=round(statistics.quantiles(requests, n=10)[8]),
+                latest_block=0,  # No p90 for latest block
             )
         else:
             avg_metrics = ChainMetrics(
@@ -678,12 +783,14 @@ async def get_chains_metrics(
                 latency_in_ms=0,
                 reachability=0.0,
                 requests_per_day=0,
+                latest_block=0,
             )
             p90_metrics = ChainMetrics(
                 uptime=0.0,
                 latency_in_ms=0,
                 reachability=0.0,
                 requests_per_day=0,
+                latest_block=0,
             )
 
         return ChainsResponse(chains=chains_data, avg=avg_metrics, p90=p90_metrics)
@@ -727,6 +834,8 @@ async def get_chain_metrics(
             latency_data,
             chain_traffic_data,
             provider_health_data,
+            consumer_latest_block_data,
+            _,
         ) = await fetch_chain_metrics_data(svc, time_window_minutes, adaptive_step_size)
 
         # Get providers for this chain to calculate reachability
@@ -741,6 +850,9 @@ async def get_chain_metrics(
             ),
             "requests_per_day": calculate_requests_per_day(
                 chain_traffic_data, chain_id
+            ),
+            "latest_block": calculate_consumer_latest_block_number(
+                consumer_latest_block_data, chain_id
             ),
         }
 
@@ -776,10 +888,10 @@ async def get_providers_metrics(
             return ProvidersResponse(
                 providers={},
                 avg=ProviderMetrics(
-                    uptime=0.0, latency_in_ms=0, freshness=0.0, requests_per_day=0
+                    uptime=0.0, latency_in_ms=0, requests_per_day=0, latest_block=0
                 ),
                 p90=ProviderMetrics(
-                    uptime=0.0, latency_in_ms=0, freshness=0.0, requests_per_day=0
+                    uptime=0.0, latency_in_ms=0, requests_per_day=0, latest_block=0
                 ),
             )
 
@@ -787,8 +899,10 @@ async def get_providers_metrics(
         adaptive_step_size = calculate_adaptive_step_size(time_window_minutes)
 
         # Fetch all required metrics in parallel
-        providers_data, provider_traffic_data = await fetch_provider_metrics_data(
-            svc, time_window_minutes, adaptive_step_size
+        providers_data, provider_traffic_data, provider_latest_block_data = (
+            await fetch_provider_metrics_data(
+                svc, time_window_minutes, adaptive_step_size
+            )
         )
 
         # Calculate metrics for each provider
@@ -801,6 +915,9 @@ async def get_providers_metrics(
                 latency_in_ms=None,  # Providers don't have latency metrics
                 requests_per_day=calculate_provider_requests_per_day(
                     provider_traffic_data, provider_id
+                ),
+                latest_block=calculate_provider_latest_block_number(
+                    provider_latest_block_data, provider_id
                 ),
             )
 
@@ -818,6 +935,7 @@ async def get_providers_metrics(
                 uptime=round(sum(uptimes) / total_providers, 2),
                 latency_in_ms=None,  # Providers don't have latency metrics
                 requests_per_day=sum(requests),
+                latest_block=0,  # No average for latest block
             )
 
             # Create 90th percentile metrics (no latency for providers)
@@ -825,13 +943,14 @@ async def get_providers_metrics(
                 uptime=round(statistics.quantiles(uptimes, n=10)[8], 2),
                 latency_in_ms=None,  # Providers don't have latency metrics
                 requests_per_day=round(statistics.quantiles(requests, n=10)[8]),
+                latest_block=0,  # No p90 for latest block
             )
         else:
             avg_metrics = ProviderMetrics(
-                uptime=0.0, latency_in_ms=None, requests_per_day=0
+                uptime=0.0, latency_in_ms=None, requests_per_day=0, latest_block=0
             )
             p90_metrics = ProviderMetrics(
-                uptime=0.0, latency_in_ms=None, requests_per_day=0
+                uptime=0.0, latency_in_ms=None, requests_per_day=0, latest_block=0
             )
 
         return ProvidersResponse(
@@ -872,7 +991,7 @@ async def get_provider_metrics(
         adaptive_step_size = calculate_adaptive_step_size(time_window_minutes)
 
         # Fetch all required metrics in parallel
-        providers_data, provider_traffic_data = await fetch_provider_metrics_data(
+        providers_data, provider_traffic_data, _ = await fetch_provider_metrics_data(
             svc, time_window_minutes, adaptive_step_size
         )
 
@@ -945,9 +1064,11 @@ async def get_chains_to_providers(
         # Fetch all required metrics in parallel
         (
             consumers_data,
-            latency_data,
-            chain_traffic_data,
+            _,
+            _,
             provider_health_data,
+            _,
+            _,
         ) = await fetch_chain_metrics_data(svc, time_window_minutes, adaptive_step_size)
 
         # Build chains-to-providers mapping

@@ -40,11 +40,11 @@ export function MetricsTable({
     <div className='overflow-x-auto'>
       <table className='w-full table-fixed border-collapse'>
         <colgroup>
-          <col style={{ width: '22%' }} />
-          <col style={{ width: '22%' }} />
-          <col style={{ width: '18%' }} />
-          <col style={{ width: '18%' }} />
+          <col style={{ width: '25%' }} />
           <col style={{ width: '20%' }} />
+          <col style={{ width: '20%' }} />
+          <col style={{ width: '20%' }} />
+          <col style={{ width: '15%' }} />
         </colgroup>
         <thead>
           <tr className='border-b'>
@@ -59,6 +59,7 @@ export function MetricsTable({
                 </div>
               </div>
             </th>
+            <th className='text-left p-3 font-medium'>Latest Block</th>
             <th className='text-left p-3 font-medium'>Traffic</th>
             <th className='text-left p-3 font-medium'>Uptime</th>
             <th className='text-left p-3 font-medium'>Latency</th>
@@ -74,6 +75,7 @@ export function MetricsTable({
             return (
               <tr key={index} className='border-b hover:bg-muted/50'>
                 <td className='p-3 font-medium'>{name}</td>
+                <td className='p-3'>{item.latest_block}</td>
                 <td className='p-3'>{item.traffic}</td>
                 <td
                   className={`p-3 ${isProvider ? getReachabilityColor(uptime) : getUptimeColor(uptime)}`}
