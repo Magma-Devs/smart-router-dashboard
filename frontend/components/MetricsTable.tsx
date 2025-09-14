@@ -3,6 +3,7 @@
 import { ChevronUp, ChevronDown } from 'lucide-react';
 import { ProviderMetrics, ChainMetrics, SortField, SortDirection } from '@/types/metrics';
 import { getUptimeColor, getReachabilityColor, getLatencyColor } from '@/utils/colors';
+import { getChainIcon } from '@/app/config/chains';
 
 interface MetricsTableProps {
   data: ProviderMetrics[] | ChainMetrics[];
@@ -40,7 +41,8 @@ export function MetricsTable({
     <div className='overflow-x-auto'>
       <table className='w-full table-fixed border-collapse'>
         <colgroup>
-          <col style={{ width: '25%' }} />
+          <col style={{ width: type === 'providers' ? '20%' : '25%' }} />
+          {type === 'providers' && <col style={{ width: '20%' }} />}
           <col style={{ width: '20%' }} />
           <col style={{ width: '20%' }} />
           <col style={{ width: '20%' }} />
@@ -59,6 +61,9 @@ export function MetricsTable({
                 </div>
               </div>
             </th>
+            {type === 'providers' && (
+              <th className='text-left p-3 font-medium'>Chain</th>
+            )}
             <th className='text-left p-3 font-medium'>Latest Block</th>
             <th className='text-left p-3 font-medium'>Traffic</th>
             <th className='text-left p-3 font-medium'>Uptime</th>
@@ -74,7 +79,45 @@ export function MetricsTable({
 
             return (
               <tr key={index} className='border-b hover:bg-muted/50'>
-                <td className='p-3 font-medium'>{name}</td>
+                <td className='p-3 font-medium'>
+                  {isProvider ? (
+                    name
+                  ) : (
+                    // For chains, show icon + name
+                    item.chainValue && (
+                      <div className='flex items-center gap-2'>
+                        <img
+                          src={getChainIcon(item.chainValue)}
+                          alt={name}
+                          className='w-5 h-5 flex-shrink-0'
+                          onError={(e) => {
+                            // Hide image if it fails to load
+                            e.currentTarget.style.display = 'none';
+                          }}
+                        />
+                        <span>{name}</span>
+                      </div>
+                    )
+                  )}
+                </td>
+                {isProvider && (
+                  <td className='p-3'>
+                    {item.chainValue && (
+                      <div className='flex items-center gap-2'>
+                        <img
+                          src={getChainIcon(item.chainValue)}
+                          alt={item.chain || ''}
+                          className='w-5 h-5 flex-shrink-0'
+                          onError={(e) => {
+                            // Hide image if it fails to load
+                            e.currentTarget.style.display = 'none';
+                          }}
+                        />
+                        <span className='text-sm'>{item.chain}</span>
+                      </div>
+                    )}
+                  </td>
+                )}
                 <td className='p-3'>{item.latest_block}</td>
                 <td className='p-3'>{item.traffic}</td>
                 <td

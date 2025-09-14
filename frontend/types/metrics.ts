@@ -4,6 +4,8 @@
 
 export interface ProviderMetrics {
   provider: string;
+  chain?: string; // chain label for display
+  chainValue?: string; // chain value for icon lookup
   latest_block: string; // latest block number
   traffic: string; // requests in time window
   uptime: string; // percentage
@@ -12,6 +14,7 @@ export interface ProviderMetrics {
 
 export interface ChainMetrics {
   chain: string;
+  chainValue?: string; // chain value for icon lookup
   latest_block: string; // latest block number
   traffic: string; // requests in time window
   uptime: string; // percentage

@@ -26,7 +26,7 @@ import { useDataFetching } from '@/hooks/useDataFetching';
 import { getChainLabel } from '@/app/config/chains';
 
 // Type and service imports
-import { MetricsData } from '@/types/metrics';
+import { MetricsData, ChainsToProvidersResponse } from '@/types/metrics';
 import { MetricsService } from '@/services/metricsService';
 import { TIME_FRAMES, DEFAULT_TIME_FRAME } from '@/constants/timeFrames';
 
@@ -109,19 +109,32 @@ export function InDepthMetrics({}: InDepthMetricsProps) {
         const stepSize = Math.max(1, Math.floor(timeFrameMinutes / 60)); // 1 minute steps for up to 1 hour, then scale up
 
         // Fetch real metrics using the new simplified backend APIs
-        const [chainsResponse, providersResponse] = await Promise.all([
+        const [chainsResponse, providersResponse, chainsToProvidersResponse] = await Promise.all([
           MetricsService.fetchMetricsForAllChains(timeFrameMinutes, stepSize),
           MetricsService.fetchMetricsForAllProviders(timeFrameMinutes, stepSize),
+          MetricsService.fetchChainsToProviders(timeFrameMinutes, stepSize),
         ]);
 
         // Get available chains and providers from API responses
         const chainsFromApi = Object.keys(chainsResponse.chains);
         const providersFromApi = Object.keys(providersResponse.providers);
 
+        // Create a mapping from provider names to chain information using chains-to-providers data
+        const providerToChainMap: Record<string, { chainValue: string; chainLabel: string }> = {};
+        chainsToProvidersResponse.chains.forEach((chain: any) => {
+          chain.providers.forEach((provider: any) => {
+            providerToChainMap[provider.name] = {
+              chainValue: chain.chain_id,
+              chainLabel: getChainLabel(chain.chain_id),
+            };
+          });
+        });
+
         // Build the response data structure
         const realData = {
           chains: chainsFromApi.map(chainValue => ({
             chain: getChainLabel(chainValue),
+            chainValue: chainValue, // Add chain value for icon lookup
             latest_block: MetricsService.formatLatestBlock(
               chainsResponse.chains[chainValue].latest_block,
             ),
@@ -131,21 +144,26 @@ export function InDepthMetrics({}: InDepthMetricsProps) {
             uptime: MetricsService.formatPercentage(chainsResponse.chains[chainValue].uptime),
             latency: MetricsService.formatLatency(chainsResponse.chains[chainValue].latency_in_ms),
           })),
-          providers: providersFromApi.map(providerValue => ({
-            provider: providerValue,
-            latest_block: MetricsService.formatLatestBlock(
-              providersResponse.providers[providerValue].latest_block,
-            ),
-            traffic: MetricsService.formatTraffic(
-              providersResponse.providers[providerValue].requests_in_window,
-            ),
-            uptime: MetricsService.formatPercentage(
-              providersResponse.providers[providerValue].uptime,
-            ),
-            latency: MetricsService.formatLatency(
-              providersResponse.providers[providerValue].latency_in_ms,
-            ),
-          })),
+          providers: providersFromApi.map(providerValue => {
+            const chainInfo = providerToChainMap[providerValue];
+            return {
+              provider: providerValue,
+              chain: chainInfo?.chainLabel || 'Unknown Chain',
+              chainValue: chainInfo?.chainValue || providerValue.split('-')[0],
+              latest_block: MetricsService.formatLatestBlock(
+                providersResponse.providers[providerValue].latest_block,
+              ),
+              traffic: MetricsService.formatTraffic(
+                providersResponse.providers[providerValue].requests_in_window,
+              ),
+              uptime: MetricsService.formatPercentage(
+                providersResponse.providers[providerValue].uptime,
+              ),
+              latency: MetricsService.formatLatency(
+                providersResponse.providers[providerValue].latency_in_ms,
+              ),
+            };
+          }),
           selectedChain: 'All Chains',
           selectedProvider: 'All Providers',
           timeFrame: selectedTimeFrame,

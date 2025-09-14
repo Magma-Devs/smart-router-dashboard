@@ -320,4 +320,21 @@ export class MetricsService {
       traffic: this.formatTraffic(metrics.requests_in_window),
     };
   }
+
+  /**
+   * Fetches chains-to-providers mapping from the backend API.
+   *
+   * @param timeWindowMinutes - Time window in minutes for metrics calculation
+   * @param stepSize - Step size in seconds for metrics calculation
+   * @returns Promise resolving to chains-to-providers mapping
+   */
+  static async fetchChainsToProviders(
+    timeWindowMinutes: number = 15,
+    stepSize: number = 5
+  ): Promise<any> {
+    const response = await apiClient.get(
+      `/api/metrics/chains-to-providers?time_window_minutes=${timeWindowMinutes}&step_size=${stepSize}`,
+    );
+    return response;
+  }
 }
