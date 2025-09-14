@@ -18,6 +18,7 @@ export interface ChainMetrics {
   latency_in_ms: number; // Average latency in milliseconds
   reachability: number; // Provider reachability percentage (0-100)
   requests_per_day: number; // Number of requests per day
+  latest_block: number; // Latest block number
 }
 
 /** Metrics data structure for individual providers */
@@ -25,6 +26,7 @@ export interface ProviderMetrics {
   uptime: number; // Uptime percentage (0-100)
   latency_in_ms: number | null; // Average latency in milliseconds (null for providers)
   requests_per_day: number; // Number of requests per day
+  latest_block: number; // Latest block number
 }
 
 /** API response structure for chains metrics endpoint */
@@ -264,6 +266,16 @@ export class MetricsService {
   }
 
   /**
+   * Format latest block number for display
+   * @param blockNumber - Latest block number
+   * @returns Block number as string
+   */
+  static formatLatestBlock(blockNumber: number): string {
+    if (blockNumber === 0) return 'N/A';
+    return blockNumber.toString();
+  }
+
+  /**
    * Legacy formatting methods for backward compatibility
    */
 
@@ -278,11 +290,13 @@ export class MetricsService {
     uptime: string;
     latency: string;
     traffic: string;
+    latest_block: string;
   } {
     return {
       uptime: this.formatPercentage(metrics.uptime),
       latency: this.formatLatency(metrics.latency_in_ms),
       traffic: this.formatTraffic(metrics.requests_per_day),
+      latest_block: this.formatLatestBlock(metrics.latest_block),
     };
   }
 

@@ -122,6 +122,9 @@ export function InDepthMetrics({}: InDepthMetricsProps) {
         const realData = {
           chains: chainsFromApi.map(chainValue => ({
             chain: getChainLabel(chainValue),
+            latest_block: MetricsService.formatLatestBlock(
+              chainsResponse.chains[chainValue].latest_block,
+            ),
             traffic: MetricsService.formatTraffic(
               chainsResponse.chains[chainValue].requests_per_day,
             ),
@@ -130,6 +133,9 @@ export function InDepthMetrics({}: InDepthMetricsProps) {
           })),
           providers: providersFromApi.map(providerValue => ({
             provider: providerValue,
+            latest_block: MetricsService.formatLatestBlock(
+              providersResponse.providers[providerValue].latest_block,
+            ),
             traffic: MetricsService.formatTraffic(
               providersResponse.providers[providerValue].requests_per_day,
             ),

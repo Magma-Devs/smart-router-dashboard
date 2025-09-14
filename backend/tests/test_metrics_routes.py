@@ -25,6 +25,8 @@ from app.api.routes.metrics import (
     calculate_latency_ms,
     calculate_requests_per_day,
     calculate_provider_uptime_percentage,
+    calculate_consumer_latest_block_number,
+    calculate_provider_latest_block_number,
 )
 
 
@@ -302,6 +304,8 @@ class TestNewEndpoints:
             {"status": "success", "data": {"result": []}},  # latency_data
             {"status": "success", "data": {"result": []}},  # chain_traffic_data
             {"status": "success", "data": {"result": []}},  # provider_health_data
+            {"status": "success", "data": {"result": []}},  # consumer_latest_block_data
+            {"status": "success", "data": {"result": []}},  # provider_latest_block_data
         )
 
         app.dependency_overrides[get_prometheus_service] = lambda: FakePrometheus()
@@ -341,6 +345,8 @@ class TestChainsToProvidersEndpoint:
             {"status": "success", "data": {"result": []}},  # latency_data
             {"status": "success", "data": {"result": []}},  # chain_traffic_data
             {"status": "success", "data": {"result": []}},  # provider_health_data
+            {"status": "success", "data": {"result": []}},  # consumer_latest_block_data
+            {"status": "success", "data": {"result": []}},  # provider_latest_block_data
         )
 
         app.dependency_overrides[get_prometheus_service] = lambda: FakePrometheus()
@@ -414,6 +420,8 @@ class TestChainsToProvidersEndpoint:
             {"status": "success", "data": {"result": []}},  # latency_data
             {"status": "success", "data": {"result": []}},  # chain_traffic_data
             mock_provider_health_data,  # provider_health_data
+            {"status": "success", "data": {"result": []}},  # consumer_latest_block_data
+            {"status": "success", "data": {"result": []}},  # provider_latest_block_data
         )
 
         app.dependency_overrides[get_prometheus_service] = lambda: FakePrometheus()
@@ -474,6 +482,8 @@ class TestChainsToProvidersEndpoint:
             {"status": "success", "data": {"result": []}},  # latency_data
             {"status": "success", "data": {"result": []}},  # chain_traffic_data
             {"status": "success", "data": {"result": []}},  # provider_health_data
+            {"status": "success", "data": {"result": []}},  # consumer_latest_block_data
+            {"status": "success", "data": {"result": []}},  # provider_latest_block_data
         )
 
         app.dependency_overrides[get_prometheus_service] = lambda: FakePrometheus()
@@ -489,3 +499,114 @@ class TestChainsToProvidersEndpoint:
         mock_fetch_data.assert_called_once()
 
         app.dependency_overrides.pop(get_prometheus_service, None)
+
+
+class TestLatestBlockCalculations:
+    """Test cases for latest block calculation functions."""
+
+    def test_calculate_consumer_latest_block_number_success(self):
+        """Test successful consumer latest block calculation."""
+        mock_data = {
+            "status": "success",
+            "data": {
+                "result": [
+                    {
+                        "metric": {"spec": "ETH1"},
+                        "values": [[1640995200, "1000"], [1640995260, "1005"]],
+                    },
+                    {
+                        "metric": {"spec": "ETH1"},
+                        "values": [[1640995200, "1002"], [1640995260, "1007"]],
+                    },
+                ]
+            },
+        }
+
+        result = calculate_consumer_latest_block_number(mock_data, "ETH1")
+        assert result == 1007  # Should return the highest block number
+
+    def test_calculate_consumer_latest_block_number_no_data(self):
+        """Test consumer latest block calculation with no matching data."""
+        mock_data = {
+            "status": "success",
+            "data": {
+                "result": [
+                    {
+                        "metric": {"spec": "BTC"},
+                        "values": [[1640995200, "1000"]],
+                    }
+                ]
+            },
+        }
+
+        result = calculate_consumer_latest_block_number(mock_data, "ETH1")
+        assert result == 0  # Should return 0 when no matching spec
+
+    def test_calculate_consumer_latest_block_number_empty_result(self):
+        """Test consumer latest block calculation with empty result."""
+        mock_data = {"status": "success", "data": {"result": []}}
+
+        result = calculate_consumer_latest_block_number(mock_data, "ETH1")
+        assert result == 0  # Should return 0 when no data
+
+    def test_calculate_provider_latest_block_number_success(self):
+        """Test successful provider latest block calculation."""
+        mock_data = {
+            "status": "success",
+            "data": {
+                "result": [
+                    {
+                        "metric": {"service": "eth-lava-provider"},
+                        "values": [[1640995200, "2000"], [1640995260, "2005"]],
+                    },
+                    {
+                        "metric": {"service": "eth-lava-provider"},
+                        "values": [[1640995200, "2002"], [1640995260, "2007"]],
+                    },
+                ]
+            },
+        }
+
+        result = calculate_provider_latest_block_number(mock_data, "eth-lava")
+        assert result == 2007  # Should return the highest block number
+
+    def test_calculate_provider_latest_block_number_no_data(self):
+        """Test provider latest block calculation with no matching data."""
+        mock_data = {
+            "status": "success",
+            "data": {
+                "result": [
+                    {
+                        "metric": {"service": "btc-lava-provider"},
+                        "values": [[1640995200, "2000"]],
+                    }
+                ]
+            },
+        }
+
+        result = calculate_provider_latest_block_number(mock_data, "eth-lava")
+        assert result == 0  # Should return 0 when no matching provider
+
+    def test_calculate_provider_latest_block_number_empty_result(self):
+        """Test provider latest block calculation with empty result."""
+        mock_data = {"status": "success", "data": {"result": []}}
+
+        result = calculate_provider_latest_block_number(mock_data, "eth-lava")
+        assert result == 0  # Should return 0 when no data
+
+    def test_calculate_provider_latest_block_number_invalid_service_format(self):
+        """Test provider latest block calculation with invalid service format."""
+        mock_data = {
+            "status": "success",
+            "data": {
+                "result": [
+                    {
+                        "metric": {"service": "eth-lava"},  # Missing -provider suffix
+                        "values": [[1640995200, "2000"]],
+                    }
+                ]
+            },
+        }
+
+        result = calculate_provider_latest_block_number(mock_data, "eth-lava")
+        assert result == 0  # Should return 0 when service doesn't end with -provider

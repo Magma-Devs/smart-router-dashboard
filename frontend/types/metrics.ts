@@ -4,6 +4,7 @@
 
 export interface ProviderMetrics {
   provider: string;
+  latest_block: string; // latest block number
   traffic: string; // req/day
   uptime: string; // percentage
   latency: string; // single value
@@ -12,6 +13,7 @@ export interface ProviderMetrics {
 
 export interface ChainMetrics {
   chain: string;
+  latest_block: string; // latest block number
   traffic: string; // req/day
   uptime: string; // percentage
   latency: string; // single value
