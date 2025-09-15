@@ -13,8 +13,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getChainLabel, getChainIcon } from '@/app/config/chains';
-import { ChainsToProvidersResponse, ChainInfo, BasicHealth, ConsumerHealth } from '@/types/metrics';
-import { useToast } from '@/components/ui/use-toast';
+import { ChainsToProvidersResponse, ChainInfo, BasicHealth } from '@/types/metrics';
 import ReactFlow, {
   Background,
   Controls,
