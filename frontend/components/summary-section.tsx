@@ -14,7 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { ChevronDown, Info, Globe, RefreshCw } from 'lucide-react';
+import { ChevronDown, Info, Globe, RefreshCw, ArrowDown } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 // Application imports
@@ -229,7 +229,19 @@ export function SummarySection({}: SummarySectionProps) {
   const handleScrollToMetrics = () => {
     const metricsSection = document.querySelector('[data-section="metrics"]');
     if (metricsSection) {
-      metricsSection.scrollIntoView({ behavior: 'smooth' });
+      // Add visual feedback with a slight delay for better UX
+      const button = document.querySelector('[data-scroll-button="metrics"]');
+      if (button) {
+        button.classList.add('animate-pulse');
+        setTimeout(() => button.classList.remove('animate-pulse'), 1000);
+      }
+      
+      // Enhanced scroll with better easing
+      metricsSection.scrollIntoView({ 
+        behavior: 'smooth',
+        block: 'start',
+        inline: 'nearest'
+      });
     }
   };
 
@@ -333,12 +345,14 @@ export function SummarySection({}: SummarySectionProps) {
 
           <div className='flex justify-end'>
             <Button
-              variant='ghost'
+              variant='outline'
               size='sm'
               onClick={handleScrollToMetrics}
-              className='flex items-center gap-2'
+              data-scroll-button='metrics'
+              className='flex items-center gap-2 bg-background border-border hover:bg-accent hover:border-primary/50 transition-all duration-200'
             >
-              <ChevronDown className='h-4 w-4' />
+              <ArrowDown className='h-4 w-4' />
+              <span className='text-sm font-medium'>In-Depth Metrics</span>
             </Button>
           </div>
         </CardContent>
