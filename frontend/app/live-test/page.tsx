@@ -55,6 +55,7 @@ export default function LiveTestPage() {
   const [isFetching, setIsFetching] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [curlCommand, setCurlCommand] = useState<string>('');
+  const [endpointUrl, setEndpointUrl] = useState<string>('');
   const [configuredInterfaces, setConfiguredInterfaces] = useState<string[]>([]);
   const [apiData, setApiData] = useState<ApiResponse | null>(null);
 
@@ -116,6 +117,10 @@ export default function LiveTestPage() {
       const domain = process.env.NEXT_PUBLIC_DOMAIN || 'lavapro.xyz';
       const port = process.env.NEXT_PUBLIC_PORT || '8443';
       const hostHeader = `${selectedChain}-${selectedInterface}.${domain}`;
+      
+      // Generate endpoint URL
+      const endpoint = `https://${domain}:${port}`;
+      setEndpointUrl(endpoint);
       
       const cmd =
         selectedInterface === 'rest'
@@ -297,6 +302,22 @@ export default function LiveTestPage() {
                 )}
               </CardContent>
             </Card>
+
+            {selectedChain && selectedInterface && (
+              <Card className='border-muted bg-card/50'>
+                <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
+                  <CardTitle className='text-lg font-medium'>Endpoint</CardTitle>
+                  <Button variant='ghost' size='icon' onClick={() => copyToClipboard(endpointUrl)}>
+                    <Copy className='h-4 w-4' />
+                  </Button>
+                </CardHeader>
+                <CardContent>
+                  <div className='rounded-lg bg-muted p-4 font-mono text-sm overflow-x-auto whitespace-pre-wrap break-all'>
+                    {endpointUrl}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
             {selectedChain && selectedInterface && (
               <Card className='border-muted bg-card/50'>
