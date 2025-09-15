@@ -31,7 +31,7 @@ class TestConfigurationService:
                             "port": 8080,
                             "addons": ["addon1", "addon2"],
                             "staticProviders": [
-                                {"url": "https://lava-provider.lava.infra"}
+                                {"url": "https://lava-provider.lavapro.xyz"}
                             ],
                         }
                     ]
@@ -49,12 +49,12 @@ class TestConfigurationService:
                             "interface": "jsonrpc",
                             "nodes": [
                                 {
-                                    "endpoint": "https://node1.lava.infra",
+                                    "endpoint": "https://node1.lavapro.xyz",
                                     "type": "full",
                                     "addons": ["addon1", "addon3"],
                                 },
                                 {
-                                    "endpoint": "https://node2.lava.infra",
+                                    "endpoint": "https://node2.lavapro.xyz",
                                     "type": "archive",
                                     "addons": ["addon2"],
                                 },
@@ -159,7 +159,7 @@ class TestConfigurationService:
 
     def test_build_provider_config(self):
         """Test building provider configuration."""
-        provider = {"url": "https://lava-provider.lava.infra"}
+        provider = {"url": "https://lava-provider.lavapro.xyz"}
 
         # Mock the provider data reading
         with patch.object(
@@ -168,7 +168,7 @@ class TestConfigurationService:
             result = self.service._build_provider_config(provider)
 
         assert result["name"] == "lava"
-        assert result["url"] == "https://lava-provider.lava.infra"
+        assert result["url"] == "https://lava-provider.lavapro.xyz"
         assert len(result["nodes"]) == 2
         # Check that all addons are present (order may vary due to set operations)
         assert set(result["addons"]) == {"addon1", "addon3", "addon2"}
