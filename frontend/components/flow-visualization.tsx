@@ -31,6 +31,7 @@ import React from 'react';
 
 interface FlowVisualizationProps {
   data: ChainsToProvidersResponse;
+  isAllExpanded?: boolean;
 }
 
 // Types for the flow visualization
@@ -1057,31 +1058,9 @@ function FlowInner({
   );
 }
 
-export function FlowVisualization({ data }: FlowVisualizationProps) {
-  const [isAllExpanded, setIsAllExpanded] = useState(false);
-
+export function FlowVisualization({ data, isAllExpanded = false }: FlowVisualizationProps) {
   return (
     <div className='space-y-4 w-full'>
-      <div className='flex mb-2'>
-        <div className='ml-auto'>
-          <button
-            onClick={() => setIsAllExpanded(prev => !prev)}
-            className='flex items-center gap-1.5 px-4 py-1.5 text-sm bg-secondary hover:bg-secondary/90 rounded-md border shadow-sm'
-          >
-            {isAllExpanded ? (
-              <>
-                <ChevronUp className='h-4 w-4' />
-                <span>Collapse All</span>
-              </>
-            ) : (
-              <>
-                <ChevronDown className='h-4 w-4' />
-                <span>Expand All</span>
-              </>
-            )}
-          </button>
-        </div>
-      </div>
       <ReactFlowProvider>
         <FlowInner apiData={data} isAllExpanded={isAllExpanded} />
       </ReactFlowProvider>
