@@ -15,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { AlertTriangle, Settings, RefreshCw } from 'lucide-react';
+import { AlertTriangle, Settings, RefreshCw, ChevronUp, ChevronDown } from 'lucide-react';
 
 // Application component imports
 import { FlowVisualization } from '@/components/flow-visualization';
@@ -84,6 +84,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [flowExpanded, setFlowExpanded] = useState(false);
 
   // Configuration hook
   const { config, updateRefreshInterval } = useConfig();
@@ -260,12 +261,33 @@ export default function Dashboard() {
                 >
                   <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
                 </Button>
+
+                {/* Expand All Button */}
+                <Button
+                  variant='outline'
+                  size='sm'
+                  onClick={() => setFlowExpanded(prev => !prev)}
+                  title={flowExpanded ? 'Collapse all providers' : 'Expand all providers'}
+                  className='bg-background border-border hover:bg-accent'
+                >
+                  {flowExpanded ? (
+                    <>
+                      <ChevronUp className='h-4 w-4 mr-1' />
+                      <span>Collapse All</span>
+                    </>
+                  ) : (
+                    <>
+                      <ChevronDown className='h-4 w-4 mr-1' />
+                      <span>Expand All</span>
+                    </>
+                  )}
+                </Button>
               </div>
             </CardHeader>
             <CardContent className='p-0 overflow-hidden'>
               {renderContent() ||
                 (data?.flow?.chains && (
-                  <FlowVisualization key='flow-visualization' data={data.flow} />
+                  <FlowVisualization key='flow-visualization' data={data.flow} isAllExpanded={flowExpanded} />
                 ))}
             </CardContent>
           </Card>
