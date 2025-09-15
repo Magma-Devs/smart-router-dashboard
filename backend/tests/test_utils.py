@@ -87,7 +87,8 @@ class TestExtractProviderNameFromURL:
     def test_extract_provider_name_from_url(self):
         """Test extraction of provider name from various URL formats."""
         assert (
-            extract_provider_name_from_url("https://lava-provider.lavapro.xyz") == "lava"
+            extract_provider_name_from_url("https://lava-provider.lavapro.xyz")
+            == "lava"
         )
         assert (
             extract_provider_name_from_url("https://test-provider.example.com")
