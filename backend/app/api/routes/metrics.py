@@ -219,57 +219,6 @@ def get_available_providers() -> list[str]:
     return available_providers
 
 
-def generate_consumer_url(chain_id: str) -> str:
-    """
-    Generate consumer URL for a given chain.
-    
-    Format: <selected-chain>-<selected-interface>.<domain>
-    - selected-chain: chain key from consumer.values.yml
-    - selected-interface: first interface in the interfaces list
-    - domain: global domain from consumer.values.yml
-    
-    Args:
-        chain_id: The chain identifier (e.g., "eth1", "arbitrum", "cosmoshub")
-        
-    Returns:
-        Consumer URL string (e.g., "eth1-jsonrpc.lavapro.xyz")
-    """
-    try:
-        consumer_path = f"{configuration_service.values_dir}/core/consumer.values.yml"
-        consumer_data = configuration_service.read_yaml_file(consumer_path)
-        
-        if not consumer_data:
-            return ""
-            
-        # Get domain from global config
-        domain = consumer_data.get("global", {}).get("domain", "")
-        if not domain:
-            return ""
-            
-        # Get chain configuration
-        chains = consumer_data.get("chains", {})
-        chain_config = chains.get(chain_id, {})
-        
-        if not chain_config:
-            return ""
-            
-        # Get first interface
-        interfaces = chain_config.get("interfaces", [])
-        if not interfaces:
-            return ""
-            
-        first_interface = interfaces[0].get("interface", "")
-        if not first_interface:
-            return ""
-            
-        # Generate URL: <chain_id>-<interface>.<domain>
-        return f"{chain_id}-{first_interface}.{domain}"
-        
-    except Exception as e:
-        print(f"Error generating consumer URL for {chain_id}: {e}")
-        return ""
-
-
 async def fetch_chain_metrics_data(
     svc: PrometheusService, time_window_minutes: int, step_size: int
 ) -> tuple[
@@ -1140,7 +1089,6 @@ class ChainInfo(BaseModel):
 
     chain_id: str
     consumer_health: ConsumerHealth  # From consumer health breakdown metric
-    consumer_url: str  # Consumer endpoint URL
     providers: list[ProviderInfo]
 
 
@@ -1189,9 +1137,6 @@ async def get_chains_to_providers(
         for chain_id in available_chains:
             # Get chain health from consumer health breakdown
             consumer_uptime = calculate_uptime_percentage(consumers_data, chain_id)
-            
-            # Generate consumer URL
-            consumer_url = generate_consumer_url(chain_id)
 
             # Get providers for this chain
             chain_providers = get_providers_for_chain(chain_id)
@@ -1266,7 +1211,6 @@ async def get_chains_to_providers(
                 ChainInfo(
                     chain_id=chain_id,
                     consumer_health=consumer_health,
-                    consumer_url=consumer_url,
                     providers=providers_info,
                 )
             )

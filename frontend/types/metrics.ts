@@ -74,7 +74,6 @@ export interface ProviderInfo {
 export interface ChainInfo {
   chain_id: string;
   consumer_health: ConsumerHealth;
-  consumer_url: string;
   providers: ProviderInfo[];
 }
 
