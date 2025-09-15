@@ -56,6 +56,7 @@ export default function LiveTestPage() {
   const [error, setError] = useState<string | null>(null);
   const [curlCommand, setCurlCommand] = useState<string>('');
   const [configuredInterfaces, setConfiguredInterfaces] = useState<string[]>([]);
+  const [apiData, setApiData] = useState<ApiResponse | null>(null);
 
   useEffect(() => {
     const fetchChains = async () => {
@@ -65,9 +66,10 @@ export default function LiveTestPage() {
       }
 
       try {
-        console.log('Fetching from:', `/api/components/`);
         const data: ApiResponse = await apiClient.get(`/api/components/`);
-        console.log('API Response:', data);
+        
+        // Store the API data for later use
+        setApiData(data);
 
         // Get configured chains and their interfaces
         const configuredChains = Object.keys(data.consumers);
@@ -75,13 +77,6 @@ export default function LiveTestPage() {
           configuredChains.includes(chain.value),
         );
         setAvailableChains(availableChainConfigs);
-
-        // If a chain is selected, update its interfaces
-        if (selectedChain && data.consumers[selectedChain]) {
-          const interfaces = data.consumers[selectedChain].interfaces.map(i => i.name);
-          console.log('Setting interfaces for', selectedChain, ':', interfaces);
-          setConfiguredInterfaces(interfaces);
-        }
       } catch (error) {
         console.error('Fetch error:', error);
         setError(error instanceof Error ? error.message : 'Failed to fetch chains');
@@ -91,7 +86,17 @@ export default function LiveTestPage() {
     };
 
     fetchChains();
-  }, [config.apiEndpoint, selectedChain]);
+  }, [config.apiEndpoint]);
+
+  // Update interfaces when chain selection changes (without refetching)
+  useEffect(() => {
+    if (selectedChain && apiData && apiData.consumers[selectedChain]) {
+      // Deduplicate interfaces by name
+      const interfaceNames = apiData.consumers[selectedChain].interfaces.map(i => i.name);
+      const uniqueInterfaces = [...new Set(interfaceNames)];
+      setConfiguredInterfaces(uniqueInterfaces);
+    }
+  }, [selectedChain, apiData]);
 
   useEffect(() => {
     if (selectedChain && selectedInterface) {
@@ -111,6 +116,7 @@ export default function LiveTestPage() {
       const domain = process.env.NEXT_PUBLIC_DOMAIN || 'lavapro.xyz';
       const port = process.env.NEXT_PUBLIC_PORT || '8443';
       const hostHeader = `${selectedChain}-${selectedInterface}.${domain}`;
+      
       const cmd =
         selectedInterface === 'rest'
           ? `curl -X GET -H "X-Host: ${hostHeader}" https://${domain}:${port}${JSON.parse(interfaceCommand).path}`
@@ -217,6 +223,7 @@ export default function LiveTestPage() {
                             onClick={() => {
                               setSelectedChain(chain.value === selectedChain ? '' : chain.value);
                               setSelectedInterface('');
+                              setResponse('');
                             }}
                             className={cn(
                               'flex items-center gap-3 p-4 rounded-lg border-2 transition-all duration-200',
@@ -273,7 +280,10 @@ export default function LiveTestPage() {
                                             : ''),
                                   'hover:opacity-90',
                                 )}
-                                onClick={() => setSelectedInterface(iface)}
+                                onClick={() => {
+                                  setSelectedInterface(iface);
+                                  setResponse('');
+                                }}
                               >
                                 {displayName}
                               </Button>
@@ -282,6 +292,7 @@ export default function LiveTestPage() {
                         </div>
                       </div>
                     )}
+
                   </>
                 )}
               </CardContent>
