@@ -18,15 +18,18 @@ from app.services.configuration import configuration_service
 # Health state enums
 class BasicHealth(str, Enum):
     """Basic health states for providers"""
+
     HEALTHY = "healthy"
     UNHEALTHY = "unhealthy"
 
 
 class ConsumerHealth(str, Enum):
     """Extended health states for consumers (includes mixed state)"""
+
     HEALTHY = "healthy"
     UNHEALTHY = "unhealthy"
     MIXED = "mixed"
+
 
 T = TypeVar("T")
 
@@ -1148,7 +1151,11 @@ async def get_chains_to_providers(
                 provider_uptime = calculate_provider_uptime_percentage(
                     provider_health_data, provider_name
                 )
-                provider_health = BasicHealth.HEALTHY if provider_uptime > 0 else BasicHealth.UNHEALTHY
+                provider_health = (
+                    BasicHealth.HEALTHY
+                    if provider_uptime > 0
+                    else BasicHealth.UNHEALTHY
+                )
                 provider_health_states.append(provider_health)
 
                 # Get interface and endpoint from configuration
@@ -1200,9 +1207,15 @@ async def get_chains_to_providers(
             # Consumer is unhealthy if NO providers are healthy
             if not provider_health_states:
                 consumer_health = ConsumerHealth.UNHEALTHY  # No providers = unhealthy
-            elif all(health == BasicHealth.HEALTHY for health in provider_health_states):
-                consumer_health = ConsumerHealth.HEALTHY  # All providers healthy = healthy
-            elif any(health == BasicHealth.HEALTHY for health in provider_health_states):
+            elif all(
+                health == BasicHealth.HEALTHY for health in provider_health_states
+            ):
+                consumer_health = (
+                    ConsumerHealth.HEALTHY
+                )  # All providers healthy = healthy
+            elif any(
+                health == BasicHealth.HEALTHY for health in provider_health_states
+            ):
                 consumer_health = ConsumerHealth.MIXED  # Some healthy, some not
             else:
                 consumer_health = ConsumerHealth.UNHEALTHY  # No providers healthy

@@ -831,8 +831,8 @@ function FlowInner({
       const hasMultipleProviders =
         serviceGroups.reduce((total, group) => total + group.providers.length, 0) > 2;
 
-      // Calculate individual width for this consumer
-      const consumerWidth = calculateConsumerWidth(consumer);
+      // Use calculated width for consumer nodes
+      const consumerWidth = finalConsumerNodeWidth;
 
       // Get the original chain data to check for mixed health state
       const originalChain = apiData?.chains?.find((chain: ChainInfo) => chain.chain_id === consumer.name);

@@ -655,8 +655,12 @@ class TestHealthEnums:
 
     def test_consumer_health_calculation_all_healthy(self):
         """Test consumer health calculation when all providers are healthy."""
-        provider_health_states = [BasicHealth.HEALTHY, BasicHealth.HEALTHY, BasicHealth.HEALTHY]
-        
+        provider_health_states = [
+            BasicHealth.HEALTHY,
+            BasicHealth.HEALTHY,
+            BasicHealth.HEALTHY,
+        ]
+
         # Simulate the logic from the API endpoint
         if not provider_health_states:
             consumer_health = ConsumerHealth.UNHEALTHY
@@ -666,13 +670,17 @@ class TestHealthEnums:
             consumer_health = ConsumerHealth.MIXED
         else:
             consumer_health = ConsumerHealth.UNHEALTHY
-            
+
         assert consumer_health == ConsumerHealth.HEALTHY
 
     def test_consumer_health_calculation_all_unhealthy(self):
         """Test consumer health calculation when all providers are unhealthy."""
-        provider_health_states = [BasicHealth.UNHEALTHY, BasicHealth.UNHEALTHY, BasicHealth.UNHEALTHY]
-        
+        provider_health_states = [
+            BasicHealth.UNHEALTHY,
+            BasicHealth.UNHEALTHY,
+            BasicHealth.UNHEALTHY,
+        ]
+
         # Simulate the logic from the API endpoint
         if not provider_health_states:
             consumer_health = ConsumerHealth.UNHEALTHY
@@ -682,13 +690,17 @@ class TestHealthEnums:
             consumer_health = ConsumerHealth.MIXED
         else:
             consumer_health = ConsumerHealth.UNHEALTHY
-            
+
         assert consumer_health == ConsumerHealth.UNHEALTHY
 
     def test_consumer_health_calculation_mixed(self):
         """Test consumer health calculation when some providers are healthy and some are not."""
-        provider_health_states = [BasicHealth.HEALTHY, BasicHealth.UNHEALTHY, BasicHealth.HEALTHY]
-        
+        provider_health_states = [
+            BasicHealth.HEALTHY,
+            BasicHealth.UNHEALTHY,
+            BasicHealth.HEALTHY,
+        ]
+
         # Simulate the logic from the API endpoint
         if not provider_health_states:
             consumer_health = ConsumerHealth.UNHEALTHY
@@ -698,13 +710,13 @@ class TestHealthEnums:
             consumer_health = ConsumerHealth.MIXED
         else:
             consumer_health = ConsumerHealth.UNHEALTHY
-            
+
         assert consumer_health == ConsumerHealth.MIXED
 
     def test_consumer_health_calculation_no_providers(self):
         """Test consumer health calculation when there are no providers."""
         provider_health_states = []
-        
+
         # Simulate the logic from the API endpoint
         if not provider_health_states:
             consumer_health = ConsumerHealth.UNHEALTHY
@@ -714,13 +726,13 @@ class TestHealthEnums:
             consumer_health = ConsumerHealth.MIXED
         else:
             consumer_health = ConsumerHealth.UNHEALTHY
-            
+
         assert consumer_health == ConsumerHealth.UNHEALTHY
 
     def test_consumer_health_calculation_single_healthy(self):
         """Test consumer health calculation with single healthy provider."""
         provider_health_states = [BasicHealth.HEALTHY]
-        
+
         # Simulate the logic from the API endpoint
         if not provider_health_states:
             consumer_health = ConsumerHealth.UNHEALTHY
@@ -730,13 +742,13 @@ class TestHealthEnums:
             consumer_health = ConsumerHealth.MIXED
         else:
             consumer_health = ConsumerHealth.UNHEALTHY
-            
+
         assert consumer_health == ConsumerHealth.HEALTHY
 
     def test_consumer_health_calculation_single_unhealthy(self):
         """Test consumer health calculation with single unhealthy provider."""
         provider_health_states = [BasicHealth.UNHEALTHY]
-        
+
         # Simulate the logic from the API endpoint
         if not provider_health_states:
             consumer_health = ConsumerHealth.UNHEALTHY
@@ -746,7 +758,7 @@ class TestHealthEnums:
             consumer_health = ConsumerHealth.MIXED
         else:
             consumer_health = ConsumerHealth.UNHEALTHY
-            
+
         assert consumer_health == ConsumerHealth.UNHEALTHY
 
     def test_consumer_health_calculation_edge_cases(self):
@@ -757,10 +769,16 @@ class TestHealthEnums:
             ([BasicHealth.UNHEALTHY, BasicHealth.UNHEALTHY], ConsumerHealth.UNHEALTHY),
             ([BasicHealth.HEALTHY, BasicHealth.UNHEALTHY], ConsumerHealth.MIXED),
             ([BasicHealth.UNHEALTHY, BasicHealth.HEALTHY], ConsumerHealth.MIXED),
-            ([BasicHealth.HEALTHY, BasicHealth.HEALTHY, BasicHealth.UNHEALTHY], ConsumerHealth.MIXED),
-            ([BasicHealth.UNHEALTHY, BasicHealth.UNHEALTHY, BasicHealth.HEALTHY], ConsumerHealth.MIXED),
+            (
+                [BasicHealth.HEALTHY, BasicHealth.HEALTHY, BasicHealth.UNHEALTHY],
+                ConsumerHealth.MIXED,
+            ),
+            (
+                [BasicHealth.UNHEALTHY, BasicHealth.UNHEALTHY, BasicHealth.HEALTHY],
+                ConsumerHealth.MIXED,
+            ),
         ]
-        
+
         for provider_states, expected_health in test_cases:
             # Simulate the logic from the API endpoint
             if not provider_states:
@@ -771,6 +789,7 @@ class TestHealthEnums:
                 consumer_health = ConsumerHealth.MIXED
             else:
                 consumer_health = ConsumerHealth.UNHEALTHY
-                
-            assert consumer_health == expected_health, f"Failed for provider states: {provider_states}"
 
+            assert (
+                consumer_health == expected_health
+            ), f"Failed for provider states: {provider_states}"
