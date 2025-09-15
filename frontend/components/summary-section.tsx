@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback } from 'react';
 import Image from 'next/image';
 
 // UI component imports
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
   Select,
@@ -236,18 +236,16 @@ export function SummarySection({}: SummarySectionProps) {
   return (
     <TooltipProvider>
       <Card className='mb-6'>
-        <CardContent className='p-6'>
-          <div className='flex items-center justify-between mb-4'>
-            <h2 className='text-lg font-semibold'>Summary</h2>
-
-            <div className='flex flex-wrap items-center gap-2'>
+        <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-4'>
+          <CardTitle>Summary</CardTitle>
+          <div className='flex flex-wrap items-center gap-2'>
               {/* Chain Selection */}
               <Select
                 value={selectedChain}
                 onValueChange={handleChainSelect}
                 disabled={isLoadingChains}
               >
-                <SelectTrigger className='w-[200px]'>
+                <SelectTrigger className='w-[200px] bg-background border-border hover:bg-accent'>
                   <SelectValue placeholder={isLoadingChains ? 'Loading...' : 'Select chain'} />
                 </SelectTrigger>
                 <SelectContent>
@@ -284,7 +282,7 @@ export function SummarySection({}: SummarySectionProps) {
 
               {/* Time Frame Selection */}
               <Select value={selectedTimeFrame} onValueChange={handleTimeFrameChange}>
-                <SelectTrigger className='w-[140px]'>
+                <SelectTrigger className='w-[140px] bg-background border-border hover:bg-accent'>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className='max-h-[15rem]'>
@@ -303,12 +301,13 @@ export function SummarySection({}: SummarySectionProps) {
                 onClick={handleRefresh}
                 disabled={isLoading}
                 title='Refresh metrics'
+                className='bg-background border-border hover:bg-accent'
               >
                 <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
               </Button>
-            </div>
           </div>
-
+        </CardHeader>
+        <CardContent className='p-6'>
           <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4'>
             <KPICard
               title='Uptime'
