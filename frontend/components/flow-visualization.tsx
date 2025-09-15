@@ -880,9 +880,9 @@ function FlowInner({
           healthy: consumer.healthy,
           hasExpandedProviders: isConsumerExpanded,
           hasMultipleProviders: hasMultipleProviders,
-          hasMixedHealth:
-            serviceGroups.some(group => group.anyHealthy) &&
-            serviceGroups.some(group => !group.allHealthy),
+          hasMixedHealth: serviceGroups.some(group => 
+            group.anyHealthy && !group.allHealthy
+          ),
           width: consumerWidth,
           consumerUrl: consumer.consumerUrl,
           onCopyUrl: copyToClipboard,
