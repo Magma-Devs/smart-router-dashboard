@@ -224,42 +224,43 @@ export default function Dashboard() {
         <div className='space-y-6'>
           <SummarySection />
 
-          {/* Time Controls Section */}
-          <div className='flex items-center justify-end gap-2'>
-            <Select
-              value={config.refreshInterval.toString()}
-              onValueChange={handleRefreshIntervalChange}
-            >
-              <SelectTrigger className='w-[180px]'>
-                <SelectValue placeholder='Auto-refresh every' />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value='1'>1 second</SelectItem>
-                <SelectItem value='5'>5 seconds</SelectItem>
-                <SelectItem value='10'>10 seconds</SelectItem>
-                <SelectItem value='30'>30 seconds</SelectItem>
-                <SelectItem value='60'>1 minute</SelectItem>
-                <SelectItem value='300'>5 minutes</SelectItem>
-              </SelectContent>
-            </Select>
-
-            <Button
-              variant='outline'
-              size='icon'
-              onClick={handleManualRefresh}
-              disabled={loading}
-              title='Refresh now'
-            >
-              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            </Button>
-          </div>
 
           <Card>
-            <CardHeader>
-              <CardTitle>System Flow Visualization</CardTitle>
-              <CardDescription>
-                Visualizing the health status between Users, Chains, and Providers
-              </CardDescription>
+            <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-4'>
+              <div>
+                <CardTitle>System Flow Visualization</CardTitle>
+                <CardDescription>
+                  Visualizing the health status between Users, Chains, and Providers
+                </CardDescription>
+              </div>
+              <div className='flex flex-wrap items-center gap-2'>
+                {/* Auto-refresh Interval Selection */}
+                <Select value={config.refreshInterval.toString()} onValueChange={handleRefreshIntervalChange}>
+                  <SelectTrigger className='w-[180px] bg-background border-border hover:bg-accent'>
+                    <SelectValue placeholder='Auto-refresh every' />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value='1'>1 second</SelectItem>
+                    <SelectItem value='5'>5 seconds</SelectItem>
+                    <SelectItem value='10'>10 seconds</SelectItem>
+                    <SelectItem value='30'>30 seconds</SelectItem>
+                    <SelectItem value='60'>1 minute</SelectItem>
+                    <SelectItem value='300'>5 minutes</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                {/* Refresh Button */}
+                <Button
+                  variant='outline'
+                  size='sm'
+                  onClick={handleManualRefresh}
+                  disabled={loading}
+                  title='Refresh flow data'
+                  className='bg-background border-border hover:bg-accent'
+                >
+                  <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className='p-0 overflow-hidden'>
               {renderContent() ||
