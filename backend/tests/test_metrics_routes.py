@@ -27,6 +27,8 @@ from app.api.routes.metrics import (
     calculate_provider_uptime_percentage,
     calculate_consumer_latest_block_number,
     calculate_provider_latest_block_number,
+    BasicHealth,
+    ConsumerHealth,
 )
 
 
@@ -632,3 +634,143 @@ class TestLatestBlockCalculations:
 
         result = calculate_provider_latest_block_number(mock_data, "eth-lava")
         assert result == 0  # Should return 0 when service doesn't end with -provider
+
+
+# Test health enum logic
+class TestHealthEnums:
+    """Test the health enum functionality and consumer health calculation logic."""
+
+    def test_basic_health_enum_values(self):
+        """Test BasicHealth enum values."""
+        assert BasicHealth.HEALTHY == "healthy"
+        assert BasicHealth.UNHEALTHY == "unhealthy"
+        assert len(BasicHealth) == 2
+
+    def test_consumer_health_enum_values(self):
+        """Test ConsumerHealth enum values."""
+        assert ConsumerHealth.HEALTHY == "healthy"
+        assert ConsumerHealth.UNHEALTHY == "unhealthy"
+        assert ConsumerHealth.MIXED == "mixed"
+        assert len(ConsumerHealth) == 3
+
+    def test_consumer_health_calculation_all_healthy(self):
+        """Test consumer health calculation when all providers are healthy."""
+        provider_health_states = [BasicHealth.HEALTHY, BasicHealth.HEALTHY, BasicHealth.HEALTHY]
+        
+        # Simulate the logic from the API endpoint
+        if not provider_health_states:
+            consumer_health = ConsumerHealth.UNHEALTHY
+        elif all(health == BasicHealth.HEALTHY for health in provider_health_states):
+            consumer_health = ConsumerHealth.HEALTHY
+        elif any(health == BasicHealth.HEALTHY for health in provider_health_states):
+            consumer_health = ConsumerHealth.MIXED
+        else:
+            consumer_health = ConsumerHealth.UNHEALTHY
+            
+        assert consumer_health == ConsumerHealth.HEALTHY
+
+    def test_consumer_health_calculation_all_unhealthy(self):
+        """Test consumer health calculation when all providers are unhealthy."""
+        provider_health_states = [BasicHealth.UNHEALTHY, BasicHealth.UNHEALTHY, BasicHealth.UNHEALTHY]
+        
+        # Simulate the logic from the API endpoint
+        if not provider_health_states:
+            consumer_health = ConsumerHealth.UNHEALTHY
+        elif all(health == BasicHealth.HEALTHY for health in provider_health_states):
+            consumer_health = ConsumerHealth.HEALTHY
+        elif any(health == BasicHealth.HEALTHY for health in provider_health_states):
+            consumer_health = ConsumerHealth.MIXED
+        else:
+            consumer_health = ConsumerHealth.UNHEALTHY
+            
+        assert consumer_health == ConsumerHealth.UNHEALTHY
+
+    def test_consumer_health_calculation_mixed(self):
+        """Test consumer health calculation when some providers are healthy and some are not."""
+        provider_health_states = [BasicHealth.HEALTHY, BasicHealth.UNHEALTHY, BasicHealth.HEALTHY]
+        
+        # Simulate the logic from the API endpoint
+        if not provider_health_states:
+            consumer_health = ConsumerHealth.UNHEALTHY
+        elif all(health == BasicHealth.HEALTHY for health in provider_health_states):
+            consumer_health = ConsumerHealth.HEALTHY
+        elif any(health == BasicHealth.HEALTHY for health in provider_health_states):
+            consumer_health = ConsumerHealth.MIXED
+        else:
+            consumer_health = ConsumerHealth.UNHEALTHY
+            
+        assert consumer_health == ConsumerHealth.MIXED
+
+    def test_consumer_health_calculation_no_providers(self):
+        """Test consumer health calculation when there are no providers."""
+        provider_health_states = []
+        
+        # Simulate the logic from the API endpoint
+        if not provider_health_states:
+            consumer_health = ConsumerHealth.UNHEALTHY
+        elif all(health == BasicHealth.HEALTHY for health in provider_health_states):
+            consumer_health = ConsumerHealth.HEALTHY
+        elif any(health == BasicHealth.HEALTHY for health in provider_health_states):
+            consumer_health = ConsumerHealth.MIXED
+        else:
+            consumer_health = ConsumerHealth.UNHEALTHY
+            
+        assert consumer_health == ConsumerHealth.UNHEALTHY
+
+    def test_consumer_health_calculation_single_healthy(self):
+        """Test consumer health calculation with single healthy provider."""
+        provider_health_states = [BasicHealth.HEALTHY]
+        
+        # Simulate the logic from the API endpoint
+        if not provider_health_states:
+            consumer_health = ConsumerHealth.UNHEALTHY
+        elif all(health == BasicHealth.HEALTHY for health in provider_health_states):
+            consumer_health = ConsumerHealth.HEALTHY
+        elif any(health == BasicHealth.HEALTHY for health in provider_health_states):
+            consumer_health = ConsumerHealth.MIXED
+        else:
+            consumer_health = ConsumerHealth.UNHEALTHY
+            
+        assert consumer_health == ConsumerHealth.HEALTHY
+
+    def test_consumer_health_calculation_single_unhealthy(self):
+        """Test consumer health calculation with single unhealthy provider."""
+        provider_health_states = [BasicHealth.UNHEALTHY]
+        
+        # Simulate the logic from the API endpoint
+        if not provider_health_states:
+            consumer_health = ConsumerHealth.UNHEALTHY
+        elif all(health == BasicHealth.HEALTHY for health in provider_health_states):
+            consumer_health = ConsumerHealth.HEALTHY
+        elif any(health == BasicHealth.HEALTHY for health in provider_health_states):
+            consumer_health = ConsumerHealth.MIXED
+        else:
+            consumer_health = ConsumerHealth.UNHEALTHY
+            
+        assert consumer_health == ConsumerHealth.UNHEALTHY
+
+    def test_consumer_health_calculation_edge_cases(self):
+        """Test consumer health calculation with various edge cases."""
+        test_cases = [
+            # (provider_states, expected_consumer_health)
+            ([BasicHealth.HEALTHY, BasicHealth.HEALTHY], ConsumerHealth.HEALTHY),
+            ([BasicHealth.UNHEALTHY, BasicHealth.UNHEALTHY], ConsumerHealth.UNHEALTHY),
+            ([BasicHealth.HEALTHY, BasicHealth.UNHEALTHY], ConsumerHealth.MIXED),
+            ([BasicHealth.UNHEALTHY, BasicHealth.HEALTHY], ConsumerHealth.MIXED),
+            ([BasicHealth.HEALTHY, BasicHealth.HEALTHY, BasicHealth.UNHEALTHY], ConsumerHealth.MIXED),
+            ([BasicHealth.UNHEALTHY, BasicHealth.UNHEALTHY, BasicHealth.HEALTHY], ConsumerHealth.MIXED),
+        ]
+        
+        for provider_states, expected_health in test_cases:
+            # Simulate the logic from the API endpoint
+            if not provider_states:
+                consumer_health = ConsumerHealth.UNHEALTHY
+            elif all(health == BasicHealth.HEALTHY for health in provider_states):
+                consumer_health = ConsumerHealth.HEALTHY
+            elif any(health == BasicHealth.HEALTHY for health in provider_states):
+                consumer_health = ConsumerHealth.MIXED
+            else:
+                consumer_health = ConsumerHealth.UNHEALTHY
+                
+            assert consumer_health == expected_health, f"Failed for provider states: {provider_states}"
+

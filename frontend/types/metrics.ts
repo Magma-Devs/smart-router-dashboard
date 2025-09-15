@@ -2,6 +2,18 @@
  * Shared types for metrics across the dashboard
  */
 
+// Health state enums
+export enum BasicHealth {
+  HEALTHY = "healthy",
+  UNHEALTHY = "unhealthy",
+}
+
+export enum ConsumerHealth {
+  HEALTHY = "healthy",
+  UNHEALTHY = "unhealthy",
+  MIXED = "mixed",
+}
+
 export interface ProviderMetrics {
   provider: string;
   chain?: string; // chain label for display
@@ -55,13 +67,13 @@ export interface ProviderInfo {
   name: string;
   interface: string;
   endpoint: string;
-  health_status: boolean;
+  health_status: BasicHealth;
 }
 
 /** Chain information for flow visualization */
 export interface ChainInfo {
   chain_id: string;
-  consumer_health: boolean;
+  consumer_health: ConsumerHealth;
   consumer_url: string;
   providers: ProviderInfo[];
 }
