@@ -149,7 +149,9 @@ export default function Dashboard() {
       setLastUpdated(new Date());
     } catch (err) {
       console.error('Error fetching data:', err);
-      setError(`Failed to connect to API: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      // Don't set error state - let FlowVisualization show mock data
+      // setError(`Failed to connect to API: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      setData({ flow: null }); // Set data to null so FlowVisualization uses mock data
     } finally {
       setLoading(false);
     }
@@ -253,13 +255,7 @@ export default function Dashboard() {
           )}
         </div>
 
-        {error && (
-          <Alert variant='destructive' className='mb-6'>
-            <AlertTriangle className='h-4 w-4' />
-            <AlertTitle>Error</AlertTitle>
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
+        {/* Error alert removed - FlowVisualization will show mock data when API fails */}
 
         <div className='space-y-6'>
           <SummarySection />
@@ -323,10 +319,17 @@ export default function Dashboard() {
               </div>
             </CardHeader>
             <CardContent className='p-0 overflow-hidden'>
-              {renderContent() ||
-                (data?.flow?.chains && (
-                  <FlowVisualization key='flow-visualization' data={data.flow} isAllExpanded={flowExpanded} />
-                ))}
+              {loading ? (
+                <div className='flex items-center justify-center h-96'>
+                  <div className='animate-spin rounded-full h-12 w-12 border-b-2 border-primary'></div>
+                </div>
+              ) : (
+                <FlowVisualization 
+                  key='flow-visualization' 
+                  data={data?.flow || null} 
+                  isAllExpanded={flowExpanded} 
+                />
+              )}
             </CardContent>
           </Card>
 

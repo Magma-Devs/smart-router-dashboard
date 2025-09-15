@@ -16,6 +16,7 @@ import { getChainLabel, getChainIcon } from '@/app/config/chains';
 import { ChainsToProvidersResponse, ChainInfo } from '@/types/metrics';
 import ReactFlow, {
   Background,
+  BackgroundVariant,
   Controls,
   Handle,
   Position,
@@ -30,7 +31,7 @@ import 'reactflow/dist/style.css';
 import React from 'react';
 
 interface FlowVisualizationProps {
-  data: ChainsToProvidersResponse;
+  data: ChainsToProvidersResponse | null;
   isAllExpanded?: boolean;
 }
 
@@ -74,7 +75,7 @@ function MixedHealthIndicator() {
 
 function UserNode({ data }: { data: any }) {
   return (
-    <div className='px-4 py-2 shadow-lg rounded-lg border bg-background min-w-44'>
+    <div className='px-4 py-2 rounded-xl border border-white/20 bg-white/10 backdrop-blur-md shadow-lg min-w-44 transition-all duration-200 hover:shadow-xl hover:scale-105 hover:bg-white/20 cursor-pointer'>
       <div className='flex items-center gap-2'>
         <User className='h-4 w-4' />
         <div className='font-medium'>User</div>
@@ -102,12 +103,12 @@ function ChainNode({
   return (
     <div
       className={cn(
-        'px-4 py-2 shadow-lg rounded-lg border bg-background',
+        'px-4 py-2 shadow-lg rounded-xl border backdrop-blur-md transition-all duration-200 hover:shadow-xl hover:scale-105 cursor-pointer',
         data.healthy
-          ? 'border-green-200'
+          ? 'border-green-200/30 bg-green-50/10 hover:bg-green-50/20'
           : data.hasMixedHealth
-            ? 'border-orange-200'
-            : 'border-red-200',
+            ? 'border-orange-200/30 bg-orange-50/10 hover:bg-orange-50/20'
+            : 'border-red-200/30 bg-red-50/10 hover:bg-red-50/20',
       )}
       style={{ width: data.width ? `${data.width}px` : 'auto' }}
     >
@@ -170,12 +171,12 @@ function ProviderNode({
   return (
     <div
       className={cn(
-        'px-4 py-2 shadow-lg rounded-lg border bg-background min-w-44',
+        'px-4 py-2 shadow-lg rounded-xl border backdrop-blur-md min-w-44 transition-all duration-200 hover:shadow-xl hover:scale-105',
         data.isCollapseButton
-          ? 'border-gray-200 cursor-pointer'
+          ? 'border-gray-200/30 bg-gray-50/10 hover:bg-gray-50/20 cursor-pointer'
           : data.healthy
-            ? 'border-green-200'
-            : 'border-red-200',
+            ? 'border-green-200/30 bg-green-50/10 hover:bg-green-50/20 cursor-pointer'
+            : 'border-red-200/30 bg-red-50/10 hover:bg-red-50/20 cursor-pointer',
       )}
       onClick={data.isCollapseButton ? data.onCollapse : undefined}
     >
@@ -258,8 +259,12 @@ function ProviderGroupNode({
   return (
     <div
       className={cn(
-        'px-4 py-2 shadow-lg rounded-lg border bg-background cursor-pointer',
-        allHealthy ? 'border-green-200' : anyHealthy ? 'border-yellow-200' : 'border-red-200',
+        'px-4 py-2 shadow-lg rounded-xl border backdrop-blur-md cursor-pointer transition-all duration-200 hover:shadow-xl hover:scale-105',
+        allHealthy 
+          ? 'border-green-200/30 bg-green-50/10 hover:bg-green-50/20' 
+          : anyHealthy 
+            ? 'border-yellow-200/30 bg-yellow-50/10 hover:bg-yellow-50/20' 
+            : 'border-red-200/30 bg-red-50/10 hover:bg-red-50/20',
       )}
       style={{ width: data.maxWidth ? `${data.maxWidth}px` : 'auto' }}
       onClick={data.onToggle}
@@ -345,12 +350,12 @@ function ProviderCountNode({
   return (
     <div
       className={cn(
-        'px-4 py-2 shadow-lg rounded-lg border bg-background cursor-pointer',
+        'px-4 py-2 shadow-lg rounded-xl border backdrop-blur-md cursor-pointer transition-all duration-200 hover:shadow-xl hover:scale-105',
         data.isHealthy
-          ? 'border-green-200'
+          ? 'border-green-200/30 bg-green-50/10 hover:bg-green-50/20'
           : data.hasMixedHealth
-            ? 'border-orange-200'
-            : 'border-red-200',
+            ? 'border-orange-200/30 bg-orange-50/10 hover:bg-orange-50/20'
+            : 'border-red-200/30 bg-red-50/10 hover:bg-red-50/20',
       )}
       onClick={data.onExpand}
     >
@@ -448,16 +453,14 @@ function FlowInner({
           });
         });
       } else {
-        // For sample data
-        const sampleData = [
-          { consumer: 'NEAR', services: ['lava'] },
-          { consumer: 'ETH', services: ['quicknodes', 'anker'] },
-          { consumer: 'BTC', services: ['anker'] },
-          { consumer: 'SOL', services: ['lava', 'anker'] },
-          { consumer: 'LAVA', services: ['anker', 'anker2'] },
+        // For mock data
+        const mockData = [
+          { consumer: 'ethereum', services: ['lava'] },
+          { consumer: 'bitcoin', services: ['quicknodes', 'ankr'] },
+          { consumer: 'solana', services: ['lava', 'ankr', 'alchemy'] },
         ];
 
-        sampleData.forEach(item => {
+        mockData.forEach(item => {
           consumerKeys.push(`chain-${item.consumer}`);
 
           item.services.forEach(service => {
@@ -500,16 +503,14 @@ function FlowInner({
           });
         });
       } else {
-        // For sample data
-        const sampleData = [
-          { consumer: 'NEAR', services: ['lava'], count: 1 },
-          { consumer: 'ETH', services: ['quicknodes', 'anker'], count: 2 },
-          { consumer: 'BTC', services: ['anker'], count: 1 },
-          { consumer: 'SOL', services: ['lava', 'anker'], count: 3 },
-          { consumer: 'LAVA', services: ['anker', 'anker2'], count: 4 },
+        // For mock data
+        const mockData = [
+          { consumer: 'ethereum', services: ['lava'], count: 1 },
+          { consumer: 'bitcoin', services: ['quicknodes', 'ankr'], count: 2 },
+          { consumer: 'solana', services: ['lava', 'ankr', 'alchemy'], count: 3 },
         ];
 
-        sampleData.forEach(item => {
+        mockData.forEach(item => {
           const chainKey = `chain-${item.consumer}`;
           // Always collapse by default
           newExpandedState[chainKey] = false;
@@ -594,16 +595,14 @@ function FlowInner({
         );
       });
     } else {
-      // Fallback to sample data if API format is not recognized
-      const sampleData = [
-        { name: 'near', label: 'NEAR Mainnet', healthy: true },
-        { name: 'eth1', label: 'Ethereum Mainnet', healthy: true },
-        { name: 'btc', label: 'Bitcoin', healthy: false },
+      // Mock data: 1 user, 3 consumers, 6 providers (1, 2, 3 distribution)
+      const mockConsumers = [
+        { name: 'ethereum', label: 'Ethereum Mainnet', healthy: true },
+        { name: 'bitcoin', label: 'Bitcoin Mainnet', healthy: false },
         { name: 'solana', label: 'Solana Mainnet', healthy: true },
-        { name: 'lava', label: 'Lava Mainnet', healthy: true },
       ];
 
-      sampleData.forEach(item => {
+      mockConsumers.forEach(item => {
         chains.push(item);
       });
 
@@ -617,12 +616,16 @@ function FlowInner({
           service: 'quicknodes',
         },
         { interface: 'anker', healthy: true, service: 'anker' },
+      ];
+      providers['btc'] = [
         { interface: 'anker', healthy: false, service: 'anker' },
+      ];
+      providers['solana'] = [
         { interface: 'lava', healthy: false, service: 'lava' },
         { interface: 'anker', healthy: true, service: 'anker' },
         { interface: 'anker2', healthy: true, service: 'anker' },
       ];
-      providers['btc'] = [
+      providers['lava'] = [
         { interface: 'anker', healthy: true, service: 'anker' },
         { interface: 'anker2', healthy: true, service: 'anker' },
         { interface: 'anker3', healthy: true, service: 'anker' },
@@ -687,8 +690,8 @@ function FlowInner({
         serviceGroups[service].push(provider);
 
         // Track unique interfaces for this service
-        const apiInterface = provider.interface;
-        serviceInterfaces[service].add(apiInterface);
+        const interfaceName = provider.interface;
+        serviceInterfaces[service].add(interfaceName);
       });
 
       // Convert to array of ServiceGroup objects
@@ -923,7 +926,7 @@ function FlowInner({
             id: `edge-${chainId}-${serviceId}`,
             source: chainId,
             target: serviceId,
-            type: 'smoothstep',
+            type: 'straight',
             animated: group.anyHealthy,
             style: group.allHealthy
               ? {
@@ -988,7 +991,7 @@ function FlowInner({
           id: `edge-${chainId}-${providerCountNodeId}`,
           source: chainId,
           target: providerCountNodeId,
-          type: 'smoothstep',
+          type: 'straight',
           animated:
             !anyUnhealthy || backendMixedHealth || (anyUnhealthy && serviceGroups.some(group => group.anyHealthy)),
           style: !anyUnhealthy && !backendMixedHealth
@@ -1022,25 +1025,41 @@ function FlowInner({
   }, [nodesInitialized, renderedNodes, expandedGroups]);
 
   return (
-    <div className='border rounded-lg w-full' style={{ height: containerHeight }}>
+    <div className='w-full overflow-hidden' style={{ height: containerHeight }}>
       <ReactFlow
         key={key}
         nodes={flowNodes}
         edges={edges}
         nodeTypes={nodeTypes}
-        className='bg-muted/10'
+        className='bg-transparent'
         defaultViewport={{ x: -20, y: 0, zoom: 1 }}
         defaultEdgeOptions={{
-          type: 'smoothstep',
+          type: 'straight',
           style: { strokeWidth: 2 },
         }}
         fitView
-        panOnDrag={false}
-        preventScrolling={true}
-        zoomOnScroll={false}
+        panOnDrag={true}
+        preventScrolling={false}
+        zoomOnScroll={true}
+        panOnScroll={false}
+        zoomOnPinch={true}
+        minZoom={0.3}
+        maxZoom={2}
+        onNodeClick={(event, node) => {
+          // TODO: Implement node click handler for future API integration
+          console.log('Node clicked:', node);
+        }}
+        onEdgeClick={(event, edge) => {
+          // TODO: Implement edge click handler for future API integration
+          console.log('Edge clicked:', edge);
+        }}
       >
-        <Background />
-        <Controls />
+        <Controls 
+          position="bottom-right"
+          showZoom={true}
+          showFitView={true}
+          showInteractive={false}
+        />
       </ReactFlow>
 
       <style>{`
@@ -1052,14 +1071,74 @@ function FlowInner({
             stroke-dashoffset: 0;
           }
         }
+        
+        /* Glassmorphism effects */
+        .react-flow__node {
+          transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+          backdrop-filter: blur(12px);
+          -webkit-backdrop-filter: blur(12px);
+        }
+        
+        .react-flow__node:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        }
+        
+        /* Edge hover effects with glassmorphism */
+        .react-flow__edge:hover .react-flow__edge-path {
+          stroke-width: 3 !important;
+          filter: drop-shadow(0 0 8px rgba(0, 0, 0, 0.15));
+        }
+        
+        /* Subtle glow for animated edges */
+        .react-flow__edge.animated .react-flow__edge-path {
+          filter: drop-shadow(0 0 4px rgba(34, 197, 94, 0.3));
+        }
+        
+        /* Controls glassmorphism */
+        .react-flow__controls {
+          backdrop-filter: blur(12px);
+          -webkit-backdrop-filter: blur(12px);
+          background: rgba(255, 255, 255, 0.1) !important;
+          border: 1px solid rgba(255, 255, 255, 0.2) !important;
+        }
+        
+        .react-flow__controls-button {
+          background: rgba(255, 255, 255, 0.1) !important;
+          border: 1px solid rgba(255, 255, 255, 0.2) !important;
+          backdrop-filter: blur(8px);
+          -webkit-backdrop-filter: blur(8px);
+        }
+        
+        .react-flow__controls-button:hover {
+          background: rgba(255, 255, 255, 0.2) !important;
+        }
+        
+        /* Hide React Flow attribution */
+        .react-flow__attribution {
+          display: none !important;
+        }
       `}</style>
     </div>
   );
 }
 
 export function FlowVisualization({ data, isAllExpanded = false }: FlowVisualizationProps) {
+  const isUsingMockData = !data || !data.chains || data.chains.length === 0;
+  
   return (
     <div className='space-y-4 w-full'>
+      {isUsingMockData && (
+        <div className='bg-blue-50/10 border border-blue-200/30 rounded-lg p-3 mb-4'>
+          <div className='flex items-center gap-2 text-blue-600'>
+            <div className='w-2 h-2 bg-blue-500 rounded-full'></div>
+            <span className='text-sm font-medium'>Demo Mode</span>
+          </div>
+          <p className='text-xs text-blue-500/80 mt-1'>
+            Showing mock data for UI/UX testing. Connect to API to see real metrics.
+          </p>
+        </div>
+      )}
       <ReactFlowProvider>
         <FlowInner apiData={data} isAllExpanded={isAllExpanded} />
       </ReactFlowProvider>
