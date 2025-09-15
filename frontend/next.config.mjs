@@ -25,7 +25,7 @@ const nextConfig = {
   output: 'standalone',
   env: {
     NEXT_PUBLIC_API_URL:
-      process.env.NEXT_PUBLIC_API_URL || 'https://dashboard-api.lava.infra:8443',
+      process.env.NEXT_PUBLIC_API_URL || 'https://dashboard-api.lavapro.xyz:8443',
   },
 };
 
