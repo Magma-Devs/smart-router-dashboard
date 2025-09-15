@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getChainLabel, getChainIcon } from '@/app/config/chains';
-import { ChainsToProvidersResponse, ChainInfo } from '@/types/metrics';
+import { ChainsToProvidersResponse, ChainInfo, BasicHealth, ConsumerHealth } from '@/types/metrics';
 import { useToast } from '@/components/ui/use-toast';
 import ReactFlow, {
   Background,
@@ -606,15 +606,19 @@ function FlowInner({
     const consumers: Consumer[] = [];
     const providers: Providers = {};
 
+
     // Process the new chains-to-providers API format
-    if (apiData && apiData.chains) {
+    if (apiData && apiData.chains && Array.isArray(apiData.chains) && apiData.chains.length > 0) {
       apiData.chains.forEach((chain: ChainInfo) => {
         // Create consumer from chain data using proper labels and icons from chains.ts
+        // Handle health states using enums - be explicit about the comparison
+        const isHealthy = chain.consumer_health === "healthy";
+        
         consumers.push({
           name: chain.chain_id,
           label: getChainLabel(chain.chain_id),
           icon: getChainIcon(chain.chain_id),
-          healthy: chain.consumer_health,
+          healthy: isHealthy, // Only true when ALL providers are healthy
           consumerUrl: chain.consumer_url,
         });
 
@@ -622,7 +626,7 @@ function FlowInner({
         providers[chain.chain_id] = chain.providers.map(provider => ({
           interface: `${provider.name}:${provider.interface}`,
           apiInterface: provider.interface,
-          healthy: provider.health_status,
+          healthy: provider.health_status === BasicHealth.HEALTHY,
           service: provider.name,
         }));
       });
@@ -869,6 +873,10 @@ function FlowInner({
       // Calculate individual width for this consumer
       const consumerWidth = calculateConsumerWidth(consumer);
 
+      // Get the original chain data to check for mixed health state
+      const originalChain = apiData?.chains?.find((chain: ChainInfo) => chain.chain_id === consumer.name);
+      const backendMixedHealth = originalChain?.consumer_health === "mixed";
+      
       // Add consumer node
       nodes.push({
         id: consumerId,
@@ -880,9 +888,7 @@ function FlowInner({
           healthy: consumer.healthy,
           hasExpandedProviders: isConsumerExpanded,
           hasMultipleProviders: hasMultipleProviders,
-          hasMixedHealth: serviceGroups.some(group => 
-            group.anyHealthy && !group.allHealthy
-          ),
+          hasMixedHealth: backendMixedHealth,
           width: consumerWidth,
           consumerUrl: consumer.consumerUrl,
           onCopyUrl: copyToClipboard,
@@ -904,15 +910,15 @@ function FlowInner({
         id: `edge-user-${consumerId}`,
         source: 'user',
         target: consumerId,
-        animated: consumer.healthy || serviceGroups.some(group => group.anyHealthy),
+        animated: consumer.healthy || backendMixedHealth || serviceGroups.some(group => group.anyHealthy),
         style:
-          consumer.healthy && serviceGroups.every(group => group.allHealthy)
+          consumer.healthy && !backendMixedHealth && serviceGroups.every(group => group.allHealthy)
             ? {
                 stroke: 'green',
                 strokeDasharray: '5 5',
                 animation: 'dashdraw 0.5s linear infinite',
               }
-            : serviceGroups.some(group => group.anyHealthy)
+            : backendMixedHealth || serviceGroups.some(group => group.anyHealthy)
               ? {
                   stroke: 'orange',
                   strokeDasharray: '5 5',
@@ -1006,8 +1012,8 @@ function FlowInner({
             consumer: consumer.name,
             count: totalProviders,
             healthyCount: healthyProviders,
-            isHealthy: !anyUnhealthy,
-            hasMixedHealth: healthyProviders > 0 && healthyProviders < totalProviders,
+            isHealthy: !anyUnhealthy && !backendMixedHealth,
+            hasMixedHealth: backendMixedHealth || (healthyProviders > 0 && healthyProviders < totalProviders),
             onExpand: () => {
               setExpandedGroups(prev => {
                 const newState = { ...prev };
@@ -1026,14 +1032,14 @@ function FlowInner({
           target: providerCountNodeId,
           type: 'smoothstep',
           animated:
-            !anyUnhealthy || (anyUnhealthy && serviceGroups.some(group => group.anyHealthy)),
-          style: !anyUnhealthy
+            !anyUnhealthy || backendMixedHealth || (anyUnhealthy && serviceGroups.some(group => group.anyHealthy)),
+          style: !anyUnhealthy && !backendMixedHealth
             ? {
                 stroke: 'green',
                 strokeDasharray: '5 5',
                 animation: 'dashdraw 0.5s linear infinite',
               }
-            : serviceGroups.some(group => group.anyHealthy)
+            : backendMixedHealth || serviceGroups.some(group => group.anyHealthy)
               ? {
                   stroke: 'orange',
                   strokeDasharray: '5 5',

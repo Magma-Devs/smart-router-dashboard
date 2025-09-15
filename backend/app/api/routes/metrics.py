@@ -1,6 +1,7 @@
 import asyncio
 import statistics
 from datetime import datetime, timedelta
+from enum import Enum
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -12,6 +13,20 @@ from typing import Callable, TypeVar
 from app.core.auth import get_current_user
 from app.services.prometheus import prometheus_service, PrometheusService
 from app.services.configuration import configuration_service
+
+
+# Health state enums
+class BasicHealth(str, Enum):
+    """Basic health states for providers"""
+    HEALTHY = "healthy"
+    UNHEALTHY = "unhealthy"
+
+
+class ConsumerHealth(str, Enum):
+    """Extended health states for consumers (includes mixed state)"""
+    HEALTHY = "healthy"
+    UNHEALTHY = "unhealthy"
+    MIXED = "mixed"
 
 T = TypeVar("T")
 
@@ -1117,14 +1132,14 @@ class ProviderInfo(BaseModel):
     name: str
     interface: str
     endpoint: str
-    health_status: bool  # From provider health breakdown metric
+    health_status: BasicHealth  # From provider health breakdown metric
 
 
 class ChainInfo(BaseModel):
     """Chain information"""
 
     chain_id: str
-    consumer_health: bool  # From consumer health breakdown metric
+    consumer_health: ConsumerHealth  # From consumer health breakdown metric
     consumer_url: str  # Consumer endpoint URL
     providers: list[ProviderInfo]
 
@@ -1174,21 +1189,22 @@ async def get_chains_to_providers(
         for chain_id in available_chains:
             # Get chain health from consumer health breakdown
             consumer_uptime = calculate_uptime_percentage(consumers_data, chain_id)
-            consumer_health = consumer_uptime > 0
-
+            
             # Generate consumer URL
             consumer_url = generate_consumer_url(chain_id)
 
             # Get providers for this chain
             chain_providers = get_providers_for_chain(chain_id)
             providers_info = []
+            provider_health_states = []
 
             for provider_name in chain_providers:
                 # Get provider health from provider health breakdown
                 provider_uptime = calculate_provider_uptime_percentage(
                     provider_health_data, provider_name
                 )
-                provider_health = provider_uptime > 0
+                provider_health = BasicHealth.HEALTHY if provider_uptime > 0 else BasicHealth.UNHEALTHY
+                provider_health_states.append(provider_health)
 
                 # Get interface and endpoint from configuration
                 interface = "jsonrpc"  # Default
@@ -1232,6 +1248,19 @@ async def get_chains_to_providers(
                         health_status=provider_health,
                     )
                 )
+
+            # Determine consumer health based on provider states
+            # Consumer is healthy only if ALL providers are healthy
+            # Consumer has mixed health if SOME providers are healthy but not all
+            # Consumer is unhealthy if NO providers are healthy
+            if not provider_health_states:
+                consumer_health = ConsumerHealth.UNHEALTHY  # No providers = unhealthy
+            elif all(health == BasicHealth.HEALTHY for health in provider_health_states):
+                consumer_health = ConsumerHealth.HEALTHY  # All providers healthy = healthy
+            elif any(health == BasicHealth.HEALTHY for health in provider_health_states):
+                consumer_health = ConsumerHealth.MIXED  # Some healthy, some not
+            else:
+                consumer_health = ConsumerHealth.UNHEALTHY  # No providers healthy
 
             chains_info.append(
                 ChainInfo(
