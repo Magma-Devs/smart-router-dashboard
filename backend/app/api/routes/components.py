@@ -64,22 +64,28 @@ async def get_configuration(
             },
         }
 
-        # Read consumer values to get single consumer resources
-        consumer_path = f"{config_service.values_dir}/core/consumer.values.yml"
-        consumer_data = config_service.read_yaml_file(consumer_path)
+        # Read smart-router values directly
+        smart_router_data = config_service.read_smart_router_values()
 
-        if consumer_data and "chains" in consumer_data:
-            # Get resources for a single consumer (assuming all consumers have same resources)
-            resources = config_service.get_consumer_resources(consumer_data)
-            config["resource_limits"]["per_consumer"]["cpu"] = resources["cpu"]
-            config["resource_limits"]["per_consumer"]["memory"] = resources["memory"]
+        if smart_router_data and "chains" in smart_router_data:
+            # Get resources from smart-router miscellaneous config
+            miscellaneous = smart_router_data.get("miscellaneous", {})
+            consumers_config = miscellaneous.get("consumers", {})
+            resources = consumers_config.get("resources", {}).get("requests", {})
+            
+            config["resource_limits"]["per_consumer"]["cpu"] = resources.get("cpu", "500m")
+            config["resource_limits"]["per_consumer"]["memory"] = resources.get("memory", "1Gi")
 
-            # Build consumer configurations
-            for chain_id, chain_data in consumer_data["chains"].items():
-                consumer_config = config_service.build_consumer_config(
-                    chain_id, chain_data
-                )
-                config["consumers"][chain_id] = consumer_config
+            # Build consumer configurations from smart-router chains
+            for chain in smart_router_data["chains"]:
+                chain_id = chain.get("id")
+                if chain_id:
+                    consumer_config = {
+                        "id": chain_id,
+                        "interfaces": chain.get("interfaces", []),
+                        "providers": chain.get("providers", [])
+                    }
+                    config["consumers"][chain_id] = consumer_config
 
         # Get server resources from Kubernetes
         try:
@@ -104,69 +110,50 @@ async def update_configuration(
 ):
     """Update the configuration for consumers and providers"""
     try:
-        # Convert Pydantic model to dict for service
-        config_dict = {
-            "consumers": {
-                chain_id: {
-                    "addons": consumer.addons,
-                    "interfaces": [
-                        {
-                            "name": interface.name,
-                            "port": interface.port,
-                            "providers": [
-                                {
-                                    "name": provider.name,
-                                    "url": provider.url,
-                                    "nodes": [
-                                        {
-                                            "endpoint": node.endpoint,
-                                            "type": node.type,
-                                        }
-                                        for node in provider.nodes
-                                    ],
-                                }
-                                for provider in interface.providers
-                            ],
-                        }
-                        for interface in consumer.interfaces
-                    ],
-                }
-                for chain_id, consumer in config.consumers.items()
+        # Convert to smart-router format
+        chains = []
+        for chain_id, consumer in config.consumers.items():
+            # Get all interfaces for this chain
+            interfaces = []
+            providers = []
+            
+            for interface in consumer.interfaces:
+                interfaces.append(interface.name)
+                # Collect unique providers (they're shared across interfaces in smart-router format)
+                for provider in interface.providers:
+                    provider_data = {
+                        "name": provider.name,
+                        "endpoint": provider.url
+                    }
+                    # Add provider if not already added
+                    if not any(p["name"] == provider.name for p in providers):
+                        providers.append(provider_data)
+            
+            chain_data = {
+                "id": chain_id,
+                "interfaces": interfaces,
+                "default_interface": interfaces[0] if interfaces else "jsonrpc",
+                "providers": providers
             }
-        }
+            chains.append(chain_data)
 
-        # Update configuration files using service
-        config_service.update_provider_values(config_dict)
-        config_service.update_consumer_values(config_dict)
+        # Update smart-router values.yml
+        config_service.update_smart_router_values({"chains": chains})
 
-        # Apply Helm releases using Kubernetes service
+        # Apply Smart Router Helm release
         try:
-            # Apply consumer HelmRelease
+            # Apply smart-router HelmRelease
             k8s_service.apply_helm_release(
-                name="consumer",
+                name="smart-router",
                 namespace="lava-infra",
-                chart="lavanet/consumer",
-                version="0.5.x",
-                values_file=f"{config_service.values_dir}/core/consumer.values.yml",
-            )
-
-            # Apply provider HelmRelease
-            k8s_service.apply_helm_release(
-                name="provider",
-                namespace="lava-infra",
-                chart="lavanet/provider",
-                version="0.5.x",
-                values_file=f"{config_service.values_dir}/core/provider.values.yml",
+                chart="./modules/smart-router-helm-chart/charts/smart-router",
+                version="latest",
+                values_file=f"{config_service.values_dir}/core/values.yml",
             )
 
             # Label ServiceMonitors for Prometheus discovery
             k8s_service.label_servicemonitor(
-                name="consumer",
-                namespace="lava-infra",
-                labels={"release": "kube-prom-stack"},
-            )
-            k8s_service.label_servicemonitor(
-                name="provider",
+                name="smart-router",
                 namespace="lava-infra",
                 labels={"release": "kube-prom-stack"},
             )
