@@ -139,27 +139,28 @@ class ConfigurationService:
         provider_url = provider["url"]
         provider_name = extract_provider_name_from_url(provider_url)
 
-        # Get provider nodes from provider values
-        provider_path = os.path.join(self.values_dir, "core", "provider.values.yml")
+        # Get provider nodes from smart-router values
+        smart_router_data = self.read_smart_router_values()
         provider_nodes = []
         provider_addons = []
 
-        provider_data = self.read_yaml_file(provider_path)
-        if provider_data and "chains" in provider_data:
-            for provider in provider_data["chains"]:
-                if provider["name"] == provider_name:
-                    for iface in provider.get("interfaces", []):
-                        for node in iface.get("nodes", []):
-                            node_config = {
-                                "endpoint": node["endpoint"],
-                                "type": node.get("type", "full"),
-                                "addons": node.get("addons", []),
-                            }
-                            provider_nodes.append(node_config)
+        if smart_router_data and "chains" in smart_router_data:
+            # Find providers across all chains in smart-router format
+            for chain in smart_router_data["chains"]:
+                for chain_provider in chain.get("providers", []):
+                    if chain_provider.get("name") == provider_name:
+                        for iface in chain_provider.get("interfaces", []):
+                            for node in iface.get("nodes", []):
+                                node_config = {
+                                    "endpoint": node["endpoint"],
+                                    "type": node.get("type", "full"),
+                                    "addons": node.get("addons", []),
+                                }
+                                provider_nodes.append(node_config)
 
-                            # Collect addons from nodes
-                            if "addons" in node:
-                                provider_addons.extend(node["addons"])
+                                # Collect addons from nodes
+                                if "addons" in node:
+                                    provider_addons.extend(node["addons"])
 
         return {
             "name": provider_name,
@@ -168,81 +169,35 @@ class ConfigurationService:
             "nodes": provider_nodes,
         }
 
-    def update_provider_values(self, config: dict[str, Any]) -> None:
+
+    def read_smart_router_values(self) -> dict[str, Any] | None:
         """
-        Update provider values file with new configuration.
+        Read the unified smart-router values.yml file.
 
-        This method rebuilds the provider.values.yml file based on the provided
-        configuration data. It extracts provider information from consumer
-        configurations and creates provider entries with chain_id references.
+        Returns:
+            Parsed smart-router configuration or None if file doesn't exist
+        """
+        values_path = os.path.join(self.values_dir, "core", "values.yml")
+        return self.read_yaml_file(values_path)
 
+    def update_smart_router_values(self, updates: dict[str, Any]) -> None:
+        """
+        Update the smart-router values.yml file.
+        
         Args:
-            config: New configuration data containing consumers and their providers
-
-        Raises:
-            ValueError: If there's an error writing the YAML file
+            updates: Dictionary containing updates to merge with existing config
         """
-        provider_path = os.path.join(self.values_dir, "core", "provider.values.yml")
-        provider_data = self.read_yaml_file(provider_path) or {}
+        values_path = os.path.join(self.values_dir, "core", "values.yml")
+        
+        # Read existing values
+        existing_values = self.read_yaml_file(values_path) or {}
+        
+        # Merge updates
+        existing_values.update(updates)
+        
+        # Write back to file
+        self.write_yaml_file(values_path, existing_values)
 
-        # Update providers in provider data
-        provider_data["chains"] = []
-        for chain_id, consumer in config["consumers"].items():
-            for interface in consumer["interfaces"]:
-                for provider in interface["providers"]:
-                    provider_config = {
-                        "name": provider["name"],
-                        "id": chain_id,
-                        "interfaces": [
-                            {
-                                "interface": interface["name"],
-                                "nodes": [
-                                    {
-                                        "endpoint": node["endpoint"],
-                                        "type": node["type"],
-                                        "addons": consumer["addons"],
-                                    }
-                                    for node in provider["nodes"]
-                                ],
-                            }
-                        ],
-                    }
-                    provider_data["chains"].append(provider_config)
-
-        self.write_yaml_file(provider_path, provider_data)
-
-    def update_consumer_values(self, config: dict[str, Any]) -> None:
-        """
-        Update consumer values file with new configuration.
-
-        Args:
-            config: New configuration data
-        """
-        consumer_path = os.path.join(self.values_dir, "core", "consumer.values.yml")
-        consumer_data = self.read_yaml_file(consumer_path) or {}
-
-        # Update chains in consumer data
-        consumer_data["chains"] = {}
-        for chain_id, consumer in config["consumers"].items():
-            chain_config = {"interfaces": []}
-
-            for interface in consumer["interfaces"]:
-                interface_config = {
-                    "interface": interface["name"],
-                    "port": interface["port"],
-                    "addons": consumer["addons"],
-                    "staticProviders": [],
-                }
-
-                for provider in interface["providers"]:
-                    provider_config = {"url": provider["url"]}
-                    interface_config["staticProviders"].append(provider_config)
-
-                chain_config["interfaces"].append(interface_config)
-
-            consumer_data["chains"][chain_id] = chain_config
-
-        self.write_yaml_file(consumer_path, consumer_data)
 
 
 # Global instance for dependency injection

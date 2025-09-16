@@ -159,46 +159,45 @@ def get_prometheus_service() -> PrometheusService:
 
 def get_available_chains() -> list[str]:
     """Get list of available chains from configuration."""
-    consumer_path = f"{configuration_service.values_dir}/core/consumer.values.yml"
-    consumer_data = configuration_service.read_yaml_file(consumer_path)
+    smart_router_data = configuration_service.read_smart_router_values()
 
-    if not consumer_data or "chains" not in consumer_data:
+    if not smart_router_data or "chains" not in smart_router_data:
         return []
 
-    return list(consumer_data["chains"].keys())
+    return [chain.get("id") for chain in smart_router_data["chains"] if chain.get("id")]
 
 
 def get_providers_for_chain(chain_id: str) -> list[str]:
     """
     Get list of provider names that serve a specific chain.
 
-    Reads provider configuration and returns providers that have the specified id.
+    Reads smart-router configuration and returns providers that serve the specified chain.
 
     Args:
-        chain_id: The chain identifier (e.g., "eth1", "arbitrum", "cosmoshub")
+        chain_id: The chain identifier (e.g., "near", "arbitrum", "hyperliquid")
 
     Returns:
         List of provider names that serve this chain
 
     Example:
-        get_providers_for_chain("eth1") -> ["eth-lava"]
-        get_providers_for_chain("arbitrum") -> ["arbitrum-lava"]
+        get_providers_for_chain("near") -> ["FASTNEAR-Free", "QuickNode", "Lava"]
     """
     try:
-        provider_path = f"{configuration_service.values_dir}/core/provider.values.yml"
-        provider_config = configuration_service.read_yaml_file(provider_path)
-
-        if not provider_config or "chains" not in provider_config:
+        smart_router_data = configuration_service.read_smart_router_values()
+        
+        if not smart_router_data or "chains" not in smart_router_data:
             return []
 
         providers = []
 
-        # Find all providers that serve this chain_id
-        for provider in provider_config["chains"]:
-            if provider.get("id") == chain_id:
-                provider_name = provider.get("name")
-                if provider_name and provider_name not in providers:
-                    providers.append(provider_name)
+        # Find the chain and get its providers
+        for chain in smart_router_data["chains"]:
+            if chain.get("id") == chain_id:
+                for provider in chain.get("providers", []):
+                    provider_name = provider.get("name")
+                    if provider_name and provider_name not in providers:
+                        providers.append(provider_name)
+                break
 
         return providers
     except Exception as e:
@@ -207,19 +206,77 @@ def get_providers_for_chain(chain_id: str) -> list[str]:
 
 
 def get_available_providers() -> list[str]:
-    """Get list of available providers from provider configuration."""
-    provider_path = f"{configuration_service.values_dir}/core/provider.values.yml"
-    provider_data = configuration_service.read_yaml_file(provider_path)
+    """Get list of available providers from smart-router configuration."""
+    smart_router_data = configuration_service.read_smart_router_values()
 
-    if not provider_data or "chains" not in provider_data:
+    if not smart_router_data or "chains" not in smart_router_data:
         return []
 
     available_providers = []
-    for provider in provider_data["chains"]:
-        if "name" in provider:
-            available_providers.append(provider["name"])
+    
+    # Collect all provider names from all chains
+    for chain in smart_router_data["chains"]:
+        for provider in chain.get("providers", []):
+            provider_name = provider.get("name")
+            if provider_name and provider_name not in available_providers:
+                available_providers.append(provider_name)
 
     return available_providers
+
+
+def generate_consumer_url(chain_id: str) -> str:
+    """
+    Generate consumer URL for a given chain.
+    
+    Format: <selected-chain>-<selected-interface>.<domain>
+    - selected-chain: chain key from smart-router values.yml
+    - selected-interface: first interface in the interfaces list
+    - domain: global domain from smart-router values.yml
+    
+    Args:
+        chain_id: The chain identifier (e.g., "eth1", "arbitrum", "cosmoshub")
+        
+    Returns:
+        Consumer URL string (e.g., "eth1-jsonrpc.lavapro.xyz")
+    """
+    try:
+        smart_router_data = configuration_service.read_smart_router_values()
+        
+        if not smart_router_data:
+            return ""
+            
+        # Get domain from smart-router config
+        domain = smart_router_data.get("domain", "")
+        if not domain:
+            return ""
+            
+        # Find the chain configuration from the smart-router format
+        chains = smart_router_data.get("chains", [])
+        chain_config = None
+        
+        for chain in chains:
+            if chain.get("id") == chain_id:
+                chain_config = chain
+                break
+                
+        if not chain_config:
+            return ""
+            
+        # Get first interface
+        interfaces = chain_config.get("interfaces", [])
+        if not interfaces:
+            return ""
+            
+        first_interface = interfaces[0] if interfaces else ""
+        if not first_interface:
+            return ""
+            
+        # Generate URL: <chain_id>-<interface>.<domain>
+        return f"{chain_id}-{first_interface}.{domain}"
+        
+    except Exception as e:
+        print(f"Error generating consumer URL for {chain_id}: {e}")
+        return ""
 
 
 async def fetch_chain_metrics_data(
@@ -1165,28 +1222,23 @@ async def get_chains_to_providers(
                 )
 
                 try:
-                    provider_path = (
-                        f"{configuration_service.values_dir}/core/provider.values.yml"
-                    )
-                    provider_data = configuration_service.read_yaml_file(provider_path)
+                    smart_router_data = configuration_service.read_smart_router_values()
 
-                    if provider_data and "chains" in provider_data:
-                        for provider in provider_data["chains"]:
-                            if (
-                                provider.get("name") == provider_name
-                                and provider.get("id") == chain_id
-                            ):
-                                # Get interface
-                                interfaces = provider.get("interfaces", [])
-                                if interfaces:
-                                    interface = interfaces[0].get(
-                                        "interface", "jsonrpc"
-                                    )
-
-                                    # Get endpoint from first node
-                                    nodes = interfaces[0].get("nodes", [])
-                                    if nodes:
-                                        endpoint = nodes[0].get("endpoint", endpoint)
+                    if smart_router_data and "chains" in smart_router_data:
+                        # Find the chain and then the provider within it
+                        for chain in smart_router_data["chains"]:
+                            if chain.get("id") == chain_id:
+                                for provider in chain.get("providers", []):
+                                    if provider.get("name") == provider_name:
+                                        # Get endpoint
+                                        endpoint = provider.get("endpoint", endpoint)
+                                        
+                                        # Get interface from chain interfaces
+                                        chain_interfaces = chain.get("interfaces", ["jsonrpc"])
+                                        if chain_interfaces:
+                                            interface = chain_interfaces[0]
+                                        
+                                        break
                                 break
                 except Exception:
                     # Use defaults if config read fails
