@@ -329,6 +329,34 @@ export const chains: Chain[] = [
     type: 'starknet',
     supportedInterfaces: ['jsonrpc'],
   },
+  {
+    value: 'ton',
+    label: 'TON Mainnet',
+    icon: 'https://info-mainnet.lavanet.xyz/icons/ton.svg',
+    type: 'ton',
+    supportedInterfaces: ['rest'],
+  },
+  {
+    value: 'tont',
+    label: 'TON Testnet',
+    icon: 'https://info-mainnet.lavanet.xyz/icons/ton.svg',
+    type: 'ton',
+    supportedInterfaces: ['rest'],
+  },
+  {
+    value: 'trx',
+    label: 'TRON Mainnet',
+    icon: 'https://info-mainnet.lavanet.xyz/icons/tron.svg',
+    type: 'tron',
+    supportedInterfaces: ['rest'],
+  },
+  {
+    value: 'trxt',
+    label: 'TRON Shasta Testnet',
+    icon: 'https://info-mainnet.lavanet.xyz/icons/tron.svg',
+    type: 'tron',
+    supportedInterfaces: ['rest'],
+  },
 ];
 
 /**
