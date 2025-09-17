@@ -65,7 +65,7 @@ export function MetricsTable({
               <th className='text-left p-3 font-medium'>Chain</th>
             )}
             <th className='text-left p-3 font-medium'>Latest Block</th>
-            <th className='text-left p-3 font-medium'>Traffic</th>
+            <th className='text-left p-3 font-medium'>Total Requests</th>
             <th className='text-left p-3 font-medium'>Uptime</th>
             <th className='text-left p-3 font-medium'>Latency</th>
           </tr>
