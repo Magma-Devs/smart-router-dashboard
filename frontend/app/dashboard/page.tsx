@@ -25,8 +25,8 @@ import { ProtectedRoute } from '@/components/protected-route';
 
 // Hook and utility imports
 import { useConfig } from '@/hooks/use-config';
+import { useAuth } from '@/lib/auth-context';
 import { apiClient } from '@/lib/api-client';
-import { chains } from '@/app/config/chains';
 import { ChainsToProvidersResponse } from '@/types/metrics';
 
 /**
@@ -88,12 +88,20 @@ export default function Dashboard() {
 
   // Configuration hook
   const { config, updateRefreshInterval } = useConfig();
+  
+  // Authentication hook
+  const { isAuthenticated, loading: authLoading } = useAuth();
 
   /**
    * Effect to initialize data fetching and set up automatic refresh polling.
-   * Runs when API endpoint or refresh interval changes.
+   * Runs when API endpoint, refresh interval, or authentication status changes.
    */
   useEffect(() => {
+    // Wait for authentication to complete before making any API calls
+    if (authLoading || !isAuthenticated) {
+      return;
+    }
+
     if (config.apiEndpoint) {
       fetchData();
     } else {
@@ -112,7 +120,7 @@ export default function Dashboard() {
     return () => {
       clearInterval(interval);
     };
-  }, [config.apiEndpoint, config.refreshInterval]);
+  }, [config.apiEndpoint, config.refreshInterval, isAuthenticated, authLoading]);
 
   /**
    * Fetches dashboard data from the API endpoint.
@@ -202,6 +210,37 @@ export default function Dashboard() {
     return null;
   };
 
+  // Show loading state while authentication is in progress
+  if (authLoading) {
+    return (
+      <ProtectedRoute>
+        <div className='container mx-auto px-4 py-6 max-w-7xl'>
+          <div className='flex items-center justify-center py-16'>
+            <div className='animate-spin rounded-full h-12 w-12 border-b-2 border-primary'></div>
+            <span className='ml-4 text-lg text-muted-foreground'>Authenticating...</span>
+          </div>
+        </div>
+      </ProtectedRoute>
+    );
+  }
+
+  // Don't render the dashboard if not authenticated
+  if (!isAuthenticated) {
+    return (
+      <ProtectedRoute>
+        <div className='container mx-auto px-4 py-6 max-w-7xl'>
+          <div className='flex items-center justify-center py-16'>
+            <div className='text-center'>
+              <AlertTriangle className='h-12 w-12 text-muted-foreground mx-auto mb-4' />
+              <h2 className='text-xl font-semibold mb-2'>Authentication Required</h2>
+              <p className='text-muted-foreground'>Please log in to access the dashboard.</p>
+            </div>
+          </div>
+        </div>
+      </ProtectedRoute>
+    );
+  }
+
   return (
     <ProtectedRoute>
       <div className='container mx-auto px-4 py-6 max-w-7xl'>
@@ -224,7 +263,6 @@ export default function Dashboard() {
 
         <div className='space-y-6'>
           <SummarySection />
-
 
           <Card>
             <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-4'>
