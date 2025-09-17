@@ -18,4 +18,4 @@ export const TIME_FRAMES: TimeFrame[] = [
   { value: '30d', label: '30 days' },
 ];
 
-export const DEFAULT_TIME_FRAME = '1d';
+export const DEFAULT_TIME_FRAME = '3h';
