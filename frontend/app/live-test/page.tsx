@@ -51,6 +51,7 @@ export default function LiveTestPage() {
   const [selectedChain, setSelectedChain] = useState<string>('');
   const [selectedInterface, setSelectedInterface] = useState<string>('');
   const [response, setResponse] = useState<string>('');
+  const [responseHeaders, setResponseHeaders] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
   const [isFetching, setIsFetching] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -93,7 +94,7 @@ export default function LiveTestPage() {
   useEffect(() => {
     if (selectedChain && apiData && apiData.consumers[selectedChain]) {
       // Deduplicate interfaces by name
-      const interfaceNames = apiData.consumers[selectedChain].interfaces.map(i => i.name);
+      const interfaceNames = apiData.consumers[selectedChain].interfaces.map((i: { name: string }) => i.name);
       const uniqueInterfaces = [...new Set(interfaceNames)];
       setConfiguredInterfaces(uniqueInterfaces);
     }
@@ -167,6 +168,17 @@ export default function LiveTestPage() {
         },
       );
 
+      // Capture response headers - filter for lava/provider
+      const headers: Record<string, string> = {};
+      response.headers.forEach((value, key) => {
+        const keyLower = key.toLowerCase();
+        const valueLower = value.toLowerCase();
+        if (keyLower.includes('lava') || keyLower.includes('provider')) {
+          headers[key] = value;
+        }
+      });
+      setResponseHeaders(JSON.stringify(headers, null, 2));
+
       const data = await response.json();
       setResponse(JSON.stringify(data, null, 2));
     } catch (error) {
@@ -226,9 +238,10 @@ export default function LiveTestPage() {
                           <button
                             key={chain.value}
                             onClick={() => {
-                              setSelectedChain(chain.value === selectedChain ? '' : chain.value);
-                              setSelectedInterface('');
-                              setResponse('');
+              setSelectedChain(chain.value === selectedChain ? '' : chain.value);
+              setSelectedInterface('');
+              setResponse('');
+              setResponseHeaders('');
                             }}
                             className={cn(
                               'flex items-center gap-3 p-4 rounded-lg border-2 transition-all duration-200',
@@ -285,10 +298,11 @@ export default function LiveTestPage() {
                                             : ''),
                                   'hover:opacity-90',
                                 )}
-                                onClick={() => {
-                                  setSelectedInterface(iface);
-                                  setResponse('');
-                                }}
+                onClick={() => {
+                  setSelectedInterface(iface);
+                  setResponse('');
+                  setResponseHeaders('');
+                }}
                               >
                                 {displayName}
                               </Button>
@@ -351,6 +365,22 @@ export default function LiveTestPage() {
                 )}
               </Button>
             </div>
+
+            {responseHeaders && (
+              <Card className='border-muted bg-card/50'>
+                <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
+                  <CardTitle className='text-lg font-medium'>Response Headers</CardTitle>
+                  <Button variant='ghost' size='icon' onClick={() => copyToClipboard(responseHeaders)}>
+                    <Copy className='h-4 w-4' />
+                  </Button>
+                </CardHeader>
+                <CardContent>
+                  <pre className='rounded-lg bg-muted p-4 font-mono text-sm overflow-x-auto whitespace-pre-wrap break-all'>
+                    {responseHeaders}
+                  </pre>
+                </CardContent>
+              </Card>
+            )}
 
             {response && (
               <Card className='border-muted bg-card/50'>
