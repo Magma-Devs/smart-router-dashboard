@@ -116,7 +116,7 @@ export default function LiveTestPage() {
 
       const domain = process.env.NEXT_PUBLIC_DOMAIN || 'lavapro.xyz';
       const port = process.env.NEXT_PUBLIC_PORT || '8443';
-      const hostHeader = `${ }-${selectedInterface}.${domain}`;
+      const hostHeader = `${selectedChain}-${selectedInterface}.${domain}`;
       
       // Generate endpoint URL
       const endpoint = `https://${domain}:${port}`;
