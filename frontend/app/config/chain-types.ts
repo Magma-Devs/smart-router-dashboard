@@ -46,4 +46,11 @@ export const chainTypes: ChainType[] = [
       jsonrpc: '{"jsonrpc":"2.0","method":"starknet_blockNumber","params":[],"id":1}',
     },
   },
+  {
+    value: 'tron',
+    label: 'Tron',
+    interfaces: {
+      rest: '{"method":"GET","path":"/wallet/getnodeinfo"}',
+    },
+  },
 ];
