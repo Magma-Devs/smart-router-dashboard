@@ -10,15 +10,12 @@ services:
         NEXT_PUBLIC_API_URL: http://localhost:8000
         NEXT_PUBLIC_DOMAIN: localhost
         NEXT_PUBLIC_PORT: 8000
-    ports:
-      - "3000:3000"
+    network_mode: host
     restart: unless-stopped
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    ports:
-      - "8000:8000"
     volumes:
       - ./backend:/app
       - ../../values:/app/helm-values
@@ -36,4 +33,5 @@ services:
     extra_hosts:
       - "prometheus.lavapro.xyz:127.0.0.1"
       - "grafana.lavapro.xyz:127.0.0.1"
+    network_mode: host
     restart: unless-stopped
