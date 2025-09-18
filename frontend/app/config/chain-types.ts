@@ -53,4 +53,11 @@ export const chainTypes: ChainType[] = [
       rest: '{"method":"GET","path":"/wallet/getnodeinfo"}',
     },
   },
+  {
+    value: 'ton',
+    label: 'TON',
+    interfaces: {
+      rest: '{"method":"GET","path":"/api/v2/getWalletInformation"}',
+    },
+  }
 ];
