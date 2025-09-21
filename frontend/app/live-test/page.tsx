@@ -13,41 +13,33 @@ import { cn } from '@/lib/utils';
 import { chainTypes } from '@/app/config/chain-types';
 import { ProtectedRoute } from '@/components/protected-route';
 import { apiClient } from '@/lib/api-client';
-
-interface Interface {
-  name: string;
-  port?: number;
-  addons?: string[];
-}
+import { getChainIcon, getChainLabel } from '@/app/config/chains';
+import { MetricsService } from '@/services/metricsService';
 
 interface ApiResponse {
   consumers: {
     [key: string]: {
-      interfaces: Array<{
+      id: string;
+      interfaces: string[];
+      providers: Array<{
         name: string;
-        port: number;
-        addons: string[];
+        endpoint: string;
+        auth_config?: any;
       }>;
     };
   };
-  providers: {
-    [key: string]: Array<{
-      name: string;
-      interfaces: Interface[];
-    }>;
+  resource_limits: {
+    server: { cpu: number; memory: number };
+    per_consumer: { cpu: number; memory: number };
+    per_provider: { cpu: number; memory: number };
   };
 }
 
-const interfaces = [
-  { value: 'jsonrpc', label: 'JSON-RPC', color: 'bg-blue-500' },
-  { value: 'tendermintrpc', label: 'TendermintRPC', color: 'bg-green-500' },
-  { value: 'rest', label: 'REST', color: 'bg-purple-500' },
-  { value: 'grpc', label: 'gRPC', color: 'bg-red-500' },
-];
-
 export default function LiveTestPage() {
   const { config } = useConfig();
-  const [availableChains, setAvailableChains] = useState<typeof chains>([]);
+  // id + network of real chains with metrics
+  const [availableChains, setAvailableChains] = useState<Array<{ id: string; network: string }>>([]);
+  const [selectedNetwork, setSelectedNetwork] = useState<string>('');
   const [selectedChain, setSelectedChain] = useState<string>('');
   const [selectedInterface, setSelectedInterface] = useState<string>('');
   const [response, setResponse] = useState<string>('');
@@ -67,17 +59,28 @@ export default function LiveTestPage() {
       }
 
       try {
+        // 1) interfaces source (keep as-is for per-chain interfaces)
         const data: ApiResponse = await apiClient.get(`/api/components/`);
-        
-        // Store the API data for later use
         setApiData(data);
 
-        // Get configured chains and their interfaces
-        const configuredChains = Object.keys(data.consumers);
-        const availableChainConfigs = chains.filter(chain =>
-          configuredChains.includes(chain.value),
-        );
-        setAvailableChains(availableChainConfigs);
+        // 2) networks and routers list from metrics API
+        const chainsResponse = await MetricsService.fetchMetricsForAllChains(1, 1);
+        const chainsData = Object.entries(chainsResponse.chains).map(([chainId, chainMetrics]: [string, any]) => ({
+          id: chainId,
+          network: chainMetrics.network,
+        }));
+        setAvailableChains(chainsData);
+
+        // default select first network if any
+        if (chainsData.length > 0) {
+          setSelectedNetwork(chainsData[0].network);
+          const routers = chainsData.filter(c => c.network === chainsData[0].network);
+          if (routers.length === 1) {
+            setSelectedChain(routers[0].id);
+          } else {
+            setSelectedChain('');
+          }
+        }
       } catch (error) {
         console.error('Fetch error:', error);
         setError(error instanceof Error ? error.message : 'Failed to fetch chains');
@@ -91,21 +94,19 @@ export default function LiveTestPage() {
 
   // Update interfaces when chain selection changes (without refetching)
   useEffect(() => {
-    if (selectedChain && apiData && apiData.consumers[selectedChain]) {
-      // Deduplicate interfaces by name
-      const interfaceNames = apiData.consumers[selectedChain].interfaces.map(i => i.name);
-      const uniqueInterfaces = [...new Set(interfaceNames)];
-      setConfiguredInterfaces(uniqueInterfaces);
+    if (selectedChain && apiData && apiData.consumers && apiData.consumers[selectedChain]) {
+      const interfaces = apiData.consumers[selectedChain].interfaces;
+      setConfiguredInterfaces(interfaces);
+    } else {
+      setConfiguredInterfaces([]);
     }
   }, [selectedChain, apiData]);
 
   useEffect(() => {
     if (selectedChain && selectedInterface) {
-      // Use the configured API endpoint
       const apiEndpoint = config.apiEndpoint;
-
-      // Get the chain type and its interface command
-      const chain = chains.find(c => c.value === selectedChain);
+      const baseNetwork = selectedChain.split('-')[0];
+      const chain = chains.find(c => c.value === baseNetwork);
       if (!chain) return;
 
       const chainType = chainTypes.find(t => t.value === chain.type);
@@ -118,7 +119,6 @@ export default function LiveTestPage() {
       const port = process.env.NEXT_PUBLIC_PORT || '8443';
       const hostHeader = `${selectedChain}.${selectedInterface}.${domain}`;
       
-      // Generate endpoint URL
       const endpoint = `https://${domain}:${port}`;
       setEndpointUrl(endpoint);
       
@@ -135,15 +135,15 @@ export default function LiveTestPage() {
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: 'Please select both chain and interface',
+        description: 'Please select network, router and interface',
       });
       return;
     }
 
     setIsLoading(true);
     try {
-      // Get the chain type and its interface command
-      const chain = chains.find(c => c.value === selectedChain);
+      const baseNetwork = selectedChain.split('-')[0];
+      const chain = chains.find(c => c.value === baseNetwork);
       if (!chain) throw new Error('Chain not found');
 
       const chainType = chainTypes.find(t => t.value === chain.type);
@@ -154,7 +154,7 @@ export default function LiveTestPage() {
 
       const domain = process.env.NEXT_PUBLIC_DOMAIN || 'lavapro.xyz';
       const port = process.env.NEXT_PUBLIC_PORT || '8443';
-      const hostHeader = `${selectedChain}-${selectedInterface}.${domain}`;
+      const hostHeader = `${selectedChain}.${selectedInterface}.${domain}`;
       const response = await fetch(
         `https://${domain}:${port}${selectedInterface === 'rest' ? JSON.parse(interfaceCommand).path : ''}`,
         {
@@ -189,15 +189,17 @@ export default function LiveTestPage() {
     });
   };
 
+  // Helpers for UI lists
+  const networks = Array.from(new Set(availableChains.map(c => c.network)));
+  const routersForSelectedNetwork = availableChains.filter(c => c.network === selectedNetwork);
+
   return (
     <ProtectedRoute>
       <div className='min-h-screen bg-background p-6'>
         <div className='mx-auto max-w-[1200px] space-y-6'>
           <div className='space-y-2'>
             <h1 className='text-3xl font-bold tracking-tight'>Live Test</h1>
-            <p className='text-muted-foreground'>
-              Test your chain configuration with live requests
-            </p>
+            <p className='text-muted-foreground'>Test your chain configuration with live requests</p>
           </div>
 
           {error && (
@@ -210,7 +212,7 @@ export default function LiveTestPage() {
                 <CardTitle className='text-xl font-bold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent'>
                   Configuration
                 </CardTitle>
-                <CardDescription>Select a chain and interface to test</CardDescription>
+                <CardDescription>Select a network, router and interface to test</CardDescription>
               </CardHeader>
               <CardContent className='space-y-6 pt-6'>
                 {isFetching ? (
@@ -220,43 +222,81 @@ export default function LiveTestPage() {
                 ) : (
                   <>
                     <div className='space-y-4'>
-                      <Label className='text-sm font-medium'>Chain</Label>
-                      <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4'>
-                        {availableChains.map(chain => (
-                          <button
-                            key={chain.value}
-                            onClick={() => {
-                              setSelectedChain(chain.value === selectedChain ? '' : chain.value);
-                              setSelectedInterface('');
-                              setResponse('');
-                            }}
-                            className={cn(
-                              'flex items-center gap-3 p-4 rounded-lg border-2 transition-all duration-200',
-                              'hover:border-primary/50 hover:bg-primary/5',
-                              selectedChain === chain.value
-                                ? 'border-primary bg-primary/10 shadow-lg'
-                                : 'border-border/50 bg-card',
-                            )}
-                          >
-                            <div className='flex-shrink-0 w-8 h-8 rounded-full bg-background/50 p-1.5'>
-                              <img
-                                src={chain.icon}
-                                alt={chain.label}
-                                className='w-full h-full object-contain'
-                              />
-                            </div>
-                            <span className='font-medium'>{chain.label}</span>
-                          </button>
-                        ))}
+                      <Label className='text-sm font-medium'>Network</Label>
+                      <div className='flex flex-wrap gap-3'>
+                        {networks.map(net => {
+                          const conf = chains.find(c => c.value === net);
+                          const label = conf ? conf.label : getChainLabel(net);
+                          const icon = conf ? conf.icon : getChainIcon(net);
+                          const selected = selectedNetwork === net;
+                          return (
+                            <button
+                              key={net}
+                              onClick={() => {
+                                if (selectedNetwork === net) return;
+                                setSelectedNetwork(net);
+                                const routers = availableChains.filter(c => c.network === net);
+                                if (routers.length === 1) {
+                                  setSelectedChain(routers[0].id);
+                                } else {
+                                  setSelectedChain('');
+                                }
+                                setSelectedInterface('');
+                                setResponse('');
+                              }}
+                              className={cn(
+                                'flex items-center gap-3 p-3 rounded-lg border-2 transition-all duration-200 hover:border-primary/50 hover:bg-primary/5',
+                                selected ? 'border-primary bg-primary/10 shadow-lg' : 'border-border/50 bg-card',
+                              )}
+                            >
+                              <div className='flex-shrink-0 w-8 h-8 rounded-full bg-background/50 p-1.5'>
+                                {icon && <img src={icon} alt={label} className='w-full h-full object-contain' />}
+                              </div>
+                              <span className='font-medium'>{label}</span>
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
+
+                    {selectedNetwork && routersForSelectedNetwork.length > 1 && (
+                      <div className='space-y-4'>
+                        <Label className='text-sm font-medium'>Router</Label>
+                        <div className='flex flex-wrap gap-3'>
+                          {routersForSelectedNetwork.map(router => {
+                            const selected = selectedChain === router.id;
+                            const conf = chains.find(c => c.value === selectedNetwork);
+                            const label = conf ? conf.label : getChainLabel(selectedNetwork);
+                            const icon = conf ? conf.icon : getChainIcon(selectedNetwork);
+                            return (
+                              <button
+                                key={router.id}
+                                onClick={() => {
+                                  setSelectedChain(router.id);
+                                  setSelectedInterface('');
+                                  setResponse('');
+                                }}
+                                className={cn(
+                                  'flex items-center gap-3 p-3 rounded-lg border-2 transition-all duration-200 hover:border-primary/50 hover:bg-primary/5',
+                                  selected ? 'border-primary bg-primary/10 shadow-lg' : 'border-border/50 bg-card',
+                                )}
+                              >
+                                <div className='flex-shrink-0 w-8 h-8 rounded-full bg-background/50 p-1.5'>
+                                  {icon && <img src={icon} alt={label} className='w-full h-full object-contain' />}
+                                </div>
+                                <span className='font-medium'>{router.id}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
 
                     {selectedChain && (
                       <div className='space-y-4'>
                         <Label className='text-sm font-medium'>Interface</Label>
                         <div className='flex flex-wrap gap-2'>
                           {configuredInterfaces.map(iface => {
-                            const interfaceConfig = interfaces.find(i => i.value === iface);
                             const displayName =
                               iface === 'jsonrpc'
                                 ? 'JSON-RPC'
@@ -297,7 +337,6 @@ export default function LiveTestPage() {
                         </div>
                       </div>
                     )}
-
                   </>
                 )}
               </CardContent>

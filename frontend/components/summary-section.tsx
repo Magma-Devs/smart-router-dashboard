@@ -88,8 +88,9 @@ interface SummarySectionProps {}
 export function SummarySection({}: SummarySectionProps) {
   // Configuration and state management
   const { config } = useConfig();
-  const [availableChains, setAvailableChains] = useState<string[]>([]);
+  const [availableChains, setAvailableChains] = useState<Array<{id: string, network: string}>>([]);
   const [selectedChain, setSelectedChain] = useState<string>('all');
+  const [selectedNetwork, setSelectedNetwork] = useState<string>('all');
   const [isLoadingChains, setIsLoadingChains] = useState(false);
   const [kpiData, setKpiData] = useState<KPIData>({
     uptime: 'N/A',
@@ -179,8 +180,16 @@ export function SummarySection({}: SummarySectionProps) {
       try {
         // Use a minimal time window (1 minute) just to get available chains
         const chainsResponse = await MetricsService.fetchMetricsForAllChains(1, 1);
-        const chainKeys = Object.keys(chainsResponse.chains);
-        setAvailableChains(chainKeys);
+        
+        // Extract chain data with both ID and network for icon lookup
+        const chainsData = Object.entries(chainsResponse.chains).map(([chainId, chainMetrics]: [string, any]) => ({
+          id: chainId,
+          network: chainMetrics.network
+        }));
+        setAvailableChains(chainsData);
+
+        // Default network selection to 'all'
+        setSelectedNetwork('all');
       } catch (error) {
         console.error('Error fetching available chains:', error);
         setAvailableChains([]);
@@ -207,6 +216,49 @@ export function SummarySection({}: SummarySectionProps) {
   const handleChainSelect = (chainValue: string) => {
     setSelectedChain(chainValue);
     fetchKPIData(chainValue, selectedTimeFrame);
+  };
+
+  // When network changes, show routers selector when there are multiple routers for this network.
+  const handleNetworkSelect = (networkValue: string) => {
+    setSelectedNetwork(networkValue);
+    if (networkValue === 'all') {
+      // Keep backend behavior the same: aggregate over all chains
+      setSelectedChain('all');
+      fetchKPIData('all', selectedTimeFrame);
+      return;
+    }
+    const routersForNetwork = availableChains.filter(c => c.network === networkValue);
+    if (routersForNetwork.length === 0) {
+      setSelectedChain('all');
+      fetchKPIData('all', selectedTimeFrame);
+    } else if (routersForNetwork.length === 1) {
+      // Auto-select the single router
+      setSelectedChain(routersForNetwork[0].id);
+      fetchKPIData(routersForNetwork[0].id, selectedTimeFrame);
+    } else {
+      // Multiple routers: default to 'all' (backend aggregates all chains)
+      setSelectedChain('all');
+      // Additionally fetch chains metrics filtered by chosen network to aggregate KPIs
+      (async () => {
+        try {
+          const minutes = MetricsService.convertTimeFrameToMinutes(selectedTimeFrame);
+          const step = minutes <= 60 ? 1 : minutes <= 240 ? 5 : 15;
+          const chainsResponse = await MetricsService.fetchMetricsForAllChains(
+            minutes,
+            step,
+            networkValue,
+          );
+          const chainMetrics = chainsResponse.avg;
+          setKpiData({
+            uptime: MetricsService.formatPercentage(chainMetrics.uptime),
+            reachability: MetricsService.formatPercentage(chainMetrics.reachability),
+            latency: MetricsService.formatLatency(chainMetrics.latency_in_ms),
+          });
+        } catch (e) {
+          fetchKPIData('all', selectedTimeFrame);
+        }
+      })();
+    }
   };
 
   /**
@@ -251,29 +303,75 @@ export function SummarySection({}: SummarySectionProps) {
         <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-4'>
           <CardTitle>Summary</CardTitle>
           <div className='flex flex-wrap items-center gap-2'>
-              {/* Chain Selection */}
+              {/* Routers Selection (appears when a network with multiple routers is chosen) */}
+              {selectedNetwork !== 'all' && availableChains.filter(c => c.network === selectedNetwork).length > 1 && (
+                <Select
+                  value={selectedChain}
+                  onValueChange={handleChainSelect}
+                  disabled={isLoadingChains}
+                >
+                  <SelectTrigger className='w-[200px] bg-background border-border hover:bg-accent'>
+                    <SelectValue placeholder={isLoadingChains ? 'Loading...' : 'Select router'} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value='all'>
+                      <div className='flex items-center gap-2'>
+                        {(() => {
+                          const chainConfig = chains.find(c => c.value === selectedNetwork);
+                          const icon = chainConfig ? chainConfig.icon : getChainIcon(selectedNetwork);
+                          const label = chainConfig ? chainConfig.label : getChainLabel(selectedNetwork);
+                          return icon ? (
+                            <Image src={icon} alt={label} width={16} height={16} className='rounded-full' />
+                          ) : (
+                            <Globe className='h-4 w-4' />
+                          );
+                        })()}
+                        All Routers
+                      </div>
+                    </SelectItem>
+                    {availableChains
+                      .filter(chain => chain.network === selectedNetwork)
+                      .map(chain => (
+                        <SelectItem key={chain.id} value={chain.id}>
+                          <div className='flex items-center gap-2'>
+                            {(() => {
+                              const chainConfig = chains.find(c => c.value === selectedNetwork);
+                              const icon = chainConfig ? chainConfig.icon : getChainIcon(selectedNetwork);
+                              const label = chainConfig ? chainConfig.label : getChainLabel(selectedNetwork);
+                              return icon ? (
+                                <Image src={icon} alt={label} width={16} height={16} className='rounded-full' />
+                              ) : null;
+                            })()}
+                            <span className='text-sm'>{chain.id}</span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              )}
+
+              {/* Network Selection (aggregated) */}
               <Select
-                value={selectedChain}
-                onValueChange={handleChainSelect}
+                value={selectedNetwork}
+                onValueChange={handleNetworkSelect}
                 disabled={isLoadingChains}
               >
                 <SelectTrigger className='w-[200px] bg-background border-border hover:bg-accent'>
-                  <SelectValue placeholder={isLoadingChains ? 'Loading...' : 'Select chain'} />
+                  <SelectValue placeholder={isLoadingChains ? 'Loading...' : 'Select network'} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value='all'>
                     <div className='flex items-center gap-2'>
                       <Globe className='h-4 w-4' />
-                      All Chains
+                      All Networks
                     </div>
                   </SelectItem>
-                  {availableChains.map(chainValue => {
-                    const chainConfig = chains.find(c => c.value === chainValue);
-                    const label = chainConfig ? chainConfig.label : getChainLabel(chainValue);
-                    const icon = chainConfig ? chainConfig.icon : getChainIcon(chainValue);
-
+                  {Array.from(new Set(availableChains.map(c => c.network))).map(network => {
+                    const chainConfig = chains.find(c => c.value === network);
+                    const label = chainConfig ? chainConfig.label : getChainLabel(network);
+                    const icon = chainConfig ? chainConfig.icon : getChainIcon(network);
                     return (
-                      <SelectItem key={chainValue} value={chainValue}>
+                      <SelectItem key={network} value={network}>
                         <div className='flex items-center gap-2'>
                           {icon && (
                             <Image
@@ -333,7 +431,7 @@ export function SummarySection({}: SummarySectionProps) {
               color={getReachabilityColorName(kpiData.reachability)}
               isLoading={isLoading}
               showInfo={true}
-              tooltipText='Percentage of healthy providers available to each consumer. Unlike Uptime (consumer health), this measures provider availability. High uptime can be maintained even with lower reachability if available providers handle the load.'
+              tooltipText='Percentage of healthy providers available to each chain. Unlike Uptime (chain health), this measures provider availability. High uptime can be maintained even with lower reachability if available providers handle the load.'
             />
             <KPICard
               title='Latency'

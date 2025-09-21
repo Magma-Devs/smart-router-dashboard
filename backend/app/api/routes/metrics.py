@@ -1,65 +1,35 @@
 import asyncio
 import statistics
 from datetime import datetime, timedelta
-from enum import Enum
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
-
-from functools import wraps
-from typing import Callable, TypeVar
 
 from app.core.auth import get_current_user
 from app.services.prometheus import prometheus_service, PrometheusService
-from app.services.configuration import configuration_service
-
-
-# Health state enums
-class BasicHealth(str, Enum):
-    """Basic health states for providers"""
-
-    HEALTHY = "healthy"
-    UNHEALTHY = "unhealthy"
-
-
-class ConsumerHealth(str, Enum):
-    """Extended health states for consumers (includes mixed state)"""
-
-    HEALTHY = "healthy"
-    UNHEALTHY = "unhealthy"
-    MIXED = "mixed"
-
-
-T = TypeVar("T")
-
-
-# Pydantic models for API responses
-class ChainMetrics(BaseModel):
-    uptime: float
-    latency_in_ms: int
-    reachability: float  # Percentage of healthy providers for this chain
-    requests_in_window: int
-    latest_block: int
-
-
-class ProviderMetrics(BaseModel):
-    uptime: float
-    latency_in_ms: int | None  # Providers don't have latency metrics
-    requests_in_window: int
-    latest_block: int
-
-
-class ChainsResponse(BaseModel):
-    chains: dict[str, ChainMetrics]
-    avg: ChainMetrics
-    p90: ChainMetrics
-
-
-class ProvidersResponse(BaseModel):
-    providers: dict[str, ProviderMetrics]
-    avg: ProviderMetrics
-    p90: ProviderMetrics
+from app.services.configuration import configuration_service, ConfigurationService
+from app.core.dataclasses import (
+    Chain,
+    ChainHealth,
+    ChainMetrics,
+    ChainsMetricsResponse,
+    ChainsToProvidersResponse,
+    Provider,
+    ProviderMetrics,
+    ProviderHealth,
+    ProvidersMetricsResponse,
+)
+from app.core.calculations import (
+    calculate_adaptive_step_size,
+    calculate_provider_uptime_percentage,
+    calculate_uptime_percentage,
+    calculate_latency_ms,
+    calculate_chain_reachability_percentage,
+    calculate_requests_in_time_window,
+    calculate_chain_latest_block_number,
+    calculate_provider_latest_block_number,
+    calculate_provider_requests_in_time_window,
+)
 
 
 router = APIRouter()
@@ -80,203 +50,13 @@ DEFAULT_TIME_WINDOW_MINUTES = 15
 DEFAULT_STEP_SIZE = 5
 
 
-def calculate_adaptive_step_size(
-    time_window_minutes: int, target_points: int = 200
-) -> int:
-    """
-    Calculate adaptive step size to keep data points reasonable.
-    Target ~200 data points regardless of time window.
-    """
-    # Calculate step size needed for target number of points
-    total_seconds = time_window_minutes * 60
-    calculated_step = max(1, total_seconds // target_points)
-
-    # Round to reasonable intervals (1, 5, 10, 15, 30, 60, 300, 600, etc.)
-    if calculated_step <= 1:
-        return 1
-    elif calculated_step <= 5:
-        return 5
-    elif calculated_step <= 10:
-        return 10
-    elif calculated_step <= 15:
-        return 15
-    elif calculated_step <= 30:
-        return 30
-    elif calculated_step <= 60:
-        return 60
-    elif calculated_step <= 300:
-        return 300
-    elif calculated_step <= 600:
-        return 600
-    elif calculated_step <= 1800:
-        return 1800  # 30 minutes
-    else:
-        return 3600  # 1 hour
-
-
-def validate_prometheus_data(func: Callable[..., T]) -> Callable[..., T]:
-    """
-    Decorator to validate Prometheus data structure before processing.
-
-    Validates that the data has:
-    - status == "success"
-    - data.result exists and is not empty
-
-    Returns the original function result or 0/0.0 for invalid data.
-    """
-
-    @wraps(func)
-    def wrapper(data: dict[str, Any], *args, **kwargs) -> T:
-        if (
-            not data
-            or data.get("status") != "success"
-            or not data.get("data", {}).get("result")
-        ):
-            # Return appropriate default value based on function name
-            if "percentage" in func.__name__:
-                return 0.0
-            else:
-                return 0
-
-        results = data["data"]["result"]
-        if not results:
-            if "percentage" in func.__name__:
-                return 0.0
-            else:
-                return 0
-
-        return func(data, *args, **kwargs)
-
-    return wrapper
-
-
 def get_prometheus_service() -> PrometheusService:
     return prometheus_service
 
 
-# Helper functions
-
-
-def get_available_chains() -> list[str]:
-    """Get list of available chains from configuration."""
-    smart_router_data = configuration_service.read_smart_router_values()
-
-    if not smart_router_data or "chains" not in smart_router_data:
-        return []
-
-    return [chain.get("id") for chain in smart_router_data["chains"] if chain.get("id")]
-
-
-def get_providers_for_chain(chain_id: str) -> list[str]:
-    """
-    Get list of provider names that serve a specific chain.
-
-    Reads smart-router configuration and returns providers that serve the specified chain.
-
-    Args:
-        chain_id: The chain identifier (e.g., "near", "arbitrum", "hyperliquid")
-
-    Returns:
-        List of provider names that serve this chain
-
-    Example:
-        get_providers_for_chain("near") -> ["FASTNEAR-Free", "QuickNode", "Lava"]
-    """
-    try:
-        smart_router_data = configuration_service.read_smart_router_values()
-        
-        if not smart_router_data or "chains" not in smart_router_data:
-            return []
-
-        providers = []
-
-        # Find the chain and get its providers
-        for chain in smart_router_data["chains"]:
-            if chain.get("id") == chain_id:
-                for provider in chain.get("providers", []):
-                    provider_name = provider.get("name")
-                    if provider_name and provider_name not in providers:
-                        providers.append(provider_name)
-                break
-
-        return providers
-    except Exception as e:
-        print(f"Error getting providers for chain {chain_id}: {e}")
-        return []
-
-
-def get_available_providers() -> list[str]:
-    """Get list of available providers from smart-router configuration."""
-    smart_router_data = configuration_service.read_smart_router_values()
-
-    if not smart_router_data or "chains" not in smart_router_data:
-        return []
-
-    available_providers = []
-    
-    # Collect all provider names from all chains
-    for chain in smart_router_data["chains"]:
-        for provider in chain.get("providers", []):
-            provider_name = provider.get("name")
-            if provider_name and provider_name not in available_providers:
-                available_providers.append(provider_name)
-
-    return available_providers
-
-
-def generate_consumer_url(chain_id: str) -> str:
-    """
-    Generate consumer URL for a given chain.
-    
-    Format: <selected-chain>-<selected-interface>.<domain>
-    - selected-chain: chain key from smart-router values.yml
-    - selected-interface: first interface in the interfaces list
-    - domain: global domain from smart-router values.yml
-    
-    Args:
-        chain_id: The chain identifier (e.g., "eth1", "arbitrum", "cosmoshub")
-        
-    Returns:
-        Consumer URL string (e.g., "eth1-jsonrpc.lavapro.xyz")
-    """
-    try:
-        smart_router_data = configuration_service.read_smart_router_values()
-        
-        if not smart_router_data:
-            return ""
-            
-        # Get domain from smart-router config
-        domain = smart_router_data.get("domain", "")
-        if not domain:
-            return ""
-            
-        # Find the chain configuration from the smart-router format
-        chains = smart_router_data.get("chains", [])
-        chain_config = None
-        
-        for chain in chains:
-            if chain.get("id") == chain_id:
-                chain_config = chain
-                break
-                
-        if not chain_config:
-            return ""
-            
-        # Get first interface
-        interfaces = chain_config.get("interfaces", [])
-        if not interfaces:
-            return ""
-            
-        first_interface = interfaces[0] if interfaces else ""
-        if not first_interface:
-            return ""
-            
-        # Generate URL: <chain_id>-<interface>.<domain>
-        return f"{chain_id}-{first_interface}.{domain}"
-        
-    except Exception as e:
-        print(f"Error generating consumer URL for {chain_id}: {e}")
-        return ""
+def get_configuration_service() -> ConfigurationService:
+    """Dependency accessor for ConfigurationService."""
+    return configuration_service
 
 
 async def fetch_chain_metrics_data(
@@ -383,320 +163,6 @@ async def fetch_provider_metrics_data(
     return providers_data, provider_traffic_data, provider_latest_block_data
 
 
-# Calculation utilities moved from frontend
-@validate_prometheus_data
-def calculate_uptime_percentage(
-    health_data: dict[str, Any], target_chain: str
-) -> float:
-    """Calculate uptime percentage for a specific chain from health data"""
-    results = health_data["data"]["result"]
-    total_healthy_time = 0
-    total_time = 0
-
-    for result in results:
-        spec = result.get("metric", {}).get("spec")
-
-        # For "all chains", process all results
-        if target_chain == "all":
-            pass  # Process all results without spec filtering
-        else:
-            # For specific chains, filter by target chain
-            if not spec or spec.lower() != target_chain.lower():
-                continue
-
-        values = result.get("values", [])
-
-        for timestamp, value in values:
-            # Convert string value to float for comparison
-            try:
-                health_value = float(value)
-                is_healthy = health_value == 1.0
-            except (ValueError, TypeError):
-                is_healthy = value == "1"  # Fallback to string comparison
-
-            total_time += 1
-            if is_healthy:
-                total_healthy_time += 1
-
-    return (total_healthy_time / total_time * 100) if total_time > 0 else 0.0
-
-
-@validate_prometheus_data
-def calculate_latency_ms(latency_data: dict[str, Any], target_chain: str) -> int:
-    """Calculate average latency in milliseconds for a specific chain"""
-    results = latency_data["data"]["result"]
-    total_latency = 0
-    total_samples = 0
-
-    for result in results:
-        spec = result.get("metric", {}).get("spec")
-        if not spec:
-            continue
-
-        # Filter by target chain if not "all"
-        if target_chain != "all" and spec.lower() != target_chain.lower():
-            continue
-
-        values = result.get("values", [])
-        for timestamp, value in values:
-            try:
-                latency_ms = float(value)
-                total_latency += latency_ms
-                total_samples += 1
-            except (ValueError, TypeError):
-                continue
-
-    return int(total_latency / total_samples) if total_samples > 0 else 0
-
-
-@validate_prometheus_data
-def calculate_requests_in_time_window(
-    traffic_data: dict[str, Any], target_chain: str
-) -> int:
-    """Calculate total requests within the time window for a specific chain"""
-    results = traffic_data["data"]["result"]
-    total_relays = 0
-
-    for result in results:
-        spec = result.get("metric", {}).get("spec")
-
-        # Filter by target chain
-        if not spec or spec.lower() != target_chain.lower():
-            continue
-
-        values = result.get("values", [])
-
-        if len(values) >= 2:
-            # Calculate the total incremental requests in the time window
-            # Handle counter resets by summing all positive increments
-            try:
-                relays_in_window = 0
-                previous_value = float(values[0][1])
-
-                for i in range(1, len(values)):
-                    current_value = float(values[i][1])
-                    increment = current_value - previous_value
-
-                    # Handle counter resets (negative increments)
-                    if increment < 0:
-                        # Counter reset detected, add the previous value
-                        relays_in_window += previous_value
-
-                    relays_in_window += max(0, increment)
-                    previous_value = current_value
-
-                total_relays += relays_in_window
-            except (ValueError, TypeError, IndexError):
-                continue
-        elif len(values) == 1:
-            # If only one value, use it as is (edge case for very short time windows)
-            try:
-                relays_value = float(values[0][1])
-                total_relays += relays_value
-            except (ValueError, TypeError, IndexError):
-                continue
-    return int(total_relays)
-
-
-@validate_prometheus_data
-def calculate_consumer_latest_block_number(
-    block_data: dict[str, Any], target_chain: str
-) -> int:
-    """Calculate the latest block number for a specific chain from consumer data"""
-    results = block_data["data"]["result"]
-    latest_block = 0
-
-    for result in results:
-        spec = result.get("metric", {}).get("spec")
-
-        # Filter by target chain (consumer query only needs spec)
-        if not spec or spec.lower() != target_chain.lower():
-            continue
-
-        values = result.get("values", [])
-        if values:
-            # Get the latest value (most recent)
-            latest_value = values[-1]
-            try:
-                block_value = float(latest_value[1])
-                latest_block = max(latest_block, int(block_value))
-            except (ValueError, TypeError, IndexError):
-                continue
-
-    return latest_block
-
-
-@validate_prometheus_data
-def calculate_provider_latest_block_number(
-    block_data: dict[str, Any], target_provider: str
-) -> int:
-    """Calculate the latest block number for a specific provider"""
-    results = block_data["data"]["result"]
-    latest_block = 0
-
-    for result in results:
-        service = result.get("metric", {}).get("service")
-
-        # Filter by target provider (provider query needs service field)
-        # The service field contains the provider name with "-provider" suffix
-        if not service or not service.endswith("-provider"):
-            continue
-
-        # Extract provider name by removing "-provider" suffix
-        provider_name = service.replace("-provider", "")
-        if provider_name.lower() != target_provider.lower():
-            continue
-
-        values = result.get("values", [])
-        if values:
-            # Get the latest value (most recent)
-            latest_value = values[-1]
-            try:
-                block_value = float(latest_value[1])
-                latest_block = max(latest_block, int(block_value))
-            except (ValueError, TypeError, IndexError):
-                continue
-
-    return latest_block
-
-
-@validate_prometheus_data
-def calculate_chain_reachability_percentage(
-    provider_health_data: dict[str, Any], chain_providers: list[str]
-) -> float:
-    """
-    Calculate overall reachability for a chain based on its providers' health.
-
-    Reachability represents the percentage of providers that are healthy/reachable
-    for a given chain. This gives a measure of how many providers are available
-    to serve requests for this chain.
-
-    Args:
-        provider_health_data: Prometheus health data for all providers
-        chain_providers: List of provider names that serve this chain
-
-    Returns:
-        float: Percentage of healthy providers (0-100)
-
-    Example:
-        If a chain has 3 providers and 2 are healthy: reachability = 66.7%
-    """
-    if not chain_providers:
-        return 0.0
-
-    total_reachability = 0.0
-    providers_checked = 0
-
-    for provider in chain_providers:
-        try:
-            provider_uptime = calculate_provider_uptime_percentage(
-                provider_health_data, provider
-            )
-            total_reachability += provider_uptime
-            providers_checked += 1
-        except Exception:
-            # If we can't get provider health, treat as 0% uptime
-            providers_checked += 1
-            continue
-
-    return (total_reachability / providers_checked) if providers_checked > 0 else 0.0
-
-
-@validate_prometheus_data
-def calculate_provider_uptime_percentage(
-    provider_health_data: dict[str, Any], target_provider: str
-) -> float:
-    """Calculate uptime percentage for a specific provider from provider health data"""
-    results = provider_health_data["data"]["result"]
-    total_healthy_time = 0
-    total_time = 0
-
-    for result in results:
-        service = result.get("metric", {}).get("service")
-        if not service:
-            continue
-
-        # Check if service matches targetProvider or targetProvider-provider
-        service_matches = (
-            service.lower() == target_provider.lower()
-            or service.lower() == f"{target_provider.lower()}-provider"
-        )
-
-        if not service_matches:
-            continue
-
-        values = result.get("values", [])
-
-        for timestamp, value in values:
-            try:
-                health_value = float(value)
-                # lava_provider_overall_health_breakdown is 0-1, so multiply by 100 for percentage
-                uptime_percentage = health_value * 100
-                total_time += 1
-                total_healthy_time += uptime_percentage
-            except (ValueError, TypeError):
-                continue
-
-    return (total_healthy_time / total_time) if total_time > 0 else 0.0
-
-
-@validate_prometheus_data
-def calculate_provider_requests_in_time_window(
-    provider_traffic_data: dict[str, Any], target_provider: str
-) -> int:
-    """Calculate total requests within the time window for a specific provider"""
-    results = provider_traffic_data["data"]["result"]
-    total_relays = 0
-
-    for result in results:
-        service = result.get("metric", {}).get("service")
-
-        if not service:
-            continue
-
-        # Check if service matches targetProvider or targetProvider-provider
-        service_matches = (
-            service.lower() == target_provider.lower()
-            or service.lower() == f"{target_provider.lower()}-provider"
-        )
-
-        if not service_matches:
-            continue
-
-        values = result.get("values", [])
-
-        if len(values) >= 2:
-            # Calculate the total incremental requests in the time window
-            # Handle counter resets by summing all positive increments
-            try:
-                relays_in_window = 0
-                previous_value = float(values[0][1])
-
-                for i in range(1, len(values)):
-                    current_value = float(values[i][1])
-                    increment = current_value - previous_value
-
-                    # Handle counter resets (negative increments)
-                    if increment < 0:
-                        # Counter reset detected, add the previous value
-                        relays_in_window += previous_value
-
-                    relays_in_window += max(0, increment)
-                    previous_value = current_value
-
-                total_relays += relays_in_window
-            except (ValueError, TypeError, IndexError):
-                continue
-        elif len(values) == 1:
-            # If only one value, use it as is (edge case for very short time windows)
-            try:
-                relays_value = float(values[0][1])
-                total_relays += relays_value
-            except (ValueError, TypeError, IndexError):
-                continue
-    return int(total_relays)
-
-
 @router.get("/")
 async def get_default_metrics(
     svc: PrometheusService = Depends(get_prometheus_service),
@@ -800,15 +266,15 @@ async def get_default_metrics_alias(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/chains", response_model=ChainsResponse)
+@router.get("/chains-metrics", response_model=ChainsMetricsResponse)
 async def get_chains_metrics(
     time_window_minutes: int = Query(
         DEFAULT_TIME_WINDOW_MINUTES,
         description="Number of minutes of data to fetch",
     ),
-    step_size: int = Query(
-        DEFAULT_STEP_SIZE,
-        description="Step size for range queries in seconds",
+    choosen_network: str | None = Query(
+        default=None,
+        description="If provided, only include chains that belong to this network",
     ),
     svc: PrometheusService = Depends(get_prometheus_service),
     current_user: str = Depends(get_current_user),
@@ -816,9 +282,14 @@ async def get_chains_metrics(
     """Get metrics for all chains"""
     try:
         # Get available chains
-        available_chains = get_available_chains()
+        available_chains = configuration_service.get_chains_providers_configuration
+        if choosen_network:
+            # Filter chains to selected network only
+            available_chains = [
+                chain for chain in available_chains if getattr(chain, "network", None) == choosen_network
+            ]
         if not available_chains:
-            return ChainsResponse(
+            return ChainsMetricsResponse(
                 chains={},
                 avg=ChainMetrics(
                     uptime=0.0,
@@ -836,84 +307,67 @@ async def get_chains_metrics(
                 ),
             )
 
-        # Use adaptive step size for better performance
-        adaptive_step_size = calculate_adaptive_step_size(time_window_minutes)
-
         # Fetch all required metrics in parallel
         (
-            consumers_data,
+            chains_data,
             latency_data,
             chain_traffic_data,
             provider_health_data,
             consumer_latest_block_data,
-            provider_latest_block_data,
-        ) = await fetch_chain_metrics_data(svc, time_window_minutes, adaptive_step_size)
+            _,
+        ) = await fetch_chain_metrics_data(
+            svc, time_window_minutes, calculate_adaptive_step_size(time_window_minutes)
+        )
 
         # Calculate metrics for each chain
-        chains_data = {}
-        for chain_id in available_chains:
-            # Get providers for this chain to calculate reachability
-            chain_providers = get_providers_for_chain(chain_id)
-
-            chains_data[chain_id] = ChainMetrics(
-                uptime=calculate_uptime_percentage(consumers_data, chain_id),
-                latency_in_ms=calculate_latency_ms(latency_data, chain_id),
+        chains_data_dict = {}
+        for chain in available_chains:
+            # Use network as key as there could be several
+            chains_data_dict[chain.id] = ChainMetrics(
+                network=chain.network,
+                uptime=calculate_uptime_percentage(chains_data, chain.id),
+                latency_in_ms=calculate_latency_ms(latency_data, chain.id),
                 reachability=calculate_chain_reachability_percentage(
-                    provider_health_data, chain_providers
+                    provider_health_data,
+                    [f"{chain.id}-{provider.name}".lower() for provider in chain.providers],
                 ),
                 requests_in_window=calculate_requests_in_time_window(
-                    chain_traffic_data, chain_id
+                    chain_traffic_data, chain.id
                 ),
-                latest_block=calculate_consumer_latest_block_number(
-                    consumer_latest_block_data, chain_id
+                latest_block=calculate_chain_latest_block_number(
+                    consumer_latest_block_data, chain.id
                 ),
             )
 
         # Calculate statistical measures
-        all_chains = list(chains_data.values())
-        total_chains = len(all_chains)
+        all_chains = list(chains_data_dict.values())
+        # Extract values for statistics
+        uptimes = [chain.uptime for chain in all_chains]
+        latencies = [chain.latency_in_ms for chain in all_chains]
+        reachabilities = [chain.reachability for chain in all_chains]
+        requests = [chain.requests_in_window for chain in all_chains]
 
-        if total_chains > 0:
-            # Extract values for statistics
-            uptimes = [chain.uptime for chain in all_chains]
-            latencies = [chain.latency_in_ms for chain in all_chains]
-            reachabilities = [chain.reachability for chain in all_chains]
-            requests = [chain.requests_in_window for chain in all_chains]
+        # Create average metrics
+        avg_metrics = ChainMetrics(
+            uptime=round(sum(uptimes) / len(all_chains), 2),
+            latency_in_ms=int(round(sum(latencies) / len(all_chains))),
+            reachability=round(sum(reachabilities) / len(all_chains), 2),
+            requests_in_window=sum(requests),
+            latest_block=0,  # No average for latest block
+        )
 
-            # Create average metrics
-            avg_metrics = ChainMetrics(
-                uptime=round(sum(uptimes) / total_chains, 2),
-                latency_in_ms=int(round(sum(latencies) / total_chains)),
-                reachability=round(sum(reachabilities) / total_chains, 2),
-                requests_in_window=sum(requests),
-                latest_block=0,  # No average for latest block
-            )
+        # Create 90th percentile metrics
+        p90_metrics = ChainMetrics(
+            uptime=round(statistics.quantiles(uptimes, n=10)[8], 2),
+            latency_in_ms=int(round(statistics.quantiles(latencies, n=10)[8])),
+            reachability=round(statistics.quantiles(reachabilities, n=10)[8], 2),
+            requests_in_window=round(statistics.quantiles(requests, n=10)[8]),
+            latest_block=0,  # No p90 for latest block
+        )
 
-            # Create 90th percentile metrics
-            p90_metrics = ChainMetrics(
-                uptime=round(statistics.quantiles(uptimes, n=10)[8], 2),
-                latency_in_ms=int(round(statistics.quantiles(latencies, n=10)[8])),
-                reachability=round(statistics.quantiles(reachabilities, n=10)[8], 2),
-                requests_in_window=round(statistics.quantiles(requests, n=10)[8]),
-                latest_block=0,  # No p90 for latest block
-            )
-        else:
-            avg_metrics = ChainMetrics(
-                uptime=0.0,
-                latency_in_ms=0,
-                reachability=0.0,
-                requests_in_window=0,
-                latest_block=0,
-            )
-            p90_metrics = ChainMetrics(
-                uptime=0.0,
-                latency_in_ms=0,
-                reachability=0.0,
-                requests_in_window=0,
-                latest_block=0,
-            )
-
-        return ChainsResponse(chains=chains_data, avg=avg_metrics, p90=p90_metrics)
+        return ChainsMetricsResponse(
+            chains=chains_data_dict, avg=avg_metrics, p90=p90_metrics
+        )
 
     except Exception as e:
         raise HTTPException(
@@ -921,32 +375,27 @@ async def get_chains_metrics(
         )
 
 
-@router.get("/chains/{chain_id}")
+@router.get("/chains-metrics/{chain_id}", response_model=ChainMetrics)
 async def get_chain_metrics(
     chain_id: str,
     time_window_minutes: int = Query(
         DEFAULT_TIME_WINDOW_MINUTES,
         description="Number of minutes of data to fetch",
     ),
-    step_size: int = Query(
-        DEFAULT_STEP_SIZE,
-        description="Step size for range queries in seconds",
-    ),
     svc: PrometheusService = Depends(get_prometheus_service),
     current_user: str = Depends(get_current_user),
 ):
     """Get metrics for a specific chain"""
     try:
-        # Validate chain exists
-        available_chains = get_available_chains()
-        if chain_id not in available_chains:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Chain '{chain_id}' not found. Available chains: {available_chains}",
-            )
-
-        # Use adaptive step size for better performance
-        adaptive_step_size = calculate_adaptive_step_size(time_window_minutes)
+        # Get available chains
+        available_chains = configuration_service.get_chains_providers_configuration
+        if not available_chains:
+            raise HTTPException(status_code=404, detail="No chains available")
+        selected_chain = next(
+            (chain for chain in available_chains if chain.id == chain_id), None
+        )
+        if not chain_id or not selected_chain:
+            raise HTTPException(status_code=404, detail=f"Chain '{chain_id}' not found")
 
         # Fetch all required metrics in parallel
         (
@@ -956,25 +405,26 @@ async def get_chain_metrics(
             provider_health_data,
             consumer_latest_block_data,
             _,
-        ) = await fetch_chain_metrics_data(svc, time_window_minutes, adaptive_step_size)
-
-        # Get providers for this chain to calculate reachability
-        chain_providers = get_providers_for_chain(chain_id)
+        ) = await fetch_chain_metrics_data(
+            svc, time_window_minutes, calculate_adaptive_step_size(time_window_minutes)
+        )
 
         # Calculate metrics for the specific chain
-        chain_metrics = {
-            "uptime": calculate_uptime_percentage(consumers_data, chain_id),
-            "latency_in_ms": calculate_latency_ms(latency_data, chain_id),
-            "reachability": calculate_chain_reachability_percentage(
-                provider_health_data, chain_providers
+        chain_metrics = ChainMetrics(
+            network=selected_chain.network,
+            uptime=calculate_uptime_percentage(consumers_data, selected_chain.id),
+            latency_in_ms=calculate_latency_ms(latency_data, selected_chain.id),
+            reachability=calculate_chain_reachability_percentage(
+                provider_health_data,
+                [f"{selected_chain.id}-{provider.name}".lower() for provider in selected_chain.providers],
             ),
-            "requests_in_window": calculate_requests_in_time_window(
-                chain_traffic_data, chain_id
+            requests_in_window=calculate_requests_in_time_window(
+                chain_traffic_data, selected_chain.id
             ),
-            "latest_block": calculate_consumer_latest_block_number(
-                consumer_latest_block_data, chain_id
+            latest_block=calculate_chain_latest_block_number(
+                consumer_latest_block_data, selected_chain.id
             ),
-        }
+        )
 
         return chain_metrics
 
@@ -983,19 +433,15 @@ async def get_chain_metrics(
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Error fetching chain metrics for {chain_id}: {str(e)}",
+            detail=f"Error fetching chain metrics for '{chain_id}': {str(e)}",
         )
 
 
-@router.get("/providers", response_model=ProvidersResponse)
+@router.get("/providers-metrics", response_model=ProvidersMetricsResponse)
 async def get_providers_metrics(
     time_window_minutes: int = Query(
         DEFAULT_TIME_WINDOW_MINUTES,
         description="Number of minutes of data to fetch",
-    ),
-    step_size: int = Query(
-        DEFAULT_STEP_SIZE,
-        description="Step size for range queries in seconds",
     ),
     svc: PrometheusService = Depends(get_prometheus_service),
     current_user: str = Depends(get_current_user),
@@ -1003,77 +449,74 @@ async def get_providers_metrics(
     """Get metrics for all providers"""
     try:
         # Get available providers
-        available_providers = get_available_providers()
-        if not available_providers:
-            return ProvidersResponse(
+        available_chains = configuration_service.get_chains_providers_configuration
+        if not available_chains:
+            return ProvidersMetricsResponse(
                 providers={},
                 avg=ProviderMetrics(
-                    uptime=0.0, latency_in_ms=0, requests_per_day=0, latest_block=0
+                    uptime=0.0, latency_in_ms=0, requests_in_window=0, latest_block=0
                 ),
                 p90=ProviderMetrics(
-                    uptime=0.0, latency_in_ms=0, requests_per_day=0, latest_block=0
+                    uptime=0.0, latency_in_ms=0, requests_in_window=0, latest_block=0
                 ),
             )
-
-        # Use adaptive step size for better performance
-        adaptive_step_size = calculate_adaptive_step_size(time_window_minutes)
 
         # Fetch all required metrics in parallel
         providers_data, provider_traffic_data, provider_latest_block_data = (
             await fetch_provider_metrics_data(
-                svc, time_window_minutes, adaptive_step_size
+                svc,
+                time_window_minutes,
+                calculate_adaptive_step_size(time_window_minutes),
             )
         )
 
         # Calculate metrics for each provider
         providers_data_dict = {}
-        for provider_id in available_providers:
-            providers_data_dict[provider_id] = ProviderMetrics(
-                uptime=calculate_provider_uptime_percentage(
-                    providers_data, provider_id
-                ),
-                latency_in_ms=None,  # Providers don't have latency metrics
-                requests_in_window=calculate_provider_requests_in_time_window(
-                    provider_traffic_data, provider_id
-                ),
-                latest_block=calculate_provider_latest_block_number(
-                    provider_latest_block_data, provider_id
-                ),
-            )
+        for chain in available_chains:
+            for provider in chain.providers:
+                provider_key = f"{chain.id}-{provider.name}".lower()
+                providers_data_dict[provider_key] = ProviderMetrics(
+                    provider_name=provider.name,
+                    network=chain.network,
+                    uptime=calculate_provider_uptime_percentage(
+                        providers_data, provider_key
+                    ),
+                    latency_in_ms=None,  # Providers don't have latency metrics
+                    requests_in_window=calculate_provider_requests_in_time_window(
+                        provider_traffic_data, provider_key
+                    ),
+                    latest_block=calculate_provider_latest_block_number(
+                        provider_latest_block_data, provider_key
+                    ),
+                )
 
         # Calculate statistical measures
-        all_providers = list(providers_data_dict.values())
-        total_providers = len(all_providers)
+        all_provider_metrics = list(
+            providers_data_dict.values()
+        )  # Extract values for statistics
+        uptimes = [provider_metrics.uptime for provider_metrics in all_provider_metrics]
+        requests = [
+            provider_metrics.requests_in_window
+            for provider_metrics in all_provider_metrics
+        ]
 
-        if total_providers > 0:
-            # Extract values for statistics
-            uptimes = [provider.uptime for provider in all_providers]
-            requests = [provider.requests_in_window for provider in all_providers]
+        # Create average metrics (no latency for providers)
+        avg_metrics = ProviderMetrics(
+            uptime=round(sum(uptimes) / len(all_provider_metrics), 2),
+            latency_in_ms=None,  # Providers don't have latency metrics
+            requests_in_window=sum(requests),
+            latest_block=0,  # No average for latest block
+        )
 
-            # Create average metrics (no latency for providers)
-            avg_metrics = ProviderMetrics(
-                uptime=round(sum(uptimes) / total_providers, 2),
-                latency_in_ms=None,  # Providers don't have latency metrics
-                requests_in_window=sum(requests),
-                latest_block=0,  # No average for latest block
-            )
+        # Create 90th percentile metrics (no latency for providers)
+        p90_metrics = ProviderMetrics(
+            uptime=round(statistics.quantiles(uptimes, n=10)[8], 2),
+            latency_in_ms=None,  # Providers don't have latency metrics
+            requests_in_window=round(statistics.quantiles(requests, n=10)[8]),
+            latest_block=0,  # No p90 for latest block
+        )
 
-            # Create 90th percentile metrics (no latency for providers)
-            p90_metrics = ProviderMetrics(
-                uptime=round(statistics.quantiles(uptimes, n=10)[8], 2),
-                latency_in_ms=None,  # Providers don't have latency metrics
-                requests_in_window=round(statistics.quantiles(requests, n=10)[8]),
-                latest_block=0,  # No p90 for latest block
-            )
-        else:
-            avg_metrics = ProviderMetrics(
-                uptime=0.0, latency_in_ms=None, requests_in_window=0, latest_block=0
-            )
-            p90_metrics = ProviderMetrics(
-                uptime=0.0, latency_in_ms=None, requests_in_window=0, latest_block=0
-            )
-
-        return ProvidersResponse(
+        return ProvidersMetricsResponse(
             providers=providers_data_dict, avg=avg_metrics, p90=p90_metrics
         )
 
@@ -1081,81 +524,6 @@ async def get_providers_metrics(
         raise HTTPException(
             status_code=500, detail=f"Error fetching providers metrics: {str(e)}"
         )
-
-
-@router.get("/providers/{provider_id}")
-async def get_provider_metrics(
-    provider_id: str,
-    time_window_minutes: int = Query(
-        DEFAULT_TIME_WINDOW_MINUTES,
-        description="Number of minutes of data to fetch",
-    ),
-    step_size: int = Query(
-        DEFAULT_STEP_SIZE,
-        description="Step size for range queries in seconds",
-    ),
-    svc: PrometheusService = Depends(get_prometheus_service),
-    current_user: str = Depends(get_current_user),
-):
-    """Get metrics for a specific provider"""
-    try:
-        # Validate provider exists
-        available_providers = get_available_providers()
-        if provider_id not in available_providers:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Provider '{provider_id}' not found. Available providers: {available_providers}",
-            )
-
-        # Use adaptive step size for better performance
-        adaptive_step_size = calculate_adaptive_step_size(time_window_minutes)
-
-        # Fetch all required metrics in parallel
-        providers_data, provider_traffic_data, _ = await fetch_provider_metrics_data(
-            svc, time_window_minutes, adaptive_step_size
-        )
-
-        # Calculate metrics for the specific provider
-        provider_metrics = {
-            "uptime": calculate_provider_uptime_percentage(providers_data, provider_id),
-            "latency_in_ms": None,  # Providers don't have latency metrics
-            "requests_in_window": calculate_provider_requests_in_time_window(
-                provider_traffic_data, provider_id
-            ),
-        }
-
-        return provider_metrics
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error fetching provider metrics for {provider_id}: {str(e)}",
-        )
-
-
-class ProviderInfo(BaseModel):
-    """Provider information"""
-
-    name: str
-    interface: str
-    endpoint: str
-    health_status: BasicHealth  # From provider health breakdown metric
-
-
-class ChainInfo(BaseModel):
-    """Chain information"""
-
-    chain_id: str
-    consumer_health: ConsumerHealth  # From consumer health breakdown metric
-    providers: list[ProviderInfo]
-
-
-class ChainsToProvidersResponse(BaseModel):
-    """Response model for chains-to-providers endpoint"""
-
-    chains: list[ChainInfo]
 
 
 @router.get("/chains-to-providers", response_model=ChainsToProvidersResponse)
@@ -1171,116 +539,69 @@ async def get_chains_to_providers(
     svc: PrometheusService = Depends(get_prometheus_service),
     current_user: str = Depends(get_current_user),
 ):
-    """Get mapping of chains to their providers with health data"""
+    """Get mapping of chains to their providers using Chain and Provider dataclasses"""
     try:
-        # Get available chains
-        available_chains = get_available_chains()
-        if not available_chains:
-            return ChainsToProvidersResponse(chains=[])
+        # Get chains from configuration service
+        chains = configuration_service.get_chains_providers_configuration
 
-        # Use adaptive step size for better performance
-        adaptive_step_size = calculate_adaptive_step_size(time_window_minutes)
+        if not chains:
+            return ChainsToProvidersResponse(chains=[])
 
         # Fetch all required metrics in parallel
         (
-            consumers_data,
+            _,
             _,
             _,
             provider_health_data,
             _,
             _,
-        ) = await fetch_chain_metrics_data(svc, time_window_minutes, adaptive_step_size)
+        ) = await fetch_chain_metrics_data(
+            svc, time_window_minutes, calculate_adaptive_step_size(time_window_minutes)
+        )
 
-        # Build chains-to-providers mapping
-        chains_info = []
-
-        for chain_id in available_chains:
-            # Get chain health from consumer health breakdown
-            consumer_uptime = calculate_uptime_percentage(consumers_data, chain_id)
-
-            # Get providers for this chain
-            chain_providers = get_providers_for_chain(chain_id)
-            providers_info = []
-            provider_health_states = []
-
-            for provider_name in chain_providers:
+        # Convert to dictionary format with chain_id as key
+        chains_list = []
+        for chain in chains:
+            providers_per_chain = []
+            for provider in chain.providers:
                 # Get provider health from provider health breakdown
+                provider_key = f"{chain.id}-{provider.name}".lower()
                 provider_uptime = calculate_provider_uptime_percentage(
-                    provider_health_data, provider_name
+                    provider_health_data, provider_key
                 )
-                provider_health = (
-                    BasicHealth.HEALTHY
-                    if provider_uptime > 0
-                    else BasicHealth.UNHEALTHY
-                )
-                provider_health_states.append(provider_health)
-
-                # Get interface and endpoint from configuration
-                interface = "jsonrpc"  # Default
-                endpoint = (
-                    f"{provider_name}.lava-infra.svc.cluster.local:2200"  # Default
-                )
-
-                try:
-                    smart_router_data = configuration_service.read_smart_router_values()
-
-                    if smart_router_data and "chains" in smart_router_data:
-                        # Find the chain and then the provider within it
-                        for chain in smart_router_data["chains"]:
-                            if chain.get("id") == chain_id:
-                                for provider in chain.get("providers", []):
-                                    if provider.get("name") == provider_name:
-                                        # Get endpoint
-                                        endpoint = provider.get("endpoint", endpoint)
-                                        
-                                        # Get interface from chain interfaces
-                                        chain_interfaces = chain.get("interfaces", ["jsonrpc"])
-                                        if chain_interfaces:
-                                            interface = chain_interfaces[0]
-                                        
-                                        break
-                                break
-                except Exception:
-                    # Use defaults if config read fails
-                    pass
-
-                providers_info.append(
-                    ProviderInfo(
-                        name=provider_name,
-                        interface=interface,
-                        endpoint=endpoint,
-                        health_status=provider_health,
+                providers_per_chain.append(
+                    Provider(
+                        name=provider.name,
+                        endpoints=provider.endpoints,
+                        health_status=(
+                            ProviderHealth.HEALTHY
+                            if provider_uptime > 0
+                            else ProviderHealth.UNHEALTHY
+                        ),
                     )
                 )
-
-            # Determine consumer health based on provider states
-            # Consumer is healthy only if ALL providers are healthy
-            # Consumer has mixed health if SOME providers are healthy but not all
-            # Consumer is unhealthy if NO providers are healthy
-            if not provider_health_states:
-                consumer_health = ConsumerHealth.UNHEALTHY  # No providers = unhealthy
+            if all(
+                provider.health_status == ProviderHealth.HEALTHY
+                for provider in providers_per_chain
+            ):
+                chain_health = ChainHealth.HEALTHY
             elif all(
-                health == BasicHealth.HEALTHY for health in provider_health_states
+                provider.health_status == ProviderHealth.UNHEALTHY
+                for provider in providers_per_chain
             ):
-                consumer_health = (
-                    ConsumerHealth.HEALTHY
-                )  # All providers healthy = healthy
-            elif any(
-                health == BasicHealth.HEALTHY for health in provider_health_states
-            ):
-                consumer_health = ConsumerHealth.MIXED  # Some healthy, some not
+                chain_health = ChainHealth.UNHEALTHY
             else:
-                consumer_health = ConsumerHealth.UNHEALTHY  # No providers healthy
-
-            chains_info.append(
-                ChainInfo(
-                    chain_id=chain_id,
-                    consumer_health=consumer_health,
-                    providers=providers_info,
-                )
+                chain_health = ChainHealth.MIXED
+            chains_list.append(
+                Chain(
+                    id=chain.id,
+                    network=chain.network,
+                    providers=providers_per_chain,
+                    health_status=chain_health,
+                ).model_dump()
             )
 
-        return ChainsToProvidersResponse(chains=chains_info)
+        return ChainsToProvidersResponse(chains=chains_list)
 
     except HTTPException:
         raise

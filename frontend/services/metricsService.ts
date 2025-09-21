@@ -14,6 +14,7 @@ import { apiClient } from '@/lib/api-client';
 
 /** Metrics data structure for individual chains */
 export interface ChainMetrics {
+  network?: string; // Network field for proper icon lookup
   uptime: number; // Uptime percentage (0-100)
   latency_in_ms: number; // Average latency in milliseconds
   reachability: number; // Provider reachability percentage (0-100)
@@ -23,6 +24,8 @@ export interface ChainMetrics {
 
 /** Metrics data structure for individual providers */
 export interface ProviderMetrics {
+  provider?: string; // Provider name/identifier
+  network?: string; // Network field for proper icon lookup
   uptime: number; // Uptime percentage (0-100)
   latency_in_ms: number | null; // Average latency in milliseconds (null for providers)
   requests_in_window: number; // Number of requests in time window
@@ -38,7 +41,7 @@ export interface ChainsResponse {
 
 /** API response structure for providers metrics endpoint */
 export interface ProvidersResponse {
-  providers: { [providerId: string]: ProviderMetrics }; // Individual provider metrics
+  providers: { [providerId: string]: ProviderMetrics }; // Individual provider metrics as a dictionary
   avg: ProviderMetrics; // Average metrics across all providers
   p90: ProviderMetrics; // 90th percentile metrics across all providers
 }
@@ -114,10 +117,12 @@ export class MetricsService {
   static async fetchMetricsForAllChains(
     timeWindowMinutes: number,
     stepSize: number,
+    choosenNetwork?: string,
   ): Promise<ChainsResponse> {
     try {
+      const networkQuery = choosenNetwork ? `&choosen_network=${encodeURIComponent(choosenNetwork)}` : '';
       const response = await apiClient.get(
-        `/api/metrics/chains?time_window_minutes=${timeWindowMinutes}&step_size=${stepSize}`,
+        `/api/metrics/chains-metrics?time_window_minutes=${timeWindowMinutes}&step_size=${stepSize}${networkQuery}`,
       );
       return response as ChainsResponse;
     } catch (error) {
@@ -141,7 +146,7 @@ export class MetricsService {
   ): Promise<ProvidersResponse> {
     try {
       const response = await apiClient.get(
-        `/api/metrics/providers?time_window_minutes=${timeWindowMinutes}&step_size=${stepSize}`,
+        `/api/metrics/providers-metrics?time_window_minutes=${timeWindowMinutes}&step_size=${stepSize}`,
       );
       return response as ProvidersResponse;
     } catch (error) {
@@ -167,7 +172,7 @@ export class MetricsService {
   ): Promise<ChainMetrics> {
     try {
       const response = await apiClient.get(
-        `/api/metrics/chains/${chainId}?time_window_minutes=${timeWindowMinutes}&step_size=${stepSize}`,
+        `/api/metrics/chains-metrics/${chainId}?time_window_minutes=${timeWindowMinutes}&step_size=${stepSize}`,
       );
       return response as ChainMetrics;
     } catch (error) {
@@ -193,7 +198,7 @@ export class MetricsService {
   ): Promise<ProviderMetrics> {
     try {
       const response = await apiClient.get(
-        `/api/metrics/providers/${providerId}?time_window_minutes=${timeWindowMinutes}&step_size=${stepSize}`,
+        `/api/metrics/providers-metrics/${providerId}?time_window_minutes=${timeWindowMinutes}&step_size=${stepSize}`,
       );
       return response as ProviderMetrics;
     } catch (error) {
