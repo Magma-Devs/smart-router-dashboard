@@ -140,7 +140,7 @@ export default function Dashboard() {
       }
 
       // Fetch flow visualization data using the new chains-to-providers endpoint
-      const flowEndpoint = `/api/metrics/chains-to-providers?minutes=1&step=1`;
+      const flowEndpoint = `/api/metrics/chains-to-providers?time_window_minutes=1&step_size=1`;
       const flowData = await apiClient.get<ChainsToProvidersResponse>(flowEndpoint);
 
       setData({

@@ -3,12 +3,13 @@
  */
 
 // Health state enums
-export enum BasicHealth {
+
+export enum ProviderHealth {
   HEALTHY = "healthy",
   UNHEALTHY = "unhealthy",
 }
 
-export enum ConsumerHealth {
+export enum ChainHealth {
   HEALTHY = "healthy",
   UNHEALTHY = "unhealthy",
   MIXED = "mixed",
@@ -18,6 +19,7 @@ export interface ProviderMetrics {
   provider: string;
   chain?: string; // chain label for display
   chainValue?: string; // chain value for icon lookup
+  network?: string; // network field for proper icon lookup
   latest_block: string; // latest block number
   traffic: string; // requests in time window
   uptime: string; // percentage
@@ -27,6 +29,7 @@ export interface ProviderMetrics {
 export interface ChainMetrics {
   chain: string;
   chainValue?: string; // chain value for icon lookup
+  network?: string; // network field for proper icon lookup
   latest_block: string; // latest block number
   traffic: string; // requests in time window
   uptime: string; // percentage
@@ -62,19 +65,27 @@ export interface KPICardProps {
 
 // API Response Types for Metrics Endpoints
 
+/** Endpoint information */
+export interface EndpointInfo {
+  url: string;
+  interface: string;
+  addons?: string[];
+}
+
 /** Provider information for flow visualization */
 export interface ProviderInfo {
   name: string;
-  interface: string;
-  endpoint: string;
-  health_status: BasicHealth;
+  endpoints: EndpointInfo[];
+  auth_config?: any;
+  health_status: ProviderHealth;
 }
 
 /** Chain information for flow visualization */
 export interface ChainInfo {
-  chain_id: string;
-  consumer_health: ConsumerHealth;
+  id: string;
+  network: string;
   providers: ProviderInfo[];
+  health_status: ChainHealth;
 }
 
 /** Response from chains-to-providers endpoint */

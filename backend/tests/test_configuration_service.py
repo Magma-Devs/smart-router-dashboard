@@ -4,12 +4,13 @@ Tests for ConfigurationService in app.services.configuration.
 
 import os
 import tempfile
-from unittest.mock import MagicMock, patch, mock_open
+from unittest.mock import patch
 
 import pytest
 import yaml
 
 from app.services.configuration import ConfigurationService
+from app.core.dataclasses import ChainConfig
 
 
 class TestConfigurationService:
@@ -19,51 +20,6 @@ class TestConfigurationService:
         """Set up test fixtures."""
         self.temp_dir = tempfile.mkdtemp()
         self.service = ConfigurationService(values_dir=self.temp_dir)
-
-        # Sample test data
-        self.sample_consumer_data = {
-            "resources": {"requests": {"cpu": "500m", "memory": "1Gi"}},
-            "chains": {
-                "chain1": {
-                    "interfaces": [
-                        {
-                            "interface": "interface1",
-                            "port": 8080,
-                            "addons": ["addon1", "addon2"],
-                            "staticProviders": [
-                                {"url": "https://lava-provider.lavapro.xyz"}
-                            ],
-                        }
-                    ]
-                }
-            },
-        }
-
-        self.sample_provider_data = {
-            "chains": [
-                {
-                    "name": "lava",
-                    "id": "eth1",
-                    "interfaces": [
-                        {
-                            "interface": "jsonrpc",
-                            "nodes": [
-                                {
-                                    "endpoint": "https://node1.lavapro.xyz",
-                                    "type": "full",
-                                    "addons": ["addon1", "addon3"],
-                                },
-                                {
-                                    "endpoint": "https://node2.lavapro.xyz",
-                                    "type": "archive",
-                                    "addons": ["addon2"],
-                                },
-                            ],
-                        }
-                    ],
-                }
-            ]
-        }
 
     def teardown_method(self):
         """Clean up test fixtures."""
@@ -118,164 +74,6 @@ class TestConfigurationService:
             result = yaml.safe_load(f)
         assert result == test_data
 
-    def test_get_consumer_resources(self):
-        """Test extracting consumer resources."""
-        resources = self.service.get_consumer_resources(self.sample_consumer_data)
-
-        assert resources["cpu"] == 0.5  # 500m = 0.5 cores
-        assert resources["memory"] == 1.0  # 1Gi = 1.0 GB
-
-    def test_get_consumer_resources_no_resources(self):
-        """Test extracting resources when none are defined."""
-        data_without_resources = {"chains": {}}
-        resources = self.service.get_consumer_resources(data_without_resources)
-
-        assert resources["cpu"] == 0.0
-        assert resources["memory"] == 0.0
-
-    def test_get_consumer_resources_partial_resources(self):
-        """Test extracting resources when only some are defined."""
-        data_partial = {"resources": {"requests": {"cpu": "1000m"}}}  # Only CPU defined
-        resources = self.service.get_consumer_resources(data_partial)
-
-        assert resources["cpu"] == 1.0
-        assert resources["memory"] == 0.0
-
-    def test_build_consumer_config(self):
-        """Test building consumer configuration."""
-        chain_id = "chain1"
-        chain_data = self.sample_consumer_data["chains"]["chain1"]
-
-        result = self.service.build_consumer_config(chain_id, chain_data)
-
-        assert "interfaces" in result
-        assert len(result["interfaces"]) == 1
-
-        interface = result["interfaces"][0]
-        assert interface["name"] == "interface1"
-        assert interface["port"] == 8080
-        assert interface["addons"] == ["addon1", "addon2"]
-        assert len(interface["providers"]) == 1
-
-    def test_build_provider_config(self):
-        """Test building provider configuration."""
-        provider = {"url": "https://lava-provider.lavapro.xyz"}
-
-        # Mock the provider data reading
-        with patch.object(
-            self.service, "read_yaml_file", return_value=self.sample_provider_data
-        ):
-            result = self.service._build_provider_config(provider)
-
-        assert result["name"] == "lava"
-        assert result["url"] == "https://lava-provider.lavapro.xyz"
-        assert len(result["nodes"]) == 2
-        # Check that all addons are present (order may vary due to set operations)
-        assert set(result["addons"]) == {"addon1", "addon3", "addon2"}
-        assert len(result["addons"]) == 3  # No duplicates
-
-    def test_build_provider_config_no_provider_data(self):
-        """Test building provider config when no provider data exists."""
-        provider = {"url": "https://unknown-provider.example.com"}
-
-        with patch.object(self.service, "read_yaml_file", return_value=None):
-            result = self.service._build_provider_config(provider)
-
-        assert result["name"] == "unknown"
-        assert result["url"] == "https://unknown-provider.example.com"
-        assert result["nodes"] == []
-        assert result["addons"] == []
-
-    def test_update_provider_values(self):
-        """Test updating provider values file."""
-        config = {
-            "consumers": {
-                "chain1": {
-                    "addons": ["addon1", "addon2"],
-                    "interfaces": [
-                        {
-                            "name": "interface1",
-                            "providers": [
-                                {
-                                    "name": "provider1",
-                                    "nodes": [
-                                        {
-                                            "endpoint": "https://node1.example.com",
-                                            "type": "full",
-                                        }
-                                    ],
-                                }
-                            ],
-                        }
-                    ],
-                }
-            }
-        }
-
-        # Mock the file operations
-        with patch.object(
-            self.service, "read_yaml_file", return_value={}
-        ), patch.object(self.service, "write_yaml_file") as mock_write:
-
-            self.service.update_provider_values(config)
-
-            # Verify write was called
-            mock_write.assert_called_once()
-
-            # Get the data that was written
-            call_args = mock_write.call_args
-            written_data = call_args[0][1]  # Second argument is the data
-
-            assert "chains" in written_data
-            assert len(written_data["chains"]) == 1
-
-            provider = written_data["chains"][0]
-            assert provider["name"] == "provider1"
-            assert provider["id"] == "chain1"
-
-    def test_update_consumer_values(self):
-        """Test updating consumer values file."""
-        config = {
-            "consumers": {
-                "chain1": {
-                    "addons": ["addon1", "addon2"],
-                    "interfaces": [
-                        {
-                            "name": "interface1",
-                            "port": 8080,
-                            "providers": [{"url": "https://provider1.example.com"}],
-                        }
-                    ],
-                }
-            }
-        }
-
-        # Mock the file operations
-        with patch.object(
-            self.service, "read_yaml_file", return_value={}
-        ), patch.object(self.service, "write_yaml_file") as mock_write:
-
-            self.service.update_consumer_values(config)
-
-            # Verify write was called
-            mock_write.assert_called_once()
-
-            # Get the data that was written
-            call_args = mock_write.call_args
-            written_data = call_args[0][1]  # Second argument is the data
-
-            assert "chains" in written_data
-            assert "chain1" in written_data["chains"]
-
-            chain = written_data["chains"]["chain1"]
-            assert len(chain["interfaces"]) == 1
-
-            interface = chain["interfaces"][0]
-            assert interface["interface"] == "interface1"
-            assert interface["port"] == 8080
-            assert interface["addons"] == ["addon1", "addon2"]
-            assert len(interface["staticProviders"]) == 1
-
     def test_write_yaml_file_io_error(self):
         """Test write_yaml_file with IO error."""
         from unittest.mock import patch, mock_open
@@ -288,3 +86,86 @@ class TestConfigurationService:
                 ValueError, match="Error writing YAML file.*Permission denied"
             ):
                 self.service.write_yaml_file("/test/path/test.yml", {"test": "data"})
+
+    def test_get_chains_providers_configuration(self):
+        """Test getting chains and providers configuration."""
+        # Mock the smart router values
+        mock_chains = [
+            ChainConfig(
+                id="chain1",
+                network="testnet",
+                providers=[],
+            )
+        ]
+
+        with patch.object(self.service, "smart_router_values", mock_chains):
+            result = self.service.get_chains_providers_configuration
+
+        assert len(result) == 1
+        assert result[0].id == "chain1"
+        assert result[0].network == "testnet"
+
+    def test_read_smart_router_values_empty(self):
+        """Test reading smart router values when file doesn't exist."""
+        result = self.service._read_smart_router_values()
+        assert result == []
+
+    def test_read_smart_router_values_with_data(self):
+        """Test reading smart router values with valid data."""
+        mock_data = {
+            "chains": [
+                {
+                    "id": "chain1",
+                    "network": "testnet",
+                    "providers": [],
+                }
+            ]
+        }
+
+        with patch.object(self.service, "read_yaml_file", return_value=mock_data):
+            result = self.service._read_smart_router_values()
+
+        assert len(result) == 1
+        assert result[0].id == "chain1"
+        assert result[0].network == "testnet"
+
+    def test_chain_config_helper_methods(self):
+        """Test ChainConfig helper methods for interfaces and addons."""
+        from app.core.dataclasses import EndpointConfig, ProviderConfig
+        
+        # Create test endpoints
+        endpoint1 = EndpointConfig(
+            url="https://example.com/jsonrpc",
+            interface="jsonrpc",
+            addons=["debug"]
+        )
+        endpoint2 = EndpointConfig(
+            url="https://example.com/rest",
+            interface="rest",
+            addons=["archive", "debug"]
+        )
+        
+        # Create test provider
+        provider = ProviderConfig(
+            name="test_provider",
+            endpoints=[endpoint1, endpoint2]
+        )
+        
+        # Create test chain
+        chain = ChainConfig(
+            id="test_chain",
+            network="testnet",
+            providers=[provider]
+        )
+        
+        # Test get_interfaces method
+        interfaces = chain.get_interfaces()
+        assert "jsonrpc" in interfaces
+        assert "rest" in interfaces
+        assert len(interfaces) == 2
+        
+        # Test get_addons method
+        addons = chain.get_addons()
+        assert "debug" in addons
+        assert "archive" in addons
+        assert len(addons) == 2  # Should remove duplicates

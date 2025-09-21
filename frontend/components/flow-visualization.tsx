@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getChainLabel, getChainIcon } from '@/app/config/chains';
-import { ChainsToProvidersResponse, ChainInfo, BasicHealth } from '@/types/metrics';
+import { ChainsToProvidersResponse, ChainInfo } from '@/types/metrics';
 import ReactFlow, {
   Background,
   Controls,
@@ -35,7 +35,7 @@ interface FlowVisualizationProps {
 }
 
 // Types for the flow visualization
-interface Consumer {
+interface Chain {
   name: string;
   label: string;
   icon?: string;
@@ -46,7 +46,6 @@ interface Provider {
   interface: string;
   healthy: boolean;
   service?: string;
-  apiInterface?: string;
 }
 
 interface Providers {
@@ -85,11 +84,12 @@ function UserNode({ data }: { data: any }) {
   );
 }
 
-function ConsumerNode({
+function ChainNode({
   data,
 }: {
   data: {
     label: string;
+    chainName?: string;
     healthy: boolean;
     hasExpandedProviders?: boolean;
     onToggleExpand?: () => void;
@@ -120,6 +120,9 @@ function ConsumerNode({
         )}
         <div className='flex flex-col whitespace-nowrap'>
           <span className='font-medium'>{data.label}</span>
+          {data.chainName && (
+            <span className='text-xs text-muted-foreground'>{data.chainName}</span>
+          )}
         </div>
         <div className='flex items-center ml-auto flex-shrink-0'>
           {data.hasMultipleProviders && (
@@ -158,7 +161,6 @@ function ProviderNode({
   data: {
     label: string;
     interface: string;
-    apiInterface?: string;
     healthy: boolean;
     isCollapseButton?: boolean;
     onCollapse?: () => void;
@@ -191,7 +193,7 @@ function ProviderNode({
                 <span>Collapse</span>
               </div>
             ) : (
-              data.apiInterface || data.interface
+              data.interface
             )}
           </span>
         </div>
@@ -236,7 +238,7 @@ function ProviderGroupNode({
   };
 
   data.providers.forEach(provider => {
-    const interfaceName = provider.apiInterface || provider.interface;
+    const interfaceName = provider.interface;
     if (provider.healthy) {
       interfacesByHealth.healthy.push(interfaceName);
     } else {
@@ -279,7 +281,7 @@ function ProviderGroupNode({
               ) : (
                 <ChevronDown className='h-3 w-3' />
               )}
-              <span>Interfaces {interfaceCount > 1 ? `(${interfaceCount} interfaces)` : ''}</span>
+              <span>Interfaces</span>
             </span>
           </div>
           <div className='ml-auto flex items-center gap-1'>
@@ -384,7 +386,7 @@ function ProviderCountNode({
 
 const nodeTypes = {
   user: UserNode,
-  consumer: ConsumerNode,
+  chain: ChainNode,
   provider: ProviderNode,
   providerGroup: ProviderGroupNode,
   providerCount: ProviderCountNode,
@@ -437,12 +439,12 @@ function FlowInner({
       const serviceGroupKeys: string[] = [];
 
       if (apiData?.chains) {
-        // Extract keys from new API data
+        // Extract keys from new API data using the correct format
         apiData.chains.forEach((chain: ChainInfo) => {
-          consumerKeys.push(`consumer-${chain.chain_id}`);
+          consumerKeys.push(`chain-${chain.id}`);
 
           chain.providers.forEach(provider => {
-            serviceGroupKeys.push(`service-group-${chain.chain_id}-${provider.name}`);
+            serviceGroupKeys.push(`service-group-${chain.id}-${provider.name}`);
           });
         });
       } else {
@@ -456,7 +458,7 @@ function FlowInner({
         ];
 
         sampleData.forEach(item => {
-          consumerKeys.push(`consumer-${item.consumer}`);
+          consumerKeys.push(`chain-${item.consumer}`);
 
           item.services.forEach(service => {
             serviceGroupKeys.push(`service-group-${item.consumer}-${service}`);
@@ -486,15 +488,15 @@ function FlowInner({
       if (apiData?.chains) {
         // Extract unique consumer names and service providers
         apiData.chains.forEach((chain: ChainInfo) => {
-          const consumerKey = `consumer-${chain.chain_id}`;
+          const chainKey = `chain-${chain.id}`;
           // Always collapse by default
-          newExpandedState[consumerKey] = false;
+          newExpandedState[chainKey] = false;
 
-          // Set service groups to expanded by default (for when consumer is expanded)
+          // Set service groups to collapsed by default
           chain.providers.forEach(provider => {
-            const serviceKey = `service-group-${chain.chain_id}-${provider.name}`;
-            // Always expand interfaces (service groups) by default
-            newExpandedState[serviceKey] = true;
+            const serviceKey = `service-group-${chain.id}-${provider.name}`;
+            // Always collapse interfaces (service groups) by default
+            newExpandedState[serviceKey] = false;
           });
         });
       } else {
@@ -508,15 +510,15 @@ function FlowInner({
         ];
 
         sampleData.forEach(item => {
-          const consumerKey = `consumer-${item.consumer}`;
+          const chainKey = `chain-${item.consumer}`;
           // Always collapse by default
-          newExpandedState[consumerKey] = false;
+          newExpandedState[chainKey] = false;
 
-          // Always expand service groups by default (for when consumer is expanded)
+          // Always collapse service groups by default
           item.services.forEach(service => {
             const serviceKey = `service-group-${item.consumer}-${service}`;
-            // Always expand interfaces (service groups) by default
-            newExpandedState[serviceKey] = true;
+            // Always collapse interfaces (service groups) by default
+            newExpandedState[serviceKey] = false;
           });
         });
       }
@@ -563,32 +565,33 @@ function FlowInner({
   };
 
   const { nodes: flowNodes, edges }: { nodes: Node[]; edges: Edge[] } = useMemo(() => {
-    // Process the API data to extract consumers and providers
-    const consumers: Consumer[] = [];
+    // Process the API data to extract chains and providers
+    const chains: Chain[] = [];
     const providers: Providers = {};
 
 
     // Process the new chains-to-providers API format
     if (apiData && apiData.chains && Array.isArray(apiData.chains) && apiData.chains.length > 0) {
       apiData.chains.forEach((chain: ChainInfo) => {
-        // Create consumer from chain data using proper labels and icons from chains.ts
+        // Create chain from chain data using proper labels and icons from chains.ts
         // Handle health states using enums - be explicit about the comparison
-        const isHealthy = chain.consumer_health === "healthy";
+        const isHealthy = chain.health_status === "healthy";
         
-        consumers.push({
-          name: chain.chain_id,
-          label: getChainLabel(chain.chain_id),
-          icon: getChainIcon(chain.chain_id),
+        chains.push({
+          name: chain.id,
+          label: getChainLabel(chain.network),
+          icon: getChainIcon(chain.network),
           healthy: isHealthy, // Only true when ALL providers are healthy
         });
 
         // Create providers for this chain
-        providers[chain.chain_id] = chain.providers.map(provider => ({
-          interface: `${provider.name}:${provider.interface}`,
-          apiInterface: provider.interface,
-          healthy: provider.health_status === BasicHealth.HEALTHY,
-          service: provider.name,
-        }));
+        providers[chain.id] = chain.providers.flatMap(provider => 
+          provider.endpoints.map(endpoint => ({
+            interface: endpoint.interface,
+            healthy: provider.health_status === "healthy",
+            service: provider.name,
+          }))
+        );
       });
     } else {
       // Fallback to sample data if API format is not recognized
@@ -601,34 +604,29 @@ function FlowInner({
       ];
 
       sampleData.forEach(item => {
-        consumers.push(item);
+        chains.push(item);
       });
 
       providers['near'] = [
-        { interface: 'lava', apiInterface: 'lava', healthy: true, service: 'lava' },
+        { interface: 'lava', healthy: true, service: 'lava' },
       ];
       providers['eth1'] = [
         {
           interface: 'quicknodes',
-          apiInterface: 'quicknodes',
           healthy: true,
           service: 'quicknodes',
         },
-        { interface: 'anker', apiInterface: 'anker', healthy: true, service: 'anker' },
+        { interface: 'anker', healthy: true, service: 'anker' },
+        { interface: 'anker', healthy: false, service: 'anker' },
+        { interface: 'lava', healthy: false, service: 'lava' },
+        { interface: 'anker', healthy: true, service: 'anker' },
+        { interface: 'anker2', healthy: true, service: 'anker' },
       ];
       providers['btc'] = [
-        { interface: 'anker', apiInterface: 'anker', healthy: false, service: 'anker' },
-      ];
-      providers['solana'] = [
-        { interface: 'lava', apiInterface: 'lava', healthy: false, service: 'lava' },
-        { interface: 'anker', apiInterface: 'anker', healthy: true, service: 'anker' },
-        { interface: 'anker2', apiInterface: 'anker2', healthy: true, service: 'anker' },
-      ];
-      providers['lava'] = [
-        { interface: 'anker', apiInterface: 'anker', healthy: true, service: 'anker' },
-        { interface: 'anker2', apiInterface: 'anker2', healthy: true, service: 'anker' },
-        { interface: 'anker3', apiInterface: 'anker3', healthy: true, service: 'anker' },
-        { interface: 'anker4', apiInterface: 'anker4', healthy: true, service: 'anker2' },
+        { interface: 'anker', healthy: true, service: 'anker' },
+        { interface: 'anker2', healthy: true, service: 'anker' },
+        { interface: 'anker3', healthy: true, service: 'anker' },
+        { interface: 'anker4', healthy: true, service: 'anker2' },
       ];
     }
 
@@ -640,47 +638,47 @@ function FlowInner({
     const providerVerticalGap = 180;
     const serviceGroupGap = 100;
 
-    // Sort consumers alphabetically by name
-    consumers.sort((a, b) => a.name.localeCompare(b.name));
+    // Sort chains alphabetically by name
+    chains.sort((a, b) => a.name.localeCompare(b.name));
 
-    // Calculate the max width needed for consumer nodes
-    const maxLabelLength = consumers.reduce(
-      (max, consumer) => Math.max(max, consumer.label.length),
+    // Calculate the max width needed for chain nodes
+    const maxLabelLength = chains.reduce(
+      (max, chain) => Math.max(max, chain.label.length),
       0,
     );
 
     // Base width + character width estimate * longest label + padding
     const baseWidth = 80; // Base width for icons and padding
     const charWidth = 10; // Approximate width of a character
-    const consumerNodeWidth = baseWidth + maxLabelLength * charWidth;
+    const chainNodeWidth = baseWidth + maxLabelLength * charWidth;
 
     // Apply a minimum width constraint
-    const finalConsumerNodeWidth = Math.max(200, consumerNodeWidth);
+    const finalChainNodeWidth = Math.max(200, chainNodeWidth);
 
-    // Create a map of expanded states for consumers and service groups
-    const expandedConsumers = new Set<string>();
+    // Create a map of expanded states for chains and service groups
+    const expandedChains = new Set<string>();
     const expandedServiceGroups = new Set<string>();
 
     Object.entries(expandedGroups).forEach(([key, isExpanded]) => {
       if (isExpanded) {
-        if (key.startsWith('consumer-')) {
-          expandedConsumers.add(key.replace('consumer-', ''));
+        if (key.startsWith('chain-')) {
+          expandedChains.add(key.replace('chain-', ''));
         } else if (key.startsWith('service-group-')) {
           expandedServiceGroups.add(key.replace('service-group-', ''));
         }
       }
     });
 
-    // Group providers by service for each consumer
-    const serviceGroupsByConsumer: Record<string, ServiceGroup[]> = {};
+    // Group providers by service for each chain
+    const serviceGroupsByChain: Record<string, ServiceGroup[]> = {};
 
-    consumers.forEach(consumer => {
-      const consumerProviders = providers[consumer.name] || [];
+    chains.forEach(chain => {
+      const chainProviders = providers[chain.name] || [];
       const serviceGroups: Record<string, Provider[]> = {};
       const serviceInterfaces: Record<string, Set<string>> = {};
 
       // Group providers by service
-      consumerProviders.forEach(provider => {
+      chainProviders.forEach(provider => {
         const service = provider.service || 'unknown';
         if (!serviceGroups[service]) {
           serviceGroups[service] = [];
@@ -689,12 +687,12 @@ function FlowInner({
         serviceGroups[service].push(provider);
 
         // Track unique interfaces for this service
-        const apiInterface = provider.apiInterface || provider.interface;
+        const apiInterface = provider.interface;
         serviceInterfaces[service].add(apiInterface);
       });
 
       // Convert to array of ServiceGroup objects
-      serviceGroupsByConsumer[consumer.name] = Object.entries(serviceGroups).map(
+      serviceGroupsByChain[chain.name] = Object.entries(serviceGroups).map(
         ([service, providers]) => {
           const healthyCount = providers.filter(p => p.healthy).length;
           return {
@@ -708,28 +706,28 @@ function FlowInner({
       );
 
       // Sort service groups alphabetically by service name
-      serviceGroupsByConsumer[consumer.name].sort((a, b) => a.service.localeCompare(b.service));
+      serviceGroupsByChain[chain.name].sort((a, b) => a.service.localeCompare(b.service));
 
-      // Also sort providers within each service group by apiInterface
-      serviceGroupsByConsumer[consumer.name].forEach(group => {
-        // Group providers by their apiInterface
+      // Also sort providers within each service group by interface
+      serviceGroupsByChain[chain.name].forEach(group => {
+        // Group providers by their interface
         const interfaceGroups: Record<string, Provider[]> = {};
 
         group.providers.forEach(provider => {
-          const apiInterface = provider.apiInterface || provider.interface;
-          if (!interfaceGroups[apiInterface]) {
-            interfaceGroups[apiInterface] = [];
+          const interfaceName = provider.interface;
+          if (!interfaceGroups[interfaceName]) {
+            interfaceGroups[interfaceName] = [];
           }
-          interfaceGroups[apiInterface].push(provider);
+          interfaceGroups[interfaceName].push(provider);
         });
 
-        // Update the providers array with a single representative provider per apiInterface
+        // Update the providers array with a single representative provider per interface
         // Use the healthiest provider as the representative
         group.providers = Object.entries(interfaceGroups)
-          .map(([apiInterface, providers]) => {
-            // Choose the healthiest provider as representative
+          .map(([interfaceName, providers]) => {
+            // Pick the healthiest provider to represent this interface
             const healthyProviders = providers.filter(p => p.healthy);
-            const representative = healthyProviders.length > 0 ? healthyProviders[0] : providers[0];
+            const representative = healthyProviders[0] || providers[0];
 
             // Aggregate health status (if any provider with this interface is healthy)
             representative.healthy = healthyProviders.length > 0;
@@ -737,8 +735,8 @@ function FlowInner({
             return representative;
           })
           .sort((a, b) => {
-            const aInterface = a.apiInterface || a.interface;
-            const bInterface = b.apiInterface || b.interface;
+            const aInterface = a.interface;
+            const bInterface = b.interface;
             return aInterface.localeCompare(bInterface);
           });
       });
@@ -746,28 +744,28 @@ function FlowInner({
 
     // Calculate total height needed
     let totalHeight = 0;
-    const consumerSectionHeights: Record<string, number> = {};
+    const chainSectionHeights: Record<string, number> = {};
 
-    consumers.forEach(consumer => {
-      const serviceGroups = serviceGroupsByConsumer[consumer.name];
-      const isExpanded = expandedConsumers.has(consumer.name);
+    chains.forEach(chain => {
+      const serviceGroups = serviceGroupsByChain[chain.name];
+      const isExpanded = expandedChains.has(chain.name);
 
-      let consumerHeight = 0;
+      let chainHeight = 0;
       if (isExpanded) {
-        // If consumer is expanded, calculate height for all service groups
+        // If chain is expanded, calculate height for all service groups
         serviceGroups.forEach(group => {
-          const isServiceExpanded = expandedServiceGroups.has(`${consumer.name}-${group.service}`);
+          const isServiceExpanded = expandedServiceGroups.has(`${chain.name}-${group.service}`);
           // Calculate height based on whether service is expanded and how many interfaces it has
           const nodeHeight = calculateNodeHeight(group, isServiceExpanded);
-          consumerHeight += nodeHeight + 60; // Increased padding between nodes
+          chainHeight += nodeHeight + 60; // Increased padding between nodes
         });
       } else {
-        // Just one row for the collapsed consumer
-        consumerHeight = providerVerticalGap;
+        // Just one row for the collapsed chain
+        chainHeight = providerVerticalGap;
       }
 
-      consumerSectionHeights[consumer.name] = consumerHeight;
-      totalHeight += consumerHeight;
+      chainSectionHeights[chain.name] = chainHeight;
+      totalHeight += chainHeight;
     });
 
     // Add some vertical padding
@@ -775,30 +773,30 @@ function FlowInner({
 
     // Calculate Y positions
     let currentY = 50;
-    const consumerYPositions: Record<string, number> = {};
+    const chainYPositions: Record<string, number> = {};
     const serviceGroupYPositions: Record<string, Record<string, number>> = {};
 
-    consumers.forEach(consumer => {
-      const serviceGroups = serviceGroupsByConsumer[consumer.name];
-      const isConsumerExpanded = expandedConsumers.has(consumer.name);
-      const sectionHeight = consumerSectionHeights[consumer.name];
+    chains.forEach(chain => {
+      const serviceGroups = serviceGroupsByChain[chain.name];
+      const isChainExpanded = expandedChains.has(chain.name);
+      const sectionHeight = chainSectionHeights[chain.name];
 
-      // Position consumer in the middle of its section
-      consumerYPositions[consumer.name] = currentY + sectionHeight / 2;
+      // Position chain in the middle of its section
+      chainYPositions[chain.name] = currentY + sectionHeight / 2;
 
-      // Initialize positions for this consumer
-      serviceGroupYPositions[consumer.name] = {};
+      // Initialize positions for this chain
+      serviceGroupYPositions[chain.name] = {};
 
-      if (isConsumerExpanded) {
+      if (isChainExpanded) {
         // Position service groups with variable heights
         let serviceY = currentY;
 
         serviceGroups.forEach(group => {
           // Store initial y position for this service group
-          serviceGroupYPositions[consumer.name][group.service] = serviceY;
+          serviceGroupYPositions[chain.name][group.service] = serviceY;
 
           // Calculate height for this service group
-          const isServiceExpanded = expandedServiceGroups.has(`${consumer.name}-${group.service}`);
+          const isServiceExpanded = expandedServiceGroups.has(`${chain.name}-${group.service}`);
           const nodeHeight = calculateNodeHeight(group, isServiceExpanded);
 
           // Move to next position with appropriate spacing
@@ -806,7 +804,7 @@ function FlowInner({
         });
       }
 
-      // Move to next consumer section
+      // Move to next chain section
       currentY += sectionHeight;
     });
 
@@ -821,42 +819,43 @@ function FlowInner({
       data: {},
     });
 
-    // Add consumer and provider nodes
-    consumers.forEach(consumer => {
-      const consumerId = `consumer-${consumer.name}`;
-      const consumerX = sidesPadding + horizontalGap;
-      const consumerY = consumerYPositions[consumer.name];
-      const isConsumerExpanded = expandedConsumers.has(consumer.name);
-      const serviceGroups = serviceGroupsByConsumer[consumer.name];
+    // Add chain and provider nodes
+    chains.forEach(chain => {
+      const chainId = `chain-${chain.name}`;
+      const chainX = sidesPadding + horizontalGap;
+      const chainY = chainYPositions[chain.name];
+      const isChainExpanded = expandedChains.has(chain.name);
+      const serviceGroups = serviceGroupsByChain[chain.name];
       const hasMultipleProviders =
         serviceGroups.reduce((total, group) => total + group.providers.length, 0) > 2;
 
-      // Use calculated width for consumer nodes
-      const consumerWidth = finalConsumerNodeWidth;
+      // Use calculated width for chain nodes
+      const chainWidth = finalChainNodeWidth;
 
       // Get the original chain data to check for mixed health state
-      const originalChain = apiData?.chains?.find((chain: ChainInfo) => chain.chain_id === consumer.name);
-      const backendMixedHealth = originalChain?.consumer_health === "mixed";
+      const originalChain = apiData?.chains?.find((chainInfo: ChainInfo) => chainInfo.id === chain.name);
+      const backendMixedHealth = originalChain?.health_status === "mixed";
       
-      // Add consumer node
+      // Add chain node
       nodes.push({
-        id: consumerId,
-        type: 'consumer',
-        position: { x: consumerX, y: consumerY },
+        id: chainId,
+        type: 'chain',
+        position: { x: chainX, y: chainY },
         data: {
-          label: consumer.label,
-          icon: consumer.icon,
-          healthy: consumer.healthy,
-          hasExpandedProviders: isConsumerExpanded,
+          label: chain.label,
+          chainName: chain.name,
+          icon: chain.icon,
+          healthy: chain.healthy,
+          hasExpandedProviders: isChainExpanded,
           hasMultipleProviders: hasMultipleProviders,
           hasMixedHealth: backendMixedHealth,
-          width: consumerWidth,
+          width: chainWidth,
           onToggleExpand: hasMultipleProviders
             ? () => {
                 setExpandedGroups(prev => {
                   const newState = { ...prev };
-                  const consumerKey = `consumer-${consumer.name}`;
-                  newState[consumerKey] = !prev[consumerKey];
+                  const chainKey = `chain-${chain.name}`;
+                  newState[chainKey] = !prev[chainKey];
                   return newState;
                 });
               }
@@ -864,14 +863,14 @@ function FlowInner({
         },
       });
 
-      // Connect user to consumer
+      // Connect user to chain
       edges.push({
-        id: `edge-user-${consumerId}`,
+        id: `edge-user-${chainId}`,
         source: 'user',
-        target: consumerId,
-        animated: consumer.healthy || backendMixedHealth || serviceGroups.some(group => group.anyHealthy),
+        target: chainId,
+        animated: chain.healthy || backendMixedHealth || serviceGroups.some(group => group.anyHealthy),
         style:
-          consumer.healthy && !backendMixedHealth && serviceGroups.every(group => group.allHealthy)
+          chain.healthy && !backendMixedHealth && serviceGroups.every(group => group.allHealthy)
             ? {
                 stroke: 'green',
                 strokeDasharray: '5 5',
@@ -886,15 +885,15 @@ function FlowInner({
               : { stroke: 'red' },
       });
 
-      if (isConsumerExpanded) {
-        // If consumer is expanded, add service groups
-        const serviceGroups = serviceGroupsByConsumer[consumer.name];
-        const serviceX = consumerX + horizontalGap;
+      if (isChainExpanded) {
+        // If chain is expanded, add service groups
+        const serviceGroups = serviceGroupsByChain[chain.name];
+        const serviceX = chainX + horizontalGap;
 
         serviceGroups.forEach(group => {
-          const serviceId = `service-group-${consumer.name}-${group.service}`;
-          const serviceY = serviceGroupYPositions[consumer.name][group.service];
-          const isServiceExpanded = expandedServiceGroups.has(`${consumer.name}-${group.service}`);
+          const serviceId = `service-group-${chain.name}-${group.service}`;
+          const serviceY = serviceGroupYPositions[chain.name][group.service];
+          const isServiceExpanded = expandedServiceGroups.has(`${chain.name}-${group.service}`);
 
           // Add service group node
           nodes.push({
@@ -902,16 +901,16 @@ function FlowInner({
             type: 'providerGroup',
             position: { x: serviceX, y: serviceY },
             data: {
-              label: consumer.name,
+              label: chain.name,
               service: group.service,
               providers: group.providers,
               interfaces: group.interfaces,
               isExpanded: isServiceExpanded,
-              maxWidth: finalConsumerNodeWidth,
+              maxWidth: finalChainNodeWidth,
               onToggle: () => {
                 setExpandedGroups(prev => {
                   const newState = { ...prev };
-                  const serviceKey = `service-group-${consumer.name}-${group.service}`;
+                  const serviceKey = `service-group-${chain.name}-${group.service}`;
                   newState[serviceKey] = !prev[serviceKey];
                   return newState;
                 });
@@ -919,10 +918,10 @@ function FlowInner({
             },
           });
 
-          // Connect consumer to service group
+          // Connect chain to service group
           edges.push({
-            id: `edge-${consumerId}-${serviceId}`,
-            source: consumerId,
+            id: `edge-${chainId}-${serviceId}`,
+            source: chainId,
             target: serviceId,
             type: 'smoothstep',
             animated: group.anyHealthy,
@@ -942,10 +941,10 @@ function FlowInner({
           });
         });
       } else {
-        // If consumer is collapsed, always show a provider count node regardless of count
-        const providerCountNodeId = `provider-count-${consumer.name}`;
-        const providerCountX = consumerX + horizontalGap;
-        const providerCountY = consumerY;
+        // If chain is collapsed, always show a provider count node regardless of count
+        const providerCountNodeId = `provider-count-${chain.name}`;
+        const providerCountX = chainX + horizontalGap;
+        const providerCountY = chainY;
 
         // Calculate total provider count and healthy count
         const totalProviders = serviceGroups.reduce(
@@ -968,7 +967,7 @@ function FlowInner({
           type: 'providerCount',
           position: { x: providerCountX, y: providerCountY },
           data: {
-            consumer: consumer.name,
+            chain: chain.name,
             count: totalProviders,
             healthyCount: healthyProviders,
             isHealthy: !anyUnhealthy && !backendMixedHealth,
@@ -976,18 +975,18 @@ function FlowInner({
             onExpand: () => {
               setExpandedGroups(prev => {
                 const newState = { ...prev };
-                const consumerKey = `consumer-${consumer.name}`;
-                newState[consumerKey] = true;
+                const chainKey = `chain-${chain.name}`;
+                newState[chainKey] = true;
                 return newState;
               });
             },
           },
         });
 
-        // Connect consumer to provider count node
+        // Connect chain to provider count node
         edges.push({
-          id: `edge-${consumerId}-${providerCountNodeId}`,
-          source: consumerId,
+          id: `edge-${chainId}-${providerCountNodeId}`,
+          source: chainId,
           target: providerCountNodeId,
           type: 'smoothstep',
           animated:
