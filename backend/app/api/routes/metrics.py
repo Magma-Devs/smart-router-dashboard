@@ -286,7 +286,9 @@ async def get_chains_metrics(
         if choosen_network:
             # Filter chains to selected network only
             available_chains = [
-                chain for chain in available_chains if getattr(chain, "network", None) == choosen_network
+                chain
+                for chain in available_chains
+                if getattr(chain, "network", None) == choosen_network
             ]
         if not available_chains:
             return ChainsMetricsResponse(
@@ -329,7 +331,10 @@ async def get_chains_metrics(
                 latency_in_ms=calculate_latency_ms(latency_data, chain.id),
                 reachability=calculate_chain_reachability_percentage(
                     provider_health_data,
-                    [f"{chain.id}-{provider.name}".lower() for provider in chain.providers],
+                    [
+                        f"{chain.id}-{provider.name}".lower()
+                        for provider in chain.providers
+                    ],
                 ),
                 requests_in_window=calculate_requests_in_time_window(
                     chain_traffic_data, chain.id
@@ -416,7 +421,10 @@ async def get_chain_metrics(
             latency_in_ms=calculate_latency_ms(latency_data, selected_chain.id),
             reachability=calculate_chain_reachability_percentage(
                 provider_health_data,
-                [f"{selected_chain.id}-{provider.name}".lower() for provider in selected_chain.providers],
+                [
+                    f"{selected_chain.id}-{provider.name}".lower()
+                    for provider in selected_chain.providers
+                ],
             ),
             requests_in_window=calculate_requests_in_time_window(
                 chain_traffic_data, selected_chain.id

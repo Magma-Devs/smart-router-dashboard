@@ -36,7 +36,7 @@ async def get_configuration(
 
         # Read smart-router values directly
         smart_router_data = config_service.read_smart_router_values()
-        
+
         if smart_router_data and "chains" in smart_router_data:
             # Build consumer configurations from smart-router chains
             for chain in smart_router_data["chains"]:
@@ -45,27 +45,28 @@ async def get_configuration(
                     # Extract interfaces and providers from the new structure
                     interfaces = set()
                     providers = []
-                    
+
                     for provider in chain.get("providers", []):
                         provider_name = provider.get("name")
                         provider_endpoints = []
-                        
+
                         for endpoint in provider.get("endpoints", []):
                             interface = endpoint.get("interface")
                             if interface:
                                 interfaces.add(interface)
-                            
-                            provider_endpoints.append({
-                                "url": endpoint.get("url"),
-                                "interface": interface,
-                                "addons": endpoint.get("addons", [])
-                            })
-                        
-                        providers.append({
-                            "name": provider_name,
-                            "endpoints": provider_endpoints
-                        })
-                    
+
+                            provider_endpoints.append(
+                                {
+                                    "url": endpoint.get("url"),
+                                    "interface": interface,
+                                    "addons": endpoint.get("addons", []),
+                                }
+                            )
+
+                        providers.append(
+                            {"name": provider_name, "endpoints": provider_endpoints}
+                        )
+
                     consumer_config = {
                         "id": chain_id,
                         "interfaces": list(interfaces),
