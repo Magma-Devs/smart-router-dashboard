@@ -132,38 +132,31 @@ class TestConfigurationService:
     def test_chain_config_helper_methods(self):
         """Test ChainConfig helper methods for interfaces and addons."""
         from app.core.dataclasses import EndpointConfig, ProviderConfig
-        
+
         # Create test endpoints
         endpoint1 = EndpointConfig(
-            url="https://example.com/jsonrpc",
-            interface="jsonrpc",
-            addons=["debug"]
+            url="https://example.com/jsonrpc", interface="jsonrpc", addons=["debug"]
         )
         endpoint2 = EndpointConfig(
             url="https://example.com/rest",
             interface="rest",
-            addons=["archive", "debug"]
+            addons=["archive", "debug"],
         )
-        
+
         # Create test provider
         provider = ProviderConfig(
-            name="test_provider",
-            endpoints=[endpoint1, endpoint2]
+            name="test_provider", endpoints=[endpoint1, endpoint2]
         )
-        
+
         # Create test chain
-        chain = ChainConfig(
-            id="test_chain",
-            network="testnet",
-            providers=[provider]
-        )
-        
+        chain = ChainConfig(id="test_chain", network="testnet", providers=[provider])
+
         # Test get_interfaces method
         interfaces = chain.get_interfaces()
         assert "jsonrpc" in interfaces
         assert "rest" in interfaces
         assert len(interfaces) == 2
-        
+
         # Test get_addons method
         addons = chain.get_addons()
         assert "debug" in addons

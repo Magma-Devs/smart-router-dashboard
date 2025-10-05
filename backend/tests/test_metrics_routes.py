@@ -18,7 +18,6 @@ sys.modules["app.services.kubernetes"] = fake_k8s
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.api.routes.metrics import ChainsToProvidersResponse
 from app.api.routes.metrics import (
     get_prometheus_service,
 )

@@ -89,7 +89,7 @@ class ConfigurationService:
     def read_smart_router_values(self) -> dict[str, Any] | None:
         """
         Read the raw smart-router values.yml file data.
-        
+
         Returns:
             Raw YAML data or None if file doesn't exist
         """
