@@ -141,7 +141,43 @@ def calculate_latency_ms(latency_data: dict[str, Any], target_chain: str) -> int
             continue
 
         values = result.get("values", [])
-        for timestamp, value in values:
+        for _, value in values:
+            try:
+                latency_ms = float(value)
+                total_latency += latency_ms
+                total_samples += 1
+            except (ValueError, TypeError):
+                continue
+
+    return int(total_latency / total_samples) if total_samples > 0 else 0
+
+
+@validate_prometheus_data
+def calculate_provider_latency_ms(
+    latency_data: dict[str, Any], target_provider: str
+) -> int:
+    """Calculate average latency in milliseconds for a specific provider"""
+    results = latency_data["data"]["result"]
+    total_latency = 0
+    total_samples = 0
+
+    for result in results:
+        service = result.get("metric", {}).get("service")
+
+        if not service:
+            continue
+
+        # Check if service matches targetProvider or targetProvider-provider
+        service_matches = (
+            service.lower() == target_provider.lower()
+            or service.lower() == f"{target_provider.lower()}-provider"
+        )
+
+        if not service_matches:
+            continue
+
+        values = result.get("values", [])
+        for _, value in values:
             try:
                 latency_ms = float(value)
                 total_latency += latency_ms

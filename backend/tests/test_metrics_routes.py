@@ -24,6 +24,7 @@ from app.api.routes.metrics import (
 from app.core.calculations import (
     calculate_uptime_percentage,
     calculate_latency_ms,
+    calculate_provider_latency_ms,
     calculate_requests_in_time_window,
     calculate_provider_uptime_percentage,
     calculate_chain_latest_block_number,
@@ -311,6 +312,48 @@ class TestCalculationFunctions:
         }
         result = calculate_provider_uptime_percentage(provider_data, "ethereum")
         assert result == 96.5  # (0.95 + 0.98) / 2 * 100
+
+    def test_calculate_provider_latency_ms_success(self):
+        """Test provider latency calculation with valid data."""
+        latency_data = {
+            "status": "success",
+            "data": {
+                "result": [
+                    {
+                        "metric": {"service": "ethereum-lava-provider"},
+                        "values": [
+                            ["1640995200", "120"],
+                            ["1640995260", "180"],
+                            ["1640995320", "150"],
+                        ],
+                    }
+                ]
+            },
+        }
+        result = calculate_provider_latency_ms(latency_data, "ethereum-lava")
+        assert result == 150  # (120 + 180 + 150) / 3
+
+    def test_calculate_provider_latency_ms_invalid_data(self):
+        """Test provider latency calculation with invalid data."""
+        assert calculate_provider_latency_ms(None, "ethereum-lava") == 0
+        assert calculate_provider_latency_ms({}, "ethereum-lava") == 0
+        assert calculate_provider_latency_ms({"status": "error"}, "ethereum-lava") == 0
+
+    def test_calculate_provider_latency_ms_no_matching_provider(self):
+        """Test provider latency calculation when provider not found."""
+        latency_data = {
+            "status": "success",
+            "data": {
+                "result": [
+                    {
+                        "metric": {"service": "bitcoin-provider"},
+                        "values": [["1640995200", "100"]],
+                    }
+                ]
+            },
+        }
+        result = calculate_provider_latency_ms(latency_data, "ethereum-lava")
+        assert result == 0
 
 
 # Note: Tests for new endpoints have been removed due to complex mocking requirements

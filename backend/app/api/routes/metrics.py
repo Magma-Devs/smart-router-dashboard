@@ -24,6 +24,7 @@ from app.core.calculations import (
     calculate_provider_uptime_percentage,
     calculate_uptime_percentage,
     calculate_latency_ms,
+    calculate_provider_latency_ms,
     calculate_chain_reachability_percentage,
     calculate_requests_in_time_window,
     calculate_chain_latest_block_number,
@@ -43,6 +44,7 @@ PROMETHEUS_QUERIES = {
     "consumer_latest_block": "lava_consumer_latest_provider_block",
     "provider_latest_block": "lava_latest_block",
     "consumer_latency": "lava_consumer_average_latency_in_milliseconds",
+    "provider_latency": "lava_provider_latency_milliseconds",
 }
 
 # Default values
@@ -132,35 +134,50 @@ async def fetch_chain_metrics_data(
 
 async def fetch_provider_metrics_data(
     svc: PrometheusService, time_window_minutes: int, step_size: int
-) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
     """Fetch all required metrics data for providers in parallel."""
+    time_range = f"{time_window_minutes}m"
     end_time = datetime.now()
     start_time = end_time - timedelta(minutes=time_window_minutes)
 
-    providers_data, provider_traffic_data, provider_latest_block_data = (
-        await asyncio.gather(
-            svc.query_range(
-                PROMETHEUS_QUERIES["provider_health"],
-                start_time,
-                end_time,
-                f"{step_size}s",
-            ),
-            svc.query_range(
-                PROMETHEUS_QUERIES["provider_traffic"],
-                start_time,
-                end_time,
-                f"{step_size}s",
-            ),
-            svc.query_range(
-                PROMETHEUS_QUERIES["provider_latest_block"],
-                start_time,
-                end_time,
-                f"{step_size}s",
-            ),
-        )
+    (
+        providers_data,
+        provider_traffic_data,
+        provider_latest_block_data,
+        provider_latency_data,
+    ) = await asyncio.gather(
+        svc.query_range(
+            PROMETHEUS_QUERIES["provider_health"],
+            start_time,
+            end_time,
+            f"{step_size}s",
+        ),
+        svc.query_range(
+            PROMETHEUS_QUERIES["provider_traffic"],
+            start_time,
+            end_time,
+            f"{step_size}s",
+        ),
+        svc.query_range(
+            PROMETHEUS_QUERIES["provider_latest_block"],
+            start_time,
+            end_time,
+            f"{step_size}s",
+        ),
+        svc.query_range(
+            f"avg_over_time({PROMETHEUS_QUERIES['provider_latency']}[{time_range}])",
+            start_time,
+            end_time,
+            f"{step_size}s",
+        ),
     )
 
-    return providers_data, provider_traffic_data, provider_latest_block_data
+    return (
+        providers_data,
+        provider_traffic_data,
+        provider_latest_block_data,
+        provider_latency_data,
+    )
 
 
 @router.get("/")
@@ -470,12 +487,15 @@ async def get_providers_metrics(
             )
 
         # Fetch all required metrics in parallel
-        providers_data, provider_traffic_data, provider_latest_block_data = (
-            await fetch_provider_metrics_data(
-                svc,
-                time_window_minutes,
-                calculate_adaptive_step_size(time_window_minutes),
-            )
+        (
+            providers_data,
+            provider_traffic_data,
+            provider_latest_block_data,
+            provider_latency_data,
+        ) = await fetch_provider_metrics_data(
+            svc,
+            time_window_minutes,
+            calculate_adaptive_step_size(time_window_minutes),
         )
 
         # Calculate metrics for each provider
@@ -489,7 +509,9 @@ async def get_providers_metrics(
                     uptime=calculate_provider_uptime_percentage(
                         providers_data, provider_key
                     ),
-                    latency_in_ms=None,  # Providers don't have latency metrics
+                    latency_in_ms=calculate_provider_latency_ms(
+                        provider_latency_data, provider_key
+                    ),
                     requests_in_window=calculate_provider_requests_in_time_window(
                         provider_traffic_data, provider_key
                     ),
@@ -507,19 +529,30 @@ async def get_providers_metrics(
             provider_metrics.requests_in_window
             for provider_metrics in all_provider_metrics
         ]
+        latencies = [
+            provider_metrics.latency_in_ms
+            for provider_metrics in all_provider_metrics
+            if provider_metrics.latency_in_ms is not None and provider_metrics.latency_in_ms > 0
+        ]
 
-        # Create average metrics (no latency for providers)
+        # Create average metrics
+        avg_latency = (
+            round(sum(latencies) / len(latencies)) if latencies else 0
+        )
         avg_metrics = ProviderMetrics(
             uptime=round(sum(uptimes) / len(all_provider_metrics), 2),
-            latency_in_ms=None,  # Providers don't have latency metrics
+            latency_in_ms=avg_latency,
             requests_in_window=sum(requests),
             latest_block=0,  # No average for latest block
         )
 
-        # Create 90th percentile metrics (no latency for providers)
+        # Create 90th percentile metrics
+        p90_latency = (
+            round(statistics.quantiles(latencies, n=10)[8]) if latencies else 0
+        )
         p90_metrics = ProviderMetrics(
             uptime=round(statistics.quantiles(uptimes, n=10)[8], 2),
-            latency_in_ms=None,  # Providers don't have latency metrics
+            latency_in_ms=p90_latency,
             requests_in_window=round(statistics.quantiles(requests, n=10)[8]),
             latest_block=0,  # No p90 for latest block
         )
