@@ -41,7 +41,8 @@ async def get_configuration(
             # Build consumer configurations from smart-router chains
             for chain in smart_router_data["chains"]:
                 chain_id = chain.get("id")
-                if chain_id:
+                network = chain.get("network")
+                if chain_id and network:
                     # Extract interfaces and providers from the new structure
                     interfaces = set()
                     providers = []
@@ -68,7 +69,7 @@ async def get_configuration(
                         )
 
                     consumer_config = {
-                        "id": chain_id,
+                        "network": network,
                         "interfaces": list(interfaces),
                         "providers": providers,
                     }
