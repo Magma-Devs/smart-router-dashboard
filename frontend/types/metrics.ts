@@ -5,14 +5,14 @@
 // Health state enums
 
 export enum ProviderHealth {
-  HEALTHY = "healthy",
-  UNHEALTHY = "unhealthy",
+  HEALTHY = 'healthy',
+  UNHEALTHY = 'unhealthy',
 }
 
 export enum ChainHealth {
-  HEALTHY = "healthy",
-  UNHEALTHY = "unhealthy",
-  MIXED = "mixed",
+  HEALTHY = 'healthy',
+  UNHEALTHY = 'unhealthy',
+  MIXED = 'mixed',
 }
 
 export interface ProviderMetrics {

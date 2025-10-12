@@ -532,13 +532,12 @@ async def get_providers_metrics(
         latencies = [
             provider_metrics.latency_in_ms
             for provider_metrics in all_provider_metrics
-            if provider_metrics.latency_in_ms is not None and provider_metrics.latency_in_ms > 0
+            if provider_metrics.latency_in_ms is not None
+            and provider_metrics.latency_in_ms > 0
         ]
 
         # Create average metrics
-        avg_latency = (
-            round(sum(latencies) / len(latencies)) if latencies else 0
-        )
+        avg_latency = round(sum(latencies) / len(latencies)) if latencies else 0
         avg_metrics = ProviderMetrics(
             uptime=round(sum(uptimes) / len(all_provider_metrics), 2),
             latency_in_ms=avg_latency,

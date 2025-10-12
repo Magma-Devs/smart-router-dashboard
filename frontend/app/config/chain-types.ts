@@ -18,9 +18,12 @@ export const chainTypes: ChainType[] = [
     interfaces: {
       jsonrpc: {
         regular: '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}',
-        archive: '{"jsonrpc":"2.0","method":"eth_getBalance","params":["0x0000000000000000000000000000000000000000","0x2C2A2"],"id":1}',
-        debug: '{"jsonrpc":"2.0","method":"debug_traceTransaction","params":["0x845f3b66c19395916a00f379fb783afbf0f38e4252fbb1c04ea37e356885f2b7",{}],"id":1}',
-        trace: '{"jsonrpc":"2.0","method":"trace_transaction","params":["0x845f3b66c19395916a00f379fb783afbf0f38e4252fbb1c04ea37e356885f2b7"],"id":1}',
+        archive:
+          '{"jsonrpc":"2.0","method":"eth_getBalance","params":["0x0000000000000000000000000000000000000000","0x2C2A2"],"id":1}',
+        debug:
+          '{"jsonrpc":"2.0","method":"debug_traceTransaction","params":["0x845f3b66c19395916a00f379fb783afbf0f38e4252fbb1c04ea37e356885f2b7",{}],"id":1}',
+        trace:
+          '{"jsonrpc":"2.0","method":"trace_transaction","params":["0x845f3b66c19395916a00f379fb783afbf0f38e4252fbb1c04ea37e356885f2b7"],"id":1}',
       },
     },
   },
@@ -30,7 +33,8 @@ export const chainTypes: ChainType[] = [
     interfaces: {
       jsonrpc: {
         regular: '{"jsonrpc":"2.0","method":"block","params":{"finality":"final"},"id":1}',
-        archive: '{"jsonrpc":"2.0","method":"query","params":{"request_type":"view_account","account_id":"example.testnet","block_id":10000000},"id":1}',
+        archive:
+          '{"jsonrpc":"2.0","method":"query","params":{"request_type":"view_account","account_id":"example.testnet","block_id":10000000},"id":1}',
         debug: null,
         trace: null,
       },
@@ -44,7 +48,8 @@ export const chainTypes: ChainType[] = [
         regular: '{"jsonrpc":"2.0","method":"getBlockHeight","params":[],"id":1}',
         archive: null,
         debug: null,
-        trace: '{"jsonrpc":"2.0","method":"getTransaction","params":["5FtxSignatureHere",{"maxSupportedTransactionVersion":0}],"id":1}',
+        trace:
+          '{"jsonrpc":"2.0","method":"getTransaction","params":["5FtxSignatureHere",{"maxSupportedTransactionVersion":0}],"id":1}',
       },
     },
   },
@@ -78,9 +83,11 @@ export const chainTypes: ChainType[] = [
     interfaces: {
       jsonrpc: {
         regular: '{"jsonrpc":"2.0","method":"starknet_blockNumber","params":[],"id":1}',
-        archive: '{"jsonrpc":"2.0","method":"starknet_getStorageAt","params":{"contract_address":"0x0123","key":"0x0","block_id":{"block_number":123456}},"id":1}',
+        archive:
+          '{"jsonrpc":"2.0","method":"starknet_getStorageAt","params":{"contract_address":"0x0123","key":"0x0","block_id":{"block_number":123456}},"id":1}',
         debug: null,
-        trace: '{"jsonrpc":"2.0","method":"starknet_traceTransaction","params":{"transaction_hash":"0xTXHASH"},"id":1}',
+        trace:
+          '{"jsonrpc":"2.0","method":"starknet_traceTransaction","params":{"transaction_hash":"0xTXHASH"},"id":1}',
       },
     },
   },

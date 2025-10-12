@@ -88,7 +88,9 @@ interface SummarySectionProps {}
 export function SummarySection({}: SummarySectionProps) {
   // Configuration and state management
   const { config } = useConfig();
-  const [availableChains, setAvailableChains] = useState<Array<{id: string, network: string}>>([]);
+  const [availableChains, setAvailableChains] = useState<Array<{ id: string; network: string }>>(
+    [],
+  );
   const [selectedChain, setSelectedChain] = useState<string>('all');
   const [selectedNetwork, setSelectedNetwork] = useState<string>('all');
   const [isLoadingChains, setIsLoadingChains] = useState(false);
@@ -180,12 +182,14 @@ export function SummarySection({}: SummarySectionProps) {
       try {
         // Use a minimal time window (1 minute) just to get available chains
         const chainsResponse = await MetricsService.fetchMetricsForAllChains(1, 1);
-        
+
         // Extract chain data with both ID and network for icon lookup
-        const chainsData = Object.entries(chainsResponse.chains).map(([chainId, chainMetrics]: [string, any]) => ({
-          id: chainId,
-          network: chainMetrics.network
-        }));
+        const chainsData = Object.entries(chainsResponse.chains).map(
+          ([chainId, chainMetrics]: [string, any]) => ({
+            id: chainId,
+            network: chainMetrics.network,
+          }),
+        );
         setAvailableChains(chainsData);
 
         // Default network selection to 'all'
@@ -287,12 +291,12 @@ export function SummarySection({}: SummarySectionProps) {
         button.classList.add('animate-pulse');
         setTimeout(() => button.classList.remove('animate-pulse'), 1000);
       }
-      
+
       // Enhanced scroll with better easing
-      metricsSection.scrollIntoView({ 
+      metricsSection.scrollIntoView({
         behavior: 'smooth',
         block: 'start',
-        inline: 'nearest'
+        inline: 'nearest',
       });
     }
   };
@@ -303,8 +307,9 @@ export function SummarySection({}: SummarySectionProps) {
         <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-4'>
           <CardTitle>Summary</CardTitle>
           <div className='flex flex-wrap items-center gap-2'>
-              {/* Routers Selection (appears when a network with multiple routers is chosen) */}
-              {selectedNetwork !== 'all' && availableChains.filter(c => c.network === selectedNetwork).length > 1 && (
+            {/* Routers Selection (appears when a network with multiple routers is chosen) */}
+            {selectedNetwork !== 'all' &&
+              availableChains.filter(c => c.network === selectedNetwork).length > 1 && (
                 <Select
                   value={selectedChain}
                   onValueChange={handleChainSelect}
@@ -318,10 +323,20 @@ export function SummarySection({}: SummarySectionProps) {
                       <div className='flex items-center gap-2'>
                         {(() => {
                           const chainConfig = chains.find(c => c.value === selectedNetwork);
-                          const icon = chainConfig ? chainConfig.icon : getChainIcon(selectedNetwork);
-                          const label = chainConfig ? chainConfig.label : getChainLabel(selectedNetwork);
+                          const icon = chainConfig
+                            ? chainConfig.icon
+                            : getChainIcon(selectedNetwork);
+                          const label = chainConfig
+                            ? chainConfig.label
+                            : getChainLabel(selectedNetwork);
                           return icon ? (
-                            <Image src={icon} alt={label} width={16} height={16} className='rounded-full' />
+                            <Image
+                              src={icon}
+                              alt={label}
+                              width={16}
+                              height={16}
+                              className='rounded-full'
+                            />
                           ) : (
                             <Globe className='h-4 w-4' />
                           );
@@ -336,10 +351,20 @@ export function SummarySection({}: SummarySectionProps) {
                           <div className='flex items-center gap-2'>
                             {(() => {
                               const chainConfig = chains.find(c => c.value === selectedNetwork);
-                              const icon = chainConfig ? chainConfig.icon : getChainIcon(selectedNetwork);
-                              const label = chainConfig ? chainConfig.label : getChainLabel(selectedNetwork);
+                              const icon = chainConfig
+                                ? chainConfig.icon
+                                : getChainIcon(selectedNetwork);
+                              const label = chainConfig
+                                ? chainConfig.label
+                                : getChainLabel(selectedNetwork);
                               return icon ? (
-                                <Image src={icon} alt={label} width={16} height={16} className='rounded-full' />
+                                <Image
+                                  src={icon}
+                                  alt={label}
+                                  width={16}
+                                  height={16}
+                                  className='rounded-full'
+                                />
                               ) : null;
                             })()}
                             <span className='text-sm'>{chain.id}</span>
@@ -350,71 +375,71 @@ export function SummarySection({}: SummarySectionProps) {
                 </Select>
               )}
 
-              {/* Network Selection (aggregated) */}
-              <Select
-                value={selectedNetwork}
-                onValueChange={handleNetworkSelect}
-                disabled={isLoadingChains}
-              >
-                <SelectTrigger className='w-[200px] bg-background border-border hover:bg-accent'>
-                  <SelectValue placeholder={isLoadingChains ? 'Loading...' : 'Select network'} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value='all'>
-                    <div className='flex items-center gap-2'>
-                      <Globe className='h-4 w-4' />
-                      All Networks
-                    </div>
-                  </SelectItem>
-                  {Array.from(new Set(availableChains.map(c => c.network))).map(network => {
-                    const chainConfig = chains.find(c => c.value === network);
-                    const label = chainConfig ? chainConfig.label : getChainLabel(network);
-                    const icon = chainConfig ? chainConfig.icon : getChainIcon(network);
-                    return (
-                      <SelectItem key={network} value={network}>
-                        <div className='flex items-center gap-2'>
-                          {icon && (
-                            <Image
-                              src={icon}
-                              alt={label}
-                              width={16}
-                              height={16}
-                              className='rounded-full'
-                            />
-                          )}
-                          {label}
-                        </div>
-                      </SelectItem>
-                    );
-                  })}
-                </SelectContent>
-              </Select>
-
-              {/* Time Frame Selection */}
-              <Select value={selectedTimeFrame} onValueChange={handleTimeFrameChange}>
-                <SelectTrigger className='w-[140px] bg-background border-border hover:bg-accent'>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className='max-h-[15rem]'>
-                  {TIME_FRAMES.map(timeFrame => (
-                    <SelectItem key={timeFrame.value} value={timeFrame.value}>
-                      {timeFrame.label}
+            {/* Network Selection (aggregated) */}
+            <Select
+              value={selectedNetwork}
+              onValueChange={handleNetworkSelect}
+              disabled={isLoadingChains}
+            >
+              <SelectTrigger className='w-[200px] bg-background border-border hover:bg-accent'>
+                <SelectValue placeholder={isLoadingChains ? 'Loading...' : 'Select network'} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value='all'>
+                  <div className='flex items-center gap-2'>
+                    <Globe className='h-4 w-4' />
+                    All Networks
+                  </div>
+                </SelectItem>
+                {Array.from(new Set(availableChains.map(c => c.network))).map(network => {
+                  const chainConfig = chains.find(c => c.value === network);
+                  const label = chainConfig ? chainConfig.label : getChainLabel(network);
+                  const icon = chainConfig ? chainConfig.icon : getChainIcon(network);
+                  return (
+                    <SelectItem key={network} value={network}>
+                      <div className='flex items-center gap-2'>
+                        {icon && (
+                          <Image
+                            src={icon}
+                            alt={label}
+                            width={16}
+                            height={16}
+                            className='rounded-full'
+                          />
+                        )}
+                        {label}
+                      </div>
                     </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                  );
+                })}
+              </SelectContent>
+            </Select>
 
-              {/* Refresh Button */}
-              <Button
-                variant='outline'
-                size='sm'
-                onClick={handleRefresh}
-                disabled={isLoading}
-                title='Refresh metrics'
-                className='bg-background border-border hover:bg-accent'
-              >
-                <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
-              </Button>
+            {/* Time Frame Selection */}
+            <Select value={selectedTimeFrame} onValueChange={handleTimeFrameChange}>
+              <SelectTrigger className='w-[140px] bg-background border-border hover:bg-accent'>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className='max-h-[15rem]'>
+                {TIME_FRAMES.map(timeFrame => (
+                  <SelectItem key={timeFrame.value} value={timeFrame.value}>
+                    {timeFrame.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {/* Refresh Button */}
+            <Button
+              variant='outline'
+              size='sm'
+              onClick={handleRefresh}
+              disabled={isLoading}
+              title='Refresh metrics'
+              className='bg-background border-border hover:bg-accent'
+            >
+              <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+            </Button>
           </div>
         </CardHeader>
         <CardContent className='p-6'>

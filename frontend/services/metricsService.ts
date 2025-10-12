@@ -120,7 +120,9 @@ export class MetricsService {
     choosenNetwork?: string,
   ): Promise<ChainsResponse> {
     try {
-      const networkQuery = choosenNetwork ? `&choosen_network=${encodeURIComponent(choosenNetwork)}` : '';
+      const networkQuery = choosenNetwork
+        ? `&choosen_network=${encodeURIComponent(choosenNetwork)}`
+        : '';
       const response = await apiClient.get(
         `/api/metrics/chains-metrics?time_window_minutes=${timeWindowMinutes}&step_size=${stepSize}${networkQuery}`,
       );
@@ -335,7 +337,7 @@ export class MetricsService {
    */
   static async fetchChainsToProviders(
     timeWindowMinutes: number = 15,
-    stepSize: number = 5
+    stepSize: number = 5,
   ): Promise<any> {
     const response = await apiClient.get(
       `/api/metrics/chains-to-providers?time_window_minutes=${timeWindowMinutes}&step_size=${stepSize}`,

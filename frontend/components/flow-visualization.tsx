@@ -260,10 +260,10 @@ function ProviderGroupNode({
     <div
       className={cn(
         'px-4 py-2 shadow-lg rounded-xl border backdrop-blur-md cursor-pointer transition-all duration-200 hover:shadow-xl hover:scale-105',
-        allHealthy 
-          ? 'border-green-200/30 bg-green-50/10 hover:bg-green-50/20' 
-          : anyHealthy 
-            ? 'border-yellow-200/30 bg-yellow-50/10 hover:bg-yellow-50/20' 
+        allHealthy
+          ? 'border-green-200/30 bg-green-50/10 hover:bg-green-50/20'
+          : anyHealthy
+            ? 'border-yellow-200/30 bg-yellow-50/10 hover:bg-yellow-50/20'
             : 'border-red-200/30 bg-red-50/10 hover:bg-red-50/20',
       )}
       style={{ width: data.maxWidth ? `${data.maxWidth}px` : 'auto' }}
@@ -570,14 +570,13 @@ function FlowInner({
     const chains: Chain[] = [];
     const providers: Providers = {};
 
-
     // Process the new chains-to-providers API format
     if (apiData && apiData.chains && Array.isArray(apiData.chains) && apiData.chains.length > 0) {
       apiData.chains.forEach((chain: ChainInfo) => {
         // Create chain from chain data using proper labels and icons from chains.ts
         // Handle health states using enums - be explicit about the comparison
-        const isHealthy = chain.health_status === "healthy";
-        
+        const isHealthy = chain.health_status === 'healthy';
+
         chains.push({
           name: chain.id,
           label: getChainLabel(chain.network),
@@ -586,12 +585,12 @@ function FlowInner({
         });
 
         // Create providers for this chain
-        providers[chain.id] = chain.providers.flatMap(provider => 
+        providers[chain.id] = chain.providers.flatMap(provider =>
           provider.endpoints.map(endpoint => ({
             interface: endpoint.interface,
-            healthy: provider.health_status === "healthy",
+            healthy: provider.health_status === 'healthy',
             service: provider.name,
-          }))
+          })),
         );
       });
     } else {
@@ -606,9 +605,7 @@ function FlowInner({
         chains.push(item);
       });
 
-      providers['near'] = [
-        { interface: 'lava', healthy: true, service: 'lava' },
-      ];
+      providers['near'] = [{ interface: 'lava', healthy: true, service: 'lava' }];
       providers['eth1'] = [
         {
           interface: 'quicknodes',
@@ -617,9 +614,7 @@ function FlowInner({
         },
         { interface: 'anker', healthy: true, service: 'anker' },
       ];
-      providers['btc'] = [
-        { interface: 'anker', healthy: false, service: 'anker' },
-      ];
+      providers['btc'] = [{ interface: 'anker', healthy: false, service: 'anker' }];
       providers['solana'] = [
         { interface: 'lava', healthy: false, service: 'lava' },
         { interface: 'anker', healthy: true, service: 'anker' },
@@ -645,10 +640,7 @@ function FlowInner({
     chains.sort((a, b) => a.name.localeCompare(b.name));
 
     // Calculate the max width needed for chain nodes
-    const maxLabelLength = chains.reduce(
-      (max, chain) => Math.max(max, chain.label.length),
-      0,
-    );
+    const maxLabelLength = chains.reduce((max, chain) => Math.max(max, chain.label.length), 0);
 
     // Base width + character width estimate * longest label + padding
     const baseWidth = 80; // Base width for icons and padding
@@ -836,9 +828,11 @@ function FlowInner({
       const chainWidth = finalChainNodeWidth;
 
       // Get the original chain data to check for mixed health state
-      const originalChain = apiData?.chains?.find((chainInfo: ChainInfo) => chainInfo.id === chain.name);
-      const backendMixedHealth = originalChain?.health_status === "mixed";
-      
+      const originalChain = apiData?.chains?.find(
+        (chainInfo: ChainInfo) => chainInfo.id === chain.name,
+      );
+      const backendMixedHealth = originalChain?.health_status === 'mixed';
+
       // Add chain node
       nodes.push({
         id: chainId,
@@ -871,7 +865,8 @@ function FlowInner({
         id: `edge-user-${chainId}`,
         source: 'user',
         target: chainId,
-        animated: chain.healthy || backendMixedHealth || serviceGroups.some(group => group.anyHealthy),
+        animated:
+          chain.healthy || backendMixedHealth || serviceGroups.some(group => group.anyHealthy),
         style:
           chain.healthy && !backendMixedHealth && serviceGroups.every(group => group.allHealthy)
             ? {
@@ -974,7 +969,8 @@ function FlowInner({
             count: totalProviders,
             healthyCount: healthyProviders,
             isHealthy: !anyUnhealthy && !backendMixedHealth,
-            hasMixedHealth: backendMixedHealth || (healthyProviders > 0 && healthyProviders < totalProviders),
+            hasMixedHealth:
+              backendMixedHealth || (healthyProviders > 0 && healthyProviders < totalProviders),
             onExpand: () => {
               setExpandedGroups(prev => {
                 const newState = { ...prev };
@@ -993,20 +989,23 @@ function FlowInner({
           target: providerCountNodeId,
           type: 'straight',
           animated:
-            !anyUnhealthy || backendMixedHealth || (anyUnhealthy && serviceGroups.some(group => group.anyHealthy)),
-          style: !anyUnhealthy && !backendMixedHealth
-            ? {
-                stroke: 'green',
-                strokeDasharray: '5 5',
-                animation: 'dashdraw 0.5s linear infinite',
-              }
-            : backendMixedHealth || serviceGroups.some(group => group.anyHealthy)
+            !anyUnhealthy ||
+            backendMixedHealth ||
+            (anyUnhealthy && serviceGroups.some(group => group.anyHealthy)),
+          style:
+            !anyUnhealthy && !backendMixedHealth
               ? {
-                  stroke: 'orange',
+                  stroke: 'green',
                   strokeDasharray: '5 5',
                   animation: 'dashdraw 0.5s linear infinite',
                 }
-              : { stroke: 'red' },
+              : backendMixedHealth || serviceGroups.some(group => group.anyHealthy)
+                ? {
+                    stroke: 'orange',
+                    strokeDasharray: '5 5',
+                    animation: 'dashdraw 0.5s linear infinite',
+                  }
+                : { stroke: 'red' },
         });
       }
     });
@@ -1054,8 +1053,8 @@ function FlowInner({
           console.log('Edge clicked:', edge);
         }}
       >
-        <Controls 
-          position="bottom-right"
+        <Controls
+          position='bottom-right'
           showZoom={true}
           showFitView={true}
           showInteractive={false}
@@ -1125,7 +1124,7 @@ function FlowInner({
 
 export function FlowVisualization({ data, isAllExpanded = false }: FlowVisualizationProps) {
   const isUsingMockData = !data || !data.chains || data.chains.length === 0;
-  
+
   return (
     <div className='space-y-4 w-full'>
       {isUsingMockData && (
