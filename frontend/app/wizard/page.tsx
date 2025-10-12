@@ -299,7 +299,7 @@ export default function WizardPage() {
                 providers.forEach((provider: any) => {
                   const providerEndpoints = provider.endpoints || [];
                   const relevantEndpoints = providerEndpoints.filter(
-                    (endpoint: any) => endpoint.interface === interfaceName
+                    (endpoint: any) => endpoint.interface === interfaceName,
                   );
 
                   if (relevantEndpoints.length > 0) {
@@ -396,11 +396,7 @@ export default function WizardPage() {
       });
     } else if (step === 2) {
       const currentChain = chainConfigs[currentChainIndex];
-      if (
-        !currentChain ||
-        !currentChain.interfaces ||
-        currentChain.interfaces.length === 0
-      ) {
+      if (!currentChain || !currentChain.interfaces || currentChain.interfaces.length === 0) {
         newErrors[`chain-interfaces-${currentChainIndex}`] = 'No interfaces configured';
       } else {
         currentChain.interfaces.forEach((iface, ifaceIndex) => {
@@ -494,10 +490,7 @@ export default function WizardPage() {
 
     // Find the highest port number used across all chains
     const highestPort = newChains.reduce((maxPort, chain) => {
-      const chainMaxPort = chain.interfaces.reduce(
-        (port, iface) => Math.max(port, iface.port),
-        0,
-      );
+      const chainMaxPort = chain.interfaces.reduce((port, iface) => Math.max(port, iface.port), 0);
       return Math.max(maxPort, chainMaxPort);
     }, 1999); // Start from 1999 so first port will be 2000
 
@@ -1096,10 +1089,7 @@ export default function WizardPage() {
                           exit={{ opacity: 0, x: 20 }}
                         >
                           <div className='flex items-center justify-between'>
-                            <Button
-                              onClick={addChain}
-                              className='bg-primary hover:bg-primary/90'
-                            >
+                            <Button onClick={addChain} className='bg-primary hover:bg-primary/90'>
                               <Plus className='mr-2 h-4 w-4' />
                               Add Chain
                             </Button>
@@ -1318,16 +1308,16 @@ export default function WizardPage() {
                                           onClick={e => {
                                             e.stopPropagation();
                                             // Remove all interfaces associated with this provider
-                                              const newChains = [...chainConfigs];
-                                              const interfaceIndices = interfaceGroup
-                                                .map(i => i.index)
-                                                .sort((a, b) => b - a); // Remove from end to beginning
-                                              interfaceIndices.forEach(idx => {
-                                                newChains[currentChainIndex].interfaces.splice(
-                                                  idx,
-                                                  1,
-                                                );
-                                              });
+                                            const newChains = [...chainConfigs];
+                                            const interfaceIndices = interfaceGroup
+                                              .map(i => i.index)
+                                              .sort((a, b) => b - a); // Remove from end to beginning
+                                            interfaceIndices.forEach(idx => {
+                                              newChains[currentChainIndex].interfaces.splice(
+                                                idx,
+                                                1,
+                                              );
+                                            });
                                             setChainConfigs(newChains);
                                             setErrors({});
                                             toast({
@@ -1472,11 +1462,9 @@ export default function WizardPage() {
                                                           onClick={() => {
                                                             if (isUsed) return;
                                                             const newChains = [...chainConfigs];
-                                                            newChains[
-                                                              currentChainIndex
-                                                            ].interfaces[index].name = [
-                                                              interfaceType.value,
-                                                            ];
+                                                            newChains[currentChainIndex].interfaces[
+                                                              index
+                                                            ].name = [interfaceType.value];
                                                             setChainConfigs(newChains);
                                                           }}
                                                           disabled={isUsed}
@@ -1497,8 +1485,9 @@ export default function WizardPage() {
                                                     onChange={e => {
                                                       const newChains = [...chainConfigs];
                                                       const currentProvider =
-                                                        newChains[currentChainIndex]
-                                                          .interfaces[index].providers[0];
+                                                        newChains[currentChainIndex].interfaces[
+                                                          index
+                                                        ].providers[0];
                                                       if (!currentProvider.nodes[0]) {
                                                         currentProvider.nodes = [
                                                           {

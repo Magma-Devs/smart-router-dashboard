@@ -56,8 +56,12 @@ export function InDepthMetrics({}: InDepthMetricsProps) {
   const [selectedTimeFrame, setSelectedTimeFrame] = useState(DEFAULT_TIME_FRAME);
 
   // Available options state
-  const [availableChains, setAvailableChains] = useState<Array<{id: string, network: string}>>([]);
-  const [availableProviders, setAvailableProviders] = useState<Array<{id: string, network: string}>>([]);
+  const [availableChains, setAvailableChains] = useState<Array<{ id: string; network: string }>>(
+    [],
+  );
+  const [availableProviders, setAvailableProviders] = useState<
+    Array<{ id: string; network: string }>
+  >([]);
   const [isLoadingComponents, setIsLoadingComponents] = useState(false);
 
   // Custom hooks for data management
@@ -92,15 +96,19 @@ export function InDepthMetrics({}: InDepthMetricsProps) {
       ]);
 
       // Extract available chains and providers from metrics responses with network info
-      const chainsData = Object.entries(chainsResponse.chains).map(([chainId, chainMetrics]: [string, any]) => ({
-        id: chainId,
-        network: chainMetrics.network
-      }));
-      
-      const providersData = Object.entries(providersResponse.providers).map(([providerId, providerMetrics]: [string, any]) => ({
-        id: providerId,
-        network: providerMetrics.network
-      }));
+      const chainsData = Object.entries(chainsResponse.chains).map(
+        ([chainId, chainMetrics]: [string, any]) => ({
+          id: chainId,
+          network: chainMetrics.network,
+        }),
+      );
+
+      const providersData = Object.entries(providersResponse.providers).map(
+        ([providerId, providerMetrics]: [string, any]) => ({
+          id: providerId,
+          network: providerMetrics.network,
+        }),
+      );
 
       setAvailableChains(chainsData);
       setAvailableProviders(providersData);
@@ -165,21 +173,24 @@ export function InDepthMetrics({}: InDepthMetricsProps) {
             uptime: MetricsService.formatPercentage(chainsResponse.chains[chainId].uptime),
             latency: MetricsService.formatLatency(chainsResponse.chains[chainId].latency_in_ms),
           })),
-          providers: Object.entries(providersResponse.providers).map(([providerId, providerMetrics]: [string, any]) => {
-            const providerName = providerMetrics.provider_name || providerId;
-            // Use providerId as the composite key to match the mapping
-            
-            const chainInfo = providerToChainMap[providerId];
-            return {
-              provider: providerName,
-              chain: chainInfo?.chainLabel || 'Unknown Chain',
-              chainValue: providerMetrics.network || chainInfo?.chainValue || providerName.split('-')[0], // Use network field for icon lookup
-              latest_block: MetricsService.formatLatestBlock(providerMetrics.latest_block),
-              traffic: MetricsService.formatTraffic(providerMetrics.requests_in_window),
-              uptime: MetricsService.formatPercentage(providerMetrics.uptime),
-              latency: MetricsService.formatLatency(providerMetrics.latency_in_ms),
-            };
-          }),
+          providers: Object.entries(providersResponse.providers).map(
+            ([providerId, providerMetrics]: [string, any]) => {
+              const providerName = providerMetrics.provider_name || providerId;
+              // Use providerId as the composite key to match the mapping
+
+              const chainInfo = providerToChainMap[providerId];
+              return {
+                provider: providerName,
+                chain: chainInfo?.chainLabel || 'Unknown Chain',
+                chainValue:
+                  providerMetrics.network || chainInfo?.chainValue || providerName.split('-')[0], // Use network field for icon lookup
+                latest_block: MetricsService.formatLatestBlock(providerMetrics.latest_block),
+                traffic: MetricsService.formatTraffic(providerMetrics.requests_in_window),
+                uptime: MetricsService.formatPercentage(providerMetrics.uptime),
+                latency: MetricsService.formatLatency(providerMetrics.latency_in_ms),
+              };
+            },
+          ),
           selectedChain: 'All Chains',
           selectedProvider: 'All Providers',
           timeFrame: selectedTimeFrame,
@@ -274,7 +285,7 @@ export function InDepthMetrics({}: InDepthMetricsProps) {
         <div className='flex items-center justify-between mb-6'>
           <TabNavigation
             activeTab={activeTab}
-            onTabChange={(tab) => {
+            onTabChange={tab => {
               if (tab === activeTab) {
                 // Ignore clicks on the already active tab to avoid re-sorting
                 return;

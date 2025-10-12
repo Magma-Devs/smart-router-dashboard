@@ -88,7 +88,7 @@ export default function Dashboard() {
 
   // Configuration hook
   const { config, updateRefreshInterval } = useConfig();
-  
+
   // Authentication hook
   const { isAuthenticated, loading: authLoading } = useAuth();
 
@@ -270,7 +270,10 @@ export default function Dashboard() {
               </div>
               <div className='flex flex-wrap items-center gap-2'>
                 {/* Auto-refresh Interval Selection */}
-                <Select value={config.refreshInterval.toString()} onValueChange={handleRefreshIntervalChange}>
+                <Select
+                  value={config.refreshInterval.toString()}
+                  onValueChange={handleRefreshIntervalChange}
+                >
                   <SelectTrigger className='w-[180px] bg-background border-border hover:bg-accent'>
                     <SelectValue placeholder='Auto-refresh every' />
                   </SelectTrigger>
@@ -324,10 +327,10 @@ export default function Dashboard() {
                   <div className='animate-spin rounded-full h-12 w-12 border-b-2 border-primary'></div>
                 </div>
               ) : (
-                <FlowVisualization 
-                  key='flow-visualization' 
-                  data={data?.flow || null} 
-                  isAllExpanded={flowExpanded} 
+                <FlowVisualization
+                  key='flow-visualization'
+                  data={data?.flow || null}
+                  isAllExpanded={flowExpanded}
                 />
               )}
             </CardContent>

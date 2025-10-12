@@ -80,9 +80,7 @@ export function MetricsTable({
             return (
               <tr key={index} className='border-b hover:bg-muted/50'>
                 {/* First column */}
-                <td className='p-3 font-medium'>
-                  {name}
-                </td>
+                <td className='p-3 font-medium'>{name}</td>
                 {/* Second column: Chain/network */}
                 <td className='p-3'>
                   {(() => {
@@ -94,7 +92,7 @@ export function MetricsTable({
                           src={getChainIcon(chainValue)}
                           alt={chainLabel || ''}
                           className='w-5 h-5 flex-shrink-0'
-                          onError={(e) => {
+                          onError={e => {
                             e.currentTarget.style.display = 'none';
                           }}
                         />
