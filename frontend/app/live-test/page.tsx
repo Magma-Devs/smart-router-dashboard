@@ -462,11 +462,25 @@ export default function LiveTestPage() {
 
       if (quorumProvidersHeader) {
         // Remove brackets and format providers separated by commas
-        const formattedProviders = quorumProvidersHeader
+        let formattedProviders = quorumProvidersHeader
           .replace(/[\[\]]/g, '') // Remove brackets
-          .split(',') // Split by comma
-          .map((provider: string) => provider.trim()) // Trim whitespace
-          .join(', '); // Join with comma and space
+          .trim();
+
+        // Handle both comma-separated and space-separated providers
+        if (formattedProviders.includes(',')) {
+          // If already comma-separated, just clean up spacing
+          formattedProviders = formattedProviders
+            .split(',')
+            .map((provider: string) => provider.trim())
+            .join(', ');
+        } else if (formattedProviders.includes(' ')) {
+          // If space-separated, convert to comma-separated
+          formattedProviders = formattedProviders
+            .split(/\s+/) // Split by one or more spaces
+            .filter((provider: string) => provider.length > 0)
+            .join(', ');
+        }
+
         setCrossValidationProvider(formattedProviders);
       }
 
