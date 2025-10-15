@@ -9,7 +9,20 @@ import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from '@/components/ui/use-toast';
 import { Toaster } from '@/components/ui/toaster';
-import { Copy, Loader2, BarChart3, Play, Check, Shield } from 'lucide-react';
+import {
+  Copy,
+  Loader2,
+  BarChart3,
+  Play,
+  Check,
+  Shield,
+  Server,
+  Timer,
+  CheckCircle2,
+  AlertTriangle,
+  XCircle,
+  Circle,
+} from 'lucide-react';
 import { chains } from '@/app/config/chains';
 import { cn } from '@/lib/utils';
 import { chainTypes } from '@/app/config/chain-types';
@@ -947,29 +960,50 @@ export default function LiveTestPage() {
                     <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
                       <CardTitle className='text-lg font-medium'>Single Test Response</CardTitle>
                       <div className='flex items-center gap-3'>
-                        {singleTestProvider && (
-                          <span className='text-sm text-muted-foreground'>
-                            {singleTestProvider.toLowerCase() === 'cached'
-                              ? '📦 Cached'
-                              : singleTestProvider}
-                          </span>
-                        )}
-                        {singleTestStatus && (
-                          <span
-                            className={`px-2 py-1 rounded text-xs font-medium ${
-                              singleTestStatus >= 200 && singleTestStatus < 300
-                                ? 'bg-green-100 text-green-800'
-                                : 'bg-red-100 text-red-800'
-                            }`}
-                          >
-                            {singleTestStatus}
-                          </span>
-                        )}
-                        {singleTestLatency && (
-                          <span className='text-sm text-muted-foreground'>
-                            {singleTestLatency.toFixed(1)}ms
-                          </span>
-                        )}
+                        <div className='flex flex-col items-start gap-1 py-1'>
+                          {singleTestStatus && (
+                            <span className='flex items-center gap-1.5 text-sm font-medium'>
+                              {singleTestStatus >= 200 && singleTestStatus < 300 ? (
+                                <CheckCircle2 className='h-4 w-4 text-green-600' />
+                              ) : singleTestStatus >= 400 && singleTestStatus < 500 ? (
+                                <AlertTriangle className='h-4 w-4 text-yellow-600' />
+                              ) : singleTestStatus >= 500 ? (
+                                <XCircle className='h-4 w-4 text-red-600' />
+                              ) : (
+                                <Circle className='h-4 w-4 text-slate-400' />
+                              )}
+                              <span
+                                className={
+                                  singleTestStatus >= 200 && singleTestStatus < 300
+                                    ? 'text-green-600'
+                                    : singleTestStatus >= 400 && singleTestStatus < 500
+                                      ? 'text-yellow-600'
+                                      : singleTestStatus >= 500
+                                        ? 'text-red-600'
+                                        : 'text-slate-400'
+                                }
+                              >
+                                {singleTestStatus}
+                              </span>
+                            </span>
+                          )}
+                          {singleTestLatency && (
+                            <span className='flex items-center gap-1.5 text-sm text-slate-300'>
+                              <Timer className='h-4 w-4 text-slate-400' />
+                              {singleTestLatency.toFixed(1)}ms
+                            </span>
+                          )}
+                          {singleTestProvider && (
+                            <div className='flex items-center gap-1.5 text-sm text-slate-400'>
+                              <Server className='h-4 w-4 text-slate-400' />
+                              <span className='truncate' title={singleTestProvider}>
+                                {singleTestProvider.toLowerCase() === 'cached'
+                                  ? 'Cached'
+                                  : singleTestProvider}
+                              </span>
+                            </div>
+                          )}
+                        </div>
                         <Button
                           variant='ghost'
                           size='icon'
@@ -1445,30 +1479,53 @@ export default function LiveTestPage() {
                                         Request #{originalIndex + 1}
                                       </CardTitle>
                                       <div className='flex items-center gap-3'>
-                                        {resp.headers &&
-                                          (() => {
-                                            const providerHeader =
-                                              resp.headers['lava-provider-address'];
-                                            return providerHeader ? (
-                                              <span className='text-sm text-muted-foreground'>
-                                                {providerHeader.toLowerCase() === 'cached'
-                                                  ? '📦 Cached'
-                                                  : providerHeader}
-                                              </span>
-                                            ) : null;
-                                          })()}
-                                        <span
-                                          className={`px-2 py-1 rounded text-xs font-medium ${
-                                            resp.success
-                                              ? 'bg-green-100 text-green-800'
-                                              : 'bg-red-100 text-red-800'
-                                          }`}
-                                        >
-                                          {resp.status_code}
-                                        </span>
-                                        <span className='text-sm text-muted-foreground'>
-                                          {resp.latency_ms.toFixed(1)}ms
-                                        </span>
+                                        <div className='flex flex-col items-start gap-1 py-1'>
+                                          <span className='flex items-center gap-1.5 text-sm font-medium'>
+                                            {resp.status_code >= 200 && resp.status_code < 300 ? (
+                                              <CheckCircle2 className='h-4 w-4 text-green-600' />
+                                            ) : resp.status_code >= 400 &&
+                                              resp.status_code < 500 ? (
+                                              <AlertTriangle className='h-4 w-4 text-yellow-600' />
+                                            ) : resp.status_code >= 500 ? (
+                                              <XCircle className='h-4 w-4 text-red-600' />
+                                            ) : (
+                                              <Circle className='h-4 w-4 text-slate-400' />
+                                            )}
+                                            <span
+                                              className={
+                                                resp.status_code >= 200 && resp.status_code < 300
+                                                  ? 'text-green-600'
+                                                  : resp.status_code >= 400 &&
+                                                      resp.status_code < 500
+                                                    ? 'text-yellow-600'
+                                                    : resp.status_code >= 500
+                                                      ? 'text-red-600'
+                                                      : 'text-slate-400'
+                                              }
+                                            >
+                                              {resp.status_code}
+                                            </span>
+                                          </span>
+                                          <span className='flex items-center gap-1.5 text-sm text-slate-300'>
+                                            <Timer className='h-4 w-4 text-slate-400' />
+                                            {resp.latency_ms.toFixed(1)}ms
+                                          </span>
+                                          {resp.headers &&
+                                            (() => {
+                                              const providerHeader =
+                                                resp.headers['lava-provider-address'];
+                                              return providerHeader ? (
+                                                <div className='flex items-center gap-1.5 text-sm text-slate-400'>
+                                                  <Server className='h-4 w-4 text-slate-400' />
+                                                  <span className='truncate' title={providerHeader}>
+                                                    {providerHeader.toLowerCase() === 'cached'
+                                                      ? 'Cached'
+                                                      : providerHeader}
+                                                  </span>
+                                                </div>
+                                              ) : null;
+                                            })()}
+                                        </div>
                                         <Button
                                           variant='ghost'
                                           size='icon'
@@ -1802,29 +1859,50 @@ export default function LiveTestPage() {
                         Cross Validation Response
                       </CardTitle>
                       <div className='flex items-center gap-3'>
-                        {crossValidationProvider && (
-                          <span className='text-sm text-muted-foreground'>
-                            {crossValidationProvider.toLowerCase() === 'cached'
-                              ? '📦 Cached'
-                              : crossValidationProvider}
-                          </span>
-                        )}
-                        {crossValidationStatus && (
-                          <span
-                            className={`px-2 py-1 rounded text-xs font-medium ${
-                              crossValidationStatus >= 200 && crossValidationStatus < 300
-                                ? 'bg-green-100 text-green-800'
-                                : 'bg-red-100 text-red-800'
-                            }`}
-                          >
-                            {crossValidationStatus}
-                          </span>
-                        )}
-                        {crossValidationLatency && (
-                          <span className='text-sm text-muted-foreground'>
-                            {crossValidationLatency.toFixed(1)}ms
-                          </span>
-                        )}
+                        <div className='flex flex-col items-start gap-1 py-1'>
+                          {crossValidationStatus && (
+                            <span className='flex items-center gap-1.5 text-sm font-medium'>
+                              {crossValidationStatus >= 200 && crossValidationStatus < 300 ? (
+                                <CheckCircle2 className='h-4 w-4 text-green-600' />
+                              ) : crossValidationStatus >= 400 && crossValidationStatus < 500 ? (
+                                <AlertTriangle className='h-4 w-4 text-yellow-600' />
+                              ) : crossValidationStatus >= 500 ? (
+                                <XCircle className='h-4 w-4 text-red-600' />
+                              ) : (
+                                <Circle className='h-4 w-4 text-slate-400' />
+                              )}
+                              <span
+                                className={
+                                  crossValidationStatus >= 200 && crossValidationStatus < 300
+                                    ? 'text-green-600'
+                                    : crossValidationStatus >= 400 && crossValidationStatus < 500
+                                      ? 'text-yellow-600'
+                                      : crossValidationStatus >= 500
+                                        ? 'text-red-600'
+                                        : 'text-slate-400'
+                                }
+                              >
+                                {crossValidationStatus}
+                              </span>
+                            </span>
+                          )}
+                          {crossValidationLatency && (
+                            <span className='flex items-center gap-1.5 text-sm text-slate-300'>
+                              <Timer className='h-4 w-4 text-slate-400' />
+                              {crossValidationLatency.toFixed(1)}ms
+                            </span>
+                          )}
+                          {crossValidationProvider && (
+                            <div className='flex items-center gap-1.5 text-sm text-slate-400'>
+                              <Server className='h-4 w-4 text-slate-400' />
+                              <span className='truncate' title={crossValidationProvider}>
+                                {crossValidationProvider.toLowerCase() === 'cached'
+                                  ? 'Cached'
+                                  : crossValidationProvider}
+                              </span>
+                            </div>
+                          )}
+                        </div>
                         <Button
                           variant='ghost'
                           size='icon'
