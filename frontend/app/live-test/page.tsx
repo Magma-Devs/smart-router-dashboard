@@ -154,14 +154,13 @@ export default function LiveTestPage() {
 
       const domain = process.env.NEXT_PUBLIC_DOMAIN || 'lavapro.xyz';
       const port = process.env.NEXT_PUBLIC_PORT || '8443';
-      const hostHeader = `${selectedChain}.${selectedInterface}.${domain}`;
+      const curlHost = `${selectedChain}-${selectedInterface}.${domain}`;
       const response = await fetch(
-        `https://${domain}:${port}${selectedInterface === 'rest' ? JSON.parse(interfaceCommand).path : ''}`,
+        `https://${curlHost}:${port}${selectedInterface === 'rest' ? JSON.parse(interfaceCommand).path : ''}`,
         {
           method: selectedInterface === 'rest' ? 'GET' : 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'X-Host': hostHeader,
           },
           body: selectedInterface === 'rest' ? undefined : interfaceCommand,
         },
