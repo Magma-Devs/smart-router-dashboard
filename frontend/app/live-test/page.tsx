@@ -117,15 +117,15 @@ export default function LiveTestPage() {
 
       const domain = process.env.NEXT_PUBLIC_DOMAIN || 'lavapro.xyz';
       const port = process.env.NEXT_PUBLIC_PORT || '8443';
-      const hostHeader = `${selectedChain}.${selectedInterface}.${domain}`;
-      
-      const endpoint = `https://${domain}:${port}`;
+
+      const curlHost = `${selectedChain}-${selectedInterface}.${domain}`;
+      const endpoint = `https://${curlHost}:${port}`;
       setEndpointUrl(endpoint);
       
       const cmd =
         selectedInterface === 'rest'
-          ? `curl -X GET -H "X-Host: ${hostHeader}" https://${domain}:${port}${JSON.parse(interfaceCommand).path}`
-          : `curl -X POST -H "X-Host: ${hostHeader}" -H "Content-Type: application/json" https://${domain}:${port} -d '${interfaceCommand}'`;
+          ? `curl -X GET https://${curlHost}:${port}${JSON.parse(interfaceCommand).path}`
+          : `curl -X POST -H "Content-Type: application/json" https://${curlHost}:${port} -d '${interfaceCommand}'`;
       setCurlCommand(cmd);
     }
   }, [selectedChain, selectedInterface, config.apiEndpoint]);
