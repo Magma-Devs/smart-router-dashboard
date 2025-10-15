@@ -99,8 +99,8 @@ async def make_test_request(
     start_time = time.time()
 
     try:
-        host_header = f"{chain_id}.{interface}.{domain}"
-        url = f"https://{domain}:{port}"
+        curl_host = f"{chain_id}-{interface}.{domain}"
+        url = f"https://{curl_host}:{port}"
 
         if interface == "rest":
             # For REST, append the path from interface_command
@@ -118,7 +118,6 @@ async def make_test_request(
         # Prepare headers
         headers = {
             "Content-Type": "application/json",
-            "X-Host": host_header,
         }
 
         # Add cache refresh header if skip_cache is enabled
@@ -285,7 +284,7 @@ async def cross_validation_endpoint(
         # Construct the target URL
         domain = getattr(settings, "domain", "lavapro.xyz")
         port = getattr(settings, "port", "8443")
-        host_header = f"{request.chain_id}.{request.interface}.{domain}"
+        curl_host = f"{request.chain_id}-{request.interface}.{domain}"
 
         # Determine HTTP method and URL based on interface
         if request.interface == "rest":
@@ -302,12 +301,11 @@ async def cross_validation_endpoint(
             http_method = "POST"
             path = ""
 
-        full_url = f"https://{domain}:{port}{path}"
+        full_url = f"https://{curl_host}:{port}{path}"
 
         # Prepare headers with quorum parameters
         headers = {
             "Content-Type": "application/json",
-            "X-Host": host_header,
             "lava-quorum-rate": str(request.quorum_rate),
             "lava-quorum-max": str(request.quorum_max),
             "lava-quorum-min": str(request.quorum_min),

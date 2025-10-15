@@ -284,11 +284,9 @@ export default function LiveTestPage() {
       const curlHost = `${selectedChain}-${selectedInterface}.${domain}`;
       const endpoint = `https://${curlHost}:${port}`;
       setEndpointUrl(endpoint);
-      
-      const headers = skipCache 
-        ? `-H "lava-force-cache-refresh: true"`
-        : ``;
-      
+
+      const headers = skipCache ? `-H "lava-force-cache-refresh: true"` : ``;
+
       const cmd =
         selectedInterface === 'rest'
           ? `curl -X GET ${headers} https://${curlHost}:${port}${JSON.parse(interfaceCommand).path}`
