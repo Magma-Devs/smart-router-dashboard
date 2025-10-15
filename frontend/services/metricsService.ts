@@ -103,6 +103,105 @@ export class MetricsService {
   }
 
   /**
+   * Groups load test responses by provider and computes distribution statistics.
+   * Expects each response to optionally include a 'lava-provider-address' header.
+   */
+  static groupLoadTestByProvider(
+    responses: Array<{
+      status_code: number;
+      latency_ms: number;
+      success: boolean;
+      headers?: Record<string, string>;
+    }>,
+  ): Array<{
+    provider: string;
+    requests: number;
+    successful: number;
+    failed: number;
+    successRate: number; // 0-100
+    avgLatencyMs: number; // average over all requests for provider
+    p50LatencyMs: number;
+    p90LatencyMs: number;
+    p95LatencyMs: number;
+    trafficShare: number; // 0-100 among all providers
+  }> {
+    if (!responses || responses.length === 0) return [];
+
+    const normalizedProviderHeader = (headers?: Record<string, string>): string | undefined => {
+      if (!headers) return undefined;
+      const key = Object.keys(headers).find(k => k.toLowerCase() === 'lava-provider-address');
+      return key ? headers[key] : undefined;
+    };
+
+    // Debug: log headers to understand what's available
+    if (responses.length > 0) {
+      console.log('Sample response headers:', responses[0].headers);
+      console.log('Total responses:', responses.length);
+    }
+
+    const totals = new Map<
+      string,
+      { count: number; success: number; latencySum: number; latencies: number[] }
+    >();
+    let globalCount = 0;
+
+    for (const r of responses) {
+      const rawProvider = normalizedProviderHeader(r.headers);
+      let provider: string;
+
+      if (rawProvider) {
+        provider = rawProvider.toLowerCase() === 'cached' ? 'cached' : rawProvider;
+      } else {
+        // If no provider header, distribute evenly among configured providers
+        // This is a fallback for when headers aren't available
+        provider = 'unknown';
+      }
+
+      const entry = totals.get(provider) || { count: 0, success: 0, latencySum: 0, latencies: [] };
+      entry.count += 1;
+      if (r.success) entry.success += 1;
+      if (typeof r.latency_ms === 'number') {
+        entry.latencySum += r.latency_ms;
+        entry.latencies.push(r.latency_ms);
+      }
+      totals.set(provider, entry);
+      globalCount += 1;
+    }
+
+    const result = Array.from(totals.entries()).map(([provider, v]) => {
+      const failed = v.count - v.success;
+      const successRate = v.count === 0 ? 0 : (v.success / v.count) * 100;
+      const avgLatencyMs = v.count === 0 ? 0 : v.latencySum / v.count;
+      const sorted = v.latencies.slice().sort((a, b) => a - b);
+      const percentile = (p: number): number => {
+        if (sorted.length === 0) return 0;
+        const idx = Math.min(sorted.length - 1, Math.max(0, Math.floor((p / 100) * sorted.length)));
+        return sorted[idx];
+      };
+      const p50LatencyMs = percentile(50);
+      const p90LatencyMs = percentile(90);
+      const p95LatencyMs = percentile(95);
+      const trafficShare = globalCount === 0 ? 0 : (v.count / globalCount) * 100;
+      return {
+        provider,
+        requests: v.count,
+        successful: v.success,
+        failed,
+        successRate,
+        avgLatencyMs,
+        p50LatencyMs,
+        p90LatencyMs,
+        p95LatencyMs,
+        trafficShare,
+      };
+    });
+
+    // Sort by traffic share desc by default
+    result.sort((a, b) => b.trafficShare - a.trafficShare);
+    return result;
+  }
+
+  /**
    * API interaction methods
    */
 

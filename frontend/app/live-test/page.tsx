@@ -17,6 +17,7 @@ import { ProtectedRoute } from '@/components/protected-route';
 import { apiClient } from '@/lib/api-client';
 import { getChainIcon, getChainLabel } from '@/app/config/chains';
 import { MetricsService } from '@/services/metricsService';
+import ProviderDistributionModal from '@/components/ProviderDistributionModal';
 
 interface ApiResponse {
   consumers: {
@@ -52,6 +53,7 @@ interface LiveTestResult {
     avg: number;
     p50: number;
     p90: number;
+    p95: number;
   };
   cached_count?: number;
   non_cached_count?: number;
@@ -107,6 +109,7 @@ export default function LiveTestPage() {
   const [copiedSummary, setCopiedSummary] = useState(false);
   const [responseFilter, setResponseFilter] = useState<'successful' | 'failed'>('successful');
   const [skipCache, setSkipCache] = useState<boolean>(false);
+  const [isDistributionOpen, setIsDistributionOpen] = useState(false);
 
   // Cross validation state
   const [crossValidationMin, setCrossValidationMin] = useState<number>(1);
@@ -1230,7 +1233,17 @@ export default function LiveTestPage() {
                 {loadTestResult && (
                   <Card className='border-muted bg-card/50'>
                     <CardHeader>
-                      <CardTitle className='text-lg font-medium'>Load Test Results</CardTitle>
+                      <div className='flex items-center justify-between'>
+                        <CardTitle className='text-lg font-medium'>Load Test Results</CardTitle>
+                        <Button
+                          variant='outline'
+                          size='sm'
+                          onClick={() => setIsDistributionOpen(true)}
+                          className='ml-auto'
+                        >
+                          View distribution
+                        </Button>
+                      </div>
                     </CardHeader>
                     <CardContent className='space-y-6'>
                       {/* Summary Stats */}
@@ -1241,40 +1254,60 @@ export default function LiveTestPage() {
                               ? `${loadTestResult.success_rate.toFixed(0)}%`
                               : `${loadTestResult.success_rate.toFixed(1)}%`}
                           </div>
-                          <div className='text-sm text-muted-foreground'>Success Rate</div>
+                          <div className='text-sm text-primary'>Success Rate</div>
                         </div>
                         <div className='text-center p-4 rounded-lg bg-muted/50'>
                           <div className='text-2xl font-bold text-green-600'>
                             {loadTestResult.successful_requests}
+                            <span className='text-xs font-semibold text-green-600'>
+                              /{loadTestResult.total_requests}
+                            </span>
                           </div>
-                          <div className='text-sm text-muted-foreground'>Successful</div>
+                          <div className='text-sm text-green-600'>Successful</div>
                         </div>
                         <div className='text-center p-4 rounded-lg bg-muted/50'>
                           <div className='text-2xl font-bold text-red-600'>
                             {loadTestResult.failed_requests}
+                            <span className='text-xs font-semibold text-red-600'>
+                              /{loadTestResult.total_requests}
+                            </span>
                           </div>
-                          <div className='text-sm text-muted-foreground'>Failed</div>
+                          <div className='text-sm text-red-600'>Failed</div>
                         </div>
                         <div className='text-center p-4 rounded-lg bg-muted/50'>
                           <div className='text-2xl font-bold text-blue-600'>
-                            {loadTestResult.total_requests}
+                            {(() => {
+                              const total = loadTestResult.total_requests || 0;
+                              const rate = total > 0 ? (cachedCount / total) * 100 : 0;
+                              return rate % 1 === 0 ? `${rate.toFixed(0)}%` : `${rate.toFixed(1)}%`;
+                            })()}
                           </div>
-                          <div className='text-sm text-muted-foreground'>Total</div>
+                          <div className='text-sm text-blue-600'>Cache Rate</div>
                         </div>
                         <div className='text-center p-4 rounded-lg bg-muted/50'>
-                          <div className='text-2xl font-bold text-slate-400'>{cachedCount}</div>
-                          <div className='text-sm text-muted-foreground'>Cached</div>
+                          <div className='text-2xl font-bold text-slate-400'>
+                            {cachedCount}
+                            <span className='text-xs font-semibold text-slate-400'>
+                              /{loadTestResult.total_requests}
+                            </span>
+                          </div>
+                          <div className='text-sm text-slate-400'>Cached</div>
                         </div>
                         <div className='text-center p-4 rounded-lg bg-muted/50'>
-                          <div className='text-2xl font-bold text-slate-400'>{nonCachedCount}</div>
-                          <div className='text-sm text-muted-foreground'>Non-cached</div>
+                          <div className='text-2xl font-bold text-slate-400'>
+                            {nonCachedCount}
+                            <span className='text-xs font-semibold text-slate-400'>
+                              /{loadTestResult.total_requests}
+                            </span>
+                          </div>
+                          <div className='text-sm text-slate-400'>Non-cached</div>
                         </div>
                       </div>
 
                       {/* Latency Stats */}
                       <div className='space-y-2'>
                         <h4 className='font-medium'>Latency Statistics (ms)</h4>
-                        <div className='grid grid-cols-2 md:grid-cols-5 gap-4'>
+                        <div className='grid grid-cols-2 md:grid-cols-6 gap-4'>
                           <div className='text-center p-3 rounded-lg bg-muted/30'>
                             <div className='text-lg font-semibold text-green-600'>
                               {loadTestResult.latency_stats.min.toFixed(1)}
@@ -1304,6 +1337,12 @@ export default function LiveTestPage() {
                               {loadTestResult.latency_stats.p90.toFixed(1)}
                             </div>
                             <div className='text-xs text-muted-foreground'>P90</div>
+                          </div>
+                          <div className='text-center p-3 rounded-lg bg-muted/30'>
+                            <div className='text-lg font-semibold text-indigo-600'>
+                              {loadTestResult.latency_stats.p95.toFixed(1)}
+                            </div>
+                            <div className='text-xs text-muted-foreground'>P95</div>
                           </div>
                         </div>
                       </div>
@@ -1471,6 +1510,20 @@ export default function LiveTestPage() {
                       )}
                     </CardContent>
                   </Card>
+                )}
+
+                {/* Provider distribution modal */}
+                {loadTestResult && (
+                  <ProviderDistributionModal
+                    open={isDistributionOpen}
+                    onOpenChange={setIsDistributionOpen}
+                    chainId={selectedChain}
+                    responses={loadTestResult.responses}
+                    allProviders={(() => {
+                      const providers = apiData?.consumers?.[selectedChain]?.providers || [];
+                      return providers.map((p: any) => p.name);
+                    })()}
+                  />
                 )}
               </div>
             </TabsContent>
