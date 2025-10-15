@@ -233,6 +233,11 @@ async def run_live_test(
                 if len(latencies) >= 10
                 else statistics.mean(latencies) if latencies else 0
             ),
+            "p95": (
+                statistics.quantiles(latencies, n=20)[18]
+                if len(latencies) >= 20
+                else statistics.mean(latencies) if latencies else 0
+            ),
         }
 
         # Compute cached vs non-cached across ALL responses (case-insensitive)
