@@ -68,13 +68,13 @@ def extract_provider_name_from_url(provider_url: str) -> str:
     Extract provider name from URL by removing domain and '-provider' suffix.
 
     Args:
-        provider_url: Provider URL (e.g., 'https://lava-provider.lavapro.xyz')
+        provider_url: Provider URL (e.g., 'https://lava-provider.lava.lavapro.xyz')
 
     Returns:
         Provider name (e.g., 'lava')
 
     Examples:
-        >>> extract_provider_name_from_url('https://lava-provider.lavapro.xyz')
+        >>> extract_provider_name_from_url('https://lava-provider.lava.lavapro.xyz')
         'lava'
         >>> extract_provider_name_from_url('https://test-provider.example.com')
         'test'

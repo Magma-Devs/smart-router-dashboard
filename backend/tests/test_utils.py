@@ -87,7 +87,7 @@ class TestExtractProviderNameFromURL:
     def test_extract_provider_name_from_url(self):
         """Test extraction of provider name from various URL formats."""
         assert (
-            extract_provider_name_from_url("https://lava-provider.lavapro.xyz")
+            extract_provider_name_from_url("https://lava-provider.lava.lavapro.xyz")
             == "lava"
         )
         assert (
@@ -98,7 +98,7 @@ class TestExtractProviderNameFromURL:
 
     def test_extract_provider_name_from_url_no_provider_suffix(self):
         """Test extraction when URL doesn't have '-provider' suffix."""
-        assert extract_provider_name_from_url("https://lava.lavapro.xyz") == "lava"
+        assert extract_provider_name_from_url("https://lava.lava.lavapro.xyz") == "lava"
         assert extract_provider_name_from_url("https://test.example.com") == "test"
 
     def test_extract_provider_name_from_url_edge_cases(self):

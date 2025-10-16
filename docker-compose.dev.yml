@@ -27,13 +27,13 @@ services:
     environment:
       - DEBUG=true
       - LOG_LEVEL=DEBUG
-      - PROMETHEUS_URL=http://prometheus.lavapro.xyz:80
+      - PROMETHEUS_URL=http://prometheus.lava.lavapro.xyz:80
       - TENANT_ID=default
       - IS_SEND_METRICS_TO_S3=false
       - AUTH_USERNAME=admin
       - AUTH_PASSWORD=password
       - CORS_ORIGINS=["http://localhost:3000","http://127.0.0.1:3000","http://0.0.0.0:3000"]
     extra_hosts:
-      - "prometheus.lavapro.xyz:127.0.0.1"
-      - "grafana.lavapro.xyz:127.0.0.1"
+      - "prometheus.lava.lavapro.xyz:127.0.0.1"
+      - "grafana.lava.lavapro.xyz:127.0.0.1"
     restart: unless-stopped

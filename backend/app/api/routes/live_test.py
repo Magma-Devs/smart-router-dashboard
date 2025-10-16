@@ -175,7 +175,7 @@ async def run_live_test(
 ):
     """Run live test with specified number of requests."""
     try:
-        domain = getattr(settings, "domain", "lavapro.xyz")
+        domain = getattr(settings, "domain", "lava.lavapro.xyz")
         port = getattr(settings, "port", "8443")
 
         # Validate interface command for REST

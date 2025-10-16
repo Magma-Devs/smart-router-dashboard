@@ -278,7 +278,7 @@ export default function LiveTestPage() {
       const interfaceCommand = interfaceCommands[selectedRequestType];
       if (!interfaceCommand) return;
 
-      const domain = process.env.NEXT_PUBLIC_DOMAIN || 'lavapro.xyz';
+      const domain = process.env.NEXT_PUBLIC_DOMAIN || 'lava.lavapro.xyz';
       const port = process.env.NEXT_PUBLIC_PORT || '8443';
 
       const curlHost = `${selectedChain}-${selectedInterface}.${domain}`;

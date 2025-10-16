@@ -429,7 +429,7 @@ class TestCrossValidationEndpoint:
         assert headers["lava-quorum-min"] == "1"
         assert headers["lava-quorum-max"] == "10"
         assert headers["lava-quorum-rate"] == "0.5"
-        assert headers["X-Host"] == "test-chain.jsonrpc.lavapro.xyz"
+        assert headers["X-Host"] == "test-chain.jsonrpc.lava.lavapro.xyz"
 
     @patch("httpx.AsyncClient")
     def test_cross_validation_endpoint_rest_interface(self, mock_client_class):
@@ -475,7 +475,7 @@ class TestCrossValidationEndpoint:
         call_args = mock_client.request.call_args
 
         assert call_args[1]["method"] == "GET"
-        assert call_args[1]["url"] == "https://lavapro.xyz:8443/block/latest"
+        assert call_args[1]["url"] == "https://lava.lavapro.xyz:8443/block/latest"
 
         # Check headers include quorum parameters
         headers = call_args[1]["headers"]
