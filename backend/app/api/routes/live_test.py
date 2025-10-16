@@ -282,7 +282,7 @@ async def cross_validation_endpoint(
 
     try:
         # Construct the target URL
-        domain = getattr(settings, "domain", "lavapro.xyz")
+        domain = getattr(settings, "domain", "lava.lavapro.xyz")
         port = getattr(settings, "port", "8443")
         curl_host = f"{request.chain_id}-{request.interface}.{domain}"
 
@@ -365,6 +365,7 @@ async def cross_validation_endpoint(
                         status_code=500,
                         latency_ms=latency_ms,
                         success=False,
+                        response_data=None,
                         error=str(e),
                         headers={},
                     )
@@ -376,6 +377,7 @@ async def cross_validation_endpoint(
                 status_code=500,
                 latency_ms=latency_ms,
                 success=False,
+                response_data=None,
                 error=str(e),
                 headers={},
             )
