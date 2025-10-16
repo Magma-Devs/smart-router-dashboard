@@ -20,7 +20,7 @@ class TestSettings:
         assert settings.tenant_id == "default"
         assert settings.auth_username == "admin"
         assert settings.auth_password == "password"
-        assert settings.prometheus_url == "http://prometheus.lavapro.xyz"
+        assert settings.prometheus_url == "http://prometheus.lava.lavapro.xyz"
         assert settings.debug is False
         assert settings.log_level == "INFO"
         assert settings.cors_origins == ["*"]

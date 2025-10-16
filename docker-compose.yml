@@ -7,8 +7,8 @@ services:
       dockerfile: Dockerfile
       args:
         NODE_ENV: production
-        NEXT_PUBLIC_API_URL: https://dashboard-api.lavapro.xyz:8443
-        NEXT_PUBLIC_DOMAIN: lavapro.xyz
+        NEXT_PUBLIC_API_URL: https://dashboard-api.lava.lavapro.xyz:8443
+        NEXT_PUBLIC_DOMAIN: lava.lavapro.xyz
         NEXT_PUBLIC_PORT: 443
     network_mode: host
     restart: unless-stopped
@@ -24,7 +24,7 @@ services:
     environment:
       - DEBUG=false
       - LOG_LEVEL=DEBUG
-      - PROMETHEUS_URL=http://prometheus.lavapro.xyz:80
+      - PROMETHEUS_URL=http://prometheus.lava.lavapro.xyz:80
       - TENANT_ID=default
       - IS_SEND_METRICS_TO_S3=true
       - S3_BUCKET=smart-router-output-metrics
@@ -33,9 +33,9 @@ services:
       - S3_REGION=us-east-1
       - AUTH_USERNAME=admin
       - AUTH_PASSWORD=password
-      - CORS_ORIGINS=["https://dashboard.lavapro.xyz:8443","https://dashboard-api.lavapro.xyz:8443"]
+      - CORS_ORIGINS=["https://dashboard.lava.lavapro.xyz:8443","https://dashboard-api.lava.lavapro.xyz:8443"]
     extra_hosts:
-      - "prometheus.lavapro.xyz:127.0.0.1"
-      - "grafana.lavapro.xyz:127.0.0.1"
+      - "prometheus.lava.lavapro.xyz:127.0.0.1"
+      - "grafana.lava.lavapro.xyz:127.0.0.1"
     network_mode: host
     restart: unless-stopped
