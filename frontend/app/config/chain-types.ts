@@ -59,19 +59,19 @@ export const chainTypes: ChainType[] = [
     interfaces: {
       tendermintrpc: {
         regular: '{"jsonrpc":"2.0","method":"status","params":[],"id":1}',
-        archive: null,
+        archive: '{"jsonrpc":"2.0","method":"block","params":{"height":"340801"},"id":1}',
         debug: null,
         trace: null,
       },
       rest: {
         regular: '{"method":"GET","path":"/cosmos/base/tendermint/v1beta1/blocks/latest"}',
-        archive: null,
+        archive: '{"method":"GET","path":"/cosmos/base/tendermint/v1beta1/blocks/340801"}',
         debug: null,
         trace: null,
       },
       grpc: {
         regular: '{"method":"/cosmos.base.tendermint.v1beta1.Service/GetLatestBlock"}',
-        archive: null,
+        archive: '{"method":"/cosmos.base.tendermint.v1beta1.Service/GetBlockByHeight","params":{"height":"340801"}}',
         debug: null,
         trace: null,
       },
