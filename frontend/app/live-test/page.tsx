@@ -31,6 +31,7 @@ import { apiClient } from '@/lib/api-client';
 import { getChainIcon, getChainLabel } from '@/app/config/chains';
 import { MetricsService } from '@/services/metricsService';
 import ProviderDistributionModal from '@/components/ProviderDistributionModal';
+import { makeTestRequest, makeLoadTestRequests, calculateLoadTestStats } from '@/lib/test-client';
 
 interface ApiResponse {
   consumers: {
@@ -70,6 +71,7 @@ interface LiveTestResult {
   };
   cached_count?: number;
   non_cached_count?: number;
+  provider_distribution?: Record<string, number>;
   responses: Array<{
     status_code: number;
     latency_ms: number;
@@ -285,12 +287,19 @@ export default function LiveTestPage() {
       const endpoint = `https://${curlHost}:${port}`;
       setEndpointUrl(endpoint);
 
-      const headers = skipCache ? `-H "lava-force-cache-refresh: true"` : ``;
+      const headers = skipCache ? `-H "lava-force-cache-refresh: true"` : '';
+      
+      // Add lava-extension header if request type is archive, trace, or debug
+      const extensionHeader = selectedRequestType && ['archive', 'trace', 'debug'].includes(selectedRequestType) 
+        ? `-H "lava-extension: ${selectedRequestType}"` 
+        : '';
+      
+      const allHeaders = [headers, extensionHeader].filter(Boolean).join(' ');
 
       const cmd =
         selectedInterface === 'rest'
-          ? `curl -X GET ${headers} https://${curlHost}:${port}${JSON.parse(interfaceCommand).path}`
-          : `curl -X POST ${headers} -H "Content-Type: application/json" https://${curlHost}:${port} -d '${interfaceCommand}'`;
+          ? `curl -X GET ${allHeaders} https://${curlHost}:${port}${JSON.parse(interfaceCommand).path}`
+          : `curl -X POST ${allHeaders} -H "Content-Type: application/json" https://${curlHost}:${port} -d '${interfaceCommand}'`;
       setCurlCommand(cmd);
     }
   }, [
@@ -339,23 +348,31 @@ export default function LiveTestPage() {
       const interfaceCommand = interfaceCommands[selectedRequestType];
       if (!interfaceCommand) throw new Error('Request type command not found');
 
-      const response = await apiClient.post('/api/live-test/', {
-        chain_id: selectedChain,
+      // Make direct requests to provider endpoint
+      const domain = process.env.NEXT_PUBLIC_DOMAIN || 'lava.lavapro.xyz';
+      const port = process.env.NEXT_PUBLIC_PORT || '8443';
+
+      const responses = await makeLoadTestRequests({
+        chainId: selectedChain,
         interface: selectedInterface,
-        interface_command: interfaceCommand,
-        number_of_requests: numberOfRequests,
-        skip_cache: skipCache,
-      });
+        interfaceCommand,
+        domain,
+        port,
+        skipCache,
+        requestType: selectedRequestType,
+      }, numberOfRequests);
 
-      setLoadTestResult(response as LiveTestResult);
+      // Calculate statistics from responses
+      const loadTestResult = calculateLoadTestStats(responses);
+      setLoadTestResult(loadTestResult);
 
-      const successRate = (response as LiveTestResult).success_rate;
+      const successRate = loadTestResult.success_rate;
       const formattedSuccessRate =
         successRate % 1 === 0 ? `${successRate.toFixed(0)}%` : `${successRate.toFixed(1)}%`;
 
       toast({
         title: 'Load test completed',
-        description: `Success rate: ${formattedSuccessRate} (${(response as LiveTestResult).successful_requests}/${(response as LiveTestResult).total_requests} requests)`,
+        description: `Success rate: ${formattedSuccessRate} (${loadTestResult.successful_requests}/${loadTestResult.total_requests} requests)`,
       });
     } catch (error) {
       toast({
@@ -399,18 +416,25 @@ export default function LiveTestPage() {
       const interfaceCommand = interfaceCommands[selectedRequestType];
       if (!interfaceCommand) throw new Error('Request type command not found');
 
-      const response = await apiClient.post('/api/live-test/cross-validation/', {
-        chain_id: selectedChain,
+      // Make direct request to provider endpoint with quorum headers
+      const domain = process.env.NEXT_PUBLIC_DOMAIN || 'lava.lavapro.xyz';
+      const port = process.env.NEXT_PUBLIC_PORT || '8443';
+
+      const response = await makeTestRequest({
+        chainId: selectedChain,
         interface: selectedInterface,
-        interface_command: interfaceCommand,
-        quorum_min: crossValidationMin,
-        quorum_max: crossValidationMax,
-        quorum_rate: crossValidationRate,
-        skip_cache: skipCache,
+        interfaceCommand,
+        domain,
+        port,
+        skipCache,
+        requestType: selectedRequestType,
+        quorumMin: crossValidationMin,
+        quorumMax: crossValidationMax,
+        quorumRate: crossValidationRate,
       });
 
       // Handle both string and object response_data
-      const responseData = (response as any).response_data;
+      const responseData = response.response_data;
       let formattedResponse: string;
 
       // Recursive function to parse nested JSON strings
@@ -465,11 +489,11 @@ export default function LiveTestPage() {
       }
 
       setCrossValidationResponse(formattedResponse);
-      setCrossValidationStatus((response as any).status_code);
-      setCrossValidationLatency((response as any).latency_ms);
+      setCrossValidationStatus(response.status_code);
+      setCrossValidationLatency(response.latency_ms);
 
       // Extract provider information from headers
-      const headers = (response as any).headers || {};
+      const headers = response.headers || {};
 
       // Cross validation uses quorum logic, so only check for lava-quorum-all-providers
       const quorumProvidersHeader = headers['lava-quorum-all-providers'];
@@ -542,36 +566,40 @@ export default function LiveTestPage() {
       const interfaceCommand = interfaceCommands[selectedRequestType];
       if (!interfaceCommand) throw new Error('Request type command not found');
 
-      // Use backend endpoint to get headers
-      const response = await apiClient.post('/api/live-test/', {
-        chain_id: selectedChain,
+      // Make direct request to provider endpoint
+      const domain = process.env.NEXT_PUBLIC_DOMAIN || 'lava.lavapro.xyz';
+      const port = process.env.NEXT_PUBLIC_PORT || '8443';
+
+      const response = await makeTestRequest({
+        chainId: selectedChain,
         interface: selectedInterface,
-        interface_command: interfaceCommand,
-        number_of_requests: 1,
-        skip_cache: skipCache,
+        interfaceCommand,
+        domain,
+        port,
+        skipCache,
+        requestType: selectedRequestType,
       });
 
-      // Get the first (and only) response from the load test result
-      const firstResponse = (response as any).responses[0];
-      if (firstResponse) {
-        setSingleTestStatus(firstResponse.status_code);
-        setSingleTestLatency(firstResponse.latency_ms);
+      setSingleTestStatus(response.status_code);
+      setSingleTestLatency(response.latency_ms);
 
-        // Extract provider information from headers
-        const headers = firstResponse.headers || {};
-        const providerHeader = headers['lava-provider-address'];
+      // Extract provider information from headers
+      const headers = response.headers || {};
+      const providerHeader = Object.keys(headers).find(
+        key => key.toLowerCase() === 'lava-provider-address'
+      );
+      const providerValue = providerHeader ? headers[providerHeader] : null;
 
-        if (providerHeader) {
-          setSingleTestProvider(
-            providerHeader.toLowerCase() === 'cached' ? 'cached' : providerHeader,
-          );
-        }
-
-        const responseData = firstResponse.response_data;
-        setResponse(
-          typeof responseData === 'string' ? responseData : JSON.stringify(responseData, null, 2),
+      if (providerValue) {
+        setSingleTestProvider(
+          providerValue.toLowerCase() === 'cached' ? 'cached' : providerValue,
         );
       }
+
+      const responseData = response.response_data;
+      setResponse(
+        typeof responseData === 'string' ? responseData : JSON.stringify(responseData, null, 2),
+      );
     } catch (error) {
       toast({
         variant: 'destructive',
