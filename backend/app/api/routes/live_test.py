@@ -176,7 +176,7 @@ async def run_live_test(
     """Run live test with specified number of requests."""
     try:
         domain = getattr(settings, "domain", "lava.lavapro.xyz")
-        port = getattr(settings, "port", "8443")
+        port = getattr(settings, "port", "443")
 
         # Validate interface command for REST
         if request.interface == "rest":
@@ -283,7 +283,7 @@ async def cross_validation_endpoint(
     try:
         # Construct the target URL
         domain = getattr(settings, "domain", "lava.lavapro.xyz")
-        port = getattr(settings, "port", "8443")
+        port = getattr(settings, "port", "443")
         curl_host = f"{request.chain_id}-{request.interface}.{domain}"
 
         # Determine HTTP method and URL based on interface
