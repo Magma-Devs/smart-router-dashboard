@@ -125,6 +125,124 @@ export default function LiveTestPage() {
   const [responseFilter, setResponseFilter] = useState<'successful' | 'failed'>('successful');
   const [skipCache, setSkipCache] = useState<boolean>(false);
   const [isDistributionOpen, setIsDistributionOpen] = useState(false);
+  const [singleTestHeaders, setSingleTestHeaders] = useState<Record<string, string> | null>(null);
+  const [singleHeadersExpanded, setSingleHeadersExpanded] = useState<boolean>(false);
+
+  // Load test headers state - track which responses have expanded headers
+  const [loadTestExpandedHeaders, setLoadTestExpandedHeaders] = useState<Set<number>>(new Set());
+
+  // Cross validation headers state
+  const [crossValidationHeadersExpanded, setCrossValidationHeadersExpanded] =
+    useState<boolean>(false);
+
+  // Helper: prettify header values that contain JSON or escaped JSON
+  const parseHeaderValue = (val: string): any => {
+    if (typeof val !== 'string') return val;
+    const tryParse = (s: string) => {
+      try {
+        return JSON.parse(s);
+      } catch {
+        return null;
+      }
+    };
+    // Try direct JSON
+    const direct = tryParse(val);
+    if (direct !== null) return direct;
+    // Try unescaped JSON (values sometimes come double-escaped)
+    const unescaped = val.replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+    const unescapedParsed = tryParse(unescaped);
+    return unescapedParsed !== null ? unescapedParsed : val;
+  };
+  const prettifyHeaders = (headers?: Record<string, string> | null) => {
+    if (!headers) return null;
+    const parsed: Record<string, any> = {};
+    for (const [k, v] of Object.entries(headers)) parsed[k] = parseHeaderValue(v);
+    return parsed;
+  };
+
+  // Helper: combine body + headers (as "headers") when expanded
+  const buildMergedResponse = (
+    body: string,
+    headers?: Record<string, string> | null,
+    includeHeaders?: boolean,
+  ) => {
+    let bodyValue: any = body;
+    if (typeof body === 'string') {
+      try {
+        bodyValue = JSON.parse(body);
+      } catch {
+        /* keep as-is */
+      }
+    }
+    if (!includeHeaders) {
+      return typeof bodyValue === 'string' ? bodyValue : JSON.stringify(bodyValue, null, 2);
+    }
+    const prettyHeaders = prettifyHeaders(headers);
+    if (bodyValue && typeof bodyValue === 'object') {
+      const merged: any = { ...bodyValue };
+      if (prettyHeaders) merged.headers = prettyHeaders;
+      return JSON.stringify(merged, null, 2);
+    }
+    const wrapped: any = { body: bodyValue };
+    if (prettyHeaders) wrapped.headers = prettyHeaders;
+    return JSON.stringify(wrapped, null, 2);
+  };
+
+  const getStatusIcon = (status: number) => {
+    if (status >= 200 && status < 300) return <CheckCircle2 className='h-4 w-4 text-green-600' />;
+    if (status >= 400 && status < 500) return <AlertTriangle className='h-4 w-4 text-yellow-600' />;
+    if (status >= 500) return <XCircle className='h-4 w-4 text-red-600' />;
+    return <Circle className='h-4 w-4 text-slate-400' />;
+  };
+
+  const getStatusColor = (status: number) => {
+    if (status >= 200 && status < 300) return 'text-green-600';
+    if (status >= 400 && status < 500) return 'text-yellow-600';
+    if (status >= 500) return 'text-red-600';
+    return 'text-slate-400';
+  };
+
+  const renderInlineJson = (
+    body: string,
+    isExpanded: boolean,
+    onExpand: () => void,
+    headers?: Record<string, string> | null,
+  ) => {
+    let base = '';
+    try {
+      const obj = JSON.parse(body);
+      const bodyStr = JSON.stringify(obj, null, 2);
+      base = bodyStr.replace(/\n}\s*$/m, '\n');
+    } catch {
+      const bodyStr = JSON.stringify({ body }, null, 2);
+      base = bodyStr.replace(/\n}\s*$/m, '\n');
+    }
+    const pretty = prettifyHeaders(headers) || {};
+    const headersStr = JSON.stringify(pretty, null, 2);
+
+    return (
+      <pre className='rounded-lg bg-muted p-4 font-mono text-sm overflow-x-auto whitespace-pre-wrap break-all'>
+        <code>
+          {base}
+          {isExpanded ? (
+            <>
+              {`  "response_headers": `}
+              {headersStr}
+              {`\n}`}
+            </>
+          ) : (
+            <>
+              {`  "response_headers": `}
+              <span className='cursor-pointer' onClick={onExpand} title='Click to expand headers'>
+                {`{ … }`}
+              </span>
+              {`\n}`}
+            </>
+          )}
+        </code>
+      </pre>
+    );
+  };
 
   // Cross validation state
   const [crossValidationMin, setCrossValidationMin] = useState<number>(1);
@@ -135,6 +253,10 @@ export default function LiveTestPage() {
   const [crossValidationStatus, setCrossValidationStatus] = useState<number | null>(null);
   const [crossValidationLatency, setCrossValidationLatency] = useState<number | null>(null);
   const [crossValidationProvider, setCrossValidationProvider] = useState<string | null>(null);
+  const [crossValidationHeaders, setCrossValidationHeaders] = useState<Record<
+    string,
+    string
+  > | null>(null);
 
   // Tab state
   const [activeTab, setActiveTab] = useState<'single' | 'load' | 'cross'>('single');
@@ -288,12 +410,13 @@ export default function LiveTestPage() {
       setEndpointUrl(endpoint);
 
       const headers = skipCache ? `-H "lava-force-cache-refresh: true"` : '';
-      
+
       // Add lava-extension header if request type is archive, trace, or debug
-      const extensionHeader = selectedRequestType && ['archive', 'trace', 'debug'].includes(selectedRequestType) 
-        ? `-H "lava-extension: ${selectedRequestType}"` 
-        : '';
-      
+      const extensionHeader =
+        selectedRequestType && ['archive', 'trace', 'debug'].includes(selectedRequestType)
+          ? `-H "lava-extension: ${selectedRequestType}"`
+          : '';
+
       const allHeaders = [headers, extensionHeader].filter(Boolean).join(' ');
 
       const cmd =
@@ -332,6 +455,7 @@ export default function LiveTestPage() {
 
     setIsLoadTesting(true);
     setLoadTestResult(null);
+    setLoadTestExpandedHeaders(new Set());
 
     try {
       const baseNetwork = getNetworkFromChainId(selectedChain);
@@ -352,15 +476,18 @@ export default function LiveTestPage() {
       const domain = process.env.NEXT_PUBLIC_DOMAIN || 'lava.lavapro.xyz';
       const port = process.env.NEXT_PUBLIC_PORT || '8443';
 
-      const responses = await makeLoadTestRequests({
-        chainId: selectedChain,
-        interface: selectedInterface,
-        interfaceCommand,
-        domain,
-        port,
-        skipCache,
-        requestType: selectedRequestType,
-      }, numberOfRequests);
+      const responses = await makeLoadTestRequests(
+        {
+          chainId: selectedChain,
+          interface: selectedInterface,
+          interfaceCommand,
+          domain,
+          port,
+          skipCache,
+          requestType: selectedRequestType,
+        },
+        numberOfRequests,
+      );
 
       // Calculate statistics from responses
       const loadTestResult = calculateLoadTestStats(responses);
@@ -400,6 +527,8 @@ export default function LiveTestPage() {
     setCrossValidationStatus(null);
     setCrossValidationLatency(null);
     setCrossValidationProvider(null);
+    setCrossValidationHeaders(null);
+    setCrossValidationHeadersExpanded(false);
 
     try {
       const baseNetwork = getNetworkFromChainId(selectedChain);
@@ -494,6 +623,7 @@ export default function LiveTestPage() {
 
       // Extract provider information from headers
       const headers = response.headers || {};
+      setCrossValidationHeaders(headers);
 
       // Cross validation uses quorum logic, so only check for lava-quorum-all-providers
       const quorumProvidersHeader = headers['lava-quorum-all-providers'];
@@ -551,6 +681,8 @@ export default function LiveTestPage() {
     setSingleTestStatus(null);
     setSingleTestLatency(null);
     setSingleTestProvider(null);
+    setSingleTestHeaders(null);
+    setSingleHeadersExpanded(false);
     try {
       const baseNetwork = getNetworkFromChainId(selectedChain);
       if (!baseNetwork) throw new Error('Network not found for chain');
@@ -585,15 +717,14 @@ export default function LiveTestPage() {
 
       // Extract provider information from headers
       const headers = response.headers || {};
+      setSingleTestHeaders(headers);
       const providerHeader = Object.keys(headers).find(
-        key => key.toLowerCase() === 'lava-provider-address'
+        key => key.toLowerCase() === 'lava-provider-address',
       );
       const providerValue = providerHeader ? headers[providerHeader] : null;
 
       if (providerValue) {
-        setSingleTestProvider(
-          providerValue.toLowerCase() === 'cached' ? 'cached' : providerValue,
-        );
+        setSingleTestProvider(providerValue.toLowerCase() === 'cached' ? 'cached' : providerValue);
       }
 
       const responseData = response.response_data;
@@ -989,26 +1120,8 @@ export default function LiveTestPage() {
                         <div className='flex flex-col items-start gap-1 py-1'>
                           {singleTestStatus && (
                             <span className='flex items-center gap-1.5 text-sm font-medium'>
-                              {singleTestStatus >= 200 && singleTestStatus < 300 ? (
-                                <CheckCircle2 className='h-4 w-4 text-green-600' />
-                              ) : singleTestStatus >= 400 && singleTestStatus < 500 ? (
-                                <AlertTriangle className='h-4 w-4 text-yellow-600' />
-                              ) : singleTestStatus >= 500 ? (
-                                <XCircle className='h-4 w-4 text-red-600' />
-                              ) : (
-                                <Circle className='h-4 w-4 text-slate-400' />
-                              )}
-                              <span
-                                className={
-                                  singleTestStatus >= 200 && singleTestStatus < 300
-                                    ? 'text-green-600'
-                                    : singleTestStatus >= 400 && singleTestStatus < 500
-                                      ? 'text-yellow-600'
-                                      : singleTestStatus >= 500
-                                        ? 'text-red-600'
-                                        : 'text-slate-400'
-                                }
-                              >
+                              {getStatusIcon(singleTestStatus)}
+                              <span className={getStatusColor(singleTestStatus)}>
                                 {singleTestStatus}
                               </span>
                             </span>
@@ -1048,9 +1161,12 @@ export default function LiveTestPage() {
                       </div>
                     </CardHeader>
                     <CardContent>
-                      <pre className='rounded-lg bg-muted p-4 font-mono text-sm overflow-x-auto whitespace-pre-wrap break-all'>
-                        {response}
-                      </pre>
+                      {renderInlineJson(
+                        response,
+                        singleHeadersExpanded,
+                        () => setSingleHeadersExpanded(true),
+                        singleTestHeaders,
+                      )}
                     </CardContent>
                   </Card>
                 )}
@@ -1507,28 +1623,8 @@ export default function LiveTestPage() {
                                       <div className='flex items-center gap-3'>
                                         <div className='flex flex-col items-start gap-1 py-1'>
                                           <span className='flex items-center gap-1.5 text-sm font-medium'>
-                                            {resp.status_code >= 200 && resp.status_code < 300 ? (
-                                              <CheckCircle2 className='h-4 w-4 text-green-600' />
-                                            ) : resp.status_code >= 400 &&
-                                              resp.status_code < 500 ? (
-                                              <AlertTriangle className='h-4 w-4 text-yellow-600' />
-                                            ) : resp.status_code >= 500 ? (
-                                              <XCircle className='h-4 w-4 text-red-600' />
-                                            ) : (
-                                              <Circle className='h-4 w-4 text-slate-400' />
-                                            )}
-                                            <span
-                                              className={
-                                                resp.status_code >= 200 && resp.status_code < 300
-                                                  ? 'text-green-600'
-                                                  : resp.status_code >= 400 &&
-                                                      resp.status_code < 500
-                                                    ? 'text-yellow-600'
-                                                    : resp.status_code >= 500
-                                                      ? 'text-red-600'
-                                                      : 'text-slate-400'
-                                              }
-                                            >
+                                            {getStatusIcon(resp.status_code)}
+                                            <span className={getStatusColor(resp.status_code)}>
                                               {resp.status_code}
                                             </span>
                                           </span>
@@ -1578,11 +1674,19 @@ export default function LiveTestPage() {
                                           {resp.error}
                                         </div>
                                       ) : (
-                                        <pre className='rounded-lg bg-muted p-4 font-mono text-sm overflow-x-auto whitespace-pre-wrap break-all'>
-                                          {typeof resp.response_data === 'string'
-                                            ? resp.response_data
-                                            : JSON.stringify(resp.response_data, null, 2)}
-                                        </pre>
+                                        <>
+                                          {renderInlineJson(
+                                            typeof resp.response_data === 'string'
+                                              ? resp.response_data
+                                              : JSON.stringify(resp.response_data, null, 2),
+                                            loadTestExpandedHeaders.has(originalIndex),
+                                            () =>
+                                              setLoadTestExpandedHeaders(prev =>
+                                                new Set(prev).add(originalIndex),
+                                              ),
+                                            resp.headers,
+                                          )}
+                                        </>
                                       )}
                                     </CardContent>
                                   </Card>
@@ -1888,26 +1992,8 @@ export default function LiveTestPage() {
                         <div className='flex flex-col items-start gap-1 py-1'>
                           {crossValidationStatus && (
                             <span className='flex items-center gap-1.5 text-sm font-medium'>
-                              {crossValidationStatus >= 200 && crossValidationStatus < 300 ? (
-                                <CheckCircle2 className='h-4 w-4 text-green-600' />
-                              ) : crossValidationStatus >= 400 && crossValidationStatus < 500 ? (
-                                <AlertTriangle className='h-4 w-4 text-yellow-600' />
-                              ) : crossValidationStatus >= 500 ? (
-                                <XCircle className='h-4 w-4 text-red-600' />
-                              ) : (
-                                <Circle className='h-4 w-4 text-slate-400' />
-                              )}
-                              <span
-                                className={
-                                  crossValidationStatus >= 200 && crossValidationStatus < 300
-                                    ? 'text-green-600'
-                                    : crossValidationStatus >= 400 && crossValidationStatus < 500
-                                      ? 'text-yellow-600'
-                                      : crossValidationStatus >= 500
-                                        ? 'text-red-600'
-                                        : 'text-slate-400'
-                                }
-                              >
+                              {getStatusIcon(crossValidationStatus)}
+                              <span className={getStatusColor(crossValidationStatus)}>
                                 {crossValidationStatus}
                               </span>
                             </span>
@@ -1950,9 +2036,12 @@ export default function LiveTestPage() {
                       </div>
                     </CardHeader>
                     <CardContent>
-                      <pre className='rounded-lg bg-muted p-4 font-mono text-sm overflow-x-auto whitespace-pre-wrap break-all'>
-                        {crossValidationResponse}
-                      </pre>
+                      {renderInlineJson(
+                        crossValidationResponse,
+                        crossValidationHeadersExpanded,
+                        () => setCrossValidationHeadersExpanded(true),
+                        crossValidationHeaders,
+                      )}
                     </CardContent>
                   </Card>
                 )}

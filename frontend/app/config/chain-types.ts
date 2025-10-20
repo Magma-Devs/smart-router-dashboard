@@ -71,7 +71,8 @@ export const chainTypes: ChainType[] = [
       },
       grpc: {
         regular: '{"method":"/cosmos.base.tendermint.v1beta1.Service/GetLatestBlock"}',
-        archive: '{"method":"/cosmos.base.tendermint.v1beta1.Service/GetBlockByHeight","params":{"height":"340801"}}',
+        archive:
+          '{"method":"/cosmos.base.tendermint.v1beta1.Service/GetBlockByHeight","params":{"height":"340801"}}',
         debug: null,
         trace: null,
       },
