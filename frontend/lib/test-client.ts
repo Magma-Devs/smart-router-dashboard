@@ -75,7 +75,7 @@ export async function makeTestRequest(options: TestRequestOptions): Promise<Test
   // Build the URL (moved outside try block for error handling)
   const curlHost = `${chainId}-${interfaceType}.${domain}`;
   let url = `https://${curlHost}:${port}`;
-  
+
   const startTime = performance.now();
 
   try {
@@ -139,7 +139,7 @@ export async function makeTestRequest(options: TestRequestOptions): Promise<Test
     // Parse response data
     let responseData: any;
     const contentType = response.headers.get('content-type') || '';
-    
+
     if (contentType.startsWith('application/json')) {
       try {
         responseData = await response.json();
@@ -163,7 +163,6 @@ export async function makeTestRequest(options: TestRequestOptions): Promise<Test
       response_data: responseData,
       headers: responseHeaders,
     };
-
   } catch (error) {
     // Try to get latency from Performance API even for failed requests
     const latencyMs = await getRequestLatency(url, startTime).catch(() => 0);
@@ -185,7 +184,7 @@ export async function makeTestRequest(options: TestRequestOptions): Promise<Test
 export async function makeLoadTestRequests(
   options: TestRequestOptions,
   numberOfRequests: number,
-  concurrency: number = 5
+  concurrency: number = 5,
 ): Promise<TestResponse[]> {
   const results: TestResponse[] = new Array(numberOfRequests);
   let nextIndex = 0;
@@ -211,36 +210,41 @@ export async function makeLoadTestRequests(
  * @param batchSize Number of requests to send in parallel per batch (default: 5)
  * @returns Array of latency measurements in milliseconds
  */
-export async function measureBatchedLatencies(urls: string[], batchSize: number = 5): Promise<number[]> {
+export async function measureBatchedLatencies(
+  urls: string[],
+  batchSize: number = 5,
+): Promise<number[]> {
   const latencies: number[] = [];
-  
+
   for (let i = 0; i < urls.length; i += batchSize) {
     const batch = urls.slice(i, i + batchSize);
-    const batchPromises = batch.map(async (url) => {
+    const batchPromises = batch.map(async url => {
       const start = performance.now();
       try {
-        await fetch(url, { 
-          method: 'GET', 
-          mode: 'cors', 
-          signal: AbortSignal.timeout(30000) 
+        await fetch(url, {
+          method: 'GET',
+          mode: 'cors',
+          signal: AbortSignal.timeout(30000),
         });
       } finally {
         return performance.now() - start;
       }
     });
-    
+
     const batchLatencies = await Promise.all(batchPromises);
     latencies.push(...batchLatencies);
-    
-    console.log(`Batch ${Math.floor(i / batchSize) + 1}: ${batchLatencies.map(l => l.toFixed(2)).join(', ')} ms`);
+
+    console.log(
+      `Batch ${Math.floor(i / batchSize) + 1}: ${batchLatencies.map(l => l.toFixed(2)).join(', ')} ms`,
+    );
   }
-  
-  console.log("--- Batched Latency Measurement Results ---");
+
+  console.log('--- Batched Latency Measurement Results ---');
   latencies.forEach((latency, index) => {
     const url = urls[index];
     console.log(`⏱️ ${url}: ${latency.toFixed(2)} ms`);
   });
-  
+
   return latencies;
 }
 
@@ -258,7 +262,7 @@ export function calculateLoadTestStats(responses: TestResponse[]) {
   const min = Math.min(...latencies);
   const max = Math.max(...latencies);
   const avg = latencies.reduce((sum, lat) => sum + lat, 0) / latencies.length;
-  
+
   // Calculate percentiles
   const p50 = calculatePercentile(sortedLatencies, 50);
   const p90 = calculatePercentile(sortedLatencies, 90);
@@ -268,14 +272,14 @@ export function calculateLoadTestStats(responses: TestResponse[]) {
   let cachedCount = 0;
   let nonCachedCount = 0;
   const providerDistribution: Record<string, number> = {};
-  
+
   responses.forEach(response => {
     const headers = response.headers || {};
     const providerHeader = Object.keys(headers).find(
-      key => key.toLowerCase() === 'lava-provider-address'
+      key => key.toLowerCase() === 'lava-provider-address',
     );
     const providerValue = providerHeader ? headers[providerHeader] : null;
-    
+
     if (providerValue) {
       if (providerValue.toLowerCase() === 'cached') {
         cachedCount++;
@@ -318,15 +322,15 @@ export function calculateLoadTestStats(responses: TestResponse[]) {
  */
 function calculatePercentile(sortedArray: number[], percentile: number): number {
   if (sortedArray.length === 0) return 0;
-  
+
   const index = (percentile / 100) * (sortedArray.length - 1);
   const lower = Math.floor(index);
   const upper = Math.ceil(index);
   const weight = index % 1;
-  
+
   if (upper >= sortedArray.length) {
     return sortedArray[sortedArray.length - 1];
   }
-  
+
   return sortedArray[lower] * (1 - weight) + sortedArray[upper] * weight;
 }
