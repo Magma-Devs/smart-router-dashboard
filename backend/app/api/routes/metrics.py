@@ -43,7 +43,7 @@ PROMETHEUS_QUERIES = {
     "provider_traffic": "lava_provider_total_relays_serviced",
     "consumer_latest_block": "lava_consumer_latest_provider_block",
     "provider_latest_block": "lava_latest_block",
-    "consumer_latency": "lava_consumer_average_latency_in_milliseconds",
+    "consumer_latency": "lava_consumer_latency_for_request",
     "provider_latency": "lava_provider_latency_milliseconds",
 }
 
@@ -91,13 +91,13 @@ async def fetch_chain_metrics_data(
             f"{step_size}s",
         ),
         svc.query_range(
-            f"avg_over_time({PROMETHEUS_QUERIES['consumer_latency']}[{time_range}])",
+            f"avg(avg_over_time({PROMETHEUS_QUERIES['consumer_latency']}[{time_range}])) by (spec, service)",
             start_time,
             end_time,
             f"{step_size}s",
         ),
         svc.query_range(
-            PROMETHEUS_QUERIES["consumer_traffic"],
+            f"increase({PROMETHEUS_QUERIES['consumer_traffic']}[{time_range}])",
             start_time,
             end_time,
             f"{step_size}s",
@@ -121,7 +121,7 @@ async def fetch_chain_metrics_data(
             f"{step_size}s",
         ),
     )
-
+    
     return (
         consumers_data,
         latency_data,
@@ -153,7 +153,7 @@ async def fetch_provider_metrics_data(
             f"{step_size}s",
         ),
         svc.query_range(
-            PROMETHEUS_QUERIES["provider_traffic"],
+            f"increase({PROMETHEUS_QUERIES['provider_traffic']}[{time_range}])",
             start_time,
             end_time,
             f"{step_size}s",
@@ -165,7 +165,7 @@ async def fetch_provider_metrics_data(
             f"{step_size}s",
         ),
         svc.query_range(
-            f"avg_over_time({PROMETHEUS_QUERIES['provider_latency']}[{time_range}])",
+            f"avg(avg_over_time({PROMETHEUS_QUERIES['provider_latency']}[{time_range}])) by (spec, service)",
             start_time,
             end_time,
             f"{step_size}s",
