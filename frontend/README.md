@@ -78,7 +78,7 @@ frontend/
 
 ### **Latency**
 
-- **Metric**: `lava_consumer_average_latency_in_milliseconds`
+- **Metric**: `lava_consumer_latency_for_request`
 - **Calculation**: Average response time across consumers
 - **Thresholds**:
   - 🟢 Green: ≤200ms
@@ -217,7 +217,7 @@ The frontend makes the following Prometheus queries:
 
 1. **Consumer Health**: `lava_consumer_overall_health_breakdown`
 2. **Provider Health**: `lava_provider_overall_health_breakdown`
-3. **Latency**: `avg_over_time(lava_consumer_average_latency_in_milliseconds[1m])`
+3. **Latency**: `avg_over_time(lava_consumer_latency_for_request[1m])`
 
 ### **API Endpoints**
 

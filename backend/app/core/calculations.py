@@ -1,8 +1,9 @@
 # Calculation utilities moved from frontend
+import logging
 from functools import wraps
 from typing import Any, Callable, TypeVar
 
-
+logger = logging.getLogger(__name__)
 T = TypeVar("T")
 
 
@@ -122,13 +123,21 @@ def calculate_uptime_percentage(
 
 @validate_prometheus_data
 def calculate_latency_ms(latency_data: dict[str, Any], target_chain: str) -> int:
-    """Calculate average latency in milliseconds for a specific chain"""
+    """
+    Get the latest latency value for a specific chain.
+    
+    The input data is pre-aggregated by Prometheus using:
+    avg(avg_over_time(lava_consumer_latency_for_request[time_window])) by (spec, service)
+    
+    Prometheus already calculates the average across all pods/endpoints per service,
+    so we just return the latest value from the time series.
+    """
     results = latency_data["data"]["result"]
-    total_latency = 0
-    total_samples = 0
 
     for result in results:
-        service = result.get("metric", {}).get("service")
+        metric = result.get("metric", {})
+        service = metric.get("service")
+        spec = metric.get("spec")
 
         # Filter by target chain (consumer query needs service field)
         # The service field contains the chain name with "-consumer" suffix
@@ -141,28 +150,42 @@ def calculate_latency_ms(latency_data: dict[str, Any], target_chain: str) -> int
             continue
 
         values = result.get("values", [])
-        for _, value in values:
-            try:
-                latency_ms = float(value)
-                total_latency += latency_ms
-                total_samples += 1
-            except (ValueError, TypeError):
-                continue
+        if not values:
+            continue
+        
+        # Prometheus already calculated the avg, just get the latest value
+        try:
+            latest_value = float(values[-1][1])
+            latest_latency = round(latest_value)
+            logger.info(f"Latency for {target_chain} (service: {service}, spec: {spec}): {latest_latency}ms")
+            return latest_latency
+        except (ValueError, TypeError, IndexError) as e:
+            logger.warning(f"Failed to parse latest latency value for chain: {target_chain}, error: {e}")
+            continue
 
-    return int(total_latency / total_samples) if total_samples > 0 else 0
+    logger.warning(f"No latency data found for chain: {target_chain}")
+    return 0
 
 
 @validate_prometheus_data
 def calculate_provider_latency_ms(
     latency_data: dict[str, Any], target_provider: str
 ) -> int:
-    """Calculate average latency in milliseconds for a specific provider"""
+    """
+    Get the latest latency value for a specific provider.
+    
+    The input data is pre-aggregated by Prometheus using:
+    avg(avg_over_time(lava_provider_latency_milliseconds[time_window])) by (spec, service)
+    
+    Prometheus already calculates the average across all pods/endpoints per service,
+    so we just return the latest value from the time series.
+    """
     results = latency_data["data"]["result"]
-    total_latency = 0
-    total_samples = 0
 
     for result in results:
-        service = result.get("metric", {}).get("service")
+        metric = result.get("metric", {})
+        service = metric.get("service")
+        spec = metric.get("spec")
 
         if not service:
             continue
@@ -177,22 +200,33 @@ def calculate_provider_latency_ms(
             continue
 
         values = result.get("values", [])
-        for _, value in values:
-            try:
-                latency_ms = float(value)
-                total_latency += latency_ms
-                total_samples += 1
-            except (ValueError, TypeError):
-                continue
+        if not values:
+            continue
+            
+        # Prometheus already calculated the avg, just get the latest value
+        try:
+            latest_value = float(values[-1][1])
+            latest_latency = round(latest_value)
+            logger.info(f"Latency for provider {target_provider} (service: {service}, spec: {spec}): {latest_latency}ms")
+            return latest_latency
+        except (ValueError, TypeError, IndexError) as e:
+            logger.warning(f"Failed to parse latest latency value for provider: {target_provider}, error: {e}")
+            continue
 
-    return int(total_latency / total_samples) if total_samples > 0 else 0
+    logger.warning(f"No latency data found for provider: {target_provider}")
+    return 0
 
 
 @validate_prometheus_data
 def calculate_requests_in_time_window(
     traffic_data: dict[str, Any], target_chain: str
 ) -> int:
-    """Calculate total requests within the time window for a specific chain"""
+    """
+    Calculate total requests within the time window for a specific chain.
+    
+    The input data uses Prometheus increase() function which automatically
+    handles counter resets, so we just get the latest value.
+    """
     results = traffic_data["data"]["result"]
     total_relays = 0
 
@@ -210,37 +244,21 @@ def calculate_requests_in_time_window(
             continue
 
         values = result.get("values", [])
-
-        if len(values) >= 2:
-            # Calculate the total incremental requests in the time window
-            # Handle counter resets by summing all positive increments
-            try:
-                relays_in_window = 0
-                previous_value = float(values[0][1])
-
-                for i in range(1, len(values)):
-                    current_value = float(values[i][1])
-                    increment = current_value - previous_value
-
-                    # Handle counter resets (negative increments)
-                    if increment < 0:
-                        # Counter reset detected, add the previous value
-                        relays_in_window += previous_value
-
-                    relays_in_window += max(0, increment)
-                    previous_value = current_value
-
-                total_relays += relays_in_window
-            except (ValueError, TypeError, IndexError):
-                continue
-        elif len(values) == 1:
-            # If only one value, use it as is (edge case for very short time windows)
-            try:
-                relays_value = float(values[0][1])
-                total_relays += relays_value
-            except (ValueError, TypeError, IndexError):
-                continue
-    return int(total_relays)
+        if not values:
+            continue
+            
+        # Prometheus increase() already calculated the total, get the latest value
+        try:
+            latest_value = float(values[-1][1])
+            total_relays += int(latest_value)
+        except (ValueError, TypeError, IndexError) as e:
+            logger.warning(f"Failed to parse traffic value for chain: {target_chain}, error: {e}")
+            continue
+    
+    if total_relays > 0:
+        logger.info(f"Total requests for {target_chain}: {total_relays}")
+    
+    return total_relays
 
 
 @validate_prometheus_data
@@ -394,7 +412,12 @@ def calculate_provider_uptime_percentage(
 def calculate_provider_requests_in_time_window(
     provider_traffic_data: dict[str, Any], target_provider: str
 ) -> int:
-    """Calculate total requests within the time window for a specific provider"""
+    """
+    Calculate total requests within the time window for a specific provider.
+    
+    The input data uses Prometheus increase() function which automatically
+    handles counter resets, so we just get the latest value.
+    """
     results = provider_traffic_data["data"]["result"]
     total_relays = 0
 
@@ -414,34 +437,18 @@ def calculate_provider_requests_in_time_window(
             continue
 
         values = result.get("values", [])
-
-        if len(values) >= 2:
-            # Calculate the total incremental requests in the time window
-            # Handle counter resets by summing all positive increments
-            try:
-                relays_in_window = 0
-                previous_value = float(values[0][1])
-
-                for i in range(1, len(values)):
-                    current_value = float(values[i][1])
-                    increment = current_value - previous_value
-
-                    # Handle counter resets (negative increments)
-                    if increment < 0:
-                        # Counter reset detected, add the previous value
-                        relays_in_window += previous_value
-
-                    relays_in_window += max(0, increment)
-                    previous_value = current_value
-
-                total_relays += relays_in_window
-            except (ValueError, TypeError, IndexError):
-                continue
-        elif len(values) == 1:
-            # If only one value, use it as is (edge case for very short time windows)
-            try:
-                relays_value = float(values[0][1])
-                total_relays += relays_value
-            except (ValueError, TypeError, IndexError):
-                continue
-    return int(total_relays)
+        if not values:
+            continue
+            
+        # Prometheus increase() already calculated the total, get the latest value
+        try:
+            latest_value = float(values[-1][1])
+            total_relays += int(latest_value)
+        except (ValueError, TypeError, IndexError) as e:
+            logger.warning(f"Failed to parse traffic value for provider: {target_provider}, error: {e}")
+            continue
+    
+    if total_relays > 0:
+        logger.info(f"Total requests for provider {target_provider}: {total_relays}")
+    
+    return total_relays
