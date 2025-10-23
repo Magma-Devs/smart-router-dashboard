@@ -238,7 +238,11 @@ export default function LiveTestPage() {
                   JSON.stringify(prettifyHeaders(headers), null, 2)
                 ) : (
                   <>
-                    <span className='cursor-pointer' onClick={onExpand} title='Click to expand headers'>
+                    <span
+                      className='cursor-pointer'
+                      onClick={onExpand}
+                      title='Click to expand headers'
+                    >
                       {`{ … }`}
                     </span>
                   </>
