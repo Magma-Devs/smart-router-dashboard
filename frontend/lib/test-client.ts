@@ -78,6 +78,13 @@ export async function makeTestRequest(options: TestRequestOptions): Promise<Test
 
   const startTime = performance.now();
 
+  // Initialize with defaults (network error state)
+  let statusCode = 0;
+  let latencyMs = 0;
+  let responseData: any = null;
+  let errorMessage: string | undefined = undefined;
+  const responseHeaders: Record<string, string> = {};
+
   try {
     let method: string;
     let body: string | undefined;
@@ -127,55 +134,63 @@ export async function makeTestRequest(options: TestRequestOptions): Promise<Test
       method,
       headers,
       body,
-      // Disable CORS mode to allow requests to different origins
       mode: 'cors',
-      // Set timeout (30 seconds like backend)
       signal: AbortSignal.timeout(30000),
     });
 
-    // Extract timing from Performance API (more accurate than manual timing)
-    const latencyMs = await getRequestLatency(url, startTime);
+    statusCode = response.status;
+
+    try {
+      latencyMs = await getRequestLatency(url, startTime);
+    } catch {
+      latencyMs = performance.now() - startTime;
+    }
 
     // Parse response data
-    let responseData: any;
     const contentType = response.headers.get('content-type') || '';
-
-    if (contentType.startsWith('application/json')) {
-      try {
-        responseData = await response.json();
-      } catch (jsonError) {
+    try {
+      if (contentType.startsWith('application/json')) {
+        try {
+          responseData = await response.json();
+        } catch (jsonError) {
+          responseData = await response.text();
+        }
+      } else {
         responseData = await response.text();
       }
-    } else {
-      responseData = await response.text();
+    } catch {
+      // If parsing fails, responseData remains null
     }
 
     // Convert headers to plain object
-    const responseHeaders: Record<string, string> = {};
-    response.headers.forEach((value, key) => {
-      responseHeaders[key] = value;
-    });
-
-    return {
-      status_code: response.status,
-      latency_ms: latencyMs,
-      success: response.status >= 200 && response.status < 300,
-      response_data: responseData,
-      headers: responseHeaders,
-    };
+    try {
+      response.headers.forEach((value, key) => {
+        responseHeaders[key] = value;
+      });
+    } catch {
+      // If headers parsing fails, responseHeaders remains empty
+    }
   } catch (error) {
-    // Try to get latency from Performance API even for failed requests
-    const latencyMs = await getRequestLatency(url, startTime).catch(() => 0);
-
-    return {
-      status_code: 0,
-      latency_ms: latencyMs,
-      success: false,
-      error: error instanceof Error ? error.message : 'Unknown error',
-      response_data: null,
-      headers: {},
-    };
+    // Network error - statusCode already initialized to 0
+    errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    
+    // Try to get latency even for failed requests
+    try {
+      latencyMs = await getRequestLatency(url, startTime);
+    } catch {
+      latencyMs = performance.now() - startTime;
+    }
   }
+
+  // Single return point
+  return {
+    status_code: statusCode,
+    latency_ms: latencyMs,
+    success: statusCode >= 200 && statusCode < 300,
+    response_data: responseData,
+    headers: responseHeaders,
+    ...(errorMessage && { error: errorMessage }),
+  };
 }
 
 /**

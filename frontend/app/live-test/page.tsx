@@ -1530,17 +1530,20 @@ export default function LiveTestPage() {
                           const failedResponses = loadTestResult.responses.filter(r => !r.success);
                           if (failedResponses.length === 0) return null;
 
-                          // Count status codes
+                          // Count status codes (exclude 0 which represents network errors)
                           const statusCounts: Record<number, number> = {};
                           failedResponses.forEach(resp => {
-                            statusCounts[resp.status_code] =
-                              (statusCounts[resp.status_code] || 0) + 1;
+                            // Only count actual HTTP status codes (not 0 which means network error)
+                            if (resp.status_code && resp.status_code > 0) {
+                              statusCounts[resp.status_code] =
+                                (statusCounts[resp.status_code] || 0) + 1;
+                            }
                           });
 
                           // Calculate percentages
                           const statusStats = Object.entries(statusCounts)
                             .map(([status, count]) => ({
-                              status: parseInt(status),
+                              status: parseInt(status, 10),
                               count,
                               percentage: (count / failedResponses.length) * 100,
                             }))
