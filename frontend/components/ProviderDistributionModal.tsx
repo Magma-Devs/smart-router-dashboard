@@ -76,7 +76,11 @@ export function ProviderDistributionModal({
 
   // Prepare data for MUI X PieChart
   const chartData = useMemo(() => {
-    return items.map((item, idx) => ({ id: idx, value: item.requests, label: item.provider }));
+    return items.map((item, idx) => ({ 
+      id: idx, 
+      value: item.trafficShare, 
+      label: item.provider
+    }));
   }, [items]);
 
   const headerCell = (label: string, key: typeof sortKey) => (
@@ -114,6 +118,16 @@ export function ProviderDistributionModal({
                   paddingAngle: 1,
                   highlightScope: { fade: 'global', highlight: 'item' },
                   faded: { innerRadius: 0, additionalRadius: -10 },
+                  valueFormatter: (value: any) => {
+                    // Extract the actual numeric value from the data object
+                    const numValue = typeof value === 'object' && value?.value ? value.value : value;
+                    const numericValue = Number(numValue);
+                    if (isNaN(numericValue)) {
+                      console.warn('NaN value detected in pie chart:', value);
+                      return '0%';
+                    }
+                    return `${numericValue.toFixed(1)}%`;
+                  },
                 },
               ]}
               colors={PIE_CHART_COLORS}
