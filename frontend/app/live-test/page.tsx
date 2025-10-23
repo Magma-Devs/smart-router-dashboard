@@ -212,35 +212,42 @@ export default function LiveTestPage() {
     try {
       const obj = JSON.parse(body);
       const bodyStr = JSON.stringify(obj, null, 2);
-      base = bodyStr.replace(/\n}\s*$/m, '\n');
+      base = bodyStr;
     } catch {
       const bodyStr = JSON.stringify({ body }, null, 2);
-      base = bodyStr.replace(/\n}\s*$/m, '\n');
+      base = bodyStr;
     }
-    const pretty = prettifyHeaders(headers) || {};
-    const headersStr = JSON.stringify(pretty, null, 2);
 
     return (
-      <pre className='rounded-lg bg-muted p-4 font-mono text-sm overflow-x-auto whitespace-pre-wrap break-all'>
-        <code>
-          {base}
-          {isExpanded ? (
-            <>
-              {`  "response_headers": `}
-              {headersStr}
-              {`\n}`}
-            </>
-          ) : (
-            <>
-              {`  "response_headers": `}
-              <span className='cursor-pointer' onClick={onExpand} title='Click to expand headers'>
-                {`{ … }`}
-              </span>
-              {`\n}`}
-            </>
-          )}
-        </code>
-      </pre>
+      <div className='space-y-4'>
+        {/* Response Body */}
+        <div>
+          <div className='text-sm font-medium text-muted-foreground mb-2'>Response Body</div>
+          <pre className='rounded-lg bg-muted p-4 font-mono text-sm overflow-x-auto whitespace-pre-wrap break-all'>
+            <code>{base}</code>
+          </pre>
+        </div>
+
+        {/* Response Headers */}
+        {headers && Object.keys(headers).length > 0 && (
+          <div>
+            <div className='text-sm font-medium text-muted-foreground mb-2'>Response Headers</div>
+            <pre className='rounded-lg bg-muted p-4 font-mono text-sm overflow-x-auto whitespace-pre-wrap break-all'>
+              <code>
+                {isExpanded ? (
+                  JSON.stringify(prettifyHeaders(headers), null, 2)
+                ) : (
+                  <>
+                    <span className='cursor-pointer' onClick={onExpand} title='Click to expand headers'>
+                      {`{ … }`}
+                    </span>
+                  </>
+                )}
+              </code>
+            </pre>
+          </div>
+        )}
+      </div>
     );
   };
 
