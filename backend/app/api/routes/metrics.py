@@ -121,7 +121,7 @@ async def fetch_chain_metrics_data(
             f"{step_size}s",
         ),
     )
-    
+
     return (
         consumers_data,
         latency_data,

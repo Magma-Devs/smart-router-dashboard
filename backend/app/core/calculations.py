@@ -125,10 +125,10 @@ def calculate_uptime_percentage(
 def calculate_latency_ms(latency_data: dict[str, Any], target_chain: str) -> int:
     """
     Get the latest latency value for a specific chain.
-    
+
     The input data is pre-aggregated by Prometheus using:
     avg(avg_over_time(lava_consumer_latency_for_request[time_window])) by (spec, service)
-    
+
     Prometheus already calculates the average across all pods/endpoints per service,
     so we just return the latest value from the time series.
     """
@@ -152,15 +152,19 @@ def calculate_latency_ms(latency_data: dict[str, Any], target_chain: str) -> int
         values = result.get("values", [])
         if not values:
             continue
-        
+
         # Prometheus already calculated the avg, just get the latest value
         try:
             latest_value = float(values[-1][1])
             latest_latency = round(latest_value)
-            logger.info(f"Latency for {target_chain} (service: {service}, spec: {spec}): {latest_latency}ms")
+            logger.info(
+                f"Latency for {target_chain} (service: {service}, spec: {spec}): {latest_latency}ms"
+            )
             return latest_latency
         except (ValueError, TypeError, IndexError) as e:
-            logger.warning(f"Failed to parse latest latency value for chain: {target_chain}, error: {e}")
+            logger.warning(
+                f"Failed to parse latest latency value for chain: {target_chain}, error: {e}"
+            )
             continue
 
     logger.warning(f"No latency data found for chain: {target_chain}")
@@ -173,10 +177,10 @@ def calculate_provider_latency_ms(
 ) -> int:
     """
     Get the latest latency value for a specific provider.
-    
+
     The input data is pre-aggregated by Prometheus using:
     avg(avg_over_time(lava_provider_latency_milliseconds[time_window])) by (spec, service)
-    
+
     Prometheus already calculates the average across all pods/endpoints per service,
     so we just return the latest value from the time series.
     """
@@ -202,15 +206,19 @@ def calculate_provider_latency_ms(
         values = result.get("values", [])
         if not values:
             continue
-            
+
         # Prometheus already calculated the avg, just get the latest value
         try:
             latest_value = float(values[-1][1])
             latest_latency = round(latest_value)
-            logger.info(f"Latency for provider {target_provider} (service: {service}, spec: {spec}): {latest_latency}ms")
+            logger.info(
+                f"Latency for provider {target_provider} (service: {service}, spec: {spec}): {latest_latency}ms"
+            )
             return latest_latency
         except (ValueError, TypeError, IndexError) as e:
-            logger.warning(f"Failed to parse latest latency value for provider: {target_provider}, error: {e}")
+            logger.warning(
+                f"Failed to parse latest latency value for provider: {target_provider}, error: {e}"
+            )
             continue
 
     logger.warning(f"No latency data found for provider: {target_provider}")
@@ -223,7 +231,7 @@ def calculate_requests_in_time_window(
 ) -> int:
     """
     Calculate total requests within the time window for a specific chain.
-    
+
     The input data uses Prometheus increase() function which automatically
     handles counter resets, so we just get the latest value.
     """
@@ -246,18 +254,20 @@ def calculate_requests_in_time_window(
         values = result.get("values", [])
         if not values:
             continue
-            
+
         # Prometheus increase() already calculated the total, get the latest value
         try:
             latest_value = float(values[-1][1])
             total_relays += int(latest_value)
         except (ValueError, TypeError, IndexError) as e:
-            logger.warning(f"Failed to parse traffic value for chain: {target_chain}, error: {e}")
+            logger.warning(
+                f"Failed to parse traffic value for chain: {target_chain}, error: {e}"
+            )
             continue
-    
+
     if total_relays > 0:
         logger.info(f"Total requests for {target_chain}: {total_relays}")
-    
+
     return total_relays
 
 
@@ -414,7 +424,7 @@ def calculate_provider_requests_in_time_window(
 ) -> int:
     """
     Calculate total requests within the time window for a specific provider.
-    
+
     The input data uses Prometheus increase() function which automatically
     handles counter resets, so we just get the latest value.
     """
@@ -439,16 +449,18 @@ def calculate_provider_requests_in_time_window(
         values = result.get("values", [])
         if not values:
             continue
-            
+
         # Prometheus increase() already calculated the total, get the latest value
         try:
             latest_value = float(values[-1][1])
             total_relays += int(latest_value)
         except (ValueError, TypeError, IndexError) as e:
-            logger.warning(f"Failed to parse traffic value for provider: {target_provider}, error: {e}")
+            logger.warning(
+                f"Failed to parse traffic value for provider: {target_provider}, error: {e}"
+            )
             continue
-    
+
     if total_relays > 0:
         logger.info(f"Total requests for provider {target_provider}: {total_relays}")
-    
+
     return total_relays

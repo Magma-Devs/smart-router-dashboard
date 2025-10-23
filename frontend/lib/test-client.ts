@@ -173,7 +173,7 @@ export async function makeTestRequest(options: TestRequestOptions): Promise<Test
   } catch (error) {
     // Network error - statusCode already initialized to 0
     errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    
+
     // Try to get latency even for failed requests
     try {
       latencyMs = await getRequestLatency(url, startTime);
