@@ -1499,37 +1499,37 @@ export default function LiveTestPage() {
                             <div className='text-lg font-semibold text-green-600'>
                               {loadTestResult.latency_stats.min.toFixed(1)}
                             </div>
-                            <div className='text-xs text-muted-foreground'>Min</div>
+                            <div className='text-xs text-green-600'>Min</div>
                           </div>
                           <div className='text-center p-3 rounded-lg bg-muted/30'>
                             <div className='text-lg font-semibold text-red-600'>
                               {loadTestResult.latency_stats.max.toFixed(1)}
                             </div>
-                            <div className='text-xs text-muted-foreground'>Max</div>
+                            <div className='text-xs text-red-600'>Max</div>
                           </div>
                           <div className='text-center p-3 rounded-lg bg-muted/30'>
-                            <div className='text-lg font-semibold text-blue-600'>
+                            <div className='text-lg font-semibold text-sky-300'>
                               {loadTestResult.latency_stats.avg.toFixed(1)}
                             </div>
-                            <div className='text-xs text-muted-foreground'>Average</div>
+                            <div className='text-xs text-sky-300'>Average</div>
                           </div>
                           <div className='text-center p-3 rounded-lg bg-muted/30'>
-                            <div className='text-lg font-semibold text-orange-600'>
+                            <div className='text-lg font-semibold text-sky-400'>
                               {loadTestResult.latency_stats.p50.toFixed(1)}
                             </div>
-                            <div className='text-xs text-muted-foreground'>P50</div>
+                            <div className='text-xs text-sky-400'>P50</div>
                           </div>
                           <div className='text-center p-3 rounded-lg bg-muted/30'>
-                            <div className='text-lg font-semibold text-purple-600'>
+                            <div className='text-lg font-semibold text-blue-500'>
                               {loadTestResult.latency_stats.p90.toFixed(1)}
                             </div>
-                            <div className='text-xs text-muted-foreground'>P90</div>
+                            <div className='text-xs text-blue-500'>P90</div>
                           </div>
                           <div className='text-center p-3 rounded-lg bg-muted/30'>
-                            <div className='text-lg font-semibold text-indigo-600'>
+                            <div className='text-lg font-semibold text-blue-800'>
                               {loadTestResult.latency_stats.p95.toFixed(1)}
                             </div>
-                            <div className='text-xs text-muted-foreground'>P95</div>
+                            <div className='text-xs text-blue-800'>P95</div>
                           </div>
                         </div>
                       </div>
