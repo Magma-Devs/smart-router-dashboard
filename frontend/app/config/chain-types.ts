@@ -116,4 +116,23 @@ export const chainTypes: ChainType[] = [
       },
     },
   },
+  {
+    value: 'xlm',
+    label: 'XLM',
+    interfaces: {
+      jsonrpc: {
+        regular: '{"jsonrpc":"2.0","id":8675309,"method":"getVersionInfo"}',
+        archive: null,
+        debug: null,
+        trace: null,
+      },
+      rest: {
+        regular:
+          '{"method":"GET","path":"/transactions/2a51b7475e3596cf4ece98c2b017eeab6b292d7d14c861d060cd3b1e164b5608"}',
+        archive: null,
+        debug: null,
+        trace: null,
+      },
+    },
+  },
 ];

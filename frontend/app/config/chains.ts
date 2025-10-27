@@ -357,6 +357,20 @@ export const chains: Chain[] = [
     type: 'tron',
     supportedInterfaces: ['rest'],
   },
+  {
+    value: 'xlm',
+    label: 'Stellar Mainnet',
+    icon: 'https://info-mainnet.lavanet.xyz/icons/stellar.svg',
+    type: 'xlm',
+    supportedInterfaces: ['rest', 'jsonrpc'],
+  },
+  {
+    value: 'xlmt',
+    label: 'Stellar Testnet',
+    icon: 'https://info-mainnet.lavanet.xyz/icons/stellar.svg',
+    type: 'xlm',
+    supportedInterfaces: ['rest', 'jsonrpc'],
+  },
 ];
 
 /**
