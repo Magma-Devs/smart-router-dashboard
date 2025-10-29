@@ -91,12 +91,19 @@ export async function makeTestRequest(options: TestRequestOptions): Promise<Test
 
     // Handle different interface types
     if (interfaceType === 'rest') {
-      // For REST, append the path from interfaceCommand
+      // For REST, check if it has a path (GET) or method (POST)
       const commandData = JSON.parse(interfaceCommand);
-      const path = commandData.path || '';
-      url = `${url}${path}`;
-      method = 'GET';
-      body = undefined;
+      if (commandData.path) {
+        // REST GET with path (e.g., Aptos, TON, TRON)
+        const path = commandData.path;
+        url = `${url}${path}`;
+        method = 'GET';
+        body = undefined;
+      } else {
+        // REST POST with JSON body (e.g., XRP)
+        method = 'POST';
+        body = interfaceCommand;
+      }
     } else {
       // For other interfaces, use POST with interfaceCommand as body
       method = 'POST';

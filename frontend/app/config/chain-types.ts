@@ -150,4 +150,28 @@ export const chainTypes: ChainType[] = [
       },
     },
   },
+  {
+    value: 'xrp',
+    label: 'XRP',
+    interfaces: {
+      rest: {
+        regular: '{"method":"server_info","params":[]}',
+        archive: null,
+        debug: null,
+        trace: null,
+      },
+    },
+  },
+  {
+    value: 'aptos',
+    label: 'Aptos',
+    interfaces: {
+      rest: {
+        regular: '{"method":"GET","path":"/"}',
+        archive: null,
+        debug: null,
+        trace: null,
+      },
+    },
+  },
 ];
