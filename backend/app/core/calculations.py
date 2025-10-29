@@ -138,9 +138,9 @@ def calculate_latency_ms(latency_data: dict[str, Any], target_chain: str) -> int
     Get the latest latency value for a specific chain.
 
     The input data is pre-aggregated by Prometheus using:
-    avg(avg_over_time(lava_consumer_latency_for_request[time_window])) by (spec, service)
+    avg(avg_over_time(lava_consumer_end_to_end_latency_milliseconds[time_window])) by (service)
 
-    Prometheus already calculates the average across all pods/endpoints per service,
+    Prometheus already calculates the average across all time points,
     so we just return the latest value from the time series.
     """
     results = latency_data["data"]["result"]
@@ -148,7 +148,6 @@ def calculate_latency_ms(latency_data: dict[str, Any], target_chain: str) -> int
     for result in results:
         metric = result.get("metric", {})
         service = metric.get("service")
-        spec = metric.get("spec")
 
         # Filter by target chain (consumer query needs service field)
         # The service field contains the chain name with "-consumer" suffix
@@ -169,7 +168,7 @@ def calculate_latency_ms(latency_data: dict[str, Any], target_chain: str) -> int
             latest_value = float(values[-1][1])
             latest_latency = round(latest_value)
             logger.info(
-                f"Latency for {target_chain} (service: {service}, spec: {spec}): {latest_latency}ms"
+                f"Latency for {target_chain} (service: {service}): {latest_latency}ms"
             )
             return latest_latency
         except (ValueError, TypeError, IndexError) as e:
@@ -190,9 +189,9 @@ def calculate_provider_latency_ms(
     Get the latest latency value for a specific provider.
 
     The input data is pre-aggregated by Prometheus using:
-    avg(avg_over_time(lava_provider_latency_milliseconds[time_window])) by (spec, service)
+    avg(avg_over_time(lava_provider_end_to_end_latency_milliseconds[time_window])) by (service)
 
-    Prometheus already calculates the average across all pods/endpoints per service,
+    Prometheus already calculates the average across all time points,
     so we just return the latest value from the time series.
     """
     results = latency_data["data"]["result"]
@@ -200,7 +199,6 @@ def calculate_provider_latency_ms(
     for result in results:
         metric = result.get("metric", {})
         service = metric.get("service")
-        spec = metric.get("spec")
 
         if not service:
             continue
@@ -223,7 +221,7 @@ def calculate_provider_latency_ms(
             latest_value = float(values[-1][1])
             latest_latency = round(latest_value)
             logger.info(
-                f"Latency for provider {target_provider} (service: {service}, spec: {spec}): {latest_latency}ms"
+                f"Latency for provider {target_provider} (service: {service}): {latest_latency}ms"
             )
             return latest_latency
         except (ValueError, TypeError, IndexError) as e:

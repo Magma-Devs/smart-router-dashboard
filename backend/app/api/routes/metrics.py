@@ -43,8 +43,8 @@ PROMETHEUS_QUERIES = {
     "provider_traffic": "lava_provider_total_relays_serviced",
     "consumer_latest_block": "lava_consumer_latest_provider_block",
     "provider_latest_block": "lava_latest_block",
-    "consumer_latency": "lava_consumer_latency_for_request",
-    "provider_latency": "lava_provider_latency_milliseconds",
+    "consumer_latency": "lava_consumer_end_to_end_latency_milliseconds",
+    "provider_latency": "lava_provider_end_to_end_latency_milliseconds",
 }
 
 # Default values
