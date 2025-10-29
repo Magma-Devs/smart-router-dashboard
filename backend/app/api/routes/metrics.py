@@ -37,7 +37,7 @@ router = APIRouter()
 
 # Prometheus query constants
 PROMETHEUS_QUERIES = {
-    "consumer_health": "lava_consumer_overall_health_breakdown",
+    "consumer_health": "lava_consumer_overall_health",
     "provider_health": "lava_provider_overall_health_breakdown",
     "consumer_traffic": "lava_consumer_total_relays_serviced",
     "provider_traffic": "lava_provider_total_relays_serviced",

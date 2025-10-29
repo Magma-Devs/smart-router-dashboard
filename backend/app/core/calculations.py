@@ -86,12 +86,15 @@ def calculate_uptime_percentage(
     total_healthy_time = 0
     total_time = 0
 
+    # Track services we've seen to log duplicates
+    seen_services = set()
+
     for result in results:
         service = result.get("metric", {}).get("service")
 
         # For "all chains", process all results
         if target_chain == "all":
-            pass  # Process all results without spec filtering
+            pass  # Process all results without filtering
         else:
             # For specific chains, filter by target chain
             # Filter by target chain (consumer query needs service field)
@@ -103,6 +106,14 @@ def calculate_uptime_percentage(
             chain_name = service.replace("-consumer", "")
             if not chain_name or chain_name.lower() != target_chain.lower():
                 continue
+
+            # Log duplicate services for the same chain
+            if service in seen_services:
+                logger.warning(
+                    f"Duplicate service found for chain {target_chain}: {service}. "
+                    "Continuing with calculation (will aggregate values)."
+                )
+            seen_services.add(service)
 
         values = result.get("values", [])
 
