@@ -253,8 +253,8 @@ function ProviderGroupNode({
 
   // Determine if interfaces should be shown
   const showInterfaces = true;
-  // Set max height for the interface list
-  const maxListHeight = 150;
+  // Set max height for the interface list - matches calculateNodeHeight cap
+  const maxListHeight = 180;
 
   return (
     <div
@@ -556,13 +556,13 @@ function FlowInner({
     }
 
     // Base height + header + padding
-    const baseHeight = 60;
+    const baseHeight = 80; // Increased from 60 to give more breathing room
 
-    // Add height for each interface (25px per interface plus additional padding)
+    // Add height for each interface (30px per interface plus additional padding)
     const interfaceCount = group.interfaces ? group.interfaces.size : group.providers.length;
-    const interfaceHeight = Math.min(interfaceCount * 30, 150); // Cap at maxListHeight
+    const interfaceHeight = Math.min(interfaceCount * 35, 180); // Increased spacing and cap
 
-    return baseHeight + interfaceHeight + 20; // Add extra padding at the bottom
+    return baseHeight + interfaceHeight + 30; // Increased bottom padding
   };
 
   const { nodes: flowNodes, edges }: { nodes: Node[]; edges: Edge[] } = useMemo(() => {
@@ -633,8 +633,9 @@ function FlowInner({
 
     const sidesPadding = 0;
     const horizontalGap = 400;
-    const providerVerticalGap = 180;
-    const serviceGroupGap = 100;
+    const providerVerticalGap = 180; // Space between collapsed chains
+    const serviceGroupGap = 80; // Space between expanded service groups within a chain
+    const expandedChainPadding = 40; // Extra padding at top/bottom of expanded chain section
 
     // Sort chains alphabetically by name
     chains.sort((a, b) => a.name.localeCompare(b.name));
@@ -747,13 +748,19 @@ function FlowInner({
 
       let chainHeight = 0;
       if (isExpanded) {
+        // Add top padding for expanded chain section
+        chainHeight += expandedChainPadding;
+        
         // If chain is expanded, calculate height for all service groups
         serviceGroups.forEach(group => {
           const isServiceExpanded = expandedServiceGroups.has(`${chain.name}-${group.service}`);
           // Calculate height based on whether service is expanded and how many interfaces it has
           const nodeHeight = calculateNodeHeight(group, isServiceExpanded);
-          chainHeight += nodeHeight + 60; // Increased padding between nodes
+          chainHeight += nodeHeight + serviceGroupGap;
         });
+        
+        // Add bottom padding for expanded chain section
+        chainHeight += expandedChainPadding;
       } else {
         // Just one row for the collapsed chain
         chainHeight = providerVerticalGap;
@@ -784,7 +791,7 @@ function FlowInner({
 
       if (isChainExpanded) {
         // Position service groups with variable heights
-        let serviceY = currentY;
+        let serviceY = currentY + expandedChainPadding; // Start after top padding
 
         serviceGroups.forEach(group => {
           // Store initial y position for this service group
@@ -795,7 +802,7 @@ function FlowInner({
           const nodeHeight = calculateNodeHeight(group, isServiceExpanded);
 
           // Move to next position with appropriate spacing
-          serviceY += nodeHeight + 60; // Increased padding between nodes
+          serviceY += nodeHeight + serviceGroupGap;
         });
       }
 
@@ -945,14 +952,9 @@ function FlowInner({
         const providerCountY = chainY;
 
         // Calculate total provider count and healthy count
-        const totalProviders = serviceGroups.reduce(
-          (total, group) => total + group.interfaces.size,
-          0,
-        );
-        const healthyProviders = serviceGroups.reduce(
-          (total, group) => total + group.providers.filter(p => p.healthy).length,
-          0,
-        );
+        // Count unique service providers, not interfaces
+        const totalProviders = serviceGroups.length;
+        const healthyProviders = serviceGroups.filter(group => group.allHealthy).length;
 
         // Calculate if any providers are unhealthy
         const anyUnhealthy = serviceGroups.some(group =>
