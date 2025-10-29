@@ -371,6 +371,27 @@ export const chains: Chain[] = [
     type: 'xlm',
     supportedInterfaces: ['rest', 'jsonrpc'],
   },
+  {
+    value: 'xrp',
+    label: 'XRP Mainnet',
+    icon: 'https://info-mainnet.lavanet.xyz/icons/xrp.svg',
+    type: 'xrp',
+    supportedInterfaces: ['rest'],
+  },
+  {
+    value: 'xrpt',
+    label: 'XRP Testnet',
+    icon: 'https://info-mainnet.lavanet.xyz/icons/xrp.svg',
+    type: 'xrp',
+    supportedInterfaces: ['rest'],
+  },
+  {
+    value: 'apt1',
+    label: 'Aptos Mainnet',
+    icon: 'https://info-mainnet.lavanet.xyz/icons/aptos.svg',
+    type: 'aptos',
+    supportedInterfaces: ['rest'],
+  },
 ];
 
 /**

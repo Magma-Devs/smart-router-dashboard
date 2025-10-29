@@ -430,10 +430,20 @@ export default function LiveTestPage() {
 
       const allHeaders = [headers, extensionHeader].filter(Boolean).join(' ');
 
-      const cmd =
-        selectedInterface === 'rest'
-          ? `curl -X GET ${allHeaders} https://${curlHost}:${port}${JSON.parse(interfaceCommand).path}`
-          : `curl -X POST ${allHeaders} -H "Content-Type: application/json" https://${curlHost}:${port} -d '${interfaceCommand}'`;
+      let cmd: string;
+      if (selectedInterface === 'rest') {
+        const commandData = JSON.parse(interfaceCommand);
+        if (commandData.path) {
+          // REST GET with path (e.g., Aptos, TON, TRON)
+          cmd = `curl -X GET ${allHeaders} https://${curlHost}:${port}${commandData.path}`;
+        } else {
+          // REST POST with JSON body (e.g., XRP)
+          cmd = `curl -X POST ${allHeaders} -H "Content-Type: application/json" https://${curlHost}:${port} -d '${interfaceCommand}'`;
+        }
+      } else {
+        // Other interfaces (jsonrpc, tendermintrpc, etc.)
+        cmd = `curl -X POST ${allHeaders} -H "Content-Type: application/json" https://${curlHost}:${port} -d '${interfaceCommand}'`;
+      }
       setCurlCommand(cmd);
     }
   }, [
