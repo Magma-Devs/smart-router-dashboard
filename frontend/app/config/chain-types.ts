@@ -21,12 +21,27 @@ export const chainTypes: ChainType[] = [
         archive:
           '{"jsonrpc":"2.0","method":"eth_getBalance","params":["0x0000000000000000000000000000000000000000","0x2C2A2"],"id":1}',
         debug:
-          '{"jsonrpc":"2.0","method":"debug_traceTransaction","params":["0x845f3b66c19395916a00f379fb783afbf0f38e4252fbb1c04ea37e356885f2b7",{}],"id":1}',
+          '{"jsonrpc":"2.0","method":"debug_traceBlockByNumber","params":["latest",{}],"id":1}',
         trace:
-          '{"jsonrpc":"2.0","method":"trace_transaction","params":["0x845f3b66c19395916a00f379fb783afbf0f38e4252fbb1c04ea37e356885f2b7"],"id":1}',
+          '{"jsonrpc":"2.0","method":"trace_block","params":["latest"],"id":1}',
       },
     },
   },
+  {
+    value: 'evm-arbitrum',
+    label: 'Arbitrum',
+    interfaces: {
+      jsonrpc: {
+        regular: '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}',
+        archive:
+          '{"jsonrpc":"2.0","method":"eth_getBalance","params":["0x0000000000000000000000000000000000000000","0x2C2A2"],"id":1}',
+        debug:
+          '{"jsonrpc":"2.0","method":"debug_traceBlockByNumber","params":["latest",{}],"id":1}',
+        trace:
+          '{"jsonrpc":"2.0","method":"arbstrace_block","params":["latest"],"id":1}',
+      },
+    },
+  },  
   {
     value: 'near',
     label: 'NEAR',
