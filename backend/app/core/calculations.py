@@ -400,6 +400,9 @@ def calculate_provider_uptime_percentage(
     total_healthy_time = 0
     total_time = 0
 
+    # Track services we've seen to log duplicates
+    seen_services = set()
+
     for result in results:
         service = result.get("metric", {}).get("service")
         if not service:
@@ -414,12 +417,20 @@ def calculate_provider_uptime_percentage(
         if not service_matches:
             continue
 
+        # Log duplicate services for the same provider
+        if service in seen_services:
+            logger.warning(
+                f"Duplicate service found for provider {target_provider}: {service}. "
+                "Continuing with calculation (will aggregate values)."
+            )
+        seen_services.add(service)
+
         values = result.get("values", [])
 
         for timestamp, value in values:
             try:
                 health_value = float(value)
-                # lava_provider_overall_health_breakdown is 0-1, so multiply by 100 for percentage
+                # lava_provider_overall_health is 0-1, so multiply by 100 for percentage
                 uptime_percentage = health_value * 100
                 total_time += 1
                 total_healthy_time += uptime_percentage
