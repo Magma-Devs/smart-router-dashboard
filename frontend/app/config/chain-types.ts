@@ -154,8 +154,8 @@ export const chainTypes: ChainType[] = [
     value: 'xrp',
     label: 'XRP',
     interfaces: {
-      rest: {
-        regular: '{"method":"server_info","params":[]}',
+      jsonrpc: {
+        regular: '{"jsonrpc":"2.0","id":1,"method":"server_info","params":[]}',
         archive: null,
         debug: null,
         trace: null,
