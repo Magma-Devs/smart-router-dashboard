@@ -108,6 +108,7 @@ export default function LiveTestPage() {
   const [isFetching, setIsFetching] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [curlCommand, setCurlCommand] = useState<string>('');
+  const [crossValidationCurlCommand, setCrossValidationCurlCommand] = useState<string>('');
   const [endpointUrl, setEndpointUrl] = useState<string>('');
   const [configuredInterfaces, setConfiguredInterfaces] = useState<string[]>([]);
   const [configuredRequestTypes, setConfiguredRequestTypes] = useState<string[]>([]);
@@ -468,6 +469,83 @@ export default function LiveTestPage() {
     config.apiEndpoint,
     skipCache,
     apiData,
+  ]);
+
+  // Generate cross-validation specific curl command with quorum headers
+  useEffect(() => {
+    if (selectedChain && selectedInterface && apiData) {
+      const apiEndpoint = config.apiEndpoint;
+
+      // Get the network from the API data instead of parsing chain ID
+      const selectedChainData = apiData.consumers[selectedChain];
+      if (!selectedChainData || !selectedChainData.network) return;
+
+      const baseNetwork = selectedChainData.network;
+      const chain = chains.find(c => c.value === baseNetwork);
+      if (!chain) return;
+
+      const chainType = chainTypes.find(t => t.value === chain.type);
+      if (!chainType) return;
+
+      // For WebSocket interfaces, use the base interface for command lookup
+      const commandLookupInterface = getCommandLookupInterface(selectedInterface);
+      const interfaceCommands = chainType.interfaces[commandLookupInterface];
+      if (!interfaceCommands) return;
+
+      const interfaceCommand = interfaceCommands[selectedRequestType];
+      if (!interfaceCommand) return;
+
+      const domain = process.env.NEXT_PUBLIC_DOMAIN || 'lava.lavapro.xyz';
+      const port = process.env.NEXT_PUBLIC_PORT || '8443';
+
+      const curlHost = `${selectedChain}-${commandLookupInterface}.${domain}`;
+
+      const headers = skipCache ? `-H "lava-force-cache-refresh: true"` : '';
+
+      // Add lava-extension header if request type is archive, trace, or debug
+      const extensionHeader =
+        selectedRequestType && ['archive', 'trace', 'debug'].includes(selectedRequestType)
+          ? `-H "lava-extension: ${selectedRequestType}"`
+          : '';
+
+      // Add quorum headers for cross-validation
+      const quorumHeaders = [
+        `-H "lava-quorum-min: ${crossValidationMin}"`,
+        `-H "lava-quorum-max: ${crossValidationMax}"`,
+        `-H "lava-quorum-rate: ${crossValidationRate}"`,
+      ].join(' ');
+
+      const allHeaders = [headers, extensionHeader, quorumHeaders].filter(Boolean).join(' ');
+
+      let cmd: string;
+      if (selectedInterface.includes('/wss')) {
+        // WebSocket command - note: quorum headers may not be supported for WebSocket
+        cmd = `wscat -c wss://${curlHost}:${port}/websocket -x '${interfaceCommand}'`;
+      } else if (selectedInterface === 'rest') {
+        const commandData = JSON.parse(interfaceCommand);
+        if (commandData.path) {
+          // REST GET with path (e.g., Aptos, TON, TRON)
+          cmd = `curl -X GET ${allHeaders} https://${curlHost}:${port}${commandData.path}`;
+        } else {
+          // REST POST with JSON body (e.g., XRP)
+          cmd = `curl -X POST ${allHeaders} -H "Content-Type: application/json" https://${curlHost}:${port} -d '${interfaceCommand}'`;
+        }
+      } else {
+        // Other interfaces (jsonrpc, tendermintrpc, etc.)
+        cmd = `curl -X POST ${allHeaders} -H "Content-Type: application/json" https://${curlHost}:${port} -d '${interfaceCommand}'`;
+      }
+      setCrossValidationCurlCommand(cmd);
+    }
+  }, [
+    selectedChain,
+    selectedInterface,
+    selectedRequestType,
+    config.apiEndpoint,
+    skipCache,
+    apiData,
+    crossValidationMin,
+    crossValidationMax,
+    crossValidationRate,
   ]);
 
   const handleLoadTest = async () => {
@@ -2022,62 +2100,6 @@ export default function LiveTestPage() {
                                   </Button>
                                 );
                               })}
-                              {/* Add JSON-RPC/WSS option for chains with hasWss */}
-                              {configuredInterfaces.includes('jsonrpc') &&
-                                (() => {
-                                  const baseNetwork = getNetworkFromChainId(selectedChain);
-                                  const chain = chains.find(c => c.value === baseNetwork);
-                                  return chain?.hasWss ? (
-                                    <Button
-                                      key='jsonrpc/wss'
-                                      variant={
-                                        selectedInterface === 'jsonrpc/wss' ? 'default' : 'outline'
-                                      }
-                                      size='sm'
-                                      className={cn(
-                                        selectedInterface === 'jsonrpc/wss' &&
-                                          'bg-cyan-500 hover:bg-cyan-600',
-                                        'hover:opacity-90',
-                                      )}
-                                      onClick={() => {
-                                        setSelectedInterface('jsonrpc/wss');
-                                        setSelectedRequestType('regular');
-                                        setCrossValidationResponse('');
-                                      }}
-                                    >
-                                      JSON-RPC/WSS
-                                    </Button>
-                                  ) : null;
-                                })()}
-                              {/* Add TendermintRPC/WSS option for chains with hasWss */}
-                              {configuredInterfaces.includes('tendermintrpc') &&
-                                (() => {
-                                  const baseNetwork = getNetworkFromChainId(selectedChain);
-                                  const chain = chains.find(c => c.value === baseNetwork);
-                                  return chain?.hasWss ? (
-                                    <Button
-                                      key='tendermintrpc/wss'
-                                      variant={
-                                        selectedInterface === 'tendermintrpc/wss'
-                                          ? 'default'
-                                          : 'outline'
-                                      }
-                                      size='sm'
-                                      className={cn(
-                                        selectedInterface === 'tendermintrpc/wss' &&
-                                          'bg-teal-500 hover:bg-teal-600',
-                                        'hover:opacity-90',
-                                      )}
-                                      onClick={() => {
-                                        setSelectedInterface('tendermintrpc/wss');
-                                        setSelectedRequestType('regular');
-                                        setCrossValidationResponse('');
-                                      }}
-                                    >
-                                      TendermintRPC/WSS
-                                    </Button>
-                                  ) : null;
-                                })()}
                             </div>
                           </div>
                         )}
@@ -2173,6 +2195,34 @@ export default function LiveTestPage() {
                           {crossValidationMax}, rate: {crossValidationRate.toFixed(2)}
                         </p>
                       </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {selectedChain && selectedInterface && (
+                  <Card className='border-muted bg-card/50'>
+                    <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
+                      <CardTitle className='text-lg font-medium'>Test Command</CardTitle>
+                      <Button
+                        variant='ghost'
+                        size='icon'
+                        onClick={() => {
+                          setCopiedCurl(true);
+                          copyToClipboard(crossValidationCurlCommand, 'Copied curl command');
+                          setTimeout(() => setCopiedCurl(false), 1200);
+                        }}
+                      >
+                        {copiedCurl ? (
+                          <Check className='h-4 w-4 text-green-500' />
+                        ) : (
+                          <Copy className='h-4 w-4' />
+                        )}
+                      </Button>
+                    </CardHeader>
+                    <CardContent>
+                      <pre className='rounded-lg bg-muted p-4 font-mono text-sm overflow-x-auto whitespace-pre-wrap break-all'>
+                        {crossValidationCurlCommand}
+                      </pre>
                     </CardContent>
                   </Card>
                 )}
