@@ -379,14 +379,14 @@ export const chains: Chain[] = [
     label: 'XRP Mainnet',
     icon: 'https://info-mainnet.lavanet.xyz/icons/xrp.svg',
     type: 'xrp',
-    supportedInterfaces: ['rest'],
+    supportedInterfaces: ['jsonrpc'],
   },
   {
     value: 'xrpt',
     label: 'XRP Testnet',
     icon: 'https://info-mainnet.lavanet.xyz/icons/xrp.svg',
     type: 'xrp',
-    supportedInterfaces: ['rest'],
+    supportedInterfaces: ['jsonrpc'],
   },
   {
     value: 'apt1',
