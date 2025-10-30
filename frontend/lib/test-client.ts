@@ -56,6 +56,108 @@ async function getRequestLatency(url: string, startTime: number): Promise<number
 }
 
 /**
+ * Makes a WebSocket request for JSON-RPC/WSS
+ */
+async function makeWebSocketRequest(
+  url: string,
+  interfaceCommand: string,
+  startTime: number,
+  skipCache: boolean,
+  requestType?: string,
+): Promise<TestResponse> {
+  return new Promise((resolve, reject) => {
+    let statusCode = 0;
+    let responseData: any = null;
+    let errorMessage: string | undefined = undefined;
+    const responseHeaders: Record<string, string> = {};
+    let ws: WebSocket;
+
+    try {
+      // Create WebSocket connection
+      ws = new WebSocket(url);
+
+      // Set a connection timeout
+      const connectTimeout = setTimeout(() => {
+        ws.close();
+        reject(new Error('WebSocket connection timeout'));
+      }, 30000);
+
+      ws.onopen = () => {
+        clearTimeout(connectTimeout);
+        try {
+          // Parse the command to add any necessary headers/extensions
+          const command = JSON.parse(interfaceCommand);
+
+          // Add extensions if needed
+          if (requestType && ['archive', 'trace', 'debug'].includes(requestType)) {
+            command.extensions = { [requestType]: true };
+          }
+
+          // Send the JSON-RPC request
+          ws.send(JSON.stringify(command));
+        } catch (error) {
+          ws.close();
+          reject(error);
+        }
+      };
+
+      ws.onmessage = event => {
+        const latencyMs = performance.now() - startTime;
+        try {
+          responseData = JSON.parse(event.data);
+          statusCode = 200; // WebSocket message received successfully
+
+          ws.close();
+          resolve({
+            status_code: statusCode,
+            latency_ms: latencyMs,
+            success: true,
+            response_data: responseData,
+            headers: responseHeaders,
+          });
+        } catch (error) {
+          ws.close();
+          reject(new Error('Failed to parse WebSocket response'));
+        }
+      };
+
+      ws.onerror = () => {
+        const latencyMs = performance.now() - startTime;
+        statusCode = 0;
+        errorMessage = 'WebSocket connection error';
+
+        resolve({
+          status_code: statusCode,
+          latency_ms: latencyMs,
+          success: false,
+          response_data: responseData,
+          headers: responseHeaders,
+          error: errorMessage,
+        });
+      };
+
+      ws.onclose = event => {
+        const latencyMs = performance.now() - startTime;
+        if (!event.wasClean && statusCode === 0) {
+          errorMessage = `WebSocket closed unexpectedly: ${event.reason || 'Unknown reason'}`;
+          resolve({
+            status_code: statusCode,
+            latency_ms: latencyMs,
+            success: false,
+            response_data: responseData,
+            headers: responseHeaders,
+            error: errorMessage,
+          });
+        }
+      };
+    } catch (error) {
+      const latencyMs = performance.now() - startTime;
+      reject(error);
+    }
+  });
+}
+
+/**
  * Makes a single test request directly to a provider endpoint
  */
 export async function makeTestRequest(options: TestRequestOptions): Promise<TestResponse> {
@@ -72,11 +174,38 @@ export async function makeTestRequest(options: TestRequestOptions): Promise<Test
     quorumRate,
   } = options;
 
+  const startTime = performance.now();
+
+  // Handle WebSocket connections for jsonrpc/wss and tendermintrpc/wss
+  if (
+    interfaceType === 'jsonrpc/wss' ||
+    interfaceType === 'jsonrpc-wss' ||
+    interfaceType === 'tendermintrpc/wss' ||
+    interfaceType === 'tendermintrpc-wss'
+  ) {
+    // Determine the base interface type for URL construction
+    const baseInterface = interfaceType.includes('jsonrpc') ? 'jsonrpc' : 'tendermintrpc';
+    const curlHost = `${chainId}-${baseInterface}.${domain}`;
+    const wsUrl = `wss://${curlHost}:${port}/websocket`;
+
+    try {
+      return await makeWebSocketRequest(wsUrl, interfaceCommand, startTime, skipCache, requestType);
+    } catch (error) {
+      const latencyMs = performance.now() - startTime;
+      return {
+        status_code: 0,
+        latency_ms: latencyMs,
+        success: false,
+        response_data: null,
+        headers: {},
+        error: error instanceof Error ? error.message : 'WebSocket error',
+      };
+    }
+  }
+
   // Build the URL (moved outside try block for error handling)
   const curlHost = `${chainId}-${interfaceType}.${domain}`;
   let url = `https://${curlHost}:${port}`;
-
-  const startTime = performance.now();
 
   // Initialize with defaults (network error state)
   let statusCode = 0;

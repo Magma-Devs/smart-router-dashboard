@@ -272,6 +272,13 @@ export default function LiveTestPage() {
   // Tab state
   const [activeTab, setActiveTab] = useState<'single' | 'load' | 'cross'>('single');
 
+  // Helper function to get the base interface for command lookup
+  const getCommandLookupInterface = (interfaceType: string): string => {
+    if (interfaceType === 'jsonrpc/wss') return 'jsonrpc';
+    if (interfaceType === 'tendermintrpc/wss') return 'tendermintrpc';
+    return interfaceType;
+  };
+
   // Derived counts: cached vs non-cached from response headers
   const { cachedCount, nonCachedCount } = useMemo(() => {
     if (!loadTestResult) return { cachedCount: 0, nonCachedCount: 0 };
@@ -407,9 +414,9 @@ export default function LiveTestPage() {
       const chainType = chainTypes.find(t => t.value === chain.type);
       if (!chainType) return;
 
-      // For jsonrpc/wss, use jsonrpc interface commands
-      const actualInterface = selectedInterface === 'jsonrpc/wss' ? 'jsonrpc' : selectedInterface;
-      const interfaceCommands = chainType.interfaces[actualInterface];
+      // For WebSocket interfaces, use the base interface for command lookup
+      const commandLookupInterface = getCommandLookupInterface(selectedInterface);
+      const interfaceCommands = chainType.interfaces[commandLookupInterface];
       if (!interfaceCommands) return;
 
       const interfaceCommand = interfaceCommands[selectedRequestType];
@@ -418,12 +425,11 @@ export default function LiveTestPage() {
       const domain = process.env.NEXT_PUBLIC_DOMAIN || 'lava.lavapro.xyz';
       const port = process.env.NEXT_PUBLIC_PORT || '8443';
 
-      const curlHost = `${selectedChain}-${actualInterface}.${domain}`;
+      const curlHost = `${selectedChain}-${commandLookupInterface}.${domain}`;
       // Use wss:// protocol with /websocket path for WebSocket connections
-      const endpoint =
-        selectedInterface === 'jsonrpc/wss'
-          ? `wss://${curlHost}:${port}/websocket`
-          : `https://${curlHost}:${port}`;
+      const endpoint = selectedInterface.includes('/wss')
+        ? `wss://${curlHost}:${port}/websocket`
+        : `https://${curlHost}:${port}`;
       setEndpointUrl(endpoint);
 
       const headers = skipCache ? `-H "lava-force-cache-refresh: true"` : '';
@@ -437,7 +443,7 @@ export default function LiveTestPage() {
       const allHeaders = [headers, extensionHeader].filter(Boolean).join(' ');
 
       let cmd: string;
-      if (selectedInterface === 'jsonrpc/wss') {
+      if (selectedInterface.includes('/wss')) {
         // WebSocket command
         cmd = `wscat -c wss://${curlHost}:${port}/websocket -x '${interfaceCommand}'`;
       } else if (selectedInterface === 'rest') {
@@ -496,9 +502,9 @@ export default function LiveTestPage() {
       const chainType = chainTypes.find(t => t.value === chain.type);
       if (!chainType) throw new Error('Chain type not found');
 
-      // For jsonrpc/wss, use jsonrpc interface commands
-      const actualInterface = selectedInterface === 'jsonrpc/wss' ? 'jsonrpc' : selectedInterface;
-      const interfaceCommands = chainType.interfaces[actualInterface];
+      // For WebSocket interfaces, use the base interface for command lookup
+      const commandLookupInterface = getCommandLookupInterface(selectedInterface);
+      const interfaceCommands = chainType.interfaces[commandLookupInterface];
       if (!interfaceCommands) throw new Error('Interface not found');
 
       const interfaceCommand = interfaceCommands[selectedRequestType];
@@ -511,7 +517,7 @@ export default function LiveTestPage() {
       const responses = await makeLoadTestRequests(
         {
           chainId: selectedChain,
-          interface: actualInterface,
+          interface: selectedInterface, // Pass the original interface (jsonrpc/wss)
           interfaceCommand,
           domain,
           port,
@@ -571,9 +577,9 @@ export default function LiveTestPage() {
       const chainType = chainTypes.find(t => t.value === chain.type);
       if (!chainType) throw new Error('Chain type not found');
 
-      // For jsonrpc/wss, use jsonrpc interface commands
-      const actualInterface = selectedInterface === 'jsonrpc/wss' ? 'jsonrpc' : selectedInterface;
-      const interfaceCommands = chainType.interfaces[actualInterface];
+      // For WebSocket interfaces, use the base interface for command lookup
+      const commandLookupInterface = getCommandLookupInterface(selectedInterface);
+      const interfaceCommands = chainType.interfaces[commandLookupInterface];
       if (!interfaceCommands) throw new Error('Interface not found');
 
       const interfaceCommand = interfaceCommands[selectedRequestType];
@@ -585,7 +591,7 @@ export default function LiveTestPage() {
 
       const response = await makeTestRequest({
         chainId: selectedChain,
-        interface: actualInterface,
+        interface: selectedInterface, // Pass the original interface (jsonrpc/wss)
         interfaceCommand,
         domain,
         port,
@@ -726,9 +732,9 @@ export default function LiveTestPage() {
       const chainType = chainTypes.find(t => t.value === chain.type);
       if (!chainType) throw new Error('Chain type not found');
 
-      // For jsonrpc/wss, use jsonrpc interface commands
-      const actualInterface = selectedInterface === 'jsonrpc/wss' ? 'jsonrpc' : selectedInterface;
-      const interfaceCommands = chainType.interfaces[actualInterface];
+      // For WebSocket interfaces, use the base interface for command lookup
+      const commandLookupInterface = getCommandLookupInterface(selectedInterface);
+      const interfaceCommands = chainType.interfaces[commandLookupInterface];
       if (!interfaceCommands) throw new Error('Interface not found');
 
       const interfaceCommand = interfaceCommands[selectedRequestType];
@@ -740,7 +746,7 @@ export default function LiveTestPage() {
 
       const response = await makeTestRequest({
         chainId: selectedChain,
-        interface: actualInterface,
+        interface: selectedInterface, // Pass the original interface (jsonrpc/wss)
         interfaceCommand,
         domain,
         port,
@@ -998,6 +1004,35 @@ export default function LiveTestPage() {
                                       }}
                                     >
                                       JSON-RPC/WSS
+                                    </Button>
+                                  ) : null;
+                                })()}
+                              {/* Add TendermintRPC/WSS option for chains with hasWss */}
+                              {configuredInterfaces.includes('tendermintrpc') &&
+                                (() => {
+                                  const baseNetwork = getNetworkFromChainId(selectedChain);
+                                  const chain = chains.find(c => c.value === baseNetwork);
+                                  return chain?.hasWss ? (
+                                    <Button
+                                      key='tendermintrpc/wss'
+                                      variant={
+                                        selectedInterface === 'tendermintrpc/wss'
+                                          ? 'default'
+                                          : 'outline'
+                                      }
+                                      size='sm'
+                                      className={cn(
+                                        selectedInterface === 'tendermintrpc/wss' &&
+                                          'bg-teal-500 hover:bg-teal-600',
+                                        'hover:opacity-90',
+                                      )}
+                                      onClick={() => {
+                                        setSelectedInterface('tendermintrpc/wss');
+                                        setSelectedRequestType('regular');
+                                        setResponse('');
+                                      }}
+                                    >
+                                      TendermintRPC/WSS
                                     </Button>
                                   ) : null;
                                 })()}
@@ -1412,6 +1447,36 @@ export default function LiveTestPage() {
                                       }}
                                     >
                                       JSON-RPC/WSS
+                                    </Button>
+                                  ) : null;
+                                })()}
+                              {/* Add TendermintRPC/WSS option for chains with hasWss */}
+                              {configuredInterfaces.includes('tendermintrpc') &&
+                                (() => {
+                                  const baseNetwork = getNetworkFromChainId(selectedChain);
+                                  const chain = chains.find(c => c.value === baseNetwork);
+                                  return chain?.hasWss ? (
+                                    <Button
+                                      key='tendermintrpc/wss'
+                                      variant={
+                                        selectedInterface === 'tendermintrpc/wss'
+                                          ? 'default'
+                                          : 'outline'
+                                      }
+                                      size='sm'
+                                      className={cn(
+                                        selectedInterface === 'tendermintrpc/wss' &&
+                                          'bg-teal-500 hover:bg-teal-600',
+                                        'hover:opacity-90',
+                                      )}
+                                      onClick={() => {
+                                        setSelectedInterface('tendermintrpc/wss');
+                                        setSelectedRequestType('regular');
+                                        setResponse('');
+                                        setLoadTestResult(null);
+                                      }}
+                                    >
+                                      TendermintRPC/WSS
                                     </Button>
                                   ) : null;
                                 })()}
@@ -1981,6 +2046,35 @@ export default function LiveTestPage() {
                                       }}
                                     >
                                       JSON-RPC/WSS
+                                    </Button>
+                                  ) : null;
+                                })()}
+                              {/* Add TendermintRPC/WSS option for chains with hasWss */}
+                              {configuredInterfaces.includes('tendermintrpc') &&
+                                (() => {
+                                  const baseNetwork = getNetworkFromChainId(selectedChain);
+                                  const chain = chains.find(c => c.value === baseNetwork);
+                                  return chain?.hasWss ? (
+                                    <Button
+                                      key='tendermintrpc/wss'
+                                      variant={
+                                        selectedInterface === 'tendermintrpc/wss'
+                                          ? 'default'
+                                          : 'outline'
+                                      }
+                                      size='sm'
+                                      className={cn(
+                                        selectedInterface === 'tendermintrpc/wss' &&
+                                          'bg-teal-500 hover:bg-teal-600',
+                                        'hover:opacity-90',
+                                      )}
+                                      onClick={() => {
+                                        setSelectedInterface('tendermintrpc/wss');
+                                        setSelectedRequestType('regular');
+                                        setCrossValidationResponse('');
+                                      }}
+                                    >
+                                      TendermintRPC/WSS
                                     </Button>
                                   ) : null;
                                 })()}
