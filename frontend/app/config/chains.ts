@@ -4,6 +4,7 @@ export interface Chain {
   icon: string;
   type: string;
   supportedInterfaces: string[];
+  hasWss?: boolean;
 }
 
 export const chains: Chain[] = [
@@ -293,6 +294,7 @@ export const chains: Chain[] = [
     icon: 'https://info-mainnet.lavanet.xyz/icons/solana.svg',
     type: 'solana',
     supportedInterfaces: ['jsonrpc'],
+    hasWss: true,
   },
   {
     value: 'solanat',
@@ -300,6 +302,7 @@ export const chains: Chain[] = [
     icon: 'https://info-mainnet.lavanet.xyz/icons/solana.svg',
     type: 'solana',
     supportedInterfaces: ['jsonrpc'],
+    hasWss: true,
   },
   {
     value: 'strgz',

@@ -407,7 +407,9 @@ export default function LiveTestPage() {
       const chainType = chainTypes.find(t => t.value === chain.type);
       if (!chainType) return;
 
-      const interfaceCommands = chainType.interfaces[selectedInterface];
+      // For jsonrpc/wss, use jsonrpc interface commands
+      const actualInterface = selectedInterface === 'jsonrpc/wss' ? 'jsonrpc' : selectedInterface;
+      const interfaceCommands = chainType.interfaces[actualInterface];
       if (!interfaceCommands) return;
 
       const interfaceCommand = interfaceCommands[selectedRequestType];
@@ -416,8 +418,12 @@ export default function LiveTestPage() {
       const domain = process.env.NEXT_PUBLIC_DOMAIN || 'lava.lavapro.xyz';
       const port = process.env.NEXT_PUBLIC_PORT || '8443';
 
-      const curlHost = `${selectedChain}-${selectedInterface}.${domain}`;
-      const endpoint = `https://${curlHost}:${port}`;
+      const curlHost = `${selectedChain}-${actualInterface}.${domain}`;
+      // Use wss:// protocol with /websocket path for WebSocket connections
+      const endpoint =
+        selectedInterface === 'jsonrpc/wss'
+          ? `wss://${curlHost}:${port}/websocket`
+          : `https://${curlHost}:${port}`;
       setEndpointUrl(endpoint);
 
       const headers = skipCache ? `-H "lava-force-cache-refresh: true"` : '';
@@ -431,7 +437,10 @@ export default function LiveTestPage() {
       const allHeaders = [headers, extensionHeader].filter(Boolean).join(' ');
 
       let cmd: string;
-      if (selectedInterface === 'rest') {
+      if (selectedInterface === 'jsonrpc/wss') {
+        // WebSocket command
+        cmd = `wscat -c wss://${curlHost}:${port}/websocket -x '${interfaceCommand}'`;
+      } else if (selectedInterface === 'rest') {
         const commandData = JSON.parse(interfaceCommand);
         if (commandData.path) {
           // REST GET with path (e.g., Aptos, TON, TRON)
@@ -487,7 +496,9 @@ export default function LiveTestPage() {
       const chainType = chainTypes.find(t => t.value === chain.type);
       if (!chainType) throw new Error('Chain type not found');
 
-      const interfaceCommands = chainType.interfaces[selectedInterface];
+      // For jsonrpc/wss, use jsonrpc interface commands
+      const actualInterface = selectedInterface === 'jsonrpc/wss' ? 'jsonrpc' : selectedInterface;
+      const interfaceCommands = chainType.interfaces[actualInterface];
       if (!interfaceCommands) throw new Error('Interface not found');
 
       const interfaceCommand = interfaceCommands[selectedRequestType];
@@ -500,7 +511,7 @@ export default function LiveTestPage() {
       const responses = await makeLoadTestRequests(
         {
           chainId: selectedChain,
-          interface: selectedInterface,
+          interface: actualInterface,
           interfaceCommand,
           domain,
           port,
@@ -560,7 +571,9 @@ export default function LiveTestPage() {
       const chainType = chainTypes.find(t => t.value === chain.type);
       if (!chainType) throw new Error('Chain type not found');
 
-      const interfaceCommands = chainType.interfaces[selectedInterface];
+      // For jsonrpc/wss, use jsonrpc interface commands
+      const actualInterface = selectedInterface === 'jsonrpc/wss' ? 'jsonrpc' : selectedInterface;
+      const interfaceCommands = chainType.interfaces[actualInterface];
       if (!interfaceCommands) throw new Error('Interface not found');
 
       const interfaceCommand = interfaceCommands[selectedRequestType];
@@ -572,7 +585,7 @@ export default function LiveTestPage() {
 
       const response = await makeTestRequest({
         chainId: selectedChain,
-        interface: selectedInterface,
+        interface: actualInterface,
         interfaceCommand,
         domain,
         port,
@@ -713,7 +726,9 @@ export default function LiveTestPage() {
       const chainType = chainTypes.find(t => t.value === chain.type);
       if (!chainType) throw new Error('Chain type not found');
 
-      const interfaceCommands = chainType.interfaces[selectedInterface];
+      // For jsonrpc/wss, use jsonrpc interface commands
+      const actualInterface = selectedInterface === 'jsonrpc/wss' ? 'jsonrpc' : selectedInterface;
+      const interfaceCommands = chainType.interfaces[actualInterface];
       if (!interfaceCommands) throw new Error('Interface not found');
 
       const interfaceCommand = interfaceCommands[selectedRequestType];
@@ -725,7 +740,7 @@ export default function LiveTestPage() {
 
       const response = await makeTestRequest({
         chainId: selectedChain,
-        interface: selectedInterface,
+        interface: actualInterface,
         interfaceCommand,
         domain,
         port,
@@ -959,6 +974,33 @@ export default function LiveTestPage() {
                                   </Button>
                                 );
                               })}
+                              {/* Add JSON-RPC/WSS option for chains with hasWss */}
+                              {configuredInterfaces.includes('jsonrpc') &&
+                                (() => {
+                                  const baseNetwork = getNetworkFromChainId(selectedChain);
+                                  const chain = chains.find(c => c.value === baseNetwork);
+                                  return chain?.hasWss ? (
+                                    <Button
+                                      key='jsonrpc/wss'
+                                      variant={
+                                        selectedInterface === 'jsonrpc/wss' ? 'default' : 'outline'
+                                      }
+                                      size='sm'
+                                      className={cn(
+                                        selectedInterface === 'jsonrpc/wss' &&
+                                          'bg-cyan-500 hover:bg-cyan-600',
+                                        'hover:opacity-90',
+                                      )}
+                                      onClick={() => {
+                                        setSelectedInterface('jsonrpc/wss');
+                                        setSelectedRequestType('regular');
+                                        setResponse('');
+                                      }}
+                                    >
+                                      JSON-RPC/WSS
+                                    </Button>
+                                  ) : null;
+                                })()}
                             </div>
                           </div>
                         )}
@@ -1345,6 +1387,34 @@ export default function LiveTestPage() {
                                   </Button>
                                 );
                               })}
+                              {/* Add JSON-RPC/WSS option for chains with hasWss */}
+                              {configuredInterfaces.includes('jsonrpc') &&
+                                (() => {
+                                  const baseNetwork = getNetworkFromChainId(selectedChain);
+                                  const chain = chains.find(c => c.value === baseNetwork);
+                                  return chain?.hasWss ? (
+                                    <Button
+                                      key='jsonrpc/wss'
+                                      variant={
+                                        selectedInterface === 'jsonrpc/wss' ? 'default' : 'outline'
+                                      }
+                                      size='sm'
+                                      className={cn(
+                                        selectedInterface === 'jsonrpc/wss' &&
+                                          'bg-cyan-500 hover:bg-cyan-600',
+                                        'hover:opacity-90',
+                                      )}
+                                      onClick={() => {
+                                        setSelectedInterface('jsonrpc/wss');
+                                        setSelectedRequestType('regular');
+                                        setResponse('');
+                                        setLoadTestResult(null);
+                                      }}
+                                    >
+                                      JSON-RPC/WSS
+                                    </Button>
+                                  ) : null;
+                                })()}
                             </div>
                           </div>
                         )}
@@ -1887,6 +1957,33 @@ export default function LiveTestPage() {
                                   </Button>
                                 );
                               })}
+                              {/* Add JSON-RPC/WSS option for chains with hasWss */}
+                              {configuredInterfaces.includes('jsonrpc') &&
+                                (() => {
+                                  const baseNetwork = getNetworkFromChainId(selectedChain);
+                                  const chain = chains.find(c => c.value === baseNetwork);
+                                  return chain?.hasWss ? (
+                                    <Button
+                                      key='jsonrpc/wss'
+                                      variant={
+                                        selectedInterface === 'jsonrpc/wss' ? 'default' : 'outline'
+                                      }
+                                      size='sm'
+                                      className={cn(
+                                        selectedInterface === 'jsonrpc/wss' &&
+                                          'bg-cyan-500 hover:bg-cyan-600',
+                                        'hover:opacity-90',
+                                      )}
+                                      onClick={() => {
+                                        setSelectedInterface('jsonrpc/wss');
+                                        setSelectedRequestType('regular');
+                                        setCrossValidationResponse('');
+                                      }}
+                                    >
+                                      JSON-RPC/WSS
+                                    </Button>
+                                  ) : null;
+                                })()}
                             </div>
                           </div>
                         )}
