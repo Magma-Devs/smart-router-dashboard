@@ -67,6 +67,61 @@ environment:
    - Backend API: http://localhost:8000
    - API Documentation: http://localhost:8000/docs
 
+### Pulling Pre-built Docker Images
+
+Docker images are automatically built and pushed to GitHub Container Registry (GHCR) on each release. To pull and use the pre-built images:
+
+1. **Create a GitHub Personal Access Token (PAT)**
+   - Go to GitHub Settings → Developer settings → Personal access tokens → Tokens (classic)
+   - Create a new token with `read:packages` scope
+   - Copy the token (you'll need it for authentication)
+
+2. **Login to GitHub Container Registry**
+
+   ```bash
+   export GITHUB_PAT=your_personal_access_token
+   echo $GITHUB_PAT | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
+   ```
+
+3. **Pull the images**
+
+   ```bash
+   # Pull backend image
+   docker pull ghcr.io/magma-devs/smart-router-dashboard/backend:latest
+   
+   # Pull frontend image
+   docker pull ghcr.io/magma-devs/smart-router-dashboard/frontend:latest
+   ```
+
+   Or pull a specific version:
+
+   ```bash
+   # Pull specific version (e.g., 1.0.0)
+   docker pull ghcr.io/magma-devs/smart-router-dashboard/backend:1.0.0
+   docker pull ghcr.io/magma-devs/smart-router-dashboard/frontend:1.0.0
+   
+   # Pull latest patch of major.minor version (e.g., 1.0)
+   docker pull ghcr.io/magma-devs/smart-router-dashboard/backend:1.0
+   docker pull ghcr.io/magma-devs/smart-router-dashboard/frontend:1.0
+   ```
+
+4. **Run the containers**
+
+   ```bash
+   # Run backend
+   docker run -d \
+     -p 8000:8000 \
+     -e AUTH_USERNAME=admin \
+     -e AUTH_PASSWORD=password \
+     ghcr.io/magma-devs/smart-router-dashboard/backend:latest
+   
+   # Run frontend
+   docker run -d \
+     -p 3000:3000 \
+     -e NEXT_PUBLIC_API_URL=http://localhost:8000 \
+     ghcr.io/magma-devs/smart-router-dashboard/frontend:latest
+   ```
+
 ### First Login
 
 1. Navigate to the dashboard URL
