@@ -1,15 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import {
-  Check,
-  Network,
-  Server,
-  User,
-  X,
-  ChevronDown,
-  ChevronUp,
-} from 'lucide-react';
+import { Check, Network, Server, User, X, ChevronDown, ChevronUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getChainLabel, getChainIcon } from '@/app/config/chains';
 import { ChainsToProvidersResponse, ChainInfo } from '@/types/metrics';

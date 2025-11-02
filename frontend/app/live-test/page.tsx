@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from '@/components/ui/use-toast';
 import { Toaster } from '@/components/ui/toaster';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   Copy,
   Loader2,
@@ -2246,7 +2247,7 @@ export default function LiveTestPage() {
                   </Card>
                 )}
 
-                {selectedChain && selectedInterface && (
+                {selectedChain && selectedInterface && maxProvidersForNetwork > 1 && (
                   <Card className='border-muted bg-card/50'>
                     <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
                       <CardTitle className='text-lg font-medium'>Test Command</CardTitle>
@@ -2275,28 +2276,41 @@ export default function LiveTestPage() {
                 )}
 
                 <div className='flex justify-end space-x-4'>
-                  <Button
-                    onClick={handleCrossValidation}
-                    disabled={
-                      isCrossValidating ||
-                      !selectedChain ||
-                      !selectedInterface ||
-                      maxProvidersForNetwork === 1
-                    }
-                    className='bg-primary hover:bg-primary/90'
-                  >
-                    {isCrossValidating ? (
-                      <>
-                        <Loader2 className='mr-2 h-4 w-4 animate-spin' />
-                        Cross Validating...
-                      </>
-                    ) : (
-                      <>
-                        <Shield className='mr-2 h-4 w-4' />
-                        Cross Validation
-                      </>
-                    )}
-                  </Button>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div>
+                          <Button
+                            onClick={handleCrossValidation}
+                            disabled={
+                              isCrossValidating ||
+                              !selectedChain ||
+                              !selectedInterface ||
+                              maxProvidersForNetwork === 1
+                            }
+                            className='bg-primary hover:bg-primary/90'
+                          >
+                            {isCrossValidating ? (
+                              <>
+                                <Loader2 className='mr-2 h-4 w-4 animate-spin' />
+                                Cross Validating...
+                              </>
+                            ) : (
+                              <>
+                                <Shield className='mr-2 h-4 w-4' />
+                                Cross Validation
+                              </>
+                            )}
+                          </Button>
+                        </div>
+                      </TooltipTrigger>
+                      {maxProvidersForNetwork === 1 && (
+                        <TooltipContent>
+                          <p>Cross validation requires at least 2 providers</p>
+                        </TooltipContent>
+                      )}
+                    </Tooltip>
+                  </TooltipProvider>
                 </div>
 
                 {crossValidationResponse && (
