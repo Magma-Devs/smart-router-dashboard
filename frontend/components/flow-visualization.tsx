@@ -8,15 +8,12 @@ import {
   User,
   X,
   ChevronDown,
-  ChevronRight,
   ChevronUp,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getChainLabel, getChainIcon } from '@/app/config/chains';
 import { ChainsToProvidersResponse, ChainInfo } from '@/types/metrics';
 import ReactFlow, {
-  Background,
-  BackgroundVariant,
   Controls,
   Handle,
   Position,
@@ -272,21 +269,14 @@ function ProviderGroupNode({
       <Handle type='target' position={Position.Left} className='!bg-muted-foreground' />
       <div className='flex flex-col'>
         <div className='flex items-center gap-2'>
-          <div className='relative'>
-            <Server className='h-4 w-4' />
-            <ChevronRight className='h-3 w-3 absolute -bottom-1 -right-1' />
-          </div>
+          <Server className='h-4 w-4' />
           <div className='flex flex-col'>
             <span className='font-medium whitespace-nowrap overflow-hidden text-ellipsis'>
               {displayService}
             </span>
             <span className='text-xs text-muted-foreground flex items-center gap-1'>
-              {showInterfaces ? (
-                <ChevronUp className='h-3 w-3' />
-              ) : (
-                <ChevronDown className='h-3 w-3' />
-              )}
-              <span>Interfaces</span>
+              <ChevronUp className='h-3 w-3' />
+              <span>Collapse</span>
             </span>
           </div>
           <div className='ml-auto flex items-center gap-1'>
@@ -305,6 +295,7 @@ function ProviderGroupNode({
 
         {showInterfaces && (
           <div className='mt-2 border-t pt-2 text-xs'>
+            <div className='text-xs font-medium text-muted-foreground mb-1'>Interfaces</div>
             <div style={{ maxHeight: maxListHeight, overflowY: 'auto' }} className='pr-1'>
               {interfacesByHealth.healthy.length > 0 && (
                 <div>
@@ -345,6 +336,7 @@ function ProviderCountNode({
     isHealthy: boolean;
     healthyCount?: number;
     hasMixedHealth?: boolean;
+    canExpand?: boolean;
   };
 }) {
   return (
@@ -361,10 +353,7 @@ function ProviderCountNode({
     >
       <Handle type='target' position={Position.Left} className='!bg-muted-foreground' />
       <div className='flex items-center gap-2'>
-        <div className='relative'>
-          <Server className='h-4 w-4' />
-          <ChevronRight className='h-3 w-3 absolute -bottom-1 -right-1' />
-        </div>
+        <Server className='h-4 w-4' />
         <div className='flex flex-col'>
           <span className='font-medium'>
             {data.healthyCount !== undefined ? `${data.healthyCount}/${data.count}` : data.count}{' '}
@@ -634,8 +623,8 @@ function FlowInner({
     const sidesPadding = 0;
     const horizontalGap = 400;
     const providerVerticalGap = 180; // Space between collapsed chains
-    const serviceGroupGap = 80; // Space between expanded service groups within a chain
-    const expandedChainPadding = 40; // Extra padding at top/bottom of expanded chain section
+    const serviceGroupGap = 150; // Space between expanded service groups within a chain (increased for better spacing)
+    const expandedChainPadding = 60; // Extra padding at top/bottom of expanded chain section (increased)
 
     // Sort chains alphabetically by name
     chains.sort((a, b) => a.name.localeCompare(b.name));
@@ -750,7 +739,7 @@ function FlowInner({
       if (isExpanded) {
         // Add top padding for expanded chain section
         chainHeight += expandedChainPadding;
-        
+
         // If chain is expanded, calculate height for all service groups
         serviceGroups.forEach(group => {
           const isServiceExpanded = expandedServiceGroups.has(`${chain.name}-${group.service}`);
@@ -758,7 +747,7 @@ function FlowInner({
           const nodeHeight = calculateNodeHeight(group, isServiceExpanded);
           chainHeight += nodeHeight + serviceGroupGap;
         });
-        
+
         // Add bottom padding for expanded chain section
         chainHeight += expandedChainPadding;
       } else {
@@ -828,8 +817,8 @@ function FlowInner({
       const chainY = chainYPositions[chain.name];
       const isChainExpanded = expandedChains.has(chain.name);
       const serviceGroups = serviceGroupsByChain[chain.name];
-      const hasMultipleProviders =
-        serviceGroups.reduce((total, group) => total + group.providers.length, 0) > 2;
+      // All chains with providers should be expandable
+      const hasMultipleProviders = serviceGroups.length > 1;
 
       // Use calculated width for chain nodes
       const chainWidth = finalChainNodeWidth;
@@ -913,10 +902,11 @@ function FlowInner({
               isExpanded: isServiceExpanded,
               maxWidth: finalChainNodeWidth,
               onToggle: () => {
+                // Collapse the entire chain when clicking on a provider group
                 setExpandedGroups(prev => {
                   const newState = { ...prev };
-                  const serviceKey = `service-group-${chain.name}-${group.service}`;
-                  newState[serviceKey] = !prev[serviceKey];
+                  const chainKey = `chain-${chain.name}`;
+                  newState[chainKey] = false;
                   return newState;
                 });
               },

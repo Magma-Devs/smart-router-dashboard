@@ -22,8 +22,7 @@ export const chainTypes: ChainType[] = [
           '{"jsonrpc":"2.0","method":"eth_getBalance","params":["0x0000000000000000000000000000000000000000","0x2C2A2"],"id":1}',
         debug:
           '{"jsonrpc":"2.0","method":"debug_traceBlockByNumber","params":["latest",{}],"id":1}',
-        trace:
-          '{"jsonrpc":"2.0","method":"trace_block","params":["latest"],"id":1}',
+        trace: '{"jsonrpc":"2.0","method":"trace_block","params":["latest"],"id":1}',
       },
     },
   },
@@ -37,11 +36,10 @@ export const chainTypes: ChainType[] = [
           '{"jsonrpc":"2.0","method":"eth_getBalance","params":["0x0000000000000000000000000000000000000000","0x2C2A2"],"id":1}',
         debug:
           '{"jsonrpc":"2.0","method":"debug_traceBlockByNumber","params":["latest",{}],"id":1}',
-        trace:
-          '{"jsonrpc":"2.0","method":"arbstrace_block","params":["latest"],"id":1}',
+        trace: '{"jsonrpc":"2.0","method":"arbstrace_block","params":["latest"],"id":1}',
       },
     },
-  },  
+  },
   {
     value: 'near',
     label: 'NEAR',

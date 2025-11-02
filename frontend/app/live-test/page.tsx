@@ -325,17 +325,17 @@ export default function LiveTestPage() {
     if (!selectedNetwork || !apiData?.consumers) {
       return 10; // Default fallback
     }
-    
+
     // Find all chains/routers in the selected network
     const routersInNetwork = availableChains.filter(c => c.network === selectedNetwork);
-    
+
     // Find the maximum number of providers across all routers in this network
     let maxProviders = 1;
     for (const router of routersInNetwork) {
       const providers = apiData.consumers[router.id]?.providers || [];
       maxProviders = Math.max(maxProviders, providers.length);
     }
-    
+
     return maxProviders;
   }, [selectedNetwork, apiData, availableChains]);
 
@@ -395,7 +395,7 @@ export default function LiveTestPage() {
   useEffect(() => {
     // Set max to the network's max providers when network changes
     setCrossValidationMax(maxProvidersForNetwork);
-    
+
     // Adjust min if it exceeds the network's max providers
     if (crossValidationMin > maxProvidersForNetwork) {
       setCrossValidationMin(maxProvidersForNetwork);
@@ -2232,7 +2232,8 @@ export default function LiveTestPage() {
                         </div>
                         {maxProvidersForNetwork === 1 ? (
                           <p className='text-sm text-muted-foreground'>
-                            Cross validation is not available for this network as it only has 1 provider configured.
+                            Cross validation is not available for this network as it only has 1
+                            provider configured.
                           </p>
                         ) : (
                           <p className='text-sm text-muted-foreground'>
@@ -2276,7 +2277,12 @@ export default function LiveTestPage() {
                 <div className='flex justify-end space-x-4'>
                   <Button
                     onClick={handleCrossValidation}
-                    disabled={isCrossValidating || !selectedChain || !selectedInterface || maxProvidersForNetwork === 1}
+                    disabled={
+                      isCrossValidating ||
+                      !selectedChain ||
+                      !selectedInterface ||
+                      maxProvidersForNetwork === 1
+                    }
                     className='bg-primary hover:bg-primary/90'
                   >
                     {isCrossValidating ? (
