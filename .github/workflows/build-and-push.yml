@@ -27,15 +27,11 @@ jobs:
       - name: Read version from VERSION file
         id: read-version
         run: |
-          if [ ! -f VERSION ]; then
-            echo "Error: VERSION file not found"
+          if [ ! -f VERSION ] || [ -z "$(tr -d ' \n\r' < VERSION)" ]; then
+            echo "Error: VERSION file not found or is empty"
             exit 1
           fi
-          VERSION=$(cat VERSION | tr -d ' \n\r')
-          if [ -z "$VERSION" ]; then
-            echo "Error: VERSION file is empty"
-            exit 1
-          fi
+          VERSION=$(tr -d ' \n\r' < VERSION)
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Read version: $VERSION"
 
