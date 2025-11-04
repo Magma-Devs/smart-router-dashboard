@@ -1,6 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { getRuntimeConfig, getApiUrl } from '@/lib/runtime-config';
 
 interface AuthContextType {
   isAuthenticated: boolean;
@@ -28,12 +29,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [username, setUsername] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [apiUrl, setApiUrl] = useState<string>(getApiUrl());
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+  // Load runtime config on mount
+  useEffect(() => {
+    getRuntimeConfig().then(config => {
+      setApiUrl(config.NEXT_PUBLIC_API_URL);
+    });
+  }, []);
 
   useEffect(() => {
     // Check if user is already authenticated on mount
-    checkAuthStatus();
+    if (apiUrl) {
+      checkAuthStatus();
+    }
 
     // Listen for auth failures from API client
     const handleAuthFailed = () => {
@@ -44,7 +53,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     window.addEventListener('auth-failed', handleAuthFailed);
     return () => window.removeEventListener('auth-failed', handleAuthFailed);
-  }, []);
+  }, [apiUrl]);
 
   const checkAuthStatus = async () => {
     try {
@@ -56,7 +65,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return;
       }
 
-      const response = await fetch(`${API_URL}/api/auth/me`, {
+      const response = await fetch(`${apiUrl}/api/auth/me`, {
         headers: {
           Authorization: `Basic ${savedCredentials}`,
           'Content-Type': 'application/json',
@@ -88,7 +97,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     try {
       setLoading(true);
 
-      const response = await fetch(`${API_URL}/api/auth/login`, {
+      const response = await fetch(`${apiUrl}/api/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -127,7 +136,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     sessionStorage.removeItem('auth_credentials');
 
     // Call logout endpoint
-    fetch(`${API_URL}/api/auth/logout`, {
+    fetch(`${apiUrl}/api/auth/logout`, {
       method: 'POST',
       credentials: 'include',
     }).catch(console.error);

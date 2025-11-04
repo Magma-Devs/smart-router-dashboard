@@ -1,6 +1,17 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+import { getApiUrl, getRuntimeConfig } from './runtime-config';
 
 class ApiClient {
+  /**
+   * Gets the current API URL from runtime config or fallback to env var
+   */
+  private async getApiUrl(): Promise<string> {
+    if (typeof window !== 'undefined') {
+      const config = await getRuntimeConfig();
+      return config.NEXT_PUBLIC_API_URL;
+    }
+    return getApiUrl();
+  }
+
   private getAuthHeaders(): HeadersInit {
     const credentials = sessionStorage.getItem('auth_credentials');
     if (credentials) {
@@ -15,7 +26,8 @@ class ApiClient {
   }
 
   async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-    const url = `${API_URL}${endpoint}`;
+    const apiUrl = await this.getApiUrl();
+    const url = `${apiUrl}${endpoint}`;
     const headers = this.getAuthHeaders();
 
     const config: RequestInit = {

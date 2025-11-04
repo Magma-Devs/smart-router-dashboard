@@ -1,0 +1,236 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# ============================================
+# Frontend (Next.js/Node.js)
+# ============================================
+
+# Dependencies
+node_modules/
+frontend/node_modules/
+.pnp
+.pnp.js
+
+# Next.js
+.next/
+frontend/.next/
+out/
+frontend/out/
+
+# Production builds
+build/
+dist/
+frontend/build/
+frontend/dist/
+
+# Debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+frontend/next-env.d.ts
+
+# Vercel
+.vercel
+frontend/.vercel
+
+# ============================================
+# Backend (Python)
+# ============================================
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+backend/__pycache__/
+backend/**/__pycache__/
+
+# Virtual environments
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.venv
+backend/venv/
+backend/env/
+backend/.venv
+
+# Python distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyCharm
+.idea/
+
+# pytest
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# ============================================
+# Environment Variables
+# ============================================
+
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env*.local
+*.env
+
+# ============================================
+# Docker
+# ============================================
+
+# Docker volumes and data
+docker-data/
+.docker/
+
+# ============================================
+# IDE / Editor
+# ============================================
+
+# VSCode
+.vscode/
+*.code-workspace
+
+# IntelliJ / PyCharm
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+*~
+\#*\#
+.\#*
+
+# ============================================
+# OS Files
+# ============================================
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# ============================================
+# Logs
+# ============================================
+
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# ============================================
+# Testing
+# ============================================
+
+coverage/
+.nyc_output/
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# ============================================
+# Temporary files
+# ============================================
+
+*.tmp
+*.temp
+*.bak
+*.swp
+*~
+
+# ============================================
+# Project specific
+# ============================================
+
+# Helm values (if sensitive)
+# Uncomment if you don't want to track helm values
+# helm-values/
+# values/
+
+# Scripts (if containing secrets)
+# scripts/secrets.sh

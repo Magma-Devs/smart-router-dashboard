@@ -560,12 +560,22 @@ async def get_providers_metrics(
         # quantiles requires at least 2 data points
         if len(all_provider_metrics) >= 2:
             p90_latency = (
-                round(statistics.quantiles(latencies, n=10)[8]) if len(latencies) >= 2 else (latencies[0] if latencies else 0)
+                round(statistics.quantiles(latencies, n=10)[8])
+                if len(latencies) >= 2
+                else (latencies[0] if latencies else 0)
             )
             p90_metrics = ProviderMetrics(
-                uptime=round(statistics.quantiles(uptimes, n=10)[8], 2) if len(uptimes) >= 2 else (uptimes[0] if uptimes else 0.0),
+                uptime=(
+                    round(statistics.quantiles(uptimes, n=10)[8], 2)
+                    if len(uptimes) >= 2
+                    else (uptimes[0] if uptimes else 0.0)
+                ),
                 latency_in_ms=p90_latency,
-                requests_in_window=round(statistics.quantiles(requests, n=10)[8]) if len(requests) >= 2 else (requests[0] if requests else 0),
+                requests_in_window=(
+                    round(statistics.quantiles(requests, n=10)[8])
+                    if len(requests) >= 2
+                    else (requests[0] if requests else 0)
+                ),
                 latest_block=0,  # No p90 for latest block
             )
         else:
