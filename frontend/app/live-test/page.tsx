@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useConfig } from '@/hooks/use-config';
+import { useRuntimeConfig } from '@/hooks/use-runtime-config';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -85,6 +86,7 @@ interface LiveTestResult {
 
 export default function LiveTestPage() {
   const { config } = useConfig();
+  const { config: runtimeConfig } = useRuntimeConfig();
   // id + network of real chains with metrics
   const [availableChains, setAvailableChains] = useState<Array<{ id: string; network: string }>>(
     [],
@@ -464,8 +466,8 @@ export default function LiveTestPage() {
       const interfaceCommand = interfaceCommands[selectedRequestType];
       if (!interfaceCommand) return;
 
-      const domain = process.env.NEXT_PUBLIC_DOMAIN || 'lava.lavapro.xyz';
-      const port = process.env.NEXT_PUBLIC_PORT || '8443';
+      const domain = runtimeConfig?.NEXT_PUBLIC_DOMAIN || 'lava.lavapro.xyz';
+      const port = runtimeConfig?.NEXT_PUBLIC_PORT || '8443';
 
       const curlHost = `${selectedChain}-${commandLookupInterface}.${domain}`;
       // Use wss:// protocol with /websocket path for WebSocket connections
@@ -536,8 +538,8 @@ export default function LiveTestPage() {
       const interfaceCommand = interfaceCommands[selectedRequestType];
       if (!interfaceCommand) return;
 
-      const domain = process.env.NEXT_PUBLIC_DOMAIN || 'lava.lavapro.xyz';
-      const port = process.env.NEXT_PUBLIC_PORT || '8443';
+      const domain = runtimeConfig?.NEXT_PUBLIC_DOMAIN || 'lava.lavapro.xyz';
+      const port = runtimeConfig?.NEXT_PUBLIC_PORT || '8443';
 
       const curlHost = `${selectedChain}-${commandLookupInterface}.${domain}`;
 
@@ -630,8 +632,8 @@ export default function LiveTestPage() {
       if (!interfaceCommand) throw new Error('Request type command not found');
 
       // Make direct requests to provider endpoint
-      const domain = process.env.NEXT_PUBLIC_DOMAIN || 'lava.lavapro.xyz';
-      const port = process.env.NEXT_PUBLIC_PORT || '8443';
+      const domain = runtimeConfig?.NEXT_PUBLIC_DOMAIN || 'lava.lavapro.xyz';
+      const port = runtimeConfig?.NEXT_PUBLIC_PORT || '8443';
 
       const responses = await makeLoadTestRequests(
         {

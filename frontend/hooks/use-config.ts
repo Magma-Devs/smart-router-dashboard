@@ -10,6 +10,7 @@
 
 import { useState, useEffect } from 'react';
 import { useLocalStorage } from '@/hooks/use-local-storage';
+import { getRuntimeConfig } from '@/lib/runtime-config';
 
 /**
  * Configuration object interface
@@ -47,26 +48,25 @@ interface Config {
  * ```
  */
 export function useConfig() {
-  // Initialize with environment variable or null for first-time users
-  const [apiHost, setApiHost] = useLocalStorage<string | null>(
-    'api-host',
-    process.env.NEXT_PUBLIC_API_URL || null,
-  );
+  // Initialize with null - will be set from runtime config
+  const [apiHost, setApiHost] = useLocalStorage<string | null>('api-host', null);
+  const [defaultApiUrl, setDefaultApiUrl] = useState<string>('');
 
   // Default refresh interval of 60 seconds
   const [refreshInterval, setRefreshInterval] = useLocalStorage<number>('refresh-interval', 60);
 
   /**
-   * Initialize API host from environment variable if not set.
+   * Initialize API host from runtime config if not set.
    * This ensures new users get the default configuration automatically.
    */
   useEffect(() => {
-    if (apiHost === null) {
-      const defaultEndpoint = process.env.NEXT_PUBLIC_API_URL;
-      if (defaultEndpoint) {
+    getRuntimeConfig().then(config => {
+      const defaultEndpoint = config.NEXT_PUBLIC_API_URL;
+      setDefaultApiUrl(defaultEndpoint);
+      if (apiHost === null && defaultEndpoint) {
         setApiHost(defaultEndpoint);
       }
-    }
+    });
   }, [apiHost, setApiHost]);
 
   /**
@@ -95,13 +95,12 @@ export function useConfig() {
   /**
    * Resets configuration to default values.
    *
-   * Restores API endpoint to environment variable default and
+   * Restores API endpoint to runtime config default and
    * refresh interval to 60 seconds.
    */
   const resetConfig = () => {
-    const defaultEndpoint = process.env.NEXT_PUBLIC_API_URL;
-    if (defaultEndpoint) {
-      setApiHost(defaultEndpoint);
+    if (defaultApiUrl) {
+      setApiHost(defaultApiUrl);
     }
     setRefreshInterval(60);
   };
@@ -111,7 +110,7 @@ export function useConfig() {
      * Current configuration object with validated values
      */
     config: {
-      apiEndpoint: apiHost || process.env.NEXT_PUBLIC_API_URL || '',
+      apiEndpoint: apiHost || defaultApiUrl || '',
       refreshInterval:
         typeof refreshInterval === 'string' ? parseInt(refreshInterval, 10) : refreshInterval,
     } as Config,
