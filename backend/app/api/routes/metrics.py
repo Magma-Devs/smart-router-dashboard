@@ -37,14 +37,14 @@ router = APIRouter()
 
 # Prometheus query constants
 PROMETHEUS_QUERIES = {
-    "consumer_health": "lava_consumer_overall_health_breakdown",
-    "provider_health": "lava_provider_overall_health_breakdown",
+    "consumer_health": "lava_consumer_overall_health",
+    "provider_health": "lava_provider_overall_health",
     "consumer_traffic": "lava_consumer_total_relays_serviced",
     "provider_traffic": "lava_provider_total_relays_serviced",
     "consumer_latest_block": "lava_consumer_latest_provider_block",
     "provider_latest_block": "lava_latest_block",
-    "consumer_latency": "lava_consumer_latency_for_request",
-    "provider_latency": "lava_provider_latency_milliseconds",
+    "consumer_latency": "lava_consumer_end_to_end_latency_milliseconds",
+    "provider_latency": "lava_provider_end_to_end_latency_milliseconds",
 }
 
 # Default values
@@ -379,13 +379,24 @@ async def get_chains_metrics(
         )
 
         # Create 90th percentile metrics
-        p90_metrics = ChainMetrics(
-            uptime=round(statistics.quantiles(uptimes, n=10)[8], 2),
-            latency_in_ms=int(round(statistics.quantiles(latencies, n=10)[8])),
-            reachability=round(statistics.quantiles(reachabilities, n=10)[8], 2),
-            requests_in_window=round(statistics.quantiles(requests, n=10)[8]),
-            latest_block=0,  # No p90 for latest block
-        )
+        # quantiles requires at least 2 data points
+        if len(all_chains) >= 2:
+            p90_metrics = ChainMetrics(
+                uptime=round(statistics.quantiles(uptimes, n=10)[8], 2),
+                latency_in_ms=int(round(statistics.quantiles(latencies, n=10)[8])),
+                reachability=round(statistics.quantiles(reachabilities, n=10)[8], 2),
+                requests_in_window=round(statistics.quantiles(requests, n=10)[8]),
+                latest_block=0,  # No p90 for latest block
+            )
+        else:
+            # If only one chain, use its values as p90
+            p90_metrics = ChainMetrics(
+                uptime=uptimes[0] if uptimes else 0.0,
+                latency_in_ms=latencies[0] if latencies else 0,
+                reachability=reachabilities[0] if reachabilities else 0.0,
+                requests_in_window=requests[0] if requests else 0,
+                latest_block=0,  # No p90 for latest block
+            )
 
         return ChainsMetricsResponse(
             chains=chains_data_dict, avg=avg_metrics, p90=p90_metrics
@@ -546,15 +557,36 @@ async def get_providers_metrics(
         )
 
         # Create 90th percentile metrics
-        p90_latency = (
-            round(statistics.quantiles(latencies, n=10)[8]) if latencies else 0
-        )
-        p90_metrics = ProviderMetrics(
-            uptime=round(statistics.quantiles(uptimes, n=10)[8], 2),
-            latency_in_ms=p90_latency,
-            requests_in_window=round(statistics.quantiles(requests, n=10)[8]),
-            latest_block=0,  # No p90 for latest block
-        )
+        # quantiles requires at least 2 data points
+        if len(all_provider_metrics) >= 2:
+            p90_latency = (
+                round(statistics.quantiles(latencies, n=10)[8])
+                if len(latencies) >= 2
+                else (latencies[0] if latencies else 0)
+            )
+            p90_metrics = ProviderMetrics(
+                uptime=(
+                    round(statistics.quantiles(uptimes, n=10)[8], 2)
+                    if len(uptimes) >= 2
+                    else (uptimes[0] if uptimes else 0.0)
+                ),
+                latency_in_ms=p90_latency,
+                requests_in_window=(
+                    round(statistics.quantiles(requests, n=10)[8])
+                    if len(requests) >= 2
+                    else (requests[0] if requests else 0)
+                ),
+                latest_block=0,  # No p90 for latest block
+            )
+        else:
+            # If only one provider, use its values as p90
+            p90_latency = latencies[0] if latencies else 0
+            p90_metrics = ProviderMetrics(
+                uptime=uptimes[0] if uptimes else 0.0,
+                latency_in_ms=p90_latency,
+                requests_in_window=requests[0] if requests else 0,
+                latest_block=0,  # No p90 for latest block
+            )
 
         return ProvidersMetricsResponse(
             providers=providers_data_dict, avg=avg_metrics, p90=p90_metrics

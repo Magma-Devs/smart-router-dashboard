@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useConfig } from '@/hooks/use-config';
+import { useRuntimeConfig } from '@/hooks/use-runtime-config';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -9,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from '@/components/ui/use-toast';
 import { Toaster } from '@/components/ui/toaster';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   Copy,
   Loader2,
@@ -84,6 +86,7 @@ interface LiveTestResult {
 
 export default function LiveTestPage() {
   const { config } = useConfig();
+  const { config: runtimeConfig } = useRuntimeConfig();
   // id + network of real chains with metrics
   const [availableChains, setAvailableChains] = useState<Array<{ id: string; network: string }>>(
     [],
@@ -259,7 +262,7 @@ export default function LiveTestPage() {
   // Cross validation state
   const [crossValidationMin, setCrossValidationMin] = useState<number>(1);
   const [crossValidationMax, setCrossValidationMax] = useState<number>(5);
-  const [crossValidationRate, setCrossValidationRate] = useState<number>(0.5);
+  const [crossValidationRate, setCrossValidationRate] = useState<number>(1.0);
   const [isCrossValidating, setIsCrossValidating] = useState(false);
   const [crossValidationResponse, setCrossValidationResponse] = useState<string>('');
   const [crossValidationStatus, setCrossValidationStatus] = useState<number | null>(null);
@@ -320,6 +323,34 @@ export default function LiveTestPage() {
     return { cachedCount: cached, nonCachedCount: nonCached };
   }, [loadTestResult]);
 
+  // Get the maximum number of providers across all routers in the selected network
+  const maxProvidersForNetwork = useMemo(() => {
+    if (!selectedNetwork || !apiData?.consumers) {
+      return 10; // Default fallback
+    }
+
+    // Find all chains/routers in the selected network
+    const routersInNetwork = availableChains.filter(c => c.network === selectedNetwork);
+
+    // Find the maximum number of providers across all routers in this network
+    let maxProviders = 1;
+    for (const router of routersInNetwork) {
+      const providers = apiData.consumers[router.id]?.providers || [];
+      maxProviders = Math.max(maxProviders, providers.length);
+    }
+
+    return maxProviders;
+  }, [selectedNetwork, apiData, availableChains]);
+
+  // Get the maximum number of providers for the selected chain
+  const maxProvidersForChain = useMemo(() => {
+    if (!selectedChain || !apiData?.consumers?.[selectedChain]) {
+      return 10; // Default fallback
+    }
+    const providers = apiData.consumers[selectedChain].providers || [];
+    return Math.max(providers.length, 1); // At least 1
+  }, [selectedChain, apiData]);
+
   useEffect(() => {
     const fetchChains = async () => {
       if (!config.apiEndpoint) {
@@ -362,6 +393,18 @@ export default function LiveTestPage() {
 
     fetchChains();
   }, [config.apiEndpoint]);
+
+  // Update cross validation max/min when the network changes and provider count changes
+  useEffect(() => {
+    // Set max to the network's max providers when network changes
+    setCrossValidationMax(maxProvidersForNetwork);
+
+    // Adjust min if it exceeds the network's max providers
+    if (crossValidationMin > maxProvidersForNetwork) {
+      setCrossValidationMin(maxProvidersForNetwork);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [maxProvidersForNetwork]);
 
   // Update interfaces when chain selection changes (without refetching)
   useEffect(() => {
@@ -423,8 +466,8 @@ export default function LiveTestPage() {
       const interfaceCommand = interfaceCommands[selectedRequestType];
       if (!interfaceCommand) return;
 
-      const domain = process.env.NEXT_PUBLIC_DOMAIN || 'lava.lavapro.xyz';
-      const port = process.env.NEXT_PUBLIC_PORT || '8443';
+      const domain = runtimeConfig?.NEXT_PUBLIC_DOMAIN || 'lava.lavapro.xyz';
+      const port = runtimeConfig?.NEXT_PUBLIC_PORT || '8443';
 
       const curlHost = `${selectedChain}-${commandLookupInterface}.${domain}`;
       // Use wss:// protocol with /websocket path for WebSocket connections
@@ -495,8 +538,8 @@ export default function LiveTestPage() {
       const interfaceCommand = interfaceCommands[selectedRequestType];
       if (!interfaceCommand) return;
 
-      const domain = process.env.NEXT_PUBLIC_DOMAIN || 'lava.lavapro.xyz';
-      const port = process.env.NEXT_PUBLIC_PORT || '8443';
+      const domain = runtimeConfig?.NEXT_PUBLIC_DOMAIN || 'lava.lavapro.xyz';
+      const port = runtimeConfig?.NEXT_PUBLIC_PORT || '8443';
 
       const curlHost = `${selectedChain}-${commandLookupInterface}.${domain}`;
 
@@ -589,8 +632,8 @@ export default function LiveTestPage() {
       if (!interfaceCommand) throw new Error('Request type command not found');
 
       // Make direct requests to provider endpoint
-      const domain = process.env.NEXT_PUBLIC_DOMAIN || 'lava.lavapro.xyz';
-      const port = process.env.NEXT_PUBLIC_PORT || '8443';
+      const domain = runtimeConfig?.NEXT_PUBLIC_DOMAIN || 'lava.lavapro.xyz';
+      const port = runtimeConfig?.NEXT_PUBLIC_PORT || '8443';
 
       const responses = await makeLoadTestRequests(
         {
@@ -2149,7 +2192,7 @@ export default function LiveTestPage() {
                             value={crossValidationMin}
                             onChange={e => setCrossValidationMin(parseInt(e.target.value))}
                             className='w-full'
-                            disabled={isCrossValidating}
+                            disabled={isCrossValidating || maxProvidersForNetwork === 1}
                           />
                         </div>
                         <div className='space-y-2'>
@@ -2160,7 +2203,7 @@ export default function LiveTestPage() {
                             id='crossValidationMax'
                             type='range'
                             min='1'
-                            max='10'
+                            max={maxProvidersForNetwork}
                             value={crossValidationMax}
                             onChange={e => {
                               const newMax = parseInt(e.target.value);
@@ -2171,7 +2214,7 @@ export default function LiveTestPage() {
                               }
                             }}
                             className='w-full'
-                            disabled={isCrossValidating}
+                            disabled={isCrossValidating || maxProvidersForNetwork === 1}
                           />
                         </div>
                         <div className='space-y-2'>
@@ -2187,19 +2230,26 @@ export default function LiveTestPage() {
                             value={crossValidationRate}
                             onChange={e => setCrossValidationRate(parseFloat(e.target.value))}
                             className='w-full'
-                            disabled={isCrossValidating}
+                            disabled={isCrossValidating || maxProvidersForNetwork === 1}
                           />
                         </div>
-                        <p className='text-sm text-muted-foreground'>
-                          Cross validation will test with minimum: {crossValidationMin}, maximum:{' '}
-                          {crossValidationMax}, rate: {crossValidationRate.toFixed(2)}
-                        </p>
+                        {maxProvidersForNetwork === 1 ? (
+                          <p className='text-sm text-muted-foreground'>
+                            Cross validation is not available for this network as it only has 1
+                            provider configured.
+                          </p>
+                        ) : (
+                          <p className='text-sm text-muted-foreground'>
+                            Cross validation will test with minimum: {crossValidationMin}, maximum:{' '}
+                            {crossValidationMax}, rate: {crossValidationRate.toFixed(2)}
+                          </p>
+                        )}
                       </div>
                     </CardContent>
                   </Card>
                 )}
 
-                {selectedChain && selectedInterface && (
+                {selectedChain && selectedInterface && maxProvidersForNetwork > 1 && (
                   <Card className='border-muted bg-card/50'>
                     <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
                       <CardTitle className='text-lg font-medium'>Test Command</CardTitle>
@@ -2228,23 +2278,41 @@ export default function LiveTestPage() {
                 )}
 
                 <div className='flex justify-end space-x-4'>
-                  <Button
-                    onClick={handleCrossValidation}
-                    disabled={isCrossValidating || !selectedChain || !selectedInterface}
-                    className='bg-primary hover:bg-primary/90'
-                  >
-                    {isCrossValidating ? (
-                      <>
-                        <Loader2 className='mr-2 h-4 w-4 animate-spin' />
-                        Cross Validating...
-                      </>
-                    ) : (
-                      <>
-                        <Shield className='mr-2 h-4 w-4' />
-                        Cross Validation
-                      </>
-                    )}
-                  </Button>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div>
+                          <Button
+                            onClick={handleCrossValidation}
+                            disabled={
+                              isCrossValidating ||
+                              !selectedChain ||
+                              !selectedInterface ||
+                              maxProvidersForNetwork === 1
+                            }
+                            className='bg-primary hover:bg-primary/90'
+                          >
+                            {isCrossValidating ? (
+                              <>
+                                <Loader2 className='mr-2 h-4 w-4 animate-spin' />
+                                Cross Validating...
+                              </>
+                            ) : (
+                              <>
+                                <Shield className='mr-2 h-4 w-4' />
+                                Cross Validation
+                              </>
+                            )}
+                          </Button>
+                        </div>
+                      </TooltipTrigger>
+                      {maxProvidersForNetwork === 1 && (
+                        <TooltipContent>
+                          <p>Cross validation requires at least 2 providers</p>
+                        </TooltipContent>
+                      )}
+                    </Tooltip>
+                  </TooltipProvider>
                 </div>
 
                 {crossValidationResponse && (

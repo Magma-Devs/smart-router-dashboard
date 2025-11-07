@@ -1,22 +1,11 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import {
-  Check,
-  Network,
-  Server,
-  User,
-  X,
-  ChevronDown,
-  ChevronRight,
-  ChevronUp,
-} from 'lucide-react';
+import { Check, Network, Server, User, X, ChevronDown, ChevronUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getChainLabel, getChainIcon } from '@/app/config/chains';
 import { ChainsToProvidersResponse, ChainInfo } from '@/types/metrics';
 import ReactFlow, {
-  Background,
-  BackgroundVariant,
   Controls,
   Handle,
   Position,
@@ -253,8 +242,8 @@ function ProviderGroupNode({
 
   // Determine if interfaces should be shown
   const showInterfaces = true;
-  // Set max height for the interface list
-  const maxListHeight = 150;
+  // Set max height for the interface list - matches calculateNodeHeight cap
+  const maxListHeight = 180;
 
   return (
     <div
@@ -272,21 +261,14 @@ function ProviderGroupNode({
       <Handle type='target' position={Position.Left} className='!bg-muted-foreground' />
       <div className='flex flex-col'>
         <div className='flex items-center gap-2'>
-          <div className='relative'>
-            <Server className='h-4 w-4' />
-            <ChevronRight className='h-3 w-3 absolute -bottom-1 -right-1' />
-          </div>
+          <Server className='h-4 w-4' />
           <div className='flex flex-col'>
             <span className='font-medium whitespace-nowrap overflow-hidden text-ellipsis'>
               {displayService}
             </span>
             <span className='text-xs text-muted-foreground flex items-center gap-1'>
-              {showInterfaces ? (
-                <ChevronUp className='h-3 w-3' />
-              ) : (
-                <ChevronDown className='h-3 w-3' />
-              )}
-              <span>Interfaces</span>
+              <ChevronUp className='h-3 w-3' />
+              <span>Collapse</span>
             </span>
           </div>
           <div className='ml-auto flex items-center gap-1'>
@@ -305,6 +287,7 @@ function ProviderGroupNode({
 
         {showInterfaces && (
           <div className='mt-2 border-t pt-2 text-xs'>
+            <div className='text-xs font-medium text-muted-foreground mb-1'>Interfaces</div>
             <div style={{ maxHeight: maxListHeight, overflowY: 'auto' }} className='pr-1'>
               {interfacesByHealth.healthy.length > 0 && (
                 <div>
@@ -345,6 +328,7 @@ function ProviderCountNode({
     isHealthy: boolean;
     healthyCount?: number;
     hasMixedHealth?: boolean;
+    canExpand?: boolean;
   };
 }) {
   return (
@@ -361,10 +345,7 @@ function ProviderCountNode({
     >
       <Handle type='target' position={Position.Left} className='!bg-muted-foreground' />
       <div className='flex items-center gap-2'>
-        <div className='relative'>
-          <Server className='h-4 w-4' />
-          <ChevronRight className='h-3 w-3 absolute -bottom-1 -right-1' />
-        </div>
+        <Server className='h-4 w-4' />
         <div className='flex flex-col'>
           <span className='font-medium'>
             {data.healthyCount !== undefined ? `${data.healthyCount}/${data.count}` : data.count}{' '}
@@ -556,13 +537,13 @@ function FlowInner({
     }
 
     // Base height + header + padding
-    const baseHeight = 60;
+    const baseHeight = 80; // Increased from 60 to give more breathing room
 
-    // Add height for each interface (25px per interface plus additional padding)
+    // Add height for each interface (30px per interface plus additional padding)
     const interfaceCount = group.interfaces ? group.interfaces.size : group.providers.length;
-    const interfaceHeight = Math.min(interfaceCount * 30, 150); // Cap at maxListHeight
+    const interfaceHeight = Math.min(interfaceCount * 35, 180); // Increased spacing and cap
 
-    return baseHeight + interfaceHeight + 20; // Add extra padding at the bottom
+    return baseHeight + interfaceHeight + 30; // Increased bottom padding
   };
 
   const { nodes: flowNodes, edges }: { nodes: Node[]; edges: Edge[] } = useMemo(() => {
@@ -633,8 +614,9 @@ function FlowInner({
 
     const sidesPadding = 0;
     const horizontalGap = 400;
-    const providerVerticalGap = 180;
-    const serviceGroupGap = 100;
+    const providerVerticalGap = 180; // Space between collapsed chains
+    const serviceGroupGap = 150; // Space between expanded service groups within a chain (increased for better spacing)
+    const expandedChainPadding = 60; // Extra padding at top/bottom of expanded chain section (increased)
 
     // Sort chains alphabetically by name
     chains.sort((a, b) => a.name.localeCompare(b.name));
@@ -747,13 +729,19 @@ function FlowInner({
 
       let chainHeight = 0;
       if (isExpanded) {
+        // Add top padding for expanded chain section
+        chainHeight += expandedChainPadding;
+
         // If chain is expanded, calculate height for all service groups
         serviceGroups.forEach(group => {
           const isServiceExpanded = expandedServiceGroups.has(`${chain.name}-${group.service}`);
           // Calculate height based on whether service is expanded and how many interfaces it has
           const nodeHeight = calculateNodeHeight(group, isServiceExpanded);
-          chainHeight += nodeHeight + 60; // Increased padding between nodes
+          chainHeight += nodeHeight + serviceGroupGap;
         });
+
+        // Add bottom padding for expanded chain section
+        chainHeight += expandedChainPadding;
       } else {
         // Just one row for the collapsed chain
         chainHeight = providerVerticalGap;
@@ -784,7 +772,7 @@ function FlowInner({
 
       if (isChainExpanded) {
         // Position service groups with variable heights
-        let serviceY = currentY;
+        let serviceY = currentY + expandedChainPadding; // Start after top padding
 
         serviceGroups.forEach(group => {
           // Store initial y position for this service group
@@ -795,7 +783,7 @@ function FlowInner({
           const nodeHeight = calculateNodeHeight(group, isServiceExpanded);
 
           // Move to next position with appropriate spacing
-          serviceY += nodeHeight + 60; // Increased padding between nodes
+          serviceY += nodeHeight + serviceGroupGap;
         });
       }
 
@@ -821,8 +809,8 @@ function FlowInner({
       const chainY = chainYPositions[chain.name];
       const isChainExpanded = expandedChains.has(chain.name);
       const serviceGroups = serviceGroupsByChain[chain.name];
-      const hasMultipleProviders =
-        serviceGroups.reduce((total, group) => total + group.providers.length, 0) > 2;
+      // All chains with providers should be expandable
+      const hasMultipleProviders = serviceGroups.length > 1;
 
       // Use calculated width for chain nodes
       const chainWidth = finalChainNodeWidth;
@@ -906,10 +894,11 @@ function FlowInner({
               isExpanded: isServiceExpanded,
               maxWidth: finalChainNodeWidth,
               onToggle: () => {
+                // Collapse the entire chain when clicking on a provider group
                 setExpandedGroups(prev => {
                   const newState = { ...prev };
-                  const serviceKey = `service-group-${chain.name}-${group.service}`;
-                  newState[serviceKey] = !prev[serviceKey];
+                  const chainKey = `chain-${chain.name}`;
+                  newState[chainKey] = false;
                   return newState;
                 });
               },
@@ -945,14 +934,9 @@ function FlowInner({
         const providerCountY = chainY;
 
         // Calculate total provider count and healthy count
-        const totalProviders = serviceGroups.reduce(
-          (total, group) => total + group.interfaces.size,
-          0,
-        );
-        const healthyProviders = serviceGroups.reduce(
-          (total, group) => total + group.providers.filter(p => p.healthy).length,
-          0,
-        );
+        // Count unique service providers, not interfaces
+        const totalProviders = serviceGroups.length;
+        const healthyProviders = serviceGroups.filter(group => group.allHealthy).length;
 
         // Calculate if any providers are unhealthy
         const anyUnhealthy = serviceGroups.some(group =>

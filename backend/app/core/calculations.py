@@ -86,12 +86,15 @@ def calculate_uptime_percentage(
     total_healthy_time = 0
     total_time = 0
 
+    # Track services we've seen to log duplicates
+    seen_services = set()
+
     for result in results:
         service = result.get("metric", {}).get("service")
 
         # For "all chains", process all results
         if target_chain == "all":
-            pass  # Process all results without spec filtering
+            pass  # Process all results without filtering
         else:
             # For specific chains, filter by target chain
             # Filter by target chain (consumer query needs service field)
@@ -103,6 +106,14 @@ def calculate_uptime_percentage(
             chain_name = service.replace("-consumer", "")
             if not chain_name or chain_name.lower() != target_chain.lower():
                 continue
+
+            # Log duplicate services for the same chain
+            if service in seen_services:
+                logger.warning(
+                    f"Duplicate service found for chain {target_chain}: {service}. "
+                    "Continuing with calculation (will aggregate values)."
+                )
+            seen_services.add(service)
 
         values = result.get("values", [])
 
@@ -127,9 +138,9 @@ def calculate_latency_ms(latency_data: dict[str, Any], target_chain: str) -> int
     Get the latest latency value for a specific chain.
 
     The input data is pre-aggregated by Prometheus using:
-    avg(avg_over_time(lava_consumer_latency_for_request[time_window])) by (spec, service)
+    avg(avg_over_time(lava_consumer_end_to_end_latency_milliseconds[time_window])) by (service)
 
-    Prometheus already calculates the average across all pods/endpoints per service,
+    Prometheus already calculates the average across all time points,
     so we just return the latest value from the time series.
     """
     results = latency_data["data"]["result"]
@@ -137,7 +148,6 @@ def calculate_latency_ms(latency_data: dict[str, Any], target_chain: str) -> int
     for result in results:
         metric = result.get("metric", {})
         service = metric.get("service")
-        spec = metric.get("spec")
 
         # Filter by target chain (consumer query needs service field)
         # The service field contains the chain name with "-consumer" suffix
@@ -158,7 +168,7 @@ def calculate_latency_ms(latency_data: dict[str, Any], target_chain: str) -> int
             latest_value = float(values[-1][1])
             latest_latency = round(latest_value)
             logger.info(
-                f"Latency for {target_chain} (service: {service}, spec: {spec}): {latest_latency}ms"
+                f"Latency for {target_chain} (service: {service}): {latest_latency}ms"
             )
             return latest_latency
         except (ValueError, TypeError, IndexError) as e:
@@ -179,9 +189,9 @@ def calculate_provider_latency_ms(
     Get the latest latency value for a specific provider.
 
     The input data is pre-aggregated by Prometheus using:
-    avg(avg_over_time(lava_provider_latency_milliseconds[time_window])) by (spec, service)
+    avg(avg_over_time(lava_provider_end_to_end_latency_milliseconds[time_window])) by (service)
 
-    Prometheus already calculates the average across all pods/endpoints per service,
+    Prometheus already calculates the average across all time points,
     so we just return the latest value from the time series.
     """
     results = latency_data["data"]["result"]
@@ -189,7 +199,6 @@ def calculate_provider_latency_ms(
     for result in results:
         metric = result.get("metric", {})
         service = metric.get("service")
-        spec = metric.get("spec")
 
         if not service:
             continue
@@ -212,7 +221,7 @@ def calculate_provider_latency_ms(
             latest_value = float(values[-1][1])
             latest_latency = round(latest_value)
             logger.info(
-                f"Latency for provider {target_provider} (service: {service}, spec: {spec}): {latest_latency}ms"
+                f"Latency for provider {target_provider} (service: {service}): {latest_latency}ms"
             )
             return latest_latency
         except (ValueError, TypeError, IndexError) as e:
@@ -389,6 +398,9 @@ def calculate_provider_uptime_percentage(
     total_healthy_time = 0
     total_time = 0
 
+    # Track services we've seen to log duplicates
+    seen_services = set()
+
     for result in results:
         service = result.get("metric", {}).get("service")
         if not service:
@@ -403,12 +415,20 @@ def calculate_provider_uptime_percentage(
         if not service_matches:
             continue
 
+        # Log duplicate services for the same provider
+        if service in seen_services:
+            logger.warning(
+                f"Duplicate service found for provider {target_provider}: {service}. "
+                "Continuing with calculation (will aggregate values)."
+            )
+        seen_services.add(service)
+
         values = result.get("values", [])
 
         for timestamp, value in values:
             try:
                 health_value = float(value)
-                # lava_provider_overall_health_breakdown is 0-1, so multiply by 100 for percentage
+                # lava_provider_overall_health is 0-1, so multiply by 100 for percentage
                 uptime_percentage = health_value * 100
                 total_time += 1
                 total_healthy_time += uptime_percentage

@@ -10,13 +10,7 @@ RUN pnpm install --frozen-lockfile
 
 COPY . .
 
-ARG NEXT_PUBLIC_API_URL
-ARG NEXT_PUBLIC_DOMAIN
-ARG NEXT_PUBLIC_PORT
-ENV NEXT_PUBLIC_DOMAIN=${NEXT_PUBLIC_DOMAIN}
-ENV NEXT_PUBLIC_PORT=${NEXT_PUBLIC_PORT}
-ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
-
+# Build the application (env vars will be available at runtime via API route)
 RUN pnpm build
 
 # Production stage
@@ -28,15 +22,15 @@ WORKDIR /app
 
 COPY --from=builder /app /app
 
-ARG NEXT_PUBLIC_API_URL
-ARG NEXT_PUBLIC_DOMAIN
-ARG NEXT_PUBLIC_PORT
-ENV NEXT_PUBLIC_DOMAIN=${NEXT_PUBLIC_DOMAIN}
-ENV NEXT_PUBLIC_PORT=${NEXT_PUBLIC_PORT}
-ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
-
+# Environment variables can be set at runtime via docker-compose or docker run
+# These will be available to the Next.js API route that serves runtime config
 ENV NODE_ENV=production
 ENV PORT=3000
+
+# Default values (can be overridden at runtime)
+ENV NEXT_PUBLIC_API_URL=http://localhost:8000
+ENV NEXT_PUBLIC_DOMAIN=localhost
+ENV NEXT_PUBLIC_PORT=3000
 
 EXPOSE 3000
 
