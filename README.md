@@ -122,6 +122,16 @@ Docker images are automatically built and pushed to GitHub Container Registry (G
      ghcr.io/magma-devs/smart-router-dashboard/frontend:latest
    ```
 
+### Versioning
+
+The project uses a `VERSION` file in the root directory to tag new docker images.
+When you trigger the GitHub Actions workflow, it reads this file and validates that the version has been bumped
+The file contains the semantic version. Example
+
+```
+0.0.5
+```
+
 ### First Login
 
 1. Navigate to the dashboard URL
