@@ -95,6 +95,37 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Check if image version already exists
+        run: |
+          IMAGE_NAME="${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.image }}"
+          VERSION="${{ steps.version.outputs.version }}"
+          IMAGE_TAG="${IMAGE_NAME}:${VERSION}"
+          
+          echo "Checking if image tag already exists: $IMAGE_TAG"
+          
+          # Check if the image tag exists in GHCR using the API
+          # Format: https://ghcr.io/v2/{owner}/{repo}/{image}/manifests/{tag}
+          IMAGE_PATH=$(echo "$IMAGE_NAME" | sed "s|${{ env.REGISTRY }}/||")
+          MANIFEST_URL="https://${{ env.REGISTRY }}/v2/${IMAGE_PATH}/manifests/${VERSION}"
+          
+          # Use curl to check if manifest exists (returns 200 if exists, 404 if not)
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            "$MANIFEST_URL" || echo "000")
+          
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "Error: Image tag $IMAGE_TAG already exists in the registry"
+            echo "Cannot overwrite existing version. Please bump the version in the VERSION file."
+            exit 1
+          elif [ "$HTTP_CODE" = "404" ]; then
+            echo "✓ Image tag $IMAGE_TAG does not exist. Safe to proceed."
+          else
+            echo "Error: Unable to verify if image tag exists (HTTP code: $HTTP_CODE)"
+            echo "Cannot proceed without confirming the tag does not exist."
+            echo "This prevents accidentally overwriting existing versions."
+            exit 1
+          fi
+
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
