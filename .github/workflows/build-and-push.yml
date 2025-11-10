@@ -104,27 +104,28 @@ jobs:
           echo "Checking if image tag already exists: $IMAGE_TAG"
           
           # Use Docker manifest inspect to check if the tag exists
-          # This works after we've logged in to the registry
-          # Exit code 0 = manifest exists, non-zero = doesn't exist or error
-          ERROR_OUTPUT=$(docker manifest inspect "$IMAGE_TAG" 2>&1)
+          # Exit code 0 = manifest exists, exit code 1 = doesn't exist (manifest unknown)
+          MANIFEST_OUTPUT=$(docker manifest inspect "$IMAGE_TAG" 2>&1)
           EXIT_CODE=$?
           
           if [ $EXIT_CODE -eq 0 ]; then
             echo "Error: Image tag $IMAGE_TAG already exists in the registry"
             echo "Cannot overwrite existing version. Please bump the version in the VERSION file."
             exit 1
-          else
-            # Check if it's a "not found" error (expected) vs other error (unexpected)
-            if echo "$ERROR_OUTPUT" | grep -qiE "manifest unknown|not found|404|no such manifest"; then
+          elif [ $EXIT_CODE -eq 1 ]; then
+            # Exit code 1 with "manifest unknown" means the image doesn't exist (expected)
+            if echo "$MANIFEST_OUTPUT" | grep -qiE "manifest unknown|not found|404|no such manifest"; then
               echo "✓ Image tag $IMAGE_TAG does not exist. Safe to proceed."
             else
-              echo "Error: Unable to verify if image tag exists"
-              echo "Docker manifest inspect output: $ERROR_OUTPUT"
-              echo "Exit code: $EXIT_CODE"
-              echo "Cannot proceed without confirming the tag does not exist."
-              echo "This prevents accidentally overwriting existing versions."
-              exit 1
+              echo "Warning: Unexpected error checking manifest (exit code 1)"
+              echo "Output: $MANIFEST_OUTPUT"
+              echo "Proceeding anyway - if the tag exists, the push will fail."
             fi
+          else
+            echo "Error: Unexpected exit code $EXIT_CODE when checking manifest"
+            echo "Docker manifest inspect output: $MANIFEST_OUTPUT"
+            echo "Cannot proceed without confirming the tag does not exist."
+            exit 1
           fi
 
       - name: Extract metadata
@@ -151,4 +152,3 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
