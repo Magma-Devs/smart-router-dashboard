@@ -126,10 +126,6 @@ jobs:
           MANIFEST_OUTPUT=$(docker manifest inspect "$IMAGE_TAG" 2>&1)
           EXIT_CODE=$?
           
-          echo "=== Docker manifest inspect output ==="
-          echo "$MANIFEST_OUTPUT"
-          echo "=== Exit code: $EXIT_CODE ==="
-          
           if [ $EXIT_CODE -eq 0 ]; then
             echo "Error: Image tag $IMAGE_TAG already exists in the registry"
             echo "Cannot overwrite existing version. Please bump the version in the VERSION file."
