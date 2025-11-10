@@ -148,14 +148,11 @@ jobs:
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
-          image: ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.image }}
+          context: ./${{ matrix.image }}
+          file: ./${{ matrix.image }}/Dockerfile
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
-          registry: ${{ env.REGISTRY }}
-          directory: ./${{ matrix.image }}
-          dockerfile: ./${{ matrix.image }}/Dockerfile
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-          pushImage: true
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          github-token: ${{ secrets.GITHUB_TOKEN }}
