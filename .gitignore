@@ -70,7 +70,10 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
+# Only ignore Python lib directories, not frontend/lib
+backend/lib/
+# Ignore root-level lib/ but allow frontend/lib/
+/lib/
 lib64/
 parts/
 sdist/
@@ -81,6 +84,9 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
+
+# Explicitly allow frontend/lib/ (must come after lib/ ignore)
+!frontend/lib/
 
 # PyCharm
 .idea/
