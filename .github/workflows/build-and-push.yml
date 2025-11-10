@@ -80,6 +80,13 @@ jobs:
         id: version
         run: |
           VERSION="${{ steps.validate-version.outputs.version }}"
+          BRANCH_NAME="${{ github.ref_name }}"
+          
+          # If branch is not main, append branch name to version
+          if [ "$BRANCH_NAME" != "main" ]; then
+            VERSION="${VERSION}-${BRANCH_NAME}"
+          fi
+          
           # Extract major.minor version
           MAJOR_MINOR=$(echo "$VERSION" | cut -d'.' -f1,2)
           echo "version=$VERSION" >> $GITHUB_OUTPUT
