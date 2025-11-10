@@ -3,8 +3,6 @@ name: Build and Push Images
 on:
   push:
     branches:
-      - main
-      - MAG-726
   workflow_dispatch:
 
 env:
