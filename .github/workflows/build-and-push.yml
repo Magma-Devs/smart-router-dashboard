@@ -41,6 +41,7 @@ jobs:
 
       - name: Validate version was bumped
         id: validate-version
+        if: github.ref_name == 'main'
         run: |
           NEW_VERSION="${{ steps.read-version.outputs.version }}"
           
@@ -79,7 +80,13 @@ jobs:
       - name: Normalize version tag
         id: version
         run: |
-          VERSION="${{ steps.validate-version.outputs.version }}"
+          # Use validated version if on main, otherwise use read version
+          if [ "${{ github.ref_name }}" = "main" ] && [ -n "${{ steps.validate-version.outputs.version }}" ]; then
+            VERSION="${{ steps.validate-version.outputs.version }}"
+          else
+            VERSION="${{ steps.read-version.outputs.version }}"
+          fi
+          
           BRANCH_NAME="${{ github.ref_name }}"
           
           # If branch is not main, append branch name to version
@@ -142,15 +149,28 @@ jobs:
             exit 1
           fi
 
+      - name: Prepare tags
+        id: prepare-tags
+        run: |
+          {
+            echo "type=raw,value=${{ steps.version.outputs.version }}"
+            echo "type=raw,value=${{ steps.version.outputs.major_minor }}"
+            if [ "${{ github.ref_name }}" = "main" ]; then
+              echo "type=raw,value=latest"
+            fi
+          } | tee tags.txt
+          
+          # Output tags as multiline string
+          echo "tags<<EOF" >> $GITHUB_OUTPUT
+          cat tags.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.image }}
-          tags: |
-            type=raw,value=${{ steps.version.outputs.version }}
-            type=raw,value=${{ steps.version.outputs.major_minor }}
-            type=raw,value=latest
+          tags: ${{ steps.prepare-tags.outputs.tags }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
