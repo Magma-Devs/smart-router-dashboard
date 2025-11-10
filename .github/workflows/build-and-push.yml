@@ -114,6 +114,7 @@ jobs:
             exit 1
           elif [ $EXIT_CODE -eq 1 ]; then
             # Exit code 1 with "manifest unknown" means the image doesn't exist (expected)
+            echo "$MANIFEST_OUTPUT"
             if echo "$MANIFEST_OUTPUT" | grep -qiE "manifest unknown|not found|404|no such manifest"; then
               echo "✓ Image tag $IMAGE_TAG does not exist. Safe to proceed."
             else
