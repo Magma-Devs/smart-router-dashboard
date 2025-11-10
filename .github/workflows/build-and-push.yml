@@ -107,7 +107,8 @@ jobs:
           
           # Use Docker manifest inspect to check if the tag exists
           # Exit code 0 = manifest exists, exit code 1 = doesn't exist (manifest unknown)
-          MANIFEST_OUTPUT=$(docker manifest inspect "$IMAGE_TAG" 2>&1) || true
+          echo run: docker manifest inspect "$IMAGE_TAG"
+          MANIFEST_OUTPUT=$(docker manifest inspect "$IMAGE_TAG" 2>&1)
           EXIT_CODE=$?
           
           echo "=== Docker manifest inspect output ==="
