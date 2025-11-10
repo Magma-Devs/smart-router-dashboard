@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - MAG-726
   workflow_dispatch:
 
 env:
@@ -137,12 +138,16 @@ jobs:
             type=raw,value=latest
 
       - name: Build and push Docker image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
-          context: ./${{ matrix.image }}
-          file: ./${{ matrix.image }}/Dockerfile
-          push: true
+          image: ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.image }}
           tags: ${{ steps.meta.outputs.tags }}
+          registry: ${{ env.REGISTRY }}
+          directory: ./${{ matrix.image }}
+          dockerfile: ./${{ matrix.image }}/Dockerfile
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+          pushImage: true
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
