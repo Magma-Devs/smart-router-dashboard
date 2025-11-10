@@ -110,6 +110,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Check if image version already exists
+        if: github.ref_name == 'main'
         run: |
           set +e  # Don't stop on errors
           set -x  # Enable debug output
