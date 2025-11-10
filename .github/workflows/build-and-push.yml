@@ -97,7 +97,7 @@ jobs:
 
       - name: Check if image version already exists
         run: |
-          IMAGE_NAME="${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.image }}"
+          IMAGE_NAME="ghcr.io/magma-devs/smart-router-dashboard/${{ matrix.image }}"
           VERSION="${{ steps.version.outputs.version }}"
           IMAGE_TAG="${IMAGE_NAME}:${VERSION}"
           
