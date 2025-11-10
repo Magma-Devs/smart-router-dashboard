@@ -97,6 +97,8 @@ jobs:
 
       - name: Check if image version already exists
         run: |
+          set +e  # Don't stop on errors
+          set -x  # Enable debug output
           IMAGE_NAME="ghcr.io/magma-devs/smart-router-dashboard/${{ matrix.image }}"
           VERSION="${{ steps.version.outputs.version }}"
           IMAGE_TAG="${IMAGE_NAME}:${VERSION}"
@@ -105,10 +107,12 @@ jobs:
           
           # Use Docker manifest inspect to check if the tag exists
           # Exit code 0 = manifest exists, exit code 1 = doesn't exist (manifest unknown)
-          MANIFEST_OUTPUT=$(docker manifest inspect "$IMAGE_TAG" 2>&1)
+          MANIFEST_OUTPUT=$(docker manifest inspect "$IMAGE_TAG" 2>&1) || true
           EXIT_CODE=$?
+          
+          echo "=== Docker manifest inspect output ==="
           echo "$MANIFEST_OUTPUT"
-          echo "EXIT_CODE: $EXIT_CODE"
+          echo "=== Exit code: $EXIT_CODE ==="
           
           if [ $EXIT_CODE -eq 0 ]; then
             echo "Error: Image tag $IMAGE_TAG already exists in the registry"
@@ -120,7 +124,7 @@ jobs:
               echo "✓ Image tag $IMAGE_TAG does not exist. Safe to proceed."
             else
               echo "Warning: Unexpected error checking manifest (exit code 1)"
-              echo "Output: $MANIFEST_OUTPUT"
+              echo "Output was: $MANIFEST_OUTPUT"
               echo "Proceeding anyway - if the tag exists, the push will fail."
             fi
           else
