@@ -30,6 +30,7 @@ import { cn } from '@/lib/utils';
 import { chainTypes } from '@/app/config/chain-types';
 import { ProtectedRoute } from '@/components/protected-route';
 import { apiClient } from '@/lib/api-client';
+import { useAuth } from '@/lib/auth-context';
 import { getChainIcon, getChainLabel } from '@/app/config/chains';
 import { MetricsService } from '@/services/metricsService';
 import ProviderDistributionModal from '@/components/ProviderDistributionModal';
@@ -87,6 +88,7 @@ interface LiveTestResult {
 export default function LiveTestPage() {
   const { config } = useConfig();
   const { config: runtimeConfig, loading: runtimeConfigLoading } = useRuntimeConfig();
+  const { isAuthenticated, loading: authLoading } = useAuth();
   // id + network of real chains with metrics
   const [availableChains, setAvailableChains] = useState<Array<{ id: string; network: string }>>(
     [],
@@ -353,6 +355,12 @@ export default function LiveTestPage() {
 
   useEffect(() => {
     const fetchChains = async () => {
+      // Don't fetch if not authenticated or still loading auth
+      if (authLoading || !isAuthenticated) {
+        setIsFetching(false);
+        return;
+      }
+
       if (!config.apiEndpoint) {
         setIsFetching(false);
         return;
@@ -392,7 +400,7 @@ export default function LiveTestPage() {
     };
 
     fetchChains();
-  }, [config.apiEndpoint]);
+  }, [config.apiEndpoint, isAuthenticated, authLoading]);
 
   // Update cross validation max/min when the network changes and provider count changes
   useEffect(() => {
