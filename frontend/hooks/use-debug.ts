@@ -14,20 +14,33 @@ export function useDebug() {
 
   useEffect(() => {
     const checkDebugStatus = async () => {
+      // Don't make request if API endpoint is not configured
+      if (!config.apiEndpoint || config.apiEndpoint.trim() === '') {
+        setDebugMode(false);
+        setIsLoading(false);
+        return;
+      }
+
       try {
         setIsLoading(true);
         setError(null);
 
-        const response = await fetch(`${config.apiEndpoint}/api/auth/debug-status`);
+        const debugUrl = `${config.apiEndpoint}/api/auth/debug-status`;
+        const response = await fetch(debugUrl);
 
         if (!response.ok) {
+          // 404 is acceptable - endpoint might not exist in all environments
+          if (response.status === 404) {
+            setDebugMode(false);
+            setIsLoading(false);
+            return;
+          }
           throw new Error(`HTTP error! status: ${response.status}`);
         }
 
         const data: DebugStatus = await response.json();
         setDebugMode(data.debug_mode);
       } catch (err) {
-        console.error('Error checking debug status:', err);
         setError(err instanceof Error ? err.message : 'Unknown error');
         setDebugMode(false); // Default to false on error
       } finally {

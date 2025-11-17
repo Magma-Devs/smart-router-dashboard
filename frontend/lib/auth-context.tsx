@@ -29,20 +29,31 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [username, setUsername] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [apiUrl, setApiUrl] = useState<string>(getApiUrl());
+  const [apiUrl, setApiUrl] = useState<string | null>(null);
+  const [configLoaded, setConfigLoaded] = useState(false);
 
   // Load runtime config on mount
   useEffect(() => {
-    getRuntimeConfig().then(config => {
-      setApiUrl(config.NEXT_PUBLIC_API_URL);
-    });
+    getRuntimeConfig()
+      .then(config => {
+        setApiUrl(config.NEXT_PUBLIC_API_URL);
+        setConfigLoaded(true);
+      })
+      .catch(error => {
+        // Fallback to getApiUrl if runtime config fails
+        const fallbackUrl = getApiUrl();
+        setApiUrl(fallbackUrl);
+        setConfigLoaded(true);
+      });
   }, []);
 
   useEffect(() => {
-    // Check if user is already authenticated on mount
-    if (apiUrl) {
-      checkAuthStatus();
+    // Only check auth status after config is loaded and apiUrl is set
+    if (!configLoaded || !apiUrl) {
+      return;
     }
+
+    checkAuthStatus();
 
     // Listen for auth failures from API client
     const handleAuthFailed = () => {
@@ -53,9 +64,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     window.addEventListener('auth-failed', handleAuthFailed);
     return () => window.removeEventListener('auth-failed', handleAuthFailed);
-  }, [apiUrl]);
+  }, [apiUrl, configLoaded]);
 
   const checkAuthStatus = async () => {
+    if (!apiUrl) {
+      setLoading(false);
+      return;
+    }
+
     try {
       const savedCredentials = sessionStorage.getItem('auth_credentials');
       if (!savedCredentials) {
@@ -65,7 +81,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return;
       }
 
-      const response = await fetch(`${apiUrl}/api/auth/me`, {
+      const authUrl = `${apiUrl}/api/auth/me`;
+
+      const response = await fetch(authUrl, {
         headers: {
           Authorization: `Basic ${savedCredentials}`,
           'Content-Type': 'application/json',

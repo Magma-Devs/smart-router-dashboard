@@ -31,7 +31,7 @@ import { ProtectedRoute } from '@/components/protected-route';
 
 export default function ConfigurationPage() {
   const router = useRouter();
-  const { config, updateApiEndpoint, updateRefreshInterval } = useConfig();
+  const { config, updateApiEndpoint, updateRefreshInterval, resetConfig } = useConfig();
   const [inputValue, setInputValue] = useState(config.apiEndpoint);
   const [isPreviewEnvironment, setIsPreviewEnvironment] = useState(false);
 
@@ -71,12 +71,12 @@ export default function ConfigurationPage() {
   };
 
   const handleReset = () => {
-    const defaultHost = 'http://localhost:8000';
-    setInputValue(defaultHost);
-    updateApiEndpoint(defaultHost);
+    resetConfig();
+    // Update input value after reset (resetConfig updates localStorage, which triggers config.apiEndpoint update)
+    // We'll use useEffect to sync inputValue with config.apiEndpoint
     toast({
       title: 'Configuration reset',
-      description: 'API host has been reset to default',
+      description: 'API host has been reset to default from runtime configuration',
     });
   };
 
