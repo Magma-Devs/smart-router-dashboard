@@ -10,9 +10,11 @@ import { NextResponse } from 'next/server';
  * values are read from the server's environment at request time.
  */
 export async function GET() {
-  return NextResponse.json({
+  const config = {
     NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000',
     NEXT_PUBLIC_DOMAIN: process.env.NEXT_PUBLIC_DOMAIN || 'localhost',
     NEXT_PUBLIC_PORT: process.env.NEXT_PUBLIC_PORT || '3000',
-  });
+  };
+
+  return NextResponse.json(config);
 }

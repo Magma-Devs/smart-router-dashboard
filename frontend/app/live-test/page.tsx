@@ -30,6 +30,7 @@ import { cn } from '@/lib/utils';
 import { chainTypes } from '@/app/config/chain-types';
 import { ProtectedRoute } from '@/components/protected-route';
 import { apiClient } from '@/lib/api-client';
+import { useAuth } from '@/lib/auth-context';
 import { getChainIcon, getChainLabel } from '@/app/config/chains';
 import { MetricsService } from '@/services/metricsService';
 import ProviderDistributionModal from '@/components/ProviderDistributionModal';
@@ -86,7 +87,8 @@ interface LiveTestResult {
 
 export default function LiveTestPage() {
   const { config } = useConfig();
-  const { config: runtimeConfig } = useRuntimeConfig();
+  const { config: runtimeConfig, loading: runtimeConfigLoading } = useRuntimeConfig();
+  const { isAuthenticated, loading: authLoading } = useAuth();
   // id + network of real chains with metrics
   const [availableChains, setAvailableChains] = useState<Array<{ id: string; network: string }>>(
     [],
@@ -353,6 +355,12 @@ export default function LiveTestPage() {
 
   useEffect(() => {
     const fetchChains = async () => {
+      // Don't fetch if not authenticated or still loading auth
+      if (authLoading || !isAuthenticated) {
+        setIsFetching(false);
+        return;
+      }
+
       if (!config.apiEndpoint) {
         setIsFetching(false);
         return;
@@ -392,7 +400,7 @@ export default function LiveTestPage() {
     };
 
     fetchChains();
-  }, [config.apiEndpoint]);
+  }, [config.apiEndpoint, isAuthenticated, authLoading]);
 
   // Update cross validation max/min when the network changes and provider count changes
   useEffect(() => {
@@ -444,7 +452,7 @@ export default function LiveTestPage() {
   }, [selectedChain, apiData, selectedRequestType]);
 
   useEffect(() => {
-    if (selectedChain && selectedInterface && apiData) {
+    if (selectedChain && selectedInterface && apiData && !runtimeConfigLoading && runtimeConfig) {
       const apiEndpoint = config.apiEndpoint;
 
       // Get the network from the API data instead of parsing chain ID
@@ -466,8 +474,29 @@ export default function LiveTestPage() {
       const interfaceCommand = interfaceCommands[selectedRequestType];
       if (!interfaceCommand) return;
 
-      const domain = runtimeConfig?.NEXT_PUBLIC_DOMAIN || 'lava.lavapro.xyz';
-      const port = runtimeConfig?.NEXT_PUBLIC_PORT || '8443';
+      // Require runtime config values - don't use fallbacks
+      if (!runtimeConfig.NEXT_PUBLIC_DOMAIN) {
+        console.error('[LiveTest] ERROR: NEXT_PUBLIC_DOMAIN is missing from runtime config!', runtimeConfig);
+        toast({
+          variant: 'destructive',
+          title: 'Configuration Error',
+          description: 'Domain configuration is missing. Please check environment variables.',
+        });
+        return;
+      }
+
+      if (!runtimeConfig.NEXT_PUBLIC_PORT) {
+        console.error('[LiveTest] ERROR: NEXT_PUBLIC_PORT is missing from runtime config!', runtimeConfig);
+        toast({
+          variant: 'destructive',
+          title: 'Configuration Error',
+          description: 'Port configuration is missing. Please check environment variables.',
+        });
+        return;
+      }
+
+      const domain = runtimeConfig.NEXT_PUBLIC_DOMAIN;
+      const port = runtimeConfig.NEXT_PUBLIC_PORT;
 
       const curlHost = `${selectedChain}-${commandLookupInterface}.${domain}`;
       // Use wss:// protocol with /websocket path for WebSocket connections
@@ -512,11 +541,13 @@ export default function LiveTestPage() {
     config.apiEndpoint,
     skipCache,
     apiData,
+    runtimeConfig,
+    runtimeConfigLoading,
   ]);
 
   // Generate cross-validation specific curl command with quorum headers
   useEffect(() => {
-    if (selectedChain && selectedInterface && apiData) {
+    if (selectedChain && selectedInterface && apiData && !runtimeConfigLoading && runtimeConfig) {
       const apiEndpoint = config.apiEndpoint;
 
       // Get the network from the API data instead of parsing chain ID
@@ -538,8 +569,14 @@ export default function LiveTestPage() {
       const interfaceCommand = interfaceCommands[selectedRequestType];
       if (!interfaceCommand) return;
 
-      const domain = runtimeConfig?.NEXT_PUBLIC_DOMAIN || 'lava.lavapro.xyz';
-      const port = runtimeConfig?.NEXT_PUBLIC_PORT || '8443';
+      // Require runtime config values - don't use fallbacks
+      if (!runtimeConfig.NEXT_PUBLIC_DOMAIN || !runtimeConfig.NEXT_PUBLIC_PORT) {
+        console.error('[LiveTest] ERROR: Runtime config values missing for cross-validation!', runtimeConfig);
+        return;
+      }
+
+      const domain = runtimeConfig.NEXT_PUBLIC_DOMAIN;
+      const port = runtimeConfig.NEXT_PUBLIC_PORT;
 
       const curlHost = `${selectedChain}-${commandLookupInterface}.${domain}`;
 
@@ -589,6 +626,8 @@ export default function LiveTestPage() {
     crossValidationMin,
     crossValidationMax,
     crossValidationRate,
+    runtimeConfig,
+    runtimeConfigLoading,
   ]);
 
   const handleLoadTest = async () => {
@@ -606,6 +645,15 @@ export default function LiveTestPage() {
         variant: 'destructive',
         title: 'Error',
         description: 'Number of requests must be between 1 and 200',
+      });
+      return;
+    }
+
+    if (runtimeConfigLoading || !runtimeConfig) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Configuration is still loading. Please wait.',
       });
       return;
     }
@@ -631,9 +679,14 @@ export default function LiveTestPage() {
       const interfaceCommand = interfaceCommands[selectedRequestType];
       if (!interfaceCommand) throw new Error('Request type command not found');
 
+      // Require runtime config values - don't use fallbacks
+      if (!runtimeConfig.NEXT_PUBLIC_DOMAIN || !runtimeConfig.NEXT_PUBLIC_PORT) {
+        throw new Error('Runtime configuration is incomplete. Missing domain or port. Please check environment variables.');
+      }
+
       // Make direct requests to provider endpoint
-      const domain = runtimeConfig?.NEXT_PUBLIC_DOMAIN || 'lava.lavapro.xyz';
-      const port = runtimeConfig?.NEXT_PUBLIC_PORT || '8443';
+      const domain = runtimeConfig.NEXT_PUBLIC_DOMAIN;
+      const port = runtimeConfig.NEXT_PUBLIC_PORT;
 
       const responses = await makeLoadTestRequests(
         {
@@ -681,6 +734,15 @@ export default function LiveTestPage() {
       return;
     }
 
+    if (runtimeConfigLoading || !runtimeConfig) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Configuration is still loading. Please wait.',
+      });
+      return;
+    }
+
     setIsCrossValidating(true);
     setCrossValidationResponse('');
     setCrossValidationStatus(null);
@@ -706,9 +768,14 @@ export default function LiveTestPage() {
       const interfaceCommand = interfaceCommands[selectedRequestType];
       if (!interfaceCommand) throw new Error('Request type command not found');
 
+      // Require runtime config values - don't use fallbacks
+      if (!runtimeConfig.NEXT_PUBLIC_DOMAIN || !runtimeConfig.NEXT_PUBLIC_PORT) {
+        throw new Error('Runtime configuration is incomplete. Missing domain or port. Please check environment variables.');
+      }
+
       // Make direct request to provider endpoint with quorum headers
-      const domain = process.env.NEXT_PUBLIC_DOMAIN || 'lava.lavapro.xyz';
-      const port = process.env.NEXT_PUBLIC_PORT || '8443';
+      const domain = runtimeConfig.NEXT_PUBLIC_DOMAIN;
+      const port = runtimeConfig.NEXT_PUBLIC_PORT;
 
       const response = await makeTestRequest({
         chainId: selectedChain,
@@ -838,6 +905,15 @@ export default function LiveTestPage() {
       return;
     }
 
+    if (runtimeConfigLoading || !runtimeConfig) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Configuration is still loading. Please wait.',
+      });
+      return;
+    }
+
     setIsLoading(true);
     setSingleTestStatus(null);
     setSingleTestLatency(null);
@@ -861,9 +937,14 @@ export default function LiveTestPage() {
       const interfaceCommand = interfaceCommands[selectedRequestType];
       if (!interfaceCommand) throw new Error('Request type command not found');
 
+      // Require runtime config values - don't use fallbacks
+      if (!runtimeConfig.NEXT_PUBLIC_DOMAIN || !runtimeConfig.NEXT_PUBLIC_PORT) {
+        throw new Error('Runtime configuration is incomplete. Missing domain or port. Please check environment variables.');
+      }
+
       // Make direct request to provider endpoint
-      const domain = process.env.NEXT_PUBLIC_DOMAIN || 'lava.lavapro.xyz';
-      const port = process.env.NEXT_PUBLIC_PORT || '8443';
+      const domain = runtimeConfig.NEXT_PUBLIC_DOMAIN;
+      const port = runtimeConfig.NEXT_PUBLIC_PORT;
 
       const response = await makeTestRequest({
         chainId: selectedChain,

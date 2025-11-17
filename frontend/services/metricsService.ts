@@ -133,12 +133,6 @@ export class MetricsService {
       return key ? headers[key] : undefined;
     };
 
-    // Debug: log headers to understand what's available
-    if (responses.length > 0) {
-      console.log('Sample response headers:', responses[0].headers);
-      console.log('Total responses:', responses.length);
-    }
-
     const totals = new Map<
       string,
       { count: number; success: number; latencySum: number; latencies: number[] }
