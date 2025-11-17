@@ -19,6 +19,8 @@ export function useRuntimeConfig() {
     getRuntimeConfig().then(runtimeConfig => {
       setConfig(runtimeConfig);
       setLoading(false);
+    }).catch(error => {
+      setLoading(false);
     });
   }, []);
 
