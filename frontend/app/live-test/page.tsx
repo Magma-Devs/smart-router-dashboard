@@ -121,6 +121,7 @@ export default function LiveTestPage() {
 
   // Load test state
   const [numberOfRequests, setNumberOfRequests] = useState<number>(50);
+  const [concurrency, setConcurrency] = useState<number>(5);
   const [isLoadTesting, setIsLoadTesting] = useState(false);
   const [loadTestResult, setLoadTestResult] = useState<LiveTestResult | null>(null);
   const [copiedResponseIndex, setCopiedResponseIndex] = useState<number | null>(null);
@@ -640,11 +641,20 @@ export default function LiveTestPage() {
       return;
     }
 
-    if (numberOfRequests < 1 || numberOfRequests > 200) {
+    if (numberOfRequests < 1 || numberOfRequests > 500) {
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: 'Number of requests must be between 1 and 200',
+        description: 'Number of requests must be between 1 and 500',
+      });
+      return;
+    }
+
+    if (concurrency < 1 || concurrency > 100) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Concurrency must be between 1 and 100',
       });
       return;
     }
@@ -699,6 +709,7 @@ export default function LiveTestPage() {
           requestType: selectedRequestType,
         },
         numberOfRequests,
+        concurrency,
       );
 
       // Calculate statistics from responses
@@ -1718,17 +1729,36 @@ export default function LiveTestPage() {
                       <div className='space-y-4'>
                         <div className='space-y-2'>
                           <Label htmlFor='numberOfRequests' className='text-sm font-medium'>
-                            Number of Requests (1-200)
+                            Number of Requests (1-500)
                           </Label>
                           <Input
                             id='numberOfRequests'
                             type='number'
                             min={1}
-                            max={200}
+                            max={500}
                             value={numberOfRequests}
                             onChange={e =>
                               setNumberOfRequests(
-                                Math.max(1, Math.min(200, parseInt(e.target.value) || 1)),
+                                Math.max(1, Math.min(500, parseInt(e.target.value) || 1)),
+                              )
+                            }
+                            className='w-32'
+                            disabled={isLoadTesting}
+                          />
+                        </div>
+                        <div className='space-y-2'>
+                          <Label htmlFor='concurrency' className='text-sm font-medium'>
+                            Concurrency (1-100)
+                          </Label>
+                          <Input
+                            id='concurrency'
+                            type='number'
+                            min={1}
+                            max={100}
+                            value={concurrency}
+                            onChange={e =>
+                              setConcurrency(
+                                Math.max(1, Math.min(100, parseInt(e.target.value) || 5)),
                               )
                             }
                             className='w-32'
@@ -1736,8 +1766,8 @@ export default function LiveTestPage() {
                           />
                         </div>
                         <p className='text-sm text-muted-foreground'>
-                          Load tests will run {numberOfRequests} parallel requests and report
-                          success rate and latency statistics.
+                          Load tests will run {numberOfRequests} requests with up to {concurrency}{' '}
+                          concurrent requests and report success rate and latency statistics.
                         </p>
                       </div>
                     </CardContent>

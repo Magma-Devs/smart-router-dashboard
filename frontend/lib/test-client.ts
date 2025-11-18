@@ -271,7 +271,7 @@ export async function makeTestRequest(options: TestRequestOptions): Promise<Test
       headers,
       body,
       mode: 'cors',
-      signal: AbortSignal.timeout(30000),
+      signal: AbortSignal.timeout(60000),
     });
 
     statusCode = response.status;
@@ -375,7 +375,7 @@ export async function measureBatchedLatencies(
         await fetch(url, {
           method: 'GET',
           mode: 'cors',
-          signal: AbortSignal.timeout(30000),
+          signal: AbortSignal.timeout(60000),
         });
       } finally {
         return performance.now() - start;
