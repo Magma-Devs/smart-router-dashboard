@@ -1712,6 +1712,78 @@ export default function LiveTestPage() {
                             </Label>
                           </div>
                         </div>
+
+                        {/* Request Type Selection */}
+                        {selectedChain &&
+                          selectedInterface &&
+                          (() => {
+                            const baseNetwork = getNetworkFromChainId(selectedChain);
+                            if (!baseNetwork) throw new Error('Network not found for chain');
+                            const chain = chains.find(c => c.value === baseNetwork);
+                            if (!chain) return null;
+
+                            const chainType = chainTypes.find(t => t.value === chain.type);
+                            if (!chainType) return null;
+
+                            const interfaceCommands = chainType.interfaces[selectedInterface];
+                            if (!interfaceCommands) return null;
+
+                            const availableTypes = configuredRequestTypes
+                              .filter(type => type !== 'regular')
+                              .filter(
+                                type =>
+                                  interfaceCommands[type as keyof typeof interfaceCommands] !==
+                                  null,
+                              );
+
+                            if (availableTypes.length === 0) return null;
+
+                            return (
+                              <div className='space-y-4'>
+                                <Label className='text-sm font-medium'>Request Type</Label>
+                                <div className='flex flex-wrap gap-2'>
+                                  {availableTypes.map(type => {
+                                    const displayName =
+                                      type.charAt(0).toUpperCase() + type.slice(1);
+                                    return (
+                                      <Button
+                                        key={type}
+                                        variant={
+                                          selectedRequestType === type ? 'default' : 'outline'
+                                        }
+                                        size='sm'
+                                        className={cn(
+                                          selectedRequestType === type &&
+                                            (type === 'regular'
+                                              ? 'bg-blue-500 hover:bg-blue-600'
+                                              : type === 'archive'
+                                                ? 'bg-green-500 hover:bg-green-600'
+                                                : type === 'debug'
+                                                  ? 'bg-orange-500 hover:bg-orange-600'
+                                                  : type === 'trace'
+                                                    ? 'bg-purple-500 hover:bg-purple-600'
+                                                    : ''),
+                                          'hover:opacity-90',
+                                        )}
+                                        onClick={() => {
+                                          // Toggle logic: if clicking the same type, reset to regular
+                                          const newType =
+                                            selectedRequestType === type ? 'regular' : type;
+                                          setSelectedRequestType(
+                                            newType as 'regular' | 'archive' | 'debug' | 'trace',
+                                          );
+                                          setResponse('');
+                                          setLoadTestResult(null);
+                                        }}
+                                      >
+                                        {displayName}
+                                      </Button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            );
+                          })()}
                       </>
                     )}
                   </CardContent>
