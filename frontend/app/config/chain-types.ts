@@ -172,4 +172,16 @@ export const chainTypes: ChainType[] = [
       },
     },
   },
+  {
+    value: 'bitcoin',
+    label: 'Bitcoin',
+    interfaces: {
+      jsonrpc: {
+        regular: '{"jsonrpc":"2.0","method":"getblockcount","params":[],"id":1}',
+        archive: '{"jsonrpc":"2.0","method":"getblockhash","params":[800000],"id":1}',
+        debug: null,
+        trace: null,
+      },
+    },
+  },
 ];
