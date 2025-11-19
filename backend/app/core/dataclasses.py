@@ -63,8 +63,58 @@ class Chain(ChainConfig):
     health_status: ChainHealth
 
 
+class SafeEndpoint(BaseModel):
+    interface: str
+
+
+class SafeProvider(BaseModel):
+    name: str
+    endpoints: list[SafeEndpoint]
+    health_status: ProviderHealth
+
+
+class SafeChain(BaseModel):
+    id: str
+    network: str
+    providers: list[SafeProvider]
+    health_status: ChainHealth
+
+
 class ChainsToProvidersResponse(BaseModel):
-    chains: list[dict]
+    chains: list[SafeChain]
+
+
+# Models for Components API
+class ResourceLimits(BaseModel):
+    cpu: int
+    memory: int
+
+
+class AllResourceLimits(BaseModel):
+    server: ResourceLimits
+    per_consumer: ResourceLimits
+    per_provider: ResourceLimits
+
+
+class ComponentEndpoint(BaseModel):
+    interface: str
+    addons: list[str] = []
+
+
+class ComponentProvider(BaseModel):
+    name: str
+    endpoints: list[ComponentEndpoint]
+
+
+class ConsumerConfig(BaseModel):
+    network: str
+    interfaces: list[str]
+    providers: list[ComponentProvider]
+
+
+class ComponentsResponse(BaseModel):
+    consumers: dict[str, ConsumerConfig]
+    resource_limits: AllResourceLimits
 
 
 # Pydantic models for API responses

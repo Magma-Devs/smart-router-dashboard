@@ -641,36 +641,46 @@ async def get_chains_to_providers(
                 provider_uptime = calculate_provider_uptime_percentage(
                     provider_health_data, provider_key
                 )
+                
+                # Convert endpoints to SafeEndpoint (excluding URL and addons)
+                safe_endpoints = [
+                    {"interface": ep.interface}
+                    for ep in provider.endpoints
+                ]
+                
                 providers_per_chain.append(
-                    Provider(
-                        name=provider.name,
-                        endpoints=provider.endpoints,
-                        health_status=(
+                    {
+                        "name": provider.name,
+                        "endpoints": safe_endpoints,
+                        "health_status": (
                             ProviderHealth.HEALTHY
                             if provider_uptime > 0
                             else ProviderHealth.UNHEALTHY
                         ),
-                    )
+                    }
                 )
+            
+            # Determine chain health status
             if all(
-                provider.health_status == ProviderHealth.HEALTHY
-                for provider in providers_per_chain
+                p["health_status"] == ProviderHealth.HEALTHY
+                for p in providers_per_chain
             ):
                 chain_health = ChainHealth.HEALTHY
             elif all(
-                provider.health_status == ProviderHealth.UNHEALTHY
-                for provider in providers_per_chain
+                p["health_status"] == ProviderHealth.UNHEALTHY
+                for p in providers_per_chain
             ):
                 chain_health = ChainHealth.UNHEALTHY
             else:
                 chain_health = ChainHealth.MIXED
+                
             chains_list.append(
-                Chain(
-                    id=chain.id,
-                    network=chain.network,
-                    providers=providers_per_chain,
-                    health_status=chain_health,
-                ).model_dump()
+                {
+                    "id": chain.id,
+                    "network": chain.network,
+                    "providers": providers_per_chain,
+                    "health_status": chain_health,
+                }
             )
 
         return ChainsToProvidersResponse(chains=chains_list)

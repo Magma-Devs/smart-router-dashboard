@@ -3,6 +3,14 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.core.auth import get_current_user
 from app.services.configuration import ConfigurationService, configuration_service
 from app.services.kubernetes import KubernetesService, kubernetes_service
+from app.core.dataclasses import (
+    ComponentsResponse,
+    ConsumerConfig,
+    ComponentProvider,
+    ComponentEndpoint,
+    AllResourceLimits,
+    ResourceLimits,
+)
 
 router = APIRouter()
 
@@ -17,7 +25,7 @@ def get_kubernetes_service() -> KubernetesService:
     return kubernetes_service
 
 
-@router.get("/")
+@router.get("/", response_model=ComponentsResponse)
 async def get_configuration(
     current_user: str = Depends(get_current_user),
     config_service: ConfigurationService = Depends(get_configuration_service),
@@ -25,14 +33,13 @@ async def get_configuration(
 ):
     """Get the current configuration for consumers and providers"""
     try:
-        config = {
-            "consumers": {},
-            "resource_limits": {
-                "server": {"cpu": 0, "memory": 0},
-                "per_consumer": {"cpu": 0, "memory": 0},
-                "per_provider": {"cpu": 0, "memory": 0},
-            },
-        }
+        # Initialize response structure
+        consumers_config = {}
+        resource_limits = AllResourceLimits(
+            server=ResourceLimits(cpu=0, memory=0),
+            per_consumer=ResourceLimits(cpu=0, memory=0),
+            per_provider=ResourceLimits(cpu=0, memory=0),
+        )
 
         # Read smart-router values directly
         smart_router_data = config_service.read_smart_router_values()
@@ -57,25 +64,27 @@ async def get_configuration(
                                 interfaces.add(interface)
 
                             provider_endpoints.append(
-                                {
-                                    "url": endpoint.get("url"),
-                                    "interface": interface,
-                                    "addons": endpoint.get("addons", []),
-                                }
+                                ComponentEndpoint(
+                                    interface=interface,
+                                    addons=endpoint.get("addons", []),
+                                )
                             )
 
                         providers.append(
-                            {"name": provider_name, "endpoints": provider_endpoints}
+                            ComponentProvider(
+                                name=provider_name, endpoints=provider_endpoints
+                            )
                         )
 
-                    consumer_config = {
-                        "network": network,
-                        "interfaces": list(interfaces),
-                        "providers": providers,
-                    }
-                    config["consumers"][chain_id] = consumer_config
+                    consumers_config[chain_id] = ConsumerConfig(
+                        network=network,
+                        interfaces=list(interfaces),
+                        providers=providers,
+                    )
 
-        return config
+        return ComponentsResponse(
+            consumers=consumers_config, resource_limits=resource_limits
+        )
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Error reading configuration: {str(e)}"
