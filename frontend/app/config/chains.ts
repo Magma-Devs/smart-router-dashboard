@@ -14,6 +14,7 @@ export const chains: Chain[] = [
     icon: 'https://info-mainnet.lavanet.xyz/icons/arbitrum-one.svg',
     type: 'evm-arbitrum',
     supportedInterfaces: ['jsonrpc'],
+    hasWss: true,
   },
   {
     value: 'arbitrumn',
@@ -21,6 +22,7 @@ export const chains: Chain[] = [
     icon: 'https://info-mainnet.lavanet.xyz/icons/arbitrum-nova.svg',
     type: 'evm-arbitrum',
     supportedInterfaces: ['jsonrpc'],
+    hasWss: true,
   },
   {
     value: 'arbitrums',
@@ -28,6 +30,7 @@ export const chains: Chain[] = [
     icon: 'https://info-mainnet.lavanet.xyz/icons/arbitrum-nova.svg',
     type: 'evm-arbitrum',
     supportedInterfaces: ['jsonrpc'],
+    hasWss: true,
   },
   {
     value: 'avax',
@@ -35,6 +38,7 @@ export const chains: Chain[] = [
     icon: 'https://info-mainnet.lavanet.xyz/icons/avalanche.svg',
     type: 'evm',
     supportedInterfaces: ['jsonrpc'],
+    hasWss: true,
   },
   {
     value: 'avaxt',
@@ -42,6 +46,7 @@ export const chains: Chain[] = [
     icon: 'https://info-mainnet.lavanet.xyz/icons/avalanche.svg',
     type: 'evm',
     supportedInterfaces: ['jsonrpc'],
+    hasWss: true,
   },
   {
     value: 'axelar',
@@ -63,6 +68,7 @@ export const chains: Chain[] = [
     icon: 'https://info-mainnet.lavanet.xyz/icons/base.svg',
     type: 'evm',
     supportedInterfaces: ['jsonrpc'],
+    hasWss: true,
   },
   {
     value: 'bases',
@@ -70,6 +76,7 @@ export const chains: Chain[] = [
     icon: 'https://info-mainnet.lavanet.xyz/icons/base.svg',
     type: 'evm',
     supportedInterfaces: ['jsonrpc'],
+    hasWss: true,
   },
   {
     value: 'blast',
@@ -77,6 +84,7 @@ export const chains: Chain[] = [
     icon: 'https://info-mainnet.lavanet.xyz/icons/blast.svg',
     type: 'evm',
     supportedInterfaces: ['jsonrpc'],
+    hasWss: true,
   },
   {
     value: 'blastsp',
@@ -84,6 +92,7 @@ export const chains: Chain[] = [
     icon: 'https://info-mainnet.lavanet.xyz/icons/blast.svg',
     type: 'evm',
     supportedInterfaces: ['jsonrpc'],
+    hasWss: true,
   },
   {
     value: 'bsc',
@@ -91,6 +100,7 @@ export const chains: Chain[] = [
     icon: 'https://info.lavanet.xyz/icons/binance-smart-chain.svg',
     type: 'evm',
     supportedInterfaces: ['jsonrpc'],
+    hasWss: true,
   },
   {
     value: 'bsct',
@@ -98,6 +108,7 @@ export const chains: Chain[] = [
     icon: 'https://info.lavanet.xyz/icons/binance-smart-chain.svg',
     type: 'evm',
     supportedInterfaces: ['jsonrpc'],
+    hasWss: true,
   },
   {
     value: 'celo',
@@ -105,6 +116,7 @@ export const chains: Chain[] = [
     icon: 'https://info-mainnet.lavanet.xyz/icons/celo.svg',
     type: 'evm',
     supportedInterfaces: ['jsonrpc'],
+    hasWss: true,
   },
   {
     value: 'alfajores',
@@ -112,6 +124,7 @@ export const chains: Chain[] = [
     icon: 'https://info-mainnet.lavanet.xyz/icons/celo.svg',
     type: 'evm',
     supportedInterfaces: ['jsonrpc'],
+    hasWss: true,
   },
   {
     value: 'cosmoshub',
@@ -133,6 +146,7 @@ export const chains: Chain[] = [
     icon: 'https://info-mainnet.lavanet.xyz/icons/ethereum.svg',
     type: 'evm',
     supportedInterfaces: ['jsonrpc'],
+    hasWss: true,
   },
   {
     value: 'sep1',
@@ -140,6 +154,7 @@ export const chains: Chain[] = [
     icon: 'https://info-mainnet.lavanet.xyz/icons/ethereum.svg',
     type: 'evm',
     supportedInterfaces: ['jsonrpc'],
+    hasWss: true,
   },
   {
     value: 'hol1',
@@ -147,6 +162,7 @@ export const chains: Chain[] = [
     icon: 'https://info-mainnet.lavanet.xyz/icons/ethereum.svg',
     type: 'evm',
     supportedInterfaces: ['jsonrpc'],
+    hasWss: true,
   },
   {
     value: 'hyperliquid',
@@ -154,6 +170,7 @@ export const chains: Chain[] = [
     icon: 'https://info-mainnet.lavanet.xyz/icons/HL-green.svg',
     type: 'evm',
     supportedInterfaces: ['jsonrpc'],
+    hasWss: true,
   },
   {
     value: 'hyperliquidt',
@@ -161,6 +178,7 @@ export const chains: Chain[] = [
     icon: 'https://info-mainnet.lavanet.xyz/icons/HL-green.svg',
     type: 'evm',
     supportedInterfaces: ['jsonrpc'],
+    hasWss: true,
   },
   {
     value: 'evmos',
@@ -182,6 +200,7 @@ export const chains: Chain[] = [
     icon: 'https://info-mainnet.lavanet.xyz/icons/fantom.svg',
     type: 'evm',
     supportedInterfaces: ['jsonrpc'],
+    hasWss: true,
   },
   {
     value: 'ftm4002',
@@ -189,6 +208,7 @@ export const chains: Chain[] = [
     icon: 'https://info-mainnet.lavanet.xyz/icons/fantom.svg',
     type: 'evm',
     supportedInterfaces: ['jsonrpc'],
+    hasWss: true,
   },
   {
     value: 'fuse',
@@ -196,6 +216,7 @@ export const chains: Chain[] = [
     icon: 'https://info-mainnet.lavanet.xyz/icons/fuse.svg',
     type: 'evm',
     supportedInterfaces: ['jsonrpc'],
+    hasWss: true,
   },
   {
     value: 'spark',
@@ -203,6 +224,7 @@ export const chains: Chain[] = [
     icon: 'https://info-mainnet.lavanet.xyz/icons/fuse.svg',
     type: 'evm',
     supportedInterfaces: ['jsonrpc'],
+    hasWss: true,
   },
   {
     value: 'fvm',
@@ -210,6 +232,7 @@ export const chains: Chain[] = [
     icon: 'https://info-mainnet.lavanet.xyz/icons/filecoin.svg',
     type: 'evm',
     supportedInterfaces: ['jsonrpc'],
+    hasWss: true,
   },
   {
     value: 'fvmt',
@@ -217,6 +240,7 @@ export const chains: Chain[] = [
     icon: 'https://info-mainnet.lavanet.xyz/icons/filecoin.svg',
     type: 'evm',
     supportedInterfaces: ['jsonrpc'],
+    hasWss: true,
   },
   {
     value: 'lava',
@@ -266,6 +290,7 @@ export const chains: Chain[] = [
     icon: 'https://info-mainnet.lavanet.xyz/icons/optimism.svg',
     type: 'evm',
     supportedInterfaces: ['jsonrpc'],
+    hasWss: true,
   },
   {
     value: 'optms',
@@ -273,6 +298,7 @@ export const chains: Chain[] = [
     icon: 'https://info-mainnet.lavanet.xyz/icons/optimism.svg',
     type: 'evm',
     supportedInterfaces: ['jsonrpc'],
+    hasWss: true,
   },
   {
     value: 'polygon',
@@ -280,6 +306,7 @@ export const chains: Chain[] = [
     icon: 'https://info-mainnet.lavanet.xyz/icons/polygon-pos.svg',
     type: 'evm',
     supportedInterfaces: ['jsonrpc'],
+    hasWss: true,
   },
   {
     value: 'polygona',
@@ -287,6 +314,7 @@ export const chains: Chain[] = [
     icon: 'https://info-mainnet.lavanet.xyz/icons/polygon-pos.svg',
     type: 'evm',
     supportedInterfaces: ['jsonrpc'],
+    hasWss: true,
   },
   {
     value: 'solana',
@@ -394,6 +422,13 @@ export const chains: Chain[] = [
     icon: 'https://info-mainnet.lavanet.xyz/icons/aptos.svg',
     type: 'aptos',
     supportedInterfaces: ['rest'],
+  },
+  {
+    value: 'btc',
+    label: 'Bitcoin Mainnet',
+    icon: 'https://info-mainnet.lavanet.xyz/icons/bitcoin.svg',
+    type: 'bitcoin',
+    supportedInterfaces: ['jsonrpc'],
   },
 ];
 
