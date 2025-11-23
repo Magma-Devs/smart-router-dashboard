@@ -145,6 +145,12 @@ export default function LiveTestPage() {
   // Helper: prettify header values that contain JSON or escaped JSON
   const parseHeaderValue = (val: string): any => {
     if (typeof val !== 'string') return val;
+    
+    // Keep numeric strings as strings to avoid precision loss with large integers
+    if (/^-?\d+$/.test(val)) {
+      return val;
+    }
+    
     const tryParse = (s: string) => {
       try {
         return JSON.parse(s);
