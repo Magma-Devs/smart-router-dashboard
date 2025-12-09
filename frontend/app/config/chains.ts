@@ -181,6 +181,13 @@ export const chains: Chain[] = [
     hasWss: true,
   },
   {
+    value: 'hedera',
+    label: 'Hedera Mainnet',
+    icon: 'https://info-mainnet.lavanet.xyz/icons/hedera.svg',
+    type: 'hedera',
+    supportedInterfaces: ['jsonrpc', 'rest'],
+  },
+  {
     value: 'evmos',
     label: 'Evmos Mainnet',
     icon: 'https://info-mainnet.lavanet.xyz/icons/evmos.svg',
@@ -387,6 +394,13 @@ export const chains: Chain[] = [
     icon: 'https://info-mainnet.lavanet.xyz/icons/tron.svg',
     type: 'tron',
     supportedInterfaces: ['rest'],
+  },
+  {
+    value: 'union',
+    label: 'Union Mainnet',
+    icon: 'https://info-mainnet.lavanet.xyz/icons/union.svg',
+    type: 'cosmos',
+    supportedInterfaces: ['rest', 'tendermintrpc', 'grpc'],
   },
   {
     value: 'xlm',
