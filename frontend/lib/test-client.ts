@@ -13,6 +13,16 @@ export interface TestRequestOptions {
   quorumMin?: number;
   quorumMax?: number;
   quorumRate?: number;
+  /**
+   * Maximum number of response bytes to read for HTTP requests (streaming).
+   * This prevents debug/trace payloads from OOM-crashing the browser.
+   */
+  maxResponseBytes?: number;
+  /**
+   * Maximum number of characters to keep for WebSocket responses.
+   * WebSocket payloads are delivered as a single message, so this is a char cap.
+   */
+  maxResponseChars?: number;
 }
 
 export interface TestResponse {
@@ -22,6 +32,8 @@ export interface TestResponse {
   response_data: any;
   headers: Record<string, string>;
   error?: string;
+  /** Whether the client truncated the response payload for safety. */
+  truncated?: boolean;
 }
 
 /**
@@ -55,6 +67,90 @@ async function getRequestLatency(url: string, startTime: number): Promise<number
   }
 }
 
+const DEFAULT_MAX_HTTP_RESPONSE_BYTES = 256 * 1024; // 256KB
+const DEFAULT_MAX_WS_RESPONSE_CHARS = 200_000; // 200k chars
+
+function truncateStringByChars(
+  input: string,
+  maxChars: number,
+): { text: string; truncated: boolean } {
+  if (maxChars <= 0) return { text: '', truncated: input.length > 0 };
+  if (input.length <= maxChars) return { text: input, truncated: false };
+  return { text: input.slice(0, maxChars), truncated: true };
+}
+
+/**
+ * Read response text with a hard byte limit using streaming.
+ * This avoids loading massive debug/trace payloads into memory.
+ */
+async function readTextWithLimit(
+  response: Response,
+  maxBytes: number,
+): Promise<{ text: string; truncated: boolean; bytesRead: number }> {
+  const clampMax = Number.isFinite(maxBytes) ? Math.max(0, Math.floor(maxBytes)) : 0;
+
+  // If no body stream is available, fall back to response.text() then truncate by bytes.
+  if (!response.body || typeof response.body.getReader !== 'function') {
+    const full = await response.text();
+    const encoder = new TextEncoder();
+    const bytes = encoder.encode(full);
+    if (clampMax > 0 && bytes.length > clampMax) {
+      // Approximate truncation by characters; safe enough for UI display.
+      // (Exact byte truncation would require re-encoding per slice.)
+      const approxChars = Math.max(1, Math.floor((full.length * clampMax) / bytes.length));
+      const { text } = truncateStringByChars(full, approxChars);
+      return { text, truncated: true, bytesRead: clampMax };
+    }
+    return { text: full, truncated: false, bytesRead: bytes.length };
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  const chunks: string[] = [];
+  let bytesRead = 0;
+  let truncated = false;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+
+      // Enforce byte cap before decoding to avoid buffering too much.
+      if (clampMax > 0 && bytesRead + value.byteLength > clampMax) {
+        const remaining = clampMax - bytesRead;
+        if (remaining > 0) {
+          chunks.push(decoder.decode(value.subarray(0, remaining), { stream: true }));
+          bytesRead += remaining;
+        }
+        truncated = true;
+        try {
+          await reader.cancel();
+        } catch {
+          // ignore
+        }
+        break;
+      }
+
+      bytesRead += value.byteLength;
+      chunks.push(decoder.decode(value, { stream: true }));
+    }
+  } finally {
+    try {
+      chunks.push(decoder.decode());
+    } catch {
+      // ignore
+    }
+    try {
+      reader.releaseLock();
+    } catch {
+      // ignore
+    }
+  }
+
+  return { text: chunks.join(''), truncated, bytesRead };
+}
+
 /**
  * Makes a WebSocket request for JSON-RPC/WSS
  */
@@ -64,12 +160,14 @@ async function makeWebSocketRequest(
   startTime: number,
   skipCache: boolean,
   requestType?: string,
+  maxResponseChars?: number,
 ): Promise<TestResponse> {
   return new Promise((resolve, reject) => {
     let statusCode = 0;
     let responseData: any = null;
     let errorMessage: string | undefined = undefined;
     const responseHeaders: Record<string, string> = {};
+    let truncated = false;
     let ws: WebSocket;
 
     try {
@@ -103,22 +201,23 @@ async function makeWebSocketRequest(
 
       ws.onmessage = event => {
         const latencyMs = performance.now() - startTime;
-        try {
-          responseData = JSON.parse(event.data);
-          statusCode = 200; // WebSocket message received successfully
+        // WebSocket payloads can be huge (debug/trace). Keep as string and cap size.
+        const raw = typeof event.data === 'string' ? event.data : String(event.data);
+        const cap = maxResponseChars ?? DEFAULT_MAX_WS_RESPONSE_CHARS;
+        const res = truncateStringByChars(raw, cap);
+        responseData = res.text;
+        truncated = res.truncated;
+        statusCode = 200; // WebSocket message received successfully
 
-          ws.close();
-          resolve({
-            status_code: statusCode,
-            latency_ms: latencyMs,
-            success: true,
-            response_data: responseData,
-            headers: responseHeaders,
-          });
-        } catch (error) {
-          ws.close();
-          reject(new Error('Failed to parse WebSocket response'));
-        }
+        ws.close();
+        resolve({
+          status_code: statusCode,
+          latency_ms: latencyMs,
+          success: true,
+          response_data: responseData,
+          headers: responseHeaders,
+          ...(truncated ? { truncated: true } : {}),
+        });
       };
 
       ws.onerror = () => {
@@ -133,6 +232,7 @@ async function makeWebSocketRequest(
           response_data: responseData,
           headers: responseHeaders,
           error: errorMessage,
+          ...(truncated ? { truncated: true } : {}),
         });
       };
 
@@ -147,6 +247,7 @@ async function makeWebSocketRequest(
             response_data: responseData,
             headers: responseHeaders,
             error: errorMessage,
+            ...(truncated ? { truncated: true } : {}),
           });
         }
       };
@@ -172,6 +273,8 @@ export async function makeTestRequest(options: TestRequestOptions): Promise<Test
     quorumMin,
     quorumMax,
     quorumRate,
+    maxResponseBytes,
+    maxResponseChars,
   } = options;
 
   const startTime = performance.now();
@@ -189,7 +292,14 @@ export async function makeTestRequest(options: TestRequestOptions): Promise<Test
     const wsUrl = `wss://${curlHost}:${port}/websocket`;
 
     try {
-      return await makeWebSocketRequest(wsUrl, interfaceCommand, startTime, skipCache, requestType);
+      return await makeWebSocketRequest(
+        wsUrl,
+        interfaceCommand,
+        startTime,
+        skipCache,
+        requestType,
+        maxResponseChars,
+      );
     } catch (error) {
       const latencyMs = performance.now() - startTime;
       return {
@@ -213,6 +323,7 @@ export async function makeTestRequest(options: TestRequestOptions): Promise<Test
   let responseData: any = null;
   let errorMessage: string | undefined = undefined;
   const responseHeaders: Record<string, string> = {};
+  let truncated = false;
 
   try {
     let method: string;
@@ -282,20 +393,14 @@ export async function makeTestRequest(options: TestRequestOptions): Promise<Test
       latencyMs = performance.now() - startTime;
     }
 
-    // Parse response data
-    const contentType = response.headers.get('content-type') || '';
+    // Read response body with a hard cap to prevent OOM on debug/trace payloads.
     try {
-      if (contentType.startsWith('application/json')) {
-        try {
-          responseData = await response.json();
-        } catch (jsonError) {
-          responseData = await response.text();
-        }
-      } else {
-        responseData = await response.text();
-      }
+      const capBytes = maxResponseBytes ?? DEFAULT_MAX_HTTP_RESPONSE_BYTES;
+      const read = await readTextWithLimit(response, capBytes);
+      responseData = read.text;
+      truncated = read.truncated;
     } catch {
-      // If parsing fails, responseData remains null
+      // If body read fails, responseData remains null
     }
 
     // Convert headers to plain object
@@ -326,6 +431,7 @@ export async function makeTestRequest(options: TestRequestOptions): Promise<Test
     response_data: responseData,
     headers: responseHeaders,
     ...(errorMessage && { error: errorMessage }),
+    ...(truncated ? { truncated: true } : {}),
   };
 }
 

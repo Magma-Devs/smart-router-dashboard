@@ -134,6 +134,7 @@ export default function LiveTestPage() {
   const [isDistributionOpen, setIsDistributionOpen] = useState(false);
   const [singleTestHeaders, setSingleTestHeaders] = useState<Record<string, string> | null>(null);
   const [singleHeadersExpanded, setSingleHeadersExpanded] = useState<boolean>(false);
+  const [singleResponseTruncated, setSingleResponseTruncated] = useState<boolean>(false);
 
   // Load test headers state - track which responses have expanded headers
   const [loadTestExpandedHeaders, setLoadTestExpandedHeaders] = useState<Set<number>>(new Set());
@@ -141,6 +142,27 @@ export default function LiveTestPage() {
   // Cross validation headers state
   const [crossValidationHeadersExpanded, setCrossValidationHeadersExpanded] =
     useState<boolean>(false);
+  const [crossValidationResponseTruncated, setCrossValidationResponseTruncated] =
+    useState<boolean>(false);
+
+  const tryPrettifyJsonString = (input: string, maxParseChars: number = 200_000): string => {
+    if (typeof input !== 'string') return String(input);
+    if (input.length > maxParseChars) return input;
+    try {
+      const parsed = JSON.parse(input);
+      return JSON.stringify(parsed, null, 2);
+    } catch {
+      return input;
+    }
+  };
+
+  const getSafeResponseCaps = (type: 'regular' | 'archive' | 'debug' | 'trace') => {
+    // Trace/debug can return very large payloads; keep caps tighter to protect the UI.
+    if (type === 'trace' || type === 'debug') {
+      return { maxResponseBytes: 128 * 1024, maxResponseChars: 100_000 };
+    }
+    return { maxResponseBytes: 512 * 1024, maxResponseChars: 250_000 };
+  };
 
   // Helper: prettify header values that contain JSON or escaped JSON
   const parseHeaderValue = (val: string): any => {
@@ -665,6 +687,29 @@ export default function LiveTestPage() {
       return;
     }
 
+    // Safety limits: debug/trace payloads are large and can crash the browser if load-tested too hard.
+    if (
+      (selectedRequestType === 'debug' || selectedRequestType === 'trace') &&
+      numberOfRequests > 100
+    ) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description:
+          'For debug/trace requests, please limit the load test to 100 requests (payloads are large).',
+      });
+      return;
+    }
+    if ((selectedRequestType === 'debug' || selectedRequestType === 'trace') && concurrency > 10) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description:
+          'For debug/trace requests, please limit concurrency to 10 (payloads are large).',
+      });
+      return;
+    }
+
     if (runtimeConfigLoading || !runtimeConfig) {
       toast({
         variant: 'destructive',
@@ -703,6 +748,7 @@ export default function LiveTestPage() {
       // Make direct requests to provider endpoint
       const domain = runtimeConfig.NEXT_PUBLIC_DOMAIN;
       const port = runtimeConfig.NEXT_PUBLIC_PORT;
+      const caps = getSafeResponseCaps(selectedRequestType);
 
       const responses = await makeLoadTestRequests(
         {
@@ -713,6 +759,7 @@ export default function LiveTestPage() {
           port,
           skipCache,
           requestType: selectedRequestType,
+          ...caps,
         },
         numberOfRequests,
         concurrency,
@@ -767,6 +814,7 @@ export default function LiveTestPage() {
     setCrossValidationProvider(null);
     setCrossValidationHeaders(null);
     setCrossValidationHeadersExpanded(false);
+    setCrossValidationResponseTruncated(false);
 
     try {
       const baseNetwork = getNetworkFromChainId(selectedChain);
@@ -793,6 +841,7 @@ export default function LiveTestPage() {
       // Make direct request to provider endpoint with quorum headers
       const domain = runtimeConfig.NEXT_PUBLIC_DOMAIN;
       const port = runtimeConfig.NEXT_PUBLIC_PORT;
+      const caps = getSafeResponseCaps(selectedRequestType);
 
       const response = await makeTestRequest({
         chainId: selectedChain,
@@ -805,66 +854,17 @@ export default function LiveTestPage() {
         quorumMin: crossValidationMin,
         quorumMax: crossValidationMax,
         quorumRate: crossValidationRate,
+        ...caps,
       });
 
-      // Handle both string and object response_data
-      const responseData = response.response_data;
-      let formattedResponse: string;
+      const raw = response.response_data;
+      const responseText =
+        typeof raw === 'string' ? tryPrettifyJsonString(raw) : JSON.stringify(raw, null, 2);
 
-      // Recursive function to parse nested JSON strings
-      const parseNestedJson = (obj: any): any => {
-        if (typeof obj === 'string') {
-          try {
-            const parsed = JSON.parse(obj);
-            return parseNestedJson(parsed); // Recursively parse nested JSON
-          } catch {
-            // Try to handle escaped JSON strings
-            try {
-              const unescaped = obj.replace(/\\"/g, '"').replace(/\\\\/g, '\\');
-              const parsed = JSON.parse(unescaped);
-              return parseNestedJson(parsed);
-            } catch {
-              return obj; // Return as-is if can't parse
-            }
-          }
-        } else if (Array.isArray(obj)) {
-          return obj.map(parseNestedJson);
-        } else if (obj && typeof obj === 'object') {
-          const result: any = {};
-          for (const [key, value] of Object.entries(obj)) {
-            result[key] = parseNestedJson(value);
-          }
-          return result;
-        }
-        return obj;
-      };
-
-      if (typeof responseData === 'string') {
-        try {
-          const parsed = JSON.parse(responseData);
-          const fullyParsed = parseNestedJson(parsed);
-          formattedResponse = JSON.stringify(fullyParsed, null, 2);
-        } catch {
-          // If parsing fails, try to handle escaped JSON strings
-          try {
-            const unescaped = responseData.replace(/\\"/g, '"').replace(/\\\\/g, '\\');
-            const parsed = JSON.parse(unescaped);
-            const fullyParsed = parseNestedJson(parsed);
-            formattedResponse = JSON.stringify(fullyParsed, null, 2);
-          } catch {
-            // If all parsing fails, use the string as-is
-            formattedResponse = responseData;
-          }
-        }
-      } else {
-        // If it's already an object, recursively parse and stringify it prettily
-        const fullyParsed = parseNestedJson(responseData);
-        formattedResponse = JSON.stringify(fullyParsed, null, 2);
-      }
-
-      setCrossValidationResponse(formattedResponse);
+      setCrossValidationResponse(responseText);
       setCrossValidationStatus(response.status_code);
       setCrossValidationLatency(response.latency_ms);
+      setCrossValidationResponseTruncated(!!response.truncated);
 
       // Extract provider information from headers
       const headers = response.headers || {};
@@ -937,6 +937,7 @@ export default function LiveTestPage() {
     setSingleTestProvider(null);
     setSingleTestHeaders(null);
     setSingleHeadersExpanded(false);
+    setSingleResponseTruncated(false);
     try {
       const baseNetwork = getNetworkFromChainId(selectedChain);
       if (!baseNetwork) throw new Error('Network not found for chain');
@@ -962,6 +963,7 @@ export default function LiveTestPage() {
       // Make direct request to provider endpoint
       const domain = runtimeConfig.NEXT_PUBLIC_DOMAIN;
       const port = runtimeConfig.NEXT_PUBLIC_PORT;
+      const caps = getSafeResponseCaps(selectedRequestType);
 
       const response = await makeTestRequest({
         chainId: selectedChain,
@@ -971,6 +973,7 @@ export default function LiveTestPage() {
         port,
         skipCache,
         requestType: selectedRequestType,
+        ...caps,
       });
 
       setSingleTestStatus(response.status_code);
@@ -988,10 +991,11 @@ export default function LiveTestPage() {
         setSingleTestProvider(providerValue.toLowerCase() === 'cached' ? 'cached' : providerValue);
       }
 
-      const responseData = response.response_data;
-      setResponse(
-        typeof responseData === 'string' ? responseData : JSON.stringify(responseData, null, 2),
-      );
+      const raw = response.response_data;
+      const responseText =
+        typeof raw === 'string' ? tryPrettifyJsonString(raw) : JSON.stringify(raw, null, 2);
+      setResponse(responseText);
+      setSingleResponseTruncated(!!response.truncated);
     } catch (error) {
       toast({
         variant: 'destructive',
@@ -1478,6 +1482,11 @@ export default function LiveTestPage() {
                       </div>
                     </CardHeader>
                     <CardContent>
+                      {singleResponseTruncated && (
+                        <div className='mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800'>
+                          Response was truncated for safety (payload too large).
+                        </div>
+                      )}
                       {renderInlineJson(
                         response,
                         singleHeadersExpanded,
@@ -2558,6 +2567,11 @@ export default function LiveTestPage() {
                       </div>
                     </CardHeader>
                     <CardContent>
+                      {crossValidationResponseTruncated && (
+                        <div className='mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800'>
+                          Response was truncated for safety (payload too large).
+                        </div>
+                      )}
                       {renderInlineJson(
                         crossValidationResponse,
                         crossValidationHeadersExpanded,
