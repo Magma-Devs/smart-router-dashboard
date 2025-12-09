@@ -184,4 +184,22 @@ export const chainTypes: ChainType[] = [
       },
     },
   },
+  {
+    value: 'hedera',
+    label: 'Hedera',
+    interfaces: {
+      jsonrpc: {
+        regular: '{"jsonrpc":"2.0","method":"getAccountInfo","params":{"account":{"accountId":"0.0.1"}},"id":1}',
+        archive: '{"jsonrpc":"2.0","method":"getAccountInfo","params":{"account":{"accountId":"0.0.1"},"blockNumber":"latest"},"id":1}',
+        debug: null,
+        trace: null,
+      },
+      rest: {
+        regular: '{"method":"GET","path":"/api/v1/accounts/0.0.1"}',
+        archive: '{"method":"GET","path":"/api/v1/accounts/0.0.1?block=latest"}',
+        debug: null,
+        trace: null,
+      },
+    },
+  },
 ];
