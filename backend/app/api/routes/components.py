@@ -2,7 +2,6 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.core.auth import get_current_user
 from app.services.configuration import ConfigurationService, configuration_service
-from app.services.kubernetes import KubernetesService, kubernetes_service
 from app.core.dataclasses import (
     ComponentsResponse,
     ConsumerConfig,
@@ -20,16 +19,10 @@ def get_configuration_service() -> ConfigurationService:
     return configuration_service
 
 
-def get_kubernetes_service() -> KubernetesService:
-    """Dependency accessor for KubernetesService."""
-    return kubernetes_service
-
-
 @router.get("/", response_model=ComponentsResponse)
 async def get_configuration(
     current_user: str = Depends(get_current_user),
     config_service: ConfigurationService = Depends(get_configuration_service),
-    k8s_service: KubernetesService = Depends(get_kubernetes_service),
 ):
     """Get the current configuration for consumers and providers"""
     try:

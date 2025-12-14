@@ -641,13 +641,12 @@ async def get_chains_to_providers(
                 provider_uptime = calculate_provider_uptime_percentage(
                     provider_health_data, provider_key
                 )
-                
+
                 # Convert endpoints to SafeEndpoint (excluding URL and addons)
                 safe_endpoints = [
-                    {"interface": ep.interface}
-                    for ep in provider.endpoints
+                    {"interface": ep.interface} for ep in provider.endpoints
                 ]
-                
+
                 providers_per_chain.append(
                     {
                         "name": provider.name,
@@ -659,7 +658,7 @@ async def get_chains_to_providers(
                         ),
                     }
                 )
-            
+
             # Determine chain health status
             if all(
                 p["health_status"] == ProviderHealth.HEALTHY
@@ -673,7 +672,7 @@ async def get_chains_to_providers(
                 chain_health = ChainHealth.UNHEALTHY
             else:
                 chain_health = ChainHealth.MIXED
-                
+
             chains_list.append(
                 {
                     "id": chain.id,
