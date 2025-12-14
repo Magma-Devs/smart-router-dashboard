@@ -5,7 +5,7 @@ Main FastAPI application for the Smart Router Dashboard API.
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import auth, components, metrics
+from app.api.routes import auth, components, metrics, settings as settings_router
 from app.core.auth import AuthMiddleware
 from app.core.config import settings
 from app.tasks import schedule_metrics_s3_upload
@@ -32,6 +32,7 @@ app.add_middleware(AuthMiddleware)
 app.include_router(auth.router, prefix="/api/auth", tags=["authentication"])
 app.include_router(metrics.router, prefix="/api/metrics", tags=["metrics"])
 app.include_router(components.router, prefix="/api/components", tags=["components"])
+app.include_router(settings_router.router, prefix="/api/settings", tags=["settings"])
 
 if settings.is_send_metrics_to_s3:
     schedule_metrics_s3_upload()
@@ -51,5 +52,5 @@ async def root():
         "docs_url": "/docs",
         "version": app.version,
         "authentication_required": True,
-        "features": ["authentication", "metrics", "components"],
+        "features": ["authentication", "metrics", "components", "settings"],
     }
