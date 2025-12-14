@@ -48,14 +48,14 @@ def test_components_success():
         "jsonrpc",
         "rest",
     ]
-    
+
     # Verify URL is NOT present in the response
     provider = data["consumers"]["hyperliquid-lava"]["providers"][0]
     endpoint = provider["endpoints"][0]
     assert "url" not in endpoint
     assert "interface" in endpoint
     assert "addons" in endpoint
-    
+
     app.dependency_overrides.pop(get_configuration_service, None)
 
 
