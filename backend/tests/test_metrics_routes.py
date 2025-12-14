@@ -1,19 +1,5 @@
 import base64
-import sys
-import types
 from unittest.mock import patch
-
-# Stub kubernetes service to avoid helm/kubectl during tests
-fake_k8s = types.ModuleType("app.services.kubernetes")
-
-
-class _Dummy:
-    pass
-
-
-fake_k8s.KubernetesService = lambda *args, **kwargs: _Dummy()
-fake_k8s.kubernetes_service = _Dummy()
-sys.modules["app.services.kubernetes"] = fake_k8s
 
 from fastapi.testclient import TestClient
 

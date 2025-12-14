@@ -1,17 +1,5 @@
 import base64
-import types
-import sys
 from unittest.mock import AsyncMock, MagicMock
-
-# Stub kubernetes service to avoid helm/kubectl during tests
-fake_k8s = types.ModuleType("app.services.kubernetes")
-
-class _Dummy:
-    pass
-
-fake_k8s.KubernetesService = lambda *args, **kwargs: _Dummy()
-fake_k8s.kubernetes_service = _Dummy()
-sys.modules["app.services.kubernetes"] = fake_k8s
 
 from fastapi.testclient import TestClient
 from app.main import app
