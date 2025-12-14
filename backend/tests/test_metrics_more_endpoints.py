@@ -1,17 +1,4 @@
-import types
 from fastapi.testclient import TestClient
-import sys
-
-# Stub kubernetes service
-fake_k8s = types.ModuleType("app.services.kubernetes")
-
-
-class _Dummy: ...
-
-
-fake_k8s.KubernetesService = lambda *a, **k: _Dummy()
-fake_k8s.kubernetes_service = _Dummy()
-sys.modules["app.services.kubernetes"] = fake_k8s
 
 from app.main import app
 from app.api.routes.metrics import get_prometheus_service
