@@ -3,7 +3,6 @@
 import type React from 'react';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import { useConfig } from '@/hooks/use-config';
 import {
   Card,
@@ -16,36 +15,32 @@ import {
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { toast } from '@/components/ui/use-toast';
+import { toast } from '@/hooks/use-toast';
 import { Toaster } from '@/components/ui/toaster';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Info } from 'lucide-react';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { ProtectedRoute } from '@/components/protected-route';
 
 export default function ConfigurationPage() {
-  const router = useRouter();
-  const { config, updateApiEndpoint, updateRefreshInterval, updatePrometheusUrl, resetConfig } = useConfig();
-  const [inputValue, setInputValue] = useState(config.apiEndpoint);
-  const [prometheusInputValue, setPrometheusInputValue] = useState(config.prometheusUrl);
+  const { config, updateApiEndpoint, updatePrometheusUrl, updateEndpointDomain, updateEndpointPort, resetConfig } = useConfig();
+  const [inputValue, setInputValue] = useState(config.apiEndpoint || '');
+  const [prometheusInputValue, setPrometheusInputValue] = useState(config.prometheusUrl || '');
+  const [domainInputValue, setDomainInputValue] = useState(config.endpointDomain || '');
+  const [portInputValue, setPortInputValue] = useState(config.endpointPort || '');
   const [isPreviewEnvironment, setIsPreviewEnvironment] = useState(false);
 
   useEffect(() => {
     setInputValue(config.apiEndpoint);
     setPrometheusInputValue(config.prometheusUrl);
+    setDomainInputValue(config.endpointDomain);
+    setPortInputValue(config.endpointPort);
     // Check if we're in a preview environment
     if (typeof window !== 'undefined') {
       setIsPreviewEnvironment(window.location.hostname !== 'localhost');
     }
-  }, [config.apiEndpoint, config.prometheusUrl]);
+  }, [config.apiEndpoint, config.prometheusUrl, config.endpointDomain, config.endpointPort]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleApiSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
     // Basic validation
@@ -58,6 +53,23 @@ export default function ConfigurationPage() {
       return;
     }
 
+    // Ensure the endpoint has a protocol
+    let endpoint = inputValue.trim();
+    if (!endpoint.startsWith('http://') && !endpoint.startsWith('https://')) {
+      endpoint = `http://${endpoint}`;
+    }
+
+    updateApiEndpoint(endpoint);
+    toast({
+      title: 'API Host saved',
+      description: 'Your API host has been updated successfully',
+    });
+  };
+
+  const handlePrometheusSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+
+    // Basic validation
     if (!prometheusInputValue.trim()) {
       toast({
         variant: 'destructive',
@@ -67,34 +79,57 @@ export default function ConfigurationPage() {
       return;
     }
 
-    // Ensure the endpoint has a protocol
-    let endpoint = inputValue.trim();
-    if (!endpoint.startsWith('http://') && !endpoint.startsWith('https://')) {
-      endpoint = `http://${endpoint}`;
-    }
-
     // Handle Prometheus URL - add protocol if provided without one
     let prometheusUrl = prometheusInputValue.trim();
     if (!prometheusUrl.startsWith('http://') && !prometheusUrl.startsWith('https://')) {
       prometheusUrl = `http://${prometheusUrl}`;
     }
 
-    updateApiEndpoint(endpoint);
     updatePrometheusUrl(prometheusUrl);
     toast({
-      title: 'Configuration saved',
-      description: 'Your configuration has been updated successfully',
+      title: 'Prometheus URL saved',
+      description: 'Your Prometheus URL has been updated successfully',
     });
-    router.push('/');
   };
 
-  const handleReset = () => {
+  const handleEndpointSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+
+    const domain = (domainInputValue || '').trim();
+    const port = (portInputValue || '').trim();
+
+    // Basic validation
+    if (!domain) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Domain cannot be empty',
+      });
+      return;
+    }
+
+    if (!port) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Port cannot be empty',
+      });
+      return;
+    }
+
+    updateEndpointDomain(domain);
+    updateEndpointPort(port);
+    toast({
+      title: 'Endpoint configuration saved',
+      description: 'Your endpoint domain and port have been updated successfully',
+    });
+  };
+
+  const handleResetAll = () => {
     resetConfig();
-    // Update input value after reset (resetConfig updates localStorage, which triggers config.apiEndpoint update)
-    // We'll use useEffect to sync inputValue with config.apiEndpoint
     toast({
       title: 'Configuration reset',
-      description: 'API host has been reset to default from runtime configuration',
+      description: 'All settings have been reset to defaults',
     });
   };
 
@@ -119,18 +154,19 @@ export default function ConfigurationPage() {
           </Alert>
         )}
 
-        <Card className='ml-0 mr-auto max-w-2xl'>
-          <CardHeader>
-            <CardTitle>API Configuration</CardTitle>
-            <CardDescription>
-              Configure the backend host and Prometheus endpoint for fetching infrastructure health metrics
-            </CardDescription>
-          </CardHeader>
-          <form onSubmit={handleSubmit}>
-            <CardContent>
-              <div className='grid w-full items-center gap-6'>
+        <div className='grid grid-cols-1 md:grid-cols-2 gap-6'>
+          {/* API Host Card */}
+          <Card>
+            <CardHeader>
+              <CardTitle>API Host</CardTitle>
+              <CardDescription>
+                Backend API endpoint for dashboard data
+              </CardDescription>
+            </CardHeader>
+            <form onSubmit={handleApiSubmit}>
+              <CardContent>
                 <div className='flex flex-col space-y-1.5'>
-                  <Label htmlFor='apiHost'>API Host</Label>
+                  <Label htmlFor='apiHost'>Backend URL</Label>
                   <Input
                     id='apiHost'
                     placeholder='http://localhost:8000'
@@ -138,14 +174,31 @@ export default function ConfigurationPage() {
                     onChange={e => setInputValue(e.target.value)}
                   />
                   <p className='text-sm text-muted-foreground'>
-                    Backend API endpoint for metrics and configuration
+                    Provides metrics, configuration, and authentication
                   </p>
                   {isPreviewEnvironment && inputValue.includes('localhost') && (
                     <p className='text-sm text-amber-500'>
-                      Note: This localhost host may not be accessible in this environment.
+                      Localhost may not be accessible here.
                     </p>
                   )}
                 </div>
+              </CardContent>
+              <CardFooter>
+                <Button type='submit'>Save</Button>
+              </CardFooter>
+            </form>
+          </Card>
+
+          {/* Prometheus URL Card */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Prometheus</CardTitle>
+              <CardDescription>
+                Prometheus endpoint for metrics collection
+              </CardDescription>
+            </CardHeader>
+            <form onSubmit={handlePrometheusSubmit}>
+              <CardContent>
                 <div className='flex flex-col space-y-1.5'>
                   <Label htmlFor='prometheusUrl'>Prometheus URL</Label>
                   <Input
@@ -155,24 +208,81 @@ export default function ConfigurationPage() {
                     onChange={e => setPrometheusInputValue(e.target.value)}
                   />
                   <p className='text-sm text-muted-foreground'>
-                    Direct Prometheus endpoint URL for custom queries (bypasses backend)
+                    Used by backend for querying metrics
                   </p>
                   {isPreviewEnvironment && prometheusInputValue.includes('localhost') && (
                     <p className='text-sm text-amber-500'>
-                      Note: This localhost URL may not be accessible in this environment.
+                      Localhost may not be accessible here.
                     </p>
                   )}
                 </div>
-              </div>
+              </CardContent>
+              <CardFooter>
+                <Button type='submit'>Save</Button>
+              </CardFooter>
+            </form>
+          </Card>
+
+          {/* Endpoint Configuration Card */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Endpoint Configuration</CardTitle>
+              <CardDescription>
+                Domain and port for endpoint URL calculation
+              </CardDescription>
+            </CardHeader>
+            <form onSubmit={handleEndpointSubmit}>
+              <CardContent>
+                <div className='flex flex-col space-y-4'>
+                  <div className='flex flex-col space-y-1.5'>
+                    <Label htmlFor='endpointDomain'>Domain</Label>
+                    <Input
+                      id='endpointDomain'
+                      placeholder='lava.lavapro.xyz'
+                      value={domainInputValue || ''}
+                      onChange={e => setDomainInputValue(e.target.value)}
+                    />
+                  </div>
+                  <div className='flex flex-col space-y-1.5'>
+                    <Label htmlFor='endpointPort'>Port</Label>
+                    <Input
+                      id='endpointPort'
+                      placeholder='443'
+                      value={portInputValue || ''}
+                      onChange={e => setPortInputValue(e.target.value)}
+                    />
+                  </div>
+                  <p className='text-sm text-muted-foreground'>
+                    Used to construct endpoint URLs: <code className='text-xs bg-muted px-1 py-0.5 rounded'>{`{chain}-{interface}.${domainInputValue || 'domain'}:${portInputValue || 'port'}`}</code>
+                  </p>
+                </div>
+              </CardContent>
+              <CardFooter>
+                <Button type='submit'>Save</Button>
+              </CardFooter>
+            </form>
+          </Card>
+
+          {/* Reset Card */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Reset Configuration</CardTitle>
+              <CardDescription>
+                Reset all settings to defaults
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className='text-sm text-muted-foreground'>
+                Restore all settings to their original default values from the environment configuration.
+              </p>
             </CardContent>
-            <CardFooter className='flex justify-between'>
-              <Button variant='outline' type='button' onClick={handleReset}>
-                Reset to Default
+            <CardFooter>
+              <Button variant='outline' onClick={handleResetAll}>
+                Reset All to Defaults
               </Button>
-              <Button type='submit'>Save Configuration</Button>
             </CardFooter>
-          </form>
-        </Card>
+          </Card>
+        </div>
         <Toaster />
       </div>
     </ProtectedRoute>

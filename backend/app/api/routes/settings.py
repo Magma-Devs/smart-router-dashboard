@@ -5,7 +5,7 @@ This module provides endpoints for retrieving and updating runtime settings,
 allowing the frontend to override default configuration values.
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field, field_validator
 
 from app.core.auth import get_current_user
@@ -50,13 +50,12 @@ def get_effective_prometheus_url() -> str:
 
 
 @router.get("/", response_model=SettingsResponse)
-async def get_settings(
-    current_user: str = Depends(get_current_user),
-):
+async def get_settings():
     """
     Get current application settings.
 
     Returns the current settings including any runtime overrides applied by the frontend.
+    This endpoint is public as the settings are not sensitive.
     """
     return SettingsResponse(
         prometheus_url=get_effective_prometheus_url(),
