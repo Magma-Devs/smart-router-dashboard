@@ -8,7 +8,7 @@
  * of user preferences using localStorage.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useLocalStorage } from '@/hooks/use-local-storage';
 import { getRuntimeConfig } from '@/lib/runtime-config';
 import { apiClient } from '@/lib/api-client';
@@ -20,6 +20,8 @@ interface Config {
   apiEndpoint: string; // Backend API endpoint URL
   refreshInterval: number; // Auto-refresh interval in seconds
   prometheusUrl: string; // Direct Prometheus endpoint URL
+  endpointDomain: string; // Domain for endpoint URL calculation
+  endpointPort: string; // Port for endpoint URL calculation
 }
 
 /**
@@ -66,6 +68,12 @@ export function useConfig() {
   const [prometheusUrl, setPrometheusUrl] = useLocalStorage<string | null>('prometheus-url', null);
   const [defaultPrometheusUrl, setDefaultPrometheusUrl] = useState<string>('');
 
+  // Endpoint domain and port - for calculating endpoint URLs
+  const [endpointDomain, setEndpointDomain] = useLocalStorage<string | null>('endpoint-domain', null);
+  const [defaultEndpointDomain, setDefaultEndpointDomain] = useState<string>('');
+  const [endpointPort, setEndpointPort] = useLocalStorage<string | null>('endpoint-port', null);
+  const [defaultEndpointPort, setDefaultEndpointPort] = useState<string>('');
+
   // Default refresh interval of 60 seconds
   const [refreshInterval, setRefreshInterval] = useLocalStorage<number>('refresh-interval', 60);
 
@@ -91,15 +99,29 @@ export function useConfig() {
 
   /**
    * Initialize API host and Prometheus URL from runtime config and backend.
-   * This ensures new users get the default configuration automatically.
+   * Uses a ref to ensure it only runs once, even in React Strict Mode.
    */
+  const initRef = React.useRef(false);
+  
   useEffect(() => {
+    // Prevent double initialization in React Strict Mode
+    if (initRef.current) return;
+    initRef.current = true;
+
     const initializeConfig = async () => {
+      // Check localStorage directly to avoid race condition with useLocalStorage hook
+      const hasStoredApiHost = typeof window !== 'undefined' && window.localStorage.getItem('api-host') !== null;
+      const hasStoredPrometheusUrl = typeof window !== 'undefined' && window.localStorage.getItem('prometheus-url') !== null;
+      const hasStoredDomain = typeof window !== 'undefined' && window.localStorage.getItem('endpoint-domain') !== null;
+      const hasStoredPort = typeof window !== 'undefined' && window.localStorage.getItem('endpoint-port') !== null;
+
       // First, get runtime config for API URL
       const config = await getRuntimeConfig();
       const defaultEndpoint = config.NEXT_PUBLIC_API_URL;
       setDefaultApiUrl(defaultEndpoint);
-      if (apiHost === null && defaultEndpoint) {
+      
+      // Only set apiHost if it hasn't been stored yet (first load)
+      if (!hasStoredApiHost && defaultEndpoint) {
         setApiHost(defaultEndpoint);
       }
 
@@ -107,28 +129,42 @@ export function useConfig() {
       const defaultPromUrl = config.NEXT_PUBLIC_PROMETHEUS_URL;
       setDefaultPrometheusUrl(defaultPromUrl);
 
+      // Set default endpoint domain and port from runtime config
+      const defaultDomain = config.NEXT_PUBLIC_DOMAIN;
+      setDefaultEndpointDomain(defaultDomain);
+      if (!hasStoredDomain && defaultDomain) {
+        setEndpointDomain(defaultDomain);
+      }
+
+      const defaultPort = config.NEXT_PUBLIC_PORT;
+      setDefaultEndpointPort(defaultPort);
+      if (!hasStoredPort && defaultPort) {
+        setEndpointPort(defaultPort);
+      }
+
       // Try to fetch Prometheus URL from backend settings
       try {
         const backendSettings = await fetchBackendSettings();
         if (backendSettings && backendSettings.prometheus_url) {
-          // Use backend setting if available and user hasn't set a custom value
-          if (prometheusUrl === null) {
+          // Use backend setting if available and user hasn't stored a custom value
+          if (!hasStoredPrometheusUrl) {
             setPrometheusUrl(backendSettings.prometheus_url);
           }
-        } else if (prometheusUrl === null && defaultPromUrl) {
+        } else if (!hasStoredPrometheusUrl && defaultPromUrl) {
           // Fallback to runtime config
           setPrometheusUrl(defaultPromUrl);
         }
       } catch {
         // If backend fetch fails, use runtime config default
-        if (prometheusUrl === null && defaultPromUrl) {
+        if (!hasStoredPrometheusUrl && defaultPromUrl) {
           setPrometheusUrl(defaultPromUrl);
         }
       }
     };
 
     initializeConfig();
-  }, [apiHost, setApiHost, prometheusUrl, setPrometheusUrl, fetchBackendSettings]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /**
    * Updates the API endpoint URL with validation.
@@ -181,9 +217,27 @@ export function useConfig() {
   };
 
   /**
+   * Updates the endpoint domain.
+   *
+   * @param value - New domain
+   */
+  const updateEndpointDomain = (value: string) => {
+    setEndpointDomain(value.trim());
+  };
+
+  /**
+   * Updates the endpoint port.
+   *
+   * @param value - New port
+   */
+  const updateEndpointPort = (value: string) => {
+    setEndpointPort(value.trim());
+  };
+
+  /**
    * Resets configuration to default values.
    *
-   * Restores API endpoint and Prometheus URL to runtime config defaults,
+   * Restores API endpoint, Prometheus URL, and endpoint settings to runtime config defaults,
    * and refresh interval to 60 seconds. Also resets backend settings.
    */
   const resetConfig = async () => {
@@ -191,6 +245,8 @@ export function useConfig() {
       setApiHost(defaultApiUrl);
     }
     setPrometheusUrl(defaultPrometheusUrl);
+    setEndpointDomain(defaultEndpointDomain);
+    setEndpointPort(defaultEndpointPort);
     setRefreshInterval(60);
 
     // Reset backend settings
@@ -211,6 +267,8 @@ export function useConfig() {
       refreshInterval:
         typeof refreshInterval === 'string' ? parseInt(refreshInterval, 10) : refreshInterval,
       prometheusUrl: prometheusUrl || defaultPrometheusUrl || '',
+      endpointDomain: endpointDomain || defaultEndpointDomain || '',
+      endpointPort: endpointPort || defaultEndpointPort || '',
     } as Config,
 
     /**
@@ -219,6 +277,8 @@ export function useConfig() {
     updateApiEndpoint,
     updateRefreshInterval,
     updatePrometheusUrl,
+    updateEndpointDomain,
+    updateEndpointPort,
     resetConfig,
 
     /**

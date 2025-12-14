@@ -3,82 +3,60 @@
 
 chains:
   # Ethereum - JSON-RPC with archive
-  - id: ethereum-test
+  - id: Ethereum
     network: eth1
     providers:
       - name: lava
         endpoints:
-          - url: https://eth1.lava.build/lava-referer-xxx
+          - url: https://eth1.lava.build
             interface: jsonrpc
             addons:
               - archive
 
   # Arbitrum - JSON-RPC with archive and trace
-  - id: arbitrum-test
-    network: evm-arbitrum
+  - id: Arbitrum
+    network: arbitrum
     providers:
       - name: lava
         endpoints:
-          - url: https://arb1.lava.build/lava-referer-xxx
+          - url: https://arb1.lava.build
             interface: jsonrpc
             addons:
               - archive
               - trace
 
   # NEAR - JSON-RPC with archive
-  - id: near-test
+  - id: Near
     network: near
     providers:
       - name: lava
         endpoints:
-          - url: https://near.lava.build/lava-referer-xxx
+          - url: https://near.lava.build
             interface: jsonrpc
             addons:
               - archive
 
   # Solana - JSON-RPC without addons
-  - id: solana-test
+  - id: Solana
     network: solana
     providers:
       - name: lava
         endpoints:
-          - url: https://solana.lava.build/lava-referer-xxx
+          - url: https://solana.lava.build
             interface: jsonrpc
             addons: []
 
   # Cosmos - TendermintRPC and REST with archive
-  - id: cosmos-test
-    network: cosmos
+  - id: Lava
+    network: lava
     providers:
       - name: lava
         endpoints:
-          - url: https://cosmos-rpc.lava.build/lava-referer-xxx
+          - url: https://lava.tendermintrpc.lava.build
             interface: tendermintrpc
             addons:
               - archive
-          - url: https://cosmos-rest.lava.build/lava-referer-xxx
+          - url: https://lava.rest.lava.build
             interface: rest
-            addons:
-              - archive
-
-  # Starknet - JSON-RPC with trace
-  - id: starknet-test
-    network: starknet
-    providers:
-      - name: lava
-        endpoints:
-          - url: https://starknet.lava.build/lava-referer-xxx
-            interface: jsonrpc
-            addons:
-              - trace
-
-  # Bitcoin - JSON-RPC with archive
-  - id: bitcoin-test
-    network: bitcoin
-    providers:
-      - name: lava
-        endpoints:
-          - url: https://bitcoin.lava.build/lava-referer-xxx
-            interface: jsonrpc
             addons:
               - archive

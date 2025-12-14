@@ -4,15 +4,27 @@ services:
   frontend:
     build:
       context: ./frontend
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./frontend/app:/app/app
+      - ./frontend/components:/app/components
+      - ./frontend/hooks:/app/hooks
+      - ./frontend/lib:/app/lib
+      - ./frontend/services:/app/services
+      - ./frontend/types:/app/types
+      - ./frontend/public:/app/public
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8000
       - NEXT_PUBLIC_DOMAIN=localhost
       - NEXT_PUBLIC_PORT=8000
       - NEXT_PUBLIC_PROMETHEUS_URL=http://prometheus.lava.lavapro.xyz:80
+      - WATCHPACK_POLLING=true
+      - CHOKIDAR_USEPOLLING=true
     ports:
       - "3000:3000"
     restart: unless-stopped
+    stdin_open: true
+    tty: true
   backend:
     build:
       context: ./backend

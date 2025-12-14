@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useConfig } from '@/hooks/use-config';
-import { useRuntimeConfig } from '@/hooks/use-runtime-config';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -87,7 +86,6 @@ interface LiveTestResult {
 
 export default function LiveTestPage() {
   const { config } = useConfig();
-  const { config: runtimeConfig, loading: runtimeConfigLoading } = useRuntimeConfig();
   const { isAuthenticated, loading: authLoading } = useAuth();
   // id + network of real chains with metrics
   const [availableChains, setAvailableChains] = useState<Array<{ id: string; network: string }>>(
@@ -395,37 +393,59 @@ export default function LiveTestPage() {
         return;
       }
 
-      try {
-        // 1) interfaces source (keep as-is for per-chain interfaces)
-        const data: ApiResponse = await apiClient.get(`/api/components/`);
-        setApiData(data);
+      let componentsData: ApiResponse | null = null;
 
-        // 2) networks and routers list from metrics API
+      // 1) Fetch components/interfaces data first - this is required
+      try {
+        componentsData = await apiClient.get<ApiResponse>(`/api/components/`);
+        setApiData(componentsData);
+      } catch (error) {
+        console.error('Failed to fetch components:', error);
+        setError(error instanceof Error ? error.message : 'Failed to fetch components');
+        setIsFetching(false);
+        return;
+      }
+
+      // 2) Try to get chains from metrics API, but fall back to components if it fails
+      let chainsData: Array<{ id: string; network: string }> = [];
+
+      try {
         const chainsResponse = await MetricsService.fetchMetricsForAllChains(1, 1);
-        const chainsData = Object.entries(chainsResponse.chains).map(
+        chainsData = Object.entries(chainsResponse.chains).map(
           ([chainId, chainMetrics]: [string, any]) => ({
             id: chainId,
             network: chainMetrics.network,
           }),
         );
-        setAvailableChains(chainsData);
-
-        // default select first network if any
-        if (chainsData.length > 0) {
-          setSelectedNetwork(chainsData[0].network);
-          const routers = chainsData.filter(c => c.network === chainsData[0].network);
-          if (routers.length === 1) {
-            setSelectedChain(routers[0].id);
-          } else {
-            setSelectedChain('');
-          }
+      } catch (metricsError) {
+        // Metrics API failed - fall back to using components data
+        console.warn('Metrics API failed, falling back to components data:', metricsError);
+        
+        // Build chains list from components/consumers
+        if (componentsData?.consumers) {
+          chainsData = Object.entries(componentsData.consumers).map(
+            ([chainId, consumer]) => ({
+              id: chainId,
+              network: consumer.network,
+            }),
+          );
         }
-      } catch (error) {
-        console.error('Fetch error:', error);
-        setError(error instanceof Error ? error.message : 'Failed to fetch chains');
-      } finally {
-        setIsFetching(false);
       }
+
+      setAvailableChains(chainsData);
+
+      // Default select first network if any
+      if (chainsData.length > 0) {
+        setSelectedNetwork(chainsData[0].network);
+        const routers = chainsData.filter(c => c.network === chainsData[0].network);
+        if (routers.length === 1) {
+          setSelectedChain(routers[0].id);
+        } else {
+          setSelectedChain('');
+        }
+      }
+
+      setIsFetching(false);
     };
 
     fetchChains();
@@ -481,9 +501,7 @@ export default function LiveTestPage() {
   }, [selectedChain, apiData, selectedRequestType]);
 
   useEffect(() => {
-    if (selectedChain && selectedInterface && apiData && !runtimeConfigLoading && runtimeConfig) {
-      const apiEndpoint = config.apiEndpoint;
-
+    if (selectedChain && selectedInterface && apiData && config.endpointDomain && config.endpointPort) {
       // Get the network from the API data instead of parsing chain ID
       const selectedChainData = apiData.consumers[selectedChain];
       if (!selectedChainData || !selectedChainData.network) return;
@@ -503,29 +521,8 @@ export default function LiveTestPage() {
       const interfaceCommand = interfaceCommands[selectedRequestType];
       if (!interfaceCommand) return;
 
-      // Require runtime config values - don't use fallbacks
-      if (!runtimeConfig.NEXT_PUBLIC_DOMAIN) {
-        console.error('[LiveTest] ERROR: NEXT_PUBLIC_DOMAIN is missing from runtime config!', runtimeConfig);
-        toast({
-          variant: 'destructive',
-          title: 'Configuration Error',
-          description: 'Domain configuration is missing. Please check environment variables.',
-        });
-        return;
-      }
-
-      if (!runtimeConfig.NEXT_PUBLIC_PORT) {
-        console.error('[LiveTest] ERROR: NEXT_PUBLIC_PORT is missing from runtime config!', runtimeConfig);
-        toast({
-          variant: 'destructive',
-          title: 'Configuration Error',
-          description: 'Port configuration is missing. Please check environment variables.',
-        });
-        return;
-      }
-
-      const domain = runtimeConfig.NEXT_PUBLIC_DOMAIN;
-      const port = runtimeConfig.NEXT_PUBLIC_PORT;
+      const domain = config.endpointDomain;
+      const port = config.endpointPort;
 
       const curlHost = `${selectedChain}-${commandLookupInterface}.${domain}`;
       // Use wss:// protocol with /websocket path for WebSocket connections
@@ -567,17 +564,15 @@ export default function LiveTestPage() {
     selectedChain,
     selectedInterface,
     selectedRequestType,
-    config.apiEndpoint,
+    config.endpointDomain,
+    config.endpointPort,
     skipCache,
     apiData,
-    runtimeConfig,
-    runtimeConfigLoading,
   ]);
 
   // Generate cross-validation specific curl command with quorum headers
   useEffect(() => {
-    if (selectedChain && selectedInterface && apiData && !runtimeConfigLoading && runtimeConfig) {
-      const apiEndpoint = config.apiEndpoint;
+    if (selectedChain && selectedInterface && apiData && config.endpointDomain && config.endpointPort) {
 
       // Get the network from the API data instead of parsing chain ID
       const selectedChainData = apiData.consumers[selectedChain];
@@ -598,14 +593,8 @@ export default function LiveTestPage() {
       const interfaceCommand = interfaceCommands[selectedRequestType];
       if (!interfaceCommand) return;
 
-      // Require runtime config values - don't use fallbacks
-      if (!runtimeConfig.NEXT_PUBLIC_DOMAIN || !runtimeConfig.NEXT_PUBLIC_PORT) {
-        console.error('[LiveTest] ERROR: Runtime config values missing for cross-validation!', runtimeConfig);
-        return;
-      }
-
-      const domain = runtimeConfig.NEXT_PUBLIC_DOMAIN;
-      const port = runtimeConfig.NEXT_PUBLIC_PORT;
+      const domain = config.endpointDomain;
+      const port = config.endpointPort;
 
       const curlHost = `${selectedChain}-${commandLookupInterface}.${domain}`;
 
@@ -655,8 +644,8 @@ export default function LiveTestPage() {
     crossValidationMin,
     crossValidationMax,
     crossValidationRate,
-    runtimeConfig,
-    runtimeConfigLoading,
+    config.endpointDomain,
+    config.endpointPort,
   ]);
 
   const handleLoadTest = async () => {
@@ -710,11 +699,11 @@ export default function LiveTestPage() {
       return;
     }
 
-    if (runtimeConfigLoading || !runtimeConfig) {
+    if (!config.endpointDomain || !config.endpointPort) {
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: 'Configuration is still loading. Please wait.',
+        description: 'Endpoint configuration is missing. Please configure domain and port in Settings.',
       });
       return;
     }
@@ -740,14 +729,14 @@ export default function LiveTestPage() {
       const interfaceCommand = interfaceCommands[selectedRequestType];
       if (!interfaceCommand) throw new Error('Request type command not found');
 
-      // Require runtime config values - don't use fallbacks
-      if (!runtimeConfig.NEXT_PUBLIC_DOMAIN || !runtimeConfig.NEXT_PUBLIC_PORT) {
-        throw new Error('Runtime configuration is incomplete. Missing domain or port. Please check environment variables.');
+      // Use configured domain and port
+      const domain = config.endpointDomain;
+      const port = config.endpointPort;
+
+      if (!domain || !port) {
+        throw new Error('Endpoint configuration is incomplete. Please configure domain and port in Settings.');
       }
 
-      // Make direct requests to provider endpoint
-      const domain = runtimeConfig.NEXT_PUBLIC_DOMAIN;
-      const port = runtimeConfig.NEXT_PUBLIC_PORT;
       const caps = getSafeResponseCaps(selectedRequestType);
 
       const responses = await makeLoadTestRequests(
@@ -798,11 +787,11 @@ export default function LiveTestPage() {
       return;
     }
 
-    if (runtimeConfigLoading || !runtimeConfig) {
+    if (!config.endpointDomain || !config.endpointPort) {
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: 'Configuration is still loading. Please wait.',
+        description: 'Endpoint configuration is missing. Please configure domain and port in Settings.',
       });
       return;
     }
@@ -833,14 +822,14 @@ export default function LiveTestPage() {
       const interfaceCommand = interfaceCommands[selectedRequestType];
       if (!interfaceCommand) throw new Error('Request type command not found');
 
-      // Require runtime config values - don't use fallbacks
-      if (!runtimeConfig.NEXT_PUBLIC_DOMAIN || !runtimeConfig.NEXT_PUBLIC_PORT) {
-        throw new Error('Runtime configuration is incomplete. Missing domain or port. Please check environment variables.');
+      // Use configured domain and port
+      const domain = config.endpointDomain;
+      const port = config.endpointPort;
+
+      if (!domain || !port) {
+        throw new Error('Endpoint configuration is incomplete. Please configure domain and port in Settings.');
       }
 
-      // Make direct request to provider endpoint with quorum headers
-      const domain = runtimeConfig.NEXT_PUBLIC_DOMAIN;
-      const port = runtimeConfig.NEXT_PUBLIC_PORT;
       const caps = getSafeResponseCaps(selectedRequestType);
 
       const response = await makeTestRequest({
@@ -922,11 +911,11 @@ export default function LiveTestPage() {
       return;
     }
 
-    if (runtimeConfigLoading || !runtimeConfig) {
+    if (!config.endpointDomain || !config.endpointPort) {
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: 'Configuration is still loading. Please wait.',
+        description: 'Endpoint configuration is missing. Please configure domain and port in Settings.',
       });
       return;
     }
@@ -955,14 +944,14 @@ export default function LiveTestPage() {
       const interfaceCommand = interfaceCommands[selectedRequestType];
       if (!interfaceCommand) throw new Error('Request type command not found');
 
-      // Require runtime config values - don't use fallbacks
-      if (!runtimeConfig.NEXT_PUBLIC_DOMAIN || !runtimeConfig.NEXT_PUBLIC_PORT) {
-        throw new Error('Runtime configuration is incomplete. Missing domain or port. Please check environment variables.');
+      // Use configured domain and port
+      const domain = config.endpointDomain;
+      const port = config.endpointPort;
+
+      if (!domain || !port) {
+        throw new Error('Endpoint configuration is incomplete. Please configure domain and port in Settings.');
       }
 
-      // Make direct request to provider endpoint
-      const domain = runtimeConfig.NEXT_PUBLIC_DOMAIN;
-      const port = runtimeConfig.NEXT_PUBLIC_PORT;
       const caps = getSafeResponseCaps(selectedRequestType);
 
       const response = await makeTestRequest({

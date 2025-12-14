@@ -1,0 +1,24 @@
+# Development Dockerfile with hot reloading
+FROM node:20-alpine
+
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+WORKDIR /app
+
+# Copy package files
+COPY package.json pnpm-lock.yaml ./
+
+# Install dependencies
+RUN pnpm install
+
+# Copy source (will be overridden by volume mount)
+COPY . .
+
+# Expose port
+EXPOSE 3000
+
+# Run in development mode with hot reloading
+# --hostname 0.0.0.0 allows external connections
+# --turbo enables turbopack for faster rebuilds
+CMD ["pnpm", "dev", "--hostname", "0.0.0.0", "--turbo"]
+
