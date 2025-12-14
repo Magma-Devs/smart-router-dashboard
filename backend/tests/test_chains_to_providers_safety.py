@@ -9,18 +9,21 @@ from app.core.dataclasses import ChainConfig, ProviderConfig, EndpointConfig
 
 client = TestClient(app)
 
+
 def _basic_header(u: str, p: str) -> dict:
     token = base64.b64encode(f"{u}:{p}".encode()).decode()
     return {"Authorization": f"Basic {token}"}
+
 
 class FakePrometheus:
     async def query_range(self, q: str, start, end, step: str):
         return {"status": "success", "data": {"result": []}}
 
+
 class FakeConfigService(ConfigurationService):
     def __init__(self):
         pass
-    
+
     @property
     def get_chains_providers_configuration(self):
         return [
@@ -34,20 +37,21 @@ class FakeConfigService(ConfigurationService):
                             EndpointConfig(
                                 url="https://secret-url.com",
                                 interface="jsonrpc",
-                                addons=["archive"]
+                                addons=["archive"],
                             )
-                        ]
+                        ],
                     )
-                ]
+                ],
             )
         ]
+
 
 def test_chains_to_providers_safe_model():
     # Mock dependencies
     app.dependency_overrides[get_prometheus_service] = lambda: FakePrometheus()
-    # We need to patch the configuration_service import in metrics.py 
+    # We need to patch the configuration_service import in metrics.py
     # or override it if it was a dependency (it's imported directly in metrics.py)
-    
+
     # Since metrics.py imports configuration_service directly, we need to mock it there
     mock_config = types.SimpleNamespace(
         get_chains_providers_configuration=FakeConfigService().get_chains_providers_configuration
@@ -55,22 +59,22 @@ def test_chains_to_providers_safe_model():
     with patch("app.api.routes.metrics.configuration_service", mock_config):
         r = client.get(
             "/api/metrics/chains-to-providers",
-            headers=_basic_header("admin", "password")
+            headers=_basic_header("admin", "password"),
         )
-        
+
         assert r.status_code == 200
         data = r.json()
-        
+
         assert "chains" in data
         assert len(data["chains"]) == 1
         chain = data["chains"][0]
         assert chain["id"] == "ethereum"
-        
+
         # Verify provider data
         assert len(chain["providers"]) == 1
         provider = chain["providers"][0]
         assert provider["name"] == "lava"
-        
+
         # CRITICAL: Verify URL is NOT present and addons ARE NOT present
         assert len(provider["endpoints"]) == 1
         endpoint = provider["endpoints"][0]
@@ -79,5 +83,5 @@ def test_chains_to_providers_safe_model():
         assert "url" not in endpoint
         assert "addons" not in endpoint
 
-from unittest.mock import patch
 
+from unittest.mock import patch
