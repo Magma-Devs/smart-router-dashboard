@@ -9,6 +9,7 @@ services:
       - NEXT_PUBLIC_API_URL=https://dashboard-api.lava.lavapro.xyz:8443
       - NEXT_PUBLIC_DOMAIN=lava.lavapro.xyz
       - NEXT_PUBLIC_PORT=443
+      - NEXT_PUBLIC_PROMETHEUS_URL=http://prometheus.lava.lavapro.xyz:80
     network_mode: host
     restart: unless-stopped
   backend:

@@ -6,11 +6,32 @@ import httpx
 from app.core.config import settings
 
 
+def _get_effective_prometheus_url() -> str:
+    """Get the effective Prometheus URL, considering runtime overrides."""
+    # Import here to avoid circular imports
+    from app.api.routes.settings import get_effective_prometheus_url
+    return get_effective_prometheus_url()
+
+
 class PrometheusService:
-    def __init__(self, base_url: str = settings.PROMETHEUS_URL):
-        self.base_url = base_url
-        self.query_url = f"{base_url}/api/v1/query"
-        self.range_query_url = f"{base_url}/api/v1/query_range"
+    def __init__(self, base_url: str | None = None):
+        # If base_url is provided, use it; otherwise use dynamic lookup
+        self._fixed_url = base_url
+
+    @property
+    def base_url(self) -> str:
+        """Get the current base URL, supporting runtime overrides."""
+        if self._fixed_url:
+            return self._fixed_url
+        return _get_effective_prometheus_url()
+
+    @property
+    def query_url(self) -> str:
+        return f"{self.base_url}/api/v1/query"
+
+    @property
+    def range_query_url(self) -> str:
+        return f"{self.base_url}/api/v1/query_range"
 
     async def query(self, query_expr: str) -> dict[str, Any]:
         """Execute an instant query against Prometheus"""

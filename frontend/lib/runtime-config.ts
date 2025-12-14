@@ -11,6 +11,7 @@ export interface RuntimeConfig {
   NEXT_PUBLIC_API_URL: string;
   NEXT_PUBLIC_DOMAIN: string;
   NEXT_PUBLIC_PORT: string;
+  NEXT_PUBLIC_PROMETHEUS_URL: string;
 }
 
 let cachedConfig: RuntimeConfig | null = null;
@@ -40,10 +41,11 @@ async function fetchRuntimeConfig(): Promise<RuntimeConfig> {
       return config;
     } catch (error) {
       // Fallback to defaults if API call fails
-      const fallbackConfig = {
+      const fallbackConfig: RuntimeConfig = {
         NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000',
         NEXT_PUBLIC_DOMAIN: process.env.NEXT_PUBLIC_DOMAIN || 'localhost',
         NEXT_PUBLIC_PORT: process.env.NEXT_PUBLIC_PORT || '3000',
+        NEXT_PUBLIC_PROMETHEUS_URL: process.env.NEXT_PUBLIC_PROMETHEUS_URL || 'http://localhost:9090',
       };
       return fallbackConfig;
     } finally {
@@ -69,6 +71,7 @@ export async function getRuntimeConfig(): Promise<RuntimeConfig> {
       NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000',
       NEXT_PUBLIC_DOMAIN: process.env.NEXT_PUBLIC_DOMAIN || 'localhost',
       NEXT_PUBLIC_PORT: process.env.NEXT_PUBLIC_PORT || '3000',
+      NEXT_PUBLIC_PROMETHEUS_URL: process.env.NEXT_PUBLIC_PROMETHEUS_URL || 'http://localhost:9090',
     };
   }
 
@@ -119,4 +122,15 @@ export function getPort(): string {
     return cachedConfig.NEXT_PUBLIC_PORT;
   }
   return process.env.NEXT_PUBLIC_PORT || '3000';
+}
+
+/**
+ * Gets the Prometheus URL from runtime config.
+ * Falls back to build-time env var if runtime config not available.
+ */
+export function getPrometheusUrl(): string {
+  if (typeof window !== 'undefined' && cachedConfig) {
+    return cachedConfig.NEXT_PUBLIC_PROMETHEUS_URL;
+  }
+  return process.env.NEXT_PUBLIC_PROMETHEUS_URL || 'http://localhost:9090';
 }

@@ -1,3 +1,3 @@
-from . import components, metrics
+from . import components, metrics, settings
 
-__all__ = ["metrics", "components"]
+__all__ = ["metrics", "components", "settings"]
