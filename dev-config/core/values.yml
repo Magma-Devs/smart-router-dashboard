@@ -1,0 +1,84 @@
+# Sample Smart Router configuration for local development
+# This file is mounted into the backend container for testing
+
+chains:
+  # Ethereum - JSON-RPC with archive
+  - id: ethereum-test
+    network: eth1
+    providers:
+      - name: lava
+        endpoints:
+          - url: https://eth1.lava.build/lava-referer-xxx
+            interface: jsonrpc
+            addons:
+              - archive
+
+  # Arbitrum - JSON-RPC with archive and trace
+  - id: arbitrum-test
+    network: evm-arbitrum
+    providers:
+      - name: lava
+        endpoints:
+          - url: https://arb1.lava.build/lava-referer-xxx
+            interface: jsonrpc
+            addons:
+              - archive
+              - trace
+
+  # NEAR - JSON-RPC with archive
+  - id: near-test
+    network: near
+    providers:
+      - name: lava
+        endpoints:
+          - url: https://near.lava.build/lava-referer-xxx
+            interface: jsonrpc
+            addons:
+              - archive
+
+  # Solana - JSON-RPC without addons
+  - id: solana-test
+    network: solana
+    providers:
+      - name: lava
+        endpoints:
+          - url: https://solana.lava.build/lava-referer-xxx
+            interface: jsonrpc
+            addons: []
+
+  # Cosmos - TendermintRPC and REST with archive
+  - id: cosmos-test
+    network: cosmos
+    providers:
+      - name: lava
+        endpoints:
+          - url: https://cosmos-rpc.lava.build/lava-referer-xxx
+            interface: tendermintrpc
+            addons:
+              - archive
+          - url: https://cosmos-rest.lava.build/lava-referer-xxx
+            interface: rest
+            addons:
+              - archive
+
+  # Starknet - JSON-RPC with trace
+  - id: starknet-test
+    network: starknet
+    providers:
+      - name: lava
+        endpoints:
+          - url: https://starknet.lava.build/lava-referer-xxx
+            interface: jsonrpc
+            addons:
+              - trace
+
+  # Bitcoin - JSON-RPC with archive
+  - id: bitcoin-test
+    network: bitcoin
+    providers:
+      - name: lava
+        endpoints:
+          - url: https://bitcoin.lava.build/lava-referer-xxx
+            interface: jsonrpc
+            addons:
+              - archive
