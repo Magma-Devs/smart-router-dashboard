@@ -149,9 +149,8 @@ export default function Dashboard() {
       setLastUpdated(new Date());
     } catch (err) {
       console.error('Error fetching data:', err);
-      // Don't set error state - let FlowVisualization show mock data
-      // setError(`Failed to connect to API: ${err instanceof Error ? err.message : 'Unknown error'}`);
-      setData({ flow: null }); // Set data to null so FlowVisualization uses mock data
+      setError(`Failed to fetch metrics: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      setData({ flow: null });
     } finally {
       setLoading(false);
     }

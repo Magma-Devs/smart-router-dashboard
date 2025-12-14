@@ -32,15 +32,19 @@ def _clear_overrides():
 class TestGetSettings:
     """Tests for GET /api/settings/ endpoint."""
 
-    def test_get_settings_requires_auth(self):
-        """Test that getting settings requires authentication."""
+    def test_get_settings_public(self):
+        """Test that getting settings does not require authentication."""
+        _clear_overrides()
         response = client.get("/api/settings/")
-        assert response.status_code == 401
+        assert response.status_code == 200
+        data = response.json()
+        assert "prometheus_url" in data
+        assert "api_url" in data
 
     def test_get_settings_success(self):
         """Test successful settings retrieval."""
         _clear_overrides()
-        response = client.get("/api/settings/", headers=_auth_headers())
+        response = client.get("/api/settings/")
         assert response.status_code == 200
         data = response.json()
         assert "prometheus_url" in data
@@ -51,15 +55,15 @@ class TestGetSettings:
     def test_get_settings_returns_override(self):
         """Test that GET returns overridden value."""
         _clear_overrides()
-        # First set an override
+        # First set an override (requires auth)
         client.put(
             "/api/settings/",
             json={"prometheus_url": "http://custom-prometheus:9090"},
             headers=_auth_headers(),
         )
         
-        # Now GET should return the override
-        response = client.get("/api/settings/", headers=_auth_headers())
+        # Now GET should return the override (no auth needed)
+        response = client.get("/api/settings/")
         assert response.status_code == 200
         data = response.json()
         assert data["prometheus_url"] == "http://custom-prometheus:9090"
@@ -200,13 +204,13 @@ class TestSettingsIntegration:
         """Test complete settings workflow: get -> update -> verify -> reset."""
         _clear_overrides()
         
-        # 1. Get initial settings
-        response = client.get("/api/settings/", headers=_auth_headers())
+        # 1. Get initial settings (public, no auth needed)
+        response = client.get("/api/settings/")
         assert response.status_code == 200
         initial_url = response.json()["prometheus_url"]
         assert initial_url == settings.prometheus_url
         
-        # 2. Update settings
+        # 2. Update settings (requires auth)
         new_url = "http://new-prometheus:9090"
         response = client.put(
             "/api/settings/",
@@ -216,31 +220,31 @@ class TestSettingsIntegration:
         assert response.status_code == 200
         assert response.json()["prometheus_url"] == new_url
         
-        # 3. Verify update persisted
-        response = client.get("/api/settings/", headers=_auth_headers())
+        # 3. Verify update persisted (public)
+        response = client.get("/api/settings/")
         assert response.status_code == 200
         assert response.json()["prometheus_url"] == new_url
         
-        # 4. Reset settings
+        # 4. Reset settings (requires auth)
         response = client.post("/api/settings/reset", headers=_auth_headers())
         assert response.status_code == 200
         
-        # 5. Verify reset
-        response = client.get("/api/settings/", headers=_auth_headers())
+        # 5. Verify reset (public)
+        response = client.get("/api/settings/")
         assert response.status_code == 200
         assert response.json()["prometheus_url"] == settings.prometheus_url
         
         _clear_overrides()
 
     def test_bad_credentials(self):
-        """Test that bad credentials are rejected for all endpoints."""
+        """Test that bad credentials are rejected for protected endpoints."""
         bad_headers = _basic_header("bad", "credentials")
         
-        # GET
-        response = client.get("/api/settings/", headers=bad_headers)
-        assert response.status_code == 401
+        # GET is public, should work
+        response = client.get("/api/settings/")
+        assert response.status_code == 200
         
-        # PUT
+        # PUT requires auth
         response = client.put(
             "/api/settings/",
             json={"prometheus_url": "http://test:9090"},
@@ -248,7 +252,7 @@ class TestSettingsIntegration:
         )
         assert response.status_code == 401
         
-        # POST reset
+        # POST reset requires auth
         response = client.post("/api/settings/reset", headers=bad_headers)
         assert response.status_code == 401
 
