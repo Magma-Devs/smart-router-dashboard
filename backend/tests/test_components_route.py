@@ -1,19 +1,4 @@
-import types
 from fastapi.testclient import TestClient
-
-# Stub kubernetes service to avoid imports
-fake_k8s = types.ModuleType("app.services.kubernetes")
-
-
-class _Dummy:
-    pass
-
-
-fake_k8s.KubernetesService = lambda *a, **k: _Dummy()
-fake_k8s.kubernetes_service = _Dummy()
-import sys
-
-sys.modules["app.services.kubernetes"] = fake_k8s
 
 from app.main import app
 from app.api.routes.components import get_configuration_service
@@ -63,14 +48,14 @@ def test_components_success():
         "jsonrpc",
         "rest",
     ]
-    
+
     # Verify URL is NOT present in the response
     provider = data["consumers"]["hyperliquid-lava"]["providers"][0]
     endpoint = provider["endpoints"][0]
     assert "url" not in endpoint
     assert "interface" in endpoint
     assert "addons" in endpoint
-    
+
     app.dependency_overrides.pop(get_configuration_service, None)
 
 
