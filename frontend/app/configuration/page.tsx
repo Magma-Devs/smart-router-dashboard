@@ -31,17 +31,19 @@ import { ProtectedRoute } from '@/components/protected-route';
 
 export default function ConfigurationPage() {
   const router = useRouter();
-  const { config, updateApiEndpoint, updateRefreshInterval, resetConfig } = useConfig();
+  const { config, updateApiEndpoint, updateRefreshInterval, updatePrometheusUrl, resetConfig } = useConfig();
   const [inputValue, setInputValue] = useState(config.apiEndpoint);
+  const [prometheusInputValue, setPrometheusInputValue] = useState(config.prometheusUrl);
   const [isPreviewEnvironment, setIsPreviewEnvironment] = useState(false);
 
   useEffect(() => {
     setInputValue(config.apiEndpoint);
+    setPrometheusInputValue(config.prometheusUrl);
     // Check if we're in a preview environment
     if (typeof window !== 'undefined') {
       setIsPreviewEnvironment(window.location.hostname !== 'localhost');
     }
-  }, [config.apiEndpoint]);
+  }, [config.apiEndpoint, config.prometheusUrl]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -56,16 +58,32 @@ export default function ConfigurationPage() {
       return;
     }
 
+    if (!prometheusInputValue.trim()) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Prometheus URL cannot be empty',
+      });
+      return;
+    }
+
     // Ensure the endpoint has a protocol
     let endpoint = inputValue.trim();
     if (!endpoint.startsWith('http://') && !endpoint.startsWith('https://')) {
       endpoint = `http://${endpoint}`;
     }
 
+    // Handle Prometheus URL - add protocol if provided without one
+    let prometheusUrl = prometheusInputValue.trim();
+    if (!prometheusUrl.startsWith('http://') && !prometheusUrl.startsWith('https://')) {
+      prometheusUrl = `http://${prometheusUrl}`;
+    }
+
     updateApiEndpoint(endpoint);
+    updatePrometheusUrl(prometheusUrl);
     toast({
       title: 'Configuration saved',
-      description: 'Your API host has been updated successfully',
+      description: 'Your configuration has been updated successfully',
     });
     router.push('/');
   };
@@ -103,14 +121,14 @@ export default function ConfigurationPage() {
 
         <Card className='ml-0 mr-auto max-w-2xl'>
           <CardHeader>
-            <CardTitle>API Host</CardTitle>
+            <CardTitle>API Configuration</CardTitle>
             <CardDescription>
-              Configure the backend host for fetching infrastructure health metrics
+              Configure the backend host and Prometheus endpoint for fetching infrastructure health metrics
             </CardDescription>
           </CardHeader>
           <form onSubmit={handleSubmit}>
             <CardContent>
-              <div className='grid w-full items-center gap-4'>
+              <div className='grid w-full items-center gap-6'>
                 <div className='flex flex-col space-y-1.5'>
                   <Label htmlFor='apiHost'>API Host</Label>
                   <Input
@@ -119,9 +137,29 @@ export default function ConfigurationPage() {
                     value={inputValue}
                     onChange={e => setInputValue(e.target.value)}
                   />
+                  <p className='text-sm text-muted-foreground'>
+                    Backend API endpoint for metrics and configuration
+                  </p>
                   {isPreviewEnvironment && inputValue.includes('localhost') && (
-                    <p className='text-sm text-amber-500 mt-1'>
+                    <p className='text-sm text-amber-500'>
                       Note: This localhost host may not be accessible in this environment.
+                    </p>
+                  )}
+                </div>
+                <div className='flex flex-col space-y-1.5'>
+                  <Label htmlFor='prometheusUrl'>Prometheus URL</Label>
+                  <Input
+                    id='prometheusUrl'
+                    placeholder='http://prometheus.example.com'
+                    value={prometheusInputValue}
+                    onChange={e => setPrometheusInputValue(e.target.value)}
+                  />
+                  <p className='text-sm text-muted-foreground'>
+                    Direct Prometheus endpoint URL for custom queries (bypasses backend)
+                  </p>
+                  {isPreviewEnvironment && prometheusInputValue.includes('localhost') && (
+                    <p className='text-sm text-amber-500'>
+                      Note: This localhost URL may not be accessible in this environment.
                     </p>
                   )}
                 </div>
