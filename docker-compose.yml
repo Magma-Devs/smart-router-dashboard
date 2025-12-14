@@ -18,9 +18,7 @@ services:
       dockerfile: Dockerfile
     volumes:
       - ./backend:/app
-      - ../../values:/app/helm-values
-      - ../../scripts:/app/scripts
-      - ${KUBECONFIG_PATH:-~/.kube/config}:/root/.kube/config:ro
+      - ./dev-config:/app/helm-values
     environment:
       - DEBUG=false
       - LOG_LEVEL=DEBUG
@@ -34,8 +32,5 @@ services:
       - AUTH_USERNAME=admin
       - AUTH_PASSWORD=password
       - CORS_ORIGINS=["https://dashboard.lava.lavapro.xyz:8443","https://dashboard-api.lava.lavapro.xyz:8443"]
-    extra_hosts:
-      - "prometheus.lava.lavapro.xyz:127.0.0.1"
-      - "grafana.lava.lavapro.xyz:127.0.0.1"
     network_mode: host
     restart: unless-stopped
