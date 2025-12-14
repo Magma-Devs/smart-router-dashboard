@@ -9,6 +9,7 @@ services:
       - NEXT_PUBLIC_API_URL=http://localhost:8000
       - NEXT_PUBLIC_DOMAIN=localhost
       - NEXT_PUBLIC_PORT=8000
+      - NEXT_PUBLIC_PROMETHEUS_URL=http://prometheus.lava.lavapro.xyz:80
     ports:
       - "3000:3000"
     restart: unless-stopped
