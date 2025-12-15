@@ -278,6 +278,7 @@ export async function makeTestRequest(options: TestRequestOptions): Promise<Test
   } = options;
 
   const startTime = performance.now();
+  const chainIdLower = chainId.toLowerCase();
 
   // Handle WebSocket connections for jsonrpc/wss and tendermintrpc/wss
   if (
@@ -288,7 +289,7 @@ export async function makeTestRequest(options: TestRequestOptions): Promise<Test
   ) {
     // Determine the base interface type for URL construction
     const baseInterface = interfaceType.includes('jsonrpc') ? 'jsonrpc' : 'tendermintrpc';
-    const curlHost = `${chainId}-${baseInterface}.${domain}`;
+    const curlHost = `${chainIdLower}-${baseInterface}.${domain}`;
     const wsUrl = `wss://${curlHost}:${port}/websocket`;
 
     try {
@@ -314,7 +315,7 @@ export async function makeTestRequest(options: TestRequestOptions): Promise<Test
   }
 
   // Build the URL (moved outside try block for error handling)
-  const curlHost = `${chainId}-${interfaceType}.${domain}`;
+  const curlHost = `${chainIdLower}-${interfaceType}.${domain}`;
   let url = `https://${curlHost}:${port}`;
 
   // Initialize with defaults (network error state)
@@ -590,4 +591,347 @@ function calculatePercentile(sortedArray: number[], percentile: number): number 
   }
 
   return sortedArray[lower] * (1 - weight) + sortedArray[upper] * weight;
+}
+
+// ============================================================================
+// BATCH REQUEST TYPES AND FUNCTIONS
+// ============================================================================
+
+export interface BatchRequestItem {
+  id: number;
+  method: string;
+  params: any;
+}
+
+export interface BatchRequestOptions {
+  chainId: string;
+  domain?: string;
+  port?: string;
+  skipCache?: boolean;
+  maxResponseBytes?: number;
+}
+
+export interface BatchResponseItem {
+  id: number;
+  method: string;
+  success: boolean;
+  result?: any;
+  error?: {
+    code: number;
+    message: string;
+    data?: any;
+  };
+}
+
+export interface BatchResponse {
+  status_code: number;
+  latency_ms: number;
+  success: boolean;
+  headers: Record<string, string>;
+  responses: BatchResponseItem[];
+  error?: string;
+  truncated?: boolean;
+}
+
+/**
+ * Makes a batch JSON-RPC request (multiple calls in a single HTTP request)
+ */
+export async function makeBatchRequest(
+  options: BatchRequestOptions,
+  requests: BatchRequestItem[],
+): Promise<BatchResponse> {
+  const {
+    chainId,
+    domain = 'lava.lavapro.xyz',
+    port = '443',
+    skipCache = false,
+    maxResponseBytes,
+  } = options;
+
+  const startTime = performance.now();
+  const chainIdLower = chainId.toLowerCase();
+  const curlHost = `${chainIdLower}-jsonrpc.${domain}`;
+  const url = `https://${curlHost}:${port}`;
+
+  // Build batch request payload
+  const batchPayload = requests.map(req => ({
+    jsonrpc: '2.0',
+    id: req.id,
+    method: req.method,
+    params: req.params,
+  }));
+
+  let statusCode = 0;
+  let latencyMs = 0;
+  let responseData: any[] = [];
+  let errorMessage: string | undefined = undefined;
+  const responseHeaders: Record<string, string> = {};
+  let truncated = false;
+
+  try {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+
+    if (skipCache) {
+      headers['lava-force-cache-refresh'] = 'true';
+    }
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(batchPayload),
+      mode: 'cors',
+      signal: AbortSignal.timeout(60000),
+    });
+
+    statusCode = response.status;
+
+    try {
+      latencyMs = await getRequestLatency(url, startTime);
+    } catch {
+      latencyMs = performance.now() - startTime;
+    }
+
+    // Read response body
+    try {
+      const capBytes = maxResponseBytes ?? DEFAULT_MAX_HTTP_RESPONSE_BYTES * 2; // Larger cap for batch
+      const read = await readTextWithLimit(response, capBytes);
+      truncated = read.truncated;
+      
+      try {
+        responseData = JSON.parse(read.text);
+        // Ensure responseData is an array
+        if (!Array.isArray(responseData)) {
+          responseData = [responseData];
+        }
+      } catch {
+        responseData = [];
+        errorMessage = 'Failed to parse batch response';
+      }
+    } catch {
+      responseData = [];
+      errorMessage = 'Failed to read response body';
+    }
+
+    // Convert headers to plain object
+    try {
+      response.headers.forEach((value, key) => {
+        responseHeaders[key] = value;
+      });
+    } catch {
+      // If headers parsing fails, responseHeaders remains empty
+    }
+  } catch (error) {
+    errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    try {
+      latencyMs = await getRequestLatency(url, startTime);
+    } catch {
+      latencyMs = performance.now() - startTime;
+    }
+  }
+
+  // Map responses to our format
+  const batchResponses: BatchResponseItem[] = requests.map(req => {
+    const matchingResponse = responseData.find((r: any) => r.id === req.id);
+    if (!matchingResponse) {
+      return {
+        id: req.id,
+        method: req.method,
+        success: false,
+        error: { code: -1, message: 'No response received for this request' },
+      };
+    }
+
+    if (matchingResponse.error) {
+      return {
+        id: req.id,
+        method: req.method,
+        success: false,
+        error: matchingResponse.error,
+      };
+    }
+
+    return {
+      id: req.id,
+      method: req.method,
+      success: true,
+      result: matchingResponse.result,
+    };
+  });
+
+  const allSuccess = batchResponses.every(r => r.success) && statusCode >= 200 && statusCode < 300;
+
+  return {
+    status_code: statusCode,
+    latency_ms: latencyMs,
+    success: allSuccess,
+    headers: responseHeaders,
+    responses: batchResponses,
+    ...(errorMessage && { error: errorMessage }),
+    ...(truncated ? { truncated: true } : {}),
+  };
+}
+
+/**
+ * Makes multiple batch requests for load testing
+ */
+export async function makeBatchLoadTestRequests(
+  options: BatchRequestOptions,
+  requests: BatchRequestItem[],
+  numberOfBatches: number,
+  concurrency: number = 5,
+): Promise<BatchResponse[]> {
+  const results: BatchResponse[] = new Array(numberOfBatches);
+  let nextIndex = 0;
+
+  async function worker() {
+    while (true) {
+      const current = nextIndex;
+      if (current >= numberOfBatches) return;
+      nextIndex = current + 1;
+      results[current] = await makeBatchRequest(options, requests);
+    }
+  }
+
+  const workerCount = Math.min(concurrency, Math.max(1, numberOfBatches));
+  const workers = Array.from({ length: workerCount }, () => worker());
+  await Promise.all(workers);
+  return results;
+}
+
+/**
+ * Calculates statistics from batch load test responses
+ */
+export function calculateBatchLoadTestStats(responses: BatchResponse[], methods: string[]) {
+  const latencies = responses.map(r => r.latency_ms);
+  const successfulBatches = responses.filter(r => r.success).length;
+  const totalBatches = responses.length;
+  const batchSuccessRate = (successfulBatches / totalBatches) * 100;
+
+  // Calculate latency statistics for overall batches
+  const sortedLatencies = [...latencies].sort((a, b) => a - b);
+  const min = Math.min(...latencies);
+  const max = Math.max(...latencies);
+  const avg = latencies.reduce((sum, lat) => sum + lat, 0) / latencies.length;
+  const p50 = calculatePercentile(sortedLatencies, 50);
+  const p90 = calculatePercentile(sortedLatencies, 90);
+  const p95 = calculatePercentile(sortedLatencies, 95);
+
+  // Calculate per-method statistics
+  const methodStats: Record<string, {
+    method: string;
+    total: number;
+    successful: number;
+    failed: number;
+    successRate: number;
+  }> = {};
+
+  methods.forEach(method => {
+    methodStats[method] = {
+      method,
+      total: 0,
+      successful: 0,
+      failed: 0,
+      successRate: 0,
+    };
+  });
+
+  responses.forEach(batchResponse => {
+    batchResponse.responses.forEach(itemResponse => {
+      const stats = methodStats[itemResponse.method];
+      if (stats) {
+        stats.total++;
+        if (itemResponse.success) {
+          stats.successful++;
+        } else {
+          stats.failed++;
+        }
+      }
+    });
+  });
+
+  // Calculate success rates
+  Object.values(methodStats).forEach(stats => {
+    if (stats.total > 0) {
+      stats.successRate = (stats.successful / stats.total) * 100;
+    }
+  });
+
+  // Count cached vs non-cached
+  let cachedCount = 0;
+  let nonCachedCount = 0;
+  const providerDistribution: Record<string, number> = {};
+
+  responses.forEach(response => {
+    const headers = response.headers || {};
+    const providerHeader = Object.keys(headers).find(
+      key => key.toLowerCase() === 'lava-provider-address',
+    );
+    const providerValue = providerHeader ? headers[providerHeader] : null;
+
+    if (providerValue) {
+      if (providerValue.toLowerCase() === 'cached') {
+        cachedCount++;
+        providerDistribution['cached'] = (providerDistribution['cached'] || 0) + 1;
+      } else {
+        nonCachedCount++;
+        providerDistribution[providerValue] = (providerDistribution[providerValue] || 0) + 1;
+      }
+    } else {
+      nonCachedCount++;
+      providerDistribution['unknown'] = (providerDistribution['unknown'] || 0) + 1;
+    }
+  });
+
+  return {
+    batch_success_rate: batchSuccessRate,
+    total_batches: totalBatches,
+    successful_batches: successfulBatches,
+    failed_batches: totalBatches - successfulBatches,
+    latency_stats: {
+      min,
+      max,
+      avg,
+      p50,
+      p90,
+      p95,
+    },
+    method_stats: methodStats,
+    cached_count: cachedCount,
+    non_cached_count: nonCachedCount,
+    provider_distribution: providerDistribution,
+    responses,
+  };
+}
+
+/**
+ * Generates a cURL command for a batch request with readable formatting
+ */
+export function generateBatchCurlCommand(
+  chainId: string,
+  domain: string,
+  port: string,
+  requests: BatchRequestItem[],
+  skipCache: boolean = false,
+): string {
+  const chainIdLower = chainId.toLowerCase();
+  const curlHost = `${chainIdLower}-jsonrpc.${domain}`;
+  const url = `https://${curlHost}:${port}`;
+
+  const batchPayload = requests.map(req => ({
+    jsonrpc: '2.0',
+    id: req.id,
+    method: req.method,
+    params: req.params,
+  }));
+
+  const headers = skipCache ? `-H "lava-force-cache-refresh: true" ` : '';
+
+  // Format each request on its own line for readability
+  const formattedPayload = '[\n' + 
+    batchPayload.map(req => '  ' + JSON.stringify(req)).join(',\n') + 
+    '\n]';
+
+  return `curl -X POST ${headers}-H "Content-Type: application/json" \\\n  ${url} \\\n  -d '${formattedPayload}'`;
 }

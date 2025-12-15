@@ -1,13 +1,24 @@
+export type BatchMethod = {
+  method: string;
+  label: string;
+  defaultParams: string; // JSON string
+};
+
+export type InterfaceConfig = {
+  regular: string | null;
+  archive: string | null;
+  debug: string | null;
+  trace: string | null;
+  batch?: {
+    methods: BatchMethod[];
+  };
+};
+
 export type ChainType = {
   value: string;
   label: string;
   interfaces: {
-    [interfaceName: string]: {
-      regular: string | null;
-      archive: string | null;
-      debug: string | null;
-      trace: string | null;
-    };
+    [interfaceName: string]: InterfaceConfig;
   };
 };
 
@@ -23,6 +34,18 @@ export const chainTypes: ChainType[] = [
         debug:
           '{"jsonrpc":"2.0","method":"debug_traceBlockByNumber","params":["latest",{}],"id":1}',
         trace: '{"jsonrpc":"2.0","method":"trace_block","params":["latest"],"id":1}',
+        batch: {
+          methods: [
+            { method: 'eth_blockNumber', label: 'Block Number', defaultParams: '[]' },
+            { method: 'eth_chainId', label: 'Chain ID', defaultParams: '[]' },
+            { method: 'eth_gasPrice', label: 'Gas Price', defaultParams: '[]' },
+            { method: 'eth_getBalance', label: 'Get Balance', defaultParams: '["0x0000000000000000000000000000000000000000", "latest"]' },
+            { method: 'net_version', label: 'Network Version', defaultParams: '[]' },
+            { method: 'eth_syncing', label: 'Syncing Status', defaultParams: '[]' },
+            { method: 'eth_getBlockByNumber', label: 'Get Block', defaultParams: '["latest", false]' },
+            { method: 'eth_getTransactionCount', label: 'Transaction Count', defaultParams: '["0x0000000000000000000000000000000000000000", "latest"]' },
+          ],
+        },
       },
     },
   },
@@ -37,6 +60,17 @@ export const chainTypes: ChainType[] = [
         debug:
           '{"jsonrpc":"2.0","method":"debug_traceBlockByNumber","params":["latest",{}],"id":1}',
         trace: '{"jsonrpc":"2.0","method":"arbstrace_block","params":["latest"],"id":1}',
+        batch: {
+          methods: [
+            { method: 'eth_blockNumber', label: 'Block Number', defaultParams: '[]' },
+            { method: 'eth_chainId', label: 'Chain ID', defaultParams: '[]' },
+            { method: 'eth_gasPrice', label: 'Gas Price', defaultParams: '[]' },
+            { method: 'eth_getBalance', label: 'Get Balance', defaultParams: '["0x0000000000000000000000000000000000000000", "latest"]' },
+            { method: 'net_version', label: 'Network Version', defaultParams: '[]' },
+            { method: 'eth_syncing', label: 'Syncing Status', defaultParams: '[]' },
+            { method: 'eth_getBlockByNumber', label: 'Get Block', defaultParams: '["latest", false]' },
+          ],
+        },
       },
     },
   },
@@ -50,6 +84,14 @@ export const chainTypes: ChainType[] = [
           '{"jsonrpc":"2.0","method":"query","params":{"request_type":"view_account","account_id":"example.testnet","block_id":10000000},"id":1}',
         debug: null,
         trace: null,
+        batch: {
+          methods: [
+            { method: 'block', label: 'Get Block', defaultParams: '{"finality":"final"}' },
+            { method: 'status', label: 'Node Status', defaultParams: '[]' },
+            { method: 'gas_price', label: 'Gas Price', defaultParams: '[null]' },
+            { method: 'validators', label: 'Validators', defaultParams: '[null]' },
+          ],
+        },
       },
     },
   },
@@ -63,6 +105,16 @@ export const chainTypes: ChainType[] = [
         debug: null,
         trace:
           '{"jsonrpc":"2.0","method":"getTransaction","params":["5FtxSignatureHere",{"maxSupportedTransactionVersion":0}],"id":1}',
+        batch: {
+          methods: [
+            { method: 'getBlockHeight', label: 'Block Height', defaultParams: '[]' },
+            { method: 'getSlot', label: 'Current Slot', defaultParams: '[]' },
+            { method: 'getEpochInfo', label: 'Epoch Info', defaultParams: '[]' },
+            { method: 'getHealth', label: 'Health', defaultParams: '[]' },
+            { method: 'getVersion', label: 'Version', defaultParams: '[]' },
+            { method: 'getRecentBlockhash', label: 'Recent Blockhash', defaultParams: '[]' },
+          ],
+        },
       },
     },
   },
@@ -102,6 +154,14 @@ export const chainTypes: ChainType[] = [
         debug: null,
         trace:
           '{"jsonrpc":"2.0","method":"starknet_traceTransaction","params":{"transaction_hash":"0xTXHASH"},"id":1}',
+        batch: {
+          methods: [
+            { method: 'starknet_blockNumber', label: 'Block Number', defaultParams: '[]' },
+            { method: 'starknet_chainId', label: 'Chain ID', defaultParams: '[]' },
+            { method: 'starknet_syncing', label: 'Syncing Status', defaultParams: '[]' },
+            { method: 'starknet_blockHashAndNumber', label: 'Block Hash & Number', defaultParams: '[]' },
+          ],
+        },
       },
     },
   },
@@ -138,6 +198,13 @@ export const chainTypes: ChainType[] = [
         archive: null,
         debug: null,
         trace: null,
+        batch: {
+          methods: [
+            { method: 'getVersionInfo', label: 'Version Info', defaultParams: '[]' },
+            { method: 'getHealth', label: 'Health', defaultParams: '[]' },
+            { method: 'getNetwork', label: 'Network', defaultParams: '[]' },
+          ],
+        },
       },
       rest: {
         regular:
@@ -181,6 +248,15 @@ export const chainTypes: ChainType[] = [
         archive: '{"jsonrpc":"2.0","method":"getblockhash","params":[800000],"id":1}',
         debug: null,
         trace: null,
+        batch: {
+          methods: [
+            { method: 'getblockcount', label: 'Block Count', defaultParams: '[]' },
+            { method: 'getbestblockhash', label: 'Best Block Hash', defaultParams: '[]' },
+            { method: 'getblockchaininfo', label: 'Blockchain Info', defaultParams: '[]' },
+            { method: 'getnetworkinfo', label: 'Network Info', defaultParams: '[]' },
+            { method: 'getmempoolinfo', label: 'Mempool Info', defaultParams: '[]' },
+          ],
+        },
       },
     },
   },
@@ -193,6 +269,12 @@ export const chainTypes: ChainType[] = [
         archive: '{"jsonrpc":"2.0","method":"getAccountInfo","params":{"account":{"accountId":"0.0.1"},"blockNumber":"latest"},"id":1}',
         debug: null,
         trace: null,
+        batch: {
+          methods: [
+            { method: 'getAccountInfo', label: 'Account Info', defaultParams: '{"account":{"accountId":"0.0.1"}}' },
+            { method: 'getLedgerId', label: 'Ledger ID', defaultParams: '[]' },
+          ],
+        },
       },
       rest: {
         regular: '{"method":"GET","path":"/api/v1/accounts/0.0.1"}',
