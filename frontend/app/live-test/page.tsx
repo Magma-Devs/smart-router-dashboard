@@ -2869,13 +2869,56 @@ export default function LiveTestPage() {
                   {/* Single Batch Results */}
                   {batchResult && batchMode === 'single' && (
                     <Card className='border-muted bg-card/50'>
-                      <CardHeader>
-                        <CardTitle className='text-lg font-medium'>Batch Response</CardTitle>
-                        <CardDescription>
-                          {batchResult.responses.filter(r => r.success).length}/{batchResult.responses.length} successful
-                          {' • '}{batchResult.latency_ms.toFixed(1)}ms
-                          {batchResult.truncated && ' • Response truncated'}
-                        </CardDescription>
+                      <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
+                        <div>
+                          <CardTitle className='text-lg font-medium'>Batch Response</CardTitle>
+                          <CardDescription>
+                            {batchResult.responses.filter(r => r.success).length}/{batchResult.responses.length} successful
+                            {batchResult.truncated && ' • Response truncated'}
+                          </CardDescription>
+                        </div>
+                        <div className='flex items-center gap-3'>
+                          <div className='flex flex-col items-start gap-1 py-1'>
+                            <span className='flex items-center gap-1.5 text-sm font-medium'>
+                              {getStatusIcon(batchResult.status_code)}
+                              <span className={getStatusColor(batchResult.status_code)}>
+                                {batchResult.status_code}
+                              </span>
+                            </span>
+                            <span className='flex items-center gap-1.5 text-sm text-slate-300'>
+                              <Timer className='h-4 w-4 text-slate-400' />
+                              {batchResult.latency_ms.toFixed(1)}ms
+                            </span>
+                            {(() => {
+                              const providerHeader = Object.keys(batchResult.headers || {}).find(
+                                key => key.toLowerCase() === 'lava-provider-address',
+                              );
+                              const providerValue = providerHeader ? batchResult.headers[providerHeader] : null;
+                              return providerValue ? (
+                                <div className='flex items-center gap-1.5 text-sm text-slate-400'>
+                                  <Server className='h-4 w-4 text-slate-400' />
+                                  <span className='truncate' title={providerValue}>
+                                    {providerValue.toLowerCase() === 'cached' ? 'Cached' : providerValue}
+                                  </span>
+                                </div>
+                              ) : null;
+                            })()}
+                          </div>
+                          <Button
+                            variant='ghost'
+                            size='icon'
+                            onClick={() => {
+                              const fullResponse = batchResult.responses.map(r => 
+                                r.error 
+                                  ? { jsonrpc: '2.0', id: r.id, error: r.error }
+                                  : { jsonrpc: '2.0', id: r.id, result: r.result }
+                              );
+                              copyToClipboard(JSON.stringify(fullResponse, null, 2), 'Copied batch response');
+                            }}
+                          >
+                            <Copy className='h-4 w-4' />
+                          </Button>
+                        </div>
                       </CardHeader>
                       <CardContent className='space-y-4'>
                         {batchResult.responses.map((resp) => (
