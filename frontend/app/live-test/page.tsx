@@ -23,6 +23,11 @@ import {
   AlertTriangle,
   XCircle,
   Circle,
+  Layers,
+  Plus,
+  Trash2,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { chains } from '@/app/config/chains';
 import { cn } from '@/lib/utils';
@@ -33,7 +38,18 @@ import { useAuth } from '@/lib/auth-context';
 import { getChainIcon, getChainLabel } from '@/app/config/chains';
 import { MetricsService } from '@/services/metricsService';
 import ProviderDistributionModal from '@/components/ProviderDistributionModal';
-import { makeTestRequest, makeLoadTestRequests, calculateLoadTestStats } from '@/lib/test-client';
+import {
+  makeTestRequest,
+  makeLoadTestRequests,
+  calculateLoadTestStats,
+  makeBatchRequest,
+  makeBatchLoadTestRequests,
+  calculateBatchLoadTestStats,
+  generateBatchCurlCommand,
+  BatchRequestItem,
+  BatchResponse,
+} from '@/lib/test-client';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 interface ApiResponse {
   consumers: {
@@ -303,7 +319,31 @@ export default function LiveTestPage() {
   > | null>(null);
 
   // Tab state
-  const [activeTab, setActiveTab] = useState<'single' | 'load' | 'cross'>('single');
+  const [activeTab, setActiveTab] = useState<'single' | 'load' | 'batch' | 'cross'>('single');
+
+  // Batch test state
+  const [batchMode, setBatchMode] = useState<'single' | 'load'>('single');
+  const [batchRequests, setBatchRequests] = useState<BatchRequestItem[]>([
+    { id: 1, method: '', params: [] },
+  ]);
+
+  // Reset batch requests when chain changes
+  const resetBatchRequests = () => {
+    setBatchRequests([{ id: 1, method: '', params: [] }]);
+    setBatchResult(null);
+    setBatchLoadTestResult(null);
+  };
+  const [isBatchTesting, setIsBatchTesting] = useState(false);
+  const [batchResult, setBatchResult] = useState<BatchResponse | null>(null);
+  const [batchLoadTestResult, setBatchLoadTestResult] = useState<ReturnType<typeof calculateBatchLoadTestStats> | null>(null);
+  const [numberOfBatches, setNumberOfBatches] = useState<number>(50);
+  const [batchConcurrency, setBatchConcurrency] = useState<number>(5);
+  const [batchCurlCommand, setBatchCurlCommand] = useState<string>('');
+  const [batchEndpointUrl, setBatchEndpointUrl] = useState<string>('');
+  const [copiedBatchCurl, setCopiedBatchCurl] = useState(false);
+  const [copiedBatchEndpoint, setCopiedBatchEndpoint] = useState(false);
+  const [expandedBatchResponses, setExpandedBatchResponses] = useState<Set<number>>(new Set());
+  const [isBatchDistributionOpen, setIsBatchDistributionOpen] = useState(false);
 
   // Helper function to get the base interface for command lookup
   const getCommandLookupInterface = (interfaceType: string): string => {
@@ -379,6 +419,89 @@ export default function LiveTestPage() {
     const providers = apiData.consumers[selectedChain].providers || [];
     return Math.max(providers.length, 1); // At least 1
   }, [selectedChain, apiData]);
+
+  // Check if batch is supported for the current chain (requires jsonrpc interface with batch config)
+  const batchConfig = useMemo(() => {
+    if (!selectedChain || !apiData?.consumers?.[selectedChain]) return null;
+    
+    const network = apiData.consumers[selectedChain].network;
+    const chain = chains.find(c => c.value === network);
+    if (!chain) return null;
+    
+    const chainType = chainTypes.find(t => t.value === chain.type);
+    if (!chainType) return null;
+    
+    const jsonrpcInterface = chainType.interfaces.jsonrpc;
+    if (!jsonrpcInterface?.batch) return null;
+    
+    return jsonrpcInterface.batch;
+  }, [selectedChain, apiData]);
+
+  // hasBatchSupport is for the currently selected chain
+  const hasBatchSupport = batchConfig !== null;
+
+  // Helper function to check if a chain ID supports batch requests
+  const chainSupportsBatch = (chainId: string): boolean => {
+    if (!apiData?.consumers?.[chainId]) return false;
+    
+    const network = apiData.consumers[chainId].network;
+    const chain = chains.find(c => c.value === network);
+    if (!chain) return false;
+    
+    const chainType = chainTypes.find(t => t.value === chain.type);
+    if (!chainType) return false;
+    
+    return chainType.interfaces.jsonrpc?.batch != null;
+  };
+
+  // Filter chains that support batch
+  const batchSupportedChains = useMemo(() => {
+    return availableChains.filter(c => chainSupportsBatch(c.id));
+  }, [availableChains, apiData]);
+
+  // Networks that have at least one batch-supported chain
+  const batchSupportedNetworks = useMemo(() => {
+    return Array.from(new Set(batchSupportedChains.map(c => c.network)));
+  }, [batchSupportedChains]);
+
+  // Routers for selected network that support batch
+  const batchRoutersForSelectedNetwork = useMemo(() => {
+    return batchSupportedChains.filter(c => c.network === selectedNetwork);
+  }, [batchSupportedChains, selectedNetwork]);
+
+  // Whether the Batch Test tab should be shown (if ANY chain supports batch)
+  const showBatchTab = batchSupportedChains.length > 0;
+
+  // Generate batch endpoint URL and curl command
+  useEffect(() => {
+    if (!selectedChain || !hasBatchSupport || !config.endpointDomain || !config.endpointPort) {
+      setBatchEndpointUrl('');
+      setBatchCurlCommand('');
+      return;
+    }
+
+    const domain = config.endpointDomain;
+    const port = config.endpointPort;
+    const chainIdLower = selectedChain.toLowerCase();
+    const curlHost = `${chainIdLower}-jsonrpc.${domain}`;
+    const endpoint = `https://${curlHost}:${port}`;
+    setBatchEndpointUrl(endpoint);
+
+    // Only generate curl if we have valid batch requests
+    const validRequests = batchRequests.filter(r => r.method.trim() !== '');
+    if (validRequests.length > 0) {
+      const curl = generateBatchCurlCommand(
+        chainIdLower,
+        domain,
+        port,
+        validRequests,
+        skipCache,
+      );
+      setBatchCurlCommand(curl);
+    } else {
+      setBatchCurlCommand('');
+    }
+  }, [selectedChain, hasBatchSupport, config.endpointDomain, config.endpointPort, batchRequests, skipCache]);
 
   useEffect(() => {
     const fetchChains = async () => {
@@ -523,8 +646,9 @@ export default function LiveTestPage() {
 
       const domain = config.endpointDomain;
       const port = config.endpointPort;
+      const chainIdLower = selectedChain.toLowerCase();
 
-      const curlHost = `${selectedChain}-${commandLookupInterface}.${domain}`;
+      const curlHost = `${chainIdLower}-${commandLookupInterface}.${domain}`;
       // Use wss:// protocol with /websocket path for WebSocket connections
       const endpoint = selectedInterface.includes('/wss')
         ? `wss://${curlHost}:${port}/websocket`
@@ -595,8 +719,9 @@ export default function LiveTestPage() {
 
       const domain = config.endpointDomain;
       const port = config.endpointPort;
+      const chainIdLower = selectedChain.toLowerCase();
 
-      const curlHost = `${selectedChain}-${commandLookupInterface}.${domain}`;
+      const curlHost = `${chainIdLower}-${commandLookupInterface}.${domain}`;
 
       const headers = skipCache ? `-H "lava-force-cache-refresh: true"` : '';
 
@@ -996,6 +1121,126 @@ export default function LiveTestPage() {
     }
   };
 
+  // Batch request handlers
+  const addBatchRequest = () => {
+    const maxId = Math.max(...batchRequests.map(r => r.id), 0);
+    setBatchRequests([...batchRequests, { id: maxId + 1, method: '', params: [] }]);
+  };
+
+  const removeBatchRequest = (id: number) => {
+    if (batchRequests.length <= 1) return;
+    setBatchRequests(batchRequests.filter(r => r.id !== id));
+  };
+
+  const updateBatchRequest = (id: number, updates: Partial<BatchRequestItem>) => {
+    setBatchRequests(batchRequests.map(r => (r.id === id ? { ...r, ...updates } : r)));
+  };
+
+  const handleBatchTest = async () => {
+    const validRequests = batchRequests.filter(r => r.method.trim() !== '');
+    
+    if (validRequests.length === 0) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Please add at least one request with a method',
+      });
+      return;
+    }
+
+    if (!selectedChain) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Please select a network and router',
+      });
+      return;
+    }
+
+    if (!config.endpointDomain || !config.endpointPort) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Endpoint configuration is missing. Please configure domain and port in Settings.',
+      });
+      return;
+    }
+
+    setIsBatchTesting(true);
+    setBatchResult(null);
+    setBatchLoadTestResult(null);
+    setExpandedBatchResponses(new Set());
+
+    try {
+      const domain = config.endpointDomain;
+      const port = config.endpointPort;
+
+      if (batchMode === 'single') {
+        // Single batch request
+        const result = await makeBatchRequest(
+          {
+            chainId: selectedChain,
+            domain,
+            port,
+            skipCache,
+          },
+          validRequests,
+        );
+        setBatchResult(result);
+
+        const successCount = result.responses.filter(r => r.success).length;
+        toast({
+          title: 'Batch request completed',
+          description: `${successCount}/${result.responses.length} requests successful (${result.latency_ms.toFixed(1)}ms)`,
+        });
+      } else {
+        // Batch load test
+        if (numberOfBatches < 1 || numberOfBatches > 500) {
+          toast({
+            variant: 'destructive',
+            title: 'Error',
+            description: 'Number of batches must be between 1 and 500',
+          });
+          setIsBatchTesting(false);
+          return;
+        }
+
+        const results = await makeBatchLoadTestRequests(
+          {
+            chainId: selectedChain,
+            domain,
+            port,
+            skipCache,
+          },
+          validRequests,
+          numberOfBatches,
+          batchConcurrency,
+        );
+
+        const methods = validRequests.map(r => r.method);
+        const stats = calculateBatchLoadTestStats(results, methods);
+        setBatchLoadTestResult(stats);
+
+        const successRate = stats.batch_success_rate;
+        const formattedSuccessRate =
+          successRate % 1 === 0 ? `${successRate.toFixed(0)}%` : `${successRate.toFixed(1)}%`;
+
+        toast({
+          title: 'Batch load test completed',
+          description: `Success rate: ${formattedSuccessRate} (${stats.successful_batches}/${stats.total_batches} batches)`,
+        });
+      }
+    } catch (error) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to execute batch test',
+      });
+    } finally {
+      setIsBatchTesting(false);
+    }
+  };
+
   const copyToClipboard = (text: string, message?: string) => {
     navigator.clipboard.writeText(text).then(() => {
       toast({
@@ -1026,10 +1271,10 @@ export default function LiveTestPage() {
 
           <Tabs
             value={activeTab}
-            onValueChange={value => setActiveTab(value as 'single' | 'load' | 'cross')}
+            onValueChange={value => setActiveTab(value as 'single' | 'load' | 'batch' | 'cross')}
             className='w-full'
           >
-            <TabsList className='grid w-full grid-cols-3'>
+            <TabsList className={cn('grid w-full', showBatchTab ? 'grid-cols-4' : 'grid-cols-3')}>
               <TabsTrigger value='single' className='flex items-center gap-2'>
                 <Play className='h-4 w-4' />
                 Single Test
@@ -1038,6 +1283,12 @@ export default function LiveTestPage() {
                 <BarChart3 className='h-4 w-4' />
                 Load Test
               </TabsTrigger>
+              {showBatchTab && (
+                <TabsTrigger value='batch' className='flex items-center gap-2'>
+                  <Layers className='h-4 w-4' />
+                  Batch Test
+                </TabsTrigger>
+              )}
               <TabsTrigger value='cross' className='flex items-center gap-2'>
                 <Shield className='h-4 w-4' />
                 Cross Validation
@@ -2181,6 +2432,683 @@ export default function LiveTestPage() {
                 )}
               </div>
             </TabsContent>
+
+            {showBatchTab && (
+              <TabsContent value='batch' className='mt-6'>
+                <div className='grid gap-6'>
+                  <Card className='border-2 border-primary/20 bg-gradient-to-br from-card/50 to-card shadow-lg hover:shadow-xl transition-all duration-200'>
+                    <CardHeader className='border-b border-border/20 bg-gradient-to-r from-primary/10 to-background pb-4'>
+                      <CardTitle className='text-xl font-bold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent'>
+                        Configuration
+                      </CardTitle>
+                      <CardDescription>
+                        Select a network and router for batch testing
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className='space-y-6 pt-6'>
+                      {isFetching ? (
+                        <div className='flex items-center justify-center py-8'>
+                          <Loader2 className='h-6 w-6 animate-spin text-primary' />
+                        </div>
+                      ) : batchSupportedNetworks.length === 0 ? (
+                        <div className='text-center py-8 text-muted-foreground'>
+                          No chains with batch support are currently configured.
+                        </div>
+                      ) : (
+                        <>
+                          <div className='space-y-4'>
+                            <Label className='text-sm font-medium'>Network</Label>
+                            <div className='flex flex-wrap gap-3'>
+                              {batchSupportedNetworks.map(net => {
+                                const conf = chains.find(c => c.value === net);
+                                const label = conf ? conf.label : getChainLabel(net);
+                                const icon = conf ? conf.icon : getChainIcon(net);
+                                const selected = selectedNetwork === net;
+                                return (
+                                  <button
+                                    key={net}
+                                    onClick={() => {
+                                      if (selectedNetwork === net) return;
+                                      setSelectedNetwork(net);
+                                      const routers = batchSupportedChains.filter(c => c.network === net);
+                                      if (routers.length === 1) {
+                                        setSelectedChain(routers[0].id);
+                                      } else {
+                                        setSelectedChain('');
+                                      }
+                                      resetBatchRequests();
+                                    }}
+                                    className={cn(
+                                      'flex items-center gap-3 p-3 rounded-lg border-2 transition-all duration-200 hover:border-primary/50 hover:bg-primary/5',
+                                      selected
+                                        ? 'border-primary bg-primary/10 shadow-lg'
+                                        : 'border-border/50 bg-card',
+                                    )}
+                                  >
+                                    <div className='flex-shrink-0 w-8 h-8 rounded-full bg-background/50 p-1.5'>
+                                      {icon && (
+                                        <img
+                                          src={icon}
+                                          alt={label}
+                                          className='w-full h-full object-contain'
+                                        />
+                                      )}
+                                    </div>
+                                    <span className='font-medium'>{label}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {selectedNetwork && batchRoutersForSelectedNetwork.length > 1 && (
+                            <div className='space-y-4'>
+                              <Label className='text-sm font-medium'>Router</Label>
+                              <div className='flex flex-wrap gap-3'>
+                                {batchRoutersForSelectedNetwork.map(router => {
+                                  const selected = selectedChain === router.id;
+                                  const conf = chains.find(c => c.value === selectedNetwork);
+                                  const label = conf ? conf.label : getChainLabel(selectedNetwork);
+                                  const icon = conf ? conf.icon : getChainIcon(selectedNetwork);
+                                  return (
+                                    <button
+                                      key={router.id}
+                                      onClick={() => {
+                                        setSelectedChain(router.id);
+                                        resetBatchRequests();
+                                      }}
+                                      className={cn(
+                                        'flex items-center gap-3 p-3 rounded-lg border-2 transition-all duration-200 hover:border-primary/50 hover:bg-primary/5',
+                                        selected
+                                          ? 'border-primary bg-primary/10 shadow-lg'
+                                          : 'border-border/50 bg-card',
+                                      )}
+                                    >
+                                      <div className='flex-shrink-0 w-8 h-8 rounded-full bg-background/50 p-1.5'>
+                                        {icon && (
+                                          <img
+                                            src={icon}
+                                            alt={label}
+                                            className='w-full h-full object-contain'
+                                          />
+                                        )}
+                                      </div>
+                                      <span className='font-medium'>{router.id}</span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Mode Selection */}
+                          <div className='space-y-4'>
+                            <Label className='text-sm font-medium'>Mode</Label>
+                            <div className='flex gap-3'>
+                              <button
+                                onClick={() => setBatchMode('single')}
+                                className={cn(
+                                  'px-4 py-2 rounded-lg border-2 transition-all duration-200',
+                                  batchMode === 'single'
+                                    ? 'border-primary bg-primary/10 text-primary font-medium'
+                                    : 'border-border/50 bg-card hover:border-primary/50',
+                                )}
+                              >
+                                Single Batch
+                              </button>
+                              <button
+                                onClick={() => setBatchMode('load')}
+                                className={cn(
+                                  'px-4 py-2 rounded-lg border-2 transition-all duration-200',
+                                  batchMode === 'load'
+                                    ? 'border-primary bg-primary/10 text-primary font-medium'
+                                    : 'border-border/50 bg-card hover:border-primary/50',
+                                )}
+                              >
+                                Batch Load Test
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Skip Cache Option */}
+                          <div className='flex items-center space-x-2'>
+                            <input
+                              type='checkbox'
+                              id='skip-cache-batch'
+                              checked={skipCache}
+                              onChange={e => setSkipCache(e.target.checked)}
+                              className='h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded'
+                            />
+                            <Label htmlFor='skip-cache-batch' className='text-sm font-medium'>
+                              Skip Cache
+                            </Label>
+                          </div>
+                        </>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  {/* Batch Composition */}
+                  {selectedChain && batchConfig && (
+                    <Card className='border-muted bg-card/50'>
+                      <CardHeader>
+                        <CardTitle className='text-lg font-medium'>Batch Composition</CardTitle>
+                        <CardDescription>
+                          Add multiple JSON-RPC requests to send in a single batch
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent className='space-y-4'>
+                        {batchRequests.map((req, index) => (
+                          <div
+                            key={req.id}
+                            className='flex items-start gap-3 p-4 rounded-lg border border-border/50 bg-muted/30'
+                          >
+                            <div className='flex-1 space-y-3'>
+                              <div className='flex items-center gap-3'>
+                                <span className='text-sm font-medium text-muted-foreground w-8'>
+                                  #{index + 1}
+                                </span>
+                                <Select
+                                  value={req.method || undefined}
+                                  onValueChange={value => {
+                                    const methodConfig = batchConfig.methods.find(m => m.method === value);
+                                    let params: any = [];
+                                    if (methodConfig) {
+                                      try {
+                                        params = JSON.parse(methodConfig.defaultParams);
+                                      } catch {
+                                        params = [];
+                                      }
+                                    }
+                                    updateBatchRequest(req.id, { method: value, params });
+                                  }}
+                                >
+                                  <SelectTrigger className='flex-1'>
+                                    <SelectValue placeholder='Select method...' />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {batchConfig.methods.map(m => (
+                                      <SelectItem key={m.method} value={m.method}>
+                                        {m.label} ({m.method})
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                <Input
+                                  className='w-20'
+                                  value={req.id}
+                                  onChange={e => {
+                                    const newId = parseInt(e.target.value) || req.id;
+                                    updateBatchRequest(req.id, { id: newId });
+                                  }}
+                                  placeholder='ID'
+                                  title='Request ID'
+                                />
+                                <Button
+                                  variant='ghost'
+                                  size='icon'
+                                  onClick={() => removeBatchRequest(req.id)}
+                                  disabled={batchRequests.length <= 1}
+                                  className='text-muted-foreground hover:text-destructive'
+                                >
+                                  <Trash2 className='h-4 w-4' />
+                                </Button>
+                              </div>
+                              {req.method && (
+                                <div className='ml-11'>
+                                  <Label className='text-xs text-muted-foreground'>Params (JSON)</Label>
+                                  <Input
+                                    className='font-mono text-sm'
+                                    value={JSON.stringify(req.params)}
+                                    onChange={e => {
+                                      try {
+                                        const params = JSON.parse(e.target.value);
+                                        updateBatchRequest(req.id, { params });
+                                      } catch {
+                                        // Keep as string if not valid JSON
+                                      }
+                                    }}
+                                    placeholder='[]'
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                        <Button
+                          variant='outline'
+                          onClick={addBatchRequest}
+                          className='w-full'
+                        >
+                          <Plus className='h-4 w-4 mr-2' />
+                          Add Request
+                        </Button>
+
+                        {/* Quick Templates */}
+                        {batchConfig.methods.length > 0 && (
+                          <div className='pt-4 border-t border-border/50'>
+                            <Label className='text-sm font-medium mb-2 block'>Quick Templates</Label>
+                            <div className='flex flex-wrap gap-2'>
+                              <Button
+                                variant='outline'
+                                size='sm'
+                                onClick={() => {
+                                  // Add first 3 methods as a quick template
+                                  const templateMethods = batchConfig.methods.slice(0, 3);
+                                  setBatchRequests(
+                                    templateMethods.map((m, i) => ({
+                                      id: i + 1,
+                                      method: m.method,
+                                      params: JSON.parse(m.defaultParams),
+                                    }))
+                                  );
+                                }}
+                              >
+                                Quick Start (3 methods)
+                              </Button>
+                              <Button
+                                variant='outline'
+                                size='sm'
+                                onClick={() => {
+                                  // Add all available methods
+                                  setBatchRequests(
+                                    batchConfig.methods.map((m, i) => ({
+                                      id: i + 1,
+                                      method: m.method,
+                                      params: JSON.parse(m.defaultParams),
+                                    }))
+                                  );
+                                }}
+                              >
+                                All Methods ({batchConfig.methods.length})
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* Load Test Settings */}
+                  {selectedChain && batchMode === 'load' && (
+                    <Card className='border-muted bg-card/50'>
+                      <CardHeader>
+                        <CardTitle className='text-lg font-medium'>Batch Load Test Settings</CardTitle>
+                        <CardDescription>
+                          Configure the number of batch requests for load testing
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className='space-y-4'>
+                          <div className='space-y-2'>
+                            <Label htmlFor='numberOfBatches' className='text-sm font-medium'>
+                              Number of Batches (1-500)
+                            </Label>
+                            <Input
+                              id='numberOfBatches'
+                              type='number'
+                              min={1}
+                              max={500}
+                              value={numberOfBatches}
+                              onChange={e =>
+                                setNumberOfBatches(
+                                  Math.max(1, Math.min(500, parseInt(e.target.value) || 1)),
+                                )
+                              }
+                              className='w-32'
+                              disabled={isBatchTesting}
+                            />
+                          </div>
+                          <div className='space-y-2'>
+                            <Label htmlFor='batchConcurrency' className='text-sm font-medium'>
+                              Concurrency (1-100)
+                            </Label>
+                            <Input
+                              id='batchConcurrency'
+                              type='number'
+                              min={1}
+                              max={100}
+                              value={batchConcurrency}
+                              onChange={e =>
+                                setBatchConcurrency(
+                                  Math.max(1, Math.min(100, parseInt(e.target.value) || 5)),
+                                )
+                              }
+                              className='w-32'
+                              disabled={isBatchTesting}
+                            />
+                          </div>
+                          <p className='text-sm text-muted-foreground'>
+                            Load test will run {numberOfBatches} batch requests with up to {batchConcurrency}{' '}
+                            concurrent requests.
+                          </p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* Endpoint */}
+                  {selectedChain && batchEndpointUrl && (
+                    <Card className='border-muted bg-card/50'>
+                      <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
+                        <CardTitle className='text-lg font-medium'>Endpoint</CardTitle>
+                        <Button
+                          variant='ghost'
+                          size='icon'
+                          onClick={() => {
+                            setCopiedBatchEndpoint(true);
+                            copyToClipboard(batchEndpointUrl, 'Copied endpoint URL');
+                            setTimeout(() => setCopiedBatchEndpoint(false), 1200);
+                          }}
+                        >
+                          {copiedBatchEndpoint ? (
+                            <Check className='h-4 w-4 text-green-500' />
+                          ) : (
+                            <Copy className='h-4 w-4' />
+                          )}
+                        </Button>
+                      </CardHeader>
+                      <CardContent>
+                        <div className='rounded-lg bg-muted p-4 font-mono text-sm overflow-x-auto whitespace-pre-wrap break-all'>
+                          {batchEndpointUrl}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* Batch cURL Command */}
+                  {selectedChain && batchCurlCommand && (
+                    <Card className='border-muted bg-card/50'>
+                      <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
+                        <CardTitle className='text-lg font-medium'>Batch Test Command</CardTitle>
+                        <Button
+                          variant='ghost'
+                          size='icon'
+                          onClick={() => {
+                            setCopiedBatchCurl(true);
+                            copyToClipboard(batchCurlCommand, 'Copied batch curl command');
+                            setTimeout(() => setCopiedBatchCurl(false), 1200);
+                          }}
+                        >
+                          {copiedBatchCurl ? (
+                            <Check className='h-4 w-4 text-green-500' />
+                          ) : (
+                            <Copy className='h-4 w-4' />
+                          )}
+                        </Button>
+                      </CardHeader>
+                      <CardContent>
+                        <pre className='rounded-lg bg-muted p-4 font-mono text-sm overflow-x-auto whitespace-pre-wrap break-all'>
+                          {batchCurlCommand}
+                        </pre>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* Run Button */}
+                  <div className='flex justify-end space-x-4'>
+                    <Button
+                      onClick={handleBatchTest}
+                      disabled={isBatchTesting || !selectedChain || batchRequests.every(r => !r.method)}
+                      className='bg-primary hover:bg-primary/90'
+                    >
+                      {isBatchTesting ? (
+                        <>
+                          <Loader2 className='mr-2 h-4 w-4 animate-spin' />
+                          {batchMode === 'single' ? 'Running Batch...' : 'Running Load Test...'}
+                        </>
+                      ) : (
+                        <>
+                          <Layers className='mr-2 h-4 w-4' />
+                          {batchMode === 'single' ? 'Run Batch Request' : 'Run Batch Load Test'}
+                        </>
+                      )}
+                    </Button>
+                  </div>
+
+                  {/* Single Batch Results */}
+                  {batchResult && batchMode === 'single' && (
+                    <Card className='border-muted bg-card/50'>
+                      <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
+                        <div>
+                          <CardTitle className='text-lg font-medium'>Batch Response</CardTitle>
+                          <CardDescription>
+                            {batchResult.responses.filter(r => r.success).length}/{batchResult.responses.length} successful
+                            {batchResult.truncated && ' • Response truncated'}
+                          </CardDescription>
+                        </div>
+                        <div className='flex items-center gap-3'>
+                          <div className='flex flex-col items-start gap-1 py-1'>
+                            <span className='flex items-center gap-1.5 text-sm font-medium'>
+                              {getStatusIcon(batchResult.status_code)}
+                              <span className={getStatusColor(batchResult.status_code)}>
+                                {batchResult.status_code}
+                              </span>
+                            </span>
+                            <span className='flex items-center gap-1.5 text-sm text-slate-300'>
+                              <Timer className='h-4 w-4 text-slate-400' />
+                              {batchResult.latency_ms.toFixed(1)}ms
+                            </span>
+                            {(() => {
+                              const providerHeader = Object.keys(batchResult.headers || {}).find(
+                                key => key.toLowerCase() === 'lava-provider-address',
+                              );
+                              const providerValue = providerHeader ? batchResult.headers[providerHeader] : null;
+                              return providerValue ? (
+                                <div className='flex items-center gap-1.5 text-sm text-slate-400'>
+                                  <Server className='h-4 w-4 text-slate-400' />
+                                  <span className='truncate' title={providerValue}>
+                                    {providerValue.toLowerCase() === 'cached' ? 'Cached' : providerValue}
+                                  </span>
+                                </div>
+                              ) : null;
+                            })()}
+                          </div>
+                          <Button
+                            variant='ghost'
+                            size='icon'
+                            onClick={() => {
+                              const fullResponse = batchResult.responses.map(r => 
+                                r.error 
+                                  ? { jsonrpc: '2.0', id: r.id, error: r.error }
+                                  : { jsonrpc: '2.0', id: r.id, result: r.result }
+                              );
+                              copyToClipboard(JSON.stringify(fullResponse, null, 2), 'Copied batch response');
+                            }}
+                          >
+                            <Copy className='h-4 w-4' />
+                          </Button>
+                        </div>
+                      </CardHeader>
+                      <CardContent className='space-y-4'>
+                        {batchResult.responses.map((resp) => (
+                          <div
+                            key={resp.id}
+                            className='rounded-lg border border-border/50 overflow-hidden'
+                          >
+                            <div className='flex items-center gap-3 p-3 bg-muted/30 border-b border-border/50'>
+                              {resp.success ? (
+                                <CheckCircle2 className='h-4 w-4 text-green-600' />
+                              ) : (
+                                <XCircle className='h-4 w-4 text-red-600' />
+                              )}
+                              <span className='font-mono text-sm font-medium'>{resp.method}</span>
+                              <span className='text-muted-foreground text-sm'>ID: {resp.id}</span>
+                            </div>
+                            <div className='p-4'>
+                              <div className='text-sm font-medium text-muted-foreground mb-2'>
+                                Response
+                              </div>
+                              <pre className='rounded-lg bg-muted p-4 font-mono text-sm overflow-x-auto whitespace-pre-wrap break-all'>
+                                <code>
+                                  {JSON.stringify(
+                                    resp.error
+                                      ? { jsonrpc: '2.0', id: resp.id, error: resp.error }
+                                      : { jsonrpc: '2.0', id: resp.id, result: resp.result },
+                                    null,
+                                    2
+                                  )}
+                                </code>
+                              </pre>
+                            </div>
+                          </div>
+                        ))}
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* Batch Load Test Results */}
+                  {batchLoadTestResult && batchMode === 'load' && (
+                    <Card className='border-muted bg-card/50'>
+                      <CardHeader>
+                        <div className='flex items-center justify-between'>
+                          <CardTitle className='text-lg font-medium'>Batch Load Test Results</CardTitle>
+                          <Button
+                            variant='outline'
+                            size='sm'
+                            onClick={() => setIsBatchDistributionOpen(true)}
+                            className='ml-auto'
+                          >
+                            View distribution
+                          </Button>
+                        </div>
+                      </CardHeader>
+                      <CardContent className='space-y-6'>
+                        {/* Summary Stats */}
+                        <div className='grid grid-cols-2 md:grid-cols-4 gap-4'>
+                          <div className='text-center p-4 rounded-lg bg-muted/50'>
+                            <div className='text-2xl font-bold text-primary'>
+                              {batchLoadTestResult.batch_success_rate % 1 === 0
+                                ? `${batchLoadTestResult.batch_success_rate.toFixed(0)}%`
+                                : `${batchLoadTestResult.batch_success_rate.toFixed(1)}%`}
+                            </div>
+                            <div className='text-sm text-primary'>Success Rate</div>
+                          </div>
+                          <div className='text-center p-4 rounded-lg bg-muted/50'>
+                            <div className='text-2xl font-bold text-green-600'>
+                              {batchLoadTestResult.successful_batches}
+                              <span className='text-xs font-semibold'>
+                                /{batchLoadTestResult.total_batches}
+                              </span>
+                            </div>
+                            <div className='text-sm text-green-600'>Successful Batches</div>
+                          </div>
+                          <div className='text-center p-4 rounded-lg bg-muted/50'>
+                            <div className='text-2xl font-bold text-red-600'>
+                              {batchLoadTestResult.failed_batches}
+                              <span className='text-xs font-semibold'>
+                                /{batchLoadTestResult.total_batches}
+                              </span>
+                            </div>
+                            <div className='text-sm text-red-600'>Failed Batches</div>
+                          </div>
+                          <div className='text-center p-4 rounded-lg bg-muted/50'>
+                            <div className='text-2xl font-bold text-blue-600'>
+                              {(() => {
+                                const total = batchLoadTestResult.total_batches || 0;
+                                const cached = batchLoadTestResult.cached_count || 0;
+                                const rate = total > 0 ? (cached / total) * 100 : 0;
+                                return rate % 1 === 0 ? `${rate.toFixed(0)}%` : `${rate.toFixed(1)}%`;
+                              })()}
+                            </div>
+                            <div className='text-sm text-blue-600'>Cache Rate</div>
+                          </div>
+                        </div>
+
+                        {/* Latency Stats */}
+                        <div className='space-y-2'>
+                          <h4 className='font-medium'>Latency Statistics (ms per batch)</h4>
+                          <div className='grid grid-cols-2 md:grid-cols-6 gap-4'>
+                            <div className='text-center p-3 rounded-lg bg-muted/30'>
+                              <div className='text-lg font-semibold text-green-600'>
+                                {batchLoadTestResult.latency_stats.min.toFixed(1)}
+                              </div>
+                              <div className='text-xs text-green-600'>Min</div>
+                            </div>
+                            <div className='text-center p-3 rounded-lg bg-muted/30'>
+                              <div className='text-lg font-semibold text-red-600'>
+                                {batchLoadTestResult.latency_stats.max.toFixed(1)}
+                              </div>
+                              <div className='text-xs text-red-600'>Max</div>
+                            </div>
+                            <div className='text-center p-3 rounded-lg bg-muted/30'>
+                              <div className='text-lg font-semibold text-sky-300'>
+                                {batchLoadTestResult.latency_stats.avg.toFixed(1)}
+                              </div>
+                              <div className='text-xs text-sky-300'>Average</div>
+                            </div>
+                            <div className='text-center p-3 rounded-lg bg-muted/30'>
+                              <div className='text-lg font-semibold text-sky-400'>
+                                {batchLoadTestResult.latency_stats.p50.toFixed(1)}
+                              </div>
+                              <div className='text-xs text-sky-400'>P50</div>
+                            </div>
+                            <div className='text-center p-3 rounded-lg bg-muted/30'>
+                              <div className='text-lg font-semibold text-blue-500'>
+                                {batchLoadTestResult.latency_stats.p90.toFixed(1)}
+                              </div>
+                              <div className='text-xs text-blue-500'>P90</div>
+                            </div>
+                            <div className='text-center p-3 rounded-lg bg-muted/30'>
+                              <div className='text-lg font-semibold text-blue-800'>
+                                {batchLoadTestResult.latency_stats.p95.toFixed(1)}
+                              </div>
+                              <div className='text-xs text-blue-800'>P95</div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Per-Method Stats */}
+                        <div className='space-y-3'>
+                          <h4 className='font-medium'>Per-Method Breakdown</h4>
+                          <div className='space-y-2'>
+                            {Object.values(batchLoadTestResult.method_stats).map(stats => (
+                              <div
+                                key={stats.method}
+                                className='flex items-center justify-between p-3 rounded-lg bg-muted/30'
+                              >
+                                <span className='font-mono text-sm'>{stats.method}</span>
+                                <div className='flex items-center gap-4 text-sm'>
+                                  <span className='text-green-600'>
+                                    {stats.successful}/{stats.total} successful
+                                  </span>
+                                  <span className={cn(
+                                    'font-medium',
+                                    stats.successRate >= 90 ? 'text-green-600' :
+                                    stats.successRate >= 70 ? 'text-yellow-600' : 'text-red-600'
+                                  )}>
+                                    {stats.successRate.toFixed(1)}%
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* Provider distribution modal for batch load test */}
+                  {batchLoadTestResult && (
+                    <ProviderDistributionModal
+                      open={isBatchDistributionOpen}
+                      onOpenChange={setIsBatchDistributionOpen}
+                      chainId={selectedChain}
+                      responses={batchLoadTestResult.responses.map(r => ({
+                        status_code: r.status_code,
+                        latency_ms: r.latency_ms,
+                        success: r.success,
+                        headers: r.headers,
+                      }))}
+                      allProviders={(() => {
+                        const providers = apiData?.consumers?.[selectedChain]?.providers || [];
+                        return providers.map((p: any) => p.name);
+                      })()}
+                    />
+                  )}
+                </div>
+              </TabsContent>
+            )}
 
             <TabsContent value='cross' className='mt-6'>
               <div className='grid gap-6'>
