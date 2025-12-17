@@ -609,6 +609,7 @@ export interface BatchRequestOptions {
   port?: string;
   skipCache?: boolean;
   maxResponseBytes?: number;
+  addonType?: 'none' | 'archive' | 'debug' | 'trace';
 }
 
 export interface BatchResponseItem {
@@ -646,6 +647,7 @@ export async function makeBatchRequest(
     port = '443',
     skipCache = false,
     maxResponseBytes,
+    addonType = 'none',
   } = options;
 
   const startTime = performance.now();
@@ -677,6 +679,11 @@ export async function makeBatchRequest(
       headers['lava-force-cache-refresh'] = 'true';
     }
 
+    // Add lava-extension header for addon types
+    if (addonType && addonType !== 'none') {
+      headers['lava-extension'] = addonType;
+    }
+
     const response = await fetch(url, {
       method: 'POST',
       headers,
@@ -698,7 +705,7 @@ export async function makeBatchRequest(
       const capBytes = maxResponseBytes ?? DEFAULT_MAX_HTTP_RESPONSE_BYTES * 2; // Larger cap for batch
       const read = await readTextWithLimit(response, capBytes);
       truncated = read.truncated;
-      
+
       try {
         responseData = JSON.parse(read.text);
         // Ensure responseData is an array
@@ -819,13 +826,16 @@ export function calculateBatchLoadTestStats(responses: BatchResponse[], methods:
   const p95 = calculatePercentile(sortedLatencies, 95);
 
   // Calculate per-method statistics
-  const methodStats: Record<string, {
-    method: string;
-    total: number;
-    successful: number;
-    failed: number;
-    successRate: number;
-  }> = {};
+  const methodStats: Record<
+    string,
+    {
+      method: string;
+      total: number;
+      successful: number;
+      failed: number;
+      successRate: number;
+    }
+  > = {};
 
   methods.forEach(method => {
     methodStats[method] = {
@@ -914,6 +924,7 @@ export function generateBatchCurlCommand(
   port: string,
   requests: BatchRequestItem[],
   skipCache: boolean = false,
+  addonType: 'none' | 'archive' | 'debug' | 'trace' = 'none',
 ): string {
   const chainIdLower = chainId.toLowerCase();
   const curlHost = `${chainIdLower}-jsonrpc.${domain}`;
@@ -926,12 +937,18 @@ export function generateBatchCurlCommand(
     params: req.params,
   }));
 
-  const headers = skipCache ? `-H "lava-force-cache-refresh: true" ` : '';
+  const headerParts: string[] = [];
+  if (skipCache) {
+    headerParts.push('-H "lava-force-cache-refresh: true"');
+  }
+  if (addonType && addonType !== 'none') {
+    headerParts.push(`-H "lava-extension: ${addonType}"`);
+  }
+  const headers = headerParts.length > 0 ? headerParts.join(' ') + ' ' : '';
 
   // Format each request on its own line for readability
-  const formattedPayload = '[\n' + 
-    batchPayload.map(req => '  ' + JSON.stringify(req)).join(',\n') + 
-    '\n]';
+  const formattedPayload =
+    '[\n' + batchPayload.map(req => '  ' + JSON.stringify(req)).join(',\n') + '\n]';
 
   return `curl -X POST ${headers}-H "Content-Type: application/json" \\\n  ${url} \\\n  -d '${formattedPayload}'`;
 }

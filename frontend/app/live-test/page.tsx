@@ -31,7 +31,12 @@ import {
 } from 'lucide-react';
 import { chains } from '@/app/config/chains';
 import { cn } from '@/lib/utils';
-import { chainTypes } from '@/app/config/chain-types';
+import {
+  chainTypes,
+  AddonCommand,
+  buildJsonRpcRequest,
+  buildRestRequest,
+} from '@/app/config/chain-types';
 import { ProtectedRoute } from '@/components/protected-route';
 import { apiClient } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-context';
@@ -49,7 +54,13 @@ import {
   BatchRequestItem,
   BatchResponse,
 } from '@/lib/test-client';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 interface ApiResponse {
   consumers: {
@@ -119,6 +130,7 @@ export default function LiveTestPage() {
   const [selectedRequestType, setSelectedRequestType] = useState<
     'regular' | 'archive' | 'debug' | 'trace'
   >('regular');
+  const [selectedCommandIndex, setSelectedCommandIndex] = useState<number>(0);
   const [response, setResponse] = useState<string>('');
   const [singleTestStatus, setSingleTestStatus] = useState<number | null>(null);
   const [singleTestLatency, setSingleTestLatency] = useState<number | null>(null);
@@ -181,12 +193,12 @@ export default function LiveTestPage() {
   // Helper: prettify header values that contain JSON or escaped JSON
   const parseHeaderValue = (val: string): any => {
     if (typeof val !== 'string') return val;
-    
+
     // Keep numeric strings as strings to avoid precision loss with large integers
     if (/^-?\d+$/.test(val)) {
       return val;
     }
-    
+
     const tryParse = (s: string) => {
       try {
         return JSON.parse(s);
@@ -335,7 +347,9 @@ export default function LiveTestPage() {
   };
   const [isBatchTesting, setIsBatchTesting] = useState(false);
   const [batchResult, setBatchResult] = useState<BatchResponse | null>(null);
-  const [batchLoadTestResult, setBatchLoadTestResult] = useState<ReturnType<typeof calculateBatchLoadTestStats> | null>(null);
+  const [batchLoadTestResult, setBatchLoadTestResult] = useState<ReturnType<
+    typeof calculateBatchLoadTestStats
+  > | null>(null);
   const [numberOfBatches, setNumberOfBatches] = useState<number>(50);
   const [batchConcurrency, setBatchConcurrency] = useState<number>(5);
   const [batchCurlCommand, setBatchCurlCommand] = useState<string>('');
@@ -421,36 +435,96 @@ export default function LiveTestPage() {
   }, [selectedChain, apiData]);
 
   // Check if batch is supported for the current chain (requires jsonrpc interface with batch config)
+  // Returns batch config with methods filtered based on available addons, each tagged with its addon type
   const batchConfig = useMemo(() => {
     if (!selectedChain || !apiData?.consumers?.[selectedChain]) return null;
-    
+
     const network = apiData.consumers[selectedChain].network;
     const chain = chains.find(c => c.value === network);
     if (!chain) return null;
-    
+
     const chainType = chainTypes.find(t => t.value === chain.type);
     if (!chainType) return null;
-    
+
     const jsonrpcInterface = chainType.interfaces.jsonrpc;
     if (!jsonrpcInterface?.batch) return null;
-    
-    return jsonrpcInterface.batch;
+
+    const batchDef = jsonrpcInterface.batch;
+
+    // Get all addons from all provider endpoints for this chain
+    const availableAddons = new Set<string>();
+    apiData.consumers[selectedChain].providers.forEach(provider => {
+      provider.endpoints?.forEach(endpoint => {
+        endpoint.addons?.forEach(addon => availableAddons.add(addon.toLowerCase()));
+      });
+    });
+
+    // Build combined methods array based on available addons, with addon type tag
+    type BatchMethodWithAddon = {
+      method: string;
+      label: string;
+      defaultParams: string;
+      addonType: 'none' | 'archive' | 'debug' | 'trace';
+    };
+    const methods: BatchMethodWithAddon[] = [
+      ...(batchDef.regular || []).map(m => ({ ...m, addonType: 'none' as const })),
+      ...(availableAddons.has('archive') && batchDef.archive
+        ? batchDef.archive.map(m => ({ ...m, addonType: 'archive' as const }))
+        : []),
+      ...(availableAddons.has('debug') && batchDef.debug
+        ? batchDef.debug.map(m => ({ ...m, addonType: 'debug' as const }))
+        : []),
+      ...(availableAddons.has('trace') && batchDef.trace
+        ? batchDef.trace.map(m => ({ ...m, addonType: 'trace' as const }))
+        : []),
+    ];
+
+    return { methods };
   }, [selectedChain, apiData]);
 
   // hasBatchSupport is for the currently selected chain
   const hasBatchSupport = batchConfig !== null;
 
+  // Compute the batch addon type based on selected batch methods
+  // Priority: debug > trace > archive > none
+  const batchAddonType = useMemo((): 'none' | 'archive' | 'debug' | 'trace' => {
+    if (!batchConfig?.methods || batchRequests.length === 0) return 'none';
+
+    const selectedMethods = batchRequests.map(r => r.method).filter(m => m);
+    if (selectedMethods.length === 0) return 'none';
+
+    // Check what addon types are needed for the selected methods
+    let hasDebug = false;
+    let hasTrace = false;
+    let hasArchive = false;
+
+    for (const method of selectedMethods) {
+      const batchMethod = batchConfig.methods.find(m => m.method === method);
+      if (batchMethod) {
+        if (batchMethod.addonType === 'debug') hasDebug = true;
+        else if (batchMethod.addonType === 'trace') hasTrace = true;
+        else if (batchMethod.addonType === 'archive') hasArchive = true;
+      }
+    }
+
+    // Return the highest priority addon type
+    if (hasDebug) return 'debug';
+    if (hasTrace) return 'trace';
+    if (hasArchive) return 'archive';
+    return 'none';
+  }, [batchConfig, batchRequests]);
+
   // Helper function to check if a chain ID supports batch requests
   const chainSupportsBatch = (chainId: string): boolean => {
     if (!apiData?.consumers?.[chainId]) return false;
-    
+
     const network = apiData.consumers[chainId].network;
     const chain = chains.find(c => c.value === network);
     if (!chain) return false;
-    
+
     const chainType = chainTypes.find(t => t.value === chain.type);
     if (!chainType) return false;
-    
+
     return chainType.interfaces.jsonrpc?.batch != null;
   };
 
@@ -496,12 +570,21 @@ export default function LiveTestPage() {
         port,
         validRequests,
         skipCache,
+        batchAddonType,
       );
       setBatchCurlCommand(curl);
     } else {
       setBatchCurlCommand('');
     }
-  }, [selectedChain, hasBatchSupport, config.endpointDomain, config.endpointPort, batchRequests, skipCache]);
+  }, [
+    selectedChain,
+    hasBatchSupport,
+    config.endpointDomain,
+    config.endpointPort,
+    batchRequests,
+    skipCache,
+    batchAddonType,
+  ]);
 
   useEffect(() => {
     const fetchChains = async () => {
@@ -543,15 +626,13 @@ export default function LiveTestPage() {
       } catch (metricsError) {
         // Metrics API failed - fall back to using components data
         console.warn('Metrics API failed, falling back to components data:', metricsError);
-        
+
         // Build chains list from components/consumers
         if (componentsData?.consumers) {
-          chainsData = Object.entries(componentsData.consumers).map(
-            ([chainId, consumer]) => ({
-              id: chainId,
-              network: consumer.network,
-            }),
-          );
+          chainsData = Object.entries(componentsData.consumers).map(([chainId, consumer]) => ({
+            id: chainId,
+            network: consumer.network,
+          }));
         }
       }
 
@@ -615,16 +696,24 @@ export default function LiveTestPage() {
       // Reset selected request type if it's not available
       if (!availableRequestTypes.includes(selectedRequestType)) {
         setSelectedRequestType('regular');
+        setSelectedCommandIndex(0);
       }
     } else {
       setConfiguredInterfaces([]);
       setConfiguredRequestTypes(['regular']);
       setSelectedRequestType('regular');
+      setSelectedCommandIndex(0);
     }
   }, [selectedChain, apiData, selectedRequestType]);
 
   useEffect(() => {
-    if (selectedChain && selectedInterface && apiData && config.endpointDomain && config.endpointPort) {
+    if (
+      selectedChain &&
+      selectedInterface &&
+      apiData &&
+      config.endpointDomain &&
+      config.endpointPort
+    ) {
       // Get the network from the API data instead of parsing chain ID
       const selectedChainData = apiData.consumers[selectedChain];
       if (!selectedChainData || !selectedChainData.network) return;
@@ -641,8 +730,13 @@ export default function LiveTestPage() {
       const interfaceCommands = chainType.interfaces[commandLookupInterface];
       if (!interfaceCommands) return;
 
-      const interfaceCommand = interfaceCommands[selectedRequestType];
-      if (!interfaceCommand) return;
+      const commandsArray = interfaceCommands[selectedRequestType];
+      if (!commandsArray || commandsArray.length === 0) return;
+
+      // Get the selected command (or first if index out of bounds)
+      const commandIndex = Math.min(selectedCommandIndex, commandsArray.length - 1);
+      const selectedCommand = commandsArray[commandIndex];
+      if (!selectedCommand) return;
 
       const domain = config.endpointDomain;
       const port = config.endpointPort;
@@ -667,20 +761,28 @@ export default function LiveTestPage() {
 
       let cmd: string;
       if (selectedInterface.includes('/wss')) {
-        // WebSocket command
-        cmd = `wscat -c wss://${curlHost}:${port}/websocket -x '${interfaceCommand}'`;
+        // WebSocket command - build JSON-RPC from command
+        const jsonRpcCommand = buildJsonRpcRequest(selectedCommand);
+        cmd = `wscat -c wss://${curlHost}:${port}/websocket -x '${jsonRpcCommand}'`;
       } else if (selectedInterface === 'rest') {
-        const commandData = JSON.parse(interfaceCommand);
-        if (commandData.path) {
-          // REST GET with path (e.g., Aptos, TON, TRON)
-          cmd = `curl -X GET ${allHeaders} https://${curlHost}:${port}${commandData.path}`;
+        // REST interface - use path from command
+        const restRequest = buildRestRequest(selectedCommand);
+        if (restRequest.method === 'GET') {
+          cmd = `curl -X GET ${allHeaders} https://${curlHost}:${port}${restRequest.path}`;
         } else {
-          // REST POST with JSON body (e.g., XRP)
-          cmd = `curl -X POST ${allHeaders} -H "Content-Type: application/json" https://${curlHost}:${port} -d '${interfaceCommand}'`;
+          // REST POST with JSON body
+          const jsonBody = JSON.stringify({
+            jsonrpc: '2.0',
+            method: selectedCommand.method,
+            params: JSON.parse(selectedCommand.params),
+            id: 1,
+          });
+          cmd = `curl -X POST ${allHeaders} -H "Content-Type: application/json" https://${curlHost}:${port} -d '${jsonBody}'`;
         }
       } else {
-        // Other interfaces (jsonrpc, tendermintrpc, etc.)
-        cmd = `curl -X POST ${allHeaders} -H "Content-Type: application/json" https://${curlHost}:${port} -d '${interfaceCommand}'`;
+        // Other interfaces (jsonrpc, tendermintrpc, etc.) - build JSON-RPC from command
+        const jsonRpcCommand = buildJsonRpcRequest(selectedCommand);
+        cmd = `curl -X POST ${allHeaders} -H "Content-Type: application/json" https://${curlHost}:${port} -d '${jsonRpcCommand}'`;
       }
       setCurlCommand(cmd);
     }
@@ -688,6 +790,7 @@ export default function LiveTestPage() {
     selectedChain,
     selectedInterface,
     selectedRequestType,
+    selectedCommandIndex,
     config.endpointDomain,
     config.endpointPort,
     skipCache,
@@ -696,8 +799,13 @@ export default function LiveTestPage() {
 
   // Generate cross-validation specific curl command with quorum headers
   useEffect(() => {
-    if (selectedChain && selectedInterface && apiData && config.endpointDomain && config.endpointPort) {
-
+    if (
+      selectedChain &&
+      selectedInterface &&
+      apiData &&
+      config.endpointDomain &&
+      config.endpointPort
+    ) {
       // Get the network from the API data instead of parsing chain ID
       const selectedChainData = apiData.consumers[selectedChain];
       if (!selectedChainData || !selectedChainData.network) return;
@@ -714,8 +822,13 @@ export default function LiveTestPage() {
       const interfaceCommands = chainType.interfaces[commandLookupInterface];
       if (!interfaceCommands) return;
 
-      const interfaceCommand = interfaceCommands[selectedRequestType];
-      if (!interfaceCommand) return;
+      const commandsArray = interfaceCommands[selectedRequestType];
+      if (!commandsArray || commandsArray.length === 0) return;
+
+      // Get the selected command (or first if index out of bounds)
+      const commandIndex = Math.min(selectedCommandIndex, commandsArray.length - 1);
+      const selectedCommand = commandsArray[commandIndex];
+      if (!selectedCommand) return;
 
       const domain = config.endpointDomain;
       const port = config.endpointPort;
@@ -742,20 +855,28 @@ export default function LiveTestPage() {
 
       let cmd: string;
       if (selectedInterface.includes('/wss')) {
-        // WebSocket command - note: quorum headers may not be supported for WebSocket
-        cmd = `wscat -c wss://${curlHost}:${port}/websocket -x '${interfaceCommand}'`;
+        // WebSocket command - build JSON-RPC from command
+        const jsonRpcCommand = buildJsonRpcRequest(selectedCommand);
+        cmd = `wscat -c wss://${curlHost}:${port}/websocket -x '${jsonRpcCommand}'`;
       } else if (selectedInterface === 'rest') {
-        const commandData = JSON.parse(interfaceCommand);
-        if (commandData.path) {
-          // REST GET with path (e.g., Aptos, TON, TRON)
-          cmd = `curl -X GET ${allHeaders} https://${curlHost}:${port}${commandData.path}`;
+        // REST interface - use path from command
+        const restRequest = buildRestRequest(selectedCommand);
+        if (restRequest.method === 'GET') {
+          cmd = `curl -X GET ${allHeaders} https://${curlHost}:${port}${restRequest.path}`;
         } else {
-          // REST POST with JSON body (e.g., XRP)
-          cmd = `curl -X POST ${allHeaders} -H "Content-Type: application/json" https://${curlHost}:${port} -d '${interfaceCommand}'`;
+          // REST POST with JSON body
+          const jsonBody = JSON.stringify({
+            jsonrpc: '2.0',
+            method: selectedCommand.method,
+            params: JSON.parse(selectedCommand.params),
+            id: 1,
+          });
+          cmd = `curl -X POST ${allHeaders} -H "Content-Type: application/json" https://${curlHost}:${port} -d '${jsonBody}'`;
         }
       } else {
-        // Other interfaces (jsonrpc, tendermintrpc, etc.)
-        cmd = `curl -X POST ${allHeaders} -H "Content-Type: application/json" https://${curlHost}:${port} -d '${interfaceCommand}'`;
+        // Other interfaces (jsonrpc, tendermintrpc, etc.) - build JSON-RPC from command
+        const jsonRpcCommand = buildJsonRpcRequest(selectedCommand);
+        cmd = `curl -X POST ${allHeaders} -H "Content-Type: application/json" https://${curlHost}:${port} -d '${jsonRpcCommand}'`;
       }
       setCrossValidationCurlCommand(cmd);
     }
@@ -763,6 +884,7 @@ export default function LiveTestPage() {
     selectedChain,
     selectedInterface,
     selectedRequestType,
+    selectedCommandIndex,
     config.apiEndpoint,
     skipCache,
     apiData,
@@ -828,7 +950,8 @@ export default function LiveTestPage() {
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: 'Endpoint configuration is missing. Please configure domain and port in Settings.',
+        description:
+          'Endpoint configuration is missing. Please configure domain and port in Settings.',
       });
       return;
     }
@@ -851,15 +974,29 @@ export default function LiveTestPage() {
       const interfaceCommands = chainType.interfaces[commandLookupInterface];
       if (!interfaceCommands) throw new Error('Interface not found');
 
-      const interfaceCommand = interfaceCommands[selectedRequestType];
-      if (!interfaceCommand) throw new Error('Request type command not found');
+      const commandsArray = interfaceCommands[selectedRequestType];
+      if (!commandsArray || commandsArray.length === 0)
+        throw new Error('Request type command not found');
+
+      // Get the selected command
+      const commandIndex = Math.min(selectedCommandIndex, commandsArray.length - 1);
+      const selectedCommand = commandsArray[commandIndex];
+      if (!selectedCommand) throw new Error('Selected command not found');
+
+      // Build the interface command string
+      const interfaceCommand =
+        selectedInterface === 'rest'
+          ? JSON.stringify(buildRestRequest(selectedCommand))
+          : buildJsonRpcRequest(selectedCommand);
 
       // Use configured domain and port
       const domain = config.endpointDomain;
       const port = config.endpointPort;
 
       if (!domain || !port) {
-        throw new Error('Endpoint configuration is incomplete. Please configure domain and port in Settings.');
+        throw new Error(
+          'Endpoint configuration is incomplete. Please configure domain and port in Settings.',
+        );
       }
 
       const caps = getSafeResponseCaps(selectedRequestType);
@@ -916,7 +1053,8 @@ export default function LiveTestPage() {
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: 'Endpoint configuration is missing. Please configure domain and port in Settings.',
+        description:
+          'Endpoint configuration is missing. Please configure domain and port in Settings.',
       });
       return;
     }
@@ -944,15 +1082,29 @@ export default function LiveTestPage() {
       const interfaceCommands = chainType.interfaces[commandLookupInterface];
       if (!interfaceCommands) throw new Error('Interface not found');
 
-      const interfaceCommand = interfaceCommands[selectedRequestType];
-      if (!interfaceCommand) throw new Error('Request type command not found');
+      const commandsArray = interfaceCommands[selectedRequestType];
+      if (!commandsArray || commandsArray.length === 0)
+        throw new Error('Request type command not found');
+
+      // Get the selected command
+      const commandIndex = Math.min(selectedCommandIndex, commandsArray.length - 1);
+      const selectedCommand = commandsArray[commandIndex];
+      if (!selectedCommand) throw new Error('Selected command not found');
+
+      // Build the interface command string
+      const interfaceCommand =
+        selectedInterface === 'rest'
+          ? JSON.stringify(buildRestRequest(selectedCommand))
+          : buildJsonRpcRequest(selectedCommand);
 
       // Use configured domain and port
       const domain = config.endpointDomain;
       const port = config.endpointPort;
 
       if (!domain || !port) {
-        throw new Error('Endpoint configuration is incomplete. Please configure domain and port in Settings.');
+        throw new Error(
+          'Endpoint configuration is incomplete. Please configure domain and port in Settings.',
+        );
       }
 
       const caps = getSafeResponseCaps(selectedRequestType);
@@ -1040,7 +1192,8 @@ export default function LiveTestPage() {
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: 'Endpoint configuration is missing. Please configure domain and port in Settings.',
+        description:
+          'Endpoint configuration is missing. Please configure domain and port in Settings.',
       });
       return;
     }
@@ -1066,15 +1219,29 @@ export default function LiveTestPage() {
       const interfaceCommands = chainType.interfaces[commandLookupInterface];
       if (!interfaceCommands) throw new Error('Interface not found');
 
-      const interfaceCommand = interfaceCommands[selectedRequestType];
-      if (!interfaceCommand) throw new Error('Request type command not found');
+      const commandsArray = interfaceCommands[selectedRequestType];
+      if (!commandsArray || commandsArray.length === 0)
+        throw new Error('Request type command not found');
+
+      // Get the selected command
+      const commandIndex = Math.min(selectedCommandIndex, commandsArray.length - 1);
+      const selectedCommand = commandsArray[commandIndex];
+      if (!selectedCommand) throw new Error('Selected command not found');
+
+      // Build the interface command string
+      const interfaceCommand =
+        selectedInterface === 'rest'
+          ? JSON.stringify(buildRestRequest(selectedCommand))
+          : buildJsonRpcRequest(selectedCommand);
 
       // Use configured domain and port
       const domain = config.endpointDomain;
       const port = config.endpointPort;
 
       if (!domain || !port) {
-        throw new Error('Endpoint configuration is incomplete. Please configure domain and port in Settings.');
+        throw new Error(
+          'Endpoint configuration is incomplete. Please configure domain and port in Settings.',
+        );
       }
 
       const caps = getSafeResponseCaps(selectedRequestType);
@@ -1138,7 +1305,7 @@ export default function LiveTestPage() {
 
   const handleBatchTest = async () => {
     const validRequests = batchRequests.filter(r => r.method.trim() !== '');
-    
+
     if (validRequests.length === 0) {
       toast({
         variant: 'destructive',
@@ -1161,7 +1328,8 @@ export default function LiveTestPage() {
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: 'Endpoint configuration is missing. Please configure domain and port in Settings.',
+        description:
+          'Endpoint configuration is missing. Please configure domain and port in Settings.',
       });
       return;
     }
@@ -1183,6 +1351,7 @@ export default function LiveTestPage() {
             domain,
             port,
             skipCache,
+            addonType: batchAddonType,
           },
           validRequests,
         );
@@ -1211,6 +1380,7 @@ export default function LiveTestPage() {
             domain,
             port,
             skipCache,
+            addonType: batchAddonType,
           },
           validRequests,
           numberOfBatches,
@@ -1531,64 +1701,110 @@ export default function LiveTestPage() {
                             const chainType = chainTypes.find(t => t.value === chain.type);
                             if (!chainType) return null;
 
-                            const interfaceCommands = chainType.interfaces[selectedInterface];
+                            const commandLookupInterface =
+                              getCommandLookupInterface(selectedInterface);
+                            const interfaceCommands = chainType.interfaces[commandLookupInterface];
                             if (!interfaceCommands) return null;
 
+                            // Get available addon types based on configured addons
                             const availableTypes = configuredRequestTypes
                               .filter(type => type !== 'regular')
-                              .filter(
-                                type =>
-                                  interfaceCommands[type as keyof typeof interfaceCommands] !==
-                                  null,
-                              );
+                              .filter(type => {
+                                const commands =
+                                  interfaceCommands[type as keyof typeof interfaceCommands];
+                                return commands && Array.isArray(commands) && commands.length > 0;
+                              });
 
-                            if (availableTypes.length === 0) return null;
+                            // Get commands for current request type
+                            const currentCommands = interfaceCommands[selectedRequestType] as
+                              | AddonCommand[]
+                              | null;
 
                             return (
                               <div className='space-y-4'>
-                                <Label className='text-sm font-medium'>Request Type</Label>
-                                <div className='flex flex-wrap gap-2'>
-                                  {availableTypes.map(type => {
-                                    const displayName =
-                                      type.charAt(0).toUpperCase() + type.slice(1);
-                                    return (
-                                      <Button
-                                        key={type}
-                                        variant={
-                                          selectedRequestType === type ? 'default' : 'outline'
-                                        }
-                                        size='sm'
-                                        className={cn(
-                                          selectedRequestType === type &&
-                                            (type === 'regular'
-                                              ? 'bg-blue-500 hover:bg-blue-600'
-                                              : type === 'archive'
-                                                ? 'bg-green-500 hover:bg-green-600'
-                                                : type === 'debug'
-                                                  ? 'bg-orange-500 hover:bg-orange-600'
-                                                  : type === 'trace'
-                                                    ? 'bg-purple-500 hover:bg-purple-600'
-                                                    : ''),
-                                          'hover:opacity-90',
-                                        )}
-                                        onClick={() => {
-                                          // Toggle logic: if clicking the same type, reset to regular
-                                          const newType =
-                                            selectedRequestType === type ? 'regular' : type;
-                                          setSelectedRequestType(
-                                            newType as 'regular' | 'archive' | 'debug' | 'trace',
-                                          );
-                                          setResponse('');
-                                          setSingleTestStatus(null);
-                                          setSingleTestLatency(null);
-                                          setSingleTestProvider(null);
-                                        }}
-                                      >
-                                        {displayName}
-                                      </Button>
-                                    );
-                                  })}
-                                </div>
+                                {/* Request Type Buttons */}
+                                {availableTypes.length > 0 && (
+                                  <>
+                                    <Label className='text-sm font-medium'>Request Type</Label>
+                                    <div className='flex flex-wrap gap-2'>
+                                      {availableTypes.map(type => {
+                                        const displayName =
+                                          type.charAt(0).toUpperCase() + type.slice(1);
+                                        return (
+                                          <Button
+                                            key={type}
+                                            variant={
+                                              selectedRequestType === type ? 'default' : 'outline'
+                                            }
+                                            size='sm'
+                                            className={cn(
+                                              selectedRequestType === type &&
+                                                (type === 'regular'
+                                                  ? 'bg-blue-500 hover:bg-blue-600'
+                                                  : type === 'archive'
+                                                    ? 'bg-green-500 hover:bg-green-600'
+                                                    : type === 'debug'
+                                                      ? 'bg-orange-500 hover:bg-orange-600'
+                                                      : type === 'trace'
+                                                        ? 'bg-purple-500 hover:bg-purple-600'
+                                                        : ''),
+                                              'hover:opacity-90',
+                                            )}
+                                            onClick={() => {
+                                              // Toggle logic: if clicking the same type, reset to regular
+                                              const newType =
+                                                selectedRequestType === type ? 'regular' : type;
+                                              setSelectedRequestType(
+                                                newType as
+                                                  | 'regular'
+                                                  | 'archive'
+                                                  | 'debug'
+                                                  | 'trace',
+                                              );
+                                              setSelectedCommandIndex(0);
+                                              setResponse('');
+                                              setSingleTestStatus(null);
+                                              setSingleTestLatency(null);
+                                              setSingleTestProvider(null);
+                                            }}
+                                          >
+                                            {displayName}
+                                          </Button>
+                                        );
+                                      })}
+                                    </div>
+                                  </>
+                                )}
+
+                                {/* Command Selection Dropdown */}
+                                {currentCommands && currentCommands.length > 0 && (
+                                  <div className='space-y-2'>
+                                    <Label className='text-sm font-medium'>Command</Label>
+                                    <Select
+                                      value={String(
+                                        Math.min(selectedCommandIndex, currentCommands.length - 1),
+                                      )}
+                                      onValueChange={value => {
+                                        setSelectedCommandIndex(Number(value));
+                                        setResponse('');
+                                        setSingleTestStatus(null);
+                                        setSingleTestLatency(null);
+                                        setSingleTestProvider(null);
+                                      }}
+                                    >
+                                      <SelectTrigger className='w-full'>
+                                        <SelectValue placeholder='Select a command' />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {currentCommands.map((cmd, idx) => (
+                                          <SelectItem key={idx} value={String(idx)}>
+                                            {cmd.label} ({cmd.method})
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                )}
                               </div>
                             );
                           })()}
@@ -1980,62 +2196,106 @@ export default function LiveTestPage() {
                             const chainType = chainTypes.find(t => t.value === chain.type);
                             if (!chainType) return null;
 
-                            const interfaceCommands = chainType.interfaces[selectedInterface];
+                            const commandLookupInterface =
+                              getCommandLookupInterface(selectedInterface);
+                            const interfaceCommands = chainType.interfaces[commandLookupInterface];
                             if (!interfaceCommands) return null;
 
+                            // Get available addon types based on configured addons
                             const availableTypes = configuredRequestTypes
                               .filter(type => type !== 'regular')
-                              .filter(
-                                type =>
-                                  interfaceCommands[type as keyof typeof interfaceCommands] !==
-                                  null,
-                              );
+                              .filter(type => {
+                                const commands =
+                                  interfaceCommands[type as keyof typeof interfaceCommands];
+                                return commands && Array.isArray(commands) && commands.length > 0;
+                              });
 
-                            if (availableTypes.length === 0) return null;
+                            // Get commands for current request type
+                            const currentCommands = interfaceCommands[selectedRequestType] as
+                              | AddonCommand[]
+                              | null;
 
                             return (
                               <div className='space-y-4'>
-                                <Label className='text-sm font-medium'>Request Type</Label>
-                                <div className='flex flex-wrap gap-2'>
-                                  {availableTypes.map(type => {
-                                    const displayName =
-                                      type.charAt(0).toUpperCase() + type.slice(1);
-                                    return (
-                                      <Button
-                                        key={type}
-                                        variant={
-                                          selectedRequestType === type ? 'default' : 'outline'
-                                        }
-                                        size='sm'
-                                        className={cn(
-                                          selectedRequestType === type &&
-                                            (type === 'regular'
-                                              ? 'bg-blue-500 hover:bg-blue-600'
-                                              : type === 'archive'
-                                                ? 'bg-green-500 hover:bg-green-600'
-                                                : type === 'debug'
-                                                  ? 'bg-orange-500 hover:bg-orange-600'
-                                                  : type === 'trace'
-                                                    ? 'bg-purple-500 hover:bg-purple-600'
-                                                    : ''),
-                                          'hover:opacity-90',
-                                        )}
-                                        onClick={() => {
-                                          // Toggle logic: if clicking the same type, reset to regular
-                                          const newType =
-                                            selectedRequestType === type ? 'regular' : type;
-                                          setSelectedRequestType(
-                                            newType as 'regular' | 'archive' | 'debug' | 'trace',
-                                          );
-                                          setResponse('');
-                                          setLoadTestResult(null);
-                                        }}
-                                      >
-                                        {displayName}
-                                      </Button>
-                                    );
-                                  })}
-                                </div>
+                                {/* Request Type Buttons */}
+                                {availableTypes.length > 0 && (
+                                  <>
+                                    <Label className='text-sm font-medium'>Request Type</Label>
+                                    <div className='flex flex-wrap gap-2'>
+                                      {availableTypes.map(type => {
+                                        const displayName =
+                                          type.charAt(0).toUpperCase() + type.slice(1);
+                                        return (
+                                          <Button
+                                            key={type}
+                                            variant={
+                                              selectedRequestType === type ? 'default' : 'outline'
+                                            }
+                                            size='sm'
+                                            className={cn(
+                                              selectedRequestType === type &&
+                                                (type === 'regular'
+                                                  ? 'bg-blue-500 hover:bg-blue-600'
+                                                  : type === 'archive'
+                                                    ? 'bg-green-500 hover:bg-green-600'
+                                                    : type === 'debug'
+                                                      ? 'bg-orange-500 hover:bg-orange-600'
+                                                      : type === 'trace'
+                                                        ? 'bg-purple-500 hover:bg-purple-600'
+                                                        : ''),
+                                              'hover:opacity-90',
+                                            )}
+                                            onClick={() => {
+                                              // Toggle logic: if clicking the same type, reset to regular
+                                              const newType =
+                                                selectedRequestType === type ? 'regular' : type;
+                                              setSelectedRequestType(
+                                                newType as
+                                                  | 'regular'
+                                                  | 'archive'
+                                                  | 'debug'
+                                                  | 'trace',
+                                              );
+                                              setSelectedCommandIndex(0);
+                                              setResponse('');
+                                              setLoadTestResult(null);
+                                            }}
+                                          >
+                                            {displayName}
+                                          </Button>
+                                        );
+                                      })}
+                                    </div>
+                                  </>
+                                )}
+
+                                {/* Command Selection Dropdown */}
+                                {currentCommands && currentCommands.length > 0 && (
+                                  <div className='space-y-2'>
+                                    <Label className='text-sm font-medium'>Command</Label>
+                                    <Select
+                                      value={String(
+                                        Math.min(selectedCommandIndex, currentCommands.length - 1),
+                                      )}
+                                      onValueChange={value => {
+                                        setSelectedCommandIndex(Number(value));
+                                        setResponse('');
+                                        setLoadTestResult(null);
+                                      }}
+                                    >
+                                      <SelectTrigger className='w-full'>
+                                        <SelectValue placeholder='Select a command' />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {currentCommands.map((cmd, idx) => (
+                                          <SelectItem key={idx} value={String(idx)}>
+                                            {cmd.label} ({cmd.method})
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                )}
                               </div>
                             );
                           })()}
@@ -2470,7 +2730,9 @@ export default function LiveTestPage() {
                                     onClick={() => {
                                       if (selectedNetwork === net) return;
                                       setSelectedNetwork(net);
-                                      const routers = batchSupportedChains.filter(c => c.network === net);
+                                      const routers = batchSupportedChains.filter(
+                                        c => c.network === net,
+                                      );
                                       if (routers.length === 1) {
                                         setSelectedChain(routers[0].id);
                                       } else {
@@ -2611,7 +2873,9 @@ export default function LiveTestPage() {
                                 <Select
                                   value={req.method || undefined}
                                   onValueChange={value => {
-                                    const methodConfig = batchConfig.methods.find(m => m.method === value);
+                                    const methodConfig = batchConfig.methods.find(
+                                      m => m.method === value,
+                                    );
                                     let params: any = [];
                                     if (methodConfig) {
                                       try {
@@ -2656,7 +2920,9 @@ export default function LiveTestPage() {
                               </div>
                               {req.method && (
                                 <div className='ml-11'>
-                                  <Label className='text-xs text-muted-foreground'>Params (JSON)</Label>
+                                  <Label className='text-xs text-muted-foreground'>
+                                    Params (JSON)
+                                  </Label>
                                   <Input
                                     className='font-mono text-sm'
                                     value={JSON.stringify(req.params)}
@@ -2675,11 +2941,7 @@ export default function LiveTestPage() {
                             </div>
                           </div>
                         ))}
-                        <Button
-                          variant='outline'
-                          onClick={addBatchRequest}
-                          className='w-full'
-                        >
+                        <Button variant='outline' onClick={addBatchRequest} className='w-full'>
                           <Plus className='h-4 w-4 mr-2' />
                           Add Request
                         </Button>
@@ -2687,7 +2949,9 @@ export default function LiveTestPage() {
                         {/* Quick Templates */}
                         {batchConfig.methods.length > 0 && (
                           <div className='pt-4 border-t border-border/50'>
-                            <Label className='text-sm font-medium mb-2 block'>Quick Templates</Label>
+                            <Label className='text-sm font-medium mb-2 block'>
+                              Quick Templates
+                            </Label>
                             <div className='flex flex-wrap gap-2'>
                               <Button
                                 variant='outline'
@@ -2700,7 +2964,7 @@ export default function LiveTestPage() {
                                       id: i + 1,
                                       method: m.method,
                                       params: JSON.parse(m.defaultParams),
-                                    }))
+                                    })),
                                   );
                                 }}
                               >
@@ -2716,7 +2980,7 @@ export default function LiveTestPage() {
                                       id: i + 1,
                                       method: m.method,
                                       params: JSON.parse(m.defaultParams),
-                                    }))
+                                    })),
                                   );
                                 }}
                               >
@@ -2733,7 +2997,9 @@ export default function LiveTestPage() {
                   {selectedChain && batchMode === 'load' && (
                     <Card className='border-muted bg-card/50'>
                       <CardHeader>
-                        <CardTitle className='text-lg font-medium'>Batch Load Test Settings</CardTitle>
+                        <CardTitle className='text-lg font-medium'>
+                          Batch Load Test Settings
+                        </CardTitle>
                         <CardDescription>
                           Configure the number of batch requests for load testing
                         </CardDescription>
@@ -2779,8 +3045,8 @@ export default function LiveTestPage() {
                             />
                           </div>
                           <p className='text-sm text-muted-foreground'>
-                            Load test will run {numberOfBatches} batch requests with up to {batchConcurrency}{' '}
-                            concurrent requests.
+                            Load test will run {numberOfBatches} batch requests with up to{' '}
+                            {batchConcurrency} concurrent requests.
                           </p>
                         </div>
                       </CardContent>
@@ -2849,7 +3115,9 @@ export default function LiveTestPage() {
                   <div className='flex justify-end space-x-4'>
                     <Button
                       onClick={handleBatchTest}
-                      disabled={isBatchTesting || !selectedChain || batchRequests.every(r => !r.method)}
+                      disabled={
+                        isBatchTesting || !selectedChain || batchRequests.every(r => !r.method)
+                      }
                       className='bg-primary hover:bg-primary/90'
                     >
                       {isBatchTesting ? (
@@ -2873,7 +3141,8 @@ export default function LiveTestPage() {
                         <div>
                           <CardTitle className='text-lg font-medium'>Batch Response</CardTitle>
                           <CardDescription>
-                            {batchResult.responses.filter(r => r.success).length}/{batchResult.responses.length} successful
+                            {batchResult.responses.filter(r => r.success).length}/
+                            {batchResult.responses.length} successful
                             {batchResult.truncated && ' • Response truncated'}
                           </CardDescription>
                         </div>
@@ -2893,12 +3162,16 @@ export default function LiveTestPage() {
                               const providerHeader = Object.keys(batchResult.headers || {}).find(
                                 key => key.toLowerCase() === 'lava-provider-address',
                               );
-                              const providerValue = providerHeader ? batchResult.headers[providerHeader] : null;
+                              const providerValue = providerHeader
+                                ? batchResult.headers[providerHeader]
+                                : null;
                               return providerValue ? (
                                 <div className='flex items-center gap-1.5 text-sm text-slate-400'>
                                   <Server className='h-4 w-4 text-slate-400' />
                                   <span className='truncate' title={providerValue}>
-                                    {providerValue.toLowerCase() === 'cached' ? 'Cached' : providerValue}
+                                    {providerValue.toLowerCase() === 'cached'
+                                      ? 'Cached'
+                                      : providerValue}
                                   </span>
                                 </div>
                               ) : null;
@@ -2908,12 +3181,15 @@ export default function LiveTestPage() {
                             variant='ghost'
                             size='icon'
                             onClick={() => {
-                              const fullResponse = batchResult.responses.map(r => 
-                                r.error 
+                              const fullResponse = batchResult.responses.map(r =>
+                                r.error
                                   ? { jsonrpc: '2.0', id: r.id, error: r.error }
-                                  : { jsonrpc: '2.0', id: r.id, result: r.result }
+                                  : { jsonrpc: '2.0', id: r.id, result: r.result },
                               );
-                              copyToClipboard(JSON.stringify(fullResponse, null, 2), 'Copied batch response');
+                              copyToClipboard(
+                                JSON.stringify(fullResponse, null, 2),
+                                'Copied batch response',
+                              );
                             }}
                           >
                             <Copy className='h-4 w-4' />
@@ -2921,7 +3197,7 @@ export default function LiveTestPage() {
                         </div>
                       </CardHeader>
                       <CardContent className='space-y-4'>
-                        {batchResult.responses.map((resp) => (
+                        {batchResult.responses.map(resp => (
                           <div
                             key={resp.id}
                             className='rounded-lg border border-border/50 overflow-hidden'
@@ -2946,7 +3222,7 @@ export default function LiveTestPage() {
                                       ? { jsonrpc: '2.0', id: resp.id, error: resp.error }
                                       : { jsonrpc: '2.0', id: resp.id, result: resp.result },
                                     null,
-                                    2
+                                    2,
                                   )}
                                 </code>
                               </pre>
@@ -2962,7 +3238,9 @@ export default function LiveTestPage() {
                     <Card className='border-muted bg-card/50'>
                       <CardHeader>
                         <div className='flex items-center justify-between'>
-                          <CardTitle className='text-lg font-medium'>Batch Load Test Results</CardTitle>
+                          <CardTitle className='text-lg font-medium'>
+                            Batch Load Test Results
+                          </CardTitle>
                           <Button
                             variant='outline'
                             size='sm'
@@ -3008,7 +3286,9 @@ export default function LiveTestPage() {
                                 const total = batchLoadTestResult.total_batches || 0;
                                 const cached = batchLoadTestResult.cached_count || 0;
                                 const rate = total > 0 ? (cached / total) * 100 : 0;
-                                return rate % 1 === 0 ? `${rate.toFixed(0)}%` : `${rate.toFixed(1)}%`;
+                                return rate % 1 === 0
+                                  ? `${rate.toFixed(0)}%`
+                                  : `${rate.toFixed(1)}%`;
                               })()}
                             </div>
                             <div className='text-sm text-blue-600'>Cache Rate</div>
@@ -3072,11 +3352,16 @@ export default function LiveTestPage() {
                                   <span className='text-green-600'>
                                     {stats.successful}/{stats.total} successful
                                   </span>
-                                  <span className={cn(
-                                    'font-medium',
-                                    stats.successRate >= 90 ? 'text-green-600' :
-                                    stats.successRate >= 70 ? 'text-yellow-600' : 'text-red-600'
-                                  )}>
+                                  <span
+                                    className={cn(
+                                      'font-medium',
+                                      stats.successRate >= 90
+                                        ? 'text-green-600'
+                                        : stats.successRate >= 70
+                                          ? 'text-yellow-600'
+                                          : 'text-red-600',
+                                    )}
+                                  >
                                     {stats.successRate.toFixed(1)}%
                                   </span>
                                 </div>
