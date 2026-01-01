@@ -369,7 +369,7 @@ async def get_chains_metrics(
                     chain_traffic_data, chain.id
                 ),
                 latest_block=calculate_chain_latest_block_number(
-                    consumer_latest_block_data, chain.id
+                    consumer_latest_block_data, chain.network
                 ),
             )
 
@@ -482,7 +482,7 @@ async def get_chain_metrics(
                 chain_traffic_data, selected_chain.id
             ),
             latest_block=calculate_chain_latest_block_number(
-                consumer_latest_block_data, selected_chain.id
+                consumer_latest_block_data, selected_chain.network
             ),
         )
 
