@@ -2,9 +2,6 @@ from app.core.calculations import (
     build_provider_metrics_lookup,
     calculate_adaptive_step_size,
     calculate_chain_reachability_percentage,
-    calculate_provider_latency_ms,
-    calculate_provider_requests_in_time_window,
-    calculate_provider_uptime_percentage,
     calculate_requests_in_time_window,
 )
 
@@ -34,6 +31,7 @@ def test_reachability_empty():
 
 
 def test_provider_requests_edge_cases():
+    """Test provider requests using build_provider_metrics_lookup."""
     # flat counter - implementation returns latest value
     data = {
         "status": "success",
@@ -46,7 +44,8 @@ def test_provider_requests_edge_cases():
             ]
         },
     }
-    assert calculate_provider_requests_in_time_window(data, "p1") == 100
+    lookup = build_provider_metrics_lookup(data, "requests")
+    assert lookup.get("p1", 0) == 100
     # single sample
     data = {
         "status": "success",
@@ -54,10 +53,12 @@ def test_provider_requests_edge_cases():
             "result": [{"metric": {"service": "p1-provider"}, "values": [[1, "42"]]}]
         },
     }
-    assert calculate_provider_requests_in_time_window(data, "p1") == 42
+    lookup = build_provider_metrics_lookup(data, "requests")
+    assert lookup.get("p1", 0) == 42
 
 
 def test_provider_uptime_mixed():
+    """Test provider uptime using build_provider_metrics_lookup."""
     data = {
         "status": "success",
         "data": {
@@ -69,7 +70,9 @@ def test_provider_uptime_mixed():
             ]
         },
     }
-    assert calculate_provider_uptime_percentage(data, "prov") == 75.0
+    lookup = build_provider_metrics_lookup(data, "uptime")
+    # Uptime: (0.5*100 + 1.0*100) / 2 = 75.0
+    assert abs(lookup.get("prov", 0.0) - 75.0) < 0.1
 
 
 def test_requests_counter_resets_multiple():
@@ -88,7 +91,7 @@ def test_requests_counter_resets_multiple():
 
 
 def test_provider_latency_success():
-    """Test provider latency calculation with valid data."""
+    """Test provider latency using build_provider_metrics_lookup."""
     data = {
         "status": "success",
         "data": {
@@ -100,12 +103,13 @@ def test_provider_latency_success():
             ]
         },
     }
-    # Implementation returns latest value: 100
-    assert calculate_provider_latency_ms(data, "eth1-lava") == 100
+    lookup = build_provider_metrics_lookup(data, "latency")
+    # Returns latest value: 100
+    assert lookup.get("eth1-lava", 0) == 100
 
 
 def test_provider_latency_with_provider_suffix():
-    """Test provider latency calculation with service that already has -provider suffix."""
+    """Test provider latency with service that has -provider suffix."""
     data = {
         "status": "success",
         "data": {
@@ -117,12 +121,12 @@ def test_provider_latency_with_provider_suffix():
             ]
         },
     }
-    # Implementation returns latest value: 60
-    assert calculate_provider_latency_ms(data, "mychain-myprovider") == 60
+    lookup = build_provider_metrics_lookup(data, "latency")
+    assert lookup.get("mychain-myprovider", 0) == 60
 
 
 def test_provider_latency_without_suffix():
-    """Test provider latency calculation matching service without suffix."""
+    """Test provider latency matching service without suffix."""
     data = {
         "status": "success",
         "data": {
@@ -134,12 +138,12 @@ def test_provider_latency_without_suffix():
             ]
         },
     }
-    # Implementation returns latest value: 180
-    assert calculate_provider_latency_ms(data, "eth1-lava") == 180
+    lookup = build_provider_metrics_lookup(data, "latency")
+    assert lookup.get("eth1-lava", 0) == 180
 
 
 def test_provider_latency_no_matching_provider():
-    """Test provider latency calculation when no matching provider found."""
+    """Test provider latency when no matching provider found."""
     data = {
         "status": "success",
         "data": {
@@ -151,24 +155,26 @@ def test_provider_latency_no_matching_provider():
             ]
         },
     }
-    assert calculate_provider_latency_ms(data, "eth1-lava") == 0
+    lookup = build_provider_metrics_lookup(data, "latency")
+    assert lookup.get("eth1-lava", 0) == 0
 
 
 def test_provider_latency_empty_result():
-    """Test provider latency calculation with empty result."""
+    """Test provider latency with empty result."""
     data = {"status": "success", "data": {"result": []}}
-    assert calculate_provider_latency_ms(data, "eth1-lava") == 0
+    lookup = build_provider_metrics_lookup(data, "latency")
+    assert lookup.get("eth1-lava", 0) == 0
 
 
 def test_provider_latency_invalid_data():
-    """Test provider latency calculation with invalid data."""
-    assert calculate_provider_latency_ms(None, "eth1-lava") == 0
-    assert calculate_provider_latency_ms({}, "eth1-lava") == 0
-    assert calculate_provider_latency_ms({"status": "error"}, "eth1-lava") == 0
+    """Test provider latency with invalid data."""
+    assert build_provider_metrics_lookup(None, "latency") == {}
+    assert build_provider_metrics_lookup({}, "latency") == {}
+    assert build_provider_metrics_lookup({"status": "error"}, "latency") == {}
 
 
 def test_provider_latency_invalid_values():
-    """Test provider latency calculation with invalid values."""
+    """Test provider latency with invalid values."""
     data = {
         "status": "success",
         "data": {
@@ -180,29 +186,13 @@ def test_provider_latency_invalid_values():
             ]
         },
     }
-    # Should skip invalid value and only calculate from valid one
-    assert calculate_provider_latency_ms(data, "eth1-lava") == 200
-
-
-def test_provider_latency_mixed_valid_invalid():
-    """Test provider latency calculation with mix of valid and invalid values."""
-    data = {
-        "status": "success",
-        "data": {
-            "result": [
-                {
-                    "metric": {"service": "provider1-provider"},
-                    "values": [[1, "100"], [2, "not_a_number"], [3, "200"], [4, ""]],
-                }
-            ]
-        },
-    }
-    # Implementation returns 0 when parsing errors occur
-    assert calculate_provider_latency_ms(data, "provider1") == 0
+    lookup = build_provider_metrics_lookup(data, "latency")
+    # Should skip invalid value and use valid one
+    assert lookup.get("eth1-lava", 0) == 200
 
 
 def test_provider_latency_case_insensitive():
-    """Test provider latency calculation is case insensitive."""
+    """Test provider latency is case insensitive."""
     data = {
         "status": "success",
         "data": {
@@ -214,12 +204,12 @@ def test_provider_latency_case_insensitive():
             ]
         },
     }
-    # Implementation returns latest value: 200
-    assert calculate_provider_latency_ms(data, "eth1-lava") == 200
+    lookup = build_provider_metrics_lookup(data, "latency")
+    assert lookup.get("eth1-lava", 0) == 200
 
 
 def test_provider_latency_multiple_providers():
-    """Test provider latency calculation with multiple providers in result."""
+    """Test provider latency with multiple providers in result."""
     data = {
         "status": "success",
         "data": {
@@ -239,12 +229,13 @@ def test_provider_latency_multiple_providers():
             ]
         },
     }
-    # Implementation returns latest value from first matching provider: 200
-    assert calculate_provider_latency_ms(data, "eth1-lava") == 200
+    lookup = build_provider_metrics_lookup(data, "latency")
+    # Returns latest value from matching provider: 250 (from second result)
+    assert lookup.get("eth1-lava", 0) == 250
 
 
 def test_provider_latency_no_service_field():
-    """Test provider latency calculation when service field is missing."""
+    """Test provider latency when service field is missing."""
     data = {
         "status": "success",
         "data": {
@@ -256,11 +247,12 @@ def test_provider_latency_no_service_field():
             ]
         },
     }
-    assert calculate_provider_latency_ms(data, "eth1-lava") == 0
+    lookup = build_provider_metrics_lookup(data, "latency")
+    assert lookup.get("eth1-lava", 0) == 0
 
 
 def test_provider_latency_single_value():
-    """Test provider latency calculation with a single value."""
+    """Test provider latency with a single value."""
     data = {
         "status": "success",
         "data": {
@@ -272,11 +264,12 @@ def test_provider_latency_single_value():
             ]
         },
     }
-    assert calculate_provider_latency_ms(data, "provider1") == 75
+    lookup = build_provider_metrics_lookup(data, "latency")
+    assert lookup.get("provider1", 0) == 75
 
 
 def test_provider_latency_zero_values():
-    """Test provider latency calculation with zero latency values."""
+    """Test provider latency with zero latency values."""
     data = {
         "status": "success",
         "data": {
@@ -288,11 +281,12 @@ def test_provider_latency_zero_values():
             ]
         },
     }
-    assert calculate_provider_latency_ms(data, "fast-provider") == 0
+    lookup = build_provider_metrics_lookup(data, "latency")
+    assert lookup.get("fast-provider", 0) == 0
 
 
 def test_provider_latency_floating_point():
-    """Test provider latency calculation with floating point values."""
+    """Test provider latency with floating point values."""
     data = {
         "status": "success",
         "data": {
@@ -304,8 +298,9 @@ def test_provider_latency_floating_point():
             ]
         },
     }
-    # Average: (100.5 + 200.7 + 150.3) / 3 = 150.5, converted to int = 150
-    assert calculate_provider_latency_ms(data, "provider1") == 150
+    lookup = build_provider_metrics_lookup(data, "latency")
+    # Returns latest value rounded: 150
+    assert lookup.get("provider1", 0) == 150
 
 
 class TestBuildProviderMetricsLookup:

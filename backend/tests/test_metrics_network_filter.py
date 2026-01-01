@@ -1,15 +1,19 @@
-from fastapi.testclient import TestClient
 from unittest.mock import patch
 
-from app.main import app
+from fastapi.testclient import TestClient
+
 from app.api.routes.metrics import get_prometheus_service
-from app.core.dataclasses import ChainConfig, ProviderConfig, EndpointConfig
+from app.core.dataclasses import ChainConfig, EndpointConfig, ProviderConfig
+from app.main import app
 from app.services.configuration import configuration_service
 
 client = TestClient(app)
 
 
 class FakeProm:
+    async def query(self, *a, **k):
+        return {"status": "success", "data": {"result": []}}
+
     async def query_range(self, *a, **k):
         return {"status": "success", "data": {"result": []}}
 

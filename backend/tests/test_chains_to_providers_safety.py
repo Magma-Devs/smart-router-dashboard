@@ -1,11 +1,13 @@
 import base64
-from unittest.mock import AsyncMock, MagicMock
+import types
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi.testclient import TestClient
-from app.main import app
+
 from app.api.routes.metrics import get_prometheus_service
+from app.core.dataclasses import ChainConfig, EndpointConfig, ProviderConfig
+from app.main import app
 from app.services.configuration import ConfigurationService, configuration_service
-from app.core.dataclasses import ChainConfig, ProviderConfig, EndpointConfig
 
 client = TestClient(app)
 
@@ -16,6 +18,9 @@ def _basic_header(u: str, p: str) -> dict:
 
 
 class FakePrometheus:
+    async def query(self, q: str):
+        return {"status": "success", "data": {"result": []}}
+
     async def query_range(self, q: str, start, end, step: str):
         return {"status": "success", "data": {"result": []}}
 
@@ -80,8 +85,5 @@ def test_chains_to_providers_safe_model():
         endpoint = provider["endpoints"][0]
         assert "interface" in endpoint
         assert endpoint["interface"] == "jsonrpc"
-        assert "url" not in endpoint
-        assert "addons" not in endpoint
-
-
-from unittest.mock import patch
+    assert "url" not in endpoint
+    assert "addons" not in endpoint

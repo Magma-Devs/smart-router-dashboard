@@ -1,8 +1,8 @@
 from fastapi.testclient import TestClient
 
-from app.main import app
 from app.api.routes.metrics import get_prometheus_service
-from app.core.dataclasses import ChainConfig, ProviderConfig, EndpointConfig
+from app.core.dataclasses import ChainConfig, EndpointConfig, ProviderConfig
+from app.main import app
 from app.services.configuration import configuration_service
 
 client = TestClient(app)
@@ -10,6 +10,26 @@ client = TestClient(app)
 
 class FakePromAgg:
     # Return synthetic but deterministic datasets for aggregates
+    async def query(self, q):
+        # For instant queries (like max() by (spec))
+        if "latest_block" in q or "latest_provider_block" in q:
+            return {
+                "status": "success",
+                "data": {
+                    "result": [
+                        {
+                            "metric": {"spec": "HYPERLIQUID-LAVA"},
+                            "value": ["t1", "1010"],
+                        },
+                        {
+                            "metric": {"spec": "HYPERLIQUID-OFFICIAL"},
+                            "value": ["t1", "2000"],
+                        },
+                    ]
+                },
+            }
+        return {"status": "success", "data": {"result": []}}
+
     async def query_range(self, q, start, end, step):
         if "health" in q or "overall_health" in q:
             # health data: two chains, three samples 1/1/0 and 1/0/0
