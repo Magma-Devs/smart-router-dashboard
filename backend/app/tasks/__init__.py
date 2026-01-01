@@ -10,6 +10,7 @@ import requests
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from app.core.config import settings
+
 from .metrics_uploader import build_metrics_url, upload_metrics_to_s3
 
 logger = logging.getLogger(__name__)

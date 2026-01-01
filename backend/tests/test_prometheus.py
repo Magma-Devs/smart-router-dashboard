@@ -3,7 +3,7 @@ from datetime import datetime
 
 import pytest
 
-from app.services.prometheus import process_result_for_chart, PrometheusService
+from app.services.prometheus import PrometheusService, process_result_for_chart
 
 
 def test_process_result_for_chart_empty_and_missing():
@@ -72,9 +72,9 @@ async def test_get_metric_range_parses_iso_and_calls_range(monkeypatch):
 
 
 import types
-import httpx
 from datetime import datetime, timedelta
 
+import httpx
 import pytest
 
 from app.services.prometheus import PrometheusService

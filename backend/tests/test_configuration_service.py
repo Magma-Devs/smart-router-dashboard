@@ -9,8 +9,8 @@ from unittest.mock import patch
 import pytest
 import yaml
 
-from app.services.configuration import ConfigurationService
 from app.core.dataclasses import ChainConfig
+from app.services.configuration import ConfigurationService
 
 
 class TestConfigurationService:
@@ -76,7 +76,7 @@ class TestConfigurationService:
 
     def test_write_yaml_file_io_error(self):
         """Test write_yaml_file with IO error."""
-        from unittest.mock import patch, mock_open
+        from unittest.mock import mock_open, patch
 
         # Mock makedirs and open to raise IOError
         with patch("os.makedirs"), patch("builtins.open", mock_open()) as mock_file:

@@ -3,8 +3,8 @@ import logging
 from fastapi import HTTPException, Request, status
 from pydantic import BaseModel
 
-from app.core.config import settings
 from app.core import auth_utils
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 

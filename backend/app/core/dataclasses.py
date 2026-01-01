@@ -1,9 +1,8 @@
 from enum import Enum
+
 from pydantic import BaseModel
 
-from app.core.utils import (
-    remove_duplicate_addons,
-)
+from app.core.utils import remove_duplicate_addons
 
 
 # Health state enums

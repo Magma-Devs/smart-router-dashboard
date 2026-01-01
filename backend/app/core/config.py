@@ -8,20 +8,20 @@ from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings
 
 from .constants import (
-    DEFAULT_TENANT_ID,
-    DEFAULT_AUTH_USERNAME,
     DEFAULT_AUTH_PASSWORD,
-    DEFAULT_PROMETHEUS_URL,
+    DEFAULT_AUTH_USERNAME,
     DEFAULT_HELM_VALUES_DIR,
-    DEFAULT_S3_REGION,
-    DEFAULT_S3_BUCKET,
+    DEFAULT_METRICS,
     DEFAULT_PROMETHEUS_RETRIES,
     DEFAULT_PROMETHEUS_RETRY_DELAY,
     DEFAULT_PROMETHEUS_TIMEOUT,
-    DEFAULT_METRICS,
+    DEFAULT_PROMETHEUS_URL,
+    DEFAULT_S3_BUCKET,
+    DEFAULT_S3_REGION,
+    DEFAULT_TENANT_ID,
 )
 from .exceptions import PrometheusConnectionError
-from .logging_config import setup_logging, get_logger
+from .logging_config import get_logger, setup_logging
 
 
 class Settings(BaseSettings):

@@ -2,8 +2,10 @@
 Tests for authentication middleware.
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
 from app.core.auth import AuthMiddleware
 
 

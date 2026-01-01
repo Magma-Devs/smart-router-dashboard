@@ -98,4 +98,3 @@ async def reset_settings(
         prometheus_url=get_effective_prometheus_url(),
         api_url=f"http://localhost:8000",
     )
-

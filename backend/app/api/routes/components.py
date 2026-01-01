@@ -1,15 +1,15 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.core.auth import get_current_user
-from app.services.configuration import ConfigurationService, configuration_service
 from app.core.dataclasses import (
+    AllResourceLimits,
+    ComponentEndpoint,
+    ComponentProvider,
     ComponentsResponse,
     ConsumerConfig,
-    ComponentProvider,
-    ComponentEndpoint,
-    AllResourceLimits,
     ResourceLimits,
 )
+from app.services.configuration import ConfigurationService, configuration_service
 
 router = APIRouter()
 

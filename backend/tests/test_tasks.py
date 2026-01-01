@@ -7,10 +7,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from app.tasks import (
+    DEFAULT_PROM_QUERY,
     create_http_session,
     create_s3_client,
     upload_metrics_to_s3_task,
-    DEFAULT_PROM_QUERY,
 )
 
 

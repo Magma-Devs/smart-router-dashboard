@@ -3,8 +3,9 @@ Tests for the configuration module.
 """
 
 import os
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 
 from app.core.config import Settings, get_settings
 from app.core.exceptions import PrometheusConnectionError

@@ -5,7 +5,7 @@ Tests for logging configuration.
 import logging
 from unittest.mock import patch
 
-from app.core.logging_config import setup_logging, DEFAULT_LOG_LEVEL
+from app.core.logging_config import DEFAULT_LOG_LEVEL, setup_logging
 
 
 class TestLoggingConfig:

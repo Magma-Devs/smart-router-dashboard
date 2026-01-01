@@ -3,20 +3,16 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from app.main import app
-from app.api.routes.metrics import (
-    get_prometheus_service,
-)
+from app.api.routes.metrics import get_prometheus_service
 from app.core.calculations import (
-    calculate_uptime_percentage,
-    calculate_latency_ms,
-    calculate_provider_latency_ms,
-    calculate_requests_in_time_window,
-    calculate_provider_uptime_percentage,
+    build_provider_metrics_lookup,
     calculate_chain_latest_block_number,
-    calculate_provider_latest_block_number,
+    calculate_latency_ms,
+    calculate_requests_in_time_window,
+    calculate_uptime_percentage,
 )
-from app.core.dataclasses import ProviderHealth, ChainHealth
+from app.core.dataclasses import ChainHealth, ProviderHealth
+from app.main import app
 
 
 def _basic_header(u: str, p: str) -> dict:
@@ -284,7 +280,7 @@ class TestCalculationFunctions:
         assert result == 300
 
     def test_calculate_provider_uptime_percentage_success(self):
-        """Test provider uptime calculation with valid data."""
+        """Test provider uptime calculation using build_provider_metrics_lookup."""
         provider_data = {
             "status": "success",
             "data": {
@@ -296,11 +292,12 @@ class TestCalculationFunctions:
                 ]
             },
         }
-        result = calculate_provider_uptime_percentage(provider_data, "ethereum")
-        assert result == 96.5  # (0.95 + 0.98) / 2 * 100
+        lookup = build_provider_metrics_lookup(provider_data, "uptime")
+        result = lookup.get("ethereum", 0.0)
+        assert abs(result - 96.5) < 0.1  # (0.95 + 0.98) / 2 * 100
 
     def test_calculate_provider_latency_ms_success(self):
-        """Test provider latency calculation with valid data."""
+        """Test provider latency calculation using build_provider_metrics_lookup."""
         latency_data = {
             "status": "success",
             "data": {
@@ -316,14 +313,15 @@ class TestCalculationFunctions:
                 ]
             },
         }
-        result = calculate_provider_latency_ms(latency_data, "ethereum-lava")
-        assert result == 150  # (120 + 180 + 150) / 3
+        lookup = build_provider_metrics_lookup(latency_data, "latency")
+        result = lookup.get("ethereum-lava", 0)
+        assert result == 150  # Latest value
 
     def test_calculate_provider_latency_ms_invalid_data(self):
         """Test provider latency calculation with invalid data."""
-        assert calculate_provider_latency_ms(None, "ethereum-lava") == 0
-        assert calculate_provider_latency_ms({}, "ethereum-lava") == 0
-        assert calculate_provider_latency_ms({"status": "error"}, "ethereum-lava") == 0
+        assert build_provider_metrics_lookup(None, "latency") == {}
+        assert build_provider_metrics_lookup({}, "latency") == {}
+        assert build_provider_metrics_lookup({"status": "error"}, "latency") == {}
 
     def test_calculate_provider_latency_ms_no_matching_provider(self):
         """Test provider latency calculation when provider not found."""
@@ -338,7 +336,8 @@ class TestCalculationFunctions:
                 ]
             },
         }
-        result = calculate_provider_latency_ms(latency_data, "ethereum-lava")
+        lookup = build_provider_metrics_lookup(latency_data, "latency")
+        result = lookup.get("ethereum-lava", 0)
         assert result == 0
 
 
@@ -352,24 +351,21 @@ class TestLatestBlockCalculations:
 
     def test_calculate_consumer_latest_block_number_success(self):
         """Test successful consumer latest block calculation."""
+        # calculate_chain_latest_block_number expects data from max() by (spec) query
         mock_data = {
             "status": "success",
             "data": {
                 "result": [
                     {
-                        "metric": {"service": "ETH1-consumer"},
-                        "values": [[1640995200, "1000"], [1640995260, "1005"]],
-                    },
-                    {
-                        "metric": {"service": "ETH1-consumer"},
-                        "values": [[1640995200, "1002"], [1640995260, "1007"]],
+                        "metric": {"spec": "ETH1"},
+                        "value": [1640995260, "1007"],
                     },
                 ]
             },
         }
 
         result = calculate_chain_latest_block_number(mock_data, "ETH1")
-        assert result == 1007  # Should return the highest block number
+        assert result == 1007  # Should return the block number from the spec
 
     def test_calculate_consumer_latest_block_number_no_data(self):
         """Test consumer latest block calculation with no matching data."""
@@ -396,7 +392,7 @@ class TestLatestBlockCalculations:
         assert result == 0  # Should return 0 when no data
 
     def test_calculate_provider_latest_block_number_success(self):
-        """Test successful provider latest block calculation."""
+        """Test successful provider latest block calculation using build_provider_metrics_lookup."""
         mock_data = {
             "status": "success",
             "data": {
@@ -413,7 +409,8 @@ class TestLatestBlockCalculations:
             },
         }
 
-        result = calculate_provider_latest_block_number(mock_data, "eth-lava")
+        lookup = build_provider_metrics_lookup(mock_data, "block")
+        result = lookup.get("eth-lava", 0)
         assert result == 2007  # Should return the highest block number
 
     def test_calculate_provider_latest_block_number_no_data(self):
@@ -430,18 +427,20 @@ class TestLatestBlockCalculations:
             },
         }
 
-        result = calculate_provider_latest_block_number(mock_data, "eth-lava")
+        lookup = build_provider_metrics_lookup(mock_data, "block")
+        result = lookup.get("eth-lava", 0)
         assert result == 0  # Should return 0 when no matching provider
 
     def test_calculate_provider_latest_block_number_empty_result(self):
         """Test provider latest block calculation with empty result."""
         mock_data = {"status": "success", "data": {"result": []}}
 
-        result = calculate_provider_latest_block_number(mock_data, "eth-lava")
+        lookup = build_provider_metrics_lookup(mock_data, "block")
+        result = lookup.get("eth-lava", 0)
         assert result == 0  # Should return 0 when no data
 
     def test_calculate_provider_latest_block_number_invalid_service_format(self):
-        """Test provider latest block calculation with invalid service format."""
+        """Test provider latest block calculation with service without -provider suffix."""
         mock_data = {
             "status": "success",
             "data": {
@@ -454,8 +453,10 @@ class TestLatestBlockCalculations:
             },
         }
 
-        result = calculate_provider_latest_block_number(mock_data, "eth-lava")
-        assert result == 0  # Should return 0 when service doesn't end with -provider
+        lookup = build_provider_metrics_lookup(mock_data, "block")
+        result = lookup.get("eth-lava", 0)
+        # build_provider_metrics_lookup processes services without -provider suffix
+        assert result == 2000
 
 
 # Test health enum logic

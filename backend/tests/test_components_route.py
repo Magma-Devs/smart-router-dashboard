@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 
-from app.main import app
 from app.api.routes.components import get_configuration_service
+from app.main import app
 from app.services.configuration import ConfigurationService
 
 client = TestClient(app)

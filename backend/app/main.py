@@ -5,7 +5,8 @@ Main FastAPI application for the Smart Router Dashboard API.
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import auth, components, metrics, settings as settings_router
+from app.api.routes import auth, components, metrics
+from app.api.routes import settings as settings_router
 from app.core.auth import AuthMiddleware
 from app.core.config import settings
 from app.tasks import schedule_metrics_s3_upload

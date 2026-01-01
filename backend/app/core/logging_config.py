@@ -4,7 +4,7 @@ Logging configuration for the Smart Router Dashboard API.
 
 import logging
 
-from .constants import DEFAULT_LOG_LEVEL, DEFAULT_LOG_FORMAT
+from .constants import DEFAULT_LOG_FORMAT, DEFAULT_LOG_LEVEL
 
 
 def setup_logging(
