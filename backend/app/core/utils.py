@@ -2,6 +2,8 @@
 Utility functions for the Smart Router Dashboard API.
 """
 
+import hashlib
+
 
 def convert_memory_to_gb(memory_str: str) -> float:
     """
@@ -108,3 +110,65 @@ def remove_duplicate_addons(addons: list[str]) -> list[str]:
         []
     """
     return list(set(addons))
+
+
+def get_provider_key_from_endpoint(chain_id: str, endpoint_url: str) -> str:
+    """
+    Generate a provider key based on chain ID and endpoint URL.
+    This allows grouping providers that share the same endpoint URL.
+    Uses a hash of the URL to avoid exposing it in API responses.
+
+    Args:
+        chain_id: Chain identifier
+        endpoint_url: Endpoint URL
+
+    Returns:
+        Provider key in format: "{chain_id}-{url_hash}"
+
+    Examples:
+        >>> get_provider_key_from_endpoint("solana", "https://example.com/rpc")
+        'solana-a1b2c3d4...'
+    """
+    # Create a hash of the URL to avoid exposing it
+    url_hash = hashlib.sha256(endpoint_url.encode()).hexdigest()[:8]
+    return f"{chain_id}-{url_hash}".lower()
+
+
+def get_endpoint_key_for_grouping(chain_id: str, endpoint_url: str) -> str:
+    """
+    Get a key for grouping providers by endpoint (internal use only).
+    Uses the full URL for accurate grouping.
+
+    Args:
+        chain_id: Chain identifier
+        endpoint_url: Endpoint URL
+
+    Returns:
+        Internal grouping key
+    """
+    return f"{chain_id}-{endpoint_url}".lower()
+
+
+def get_base_provider_name(provider_name: str) -> str:
+    """
+    Extract the base provider name by removing numeric suffixes.
+    Assumes providers with same base name share the same endpoint.
+
+    Args:
+        provider_name: Provider name (e.g., "quicknode1", "chainstack2")
+
+    Returns:
+        Base provider name without numeric suffix (e.g., "quicknode", "chainstack")
+
+    Examples:
+        >>> get_base_provider_name("quicknode1")
+        'quicknode'
+        >>> get_base_provider_name("chainstack")
+        'chainstack'
+        >>> get_base_provider_name("helius123")
+        'helius'
+    """
+    import re
+
+    # Remove trailing numeric characters
+    return re.sub(r"\d+$", "", provider_name)

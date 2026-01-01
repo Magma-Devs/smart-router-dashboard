@@ -7,6 +7,90 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T")
 
 
+def build_provider_metrics_lookup(
+    prometheus_data: dict[str, Any], metric_type: str
+) -> dict[str, float | int]:
+    """
+    Build a lookup dictionary for provider metrics to avoid repeated iterations.
+
+    Args:
+        prometheus_data: Prometheus query result
+        metric_type: Type of metric ('uptime', 'latency', 'requests', 'block')
+
+    Returns:
+        Dictionary mapping provider_key -> metric value
+    """
+    if not prometheus_data or prometheus_data.get("status") != "success":
+        return {}
+
+    results = prometheus_data.get("data", {}).get("result", [])
+    lookup: dict[str, float | int] = {}
+
+    for result in results:
+        service = result.get("metric", {}).get("service", "")
+        if not service:
+            continue
+
+        # Extract provider key from service name
+        # Service format: "{chain_id}-{provider_name}" or "{chain_id}-{provider_name}-provider"
+        service_lower = service.lower()
+        if service_lower.endswith("-provider"):
+            provider_key = service_lower.replace("-provider", "")
+        else:
+            provider_key = service_lower
+
+        values = result.get("values", [])
+        if not values:
+            continue
+
+        try:
+            if metric_type == "uptime":
+                # Calculate average uptime percentage
+                total_healthy_time = 0
+                total_time = 0
+                for _, value in values:
+                    try:
+                        health_value = float(value)
+                        uptime_percentage = health_value * 100
+                        total_time += 1
+                        total_healthy_time += uptime_percentage
+                    except (ValueError, TypeError):
+                        # Skip invalid values but continue processing
+                        continue
+                if total_time > 0:
+                    lookup[provider_key] = total_healthy_time / total_time
+            elif metric_type == "latency":
+                # Get latest latency value
+                try:
+                    latest_value = float(values[-1][1])
+                    lookup[provider_key] = round(latest_value)
+                except (ValueError, TypeError, IndexError):
+                    continue
+            elif metric_type == "requests":
+                # Get latest request count
+                try:
+                    latest_value = float(values[-1][1])
+                    lookup[provider_key] = int(latest_value)
+                except (ValueError, TypeError, IndexError):
+                    continue
+            elif metric_type == "block":
+                # Get max block number
+                max_block = 0
+                for _, value in values:
+                    try:
+                        block_value = float(value)
+                        max_block = max(max_block, int(block_value))
+                    except (ValueError, TypeError):
+                        # Skip invalid values but continue processing
+                        continue
+                if max_block > 0:
+                    lookup[provider_key] = max_block
+        except (ValueError, TypeError, IndexError):
+            continue
+
+    return lookup
+
+
 def calculate_adaptive_step_size(
     time_window_minutes: int, target_points: int = 200
 ) -> int:
@@ -286,15 +370,15 @@ def calculate_chain_latest_block_number(
 ) -> int:
     """
     Get the maximum block number for a specific chain across all consumers.
-    
+
     The input data is pre-aggregated by Prometheus using:
     max(lava_consumer_latest_provider_block) by (spec)
-    
+
     Prometheus already calculates the maximum across all consumers for each spec,
     so we filter by spec (chain_id converted to uppercase) and return the value.
     """
     results = block_data["data"]["result"]
-    
+
     # Convert chain_id to uppercase to match spec label (e.g., "solana" -> "SOLANA")
     target_spec = target_chain.upper()
 
@@ -347,9 +431,8 @@ def calculate_provider_latest_block_number(
     return latest_block
 
 
-@validate_prometheus_data
 def calculate_chain_reachability_percentage(
-    provider_health_data: dict[str, Any], chain_providers: list[str]
+    uptime_lookup: dict[str, float], chain_providers: list[str]
 ) -> float:
     """
     Calculate overall reachability for a chain based on its providers' health.
@@ -359,7 +442,7 @@ def calculate_chain_reachability_percentage(
     to serve requests for this chain.
 
     Args:
-        provider_health_data: Prometheus health data for all providers
+        uptime_lookup: Lookup map from build_provider_metrics_lookup (dict[str, float])
         chain_providers: List of provider names that serve this chain
 
     Returns:
@@ -375,16 +458,9 @@ def calculate_chain_reachability_percentage(
     providers_checked = 0
 
     for provider in chain_providers:
-        try:
-            provider_uptime = calculate_provider_uptime_percentage(
-                provider_health_data, provider
-            )
-            total_reachability += provider_uptime
-            providers_checked += 1
-        except Exception:
-            # If we can't get provider health, treat as 0% uptime
-            providers_checked += 1
-            continue
+        provider_uptime = uptime_lookup.get(provider.lower(), 0.0)
+        total_reachability += provider_uptime
+        providers_checked += 1
 
     return (total_reachability / providers_checked) if providers_checked > 0 else 0.0
 

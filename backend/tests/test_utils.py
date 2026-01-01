@@ -5,9 +5,12 @@ Tests for utility functions in app.core.utils.
 import pytest
 
 from app.core.utils import (
-    convert_memory_to_gb,
     convert_cpu_to_cores,
+    convert_memory_to_gb,
     extract_provider_name_from_url,
+    get_base_provider_name,
+    get_endpoint_key_for_grouping,
+    get_provider_key_from_endpoint,
     remove_duplicate_addons,
 )
 
@@ -141,3 +144,97 @@ class TestRemoveDuplicateAddons:
         result = remove_duplicate_addons(["b", "a", "b", "c", "a"])
         assert set(result) == {"a", "b", "c"}
         assert len(result) == 3
+
+
+class TestGetBaseProviderName:
+    """Test base provider name extraction utility function."""
+
+    def test_get_base_provider_name_with_numeric_suffix(self):
+        """Test extraction of base name by removing numeric suffixes."""
+        assert get_base_provider_name("quicknode1") == "quicknode"
+        assert get_base_provider_name("chainstack2") == "chainstack"
+        assert get_base_provider_name("helius123") == "helius"
+        assert get_base_provider_name("provider99") == "provider"
+
+    def test_get_base_provider_name_without_suffix(self):
+        """Test that names without numeric suffix remain unchanged."""
+        assert get_base_provider_name("quicknode") == "quicknode"
+        assert get_base_provider_name("chainstack") == "chainstack"
+        assert get_base_provider_name("helius") == "helius"
+
+    def test_get_base_provider_name_edge_cases(self):
+        """Test edge cases for base provider name extraction."""
+        assert get_base_provider_name("") == ""
+        assert get_base_provider_name("123") == ""
+        assert get_base_provider_name("a1b2") == "a1b"  # Only removes trailing numbers
+        assert get_base_provider_name("provider0") == "provider"
+
+
+class TestGetProviderKeyFromEndpoint:
+    """Test provider key generation from endpoint URL."""
+
+    def test_get_provider_key_from_endpoint_hashes_url(self):
+        """Test that endpoint URL is hashed and not exposed."""
+        key1 = get_provider_key_from_endpoint("solana", "https://example.com/rpc")
+        key2 = get_provider_key_from_endpoint("solana", "https://example.com/rpc")
+
+        # Same URL should produce same hash
+        assert key1 == key2
+        # Should start with chain_id
+        assert key1.startswith("solana-")
+        # Should not contain the actual URL
+        assert "example.com" not in key1
+        # Hash should be 8 characters
+        assert len(key1.split("-")[1]) == 8
+
+    def test_get_provider_key_from_endpoint_different_urls(self):
+        """Test that different URLs produce different hashes."""
+        key1 = get_provider_key_from_endpoint("solana", "https://example.com/rpc1")
+        key2 = get_provider_key_from_endpoint("solana", "https://example.com/rpc2")
+
+        assert key1 != key2
+        assert key1.startswith("solana-")
+        assert key2.startswith("solana-")
+
+    def test_get_provider_key_from_endpoint_case_insensitive(self):
+        """Test that keys are lowercase."""
+        key1 = get_provider_key_from_endpoint("SOLANA", "https://Example.com/RPC")
+        key2 = get_provider_key_from_endpoint("solana", "https://example.com/rpc")
+
+        # Chain ID is lowercased, but URL hash should be different due to case
+        assert key1.startswith("solana-")
+        # Different case URLs produce different hashes
+        assert key1 != key2
+
+
+class TestGetEndpointKeyForGrouping:
+    """Test endpoint key generation for internal grouping."""
+
+    def test_get_endpoint_key_for_grouping_includes_full_url(self):
+        """Test that grouping key includes full URL for accurate grouping."""
+        key = get_endpoint_key_for_grouping("solana", "https://example.com/rpc")
+
+        assert key == "solana-https://example.com/rpc"
+        assert "example.com" in key
+
+    def test_get_endpoint_key_for_grouping_case_insensitive(self):
+        """Test that grouping key is lowercase."""
+        key = get_endpoint_key_for_grouping("SOLANA", "https://Example.com/RPC")
+
+        assert key == "solana-https://example.com/rpc"
+
+    def test_get_endpoint_key_for_grouping_same_url_same_key(self):
+        """Test that same URL produces same key."""
+        key1 = get_endpoint_key_for_grouping("solana", "https://example.com/rpc")
+        key2 = get_endpoint_key_for_grouping("solana", "https://example.com/rpc")
+
+        assert key1 == key2
+
+    def test_get_endpoint_key_for_grouping_different_chains(self):
+        """Test that different chains produce different keys."""
+        key1 = get_endpoint_key_for_grouping("solana", "https://example.com/rpc")
+        key2 = get_endpoint_key_for_grouping("ethereum", "https://example.com/rpc")
+
+        assert key1 != key2
+        assert key1.startswith("solana-")
+        assert key2.startswith("ethereum-")

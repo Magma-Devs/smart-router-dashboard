@@ -6,8 +6,15 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.core.auth import get_current_user
-from app.services.prometheus import prometheus_service, PrometheusService
-from app.services.configuration import configuration_service, ConfigurationService
+from app.core.calculations import (
+    build_provider_metrics_lookup,
+    calculate_adaptive_step_size,
+    calculate_chain_latest_block_number,
+    calculate_chain_reachability_percentage,
+    calculate_latency_ms,
+    calculate_requests_in_time_window,
+    calculate_uptime_percentage,
+)
 from app.core.dataclasses import (
     Chain,
     ChainHealth,
@@ -15,23 +22,17 @@ from app.core.dataclasses import (
     ChainsMetricsResponse,
     ChainsToProvidersResponse,
     Provider,
-    ProviderMetrics,
     ProviderHealth,
+    ProviderMetrics,
     ProvidersMetricsResponse,
 )
-from app.core.calculations import (
-    calculate_adaptive_step_size,
-    calculate_provider_uptime_percentage,
-    calculate_uptime_percentage,
-    calculate_latency_ms,
-    calculate_provider_latency_ms,
-    calculate_chain_reachability_percentage,
-    calculate_requests_in_time_window,
-    calculate_chain_latest_block_number,
-    calculate_provider_latest_block_number,
-    calculate_provider_requests_in_time_window,
+from app.core.utils import (
+    get_base_provider_name,
+    get_endpoint_key_for_grouping,
+    get_provider_key_from_endpoint,
 )
-
+from app.services.configuration import ConfigurationService, configuration_service
+from app.services.prometheus import PrometheusService, prometheus_service
 
 router = APIRouter()
 
@@ -335,20 +336,34 @@ async def get_chains_metrics(
             svc, time_window_minutes, calculate_adaptive_step_size(time_window_minutes)
         )
 
+        # Build uptime lookup once to avoid repeated iterations
+        uptime_lookup = build_provider_metrics_lookup(provider_health_data, "uptime")
+
         # Calculate metrics for each chain
         chains_data_dict = {}
         for chain in available_chains:
+            # Group providers by endpoint URL for reachability calculation
+            # Since multiple providers can share an endpoint, we'll use the first provider's key
+            # for each unique endpoint
+            endpoint_provider_keys = []
+            seen_endpoints = set()
+            for provider in chain.providers:
+                if provider.endpoints:
+                    endpoint_url = provider.endpoints[0].url
+                    if endpoint_url not in seen_endpoints:
+                        seen_endpoints.add(endpoint_url)
+                        endpoint_provider_keys.append(
+                            f"{chain.id}-{provider.name}".lower()
+                        )
+
             # Use network as key as there could be several
             chains_data_dict[chain.id] = ChainMetrics(
                 network=chain.network,
                 uptime=calculate_uptime_percentage(chains_data, chain.id),
                 latency_in_ms=calculate_latency_ms(latency_data, chain.id),
                 reachability=calculate_chain_reachability_percentage(
-                    provider_health_data,
-                    [
-                        f"{chain.id}-{provider.name}".lower()
-                        for provider in chain.providers
-                    ],
+                    uptime_lookup,
+                    endpoint_provider_keys,  # Use unique endpoint provider keys
                 ),
                 requests_in_window=calculate_requests_in_time_window(
                     chain_traffic_data, chain.id
@@ -439,17 +454,29 @@ async def get_chain_metrics(
             svc, time_window_minutes, calculate_adaptive_step_size(time_window_minutes)
         )
 
+        # Build uptime lookup once to avoid repeated iterations
+        uptime_lookup = build_provider_metrics_lookup(provider_health_data, "uptime")
+
+        # Group providers by endpoint URL for reachability calculation
+        seen_endpoints = set()
+        endpoint_provider_keys = []
+        for provider in selected_chain.providers:
+            if provider.endpoints:
+                endpoint_url = provider.endpoints[0].url
+                if endpoint_url not in seen_endpoints:
+                    seen_endpoints.add(endpoint_url)
+                    endpoint_provider_keys.append(
+                        f"{selected_chain.id}-{provider.name}".lower()
+                    )
+
         # Calculate metrics for the specific chain
         chain_metrics = ChainMetrics(
             network=selected_chain.network,
             uptime=calculate_uptime_percentage(consumers_data, selected_chain.id),
             latency_in_ms=calculate_latency_ms(latency_data, selected_chain.id),
             reachability=calculate_chain_reachability_percentage(
-                provider_health_data,
-                [
-                    f"{selected_chain.id}-{provider.name}".lower()
-                    for provider in selected_chain.providers
-                ],
+                uptime_lookup,
+                endpoint_provider_keys,  # Use unique endpoint provider keys
             ),
             requests_in_window=calculate_requests_in_time_window(
                 chain_traffic_data, selected_chain.id
@@ -506,27 +533,84 @@ async def get_providers_metrics(
             calculate_adaptive_step_size(time_window_minutes),
         )
 
-        # Calculate metrics for each provider
-        providers_data_dict = {}
+        # Group providers by endpoint URL to aggregate metrics for shared endpoints
+        # Map: endpoint_key (internal) -> list of (chain, provider) tuples
+        endpoint_providers_map: dict[str, list[tuple[Chain, Provider]]] = {}
         for chain in available_chains:
             for provider in chain.providers:
-                provider_key = f"{chain.id}-{provider.name}".lower()
-                providers_data_dict[provider_key] = ProviderMetrics(
-                    provider_name=provider.name,
-                    network=chain.network,
-                    uptime=calculate_provider_uptime_percentage(
-                        providers_data, provider_key
-                    ),
-                    latency_in_ms=calculate_provider_latency_ms(
-                        provider_latency_data, provider_key
-                    ),
-                    requests_in_window=calculate_provider_requests_in_time_window(
-                        provider_traffic_data, provider_key
-                    ),
-                    latest_block=calculate_provider_latest_block_number(
-                        provider_latest_block_data, provider_key
-                    ),
-                )
+                # Use the first endpoint URL as the key (assuming providers with same URL share all endpoints)
+                if provider.endpoints:
+                    endpoint_url = provider.endpoints[0].url
+                    # Use internal key for grouping (full URL)
+                    endpoint_key = get_endpoint_key_for_grouping(chain.id, endpoint_url)
+                    if endpoint_key not in endpoint_providers_map:
+                        endpoint_providers_map[endpoint_key] = []
+                    endpoint_providers_map[endpoint_key].append((chain, provider))
+
+        # Build lookup maps once to avoid repeated iterations through Prometheus data
+        uptime_lookup = build_provider_metrics_lookup(providers_data, "uptime")
+        latency_lookup = build_provider_metrics_lookup(provider_latency_data, "latency")
+        requests_lookup = build_provider_metrics_lookup(
+            provider_traffic_data, "requests"
+        )
+        block_lookup = build_provider_metrics_lookup(
+            provider_latest_block_data, "block"
+        )
+
+        # Calculate metrics for each unique endpoint (aggregating across providers with same endpoint)
+        providers_data_dict = {}
+        for endpoint_key, chain_provider_pairs in endpoint_providers_map.items():
+            # Get the first provider's info for display (they all share the same endpoint)
+            chain, first_provider = chain_provider_pairs[0]
+
+            # Aggregate metrics across all providers with this endpoint
+            uptimes = []
+            latencies = []
+            requests = []
+            blocks = []
+
+            for chain, provider in chain_provider_pairs:
+                provider_name_key = f"{chain.id}-{provider.name}".lower()
+
+                # Use lookup maps instead of iterating through Prometheus data
+                provider_uptime = uptime_lookup.get(provider_name_key, 0.0)
+                provider_latency = latency_lookup.get(provider_name_key, 0)
+                provider_requests = requests_lookup.get(provider_name_key, 0)
+                provider_block = block_lookup.get(provider_name_key, 0)
+
+                if provider_uptime > 0:
+                    uptimes.append(provider_uptime)
+                if provider_latency and provider_latency > 0:
+                    latencies.append(provider_latency)
+                if provider_requests > 0:
+                    requests.append(provider_requests)
+                if provider_block > 0:
+                    blocks.append(provider_block)
+
+            # Aggregate: average for uptime/latency, sum for requests, max for blocks
+            aggregated_uptime = sum(uptimes) / len(uptimes) if uptimes else 0.0
+            aggregated_latency = (
+                round(sum(latencies) / len(latencies)) if latencies else 0
+            )
+            aggregated_requests = sum(requests)
+            aggregated_block = max(blocks) if blocks else 0
+
+            # Use base provider name (without numeric suffix) for display
+            # Assumes providers with same base name share the same endpoint
+            display_name = get_base_provider_name(first_provider.name)
+
+            # Use hashed endpoint key for API response (doesn't expose URL)
+            endpoint_url = first_provider.endpoints[0].url
+            api_key = get_provider_key_from_endpoint(chain.id, endpoint_url)
+
+            providers_data_dict[api_key] = ProviderMetrics(
+                provider_name=display_name,  # Show base provider name only
+                network=chain.network,
+                uptime=round(aggregated_uptime, 2),
+                latency_in_ms=aggregated_latency,
+                requests_in_window=aggregated_requests,
+                latest_block=aggregated_block,
+            )
 
         # Calculate statistical measures
         all_provider_metrics = list(
@@ -628,29 +712,53 @@ async def get_chains_to_providers(
             svc, time_window_minutes, calculate_adaptive_step_size(time_window_minutes)
         )
 
-        # Convert to dictionary format with chain_id as key
+        # Group providers by endpoint URL to aggregate health for shared endpoints
         chains_list = []
         for chain in chains:
-            providers_per_chain = []
+            # Group providers by endpoint URL
+            endpoint_providers_map: dict[str, list[Provider]] = {}
             for provider in chain.providers:
-                # Get provider health from provider health breakdown
-                provider_key = f"{chain.id}-{provider.name}".lower()
-                provider_uptime = calculate_provider_uptime_percentage(
-                    provider_health_data, provider_key
-                )
+                if provider.endpoints:
+                    endpoint_url = provider.endpoints[0].url
+                    if endpoint_url not in endpoint_providers_map:
+                        endpoint_providers_map[endpoint_url] = []
+                    endpoint_providers_map[endpoint_url].append(provider)
 
-                # Convert endpoints to SafeEndpoint (excluding URL and addons)
+            # Build uptime lookup once to avoid repeated iterations
+            uptime_lookup = build_provider_metrics_lookup(
+                provider_health_data, "uptime"
+            )
+
+            providers_per_chain = []
+            for endpoint_url, providers_with_endpoint in endpoint_providers_map.items():
+                # Aggregate health across all providers with this endpoint
+                uptimes = []
+                for provider in providers_with_endpoint:
+                    provider_key = f"{chain.id}-{provider.name}".lower()
+                    provider_uptime = uptime_lookup.get(provider_key, 0.0)
+                    if provider_uptime > 0:
+                        uptimes.append(provider_uptime)
+
+                # Use average uptime for health status
+                avg_uptime = sum(uptimes) / len(uptimes) if uptimes else 0.0
+
+                # Use base provider name (without numeric suffix) for display
+                # Assumes providers with same base name share the same endpoint
+                first_provider = providers_with_endpoint[0]
+                display_name = get_base_provider_name(first_provider.name)
+
+                # Use first provider's endpoints info (they all share the same endpoint)
                 safe_endpoints = [
-                    {"interface": ep.interface} for ep in provider.endpoints
+                    {"interface": ep.interface} for ep in first_provider.endpoints
                 ]
 
                 providers_per_chain.append(
                     {
-                        "name": provider.name,
+                        "name": display_name,  # Show base provider name only
                         "endpoints": safe_endpoints,
                         "health_status": (
                             ProviderHealth.HEALTHY
-                            if provider_uptime > 0
+                            if avg_uptime > 0
                             else ProviderHealth.UNHEALTHY
                         ),
                     }
