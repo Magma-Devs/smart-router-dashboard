@@ -284,33 +284,33 @@ def calculate_requests_in_time_window(
 def calculate_chain_latest_block_number(
     block_data: dict[str, Any], target_chain: str
 ) -> int:
-    """Calculate the latest block number for a specific chain from chain data"""
+    """
+    Get the maximum block number for a specific chain across all consumers.
+    
+    The input data is pre-aggregated by Prometheus using:
+    max(lava_consumer_latest_provider_block) by (spec)
+    
+    Prometheus already calculates the maximum across all consumers for each spec,
+    so we filter by spec (chain_id converted to uppercase) and return the value.
+    """
     results = block_data["data"]["result"]
-    latest_block = 0
+    
+    # Convert chain_id to uppercase to match spec label (e.g., "solana" -> "SOLANA")
+    target_spec = target_chain.upper()
 
+    # Find the result matching the target spec
+    # The query returns one result per spec, so we search for the matching one
     for result in results:
-        service = result.get("metric", {}).get("service")
+        spec = result.get("metric", {}).get("spec", "").upper()
+        if spec == target_spec:
+            value = result.get("value")
+            if value:
+                try:
+                    return int(float(value[1]))
+                except (ValueError, TypeError, IndexError):
+                    pass
 
-        # Filter by target chain (consumer query only needs service)
-        if not service or not service.endswith("-consumer"):
-            continue
-
-        # Extract chain name by removing "-consumer" suffix
-        chain_name = service.replace("-consumer", "")
-        if not chain_name or chain_name.lower() != target_chain.lower():
-            continue
-
-        values = result.get("values", [])
-        if values:
-            # Get the latest value (most recent)
-            latest_value = values[-1]
-            try:
-                block_value = float(latest_value[1])
-                latest_block = max(latest_block, int(block_value))
-            except (ValueError, TypeError, IndexError):
-                continue
-
-    return latest_block
+    return 0
 
 
 @validate_prometheus_data

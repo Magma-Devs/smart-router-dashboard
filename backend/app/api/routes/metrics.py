@@ -108,11 +108,8 @@ async def fetch_chain_metrics_data(
             end_time,
             f"{step_size}s",
         ),
-        svc.query_range(
-            PROMETHEUS_QUERIES["consumer_latest_block"],
-            start_time,
-            end_time,
-            f"{step_size}s",
+        svc.query(
+            f"max({PROMETHEUS_QUERIES['consumer_latest_block']}) by (spec)",
         ),
         svc.query_range(
             PROMETHEUS_QUERIES["provider_latest_block"],
