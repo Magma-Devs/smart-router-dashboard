@@ -557,12 +557,10 @@ async def get_providers_metrics(
             provider_latest_block_data, "block"
         )
 
-        # Calculate metrics for each unique endpoint (aggregating across providers with same endpoint)
-        providers_data_dict = {}
+        # First, aggregate metrics by endpoint internally (backend-side only)
+        # Map: endpoint_key -> aggregated metrics
+        endpoint_metrics: dict[str, dict[str, Any]] = {}
         for endpoint_key, chain_provider_pairs in endpoint_providers_map.items():
-            # Get the first provider's info for display (they all share the same endpoint)
-            chain, first_provider = chain_provider_pairs[0]
-
             # Aggregate metrics across all providers with this endpoint
             uptimes = []
             latencies = []
@@ -595,16 +593,40 @@ async def get_providers_metrics(
             aggregated_requests = sum(requests)
             aggregated_block = max(blocks) if blocks else 0
 
-            # Use base provider name (without numeric suffix) for display
-            # Assumes providers with same base name share the same endpoint
-            display_name = get_base_provider_name(first_provider.name)
+            # Store aggregated metrics for this endpoint (internal use only)
+            endpoint_metrics[endpoint_key] = {
+                "uptime": aggregated_uptime,
+                "latency": aggregated_latency,
+                "requests": aggregated_requests,
+                "block": aggregated_block,
+            }
 
-            # Use hashed endpoint key for API response (doesn't expose URL)
-            endpoint_url = first_provider.endpoints[0].url
-            api_key = get_provider_key_from_endpoint(chain.id, endpoint_url)
+        # Now return one entry per unique endpoint as frontend expects
+        # Frontend expects: providers[chain_id-provider_name]
+        # Since providers sharing the same endpoint are aggregated, return one entry per endpoint
+        providers_data_dict = {}
+        for endpoint_key, chain_provider_pairs in endpoint_providers_map.items():
+            if not chain_provider_pairs:
+                continue
+
+            # Get aggregated metrics for this endpoint
+            aggregated = endpoint_metrics.get(endpoint_key, {})
+            aggregated_uptime = aggregated.get("uptime", 0.0)
+            aggregated_latency = aggregated.get("latency", 0)
+            aggregated_requests = aggregated.get("requests", 0)
+            aggregated_block = aggregated.get("block", 0)
+
+            # Use the first provider to get chain and base provider name
+            # All providers in chain_provider_pairs share the same endpoint and are from the same chain
+            chain, first_provider = chain_provider_pairs[0]
+
+            # Use base provider name (without numeric suffix) for both key and display
+            # This ensures one entry per unique endpoint (e.g., quicknode and quicknode1 -> quicknode)
+            base_provider_name = get_base_provider_name(first_provider.name)
+            api_key = f"{chain.id}-{base_provider_name}".lower()
 
             providers_data_dict[api_key] = ProviderMetrics(
-                provider_name=display_name,  # Show base provider name only
+                provider_name=base_provider_name,  # Show base provider name only
                 network=chain.network,
                 uptime=round(aggregated_uptime, 2),
                 latency_in_ms=aggregated_latency,
