@@ -25,6 +25,8 @@ from app.core.dataclasses import (
     BatchRequestUsage,
     ChainUsageMetrics,
     UsageMetricsResponse,
+    DashboardSummaryMetrics,
+    ErrorRecoveryMetrics,
 )
 from app.core.calculations import (
     calculate_adaptive_step_size,
@@ -59,6 +61,11 @@ PROMETHEUS_QUERIES = {
     "errors_per_function": "lava_provider_total_relays_errored_per_function",
     # Usage metrics - total successful relays (for graphs)
     "total_relays_serviced": "lava_provider_total_relays_serviced",
+    # Dashboard summary metrics - node errors and recovery
+    "total_node_errors": "lava_consumer_total_node_errors_received_from_providers",
+    "recovered_errors": "lava_consumer_total_node_errors_recovered_successfully",
+    # Cache metrics
+    "cache_hits": "cache_total_hits",
 }
 
 # Default values
@@ -1271,4 +1278,133 @@ async def get_usage_metrics(
         raise HTTPException(
             status_code=500,
             detail=f"Error fetching usage metrics: {str(e)}",
+        )
+
+
+@router.get("/dashboard-summary", response_model=DashboardSummaryMetrics)
+async def get_dashboard_summary_metrics(
+    time_window_minutes: int = Query(
+        DEFAULT_TIME_WINDOW_MINUTES,
+        description="Time window in minutes for rate calculations",
+    ),
+    choosen_network: str | None = Query(
+        default=None,
+        description="If provided, filter metrics to this network/spec only",
+    ),
+    svc: PrometheusService = Depends(get_prometheus_service),
+    current_user: str = Depends(get_current_user),
+):
+    """
+    Get dashboard summary metrics including:
+    - Total requests (from consumer traffic)
+    - Cache hit rate (cache_total_hits / total_relays_serviced)
+    - Node error recovery statistics
+    
+    Optionally filter by network/spec.
+    """
+    try:
+        time_range = f"{time_window_minutes}m"
+        
+        # Build spec filter if network is specified
+        spec_filter = f'{{spec="{choosen_network}"}}' if choosen_network else ""
+        
+        # Build the queries
+        # Total requests from consumer traffic
+        total_requests_query = f"sum(increase({PROMETHEUS_QUERIES['consumer_traffic']}{spec_filter}[{time_range}]))"
+        
+        # Cache hits - for cache hit rate calculation
+        cache_hits_query = f"sum(increase({PROMETHEUS_QUERIES['cache_hits']}{spec_filter}[{time_range}]))"
+        
+        # Node errors metrics - use increase() for actual counts in time window
+        total_errors_query = f"sum(increase({PROMETHEUS_QUERIES['total_node_errors']}{spec_filter}[{time_range}]))"
+        recovered_errors_query = f"sum(increase({PROMETHEUS_QUERIES['recovered_errors']}{spec_filter}[{time_range}]))"
+        
+        # Recovery by attempt number
+        recovery_by_attempt_query = f"sum by (attempt) (increase({PROMETHEUS_QUERIES['recovered_errors']}{spec_filter}[{time_range}]))"
+        
+        # Errors by chain/spec (only when not filtering by specific network)
+        errors_by_chain_query = f"sum by (spec) (increase({PROMETHEUS_QUERIES['total_node_errors']}[{time_range}]))"
+        
+        # Execute all queries in parallel
+        (
+            total_requests_data,
+            cache_hits_data,
+            total_errors_data,
+            recovered_errors_data,
+            recovery_by_attempt_data,
+            errors_by_chain_data,
+        ) = await asyncio.gather(
+            svc.query(total_requests_query),
+            svc.query(cache_hits_query),
+            svc.query(total_errors_query),
+            svc.query(recovered_errors_query),
+            svc.query(recovery_by_attempt_query),
+            svc.query(errors_by_chain_query),
+        )
+        
+        # Extract values from Prometheus responses
+        def extract_scalar(data: dict) -> float:
+            """Extract scalar value from Prometheus instant query result."""
+            if data.get("status") != "success":
+                return 0.0
+            result = data.get("data", {}).get("result", [])
+            if not result:
+                return 0.0
+            # For instant queries, value is [timestamp, value]
+            value = result[0].get("value", [0, "0"])
+            try:
+                return float(value[1])
+            except (ValueError, IndexError):
+                return 0.0
+        
+        def extract_by_label(data: dict, label: str) -> dict[str, float]:
+            """Extract values grouped by a label from Prometheus query result."""
+            result_dict: dict[str, float] = {}
+            if data.get("status") != "success":
+                return result_dict
+            results = data.get("data", {}).get("result", [])
+            for item in results:
+                metric = item.get("metric", {})
+                label_value = metric.get(label, "unknown")
+                value = item.get("value", [0, "0"])
+                try:
+                    result_dict[label_value] = float(value[1])
+                except (ValueError, IndexError):
+                    result_dict[label_value] = 0.0
+            return result_dict
+        
+        # Parse the results
+        total_requests = extract_scalar(total_requests_data)
+        cache_hits = extract_scalar(cache_hits_data)
+        total_node_errors = extract_scalar(total_errors_data)
+        recovered_requests = extract_scalar(recovered_errors_data)
+        
+        # Calculate cache hit rate: cache_hits / total_requests * 100
+        cache_hit_rate = (cache_hits / total_requests * 100) if total_requests > 0 else 0.0
+        
+        # Calculate recovery rate
+        recovery_rate = (recovered_requests / total_node_errors * 100) if total_node_errors > 0 else 0.0
+        
+        # Extract grouped data
+        recovery_by_attempt = extract_by_label(recovery_by_attempt_data, "attempt")
+        errors_by_chain = extract_by_label(errors_by_chain_data, "spec")
+        
+        return DashboardSummaryMetrics(
+            total_requests=round(total_requests, 0),
+            cache_hit_rate=round(cache_hit_rate, 2),
+            cache_hits=round(cache_hits, 0),
+            cache_misses=round(total_requests - cache_hits, 0),  # Derived from total - hits
+            error_recovery=ErrorRecoveryMetrics(
+                total_node_errors=round(total_node_errors, 0),  # Actual count
+                recovered_requests=round(recovered_requests, 0),  # Actual count
+                recovery_rate=round(recovery_rate, 2),
+                recovery_by_attempt={k: round(v, 0) for k, v in recovery_by_attempt.items()},
+                errors_by_chain={k: round(v, 0) for k, v in errors_by_chain.items()},
+            ),
+        )
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error fetching dashboard summary metrics: {str(e)}",
         )
