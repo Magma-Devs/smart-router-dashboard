@@ -51,12 +51,15 @@ export interface KPIData {
   uptime: string;
   reachability: string;
   latency: string;
+  totalRequests?: string;
+  cacheHitRate?: string;
+  recoveredNodeErrors?: { recovered: string; total: string } | string;  // Format: { recovered, total } or "Error"/"N/A"
 }
 
 export interface KPICardProps {
   title: string;
   value: string;
-  color: 'green' | 'orange' | 'red';
+  color: 'green' | 'orange' | 'red' | 'grey';
   tooltip?: string;
   showInfo?: boolean;
   tooltipText?: string;

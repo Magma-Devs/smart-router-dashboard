@@ -197,3 +197,22 @@ class ChainUsageMetrics(BaseModel):
 class UsageMetricsResponse(BaseModel):
     """Response model for usage metrics endpoint"""
     chains: dict[str, ChainUsageMetrics]
+
+
+# Dashboard summary metrics models
+class ErrorRecoveryMetrics(BaseModel):
+    """Metrics for node error recovery"""
+    total_node_errors: float  # Total errors received from providers (rate)
+    recovered_requests: float  # Errors that were recovered successfully (rate)
+    recovery_rate: float  # Percentage of errors recovered (0-100)
+    recovery_by_attempt: dict[str, float] = {}  # Recovery rate by attempt number
+    errors_by_chain: dict[str, float] = {}  # Errors rate by chain/spec
+
+
+class DashboardSummaryMetrics(BaseModel):
+    """Summary metrics for the dashboard overview"""
+    total_requests: float  # Total requests in the time window
+    cache_hit_rate: float  # Percentage of requests served from cache (0-100)
+    cache_hits: float  # Number of cache hits (rate)
+    cache_misses: float  # Number of cache misses (rate)
+    error_recovery: ErrorRecoveryMetrics

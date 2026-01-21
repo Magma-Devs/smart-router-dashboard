@@ -21,9 +21,16 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { chains, getChainLabel, getChainIcon } from '@/app/config/chains';
 import { useConfig } from '@/hooks/use-config';
 import { KPIData, KPICardProps } from '@/types/metrics';
-import { MetricsService, ChainMetrics } from '@/services/metricsService';
+import { MetricsService, ChainMetrics, DashboardSummaryMetrics } from '@/services/metricsService';
 import { TIME_FRAMES, DEFAULT_TIME_FRAME } from '@/constants/timeFrames';
-import { getUptimeColorName, getReachabilityColorName, getLatencyColorName } from '@/utils/colors';
+import {
+  getUptimeColorName,
+  getReachabilityColorName,
+  getLatencyColorName,
+  getCacheHitColorName,
+  getErrorRecoveryColorName,
+  getRequestsColorName,
+} from '@/utils/colors';
 
 /**
  * KPI Card component that displays individual metric values with color-coded status.
@@ -32,10 +39,11 @@ import { getUptimeColorName, getReachabilityColorName, getLatencyColorName } fro
  * @returns JSX.Element A card displaying the KPI metric
  */
 function KPICard({ title, value, color, tooltip, isLoading, showInfo, tooltipText }: KPICardProps) {
-  const colorClasses = {
+  const colorClasses: Record<string, string> = {
     green: 'text-green-600',
     orange: 'text-orange-600',
     red: 'text-red-600',
+    grey: 'text-muted-foreground',
   };
 
   return (
@@ -61,6 +69,72 @@ function KPICard({ title, value, color, tooltip, isLoading, showInfo, tooltipTex
             <div className='h-8 w-16 bg-muted animate-pulse rounded' />
           ) : (
             <span className={`text-2xl font-bold ${colorClasses[color]}`}>{value}</span>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * KPI Card component for displaying recovered/total errors with subscript format.
+ * Shows the recovered count prominently with total as a smaller subscript.
+ */
+interface RecoveredErrorsKPICardProps {
+  title: string;
+  data: { recovered: string; total: string } | string;
+  color: 'green' | 'orange' | 'red' | 'grey';
+  isLoading?: boolean;
+  showInfo?: boolean;
+  tooltipText?: string;
+}
+
+function RecoveredErrorsKPICard({
+  title,
+  data,
+  color,
+  isLoading,
+  showInfo,
+  tooltipText,
+}: RecoveredErrorsKPICardProps) {
+  const colorClasses: Record<string, string> = {
+    green: 'text-green-600',
+    orange: 'text-orange-600',
+    red: 'text-red-600',
+    grey: 'text-muted-foreground',
+  };
+
+  const isObject = typeof data === 'object' && data !== null;
+
+  return (
+    <Card className='flex-1'>
+      <CardContent className='p-4'>
+        <div className='flex items-center justify-between'>
+          <div className='flex items-center gap-2'>
+            <span className='text-sm font-medium text-muted-foreground'>{title}</span>
+            {showInfo && tooltipText && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Info className='h-3 w-3 text-muted-foreground' />
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p className='max-w-xs text-xs'>{tooltipText}</p>
+                </TooltipContent>
+              </Tooltip>
+            )}
+          </div>
+        </div>
+        <div className='mt-2'>
+          {isLoading ? (
+            <div className='h-8 w-16 bg-muted animate-pulse rounded' />
+          ) : isObject ? (
+            <span className='text-2xl font-bold'>
+              <span className={colorClasses[color]}>{data.recovered}</span>
+              <span className='text-muted-foreground'> / </span>
+              <span className={colorClasses[color]}>{data.total}</span>
+            </span>
+          ) : (
+            <span className={`text-2xl font-bold ${colorClasses[color]}`}>{data}</span>
           )}
         </div>
       </CardContent>
@@ -98,6 +172,9 @@ export function SummarySection({}: SummarySectionProps) {
     uptime: 'N/A',
     reachability: 'N/A',
     latency: 'N/A',
+    totalRequests: 'N/A',
+    cacheHitRate: 'N/A',
+    recoveredNodeErrors: 'N/A',
   });
   const [isLoading, setIsLoading] = useState(false);
   const [selectedTimeFrame, setSelectedTimeFrame] = useState<string>(DEFAULT_TIME_FRAME);
@@ -108,9 +185,10 @@ export function SummarySection({}: SummarySectionProps) {
    *
    * @param chainValue - The chain identifier or "all" for aggregated data
    * @param timeFrame - Time frame string (e.g., "1h", "30m") for the metrics query
+   * @param networkValue - Optional network/spec to filter dashboard summary metrics
    */
   const fetchKPIData = useCallback(
-    async (chainValue: string, timeFrame: string) => {
+    async (chainValue: string, timeFrame: string, networkValue?: string) => {
       setIsLoading(true);
 
       if (!config.apiEndpoint) {
@@ -118,6 +196,9 @@ export function SummarySection({}: SummarySectionProps) {
           uptime: 'Error',
           reachability: 'Error',
           latency: 'Error',
+          totalRequests: 'Error',
+          cacheHitRate: 'Error',
+          recoveredNodeErrors: 'Error',
         });
         setIsLoading(false);
         return;
@@ -128,30 +209,55 @@ export function SummarySection({}: SummarySectionProps) {
         const timeWindowMinutes = MetricsService.convertTimeFrameToMinutes(timeFrame);
         const stepSize = timeWindowMinutes <= 60 ? 1 : timeWindowMinutes <= 240 ? 5 : 15;
 
-        let chainMetrics: ChainMetrics;
+        // Determine the network filter for dashboard summary
+        // Use the specific network if provided, otherwise undefined for all networks
+        const networkFilter = networkValue && networkValue !== 'all' ? networkValue : undefined;
 
-        if (chainValue === 'all') {
-          // For "all chains", use the avg data from the backend
-          const chainsResponse = await MetricsService.fetchMetricsForAllChains(
-            timeWindowMinutes,
-            stepSize,
-          );
-          chainMetrics = chainsResponse.avg;
-        } else {
-          // For specific chain, fetch individual chain data
-          const chainResponse = await MetricsService.fetchMetricsForChain(
-            chainValue,
-            timeWindowMinutes,
-            stepSize,
-          );
-          chainMetrics = chainResponse;
-        }
+        // Fetch chain metrics and dashboard summary in parallel
+        const [chainMetricsResult, dashboardSummary] = await Promise.all([
+          (async () => {
+            let chainMetrics: ChainMetrics;
+            if (chainValue === 'all') {
+              // For "all chains", use the avg data from the backend
+              const chainsResponse = await MetricsService.fetchMetricsForAllChains(
+                timeWindowMinutes,
+                stepSize,
+              );
+              chainMetrics = chainsResponse.avg;
+            } else {
+              // For specific chain, fetch individual chain data
+              const chainResponse = await MetricsService.fetchMetricsForChain(
+                chainValue,
+                timeWindowMinutes,
+                stepSize,
+              );
+              chainMetrics = chainResponse;
+            }
+            return chainMetrics;
+          })(),
+          MetricsService.fetchDashboardSummary(timeWindowMinutes, networkFilter).catch(err => {
+            console.warn('Failed to fetch dashboard summary:', err);
+            return null;
+          }),
+        ]);
 
         // Update KPI data with formatted values
         setKpiData({
-          uptime: MetricsService.formatPercentage(chainMetrics.uptime),
-          reachability: MetricsService.formatPercentage(chainMetrics.reachability), // Now using real provider reachability
-          latency: MetricsService.formatLatency(chainMetrics.latency_in_ms),
+          uptime: MetricsService.formatPercentage(chainMetricsResult.uptime),
+          reachability: MetricsService.formatPercentage(chainMetricsResult.reachability),
+          latency: MetricsService.formatLatency(chainMetricsResult.latency_in_ms),
+          totalRequests: dashboardSummary
+            ? MetricsService.formatTraffic(dashboardSummary.total_requests)
+            : 'N/A',
+          cacheHitRate: dashboardSummary
+            ? MetricsService.formatCacheHitRate(dashboardSummary.cache_hit_rate)
+            : 'N/A',
+          recoveredNodeErrors: dashboardSummary
+            ? MetricsService.formatRecoveredNodeErrors(
+                dashboardSummary.error_recovery.recovered_requests,
+                dashboardSummary.error_recovery.total_node_errors,
+              )
+            : 'N/A',
         });
       } catch (error) {
         console.error('Error fetching KPI data:', error);
@@ -159,6 +265,9 @@ export function SummarySection({}: SummarySectionProps) {
           uptime: 'Error',
           reachability: 'Error',
           latency: 'Error',
+          totalRequests: 'Error',
+          cacheHitRate: 'Error',
+          recoveredNodeErrors: 'Error',
         });
       } finally {
         setIsLoading(false);
@@ -203,15 +312,15 @@ export function SummarySection({}: SummarySectionProps) {
     };
 
     fetchAvailableChains();
-    fetchKPIData('all', selectedTimeFrame);
+    fetchKPIData('all', selectedTimeFrame, 'all');
   }, [config.apiEndpoint, fetchKPIData, selectedTimeFrame]);
 
   /**
    * Effect to trigger data fetch when parameters change.
    */
   useEffect(() => {
-    fetchKPIData(selectedChain, selectedTimeFrame);
-  }, [selectedChain, selectedTimeFrame, fetchKPIData]);
+    fetchKPIData(selectedChain, selectedTimeFrame, selectedNetwork);
+  }, [selectedChain, selectedTimeFrame, selectedNetwork, fetchKPIData]);
 
   /**
    * Handles chain selection change from the dropdown.
@@ -219,7 +328,7 @@ export function SummarySection({}: SummarySectionProps) {
    */
   const handleChainSelect = (chainValue: string) => {
     setSelectedChain(chainValue);
-    fetchKPIData(chainValue, selectedTimeFrame);
+    fetchKPIData(chainValue, selectedTimeFrame, selectedNetwork);
   };
 
   // When network changes, show routers selector when there are multiple routers for this network.
@@ -228,17 +337,17 @@ export function SummarySection({}: SummarySectionProps) {
     if (networkValue === 'all') {
       // Keep backend behavior the same: aggregate over all chains
       setSelectedChain('all');
-      fetchKPIData('all', selectedTimeFrame);
+      fetchKPIData('all', selectedTimeFrame, 'all');
       return;
     }
     const routersForNetwork = availableChains.filter(c => c.network === networkValue);
     if (routersForNetwork.length === 0) {
       setSelectedChain('all');
-      fetchKPIData('all', selectedTimeFrame);
+      fetchKPIData('all', selectedTimeFrame, networkValue);
     } else if (routersForNetwork.length === 1) {
       // Auto-select the single router
       setSelectedChain(routersForNetwork[0].id);
-      fetchKPIData(routersForNetwork[0].id, selectedTimeFrame);
+      fetchKPIData(routersForNetwork[0].id, selectedTimeFrame, networkValue);
     } else {
       // Multiple routers: default to 'all' (backend aggregates all chains)
       setSelectedChain('all');
@@ -247,19 +356,33 @@ export function SummarySection({}: SummarySectionProps) {
         try {
           const minutes = MetricsService.convertTimeFrameToMinutes(selectedTimeFrame);
           const step = minutes <= 60 ? 1 : minutes <= 240 ? 5 : 15;
-          const chainsResponse = await MetricsService.fetchMetricsForAllChains(
-            minutes,
-            step,
-            networkValue,
-          );
+          const [chainsResponse, dashboardSummary] = await Promise.all([
+            MetricsService.fetchMetricsForAllChains(minutes, step, networkValue),
+            MetricsService.fetchDashboardSummary(minutes, networkValue).catch(err => {
+              console.warn('Failed to fetch dashboard summary:', err);
+              return null;
+            }),
+          ]);
           const chainMetrics = chainsResponse.avg;
           setKpiData({
             uptime: MetricsService.formatPercentage(chainMetrics.uptime),
             reachability: MetricsService.formatPercentage(chainMetrics.reachability),
             latency: MetricsService.formatLatency(chainMetrics.latency_in_ms),
+            totalRequests: dashboardSummary
+              ? MetricsService.formatTraffic(dashboardSummary.total_requests)
+              : 'N/A',
+            cacheHitRate: dashboardSummary
+              ? MetricsService.formatCacheHitRate(dashboardSummary.cache_hit_rate)
+              : 'N/A',
+            recoveredNodeErrors: dashboardSummary
+              ? MetricsService.formatRecoveredNodeErrors(
+                  dashboardSummary.error_recovery.recovered_requests,
+                  dashboardSummary.error_recovery.total_node_errors,
+                )
+              : 'N/A',
           });
         } catch (e) {
-          fetchKPIData('all', selectedTimeFrame);
+          fetchKPIData('all', selectedTimeFrame, networkValue);
         }
       })();
     }
@@ -271,7 +394,7 @@ export function SummarySection({}: SummarySectionProps) {
    */
   const handleTimeFrameChange = (value: string) => {
     setSelectedTimeFrame(value);
-    fetchKPIData(selectedChain, value);
+    fetchKPIData(selectedChain, value, selectedNetwork);
   };
 
   /**
@@ -279,7 +402,7 @@ export function SummarySection({}: SummarySectionProps) {
    * Triggers immediate data refresh for current selection.
    */
   const handleRefresh = () => {
-    fetchKPIData(selectedChain, selectedTimeFrame);
+    fetchKPIData(selectedChain, selectedTimeFrame, selectedNetwork);
   };
 
   const handleScrollToMetrics = () => {
@@ -444,6 +567,7 @@ export function SummarySection({}: SummarySectionProps) {
         </CardHeader>
         <CardContent className='p-6'>
           <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4'>
+            {/* Row 1 */}
             <KPICard
               title='Uptime'
               value={kpiData.uptime}
@@ -457,6 +581,27 @@ export function SummarySection({}: SummarySectionProps) {
               isLoading={isLoading}
               showInfo={true}
               tooltipText='Percentage of healthy providers available to each chain. Unlike Uptime (chain health), this measures provider availability. High uptime can be maintained even with lower reachability if available providers handle the load.'
+            />
+            <KPICard
+              title='Total Requests'
+              value={kpiData.totalRequests || 'N/A'}
+              color={getRequestsColorName(kpiData.totalRequests)}
+              isLoading={isLoading}
+            />
+            {/* Row 2 */}
+            <KPICard
+              title='Cache Hit Rate'
+              value={selectedNetwork !== 'all' ? 'N/A' : kpiData.cacheHitRate || 'N/A'}
+              color={getCacheHitColorName(selectedNetwork !== 'all' ? undefined : kpiData.cacheHitRate)}
+              isLoading={isLoading}
+            />
+            <RecoveredErrorsKPICard
+              title='Recovered / Node Errors'
+              data={kpiData.recoveredNodeErrors || 'N/A'}
+              color={getErrorRecoveryColorName(kpiData.recoveredNodeErrors)}
+              isLoading={isLoading}
+              showInfo={true}
+              tooltipText='Number of node errors successfully recovered vs total node errors received from providers. Higher recovery means better fault tolerance.'
             />
             <KPICard
               title='Latency'
