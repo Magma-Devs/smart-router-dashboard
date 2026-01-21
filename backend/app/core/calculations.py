@@ -41,6 +41,20 @@ def calculate_adaptive_step_size(
         return 3600  # 1 hour
 
 
+def calculate_graph_step_minutes(time_window_minutes: int) -> int:
+    """
+    Calculate step size in minutes for usage graph time series.
+    
+    Uses fixed bucket sizes optimized for readability:
+    - <= 15 minutes: 5-minute buckets
+    - >= 30 minutes: 15-minute buckets (for all time windows)
+    """
+    if time_window_minutes <= 15:
+        return 5
+    else:
+        return 15  # 15-minute buckets for all time windows >= 30 minutes
+
+
 def validate_prometheus_data(func: Callable[..., T]) -> Callable[..., T]:
     """
     Decorator to validate Prometheus data structure before processing.
