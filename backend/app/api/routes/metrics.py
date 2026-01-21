@@ -1,4 +1,5 @@
 import asyncio
+import re
 import statistics
 from datetime import datetime, timedelta
 from typing import Any
@@ -18,9 +19,16 @@ from app.core.dataclasses import (
     ProviderMetrics,
     ProviderHealth,
     ProvidersMetricsResponse,
+    MethodUsage,
+    TimeSeriesDataPoint,
+    RequestTypeUsage,
+    BatchRequestUsage,
+    ChainUsageMetrics,
+    UsageMetricsResponse,
 )
 from app.core.calculations import (
     calculate_adaptive_step_size,
+    calculate_graph_step_minutes,
     calculate_provider_uptime_percentage,
     calculate_uptime_percentage,
     calculate_latency_ms,
@@ -45,6 +53,12 @@ PROMETHEUS_QUERIES = {
     "provider_latest_block": "lava_latest_block",
     "consumer_latency": "lava_consumer_end_to_end_latency_milliseconds",
     "provider_latency": "lava_provider_end_to_end_latency_milliseconds",
+    # Usage metrics - method-level breakdown (per function)
+    "requests_per_function": "lava_provider_total_relays_serviced_per_function",
+    "latency_per_function": "lava_provider_request_latency_per_function",
+    "errors_per_function": "lava_provider_total_relays_errored_per_function",
+    # Usage metrics - total successful relays (for graphs)
+    "total_relays_serviced": "lava_provider_total_relays_serviced",
 }
 
 # Default values
@@ -690,4 +704,571 @@ async def get_chains_to_providers(
         raise HTTPException(
             status_code=500,
             detail=f"Error fetching chains-to-providers mapping: {str(e)}",
+        )
+
+
+async def fetch_usage_metrics_data(
+    svc: PrometheusService, time_window_minutes: int
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any], datetime, datetime, int]:
+    """Fetch all required metrics data for usage analysis in parallel.
+    
+    Uses per-function metrics:
+    - lava_provider_total_relays_serviced_per_function (requests - all relays including errors)
+    - lava_provider_request_latency_per_function (latency)
+    - lava_provider_total_relays_errored_per_function (errors)
+    
+    Batch requests are identified by "&" in the function name (e.g., "getBlock&getBlock")
+    
+    Note: For total counts (requests, errors), we use instant queries with increase() over the
+    full time range to avoid double-counting that would occur with query_range.
+    For the time series graph, we use query_range with step-sized intervals.
+    """
+    time_range = f"{time_window_minutes}m"
+    end_time = datetime.now()
+    start_time = end_time - timedelta(minutes=time_window_minutes)
+    graph_step_minutes = calculate_graph_step_minutes(time_window_minutes)
+
+    # Fetch requests, latency, errors per function, and total relays over time
+    (
+        requests_data,
+        latency_data,
+        errors_data,
+        total_relays_data,
+    ) = await asyncio.gather(
+        # Total requests per function - use increase() to get new requests in the time window
+        svc.query(
+            f'sum(increase({PROMETHEUS_QUERIES["requests_per_function"]}[{time_range}])) by (spec, function)',
+        ),
+        # Latency per function - average over the time window
+        svc.query(
+            f'avg(avg_over_time({PROMETHEUS_QUERIES["latency_per_function"]}[{time_range}])) by (spec, function)',
+        ),
+        # Errors per function - use increase() to get new errors in the time window
+        svc.query(
+            f'sum(increase({PROMETHEUS_QUERIES["errors_per_function"]}[{time_range}])) by (spec, function)',
+        ),
+        # Total relays over time (for graph) - use increase() to show new requests per interval
+        # Note: increase() only shows changes when counters are actively incrementing
+        svc.query_range(
+            f'sum(increase({PROMETHEUS_QUERIES["requests_per_function"]}[{graph_step_minutes}m])) by (spec)',
+            start_time,
+            end_time,
+            f"{graph_step_minutes * 60}s",
+        ),
+    )
+
+    return (
+        requests_data,
+        latency_data,
+        errors_data,
+        total_relays_data,
+        start_time,
+        end_time,
+        graph_step_minutes,
+    )
+
+
+def is_batch_function(function_name: str) -> bool:
+    """Check if a function name represents a batch request (contains '&')."""
+    return "&" in function_name
+
+
+def get_batch_function_counts(function_name: str) -> dict[str, int]:
+    """
+    Parse a batch function name and return counts of individual functions.
+    
+    Example: "eth_call&eth_call&getSlot" -> {"eth_call": 2, "getSlot": 1}
+    """
+    functions = function_name.split("&")
+    counts: dict[str, int] = {}
+    for func in functions:
+        counts[func] = counts.get(func, 0) + 1
+    return counts
+
+
+def get_normalized_batch_key(function_name: str) -> str:
+    """
+    Create a normalized display key for a batch function.
+    Groups all permutations of the same function combination together.
+    
+    Example: 
+      "eth_call&eth_call&getSlot" -> "2 x eth_call\n1 x getSlot"
+      "getSlot&eth_call&eth_call" -> "2 x eth_call\n1 x getSlot"
+      "eth_call&getSlot&eth_call" -> "2 x eth_call\n1 x getSlot"
+    
+    The output is sorted by count (descending), then alphabetically by function name.
+    Each function is on a separate line for better readability.
+    """
+    counts = get_batch_function_counts(function_name)
+    # Sort by count (descending), then alphabetically by function name
+    sorted_funcs = sorted(counts.items(), key=lambda x: (-x[1], x[0]))
+    parts = [f"{count} x {func}" for func, count in sorted_funcs]
+    return "\n".join(parts)
+
+
+def get_batch_size(function_name: str) -> int:
+    """Get the batch size (number of functions in the batch)."""
+    return len(function_name.split("&"))
+
+
+def get_batch_size_from_normalized_key(normalized_key: str) -> int:
+    """
+    Get the batch size from a normalized key like "2 x eth_call, 1 x getSlot".
+    
+    Example: "2 x eth_call, 1 x getSlot" -> 3 (2 + 1)
+    """
+    matches = re.findall(r"(\d+) x", normalized_key)
+    return sum(int(m) for m in matches) if matches else 1
+
+
+def process_usage_data(
+    requests_data: dict[str, Any],
+    latency_data: dict[str, Any],
+    errors_data: dict[str, Any],
+    network: str,
+    is_batch: bool,
+) -> tuple[list[MethodUsage], int, int, int, float | None]:
+    """
+    Process Prometheus data to extract method-level usage metrics for a specific network.
+    
+    For regular requests: aggregates by function name directly.
+    For batch requests: aggregates by normalized batch composition.
+                        All permutations of the same composition are grouped together.
+                        Example: "eth_call&eth_call&getSlot", "getSlot&eth_call&eth_call", 
+                                 "eth_call&getSlot&eth_call" all become "2 x eth_call, 1 x getSlot"
+    
+    Args:
+        requests_data: Prometheus data for requests per function
+        latency_data: Prometheus data for latency per function
+        errors_data: Prometheus data for errors per function
+        network: Network/spec to filter by (e.g., "eth1", "base", "solana"), or "all" for all networks.
+                 Prometheus spec label is the network in uppercase (e.g., ETH1, BASE, SOLANA).
+        is_batch: If True, only process batch requests (functions with "&")
+                  If False, only process single requests (functions without "&")
+    
+    Returns: (methods list, total_requests, total_individual_requests, total_errors, avg_latency)
+             For regular requests, total_individual_requests equals total_requests.
+             For batch requests, total_individual_requests is the sum of all individual function calls.
+    """
+    methods_dict: dict[str, dict] = {}
+    total_requests = 0  # Total number of batch calls (for batch) or requests (for regular)
+    total_individual_requests = 0  # Total individual function calls (for batch only)
+    total_errors = 0
+    latency_sum = 0.0
+    latency_count = 0
+
+    # Process requests data
+    if requests_data.get("status") == "success" and requests_data.get("data", {}).get("result"):
+        for series in requests_data["data"]["result"]:
+            metric = series.get("metric", {})
+            spec = metric.get("spec", "").lower()
+            
+            # Match network (case-insensitive) - Prometheus spec is network in uppercase
+            if network.lower() != "all" and spec != network.lower():
+                continue
+            
+            function_name = metric.get("function", "unknown")
+            
+            # Filter by batch vs single
+            if is_batch_function(function_name) != is_batch:
+                continue
+            
+            # Handle both instant query (value) and range query (values) formats
+            value = series.get("value")
+            values = series.get("values", [])
+            
+            if value:
+                # Instant query format: [timestamp, value]
+                raw_value = value[1] if len(value) > 1 else "0"
+                method_requests = int(float(raw_value)) if raw_value != "NaN" else 0
+            elif values:
+                # Range query format: [[timestamp, value], ...]
+                method_requests = int(sum(float(v[1]) for v in values if v[1] != "NaN"))
+            else:
+                continue
+                
+            if method_requests > 0:
+                if is_batch:
+                    # For batch: use normalized key to group all permutations together
+                    normalized_key = get_normalized_batch_key(function_name)
+                    batch_size = get_batch_size(function_name)
+                    
+                    if normalized_key not in methods_dict:
+                        methods_dict[normalized_key] = {
+                            "requests": 0,
+                            "errors": 0,
+                            "latency_sum": 0,
+                            "latency_count": 0,
+                            "batch_size": batch_size,
+                        }
+                    
+                    methods_dict[normalized_key]["requests"] += method_requests
+                    total_requests += method_requests
+                    total_individual_requests += method_requests * batch_size
+                else:
+                    # For regular: use function name directly
+                    if function_name not in methods_dict:
+                        methods_dict[function_name] = {
+                            "requests": 0,
+                            "errors": 0,
+                            "latency_sum": 0,
+                            "latency_count": 0,
+                        }
+                    methods_dict[function_name]["requests"] += method_requests
+                    total_requests += method_requests
+
+    # Process errors data
+    if errors_data.get("status") == "success" and errors_data.get("data", {}).get("result"):
+        for series in errors_data["data"]["result"]:
+            metric = series.get("metric", {})
+            spec = metric.get("spec", "").lower()
+            
+            # Match network (case-insensitive)
+            if network.lower() != "all" and spec != network.lower():
+                continue
+            
+            function_name = metric.get("function", "unknown")
+            
+            # Filter by batch vs single
+            if is_batch_function(function_name) != is_batch:
+                continue
+            
+            # Handle both instant query (value) and range query (values) formats
+            value = series.get("value")
+            values = series.get("values", [])
+            
+            if value:
+                # Instant query format: [timestamp, value]
+                raw_value = value[1] if len(value) > 1 else "0"
+                method_errors = int(float(raw_value)) if raw_value != "NaN" else 0
+            elif values:
+                # Range query format: [[timestamp, value], ...]
+                method_errors = int(sum(float(v[1]) for v in values if v[1] != "NaN"))
+            else:
+                continue
+                
+            if method_errors > 0:
+                if is_batch:
+                    normalized_key = get_normalized_batch_key(function_name)
+                    if normalized_key in methods_dict:
+                        methods_dict[normalized_key]["errors"] += method_errors
+                        total_errors += method_errors
+                else:
+                    if function_name in methods_dict:
+                        methods_dict[function_name]["errors"] += method_errors
+                        total_errors += method_errors
+
+    # Process latency data
+    if latency_data.get("status") == "success" and latency_data.get("data", {}).get("result"):
+        for series in latency_data["data"]["result"]:
+            metric = series.get("metric", {})
+            spec = metric.get("spec", "").lower()
+            
+            # Match network (case-insensitive)
+            if network.lower() != "all" and spec != network.lower():
+                continue
+            
+            function_name = metric.get("function", "unknown")
+            
+            # Filter by batch vs single
+            if is_batch_function(function_name) != is_batch:
+                continue
+            
+            # Handle both instant query (value) and range query (values) formats
+            value = series.get("value")
+            values = series.get("values", [])
+            
+            method_avg_latency = None
+            if value:
+                # Instant query format: [timestamp, value]
+                raw_value = value[1] if len(value) > 1 else None
+                if raw_value and raw_value != "NaN":
+                    method_avg_latency = float(raw_value)
+            elif values:
+                # Range query format: [[timestamp, value], ...]
+                valid_latencies = [float(v[1]) for v in values if v[1] != "NaN"]
+                if valid_latencies:
+                    method_avg_latency = sum(valid_latencies) / len(valid_latencies)
+            
+            if method_avg_latency is not None:
+                if is_batch:
+                    normalized_key = get_normalized_batch_key(function_name)
+                    if normalized_key in methods_dict:
+                        methods_dict[normalized_key]["latency_sum"] += method_avg_latency
+                        methods_dict[normalized_key]["latency_count"] += 1
+                else:
+                    if function_name in methods_dict:
+                        methods_dict[function_name]["latency_sum"] += method_avg_latency
+                        methods_dict[function_name]["latency_count"] += 1
+                
+                latency_sum += method_avg_latency
+                latency_count += 1
+
+    # Build method usage list (skip methods with 0 requests)
+    methods_list = []
+    
+    for method_name, data in methods_dict.items():
+        requests = data["requests"]
+        
+        # Skip methods with 0 requests
+        if requests == 0:
+            continue
+        
+        errors = data["errors"]
+        error_rate = (errors / requests * 100) if requests > 0 else 0
+        
+        # Calculate latency (None if no data)
+        method_latency = None
+        if data["latency_count"] > 0:
+            method_latency = round(data["latency_sum"] / data["latency_count"], 2)
+        
+        percentage = (requests / total_requests * 100) if total_requests > 0 else 0
+        
+        methods_list.append(
+            MethodUsage(
+                method=method_name,
+                requests=requests,
+                errors=errors,
+                error_rate=round(error_rate, 2),
+                avg_latency_ms=method_latency,
+                percentage=round(percentage, 1),
+            )
+        )
+
+    # Sort by requests descending
+    methods_list.sort(key=lambda x: x.requests, reverse=True)
+
+    # Calculate overall latency
+    overall_latency = round(latency_sum / latency_count, 2) if latency_count > 0 else None
+
+    # For regular requests, total_individual_requests = total_requests
+    if not is_batch:
+        total_individual_requests = total_requests
+    
+    return methods_list, total_requests, total_individual_requests, total_errors, overall_latency
+
+
+def get_timestamp_format(time_window_minutes: int) -> str:
+    """
+    Get the appropriate timestamp format string based on time window.
+    
+    - <= 24 hours: HH:MM (e.g., "14:30")
+    - <= 7 days: Mon HH:MM (e.g., "Mon 14:30")
+    - > 7 days: Mon DD (e.g., "Jan 15")
+    """
+    if time_window_minutes <= 1440:  # <= 24 hours
+        return "%H:%M"
+    elif time_window_minutes <= 10080:  # <= 7 days
+        return "%a %H:%M"
+    else:  # > 7 days
+        return "%b %d"
+
+
+def process_requests_over_time(
+    total_relays_data: dict[str, Any],
+    network: str,
+    time_window_minutes: int,
+    start_time: datetime,
+    end_time: datetime,
+    step_minutes: int,
+) -> list[TimeSeriesDataPoint]:
+    """
+    Process total relays data to create a time series of requests aggregated in time buckets.
+    
+    Creates a continuous time series from start_time to end_time at step_minutes intervals,
+    filling in zeros where Prometheus has no data. This ensures the graph shows the full
+    time range even when data is sparse.
+    
+    Args:
+        total_relays_data: Prometheus data for total relays (already at step intervals)
+        network: Network/spec to filter by (e.g., "eth1", "base", "solana"), or "all" for all networks.
+                 Prometheus spec label is the network in uppercase (e.g., ETH1, BASE, SOLANA).
+        time_window_minutes: The time window in minutes (used for timestamp formatting)
+        start_time: Start of the time range
+        end_time: End of the time range
+        step_minutes: Step size in minutes for the time series
+    """
+    # Sum values at each timestamp across all matching specs from Prometheus data
+    timestamp_values: dict[float, float] = {}
+    
+    if total_relays_data.get("status") == "success" and total_relays_data.get("data", {}).get("result"):
+        for series in total_relays_data["data"]["result"]:
+            metric = series.get("metric", {})
+            spec = metric.get("spec", "").lower()
+            
+            # Match network (case-insensitive) - Prometheus spec is network in uppercase
+            if network.lower() != "all" and spec != network.lower():
+                continue
+            
+            values = series.get("values", [])
+            
+            for timestamp, value in values:
+                if value != "NaN":
+                    ts = float(timestamp)
+                    if ts not in timestamp_values:
+                        timestamp_values[ts] = 0
+                    timestamp_values[ts] += float(value)
+    
+    # Get appropriate timestamp format based on time window
+    ts_format = get_timestamp_format(time_window_minutes)
+    
+    # Generate all expected timestamps from start to end at step intervals
+    # This ensures we have a continuous time series even when Prometheus has gaps
+    # Note: We generate timestamps up to the requested end_time, even if Prometheus
+    # doesn't have data for the most recent period (due to scrape lag)
+    requests_over_time: list[TimeSeriesDataPoint] = []
+    step_seconds = step_minutes * 60
+    
+    # Align start_time to step boundary
+    start_ts = start_time.timestamp()
+    end_ts = end_time.timestamp()
+    
+    # Round start to nearest step boundary
+    aligned_start = (int(start_ts) // step_seconds) * step_seconds
+    
+    # Round end to nearest step boundary (to ensure we include the final bucket)
+    aligned_end = ((int(end_ts) // step_seconds) + 1) * step_seconds
+    
+    current_ts = aligned_start
+    while current_ts <= aligned_end:
+        # Find closest matching timestamp in data (within half a step)
+        value = 0.0
+        for data_ts, data_val in timestamp_values.items():
+            if abs(data_ts - current_ts) < step_seconds / 2:
+                value += data_val
+        
+        requests_over_time.append(
+            TimeSeriesDataPoint(
+                timestamp=datetime.fromtimestamp(current_ts).strftime(ts_format),
+                value=round(value, 0),
+            )
+        )
+        current_ts += step_seconds
+    
+    return requests_over_time
+
+
+@router.get("/usage/{chain_id}", response_model=UsageMetricsResponse)
+@router.get("/usage", response_model=UsageMetricsResponse)
+async def get_usage_metrics(
+    chain_id: str | None = None,
+    time_window_minutes: int = Query(
+        DEFAULT_TIME_WINDOW_MINUTES,
+        description="Number of minutes of data to fetch",
+    ),
+    svc: PrometheusService = Depends(get_prometheus_service),
+    current_user: str = Depends(get_current_user),
+):
+    """
+    Get usage metrics including method-level breakdown for single and batch requests.
+    
+    Returns request counts, error counts, and latency metrics broken down by RPC method for each chain.
+    
+    Single requests: Functions without "&" in their name
+    Batch requests: Functions with "&" in their name (e.g., "getBlock&getBlock")
+    
+    Latency is only available for single requests.
+    If no latency data and total_relays == total_errors, status is "all_errors".
+    """
+    try:
+        # Get available chains
+        available_chains = configuration_service.get_chains_providers_configuration
+        if not available_chains:
+            return UsageMetricsResponse(chains={})
+
+        # Filter to specific chain if requested (same logic as chains-metrics/{chain_id} endpoint)
+        if chain_id:
+            selected_chain = next(
+                (chain for chain in available_chains if chain.id == chain_id), None
+            )
+            if not selected_chain:
+                raise HTTPException(status_code=404, detail=f"Chain '{chain_id}' not found")
+            available_chains = [selected_chain]
+
+        # Fetch all usage metrics data in parallel
+        (
+            requests_data,
+            latency_data,
+            errors_data,
+            total_relays_data,
+            graph_start_time,
+            graph_end_time,
+            graph_step_minutes,
+        ) = await fetch_usage_metrics_data(svc, time_window_minutes)
+
+        # Process metrics for each chain
+        chains_usage: dict[str, ChainUsageMetrics] = {}
+        
+        for chain in available_chains:
+            # Process regular requests (functions without "&")
+            # Note: Prometheus spec label matches chain.network in uppercase (e.g., ETH1, BASE, SOLANA)
+            (
+                single_methods,
+                single_total,
+                _,  # total_individual same as total for regular
+                single_errors,
+                single_avg_latency,
+            ) = process_usage_data(requests_data, latency_data, errors_data, chain.network, is_batch=False)
+
+            # Process batch requests (functions with "&")
+            (
+                batch_methods,
+                batch_total,
+                _,  # Not used
+                batch_errors,
+                batch_avg_latency,
+            ) = process_usage_data(requests_data, latency_data, errors_data, chain.network, is_batch=True)
+
+            # Get requests over time (all relays) - fills gaps with zeros for continuous graph
+            requests_over_time = process_requests_over_time(
+                total_relays_data, 
+                chain.network, 
+                time_window_minutes,
+                graph_start_time,
+                graph_end_time,
+                graph_step_minutes,
+            )
+
+            # Calculate average batch size from unique batch compositions
+            # Sum of batch sizes for each unique composition / number of unique compositions
+            if batch_methods:
+                total_batch_sizes = sum(get_batch_size_from_normalized_key(m.method) for m in batch_methods)
+                avg_batch_size = total_batch_sizes / len(batch_methods)
+            else:
+                avg_batch_size = 0.0
+
+            # Calculate error rates
+            single_error_rate = (single_errors / single_total * 100) if single_total > 0 else 0
+            batch_error_rate = (batch_errors / batch_total * 100) if batch_total > 0 else 0
+
+            chains_usage[chain.id] = ChainUsageMetrics(
+                chain_id=chain.id,
+                network=chain.network,
+                single=RequestTypeUsage(
+                    total_requests=single_total,
+                    total_errors=single_errors,
+                    error_rate=round(single_error_rate, 2),
+                    avg_latency_ms=single_avg_latency,
+                    methods=single_methods,
+                    requests_over_time=requests_over_time,
+                ),
+                batch=BatchRequestUsage(
+                    total_requests=batch_total,
+                    total_errors=batch_errors,
+                    error_rate=round(batch_error_rate, 2),
+                    avg_latency_ms=batch_avg_latency,
+                    avg_batch_size=round(avg_batch_size, 1),
+                    methods=batch_methods,
+                    requests_over_time=requests_over_time,
+                ),
+            )
+
+        return UsageMetricsResponse(chains=chains_usage)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error fetching usage metrics: {str(e)}",
         )

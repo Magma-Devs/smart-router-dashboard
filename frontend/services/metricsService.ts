@@ -437,4 +437,74 @@ export class MetricsService {
     );
     return response;
   }
+
+  /**
+   * Fetches usage metrics including method-level breakdown for single and batch requests.
+   *
+   * @param timeWindowMinutes - Time window in minutes for the query
+   * @param chainId - Optional chain ID to filter results
+   * @returns Promise resolving to usage metrics response
+   * @throws Error if API request fails
+   */
+  static async fetchUsageMetrics(
+    timeWindowMinutes: number,
+    chainId?: string,
+  ): Promise<UsageMetricsResponse> {
+    try {
+      const path = chainId
+        ? `/api/metrics/usage/${encodeURIComponent(chainId)}?time_window_minutes=${timeWindowMinutes}`
+        : `/api/metrics/usage?time_window_minutes=${timeWindowMinutes}`;
+      const response = await apiClient.get(path);
+      return response as UsageMetricsResponse;
+    } catch (error) {
+      throw new Error(
+        `Failed to fetch usage metrics: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+    }
+  }
+}
+
+/** Usage metrics types */
+export interface MethodUsage {
+  method: string;
+  requests: number;
+  errors: number;
+  error_rate: number;
+  avg_latency_ms: number | null;
+  percentage: number;
+}
+
+export interface TimeSeriesDataPoint {
+  timestamp: string;
+  value: number;
+}
+
+export interface RequestTypeUsage {
+  total_requests: number;
+  total_errors: number;
+  error_rate: number;
+  avg_latency_ms: number | null;
+  methods: MethodUsage[];
+  requests_over_time: TimeSeriesDataPoint[];
+}
+
+export interface BatchRequestUsage {
+  total_requests: number;
+  total_errors: number;
+  error_rate: number;
+  avg_latency_ms: number | null;
+  avg_batch_size: number;
+  methods: MethodUsage[];
+  requests_over_time: TimeSeriesDataPoint[];
+}
+
+export interface ChainUsageMetrics {
+  chain_id: string;
+  network: string;
+  single: RequestTypeUsage;
+  batch: BatchRequestUsage;
+}
+
+export interface UsageMetricsResponse {
+  chains: { [chainId: string]: ChainUsageMetrics };
 }

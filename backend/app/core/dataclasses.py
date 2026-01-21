@@ -146,3 +146,54 @@ class ProvidersMetricsResponse(BaseModel):
     providers: dict[str, ProviderMetrics]
     avg: ProviderMetrics
     p90: ProviderMetrics
+
+
+# Usage metrics models
+class MethodUsage(BaseModel):
+    """Usage metrics for a specific RPC method"""
+    method: str
+    requests: int
+    errors: int
+    error_rate: float  # Percentage of errors (0-100)
+    avg_latency_ms: float | None  # None if no latency data
+    percentage: float  # Percentage of total requests
+
+
+class TimeSeriesDataPoint(BaseModel):
+    """A single data point over time"""
+    timestamp: str
+    value: float
+
+
+class RequestTypeUsage(BaseModel):
+    """Usage metrics for single or batch requests"""
+    total_requests: int
+    total_errors: int
+    error_rate: float  # Percentage of errors (0-100)
+    avg_latency_ms: float | None  # None if no latency data available
+    methods: list[MethodUsage]
+    requests_over_time: list[TimeSeriesDataPoint]
+
+
+class BatchRequestUsage(BaseModel):
+    """Usage metrics for batch requests"""
+    total_requests: int
+    total_errors: int
+    error_rate: float  # Percentage of errors (0-100)
+    avg_latency_ms: float | None  # None if no latency data available
+    avg_batch_size: float
+    methods: list[MethodUsage]
+    requests_over_time: list[TimeSeriesDataPoint]
+
+
+class ChainUsageMetrics(BaseModel):
+    """Complete usage metrics for a chain"""
+    chain_id: str
+    network: str
+    single: RequestTypeUsage
+    batch: BatchRequestUsage
+
+
+class UsageMetricsResponse(BaseModel):
+    """Response model for usage metrics endpoint"""
+    chains: dict[str, ChainUsageMetrics]
