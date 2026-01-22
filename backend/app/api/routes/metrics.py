@@ -1059,11 +1059,11 @@ def get_timestamp_format(time_window_minutes: int) -> str:
     """
     Get the appropriate timestamp format string based on time window.
     
-    - <= 24 hours: HH:MM (e.g., "14:30")
-    - <= 7 days: Mon HH:MM (e.g., "Mon 14:30")
+    - <= 6 hours: HH:MM (e.g., "14:30")
+    - <= 7 days: Mon HH:MM (e.g., "Mon 14:30") - shows day to avoid midnight confusion
     - > 7 days: Mon DD (e.g., "Jan 15")
     """
-    if time_window_minutes <= 1440:  # <= 24 hours
+    if time_window_minutes <= 360:  # <= 6 hours
         return "%H:%M"
     elif time_window_minutes <= 10080:  # <= 7 days
         return "%a %H:%M"
