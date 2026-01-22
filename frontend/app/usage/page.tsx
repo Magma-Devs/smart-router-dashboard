@@ -427,12 +427,20 @@ export default function UsagePage() {
     const avgBatchLatency = batchLatencyCount > 0 ? Math.round(batchLatencySum / batchLatencyCount) : null;
     
     // Aggregate requests over time by summing values at each timestamp across all chains
+    // Preserves the chronological order from the backend (don't sort alphabetically)
     const aggregateRequestsOverTime = (
       chainsData: ChainUsageData[],
       getTimeSeries: (c: ChainUsageData) => Array<{ timestamp: string; value: number }>
     ): Array<{ timestamp: string; value: number }> => {
-      const timestampMap = new Map<string, number>();
+      if (chainsData.length === 0) return [];
       
+      // Use the first chain's time series as the reference for order
+      // Backend returns data in chronological order
+      const referenceTimeSeries = getTimeSeries(chainsData[0]);
+      const timestampOrder = referenceTimeSeries.map(p => p.timestamp);
+      
+      // Aggregate values across all chains
+      const timestampMap = new Map<string, number>();
       for (const chain of chainsData) {
         for (const point of getTimeSeries(chain)) {
           const current = timestampMap.get(point.timestamp) || 0;
@@ -440,10 +448,11 @@ export default function UsagePage() {
         }
       }
       
-      // Sort by timestamp and return
-      return Array.from(timestampMap.entries())
-        .sort((a, b) => a[0].localeCompare(b[0]))
-        .map(([timestamp, value]) => ({ timestamp, value }));
+      // Return in the original chronological order from backend
+      return timestampOrder.map(timestamp => ({
+        timestamp,
+        value: timestampMap.get(timestamp) || 0,
+      }));
     };
     
     const singleRequestsOverTime = aggregateRequestsOverTime(chainsData, c => c.single.requestsOverTime);
