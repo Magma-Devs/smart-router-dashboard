@@ -146,3 +146,73 @@ class ProvidersMetricsResponse(BaseModel):
     providers: dict[str, ProviderMetrics]
     avg: ProviderMetrics
     p90: ProviderMetrics
+
+
+# Usage metrics models
+class MethodUsage(BaseModel):
+    """Usage metrics for a specific RPC method"""
+    method: str
+    requests: int
+    errors: int
+    error_rate: float  # Percentage of errors (0-100)
+    avg_latency_ms: float | None  # None if no latency data
+    percentage: float  # Percentage of total requests
+
+
+class TimeSeriesDataPoint(BaseModel):
+    """A single data point over time"""
+    timestamp: str
+    value: float
+
+
+class RequestTypeUsage(BaseModel):
+    """Usage metrics for single or batch requests"""
+    total_requests: int
+    total_errors: int
+    error_rate: float  # Percentage of errors (0-100)
+    avg_latency_ms: float | None  # None if no latency data available
+    methods: list[MethodUsage]
+    requests_over_time: list[TimeSeriesDataPoint]
+
+
+class BatchRequestUsage(BaseModel):
+    """Usage metrics for batch requests"""
+    total_requests: int
+    total_errors: int
+    error_rate: float  # Percentage of errors (0-100)
+    avg_latency_ms: float | None  # None if no latency data available
+    avg_batch_size: float
+    methods: list[MethodUsage]
+    requests_over_time: list[TimeSeriesDataPoint]
+
+
+class ChainUsageMetrics(BaseModel):
+    """Complete usage metrics for a chain"""
+    chain_id: str
+    network: str
+    single: RequestTypeUsage
+    batch: BatchRequestUsage
+
+
+class UsageMetricsResponse(BaseModel):
+    """Response model for usage metrics endpoint"""
+    chains: dict[str, ChainUsageMetrics]
+
+
+# Dashboard summary metrics models
+class ErrorRecoveryMetrics(BaseModel):
+    """Metrics for node error recovery"""
+    total_node_errors: float  # Total errors received from providers (rate)
+    recovered_requests: float  # Errors that were recovered successfully (rate)
+    recovery_rate: float  # Percentage of errors recovered (0-100)
+    recovery_by_attempt: dict[str, float] = {}  # Recovery rate by attempt number
+    errors_by_chain: dict[str, float] = {}  # Errors rate by chain/spec
+
+
+class DashboardSummaryMetrics(BaseModel):
+    """Summary metrics for the dashboard overview"""
+    total_requests: float  # Total requests in the time window
+    cache_hit_rate: float  # Percentage of requests served from cache (0-100)
+    cache_hits: float  # Number of cache hits (rate)
+    cache_misses: float  # Number of cache misses (rate)
+    error_recovery: ErrorRecoveryMetrics
