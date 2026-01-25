@@ -437,4 +437,156 @@ export class MetricsService {
     );
     return response;
   }
+
+  /**
+   * Fetches usage metrics including method-level breakdown for single and batch requests.
+   *
+   * @param timeWindowMinutes - Time window in minutes for the query
+   * @param chainId - Optional chain ID to filter results
+   * @returns Promise resolving to usage metrics response
+   * @throws Error if API request fails
+   */
+  static async fetchUsageMetrics(
+    timeWindowMinutes: number,
+    chainId?: string,
+  ): Promise<UsageMetricsResponse> {
+    try {
+      const path = chainId
+        ? `/api/metrics/usage/${encodeURIComponent(chainId)}?time_window_minutes=${timeWindowMinutes}`
+        : `/api/metrics/usage?time_window_minutes=${timeWindowMinutes}`;
+      const response = await apiClient.get(path);
+      return response as UsageMetricsResponse;
+    } catch (error) {
+      throw new Error(
+        `Failed to fetch usage metrics: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+    }
+  }
+
+  /**
+   * Fetches dashboard summary metrics including total requests, cache hit rate, and error recovery.
+   *
+   * @param timeWindowMinutes - Time window in minutes for the query
+   * @param choosenNetwork - Optional network/spec to filter metrics by
+   * @returns Promise resolving to dashboard summary metrics
+   * @throws Error if API request fails
+   */
+  static async fetchDashboardSummary(
+    timeWindowMinutes: number,
+    choosenNetwork?: string,
+  ): Promise<DashboardSummaryMetrics> {
+    try {
+      const networkQuery = choosenNetwork
+        ? `&choosen_network=${encodeURIComponent(choosenNetwork)}`
+        : '';
+      const response = await apiClient.get(
+        `/api/metrics/dashboard-summary?time_window_minutes=${timeWindowMinutes}${networkQuery}`,
+      );
+      return response as DashboardSummaryMetrics;
+    } catch (error) {
+      throw new Error(
+        `Failed to fetch dashboard summary: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      );
+    }
+  }
+
+  /**
+   * Formats recovered/total node errors for display.
+   * Returns an object with main value and subscript for styled display.
+   *
+   * @param recovered - Number of recovered errors
+   * @param total - Total number of node errors
+   * @returns Object with recovered and total formatted numbers
+   */
+  static formatRecoveredNodeErrors(
+    recovered: number,
+    total: number,
+  ): { recovered: string; total: string } {
+    const formatNum = (n: number): string => {
+      if (n >= 1000000) {
+        return `${(n / 1000000).toFixed(1)}M`;
+      } else if (n >= 1000) {
+        return `${(n / 1000).toFixed(1)}K`;
+      } else if (n >= 1) {
+        return Math.round(n).toString();
+      } else if (n > 0) {
+        return n.toFixed(2);
+      }
+      return '0';
+    };
+    return { recovered: formatNum(recovered), total: formatNum(total) };
+  }
+
+  /**
+   * Formats cache hit rate for display.
+   *
+   * @param cacheHitRate - Cache hit rate as a percentage (0-100)
+   * @returns Formatted cache hit rate string
+   */
+  static formatCacheHitRate(cacheHitRate: number): string {
+    return cacheHitRate % 1 === 0 ? `${Math.round(cacheHitRate)}%` : `${cacheHitRate.toFixed(1)}%`;
+  }
+}
+
+/** Usage metrics types */
+export interface MethodUsage {
+  method: string;
+  requests: number;
+  errors: number;
+  error_rate: number;
+  avg_latency_ms: number | null;
+  percentage: number;
+}
+
+export interface TimeSeriesDataPoint {
+  timestamp: string;
+  value: number;
+}
+
+export interface RequestTypeUsage {
+  total_requests: number;
+  total_errors: number;
+  error_rate: number;
+  avg_latency_ms: number | null;
+  methods: MethodUsage[];
+  requests_over_time: TimeSeriesDataPoint[];
+}
+
+export interface BatchRequestUsage {
+  total_requests: number;
+  total_errors: number;
+  error_rate: number;
+  avg_latency_ms: number | null;
+  avg_batch_size: number;
+  methods: MethodUsage[];
+  requests_over_time: TimeSeriesDataPoint[];
+}
+
+export interface ChainUsageMetrics {
+  chain_id: string;
+  network: string;
+  single: RequestTypeUsage;
+  batch: BatchRequestUsage;
+}
+
+export interface UsageMetricsResponse {
+  chains: { [chainId: string]: ChainUsageMetrics };
+}
+
+/** Error recovery metrics */
+export interface ErrorRecoveryMetrics {
+  total_node_errors: number; // Total errors received from providers (rate)
+  recovered_requests: number; // Errors that were recovered successfully (rate)
+  recovery_rate: number; // Percentage of errors recovered (0-100)
+  recovery_by_attempt: { [attempt: string]: number }; // Recovery rate by attempt number
+  errors_by_chain: { [chain: string]: number }; // Errors rate by chain/spec
+}
+
+/** Dashboard summary metrics */
+export interface DashboardSummaryMetrics {
+  total_requests: number; // Total requests in the time window
+  cache_hit_rate: number; // Percentage of requests served from cache (0-100)
+  cache_hits: number; // Number of cache hits (rate)
+  cache_misses: number; // Number of cache misses (rate)
+  error_recovery: ErrorRecoveryMetrics;
 }
