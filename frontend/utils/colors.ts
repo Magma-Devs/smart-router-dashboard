@@ -10,12 +10,6 @@ const REACHABILITY_GREEN = 95;
 const REACHABILITY_ORANGE = 85;
 const LATENCY_GREEN = 300;
 const LATENCY_ORANGE = 500;
-// Cache hit rate thresholds (higher is better)
-const CACHE_HIT_GREEN = 50;
-const CACHE_HIT_ORANGE = 20;
-// Error recovery rate thresholds (higher is better)
-const ERROR_RECOVERY_GREEN = 80;
-const ERROR_RECOVERY_ORANGE = 50;
 
 // Helper function to parse numeric values
 const parseValue = (value: string, unit: string): number => {
@@ -74,19 +68,19 @@ export const getLatencyColorName = (value: string): 'green' | 'orange' | 'red' =
   return 'red';
 };
 
-export const getCacheHitColorName = (value: string | undefined): 'green' | 'orange' | 'red' | 'grey' => {
+export const getCacheHitColorName = (value: string | undefined): 'grey' => {
   // TODO: Color thresholds to be defined later
   return 'grey';
 };
 
 export const getErrorRecoveryColorName = (
   value: { recovered: string; total: string } | string | undefined,
-): 'green' | 'orange' | 'red' | 'grey' => {
+): 'grey' => {
   // TODO: Color thresholds to be defined later
   return 'grey';
 };
 
-export const getRequestsColorName = (value: string | undefined): 'green' | 'orange' | 'red' | 'grey' => {
+export const getRequestsColorName = (value: string | undefined): 'grey' => {
   // TODO: Color thresholds to be defined later
   return 'grey';
 };
