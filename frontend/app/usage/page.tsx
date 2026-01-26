@@ -24,7 +24,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { RefreshCw, Globe, TrendingUp, Clock, Activity, Layers, ChevronDown, ChevronUp, XCircle } from 'lucide-react';
+import { RefreshCw, Globe, TrendingUp, Clock, Activity, Layers, ChevronDown, ChevronUp, XCircle, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import {
   Collapsible,
   CollapsibleContent,
@@ -58,6 +58,77 @@ interface MethodUsage {
   avgLatency: number | null;
   percentage: number;
 }
+
+// Sorting types
+type SortField = 'method' | 'requests' | 'errors' | 'avgLatency' | 'percentage';
+type SortDirection = 'asc' | 'desc';
+
+interface SortConfig {
+  field: SortField;
+  direction: SortDirection;
+}
+
+// Sortable table header component
+interface SortableHeaderProps {
+  field: SortField;
+  label: string;
+  sortConfig: SortConfig;
+  onSort: (field: SortField) => void;
+  className?: string;
+}
+
+const SortableHeader = ({ field, label, sortConfig, onSort, className = '' }: SortableHeaderProps) => {
+  const isActive = sortConfig.field === field;
+  return (
+    <TableHead 
+      className={`cursor-pointer hover:bg-muted/50 select-none ${className}`}
+      onClick={() => onSort(field)}
+    >
+      <div className={`flex items-center gap-1 ${className.includes('text-right') ? 'justify-end' : ''}`}>
+        {label}
+        {isActive ? (
+          sortConfig.direction === 'asc' ? (
+            <ArrowUp className="h-3 w-3" />
+          ) : (
+            <ArrowDown className="h-3 w-3" />
+          )
+        ) : (
+          <ArrowUpDown className="h-3 w-3 opacity-30" />
+        )}
+      </div>
+    </TableHead>
+  );
+};
+
+// Sort methods helper function
+const sortMethods = (methods: MethodUsage[], sortConfig: SortConfig): MethodUsage[] => {
+  return [...methods].sort((a, b) => {
+    let comparison = 0;
+    
+    switch (sortConfig.field) {
+      case 'method':
+        comparison = a.method.localeCompare(b.method);
+        break;
+      case 'requests':
+        comparison = a.requests - b.requests;
+        break;
+      case 'errors':
+        comparison = a.errors - b.errors;
+        break;
+      case 'avgLatency':
+        // Handle null values - treat null as highest (worst) for ascending, lowest for descending
+        const aLatency = a.avgLatency ?? (sortConfig.direction === 'asc' ? Infinity : -Infinity);
+        const bLatency = b.avgLatency ?? (sortConfig.direction === 'asc' ? Infinity : -Infinity);
+        comparison = aLatency - bLatency;
+        break;
+      case 'percentage':
+        comparison = a.percentage - b.percentage;
+        break;
+    }
+    
+    return sortConfig.direction === 'asc' ? comparison : -comparison;
+  });
+};
 
 interface ChainUsageData {
   chainId: string;
@@ -244,6 +315,25 @@ export default function UsagePage() {
   const [availableChains, setAvailableChains] = useState<Array<{ id: string; network: string }>>([]);
   const [singleExpanded, setSingleExpanded] = useState(true);
   const [batchExpanded, setBatchExpanded] = useState(true);
+  
+  // Sorting state for tables
+  const [singleSortConfig, setSingleSortConfig] = useState<SortConfig>({ field: 'requests', direction: 'desc' });
+  const [batchSortConfig, setBatchSortConfig] = useState<SortConfig>({ field: 'requests', direction: 'desc' });
+
+  // Sort handlers
+  const handleSingleSort = (field: SortField) => {
+    setSingleSortConfig(prev => ({
+      field,
+      direction: prev.field === field && prev.direction === 'desc' ? 'asc' : 'desc',
+    }));
+  };
+
+  const handleBatchSort = (field: SortField) => {
+    setBatchSortConfig(prev => ({
+      field,
+      direction: prev.field === field && prev.direction === 'desc' ? 'asc' : 'desc',
+    }));
+  };
 
   // Fetch available chains from API
   useEffect(() => {
@@ -783,21 +873,21 @@ export default function UsagePage() {
                         <Table>
                           <TableHeader>
                             <TableRow>
-                              <TableHead>Method</TableHead>
-                              <TableHead className="text-right">Requests</TableHead>
-                              <TableHead className="text-right">Errors</TableHead>
-                              <TableHead className="text-right">Avg Latency</TableHead>
-                              <TableHead className="text-right">Share</TableHead>
+                              <SortableHeader field="method" label="Method" sortConfig={singleSortConfig} onSort={handleSingleSort} />
+                              <SortableHeader field="requests" label="Requests" sortConfig={singleSortConfig} onSort={handleSingleSort} className="text-right" />
+                              <SortableHeader field="errors" label="Errors" sortConfig={singleSortConfig} onSort={handleSingleSort} className="text-right" />
+                              <SortableHeader field="avgLatency" label="Avg Latency" sortConfig={singleSortConfig} onSort={handleSingleSort} className="text-right" />
+                              <SortableHeader field="percentage" label="Share" sortConfig={singleSortConfig} onSort={handleSingleSort} className="text-right" />
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {usageData.single.methods.map((method, index) => (
+                            {sortMethods(usageData.single.methods, singleSortConfig).map((method, index) => (
                               <TableRow key={method.method}>
                                 <TableCell className="font-mono text-sm">
                                   <div className="flex items-center gap-2">
                                     <div
                                       className="w-3 h-3 rounded-full"
-                                      style={{ backgroundColor: COLORS[index % COLORS.length] }}
+                                      style={{ backgroundColor: COLORS[usageData.single.methods.findIndex(m => m.method === method.method) % COLORS.length] }}
                                     />
                                     {method.method}
                                   </div>
@@ -934,21 +1024,21 @@ export default function UsagePage() {
                         <Table>
                           <TableHeader>
                             <TableRow>
-                              <TableHead>Batch Composition</TableHead>
-                              <TableHead className="text-right">Requests</TableHead>
-                              <TableHead className="text-right">Errors</TableHead>
-                              <TableHead className="text-right">Avg Latency</TableHead>
-                              <TableHead className="text-right">Share</TableHead>
+                              <SortableHeader field="method" label="Batch Composition" sortConfig={batchSortConfig} onSort={handleBatchSort} />
+                              <SortableHeader field="requests" label="Requests" sortConfig={batchSortConfig} onSort={handleBatchSort} className="text-right" />
+                              <SortableHeader field="errors" label="Errors" sortConfig={batchSortConfig} onSort={handleBatchSort} className="text-right" />
+                              <SortableHeader field="avgLatency" label="Avg Latency" sortConfig={batchSortConfig} onSort={handleBatchSort} className="text-right" />
+                              <SortableHeader field="percentage" label="Share" sortConfig={batchSortConfig} onSort={handleBatchSort} className="text-right" />
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {usageData.batch.methods.map((method, index) => (
+                            {sortMethods(usageData.batch.methods, batchSortConfig).map((method, index) => (
                               <TableRow key={method.method}>
                                 <TableCell className="font-mono text-sm">
                                   <div className="flex items-start gap-2">
                                     <div
                                       className="w-3 h-3 rounded-full mt-1 flex-shrink-0"
-                                      style={{ backgroundColor: COLORS[index % COLORS.length] }}
+                                      style={{ backgroundColor: COLORS[usageData.batch.methods.findIndex(m => m.method === method.method) % COLORS.length] }}
                                     />
                                     <div className="whitespace-pre-line">
                                       {method.method}
