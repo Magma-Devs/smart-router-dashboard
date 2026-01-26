@@ -5,6 +5,9 @@ This module provides endpoints for retrieving and updating runtime settings,
 allowing the frontend to override default configuration values.
 """
 
+import os
+from pathlib import Path
+
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field, field_validator
 
@@ -12,6 +15,36 @@ from app.core.auth import get_current_user
 from app.core.config import settings as app_settings
 
 router = APIRouter()
+
+
+def get_app_version() -> str:
+    """Get the application version from VERSION file or environment variable."""
+    # First check environment variable
+    version = os.environ.get("APP_VERSION")
+    if version:
+        return version.strip()
+
+    # Try to read from VERSION file
+    possible_paths = [
+        Path("/app/VERSION"),  # Docker container
+        Path(__file__).parent.parent.parent.parent.parent / "VERSION",  # Dev: backend/../VERSION
+        Path(__file__).parent.parent.parent.parent / "VERSION",  # Alternative dev path
+    ]
+
+    for version_path in possible_paths:
+        try:
+            if version_path.exists():
+                return version_path.read_text().strip()
+        except Exception:
+            continue
+
+    return "unknown"
+
+
+class VersionResponse(BaseModel):
+    """Response model for version endpoint."""
+
+    version: str = Field(description="Application version")
 
 
 class SettingsResponse(BaseModel):
@@ -98,4 +131,15 @@ async def reset_settings(
         prometheus_url=get_effective_prometheus_url(),
         api_url=f"http://localhost:8000",
     )
+
+
+@router.get("/version", response_model=VersionResponse)
+async def get_version():
+    """
+    Get the application version.
+
+    Returns the version from the VERSION file or APP_VERSION environment variable.
+    This endpoint is public and does not require authentication.
+    """
+    return VersionResponse(version=get_app_version())
 

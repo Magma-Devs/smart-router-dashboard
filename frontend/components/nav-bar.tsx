@@ -1,13 +1,15 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
-import { Settings, LayoutDashboard, Zap, LogOut, User, Wand2, BarChart3 } from 'lucide-react';
+import { Settings, LayoutDashboard, Zap, LogOut, User, Wand2, BarChart3, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/auth-context';
 import { useDebug } from '@/hooks/use-debug';
+import { apiClient } from '@/lib/api-client';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,6 +23,16 @@ export function NavBar() {
   const pathname = usePathname();
   const { isAuthenticated, username, logout } = useAuth();
   const { debugMode } = useDebug();
+  const [version, setVersion] = useState<string | null>(null);
+
+  // Fetch version from backend API
+  useEffect(() => {
+    if (isAuthenticated) {
+      apiClient.get<{ version: string }>('/api/settings/version')
+        .then(data => setVersion(data.version))
+        .catch(() => setVersion('unknown'));
+    }
+  }, [isAuthenticated]);
 
   return (
     <header className='sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60'>
@@ -101,6 +113,11 @@ export function NavBar() {
               </DropdownMenuTrigger>
               <DropdownMenuContent align='end'>
                 <DropdownMenuLabel>Account</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem disabled className='text-muted-foreground cursor-default'>
+                  <Info className='mr-2 h-4 w-4' />
+                  Version {version || '...'}
+                </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={logout} className='text-red-600'>
                   <LogOut className='mr-2 h-4 w-4' />
