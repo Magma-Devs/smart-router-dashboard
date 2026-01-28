@@ -378,7 +378,7 @@ async def get_chains_metrics(
                     chain_traffic_data, chain.id
                 ),
                 latest_block=calculate_chain_latest_block_number(
-                    consumer_latest_block_data, chain.id
+                    consumer_latest_block_data, chain.network
                 ),
             )
 
@@ -479,7 +479,7 @@ async def get_chain_metrics(
                 chain_traffic_data, selected_chain.id
             ),
             latest_block=calculate_chain_latest_block_number(
-                consumer_latest_block_data, selected_chain.id
+                consumer_latest_block_data, selected_chain.network
             ),
         )
 
@@ -1306,7 +1306,8 @@ async def get_dashboard_summary_metrics(
         time_range = f"{time_window_minutes}m"
         
         # Build spec filter if network is specified
-        spec_filter = f'{{spec="{choosen_network}"}}' if choosen_network else ""
+        # Note: Prometheus spec label is in uppercase (e.g., ETH1, BASE, SOLANA)
+        spec_filter = f'{{spec="{choosen_network.upper()}"}}' if choosen_network else ""
         
         # Build the queries
         # Total requests from consumer traffic
