@@ -277,7 +277,7 @@ export function SummarySection({}: SummarySectionProps) {
   );
 
   /**
-   * Fetches available chains from the metrics API.
+   * Fetches available chains from the metrics API on mount.
    * Populates the chain selection dropdown with chains that have actual metrics data.
    * This is more efficient and accurate than using the components API.
    */
@@ -301,7 +301,7 @@ export function SummarySection({}: SummarySectionProps) {
         );
         setAvailableChains(chainsData);
 
-        // Default network selection to 'all'
+        // Default network selection to 'all' only on initial load
         setSelectedNetwork('all');
       } catch (error) {
         console.error('Error fetching available chains:', error);
@@ -312,8 +312,8 @@ export function SummarySection({}: SummarySectionProps) {
     };
 
     fetchAvailableChains();
-    fetchKPIData('all', selectedTimeFrame, 'all');
-  }, [config.apiEndpoint, fetchKPIData, selectedTimeFrame]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [config.apiEndpoint]);
 
   /**
    * Effect to trigger data fetch when parameters change.

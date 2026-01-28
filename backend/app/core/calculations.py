@@ -296,22 +296,33 @@ def calculate_requests_in_time_window(
 
 @validate_prometheus_data
 def calculate_chain_latest_block_number(
-    block_data: dict[str, Any], target_chain: str
+    block_data: dict[str, Any], target_network: str
 ) -> int:
-    """Calculate the latest block number for a specific chain from chain data"""
+    """
+    Calculate the latest block number for a specific chain from chain data.
+    
+    Args:
+        block_data: Prometheus query result data
+        target_network: The network/spec to filter by (e.g., "eth1", "base", "solana").
+                       This matches the Prometheus service label format: {network}-consumer
+    
+    The Prometheus metric uses service labels in the format "{network}-consumer"
+    (e.g., "eth1-consumer", "base-consumer", "solana-consumer").
+    """
     results = block_data["data"]["result"]
     latest_block = 0
 
     for result in results:
         service = result.get("metric", {}).get("service")
 
-        # Filter by target chain (consumer query only needs service)
+        # Filter by target network (consumer query needs service field)
+        # The service field contains the network name with "-consumer" suffix
         if not service or not service.endswith("-consumer"):
             continue
 
-        # Extract chain name by removing "-consumer" suffix
-        chain_name = service.replace("-consumer", "")
-        if not chain_name or chain_name.lower() != target_chain.lower():
+        # Extract network name by removing "-consumer" suffix
+        network_name = service.replace("-consumer", "")
+        if not network_name or network_name.lower() != target_network.lower():
             continue
 
         values = result.get("values", [])
