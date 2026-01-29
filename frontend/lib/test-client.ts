@@ -10,9 +10,9 @@ export interface TestRequestOptions {
   port?: string;
   skipCache?: boolean;
   requestType?: string; // Add request type parameter
-  quorumMin?: number;
-  quorumMax?: number;
-  quorumRate?: number;
+  crossValidationMin?: number;
+  crossValidationMax?: number;
+  crossValidationRate?: number;
   /**
    * Maximum number of response bytes to read for HTTP requests (streaming).
    * This prevents debug/trace payloads from OOM-crashing the browser.
@@ -270,9 +270,9 @@ export async function makeTestRequest(options: TestRequestOptions): Promise<Test
     port = '443',
     skipCache = false,
     requestType,
-    quorumMin,
-    quorumMax,
-    quorumRate,
+    crossValidationMin,
+    crossValidationMax,
+    crossValidationRate,
     maxResponseBytes,
     maxResponseChars,
   } = options;
@@ -366,15 +366,15 @@ export async function makeTestRequest(options: TestRequestOptions): Promise<Test
       headers['lava-extension'] = requestType;
     }
 
-    // Add quorum headers for cross validation
-    if (quorumMin !== undefined) {
-      headers['lava-quorum-min'] = quorumMin.toString();
+    // Add cross-validation headers
+    if (crossValidationMin !== undefined) {
+      headers['lava-cross-validation-min'] = crossValidationMin.toString();
     }
-    if (quorumMax !== undefined) {
-      headers['lava-quorum-max'] = quorumMax.toString();
+    if (crossValidationMax !== undefined) {
+      headers['lava-cross-validation-max'] = crossValidationMax.toString();
     }
-    if (quorumRate !== undefined) {
-      headers['lava-quorum-rate'] = quorumRate.toString();
+    if (crossValidationRate !== undefined) {
+      headers['lava-cross-validation-rate'] = crossValidationRate.toString();
     }
 
     // Make the request
