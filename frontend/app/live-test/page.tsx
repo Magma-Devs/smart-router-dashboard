@@ -797,7 +797,7 @@ export default function LiveTestPage() {
     apiData,
   ]);
 
-  // Generate cross-validation specific curl command with quorum headers
+  // Generate cross-validation specific curl command with cross-validation headers
   useEffect(() => {
     if (
       selectedChain &&
@@ -844,14 +844,14 @@ export default function LiveTestPage() {
           ? `-H "lava-extension: ${selectedRequestType}"`
           : '';
 
-      // Add quorum headers for cross-validation
-      const quorumHeaders = [
-        `-H "lava-quorum-min: ${crossValidationMin}"`,
-        `-H "lava-quorum-max: ${crossValidationMax}"`,
-        `-H "lava-quorum-rate: ${crossValidationRate}"`,
+      // Add cross-validation headers
+      const crossValidationHeaders = [
+        `-H "lava-cross-validation-min: ${crossValidationMin}"`,
+        `-H "lava-cross-validation-max: ${crossValidationMax}"`,
+        `-H "lava-cross-validation-rate: ${crossValidationRate}"`,
       ].join(' ');
 
-      const allHeaders = [headers, extensionHeader, quorumHeaders].filter(Boolean).join(' ');
+      const allHeaders = [headers, extensionHeader, crossValidationHeaders].filter(Boolean).join(' ');
 
       let cmd: string;
       if (selectedInterface.includes('/wss')) {
@@ -1117,9 +1117,9 @@ export default function LiveTestPage() {
         port,
         skipCache,
         requestType: selectedRequestType,
-        quorumMin: crossValidationMin,
-        quorumMax: crossValidationMax,
-        quorumRate: crossValidationRate,
+        crossValidationMin,
+        crossValidationMax,
+        crossValidationRate,
         ...caps,
       });
 
@@ -1136,12 +1136,12 @@ export default function LiveTestPage() {
       const headers = response.headers || {};
       setCrossValidationHeaders(headers);
 
-      // Cross validation uses quorum logic, so only check for lava-quorum-all-providers
-      const quorumProvidersHeader = headers['lava-quorum-all-providers'];
+      // Cross validation - check for lava-cross-validation-all-providers
+      const crossValidationProvidersHeader = headers['lava-cross-validation-all-providers'];
 
-      if (quorumProvidersHeader) {
+      if (crossValidationProvidersHeader) {
         // Remove brackets and format providers separated by commas
-        let formattedProviders = quorumProvidersHeader
+        let formattedProviders = crossValidationProvidersHeader
           .replace(/[\[\]]/g, '') // Remove brackets
           .trim();
 
