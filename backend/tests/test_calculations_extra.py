@@ -77,7 +77,7 @@ def test_requests_counter_resets_multiple():
         "data": {
             "result": [
                 {
-                    "metric": {"service": "chain-consumer"},
+                    "metric": {"spec": "CHAIN"},
                     "values": [[1, "100"], [2, "50"], [3, "70"], [4, "60"], [5, "65"]],
                 }
             ]

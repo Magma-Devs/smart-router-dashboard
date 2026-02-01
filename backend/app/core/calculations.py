@@ -95,39 +95,40 @@ def validate_prometheus_data(func: Callable[..., T]) -> Callable[..., T]:
 def calculate_uptime_percentage(
     health_data: dict[str, Any], target_chain: str
 ) -> float:
-    """Calculate uptime percentage for a specific chain from health data"""
+    """Calculate uptime percentage for a specific chain from health data.
+    
+    Filters by the `spec` label which contains the chain/network identifier
+    in uppercase (e.g., "ETH1", "BASE", "SOLANA").
+    The target_chain is the network identifier (e.g., "eth1", "base").
+    """
     results = health_data["data"]["result"]
     total_healthy_time = 0
     total_time = 0
 
-    # Track services we've seen to log duplicates
-    seen_services = set()
+    # Track specs we've seen to log duplicates
+    seen_specs = set()
 
     for result in results:
-        service = result.get("metric", {}).get("service")
+        spec = result.get("metric", {}).get("spec")
 
         # For "all chains", process all results
         if target_chain == "all":
             pass  # Process all results without filtering
         else:
-            # For specific chains, filter by target chain
-            # Filter by target chain (consumer query needs service field)
-            # The service field contains the chain name with "-consumer" suffix
-            if not service or not service.endswith("-consumer"):
+            # Filter by spec label (uppercase chain identifier like ETH1, BASE)
+            if not spec:
                 continue
 
-            # Extract chain name by removing "-consumer" suffix
-            chain_name = service.replace("-consumer", "")
-            if not chain_name or chain_name.lower() != target_chain.lower():
+            if spec.upper() != target_chain.upper():
                 continue
 
-            # Log duplicate services for the same chain
-            if service in seen_services:
+            # Log duplicate specs for the same chain
+            if spec in seen_specs:
                 logger.warning(
-                    f"Duplicate service found for chain {target_chain}: {service}. "
+                    f"Duplicate spec found for chain {target_chain}: {spec}. "
                     "Continuing with calculation (will aggregate values)."
                 )
-            seen_services.add(service)
+            seen_specs.add(spec)
 
         values = result.get("values", [])
 
@@ -152,25 +153,25 @@ def calculate_latency_ms(latency_data: dict[str, Any], target_chain: str) -> int
     Get the latest latency value for a specific chain.
 
     The input data is pre-aggregated by Prometheus using:
-    avg(avg_over_time(lava_consumer_end_to_end_latency_milliseconds[time_window])) by (service)
+    avg(avg_over_time(lava_consumer_end_to_end_latency_milliseconds[time_window])) by (spec)
 
     Prometheus already calculates the average across all time points,
     so we just return the latest value from the time series.
+    
+    Filters by the `spec` label which contains the chain/network identifier
+    in uppercase (e.g., "ETH1", "BASE", "SOLANA").
     """
     results = latency_data["data"]["result"]
 
     for result in results:
         metric = result.get("metric", {})
-        service = metric.get("service")
+        spec = metric.get("spec")
 
-        # Filter by target chain (consumer query needs service field)
-        # The service field contains the chain name with "-consumer" suffix
-        if not service or not service.endswith("-consumer"):
+        # Filter by spec label (uppercase chain identifier like ETH1, BASE)
+        if not spec:
             continue
 
-        # Extract chain name by removing "-consumer" suffix
-        chain_name = service.replace("-consumer", "")
-        if not chain_name or chain_name.lower() != target_chain.lower():
+        if spec.upper() != target_chain.upper():
             continue
 
         values = result.get("values", [])
@@ -182,7 +183,7 @@ def calculate_latency_ms(latency_data: dict[str, Any], target_chain: str) -> int
             latest_value = float(values[-1][1])
             latest_latency = round(latest_value)
             logger.info(
-                f"Latency for {target_chain} (service: {service}): {latest_latency}ms"
+                f"Latency for {target_chain} (spec: {spec}): {latest_latency}ms"
             )
             return latest_latency
         except (ValueError, TypeError, IndexError) as e:
@@ -257,21 +258,21 @@ def calculate_requests_in_time_window(
 
     The input data uses Prometheus increase() function which automatically
     handles counter resets, so we just get the latest value.
+    
+    Filters by the `spec` label which contains the chain/network identifier
+    in uppercase (e.g., "ETH1", "BASE", "SOLANA").
     """
     results = traffic_data["data"]["result"]
     total_relays = 0
 
     for result in results:
-        service = result.get("metric", {}).get("service")
+        spec = result.get("metric", {}).get("spec")
 
-        # Filter by target chain (consumer query needs service field)
-        # The service field contains the chain name with "-consumer" suffix
-        if not service or not service.endswith("-consumer"):
+        # Filter by spec label (uppercase chain identifier like ETH1, BASE)
+        if not spec:
             continue
 
-        # Extract chain name by removing "-consumer" suffix
-        chain_name = service.replace("-consumer", "")
-        if not chain_name or chain_name.lower() != target_chain.lower():
+        if spec.upper() != target_chain.upper():
             continue
 
         values = result.get("values", [])
@@ -304,25 +305,21 @@ def calculate_chain_latest_block_number(
     Args:
         block_data: Prometheus query result data
         target_network: The network/spec to filter by (e.g., "eth1", "base", "solana").
-                       This matches the Prometheus service label format: {network}-consumer
     
-    The Prometheus metric uses service labels in the format "{network}-consumer"
-    (e.g., "eth1-consumer", "base-consumer", "solana-consumer").
+    Filters by the `spec` label which contains the chain/network identifier
+    in uppercase (e.g., "ETH1", "BASE", "SOLANA").
     """
     results = block_data["data"]["result"]
     latest_block = 0
 
     for result in results:
-        service = result.get("metric", {}).get("service")
+        spec = result.get("metric", {}).get("spec")
 
-        # Filter by target network (consumer query needs service field)
-        # The service field contains the network name with "-consumer" suffix
-        if not service or not service.endswith("-consumer"):
+        # Filter by spec label (uppercase chain identifier like ETH1, BASE)
+        if not spec:
             continue
 
-        # Extract network name by removing "-consumer" suffix
-        network_name = service.replace("-consumer", "")
-        if not network_name or network_name.lower() != target_network.lower():
+        if spec.upper() != target_network.upper():
             continue
 
         values = result.get("values", [])
