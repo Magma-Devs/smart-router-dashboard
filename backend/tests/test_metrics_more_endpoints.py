@@ -13,16 +13,17 @@ class FakePromAgg:
     async def query_range(self, q, start, end, step):
         if "health" in q or "overall_health" in q:
             # health data: two chains, three samples 1/1/0 and 1/0/0
+            # Uses spec label (lava_consumer_overall_health_breakdown)
             return {
                 "status": "success",
                 "data": {
                     "result": [
                         {
-                            "metric": {"service": "hyperliquid-lava-consumer"},
+                            "metric": {"spec": "HYPERLIQUID"},
                             "values": [["t1", "1"], ["t2", "1"], ["t3", "0"]],
                         },
                         {
-                            "metric": {"service": "hyperliquid-official-consumer"},
+                            "metric": {"spec": "HYPERLIQUID"},
                             "values": [["t1", "1"], ["t2", "0"], ["t3", "0"]],
                         },
                     ]
@@ -34,11 +35,11 @@ class FakePromAgg:
                 "data": {
                     "result": [
                         {
-                            "metric": {"service": "hyperliquid-lava-consumer"},
+                            "metric": {"spec": "HYPERLIQUID"},
                             "values": [["t1", "100"], ["t2", "200"]],
                         },
                         {
-                            "metric": {"service": "hyperliquid-official-consumer"},
+                            "metric": {"spec": "HYPERLIQUID"},
                             "values": [["t1", "300"], ["t2", "300"]],
                         },
                     ]
@@ -50,11 +51,11 @@ class FakePromAgg:
                 "data": {
                     "result": [
                         {
-                            "metric": {"service": "hyperliquid-lava-consumer"},
+                            "metric": {"spec": "HYPERLIQUID"},
                             "values": [["t1", "100"], ["t2", "150"]],
                         },
                         {
-                            "metric": {"service": "hyperliquid-official-consumer"},
+                            "metric": {"spec": "HYPERLIQUID"},
                             "values": [["t1", "200"], ["t2", "240"]],
                         },
                     ]
@@ -66,11 +67,11 @@ class FakePromAgg:
                 "data": {
                     "result": [
                         {
-                            "metric": {"service": "hyperliquid-lava-consumer"},
+                            "metric": {"spec": "HYPERLIQUID"},
                             "values": [["t1", "1000"], ["t2", "1010"]],
                         },
                         {
-                            "metric": {"service": "hyperliquid-official-consumer"},
+                            "metric": {"spec": "HYPERLIQUID"},
                             "values": [["t1", "2000"], ["t2", "1999"]],
                         },
                     ]

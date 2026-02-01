@@ -206,7 +206,7 @@ class TestCalculationFunctions:
             "data": {
                 "result": [
                     {
-                        "metric": {"service": "ethereum-consumer"},
+                        "metric": {"spec": "ETH1"},
                         "values": [
                             ["1640995200", "1"],
                             ["1640995260", "1"],
@@ -216,7 +216,7 @@ class TestCalculationFunctions:
                 ]
             },
         }
-        result = calculate_uptime_percentage(health_data, "ethereum")
+        result = calculate_uptime_percentage(health_data, "eth1")
         assert result == 66.66666666666666  # 2 out of 3 samples healthy
 
     def test_calculate_uptime_percentage_invalid_data(self):
@@ -232,7 +232,7 @@ class TestCalculationFunctions:
             "data": {
                 "result": [
                     {
-                        "metric": {"service": "ethereum-consumer"},
+                        "metric": {"spec": "ETHEREUM"},
                         "values": [
                             ["1640995200", "150"],
                             ["1640995260", "200"],
@@ -252,7 +252,7 @@ class TestCalculationFunctions:
             "data": {
                 "result": [
                     {
-                        "metric": {"service": "ethereum-consumer"},
+                        "metric": {"spec": "ETHEREUM"},
                         "values": [["1640995200", "1000"], ["1640995260", "1200"]],
                     }
                 ]
@@ -268,7 +268,7 @@ class TestCalculationFunctions:
             "data": {
                 "result": [
                     {
-                        "metric": {"service": "ethereum-consumer"},
+                        "metric": {"spec": "ETHEREUM"},
                         "values": [
                             ["1640995200", "1000"],
                             ["1640995260", "1200"],
@@ -357,11 +357,11 @@ class TestLatestBlockCalculations:
             "data": {
                 "result": [
                     {
-                        "metric": {"service": "ETH1-consumer"},
+                        "metric": {"spec": "ETH1"},
                         "values": [[1640995200, "1000"], [1640995260, "1005"]],
                     },
                     {
-                        "metric": {"service": "ETH1-consumer"},
+                        "metric": {"spec": "ETH1"},
                         "values": [[1640995200, "1002"], [1640995260, "1007"]],
                     },
                 ]
@@ -378,7 +378,7 @@ class TestLatestBlockCalculations:
             "data": {
                 "result": [
                     {
-                        "metric": {"service": "BTC-consumer"},
+                        "metric": {"spec": "BTC"},
                         "values": [[1640995200, "1000"]],
                     }
                 ]

@@ -47,7 +47,7 @@ router = APIRouter()
 
 # Prometheus query constants
 PROMETHEUS_QUERIES = {
-    "consumer_health": "lava_consumer_overall_health",
+    "consumer_health": "lava_consumer_overall_health_breakdown",
     "provider_health": "lava_provider_overall_health",
     "consumer_traffic": "lava_consumer_total_relays_serviced",
     "provider_traffic": "lava_provider_total_relays_serviced",
@@ -362,11 +362,12 @@ async def get_chains_metrics(
         # Calculate metrics for each chain
         chains_data_dict = {}
         for chain in available_chains:
-            # Use network as key as there could be several
+            # Use chain.id as key (user-defined name)
+            # Use chain.network for Prometheus filtering (matches spec label)
             chains_data_dict[chain.id] = ChainMetrics(
                 network=chain.network,
-                uptime=calculate_uptime_percentage(chains_data, chain.id),
-                latency_in_ms=calculate_latency_ms(latency_data, chain.id),
+                uptime=calculate_uptime_percentage(chains_data, chain.network),
+                latency_in_ms=calculate_latency_ms(latency_data, chain.network),
                 reachability=calculate_chain_reachability_percentage(
                     provider_health_data,
                     [
@@ -375,7 +376,7 @@ async def get_chains_metrics(
                     ],
                 ),
                 requests_in_window=calculate_requests_in_time_window(
-                    chain_traffic_data, chain.id
+                    chain_traffic_data, chain.network
                 ),
                 latest_block=calculate_chain_latest_block_number(
                     consumer_latest_block_data, chain.network
@@ -464,10 +465,11 @@ async def get_chain_metrics(
         )
 
         # Calculate metrics for the specific chain
+        # Use selected_chain.network for Prometheus filtering (matches spec label)
         chain_metrics = ChainMetrics(
             network=selected_chain.network,
-            uptime=calculate_uptime_percentage(consumers_data, selected_chain.id),
-            latency_in_ms=calculate_latency_ms(latency_data, selected_chain.id),
+            uptime=calculate_uptime_percentage(consumers_data, selected_chain.network),
+            latency_in_ms=calculate_latency_ms(latency_data, selected_chain.network),
             reachability=calculate_chain_reachability_percentage(
                 provider_health_data,
                 [
@@ -476,7 +478,7 @@ async def get_chain_metrics(
                 ],
             ),
             requests_in_window=calculate_requests_in_time_window(
-                chain_traffic_data, selected_chain.id
+                chain_traffic_data, selected_chain.network
             ),
             latest_block=calculate_chain_latest_block_number(
                 consumer_latest_block_data, selected_chain.network
