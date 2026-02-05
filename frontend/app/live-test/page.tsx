@@ -317,18 +317,27 @@ export default function LiveTestPage() {
   };
 
   // Cross validation state
-  const [crossValidationMin, setCrossValidationMin] = useState<number>(1);
-  const [crossValidationMax, setCrossValidationMax] = useState<number>(5);
-  const [crossValidationRate, setCrossValidationRate] = useState<number>(1.0);
+  const [crossValidationMaxParticipants, setCrossValidationMaxParticipants] = useState<number>(5);
+  const [crossValidationAgreementThreshold, setCrossValidationAgreementThreshold] =
+    useState<number>(3);
   const [isCrossValidating, setIsCrossValidating] = useState(false);
   const [crossValidationResponse, setCrossValidationResponse] = useState<string>('');
   const [crossValidationStatus, setCrossValidationStatus] = useState<number | null>(null);
   const [crossValidationLatency, setCrossValidationLatency] = useState<number | null>(null);
-  const [crossValidationProvider, setCrossValidationProvider] = useState<string | null>(null);
   const [crossValidationHeaders, setCrossValidationHeaders] = useState<Record<
     string,
     string
   > | null>(null);
+  // Cross validation result headers
+  const [crossValidationResultStatus, setCrossValidationResultStatus] = useState<string | null>(
+    null,
+  );
+  const [crossValidationAllProviders, setCrossValidationAllProviders] = useState<string | null>(
+    null,
+  );
+  const [crossValidationAgreeingProviders, setCrossValidationAgreeingProviders] = useState<
+    string | null
+  >(null);
 
   // Tab state
   const [activeTab, setActiveTab] = useState<'single' | 'load' | 'batch' | 'cross'>('single');
@@ -655,14 +664,14 @@ export default function LiveTestPage() {
     fetchChains();
   }, [config.apiEndpoint, isAuthenticated, authLoading]);
 
-  // Update cross validation max/min when the network changes and provider count changes
+  // Update cross validation maxParticipants/agreementThreshold when the network changes
   useEffect(() => {
-    // Set max to the network's max providers when network changes
-    setCrossValidationMax(maxProvidersForNetwork);
+    // Set maxParticipants to the network's max providers when network changes
+    setCrossValidationMaxParticipants(maxProvidersForNetwork);
 
-    // Adjust min if it exceeds the network's max providers
-    if (crossValidationMin > maxProvidersForNetwork) {
-      setCrossValidationMin(maxProvidersForNetwork);
+    // Adjust agreementThreshold if it exceeds the network's max providers
+    if (crossValidationAgreementThreshold > maxProvidersForNetwork) {
+      setCrossValidationAgreementThreshold(maxProvidersForNetwork);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [maxProvidersForNetwork]);
@@ -705,6 +714,19 @@ export default function LiveTestPage() {
       setSelectedCommandIndex(0);
     }
   }, [selectedChain, apiData, selectedRequestType]);
+
+  // Auto-adjust load test limits when switching to debug/trace
+  useEffect(() => {
+    const isDebugOrTrace = selectedRequestType === 'debug' || selectedRequestType === 'trace';
+    if (isDebugOrTrace) {
+      if (numberOfRequests > 100) {
+        setNumberOfRequests(100);
+      }
+      if (concurrency > 10) {
+        setConcurrency(10);
+      }
+    }
+  }, [selectedRequestType, numberOfRequests, concurrency]);
 
   useEffect(() => {
     if (
@@ -846,9 +868,8 @@ export default function LiveTestPage() {
 
       // Add cross-validation headers
       const crossValidationHeaders = [
-        `-H "lava-cross-validation-min: ${crossValidationMin}"`,
-        `-H "lava-cross-validation-max: ${crossValidationMax}"`,
-        `-H "lava-cross-validation-rate: ${crossValidationRate}"`,
+        `-H "lava-cross-validation-max-participants: ${crossValidationMaxParticipants}"`,
+        `-H "lava-cross-validation-agreement-threshold: ${crossValidationAgreementThreshold}"`,
       ].join(' ');
 
       const allHeaders = [headers, extensionHeader, crossValidationHeaders].filter(Boolean).join(' ');
@@ -888,9 +909,8 @@ export default function LiveTestPage() {
     config.apiEndpoint,
     skipCache,
     apiData,
-    crossValidationMin,
-    crossValidationMax,
-    crossValidationRate,
+    crossValidationMaxParticipants,
+    crossValidationAgreementThreshold,
     config.endpointDomain,
     config.endpointPort,
   ]);
@@ -1063,10 +1083,12 @@ export default function LiveTestPage() {
     setCrossValidationResponse('');
     setCrossValidationStatus(null);
     setCrossValidationLatency(null);
-    setCrossValidationProvider(null);
     setCrossValidationHeaders(null);
     setCrossValidationHeadersExpanded(false);
     setCrossValidationResponseTruncated(false);
+    setCrossValidationResultStatus(null);
+    setCrossValidationAllProviders(null);
+    setCrossValidationAgreeingProviders(null);
 
     try {
       const baseNetwork = getNetworkFromChainId(selectedChain);
@@ -1117,9 +1139,8 @@ export default function LiveTestPage() {
         port,
         skipCache,
         requestType: selectedRequestType,
-        crossValidationMin,
-        crossValidationMax,
-        crossValidationRate,
+        crossValidationMaxParticipants,
+        crossValidationAgreementThreshold,
         ...caps,
       });
 
@@ -1132,40 +1153,49 @@ export default function LiveTestPage() {
       setCrossValidationLatency(response.latency_ms);
       setCrossValidationResponseTruncated(!!response.truncated);
 
-      // Extract provider information from headers
+      // Extract cross-validation information from headers
       const headers = response.headers || {};
       setCrossValidationHeaders(headers);
 
-      // Cross validation - check for lava-cross-validation-all-providers
-      const crossValidationProvidersHeader = headers['lava-cross-validation-all-providers'];
-
-      if (crossValidationProvidersHeader) {
-        // Remove brackets and format providers separated by commas
-        let formattedProviders = crossValidationProvidersHeader
-          .replace(/[\[\]]/g, '') // Remove brackets
-          .trim();
-
-        // Handle both comma-separated and space-separated providers
-        if (formattedProviders.includes(',')) {
-          // If already comma-separated, just clean up spacing
-          formattedProviders = formattedProviders
+      // Helper function to format provider list
+      const formatProviders = (providerHeader: string | undefined): string | null => {
+        if (!providerHeader) return null;
+        let formatted = providerHeader.replace(/[\[\]]/g, '').trim();
+        if (formatted.includes(',')) {
+          formatted = formatted
             .split(',')
-            .map((provider: string) => provider.trim())
+            .map((p: string) => p.trim())
             .join(', ');
-        } else if (formattedProviders.includes(' ')) {
-          // If space-separated, convert to comma-separated
-          formattedProviders = formattedProviders
-            .split(/\s+/) // Split by one or more spaces
-            .filter((provider: string) => provider.length > 0)
+        } else if (formatted.includes(' ')) {
+          formatted = formatted
+            .split(/\s+/)
+            .filter((p: string) => p.length > 0)
             .join(', ');
         }
+        return formatted || null;
+      };
 
-        setCrossValidationProvider(formattedProviders);
-      }
+      // Extract cross-validation status (success/failure)
+      const cvStatus = headers['lava-cross-validation-status'];
+      setCrossValidationResultStatus(cvStatus || null);
 
+      // Extract all participating providers
+      const allProviders = formatProviders(headers['lava-cross-validation-all-providers']);
+      setCrossValidationAllProviders(allProviders);
+
+      // Extract agreeing providers (only present on success)
+      const agreeingProviders = formatProviders(headers['lava-cross-validation-agreeing-providers']);
+      setCrossValidationAgreeingProviders(agreeingProviders);
+
+      const isSuccess = cvStatus?.toLowerCase() === 'success';
       toast({
-        title: 'Cross validation completed',
-        description: 'Cross validation test completed successfully',
+        title: isSuccess ? 'Cross validation succeeded' : 'Cross validation completed',
+        description: isSuccess
+          ? `Consensus reached with ${agreeingProviders?.split(', ').length || 0} agreeing providers`
+          : cvStatus
+            ? `Cross validation status: ${cvStatus}`
+            : 'Cross validation test completed',
+        variant: isSuccess ? 'default' : cvStatus ? 'destructive' : 'default',
       });
     } catch (error) {
       toast({
@@ -2313,50 +2343,72 @@ export default function LiveTestPage() {
                       </CardDescription>
                     </CardHeader>
                     <CardContent>
-                      <div className='space-y-4'>
-                        <div className='space-y-2'>
-                          <Label htmlFor='numberOfRequests' className='text-sm font-medium'>
-                            Number of Requests (1-500)
-                          </Label>
-                          <Input
-                            id='numberOfRequests'
-                            type='number'
-                            min={1}
-                            max={500}
-                            value={numberOfRequests}
-                            onChange={e =>
-                              setNumberOfRequests(
-                                Math.max(1, Math.min(500, parseInt(e.target.value) || 1)),
-                              )
-                            }
-                            className='w-32'
-                            disabled={isLoadTesting}
-                          />
-                        </div>
-                        <div className='space-y-2'>
-                          <Label htmlFor='concurrency' className='text-sm font-medium'>
-                            Concurrency (1-100)
-                          </Label>
-                          <Input
-                            id='concurrency'
-                            type='number'
-                            min={1}
-                            max={100}
-                            value={concurrency}
-                            onChange={e =>
-                              setConcurrency(
-                                Math.max(1, Math.min(100, parseInt(e.target.value) || 5)),
-                              )
-                            }
-                            className='w-32'
-                            disabled={isLoadTesting}
-                          />
-                        </div>
-                        <p className='text-sm text-muted-foreground'>
-                          Load tests will run {numberOfRequests} requests with up to {concurrency}{' '}
-                          concurrent requests and report success rate and latency statistics.
-                        </p>
-                      </div>
+                      {(() => {
+                        const isDebugOrTrace =
+                          selectedRequestType === 'debug' || selectedRequestType === 'trace';
+                        const maxRequests = isDebugOrTrace ? 100 : 500;
+                        const maxConcurrency = isDebugOrTrace ? 10 : 100;
+                        return (
+                          <div className='space-y-4'>
+                            <div className='space-y-2'>
+                              <Label htmlFor='numberOfRequests' className='text-sm font-medium'>
+                                Number of Requests (1-{maxRequests})
+                                {isDebugOrTrace && (
+                                  <span className='ml-2 text-xs text-amber-500'>
+                                    (limited for {selectedRequestType} requests)
+                                  </span>
+                                )}
+                              </Label>
+                              <Input
+                                id='numberOfRequests'
+                                type='number'
+                                min={1}
+                                max={maxRequests}
+                                value={Math.min(numberOfRequests, maxRequests)}
+                                onChange={e =>
+                                  setNumberOfRequests(
+                                    Math.max(1, Math.min(maxRequests, parseInt(e.target.value) || 1)),
+                                  )
+                                }
+                                className='w-32'
+                                disabled={isLoadTesting}
+                              />
+                            </div>
+                            <div className='space-y-2'>
+                              <Label htmlFor='concurrency' className='text-sm font-medium'>
+                                Concurrency (1-{maxConcurrency})
+                                {isDebugOrTrace && (
+                                  <span className='ml-2 text-xs text-amber-500'>
+                                    (limited for {selectedRequestType} requests)
+                                  </span>
+                                )}
+                              </Label>
+                              <Input
+                                id='concurrency'
+                                type='number'
+                                min={1}
+                                max={maxConcurrency}
+                                value={Math.min(concurrency, maxConcurrency)}
+                                onChange={e =>
+                                  setConcurrency(
+                                    Math.max(
+                                      1,
+                                      Math.min(maxConcurrency, parseInt(e.target.value) || 5),
+                                    ),
+                                  )
+                                }
+                                className='w-32'
+                                disabled={isLoadTesting}
+                              />
+                            </div>
+                            <p className='text-sm text-muted-foreground'>
+                              Load tests will run {Math.min(numberOfRequests, maxRequests)} requests
+                              with up to {Math.min(concurrency, maxConcurrency)} concurrent requests
+                              and report success rate and latency statistics.
+                            </p>
+                          </div>
+                        );
+                      })()}
                     </CardContent>
                   </Card>
                 )}
@@ -3581,36 +3633,24 @@ export default function LiveTestPage() {
                     <CardContent>
                       <div className='space-y-6'>
                         <div className='space-y-2'>
-                          <Label htmlFor='crossValidationMin' className='text-sm font-medium'>
-                            Minimum: {crossValidationMin}
+                          <Label
+                            htmlFor='crossValidationMaxParticipants'
+                            className='text-sm font-medium'
+                          >
+                            Max Participants: {crossValidationMaxParticipants}
                           </Label>
                           <input
-                            id='crossValidationMin'
-                            type='range'
-                            min='1'
-                            max={crossValidationMax}
-                            value={crossValidationMin}
-                            onChange={e => setCrossValidationMin(parseInt(e.target.value))}
-                            className='w-full'
-                            disabled={isCrossValidating || maxProvidersForNetwork === 1}
-                          />
-                        </div>
-                        <div className='space-y-2'>
-                          <Label htmlFor='crossValidationMax' className='text-sm font-medium'>
-                            Maximum: {crossValidationMax}
-                          </Label>
-                          <input
-                            id='crossValidationMax'
+                            id='crossValidationMaxParticipants'
                             type='range'
                             min='1'
                             max={maxProvidersForNetwork}
-                            value={crossValidationMax}
+                            value={crossValidationMaxParticipants}
                             onChange={e => {
                               const newMax = parseInt(e.target.value);
-                              setCrossValidationMax(newMax);
-                              // If minimum is higher than new maximum, adjust it
-                              if (crossValidationMin > newMax) {
-                                setCrossValidationMin(newMax);
+                              setCrossValidationMaxParticipants(newMax);
+                              // If agreementThreshold is higher than new max, adjust it
+                              if (crossValidationAgreementThreshold > newMax) {
+                                setCrossValidationAgreementThreshold(newMax);
                               }
                             }}
                             className='w-full'
@@ -3618,17 +3658,21 @@ export default function LiveTestPage() {
                           />
                         </div>
                         <div className='space-y-2'>
-                          <Label htmlFor='crossValidationRate' className='text-sm font-medium'>
-                            Rate: {crossValidationRate.toFixed(2)}
+                          <Label
+                            htmlFor='crossValidationAgreementThreshold'
+                            className='text-sm font-medium'
+                          >
+                            Agreement Threshold: {crossValidationAgreementThreshold}
                           </Label>
                           <input
-                            id='crossValidationRate'
+                            id='crossValidationAgreementThreshold'
                             type='range'
-                            min='0'
-                            max='1'
-                            step='0.01'
-                            value={crossValidationRate}
-                            onChange={e => setCrossValidationRate(parseFloat(e.target.value))}
+                            min='1'
+                            max={crossValidationMaxParticipants}
+                            value={crossValidationAgreementThreshold}
+                            onChange={e =>
+                              setCrossValidationAgreementThreshold(parseInt(e.target.value))
+                            }
                             className='w-full'
                             disabled={isCrossValidating || maxProvidersForNetwork === 1}
                           />
@@ -3640,8 +3684,9 @@ export default function LiveTestPage() {
                           </p>
                         ) : (
                           <p className='text-sm text-muted-foreground'>
-                            Cross validation will test with minimum: {crossValidationMin}, maximum:{' '}
-                            {crossValidationMax}, rate: {crossValidationRate.toFixed(2)}
+                            Cross validation will query up to {crossValidationMaxParticipants}{' '}
+                            providers and require {crossValidationAgreementThreshold} matching
+                            responses for consensus.
                           </p>
                         )}
                       </div>
@@ -3723,11 +3768,31 @@ export default function LiveTestPage() {
                       </CardTitle>
                       <div className='flex items-center gap-3'>
                         <div className='flex flex-col items-start gap-1 py-1'>
+                          {/* Cross-validation consensus status */}
+                          {crossValidationResultStatus && (
+                            <span className='flex items-center gap-1.5 text-sm font-medium'>
+                              {crossValidationResultStatus.toLowerCase() === 'success' ? (
+                                <CheckCircle2 className='h-4 w-4 text-green-500' />
+                              ) : (
+                                <XCircle className='h-4 w-4 text-red-500' />
+                              )}
+                              <span
+                                className={
+                                  crossValidationResultStatus.toLowerCase() === 'success'
+                                    ? 'text-green-500'
+                                    : 'text-red-500'
+                                }
+                              >
+                                {crossValidationResultStatus}
+                              </span>
+                            </span>
+                          )}
+                          {/* HTTP status code */}
                           {crossValidationStatus && (
                             <span className='flex items-center gap-1.5 text-sm font-medium'>
                               {getStatusIcon(crossValidationStatus)}
                               <span className={getStatusColor(crossValidationStatus)}>
-                                {crossValidationStatus}
+                                HTTP {crossValidationStatus}
                               </span>
                             </span>
                           )}
@@ -3736,16 +3801,6 @@ export default function LiveTestPage() {
                               <Timer className='h-4 w-4 text-slate-400' />
                               {crossValidationLatency.toFixed(1)}ms
                             </span>
-                          )}
-                          {crossValidationProvider && (
-                            <div className='flex items-center gap-1.5 text-sm text-slate-400'>
-                              <Server className='h-4 w-4 text-slate-400' />
-                              <span className='truncate' title={crossValidationProvider}>
-                                {crossValidationProvider.toLowerCase() === 'cached'
-                                  ? 'Cached'
-                                  : crossValidationProvider}
-                              </span>
-                            </div>
                           )}
                         </div>
                         <Button
@@ -3774,6 +3829,57 @@ export default function LiveTestPage() {
                           Response was truncated for safety (payload too large).
                         </div>
                       )}
+
+                      {/* Cross-validation provider details */}
+                      {(crossValidationAllProviders || crossValidationAgreeingProviders) && (
+                        <div className='mb-4 space-y-2 rounded-lg border border-slate-700 bg-slate-800/50 p-3'>
+                          <div className='text-xs font-medium uppercase tracking-wide text-slate-400'>
+                            Cross-Validation Details
+                          </div>
+                          {crossValidationAllProviders && (
+                            <div className='flex flex-col gap-1'>
+                              <span className='text-xs text-slate-500'>All Participants:</span>
+                              <div className='flex flex-wrap gap-1'>
+                                {crossValidationAllProviders.split(', ').map((provider, idx) => (
+                                  <span
+                                    key={idx}
+                                    className='inline-flex items-center rounded-md bg-slate-700 px-2 py-0.5 text-xs text-slate-300'
+                                    title={provider}
+                                  >
+                                    <Server className='mr-1 h-3 w-3' />
+                                    {provider.length > 20
+                                      ? `${provider.slice(0, 8)}...${provider.slice(-8)}`
+                                      : provider}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {crossValidationResultStatus?.toLowerCase() === 'success' &&
+                            crossValidationAgreeingProviders && (
+                              <div className='flex flex-col gap-1'>
+                                <span className='text-xs text-slate-500'>Agreeing Providers:</span>
+                                <div className='flex flex-wrap gap-1'>
+                                  {crossValidationAgreeingProviders
+                                    .split(', ')
+                                    .map((provider, idx) => (
+                                      <span
+                                        key={idx}
+                                        className='inline-flex items-center rounded-md bg-green-900/50 px-2 py-0.5 text-xs text-green-400'
+                                        title={provider}
+                                      >
+                                        <CheckCircle2 className='mr-1 h-3 w-3' />
+                                        {provider.length > 20
+                                          ? `${provider.slice(0, 8)}...${provider.slice(-8)}`
+                                          : provider}
+                                      </span>
+                                    ))}
+                                </div>
+                              </div>
+                            )}
+                        </div>
+                      )}
+
                       {renderInlineJson(
                         crossValidationResponse,
                         crossValidationHeadersExpanded,

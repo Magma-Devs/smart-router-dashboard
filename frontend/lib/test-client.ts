@@ -10,9 +10,8 @@ export interface TestRequestOptions {
   port?: string;
   skipCache?: boolean;
   requestType?: string; // Add request type parameter
-  crossValidationMin?: number;
-  crossValidationMax?: number;
-  crossValidationRate?: number;
+  crossValidationMaxParticipants?: number;
+  crossValidationAgreementThreshold?: number;
   /**
    * Maximum number of response bytes to read for HTTP requests (streaming).
    * This prevents debug/trace payloads from OOM-crashing the browser.
@@ -270,9 +269,8 @@ export async function makeTestRequest(options: TestRequestOptions): Promise<Test
     port = '443',
     skipCache = false,
     requestType,
-    crossValidationMin,
-    crossValidationMax,
-    crossValidationRate,
+    crossValidationMaxParticipants,
+    crossValidationAgreementThreshold,
     maxResponseBytes,
     maxResponseChars,
   } = options;
@@ -367,14 +365,11 @@ export async function makeTestRequest(options: TestRequestOptions): Promise<Test
     }
 
     // Add cross-validation headers
-    if (crossValidationMin !== undefined) {
-      headers['lava-cross-validation-min'] = crossValidationMin.toString();
+    if (crossValidationMaxParticipants !== undefined) {
+      headers['lava-cross-validation-max-participants'] = crossValidationMaxParticipants.toString();
     }
-    if (crossValidationMax !== undefined) {
-      headers['lava-cross-validation-max'] = crossValidationMax.toString();
-    }
-    if (crossValidationRate !== undefined) {
-      headers['lava-cross-validation-rate'] = crossValidationRate.toString();
+    if (crossValidationAgreementThreshold !== undefined) {
+      headers['lava-cross-validation-agreement-threshold'] = crossValidationAgreementThreshold.toString();
     }
 
     // Make the request
