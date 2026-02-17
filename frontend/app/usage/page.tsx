@@ -41,7 +41,6 @@ import {
   Cell,
   ResponsiveContainer,
   Tooltip,
-  Legend,
   LineChart,
   Line,
   XAxis,
@@ -152,19 +151,16 @@ interface ChainUsageData {
   };
 }
 
-// Color palette for pie chart
+// Color palette for pie chart - 40 distinct colors for unique method mapping
 const COLORS = [
-  '#6366F1', // Indigo
-  '#10B981', // Emerald
-  '#F59E42', // Orange
-  '#F43F5E', // Rose
-  '#3B82F6', // Blue
-  '#FBBF24', // Amber
-  '#8B5CF6', // Violet
-  '#14B8A6', // Teal
-  '#EAB308', // Yellow
-  '#EC4899', // Pink
+  '#6366F1', '#10B981', '#F59E42', '#F43F5E', '#3B82F6', '#FBBF24', '#8B5CF6', '#14B8A6', '#EAB308', '#EC4899',
+  '#06B6D4', '#84CC16', '#F97316', '#A855F7', '#0EA5E9', '#22C55E', '#E11D48', '#7C3AED', '#2563EB', '#CA8A04',
+  '#059669', '#DB2777', '#0891B2', '#65A30D', '#C2410C', '#9333EA', '#0284C7', '#16A34A', '#BE123C', '#6D28D9',
+  '#1D4ED8', '#A16207', '#047857', '#9D174D', '#0E7490', '#4D7C0F', '#9A3412', '#7E22CE', '#0369A1', '#15803D',
 ];
+function getChartColor(index: number): string {
+  return COLORS[index % COLORS.length];
+}
 
 // Generate mock requests over time data
 const generateRequestsOverTime = (baseRequests: number, points: number = 12) => {
@@ -653,8 +649,7 @@ export default function UsagePage() {
     return num.toString();
   };
 
-  return (
-    <ProtectedRoute>
+  const pageContent = (
       <div className="container mx-auto px-4 py-6 max-w-7xl">
         <div className="mb-8">
           <h1 className="text-3xl font-bold">Usage</h1>
@@ -869,8 +864,8 @@ export default function UsagePage() {
                     {/* Table and Pie Chart */}
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                       {/* Methods Table */}
-                      <div className="border rounded-lg overflow-hidden">
-                        <Table>
+                      <div className="border rounded-lg overflow-x-auto min-w-0">
+                        <Table className="min-w-[560px]">
                           <TableHeader>
                             <TableRow>
                               <SortableHeader field="method" label="Method" sortConfig={singleSortConfig} onSort={handleSingleSort} />
@@ -887,7 +882,7 @@ export default function UsagePage() {
                                   <div className="flex items-center gap-2">
                                     <div
                                       className="w-3 h-3 rounded-full"
-                                      style={{ backgroundColor: COLORS[usageData.single.methods.findIndex(m => m.method === method.method) % COLORS.length] }}
+                                      style={{ backgroundColor: getChartColor(usageData.single.methods.findIndex(m => m.method === method.method)) }}
                                     />
                                     {method.method}
                                   </div>
@@ -908,30 +903,39 @@ export default function UsagePage() {
                         </Table>
                       </div>
 
-                      {/* Pie Chart */}
-                      <div className="h-[300px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <PieChart>
-                            <Pie
-                              data={usageData.single.methods}
-                              dataKey="requests"
-                              nameKey="method"
-                              cx="50%"
-                              cy="50%"
-                              outerRadius={100}
-                            >
-                              {usageData.single.methods.map((entry, index) => (
-                                <Cell key={entry.method} fill={COLORS[index % COLORS.length]} />
-                              ))}
-                            </Pie>
-                            <Tooltip content={<CustomPieTooltip />} />
-                            <Legend
-                              formatter={(value) => (
-                                <span className="text-xs text-muted-foreground">{value}</span>
-                              )}
-                            />
-                          </PieChart>
-                        </ResponsiveContainer>
+                      {/* Pie Chart with legend below - chart and legend fully separated */}
+                      <div className="flex flex-col min-w-0 w-full overflow-visible">
+                        <div className="h-[320px] w-full min-w-[280px] shrink-0 overflow-visible">
+                          <ResponsiveContainer width="100%" height="100%" minWidth={280} minHeight={280}>
+                            <PieChart margin={{ top: 10, right: 10, bottom: 10, left: 10 }}>
+                              <Pie
+                                data={usageData.single.methods}
+                                dataKey="requests"
+                                nameKey="method"
+                                cx="50%"
+                                cy="50%"
+                                outerRadius={120}
+                                stroke="#27272a"
+                                strokeWidth={1}
+                              >
+                                {usageData.single.methods.map((entry, index) => (
+                                  <Cell key={entry.method} fill={getChartColor(index)} />
+                                ))}
+                              </Pie>
+                              <Tooltip content={<CustomPieTooltip />} />
+                            </PieChart>
+                          </ResponsiveContainer>
+                        </div>
+                        <div className="flex flex-wrap justify-center gap-x-4 gap-y-1.5 pt-4 mt-4 border-t">
+                          {usageData.single.methods.map((method, index) => (
+                            <div key={method.method} className="flex items-center gap-1.5 shrink-0">
+                              <div className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ backgroundColor: getChartColor(index) }} />
+                              <span className="text-xs font-mono text-muted-foreground truncate max-w-[180px]" title={method.method}>
+                                {method.method}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     </div>
 
@@ -1020,8 +1024,8 @@ export default function UsagePage() {
                     {/* Table and Pie Chart */}
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                       {/* Methods Table */}
-                      <div className="border rounded-lg overflow-hidden">
-                        <Table>
+                      <div className="border rounded-lg overflow-x-auto min-w-0">
+                        <Table className="min-w-[560px]">
                           <TableHeader>
                             <TableRow>
                               <SortableHeader field="method" label="Batch Composition" sortConfig={batchSortConfig} onSort={handleBatchSort} />
@@ -1038,7 +1042,7 @@ export default function UsagePage() {
                                   <div className="flex items-start gap-2">
                                     <div
                                       className="w-3 h-3 rounded-full mt-1 flex-shrink-0"
-                                      style={{ backgroundColor: COLORS[usageData.batch.methods.findIndex(m => m.method === method.method) % COLORS.length] }}
+                                      style={{ backgroundColor: getChartColor(usageData.batch.methods.findIndex(m => m.method === method.method)) }}
                                     />
                                     <div className="whitespace-pre-line">
                                       {method.method}
@@ -1061,32 +1065,39 @@ export default function UsagePage() {
                         </Table>
                       </div>
 
-                      {/* Pie Chart */}
-                      <div className="h-[300px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <PieChart>
-                            <Pie
-                              data={usageData.batch.methods}
-                              dataKey="requests"
-                              nameKey="method"
-                              cx="50%"
-                              cy="50%"
-                              outerRadius={100}
-                            >
-                              {usageData.batch.methods.map((entry, index) => (
-                                <Cell key={entry.method} fill={COLORS[index % COLORS.length]} />
-                              ))}
-                            </Pie>
-                            <Tooltip content={<CustomPieTooltip />} />
-                            <Legend
-                              formatter={(value) => (
-                                <span className="text-xs text-muted-foreground whitespace-pre-line" title={value}>
-                                  {value}
-                                </span>
-                              )}
-                            />
-                          </PieChart>
-                        </ResponsiveContainer>
+                      {/* Pie Chart with legend below - chart and legend fully separated */}
+                      <div className="flex flex-col min-w-0 w-full overflow-visible">
+                        <div className="h-[320px] w-full min-w-[280px] shrink-0 overflow-visible">
+                          <ResponsiveContainer width="100%" height="100%" minWidth={280} minHeight={280}>
+                            <PieChart margin={{ top: 10, right: 10, bottom: 10, left: 10 }}>
+                              <Pie
+                                data={usageData.batch.methods}
+                                dataKey="requests"
+                                nameKey="method"
+                                cx="50%"
+                                cy="50%"
+                                outerRadius={120}
+                                stroke="#27272a"
+                                strokeWidth={1}
+                              >
+                                {usageData.batch.methods.map((entry, index) => (
+                                  <Cell key={entry.method} fill={getChartColor(index)} />
+                                ))}
+                              </Pie>
+                              <Tooltip content={<CustomPieTooltip />} />
+                            </PieChart>
+                          </ResponsiveContainer>
+                        </div>
+                        <div className="flex flex-wrap justify-center gap-x-4 gap-y-1.5 pt-4 mt-4 border-t">
+                          {usageData.batch.methods.map((method, index) => (
+                            <div key={method.method} className="flex items-center gap-1.5 shrink-0">
+                              <div className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ backgroundColor: getChartColor(index) }} />
+                              <span className="text-xs font-mono text-muted-foreground truncate max-w-[180px]" title={method.method}>
+                                {method.method}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     </div>
 
@@ -1103,6 +1114,7 @@ export default function UsagePage() {
           </Card>
         )}
       </div>
-    </ProtectedRoute>
   );
+
+  return <ProtectedRoute>{pageContent}</ProtectedRoute>;
 }
