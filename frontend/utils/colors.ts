@@ -6,8 +6,8 @@
 // Color thresholds
 const UPTIME_GREEN = 99.5;
 const UPTIME_ORANGE = 95;
-const REACHABILITY_GREEN = 95;
-const REACHABILITY_ORANGE = 85;
+const REACHABILITY_GREEN = 100;
+const REACHABILITY_ORANGE = 99;
 const LATENCY_GREEN = 300;
 const LATENCY_ORANGE = 500;
 
@@ -68,9 +68,12 @@ export const getLatencyColorName = (value: string): 'green' | 'orange' | 'red' =
   return 'red';
 };
 
-export const getCacheHitColorName = (value: string | undefined): 'grey' => {
-  // TODO: Color thresholds to be defined later
-  return 'grey';
+export const getCacheHitColorName = (value: string | undefined): 'grey' | 'green' => {
+  if (!value || value === 'Error' || value === 'N/A' || value === 'Coming Soon') return 'grey';
+  const num = parseFloat(value.replace('%', ''));
+  if (isNaN(num)) return 'grey';
+  if (num <= 10) return 'grey';
+  return 'green';
 };
 
 export const getErrorRecoveryColorName = (
