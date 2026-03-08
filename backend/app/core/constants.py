@@ -12,9 +12,6 @@ DEFAULT_AUTH_USERNAME = "admin"
 DEFAULT_AUTH_PASSWORD = "password"
 DEFAULT_PROMETHEUS_URL = "http://prometheus.lava.lavapro.xyz"
 DEFAULT_HELM_VALUES_DIR = "/app/helm-values"
-DEFAULT_S3_REGION = "us-east-1"
-DEFAULT_S3_BUCKET = "smart-router-output-metrics"
-
 # Prometheus Configuration
 DEFAULT_PROMETHEUS_RETRIES = 3
 DEFAULT_PROMETHEUS_RETRY_DELAY = 0.5

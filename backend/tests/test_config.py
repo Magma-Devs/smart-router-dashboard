@@ -204,16 +204,6 @@ class TestSettings:
         assert config["retries"] == 2
         assert config["verify_ssl"] is True
 
-    def test_get_s3_config(self):
-        """Test getting S3 configuration as dictionary."""
-        settings = Settings(s3_bucket="test-bucket", s3_region="us-west-2")
-
-        config = settings.get_s3_config()
-
-        assert config["bucket"] == "test-bucket"
-        assert config["region"] == "us-west-2"
-        assert config["access_key"] is None
-        assert config["secret_key"] is None
 
 
 class TestGetSettings:
