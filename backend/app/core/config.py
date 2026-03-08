@@ -71,7 +71,10 @@ class Settings(BaseSettings):
     )
 
     # CORS settings
-    cors_origins: list[str] = Field(default=["*"], description="Allowed CORS origins")
+    cors_origins: list[str] = Field(
+        default=["http://localhost:3000", "http://127.0.0.1:3000", "http://0.0.0.0:3000"],
+        description="Allowed CORS origins",
+    )
 
     # Feature flags
     debug: bool = Field(default=False, description="Enable debug mode")
@@ -120,15 +123,20 @@ class Settings(BaseSettings):
     @field_validator("cors_origins")
     @classmethod
     def validate_cors_origins(cls, v: list[str]) -> list[str]:
-        """Validate CORS origins format."""
+        """Validate CORS origins format. Wildcard '*' is not allowed."""
         if not isinstance(v, list):
             raise ValueError("CORS origins must be a list")
 
         for origin in v:
             if not isinstance(origin, str):
                 raise ValueError("Each CORS origin must be a string")
-            # Allow "*" or valid URL format
-            if origin != "*" and not (
+            if origin == "*":
+                raise ValueError(
+                    "Wildcard CORS origin '*' is not allowed. "
+                    "Set CORS_ORIGINS to explicit origins, e.g.: "
+                    '[\"https://dashboard.example.com\"]'
+                )
+            if not (
                 origin.startswith(("http://", "https://"))
                 or origin.startswith(("localhost:", "127.0.0.1:", "0.0.0.0:"))
             ):
