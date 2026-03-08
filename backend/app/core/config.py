@@ -13,8 +13,6 @@ from .constants import (
     DEFAULT_AUTH_PASSWORD,
     DEFAULT_PROMETHEUS_URL,
     DEFAULT_HELM_VALUES_DIR,
-    DEFAULT_S3_REGION,
-    DEFAULT_S3_BUCKET,
     DEFAULT_PROMETHEUS_RETRIES,
     DEFAULT_PROMETHEUS_RETRY_DELAY,
     DEFAULT_PROMETHEUS_TIMEOUT,
@@ -72,22 +70,11 @@ class Settings(BaseSettings):
         default=DEFAULT_HELM_VALUES_DIR, description="Directory for Helm values files"
     )
 
-    # S3 settings
-    s3_bucket: str | None = Field(
-        default=DEFAULT_S3_BUCKET, description="S3 bucket for metrics storage"
-    )
-    s3_access_key: str | None = Field(default=None, description="S3 access key")
-    s3_secret_key: str | None = Field(default=None, description="S3 secret key")
-    s3_region: str = Field(default=DEFAULT_S3_REGION, description="S3 region")
-
     # CORS settings
     cors_origins: list[str] = Field(default=["*"], description="Allowed CORS origins")
 
     # Feature flags
     debug: bool = Field(default=False, description="Enable debug mode")
-    is_send_metrics_to_s3: bool = Field(
-        default=False, description="Enable S3 metrics upload"
-    )
 
     # Logging
     log_level: str = Field(default="INFO", description="Logging level")
@@ -230,15 +217,6 @@ class Settings(BaseSettings):
             "verify_ssl": self.prometheus_verify_ssl,
         }
 
-    def get_s3_config(self) -> dict[str, str | None]:
-        """Get S3 configuration as a dictionary."""
-        return {
-            "bucket": self.s3_bucket,
-            "access_key": self.s3_access_key,
-            "secret_key": self.s3_secret_key,
-            "region": self.s3_region,
-        }
-
     # Backward-compatible attribute accessors
     @property
     def AUTH_USERNAME(self) -> str:
@@ -253,10 +231,6 @@ class Settings(BaseSettings):
         return self.debug
 
     @property
-    def IS_SEND_METRICS_TO_S3(self) -> bool:
-        return self.is_send_metrics_to_s3
-
-    @property
     def PROMETHEUS_URL(self) -> str:
         return self.prometheus_url
 
@@ -267,22 +241,6 @@ class Settings(BaseSettings):
     @property
     def DEFAULT_METRICS(self):
         return self.default_metrics
-
-    @property
-    def S3_ACCESS_KEY(self) -> str | None:
-        return self.s3_access_key
-
-    @property
-    def S3_SECRET_KEY(self) -> str | None:
-        return self.s3_secret_key
-
-    @property
-    def S3_REGION(self) -> str:
-        return self.s3_region
-
-    @property
-    def S3_BUCKET(self) -> str | None:
-        return self.s3_bucket
 
     @property
     def TENANT_ID(self) -> str:
