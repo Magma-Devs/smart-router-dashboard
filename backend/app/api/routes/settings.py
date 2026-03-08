@@ -83,12 +83,14 @@ def get_effective_prometheus_url() -> str:
 
 
 @router.get("/", response_model=SettingsResponse)
-async def get_settings():
+async def get_settings(
+    current_user: str = Depends(get_current_user),
+):
     """
     Get current application settings.
 
     Returns the current settings including any runtime overrides applied by the frontend.
-    This endpoint is public as the settings are not sensitive.
+    Requires authentication.
     """
     return SettingsResponse(
         prometheus_url=get_effective_prometheus_url(),
