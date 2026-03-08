@@ -506,3 +506,142 @@ def calculate_provider_requests_in_time_window(
         logger.info(f"Total requests for provider {target_provider}: {total_relays}")
 
     return total_relays
+
+
+# ---------------------------------------------------------------------------
+# Node / endpoint-level calculation functions (unified smart router)
+#
+# All lava_rpc_endpoint_* metrics use provider name as endpoint_id label.
+# Functions below match by node name (case-insensitive) rather than URL.
+# ---------------------------------------------------------------------------
+
+
+def _node_matches(metric: dict, node_name: str, network: str) -> bool:
+    """Return True if a Prometheus metric matches the given node name and network.
+
+    Matches endpoint_id case-insensitively against node_name, and spec
+    case-insensitively against network, so that two nodes with the same
+    name on different routers (e.g. "lava" on ETH1 and BASE) are kept separate.
+    """
+    if metric.get("endpoint_id", "").lower() != node_name.lower():
+        return False
+    spec = metric.get("spec", "")
+    return not spec or spec.lower() == network.lower()
+
+
+@validate_prometheus_data
+def calculate_node_uptime_percentage(
+    endpoint_health_data: dict[str, Any], node_name: str, network: str = ""
+) -> float:
+    """Calculate uptime percentage for a node based on its name and network.
+
+    Matches by endpoint_id (node name) and spec (network) to avoid mixing
+    same-named nodes from different routers.
+    A node is healthy at a given time step if any matching series reports health == 1.
+    """
+    if not node_name:
+        return 0.0
+
+    results = endpoint_health_data["data"]["result"]
+    healthy_steps: dict[float, bool] = {}  # timestamp -> was_healthy
+
+    for result in results:
+        if not _node_matches(result.get("metric", {}), node_name, network):
+            continue
+
+        for timestamp, value in result.get("values", []):
+            ts = float(timestamp)
+            try:
+                is_healthy = float(value) == 1.0
+            except (ValueError, TypeError):
+                is_healthy = False
+            # A step is healthy if any matching endpoint is healthy
+            healthy_steps[ts] = healthy_steps.get(ts, False) or is_healthy
+
+    if not healthy_steps:
+        return 0.0
+
+    healthy_count = sum(1 for v in healthy_steps.values() if v)
+    return healthy_count / len(healthy_steps) * 100
+
+
+@validate_prometheus_data
+def calculate_node_latency_ms(
+    latency_data: dict[str, Any], node_name: str, network: str = ""
+) -> int:
+    """Get the latest average latency for a node, scoped by network."""
+    if not node_name:
+        return 0
+
+    results = latency_data["data"]["result"]
+    matching_latencies: list[float] = []
+
+    for result in results:
+        if not _node_matches(result.get("metric", {}), node_name, network):
+            continue
+
+        values = result.get("values", [])
+        if not values:
+            continue
+        try:
+            latest = float(values[-1][1])
+            if not (latest != latest):  # skip NaN
+                matching_latencies.append(latest)
+        except (ValueError, TypeError, IndexError):
+            continue
+
+    if not matching_latencies:
+        return 0
+    return round(sum(matching_latencies) / len(matching_latencies))
+
+
+@validate_prometheus_data
+def calculate_node_requests_in_time_window(
+    traffic_data: dict[str, Any], node_name: str, network: str = ""
+) -> int:
+    """Calculate total requests for a node, scoped by network."""
+    if not node_name:
+        return 0
+
+    results = traffic_data["data"]["result"]
+    total = 0
+
+    for result in results:
+        if not _node_matches(result.get("metric", {}), node_name, network):
+            continue
+
+        values = result.get("values", [])
+        if not values:
+            continue
+        try:
+            total += int(float(values[-1][1]))
+        except (ValueError, TypeError, IndexError):
+            continue
+
+    return total
+
+
+@validate_prometheus_data
+def calculate_node_latest_block_number(
+    block_data: dict[str, Any], node_name: str, network: str = ""
+) -> int:
+    """Get the highest latest block number for a node, scoped by network."""
+    if not node_name:
+        return 0
+
+    results = block_data["data"]["result"]
+    latest_block = 0
+
+    for result in results:
+        if not _node_matches(result.get("metric", {}), node_name, network):
+            continue
+
+        values = result.get("values", [])
+        if values:
+            try:
+                block_val = int(float(values[-1][1]))
+                latest_block = max(latest_block, block_val)
+            except (ValueError, TypeError, IndexError):
+                continue
+
+    return latest_block

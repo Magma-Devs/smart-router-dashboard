@@ -26,7 +26,7 @@ import { useDataFetching } from '@/hooks/useDataFetching';
 import { getChainLabel } from '@/app/config/chains';
 
 // Type and service imports
-import { MetricsData, ChainsToProvidersResponse } from '@/types/metrics';
+import { MetricsData, RoutersToNodesResponse } from '@/types/metrics';
 import { MetricsService } from '@/services/metricsService';
 import { TIME_FRAMES, DEFAULT_TIME_FRAME } from '@/constants/timeFrames';
 
@@ -56,10 +56,10 @@ export function InDepthMetrics({}: InDepthMetricsProps) {
   const [selectedTimeFrame, setSelectedTimeFrame] = useState(DEFAULT_TIME_FRAME);
 
   // Available options state
-  const [availableChains, setAvailableChains] = useState<Array<{ id: string; network: string }>>(
+  const [availableRouters, setAvailableRouters] = useState<Array<{ id: string; network: string }>>(
     [],
   );
-  const [availableProviders, setAvailableProviders] = useState<
+  const [availableNodes, setAvailableNodes] = useState<
     Array<{ id: string; network: string }>
   >([]);
   const [isLoadingComponents, setIsLoadingComponents] = useState(false);
@@ -78,8 +78,8 @@ export function InDepthMetrics({}: InDepthMetricsProps) {
   }, []);
 
   /**
-   * Fetches available chains and providers from the metrics APIs.
-   * This populates the dropdown options with chains/providers that have actual metrics data.
+   * Fetches available routers and nodes from the metrics APIs.
+   * This populates the dropdown options with routers/nodes that have actual metrics data.
    * More efficient and accurate than using the components API.
    */
   const fetchComponents = async () => {
@@ -89,40 +89,40 @@ export function InDepthMetrics({}: InDepthMetricsProps) {
 
     setIsLoadingComponents(true);
     try {
-      // Use minimal time windows (1 minute) just to get available chains and providers
+      // Use minimal time windows (1 minute) just to get available routers and nodes
       const [chainsResponse, providersResponse] = await Promise.all([
         MetricsService.fetchMetricsForAllChains(1, 1),
         MetricsService.fetchMetricsForAllProviders(1, 1),
       ]);
 
-      // Extract available chains and providers from metrics responses with network info
-      const chainsData = Object.entries(chainsResponse.chains).map(
+      // Extract available routers and nodes from metrics responses with network info
+      const routersData = Object.entries(chainsResponse.chains).map(
         ([chainId, chainMetrics]: [string, any]) => ({
           id: chainId,
           network: chainMetrics.network,
         }),
       );
 
-      const providersData = Object.entries(providersResponse.providers).map(
+      const nodesData = Object.entries(providersResponse.providers).map(
         ([providerId, providerMetrics]: [string, any]) => ({
           id: providerId,
           network: providerMetrics.network,
         }),
       );
 
-      setAvailableChains(chainsData);
-      setAvailableProviders(providersData);
+      setAvailableRouters(routersData);
+      setAvailableNodes(nodesData);
     } catch (error) {
-      console.error('Error fetching available chains and providers:', error);
-      setAvailableChains([]);
-      setAvailableProviders([]);
+      console.error('Error fetching available routers and nodes:', error);
+      setAvailableRouters([]);
+      setAvailableNodes([]);
     } finally {
       setIsLoadingComponents(false);
     }
   };
 
   /**
-   * Fetches metrics data based on current selections (time frame, available chains/providers).
+   * Fetches metrics data based on current selections (time frame, available routers/nodes).
    * Handles both real API data and error states.
    */
   const handleFetchData = useCallback(async () => {
@@ -133,23 +133,23 @@ export function InDepthMetrics({}: InDepthMetricsProps) {
         const stepSize = Math.max(1, Math.floor(timeFrameMinutes / 60)); // 1 minute steps for up to 1 hour, then scale up
 
         // Fetch real metrics using the new simplified backend APIs
-        const [chainsResponse, providersResponse, chainsToProvidersResponse] = await Promise.all([
+        const [chainsResponse, providersResponse, routersToNodesResponse] = await Promise.all([
           MetricsService.fetchMetricsForAllChains(timeFrameMinutes, stepSize),
           MetricsService.fetchMetricsForAllProviders(timeFrameMinutes, stepSize),
           MetricsService.fetchChainsToProviders(timeFrameMinutes, stepSize),
         ]);
 
-        // Get available chains and providers from API responses
-        const chainsFromApi = Object.keys(chainsResponse.chains);
+        // Get available routers from API responses
+        const routersFromApi = Object.keys(chainsResponse.chains);
 
-        // Create a mapping from provider names to chain information using chains-to-providers data
-        const providerToChainMap: Record<string, { chainValue: string; chainLabel: string }> = {};
-        chainsToProvidersResponse.chains.forEach((chain: any) => {
-          chain.providers.forEach((provider: any) => {
-            // Use composite key to handle duplicate provider names across chains
+        // Create a mapping from node names to router information using routers-to-nodes data
+        const nodeToRouterMap: Record<string, { chainValue: string; chainLabel: string }> = {};
+        routersToNodesResponse.chains.forEach((chain: any) => {
+          chain.nodes.forEach((node: any) => {
+            // Use composite key to handle duplicate node names across routers
             // Convert to lowercase to match backend key format
-            const compositeKey = `${chain.id}-${provider.name}`.toLowerCase();
-            providerToChainMap[compositeKey] = {
+            const compositeKey = `${chain.id}-${node.name}`.toLowerCase();
+            nodeToRouterMap[compositeKey] = {
               chainValue: chain.id,
               chainLabel: getChainLabel(chain.network),
             };
@@ -158,7 +158,7 @@ export function InDepthMetrics({}: InDepthMetricsProps) {
 
         // Build the response data structure
         const realData = {
-          chains: chainsFromApi.map(chainId => ({
+          chains: routersFromApi.map(chainId => ({
             // Router column: show chain id (router name)
             chain: chainId,
             // Chain column: show network label and use network value for icon lookup
@@ -178,12 +178,12 @@ export function InDepthMetrics({}: InDepthMetricsProps) {
               const providerName = providerMetrics.provider_name || providerId;
               // Use providerId as the composite key to match the mapping
 
-              const chainInfo = providerToChainMap[providerId];
+              const routerInfo = nodeToRouterMap[providerId];
               return {
                 provider: providerName,
-                chain: chainInfo?.chainLabel || 'Unknown Chain',
+                chain: routerInfo?.chainLabel || 'Unknown Chain',
                 chainValue:
-                  providerMetrics.network || chainInfo?.chainValue || providerName.split('-')[0], // Use network field for icon lookup
+                  providerMetrics.network || routerInfo?.chainValue || providerName.split('-')[0], // Use network field for icon lookup
                 latest_block: MetricsService.formatLatestBlock(providerMetrics.latest_block),
                 traffic: MetricsService.formatTraffic(providerMetrics.requests_in_window),
                 uptime: MetricsService.formatPercentage(providerMetrics.uptime),
@@ -191,8 +191,8 @@ export function InDepthMetrics({}: InDepthMetricsProps) {
               };
             },
           ),
-          selectedChain: 'All Chains',
-          selectedProvider: 'All Providers',
+          selectedRouter: 'All Routers',
+          selectedNode: 'All Nodes',
           timeFrame: selectedTimeFrame,
         };
 
@@ -203,8 +203,8 @@ export function InDepthMetrics({}: InDepthMetricsProps) {
         return {
           chains: [],
           providers: [],
-          selectedChain: 'All Chains',
-          selectedProvider: 'All Providers',
+          selectedRouter: 'All Routers',
+          selectedNode: 'All Nodes',
           timeFrame: selectedTimeFrame,
         };
       }
@@ -277,7 +277,7 @@ export function InDepthMetrics({}: InDepthMetricsProps) {
         <div className='flex items-center justify-between'>
           <div>
             <CardTitle>In-Depth Metrics</CardTitle>
-            <CardDescription>Detailed performance metrics for chains and providers</CardDescription>
+            <CardDescription>Detailed performance metrics for routers and nodes</CardDescription>
           </div>
         </div>
       </CardHeader>

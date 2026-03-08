@@ -37,7 +37,7 @@ import { useDebounce } from '@/hooks/use-debounce';
 import { chains } from '@/app/config/chains';
 import { ProtectedRoute } from '@/components/protected-route';
 
-interface ChainInterface {
+interface RouterInterface {
   name: string[];
   port: number;
   addons: string[];
@@ -52,12 +52,12 @@ interface ChainInterface {
   }[];
 }
 
-interface ChainConfig {
+interface RouterConfig {
   name: string;
-  interfaces: ChainInterface[];
+  interfaces: RouterInterface[];
 }
 
-interface ProviderInterface {
+interface NodeInterface {
   name: string;
   nodes: {
     endpoint: string;
@@ -65,16 +65,16 @@ interface ProviderInterface {
   }[];
 }
 
-interface Provider {
+interface NodeModel {
   name: string;
-  interfaces: ProviderInterface[];
-  chainIndex: number;
+  interfaces: NodeInterface[];
+  routerIndex: number;
 }
 
 type Step = 1 | 2 | 3;
 const steps = [
-  { id: 1, title: 'Add Chains', description: 'Configure your chains' },
-  { id: 2, title: 'Add Providers', description: 'Configure providers for each chain' },
+  { id: 1, title: 'Add Routers', description: 'Configure your routers' },
+  { id: 2, title: 'Add Nodes', description: 'Configure nodes for each router' },
   { id: 3, title: 'Review', description: 'Review your configuration' },
 ];
 
@@ -85,17 +85,17 @@ const interfaces = [
   { value: 'grpc', label: 'gRPC', color: 'bg-red-500' },
 ];
 
-interface ProviderCardProps {
+interface NodeCardProps {
   providerName: string;
-  interfaces: ChainInterface[];
-  chainIndex: number;
+  interfaces: RouterInterface[];
+  routerIndex: number;
 }
 
-const ProviderCard = ({ providerName, interfaces, chainIndex }: ProviderCardProps) => {
+const NodeCard = ({ providerName, interfaces, routerIndex }: NodeCardProps) => {
   return (
     <div className='space-y-2'>
       <div className='flex items-center gap-2'>
-        <h5 className='font-medium'>Provider: {providerName}</h5>
+        <h5 className='font-medium'>Node: {providerName}</h5>
         <span className='text-sm text-muted-foreground'></span>
       </div>
       <div className='flex flex-wrap gap-2'>
@@ -132,42 +132,42 @@ const ProviderCard = ({ providerName, interfaces, chainIndex }: ProviderCardProp
   );
 };
 
-const useProviderNameUpdate = (
-  chainConfigs: ChainConfig[],
-  setChainConfigs: React.Dispatch<React.SetStateAction<ChainConfig[]>>,
+const useNodeNameUpdate = (
+  routerConfigs: RouterConfig[],
+  setRouterConfigs: React.Dispatch<React.SetStateAction<RouterConfig[]>>,
 ) => {
-  const [localProviderName, setLocalProviderName] = useState<string>('');
-  const [currentProviderKey, setCurrentProviderKey] = useState<string>('');
-  const debouncedName = useDebounce(localProviderName, 1000);
+  const [localNodeName, setLocalNodeName] = useState<string>('');
+  const [currentNodeKey, setCurrentNodeKey] = useState<string>('');
+  const debouncedName = useDebounce(localNodeName, 1000);
   const { toast } = useToast();
 
   useEffect(() => {
-    if (debouncedName && currentProviderKey) {
-      const [chainIndex, providerName] = currentProviderKey.split(':');
-      updateProviderName(parseInt(chainIndex), providerName, debouncedName);
+    if (debouncedName && currentNodeKey) {
+      const [routerIndex, nodeName] = currentNodeKey.split(':');
+      updateNodeName(parseInt(routerIndex), nodeName, debouncedName);
     }
-  }, [debouncedName, currentProviderKey]);
+  }, [debouncedName, currentNodeKey]);
 
-  const updateProviderName = useCallback(
-    (chainIndex: number, oldName: string, newName: string) => {
-      // Validate provider name
-      const providerNameRegex = /^[a-zA-Z0-9_-]{3,}$/;
-      if (!providerNameRegex.test(newName)) {
+  const updateNodeName = useCallback(
+    (routerIndex: number, oldName: string, newName: string) => {
+      // Validate node name
+      const nodeNameRegex = /^[a-zA-Z0-9_-]{3,}$/;
+      if (!nodeNameRegex.test(newName)) {
         toast({
-          title: 'Invalid provider name',
+          title: 'Invalid node name',
           description:
-            'Provider name must be at least 3 characters long and contain only letters, numbers, hyphens, and underscores.',
+            'Node name must be at least 3 characters long and contain only letters, numbers, hyphens, and underscores.',
           variant: 'destructive',
         });
         return;
       }
 
-      setChainConfigs((prevChains: ChainConfig[]) => {
-        const newChains = [...prevChains];
-        const chain = newChains[chainIndex];
+      setRouterConfigs((prevRouters: RouterConfig[]) => {
+        const newRouters = [...prevRouters];
+        const router = newRouters[routerIndex];
 
-        // Create a new interfaces array with only the updated provider
-        const updatedInterfaces = chain.interfaces.map((iface: ChainInterface) => {
+        // Create a new interfaces array with only the updated node
+        const updatedInterfaces = router.interfaces.map((iface: RouterInterface) => {
           if (iface.providers[0]?.name === oldName) {
             return {
               ...iface,
@@ -183,30 +183,30 @@ const useProviderNameUpdate = (
           return iface;
         });
 
-        // Only update the specific chain
-        newChains[chainIndex] = {
-          ...chain,
+        // Only update the specific router
+        newRouters[routerIndex] = {
+          ...router,
           interfaces: updatedInterfaces,
         };
 
-        return newChains;
+        return newRouters;
       });
     },
-    [setChainConfigs, toast],
+    [setRouterConfigs, toast],
   );
 
-  const handleProviderNameChange = useCallback(
-    (chainIndex: number, providerName: string, newName: string) => {
-      setLocalProviderName(newName);
-      setCurrentProviderKey(`${chainIndex}:${providerName}`);
+  const handleNodeNameChange = useCallback(
+    (routerIndex: number, nodeName: string, newName: string) => {
+      setLocalNodeName(newName);
+      setCurrentNodeKey(`${routerIndex}:${nodeName}`);
     },
     [],
   );
 
   return {
-    localProviderName,
-    setLocalProviderName,
-    handleProviderNameChange,
+    localNodeName,
+    setLocalNodeName,
+    handleNodeNameChange,
   };
 };
 
@@ -234,8 +234,8 @@ export default function WizardPage() {
   const [selectedOption, setSelectedOption] = useState<'edit' | 'new' | null>(null);
   const [hoveredCard, setHoveredCard] = useState<'edit' | 'new' | null>(null);
   const [step, setStep] = useState<Step>(1);
-  const [chainConfigs, setChainConfigs] = useState<ChainConfig[]>([]);
-  const [currentChainIndex, setCurrentChainIndex] = useState(0);
+  const [routerConfigs, setRouterConfigs] = useState<RouterConfig[]>([]);
+  const [currentRouterIndex, setCurrentRouterIndex] = useState(0);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isComplete, setIsComplete] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -246,9 +246,9 @@ export default function WizardPage() {
   const { toast } = useToast();
   const formRef = useRef<HTMLDivElement>(null);
   const { config } = useConfig();
-  const [expandedProviders, setExpandedProviders] = useState<Record<string, boolean>>({});
-  const { localProviderName, setLocalProviderName, handleProviderNameChange } =
-    useProviderNameUpdate(chainConfigs, setChainConfigs);
+  const [expandedNodes, setExpandedNodes] = useState<Record<string, boolean>>({});
+  const { localNodeName, setLocalNodeName, handleNodeNameChange } =
+    useNodeNameUpdate(routerConfigs, setRouterConfigs);
   const [showConfig, setShowConfig] = useState(false);
   const [finalConfig, setFinalConfig] = useState<string>('');
 
@@ -275,14 +275,14 @@ export default function WizardPage() {
           const data = await response.json();
 
           // Transform the API data into our internal format
-          const transformedChains = Object.entries(data.consumers).map(
-            ([chainId, chain]: [string, any]) => {
+          const transformedRouters = Object.entries(data.routers).map(
+            ([routerId, router]: [string, any]) => {
               // Group interfaces by name only
               const interfaceMap = new Map<string, any>();
 
               // Extract interfaces from the new structure
-              const interfaces = chain.interfaces || [];
-              const providers = chain.providers || [];
+              const interfaces = router.interfaces || [];
+              const nodes = router.nodes || [];
 
               interfaces.forEach((interfaceName: string) => {
                 if (!interfaceMap.has(interfaceName)) {
@@ -295,24 +295,24 @@ export default function WizardPage() {
                   });
                 }
 
-                // Add providers that support this interface
-                providers.forEach((provider: any) => {
-                  const providerEndpoints = provider.endpoints || [];
-                  const relevantEndpoints = providerEndpoints.filter(
+                // Add nodes that support this interface
+                nodes.forEach((node: any) => {
+                  const nodeEndpoints = node.endpoints || [];
+                  const relevantEndpoints = nodeEndpoints.filter(
                     (endpoint: any) => endpoint.interface === interfaceName,
                   );
 
                   if (relevantEndpoints.length > 0) {
                     const existingInterface = interfaceMap.get(interfaceName);
-                    // Check if this provider already exists
-                    const existingProviderIndex = existingInterface.providers.findIndex(
-                      (p: any) => p.name === provider.name,
+                    // Check if this node already exists
+                    const existingNodeIndex = existingInterface.providers.findIndex(
+                      (p: any) => p.name === node.name,
                     );
 
-                    if (existingProviderIndex === -1) {
-                      // Add new provider
+                    if (existingNodeIndex === -1) {
+                      // Add new node
                       existingInterface.providers.push({
-                        name: provider.name,
+                        name: node.name,
                         url: relevantEndpoints[0].url, // Use first endpoint URL
                         addons: relevantEndpoints.flatMap((ep: any) => ep.addons || []),
                         nodes: relevantEndpoints.map((endpoint: any) => ({
@@ -326,16 +326,16 @@ export default function WizardPage() {
               });
 
               return {
-                name: chainId,
+                name: routerId,
                 interfaces: Array.from(interfaceMap.values()),
               };
             },
           );
 
-          console.log('Transformed chains:', transformedChains);
-          setChainConfigs(transformedChains);
+          console.log('Transformed routers:', transformedRouters);
+          setRouterConfigs(transformedRouters);
           setStep(1);
-          setCurrentChainIndex(0);
+          setCurrentRouterIndex(0);
           setErrors({});
           setIsComplete(false);
           setProgress(0);
@@ -370,7 +370,7 @@ export default function WizardPage() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [step, chains, currentChainIndex]);
+  }, [step, chains, currentRouterIndex]);
 
   // Progress animation
   useEffect(() => {
@@ -389,34 +389,34 @@ export default function WizardPage() {
     const newErrors: Record<string, string> = {};
 
     if (step === 1) {
-      chainConfigs.forEach((chain, index) => {
-        if (!chain.name) {
-          newErrors[`chain-name-${index}`] = 'Chain is required';
+      routerConfigs.forEach((router, index) => {
+        if (!router.name) {
+          newErrors[`router-name-${index}`] = 'Router is required';
         }
       });
     } else if (step === 2) {
-      const currentChain = chainConfigs[currentChainIndex];
-      if (!currentChain || !currentChain.interfaces || currentChain.interfaces.length === 0) {
-        newErrors[`chain-interfaces-${currentChainIndex}`] = 'No interfaces configured';
+      const currentRouter = routerConfigs[currentRouterIndex];
+      if (!currentRouter || !currentRouter.interfaces || currentRouter.interfaces.length === 0) {
+        newErrors[`router-interfaces-${currentRouterIndex}`] = 'No interfaces configured';
       } else {
-        currentChain.interfaces.forEach((iface, ifaceIndex) => {
+        currentRouter.interfaces.forEach((iface, ifaceIndex) => {
           if (!iface.name || iface.name.length === 0) {
-            newErrors[`interface-types-${currentChainIndex}-${ifaceIndex}`] =
+            newErrors[`interface-types-${currentRouterIndex}-${ifaceIndex}`] =
               'At least one interface type must be selected';
           }
-          iface.providers.forEach((provider, providerIndex) => {
-            if (!provider.name) {
-              newErrors[`provider-name-${currentChainIndex}-${ifaceIndex}-${providerIndex}`] =
-                'Provider name is required';
+          iface.providers.forEach((node, nodeIndex) => {
+            if (!node.name) {
+              newErrors[`node-name-${currentRouterIndex}-${ifaceIndex}-${nodeIndex}`] =
+                'Node name is required';
             }
-            if (!provider.nodes?.[0]?.endpoint) {
-              newErrors[`node-endpoint-${currentChainIndex}-${ifaceIndex}-${providerIndex}`] =
+            if (!node.nodes?.[0]?.endpoint) {
+              newErrors[`node-endpoint-${currentRouterIndex}-${ifaceIndex}-${nodeIndex}`] =
                 'Node endpoint is required';
             } else if (
-              !provider.nodes[0].endpoint.startsWith('http://') &&
-              !provider.nodes[0].endpoint.startsWith('https://')
+              !node.nodes[0].endpoint.startsWith('http://') &&
+              !node.nodes[0].endpoint.startsWith('https://')
             ) {
-              newErrors[`node-endpoint-${currentChainIndex}-${ifaceIndex}-${providerIndex}`] =
+              newErrors[`node-endpoint-${currentRouterIndex}-${ifaceIndex}-${nodeIndex}`] =
                 'Node endpoint must be a valid URL starting with http:// or https://';
             }
           });
@@ -428,33 +428,33 @@ export default function WizardPage() {
     return Object.keys(newErrors).length === 0;
   };
 
-  const addChain = () => {
-    setChainConfigs([...chainConfigs, { name: '', interfaces: [] }]);
+  const addRouter = () => {
+    setRouterConfigs([...routerConfigs, { name: '', interfaces: [] }]);
     controls.start({ scale: [1, 1.05, 1], transition: { duration: 0.3 } });
   };
 
-  const removeChain = (index: number) => {
-    const newChains = [...chainConfigs];
-    newChains.splice(index, 1);
-    setChainConfigs(newChains);
+  const removeRouter = (index: number) => {
+    const newRouters = [...routerConfigs];
+    newRouters.splice(index, 1);
+    setRouterConfigs(newRouters);
     setErrors({});
     toast({
-      title: 'Chain removed',
-      description: 'The chain has been removed from the configuration.',
+      title: 'Router removed',
+      description: 'The router has been removed from the configuration.',
     });
   };
 
-  const updateChain = (index: number, field: keyof ChainConfig, value: any) => {
-    const newChains = [...chainConfigs];
-    newChains[index] = { ...newChains[index], [field]: value };
-    // If updating interfaces, ensure each interface has its own provider
+  const updateRouter = (index: number, field: keyof RouterConfig, value: any) => {
+    const newRouters = [...routerConfigs];
+    newRouters[index] = { ...newRouters[index], [field]: value };
+    // If updating interfaces, ensure each interface has its own node
     if (field === 'interfaces') {
-      const currentInterfaces = newChains[index].interfaces;
-      const newInterfaces: ChainInterface[] = [];
+      const currentInterfaces = newRouters[index].interfaces;
+      const newInterfaces: RouterInterface[] = [];
 
-      // Create a provider for each interface
-      value.forEach((iface: ChainInterface) => {
-        // Try to find an existing provider for this interface
+      // Create a node for each interface
+      value.forEach((iface: RouterInterface) => {
+        // Try to find an existing node for this interface
         const existingInterface = currentInterfaces.find(p =>
           p.name.some(n => iface.name.some(m => m === n)),
         );
@@ -468,7 +468,7 @@ export default function WizardPage() {
             })),
           });
         } else {
-          // If not found, create a new provider
+          // If not found, create a new node
           newInterfaces.push({
             ...iface,
             providers: iface.providers.map(p => ({
@@ -479,39 +479,39 @@ export default function WizardPage() {
         }
       });
 
-      newChains[index].interfaces = newInterfaces;
+      newRouters[index].interfaces = newInterfaces;
     }
-    setChainConfigs(newChains);
+    setRouterConfigs(newRouters);
     setErrors({});
   };
 
-  const addProvider = (chainIndex: number) => {
-    const newChains = [...chainConfigs];
+  const addNode = (routerIndex: number) => {
+    const newRouters = [...routerConfigs];
 
-    // Find the highest port number used across all chains
-    const highestPort = newChains.reduce((maxPort, chain) => {
-      const chainMaxPort = chain.interfaces.reduce((port, iface) => Math.max(port, iface.port), 0);
-      return Math.max(maxPort, chainMaxPort);
+    // Find the highest port number used across all routers
+    const highestPort = newRouters.reduce((maxPort, router) => {
+      const routerMaxPort = router.interfaces.reduce((port, iface) => Math.max(port, iface.port), 0);
+      return Math.max(maxPort, routerMaxPort);
     }, 1999); // Start from 1999 so first port will be 2000
 
-    // Get the chain name and count existing providers for this chain
-    const chainName = newChains[chainIndex].name;
-    const providerCount = newChains[chainIndex].interfaces.filter(iface =>
-      iface.providers[0]?.name?.startsWith(`${chainName}-`),
+    // Get the router name and count existing nodes for this router
+    const routerName = newRouters[routerIndex].name;
+    const nodeCount = newRouters[routerIndex].interfaces.filter(iface =>
+      iface.providers[0]?.name?.startsWith(`${routerName}-`),
     ).length;
 
-    // Generate default provider name
-    const defaultProviderName = `${chainName}-${providerCount}`;
+    // Generate default node name
+    const defaultNodeName = `${routerName}-${nodeCount}`;
 
-    // Create a new interface with a new provider
-    newChains[chainIndex].interfaces.push({
+    // Create a new interface with a new node
+    newRouters[routerIndex].interfaces.push({
       name: [], // Don't set a default interface type
       port: highestPort + 1, // Use the next available port
       addons: ['archive', 'debug'], // Always include both addons
       providers: [
         {
-          name: defaultProviderName, // Use the generated default name
-          url: `${defaultProviderName}-provider.lava-infra.svc.cluster.local:2200`,
+          name: defaultNodeName, // Use the generated default name
+          url: `${defaultNodeName}-provider.lava-infra.svc.cluster.local:2200`,
           addons: ['archive', 'debug'], // Always include both addons
           nodes: [
             {
@@ -523,38 +523,38 @@ export default function WizardPage() {
       ],
     });
 
-    // Collapse all existing providers
-    const newExpandedProviders = { ...expandedProviders };
-    Object.keys(newExpandedProviders).forEach(key => {
-      newExpandedProviders[key] = false;
+    // Collapse all existing nodes
+    const newExpandedNodes = { ...expandedNodes };
+    Object.keys(newExpandedNodes).forEach(key => {
+      newExpandedNodes[key] = false;
     });
-    // Expand only the new provider
-    newExpandedProviders[defaultProviderName] = true;
-    setExpandedProviders(newExpandedProviders);
+    // Expand only the new node
+    newExpandedNodes[defaultNodeName] = true;
+    setExpandedNodes(newExpandedNodes);
 
-    // Reset the local provider name state
-    setLocalProviderName('');
+    // Reset the local node name state
+    setLocalNodeName('');
 
-    setChainConfigs(newChains);
+    setRouterConfigs(newRouters);
     setErrors({} as Record<string, string>);
     controls.start({ scale: [1, 1.05, 1], transition: { duration: 0.3 } });
   };
 
-  const addInterfaceToProvider = (
-    chainIndex: number,
+  const addInterfaceToNode = (
+    routerIndex: number,
     interfaceIndex: number,
-    providerName: string,
+    nodeName: string,
   ) => {
-    const newChains = [...chainConfigs];
-    const currentInterface = newChains[chainIndex].interfaces[interfaceIndex];
+    const newRouters = [...routerConfigs];
+    const currentInterface = newRouters[routerIndex].interfaces[interfaceIndex];
 
-    // Get the chain's supported interfaces
-    const chainInfo = chains.find(c => c.value === newChains[chainIndex].name);
-    const supportedInterfaces = chainInfo?.supportedInterfaces || [];
+    // Get the router's supported interfaces
+    const routerInfo = chains.find(c => c.value === newRouters[routerIndex].name);
+    const supportedInterfaces = routerInfo?.supportedInterfaces || [];
 
-    // Get all used interface types for this provider
-    const usedInterfaceTypes = newChains[chainIndex].interfaces
-      .filter(iface => iface.providers[0]?.name === providerName)
+    // Get all used interface types for this node
+    const usedInterfaceTypes = newRouters[routerIndex].interfaces
+      .filter(iface => iface.providers[0]?.name === nodeName)
       .map(iface => iface.name[0]);
 
     // Find the first available supported interface that hasn't been used
@@ -566,20 +566,20 @@ export default function WizardPage() {
     if (!availableInterface) {
       toast({
         title: 'No available interfaces',
-        description: 'All supported interface types are already configured for this provider.',
+        description: 'All supported interface types are already configured for this node.',
         variant: 'destructive',
       });
       return;
     }
 
-    // Create a new interface with the same provider
+    // Create a new interface with the same node
     const newInterface = {
       name: [availableInterface.value],
       port: currentInterface.port + 1,
       addons: ['archive', 'debug'], // Always include both addons
       providers: [
         {
-          name: providerName,
+          name: nodeName,
           url: currentInterface.providers[0].url,
           addons: ['archive', 'debug'], // Always include both addons
           nodes: [
@@ -593,43 +593,43 @@ export default function WizardPage() {
     };
 
     // Insert the new interface right after the current one
-    newChains[chainIndex].interfaces.splice(interfaceIndex + 1, 0, newInterface);
+    newRouters[routerIndex].interfaces.splice(interfaceIndex + 1, 0, newInterface);
 
-    setChainConfigs(newChains);
+    setRouterConfigs(newRouters);
     setErrors({} as Record<string, string>);
   };
 
-  const removeProvider = (chainIndex: number, providerIndex: number) => {
-    const newChains = [...chainConfigs];
-    newChains[chainIndex].interfaces.splice(providerIndex, 1);
-    setChainConfigs(newChains);
+  const removeNode = (routerIndex: number, nodeIndex: number) => {
+    const newRouters = [...routerConfigs];
+    newRouters[routerIndex].interfaces.splice(nodeIndex, 1);
+    setRouterConfigs(newRouters);
     setErrors({});
     toast({
-      title: 'Provider removed',
-      description: 'The provider has been removed from the configuration.',
+      title: 'Node removed',
+      description: 'The node has been removed from the configuration.',
     });
   };
 
-  const updateProvider = (
-    chainIndex: number,
+  const updateNode = (
+    routerIndex: number,
     interfaceIndex: number,
-    providerIndex: number,
+    nodeIndex: number,
     updates: Partial<{ name: string; url: string }>,
   ) => {
-    const newChains = [...chainConfigs];
-    const currentProvider =
-      newChains[chainIndex].interfaces[interfaceIndex].providers[providerIndex];
+    const newRouters = [...routerConfigs];
+    const currentNode =
+      newRouters[routerIndex].interfaces[interfaceIndex].providers[nodeIndex];
 
     if (updates.name) {
       // Update URL based on the new name
       updates.url = `${updates.name}.lava-infra.svc.cluster.local:2200`;
     }
 
-    newChains[chainIndex].interfaces[interfaceIndex].providers[providerIndex] = {
-      ...currentProvider,
+    newRouters[routerIndex].interfaces[interfaceIndex].providers[nodeIndex] = {
+      ...currentNode,
       ...updates,
     };
-    setChainConfigs(newChains);
+    setRouterConfigs(newRouters);
     setErrors({} as Record<string, string>);
   };
 
@@ -638,13 +638,13 @@ export default function WizardPage() {
       chains: {},
     };
 
-    // Process chains
-    chainConfigs.forEach(chain => {
+    // Process routers
+    routerConfigs.forEach(router => {
       // Create a map to store interfaces by name
       const interfaceMap = new Map();
 
-      // First pass: collect all interfaces and their providers
-      chain.interfaces.forEach(iface => {
+      // First pass: collect all interfaces and their nodes
+      router.interfaces.forEach(iface => {
         const interfaceName = iface.name[0];
         if (!interfaceMap.has(interfaceName)) {
           interfaceMap.set(interfaceName, {
@@ -654,36 +654,36 @@ export default function WizardPage() {
           });
         }
 
-        // Add providers to the existing interface
+        // Add nodes to the existing interface
         const existingInterface = interfaceMap.get(interfaceName);
         existingInterface.providers.push(
-          ...iface.providers.map(provider => ({
-            name: provider.name,
-            url: provider.url,
-            nodes: provider.nodes.map(node => ({
-              endpoint: node.endpoint,
+          ...iface.providers.map(node => ({
+            name: node.name,
+            url: node.url,
+            nodes: node.nodes.map(endpoint => ({
+              endpoint: endpoint.endpoint,
               type: 'full', // Always set type to "full"
             })),
           })),
         );
       });
 
-      // Add the chain with combined interfaces
-      config.chains[chain.name] = {
-        addons: ['archive', 'debug'], // Move addons to chain level
+      // Add the router with combined interfaces
+      config.chains[router.name] = {
+        addons: ['archive', 'debug'], // Move addons to router level
         interfaces: Array.from(interfaceMap.values()),
       };
     });
 
     return JSON.stringify(config, null, 2);
-  }, [chainConfigs]);
+  }, [routerConfigs]);
 
-  // Update the useEffect to set the final config when chains change
+  // Update the useEffect to set the final config when routers change
   useEffect(() => {
     if (step === 3) {
       setFinalConfig(generateFinalConfig());
     }
-  }, [step, chainConfigs, generateFinalConfig]);
+  }, [step, routerConfigs, generateFinalConfig]);
 
   const handleComplete = useCallback(async () => {
     setIsSubmitting(true);
@@ -746,11 +746,11 @@ export default function WizardPage() {
       return;
     }
 
-    if (step === 1 && chainConfigs.length > 0) {
+    if (step === 1 && routerConfigs.length > 0) {
       setStep(2);
-    } else if (step === 2 && currentChainIndex < chainConfigs.length - 1) {
-      setCurrentChainIndex(currentChainIndex + 1);
-    } else if (step === 2 && currentChainIndex === chainConfigs.length - 1) {
+    } else if (step === 2 && currentRouterIndex < routerConfigs.length - 1) {
+      setCurrentRouterIndex(currentRouterIndex + 1);
+    } else if (step === 2 && currentRouterIndex === routerConfigs.length - 1) {
       setStep(3);
     } else if (step === 3) {
       await handleComplete();
@@ -758,9 +758,9 @@ export default function WizardPage() {
   };
 
   const prevStep = () => {
-    if (step === 2 && currentChainIndex > 0) {
-      setCurrentChainIndex(currentChainIndex - 1);
-    } else if (step === 2 && currentChainIndex === 0) {
+    if (step === 2 && currentRouterIndex > 0) {
+      setCurrentRouterIndex(currentRouterIndex - 1);
+    } else if (step === 2 && currentRouterIndex === 0) {
       setStep(1);
     } else if (step === 3) {
       setStep(2);
@@ -769,8 +769,8 @@ export default function WizardPage() {
 
   const resetWizard = () => {
     setStep(1);
-    setChainConfigs([]);
-    setCurrentChainIndex(0);
+    setRouterConfigs([]);
+    setCurrentRouterIndex(0);
     setErrors({});
     setIsComplete(false);
     setProgress(0);
@@ -833,7 +833,7 @@ export default function WizardPage() {
                   </CardHeader>
                   <CardContent>
                     <p className='text-muted-foreground text-lg mb-6'>
-                      Update your current chains, providers, and their relationships while
+                      Update your current routers, nodes, and their relationships while
                       preserving existing configurations.
                     </p>
                     <motion.div
@@ -864,8 +864,8 @@ export default function WizardPage() {
                   onClick={() => {
                     setSelectedOption('new');
                     setStep(1);
-                    setChainConfigs([]);
-                    setCurrentChainIndex(0);
+                    setRouterConfigs([]);
+                    setCurrentRouterIndex(0);
                     setErrors({});
                     setIsComplete(false);
                     setProgress(0);
@@ -873,7 +873,7 @@ export default function WizardPage() {
                     setFinalConfig('');
                     setApiError(null);
                     setIsLoading(false);
-                    setExpandedProviders({});
+                    setExpandedNodes({});
                   }}
                 >
                   <CardHeader className='pb-6'>
@@ -998,12 +998,12 @@ export default function WizardPage() {
                         <Check className='h-4 w-4' />
                         <AlertTitle>Success!</AlertTitle>
                         <AlertDescription>
-                          You have successfully configured {chainConfigs.length} chain
-                          {chainConfigs.length !== 1 ? 's' : ''} with their providers.
+                          You have successfully configured {routerConfigs.length} router
+                          {routerConfigs.length !== 1 ? 's' : ''} with their nodes.
                         </AlertDescription>
                       </Alert>
                       <div className='space-y-4'>
-                        {chainConfigs.map((chain, index) => (
+                        {routerConfigs.map((router, index) => (
                           <motion.div
                             key={index}
                             initial={{ opacity: 0, y: 20 }}
@@ -1013,16 +1013,16 @@ export default function WizardPage() {
                             <Card className='p-6 border-primary/20'>
                               <div className='space-y-4'>
                                 <h4 className='font-medium text-lg'>
-                                  {chain.name}
+                                  {router.name}
                                   {(() => {
-                                    const chainConfig = chains.find(c => c.value === chain.name);
-                                    return chainConfig ? (
+                                    const routerConfig = chains.find(c => c.value === router.name);
+                                    return routerConfig ? (
                                       <>
                                         {' '}
-                                        ({chainConfig.label}{' '}
+                                        ({routerConfig.label}{' '}
                                         <img
-                                          src={chainConfig.icon}
-                                          alt={chainConfig.label}
+                                          src={routerConfig.icon}
+                                          alt={routerConfig.label}
                                           className='w-4 h-4 inline-block ml-1'
                                         />
                                         )
@@ -1033,24 +1033,24 @@ export default function WizardPage() {
                                   })()}
                                 </h4>
 
-                                {/* Get unique providers across all interfaces */}
+                                {/* Get unique nodes across all interfaces */}
                                 {Array.from(
                                   new Set(
-                                    chain.interfaces.flatMap(iface =>
+                                    router.interfaces.flatMap(iface =>
                                       iface.providers.map(p => p.name),
                                     ),
                                   ),
                                 ).map(providerName => {
-                                  // Get all interfaces that have this provider
-                                  const providerInterfaces = chain.interfaces.filter(iface =>
+                                  // Get all interfaces that have this node
+                                  const providerInterfaces = router.interfaces.filter(iface =>
                                     iface.providers.some(p => p.name === providerName),
                                   );
                                   return (
-                                    <ProviderCard
+                                    <NodeCard
                                       key={providerName}
                                       providerName={providerName}
                                       interfaces={providerInterfaces}
-                                      chainIndex={index}
+                                      routerIndex={index}
                                     />
                                   );
                                 })}
@@ -1089,12 +1089,12 @@ export default function WizardPage() {
                           exit={{ opacity: 0, x: 20 }}
                         >
                           <div className='flex items-center justify-between'>
-                            <Button onClick={addChain} className='bg-primary hover:bg-primary/90'>
+                            <Button onClick={addRouter} className='bg-primary hover:bg-primary/90'>
                               <Plus className='mr-2 h-4 w-4' />
-                              Add Chain
+                              Add Router
                             </Button>
                           </div>
-                          {chainConfigs.map((chain, index) => (
+                          {routerConfigs.map((router, index) => (
                             <motion.div
                               key={index}
                               initial={{ opacity: 0, y: 20 }}
@@ -1104,33 +1104,33 @@ export default function WizardPage() {
                               <Card className='p-6 border-primary/20'>
                                 <div className='space-y-4'>
                                   <div className='flex items-center justify-between'>
-                                    <h4 className='font-medium'>Chain {index + 1}</h4>
+                                    <h4 className='font-medium'>Router {index + 1}</h4>
                                     <Button
                                       variant='ghost'
                                       size='sm'
-                                      onClick={() => removeChain(index)}
+                                      onClick={() => removeRouter(index)}
                                     >
                                       <Trash2 className='h-4 w-4 text-destructive' />
                                     </Button>
                                   </div>
                                   <div className='space-y-2'>
                                     <Select
-                                      value={chain.name}
+                                      value={router.name}
                                       onValueChange={value => {
-                                        const newChains = [...chainConfigs];
-                                        newChains[index] = {
+                                        const newRouters = [...routerConfigs];
+                                        newRouters[index] = {
                                           name: value,
                                           interfaces: [],
                                         };
-                                        setChainConfigs(newChains);
+                                        setRouterConfigs(newRouters);
                                       }}
                                     >
                                       <SelectTrigger
                                         className={cn(
-                                          errors[`chain-name-${index}`] && 'border-destructive',
+                                          errors[`router-name-${index}`] && 'border-destructive',
                                         )}
                                       >
-                                        <SelectValue placeholder='Select chain' />
+                                        <SelectValue placeholder='Select router' />
                                       </SelectTrigger>
                                       <SelectContent>
                                         {chains.map(chain => (
@@ -1147,10 +1147,10 @@ export default function WizardPage() {
                                         ))}
                                       </SelectContent>
                                     </Select>
-                                    {errors[`chain-name-${index}`] && (
+                                    {errors[`router-name-${index}`] && (
                                       <div className='flex items-center gap-1 text-sm text-destructive'>
                                         <AlertCircle className='h-4 w-4' />
-                                        {errors[`chain-name-${index}`]}
+                                        {errors[`router-name-${index}`]}
                                       </div>
                                     )}
                                   </div>
@@ -1161,7 +1161,7 @@ export default function WizardPage() {
                           <div className='mt-8 flex justify-end'>
                             <Button
                               onClick={nextStep}
-                              disabled={chainConfigs.length === 0}
+                              disabled={routerConfigs.length === 0}
                               className='w-32 bg-primary hover:bg-primary/90'
                             >
                               Next
@@ -1181,19 +1181,19 @@ export default function WizardPage() {
                           <div className='flex items-center justify-between'>
                             <div className='space-y-1'>
                               <h3 className='text-lg font-medium'>
-                                Configure Providers for{' '}
+                                Configure Nodes for{' '}
                                 <span className='text-primary font-bold'>
                                   {(() => {
-                                    const chainInfo = chains.find(
-                                      c => c.value === chainConfigs[currentChainIndex]?.name,
+                                    const routerInfo = chains.find(
+                                      c => c.value === routerConfigs[currentRouterIndex]?.name,
                                     );
-                                    return chainInfo ? (
+                                    return routerInfo ? (
                                       <>
                                         {' '}
-                                        {chainInfo.label}{' '}
+                                        {routerInfo.label}{' '}
                                         <img
-                                          src={chainInfo.icon}
-                                          alt={chainInfo.label}
+                                          src={routerInfo.icon}
+                                          alt={routerInfo.label}
                                           className='w-4 h-4 inline-block ml-1'
                                         />
                                       </>
@@ -1204,39 +1204,39 @@ export default function WizardPage() {
                                 </span>
                               </h3>
                               <p className='text-sm text-muted-foreground'>
-                                Add and configure providers to handle requests for this chain
+                                Add and configure nodes to handle requests for this router
                               </p>
                             </div>
                             <Button
-                              onClick={() => addProvider(currentChainIndex)}
+                              onClick={() => addNode(currentRouterIndex)}
                               className='bg-primary hover:bg-primary/90'
                             >
                               <Plus className='mr-2 h-4 w-4' />
-                              Add Provider
+                              Add Node
                             </Button>
                           </div>
 
-                          {/* Group interfaces by provider */}
+                          {/* Group interfaces by node */}
                           {Object.entries(
-                            chainConfigs[currentChainIndex]?.interfaces.reduce(
+                            routerConfigs[currentRouterIndex]?.interfaces.reduce(
                               (acc, iface, index) => {
-                                // Get all providers for this interface
-                                iface.providers.forEach(provider => {
-                                  const providerName = provider.name;
-                                  if (!acc[providerName]) {
-                                    acc[providerName] = [];
+                                // Get all nodes for this interface
+                                iface.providers.forEach(node => {
+                                  const nodeName = node.name;
+                                  if (!acc[nodeName]) {
+                                    acc[nodeName] = [];
                                   }
-                                  // Add this interface to the provider's group
-                                  acc[providerName].push({ iface, index });
+                                  // Add this interface to the node's group
+                                  acc[nodeName].push({ iface, index });
                                 });
                                 return acc;
                               },
-                              {} as Record<string, { iface: ChainInterface; index: number }[]>,
+                              {} as Record<string, { iface: RouterInterface; index: number }[]>,
                             ),
                           ).map(([providerName, interfaceGroup]) => {
-                            // Initialize expanded state for this provider if it doesn't exist yet
-                            if (expandedProviders[providerName] === undefined) {
-                              setExpandedProviders(prev => ({ ...prev, [providerName]: true }));
+                            // Initialize expanded state for this node if it doesn't exist yet
+                            if (expandedNodes[providerName] === undefined) {
+                              setExpandedNodes(prev => ({ ...prev, [providerName]: true }));
                             }
 
                             return (
@@ -1251,15 +1251,15 @@ export default function WizardPage() {
                                     <div
                                       className='flex items-center justify-between cursor-pointer'
                                       onClick={() =>
-                                        setExpandedProviders({
-                                          ...expandedProviders,
-                                          [providerName]: !expandedProviders[providerName],
+                                        setExpandedNodes({
+                                          ...expandedNodes,
+                                          [providerName]: !expandedNodes[providerName],
                                         })
                                       }
                                     >
                                       <div className='space-y-1'>
                                         <h4 className='font-medium text-lg'>
-                                          Provider{providerName ? `: ${providerName}` : ''}
+                                          Node{providerName ? `: ${providerName}` : ''}
                                         </h4>
                                         <div className='flex flex-col gap-1'>
                                           <div className='flex flex-wrap gap-1 mt-1'>
@@ -1290,13 +1290,13 @@ export default function WizardPage() {
                                           size='sm'
                                           onClick={e => {
                                             e.stopPropagation();
-                                            setExpandedProviders({
-                                              ...expandedProviders,
-                                              [providerName]: !expandedProviders[providerName],
+                                            setExpandedNodes({
+                                              ...expandedNodes,
+                                              [providerName]: !expandedNodes[providerName],
                                             });
                                           }}
                                         >
-                                          {expandedProviders[providerName] ? (
+                                          {expandedNodes[providerName] ? (
                                             <ChevronLeft className='h-4 w-4' />
                                           ) : (
                                             <ChevronRight className='h-4 w-4' />
@@ -1307,23 +1307,23 @@ export default function WizardPage() {
                                           size='sm'
                                           onClick={e => {
                                             e.stopPropagation();
-                                            // Remove all interfaces associated with this provider
-                                            const newChains = [...chainConfigs];
+                                            // Remove all interfaces associated with this node
+                                            const newRouters = [...routerConfigs];
                                             const interfaceIndices = interfaceGroup
                                               .map(i => i.index)
                                               .sort((a, b) => b - a); // Remove from end to beginning
                                             interfaceIndices.forEach(idx => {
-                                              newChains[currentChainIndex].interfaces.splice(
+                                              newRouters[currentRouterIndex].interfaces.splice(
                                                 idx,
                                                 1,
                                               );
                                             });
-                                            setChainConfigs(newChains);
+                                            setRouterConfigs(newRouters);
                                             setErrors({});
                                             toast({
-                                              title: 'Provider removed',
+                                              title: 'Node removed',
                                               description:
-                                                'The provider and all its interfaces have been removed.',
+                                                'The node and all its interfaces have been removed.',
                                             });
                                           }}
                                         >
@@ -1332,23 +1332,23 @@ export default function WizardPage() {
                                       </div>
                                     </div>
 
-                                    {expandedProviders[providerName] && (
+                                    {expandedNodes[providerName] && (
                                       <>
-                                        {/* Provider Name - Only show once for each provider */}
+                                        {/* Node Name - Only show once for each node */}
                                         <div className='space-y-2'>
                                           <Label
-                                            htmlFor={`provider-name-${currentChainIndex}-${providerName}`}
+                                            htmlFor={`node-name-${currentRouterIndex}-${providerName}`}
                                           >
-                                            Provider Name
+                                            Node Name
                                           </Label>
                                           <Input
-                                            id={`provider-name-${currentChainIndex}-${providerName}`}
-                                            value={localProviderName || providerName}
+                                            id={`node-name-${currentRouterIndex}-${providerName}`}
+                                            value={localNodeName || providerName}
                                             onChange={e => {
                                               const newName = e.target.value;
-                                              // Check if the name is already used by another provider
+                                              // Check if the name is already used by another node
                                               const isNameUsed = Object.keys(
-                                                chainConfigs[currentChainIndex].interfaces
+                                                routerConfigs[currentRouterIndex].interfaces
                                                   .filter(
                                                     iface =>
                                                       iface.providers[0]?.name !== providerName &&
@@ -1367,14 +1367,14 @@ export default function WizardPage() {
                                                 toast({
                                                   title: 'Name already in use',
                                                   description:
-                                                    'This provider name is already being used by another provider.',
+                                                    'This node name is already being used by another node.',
                                                   variant: 'destructive',
                                                 });
                                                 return;
                                               }
 
-                                              handleProviderNameChange(
-                                                currentChainIndex,
+                                              handleNodeNameChange(
+                                                currentRouterIndex,
                                                 providerName,
                                                 newName,
                                               );
@@ -1400,7 +1400,7 @@ export default function WizardPage() {
                                                       variant='ghost'
                                                       size='sm'
                                                       onClick={() =>
-                                                        removeProvider(currentChainIndex, index)
+                                                        removeNode(currentRouterIndex, index)
                                                       }
                                                     >
                                                       <Trash2 className='h-4 w-4 text-destructive' />
@@ -1409,11 +1409,11 @@ export default function WizardPage() {
 
                                                   <div className='flex flex-wrap gap-2'>
                                                     {getAvailableInterfaces(
-                                                      chainConfigs[currentChainIndex].name,
+                                                      routerConfigs[currentRouterIndex].name,
                                                     ).map(interfaceType => {
-                                                      // Check if this interface type is already used by other interfaces of the same provider
-                                                      const isUsed = chainConfigs[
-                                                        currentChainIndex
+                                                      // Check if this interface type is already used by other interfaces of the same node
+                                                      const isUsed = routerConfigs[
+                                                        currentRouterIndex
                                                       ].interfaces
                                                         .filter(
                                                           iface =>
@@ -1461,11 +1461,11 @@ export default function WizardPage() {
                                                           )}
                                                           onClick={() => {
                                                             if (isUsed) return;
-                                                            const newChains = [...chainConfigs];
-                                                            newChains[currentChainIndex].interfaces[
+                                                            const newRouters = [...routerConfigs];
+                                                            newRouters[currentRouterIndex].interfaces[
                                                               index
                                                             ].name = [interfaceType.value];
-                                                            setChainConfigs(newChains);
+                                                            setRouterConfigs(newRouters);
                                                           }}
                                                           disabled={isUsed}
                                                         >
@@ -1483,24 +1483,24 @@ export default function WizardPage() {
                                                       iface.providers[0]?.nodes[0]?.endpoint || ''
                                                     }
                                                     onChange={e => {
-                                                      const newChains = [...chainConfigs];
-                                                      const currentProvider =
-                                                        newChains[currentChainIndex].interfaces[
+                                                      const newRouters = [...routerConfigs];
+                                                      const currentNode =
+                                                        newRouters[currentRouterIndex].interfaces[
                                                           index
                                                         ].providers[0];
-                                                      if (!currentProvider.nodes[0]) {
-                                                        currentProvider.nodes = [
+                                                      if (!currentNode.nodes[0]) {
+                                                        currentNode.nodes = [
                                                           {
                                                             endpoint: e.target.value,
                                                             type: 'full',
                                                           },
                                                         ];
                                                       } else {
-                                                        currentProvider.nodes[0].endpoint =
+                                                        currentNode.nodes[0].endpoint =
                                                           e.target.value;
                                                       }
 
-                                                      setChainConfigs(newChains);
+                                                      setRouterConfigs(newRouters);
                                                     }}
                                                   />
                                                 </div>
@@ -1509,18 +1509,18 @@ export default function WizardPage() {
                                           </motion.div>
                                         ))}
 
-                                        {/* Only show "Add Another Interface" button for the last interface of this provider group if more interfaces are available */}
+                                        {/* Only show "Add Another Interface" button for the last interface of this node group if more interfaces are available */}
                                         {(() => {
-                                          // Get the chain's supported interfaces
-                                          const chainInfo = chains.find(
-                                            c => c.value === chainConfigs[currentChainIndex].name,
+                                          // Get the router's supported interfaces
+                                          const routerInfo = chains.find(
+                                            c => c.value === routerConfigs[currentRouterIndex].name,
                                           );
                                           const supportedInterfaces =
-                                            chainInfo?.supportedInterfaces || [];
+                                            routerInfo?.supportedInterfaces || [];
 
-                                          // Get all used interface types for this provider
-                                          const usedInterfaceTypes = chainConfigs[
-                                            currentChainIndex
+                                          // Get all used interface types for this node
+                                          const usedInterfaceTypes = routerConfigs[
+                                            currentRouterIndex
                                           ].interfaces
                                             .filter(
                                               iface => iface.providers[0]?.name === providerName,
@@ -1539,11 +1539,11 @@ export default function WizardPage() {
                                               variant='outline'
                                               size='sm'
                                               onClick={() => {
-                                                // Find the last interface index for this provider
+                                                // Find the last interface index for this node
                                                 const lastInterfaceIndex =
                                                   interfaceGroup[interfaceGroup.length - 1].index;
-                                                addInterfaceToProvider(
-                                                  currentChainIndex,
+                                                addInterfaceToNode(
+                                                  currentRouterIndex,
                                                   lastInterfaceIndex,
                                                   providerName,
                                                 );
@@ -1569,7 +1569,7 @@ export default function WizardPage() {
                             </Button>
                             <Button
                               onClick={nextStep}
-                              disabled={chainConfigs[currentChainIndex]?.interfaces.length === 0}
+                              disabled={routerConfigs[currentRouterIndex]?.interfaces.length === 0}
                               className='w-32 bg-primary hover:bg-primary/90'
                             >
                               Next
@@ -1586,7 +1586,7 @@ export default function WizardPage() {
                           animate={{ opacity: 1, x: 0 }}
                           exit={{ opacity: 0, x: 20 }}
                         >
-                          {chainConfigs.map((chain, index) => (
+                          {routerConfigs.map((router, index) => (
                             <motion.div
                               key={index}
                               initial={{ opacity: 0, y: 20 }}
@@ -1598,14 +1598,14 @@ export default function WizardPage() {
                                   <h4 className='font-medium text-lg'>
                                     <span className='text-primary font-bold'>
                                       {(() => {
-                                        const chainInfo = chains.find(c => c.value === chain.name);
-                                        return chainInfo ? (
+                                        const routerInfo = chains.find(c => c.value === router.name);
+                                        return routerInfo ? (
                                           <>
                                             {' '}
-                                            {chainInfo.label}{' '}
+                                            {routerInfo.label}{' '}
                                             <img
-                                              src={chainInfo.icon}
-                                              alt={chainInfo.label}
+                                              src={routerInfo.icon}
+                                              alt={routerInfo.label}
                                               className='w-4 h-4 inline-block ml-1'
                                             />
                                           </>
@@ -1616,24 +1616,24 @@ export default function WizardPage() {
                                     </span>
                                   </h4>
 
-                                  {/* Get unique providers across all interfaces */}
+                                  {/* Get unique nodes across all interfaces */}
                                   {Array.from(
                                     new Set(
-                                      chain.interfaces.flatMap(iface =>
+                                      router.interfaces.flatMap(iface =>
                                         iface.providers.map(p => p.name),
                                       ),
                                     ),
                                   ).map(providerName => {
-                                    // Get all interfaces that have this provider
-                                    const providerInterfaces = chain.interfaces.filter(iface =>
+                                    // Get all interfaces that have this node
+                                    const providerInterfaces = router.interfaces.filter(iface =>
                                       iface.providers.some(p => p.name === providerName),
                                     );
                                     return (
-                                      <ProviderCard
+                                      <NodeCard
                                         key={providerName}
                                         providerName={providerName}
                                         interfaces={providerInterfaces}
-                                        chainIndex={index}
+                                        routerIndex={index}
                                       />
                                     );
                                   })}
@@ -1697,9 +1697,9 @@ export default function WizardPage() {
                             <Button
                               onClick={nextStep}
                               disabled={
-                                (Number(step) === 1 && chainConfigs.length === 0) ||
+                                (Number(step) === 1 && routerConfigs.length === 0) ||
                                 (Number(step) === 2 &&
-                                  chainConfigs[currentChainIndex]?.interfaces.length === 0) ||
+                                  routerConfigs[currentRouterIndex]?.interfaces.length === 0) ||
                                 isSubmitting
                               }
                               className='w-32 bg-primary hover:bg-primary/90'
@@ -1764,7 +1764,7 @@ export default function WizardPage() {
                         onClick={() => {
                           setStep(1);
                           setSelectedOption('new');
-                          setCurrentChainIndex(0);
+                          setCurrentRouterIndex(0);
                           setErrors({});
                           setIsComplete(false);
                           setProgress(0);
@@ -1777,7 +1777,7 @@ export default function WizardPage() {
                     </div>
 
                     <div className='space-y-4'>
-                      {chainConfigs.map((chain, index) => (
+                      {routerConfigs.map((router, index) => (
                         <motion.div
                           key={index}
                           initial={{ opacity: 0, y: 20 }}
@@ -1789,14 +1789,14 @@ export default function WizardPage() {
                               <h4 className='font-medium text-lg'>
                                 <span className='text-primary font-bold'>
                                   {(() => {
-                                    const chainInfo = chains.find(c => c.value === chain.name);
-                                    return chainInfo ? (
+                                    const routerInfo = chains.find(c => c.value === router.name);
+                                    return routerInfo ? (
                                       <>
                                         {' '}
-                                        {chainInfo.label}{' '}
+                                        {routerInfo.label}{' '}
                                         <img
-                                          src={chainInfo.icon}
-                                          alt={chainInfo.label}
+                                          src={routerInfo.icon}
+                                          alt={routerInfo.label}
                                           className='w-4 h-4 inline-block ml-1'
                                         />
                                       </>
@@ -1807,24 +1807,24 @@ export default function WizardPage() {
                                 </span>
                               </h4>
 
-                              {/* Get unique providers across all interfaces */}
+                              {/* Get unique nodes across all interfaces */}
                               {Array.from(
                                 new Set(
-                                  chain.interfaces.flatMap(iface =>
+                                  router.interfaces.flatMap(iface =>
                                     iface.providers.map(p => p.name),
                                   ),
                                 ),
                               ).map(providerName => {
-                                // Get all interfaces that have this provider
-                                const providerInterfaces = chain.interfaces.filter(iface =>
+                                // Get all interfaces that have this node
+                                const providerInterfaces = router.interfaces.filter(iface =>
                                   iface.providers.some(p => p.name === providerName),
                                 );
                                 return (
-                                  <ProviderCard
+                                  <NodeCard
                                     key={providerName}
                                     providerName={providerName}
                                     interfaces={providerInterfaces}
-                                    chainIndex={index}
+                                    routerIndex={index}
                                   />
                                 );
                               })}

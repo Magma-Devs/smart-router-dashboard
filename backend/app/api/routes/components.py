@@ -4,8 +4,8 @@ from app.core.auth import get_current_user
 from app.services.configuration import ConfigurationService, configuration_service
 from app.core.dataclasses import (
     ComponentsResponse,
-    ConsumerConfig,
-    ComponentProvider,
+    RouterInfo,
+    ComponentNode,
     ComponentEndpoint,
     AllResourceLimits,
     ResourceLimits,
@@ -24,59 +24,52 @@ async def get_configuration(
     current_user: str = Depends(get_current_user),
     config_service: ConfigurationService = Depends(get_configuration_service),
 ):
-    """Get the current configuration for consumers and providers"""
+    """Get the current configuration for routers and nodes"""
     try:
-        # Initialize response structure
-        consumers_config = {}
+        routers_config: dict[str, RouterInfo] = {}
         resource_limits = AllResourceLimits(
             server=ResourceLimits(cpu=0, memory=0),
             per_consumer=ResourceLimits(cpu=0, memory=0),
             per_provider=ResourceLimits(cpu=0, memory=0),
         )
 
-        # Read smart-router values directly
         smart_router_data = config_service.read_smart_router_values()
 
-        if smart_router_data and "chains" in smart_router_data:
-            # Build consumer configurations from smart-router chains
-            for chain in smart_router_data["chains"]:
-                chain_id = chain.get("id")
-                network = chain.get("network")
-                if chain_id and network:
-                    # Extract interfaces and providers from the new structure
-                    interfaces = set()
-                    providers = []
+        if smart_router_data and "routers" in smart_router_data:
+            for router_entry in smart_router_data["routers"]:
+                router_id = router_entry.get("id")
+                network = router_entry.get("network")
+                if router_id and network:
+                    interfaces: set[str] = set()
+                    nodes: list[ComponentNode] = []
 
-                    for provider in chain.get("providers", []):
-                        provider_name = provider.get("name")
-                        provider_endpoints = []
+                    for node in router_entry.get("nodes", []):
+                        node_name = node.get("name")
+                        node_endpoints: list[ComponentEndpoint] = []
 
-                        for endpoint in provider.get("endpoints", []):
+                        for endpoint in node.get("endpoints", []):
                             interface = endpoint.get("interface")
                             if interface:
                                 interfaces.add(interface)
-
-                            provider_endpoints.append(
+                            node_endpoints.append(
                                 ComponentEndpoint(
                                     interface=interface,
                                     addons=endpoint.get("addons", []),
                                 )
                             )
 
-                        providers.append(
-                            ComponentProvider(
-                                name=provider_name, endpoints=provider_endpoints
-                            )
+                        nodes.append(
+                            ComponentNode(name=node_name, endpoints=node_endpoints)
                         )
 
-                    consumers_config[chain_id] = ConsumerConfig(
+                    routers_config[router_id] = RouterInfo(
                         network=network,
                         interfaces=list(interfaces),
-                        providers=providers,
+                        nodes=nodes,
                     )
 
         return ComponentsResponse(
-            consumers=consumers_config, resource_limits=resource_limits
+            routers=routers_config, resource_limits=resource_limits
         )
     except Exception as e:
         raise HTTPException(

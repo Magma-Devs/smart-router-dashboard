@@ -64,7 +64,7 @@ export function TimeSeriesGraph({
 }: TimeSeriesGraphProps) {
   const [timeRange, setTimeRange] = useState(15);
   const [selectedSpec, setSelectedSpec] = useState<string>('all');
-  const [selectedProvider, setSelectedProvider] = useState<string>('all');
+  const [selectedNode, setSelectedNode] = useState<string>('all');
 
   const handleTimeRangeChange = (value: string) => {
     const minutes = parseInt(value, 10);
@@ -82,11 +82,11 @@ export function TimeSeriesGraph({
 
   const handleSpecChange = (spec: string) => {
     setSelectedSpec(spec);
-    setSelectedProvider('all'); // Reset provider when chain changes
+    setSelectedNode('all'); // Reset node when chain changes
   };
 
-  const handleProviderChange = (provider: string) => {
-    setSelectedProvider(provider);
+  const handleNodeChange = (node: string) => {
+    setSelectedNode(node);
   };
 
   // Custom tooltip content component
@@ -97,7 +97,7 @@ export function TimeSeriesGraph({
     maxWidth = 440,
   }: TooltipProps<ValueType, NameType> & { maxWidth?: number }) => {
     if (!active || !payload || payload.length === 0) return null;
-    // Determine if we are in provider mode (selectedSpec !== 'all' && !isLatency)
+    // Determine if we are in node mode (selectedSpec !== 'all' && !isLatency)
     const isProviderMode = selectedSpec !== 'all' && !isLatency;
     return (
       <div
@@ -183,8 +183,8 @@ export function TimeSeriesGraph({
     [data],
   );
 
-  // Get unique providers for the selected spec
-  const providers = useMemo(() => {
+  // Get unique nodes for the selected spec
+  const nodes = useMemo(() => {
     if (!data?.data?.result) return [];
     if (selectedSpec === 'all') return [];
     const filtered = data.data.result.filter(item => item.metric.spec === selectedSpec);
@@ -269,31 +269,31 @@ export function TimeSeriesGraph({
     legendNames = Object.keys(chainMap).map(getChainLabel);
     legendNames.forEach((name, idx) => colorMap.set(name, palette[idx % palette.length]));
   } else {
-    // Show breakdown by provider for the selected chain (requests only)
+    // Show breakdown by node for the selected chain (requests only)
     const filtered = (data?.data?.result ?? []).filter(
       item =>
         item.metric.spec === selectedSpec &&
-        (selectedProvider === 'all' || item.metric.service === selectedProvider),
+        (selectedNode === 'all' || item.metric.service === selectedNode),
     );
     legendNames = Array.from(new Set(filtered.map(item => item.metric.service)));
     legendNames.forEach((name, idx) => colorMap.set(name, palette[idx % palette.length]));
     // Build chartData
-    const providerMap: Record<string, { [timestamp: string]: number }> = {};
+    const nodeMap: Record<string, { [timestamp: string]: number }> = {};
     filtered.forEach(series => {
-      const provider = series.metric.service;
-      if (!providerMap[provider]) providerMap[provider] = {};
+      const node = series.metric.service;
+      if (!nodeMap[node]) nodeMap[node] = {};
       series.values.forEach(([timestamp, value]) => {
         const ts = new Date(timestamp * 1000).toLocaleTimeString();
-        providerMap[provider][ts] = parseFloat(value);
+        nodeMap[node][ts] = parseFloat(value);
       });
     });
     const allTimestamps = Array.from(
-      new Set(Object.values(providerMap).flatMap(obj => Object.keys(obj))),
+      new Set(Object.values(nodeMap).flatMap(obj => Object.keys(obj))),
     ).sort();
     chartData = allTimestamps.map(ts => {
       const row: any = { timestamp: ts };
-      legendNames.forEach(provider => {
-        row[provider] = providerMap[provider][ts] || 0;
+      legendNames.forEach(node => {
+        row[node] = nodeMap[node][ts] || 0;
       });
       return row;
     });
@@ -305,14 +305,14 @@ export function TimeSeriesGraph({
         <CardTitle>{title}</CardTitle>
         <div className='flex items-center space-x-4'>
           {selectedSpec !== 'all' && !isLatency && (
-            <Select value={selectedProvider} onValueChange={handleProviderChange}>
+            <Select value={selectedNode} onValueChange={handleNodeChange}>
               <SelectTrigger className='w-[180px]'>
-                <SelectValue placeholder='Select Provider' />
+                <SelectValue placeholder='Select Node' />
               </SelectTrigger>
               <SelectContent>
-                {providers.map(provider => (
-                  <SelectItem key={provider} value={provider}>
-                    {provider === 'all' ? 'All Providers' : provider}
+                {nodes.map(node => (
+                  <SelectItem key={node} value={node}>
+                    {node === 'all' ? 'All Nodes' : node}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -320,10 +320,10 @@ export function TimeSeriesGraph({
           )}
           <Select value={selectedSpec} onValueChange={handleSpecChange}>
             <SelectTrigger className='w-[240px]'>
-              <SelectValue placeholder='Select Chain' />
+              <SelectValue placeholder='Select Router' />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value='all'>All Chains</SelectItem>
+              <SelectItem value='all'>All Routers</SelectItem>
               {specs.map(spec => (
                 <SelectItem key={spec} value={spec}>
                   <div className='flex items-center gap-2'>
