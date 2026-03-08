@@ -27,7 +27,7 @@ import { ProtectedRoute } from '@/components/protected-route';
 import { useConfig } from '@/hooks/use-config';
 import { useAuth } from '@/lib/auth-context';
 import { apiClient } from '@/lib/api-client';
-import { ChainsToProvidersResponse } from '@/types/metrics';
+import { RoutersToNodesResponse } from '@/types/metrics';
 
 /**
  * Type definitions for Prometheus API responses
@@ -63,7 +63,7 @@ interface PrometheusResponse {
 
 /** Dashboard data structure containing flow visualization data */
 interface DashboardData {
-  flow: ChainsToProvidersResponse | null;
+  flow: RoutersToNodesResponse | null;
 }
 
 /**
@@ -139,9 +139,9 @@ export default function Dashboard() {
         return;
       }
 
-      // Fetch flow visualization data using the new chains-to-providers endpoint
+      // Fetch flow visualization data using the routers-to-nodes endpoint
       const flowEndpoint = `/api/metrics/chains-to-providers?time_window_minutes=1&step_size=1`;
-      const flowData = await apiClient.get<ChainsToProvidersResponse>(flowEndpoint);
+      const flowData = await apiClient.get<RoutersToNodesResponse>(flowEndpoint);
 
       setData({
         flow: flowData,
@@ -264,7 +264,7 @@ export default function Dashboard() {
               <div>
                 <CardTitle>System Flow Visualization</CardTitle>
                 <CardDescription>
-                  Visualizing the health status between Users, Chains, and Providers
+                  Visualizing the health status between Users, Routers, and Nodes
                 </CardDescription>
               </div>
               <div className='flex flex-wrap items-center gap-2'>
@@ -303,7 +303,7 @@ export default function Dashboard() {
                   variant='outline'
                   size='sm'
                   onClick={() => setFlowExpanded(prev => !prev)}
-                  title={flowExpanded ? 'Collapse all providers' : 'Expand all providers'}
+                  title={flowExpanded ? 'Collapse all nodes' : 'Expand all nodes'}
                   className='bg-background border-border hover:bg-accent'
                 >
                   {flowExpanded ? (

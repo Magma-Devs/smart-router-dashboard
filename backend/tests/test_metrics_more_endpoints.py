@@ -2,7 +2,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.api.routes.metrics import get_prometheus_service
-from app.core.dataclasses import ChainConfig, ProviderConfig, EndpointConfig
+from app.core.dataclasses import RouterConfig, NodeConfig, EndpointConfig
 from app.services.configuration import configuration_service
 
 client = TestClient(app)
@@ -96,20 +96,20 @@ class FakePromAgg:
 
 
 def _seed_chains():
-    c1 = ChainConfig(
+    c1 = RouterConfig(
         id="hyperliquid-lava",
         network="hyperliquid",
-        providers=[
-            ProviderConfig(
+        nodes=[
+            NodeConfig(
                 name="lava", endpoints=[EndpointConfig(url="rpc", interface="jsonrpc")]
             )
         ],
     )
-    c2 = ChainConfig(
+    c2 = RouterConfig(
         id="hyperliquid-official",
         network="hyperliquid",
-        providers=[
-            ProviderConfig(
+        nodes=[
+            NodeConfig(
                 name="ankr", endpoints=[EndpointConfig(url="rpc", interface="jsonrpc")]
             )
         ],

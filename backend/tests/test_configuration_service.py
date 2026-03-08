@@ -10,7 +10,7 @@ import pytest
 import yaml
 
 from app.services.configuration import ConfigurationService
-from app.core.dataclasses import ChainConfig
+from app.core.dataclasses import RouterConfig
 
 
 class TestConfigurationService:
@@ -91,10 +91,10 @@ class TestConfigurationService:
         """Test getting chains and providers configuration."""
         # Mock the smart router values
         mock_chains = [
-            ChainConfig(
+            RouterConfig(
                 id="chain1",
                 network="testnet",
-                providers=[],
+                nodes=[],
             )
         ]
 
@@ -113,11 +113,11 @@ class TestConfigurationService:
     def test_read_smart_router_values_with_data(self):
         """Test reading smart router values with valid data."""
         mock_data = {
-            "chains": [
+            "routers": [
                 {
                     "id": "chain1",
                     "network": "testnet",
-                    "providers": [],
+                    "nodes": [],
                 }
             ]
         }
@@ -130,8 +130,8 @@ class TestConfigurationService:
         assert result[0].network == "testnet"
 
     def test_chain_config_helper_methods(self):
-        """Test ChainConfig helper methods for interfaces and addons."""
-        from app.core.dataclasses import EndpointConfig, ProviderConfig
+        """Test RouterConfig helper methods for interfaces and addons."""
+        from app.core.dataclasses import EndpointConfig, NodeConfig
 
         # Create test endpoints
         endpoint1 = EndpointConfig(
@@ -143,13 +143,13 @@ class TestConfigurationService:
             addons=["archive", "debug"],
         )
 
-        # Create test provider
-        provider = ProviderConfig(
-            name="test_provider", endpoints=[endpoint1, endpoint2]
+        # Create test node
+        node = NodeConfig(
+            name="test_node", endpoints=[endpoint1, endpoint2]
         )
 
-        # Create test chain
-        chain = ChainConfig(id="test_chain", network="testnet", providers=[provider])
+        # Create test router
+        chain = RouterConfig(id="test_chain", network="testnet", nodes=[node])
 
         # Test get_interfaces method
         interfaces = chain.get_interfaces()

@@ -16,7 +16,7 @@ export function TabNavigation({ activeTab, onTabChange }: TabNavigationProps) {
             : 'text-muted-foreground hover:text-white'
         }`}
       >
-        Chains
+        Routers
       </button>
       <button
         onClick={() => onTabChange('providers')}
@@ -26,7 +26,7 @@ export function TabNavigation({ activeTab, onTabChange }: TabNavigationProps) {
             : 'text-muted-foreground hover:text-white'
         }`}
       >
-        Providers
+        Nodes
       </button>
     </div>
   );

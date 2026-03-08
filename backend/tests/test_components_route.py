@@ -13,11 +13,11 @@ class FakeConfigService(ConfigurationService):
 
     def read_smart_router_values(self):
         return {
-            "chains": [
+            "routers": [
                 {
                     "id": "hyperliquid-lava",
                     "network": "hyperliquid",
-                    "providers": [
+                    "nodes": [
                         {
                             "name": "Lava",
                             "endpoints": [
@@ -42,16 +42,16 @@ def test_components_success():
     )
     assert r.status_code == 200
     data = r.json()
-    assert "consumers" in data
-    assert "hyperliquid-lava" in data["consumers"]
-    assert sorted(data["consumers"]["hyperliquid-lava"]["interfaces"]) == [
+    assert "routers" in data
+    assert "hyperliquid-lava" in data["routers"]
+    assert sorted(data["routers"]["hyperliquid-lava"]["interfaces"]) == [
         "jsonrpc",
         "rest",
     ]
 
     # Verify URL is NOT present in the response
-    provider = data["consumers"]["hyperliquid-lava"]["providers"][0]
-    endpoint = provider["endpoints"][0]
+    node = data["routers"]["hyperliquid-lava"]["nodes"][0]
+    endpoint = node["endpoints"][0]
     assert "url" not in endpoint
     assert "interface" in endpoint
     assert "addons" in endpoint

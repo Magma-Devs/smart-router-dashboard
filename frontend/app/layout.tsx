@@ -42,6 +42,22 @@ export default function RootLayout({
     <html lang='en' suppressHydrationWarning>
       <head>
         <link rel='icon' href='/magma-icon.png' sizes='any' />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              window.addEventListener('error', function(e) {
+                if (e.message && e.message.includes('ChunkLoadError') || e.message && e.message.includes('Loading chunk')) {
+                  window.location.reload();
+                }
+              });
+              window.addEventListener('unhandledrejection', function(e) {
+                if (e.reason && e.reason.name === 'ChunkLoadError') {
+                  window.location.reload();
+                }
+              });
+            `,
+          }}
+        />
       </head>
       <body className={`${outfit.className} ${poppins.variable} ${jetbrainsMono.variable}`}>
         <ThemeProvider

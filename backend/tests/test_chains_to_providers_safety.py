@@ -1,11 +1,12 @@
 import base64
-from unittest.mock import AsyncMock, MagicMock
+import types
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi.testclient import TestClient
 from app.main import app
 from app.api.routes.metrics import get_prometheus_service
 from app.services.configuration import ConfigurationService, configuration_service
-from app.core.dataclasses import ChainConfig, ProviderConfig, EndpointConfig
+from app.core.dataclasses import RouterConfig, NodeConfig, EndpointConfig
 
 client = TestClient(app)
 
@@ -27,11 +28,11 @@ class FakeConfigService(ConfigurationService):
     @property
     def get_chains_providers_configuration(self):
         return [
-            ChainConfig(
+            RouterConfig(
                 id="ethereum",
                 network="ethereum",
-                providers=[
-                    ProviderConfig(
+                nodes=[
+                    NodeConfig(
                         name="lava",
                         endpoints=[
                             EndpointConfig(
@@ -49,8 +50,6 @@ class FakeConfigService(ConfigurationService):
 def test_chains_to_providers_safe_model():
     # Mock dependencies
     app.dependency_overrides[get_prometheus_service] = lambda: FakePrometheus()
-    # We need to patch the configuration_service import in metrics.py
-    # or override it if it was a dependency (it's imported directly in metrics.py)
 
     # Since metrics.py imports configuration_service directly, we need to mock it there
     mock_config = types.SimpleNamespace(
@@ -70,18 +69,15 @@ def test_chains_to_providers_safe_model():
         chain = data["chains"][0]
         assert chain["id"] == "ethereum"
 
-        # Verify provider data
-        assert len(chain["providers"]) == 1
-        provider = chain["providers"][0]
-        assert provider["name"] == "lava"
+        # Verify node data
+        assert len(chain["nodes"]) == 1
+        node = chain["nodes"][0]
+        assert node["name"] == "lava"
 
         # CRITICAL: Verify URL is NOT present and addons ARE NOT present
-        assert len(provider["endpoints"]) == 1
-        endpoint = provider["endpoints"][0]
+        assert len(node["endpoints"]) == 1
+        endpoint = node["endpoints"][0]
         assert "interface" in endpoint
         assert endpoint["interface"] == "jsonrpc"
         assert "url" not in endpoint
         assert "addons" not in endpoint
-
-
-from unittest.mock import patch

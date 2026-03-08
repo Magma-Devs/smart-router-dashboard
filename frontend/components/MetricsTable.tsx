@@ -1,12 +1,12 @@
 'use client';
 
 import { ChevronUp, ChevronDown } from 'lucide-react';
-import { ProviderMetrics, ChainMetrics, SortField, SortDirection } from '@/types/metrics';
+import { NodeMetrics, RouterMetrics, SortField, SortDirection } from '@/types/metrics';
 import { getUptimeColor, getReachabilityColor, getLatencyColor } from '@/utils/colors';
 import { getChainIcon } from '@/app/config/chains';
 
 interface MetricsTableProps {
-  data: ProviderMetrics[] | ChainMetrics[];
+  data: NodeMetrics[] | RouterMetrics[];
   type: 'providers' | 'chains';
   sortField: SortField | null;
   sortDirection: SortDirection;
@@ -56,7 +56,7 @@ export function MetricsTable({
               onClick={() => onSort('name')}
             >
               <div className='flex items-center gap-1'>
-                {type === 'providers' ? 'Provider' : 'Router'}
+                {type === 'providers' ? 'Node' : 'Router'}
                 <div className='opacity-0 group-hover:opacity-100 transition-opacity'>
                   {getSortIcon('name')}
                 </div>
