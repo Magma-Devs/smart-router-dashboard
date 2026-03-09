@@ -259,6 +259,7 @@ async def range_query(
     end: str | None = Query(None, description="End time (ISO format)"),
     step: str = Query("5s", description="Step size for range queries"),
     svc: PrometheusService = Depends(get_prometheus_service),
+    current_user: str = Depends(get_current_user),
 ):
     """Execute a range Prometheus query with custom time range"""
     try:
@@ -281,6 +282,7 @@ async def last_n_minutes(
     minutes: int = Query(15, description="Number of minutes of data to fetch"),
     step: str = Query("5s", description="Step size for range queries"),
     svc: PrometheusService = Depends(get_prometheus_service),
+    current_user: str = Depends(get_current_user),
 ):
     """Execute a range Prometheus query for the last n minutes"""
     try:
@@ -296,6 +298,7 @@ async def last_n_minutes(
 @router.get("/default")
 async def get_default_metrics_alias(
     svc: PrometheusService = Depends(get_prometheus_service),
+    current_user: str = Depends(get_current_user),
 ):
     """Alias endpoint for default metrics (kept for compatibility)."""
     try:
