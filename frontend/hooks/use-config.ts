@@ -12,6 +12,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useLocalStorage } from '@/hooks/use-local-storage';
 import { getRuntimeConfig } from '@/lib/runtime-config';
 import { apiClient } from '@/lib/api-client';
+import { useAuth } from '@/lib/auth-context';
 
 /**
  * Configuration object interface
@@ -60,6 +61,8 @@ interface BackendSettings {
  * ```
  */
 export function useConfig() {
+  const { isAuthenticated } = useAuth();
+
   // Initialize with null - will be set from runtime config
   const [apiHost, setApiHost] = useLocalStorage<string | null>('api-host', null);
   const [defaultApiUrl, setDefaultApiUrl] = useState<string>('');
@@ -98,11 +101,11 @@ export function useConfig() {
   }, []);
 
   /**
-   * Initialize API host and Prometheus URL from runtime config and backend.
+   * Initialize default values from runtime config (no auth required).
    * Uses a ref to ensure it only runs once, even in React Strict Mode.
    */
   const initRef = React.useRef(false);
-  
+
   useEffect(() => {
     // Prevent double initialization in React Strict Mode
     if (initRef.current) return;
@@ -115,11 +118,11 @@ export function useConfig() {
       const hasStoredDomain = typeof window !== 'undefined' && window.localStorage.getItem('endpoint-domain') !== null;
       const hasStoredPort = typeof window !== 'undefined' && window.localStorage.getItem('endpoint-port') !== null;
 
-      // First, get runtime config for API URL
+      // Get runtime config for default values
       const config = await getRuntimeConfig();
       const defaultEndpoint = config.NEXT_PUBLIC_API_URL;
       setDefaultApiUrl(defaultEndpoint);
-      
+
       // Only set apiHost if it hasn't been stored yet (first load)
       if (!hasStoredApiHost && defaultEndpoint) {
         setApiHost(defaultEndpoint);
@@ -128,6 +131,9 @@ export function useConfig() {
       // Set default Prometheus URL from runtime config
       const defaultPromUrl = config.NEXT_PUBLIC_PROMETHEUS_URL;
       setDefaultPrometheusUrl(defaultPromUrl);
+      if (!hasStoredPrometheusUrl && defaultPromUrl) {
+        setPrometheusUrl(defaultPromUrl);
+      }
 
       // Set default endpoint domain and port from runtime config
       const defaultDomain = config.NEXT_PUBLIC_DOMAIN;
@@ -141,30 +147,41 @@ export function useConfig() {
       if (!hasStoredPort && defaultPort) {
         setEndpointPort(defaultPort);
       }
-
-      // Try to fetch Prometheus URL from backend settings
-      try {
-        const backendSettings = await fetchBackendSettings();
-        if (backendSettings && backendSettings.prometheus_url) {
-          // Use backend setting if available and user hasn't stored a custom value
-          if (!hasStoredPrometheusUrl) {
-            setPrometheusUrl(backendSettings.prometheus_url);
-          }
-        } else if (!hasStoredPrometheusUrl && defaultPromUrl) {
-          // Fallback to runtime config
-          setPrometheusUrl(defaultPromUrl);
-        }
-      } catch {
-        // If backend fetch fails, use runtime config default
-        if (!hasStoredPrometheusUrl && defaultPromUrl) {
-          setPrometheusUrl(defaultPromUrl);
-        }
-      }
     };
 
     initializeConfig();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /**
+   * Fetch settings from backend once the user is authenticated.
+   * This overrides runtime config defaults with actual backend values.
+   */
+  const settingsFetchedRef = React.useRef(false);
+
+  useEffect(() => {
+    if (!isAuthenticated || settingsFetchedRef.current) return;
+    settingsFetchedRef.current = true;
+
+    const fetchSettings = async () => {
+      const hasStoredPrometheusUrl = typeof window !== 'undefined' && window.localStorage.getItem('prometheus-url') !== null;
+
+      try {
+        const backendSettings = await fetchBackendSettings();
+        if (backendSettings && backendSettings.prometheus_url) {
+          // Use backend setting if user hasn't stored a custom value
+          if (!hasStoredPrometheusUrl) {
+            setPrometheusUrl(backendSettings.prometheus_url);
+          }
+        }
+      } catch {
+        // Backend fetch failed, keep runtime config defaults
+      }
+    };
+
+    fetchSettings();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated]);
 
   /**
    * Updates the API endpoint URL with validation.
