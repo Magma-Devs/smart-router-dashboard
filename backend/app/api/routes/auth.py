@@ -111,12 +111,13 @@ async def auth_status() -> dict[str, Any]:
 
 
 @router.get("/debug-status")
-async def debug_status() -> dict[str, Any]:
+async def debug_status(
+    current_user: str = Depends(get_current_user),
+) -> dict[str, Any]:
     """
     Get debug mode status for development and troubleshooting.
 
-    This public endpoint returns the current debug mode configuration,
-    which is useful for development environments and troubleshooting.
+    Requires authentication.
 
     Returns:
         Dict containing debug mode status and information
