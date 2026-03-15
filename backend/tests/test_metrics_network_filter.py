@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 from app.main import app
 from app.api.routes.metrics import get_prometheus_service
-from app.core.dataclasses import ChainConfig, ProviderConfig, EndpointConfig
+from app.core.dataclasses import RouterConfig, NodeConfig, EndpointConfig
 from app.services.configuration import configuration_service
 
 client = TestClient(app)
@@ -16,31 +16,31 @@ class FakeProm:
 
 def make_chains():
     # two chains on hyperliquid and one lava
-    c1 = ChainConfig(
+    c1 = RouterConfig(
         id="hyperliquid-lava",
         network="hyperliquid",
-        providers=[
-            ProviderConfig(
+        nodes=[
+            NodeConfig(
                 name="Lava",
                 endpoints=[EndpointConfig(url="https://rpc", interface="jsonrpc")],
             )
         ],
     )
-    c2 = ChainConfig(
+    c2 = RouterConfig(
         id="hyperliquid-official",
         network="hyperliquid",
-        providers=[
-            ProviderConfig(
+        nodes=[
+            NodeConfig(
                 name="Alchemy",
                 endpoints=[EndpointConfig(url="https://rpc", interface="jsonrpc")],
             )
         ],
     )
-    c3 = ChainConfig(
+    c3 = RouterConfig(
         id="lava-official",
         network="lava",
-        providers=[
-            ProviderConfig(
+        nodes=[
+            NodeConfig(
                 name="Lava",
                 endpoints=[EndpointConfig(url="https://rest", interface="rest")],
             )

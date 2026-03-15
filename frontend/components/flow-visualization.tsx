@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Check, Network, Server, User, X, ChevronDown, ChevronUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getChainLabel, getChainIcon } from '@/app/config/chains';
-import { ChainsToProvidersResponse, ChainInfo } from '@/types/metrics';
+import { RoutersToNodesResponse, RouterInfo } from '@/types/metrics';
 import ReactFlow, {
   Controls,
   Handle,
@@ -20,7 +20,7 @@ import 'reactflow/dist/style.css';
 import React from 'react';
 
 interface FlowVisualizationProps {
-  data: ChainsToProvidersResponse | null;
+  data: RoutersToNodesResponse | null;
   isAllExpanded?: boolean;
 }
 
@@ -122,7 +122,7 @@ function ChainNode({
                 if (data.onToggleExpand) data.onToggleExpand();
               }}
               className='mr-2 p-1 hover:bg-muted rounded'
-              title={data.hasExpandedProviders ? 'Collapse providers' : 'Expand providers'}
+              title={data.hasExpandedProviders ? 'Collapse nodes' : 'Expand nodes'}
             >
               {data.hasExpandedProviders ? (
                 <ChevronUp className='h-4 w-4 text-gray-500' />
@@ -349,7 +349,7 @@ function ProviderCountNode({
         <div className='flex flex-col'>
           <span className='font-medium'>
             {data.healthyCount !== undefined ? `${data.healthyCount}/${data.count}` : data.count}{' '}
-            {data.count === 1 ? 'Provider' : 'Providers'}
+            {data.count === 1 ? 'Node' : 'Nodes'}
           </span>
           <span className='text-xs text-muted-foreground flex items-center gap-1'>
             <ChevronDown className='h-3 w-3' />
@@ -426,11 +426,11 @@ function FlowInner({
 
       if (apiData?.chains) {
         // Extract keys from new API data using the correct format
-        apiData.chains.forEach((chain: ChainInfo) => {
+        apiData.chains.forEach((chain: RouterInfo) => {
           consumerKeys.push(`chain-${chain.id}`);
 
-          chain.providers.forEach(provider => {
-            serviceGroupKeys.push(`service-group-${chain.id}-${provider.name}`);
+          chain.nodes.forEach(node => {
+            serviceGroupKeys.push(`service-group-${chain.id}-${node.name}`);
           });
         });
       } else {
@@ -471,14 +471,14 @@ function FlowInner({
       // Check if data follows the new chains-to-providers format
       if (apiData?.chains) {
         // Extract unique consumer names and service providers
-        apiData.chains.forEach((chain: ChainInfo) => {
+        apiData.chains.forEach((chain: RouterInfo) => {
           const chainKey = `chain-${chain.id}`;
           // Always collapse by default
           newExpandedState[chainKey] = false;
 
           // Set service groups to collapsed by default
-          chain.providers.forEach(provider => {
-            const serviceKey = `service-group-${chain.id}-${provider.name}`;
+          chain.nodes.forEach(node => {
+            const serviceKey = `service-group-${chain.id}-${node.name}`;
             // Always collapse interfaces (service groups) by default
             newExpandedState[serviceKey] = false;
           });
@@ -553,7 +553,7 @@ function FlowInner({
 
     // Process the new chains-to-providers API format
     if (apiData && apiData.chains && Array.isArray(apiData.chains) && apiData.chains.length > 0) {
-      apiData.chains.forEach((chain: ChainInfo) => {
+      apiData.chains.forEach((chain: RouterInfo) => {
         // Create chain from chain data using proper labels and icons from chains.ts
         // Handle health states using enums - be explicit about the comparison
         const isHealthy = chain.health_status === 'healthy';
@@ -566,11 +566,11 @@ function FlowInner({
         });
 
         // Create providers for this chain
-        providers[chain.id] = chain.providers.flatMap(provider =>
-          provider.endpoints.map(endpoint => ({
+        providers[chain.id] = chain.nodes.flatMap(node =>
+          node.endpoints.map(endpoint => ({
             interface: endpoint.interface,
-            healthy: provider.health_status === 'healthy',
-            service: provider.name,
+            healthy: node.health_status === 'healthy',
+            service: node.name,
           })),
         );
       });
@@ -817,7 +817,7 @@ function FlowInner({
 
       // Get the original chain data to check for mixed health state
       const originalChain = apiData?.chains?.find(
-        (chainInfo: ChainInfo) => chainInfo.id === chain.name,
+        (chainInfo: RouterInfo) => chainInfo.id === chain.name,
       );
       const backendMixedHealth = originalChain?.health_status === 'mixed';
 

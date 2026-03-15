@@ -4,18 +4,18 @@
 
 // Health state enums
 
-export enum ProviderHealth {
+export enum NodeHealth {
   HEALTHY = 'healthy',
   UNHEALTHY = 'unhealthy',
 }
 
-export enum ChainHealth {
+export enum RouterHealth {
   HEALTHY = 'healthy',
   UNHEALTHY = 'unhealthy',
   MIXED = 'mixed',
 }
 
-export interface ProviderMetrics {
+export interface NodeMetrics {
   provider: string;
   chain?: string; // chain label for display
   chainValue?: string; // chain value for icon lookup
@@ -26,7 +26,7 @@ export interface ProviderMetrics {
   latency: string; // single value
 }
 
-export interface ChainMetrics {
+export interface RouterMetrics {
   chain: string;
   chainValue?: string; // chain value for icon lookup
   network?: string; // network field for proper icon lookup
@@ -37,10 +37,10 @@ export interface ChainMetrics {
 }
 
 export interface MetricsData {
-  providers: ProviderMetrics[];
-  chains: ChainMetrics[];
-  selectedChain: string;
-  selectedProvider: string;
+  providers: NodeMetrics[];
+  chains: RouterMetrics[];
+  selectedRouter: string;
+  selectedNode: string;
   timeFrame: string;
 }
 
@@ -66,32 +66,51 @@ export interface KPICardProps {
   isLoading?: boolean;
 }
 
+// ---------------------------------------------------------------------------
 // API Response Types for Metrics Endpoints
+// ---------------------------------------------------------------------------
 
-/** Endpoint information */
+/** Endpoint information (safe — URL is not exposed) */
 export interface EndpointInfo {
-  url: string;
   interface: string;
-  addons?: string[];
 }
 
-/** Provider information for flow visualization */
-export interface ProviderInfo {
+/** Node information for flow visualization */
+export interface NodeInfo {
   name: string;
   endpoints: EndpointInfo[];
-  auth_config?: any;
-  health_status: ProviderHealth;
+  health_status: NodeHealth;
+  is_backup?: boolean;
 }
 
-/** Chain information for flow visualization */
-export interface ChainInfo {
+/** Router information for flow visualization */
+export interface RouterInfo {
   id: string;
   network: string;
-  providers: ProviderInfo[];
-  health_status: ChainHealth;
+  nodes: NodeInfo[];
+  health_status: RouterHealth;
 }
 
-/** Response from chains-to-providers endpoint */
-export interface ChainsToProvidersResponse {
-  chains: ChainInfo[];
+/** Response from routers-to-nodes endpoint */
+export interface RoutersToNodesResponse {
+  chains: RouterInfo[];
 }
+
+// ---------------------------------------------------------------------------
+// Backward-compatible type aliases
+// ---------------------------------------------------------------------------
+
+/** @deprecated Use NodeMetrics */
+export type ProviderMetrics = NodeMetrics;
+
+/** @deprecated Use RouterMetrics */
+export type ChainMetrics = RouterMetrics;
+
+/** @deprecated Use NodeInfo */
+export type ProviderInfo = NodeInfo;
+
+/** @deprecated Use RouterInfo */
+export type ChainInfo = RouterInfo;
+
+/** @deprecated Use RoutersToNodesResponse */
+export type ChainsToProvidersResponse = RoutersToNodesResponse;

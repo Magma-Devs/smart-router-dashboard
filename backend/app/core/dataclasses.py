@@ -1,4 +1,6 @@
 from enum import Enum
+from typing import Any
+
 from pydantic import BaseModel
 
 from app.core.utils import (
@@ -8,83 +10,120 @@ from app.core.utils import (
 
 # Health state enums
 class ProviderHealth(str, Enum):
-    """Basic health states for providers"""
+    """Basic health states for nodes/endpoints"""
 
     HEALTHY = "healthy"
     UNHEALTHY = "unhealthy"
 
 
 class ChainHealth(str, Enum):
-    """Extended health states for chains (includes mixed state)"""
+    """Extended health states for routers (includes mixed state)"""
 
     HEALTHY = "healthy"
     UNHEALTHY = "unhealthy"
     MIXED = "mixed"
 
 
+class AuthConfig(BaseModel):
+    auth_headers: dict[str, str] = {}
+    auth_query: str | None = None
+    use_tls: bool = False
+    key_pem: str | None = None
+    cert_pem: str | None = None
+    ca_cert: str | None = None
+    allow_insecure: bool = False
+
+
 class EndpointConfig(BaseModel):
     url: str
     interface: str
     addons: list[str] = []
+    auth_config: AuthConfig | None = None
+    timeout: str | None = None
+    ip_forwarding: bool = False
 
 
-class ProviderConfig(BaseModel):
+class NodeConfig(BaseModel):
     name: str
     endpoints: list[EndpointConfig]
+    is_backup: bool = False
+    stake: int | None = None
+    skip_verifications: str | None = None
+
+    def get_endpoint_urls(self) -> list[str]:
+        """Return all endpoint URLs for this node."""
+        return [ep.url for ep in self.endpoints]
 
 
-class Provider(ProviderConfig):
-    health_status: ProviderHealth = ProviderHealth.UNHEALTHY
-
-
-class ChainConfig(BaseModel):
-    id: str  # chain name
-    network: str  # basically chain ID, but there could be several different chains from the same network
-    providers: list[ProviderConfig] | list[Provider]
+class RouterConfig(BaseModel):
+    id: str  # router name (user-defined)
+    network: str  # chain spec (e.g. eth1, base) - used as Prometheus spec label (uppercase)
+    nodes: list[NodeConfig]
+    custom_url_prefix: str | None = None
 
     def get_interfaces(self) -> list[str]:
-        """Get all unique interfaces from all providers' endpoints."""
+        """Get all unique interfaces from all nodes' endpoints."""
         interfaces = set()
-        for provider in self.providers:
-            for endpoint in provider.endpoints:
+        for node in self.nodes:
+            for endpoint in node.endpoints:
                 interfaces.add(endpoint.interface)
         return list(interfaces)
 
     def get_addons(self) -> list[str]:
-        """Get all unique addons from all providers' endpoints."""
+        """Get all unique addons from all nodes' endpoints."""
         addons = set()
-        for provider in self.providers:
-            for endpoint in provider.endpoints:
+        for node in self.nodes:
+            for endpoint in node.endpoints:
                 addons.update(endpoint.addons)
         return remove_duplicate_addons(list(addons))
 
+    def get_all_endpoint_urls(self) -> list[str]:
+        """Return all endpoint URLs across all nodes in this router."""
+        urls = []
+        for node in self.nodes:
+            urls.extend(node.get_endpoint_urls())
+        return urls
 
-class Chain(ChainConfig):
+
+class Router(RouterConfig):
     health_status: ChainHealth
 
+
+# Node with health status
+class Node(NodeConfig):
+    health_status: ProviderHealth = ProviderHealth.UNHEALTHY
+
+
+# ---------------------------------------------------------------------------
+# Safe / sanitized models (exclude raw URLs from API responses)
+# ---------------------------------------------------------------------------
 
 class SafeEndpoint(BaseModel):
     interface: str
 
 
-class SafeProvider(BaseModel):
+class SafeNode(BaseModel):
     name: str
     endpoints: list[SafeEndpoint]
     health_status: ProviderHealth
+    is_backup: bool = False
 
 
-class SafeChain(BaseModel):
+class SafeRouter(BaseModel):
     id: str
     network: str
-    providers: list[SafeProvider]
+    nodes: list[SafeNode]
     health_status: ChainHealth
 
 
 class ChainsToProvidersResponse(BaseModel):
-    chains: list[SafeChain]
+    chains: list[SafeRouter]
 
 
-# Models for Components API
+# ---------------------------------------------------------------------------
+# Components API models
+# ---------------------------------------------------------------------------
+
 class ResourceLimits(BaseModel):
     cpu: int
     memory: int
@@ -101,28 +140,31 @@ class ComponentEndpoint(BaseModel):
     addons: list[str] = []
 
 
-class ComponentProvider(BaseModel):
+class ComponentNode(BaseModel):
     name: str
     endpoints: list[ComponentEndpoint]
 
 
-class ConsumerConfig(BaseModel):
+class RouterInfo(BaseModel):
     network: str
     interfaces: list[str]
-    providers: list[ComponentProvider]
+    nodes: list[ComponentNode]
 
 
 class ComponentsResponse(BaseModel):
-    consumers: dict[str, ConsumerConfig]
+    routers: dict[str, RouterInfo]
     resource_limits: AllResourceLimits
 
 
-# Pydantic models for API responses
+# ---------------------------------------------------------------------------
+# Pydantic models for metrics API responses
+# ---------------------------------------------------------------------------
+
 class ChainMetrics(BaseModel):
     network: str | None = None
     uptime: float
     latency_in_ms: int
-    reachability: float  # Percentage of healthy providers for this chain
+    reachability: float  # Percentage of healthy endpoints for this router
     requests_in_window: int
     latest_block: int
 
@@ -131,7 +173,7 @@ class ProviderMetrics(BaseModel):
     provider_name: str | None = None
     network: str | None = None
     uptime: float
-    latency_in_ms: int | None  # Providers don't have latency metrics
+    latency_in_ms: int | None  # May be None if no latency data
     requests_in_window: int
     latest_block: int
 
@@ -148,7 +190,10 @@ class ProvidersMetricsResponse(BaseModel):
     p90: ProviderMetrics
 
 
+# ---------------------------------------------------------------------------
 # Usage metrics models
+# ---------------------------------------------------------------------------
+
 class MethodUsage(BaseModel):
     """Usage metrics for a specific RPC method"""
     method: str
@@ -187,7 +232,7 @@ class BatchRequestUsage(BaseModel):
 
 
 class ChainUsageMetrics(BaseModel):
-    """Complete usage metrics for a chain"""
+    """Complete usage metrics for a router/chain"""
     chain_id: str
     network: str
     single: RequestTypeUsage
@@ -199,20 +244,36 @@ class UsageMetricsResponse(BaseModel):
     chains: dict[str, ChainUsageMetrics]
 
 
+# ---------------------------------------------------------------------------
 # Dashboard summary metrics models
+# ---------------------------------------------------------------------------
+
 class ErrorRecoveryMetrics(BaseModel):
-    """Metrics for node error recovery"""
-    total_node_errors: float  # Total errors received from providers (rate)
-    recovered_requests: float  # Errors that were recovered successfully (rate)
-    recovery_rate: float  # Percentage of errors recovered (0-100)
-    recovery_by_attempt: dict[str, float] = {}  # Recovery rate by attempt number
-    errors_by_chain: dict[str, float] = {}  # Errors rate by chain/spec
+    """Metrics for node error recovery from lava_consumer_total_node_errors_* metrics."""
+    total_node_errors: float = 0.0
+    recovered_requests: float = 0.0
+    recovery_rate: float = 0.0
+    recovery_by_attempt: dict[str, float] = {}
+    errors_by_chain: dict[str, float] = {}
 
 
 class DashboardSummaryMetrics(BaseModel):
     """Summary metrics for the dashboard overview"""
-    total_requests: float  # Total requests in the time window
-    cache_hit_rate: float  # Percentage of requests served from cache (0-100)
-    cache_hits: float  # Number of cache hits (rate)
-    cache_misses: float  # Number of cache misses (rate)
-    error_recovery: ErrorRecoveryMetrics
+    total_requests: float
+    cache_hit_rate: float = 0.0   # From Lava cache sidecar (cache_total_hits/misses)
+    cache_hits: float = 0.0       # From Lava cache sidecar
+    cache_misses: float = 0.0     # From Lava cache sidecar
+    error_recovery: ErrorRecoveryMetrics = ErrorRecoveryMetrics()
+
+
+# ---------------------------------------------------------------------------
+# Backward-compatible type aliases
+# (keep old names importable so existing imports don't hard-break)
+# ---------------------------------------------------------------------------
+
+ProviderConfig = NodeConfig
+Provider = Node
+ChainConfig = RouterConfig
+Chain = Router
+SafeProvider = SafeNode
+SafeChain = SafeRouter

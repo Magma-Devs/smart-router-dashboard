@@ -1,11 +1,11 @@
 # Sample Smart Router configuration for local development
 # This file is mounted into the backend container for testing
 
-chains:
+routers:
   # Ethereum - JSON-RPC with archive
   - id: Ethereum
     network: eth1
-    providers:
+    nodes:
       - name: lava
         endpoints:
           - url: https://eth1.lava.build
@@ -16,7 +16,7 @@ chains:
   # Arbitrum - JSON-RPC with archive and trace
   - id: Arbitrum
     network: arbitrum
-    providers:
+    nodes:
       - name: lava
         endpoints:
           - url: https://arb1.lava.build
@@ -28,7 +28,7 @@ chains:
   # NEAR - JSON-RPC with archive
   - id: Near
     network: near
-    providers:
+    nodes:
       - name: lava
         endpoints:
           - url: https://near.lava.build
@@ -39,7 +39,7 @@ chains:
   # Solana - JSON-RPC without addons
   - id: Solana
     network: solana
-    providers:
+    nodes:
       - name: lava
         endpoints:
           - url: https://solana.lava.build
@@ -49,7 +49,7 @@ chains:
   # Cosmos - TendermintRPC and REST with archive
   - id: Lava
     network: lava
-    providers:
+    nodes:
       - name: lava
         endpoints:
           - url: https://lava.tendermintrpc.lava.build

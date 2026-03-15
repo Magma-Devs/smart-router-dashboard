@@ -162,12 +162,12 @@ interface SummarySectionProps {}
 export function SummarySection({}: SummarySectionProps) {
   // Configuration and state management
   const { config } = useConfig();
-  const [availableChains, setAvailableChains] = useState<Array<{ id: string; network: string }>>(
+  const [availableRouters, setAvailableRouters] = useState<Array<{ id: string; network: string }>>(
     [],
   );
-  const [selectedChain, setSelectedChain] = useState<string>('all');
+  const [selectedRouter, setSelectedRouter] = useState<string>('all');
   const [selectedNetwork, setSelectedNetwork] = useState<string>('all');
-  const [isLoadingChains, setIsLoadingChains] = useState(false);
+  const [isLoadingRouters, setIsLoadingRouters] = useState(false);
   const [kpiData, setKpiData] = useState<KPIData>({
     uptime: 'N/A',
     reachability: 'N/A',
@@ -180,15 +180,15 @@ export function SummarySection({}: SummarySectionProps) {
   const [selectedTimeFrame, setSelectedTimeFrame] = useState<string>(DEFAULT_TIME_FRAME);
 
   /**
-   * Fetches KPI data for the specified chain and time frame.
-   * Handles both individual chain data and aggregated "all chains" data.
+   * Fetches KPI data for the specified router and time frame.
+   * Handles both individual router data and aggregated "all routers" data.
    *
-   * @param chainValue - The chain identifier or "all" for aggregated data
+   * @param routerValue - The router identifier or "all" for aggregated data
    * @param timeFrame - Time frame string (e.g., "1h", "30m") for the metrics query
    * @param networkValue - Optional network/spec to filter dashboard summary metrics
    */
   const fetchKPIData = useCallback(
-    async (chainValue: string, timeFrame: string, networkValue?: string) => {
+    async (routerValue: string, timeFrame: string, networkValue?: string) => {
       setIsLoading(true);
 
       if (!config.apiEndpoint) {
@@ -213,21 +213,21 @@ export function SummarySection({}: SummarySectionProps) {
         // Use the specific network if provided, otherwise undefined for all networks
         const networkFilter = networkValue && networkValue !== 'all' ? networkValue : undefined;
 
-        // Fetch chain metrics and dashboard summary in parallel
-        const [chainMetricsResult, dashboardSummary] = await Promise.all([
+        // Fetch router metrics and dashboard summary in parallel
+        const [routerMetricsResult, dashboardSummary] = await Promise.all([
           (async () => {
             let chainMetrics: ChainMetrics;
-            if (chainValue === 'all') {
-              // For "all chains", use the avg data from the backend
+            if (routerValue === 'all') {
+              // For "all routers", use the avg data from the backend
               const chainsResponse = await MetricsService.fetchMetricsForAllChains(
                 timeWindowMinutes,
                 stepSize,
               );
               chainMetrics = chainsResponse.avg;
             } else {
-              // For specific chain, fetch individual chain data
+              // For specific router, fetch individual router data
               const chainResponse = await MetricsService.fetchMetricsForChain(
-                chainValue,
+                routerValue,
                 timeWindowMinutes,
                 stepSize,
               );
@@ -243,9 +243,9 @@ export function SummarySection({}: SummarySectionProps) {
 
         // Update KPI data with formatted values
         setKpiData({
-          uptime: MetricsService.formatPercentage(chainMetricsResult.uptime),
-          reachability: MetricsService.formatPercentage(chainMetricsResult.reachability),
-          latency: MetricsService.formatLatency(chainMetricsResult.latency_in_ms),
+          uptime: MetricsService.formatPercentage(routerMetricsResult.uptime),
+          reachability: MetricsService.formatPercentage(routerMetricsResult.reachability),
+          latency: MetricsService.formatLatency(routerMetricsResult.latency_in_ms),
           totalRequests: dashboardSummary
             ? MetricsService.formatTraffic(dashboardSummary.total_requests)
             : 'N/A',
@@ -277,41 +277,41 @@ export function SummarySection({}: SummarySectionProps) {
   );
 
   /**
-   * Fetches available chains from the metrics API on mount.
-   * Populates the chain selection dropdown with chains that have actual metrics data.
+   * Fetches available routers from the metrics API on mount.
+   * Populates the router selection dropdown with routers that have actual metrics data.
    * This is more efficient and accurate than using the components API.
    */
   useEffect(() => {
-    const fetchAvailableChains = async () => {
+    const fetchAvailableRouters = async () => {
       if (!config.apiEndpoint) {
         return;
       }
 
-      setIsLoadingChains(true);
+      setIsLoadingRouters(true);
       try {
-        // Use a minimal time window (1 minute) just to get available chains
+        // Use a minimal time window (1 minute) just to get available routers
         const chainsResponse = await MetricsService.fetchMetricsForAllChains(1, 1);
 
-        // Extract chain data with both ID and network for icon lookup
-        const chainsData = Object.entries(chainsResponse.chains).map(
+        // Extract router data with both ID and network for icon lookup
+        const routersData = Object.entries(chainsResponse.chains).map(
           ([chainId, chainMetrics]: [string, any]) => ({
             id: chainId,
             network: chainMetrics.network,
           }),
         );
-        setAvailableChains(chainsData);
+        setAvailableRouters(routersData);
 
         // Default network selection to 'all' only on initial load
         setSelectedNetwork('all');
       } catch (error) {
-        console.error('Error fetching available chains:', error);
-        setAvailableChains([]);
+        console.error('Error fetching available routers:', error);
+        setAvailableRouters([]);
       } finally {
-        setIsLoadingChains(false);
+        setIsLoadingRouters(false);
       }
     };
 
-    fetchAvailableChains();
+    fetchAvailableRouters();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [config.apiEndpoint]);
 
@@ -319,39 +319,39 @@ export function SummarySection({}: SummarySectionProps) {
    * Effect to trigger data fetch when parameters change.
    */
   useEffect(() => {
-    fetchKPIData(selectedChain, selectedTimeFrame, selectedNetwork);
-  }, [selectedChain, selectedTimeFrame, selectedNetwork, fetchKPIData]);
+    fetchKPIData(selectedRouter, selectedTimeFrame, selectedNetwork);
+  }, [selectedRouter, selectedTimeFrame, selectedNetwork, fetchKPIData]);
 
   /**
-   * Handles chain selection change from the dropdown.
-   * @param chainValue - The selected chain identifier
+   * Handles router selection change from the dropdown.
+   * @param routerValue - The selected router identifier
    */
-  const handleChainSelect = (chainValue: string) => {
-    setSelectedChain(chainValue);
-    fetchKPIData(chainValue, selectedTimeFrame, selectedNetwork);
+  const handleRouterSelect = (routerValue: string) => {
+    setSelectedRouter(routerValue);
+    fetchKPIData(routerValue, selectedTimeFrame, selectedNetwork);
   };
 
   // When network changes, show routers selector when there are multiple routers for this network.
   const handleNetworkSelect = (networkValue: string) => {
     setSelectedNetwork(networkValue);
     if (networkValue === 'all') {
-      // Keep backend behavior the same: aggregate over all chains
-      setSelectedChain('all');
+      // Keep backend behavior the same: aggregate over all routers
+      setSelectedRouter('all');
       fetchKPIData('all', selectedTimeFrame, 'all');
       return;
     }
-    const routersForNetwork = availableChains.filter(c => c.network === networkValue);
+    const routersForNetwork = availableRouters.filter(c => c.network === networkValue);
     if (routersForNetwork.length === 0) {
-      setSelectedChain('all');
+      setSelectedRouter('all');
       fetchKPIData('all', selectedTimeFrame, networkValue);
     } else if (routersForNetwork.length === 1) {
       // Auto-select the single router
-      setSelectedChain(routersForNetwork[0].id);
+      setSelectedRouter(routersForNetwork[0].id);
       fetchKPIData(routersForNetwork[0].id, selectedTimeFrame, networkValue);
     } else {
-      // Multiple routers: default to 'all' (backend aggregates all chains)
-      setSelectedChain('all');
-      // Additionally fetch chains metrics filtered by chosen network to aggregate KPIs
+      // Multiple routers: default to 'all' (backend aggregates all routers)
+      setSelectedRouter('all');
+      // Additionally fetch router metrics filtered by chosen network to aggregate KPIs
       (async () => {
         try {
           const minutes = MetricsService.convertTimeFrameToMinutes(selectedTimeFrame);
@@ -394,7 +394,7 @@ export function SummarySection({}: SummarySectionProps) {
    */
   const handleTimeFrameChange = (value: string) => {
     setSelectedTimeFrame(value);
-    fetchKPIData(selectedChain, value, selectedNetwork);
+    fetchKPIData(selectedRouter, value, selectedNetwork);
   };
 
   /**
@@ -402,7 +402,7 @@ export function SummarySection({}: SummarySectionProps) {
    * Triggers immediate data refresh for current selection.
    */
   const handleRefresh = () => {
-    fetchKPIData(selectedChain, selectedTimeFrame, selectedNetwork);
+    fetchKPIData(selectedRouter, selectedTimeFrame, selectedNetwork);
   };
 
   const handleScrollToMetrics = () => {
@@ -430,16 +430,16 @@ export function SummarySection({}: SummarySectionProps) {
         <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-4'>
           <CardTitle>Summary</CardTitle>
           <div className='flex flex-wrap items-center gap-2'>
-            {/* Routers Selection (appears when a network with multiple routers is chosen) */}
+            {/* Router Selection (appears when a network with multiple routers is chosen) */}
             {selectedNetwork !== 'all' &&
-              availableChains.filter(c => c.network === selectedNetwork).length > 1 && (
+              availableRouters.filter(c => c.network === selectedNetwork).length > 1 && (
                 <Select
-                  value={selectedChain}
-                  onValueChange={handleChainSelect}
-                  disabled={isLoadingChains}
+                  value={selectedRouter}
+                  onValueChange={handleRouterSelect}
+                  disabled={isLoadingRouters}
                 >
                   <SelectTrigger className='w-[200px] bg-background border-border hover:bg-accent'>
-                    <SelectValue placeholder={isLoadingChains ? 'Loading...' : 'Select router'} />
+                    <SelectValue placeholder={isLoadingRouters ? 'Loading...' : 'Select router'} />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value='all'>
@@ -467,10 +467,10 @@ export function SummarySection({}: SummarySectionProps) {
                         All Routers
                       </div>
                     </SelectItem>
-                    {availableChains
-                      .filter(chain => chain.network === selectedNetwork)
-                      .map(chain => (
-                        <SelectItem key={chain.id} value={chain.id}>
+                    {availableRouters
+                      .filter(router => router.network === selectedNetwork)
+                      .map(router => (
+                        <SelectItem key={router.id} value={router.id}>
                           <div className='flex items-center gap-2'>
                             {(() => {
                               const chainConfig = chains.find(c => c.value === selectedNetwork);
@@ -490,7 +490,7 @@ export function SummarySection({}: SummarySectionProps) {
                                 />
                               ) : null;
                             })()}
-                            <span className='text-sm'>{chain.id}</span>
+                            <span className='text-sm'>{router.id}</span>
                           </div>
                         </SelectItem>
                       ))}
@@ -502,10 +502,10 @@ export function SummarySection({}: SummarySectionProps) {
             <Select
               value={selectedNetwork}
               onValueChange={handleNetworkSelect}
-              disabled={isLoadingChains}
+              disabled={isLoadingRouters}
             >
               <SelectTrigger className='w-[200px] bg-background border-border hover:bg-accent'>
-                <SelectValue placeholder={isLoadingChains ? 'Loading...' : 'Select network'} />
+                <SelectValue placeholder={isLoadingRouters ? 'Loading...' : 'Select network'} />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value='all'>
@@ -514,7 +514,7 @@ export function SummarySection({}: SummarySectionProps) {
                     All Networks
                   </div>
                 </SelectItem>
-                {Array.from(new Set(availableChains.map(c => c.network))).map(network => {
+                {Array.from(new Set(availableRouters.map(c => c.network))).map(network => {
                   const chainConfig = chains.find(c => c.value === network);
                   const label = chainConfig ? chainConfig.label : getChainLabel(network);
                   const icon = chainConfig ? chainConfig.icon : getChainIcon(network);
@@ -580,7 +580,7 @@ export function SummarySection({}: SummarySectionProps) {
               color={getReachabilityColorName(kpiData.reachability)}
               isLoading={isLoading}
               showInfo={true}
-              tooltipText='Percentage of healthy providers available to each chain. Unlike Uptime (chain health), this measures provider availability. High uptime can be maintained even with lower reachability if available providers handle the load.'
+              tooltipText='Percentage of healthy nodes available to each router. Unlike Uptime (router health), this measures node availability. High uptime can be maintained even with lower reachability if available nodes handle the load.'
             />
             <KPICard
               title='Total Requests'
@@ -601,7 +601,7 @@ export function SummarySection({}: SummarySectionProps) {
               color={getErrorRecoveryColorName(kpiData.recoveredNodeErrors)}
               isLoading={isLoading}
               showInfo={true}
-              tooltipText='Number of node errors successfully recovered vs total node errors received from providers. Higher recovery means better fault tolerance.'
+              tooltipText='Number of node errors successfully recovered vs total node errors received from nodes. Higher recovery means better fault tolerance.'
             />
             <KPICard
               title='Latency'

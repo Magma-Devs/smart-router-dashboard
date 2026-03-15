@@ -13,7 +13,7 @@ import {
 import { MetricsService } from '@/services/metricsService';
 import { PieChart } from '@mui/x-charts/PieChart';
 
-export interface ProviderDistributionItem {
+export interface NodeDistributionItem {
   provider: string;
   requests: number;
   successful: number;
@@ -26,7 +26,10 @@ export interface ProviderDistributionItem {
   trafficShare: number;
 }
 
-interface ProviderDistributionModalProps {
+/** @deprecated Use NodeDistributionItem */
+export type ProviderDistributionItem = NodeDistributionItem;
+
+interface NodeDistributionModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   chainId: string;
@@ -36,16 +39,16 @@ interface ProviderDistributionModalProps {
     success: boolean;
     headers?: Record<string, string>;
   }>;
-  allProviders: string[]; // all providers configured for this router
+  allNodes: string[]; // all nodes configured for this router
 }
 
-export function ProviderDistributionModal({
+export function NodeDistributionModal({
   open,
   onOpenChange,
   chainId,
   responses,
-  allProviders,
-}: ProviderDistributionModalProps) {
+  allNodes,
+}: NodeDistributionModalProps) {
   const PIE_CHART_COLORS = [
     '#3b82f6', // Blue
     '#10b981', // Green
@@ -61,7 +64,7 @@ export function ProviderDistributionModal({
   >('trafficShare');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
-  const items = useMemo<ProviderDistributionItem[]>(() => {
+  const items = useMemo<NodeDistributionItem[]>(() => {
     const grouped = MetricsService.groupLoadTestByProvider(responses);
 
     // Show only providers that actually responded (no zero-filling)
@@ -102,7 +105,7 @@ export function ProviderDistributionModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className='max-w-6xl w-[1100px]'>
         <DialogHeader>
-          <DialogTitle>Provider distribution – {chainId}</DialogTitle>
+          <DialogTitle>Node distribution – {chainId}</DialogTitle>
         </DialogHeader>
 
         {/* Donut chart for traffic share */}
@@ -153,7 +156,7 @@ export function ProviderDistributionModal({
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Provider</TableHead>
+                <TableHead>Node</TableHead>
                 {headerCell('Requests', 'requests')}
                 {headerCell('Success %', 'successRate')}
                 {headerCell('Avg latency', 'avgLatencyMs')}
@@ -191,4 +194,7 @@ export function ProviderDistributionModal({
   );
 }
 
-export default ProviderDistributionModal;
+/** @deprecated Use NodeDistributionModal */
+export const ProviderDistributionModal = NodeDistributionModal;
+
+export default NodeDistributionModal;

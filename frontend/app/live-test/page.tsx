@@ -42,7 +42,7 @@ import { apiClient } from '@/lib/api-client';
 import { useAuth } from '@/lib/auth-context';
 import { getChainIcon, getChainLabel } from '@/app/config/chains';
 import { MetricsService } from '@/services/metricsService';
-import ProviderDistributionModal from '@/components/ProviderDistributionModal';
+import NodeDistributionModal from '@/components/NodeDistributionModal';
 import {
   makeTestRequest,
   makeLoadTestRequests,
@@ -63,14 +63,13 @@ import {
 } from '@/components/ui/select';
 
 interface ApiResponse {
-  consumers: {
+  routers: {
     [key: string]: {
       network: string;
       interfaces: string[];
-      providers: Array<{
+      nodes: Array<{
         name: string;
         endpoints: Array<{
-          url: string;
           interface: string;
           addons: string[];
         }>;
@@ -114,18 +113,18 @@ interface LiveTestResult {
 export default function LiveTestPage() {
   const { config } = useConfig();
   const { isAuthenticated, loading: authLoading } = useAuth();
-  // id + network of real chains with metrics
-  const [availableChains, setAvailableChains] = useState<Array<{ id: string; network: string }>>(
+  // id + network of real routers with metrics
+  const [availableRouters, setAvailableRouters] = useState<Array<{ id: string; network: string }>>(
     [],
   );
 
-  // Helper function to get network from chain ID
+  // Helper function to get network from router ID
   const getNetworkFromChainId = (chainId: string): string | null => {
-    if (!apiData?.consumers?.[chainId]) return null;
-    return apiData.consumers[chainId].network;
+    if (!apiData?.routers?.[chainId]) return null;
+    return apiData.routers[chainId].network;
   };
   const [selectedNetwork, setSelectedNetwork] = useState<string>('');
-  const [selectedChain, setSelectedChain] = useState<string>('');
+  const [selectedRouter, setSelectedRouter] = useState<string>('');
   const [selectedInterface, setSelectedInterface] = useState<string>('');
   const [selectedRequestType, setSelectedRequestType] = useState<
     'regular' | 'archive' | 'debug' | 'trace'
@@ -134,7 +133,7 @@ export default function LiveTestPage() {
   const [response, setResponse] = useState<string>('');
   const [singleTestStatus, setSingleTestStatus] = useState<number | null>(null);
   const [singleTestLatency, setSingleTestLatency] = useState<number | null>(null);
-  const [singleTestProvider, setSingleTestProvider] = useState<string | null>(null);
+  const [singleTestNode, setSingleTestNode] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isFetching, setIsFetching] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -332,10 +331,10 @@ export default function LiveTestPage() {
   const [crossValidationResultStatus, setCrossValidationResultStatus] = useState<string | null>(
     null,
   );
-  const [crossValidationAllProviders, setCrossValidationAllProviders] = useState<string | null>(
+  const [crossValidationAllNodes, setCrossValidationAllNodes] = useState<string | null>(
     null,
   );
-  const [crossValidationAgreeingProviders, setCrossValidationAgreeingProviders] = useState<
+  const [crossValidationAgreeingNodes, setCrossValidationAgreeingNodes] = useState<
     string | null
   >(null);
 
@@ -415,40 +414,40 @@ export default function LiveTestPage() {
     return { cachedCount: cached, nonCachedCount: nonCached };
   }, [loadTestResult]);
 
-  // Get the maximum number of providers across all routers in the selected network
-  const maxProvidersForNetwork = useMemo(() => {
-    if (!selectedNetwork || !apiData?.consumers) {
+  // Get the maximum number of nodes across all routers in the selected network
+  const maxNodesForNetwork = useMemo(() => {
+    if (!selectedNetwork || !apiData?.routers) {
       return 10; // Default fallback
     }
 
     // Find all chains/routers in the selected network
-    const routersInNetwork = availableChains.filter(c => c.network === selectedNetwork);
+    const routersInNetwork = availableRouters.filter(c => c.network === selectedNetwork);
 
-    // Find the maximum number of providers across all routers in this network
-    let maxProviders = 1;
+    // Find the maximum number of nodes across all routers in this network
+    let maxNodes = 1;
     for (const router of routersInNetwork) {
-      const providers = apiData.consumers[router.id]?.providers || [];
-      maxProviders = Math.max(maxProviders, providers.length);
+      const nodes = apiData.routers[router.id]?.nodes || [];
+      maxNodes = Math.max(maxNodes, nodes.length);
     }
 
-    return maxProviders;
-  }, [selectedNetwork, apiData, availableChains]);
+    return maxNodes;
+  }, [selectedNetwork, apiData, availableRouters]);
 
-  // Get the maximum number of providers for the selected chain
-  const maxProvidersForChain = useMemo(() => {
-    if (!selectedChain || !apiData?.consumers?.[selectedChain]) {
+  // Get the maximum number of nodes for the selected router
+  const maxNodesForRouter = useMemo(() => {
+    if (!selectedRouter || !apiData?.routers?.[selectedRouter]) {
       return 10; // Default fallback
     }
-    const providers = apiData.consumers[selectedChain].providers || [];
-    return Math.max(providers.length, 1); // At least 1
-  }, [selectedChain, apiData]);
+    const nodes = apiData.routers[selectedRouter].nodes || [];
+    return Math.max(nodes.length, 1); // At least 1
+  }, [selectedRouter, apiData]);
 
   // Check if batch is supported for the current chain (requires jsonrpc interface with batch config)
   // Returns batch config with methods filtered based on available addons, each tagged with its addon type
   const batchConfig = useMemo(() => {
-    if (!selectedChain || !apiData?.consumers?.[selectedChain]) return null;
+    if (!selectedRouter || !apiData?.routers?.[selectedRouter]) return null;
 
-    const network = apiData.consumers[selectedChain].network;
+    const network = apiData.routers[selectedRouter].network;
     const chain = chains.find(c => c.value === network);
     if (!chain) return null;
 
@@ -460,10 +459,10 @@ export default function LiveTestPage() {
 
     const batchDef = jsonrpcInterface.batch;
 
-    // Get all addons from all provider endpoints for this chain
+    // Get all addons from all node endpoints for this chain
     const availableAddons = new Set<string>();
-    apiData.consumers[selectedChain].providers.forEach(provider => {
-      provider.endpoints?.forEach(endpoint => {
+    apiData.routers[selectedRouter].nodes.forEach(node => {
+      node.endpoints?.forEach(endpoint => {
         endpoint.addons?.forEach(addon => availableAddons.add(addon.toLowerCase()));
       });
     });
@@ -489,7 +488,7 @@ export default function LiveTestPage() {
     ];
 
     return { methods };
-  }, [selectedChain, apiData]);
+  }, [selectedRouter, apiData]);
 
   // hasBatchSupport is for the currently selected chain
   const hasBatchSupport = batchConfig !== null;
@@ -525,9 +524,9 @@ export default function LiveTestPage() {
 
   // Helper function to check if a chain ID supports batch requests
   const chainSupportsBatch = (chainId: string): boolean => {
-    if (!apiData?.consumers?.[chainId]) return false;
+    if (!apiData?.routers?.[chainId]) return false;
 
-    const network = apiData.consumers[chainId].network;
+    const network = apiData.routers[chainId].network;
     const chain = chains.find(c => c.value === network);
     if (!chain) return false;
 
@@ -538,26 +537,26 @@ export default function LiveTestPage() {
   };
 
   // Filter chains that support batch
-  const batchSupportedChains = useMemo(() => {
-    return availableChains.filter(c => chainSupportsBatch(c.id));
-  }, [availableChains, apiData]);
+  const batchSupportedRouters = useMemo(() => {
+    return availableRouters.filter(c => chainSupportsBatch(c.id));
+  }, [availableRouters, apiData]);
 
   // Networks that have at least one batch-supported chain
   const batchSupportedNetworks = useMemo(() => {
-    return Array.from(new Set(batchSupportedChains.map(c => c.network)));
-  }, [batchSupportedChains]);
+    return Array.from(new Set(batchSupportedRouters.map(c => c.network)));
+  }, [batchSupportedRouters]);
 
   // Routers for selected network that support batch
   const batchRoutersForSelectedNetwork = useMemo(() => {
-    return batchSupportedChains.filter(c => c.network === selectedNetwork);
-  }, [batchSupportedChains, selectedNetwork]);
+    return batchSupportedRouters.filter(c => c.network === selectedNetwork);
+  }, [batchSupportedRouters, selectedNetwork]);
 
   // Whether the Batch Test tab should be shown (if ANY chain supports batch)
-  const showBatchTab = batchSupportedChains.length > 0;
+  const showBatchTab = batchSupportedRouters.length > 0;
 
   // Generate batch endpoint URL and curl command
   useEffect(() => {
-    if (!selectedChain || !hasBatchSupport || !config.endpointDomain || !config.endpointPort) {
+    if (!selectedRouter || !hasBatchSupport || !config.endpointDomain || !config.endpointPort) {
       setBatchEndpointUrl('');
       setBatchCurlCommand('');
       return;
@@ -565,7 +564,7 @@ export default function LiveTestPage() {
 
     const domain = config.endpointDomain;
     const port = config.endpointPort;
-    const chainIdLower = selectedChain.toLowerCase();
+    const chainIdLower = selectedRouter.toLowerCase();
     const curlHost = `${chainIdLower}-jsonrpc.${domain}`;
     const endpoint = `https://${curlHost}:${port}`;
     setBatchEndpointUrl(endpoint);
@@ -586,7 +585,7 @@ export default function LiveTestPage() {
       setBatchCurlCommand('');
     }
   }, [
-    selectedChain,
+    selectedRouter,
     hasBatchSupport,
     config.endpointDomain,
     config.endpointPort,
@@ -636,25 +635,25 @@ export default function LiveTestPage() {
         // Metrics API failed - fall back to using components data
         console.warn('Metrics API failed, falling back to components data:', metricsError);
 
-        // Build chains list from components/consumers
-        if (componentsData?.consumers) {
-          chainsData = Object.entries(componentsData.consumers).map(([chainId, consumer]) => ({
+        // Build chains list from components/routers
+        if (componentsData?.routers) {
+          chainsData = Object.entries(componentsData.routers).map(([chainId, router]) => ({
             id: chainId,
-            network: consumer.network,
+            network: router.network,
           }));
         }
       }
 
-      setAvailableChains(chainsData);
+      setAvailableRouters(chainsData);
 
       // Default select first network if any
       if (chainsData.length > 0) {
         setSelectedNetwork(chainsData[0].network);
         const routers = chainsData.filter(c => c.network === chainsData[0].network);
         if (routers.length === 1) {
-          setSelectedChain(routers[0].id);
+          setSelectedRouter(routers[0].id);
         } else {
-          setSelectedChain('');
+          setSelectedRouter('');
         }
       }
 
@@ -666,29 +665,29 @@ export default function LiveTestPage() {
 
   // Update cross validation maxParticipants/agreementThreshold when the network changes
   useEffect(() => {
-    // Set maxParticipants to the network's max providers when network changes
-    setCrossValidationMaxParticipants(maxProvidersForNetwork);
+    // Set maxParticipants to the network's max nodes when network changes
+    setCrossValidationMaxParticipants(maxNodesForNetwork);
 
-    // Adjust agreementThreshold if it exceeds the network's max providers
-    if (crossValidationAgreementThreshold > maxProvidersForNetwork) {
-      setCrossValidationAgreementThreshold(maxProvidersForNetwork);
+    // Adjust agreementThreshold if it exceeds the network's max nodes
+    if (crossValidationAgreementThreshold > maxNodesForNetwork) {
+      setCrossValidationAgreementThreshold(maxNodesForNetwork);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [maxProvidersForNetwork]);
+  }, [maxNodesForNetwork]);
 
   // Update interfaces when chain selection changes (without refetching)
   useEffect(() => {
-    if (selectedChain && apiData && apiData.consumers && apiData.consumers[selectedChain]) {
-      const interfaces = apiData.consumers[selectedChain].interfaces;
+    if (selectedRouter && apiData && apiData.routers && apiData.routers[selectedRouter]) {
+      const interfaces = apiData.routers[selectedRouter].interfaces;
       setConfiguredInterfaces(interfaces);
 
       // Determine available request types based on configured addons
       const availableRequestTypes = ['regular']; // regular is always available
 
-      // Get all addons from all providers for this chain
+      // Get all addons from all nodes for this chain
       const allAddons = new Set<string>();
-      apiData.consumers[selectedChain].providers.forEach(provider => {
-        provider.endpoints.forEach(endpoint => {
+      apiData.routers[selectedRouter].nodes.forEach(node => {
+        node.endpoints.forEach(endpoint => {
           if (endpoint.addons) {
             endpoint.addons.forEach(addon => allAddons.add(addon));
           }
@@ -713,7 +712,7 @@ export default function LiveTestPage() {
       setSelectedRequestType('regular');
       setSelectedCommandIndex(0);
     }
-  }, [selectedChain, apiData, selectedRequestType]);
+  }, [selectedRouter, apiData, selectedRequestType]);
 
   // Auto-adjust load test limits when switching to debug/trace
   useEffect(() => {
@@ -730,17 +729,17 @@ export default function LiveTestPage() {
 
   useEffect(() => {
     if (
-      selectedChain &&
+      selectedRouter &&
       selectedInterface &&
       apiData &&
       config.endpointDomain &&
       config.endpointPort
     ) {
       // Get the network from the API data instead of parsing chain ID
-      const selectedChainData = apiData.consumers[selectedChain];
-      if (!selectedChainData || !selectedChainData.network) return;
+      const selectedRouterData = apiData.routers[selectedRouter];
+      if (!selectedRouterData || !selectedRouterData.network) return;
 
-      const baseNetwork = selectedChainData.network;
+      const baseNetwork = selectedRouterData.network;
       const chain = chains.find(c => c.value === baseNetwork);
       if (!chain) return;
 
@@ -762,7 +761,7 @@ export default function LiveTestPage() {
 
       const domain = config.endpointDomain;
       const port = config.endpointPort;
-      const chainIdLower = selectedChain.toLowerCase();
+      const chainIdLower = selectedRouter.toLowerCase();
 
       const curlHost = `${chainIdLower}-${commandLookupInterface}.${domain}`;
       // Use wss:// protocol with /websocket path for WebSocket connections
@@ -809,7 +808,7 @@ export default function LiveTestPage() {
       setCurlCommand(cmd);
     }
   }, [
-    selectedChain,
+    selectedRouter,
     selectedInterface,
     selectedRequestType,
     selectedCommandIndex,
@@ -822,17 +821,17 @@ export default function LiveTestPage() {
   // Generate cross-validation specific curl command with cross-validation headers
   useEffect(() => {
     if (
-      selectedChain &&
+      selectedRouter &&
       selectedInterface &&
       apiData &&
       config.endpointDomain &&
       config.endpointPort
     ) {
       // Get the network from the API data instead of parsing chain ID
-      const selectedChainData = apiData.consumers[selectedChain];
-      if (!selectedChainData || !selectedChainData.network) return;
+      const selectedRouterData = apiData.routers[selectedRouter];
+      if (!selectedRouterData || !selectedRouterData.network) return;
 
-      const baseNetwork = selectedChainData.network;
+      const baseNetwork = selectedRouterData.network;
       const chain = chains.find(c => c.value === baseNetwork);
       if (!chain) return;
 
@@ -854,7 +853,7 @@ export default function LiveTestPage() {
 
       const domain = config.endpointDomain;
       const port = config.endpointPort;
-      const chainIdLower = selectedChain.toLowerCase();
+      const chainIdLower = selectedRouter.toLowerCase();
 
       const curlHost = `${chainIdLower}-${commandLookupInterface}.${domain}`;
 
@@ -902,7 +901,7 @@ export default function LiveTestPage() {
       setCrossValidationCurlCommand(cmd);
     }
   }, [
-    selectedChain,
+    selectedRouter,
     selectedInterface,
     selectedRequestType,
     selectedCommandIndex,
@@ -916,7 +915,7 @@ export default function LiveTestPage() {
   ]);
 
   const handleLoadTest = async () => {
-    if (!selectedChain || !selectedInterface) {
+    if (!selectedRouter || !selectedInterface) {
       toast({
         variant: 'destructive',
         title: 'Error',
@@ -981,7 +980,7 @@ export default function LiveTestPage() {
     setLoadTestExpandedHeaders(new Set());
 
     try {
-      const baseNetwork = getNetworkFromChainId(selectedChain);
+      const baseNetwork = getNetworkFromChainId(selectedRouter);
       if (!baseNetwork) throw new Error('Network not found for chain');
       const chain = chains.find(c => c.value === baseNetwork);
       if (!chain) throw new Error('Chain not found');
@@ -1023,7 +1022,7 @@ export default function LiveTestPage() {
 
       const responses = await makeLoadTestRequests(
         {
-          chainId: selectedChain,
+          chainId: selectedRouter,
           interface: selectedInterface, // Pass the original interface (jsonrpc/wss)
           interfaceCommand,
           domain,
@@ -1060,7 +1059,7 @@ export default function LiveTestPage() {
   };
 
   const handleCrossValidation = async () => {
-    if (!selectedChain || !selectedInterface) {
+    if (!selectedRouter || !selectedInterface) {
       toast({
         variant: 'destructive',
         title: 'Error',
@@ -1087,11 +1086,11 @@ export default function LiveTestPage() {
     setCrossValidationHeadersExpanded(false);
     setCrossValidationResponseTruncated(false);
     setCrossValidationResultStatus(null);
-    setCrossValidationAllProviders(null);
-    setCrossValidationAgreeingProviders(null);
+    setCrossValidationAllNodes(null);
+    setCrossValidationAgreeingNodes(null);
 
     try {
-      const baseNetwork = getNetworkFromChainId(selectedChain);
+      const baseNetwork = getNetworkFromChainId(selectedRouter);
       if (!baseNetwork) throw new Error('Network not found for chain');
       const chain = chains.find(c => c.value === baseNetwork);
       if (!chain) throw new Error('Chain not found');
@@ -1132,7 +1131,7 @@ export default function LiveTestPage() {
       const caps = getSafeResponseCaps(selectedRequestType);
 
       const response = await makeTestRequest({
-        chainId: selectedChain,
+        chainId: selectedRouter,
         interface: selectedInterface, // Pass the original interface (jsonrpc/wss)
         interfaceCommand,
         domain,
@@ -1157,7 +1156,7 @@ export default function LiveTestPage() {
       const headers = response.headers || {};
       setCrossValidationHeaders(headers);
 
-      // Helper function to format provider list
+      // Helper function to format node list
       const formatProviders = (providerHeader: string | undefined): string | null => {
         if (!providerHeader) return null;
         let formatted = providerHeader.replace(/[\[\]]/g, '').trim();
@@ -1179,19 +1178,19 @@ export default function LiveTestPage() {
       const cvStatus = headers['lava-cross-validation-status'];
       setCrossValidationResultStatus(cvStatus || null);
 
-      // Extract all participating providers
-      const allProviders = formatProviders(headers['lava-cross-validation-all-providers']);
-      setCrossValidationAllProviders(allProviders);
+      // Extract all participating nodes
+      const allNodes = formatProviders(headers['lava-cross-validation-all-providers']);
+      setCrossValidationAllNodes(allNodes);
 
-      // Extract agreeing providers (only present on success)
-      const agreeingProviders = formatProviders(headers['lava-cross-validation-agreeing-providers']);
-      setCrossValidationAgreeingProviders(agreeingProviders);
+      // Extract agreeing nodes (only present on success)
+      const agreeingNodes = formatProviders(headers['lava-cross-validation-agreeing-providers']);
+      setCrossValidationAgreeingNodes(agreeingNodes);
 
       const isSuccess = cvStatus?.toLowerCase() === 'success';
       toast({
         title: isSuccess ? 'Cross validation succeeded' : 'Cross validation completed',
         description: isSuccess
-          ? `Consensus reached with ${agreeingProviders?.split(', ').length || 0} agreeing providers`
+          ? `Consensus reached with ${agreeingNodes?.split(', ').length || 0} agreeing nodes`
           : cvStatus
             ? `Cross validation status: ${cvStatus}`
             : 'Cross validation test completed',
@@ -1209,7 +1208,7 @@ export default function LiveTestPage() {
   };
 
   const handleTest = async () => {
-    if (!selectedChain || !selectedInterface) {
+    if (!selectedRouter || !selectedInterface) {
       toast({
         variant: 'destructive',
         title: 'Error',
@@ -1231,12 +1230,12 @@ export default function LiveTestPage() {
     setIsLoading(true);
     setSingleTestStatus(null);
     setSingleTestLatency(null);
-    setSingleTestProvider(null);
+    setSingleTestNode(null);
     setSingleTestHeaders(null);
     setSingleHeadersExpanded(false);
     setSingleResponseTruncated(false);
     try {
-      const baseNetwork = getNetworkFromChainId(selectedChain);
+      const baseNetwork = getNetworkFromChainId(selectedRouter);
       if (!baseNetwork) throw new Error('Network not found for chain');
       const chain = chains.find(c => c.value === baseNetwork);
       if (!chain) throw new Error('Chain not found');
@@ -1277,7 +1276,7 @@ export default function LiveTestPage() {
       const caps = getSafeResponseCaps(selectedRequestType);
 
       const response = await makeTestRequest({
-        chainId: selectedChain,
+        chainId: selectedRouter,
         interface: selectedInterface, // Pass the original interface (jsonrpc/wss)
         interfaceCommand,
         domain,
@@ -1299,7 +1298,7 @@ export default function LiveTestPage() {
       const providerValue = providerHeader ? headers[providerHeader] : null;
 
       if (providerValue) {
-        setSingleTestProvider(providerValue.toLowerCase() === 'cached' ? 'cached' : providerValue);
+        setSingleTestNode(providerValue.toLowerCase() === 'cached' ? 'cached' : providerValue);
       }
 
       const raw = response.response_data;
@@ -1345,7 +1344,7 @@ export default function LiveTestPage() {
       return;
     }
 
-    if (!selectedChain) {
+    if (!selectedRouter) {
       toast({
         variant: 'destructive',
         title: 'Error',
@@ -1377,7 +1376,7 @@ export default function LiveTestPage() {
         // Single batch request
         const result = await makeBatchRequest(
           {
-            chainId: selectedChain,
+            chainId: selectedRouter,
             domain,
             port,
             skipCache,
@@ -1406,7 +1405,7 @@ export default function LiveTestPage() {
 
         const results = await makeBatchLoadTestRequests(
           {
-            chainId: selectedChain,
+            chainId: selectedRouter,
             domain,
             port,
             skipCache,
@@ -1451,8 +1450,8 @@ export default function LiveTestPage() {
   };
 
   // Helpers for UI lists
-  const networks = Array.from(new Set(availableChains.map(c => c.network)));
-  const routersForSelectedNetwork = availableChains.filter(c => c.network === selectedNetwork);
+  const networks = Array.from(new Set(availableRouters.map(c => c.network)));
+  const routersForSelectedNetwork = availableRouters.filter(c => c.network === selectedNetwork);
 
   return (
     <ProtectedRoute>
@@ -1527,11 +1526,11 @@ export default function LiveTestPage() {
                                   onClick={() => {
                                     if (selectedNetwork === net) return;
                                     setSelectedNetwork(net);
-                                    const routers = availableChains.filter(c => c.network === net);
+                                    const routers = availableRouters.filter(c => c.network === net);
                                     if (routers.length === 1) {
-                                      setSelectedChain(routers[0].id);
+                                      setSelectedRouter(routers[0].id);
                                     } else {
-                                      setSelectedChain('');
+                                      setSelectedRouter('');
                                     }
                                     setSelectedInterface('');
                                     setResponse('');
@@ -1564,7 +1563,7 @@ export default function LiveTestPage() {
                             <Label className='text-sm font-medium'>Router</Label>
                             <div className='flex flex-wrap gap-3'>
                               {routersForSelectedNetwork.map(router => {
-                                const selected = selectedChain === router.id;
+                                const selected = selectedRouter === router.id;
                                 const conf = chains.find(c => c.value === selectedNetwork);
                                 const label = conf ? conf.label : getChainLabel(selectedNetwork);
                                 const icon = conf ? conf.icon : getChainIcon(selectedNetwork);
@@ -1572,7 +1571,7 @@ export default function LiveTestPage() {
                                   <button
                                     key={router.id}
                                     onClick={() => {
-                                      setSelectedChain(router.id);
+                                      setSelectedRouter(router.id);
                                       setSelectedInterface('');
                                       setResponse('');
                                     }}
@@ -1600,7 +1599,7 @@ export default function LiveTestPage() {
                           </div>
                         )}
 
-                        {selectedChain && (
+                        {selectedRouter && (
                           <div className='space-y-4'>
                             <Label className='text-sm font-medium'>Interface</Label>
                             <div className='flex flex-wrap gap-2'>
@@ -1646,7 +1645,7 @@ export default function LiveTestPage() {
                               {/* Add JSON-RPC/WSS option for chains with hasWss */}
                               {configuredInterfaces.includes('jsonrpc') &&
                                 (() => {
-                                  const baseNetwork = getNetworkFromChainId(selectedChain);
+                                  const baseNetwork = getNetworkFromChainId(selectedRouter);
                                   const chain = chains.find(c => c.value === baseNetwork);
                                   return chain?.hasWss ? (
                                     <Button
@@ -1673,7 +1672,7 @@ export default function LiveTestPage() {
                               {/* Add TendermintRPC/WSS option for chains with hasWss */}
                               {configuredInterfaces.includes('tendermintrpc') &&
                                 (() => {
-                                  const baseNetwork = getNetworkFromChainId(selectedChain);
+                                  const baseNetwork = getNetworkFromChainId(selectedRouter);
                                   const chain = chains.find(c => c.value === baseNetwork);
                                   return chain?.hasWss ? (
                                     <Button
@@ -1720,10 +1719,10 @@ export default function LiveTestPage() {
                         </div>
 
                         {/* Request Type Selection */}
-                        {selectedChain &&
+                        {selectedRouter &&
                           selectedInterface &&
                           (() => {
-                            const baseNetwork = getNetworkFromChainId(selectedChain);
+                            const baseNetwork = getNetworkFromChainId(selectedRouter);
                             if (!baseNetwork) throw new Error('Network not found for chain');
                             const chain = chains.find(c => c.value === baseNetwork);
                             if (!chain) return null;
@@ -1795,7 +1794,7 @@ export default function LiveTestPage() {
                                               setResponse('');
                                               setSingleTestStatus(null);
                                               setSingleTestLatency(null);
-                                              setSingleTestProvider(null);
+                                              setSingleTestNode(null);
                                             }}
                                           >
                                             {displayName}
@@ -1819,7 +1818,7 @@ export default function LiveTestPage() {
                                         setResponse('');
                                         setSingleTestStatus(null);
                                         setSingleTestLatency(null);
-                                        setSingleTestProvider(null);
+                                        setSingleTestNode(null);
                                       }}
                                     >
                                       <SelectTrigger className='w-full'>
@@ -1843,7 +1842,7 @@ export default function LiveTestPage() {
                   </CardContent>
                 </Card>
 
-                {selectedChain && selectedInterface && (
+                {selectedRouter && selectedInterface && (
                   <Card className='border-muted bg-card/50'>
                     <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
                       <CardTitle className='text-lg font-medium'>Endpoint</CardTitle>
@@ -1871,7 +1870,7 @@ export default function LiveTestPage() {
                   </Card>
                 )}
 
-                {selectedChain && selectedInterface && (
+                {selectedRouter && selectedInterface && (
                   <Card className='border-muted bg-card/50'>
                     <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
                       <CardTitle className='text-lg font-medium'>Test Command</CardTitle>
@@ -1902,7 +1901,7 @@ export default function LiveTestPage() {
                 <div className='flex justify-end space-x-4'>
                   <Button
                     onClick={handleTest}
-                    disabled={isLoading || !selectedChain || !selectedInterface}
+                    disabled={isLoading || !selectedRouter || !selectedInterface}
                     className='bg-primary hover:bg-primary/90'
                   >
                     {isLoading ? (
@@ -1939,13 +1938,13 @@ export default function LiveTestPage() {
                               {singleTestLatency.toFixed(1)}ms
                             </span>
                           )}
-                          {singleTestProvider && (
+                          {singleTestNode && (
                             <div className='flex items-center gap-1.5 text-sm text-slate-400'>
                               <Server className='h-4 w-4 text-slate-400' />
-                              <span className='truncate' title={singleTestProvider}>
-                                {singleTestProvider.toLowerCase() === 'cached'
+                              <span className='truncate' title={singleTestNode}>
+                                {singleTestNode.toLowerCase() === 'cached'
                                   ? 'Cached'
-                                  : singleTestProvider}
+                                  : singleTestNode}
                               </span>
                             </div>
                           )}
@@ -2017,11 +2016,11 @@ export default function LiveTestPage() {
                                   onClick={() => {
                                     if (selectedNetwork === net) return;
                                     setSelectedNetwork(net);
-                                    const routers = availableChains.filter(c => c.network === net);
+                                    const routers = availableRouters.filter(c => c.network === net);
                                     if (routers.length === 1) {
-                                      setSelectedChain(routers[0].id);
+                                      setSelectedRouter(routers[0].id);
                                     } else {
-                                      setSelectedChain('');
+                                      setSelectedRouter('');
                                     }
                                     setSelectedInterface('');
                                     setResponse('');
@@ -2055,7 +2054,7 @@ export default function LiveTestPage() {
                             <Label className='text-sm font-medium'>Router</Label>
                             <div className='flex flex-wrap gap-3'>
                               {routersForSelectedNetwork.map(router => {
-                                const selected = selectedChain === router.id;
+                                const selected = selectedRouter === router.id;
                                 const conf = chains.find(c => c.value === selectedNetwork);
                                 const label = conf ? conf.label : getChainLabel(selectedNetwork);
                                 const icon = conf ? conf.icon : getChainIcon(selectedNetwork);
@@ -2063,7 +2062,7 @@ export default function LiveTestPage() {
                                   <button
                                     key={router.id}
                                     onClick={() => {
-                                      setSelectedChain(router.id);
+                                      setSelectedRouter(router.id);
                                       setSelectedInterface('');
                                       setResponse('');
                                       setLoadTestResult(null);
@@ -2092,7 +2091,7 @@ export default function LiveTestPage() {
                           </div>
                         )}
 
-                        {selectedChain && (
+                        {selectedRouter && (
                           <div className='space-y-4'>
                             <Label className='text-sm font-medium'>Interface</Label>
                             <div className='flex flex-wrap gap-2'>
@@ -2139,7 +2138,7 @@ export default function LiveTestPage() {
                               {/* Add JSON-RPC/WSS option for chains with hasWss */}
                               {configuredInterfaces.includes('jsonrpc') &&
                                 (() => {
-                                  const baseNetwork = getNetworkFromChainId(selectedChain);
+                                  const baseNetwork = getNetworkFromChainId(selectedRouter);
                                   const chain = chains.find(c => c.value === baseNetwork);
                                   return chain?.hasWss ? (
                                     <Button
@@ -2167,7 +2166,7 @@ export default function LiveTestPage() {
                               {/* Add TendermintRPC/WSS option for chains with hasWss */}
                               {configuredInterfaces.includes('tendermintrpc') &&
                                 (() => {
-                                  const baseNetwork = getNetworkFromChainId(selectedChain);
+                                  const baseNetwork = getNetworkFromChainId(selectedRouter);
                                   const chain = chains.find(c => c.value === baseNetwork);
                                   return chain?.hasWss ? (
                                     <Button
@@ -2215,10 +2214,10 @@ export default function LiveTestPage() {
                         </div>
 
                         {/* Request Type Selection */}
-                        {selectedChain &&
+                        {selectedRouter &&
                           selectedInterface &&
                           (() => {
-                            const baseNetwork = getNetworkFromChainId(selectedChain);
+                            const baseNetwork = getNetworkFromChainId(selectedRouter);
                             if (!baseNetwork) throw new Error('Network not found for chain');
                             const chain = chains.find(c => c.value === baseNetwork);
                             if (!chain) return null;
@@ -2334,7 +2333,7 @@ export default function LiveTestPage() {
                   </CardContent>
                 </Card>
 
-                {selectedChain && selectedInterface && (
+                {selectedRouter && selectedInterface && (
                   <Card className='border-muted bg-card/50'>
                     <CardHeader>
                       <CardTitle className='text-lg font-medium'>Load Test Configuration</CardTitle>
@@ -2416,7 +2415,7 @@ export default function LiveTestPage() {
                 <div className='flex justify-end space-x-4'>
                   <Button
                     onClick={handleLoadTest}
-                    disabled={isLoadTesting || !selectedChain || !selectedInterface}
+                    disabled={isLoadTesting || !selectedRouter || !selectedInterface}
                     className='bg-primary hover:bg-primary/90'
                   >
                     {isLoadTesting ? (
@@ -2729,16 +2728,16 @@ export default function LiveTestPage() {
                   </Card>
                 )}
 
-                {/* Provider distribution modal */}
+                {/* Node distribution modal */}
                 {loadTestResult && (
-                  <ProviderDistributionModal
+                  <NodeDistributionModal
                     open={isDistributionOpen}
                     onOpenChange={setIsDistributionOpen}
-                    chainId={selectedChain}
+                    chainId={selectedRouter}
                     responses={loadTestResult.responses}
-                    allProviders={(() => {
-                      const providers = apiData?.consumers?.[selectedChain]?.providers || [];
-                      return providers.map((p: any) => p.name);
+                    allNodes={(() => {
+                      const nodes = apiData?.routers?.[selectedRouter]?.nodes || [];
+                      return nodes.map((p: any) => p.name);
                     })()}
                   />
                 )}
@@ -2782,13 +2781,13 @@ export default function LiveTestPage() {
                                     onClick={() => {
                                       if (selectedNetwork === net) return;
                                       setSelectedNetwork(net);
-                                      const routers = batchSupportedChains.filter(
+                                      const routers = batchSupportedRouters.filter(
                                         c => c.network === net,
                                       );
                                       if (routers.length === 1) {
-                                        setSelectedChain(routers[0].id);
+                                        setSelectedRouter(routers[0].id);
                                       } else {
-                                        setSelectedChain('');
+                                        setSelectedRouter('');
                                       }
                                       resetBatchRequests();
                                     }}
@@ -2820,7 +2819,7 @@ export default function LiveTestPage() {
                               <Label className='text-sm font-medium'>Router</Label>
                               <div className='flex flex-wrap gap-3'>
                                 {batchRoutersForSelectedNetwork.map(router => {
-                                  const selected = selectedChain === router.id;
+                                  const selected = selectedRouter === router.id;
                                   const conf = chains.find(c => c.value === selectedNetwork);
                                   const label = conf ? conf.label : getChainLabel(selectedNetwork);
                                   const icon = conf ? conf.icon : getChainIcon(selectedNetwork);
@@ -2828,7 +2827,7 @@ export default function LiveTestPage() {
                                     <button
                                       key={router.id}
                                       onClick={() => {
-                                        setSelectedChain(router.id);
+                                        setSelectedRouter(router.id);
                                         resetBatchRequests();
                                       }}
                                       className={cn(
@@ -2903,7 +2902,7 @@ export default function LiveTestPage() {
                   </Card>
 
                   {/* Batch Composition */}
-                  {selectedChain && batchConfig && (
+                  {selectedRouter && batchConfig && (
                     <Card className='border-muted bg-card/50'>
                       <CardHeader>
                         <CardTitle className='text-lg font-medium'>Batch Composition</CardTitle>
@@ -3046,7 +3045,7 @@ export default function LiveTestPage() {
                   )}
 
                   {/* Load Test Settings */}
-                  {selectedChain && batchMode === 'load' && (
+                  {selectedRouter && batchMode === 'load' && (
                     <Card className='border-muted bg-card/50'>
                       <CardHeader>
                         <CardTitle className='text-lg font-medium'>
@@ -3106,7 +3105,7 @@ export default function LiveTestPage() {
                   )}
 
                   {/* Endpoint */}
-                  {selectedChain && batchEndpointUrl && (
+                  {selectedRouter && batchEndpointUrl && (
                     <Card className='border-muted bg-card/50'>
                       <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
                         <CardTitle className='text-lg font-medium'>Endpoint</CardTitle>
@@ -3135,7 +3134,7 @@ export default function LiveTestPage() {
                   )}
 
                   {/* Batch cURL Command */}
-                  {selectedChain && batchCurlCommand && (
+                  {selectedRouter && batchCurlCommand && (
                     <Card className='border-muted bg-card/50'>
                       <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
                         <CardTitle className='text-lg font-medium'>Batch Test Command</CardTitle>
@@ -3168,7 +3167,7 @@ export default function LiveTestPage() {
                     <Button
                       onClick={handleBatchTest}
                       disabled={
-                        isBatchTesting || !selectedChain || batchRequests.every(r => !r.method)
+                        isBatchTesting || !selectedRouter || batchRequests.every(r => !r.method)
                       }
                       className='bg-primary hover:bg-primary/90'
                     >
@@ -3425,21 +3424,21 @@ export default function LiveTestPage() {
                     </Card>
                   )}
 
-                  {/* Provider distribution modal for batch load test */}
+                  {/* Node distribution modal for batch load test */}
                   {batchLoadTestResult && (
-                    <ProviderDistributionModal
+                    <NodeDistributionModal
                       open={isBatchDistributionOpen}
                       onOpenChange={setIsBatchDistributionOpen}
-                      chainId={selectedChain}
+                      chainId={selectedRouter}
                       responses={batchLoadTestResult.responses.map(r => ({
                         status_code: r.status_code,
                         latency_ms: r.latency_ms,
                         success: r.success,
                         headers: r.headers,
                       }))}
-                      allProviders={(() => {
-                        const providers = apiData?.consumers?.[selectedChain]?.providers || [];
-                        return providers.map((p: any) => p.name);
+                      allNodes={(() => {
+                        const nodes = apiData?.routers?.[selectedRouter]?.nodes || [];
+                        return nodes.map((p: any) => p.name);
                       })()}
                     />
                   )}
@@ -3479,11 +3478,11 @@ export default function LiveTestPage() {
                                   onClick={() => {
                                     if (selectedNetwork === net) return;
                                     setSelectedNetwork(net);
-                                    const routers = availableChains.filter(c => c.network === net);
+                                    const routers = availableRouters.filter(c => c.network === net);
                                     if (routers.length === 1) {
-                                      setSelectedChain(routers[0].id);
+                                      setSelectedRouter(routers[0].id);
                                     } else {
-                                      setSelectedChain('');
+                                      setSelectedRouter('');
                                     }
                                     setSelectedInterface('');
                                     setCrossValidationResponse('');
@@ -3516,7 +3515,7 @@ export default function LiveTestPage() {
                             <Label className='text-sm font-medium'>Router</Label>
                             <div className='flex flex-wrap gap-3'>
                               {routersForSelectedNetwork.map(router => {
-                                const selected = selectedChain === router.id;
+                                const selected = selectedRouter === router.id;
                                 const conf = chains.find(c => c.value === selectedNetwork);
                                 const label = conf ? conf.label : getChainLabel(selectedNetwork);
                                 const icon = conf ? conf.icon : getChainIcon(selectedNetwork);
@@ -3524,7 +3523,7 @@ export default function LiveTestPage() {
                                   <button
                                     key={router.id}
                                     onClick={() => {
-                                      setSelectedChain(router.id);
+                                      setSelectedRouter(router.id);
                                       setSelectedInterface('');
                                       setCrossValidationResponse('');
                                     }}
@@ -3552,7 +3551,7 @@ export default function LiveTestPage() {
                           </div>
                         )}
 
-                        {selectedChain && (
+                        {selectedRouter && (
                           <div className='space-y-4'>
                             <Label className='text-sm font-medium'>Interface</Label>
                             <div className='flex flex-wrap gap-2'>
@@ -3622,7 +3621,7 @@ export default function LiveTestPage() {
                   </CardContent>
                 </Card>
 
-                {selectedChain && selectedInterface && (
+                {selectedRouter && selectedInterface && (
                   <Card className='border-muted bg-card/50'>
                     <CardHeader>
                       <CardTitle className='text-lg font-medium'>
@@ -3643,7 +3642,7 @@ export default function LiveTestPage() {
                             id='crossValidationMaxParticipants'
                             type='range'
                             min='1'
-                            max={maxProvidersForNetwork}
+                            max={maxNodesForNetwork}
                             value={crossValidationMaxParticipants}
                             onChange={e => {
                               const newMax = parseInt(e.target.value);
@@ -3654,7 +3653,7 @@ export default function LiveTestPage() {
                               }
                             }}
                             className='w-full'
-                            disabled={isCrossValidating || maxProvidersForNetwork === 1}
+                            disabled={isCrossValidating || maxNodesForNetwork === 1}
                           />
                         </div>
                         <div className='space-y-2'>
@@ -3674,18 +3673,18 @@ export default function LiveTestPage() {
                               setCrossValidationAgreementThreshold(parseInt(e.target.value))
                             }
                             className='w-full'
-                            disabled={isCrossValidating || maxProvidersForNetwork === 1}
+                            disabled={isCrossValidating || maxNodesForNetwork === 1}
                           />
                         </div>
-                        {maxProvidersForNetwork === 1 ? (
+                        {maxNodesForNetwork === 1 ? (
                           <p className='text-sm text-muted-foreground'>
                             Cross validation is not available for this network as it only has 1
-                            provider configured.
+                            node configured.
                           </p>
                         ) : (
                           <p className='text-sm text-muted-foreground'>
                             Cross validation will query up to {crossValidationMaxParticipants}{' '}
-                            providers and require {crossValidationAgreementThreshold} matching
+                            nodes and require {crossValidationAgreementThreshold} matching
                             responses for consensus.
                           </p>
                         )}
@@ -3694,7 +3693,7 @@ export default function LiveTestPage() {
                   </Card>
                 )}
 
-                {selectedChain && selectedInterface && maxProvidersForNetwork > 1 && (
+                {selectedRouter && selectedInterface && maxNodesForNetwork > 1 && (
                   <Card className='border-muted bg-card/50'>
                     <CardHeader className='flex flex-row items-center justify-between space-y-0 pb-2'>
                       <CardTitle className='text-lg font-medium'>Test Command</CardTitle>
@@ -3731,9 +3730,9 @@ export default function LiveTestPage() {
                             onClick={handleCrossValidation}
                             disabled={
                               isCrossValidating ||
-                              !selectedChain ||
+                              !selectedRouter ||
                               !selectedInterface ||
-                              maxProvidersForNetwork === 1
+                              maxNodesForNetwork === 1
                             }
                             className='bg-primary hover:bg-primary/90'
                           >
@@ -3751,9 +3750,9 @@ export default function LiveTestPage() {
                           </Button>
                         </div>
                       </TooltipTrigger>
-                      {maxProvidersForNetwork === 1 && (
+                      {maxNodesForNetwork === 1 && (
                         <TooltipContent>
-                          <p>Cross validation requires at least 2 providers</p>
+                          <p>Cross validation requires at least 2 nodes</p>
                         </TooltipContent>
                       )}
                     </Tooltip>
@@ -3830,17 +3829,17 @@ export default function LiveTestPage() {
                         </div>
                       )}
 
-                      {/* Cross-validation provider details */}
-                      {(crossValidationAllProviders || crossValidationAgreeingProviders) && (
+                      {/* Cross-validation node details */}
+                      {(crossValidationAllNodes || crossValidationAgreeingNodes) && (
                         <div className='mb-4 space-y-2 rounded-lg border border-slate-700 bg-slate-800/50 p-3'>
                           <div className='text-xs font-medium uppercase tracking-wide text-slate-400'>
                             Cross-Validation Details
                           </div>
-                          {crossValidationAllProviders && (
+                          {crossValidationAllNodes && (
                             <div className='flex flex-col gap-1'>
                               <span className='text-xs text-slate-500'>All Participants:</span>
                               <div className='flex flex-wrap gap-1'>
-                                {crossValidationAllProviders.split(', ').map((provider, idx) => (
+                                {crossValidationAllNodes.split(', ').map((provider, idx) => (
                                   <span
                                     key={idx}
                                     className='inline-flex items-center rounded-md bg-slate-700 px-2 py-0.5 text-xs text-slate-300'
@@ -3856,11 +3855,11 @@ export default function LiveTestPage() {
                             </div>
                           )}
                           {crossValidationResultStatus?.toLowerCase() === 'success' &&
-                            crossValidationAgreeingProviders && (
+                            crossValidationAgreeingNodes && (
                               <div className='flex flex-col gap-1'>
-                                <span className='text-xs text-slate-500'>Agreeing Providers:</span>
+                                <span className='text-xs text-slate-500'>Agreeing Nodes:</span>
                                 <div className='flex flex-wrap gap-1'>
-                                  {crossValidationAgreeingProviders
+                                  {crossValidationAgreeingNodes
                                     .split(', ')
                                     .map((provider, idx) => (
                                       <span
