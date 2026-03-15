@@ -129,7 +129,7 @@ const sortMethods = (methods: MethodUsage[], sortConfig: SortConfig): MethodUsag
   });
 };
 
-interface ChainUsageData {
+interface RouterUsageData {
   chainId: string;
   network: string;
   single: {
@@ -178,7 +178,7 @@ const generateRequestsOverTime = (baseRequests: number, points: number = 12) => 
 };
 
 // Generate mock data for a chain
-const generateMockChainData = (chainId: string, network: string): ChainUsageData => {
+const generateMockChainData = (chainId: string, network: string): RouterUsageData => {
   const generateMethodWithErrors = (method: string, baseRequests: number, baseLatency: number): MethodUsage => {
     const requests = Math.floor(Math.random() * baseRequests) + Math.floor(baseRequests / 2);
     const errors = Math.floor(Math.random() * requests * 0.05); // 0-5% errors
@@ -304,11 +304,11 @@ const CustomLineTooltip = ({ active, payload, label }: any) => {
 
 export default function UsagePage() {
   const { config } = useConfig();
-  const [selectedChain, setSelectedChain] = useState<string>('all');
+  const [selectedRouter, setSelectedRouter] = useState<string>('all');
   const [selectedTimeFrame, setSelectedTimeFrame] = useState<string>(DEFAULT_TIME_FRAME);
   const [isLoading, setIsLoading] = useState(false);
-  const [usageData, setUsageData] = useState<ChainUsageData | null>(null);
-  const [availableChains, setAvailableChains] = useState<Array<{ id: string; network: string }>>([]);
+  const [usageData, setUsageData] = useState<RouterUsageData | null>(null);
+  const [availableRouters, setAvailableRouters] = useState<Array<{ id: string; network: string }>>([]);
   const [singleExpanded, setSingleExpanded] = useState(true);
   const [batchExpanded, setBatchExpanded] = useState(true);
   
@@ -331,26 +331,26 @@ export default function UsagePage() {
     }));
   };
 
-  // Fetch available chains from API
+  // Fetch available routers from API
   useEffect(() => {
-    const fetchAvailableChains = async () => {
+    const fetchAvailableRouters = async () => {
       try {
-        // Fetch chains from the chains-metrics endpoint (minimal time window)
+        // Fetch routers from the chains-metrics endpoint (minimal time window)
         const chainsResponse = await MetricsService.fetchMetricsForAllChains(1, 1);
-        
-        // Extract chain data with both ID and network for icon lookup
-        const chainsData = Object.entries(chainsResponse.chains).map(
+
+        // Extract router data with both ID and network for icon lookup
+        const routersData = Object.entries(chainsResponse.chains).map(
           ([chainId, chainMetrics]: [string, any]) => ({
             id: chainId,
             network: chainMetrics.network || chainId,
           }),
         );
-        
-        if (chainsData.length > 0) {
-          setAvailableChains(chainsData);
+
+        if (routersData.length > 0) {
+          setAvailableRouters(routersData);
         } else {
-          // Fallback to mock chains if API returns empty
-          setAvailableChains([
+          // Fallback to mock routers if API returns empty
+          setAvailableRouters([
             { id: 'eth1-router-1', network: 'eth1' },
             { id: 'arbitrum-router-1', network: 'arbitrum' },
             { id: 'polygon-router-1', network: 'polygon' },
@@ -359,8 +359,8 @@ export default function UsagePage() {
           ]);
         }
       } catch (error) {
-        // Fallback to mock chains on error
-        setAvailableChains([
+        // Fallback to mock routers on error
+        setAvailableRouters([
           { id: 'eth1-router-1', network: 'eth1' },
           { id: 'arbitrum-router-1', network: 'arbitrum' },
           { id: 'polygon-router-1', network: 'polygon' },
@@ -370,11 +370,11 @@ export default function UsagePage() {
       }
     };
 
-    fetchAvailableChains();
+    fetchAvailableRouters();
   }, [config.apiEndpoint]);
 
   // Convert API response to local format
-  const convertApiToLocalFormat = (apiData: ApiChainUsageMetrics): ChainUsageData => {
+  const convertApiToLocalFormat = (apiData: ApiChainUsageMetrics): RouterUsageData => {
     return {
       chainId: apiData.chain_id,
       network: apiData.network,
@@ -418,19 +418,19 @@ export default function UsagePage() {
     };
   };
 
-  // Aggregate multiple chain data into one
-  const aggregateChainData = (chainsData: ChainUsageData[]): ChainUsageData => {
-    if (chainsData.length === 0) {
+  // Aggregate multiple router data into one
+  const aggregateRouterData = (routersData: RouterUsageData[]): RouterUsageData => {
+    if (routersData.length === 0) {
       return generateMockChainData('all', 'all');
     }
-    if (chainsData.length === 1) {
-      return { ...chainsData[0], chainId: 'all', network: 'all' };
+    if (routersData.length === 1) {
+      return { ...routersData[0], chainId: 'all', network: 'all' };
     }
 
-    // Aggregate methods across all chains
+    // Aggregate methods across all routers
     const singleMethodsMap = new Map<string, { requests: number; errors: number; latencySum: number; latencyCount: number }>();
     const batchMethodsMap = new Map<string, { requests: number; errors: number; latencySum: number; latencyCount: number }>();
-    
+
     let totalSingleRequests = 0;
     let totalSingleErrors = 0;
     let singleLatencySum = 0;
@@ -438,7 +438,7 @@ export default function UsagePage() {
     let batchLatencySum = 0;
     let batchLatencyCount = 0;
 
-    for (const chain of chainsData) {
+    for (const chain of routersData) {
       totalSingleRequests += chain.single.totalRequests;
       totalSingleErrors += chain.single.totalErrors;
       if (chain.single.avgLatency !== null) {
@@ -512,37 +512,37 @@ export default function UsagePage() {
     const avgSingleLatency = singleLatencyCount > 0 ? Math.round(singleLatencySum / singleLatencyCount) : null;
     const avgBatchLatency = batchLatencyCount > 0 ? Math.round(batchLatencySum / batchLatencyCount) : null;
     
-    // Aggregate requests over time by summing values at each timestamp across all chains
+    // Aggregate requests over time by summing values at each timestamp across all routers
     // Preserves the chronological order from the backend (don't sort alphabetically)
     const aggregateRequestsOverTime = (
-      chainsData: ChainUsageData[],
-      getTimeSeries: (c: ChainUsageData) => Array<{ timestamp: string; value: number }>
+      routersDataInner: RouterUsageData[],
+      getTimeSeries: (c: RouterUsageData) => Array<{ timestamp: string; value: number }>
     ): Array<{ timestamp: string; value: number }> => {
-      if (chainsData.length === 0) return [];
-      
-      // Use the first chain's time series as the reference for order
+      if (routersDataInner.length === 0) return [];
+
+      // Use the first router's time series as the reference for order
       // Backend returns data in chronological order
-      const referenceTimeSeries = getTimeSeries(chainsData[0]);
+      const referenceTimeSeries = getTimeSeries(routersDataInner[0]);
       const timestampOrder = referenceTimeSeries.map(p => p.timestamp);
-      
-      // Aggregate values across all chains
+
+      // Aggregate values across all routers
       const timestampMap = new Map<string, number>();
-      for (const chain of chainsData) {
-        for (const point of getTimeSeries(chain)) {
+      for (const router of routersDataInner) {
+        for (const point of getTimeSeries(router)) {
           const current = timestampMap.get(point.timestamp) || 0;
           timestampMap.set(point.timestamp, current + point.value);
         }
       }
-      
+
       // Return in the original chronological order from backend
       return timestampOrder.map(timestamp => ({
         timestamp,
         value: timestampMap.get(timestamp) || 0,
       }));
     };
-    
-    const singleRequestsOverTime = aggregateRequestsOverTime(chainsData, c => c.single.requestsOverTime);
-    const batchRequestsOverTime = aggregateRequestsOverTime(chainsData, c => c.batch.requestsOverTime);
+
+    const singleRequestsOverTime = aggregateRequestsOverTime(routersData, c => c.single.requestsOverTime);
+    const batchRequestsOverTime = aggregateRequestsOverTime(routersData, c => c.batch.requestsOverTime);
 
     // Calculate aggregated batch errors from methods
     const aggregatedBatchErrors = batchMethods.reduce((sum, m) => sum + m.errors, 0);
@@ -581,55 +581,55 @@ export default function UsagePage() {
 
   const fetchUsageData = useCallback(async () => {
     setIsLoading(true);
-    
+
     try {
       // Convert time frame to minutes
       const timeWindowMinutes = MetricsService.convertTimeFrameToMinutes(selectedTimeFrame);
-      
-      // Fetch usage metrics from API (same pattern as Dashboard: /usage/{chain_id})
-      const chainIdParam = selectedChain === 'all' ? undefined : selectedChain;
+
+      // Fetch usage metrics from API (same pattern as Dashboard: /usage/{router_id})
+      const routerIdParam = selectedRouter === 'all' ? undefined : selectedRouter;
       const response: UsageMetricsResponse = await MetricsService.fetchUsageMetrics(
         timeWindowMinutes,
-        chainIdParam
+        routerIdParam
       );
 
       // Convert API response to local format
-      const chainsArray = Object.values(response.chains).map(convertApiToLocalFormat);
-      
-      if (chainsArray.length === 0) {
+      const routersArray = Object.values(response.chains).map(convertApiToLocalFormat);
+
+      if (routersArray.length === 0) {
         // No data from API, use mock data
-        if (selectedChain === 'all') {
+        if (selectedRouter === 'all') {
           setUsageData(generateMockChainData('all', 'all'));
         } else {
-          const chainInfo = availableChains.find(c => c.id === selectedChain);
-          setUsageData(generateMockChainData(selectedChain, chainInfo?.network || selectedChain));
+          const routerInfo = availableRouters.find(c => c.id === selectedRouter);
+          setUsageData(generateMockChainData(selectedRouter, routerInfo?.network || selectedRouter));
         }
-      } else if (selectedChain === 'all') {
-        // Aggregate all chains
-        setUsageData(aggregateChainData(chainsArray));
+      } else if (selectedRouter === 'all') {
+        // Aggregate all routers
+        setUsageData(aggregateRouterData(routersArray));
       } else {
-        // Single chain
-        setUsageData(chainsArray[0]);
+        // Single router
+        setUsageData(routersArray[0]);
       }
     } catch (error) {
       // Fallback to mock data on error
-      if (selectedChain === 'all') {
+      if (selectedRouter === 'all') {
         setUsageData(generateMockChainData('all', 'all'));
       } else {
-        const chainInfo = availableChains.find(c => c.id === selectedChain);
-        setUsageData(generateMockChainData(selectedChain, chainInfo?.network || selectedChain));
+        const routerInfo = availableRouters.find(c => c.id === selectedRouter);
+        setUsageData(generateMockChainData(selectedRouter, routerInfo?.network || selectedRouter));
       }
     }
-    
+
     setIsLoading(false);
-  }, [selectedChain, selectedTimeFrame, availableChains]);
+  }, [selectedRouter, selectedTimeFrame, availableRouters]);
 
   useEffect(() => {
     fetchUsageData();
   }, [fetchUsageData]);
 
-  const handleChainSelect = (value: string) => {
-    setSelectedChain(value);
+  const handleRouterSelect = (value: string) => {
+    setSelectedRouter(value);
   };
 
   const handleTimeFrameChange = (value: string) => {
@@ -654,7 +654,7 @@ export default function UsagePage() {
         <div className="mb-8">
           <h1 className="text-3xl font-bold">Usage</h1>
           <p className="text-muted-foreground">
-            Monitor request usage and latency metrics per chain.
+            Monitor request usage and latency metrics per router.
           </p>
         </div>
 
@@ -663,10 +663,10 @@ export default function UsagePage() {
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
             <CardTitle>Usage Overview</CardTitle>
             <div className="flex flex-wrap items-center gap-2">
-              {/* Chain Selection */}
-              <Select value={selectedChain} onValueChange={handleChainSelect}>
+              {/* Router Selection */}
+              <Select value={selectedRouter} onValueChange={handleRouterSelect}>
                 <SelectTrigger className="w-[240px] bg-background border-border hover:bg-accent">
-                  <SelectValue placeholder="Select chain" />
+                  <SelectValue placeholder="Select router" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">
@@ -675,12 +675,12 @@ export default function UsagePage() {
                       All Networks
                     </div>
                   </SelectItem>
-                  {availableChains.map(chain => {
-                    const chainConfig = chains.find(c => c.value === chain.network);
-                    const label = chainConfig ? chainConfig.label : getChainLabel(chain.network);
-                    const icon = chainConfig ? chainConfig.icon : getChainIcon(chain.network);
+                  {availableRouters.map(router => {
+                    const chainConfig = chains.find(c => c.value === router.network);
+                    const label = chainConfig ? chainConfig.label : getChainLabel(router.network);
+                    const icon = chainConfig ? chainConfig.icon : getChainIcon(router.network);
                     return (
-                      <SelectItem key={chain.id} value={chain.id}>
+                      <SelectItem key={router.id} value={router.id}>
                         <div className="flex items-center gap-2">
                           {icon && (
                             <Image
