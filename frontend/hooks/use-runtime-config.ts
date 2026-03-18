@@ -16,12 +16,14 @@ export function useRuntimeConfig() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getRuntimeConfig().then(runtimeConfig => {
-      setConfig(runtimeConfig);
-      setLoading(false);
-    }).catch(error => {
-      setLoading(false);
-    });
+    getRuntimeConfig()
+      .then(runtimeConfig => {
+        setConfig(runtimeConfig);
+        setLoading(false);
+      })
+      .catch(error => {
+        setLoading(false);
+      });
   }, []);
 
   return { config, loading };

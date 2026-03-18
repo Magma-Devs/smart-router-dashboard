@@ -45,7 +45,8 @@ async function fetchRuntimeConfig(): Promise<RuntimeConfig> {
         NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000',
         NEXT_PUBLIC_DOMAIN: process.env.NEXT_PUBLIC_DOMAIN || 'localhost',
         NEXT_PUBLIC_PORT: process.env.NEXT_PUBLIC_PORT || '3000',
-        NEXT_PUBLIC_PROMETHEUS_URL: process.env.NEXT_PUBLIC_PROMETHEUS_URL || 'http://localhost:9090',
+        NEXT_PUBLIC_PROMETHEUS_URL:
+          process.env.NEXT_PUBLIC_PROMETHEUS_URL || 'http://localhost:9090',
       };
       return fallbackConfig;
     } finally {

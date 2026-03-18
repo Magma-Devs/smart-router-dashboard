@@ -331,12 +331,10 @@ export default function LiveTestPage() {
   const [crossValidationResultStatus, setCrossValidationResultStatus] = useState<string | null>(
     null,
   );
-  const [crossValidationAllNodes, setCrossValidationAllNodes] = useState<string | null>(
+  const [crossValidationAllNodes, setCrossValidationAllNodes] = useState<string | null>(null);
+  const [crossValidationAgreeingNodes, setCrossValidationAgreeingNodes] = useState<string | null>(
     null,
   );
-  const [crossValidationAgreeingNodes, setCrossValidationAgreeingNodes] = useState<
-    string | null
-  >(null);
 
   // Tab state
   const [activeTab, setActiveTab] = useState<'single' | 'load' | 'batch' | 'cross'>('single');
@@ -871,7 +869,9 @@ export default function LiveTestPage() {
         `-H "lava-cross-validation-agreement-threshold: ${crossValidationAgreementThreshold}"`,
       ].join(' ');
 
-      const allHeaders = [headers, extensionHeader, crossValidationHeaders].filter(Boolean).join(' ');
+      const allHeaders = [headers, extensionHeader, crossValidationHeaders]
+        .filter(Boolean)
+        .join(' ');
 
       let cmd: string;
       if (selectedInterface.includes('/wss')) {
@@ -2366,7 +2366,10 @@ export default function LiveTestPage() {
                                 value={Math.min(numberOfRequests, maxRequests)}
                                 onChange={e =>
                                   setNumberOfRequests(
-                                    Math.max(1, Math.min(maxRequests, parseInt(e.target.value) || 1)),
+                                    Math.max(
+                                      1,
+                                      Math.min(maxRequests, parseInt(e.target.value) || 1),
+                                    ),
                                   )
                                 }
                                 className='w-32'
@@ -3678,14 +3681,14 @@ export default function LiveTestPage() {
                         </div>
                         {maxNodesForNetwork === 1 ? (
                           <p className='text-sm text-muted-foreground'>
-                            Cross validation is not available for this network as it only has 1
-                            node configured.
+                            Cross validation is not available for this network as it only has 1 node
+                            configured.
                           </p>
                         ) : (
                           <p className='text-sm text-muted-foreground'>
-                            Cross validation will query up to {crossValidationMaxParticipants}{' '}
-                            nodes and require {crossValidationAgreementThreshold} matching
-                            responses for consensus.
+                            Cross validation will query up to {crossValidationMaxParticipants} nodes
+                            and require {crossValidationAgreementThreshold} matching responses for
+                            consensus.
                           </p>
                         )}
                       </div>
@@ -3859,20 +3862,18 @@ export default function LiveTestPage() {
                               <div className='flex flex-col gap-1'>
                                 <span className='text-xs text-slate-500'>Agreeing Nodes:</span>
                                 <div className='flex flex-wrap gap-1'>
-                                  {crossValidationAgreeingNodes
-                                    .split(', ')
-                                    .map((provider, idx) => (
-                                      <span
-                                        key={idx}
-                                        className='inline-flex items-center rounded-md bg-green-900/50 px-2 py-0.5 text-xs text-green-400'
-                                        title={provider}
-                                      >
-                                        <CheckCircle2 className='mr-1 h-3 w-3' />
-                                        {provider.length > 20
-                                          ? `${provider.slice(0, 8)}...${provider.slice(-8)}`
-                                          : provider}
-                                      </span>
-                                    ))}
+                                  {crossValidationAgreeingNodes.split(', ').map((provider, idx) => (
+                                    <span
+                                      key={idx}
+                                      className='inline-flex items-center rounded-md bg-green-900/50 px-2 py-0.5 text-xs text-green-400'
+                                      title={provider}
+                                    >
+                                      <CheckCircle2 className='mr-1 h-3 w-3' />
+                                      {provider.length > 20
+                                        ? `${provider.slice(0, 8)}...${provider.slice(-8)}`
+                                        : provider}
+                                    </span>
+                                  ))}
                                 </div>
                               </div>
                             )}

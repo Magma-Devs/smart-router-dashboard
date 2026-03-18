@@ -78,7 +78,10 @@ def test_logout_success():
 
 def test_debug_status():
     """Test debug status endpoint."""
-    response = client.get("/api/auth/debug-status")
+    response = client.get(
+        "/api/auth/debug-status",
+        headers=_basic_header(settings.AUTH_USERNAME, settings.AUTH_PASSWORD),
+    )
     assert response.status_code == 200
     data = response.json()
     assert "debug_mode" in data

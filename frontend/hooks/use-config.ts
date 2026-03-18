@@ -72,7 +72,10 @@ export function useConfig() {
   const [defaultPrometheusUrl, setDefaultPrometheusUrl] = useState<string>('');
 
   // Endpoint domain and port - for calculating endpoint URLs
-  const [endpointDomain, setEndpointDomain] = useLocalStorage<string | null>('endpoint-domain', null);
+  const [endpointDomain, setEndpointDomain] = useLocalStorage<string | null>(
+    'endpoint-domain',
+    null,
+  );
   const [defaultEndpointDomain, setDefaultEndpointDomain] = useState<string>('');
   const [endpointPort, setEndpointPort] = useLocalStorage<string | null>('endpoint-port', null);
   const [defaultEndpointPort, setDefaultEndpointPort] = useState<string>('');
@@ -113,10 +116,14 @@ export function useConfig() {
 
     const initializeConfig = async () => {
       // Check localStorage directly to avoid race condition with useLocalStorage hook
-      const hasStoredApiHost = typeof window !== 'undefined' && window.localStorage.getItem('api-host') !== null;
-      const hasStoredPrometheusUrl = typeof window !== 'undefined' && window.localStorage.getItem('prometheus-url') !== null;
-      const hasStoredDomain = typeof window !== 'undefined' && window.localStorage.getItem('endpoint-domain') !== null;
-      const hasStoredPort = typeof window !== 'undefined' && window.localStorage.getItem('endpoint-port') !== null;
+      const hasStoredApiHost =
+        typeof window !== 'undefined' && window.localStorage.getItem('api-host') !== null;
+      const hasStoredPrometheusUrl =
+        typeof window !== 'undefined' && window.localStorage.getItem('prometheus-url') !== null;
+      const hasStoredDomain =
+        typeof window !== 'undefined' && window.localStorage.getItem('endpoint-domain') !== null;
+      const hasStoredPort =
+        typeof window !== 'undefined' && window.localStorage.getItem('endpoint-port') !== null;
 
       // Get runtime config for default values
       const config = await getRuntimeConfig();
@@ -164,7 +171,8 @@ export function useConfig() {
     settingsFetchedRef.current = true;
 
     const fetchSettings = async () => {
-      const hasStoredPrometheusUrl = typeof window !== 'undefined' && window.localStorage.getItem('prometheus-url') !== null;
+      const hasStoredPrometheusUrl =
+        typeof window !== 'undefined' && window.localStorage.getItem('prometheus-url') !== null;
 
       try {
         const backendSettings = await fetchBackendSettings();

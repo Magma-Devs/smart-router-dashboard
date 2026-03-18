@@ -59,9 +59,7 @@ export function InDepthMetrics({}: InDepthMetricsProps) {
   const [availableRouters, setAvailableRouters] = useState<Array<{ id: string; network: string }>>(
     [],
   );
-  const [availableNodes, setAvailableNodes] = useState<
-    Array<{ id: string; network: string }>
-  >([]);
+  const [availableNodes, setAvailableNodes] = useState<Array<{ id: string; network: string }>>([]);
   const [isLoadingComponents, setIsLoadingComponents] = useState(false);
 
   // Custom hooks for data management

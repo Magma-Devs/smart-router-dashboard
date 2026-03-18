@@ -13,6 +13,7 @@ from app.core.exceptions import PrometheusConnectionError
 class TestSettings:
     """Test cases for the Settings class."""
 
+    @patch.dict(os.environ, {}, clear=True)
     def test_default_values(self):
         """Test that default values are set correctly."""
         settings = Settings()
@@ -23,7 +24,6 @@ class TestSettings:
         assert settings.prometheus_url == "http://prometheus.lava.lavapro.xyz"
         assert settings.debug is False
         assert settings.log_level == "INFO"
-        assert settings.cors_origins == ["*"]
 
     def test_environment_variable_override(self):
         """Test that environment variables override defaults."""
@@ -108,7 +108,6 @@ class TestSettings:
     def test_cors_origins_validation_valid(self):
         """Test valid CORS origins validation."""
         valid_origins = [
-            ["*"],
             ["http://localhost:3000"],
             ["https://example.com"],
             ["http://localhost:3000", "https://example.com"],
@@ -203,7 +202,6 @@ class TestSettings:
         assert config["timeout"] == 15
         assert config["retries"] == 2
         assert config["verify_ssl"] is True
-
 
 
 class TestGetSettings:

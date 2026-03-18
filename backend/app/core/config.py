@@ -72,7 +72,11 @@ class Settings(BaseSettings):
 
     # CORS settings
     cors_origins: list[str] = Field(
-        default=["http://localhost:3000", "http://127.0.0.1:3000", "http://0.0.0.0:3000"],
+        default=[
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+            "http://0.0.0.0:3000",
+        ],
         description="Allowed CORS origins",
     )
 
@@ -134,7 +138,7 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "Wildcard CORS origin '*' is not allowed. "
                     "Set CORS_ORIGINS to explicit origins, e.g.: "
-                    '[\"https://dashboard.example.com\"]'
+                    '["https://dashboard.example.com"]'
                 )
             if not (
                 origin.startswith(("http://", "https://"))

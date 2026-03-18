@@ -247,8 +247,10 @@ export default function WizardPage() {
   const formRef = useRef<HTMLDivElement>(null);
   const { config } = useConfig();
   const [expandedNodes, setExpandedNodes] = useState<Record<string, boolean>>({});
-  const { localNodeName, setLocalNodeName, handleNodeNameChange } =
-    useNodeNameUpdate(routerConfigs, setRouterConfigs);
+  const { localNodeName, setLocalNodeName, handleNodeNameChange } = useNodeNameUpdate(
+    routerConfigs,
+    setRouterConfigs,
+  );
   const [showConfig, setShowConfig] = useState(false);
   const [finalConfig, setFinalConfig] = useState<string>('');
 
@@ -490,7 +492,10 @@ export default function WizardPage() {
 
     // Find the highest port number used across all routers
     const highestPort = newRouters.reduce((maxPort, router) => {
-      const routerMaxPort = router.interfaces.reduce((port, iface) => Math.max(port, iface.port), 0);
+      const routerMaxPort = router.interfaces.reduce(
+        (port, iface) => Math.max(port, iface.port),
+        0,
+      );
       return Math.max(maxPort, routerMaxPort);
     }, 1999); // Start from 1999 so first port will be 2000
 
@@ -540,11 +545,7 @@ export default function WizardPage() {
     controls.start({ scale: [1, 1.05, 1], transition: { duration: 0.3 } });
   };
 
-  const addInterfaceToNode = (
-    routerIndex: number,
-    interfaceIndex: number,
-    nodeName: string,
-  ) => {
+  const addInterfaceToNode = (routerIndex: number, interfaceIndex: number, nodeName: string) => {
     const newRouters = [...routerConfigs];
     const currentInterface = newRouters[routerIndex].interfaces[interfaceIndex];
 
@@ -617,8 +618,7 @@ export default function WizardPage() {
     updates: Partial<{ name: string; url: string }>,
   ) => {
     const newRouters = [...routerConfigs];
-    const currentNode =
-      newRouters[routerIndex].interfaces[interfaceIndex].providers[nodeIndex];
+    const currentNode = newRouters[routerIndex].interfaces[interfaceIndex].providers[nodeIndex];
 
     if (updates.name) {
       // Update URL based on the new name
@@ -833,8 +833,8 @@ export default function WizardPage() {
                   </CardHeader>
                   <CardContent>
                     <p className='text-muted-foreground text-lg mb-6'>
-                      Update your current routers, nodes, and their relationships while
-                      preserving existing configurations.
+                      Update your current routers, nodes, and their relationships while preserving
+                      existing configurations.
                     </p>
                     <motion.div
                       className='flex items-center text-primary font-medium'
@@ -1462,9 +1462,11 @@ export default function WizardPage() {
                                                           onClick={() => {
                                                             if (isUsed) return;
                                                             const newRouters = [...routerConfigs];
-                                                            newRouters[currentRouterIndex].interfaces[
-                                                              index
-                                                            ].name = [interfaceType.value];
+                                                            newRouters[
+                                                              currentRouterIndex
+                                                            ].interfaces[index].name = [
+                                                              interfaceType.value,
+                                                            ];
                                                             setRouterConfigs(newRouters);
                                                           }}
                                                           disabled={isUsed}
@@ -1598,7 +1600,9 @@ export default function WizardPage() {
                                   <h4 className='font-medium text-lg'>
                                     <span className='text-primary font-bold'>
                                       {(() => {
-                                        const routerInfo = chains.find(c => c.value === router.name);
+                                        const routerInfo = chains.find(
+                                          c => c.value === router.name,
+                                        );
                                         return routerInfo ? (
                                           <>
                                             {' '}

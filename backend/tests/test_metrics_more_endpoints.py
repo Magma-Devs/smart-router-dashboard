@@ -10,6 +10,26 @@ client = TestClient(app)
 
 class FakePromAgg:
     # Return synthetic but deterministic datasets for aggregates
+    async def query(self, q):
+        # router health breakdown — keyed by spec
+        if "health_breakdown" in q or "overall_health" in q:
+            return {
+                "status": "success",
+                "data": {
+                    "resultType": "vector",
+                    "result": [
+                        {
+                            "metric": {
+                                "spec": "HYPERLIQUID",
+                                "apiInterface": "jsonrpc",
+                            },
+                            "value": ["t1", "1"],
+                        },
+                    ],
+                },
+            }
+        return {"status": "success", "data": {"resultType": "vector", "result": []}}
+
     async def query_range(self, q, start, end, step):
         if "health" in q or "overall_health" in q:
             # health data: two chains, three samples 1/1/0 and 1/0/0
