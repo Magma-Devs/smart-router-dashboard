@@ -20,6 +20,9 @@ class FakePrometheus:
     async def query_range(self, q: str, start, end, step: str):
         return {"status": "success", "data": {"result": []}}
 
+    async def query(self, q: str):
+        return {"status": "success", "data": {"resultType": "vector", "result": []}}
+
 
 class FakeConfigService(ConfigurationService):
     def __init__(self):

@@ -22,7 +22,14 @@ import { Info } from 'lucide-react';
 import { ProtectedRoute } from '@/components/protected-route';
 
 export default function ConfigurationPage() {
-  const { config, updateApiEndpoint, updatePrometheusUrl, updateEndpointDomain, updateEndpointPort, resetConfig } = useConfig();
+  const {
+    config,
+    updateApiEndpoint,
+    updatePrometheusUrl,
+    updateEndpointDomain,
+    updateEndpointPort,
+    resetConfig,
+  } = useConfig();
   const [inputValue, setInputValue] = useState(config.apiEndpoint || '');
   const [prometheusInputValue, setPrometheusInputValue] = useState(config.prometheusUrl || '');
   const [domainInputValue, setDomainInputValue] = useState(config.endpointDomain || '');
@@ -159,9 +166,7 @@ export default function ConfigurationPage() {
           <Card>
             <CardHeader>
               <CardTitle>API Host</CardTitle>
-              <CardDescription>
-                Backend API endpoint for dashboard data
-              </CardDescription>
+              <CardDescription>Backend API endpoint for dashboard data</CardDescription>
             </CardHeader>
             <form onSubmit={handleApiSubmit}>
               <CardContent>
@@ -177,9 +182,7 @@ export default function ConfigurationPage() {
                     Provides metrics, configuration, and authentication
                   </p>
                   {isPreviewEnvironment && inputValue.includes('localhost') && (
-                    <p className='text-sm text-amber-500'>
-                      Localhost may not be accessible here.
-                    </p>
+                    <p className='text-sm text-amber-500'>Localhost may not be accessible here.</p>
                   )}
                 </div>
               </CardContent>
@@ -193,9 +196,7 @@ export default function ConfigurationPage() {
           <Card>
             <CardHeader>
               <CardTitle>Prometheus</CardTitle>
-              <CardDescription>
-                Prometheus endpoint for metrics collection
-              </CardDescription>
+              <CardDescription>Prometheus endpoint for metrics collection</CardDescription>
             </CardHeader>
             <form onSubmit={handlePrometheusSubmit}>
               <CardContent>
@@ -211,9 +212,7 @@ export default function ConfigurationPage() {
                     Used by backend for querying metrics
                   </p>
                   {isPreviewEnvironment && prometheusInputValue.includes('localhost') && (
-                    <p className='text-sm text-amber-500'>
-                      Localhost may not be accessible here.
-                    </p>
+                    <p className='text-sm text-amber-500'>Localhost may not be accessible here.</p>
                   )}
                 </div>
               </CardContent>
@@ -227,9 +226,7 @@ export default function ConfigurationPage() {
           <Card>
             <CardHeader>
               <CardTitle>Endpoint Configuration</CardTitle>
-              <CardDescription>
-                Domain and port for endpoint URL calculation
-              </CardDescription>
+              <CardDescription>Domain and port for endpoint URL calculation</CardDescription>
             </CardHeader>
             <form onSubmit={handleEndpointSubmit}>
               <CardContent>
@@ -253,7 +250,8 @@ export default function ConfigurationPage() {
                     />
                   </div>
                   <p className='text-sm text-muted-foreground'>
-                    Used to construct endpoint URLs: <code className='text-xs bg-muted px-1 py-0.5 rounded'>{`{chain}-{interface}.${domainInputValue || 'domain'}:${portInputValue || 'port'}`}</code>
+                    Used to construct endpoint URLs:{' '}
+                    <code className='text-xs bg-muted px-1 py-0.5 rounded'>{`{chain}-{interface}.${domainInputValue || 'domain'}:${portInputValue || 'port'}`}</code>
                   </p>
                 </div>
               </CardContent>
@@ -267,13 +265,12 @@ export default function ConfigurationPage() {
           <Card>
             <CardHeader>
               <CardTitle>Reset Configuration</CardTitle>
-              <CardDescription>
-                Reset all settings to defaults
-              </CardDescription>
+              <CardDescription>Reset all settings to defaults</CardDescription>
             </CardHeader>
             <CardContent>
               <p className='text-sm text-muted-foreground'>
-                Restore all settings to their original default values from the environment configuration.
+                Restore all settings to their original default values from the environment
+                configuration.
               </p>
             </CardContent>
             <CardFooter>

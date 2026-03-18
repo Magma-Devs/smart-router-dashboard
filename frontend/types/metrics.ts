@@ -53,7 +53,7 @@ export interface KPIData {
   latency: string;
   totalRequests?: string;
   cacheHitRate?: string;
-  recoveredNodeErrors?: { recovered: string; total: string } | string;  // Format: { recovered, total } or "Error"/"N/A"
+  recoveredNodeErrors?: { recovered: string; total: string } | string; // Format: { recovered, total } or "Error"/"N/A"
 }
 
 export interface KPICardProps {

@@ -27,7 +27,8 @@ def get_app_version() -> str:
     # Try to read from VERSION file
     possible_paths = [
         Path("/app/VERSION"),  # Docker container
-        Path(__file__).parent.parent.parent.parent.parent / "VERSION",  # Dev: backend/../VERSION
+        Path(__file__).parent.parent.parent.parent.parent
+        / "VERSION",  # Dev: backend/../VERSION
         Path(__file__).parent.parent.parent.parent / "VERSION",  # Alternative dev path
     ]
 
@@ -144,4 +145,3 @@ async def get_version():
     This endpoint is public and does not require authentication.
     """
     return VersionResponse(version=get_app_version())
-

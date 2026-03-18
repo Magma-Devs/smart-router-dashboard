@@ -28,7 +28,8 @@ export function NavBar() {
   // Fetch version from backend API
   useEffect(() => {
     if (isAuthenticated) {
-      apiClient.get<{ version: string }>('/api/settings/version')
+      apiClient
+        .get<{ version: string }>('/api/settings/version')
         .then(data => setVersion(data.version))
         .catch(() => setVersion('unknown'));
     }

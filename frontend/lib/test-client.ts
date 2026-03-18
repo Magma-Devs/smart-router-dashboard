@@ -369,7 +369,8 @@ export async function makeTestRequest(options: TestRequestOptions): Promise<Test
       headers['lava-cross-validation-max-participants'] = crossValidationMaxParticipants.toString();
     }
     if (crossValidationAgreementThreshold !== undefined) {
-      headers['lava-cross-validation-agreement-threshold'] = crossValidationAgreementThreshold.toString();
+      headers['lava-cross-validation-agreement-threshold'] =
+        crossValidationAgreementThreshold.toString();
     }
 
     // Make the request

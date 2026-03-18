@@ -592,7 +592,9 @@ export function SummarySection({}: SummarySectionProps) {
             <KPICard
               title='Cache Hit Rate'
               value={selectedNetwork !== 'all' ? 'N/A' : kpiData.cacheHitRate || 'N/A'}
-              color={getCacheHitColorName(selectedNetwork !== 'all' ? undefined : kpiData.cacheHitRate)}
+              color={getCacheHitColorName(
+                selectedNetwork !== 'all' ? undefined : kpiData.cacheHitRate,
+              )}
               isLoading={isLoading}
             />
             <RecoveredErrorsKPICard
@@ -608,6 +610,8 @@ export function SummarySection({}: SummarySectionProps) {
               value={kpiData.latency}
               color={getLatencyColorName(kpiData.latency)}
               isLoading={isLoading}
+              showInfo={true}
+              tooltipText='p50 (median) latency across all requests in the selected time window.'
             />
           </div>
 
