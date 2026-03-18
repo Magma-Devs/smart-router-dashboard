@@ -189,6 +189,7 @@ def test_default_alias_success():
     app.dependency_overrides[get_prometheus_service] = lambda: FakePrometheus()
     r = client.get(
         "/api/metrics/default",
+        headers=_basic_header("admin", "password"),
     )
     assert r.status_code == 200
     assert isinstance(r.json(), list)

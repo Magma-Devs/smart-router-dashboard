@@ -144,9 +144,7 @@ class TestConfigurationService:
         )
 
         # Create test node
-        node = NodeConfig(
-            name="test_node", endpoints=[endpoint1, endpoint2]
-        )
+        node = NodeConfig(name="test_node", endpoints=[endpoint1, endpoint2])
 
         # Create test router
         chain = RouterConfig(id="test_chain", network="testnet", nodes=[node])

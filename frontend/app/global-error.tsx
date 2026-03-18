@@ -22,7 +22,16 @@ export default function GlobalError({
   return (
     <html>
       <body>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', gap: '16px' }}>
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            height: '100vh',
+            gap: '16px',
+          }}
+        >
           <h2>Something went wrong</h2>
           <button onClick={reset}>Try again</button>
         </div>

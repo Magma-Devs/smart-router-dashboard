@@ -10,6 +10,7 @@ def _get_effective_prometheus_url() -> str:
     """Get the effective Prometheus URL, considering runtime overrides."""
     # Import here to avoid circular imports
     from app.api.routes.settings import get_effective_prometheus_url
+
     return get_effective_prometheus_url()
 
 

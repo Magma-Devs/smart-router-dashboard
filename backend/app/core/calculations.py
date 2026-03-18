@@ -44,7 +44,7 @@ def calculate_adaptive_step_size(
 def calculate_graph_step_minutes(time_window_minutes: int) -> int:
     """
     Calculate step size in minutes for usage graph time series.
-    
+
     Uses fixed bucket sizes optimized for readability:
     - <= 15 minutes: 5-minute buckets
     - >= 30 minutes: 15-minute buckets (for all time windows)
@@ -96,7 +96,7 @@ def calculate_uptime_percentage(
     health_data: dict[str, Any], target_chain: str
 ) -> float:
     """Calculate uptime percentage for a specific chain from health data.
-    
+
     Filters by the `spec` label which contains the chain/network identifier
     in uppercase (e.g., "ETH1", "BASE", "SOLANA").
     The target_chain is the network identifier (e.g., "eth1", "base").
@@ -157,7 +157,7 @@ def calculate_latency_ms(latency_data: dict[str, Any], target_chain: str) -> int
 
     Prometheus already calculates the average across all time points,
     so we just return the latest value from the time series.
-    
+
     Filters by the `spec` label which contains the chain/network identifier
     in uppercase (e.g., "ETH1", "BASE", "SOLANA").
     """
@@ -258,7 +258,7 @@ def calculate_requests_in_time_window(
 
     The input data uses Prometheus increase() function which automatically
     handles counter resets, so we just get the latest value.
-    
+
     Filters by the `spec` label which contains the chain/network identifier
     in uppercase (e.g., "ETH1", "BASE", "SOLANA").
     """
@@ -301,11 +301,11 @@ def calculate_chain_latest_block_number(
 ) -> int:
     """
     Calculate the latest block number for a specific chain from chain data.
-    
+
     Args:
         block_data: Prometheus query result data
         target_network: The network/spec to filter by (e.g., "eth1", "base", "solana").
-    
+
     Filters by the `spec` label which contains the chain/network identifier
     in uppercase (e.g., "ETH1", "BASE", "SOLANA").
     """

@@ -57,7 +57,9 @@ class NodeConfig(BaseModel):
 
 class RouterConfig(BaseModel):
     id: str  # router name (user-defined)
-    network: str  # chain spec (e.g. eth1, base) - used as Prometheus spec label (uppercase)
+    network: (
+        str  # chain spec (e.g. eth1, base) - used as Prometheus spec label (uppercase)
+    )
     nodes: list[NodeConfig]
     custom_url_prefix: str | None = None
 
@@ -98,6 +100,7 @@ class Node(NodeConfig):
 # Safe / sanitized models (exclude raw URLs from API responses)
 # ---------------------------------------------------------------------------
 
+
 class SafeEndpoint(BaseModel):
     interface: str
 
@@ -123,6 +126,7 @@ class ChainsToProvidersResponse(BaseModel):
 # ---------------------------------------------------------------------------
 # Components API models
 # ---------------------------------------------------------------------------
+
 
 class ResourceLimits(BaseModel):
     cpu: int
@@ -160,6 +164,7 @@ class ComponentsResponse(BaseModel):
 # Pydantic models for metrics API responses
 # ---------------------------------------------------------------------------
 
+
 class ChainMetrics(BaseModel):
     network: str | None = None
     uptime: float
@@ -194,8 +199,10 @@ class ProvidersMetricsResponse(BaseModel):
 # Usage metrics models
 # ---------------------------------------------------------------------------
 
+
 class MethodUsage(BaseModel):
     """Usage metrics for a specific RPC method"""
+
     method: str
     requests: int
     errors: int
@@ -206,12 +213,14 @@ class MethodUsage(BaseModel):
 
 class TimeSeriesDataPoint(BaseModel):
     """A single data point over time"""
+
     timestamp: str
     value: float
 
 
 class RequestTypeUsage(BaseModel):
     """Usage metrics for single or batch requests"""
+
     total_requests: int
     total_errors: int
     error_rate: float  # Percentage of errors (0-100)
@@ -222,6 +231,7 @@ class RequestTypeUsage(BaseModel):
 
 class BatchRequestUsage(BaseModel):
     """Usage metrics for batch requests"""
+
     total_requests: int
     total_errors: int
     error_rate: float  # Percentage of errors (0-100)
@@ -233,6 +243,7 @@ class BatchRequestUsage(BaseModel):
 
 class ChainUsageMetrics(BaseModel):
     """Complete usage metrics for a router/chain"""
+
     chain_id: str
     network: str
     single: RequestTypeUsage
@@ -241,6 +252,7 @@ class ChainUsageMetrics(BaseModel):
 
 class UsageMetricsResponse(BaseModel):
     """Response model for usage metrics endpoint"""
+
     chains: dict[str, ChainUsageMetrics]
 
 
@@ -248,8 +260,10 @@ class UsageMetricsResponse(BaseModel):
 # Dashboard summary metrics models
 # ---------------------------------------------------------------------------
 
+
 class ErrorRecoveryMetrics(BaseModel):
     """Metrics for node error recovery from lava_consumer_total_node_errors_* metrics."""
+
     total_node_errors: float = 0.0
     recovered_requests: float = 0.0
     recovery_rate: float = 0.0
@@ -259,10 +273,11 @@ class ErrorRecoveryMetrics(BaseModel):
 
 class DashboardSummaryMetrics(BaseModel):
     """Summary metrics for the dashboard overview"""
+
     total_requests: float
-    cache_hit_rate: float = 0.0   # From Lava cache sidecar (cache_total_hits/misses)
-    cache_hits: float = 0.0       # From Lava cache sidecar
-    cache_misses: float = 0.0     # From Lava cache sidecar
+    cache_hit_rate: float = 0.0  # From Lava cache sidecar (cache_total_hits/misses)
+    cache_hits: float = 0.0  # From Lava cache sidecar
+    cache_misses: float = 0.0  # From Lava cache sidecar
     error_recovery: ErrorRecoveryMetrics = ErrorRecoveryMetrics()
 
 
