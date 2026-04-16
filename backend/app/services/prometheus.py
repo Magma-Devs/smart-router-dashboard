@@ -36,7 +36,10 @@ class PrometheusService:
 
     async def query(self, query_expr: str) -> dict[str, Any]:
         """Execute an instant query against Prometheus"""
-        async with httpx.AsyncClient(verify=settings.PROMETHEUS_VERIFY_SSL) as client:
+        async with httpx.AsyncClient(
+            verify=settings.PROMETHEUS_VERIFY_SSL,
+            timeout=settings.PROMETHEUS_TIMEOUT,
+        ) as client:
             response = await client.get(self.query_url, params={"query": query_expr})
             response.raise_for_status()
             return response.json()
@@ -61,7 +64,10 @@ class PrometheusService:
             "step": step,
         }
 
-        async with httpx.AsyncClient(verify=settings.PROMETHEUS_VERIFY_SSL) as client:
+        async with httpx.AsyncClient(
+            verify=settings.PROMETHEUS_VERIFY_SSL,
+            timeout=settings.PROMETHEUS_TIMEOUT,
+        ) as client:
             response = await client.get(self.range_query_url, params=params)
             response.raise_for_status()
             return response.json()
