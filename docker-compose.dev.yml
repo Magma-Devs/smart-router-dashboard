@@ -25,6 +25,8 @@ services:
     restart: unless-stopped
     stdin_open: true
     tty: true
+    networks:
+      - smart-router
   backend:
     build:
       context: ./backend
@@ -41,5 +43,14 @@ services:
       - TENANT_ID=default
       - AUTH_USERNAME=admin
       - AUTH_PASSWORD=password
+      - AUTH_GATEWAY_URL=http://auth-gateway:8081
+      - AUTH_GATEWAY_ADMIN_TOKEN=dev-secret
       - CORS_ORIGINS=["http://localhost:3000","http://127.0.0.1:3000","http://0.0.0.0:3000"]
     restart: unless-stopped
+    networks:
+      - smart-router
+
+networks:
+  smart-router:
+    name: smart-router
+    driver: bridge

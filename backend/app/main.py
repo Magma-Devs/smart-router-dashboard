@@ -5,7 +5,7 @@ Main FastAPI application for the Smart Router Dashboard API.
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import auth, components, metrics, settings as settings_router
+from app.api.routes import auth, components, keys, metrics, settings as settings_router
 from app.core.auth import AuthMiddleware
 from app.core.config import settings
 
@@ -35,6 +35,7 @@ app.include_router(auth.router, prefix="/api/auth", tags=["authentication"])
 app.include_router(metrics.router, prefix="/api/metrics", tags=["metrics"])
 app.include_router(components.router, prefix="/api/components", tags=["components"])
 app.include_router(settings_router.router, prefix="/api/settings", tags=["settings"])
+app.include_router(keys.router, prefix="/api/keys", tags=["keys"])
 
 
 @app.get("/api/health")

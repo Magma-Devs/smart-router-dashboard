@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
-import { Settings, LayoutDashboard, Zap, LogOut, User, Wand2, BarChart3, Info } from 'lucide-react';
+import { Settings, LayoutDashboard, Zap, LogOut, User, Wand2, BarChart3, Info, Key } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/auth-context';
@@ -78,6 +78,15 @@ export function NavBar() {
                 >
                   <BarChart3 className='h-4 w-4' />
                   Usage
+                </Button>
+              </Link>
+              <Link href='/api-keys'>
+                <Button
+                  variant={pathname === '/api-keys' ? 'default' : 'ghost'}
+                  className='flex items-center gap-1.5'
+                >
+                  <Key className='h-4 w-4' />
+                  API Keys
                 </Button>
               </Link>
               <Link href='/configuration'>

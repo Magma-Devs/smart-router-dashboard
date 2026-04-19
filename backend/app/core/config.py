@@ -80,6 +80,14 @@ class Settings(BaseSettings):
         description="Allowed CORS origins",
     )
 
+    # Auth Gateway settings (for API key management)
+    auth_gateway_url: str | None = Field(
+        default=None, description="Auth gateway internal URL, e.g. http://auth-gateway:8081"
+    )
+    auth_gateway_admin_token: str | None = Field(
+        default=None, description="Admin token for auth gateway X-Admin-Token header"
+    )
+
     # Feature flags
     debug: bool = Field(default=False, description="Enable debug mode")
 
