@@ -332,7 +332,10 @@ async def instant_query(
         result = await svc.query(query)
         return result
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error executing query: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error executing query ({type(e).__name__}): {e}",
+        )
 
 
 @router.get("/range")
@@ -355,7 +358,10 @@ async def range_query(
         result = await svc.query_range(query, start_time, end_time, step)
         return result
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error executing query: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error executing query ({type(e).__name__}): {e}",
+        )
 
 
 @router.get("/last_minutes")
@@ -373,7 +379,10 @@ async def last_n_minutes(
         result = await svc.query_range(query, start_time, end_time, step)
         return result
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error executing query: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error executing query ({type(e).__name__}): {e}",
+        )
 
 
 @router.get("/default")

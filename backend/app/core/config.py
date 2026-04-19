@@ -259,6 +259,10 @@ class Settings(BaseSettings):
         return self.prometheus_verify_ssl
 
     @property
+    def PROMETHEUS_TIMEOUT(self) -> int:
+        return self.prometheus_timeout
+
+    @property
     def DEFAULT_METRICS(self):
         return self.default_metrics
 

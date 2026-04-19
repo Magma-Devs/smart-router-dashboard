@@ -14,7 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { ChevronDown, Info, Globe, RefreshCw, ArrowDown } from 'lucide-react';
+import { ChevronDown, Info, Globe, RefreshCw, ArrowDown, Download } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 // Application imports
@@ -23,6 +23,8 @@ import { useConfig } from '@/hooks/use-config';
 import { KPIData, KPICardProps } from '@/types/metrics';
 import { MetricsService, ChainMetrics, DashboardSummaryMetrics } from '@/services/metricsService';
 import { TIME_FRAMES, DEFAULT_TIME_FRAME } from '@/constants/timeFrames';
+import { exportLavaMetrics } from '@/lib/export-metrics';
+import { toast } from '@/components/ui/use-toast';
 import {
   getUptimeColorName,
   getReachabilityColorName,
@@ -177,6 +179,7 @@ export function SummarySection({}: SummarySectionProps) {
     recoveredNodeErrors: 'N/A',
   });
   const [isLoading, setIsLoading] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [selectedTimeFrame, setSelectedTimeFrame] = useState<string>(DEFAULT_TIME_FRAME);
 
   /**
@@ -405,6 +408,38 @@ export function SummarySection({}: SummarySectionProps) {
     fetchKPIData(selectedRouter, selectedTimeFrame, selectedNetwork);
   };
 
+  const handleExport = async () => {
+    if (isExporting) return;
+    setIsExporting(true);
+    try {
+      const minutes = MetricsService.convertTimeFrameToMinutes(selectedTimeFrame);
+      const result = await exportLavaMetrics(selectedTimeFrame, minutes);
+      if (result.failed === 0) {
+        toast({
+          title: 'Export complete',
+          description: `Exported ${result.succeeded}/${result.total} metrics — ${result.filename}`,
+        });
+      } else {
+        const preview = result.failedMetrics.slice(0, 3).join(', ');
+        const suffix = result.failedMetrics.length > 3 ? '…' : '';
+        toast({
+          variant: 'destructive',
+          title: `Export finished with ${result.failed} failure${result.failed === 1 ? '' : 's'}`,
+          description: `Exported ${result.succeeded}/${result.total} metrics. Failed: ${preview}${suffix}`,
+        });
+      }
+    } catch (err) {
+      console.error('Export failed:', err);
+      toast({
+        variant: 'destructive',
+        title: 'Export failed',
+        description: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   const handleScrollToMetrics = () => {
     const metricsSection = document.querySelector('[data-section="metrics"]');
     if (metricsSection) {
@@ -551,6 +586,19 @@ export function SummarySection({}: SummarySectionProps) {
                 ))}
               </SelectContent>
             </Select>
+
+            {/* Export Button — downloads all lava_* metrics for the selected time frame as gzipped JSON */}
+            <Button
+              variant='outline'
+              size='sm'
+              onClick={handleExport}
+              disabled={isExporting}
+              title={`Export all lava_* metrics for the last ${selectedTimeFrame}`}
+              className='bg-background border-border hover:bg-accent'
+            >
+              <Download className={`h-4 w-4 mr-2 ${isExporting ? 'animate-pulse' : ''}`} />
+              {isExporting ? 'Exporting...' : 'Export'}
+            </Button>
 
             {/* Refresh Button */}
             <Button
