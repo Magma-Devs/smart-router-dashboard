@@ -110,6 +110,11 @@ interface LiveTestResult {
   }>;
 }
 
+function formatAuthHeader(token: string): string {
+  const trimmed = token.trim();
+  return trimmed ? `Bearer ${trimmed}` : '';
+}
+
 function AuthorizationHeaderInput({
   id,
   value,
@@ -126,14 +131,15 @@ function AuthorizationHeaderInput({
       </Label>
       <Input
         id={id}
-        type='password'
-        placeholder='Bearer eyJhbGci...'
+        type='text'
+        placeholder='eyJhbGci...'
         value={value}
         onChange={e => onChange(e.target.value)}
         className='text-sm font-mono'
       />
       <p className='text-xs text-muted-foreground'>
-        Required when the endpoint is protected by API key authentication.
+        Paste only the token &mdash; <span className='font-medium'>Bearer</span> is added
+        automatically. Required when the endpoint is protected by API key authentication.
       </p>
     </div>
   );
@@ -615,7 +621,7 @@ export default function LiveTestPage() {
         validRequests,
         skipCache,
         batchAddonType,
-        authorizationHeader || undefined,
+        formatAuthHeader(authorizationHeader) || undefined,
       );
       setBatchCurlCommand(curl);
     } else {
@@ -816,9 +822,8 @@ export default function LiveTestPage() {
           ? `-H "lava-extension: ${selectedRequestType}"`
           : '';
 
-      const authHeader = authorizationHeader
-        ? `-H "Authorization: ${authorizationHeader}"`
-        : '';
+      const formattedAuth = formatAuthHeader(authorizationHeader);
+      const authHeader = formattedAuth ? `-H "Authorization: ${formattedAuth}"` : '';
 
       const allHeaders = [headers, extensionHeader, authHeader].filter(Boolean).join(' ');
 
@@ -914,9 +919,8 @@ export default function LiveTestPage() {
         `-H "lava-cross-validation-agreement-threshold: ${crossValidationAgreementThreshold}"`,
       ].join(' ');
 
-      const authHeader = authorizationHeader
-        ? `-H "Authorization: ${authorizationHeader}"`
-        : '';
+      const formattedAuth = formatAuthHeader(authorizationHeader);
+      const authHeader = formattedAuth ? `-H "Authorization: ${formattedAuth}"` : '';
 
       const allHeaders = [headers, extensionHeader, crossValidationHeaders, authHeader]
         .filter(Boolean)
@@ -1079,7 +1083,7 @@ export default function LiveTestPage() {
           port,
           skipCache,
           requestType: selectedRequestType,
-          authorizationHeader: authorizationHeader || undefined,
+          authorizationHeader: formatAuthHeader(authorizationHeader) || undefined,
           ...caps,
         },
         numberOfRequests,
@@ -1191,7 +1195,7 @@ export default function LiveTestPage() {
         requestType: selectedRequestType,
         crossValidationMaxParticipants,
         crossValidationAgreementThreshold,
-        authorizationHeader: authorizationHeader || undefined,
+        authorizationHeader: formatAuthHeader(authorizationHeader) || undefined,
         ...caps,
       });
 
@@ -1335,7 +1339,7 @@ export default function LiveTestPage() {
         port,
         skipCache,
         requestType: selectedRequestType,
-        authorizationHeader: authorizationHeader || undefined,
+        authorizationHeader: formatAuthHeader(authorizationHeader) || undefined,
         ...caps,
       });
 
@@ -1434,7 +1438,7 @@ export default function LiveTestPage() {
             port,
             skipCache,
             addonType: batchAddonType,
-            authorizationHeader: authorizationHeader || undefined,
+            authorizationHeader: formatAuthHeader(authorizationHeader) || undefined,
           },
           validRequests,
         );
@@ -1464,7 +1468,7 @@ export default function LiveTestPage() {
             port,
             skipCache,
             addonType: batchAddonType,
-            authorizationHeader: authorizationHeader || undefined,
+            authorizationHeader: formatAuthHeader(authorizationHeader) || undefined,
           },
           validRequests,
           numberOfBatches,
