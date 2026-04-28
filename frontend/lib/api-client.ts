@@ -63,6 +63,10 @@ class ApiClient {
         throw new Error(errorMessage);
       }
 
+      if (response.status === 204) {
+        return undefined as T;
+      }
+
       return await response.json();
     } catch (error) {
       console.error('API request failed:', error);
