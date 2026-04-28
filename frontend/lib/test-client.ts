@@ -22,6 +22,7 @@ export interface TestRequestOptions {
    * WebSocket payloads are delivered as a single message, so this is a char cap.
    */
   maxResponseChars?: number;
+  authorizationHeader?: string;
 }
 
 export interface TestResponse {
@@ -273,6 +274,7 @@ export async function makeTestRequest(options: TestRequestOptions): Promise<Test
     crossValidationAgreementThreshold,
     maxResponseBytes,
     maxResponseChars,
+    authorizationHeader,
   } = options;
 
   const startTime = performance.now();
@@ -371,6 +373,10 @@ export async function makeTestRequest(options: TestRequestOptions): Promise<Test
     if (crossValidationAgreementThreshold !== undefined) {
       headers['lava-cross-validation-agreement-threshold'] =
         crossValidationAgreementThreshold.toString();
+    }
+
+    if (authorizationHeader) {
+      headers['Authorization'] = authorizationHeader;
     }
 
     // Make the request
@@ -606,6 +612,7 @@ export interface BatchRequestOptions {
   skipCache?: boolean;
   maxResponseBytes?: number;
   addonType?: 'none' | 'archive' | 'debug' | 'trace';
+  authorizationHeader?: string;
 }
 
 export interface BatchResponseItem {
@@ -644,6 +651,7 @@ export async function makeBatchRequest(
     skipCache = false,
     maxResponseBytes,
     addonType = 'none',
+    authorizationHeader,
   } = options;
 
   const startTime = performance.now();
@@ -678,6 +686,10 @@ export async function makeBatchRequest(
     // Add lava-extension header for addon types
     if (addonType && addonType !== 'none') {
       headers['lava-extension'] = addonType;
+    }
+
+    if (authorizationHeader) {
+      headers['Authorization'] = authorizationHeader;
     }
 
     const response = await fetch(url, {
@@ -921,6 +933,7 @@ export function generateBatchCurlCommand(
   requests: BatchRequestItem[],
   skipCache: boolean = false,
   addonType: 'none' | 'archive' | 'debug' | 'trace' = 'none',
+  authorizationHeader?: string,
 ): string {
   const chainIdLower = chainId.toLowerCase();
   const curlHost = `${chainIdLower}-jsonrpc.${domain}`;
@@ -939,6 +952,9 @@ export function generateBatchCurlCommand(
   }
   if (addonType && addonType !== 'none') {
     headerParts.push(`-H "lava-extension: ${addonType}"`);
+  }
+  if (authorizationHeader) {
+    headerParts.push(`-H "Authorization: ${authorizationHeader}"`);
   }
   const headers = headerParts.length > 0 ? headerParts.join(' ') + ' ' : '';
 

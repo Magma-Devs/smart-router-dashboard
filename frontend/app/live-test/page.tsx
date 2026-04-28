@@ -110,6 +110,41 @@ interface LiveTestResult {
   }>;
 }
 
+function formatAuthHeader(token: string): string {
+  const trimmed = token.trim();
+  return trimmed ? `Bearer ${trimmed}` : '';
+}
+
+function AuthorizationHeaderInput({
+  id,
+  value,
+  onChange,
+}: {
+  id: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className='flex flex-col gap-2'>
+      <Label htmlFor={id} className='text-sm font-medium'>
+        Authorization Header (optional)
+      </Label>
+      <Input
+        id={id}
+        type='text'
+        placeholder='eyJhbGci...'
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        className='text-sm font-mono'
+      />
+      <p className='text-xs text-muted-foreground'>
+        Paste only the token &mdash; <span className='font-medium'>Bearer</span> is added
+        automatically. Required when the endpoint is protected by API key authentication.
+      </p>
+    </div>
+  );
+}
+
 export default function LiveTestPage() {
   const { config } = useConfig();
   const { isAuthenticated, loading: authLoading } = useAuth();
@@ -156,6 +191,15 @@ export default function LiveTestPage() {
   const [copiedSummary, setCopiedSummary] = useState(false);
   const [responseFilter, setResponseFilter] = useState<'successful' | 'failed'>('successful');
   const [skipCache, setSkipCache] = useState<boolean>(false);
+  const [authorizationHeader, setAuthorizationHeader] = useState<string>(() => {
+    if (typeof window === 'undefined') return '';
+    return localStorage.getItem('live-test-auth-header') || '';
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem('live-test-auth-header', authorizationHeader);
+  }, [authorizationHeader]);
   const [isDistributionOpen, setIsDistributionOpen] = useState(false);
   const [singleTestHeaders, setSingleTestHeaders] = useState<Record<string, string> | null>(null);
   const [singleHeadersExpanded, setSingleHeadersExpanded] = useState<boolean>(false);
@@ -577,6 +621,7 @@ export default function LiveTestPage() {
         validRequests,
         skipCache,
         batchAddonType,
+        formatAuthHeader(authorizationHeader) || undefined,
       );
       setBatchCurlCommand(curl);
     } else {
@@ -590,6 +635,7 @@ export default function LiveTestPage() {
     batchRequests,
     skipCache,
     batchAddonType,
+    authorizationHeader,
   ]);
 
   useEffect(() => {
@@ -776,7 +822,10 @@ export default function LiveTestPage() {
           ? `-H "lava-extension: ${selectedRequestType}"`
           : '';
 
-      const allHeaders = [headers, extensionHeader].filter(Boolean).join(' ');
+      const formattedAuth = formatAuthHeader(authorizationHeader);
+      const authHeader = formattedAuth ? `-H "Authorization: ${formattedAuth}"` : '';
+
+      const allHeaders = [headers, extensionHeader, authHeader].filter(Boolean).join(' ');
 
       let cmd: string;
       if (selectedInterface.includes('/wss')) {
@@ -813,6 +862,7 @@ export default function LiveTestPage() {
     config.endpointDomain,
     config.endpointPort,
     skipCache,
+    authorizationHeader,
     apiData,
   ]);
 
@@ -869,7 +919,10 @@ export default function LiveTestPage() {
         `-H "lava-cross-validation-agreement-threshold: ${crossValidationAgreementThreshold}"`,
       ].join(' ');
 
-      const allHeaders = [headers, extensionHeader, crossValidationHeaders]
+      const formattedAuth = formatAuthHeader(authorizationHeader);
+      const authHeader = formattedAuth ? `-H "Authorization: ${formattedAuth}"` : '';
+
+      const allHeaders = [headers, extensionHeader, crossValidationHeaders, authHeader]
         .filter(Boolean)
         .join(' ');
 
@@ -912,6 +965,7 @@ export default function LiveTestPage() {
     crossValidationAgreementThreshold,
     config.endpointDomain,
     config.endpointPort,
+    authorizationHeader,
   ]);
 
   const handleLoadTest = async () => {
@@ -1029,6 +1083,7 @@ export default function LiveTestPage() {
           port,
           skipCache,
           requestType: selectedRequestType,
+          authorizationHeader: formatAuthHeader(authorizationHeader) || undefined,
           ...caps,
         },
         numberOfRequests,
@@ -1140,6 +1195,7 @@ export default function LiveTestPage() {
         requestType: selectedRequestType,
         crossValidationMaxParticipants,
         crossValidationAgreementThreshold,
+        authorizationHeader: formatAuthHeader(authorizationHeader) || undefined,
         ...caps,
       });
 
@@ -1283,6 +1339,7 @@ export default function LiveTestPage() {
         port,
         skipCache,
         requestType: selectedRequestType,
+        authorizationHeader: formatAuthHeader(authorizationHeader) || undefined,
         ...caps,
       });
 
@@ -1381,6 +1438,7 @@ export default function LiveTestPage() {
             port,
             skipCache,
             addonType: batchAddonType,
+            authorizationHeader: formatAuthHeader(authorizationHeader) || undefined,
           },
           validRequests,
         );
@@ -1410,6 +1468,7 @@ export default function LiveTestPage() {
             port,
             skipCache,
             addonType: batchAddonType,
+            authorizationHeader: formatAuthHeader(authorizationHeader) || undefined,
           },
           validRequests,
           numberOfBatches,
@@ -1717,6 +1776,12 @@ export default function LiveTestPage() {
                             </Label>
                           </div>
                         </div>
+
+                        <AuthorizationHeaderInput
+                          id='auth-header-single'
+                          value={authorizationHeader}
+                          onChange={setAuthorizationHeader}
+                        />
 
                         {/* Request Type Selection */}
                         {selectedRouter &&
@@ -2212,6 +2277,12 @@ export default function LiveTestPage() {
                             </Label>
                           </div>
                         </div>
+
+                        <AuthorizationHeaderInput
+                          id='auth-header-load'
+                          value={authorizationHeader}
+                          onChange={setAuthorizationHeader}
+                        />
 
                         {/* Request Type Selection */}
                         {selectedRouter &&
@@ -2899,6 +2970,12 @@ export default function LiveTestPage() {
                               Skip Cache
                             </Label>
                           </div>
+
+                          <AuthorizationHeaderInput
+                            id='auth-header-batch'
+                            value={authorizationHeader}
+                            onChange={setAuthorizationHeader}
+                          />
                         </>
                       )}
                     </CardContent>
@@ -3619,6 +3696,12 @@ export default function LiveTestPage() {
                             </Label>
                           </div>
                         </div>
+
+                        <AuthorizationHeaderInput
+                          id='auth-header-cross'
+                          value={authorizationHeader}
+                          onChange={setAuthorizationHeader}
+                        />
                       </>
                     )}
                   </CardContent>
