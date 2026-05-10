@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "A dashboard for monitoring Smart Router infrastructure health and uptime",
+  "packageManager": "pnpm@10.8.0",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
