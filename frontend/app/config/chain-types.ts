@@ -776,7 +776,7 @@ export const chainTypes: ChainType[] = [
     },
   },
   {
-    value: 'polkadot-ah',
+    value: 'polkadotassethub',
     label: 'Polkadot Asset Hub',
     interfaces: {
       jsonrpc: {

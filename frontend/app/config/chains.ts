@@ -412,17 +412,17 @@ export const chains: Chain[] = [
     hasWss: true,
   },
   {
-    value: 'polkadotah',
+    value: 'polkadotassethub',
     label: 'Polkadot Asset Hub Mainnet',
     icon: 'https://info-mainnet.lavanet.xyz/icons/polkadot.svg',
-    type: 'polkadot-ah',
+    type: 'polkadotassethub',
     supportedInterfaces: ['jsonrpc'],
   },
   {
-    value: 'polkadotaht',
+    value: 'polkadotassethubt',
     label: 'Polkadot Asset Hub Westend Testnet',
     icon: 'https://info-mainnet.lavanet.xyz/icons/polkadot.svg',
-    type: 'polkadot-ah',
+    type: 'polkadotassethub',
     supportedInterfaces: ['jsonrpc'],
   },
   {
