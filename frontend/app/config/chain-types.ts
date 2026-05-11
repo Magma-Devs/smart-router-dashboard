@@ -534,11 +534,32 @@ export const chainTypes: ChainType[] = [
     value: 'xrp',
     label: 'XRP',
     interfaces: {
-      rest: {
-        regular: [{ method: 'server_info', label: 'Server Info', params: '[]' }],
-        archive: null,
+      jsonrpc: {
+        regular: [
+          { method: 'server_info', label: 'Server Info', params: '[]' },
+          { method: 'server_state', label: 'Server State', params: '[]' },
+          { method: 'fee', label: 'Fee', params: '[]' },
+          { method: 'ledger_current', label: 'Ledger Current', params: '[]' },
+          { method: 'ledger_closed', label: 'Ledger Closed', params: '[]' },
+        ],
+        archive: [
+          {
+            method: 'ledger',
+            label: 'Ledger (Archive)',
+            params: '[{"ledger_index":1000000,"transactions":false,"expand":false}]',
+          },
+        ],
         debug: null,
         trace: null,
+        batch: {
+          regular: [
+            { method: 'server_info', label: 'Server Info', defaultParams: '[]' },
+            { method: 'server_state', label: 'Server State', defaultParams: '[]' },
+            { method: 'fee', label: 'Fee', defaultParams: '[]' },
+            { method: 'ledger_current', label: 'Ledger Current', defaultParams: '[]' },
+            { method: 'ledger_closed', label: 'Ledger Closed', defaultParams: '[]' },
+          ],
+        },
       },
     },
   },
@@ -641,6 +662,225 @@ export const chainTypes: ChainType[] = [
         ],
         debug: null,
         trace: null,
+      },
+    },
+  },
+  {
+    value: 'cardano',
+    label: 'Cardano',
+    interfaces: {
+      rest: {
+        regular: [
+          { method: 'GET', label: 'Latest Block', params: '/blocks/latest' },
+          { method: 'GET', label: 'Latest Epoch', params: '/epochs/latest' },
+          { method: 'GET', label: 'Network Info', params: '/network' },
+          { method: 'GET', label: 'Pools', params: '/pools' },
+        ],
+        archive: [{ method: 'GET', label: 'Block By Number (Archive)', params: '/blocks/1000000' }],
+        debug: null,
+        trace: null,
+        batch: {
+          regular: [
+            { method: 'GET', label: 'Latest Block', defaultParams: '/blocks/latest' },
+            { method: 'GET', label: 'Latest Epoch', defaultParams: '/epochs/latest' },
+            { method: 'GET', label: 'Network Info', defaultParams: '/network' },
+            { method: 'GET', label: 'Pools', defaultParams: '/pools' },
+          ],
+        },
+      },
+    },
+  },
+  {
+    value: 'avalanche-p',
+    label: 'Avalanche P-Chain',
+    interfaces: {
+      jsonrpc: {
+        regular: [
+          { method: 'platform.getHeight', label: 'Get Height', params: '[]' },
+          { method: 'platform.getBlockchainStatus', label: 'Blockchain Status', params: '[]' },
+          { method: 'platform.getCurrentSupply', label: 'Current Supply', params: '[]' },
+          { method: 'platform.getCurrentValidators', label: 'Current Validators', params: '[]' },
+          { method: 'platform.getMinStake', label: 'Min Stake', params: '[]' },
+          { method: 'platform.getTimestamp', label: 'Timestamp', params: '[]' },
+        ],
+        archive: [
+          {
+            method: 'platform.getBlockByHeight',
+            label: 'Get Block By Height (Archive)',
+            params: '{"height":"1000000"}',
+          },
+        ],
+        debug: null,
+        trace: null,
+        batch: {
+          regular: [
+            { method: 'platform.getHeight', label: 'Get Height', defaultParams: '[]' },
+            {
+              method: 'platform.getBlockchainStatus',
+              label: 'Blockchain Status',
+              defaultParams: '[]',
+            },
+            { method: 'platform.getCurrentSupply', label: 'Current Supply', defaultParams: '[]' },
+            { method: 'platform.getMinStake', label: 'Min Stake', defaultParams: '[]' },
+            { method: 'platform.getTimestamp', label: 'Timestamp', defaultParams: '[]' },
+          ],
+        },
+      },
+    },
+  },
+  {
+    value: 'iota',
+    label: 'IOTA',
+    interfaces: {
+      jsonrpc: {
+        regular: [
+          { method: 'iota_getChainIdentifier', label: 'Chain Identifier', params: '[]' },
+          { method: 'iota_getProtocolConfig', label: 'Protocol Config', params: '[]' },
+          {
+            method: 'iota_getLatestCheckpointSequenceNumber',
+            label: 'Latest Checkpoint',
+            params: '[]',
+          },
+          {
+            method: 'iota_getTotalTransactionBlocks',
+            label: 'Total Transaction Blocks',
+            params: '[]',
+          },
+        ],
+        archive: [
+          {
+            method: 'iota_getCheckpoint',
+            label: 'Get Checkpoint (Archive)',
+            params: '["1000000"]',
+          },
+        ],
+        debug: null,
+        trace: null,
+        batch: {
+          regular: [
+            { method: 'iota_getChainIdentifier', label: 'Chain Identifier', defaultParams: '[]' },
+            { method: 'iota_getProtocolConfig', label: 'Protocol Config', defaultParams: '[]' },
+            {
+              method: 'iota_getLatestCheckpointSequenceNumber',
+              label: 'Latest Checkpoint',
+              defaultParams: '[]',
+            },
+            {
+              method: 'iota_getTotalTransactionBlocks',
+              label: 'Total Transaction Blocks',
+              defaultParams: '[]',
+            },
+          ],
+        },
+      },
+    },
+  },
+  {
+    value: 'polkadot-ah',
+    label: 'Polkadot Asset Hub',
+    interfaces: {
+      jsonrpc: {
+        regular: [
+          { method: 'chain_getFinalizedHead', label: 'Finalized Head', params: '[]' },
+          { method: 'chain_getHead', label: 'Head', params: '[]' },
+          { method: 'chain_getHeader', label: 'Header', params: '[]' },
+          { method: 'chain_getRuntimeVersion', label: 'Runtime Version', params: '[]' },
+          { method: 'chainSpec_v1_chainName', label: 'Chain Name', params: '[]' },
+          { method: 'chainSpec_v1_genesisHash', label: 'Genesis Hash', params: '[]' },
+          { method: 'system_chain', label: 'System Chain', params: '[]' },
+          { method: 'system_health', label: 'System Health', params: '[]' },
+          { method: 'system_version', label: 'System Version', params: '[]' },
+        ],
+        archive: [
+          { method: 'chain_getBlockHash', label: 'Block Hash (Archive)', params: '[1000000]' },
+        ],
+        debug: null,
+        trace: null,
+        batch: {
+          regular: [
+            { method: 'chain_getFinalizedHead', label: 'Finalized Head', defaultParams: '[]' },
+            { method: 'chain_getHead', label: 'Head', defaultParams: '[]' },
+            { method: 'chain_getHeader', label: 'Header', defaultParams: '[]' },
+            { method: 'chain_getRuntimeVersion', label: 'Runtime Version', defaultParams: '[]' },
+            { method: 'system_chain', label: 'System Chain', defaultParams: '[]' },
+            { method: 'system_health', label: 'System Health', defaultParams: '[]' },
+            { method: 'system_version', label: 'System Version', defaultParams: '[]' },
+          ],
+        },
+      },
+    },
+  },
+  {
+    value: 'casper',
+    label: 'Casper',
+    interfaces: {
+      jsonrpc: {
+        regular: [
+          { method: 'info_get_status', label: 'Get Status', params: '[]' },
+          { method: 'info_get_peers', label: 'Get Peers', params: '[]' },
+          { method: 'info_get_chainspec', label: 'Get Chainspec', params: '[]' },
+          { method: 'chain_get_state_root_hash', label: 'State Root Hash', params: '[]' },
+        ],
+        archive: [
+          {
+            method: 'chain_get_block',
+            label: 'Get Block (Archive)',
+            params: '{"block_identifier":{"Height":1000000}}',
+          },
+        ],
+        debug: null,
+        trace: null,
+        batch: {
+          regular: [
+            { method: 'info_get_status', label: 'Get Status', defaultParams: '[]' },
+            { method: 'info_get_peers', label: 'Get Peers', defaultParams: '[]' },
+            { method: 'info_get_chainspec', label: 'Get Chainspec', defaultParams: '[]' },
+            {
+              method: 'chain_get_state_root_hash',
+              label: 'State Root Hash',
+              defaultParams: '[]',
+            },
+          ],
+        },
+      },
+    },
+  },
+  {
+    value: 'tezos',
+    label: 'Tezos',
+    interfaces: {
+      rest: {
+        regular: [
+          { method: 'GET', label: 'Version', params: '/version' },
+          { method: 'GET', label: 'Chain ID', params: '/chains/main/chain_id' },
+          { method: 'GET', label: 'Is Bootstrapped', params: '/chains/main/is_bootstrapped' },
+          { method: 'GET', label: 'Head Header', params: '/chains/main/blocks/head/header' },
+        ],
+        archive: [
+          {
+            method: 'GET',
+            label: 'Block Header (Archive)',
+            params: '/chains/main/blocks/1000000/header',
+          },
+        ],
+        debug: null,
+        trace: null,
+        batch: {
+          regular: [
+            { method: 'GET', label: 'Version', defaultParams: '/version' },
+            { method: 'GET', label: 'Chain ID', defaultParams: '/chains/main/chain_id' },
+            {
+              method: 'GET',
+              label: 'Is Bootstrapped',
+              defaultParams: '/chains/main/is_bootstrapped',
+            },
+            {
+              method: 'GET',
+              label: 'Head Header',
+              defaultParams: '/chains/main/blocks/head/header',
+            },
+          ],
+        },
       },
     },
   },
