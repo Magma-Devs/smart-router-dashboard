@@ -49,7 +49,7 @@ export const chains: Chain[] = [
     hasWss: true,
   },
   {
-    value: 'avaxc',
+    value: 'avalanchec',
     label: 'Avalanche C-Chain Mainnet',
     icon: 'https://info-mainnet.lavanet.xyz/icons/avalanche.svg',
     type: 'evm',
@@ -57,7 +57,7 @@ export const chains: Chain[] = [
     hasWss: true,
   },
   {
-    value: 'avaxct',
+    value: 'avalanchect',
     label: 'Avalanche C-Chain Testnet',
     icon: 'https://info-mainnet.lavanet.xyz/icons/avalanche.svg',
     type: 'evm',
@@ -65,17 +65,17 @@ export const chains: Chain[] = [
     hasWss: true,
   },
   {
-    value: 'avaxp',
+    value: 'avalanchep',
     label: 'Avalanche P-Chain Mainnet',
     icon: 'https://info-mainnet.lavanet.xyz/icons/avalanche.svg',
-    type: 'avalanche-p',
+    type: 'avalanchep',
     supportedInterfaces: ['jsonrpc'],
   },
   {
-    value: 'avaxpt',
+    value: 'avalanchept',
     label: 'Avalanche P-Chain Testnet',
     icon: 'https://info-mainnet.lavanet.xyz/icons/avalanche.svg',
-    type: 'avalanche-p',
+    type: 'avalanchep',
     supportedInterfaces: ['jsonrpc'],
   },
   {

@@ -691,7 +691,7 @@ export const chainTypes: ChainType[] = [
     },
   },
   {
-    value: 'avalanche-p',
+    value: 'avalanchep',
     label: 'Avalanche P-Chain',
     interfaces: {
       jsonrpc: {
