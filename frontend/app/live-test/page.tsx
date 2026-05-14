@@ -39,6 +39,7 @@ import {
 } from '@/app/config/chain-types';
 import { ProtectedRoute } from '@/components/protected-route';
 import { apiClient } from '@/lib/api-client';
+import { getEndpointScheme, getWebSocketScheme } from '@/lib/runtime-config';
 import { useAuth } from '@/lib/auth-context';
 import { getChainIcon, getChainLabel } from '@/app/config/chains';
 import { MetricsService } from '@/services/metricsService';
@@ -608,7 +609,8 @@ export default function LiveTestPage() {
     const port = config.endpointPort;
     const chainIdLower = selectedRouter.toLowerCase();
     const curlHost = `${chainIdLower}-jsonrpc.${domain}`;
-    const endpoint = `https://${curlHost}:${port}`;
+    const scheme = getEndpointScheme();
+    const endpoint = `${scheme}://${curlHost}:${port}`;
     setBatchEndpointUrl(endpoint);
 
     // Only generate curl if we have valid batch requests
@@ -808,10 +810,12 @@ export default function LiveTestPage() {
       const chainIdLower = selectedRouter.toLowerCase();
 
       const curlHost = `${chainIdLower}-${commandLookupInterface}.${domain}`;
-      // Use wss:// protocol with /websocket path for WebSocket connections
+      const scheme = getEndpointScheme();
+      const wsScheme = getWebSocketScheme();
+      // Use ws/wss with /websocket path for WebSocket connections
       const endpoint = selectedInterface.includes('/wss')
-        ? `wss://${curlHost}:${port}/websocket`
-        : `https://${curlHost}:${port}`;
+        ? `${wsScheme}://${curlHost}:${port}/websocket`
+        : `${scheme}://${curlHost}:${port}`;
       setEndpointUrl(endpoint);
 
       const headers = skipCache ? `-H "lava-force-cache-refresh: true"` : '';
@@ -831,12 +835,12 @@ export default function LiveTestPage() {
       if (selectedInterface.includes('/wss')) {
         // WebSocket command - build JSON-RPC from command
         const jsonRpcCommand = buildJsonRpcRequest(selectedCommand);
-        cmd = `wscat -c wss://${curlHost}:${port}/websocket -x '${jsonRpcCommand}'`;
+        cmd = `wscat -c ${wsScheme}://${curlHost}:${port}/websocket -x '${jsonRpcCommand}'`;
       } else if (selectedInterface === 'rest') {
         // REST interface - use path from command
         const restRequest = buildRestRequest(selectedCommand);
         if (restRequest.method === 'GET') {
-          cmd = `curl -X GET ${allHeaders} https://${curlHost}:${port}${restRequest.path}`;
+          cmd = `curl -X GET ${allHeaders} ${scheme}://${curlHost}:${port}${restRequest.path}`;
         } else {
           // REST POST with JSON body
           const jsonBody = JSON.stringify({
@@ -845,12 +849,12 @@ export default function LiveTestPage() {
             params: JSON.parse(selectedCommand.params),
             id: 1,
           });
-          cmd = `curl -X POST ${allHeaders} -H "Content-Type: application/json" https://${curlHost}:${port} -d '${jsonBody}'`;
+          cmd = `curl -X POST ${allHeaders} -H "Content-Type: application/json" ${scheme}://${curlHost}:${port} -d '${jsonBody}'`;
         }
       } else {
         // Other interfaces (jsonrpc, tendermintrpc, etc.) - build JSON-RPC from command
         const jsonRpcCommand = buildJsonRpcRequest(selectedCommand);
-        cmd = `curl -X POST ${allHeaders} -H "Content-Type: application/json" https://${curlHost}:${port} -d '${jsonRpcCommand}'`;
+        cmd = `curl -X POST ${allHeaders} -H "Content-Type: application/json" ${scheme}://${curlHost}:${port} -d '${jsonRpcCommand}'`;
       }
       setCurlCommand(cmd);
     }
@@ -904,6 +908,8 @@ export default function LiveTestPage() {
       const chainIdLower = selectedRouter.toLowerCase();
 
       const curlHost = `${chainIdLower}-${commandLookupInterface}.${domain}`;
+      const scheme = getEndpointScheme();
+      const wsScheme = getWebSocketScheme();
 
       const headers = skipCache ? `-H "lava-force-cache-refresh: true"` : '';
 
@@ -930,12 +936,12 @@ export default function LiveTestPage() {
       if (selectedInterface.includes('/wss')) {
         // WebSocket command - build JSON-RPC from command
         const jsonRpcCommand = buildJsonRpcRequest(selectedCommand);
-        cmd = `wscat -c wss://${curlHost}:${port}/websocket -x '${jsonRpcCommand}'`;
+        cmd = `wscat -c ${wsScheme}://${curlHost}:${port}/websocket -x '${jsonRpcCommand}'`;
       } else if (selectedInterface === 'rest') {
         // REST interface - use path from command
         const restRequest = buildRestRequest(selectedCommand);
         if (restRequest.method === 'GET') {
-          cmd = `curl -X GET ${allHeaders} https://${curlHost}:${port}${restRequest.path}`;
+          cmd = `curl -X GET ${allHeaders} ${scheme}://${curlHost}:${port}${restRequest.path}`;
         } else {
           // REST POST with JSON body
           const jsonBody = JSON.stringify({
@@ -944,12 +950,12 @@ export default function LiveTestPage() {
             params: JSON.parse(selectedCommand.params),
             id: 1,
           });
-          cmd = `curl -X POST ${allHeaders} -H "Content-Type: application/json" https://${curlHost}:${port} -d '${jsonBody}'`;
+          cmd = `curl -X POST ${allHeaders} -H "Content-Type: application/json" ${scheme}://${curlHost}:${port} -d '${jsonBody}'`;
         }
       } else {
         // Other interfaces (jsonrpc, tendermintrpc, etc.) - build JSON-RPC from command
         const jsonRpcCommand = buildJsonRpcRequest(selectedCommand);
-        cmd = `curl -X POST ${allHeaders} -H "Content-Type: application/json" https://${curlHost}:${port} -d '${jsonRpcCommand}'`;
+        cmd = `curl -X POST ${allHeaders} -H "Content-Type: application/json" ${scheme}://${curlHost}:${port} -d '${jsonRpcCommand}'`;
       }
       setCrossValidationCurlCommand(cmd);
     }
