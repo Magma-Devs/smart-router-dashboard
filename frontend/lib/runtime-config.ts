@@ -12,6 +12,7 @@ export interface RuntimeConfig {
   NEXT_PUBLIC_DOMAIN: string;
   NEXT_PUBLIC_PORT: string;
   NEXT_PUBLIC_PROMETHEUS_URL: string;
+  NEXT_PUBLIC_USE_TLS: string;
 }
 
 let cachedConfig: RuntimeConfig | null = null;
@@ -47,6 +48,7 @@ async function fetchRuntimeConfig(): Promise<RuntimeConfig> {
         NEXT_PUBLIC_PORT: process.env.NEXT_PUBLIC_PORT || '3000',
         NEXT_PUBLIC_PROMETHEUS_URL:
           process.env.NEXT_PUBLIC_PROMETHEUS_URL || 'http://localhost:9090',
+        NEXT_PUBLIC_USE_TLS: process.env.NEXT_PUBLIC_USE_TLS || 'true',
       };
       return fallbackConfig;
     } finally {
@@ -73,6 +75,7 @@ export async function getRuntimeConfig(): Promise<RuntimeConfig> {
       NEXT_PUBLIC_DOMAIN: process.env.NEXT_PUBLIC_DOMAIN || 'localhost',
       NEXT_PUBLIC_PORT: process.env.NEXT_PUBLIC_PORT || '3000',
       NEXT_PUBLIC_PROMETHEUS_URL: process.env.NEXT_PUBLIC_PROMETHEUS_URL || 'http://localhost:9090',
+      NEXT_PUBLIC_USE_TLS: process.env.NEXT_PUBLIC_USE_TLS || 'true',
     };
   }
 
@@ -134,4 +137,24 @@ export function getPrometheusUrl(): string {
     return cachedConfig.NEXT_PUBLIC_PROMETHEUS_URL;
   }
   return process.env.NEXT_PUBLIC_PROMETHEUS_URL || 'http://localhost:9090';
+}
+
+/**
+ * Gets the scheme ('http' | 'https') from runtime config.
+ * Defaults to https.
+ */
+export function getEndpointScheme(): 'http' | 'https' {
+  const useTls =
+    typeof window !== 'undefined' && cachedConfig
+      ? cachedConfig.NEXT_PUBLIC_USE_TLS
+      : process.env.NEXT_PUBLIC_USE_TLS;
+  return useTls === 'false' ? 'http' : 'https';
+}
+
+/**
+ * Gets the WebSocket scheme ('ws' | 'wss')
+ * when TLS is on, `ws` when off. Same `NEXT_PUBLIC_USE_TLS` switch.
+ */
+export function getWebSocketScheme(): 'ws' | 'wss' {
+  return getEndpointScheme() === 'https' ? 'wss' : 'ws';
 }

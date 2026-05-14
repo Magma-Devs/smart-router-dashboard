@@ -2,6 +2,8 @@
  * Frontend HTTP client for making direct requests to provider endpoints
  */
 
+import { getEndpointScheme, getWebSocketScheme } from '@/lib/runtime-config';
+
 export interface TestRequestOptions {
   chainId: string;
   interface: string;
@@ -290,7 +292,8 @@ export async function makeTestRequest(options: TestRequestOptions): Promise<Test
     // Determine the base interface type for URL construction
     const baseInterface = interfaceType.includes('jsonrpc') ? 'jsonrpc' : 'tendermintrpc';
     const curlHost = `${chainIdLower}-${baseInterface}.${domain}`;
-    const wsUrl = `wss://${curlHost}:${port}/websocket`;
+    const wsScheme = getWebSocketScheme();
+    const wsUrl = `${wsScheme}://${curlHost}:${port}/websocket`;
 
     try {
       return await makeWebSocketRequest(
@@ -316,7 +319,8 @@ export async function makeTestRequest(options: TestRequestOptions): Promise<Test
 
   // Build the URL (moved outside try block for error handling)
   const curlHost = `${chainIdLower}-${interfaceType}.${domain}`;
-  let url = `https://${curlHost}:${port}`;
+  const scheme = getEndpointScheme();
+  let url = `${scheme}://${curlHost}:${port}`;
 
   // Initialize with defaults (network error state)
   let statusCode = 0;
@@ -657,7 +661,8 @@ export async function makeBatchRequest(
   const startTime = performance.now();
   const chainIdLower = chainId.toLowerCase();
   const curlHost = `${chainIdLower}-jsonrpc.${domain}`;
-  const url = `https://${curlHost}:${port}`;
+  const scheme = getEndpointScheme();
+  const url = `${scheme}://${curlHost}:${port}`;
 
   // Build batch request payload
   const batchPayload = requests.map(req => ({
@@ -937,7 +942,8 @@ export function generateBatchCurlCommand(
 ): string {
   const chainIdLower = chainId.toLowerCase();
   const curlHost = `${chainIdLower}-jsonrpc.${domain}`;
-  const url = `https://${curlHost}:${port}`;
+  const scheme = getEndpointScheme();
+  const url = `${scheme}://${curlHost}:${port}`;
 
   const batchPayload = requests.map(req => ({
     jsonrpc: '2.0',

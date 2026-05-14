@@ -15,6 +15,7 @@ export async function GET() {
     NEXT_PUBLIC_DOMAIN: process.env.NEXT_PUBLIC_DOMAIN || 'localhost',
     NEXT_PUBLIC_PORT: process.env.NEXT_PUBLIC_PORT || '3000',
     NEXT_PUBLIC_PROMETHEUS_URL: process.env.NEXT_PUBLIC_PROMETHEUS_URL || 'http://localhost:9090',
+    NEXT_PUBLIC_USE_TLS: process.env.NEXT_PUBLIC_USE_TLS || 'true',
   };
 
   return NextResponse.json(config);
