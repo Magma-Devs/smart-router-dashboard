@@ -808,6 +808,28 @@ export const chainTypes: ChainType[] = [
           ],
         },
       },
+      rest: {
+        regular: [
+          { method: 'GET', label: 'Latest Block', params: '/blocks/head' },
+          { method: 'GET', label: 'Latest Block Header', params: '/blocks/head/header' },
+          { method: 'GET', label: 'Node Version', params: '/node/version' },
+          { method: 'GET', label: 'Node Network', params: '/node/network' },
+          { method: 'GET', label: 'Runtime Spec', params: '/runtime/spec' },
+        ],
+        archive: [
+          { method: 'GET', label: 'Block By Number (Archive)', params: '/blocks/1000000' },
+        ],
+        debug: null,
+        trace: null,
+        batch: {
+          regular: [
+            { method: 'GET', label: 'Latest Block', defaultParams: '/blocks/head' },
+            { method: 'GET', label: 'Latest Block Header', defaultParams: '/blocks/head/header' },
+            { method: 'GET', label: 'Node Version', defaultParams: '/node/version' },
+            { method: 'GET', label: 'Runtime Spec', defaultParams: '/runtime/spec' },
+          ],
+        },
+      },
     },
   },
   {
