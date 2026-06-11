@@ -1,11 +1,39 @@
 from enum import Enum
-from typing import Any
 
-from pydantic import BaseModel
+from pydantic import AliasChoices, AliasGenerator, BaseModel, ConfigDict
 
 from app.core.utils import (
     remove_duplicate_addons,
 )
+
+
+def _hyphen_or_underscore(field_name: str) -> AliasChoices:
+    """Accept both the snake_case field name and its kebab-case variant.
+
+    Router config is authored in two dialects: the dashboard helm values use
+    snake_case (``auth_config``, ``skip_verifications``) while the smart-router
+    ``SR_CONFIG`` — and parts of the production helm values — use kebab-case
+    (``auth-config``, ``use-tls``, ``node-urls``). Without this, kebab-case keys
+    are silently dropped (e.g. a ``auth-config: {use-tls: true}`` block parses
+    to ``None``).
+    """
+    return AliasChoices(field_name, field_name.replace("_", "-"))
+
+
+class _LenientConfig(BaseModel):
+    """Base for router-config models: tolerant of both naming dialects.
+
+    ``populate_by_name=True`` keeps the snake_case field name usable so
+    programmatically-built models (and the normalizer) still work; the
+    alias_generator additionally accepts the kebab-case form on input.
+    """
+
+    model_config = ConfigDict(
+        populate_by_name=True,
+        # Only the validation (input) alias accepts kebab-case; serialization
+        # keeps the snake_case field name so API responses are unchanged.
+        alias_generator=AliasGenerator(validation_alias=_hyphen_or_underscore),
+    )
 
 
 # Health state enums
@@ -24,7 +52,7 @@ class ChainHealth(str, Enum):
     MIXED = "mixed"
 
 
-class AuthConfig(BaseModel):
+class AuthConfig(_LenientConfig):
     auth_headers: dict[str, str] = {}
     auth_query: str | None = None
     use_tls: bool = False
@@ -34,7 +62,7 @@ class AuthConfig(BaseModel):
     allow_insecure: bool = False
 
 
-class EndpointConfig(BaseModel):
+class EndpointConfig(_LenientConfig):
     url: str
     interface: str
     addons: list[str] = []
@@ -43,7 +71,7 @@ class EndpointConfig(BaseModel):
     ip_forwarding: bool = False
 
 
-class NodeConfig(BaseModel):
+class NodeConfig(_LenientConfig):
     name: str
     endpoints: list[EndpointConfig]
     is_backup: bool = False
@@ -55,7 +83,7 @@ class NodeConfig(BaseModel):
         return [ep.url for ep in self.endpoints]
 
 
-class RouterConfig(BaseModel):
+class RouterConfig(_LenientConfig):
     id: str  # router name (user-defined)
     network: (
         str  # chain spec (e.g. eth1, base) - used as Prometheus spec label (uppercase)
