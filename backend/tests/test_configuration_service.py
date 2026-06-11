@@ -129,6 +129,102 @@ class TestConfigurationService:
         assert result[0].id == "chain1"
         assert result[0].network == "testnet"
 
+    def test_read_smart_router_sr_config_direct_rpc(self):
+        """A raw smart-router SR_CONFIG (endpoints/direct-rpc) is normalized."""
+        sr_config = {
+            "metrics-listen-address": "0.0.0.0:7779",
+            "endpoints": [
+                {"chain-id": "ETH1", "api-interface": "jsonrpc"},
+            ],
+            "direct-rpc": [
+                {
+                    "name": "eth-lava-build",
+                    "chain-id": "ETH1",
+                    "api-interface": "jsonrpc",
+                    "node-urls": [
+                        {"url": "https://eth1.lava.build"},
+                        {"url": "wss://eth1.lava.build/websocket"},
+                    ],
+                },
+                {
+                    "name": "eth-publicnode",
+                    "chain-id": "ETH1",
+                    "api-interface": "jsonrpc",
+                    "node-urls": [{"url": "https://ethereum-rpc.publicnode.com"}],
+                },
+            ],
+        }
+
+        with patch.object(self.service, "read_yaml_file", return_value=sr_config):
+            result = self.service._read_smart_router_values()
+
+        # Both providers share chain-id ETH1 -> one router, two nodes.
+        assert len(result) == 1
+        router = result[0]
+        assert router.id == "ETH1"
+        # network lowercased so network.upper() == spec label "ETH1".
+        assert router.network == "eth1"
+        assert {n.name for n in router.nodes} == {"eth-lava-build", "eth-publicnode"}
+        lava = next(n for n in router.nodes if n.name == "eth-lava-build")
+        assert lava.get_endpoint_urls() == [
+            "https://eth1.lava.build",
+            "wss://eth1.lava.build/websocket",
+        ]
+        assert lava.endpoints[0].interface == "jsonrpc"
+
+    def test_read_smart_router_sr_config_multichain(self):
+        """direct-rpc providers group into one router per chain-id."""
+        sr_config = {
+            "direct-rpc": [
+                {
+                    "name": "eth",
+                    "chain-id": "ETH1",
+                    "api-interface": "jsonrpc",
+                    "node-urls": [{"url": "https://eth1.lava.build"}],
+                },
+                {
+                    "name": "arb",
+                    "chain-id": "ARBITRUM",
+                    "api-interface": "jsonrpc",
+                    "node-urls": [{"url": "https://arbitrum.lava.build"}],
+                },
+            ],
+        }
+
+        with patch.object(self.service, "read_yaml_file", return_value=sr_config):
+            data = self.service.read_smart_router_values()
+
+        assert data is not None
+        ids = {r["id"] for r in data["routers"]}
+        assert ids == {"ETH1", "ARBITRUM"}
+
+    def test_read_smart_router_sr_config_addons_preserved(self):
+        """Per-node-url addons survive normalization onto the endpoint."""
+        sr_config = {
+            "direct-rpc": [
+                {
+                    "name": "eth-archive",
+                    "chain-id": "ETH1",
+                    "api-interface": "jsonrpc",
+                    "node-urls": [
+                        {"url": "https://eth1.lava.build", "addons": ["archive"]},
+                    ],
+                },
+            ],
+        }
+
+        with patch.object(self.service, "read_yaml_file", return_value=sr_config):
+            result = self.service._read_smart_router_values()
+
+        assert result[0].get_addons() == ["archive"]
+
+    def test_read_smart_router_unknown_shape_is_empty(self):
+        """A dict with neither routers nor direct-rpc yields no routers."""
+        with patch.object(
+            self.service, "read_yaml_file", return_value={"something": "else"}
+        ):
+            assert self.service._read_smart_router_values() == []
+
     def test_chain_config_helper_methods(self):
         """Test RouterConfig helper methods for interfaces and addons."""
         from app.core.dataclasses import EndpointConfig, NodeConfig
