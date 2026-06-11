@@ -90,6 +90,10 @@ class RouterConfig(_LenientConfig):
     )
     nodes: list[NodeConfig]
     custom_url_prefix: str | None = None
+    # Local listen port (from SR_CONFIG endpoints[].listen-address) for
+    # docker-compose runs where each chain is reached at localhost:<port>.
+    # None for helm-values deployments, which route via the gateway.
+    local_port: int | None = None
 
     def get_interfaces(self) -> list[str]:
         """Get all unique interfaces from all nodes' endpoints."""
@@ -181,6 +185,9 @@ class RouterInfo(BaseModel):
     network: str
     interfaces: list[str]
     nodes: list[ComponentNode]
+    # Local listen port for docker-compose runs (localhost:<port>); null when
+    # the deployment routes via the gateway (helm values).
+    local_port: int | None = None
 
 
 class ComponentsResponse(BaseModel):

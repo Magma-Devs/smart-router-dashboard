@@ -44,7 +44,9 @@ def _normalize_smart_router_config(raw: dict[str, Any]) -> dict[str, Any]:
        by ``chain-id`` into one router per chain. ``chain-id`` (already the
        uppercase Prometheus ``spec`` label, e.g. ``ETH1``) is lowercased into
        ``network`` so it matches the dashboard's ``network.upper() == spec``
-       correlation, and reused as the router ``id``.
+       correlation, and reused as the router ``id``. The ``endpoints`` block's
+       ``listen-address`` port is carried onto each router as ``local_port``
+       for the dashboard's local mode (localhost:<port>).
 
     Detection is by key: ``routers`` → format 1; ``direct-rpc`` → format 2.
     Anything else yields an empty topology.
@@ -57,6 +59,20 @@ def _normalize_smart_router_config(raw: dict[str, Any]) -> dict[str, Any]:
 
     if "direct-rpc" not in raw:
         return {"routers": []}
+
+    # Map chain-id -> local listen port from the `endpoints` block. In a local
+    # docker-compose run there's no gateway: each chain is reached directly at
+    # localhost:<port> (e.g. listen-address "0.0.0.0:3360" -> ETH1 on 3360),
+    # so the dashboard's local mode builds http://localhost:<port> from this.
+    local_ports: dict[str, int] = {}
+    for endpoint in raw.get("endpoints") or []:
+        chain_id = endpoint.get("chain-id")
+        listen = endpoint.get("listen-address") or endpoint.get("network-address")
+        if not chain_id or not listen:
+            continue
+        port = _port_from_listen_address(listen)
+        if port is not None:
+            local_ports.setdefault(chain_id, port)
 
     # Group direct-rpc providers by chain-id into one router each.
     routers_by_chain: dict[str, dict[str, Any]] = {}
@@ -83,11 +99,31 @@ def _normalize_smart_router_config(raw: dict[str, Any]) -> dict[str, Any]:
 
         router = routers_by_chain.setdefault(
             chain_id,
-            {"id": chain_id, "network": chain_id.lower(), "nodes": []},
+            {
+                "id": chain_id,
+                "network": chain_id.lower(),
+                "nodes": [],
+                "local_port": local_ports.get(chain_id),
+            },
         )
         router["nodes"].append(node)
 
     return {"routers": list(routers_by_chain.values())}
+
+
+def _port_from_listen_address(listen: str) -> int | None:
+    """Extract the port from a ``host:port`` listen-address string.
+
+    Accepts ``0.0.0.0:3360``, ``:3360``, ``127.0.0.1:3360``. Returns None if no
+    parseable port is present.
+    """
+    if ":" not in listen:
+        return None
+    port_str = listen.rsplit(":", 1)[1].strip()
+    try:
+        return int(port_str)
+    except ValueError:
+        return None
 
 
 class ConfigurationService:
