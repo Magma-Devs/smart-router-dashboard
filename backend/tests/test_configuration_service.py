@@ -225,6 +225,134 @@ class TestConfigurationService:
         ):
             assert self.service._read_smart_router_values() == []
 
+    def test_production_helm_values_full_shape(self):
+        """The full production helm values (multi-chain, mixed auth dialects,
+        skip_verifications) parse cleanly."""
+        helm = {
+            "base_domain": "lava.magmadevs.com",
+            "debug": {"enabled": True},
+            "routers": [
+                {
+                    "id": "eth",
+                    "network": "eth1",
+                    "nodes": [
+                        {
+                            "name": "Google1",
+                            "skip_verifications": "chain-id,pruning",
+                            "endpoints": [
+                                {
+                                    "url": "https://node.example/jsonrpc",
+                                    "interface": "jsonrpc",
+                                    "addons": ["archive", "trace", "debug"],
+                                },
+                                {
+                                    "url": "wss://node.example/ws",
+                                    "interface": "jsonrpc",
+                                },
+                            ],
+                        }
+                    ],
+                },
+                {
+                    "id": "lava-grpc",
+                    "network": "lava",
+                    "nodes": [
+                        {
+                            "name": "LavaGateway",
+                            "endpoints": [
+                                {
+                                    "url": "grpcs://host:443",
+                                    "interface": "grpc",
+                                    # kebab-case auth-config / use-tls (was
+                                    # silently dropped before alias support)
+                                    "auth-config": {"use-tls": True},
+                                }
+                            ],
+                        }
+                    ],
+                },
+                {
+                    "id": "solana",
+                    "network": "solana",
+                    "nodes": [
+                        {
+                            "name": "Tatum1",
+                            "endpoints": [
+                                {
+                                    "url": "https://solana.example",
+                                    "interface": "jsonrpc",
+                                    # snake_case auth_config / auth_headers
+                                    "auth_config": {
+                                        "auth_headers": {"x-api-key": "secret"}
+                                    },
+                                }
+                            ],
+                        }
+                    ],
+                },
+            ],
+        }
+
+        with patch.object(self.service, "read_yaml_file", return_value=helm):
+            result = self.service._read_smart_router_values()
+
+        by_id = {r.id: r for r in result}
+        assert set(by_id) == {"eth", "lava-grpc", "solana"}
+
+        # skip_verifications survives.
+        eth = by_id["eth"]
+        assert eth.nodes[0].skip_verifications == "chain-id,pruning"
+        assert eth.get_addons() == ["archive", "trace", "debug"] or set(
+            eth.get_addons()
+        ) == {"archive", "trace", "debug"}
+
+        # kebab-case auth-config / use-tls binds.
+        grpc_ep = by_id["lava-grpc"].nodes[0].endpoints[0]
+        assert grpc_ep.auth_config is not None
+        assert grpc_ep.auth_config.use_tls is True
+
+        # snake_case auth_config / auth_headers binds.
+        sol_ep = by_id["solana"].nodes[0].endpoints[0]
+        assert sol_ep.auth_config is not None
+        assert sol_ep.auth_config.auth_headers == {"x-api-key": "secret"}
+
+    def test_auth_config_both_dialects_equivalent(self):
+        """auth-config (kebab) and auth_config (snake) produce the same model."""
+        from app.core.dataclasses import EndpointConfig
+
+        kebab = EndpointConfig.model_validate(
+            {
+                "url": "grpcs://h:443",
+                "interface": "grpc",
+                "auth-config": {"use-tls": True, "allow-insecure": True},
+            }
+        )
+        snake = EndpointConfig.model_validate(
+            {
+                "url": "grpcs://h:443",
+                "interface": "grpc",
+                "auth_config": {"use_tls": True, "allow_insecure": True},
+            }
+        )
+        assert kebab.auth_config == snake.auth_config
+        assert kebab.auth_config.use_tls is True
+        assert kebab.auth_config.allow_insecure is True
+
+    def test_response_serialization_stays_snake_case(self):
+        """Alias support is input-only; serialized output keeps snake_case."""
+        from app.core.dataclasses import EndpointConfig
+
+        ep = EndpointConfig.model_validate(
+            {
+                "url": "grpcs://h:443",
+                "interface": "grpc",
+                "auth-config": {"use-tls": True},
+            }
+        )
+        dumped = ep.model_dump()
+        assert "auth_config" in dumped
+        assert dumped["auth_config"]["use_tls"] is True
+
     def test_chain_config_helper_methods(self):
         """Test RouterConfig helper methods for interfaces and addons."""
         from app.core.dataclasses import EndpointConfig, NodeConfig
