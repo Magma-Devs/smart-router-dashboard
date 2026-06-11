@@ -129,6 +129,52 @@ class TestConfigurationService:
         assert result[0].id == "chain1"
         assert result[0].network == "testnet"
 
+    def test_sr_config_local_port_from_listen_address(self):
+        """The endpoints[] listen-address port is carried onto each router."""
+        sr_config = {
+            "endpoints": [
+                {"chain-id": "ETH1", "listen-address": "0.0.0.0:3360"},
+                {"chain-id": "ARBITRUM", "listen-address": "0.0.0.0:3361"},
+            ],
+            "direct-rpc": [
+                {
+                    "chain-id": "ETH1",
+                    "api-interface": "jsonrpc",
+                    "node-urls": [{"url": "https://eth.example"}],
+                },
+                {
+                    "chain-id": "ARBITRUM",
+                    "api-interface": "jsonrpc",
+                    "node-urls": [{"url": "https://arb.example"}],
+                },
+            ],
+        }
+
+        with patch.object(self.service, "read_yaml_file", return_value=sr_config):
+            data = self.service.read_smart_router_values()
+            # Parsed RouterConfig objects carry it too (same patch context).
+            rc = {r.id: r for r in self.service._read_smart_router_values()}
+
+        by_id = {r["id"]: r for r in data["routers"]}
+        assert by_id["ETH1"]["local_port"] == 3360
+        assert by_id["ARBITRUM"]["local_port"] == 3361
+        assert rc["ETH1"].local_port == 3360
+
+    def test_sr_config_local_port_absent_when_no_endpoints(self):
+        """No endpoints block -> local_port is None (helm/gateway deployments)."""
+        sr_config = {
+            "direct-rpc": [
+                {
+                    "chain-id": "ETH1",
+                    "api-interface": "jsonrpc",
+                    "node-urls": [{"url": "https://eth.example"}],
+                }
+            ],
+        }
+        with patch.object(self.service, "read_yaml_file", return_value=sr_config):
+            result = self.service._read_smart_router_values()
+        assert result[0].local_port is None
+
     def test_read_smart_router_sr_config_direct_rpc(self):
         """A raw smart-router SR_CONFIG (endpoints/direct-rpc) is normalized."""
         sr_config = {

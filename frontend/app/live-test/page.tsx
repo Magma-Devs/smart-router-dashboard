@@ -39,7 +39,7 @@ import {
 } from '@/app/config/chain-types';
 import { ProtectedRoute } from '@/components/protected-route';
 import { apiClient } from '@/lib/api-client';
-import { getEndpointScheme, getWebSocketScheme } from '@/lib/runtime-config';
+import { buildEndpointBaseUrl } from '@/lib/runtime-config';
 import { useAuth } from '@/lib/auth-context';
 import { getChainIcon, getChainLabel } from '@/app/config/chains';
 import { MetricsService } from '@/services/metricsService';
@@ -68,6 +68,8 @@ interface ApiResponse {
     [key: string]: {
       network: string;
       interfaces: string[];
+      // Local listen port (docker-compose); null when routed via the gateway.
+      local_port?: number | null;
       nodes: Array<{
         name: string;
         endpoints: Array<{
@@ -159,6 +161,9 @@ export default function LiveTestPage() {
     if (!apiData?.routers?.[chainId]) return null;
     return apiData.routers[chainId].network;
   };
+  // Local listen port for a chain (docker-compose local mode); null otherwise.
+  const localPortFor = (chainId: string): number | null =>
+    apiData?.routers?.[chainId]?.local_port ?? null;
   const [selectedNetwork, setSelectedNetwork] = useState<string>('');
   const [selectedRouter, setSelectedRouter] = useState<string>('');
   const [selectedInterface, setSelectedInterface] = useState<string>('');
@@ -607,23 +612,28 @@ export default function LiveTestPage() {
 
     const domain = config.endpointDomain;
     const port = config.endpointPort;
-    const chainIdLower = selectedRouter.toLowerCase();
-    const curlHost = `${chainIdLower}-jsonrpc.${domain}`;
-    const scheme = getEndpointScheme();
-    const endpoint = `${scheme}://${curlHost}:${port}`;
-    setBatchEndpointUrl(endpoint);
+    const localPort = localPortFor(selectedRouter);
+    const endpoint = buildEndpointBaseUrl({
+      chainId: selectedRouter,
+      interfaceType: 'jsonrpc',
+      domain,
+      port,
+      localPort,
+    });
+    setBatchEndpointUrl(endpoint ?? '');
 
     // Only generate curl if we have valid batch requests
     const validRequests = batchRequests.filter(r => r.method.trim() !== '');
     if (validRequests.length > 0) {
       const curl = generateBatchCurlCommand(
-        chainIdLower,
+        selectedRouter,
         domain,
         port,
         validRequests,
         skipCache,
         batchAddonType,
         formatAuthHeader(authorizationHeader) || undefined,
+        localPort,
       );
       setBatchCurlCommand(curl);
     } else {
@@ -807,15 +817,18 @@ export default function LiveTestPage() {
 
       const domain = config.endpointDomain;
       const port = config.endpointPort;
-      const chainIdLower = selectedRouter.toLowerCase();
-
-      const curlHost = `${chainIdLower}-${commandLookupInterface}.${domain}`;
-      const scheme = getEndpointScheme();
-      const wsScheme = getWebSocketScheme();
+      const localPort = localPortFor(selectedRouter);
+      const builderArgs = {
+        chainId: selectedRouter,
+        interfaceType: commandLookupInterface,
+        domain,
+        port,
+        localPort,
+      };
+      const httpBase = buildEndpointBaseUrl(builderArgs) ?? '';
+      const wsBase = buildEndpointBaseUrl({ ...builderArgs, ws: true }) ?? '';
       // Use ws/wss with /websocket path for WebSocket connections
-      const endpoint = selectedInterface.includes('/wss')
-        ? `${wsScheme}://${curlHost}:${port}/websocket`
-        : `${scheme}://${curlHost}:${port}`;
+      const endpoint = selectedInterface.includes('/wss') ? `${wsBase}/websocket` : httpBase;
       setEndpointUrl(endpoint);
 
       const headers = skipCache ? `-H "lava-force-cache-refresh: true"` : '';
@@ -835,12 +848,12 @@ export default function LiveTestPage() {
       if (selectedInterface.includes('/wss')) {
         // WebSocket command - build JSON-RPC from command
         const jsonRpcCommand = buildJsonRpcRequest(selectedCommand);
-        cmd = `wscat -c ${wsScheme}://${curlHost}:${port}/websocket -x '${jsonRpcCommand}'`;
+        cmd = `wscat -c ${wsBase}/websocket -x '${jsonRpcCommand}'`;
       } else if (selectedInterface === 'rest') {
         // REST interface - use path from command
         const restRequest = buildRestRequest(selectedCommand);
         if (restRequest.method === 'GET') {
-          cmd = `curl -X GET ${allHeaders} ${scheme}://${curlHost}:${port}${restRequest.path}`;
+          cmd = `curl -X GET ${allHeaders} ${httpBase}${restRequest.path}`;
         } else {
           // REST POST with JSON body
           const jsonBody = JSON.stringify({
@@ -849,12 +862,12 @@ export default function LiveTestPage() {
             params: JSON.parse(selectedCommand.params),
             id: 1,
           });
-          cmd = `curl -X POST ${allHeaders} -H "Content-Type: application/json" ${scheme}://${curlHost}:${port} -d '${jsonBody}'`;
+          cmd = `curl -X POST ${allHeaders} -H "Content-Type: application/json" ${httpBase} -d '${jsonBody}'`;
         }
       } else {
         // Other interfaces (jsonrpc, tendermintrpc, etc.) - build JSON-RPC from command
         const jsonRpcCommand = buildJsonRpcRequest(selectedCommand);
-        cmd = `curl -X POST ${allHeaders} -H "Content-Type: application/json" ${scheme}://${curlHost}:${port} -d '${jsonRpcCommand}'`;
+        cmd = `curl -X POST ${allHeaders} -H "Content-Type: application/json" ${httpBase} -d '${jsonRpcCommand}'`;
       }
       setCurlCommand(cmd);
     }
@@ -905,11 +918,16 @@ export default function LiveTestPage() {
 
       const domain = config.endpointDomain;
       const port = config.endpointPort;
-      const chainIdLower = selectedRouter.toLowerCase();
-
-      const curlHost = `${chainIdLower}-${commandLookupInterface}.${domain}`;
-      const scheme = getEndpointScheme();
-      const wsScheme = getWebSocketScheme();
+      const localPort = localPortFor(selectedRouter);
+      const builderArgs = {
+        chainId: selectedRouter,
+        interfaceType: commandLookupInterface,
+        domain,
+        port,
+        localPort,
+      };
+      const httpBase = buildEndpointBaseUrl(builderArgs) ?? '';
+      const wsBase = buildEndpointBaseUrl({ ...builderArgs, ws: true }) ?? '';
 
       const headers = skipCache ? `-H "lava-force-cache-refresh: true"` : '';
 
@@ -936,12 +954,12 @@ export default function LiveTestPage() {
       if (selectedInterface.includes('/wss')) {
         // WebSocket command - build JSON-RPC from command
         const jsonRpcCommand = buildJsonRpcRequest(selectedCommand);
-        cmd = `wscat -c ${wsScheme}://${curlHost}:${port}/websocket -x '${jsonRpcCommand}'`;
+        cmd = `wscat -c ${wsBase}/websocket -x '${jsonRpcCommand}'`;
       } else if (selectedInterface === 'rest') {
         // REST interface - use path from command
         const restRequest = buildRestRequest(selectedCommand);
         if (restRequest.method === 'GET') {
-          cmd = `curl -X GET ${allHeaders} ${scheme}://${curlHost}:${port}${restRequest.path}`;
+          cmd = `curl -X GET ${allHeaders} ${httpBase}${restRequest.path}`;
         } else {
           // REST POST with JSON body
           const jsonBody = JSON.stringify({
@@ -950,12 +968,12 @@ export default function LiveTestPage() {
             params: JSON.parse(selectedCommand.params),
             id: 1,
           });
-          cmd = `curl -X POST ${allHeaders} -H "Content-Type: application/json" ${scheme}://${curlHost}:${port} -d '${jsonBody}'`;
+          cmd = `curl -X POST ${allHeaders} -H "Content-Type: application/json" ${httpBase} -d '${jsonBody}'`;
         }
       } else {
         // Other interfaces (jsonrpc, tendermintrpc, etc.) - build JSON-RPC from command
         const jsonRpcCommand = buildJsonRpcRequest(selectedCommand);
-        cmd = `curl -X POST ${allHeaders} -H "Content-Type: application/json" ${scheme}://${curlHost}:${port} -d '${jsonRpcCommand}'`;
+        cmd = `curl -X POST ${allHeaders} -H "Content-Type: application/json" ${httpBase} -d '${jsonRpcCommand}'`;
       }
       setCrossValidationCurlCommand(cmd);
     }
@@ -1197,6 +1215,7 @@ export default function LiveTestPage() {
         interfaceCommand,
         domain,
         port,
+        localPort: localPortFor(selectedRouter),
         skipCache,
         requestType: selectedRequestType,
         crossValidationMaxParticipants,
@@ -1343,6 +1362,7 @@ export default function LiveTestPage() {
         interfaceCommand,
         domain,
         port,
+        localPort: localPortFor(selectedRouter),
         skipCache,
         requestType: selectedRequestType,
         authorizationHeader: formatAuthHeader(authorizationHeader) || undefined,
@@ -1442,6 +1462,7 @@ export default function LiveTestPage() {
             chainId: selectedRouter,
             domain,
             port,
+            localPort: localPortFor(selectedRouter),
             skipCache,
             addonType: batchAddonType,
             authorizationHeader: formatAuthHeader(authorizationHeader) || undefined,
