@@ -66,6 +66,7 @@ async def get_configuration(
                         network=network,
                         interfaces=list(interfaces),
                         nodes=nodes,
+                        local_port=router_entry.get("local_port"),
                     )
 
         return ComponentsResponse(

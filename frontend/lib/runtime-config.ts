@@ -13,6 +13,10 @@ export interface RuntimeConfig {
   NEXT_PUBLIC_PORT: string;
   NEXT_PUBLIC_PROMETHEUS_URL: string;
   NEXT_PUBLIC_USE_TLS: string;
+  // 'true' for a local docker-compose run: chains are reached directly at
+  // localhost:<port> (port from the router config) instead of the gateway's
+  // <chain>-<interface>.<domain> subdomain shape.
+  NEXT_PUBLIC_LOCAL_MODE: string;
 }
 
 let cachedConfig: RuntimeConfig | null = null;
@@ -49,6 +53,7 @@ async function fetchRuntimeConfig(): Promise<RuntimeConfig> {
         NEXT_PUBLIC_PROMETHEUS_URL:
           process.env.NEXT_PUBLIC_PROMETHEUS_URL || 'http://localhost:9090',
         NEXT_PUBLIC_USE_TLS: process.env.NEXT_PUBLIC_USE_TLS || 'true',
+        NEXT_PUBLIC_LOCAL_MODE: process.env.NEXT_PUBLIC_LOCAL_MODE || 'false',
       };
       return fallbackConfig;
     } finally {
@@ -76,6 +81,7 @@ export async function getRuntimeConfig(): Promise<RuntimeConfig> {
       NEXT_PUBLIC_PORT: process.env.NEXT_PUBLIC_PORT || '3000',
       NEXT_PUBLIC_PROMETHEUS_URL: process.env.NEXT_PUBLIC_PROMETHEUS_URL || 'http://localhost:9090',
       NEXT_PUBLIC_USE_TLS: process.env.NEXT_PUBLIC_USE_TLS || 'true',
+      NEXT_PUBLIC_LOCAL_MODE: process.env.NEXT_PUBLIC_LOCAL_MODE || 'false',
     };
   }
 
@@ -157,4 +163,58 @@ export function getEndpointScheme(): 'http' | 'https' {
  */
 export function getWebSocketScheme(): 'ws' | 'wss' {
   return getEndpointScheme() === 'https' ? 'wss' : 'ws';
+}
+
+/**
+ * Whether the dashboard is running against a local docker-compose smart-router.
+ * In local mode there's no gateway: each chain is reached at localhost:<port>.
+ */
+export function getLocalMode(): boolean {
+  const localMode =
+    typeof window !== 'undefined' && cachedConfig
+      ? cachedConfig.NEXT_PUBLIC_LOCAL_MODE
+      : process.env.NEXT_PUBLIC_LOCAL_MODE;
+  return localMode === 'true';
+}
+
+/**
+ * Builds the base endpoint URL for a chain's interface.
+ *
+ * - **Local mode** (docker-compose): `http://localhost:<localPort>` — the
+ *   chain is reached directly on its published port over plain HTTP (the local
+ *   router has no TLS), so the scheme is always `http`/`ws` regardless of
+ *   `NEXT_PUBLIC_USE_TLS`; `domain`/`port` and the `<chain>-<interface>`
+ *   subdomain shape don't apply. Returns null when no local port is known for
+ *   the chain (so callers can skip / show a hint).
+ * - **Gateway mode** (default): `<scheme>://<chain>-<interface>.<domain>:<port>`
+ *   — the production shape routed by the gateway on the Host header.
+ *
+ * @param chainId      chain id (any case; lowercased for the subdomain)
+ * @param interfaceType e.g. 'jsonrpc', 'rest', 'tendermintrpc'
+ * @param domain        gateway domain (gateway mode only)
+ * @param port          gateway port (gateway mode only)
+ * @param localPort     chain's local listen port (local mode only)
+ * @param ws            build a websocket base (ws/wss) instead of http(s)
+ */
+export function buildEndpointBaseUrl(params: {
+  chainId: string;
+  interfaceType: string;
+  domain: string;
+  port: string;
+  localPort?: number | null;
+  ws?: boolean;
+}): string | null {
+  const { chainId, interfaceType, domain, port, localPort, ws } = params;
+
+  if (getLocalMode()) {
+    if (localPort == null) return null;
+    // The local docker-compose router serves plain HTTP/WS (no TLS), so force
+    // http/ws here rather than honoring NEXT_PUBLIC_USE_TLS.
+    const scheme = ws ? 'ws' : 'http';
+    return `${scheme}://localhost:${localPort}`;
+  }
+
+  const scheme = ws ? getWebSocketScheme() : getEndpointScheme();
+  const host = `${chainId.toLowerCase()}-${interfaceType}.${domain}`;
+  return `${scheme}://${host}:${port}`;
 }

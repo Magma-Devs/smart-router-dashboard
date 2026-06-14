@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/auth-context';
 import { useDebug } from '@/hooks/use-debug';
+import { useRuntimeConfig } from '@/hooks/use-runtime-config';
 import { apiClient } from '@/lib/api-client';
 import {
   DropdownMenu,
@@ -23,6 +24,10 @@ export function NavBar() {
   const pathname = usePathname();
   const { isAuthenticated, username, logout } = useAuth();
   const { debugMode } = useDebug();
+  const { config: runtimeConfig } = useRuntimeConfig();
+  // In a local docker-compose run there are no API keys to manage and no
+  // gateway settings to configure, so those tabs are hidden.
+  const localMode = runtimeConfig?.NEXT_PUBLIC_LOCAL_MODE === 'true';
   const [version, setVersion] = useState<string | null>(null);
 
   // Fetch version from backend API
@@ -80,24 +85,28 @@ export function NavBar() {
                   Usage
                 </Button>
               </Link>
-              <Link href='/api-keys'>
-                <Button
-                  variant={pathname === '/api-keys' ? 'default' : 'ghost'}
-                  className='flex items-center gap-1.5'
-                >
-                  <Key className='h-4 w-4' />
-                  API Keys
-                </Button>
-              </Link>
-              <Link href='/configuration'>
-                <Button
-                  variant={pathname === '/configuration' ? 'default' : 'ghost'}
-                  className='flex items-center gap-1.5'
-                >
-                  <Settings className='h-4 w-4' />
-                  Settings
-                </Button>
-              </Link>
+              {!localMode && (
+                <Link href='/api-keys'>
+                  <Button
+                    variant={pathname === '/api-keys' ? 'default' : 'ghost'}
+                    className='flex items-center gap-1.5'
+                  >
+                    <Key className='h-4 w-4' />
+                    API Keys
+                  </Button>
+                </Link>
+              )}
+              {!localMode && (
+                <Link href='/configuration'>
+                  <Button
+                    variant={pathname === '/configuration' ? 'default' : 'ghost'}
+                    className='flex items-center gap-1.5'
+                  >
+                    <Settings className='h-4 w-4' />
+                    Settings
+                  </Button>
+                </Link>
+              )}
               {debugMode && (
                 <Link href='/wizard'>
                   <Button

@@ -2,7 +2,7 @@
  * Frontend HTTP client for making direct requests to provider endpoints
  */
 
-import { getEndpointScheme, getWebSocketScheme } from '@/lib/runtime-config';
+import { buildEndpointBaseUrl } from '@/lib/runtime-config';
 
 export interface TestRequestOptions {
   chainId: string;
@@ -10,6 +10,8 @@ export interface TestRequestOptions {
   interfaceCommand: string;
   domain?: string;
   port?: string;
+  /** Chain's local listen port — used in local mode (localhost:<port>). */
+  localPort?: number | null;
   skipCache?: boolean;
   requestType?: string; // Add request type parameter
   crossValidationMaxParticipants?: number;
@@ -270,6 +272,7 @@ export async function makeTestRequest(options: TestRequestOptions): Promise<Test
     interfaceCommand,
     domain = 'lava.lavapro.xyz',
     port = '443',
+    localPort,
     skipCache = false,
     requestType,
     crossValidationMaxParticipants,
@@ -280,7 +283,6 @@ export async function makeTestRequest(options: TestRequestOptions): Promise<Test
   } = options;
 
   const startTime = performance.now();
-  const chainIdLower = chainId.toLowerCase();
 
   // Handle WebSocket connections for jsonrpc/wss and tendermintrpc/wss
   if (
@@ -291,9 +293,25 @@ export async function makeTestRequest(options: TestRequestOptions): Promise<Test
   ) {
     // Determine the base interface type for URL construction
     const baseInterface = interfaceType.includes('jsonrpc') ? 'jsonrpc' : 'tendermintrpc';
-    const curlHost = `${chainIdLower}-${baseInterface}.${domain}`;
-    const wsScheme = getWebSocketScheme();
-    const wsUrl = `${wsScheme}://${curlHost}:${port}/websocket`;
+    const wsBase = buildEndpointBaseUrl({
+      chainId,
+      interfaceType: baseInterface,
+      domain,
+      port,
+      localPort,
+      ws: true,
+    });
+    if (!wsBase) {
+      return {
+        status_code: 0,
+        latency_ms: performance.now() - startTime,
+        success: false,
+        response_data: null,
+        headers: {},
+        error: `No local port known for chain ${chainId}; cannot build a local-mode URL.`,
+      };
+    }
+    const wsUrl = `${wsBase}/websocket`;
 
     try {
       return await makeWebSocketRequest(
@@ -318,9 +336,18 @@ export async function makeTestRequest(options: TestRequestOptions): Promise<Test
   }
 
   // Build the URL (moved outside try block for error handling)
-  const curlHost = `${chainIdLower}-${interfaceType}.${domain}`;
-  const scheme = getEndpointScheme();
-  let url = `${scheme}://${curlHost}:${port}`;
+  const baseUrl = buildEndpointBaseUrl({ chainId, interfaceType, domain, port, localPort });
+  if (!baseUrl) {
+    return {
+      status_code: 0,
+      latency_ms: performance.now() - startTime,
+      success: false,
+      response_data: null,
+      headers: {},
+      error: `No local port known for chain ${chainId}; cannot build a local-mode URL.`,
+    };
+  }
+  let url = baseUrl;
 
   // Initialize with defaults (network error state)
   let statusCode = 0;
@@ -613,6 +640,8 @@ export interface BatchRequestOptions {
   chainId: string;
   domain?: string;
   port?: string;
+  /** Chain's local listen port — used in local mode (localhost:<port>). */
+  localPort?: number | null;
   skipCache?: boolean;
   maxResponseBytes?: number;
   addonType?: 'none' | 'archive' | 'debug' | 'trace';
@@ -652,6 +681,7 @@ export async function makeBatchRequest(
     chainId,
     domain = 'lava.lavapro.xyz',
     port = '443',
+    localPort,
     skipCache = false,
     maxResponseBytes,
     addonType = 'none',
@@ -659,10 +689,17 @@ export async function makeBatchRequest(
   } = options;
 
   const startTime = performance.now();
-  const chainIdLower = chainId.toLowerCase();
-  const curlHost = `${chainIdLower}-jsonrpc.${domain}`;
-  const scheme = getEndpointScheme();
-  const url = `${scheme}://${curlHost}:${port}`;
+  const url = buildEndpointBaseUrl({ chainId, interfaceType: 'jsonrpc', domain, port, localPort });
+  if (!url) {
+    return {
+      status_code: 0,
+      latency_ms: performance.now() - startTime,
+      success: false,
+      headers: {},
+      responses: [],
+      error: `No local port known for chain ${chainId}; cannot build a local-mode URL.`,
+    };
+  }
 
   // Build batch request payload
   const batchPayload = requests.map(req => ({
@@ -939,11 +976,11 @@ export function generateBatchCurlCommand(
   skipCache: boolean = false,
   addonType: 'none' | 'archive' | 'debug' | 'trace' = 'none',
   authorizationHeader?: string,
+  localPort?: number | null,
 ): string {
-  const chainIdLower = chainId.toLowerCase();
-  const curlHost = `${chainIdLower}-jsonrpc.${domain}`;
-  const scheme = getEndpointScheme();
-  const url = `${scheme}://${curlHost}:${port}`;
+  const url =
+    buildEndpointBaseUrl({ chainId, interfaceType: 'jsonrpc', domain, port, localPort }) ??
+    `http://localhost:<port>`;
 
   const batchPayload = requests.map(req => ({
     jsonrpc: '2.0',
