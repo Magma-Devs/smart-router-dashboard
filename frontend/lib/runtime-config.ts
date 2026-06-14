@@ -181,9 +181,11 @@ export function getLocalMode(): boolean {
  * Builds the base endpoint URL for a chain's interface.
  *
  * - **Local mode** (docker-compose): `http://localhost:<localPort>` — the
- *   chain is reached directly on its published port; `domain`/`port` and the
- *   `<chain>-<interface>` subdomain shape don't apply. Returns null when no
- *   local port is known for the chain (so callers can skip / show a hint).
+ *   chain is reached directly on its published port over plain HTTP (the local
+ *   router has no TLS), so the scheme is always `http`/`ws` regardless of
+ *   `NEXT_PUBLIC_USE_TLS`; `domain`/`port` and the `<chain>-<interface>`
+ *   subdomain shape don't apply. Returns null when no local port is known for
+ *   the chain (so callers can skip / show a hint).
  * - **Gateway mode** (default): `<scheme>://<chain>-<interface>.<domain>:<port>`
  *   — the production shape routed by the gateway on the Host header.
  *
@@ -206,7 +208,9 @@ export function buildEndpointBaseUrl(params: {
 
   if (getLocalMode()) {
     if (localPort == null) return null;
-    const scheme = ws ? (getEndpointScheme() === 'https' ? 'wss' : 'ws') : getEndpointScheme();
+    // The local docker-compose router serves plain HTTP/WS (no TLS), so force
+    // http/ws here rather than honoring NEXT_PUBLIC_USE_TLS.
+    const scheme = ws ? 'ws' : 'http';
     return `${scheme}://localhost:${localPort}`;
   }
 
