@@ -246,6 +246,13 @@ export const chains: Chain[] = [
     supportedInterfaces: ['jsonrpc', 'rest'],
   },
   {
+    value: 'hederat',
+    label: 'Hedera Testnet',
+    icon: 'https://info-mainnet.lavanet.xyz/chains/hedera.svg',
+    type: 'hedera',
+    supportedInterfaces: ['jsonrpc', 'rest'],
+  },
+  {
     value: 'iota',
     label: 'IOTA Mainnet',
     icon: 'https://info-mainnet.lavanet.xyz/chains/iota.svg',
@@ -519,6 +526,13 @@ export const chains: Chain[] = [
     supportedInterfaces: ['rest', 'tendermintrpc', 'grpc'],
   },
   {
+    value: 'uniont',
+    label: 'Union Testnet',
+    icon: 'https://info-mainnet.lavanet.xyz/chains/union.svg',
+    type: 'cosmos',
+    supportedInterfaces: ['rest', 'tendermintrpc', 'grpc'],
+  },
+  {
     value: 'xlm',
     label: 'Stellar Mainnet',
     icon: 'https://info-mainnet.lavanet.xyz/chains/stellar.svg',
@@ -559,6 +573,35 @@ export const chains: Chain[] = [
     icon: 'https://info-mainnet.lavanet.xyz/chains/bitcoin.svg',
     type: 'bitcoin',
     supportedInterfaces: ['jsonrpc'],
+  },
+  {
+    value: 'btct',
+    label: 'Bitcoin Testnet',
+    icon: 'https://info-mainnet.lavanet.xyz/chains/bitcoin.svg',
+    type: 'bitcoin',
+    supportedInterfaces: ['jsonrpc'],
+  },
+  {
+    value: 'bch',
+    label: 'Bitcoin Cash Mainnet',
+    icon: 'https://info-mainnet.lavanet.xyz/chains/bitcoincash.svg',
+    type: 'bitcoin',
+    supportedInterfaces: ['jsonrpc'],
+  },
+  {
+    value: 'bcht',
+    label: 'Bitcoin Cash Testnet',
+    icon: 'https://info-mainnet.lavanet.xyz/chains/bitcoincash.svg',
+    type: 'bitcoin',
+    supportedInterfaces: ['jsonrpc'],
+  },
+  {
+    value: 'sonic',
+    label: 'Sonic Mainnet',
+    icon: 'https://info-mainnet.lavanet.xyz/chains/sonic.svg',
+    type: 'evm',
+    supportedInterfaces: ['jsonrpc'],
+    hasWss: true,
   },
 ];
 
