@@ -416,14 +416,14 @@ export const chains: Chain[] = [
     label: 'Polkadot Asset Hub Mainnet',
     icon: 'https://info-mainnet.lavanet.xyz/chains/polkadot.svg',
     type: 'polkadotassethub',
-    supportedInterfaces: ['jsonrpc'],
+    supportedInterfaces: ['jsonrpc', 'rest'],
   },
   {
     value: 'polkadotassethubt',
     label: 'Polkadot Asset Hub Westend Testnet',
     icon: 'https://info-mainnet.lavanet.xyz/chains/polkadot.svg',
     type: 'polkadotassethub',
-    supportedInterfaces: ['jsonrpc'],
+    supportedInterfaces: ['jsonrpc', 'rest'],
   },
   {
     value: 'solana',
