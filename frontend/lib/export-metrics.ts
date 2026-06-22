@@ -93,7 +93,7 @@ export async function exportLavaMetrics(
   timeFrame: string,
   minutes: number,
 ): Promise<ExportResult> {
-  const discoveryQuery = `group by (__name__) (last_over_time({__name__=~"lava_.*"}[${timeFrame}]))`;
+  const discoveryQuery = `group by (__name__) (last_over_time({__name__=~"(smartrouter|rpc)_.*"}[${timeFrame}]))`;
   const discovery = await apiClient.get<PromInstantResponse>(
     `/api/metrics/instant?query=${encodeURIComponent(discoveryQuery)}`,
   );
@@ -107,7 +107,7 @@ export async function exportLavaMetrics(
   ).sort();
 
   if (metricNames.length === 0) {
-    throw new Error(`No lava_* metrics found for the last ${timeFrame}`);
+    throw new Error(`No smartrouter_* / rpc_* metrics found for the last ${timeFrame}`);
   }
 
   const step = calcStep(minutes);
@@ -132,7 +132,7 @@ export async function exportLavaMetrics(
   const gzBlob = await new Response(gzStream).blob();
 
   const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-  const filename = `lava-metrics-${timeFrame}-${ts}.json.gz`;
+  const filename = `smartrouter-metrics-${timeFrame}-${ts}.json.gz`;
   const url = URL.createObjectURL(gzBlob);
   const a = document.createElement('a');
   a.href = url;

@@ -33,7 +33,7 @@ class FakePromAgg:
     async def query_range(self, q, start, end, step):
         if "health" in q or "overall_health" in q:
             # health data: two chains, three samples 1/1/0 and 1/0/0
-            # Uses spec label (lava_consumer_overall_health_breakdown)
+            # Uses spec label (smartrouter_overall_health_breakdown)
             return {
                 "status": "success",
                 "data": {

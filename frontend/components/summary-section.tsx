@@ -587,13 +587,13 @@ export function SummarySection({}: SummarySectionProps) {
               </SelectContent>
             </Select>
 
-            {/* Export Button — downloads all lava_* metrics for the selected time frame as gzipped JSON */}
+            {/* Export Button — downloads all smartrouter_* / rpc_* metrics for the selected time frame as gzipped JSON */}
             <Button
               variant='outline'
               size='sm'
               onClick={handleExport}
               disabled={isExporting}
-              title={`Export all lava_* metrics for the last ${selectedTimeFrame}`}
+              title={`Export all smartrouter_* / rpc_* metrics for the last ${selectedTimeFrame}`}
               className='bg-background border-border hover:bg-accent'
             >
               <Download className={`h-4 w-4 mr-2 ${isExporting ? 'animate-pulse' : ''}`} />
