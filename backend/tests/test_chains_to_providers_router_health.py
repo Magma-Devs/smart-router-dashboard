@@ -1,7 +1,7 @@
 """
 Tests for the /chains-to-providers router health lookup, covering the metrics-rework change:
-  - lava_rpc_endpoint_info is removed; router health now comes from
-    lava_rpcsmartrouter_overall_health_breakdown keyed directly by spec.
+  - rpc_endpoint_info is removed; router health now comes from
+    smartrouter_overall_health_breakdown keyed directly by spec.
 """
 
 import base64
@@ -89,7 +89,7 @@ def test_router_health_uses_breakdown_metric():
 
 
 def test_endpoint_info_is_not_queried():
-    """lava_rpc_endpoint_info must NOT be queried (metric was removed in metrics-cleanup PR)."""
+    """rpc_endpoint_info must NOT be queried (metric was removed in metrics-cleanup PR)."""
     prom = RecordingPrometheus()
     app.dependency_overrides[get_prometheus_service] = lambda: prom
     with patch("app.api.routes.metrics.configuration_service", _mock_config()):

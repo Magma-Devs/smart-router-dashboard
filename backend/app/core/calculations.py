@@ -153,7 +153,7 @@ def calculate_latency_ms(latency_data: dict[str, Any], target_chain: str) -> int
     Get the latest latency value for a specific chain.
 
     The input data is pre-aggregated by Prometheus using:
-    avg(avg_over_time(lava_consumer_end_to_end_latency_milliseconds[time_window])) by (spec)
+    avg(avg_over_time(smartrouter_end_to_end_latency_milliseconds[time_window])) by (spec)
 
     Prometheus already calculates the average across all time points,
     so we just return the latest value from the time series.
@@ -204,7 +204,7 @@ def calculate_provider_latency_ms(
     Get the latest latency value for a specific provider.
 
     The input data is pre-aggregated by Prometheus using:
-    avg(avg_over_time(lava_provider_end_to_end_latency_milliseconds[time_window])) by (service)
+    avg(avg_over_time(rpc_endpoint_end_to_end_latency_milliseconds[time_window])) by (service)
 
     Prometheus already calculates the average across all time points,
     so we just return the latest value from the time series.
@@ -450,7 +450,7 @@ def calculate_provider_uptime_percentage(
         for timestamp, value in values:
             try:
                 health_value = float(value)
-                # lava_provider_overall_health is 0-1, so multiply by 100 for percentage
+                # rpc_endpoint_overall_health is 0-1, so multiply by 100 for percentage
                 uptime_percentage = health_value * 100
                 total_time += 1
                 total_healthy_time += uptime_percentage
@@ -511,7 +511,7 @@ def calculate_provider_requests_in_time_window(
 # ---------------------------------------------------------------------------
 # Node / endpoint-level calculation functions (unified smart router)
 #
-# All lava_rpc_endpoint_* metrics use provider name as endpoint_id label.
+# All rpc_endpoint_* metrics use provider name as endpoint_id label.
 # Functions below match by node name (case-insensitive) rather than URL.
 # ---------------------------------------------------------------------------
 

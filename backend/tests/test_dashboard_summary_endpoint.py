@@ -1,7 +1,7 @@
 """
 Tests for the /dashboard-summary endpoint, covering the metrics-rework changes:
-  - traffic uses lava_rpcsmartrouter_requests_total (not total_relays_serviced)
-  - recovery uses lava_rpcsmartrouter_retries_* (not node_errors_received/recovered)
+  - traffic uses smartrouter_requests_total (not total_relays_serviced)
+  - recovery uses smartrouter_retries_* (not node_errors_received/recovered)
   - zero-division safety when retries_total is 0
 """
 

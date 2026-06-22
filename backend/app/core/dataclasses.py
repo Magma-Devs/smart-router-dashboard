@@ -297,7 +297,7 @@ class UsageMetricsResponse(BaseModel):
 
 
 class ErrorRecoveryMetrics(BaseModel):
-    """Metrics for node error recovery from lava_consumer_total_node_errors_* metrics."""
+    """Metrics for node error recovery from smartrouter_node_errors_* metrics."""
 
     total_node_errors: float = 0.0
     recovered_requests: float = 0.0

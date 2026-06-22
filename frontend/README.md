@@ -69,8 +69,8 @@ frontend/
 
 ### **Uptime**
 
-- **Metric**: `lava_consumer_overall_health_breakdown`
-- **Calculation**: Percentage of healthy consumer timestamps
+- **Metric**: `smartrouter_overall_health_breakdown`
+- **Calculation**: Percentage of healthy router timestamps
 - **Thresholds**:
   - 🟢 Green: ≥99.5%
   - 🟠 Orange: 95-99.4%
@@ -78,8 +78,8 @@ frontend/
 
 ### **Latency**
 
-- **Metric**: `lava_consumer_latency_for_request`
-- **Calculation**: Average response time across consumers
+- **Metric**: `smartrouter_end_to_end_latency_milliseconds`
+- **Calculation**: Average response time across the router
 - **Thresholds**:
   - 🟢 Green: ≤200ms
   - 🟠 Orange: 201-500ms
@@ -87,8 +87,8 @@ frontend/
 
 ### **Reachability**
 
-- **Metrics**: `lava_consumer_overall_health_breakdown` + `lava_provider_overall_health_breakdown`
-- **Calculation**: Average percentage of healthy providers per consumer
+- **Metrics**: `smartrouter_overall_health_breakdown` + `rpc_endpoint_overall_health`
+- **Calculation**: Average percentage of healthy endpoints per router
 - **Thresholds**:
   - 🟢 Green: ≥95%
   - 🟠 Orange: 85-94.9%
@@ -215,9 +215,9 @@ Interactive system flow diagram showing:
 
 The frontend makes the following Prometheus queries:
 
-1. **Consumer Health**: `lava_consumer_overall_health_breakdown`
-2. **Provider Health**: `lava_provider_overall_health_breakdown`
-3. **Latency**: `avg_over_time(lava_consumer_latency_for_request[1m])`
+1. **Router Health**: `smartrouter_overall_health_breakdown`
+2. **Endpoint Health**: `rpc_endpoint_overall_health`
+3. **Latency**: `avg_over_time(smartrouter_end_to_end_latency_milliseconds[1m])`
 
 ### **API Endpoints**
 
