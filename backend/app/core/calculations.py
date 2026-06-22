@@ -511,7 +511,7 @@ def calculate_provider_requests_in_time_window(
 # ---------------------------------------------------------------------------
 # Node / endpoint-level calculation functions (unified smart router)
 #
-# All lava_rpc_endpoint_* metrics use provider name as endpoint_id label.
+# All rpc_endpoint_* metrics use provider name as endpoint_id label.
 # Functions below match by node name (case-insensitive) rather than URL.
 # ---------------------------------------------------------------------------
 

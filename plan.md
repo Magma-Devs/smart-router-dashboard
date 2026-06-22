@@ -9,12 +9,12 @@ Validated against actual Go source across all 4 PRs in the lava repo.
 
 | PR | Branch | What it removes / renames | Dashboard impact |
 |---|---|---|---|
-| 1+2 | `feat/metrics-rework` → `main` | `lava_rpcsmartrouter_total_relays_serviced` | Traffic panels show 0 |
-| 1+2 | `feat/metrics-rework` → `main` | `lava_rpcsmartrouter_total_errored` | Error data shows 0 |
-| 1+2 | `feat/metrics-rework` → `main` | `lava_rpcsmartrouter_node_errors_received` | Recovery card shows 0 |
-| 1+2 | `feat/metrics-rework` → `main` | `lava_rpcsmartrouter_node_errors_recovered` | Recovery card shows 0 |
+| 1+2 | `feat/metrics-rework` → `main` | `smartrouter_total_relays_serviced` | Traffic panels show 0 |
+| 1+2 | `feat/metrics-rework` → `main` | `smartrouter_total_errored` | Error data shows 0 |
+| 1+2 | `feat/metrics-rework` → `main` | `smartrouter_node_errors_received` | Recovery card shows 0 |
+| 1+2 | `feat/metrics-rework` → `main` | `smartrouter_node_errors_recovered` | Recovery card shows 0 |
 | 1+2 | `feat/metrics-rework` → `main` | `function` label on traffic/error metrics → now `method` | Usage page method table empty |
-| 3 | `metrics-cleanup` → `feat/metrics-rework` | `lava_rpc_endpoint_info` | Flow visualization: all router health shows unhealthy |
+| 3 | `metrics-cleanup` → `feat/metrics-rework` | `rpc_endpoint_info` | Flow visualization: all router health shows unhealthy |
 
 PR4 (`metrics-provider-only`) touches only provider-side metrics — no dashboard impact.
 
@@ -24,13 +24,13 @@ PR4 (`metrics-provider-only`) touches only provider-side metrics — no dashboar
 
 | Removed metric | Replacement | Label change |
 |---|---|---|
-| `lava_rpcsmartrouter_total_relays_serviced` | `lava_rpcsmartrouter_requests_total` | `function` → `method` (also adds `provider_address`, `apiInterface`) |
-| `lava_rpcsmartrouter_total_errored` | `lava_rpcsmartrouter_requests_failed_total` | `function` → `method` |
-| `lava_rpcsmartrouter_node_errors_received` | `lava_rpcsmartrouter_node_errors_total` | — |
-| `lava_rpcsmartrouter_node_errors_recovered` | `lava_rpcsmartrouter_retries_success_total` | — |
-| `lava_rpc_endpoint_info` (used for spec→job bridge) | `lava_rpcsmartrouter_overall_health_breakdown {spec, apiInterface}` | Direct spec label, no bridge needed |
+| `smartrouter_total_relays_serviced` | `smartrouter_requests_total` | `function` → `method` (also adds `provider_address`, `apiInterface`) |
+| `smartrouter_total_errored` | `smartrouter_requests_failed_total` | `function` → `method` |
+| `smartrouter_node_errors_received` | `smartrouter_node_errors_total` | — |
+| `smartrouter_node_errors_recovered` | `smartrouter_retries_success_total` | — |
+| `rpc_endpoint_info` (used for spec→job bridge) | `smartrouter_overall_health_breakdown {spec, apiInterface}` | Direct spec label, no bridge needed |
 
-**Important nuance:** `lava_rpcsmartrouter_end_to_end_latency_milliseconds` still exists and **still uses the `function` label** (`routerFunctionLabels`). Only the request and error counters moved to `method`.
+**Important nuance:** `smartrouter_end_to_end_latency_milliseconds` still exists and **still uses the `function` label** (`routerFunctionLabels`). Only the request and error counters moved to `method`.
 
 ---
 
@@ -44,18 +44,18 @@ All changes are in a single file: **`backend/app/api/routes/metrics.py`**
 
 ```python
 # Before
-"router_traffic":       "lava_rpcsmartrouter_total_relays_serviced",
-"router_errored":       "lava_rpcsmartrouter_total_errored",
-"router_node_errors":   "lava_rpcsmartrouter_node_errors_received",
-"router_node_recovered":"lava_rpcsmartrouter_node_errors_recovered",
-"endpoint_info":        "lava_rpc_endpoint_info",
+"router_traffic":       "smartrouter_total_relays_serviced",
+"router_errored":       "smartrouter_total_errored",
+"router_node_errors":   "smartrouter_node_errors_received",
+"router_node_recovered":"smartrouter_node_errors_recovered",
+"endpoint_info":        "rpc_endpoint_info",
 
 # After
-"router_traffic":       "lava_rpcsmartrouter_requests_total",
-"router_errored":       "lava_rpcsmartrouter_requests_failed_total",
-"router_node_errors":   "lava_rpcsmartrouter_node_errors_total",
-"router_node_recovered":"lava_rpcsmartrouter_retries_success_total",
-"router_health_by_spec":"lava_rpcsmartrouter_overall_health_breakdown",
+"router_traffic":       "smartrouter_requests_total",
+"router_errored":       "smartrouter_requests_failed_total",
+"router_node_errors":   "smartrouter_node_errors_total",
+"router_node_recovered":"smartrouter_retries_success_total",
+"router_health_by_spec":"smartrouter_overall_health_breakdown",
 # remove endpoint_info key
 ```
 
@@ -106,12 +106,12 @@ The join across the three datasets works correctly because both `method` and `fu
 ### Fix 4 — Replace `endpoint_info` + `job`-bridge in `get_chains_to_providers`
 
 **Current flow (broken after PR3):**
-1. Query `lava_rpc_endpoint_info` → build `{spec → job}` map
-2. Query `lava_rpcsmartrouter_overall_health` → build `{job → health}` map
+1. Query `rpc_endpoint_info` → build `{spec → job}` map
+2. Query `smartrouter_overall_health` → build `{job → health}` map
 3. Join via `spec → job → health`
 
 **New flow:**
-1. Query `lava_rpcsmartrouter_overall_health_breakdown{spec, apiInterface}` directly
+1. Query `smartrouter_overall_health_breakdown{spec, apiInterface}` directly
 2. Build `{spec → health}` map — no bridging needed
 3. Remove the `endpoint_info_data` fetch and the `spec_to_job` / `job_to_health` logic
 
@@ -142,7 +142,7 @@ router_healthy = job_to_health.get(job, 0.0) > 0 if job else False
 router_healthy = spec_health.get(r.network.upper(), 0.0) > 0
 ```
 
-Where `spec_health` is built from `lava_rpcsmartrouter_overall_health_breakdown`:
+Where `spec_health` is built from `smartrouter_overall_health_breakdown`:
 ```python
 spec_health: dict[str, float] = {}
 for series in router_health_data.get("data", {}).get("result", []):

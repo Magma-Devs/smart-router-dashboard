@@ -56,20 +56,20 @@ router = APIRouter()
 # Histograms expose _bucket, _count, _sum suffixes automatically.
 PROMETHEUS_QUERIES = {
     # Router-scoped (per chain/spec, all endpoints aggregated)
-    "router_traffic": "lava_rpcsmartrouter_requests_total",
-    "router_errored": "lava_rpcsmartrouter_requests_failed_total",
-    "router_latency": "lava_rpcsmartrouter_end_to_end_latency_milliseconds",
-    "router_latest_block": "lava_rpcsmartrouter_latest_block",
-    "router_health": "lava_rpcsmartrouter_overall_health",
-    "router_health_by_spec": "lava_rpcsmartrouter_overall_health_breakdown",
-    "router_retries_total": "lava_rpcsmartrouter_retries_total",
-    "router_retries_success": "lava_rpcsmartrouter_retries_success_total",
+    "router_traffic": "smartrouter_requests_total",
+    "router_errored": "smartrouter_requests_failed_total",
+    "router_latency": "smartrouter_end_to_end_latency_milliseconds",
+    "router_latest_block": "smartrouter_latest_block",
+    "router_health": "smartrouter_overall_health",
+    "router_health_by_spec": "smartrouter_overall_health_breakdown",
+    "router_retries_total": "smartrouter_retries_total",
+    "router_retries_success": "smartrouter_retries_success_total",
     # Endpoint-scoped (per RPC node / direct-rpc endpoint)
-    "endpoint_health": "lava_rpc_endpoint_overall_health",
-    "endpoint_traffic": "lava_rpc_endpoint_total_relays_serviced",
-    "endpoint_errored": "lava_rpc_endpoint_total_errored",
-    "endpoint_latency": "lava_rpc_endpoint_end_to_end_latency_milliseconds",
-    "endpoint_latest_block": "lava_rpc_endpoint_latest_block",
+    "endpoint_health": "rpc_endpoint_overall_health",
+    "endpoint_traffic": "rpc_endpoint_total_relays_serviced",
+    "endpoint_errored": "rpc_endpoint_total_errored",
+    "endpoint_latency": "rpc_endpoint_end_to_end_latency_milliseconds",
+    "endpoint_latest_block": "rpc_endpoint_latest_block",
 }
 
 DEFAULT_TIME_WINDOW_MINUTES = 15
@@ -95,7 +95,7 @@ async def fetch_chain_metrics_data(
     dict[str, Any],  # uptime_data       — max(endpoint_health) by (spec) — 0/1 per step
     dict[str, Any],  # latency_data      — avg latency per spec from histogram
     dict[str, Any],  # traffic_data      — increase(router_traffic) by (spec)
-    dict[str, Any],  # endpoint_health   — raw lava_rpc_endpoint_overall_health
+    dict[str, Any],  # endpoint_health   — raw rpc_endpoint_overall_health
     dict[str, Any],  # block_data        — max(router_latest_block) by (spec)
     dict[str, Any],  # reachability_data — avg(endpoint_health) by (spec) — 0-1 fraction
 ]:
@@ -229,7 +229,7 @@ async def fetch_usage_metrics_data(
 ]:
     """Fetch per-function (method) usage metrics from router-scoped metrics.
 
-    Uses lava_rpcsmartrouter_total_relays_serviced and lava_rpcsmartrouter_total_errored
+    Uses smartrouter_total_relays_serviced and smartrouter_total_errored
     (both have a `function` label), and computes average latency per function from the
     histogram sum/count series.
 
@@ -677,7 +677,7 @@ async def get_chains_to_providers(
         )
 
         # Build {endpoint_id_lower: latest_health_value} map from Prometheus results.
-        # The endpoint_id label in lava_rpc_endpoint_overall_health is the node name
+        # The endpoint_id label in rpc_endpoint_overall_health is the node name
         # from the router config (e.g. "lava", "google"), stored in lowercase.
         # Multiple series may exist per endpoint_id (one per apiInterface replica);
         # take the max so a node is healthy if any series reports healthy.
@@ -698,7 +698,7 @@ async def get_chains_to_providers(
                     key = endpoint_id.lower()
                     node_health[key] = max(node_health.get(key, 0.0), health_val)
 
-        # Build {spec_upper: health_value} map from lava_rpcsmartrouter_overall_health_breakdown.
+        # Build {spec_upper: health_value} map from smartrouter_overall_health_breakdown.
         # Multiple series may exist per spec (one per apiInterface); take the max.
         spec_health: dict[str, float] = {}
         if router_health_data.get("status") == "success":
@@ -716,7 +716,7 @@ async def get_chains_to_providers(
         for r in routers:
             nodes_list: list[SafeNode] = []
             for node in r.nodes:
-                # Node health: from lava_rpc_endpoint_overall_health, matched by node name.
+                # Node health: from rpc_endpoint_overall_health, matched by node name.
                 node_healthy = node_health.get(node.name.lower(), 0.0) > 0
                 safe_endpoints = [
                     SafeEndpoint(interface=ep.interface) for ep in node.endpoints
@@ -734,7 +734,7 @@ async def get_chains_to_providers(
                     )
                 )
 
-            # Router health: from lava_rpcsmartrouter_overall_health_breakdown, keyed by spec.
+            # Router health: from smartrouter_overall_health_breakdown, keyed by spec.
             router_healthy = spec_health.get(r.network.upper(), 0.0) > 0
             router_health = (
                 ChainHealth.HEALTHY if router_healthy else ChainHealth.UNHEALTHY
@@ -1133,7 +1133,7 @@ async def get_dashboard_summary_metrics(
     Returns:
     - total_requests: sum of all router-level relay traffic
     - cache_hit_rate / cache_hits / cache_misses: from the Lava cache sidecar service
-    - error_recovery: retry successes vs total retries from lava_rpcsmartrouter_retries_*
+    - error_recovery: retry successes vs total retries from smartrouter_retries_*
     """
     try:
         time_range = f"{time_window_minutes}m"
