@@ -1,0 +1,304 @@
+/**
+ * Domain logic: turn Prometheus query results into the typed shapes the web
+ * consumes. Every value maps to a real `smartrouter_*`/`rpc_endpoint_*` series;
+ * unbacked values are returned as null (never invented) — this honours the
+ * design doc's "no synthetic data" rule.
+ */
+import {
+  ENDPOINT_METRICS,
+  ROUTER_METRICS,
+  buildChainMetaByIndex,
+  qAvailability,
+  qErrorRate,
+  qLatencyQuantile,
+  qLatestBlock,
+  qRequestsTotal,
+  selector,
+  rangeFor,
+  type ChainMetrics,
+  type DashboardSummary,
+  type HealthState,
+  type MetricWindow,
+  type ProviderMetrics,
+  type ScoreType,
+  type TimeSeries,
+} from "@sr/shared";
+import { WINDOWS } from "@sr/shared/constants";
+import type { PrometheusClient } from "./prometheus-client.js";
+
+function health(value: number | null): HealthState {
+  if (value === null) return "unknown";
+  return value >= 1 ? "operational" : "unhealthy";
+}
+
+/** Prometheus matrix `values` → typed points (null when the bucket is empty). */
+function toPoints(values: [number, string][] | undefined): { t: number; v: number | null }[] {
+  if (!values) return [];
+  return values.map(([t, v]) => {
+    const n = Number(v);
+    return { t, v: Number.isFinite(n) ? n : null };
+  });
+}
+
+export class MetricsService {
+  constructor(private readonly prom: PrometheusClient) {}
+
+  /** Distinct spec labels currently present on the requests counter. */
+  async listSpecs(): Promise<string[]> {
+    const rows = await this.prom.query(`count by (spec) (${ROUTER_METRICS.requestsTotal})`);
+    return rows
+      .map((r) => r.metric.spec)
+      .filter((s): s is string => Boolean(s))
+      .sort();
+  }
+
+  async dashboardSummary(window: MetricWindow): Promise<DashboardSummary> {
+    const [requestsServed, successRate, p95, stale, specs, providers, healthGauge] =
+      await Promise.all([
+        this.prom.scalar(qRequestsTotal(undefined, window)),
+        this.prom.scalar(qAvailability(undefined, window)),
+        this.prom.scalar(qLatencyQuantile(0.95, undefined, window)),
+        this.prom.scalar(
+          `sum(increase(${ROUTER_METRICS.consistencySuccessTotal}[${rangeFor(window)}]))`,
+        ),
+        this.listSpecs(),
+        this.prom.query(`count by (endpoint_id) (${ENDPOINT_METRICS.overallHealth})`),
+        this.prom.scalar(ROUTER_METRICS.overallHealth),
+      ]);
+
+    return {
+      requestsServed: requestsServed ?? 0,
+      successRate,
+      effectiveReadP95Ms: p95,
+      staleResponsesCaught: stale,
+      providerCount: providers.length,
+      chainCount: specs.length,
+      health: health(healthGauge),
+      lastUpdated: new Date().toISOString(),
+    };
+  }
+
+  async chains(window: MetricWindow): Promise<ChainMetrics[]> {
+    const specs = await this.listSpecs();
+    return Promise.all(specs.map((spec) => this.chainRow(spec, window)));
+  }
+
+  private async chainRow(spec: string, window: MetricWindow): Promise<ChainMetrics> {
+    const meta = buildChainMetaByIndex(spec);
+    const [requests, availability, errorRate, p95, qos, healthGauge, latestBlock, providers] =
+      await Promise.all([
+        this.prom.scalar(qRequestsTotal(spec, window)),
+        this.prom.scalar(qAvailability(spec, window)),
+        this.prom.scalar(qErrorRate(spec, window)),
+        this.prom.scalar(qLatencyQuantile(0.95, spec, window)),
+        this.prom.scalar(
+          `avg(${ENDPOINT_METRICS.selectionScore}${selector({ spec, score_type: "composite" })})`,
+        ),
+        this.prom.scalar(`${ROUTER_METRICS.overallHealth}`),
+        this.prom.scalar(qLatestBlock(spec)),
+        this.prom.query(
+          `count by (endpoint_id) (${ENDPOINT_METRICS.overallHealth}${selector({ spec })})`,
+        ),
+      ]);
+
+    return {
+      spec,
+      name: meta.name,
+      color: meta.color,
+      requests: requests ?? 0,
+      availability,
+      errorRate,
+      p95Ms: p95,
+      qos,
+      health: health(healthGauge),
+      latestBlock,
+      providerCount: providers.length,
+    };
+  }
+
+  async providers(spec: string | undefined, window: MetricWindow): Promise<ProviderMetrics[]> {
+    const sel = selector({ spec });
+    const r = rangeFor(window);
+
+    const [requests, scores, healthRows, blocks, inFlight] = await Promise.all([
+      this.prom.query(
+        `sum by (endpoint_id, spec) (increase(${ENDPOINT_METRICS.totalRelaysServiced}${sel}[${r}]))`,
+      ),
+      this.prom.query(`${ENDPOINT_METRICS.selectionScore}${sel}`),
+      this.prom.query(`${ENDPOINT_METRICS.overallHealth}${sel}`),
+      this.prom.query(`${ENDPOINT_METRICS.latestBlock}${sel}`),
+      this.prom.query(
+        `sum by (endpoint_id) (${ENDPOINT_METRICS.requestsInFlight}${sel})`,
+      ),
+    ]);
+
+    const byId = new Map<string, ProviderMetrics>();
+    const ensure = (endpointId: string, specLabel: string): ProviderMetrics => {
+      let row = byId.get(endpointId);
+      if (!row) {
+        row = {
+          endpointId,
+          spec: specLabel,
+          requests: 0,
+          uptime: null,
+          p95Ms: null,
+          errorRate: null,
+          scores: {},
+          health: "unknown",
+          latestBlock: null,
+          inFlight: 0,
+        };
+        byId.set(endpointId, row);
+      }
+      return row;
+    };
+
+    for (const s of requests) {
+      const id = s.metric.endpoint_id;
+      if (!id) continue;
+      ensure(id, s.metric.spec ?? "").requests = Number(s.value[1]) || 0;
+    }
+    for (const s of scores) {
+      const id = s.metric.endpoint_id;
+      const type = s.metric.score_type as ScoreType | undefined;
+      if (!id || !type) continue;
+      ensure(id, s.metric.spec ?? "").scores[type] = Number(s.value[1]);
+    }
+    for (const s of healthRows) {
+      const id = s.metric.endpoint_id;
+      if (!id) continue;
+      ensure(id, s.metric.spec ?? "").health = health(Number(s.value[1]));
+    }
+    for (const s of blocks) {
+      const id = s.metric.endpoint_id;
+      if (!id) continue;
+      ensure(id, s.metric.spec ?? "").latestBlock = Number(s.value[1]) || null;
+    }
+    for (const s of inFlight) {
+      const id = s.metric.endpoint_id;
+      if (!id) continue;
+      ensure(id, s.metric.spec ?? "").inFlight = Number(s.value[1]) || 0;
+    }
+
+    return [...byId.values()].sort((a, b) => b.requests - a.requests);
+  }
+
+  /**
+   * Traffic tab: aggregate RPS-now + per-chain rows (rpsNow, requests, share,
+   * trend sparkline). Mirrors the design's "Requests / sec · N chains" view.
+   */
+  async traffic(window: MetricWindow): Promise<{
+    rpsNow: number | null;
+    chainCount: number;
+    aggregate: { t: number; v: number | null }[];
+    chains: {
+      spec: string;
+      name: string;
+      color: string;
+      rpsNow: number | null;
+      requests: number;
+      share: number | null;
+      trend: { t: number; v: number | null }[];
+    }[];
+  }> {
+    const win = WINDOWS[window];
+    const end = Math.floor(Date.now() / 1000);
+    const start = end - win.rangeSeconds;
+    const specs = await this.listSpecs();
+
+    const [aggMatrix, totalAll] = await Promise.all([
+      this.prom.queryRange(
+        `sum(rate(${ROUTER_METRICS.requestsTotal}[${win.step}]))`,
+        start,
+        end,
+        win.step,
+      ),
+      this.prom.scalar(qRequestsTotal(undefined, window)),
+    ]);
+    const aggPoints = toPoints(aggMatrix[0]?.values);
+
+    const chains = await Promise.all(
+      specs.map(async (spec) => {
+        const meta = buildChainMetaByIndex(spec);
+        const [trendMatrix, requests] = await Promise.all([
+          this.prom.queryRange(
+            `sum(rate(${ROUTER_METRICS.requestsTotal}${selector({ spec })}[${win.step}]))`,
+            start,
+            end,
+            win.step,
+          ),
+          this.prom.scalar(qRequestsTotal(spec, window)),
+        ]);
+        const trend = toPoints(trendMatrix[0]?.values);
+        const last = trend.length ? trend[trend.length - 1] : undefined;
+        return {
+          spec,
+          name: meta.name,
+          color: meta.color,
+          rpsNow: last?.v ?? null,
+          requests: requests ?? 0,
+          share: totalAll && totalAll > 0 ? (requests ?? 0) / totalAll : null,
+          trend,
+        };
+      }),
+    );
+
+    chains.sort((a, b) => b.requests - a.requests);
+    const aggLast = aggPoints.length ? aggPoints[aggPoints.length - 1] : undefined;
+    return {
+      rpsNow: aggLast?.v ?? null,
+      chainCount: specs.length,
+      aggregate: aggPoints,
+      chains,
+    };
+  }
+
+  /**
+   * Method-level breakdown. Backed only if the request series carries a
+   * `method` label with values; on this build the latency histogram lacks
+   * `method`, so p95 stays null. Returns [] when nothing is emitted — the UI
+   * then shows the honest empty state rather than inventing rows.
+   */
+  async methods(spec: string | undefined, window: MetricWindow): Promise<
+    { method: string; class: "read" | "write" | "batch" | "unknown"; requests: number; p95Ms: number | null; errorRate: number | null }[]
+  > {
+    const sel = selector({ spec });
+    const r = rangeFor(window);
+    const rows = await this.prom.query(
+      `sum by (method) (increase(${ROUTER_METRICS.requestsTotal}${sel}[${r}]))`,
+    );
+    const reads = await this.prom.query(
+      `sum by (method) (increase(${ROUTER_METRICS.requestsReadTotal}${sel}[${r}]))`,
+    );
+    const readSet = new Set(reads.map((s) => s.metric.method).filter(Boolean));
+
+    return rows
+      .map((s) => {
+        const method = s.metric.method ?? "unknown";
+        return {
+          method,
+          class: (readSet.has(method) ? "read" : "unknown") as "read" | "write" | "batch" | "unknown",
+          requests: Number(s.value[1]) || 0,
+          p95Ms: null, // histogram has no `method` label on this build (Gap #3)
+          errorRate: null,
+        };
+      })
+      .sort((a, b) => b.requests - a.requests);
+  }
+
+  /** RPS time-series for the Traffic chart. */
+  async rpsSeries(spec: string | undefined, window: MetricWindow): Promise<TimeSeries> {
+    const win = WINDOWS[window];
+    const end = Math.floor(Date.now() / 1000);
+    const start = end - win.rangeSeconds;
+    const expr = `sum(rate(${ROUTER_METRICS.requestsTotal}${selector({ spec })}[${win.step}]))`;
+    const matrix = await this.prom.queryRange(expr, start, end, win.step);
+    const first = matrix[0];
+    return {
+      label: spec ?? "all chains",
+      points: first
+        ? first.values.map(([t, v]) => ({ t, v: Number.isFinite(Number(v)) ? Number(v) : null }))
+        : [],
+    };
+  }
+}

@@ -1,0 +1,62 @@
+# Smart Router Dashboard v2 — dev stack (hot reload).
+#
+#   docker compose -f docker-compose.dev.yml up --build
+#
+# Mounts source so api (tsx watch) and web (next dev) reload on edits. The
+# shared package is rebuilt by the `builder` service's tsc --watch.
+# Joins the running smart-router_default network for live Prometheus data.
+
+name: smart-router-dashboard-dev
+
+services:
+  builder:
+    image: node:22-alpine
+    working_dir: /app
+    command: sh -c "corepack enable && pnpm install && pnpm --filter @sr/shared build:watch"
+    volumes:
+      - .:/app
+    networks:
+      - srnet
+
+  api:
+    image: node:22-alpine
+    working_dir: /app
+    command: sh -c "corepack enable && pnpm install && pnpm --filter @sr/api dev"
+    environment:
+      - NODE_ENV=development
+      - API_PORT=8000
+      - PROMETHEUS_URL=http://prometheus:9090
+      - HELM_VALUES_DIR=/app/helm-values
+      - CORS_ORIGINS=http://localhost:3000
+    volumes:
+      - .:/app
+      - ${SR_CONFIG_HOST:-./dev-config/values.yml}:/app/helm-values/core/values.yml:ro
+    ports:
+      - "8000:8000"
+    depends_on:
+      - builder
+    networks:
+      - srnet
+
+  web:
+    image: node:22-alpine
+    working_dir: /app
+    command: sh -c "corepack enable && pnpm install && pnpm --filter @sr/web dev"
+    environment:
+      - NODE_ENV=development
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NEXT_PUBLIC_LOCAL_MODE=true
+      - WATCHPACK_POLLING=true
+    volumes:
+      - .:/app
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+    networks:
+      - srnet
+
+networks:
+  srnet:
+    name: ${SRNET_NAME:-smart-router_default}
+    external: ${SRNET_EXTERNAL:-true}

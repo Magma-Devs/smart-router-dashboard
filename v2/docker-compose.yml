@@ -1,0 +1,72 @@
+# Smart Router Dashboard v2 — production-style stack (api + web).
+#
+# Assumes a smart-router + Prometheus are already running (e.g. via
+# ~/projects/smart-router `docker/docker-compose.dashboard.yml`, which creates
+# the `smart-router_default` network and a `prometheus` service on :9090).
+# This compose joins that network so the api can scrape Prometheus by name.
+#
+#   docker compose -f docker-compose.yml up --build
+#
+# Endpoints:
+#   http://localhost:3000   dashboard UI
+#   http://localhost:8000   dashboard API (/health, /api/metrics/*)
+#
+# SR_CONFIG must point (relative to ~/projects/smart-router) at the same router
+# config the router runs, so the Endpoints/live-test pages reflect the topology.
+
+name: smart-router-dashboard
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      args:
+        GIT_COMMIT: ${GIT_COMMIT:-dev}
+        APP_VERSION: ${APP_VERSION:-0.0.0}
+    environment:
+      - NODE_ENV=production
+      - API_PORT=8000
+      - PROMETHEUS_URL=http://prometheus:9090
+      - AUTH_ENABLED=${AUTH_ENABLED:-false}
+      - AUTH_USERNAME=${DASHBOARD_USERNAME:-admin}
+      - AUTH_PASSWORD=${DASHBOARD_PASSWORD:-password}
+      - CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+      - HELM_VALUES_DIR=/app/helm-values
+    volumes:
+      # Mount the live router config so /api/config/routers reflects the
+      # running topology — exactly the v1 mechanism (core/values.yml).
+      - ${SR_CONFIG_HOST:-./dev-config/values.yml}:/app/helm-values/core/values.yml:ro
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    networks:
+      - srnet
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+        NEXT_PUBLIC_LOCAL_MODE: "true"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+      - NEXT_PUBLIC_LOCAL_MODE=true
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+    restart: unless-stopped
+    networks:
+      - srnet
+
+networks:
+  # Join the smart-router stack's network so `prometheus` resolves. Set
+  # SRNET_EXTERNAL=smart-router_default when the router stack is up; otherwise
+  # this falls back to a local bridge (api will 503 metrics until Prometheus
+  # is reachable).
+  srnet:
+    name: ${SRNET_NAME:-smart-router_default}
+    external: ${SRNET_EXTERNAL:-true}

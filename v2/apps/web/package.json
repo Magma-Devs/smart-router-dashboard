@@ -1,0 +1,25 @@
+{
+  "name": "@sr/web",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start -p 3000",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@sr/shared": "workspace:*",
+    "next": "16.2.6",
+    "react": "^19",
+    "react-dom": "^19",
+    "swr": "^2.2.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "typescript": "^6.0.0"
+  }
+}
