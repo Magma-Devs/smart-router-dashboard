@@ -116,6 +116,7 @@ topology with no duplicated config. Override the mount dir with `HELM_VALUES_DIR
 
 | Endpoint | Auth | Description |
 |---|---|---|
+| `GET /docs` · `GET /docs/json` | public (dev only) | Swagger UI explorer + OpenAPI 3.1 spec. Gated off in production. |
 | `GET /health` · `GET /health/ready` | public | Liveness / readiness (readiness pings Prometheus) |
 | `GET /version` | public | Build provenance |
 | `POST /api/auth/login` · `GET /api/auth/status` | public | Basic-auth sign-in (parity with v1) |

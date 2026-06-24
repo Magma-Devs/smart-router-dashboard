@@ -17,10 +17,14 @@ function safeEqual(a: string, b: string): boolean {
  */
 export const authPlugin = fp(async (app: FastifyInstance) => {
   const PUBLIC = ["/health", "/health/ready", "/version", "/api/auth/login", "/api/auth/status"];
+  // The OpenAPI explorer + spec are dev-only (swagger plugin is gated on prod),
+  // so leave them ungated when present.
+  const PUBLIC_PREFIXES = ["/docs"];
 
   app.addHook("onRequest", async (request: FastifyRequest, reply: FastifyReply) => {
     if (!config.auth.enabled) return;
     if (PUBLIC.some((p) => request.url === p || request.url.startsWith(`${p}?`))) return;
+    if (PUBLIC_PREFIXES.some((p) => request.url.startsWith(p))) return;
 
     const header = request.headers.authorization;
     if (!header?.startsWith("Basic ")) {
