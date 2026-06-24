@@ -93,7 +93,13 @@ class RouterConfig(_LenientConfig):
     # Local listen port (from SR_CONFIG endpoints[].listen-address) for
     # docker-compose runs where each chain is reached at localhost:<port>.
     # None for helm-values deployments, which route via the gateway.
+    #
+    # `local_port` is the back-compat scalar (the chain's first interface's
+    # port); `local_ports` maps api-interface -> port so a chain exposing
+    # several interfaces on different ports (rest:3360 + tendermintrpc:3361)
+    # resolves each one correctly. Empty for helm/gateway deployments.
     local_port: int | None = None
+    local_ports: dict[str, int] = {}
 
     def get_interfaces(self) -> list[str]:
         """Get all unique interfaces from all nodes' endpoints."""
@@ -185,9 +191,12 @@ class RouterInfo(BaseModel):
     network: str
     interfaces: list[str]
     nodes: list[ComponentNode]
-    # Local listen port for docker-compose runs (localhost:<port>); null when
-    # the deployment routes via the gateway (helm values).
+    # Local listen ports for docker-compose runs (localhost:<port>); empty/null
+    # when the deployment routes via the gateway (helm values). `local_port` is
+    # the back-compat scalar (first interface); `local_ports` maps
+    # api-interface -> port so multi-interface chains resolve each interface.
     local_port: int | None = None
+    local_ports: dict[str, int] = {}
 
 
 class ComponentsResponse(BaseModel):

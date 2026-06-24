@@ -159,6 +159,57 @@ class TestConfigurationService:
         assert by_id["ETH1"]["local_port"] == 3360
         assert by_id["ARBITRUM"]["local_port"] == 3361
         assert rc["ETH1"].local_port == 3360
+        # These endpoints omit api-interface, so the port lands under the ""
+        # bucket; the frontend's per-interface lookup misses and falls back to
+        # the scalar local_port. (When endpoints DO declare api-interface — the
+        # wizard-generated shape — the map is keyed by it; see
+        # test_sr_config_local_ports_per_interface.)
+        assert by_id["ETH1"]["local_ports"] == {"": 3360}
+        assert by_id["ARBITRUM"]["local_ports"] == {"": 3361}
+
+    def test_sr_config_local_ports_per_interface(self):
+        """A chain exposing several interfaces on DIFFERENT ports keeps each
+        port keyed by api-interface — rest:3360 + tendermintrpc:3361 must NOT
+        collapse onto one port. (Regression: the dashboard showed both LAVA
+        interfaces at localhost:3360 because local_port was chain-wide.)"""
+        sr_config = {
+            "endpoints": [
+                {
+                    "chain-id": "LAVA",
+                    "api-interface": "rest",
+                    "listen-address": "0.0.0.0:3360",
+                },
+                {
+                    "chain-id": "LAVA",
+                    "api-interface": "tendermintrpc",
+                    "listen-address": "0.0.0.0:3361",
+                },
+            ],
+            "direct-rpc": [
+                {
+                    "chain-id": "LAVA",
+                    "api-interface": "rest",
+                    "node-urls": [{"url": "https://lava.example"}],
+                },
+                {
+                    "chain-id": "LAVA",
+                    "api-interface": "tendermintrpc",
+                    "node-urls": [{"url": "https://lava.tm.example"}],
+                },
+            ],
+        }
+
+        with patch.object(self.service, "read_yaml_file", return_value=sr_config):
+            data = self.service.read_smart_router_values()
+            rc = {r.id: r for r in self.service._read_smart_router_values()}
+
+        lava = {r["id"]: r for r in data["routers"]}["LAVA"]
+        # Per-interface map resolves each interface to its OWN port.
+        assert lava["local_ports"] == {"rest": 3360, "tendermintrpc": 3361}
+        # Back-compat scalar is the first interface's port (insertion order).
+        assert lava["local_port"] == 3360
+        # The parsed RouterConfig carries the map too.
+        assert rc["LAVA"].local_ports == {"rest": 3360, "tendermintrpc": 3361}
 
     def test_sr_config_local_port_absent_when_no_endpoints(self):
         """No endpoints block -> local_port is None (helm/gateway deployments)."""

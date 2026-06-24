@@ -60,19 +60,29 @@ def _normalize_smart_router_config(raw: dict[str, Any]) -> dict[str, Any]:
     if "direct-rpc" not in raw:
         return {"routers": []}
 
-    # Map chain-id -> local listen port from the `endpoints` block. In a local
-    # docker-compose run there's no gateway: each chain is reached directly at
-    # localhost:<port> (e.g. listen-address "0.0.0.0:3360" -> ETH1 on 3360),
-    # so the dashboard's local mode builds http://localhost:<port> from this.
-    local_ports: dict[str, int] = {}
+    # Map chain-id -> { api-interface -> local listen port } from the `endpoints`
+    # block. In a local docker-compose run there's no gateway: each chain's
+    # interface is reached directly at localhost:<port> (e.g. listen-address
+    # "0.0.0.0:3360" with api-interface "rest" -> LAVA rest on 3360), so the
+    # dashboard's local mode builds http://localhost:<port> from this.
+    #
+    # Keyed by (chain-id, api-interface) because ONE chain can expose several
+    # interfaces on DIFFERENT ports (LAVA rest:3360 + tendermintrpc:3361). A
+    # chain-id-only map collapses them onto the first interface's port — the bug
+    # this map fixes.
+    local_ports_by_chain: dict[str, dict[str, int]] = {}
     for endpoint in raw.get("endpoints") or []:
         chain_id = endpoint.get("chain-id")
         listen = endpoint.get("listen-address") or endpoint.get("network-address")
         if not chain_id or not listen:
             continue
         port = _port_from_listen_address(listen)
-        if port is not None:
-            local_ports.setdefault(chain_id, port)
+        if port is None:
+            continue
+        # api-interface keys the per-interface port; "" groups endpoints that
+        # omit it (the legacy single-interface shape) under one bucket.
+        interface = endpoint.get("api-interface", "") or ""
+        local_ports_by_chain.setdefault(chain_id, {}).setdefault(interface, port)
 
     # Group direct-rpc providers by chain-id into one router each.
     routers_by_chain: dict[str, dict[str, Any]] = {}
@@ -97,13 +107,19 @@ def _normalize_smart_router_config(raw: dict[str, Any]) -> dict[str, Any]:
             "endpoints": endpoints,
         }
 
+        ports = local_ports_by_chain.get(chain_id, {})
+        # Back-compat scalar: the first interface's port (any() over an insertion-
+        # ordered dict). Older clients that read `local_port` still get a usable
+        # port; per-interface clients read `local_ports`.
+        first_port = next(iter(ports.values()), None)
         router = routers_by_chain.setdefault(
             chain_id,
             {
                 "id": chain_id,
                 "network": chain_id.lower(),
                 "nodes": [],
-                "local_port": local_ports.get(chain_id),
+                "local_port": first_port,
+                "local_ports": ports,
             },
         )
         router["nodes"].append(node)
