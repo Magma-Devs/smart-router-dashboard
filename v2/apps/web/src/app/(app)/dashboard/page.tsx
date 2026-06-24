@@ -1,13 +1,24 @@
 "use client";
 
 import { useState } from "react";
-import { DEFAULT_WINDOW, type MetricWindow, type OverviewData, type TimePoint } from "@sr/shared";
+import { type MetricWindow, type OverviewData, type TimePoint } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
-import { WindowSelector } from "@/components/gateway/WindowSelector";
 import { ChartLegend, ColumnChart, LineChart, StackedAreaChart, type Layer } from "@/components/gateway/charts";
 import { fmtNum, fmtPct } from "@/lib/format";
 
 const vals = (pts: TimePoint[] | undefined) => (pts ?? []).map((p) => p.v ?? 0);
+
+/** Dashboard window toggle — matches the design's 1h/3h/24h/7d set. */
+function DashWindow({ value, onChange }: { value: MetricWindow; onChange: (w: MetricWindow) => void }) {
+  const opts: [MetricWindow, string][] = [["1h", "1h"], ["6h", "6h"], ["1d", "24h"], ["7d", "7d"]];
+  return (
+    <div className="gw-segctl">
+      {opts.map(([w, label]) => (
+        <button key={w} className={value === w ? "on" : ""} onClick={() => onChange(w)}>{label}</button>
+      ))}
+    </div>
+  );
+}
 
 function deltaNode(value: number | null | undefined, prior: number | null | undefined, opts?: { lowerIsBetter?: boolean; suffix?: string }) {
   if (value == null || prior == null || prior === 0) return null;
@@ -59,7 +70,7 @@ function ChCard({ title, controls, footer, children }: { title: React.ReactNode;
 }
 
 export default function DashboardPage() {
-  const [window, setWindow] = useState<MetricWindow>(DEFAULT_WINDOW);
+  const [window, setWindow] = useState<MetricWindow>("1d");
   const [pctile, setPctile] = useState<"p50" | "p95" | "p99">("p95");
   const { data } = useApi<OverviewData>(`/api/metrics/overview?window=${window}`);
 
@@ -83,9 +94,24 @@ export default function DashboardPage() {
           <div style={{ fontWeight: 700, fontSize: 15, letterSpacing: "-0.01em" }}>Smart Router</div>
           <div className="muted" style={{ fontSize: 11 }}>live deployment</div>
         </div>
-        <WindowSelector value={window} onChange={setWindow} />
+        <DashWindow value={window} onChange={setWindow} />
+        <button className="gw-btn" style={{ fontSize: 12, height: 32, padding: "0 10px" }}>Chains: All ▾</button>
+        <button className="gw-btn gw-btn--ghost" style={{ fontSize: 12, height: 32, padding: "0 10px", color: "var(--text-3)" }}>+ filter</button>
         <div style={{ flex: 1 }} />
         <button className="gw-btn gw-btn--primary" style={{ fontSize: 12, padding: "5px 12px" }}>Export POC report</button>
+      </div>
+
+      {/* Overview / Metrics tabs */}
+      <div style={{ display: "flex", gap: 22, borderBottom: "1px solid var(--line)" }}>
+        {[["overview", "Overview"], ["metrics", "Metrics"]].map(([id, label], i) => (
+          <button
+            key={id}
+            className="gw-btn gw-btn--ghost"
+            style={{ padding: "6px 0", borderRadius: 0, fontWeight: i === 0 ? 600 : 500, color: i === 0 ? "var(--text)" : "var(--text-3)", borderBottom: i === 0 ? "2px solid var(--brand)" : "2px solid transparent" }}
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
       {/* 5 KPI cards */}
@@ -98,7 +124,11 @@ export default function DashboardPage() {
         <KpiCard label="P95 latency" value={lat?.value == null ? "—" : `${Math.round(lat.value)} ms`} delta={deltaNode(lat?.value, lat?.prior, { lowerIsBetter: true, suffix: " ms" })}>
           <div style={{ marginTop: 10 }}>{seg}</div>
         </KpiCard>
-        <KpiCard label="Errors handled" value={fmtNum(data?.errors.value)} sub={`${fmtPct(data?.errorRate)} error rate`} />
+        <KpiCard label="Errors handled" value={fmtNum(data?.errors.value)} sub={`${fmtPct(data?.errorRate)} error rate`}>
+          <button className="gw-btn gw-btn--ghost" style={{ fontSize: 10, padding: "2px 7px", marginTop: 6, color: "var(--brand)", background: "rgba(255,57,0,0.08)", border: "1px solid rgba(255,57,0,0.2)", borderRadius: 5, alignSelf: "flex-start" }}>
+            show breakdown
+          </button>
+        </KpiCard>
         <KpiCard
           label="RPC traffic"
           value={<span style={{ color: "var(--info)" }}>{fmtNum(data?.throughputRps.value)} <span style={{ fontSize: 18 }} className="muted">req/s</span></span>}
