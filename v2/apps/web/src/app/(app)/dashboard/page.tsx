@@ -85,7 +85,7 @@ export default function DashboardPage() {
         </div>
         <WindowSelector value={window} onChange={setWindow} />
         <div style={{ flex: 1 }} />
-        <button className="gw-btn gw-btn--primary" style={{ fontSize: 12, padding: "5px 12px" }}>Export report</button>
+        <button className="gw-btn gw-btn--primary" style={{ fontSize: 12, padding: "5px 12px" }}>Export POC report</button>
       </div>
 
       {/* 5 KPI cards */}

@@ -75,11 +75,11 @@ function Topbar({ here }: { here: string }) {
         <span className="here">{here}</span>
       </div>
       <div className="gw-top__right">
-        {rps != null && (
-          <span className="muted mono" style={{ fontSize: 12 }}>
-            {fmtNum(rps)} RPS
-          </span>
-        )}
+        {/* Live throughput (real). CU/mo cap is not metered by the router, so
+            it's shown as "—" rather than an invented quota. */}
+        <span className="gw-mono" style={{ fontSize: 12, color: "var(--text-3)" }} title="Throughput · monthly compute units">
+          {rps != null ? fmtNum(rps) : "—"} RPS · — CU/mo
+        </span>
         <span className="pill">
           <span className={ok ? "dot-ok" : "dot-warn"} />
           {ok ? "All systems normal" : data ? "Degraded" : "…"}
