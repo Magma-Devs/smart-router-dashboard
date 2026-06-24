@@ -26,21 +26,24 @@ pnpm dev                            # api :8000, web :3000
 pnpm typecheck && pnpm test
 ```
 
-### Run the full stack against a real Smart Router
+### Run the full stack against a real Smart Router — `make up`
 
-The dashboard is useless without a router emitting metrics. Bring one up from
-`~/projects/smart-router` (router + Prometheus), then point this stack at it.
+The dashboard is useless without a router emitting metrics. `make up` does it all
+— router + Prometheus (from `~/projects/smart-router`) + api + web:
 
 ```bash
-# 1. Router + Prometheus (offline specs so it never hits GitHub):
-#    (run from ~/projects/smart-router — do NOT edit that repo)
-SR_CONFIG=config/smartrouter_examples/smartrouter_eth.yml SR_SPEC=specs/ \
-  docker compose -f docker/docker-compose.dashboard.yml up -d router prometheus
-
-# 2. This dashboard (api+web), joining the router's network:
-docker compose -f v2/docker-compose.yml up --build
-#    UI → http://localhost:3000   API → http://localhost:8000
+make up      # UI → http://localhost:3000  ·  API → http://localhost:8000
+make ps      # what's running
+make down    # stop the dashboard (router left up)
 ```
+
+> **Use `make`, not plain `docker compose up --build`.** On a Docker daemon
+> shared with sibling projects, BuildKit's shared cache/context can bleed the
+> wrong project's `apps/api/package.json` into the build (you'll see
+> `ERR_PNPM_OUTDATED_LOCKFILE` mentioning `@info/shared` — a project that isn't
+> this one). `make` builds on a dedicated `srdash-builder` with a clean cache,
+> so it's deterministic. Override paths/ports via Makefile vars
+> (`ROUTER_DIR`, `SR_CONFIG`, `WEB_PORT`, …).
 
 ## Architecture
 
