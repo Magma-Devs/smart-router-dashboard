@@ -171,5 +171,6 @@ a { color: inherit; text-decoration: none; }
 .gw-segctl button.on { background: var(--surface); color: var(--text); box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset; }
 
 /* KPI card label */
-.kpi-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.09em; font-weight: 600; color: var(--text-3); }
-.kpi-num { font-size: 26px; font-weight: 700; letter-spacing: -0.03em; line-height: 1; }
+/* exact design values: label 10px/0.8px, value 28px mono/-0.84px */
+.kpi-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; color: var(--text-3); }
+.kpi-num { font-size: 28px; font-weight: 700; letter-spacing: -0.03em; line-height: 1; font-family: var(--font-mono); font-feature-settings: "tnum"; }

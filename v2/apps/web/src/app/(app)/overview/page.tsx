@@ -70,7 +70,7 @@ export default function OverviewPage() {
         <KpiCard label="Total Requests" value={fmtNum(data?.totalRequests.value)} sub={`${winLabel} window · all routes`} spark={vals(data?.throughput)} />
         <KpiCard
           label="Throughput"
-          value={<span style={{ color: "var(--info)" }}>{fmtNum(data?.throughputRps.value)} <span style={{ fontSize: 16, color: "var(--text-3)" }}>rps</span></span>}
+          value={<span style={{ color: "var(--info)" }}>{fmtNum(data?.throughputRps.value)}<span style={{ fontSize: 16, color: "var(--text-3)", marginLeft: 6 }}>rps</span></span>}
           sub={data?.rpsCap ? `of ${data.rpsCap} rps cap` : "rps cap not tracked"}
           spark={vals(data?.throughput)}
         />
@@ -82,10 +82,10 @@ export default function OverviewPage() {
         />
       </div>
 
-      {/* Row 2 — 638 / 298 two-column */}
+      {/* Row 2 — 638 / 298 two-column, fixed heights matching the design */}
       <div style={{ display: "grid", gridTemplateColumns: "2.14fr 1fr", gap: 16 }}>
-        {/* Left column */}
-        <div style={{ display: "grid", gridTemplateRows: "auto 1fr", gap: 16 }}>
+        {/* Left column — Compute units (173px) + Throughput·RPS (323px) */}
+        <div style={{ display: "grid", gridTemplateRows: "173px 323px", gap: 16 }}>
           {/* Compute units */}
           <div className="gw-card gw-card--accent">
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -141,8 +141,8 @@ export default function OverviewPage() {
           </div>
         </div>
 
-        {/* Right column */}
-        <div style={{ display: "grid", gridTemplateRows: "auto auto", gap: 16 }}>
+        {/* Right column — p50 latency (flex-grows) + Active routes (215px) */}
+        <div style={{ display: "grid", gridTemplateRows: "1fr 215px", gap: 16 }}>
           {/* p50 latency · ms */}
           <div className="gw-card">
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
