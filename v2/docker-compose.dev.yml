@@ -1,35 +1,48 @@
-# Smart Router Dashboard v2 — dev stack (hot reload).
+# Smart Router Dashboard v2 — dev stack with HOT RELOAD.
 #
-#   docker compose -f docker-compose.dev.yml up --build
+#   make dev          (or: docker compose -f docker-compose.dev.yml up --build)
 #
-# Mounts source so api (tsx watch) and web (next dev) reload on edits. The
-# shared package is rebuilt by the `builder` service's tsc --watch.
+# Mirrors lava-connect's dev pattern:
+#   - a shared Dockerfile.dev image carries node_modules (so mounts don't clobber it)
+#   - only source + dist dirs are mounted (NOT the whole tree)
+#   - `builder` runs `tsc --watch` on @sr/shared → dist/ (which api+web read)
+#   - api runs `tsx watch` (restarts on src or shared/dist change)
+#   - web runs `next dev` (Fast Refresh in the browser)
+#
 # Joins the running smart-router_default network for live Prometheus data.
 
 name: smart-router-dashboard-dev
 
 services:
   builder:
-    image: node:22-alpine
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
     working_dir: /app
-    command: sh -c "corepack enable && pnpm install && pnpm --filter @sr/shared build:watch"
+    command: pnpm --filter @sr/shared build:watch
     volumes:
-      - .:/app
+      - ./packages/shared/src:/app/packages/shared/src
+      - ./packages/shared/dist:/app/packages/shared/dist
     networks:
       - srnet
 
   api:
-    image: node:22-alpine
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
     working_dir: /app
-    command: sh -c "corepack enable && pnpm install && pnpm --filter @sr/api dev"
+    command: pnpm --filter @sr/api dev
     environment:
       - NODE_ENV=development
       - API_PORT=8000
       - PROMETHEUS_URL=http://prometheus:9090
       - HELM_VALUES_DIR=/app/helm-values
-      - CORS_ORIGINS=http://localhost:3000
+      - CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
     volumes:
-      - .:/app
+      - ./apps/api/src:/app/apps/api/src
+      - ./apps/api/tsconfig.json:/app/apps/api/tsconfig.json
+      - ./packages/shared/src:/app/packages/shared/src
+      - ./packages/shared/dist:/app/packages/shared/dist
       - ${SR_CONFIG_HOST:-./dev-config/values.yml}:/app/helm-values/core/values.yml:ro
     ports:
       - "8000:8000"
@@ -39,16 +52,24 @@ services:
       - srnet
 
   web:
-    image: node:22-alpine
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
     working_dir: /app
-    command: sh -c "corepack enable && pnpm install && pnpm --filter @sr/web dev"
+    command: pnpm --filter @sr/web dev
     environment:
       - NODE_ENV=development
       - NEXT_PUBLIC_API_URL=http://localhost:8000
       - NEXT_PUBLIC_LOCAL_MODE=true
       - WATCHPACK_POLLING=true
     volumes:
-      - .:/app
+      - ./apps/web/src:/app/apps/web/src
+      - ./apps/web/public:/app/apps/web/public
+      - ./apps/web/next.config.mjs:/app/apps/web/next.config.mjs
+      - ./apps/web/tsconfig.json:/app/apps/web/tsconfig.json
+      - ./apps/web/next-env.d.ts:/app/apps/web/next-env.d.ts
+      - ./packages/shared/src:/app/packages/shared/src
+      - ./packages/shared/dist:/app/packages/shared/dist
     ports:
       - "3000:3000"
     depends_on:

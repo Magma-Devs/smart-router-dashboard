@@ -6,6 +6,8 @@ import {
   IconPlay,
   IconPulse,
   IconServer,
+  IconSettings,
+  IconUsers,
 } from "./icons";
 
 export interface NavItem {
@@ -19,6 +21,7 @@ export interface NavSection {
   items: NavItem[];
 }
 
+/** Mirrors the SR Dashboard prototype's sidebar structure. */
 export const NAV_SECTIONS: NavSection[] = [
   {
     label: null,
@@ -27,10 +30,18 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     label: "Smart Router",
     items: [
-      { href: "/metrics", label: "Metrics", icon: IconChart },
+      { href: "/dashboard", label: "Dashboard", icon: IconPulse },
       { href: "/providers", label: "Providers", icon: IconServer },
       { href: "/endpoints", label: "Endpoints", icon: IconGlobe },
+      { href: "/metrics", label: "Metrics", icon: IconChart },
       { href: "/live-test", label: "Live test", icon: IconPlay },
+    ],
+  },
+  {
+    label: "Account",
+    items: [
+      { href: "/team", label: "Team", icon: IconUsers },
+      { href: "/account", label: "Account", icon: IconSettings },
     ],
   },
 ];

@@ -29,14 +29,25 @@ WEB_PORT    ?= 3000
 API_URL     ?= http://localhost:$(API_PORT)
 SR_CONFIG_HOST ?= $(CURDIR)/dev-config/values.yml
 
-.PHONY: up down router build build-api build-web run logs ps clean builder
+.PHONY: up dev dev-down down router build build-api build-web run logs ps clean builder
 
-## up: router + Prometheus + dashboard (the one command)
+## up: router + Prometheus + dashboard, PRODUCTION images (no hot reload)
 up: router build run
 	@echo ""
-	@echo "  ✅ Dashboard up:"
+	@echo "  ✅ Dashboard up (prod images — rebuild on code change with 'make build run'):"
 	@echo "     UI   → http://localhost:$(WEB_PORT)"
 	@echo "     API  → http://localhost:$(API_PORT)"
+
+## dev: router + Prometheus + dashboard with HOT RELOAD (source mounted)
+##      api = tsx watch · web = next dev · shared = tsc --watch (like lava-connect)
+dev: router
+	@echo "▶ dev stack with hot reload (first boot runs pnpm install — ~1 min)"
+	docker compose -f docker-compose.dev.yml up --build
+	@echo "     UI → http://localhost:$(WEB_PORT)  ·  API → http://localhost:$(API_PORT)"
+
+## dev-down: stop the hot-reload dev stack
+dev-down:
+	docker compose -f docker-compose.dev.yml down
 
 ## router: bring up smart-router + Prometheus (offline specs, no GitHub)
 router:
