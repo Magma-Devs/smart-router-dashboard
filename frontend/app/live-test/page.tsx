@@ -68,8 +68,12 @@ interface ApiResponse {
     [key: string]: {
       network: string;
       interfaces: string[];
-      // Local listen port (docker-compose); null when routed via the gateway.
+      // Local listen ports (docker-compose); empty/null when routed via the
+      // gateway. `local_port` is the back-compat scalar (first interface);
+      // `local_ports` maps interface -> port so multi-interface chains resolve
+      // each interface to its own port.
       local_port?: number | null;
+      local_ports?: Record<string, number> | null;
       nodes: Array<{
         name: string;
         endpoints: Array<{
@@ -161,9 +165,19 @@ export default function LiveTestPage() {
     if (!apiData?.routers?.[chainId]) return null;
     return apiData.routers[chainId].network;
   };
-  // Local listen port for a chain (docker-compose local mode); null otherwise.
-  const localPortFor = (chainId: string): number | null =>
-    apiData?.routers?.[chainId]?.local_port ?? null;
+  // Local listen port for a chain's interface (docker-compose local mode); null
+  // otherwise. Prefers the per-interface map so a chain exposing several
+  // interfaces on different ports (rest:3360 + tendermintrpc:3361) resolves each
+  // one; falls back to the back-compat scalar when the interface isn't in the
+  // map or no interface is given (single-interface chains).
+  const localPortFor = (chainId: string, interfaceType?: string): number | null => {
+    const router = apiData?.routers?.[chainId];
+    if (!router) return null;
+    if (interfaceType && router.local_ports && router.local_ports[interfaceType] != null) {
+      return router.local_ports[interfaceType];
+    }
+    return router.local_port ?? null;
+  };
   const [selectedNetwork, setSelectedNetwork] = useState<string>('');
   const [selectedRouter, setSelectedRouter] = useState<string>('');
   const [selectedInterface, setSelectedInterface] = useState<string>('');
@@ -612,7 +626,7 @@ export default function LiveTestPage() {
 
     const domain = config.endpointDomain;
     const port = config.endpointPort;
-    const localPort = localPortFor(selectedRouter);
+    const localPort = localPortFor(selectedRouter, 'jsonrpc');
     const endpoint = buildEndpointBaseUrl({
       chainId: selectedRouter,
       interfaceType: 'jsonrpc',
@@ -817,7 +831,7 @@ export default function LiveTestPage() {
 
       const domain = config.endpointDomain;
       const port = config.endpointPort;
-      const localPort = localPortFor(selectedRouter);
+      const localPort = localPortFor(selectedRouter, commandLookupInterface);
       const builderArgs = {
         chainId: selectedRouter,
         interfaceType: commandLookupInterface,
@@ -918,7 +932,7 @@ export default function LiveTestPage() {
 
       const domain = config.endpointDomain;
       const port = config.endpointPort;
-      const localPort = localPortFor(selectedRouter);
+      const localPort = localPortFor(selectedRouter, commandLookupInterface);
       const builderArgs = {
         chainId: selectedRouter,
         interfaceType: commandLookupInterface,
@@ -1215,7 +1229,7 @@ export default function LiveTestPage() {
         interfaceCommand,
         domain,
         port,
-        localPort: localPortFor(selectedRouter),
+        localPort: localPortFor(selectedRouter, selectedInterface),
         skipCache,
         requestType: selectedRequestType,
         crossValidationMaxParticipants,
@@ -1362,7 +1376,7 @@ export default function LiveTestPage() {
         interfaceCommand,
         domain,
         port,
-        localPort: localPortFor(selectedRouter),
+        localPort: localPortFor(selectedRouter, selectedInterface),
         skipCache,
         requestType: selectedRequestType,
         authorizationHeader: formatAuthHeader(authorizationHeader) || undefined,
@@ -1462,7 +1476,9 @@ export default function LiveTestPage() {
             chainId: selectedRouter,
             domain,
             port,
-            localPort: localPortFor(selectedRouter),
+            // Batch is JSON-RPC only (makeBatchRequest builds a jsonrpc URL), so
+            // resolve the local port for the jsonrpc interface specifically.
+            localPort: localPortFor(selectedRouter, 'jsonrpc'),
             skipCache,
             addonType: batchAddonType,
             authorizationHeader: formatAuthHeader(authorizationHeader) || undefined,
@@ -1493,6 +1509,9 @@ export default function LiveTestPage() {
             chainId: selectedRouter,
             domain,
             port,
+            // Batch load test is JSON-RPC only; resolve the jsonrpc local port so
+            // it reaches the right localhost:<port> in local mode.
+            localPort: localPortFor(selectedRouter, 'jsonrpc'),
             skipCache,
             addonType: batchAddonType,
             authorizationHeader: formatAuthHeader(authorizationHeader) || undefined,
