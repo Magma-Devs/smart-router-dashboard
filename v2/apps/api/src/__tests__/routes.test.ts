@@ -96,4 +96,17 @@ describe("api routes", () => {
     expect(res.statusCode).toBe(200);
     expect(Array.isArray(res.json().methods)).toBe(true);
   });
+
+  it("GET /api/metrics/overview → KPIs + series + gated CU/cap", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/metrics/overview?window=1d" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.totalRequests).toHaveProperty("value");
+    expect(body.totalRequests).toHaveProperty("prior");
+    expect(Array.isArray(body.throughput)).toBe(true);
+    expect(Array.isArray(body.activeRoutes)).toBe(true);
+    // Quota/cap are never invented — always null on this build.
+    expect(body.computeUnits.limit).toBeNull();
+    expect(body.rpsCap).toBeNull();
+  });
 });

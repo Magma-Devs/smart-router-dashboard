@@ -1,97 +1,156 @@
 "use client";
 
 import { useState } from "react";
-import {
-  DEFAULT_WINDOW,
-  type ChainMetrics,
-  type DashboardSummary,
-  type MetricWindow,
-} from "@sr/shared";
+import { DEFAULT_WINDOW, type MetricWindow, type OverviewData, type TimePoint } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { WindowSelector } from "@/components/gateway/WindowSelector";
-import { fmtBlock, fmtMs, fmtNum, fmtPct } from "@/lib/format";
+import { Sparkline } from "@/components/gateway/Sparkline";
+import { MiniBars, MiniSpark } from "@/components/gateway/MiniSpark";
+import { fmtMs, fmtNum, fmtPct } from "@/lib/format";
 
-function StatCard({ title, value, sub, accent }: { title: string; value: string; sub?: string; accent?: boolean }) {
+function delta(value: number | null, prior: number | null, opts?: { lowerIsBetter?: boolean; suffix?: string }) {
+  if (value === null || prior === null || prior === 0) return null;
+  const diff = value - prior;
+  if (Math.abs(diff) < 1e-9) return null;
+  const better = opts?.lowerIsBetter ? diff < 0 : diff > 0;
+  const arrow = diff > 0 ? "↑" : "↓";
   return (
-    <div className={`gw-card${accent ? " gw-card--accent" : ""}`}>
-      <p className="gw-card__title">{title}</p>
-      <div className="gw-stat">{value}</div>
-      {sub && <div className="gw-stat__sub">{sub}</div>}
+    <span className={better ? "up" : "down"}>
+      {arrow} {fmtNum(Math.abs(diff))}{opts?.suffix ?? ""} vs prior
+    </span>
+  );
+}
+
+function HeroCard({
+  label,
+  value,
+  sub,
+  spark,
+  color = "var(--brand)",
+  deltaNode,
+}: {
+  label: string;
+  value: React.ReactNode;
+  sub?: string;
+  spark?: { points: TimePoint[] };
+  color?: string;
+  deltaNode?: React.ReactNode;
+}) {
+  return (
+    <div className="gw-card">
+      <p className="kpi__label">{label}</p>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div className="kpi__value" style={{ color }}>{value}</div>
+        {spark && <MiniSpark points={spark.points} color={color} width={80} />}
+      </div>
+      {sub && <div className="kpi__sub">{sub}</div>}
+      {deltaNode && <div className="kpi__delta">{deltaNode}</div>}
     </div>
   );
 }
 
 export default function OverviewPage() {
   const [window, setWindow] = useState<MetricWindow>(DEFAULT_WINDOW);
-  const summary = useApi<DashboardSummary>(`/api/metrics/dashboard-summary?window=${window}`);
-  const chains = useApi<{ chains: ChainMetrics[] }>(`/api/metrics/chains?window=${window}`);
-
-  const s = summary.data;
+  const { data } = useApi<OverviewData>(`/api/metrics/overview?window=${window}`);
 
   return (
-    <div className="gw-page">
+    <div className="gw-page" style={{ maxWidth: 1280 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
         <div>
           <h1>Overview</h1>
-          <p className="lede">Smart Router health and traffic at a glance.</p>
+          <p className="lede">Live metrics across all routes</p>
         </div>
         <WindowSelector value={window} onChange={setWindow} />
       </div>
 
-      <div className="gw-grid" style={{ gridTemplateColumns: "repeat(3, 1fr)", marginBottom: 24 }}>
-        <StatCard title="Requests served" value={fmtNum(s?.requestsServed)} sub={`across ${s?.providerCount ?? "—"} providers`} accent />
-        <StatCard title="Success rate" value={fmtPct(s?.successRate)} sub="effective, after retries" />
-        <StatCard title="Effective read p95" value={fmtMs(s?.effectiveReadP95Ms)} sub="blended latency" />
-        <StatCard title="Stale responses caught" value={fmtNum(s?.staleResponsesCaught)} sub="consistency enforcement" />
-        <StatCard title="Chains" value={String(s?.chainCount ?? "—")} sub={`${s?.providerCount ?? "—"} backing endpoints`} />
-        <StatCard title="Status" value={s?.health === "operational" ? "Operational" : s?.health === "unhealthy" ? "Unhealthy" : "—"} sub="router overall health" />
+      {/* 4 hero KPI cards */}
+      <div className="gw-grid" style={{ gridTemplateColumns: "repeat(4, 1fr)", marginBottom: 16 }}>
+        <HeroCard
+          label="Total requests"
+          value={fmtNum(data?.totalRequests.value)}
+          sub={`${window} window · all routes`}
+          spark={{ points: data?.throughput ?? [] }}
+          deltaNode={delta(data?.totalRequests.value ?? null, data?.totalRequests.prior ?? null)}
+        />
+        <HeroCard
+          label="Throughput"
+          value={<span>{fmtNum(data?.throughputRps.value)} <span style={{ fontSize: 16 }} className="muted">rps</span></span>}
+          sub={data?.rpsCap ? `of ${data.rpsCap} rps cap` : "rps cap not tracked"}
+          color="var(--info)"
+          spark={{ points: data?.throughput ?? [] }}
+        />
+        <HeroCard
+          label="Errors"
+          value={fmtNum(data?.errors.value)}
+          sub={`${fmtPct(data?.errorRate)} error rate`}
+          color="var(--text)"
+        />
+        <HeroCard
+          label="Uptime"
+          value={fmtPct(data?.uptime)}
+          sub={`reachability · ${data?.health === "operational" ? "100% now" : "degraded"}`}
+          color="var(--ok)"
+        />
       </div>
 
-      <div className="gw-card" style={{ padding: 0 }}>
-        <p className="gw-card__title" style={{ padding: "16px 18px 0" }}>Routers · how each chain performs</p>
-        <table className="gw-table">
-          <thead>
-            <tr>
-              <th>Router</th>
-              <th>Providers</th>
-              <th>Requests</th>
-              <th>Availability</th>
-              <th>P95</th>
-              <th>Error rate</th>
-              <th>QoS</th>
-              <th>Latest block</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {(chains.data?.chains ?? []).map((c) => (
-              <tr key={c.spec}>
-                <td>
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ width: 8, height: 8, borderRadius: "50%", background: c.color }} />
-                    <strong>{c.name}</strong>
-                    <span className="muted mono" style={{ fontSize: 11 }}>{c.spec}</span>
-                  </span>
-                </td>
-                <td>{c.providerCount}</td>
-                <td>{fmtNum(c.requests)}</td>
-                <td>{fmtPct(c.availability)}</td>
-                <td>{fmtMs(c.p95Ms)}</td>
-                <td>{fmtPct(c.errorRate)}</td>
-                <td>{c.qos === null ? <span className="muted">—</span> : c.qos.toFixed(2)}</td>
-                <td className="mono">{fmtBlock(c.latestBlock)}</td>
-                <td>
-                  <span className={`tag ${c.health === "operational" ? "tag--ok" : c.health === "unhealthy" ? "tag--err" : "tag--muted"}`}>
-                    {c.health === "operational" ? "Operational" : c.health === "unhealthy" ? "Unhealthy" : "Unknown"}
-                  </span>
-                </td>
-              </tr>
+      {/* Compute Units (gated — not a router metric) + P50 latency */}
+      <div className="gw-grid" style={{ gridTemplateColumns: "2fr 1fr", marginBottom: 16 }}>
+        <div className="gw-card gw-card--accent">
+          <p className="kpi__label">Compute units</p>
+          {data?.computeUnits.limit == null ? (
+            <div className="muted" style={{ padding: "12px 0", fontSize: 13 }}>
+              Compute-unit quota isn&apos;t emitted by the Smart Router (it&apos;s a Lava-consumer
+              billing concept). Set a limit per-deployment to track usage here.
+            </div>
+          ) : (
+            <>
+              <div className="kpi__value">
+                {fmtNum(data.computeUnits.used)} <span className="muted" style={{ fontSize: 16 }}>/ {fmtNum(data.computeUnits.limit)}</span>
+              </div>
+              <div className="gw-bar" style={{ marginTop: 14 }}><span style={{ width: "62%" }} /></div>
+            </>
+          )}
+        </div>
+        <div className="gw-card">
+          <p className="kpi__label">P50 latency · ms</p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 4 }}>
+            {(data?.perChainLatency ?? []).map((c) => (
+              <div key={c.spec} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ width: 7, height: 7, borderRadius: "50%", background: c.color }} />
+                <span style={{ flex: 1, fontSize: 13 }}>
+                  {c.name}
+                  {c.degraded && <span className="tag tag--err" style={{ marginLeft: 6, fontSize: 9 }}>degraded</span>}
+                </span>
+                <span className="mono" style={{ fontSize: 12 }}>{fmtMs(c.p50Ms)}</span>
+                <MiniBars points={c.trend} color={c.color} />
+              </div>
             ))}
-            {chains.data && chains.data.chains.length === 0 && (
-              <tr><td colSpan={9} className="muted" style={{ textAlign: "center", padding: 32 }}>No chains are emitting metrics yet.</td></tr>
-            )}
-          </tbody>
-        </table>
+            {data && data.perChainLatency.length === 0 && <span className="muted" style={{ fontSize: 13 }}>No latency data yet.</span>}
+          </div>
+        </div>
+      </div>
+
+      {/* Throughput chart + Active routes */}
+      <div className="gw-grid" style={{ gridTemplateColumns: "2fr 1fr" }}>
+        <div className="gw-card">
+          <p className="kpi__label">Throughput · rps</p>
+          <Sparkline points={data?.throughput ?? []} height={200} />
+        </div>
+        <div className="gw-card">
+          <p className="kpi__label">Active routes · requests</p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 4 }}>
+            {(data?.activeRoutes ?? []).map((rt) => (
+              <div key={`${rt.spec}-${rt.endpointId}`}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 4 }}>
+                  <span>{rt.endpointId}</span>
+                  <span className="muted">{fmtNum(rt.requests)}</span>
+                </div>
+                <div className="gw-bar"><span style={{ width: `${Math.round(rt.share * 100)}%`, background: rt.color }} /></div>
+              </div>
+            ))}
+            {data && data.activeRoutes.length === 0 && <span className="muted" style={{ fontSize: 13 }}>No routes with traffic yet.</span>}
+          </div>
+        </div>
       </div>
     </div>
   );

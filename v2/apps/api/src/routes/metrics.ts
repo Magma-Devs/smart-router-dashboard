@@ -20,6 +20,11 @@ export async function metricRoutes(app: FastifyInstance) {
     return app.metrics.dashboardSummary(parseWindow(request.query.window));
   });
 
+  // Rich Overview/Dashboard payload (KPIs + deltas + series + per-chain).
+  app.get<{ Querystring: WindowQuery }>("/api/metrics/overview", async (request) => {
+    return app.metrics.overview(parseWindow(request.query.window));
+  });
+
   // Per-chain rollup (Overview "Routers" table).
   app.get<{ Querystring: WindowQuery }>("/api/metrics/chains", async (request) => {
     return { chains: await app.metrics.chains(parseWindow(request.query.window)) };

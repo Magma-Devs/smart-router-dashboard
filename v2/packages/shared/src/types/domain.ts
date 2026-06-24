@@ -108,6 +108,60 @@ export interface MethodUsage {
   errorRate: number | null;
 }
 
+/** A KPI value with its prior-window comparison (for the ↑/↓ deltas). */
+export interface Kpi {
+  value: number | null;
+  /** Same metric over the previous equal-length window, for delta arrows. */
+  prior: number | null;
+}
+
+/** Per-chain latency row for the Overview "P50 latency" panel. */
+export interface ChainLatency {
+  spec: string;
+  name: string;
+  color: string;
+  p50Ms: number | null;
+  /** mini bar-chart series (recent latency buckets). */
+  trend: TimePoint[];
+  /** true when health gauge is 0 (the "degraded" tag). */
+  degraded: boolean;
+}
+
+/** One active-route row ("requests today" bars). */
+export interface ActiveRoute {
+  endpointId: string;
+  spec: string;
+  color: string;
+  requests: number;
+  /** fraction of the max route (for the bar width), 0..1. */
+  share: number;
+}
+
+/** Everything the Overview + Dashboard screens need in one round-trip. */
+export interface OverviewData {
+  totalRequests: Kpi;
+  throughputRps: Kpi;
+  errors: Kpi;
+  errorRate: number | null;
+  uptime: number | null;
+  successRate: Kpi;
+  p50Ms: Kpi;
+  p95Ms: Kpi;
+  p99Ms: Kpi;
+  health: HealthState;
+  /** Quota/cap are NOT emitted by the router — always null (gated in the UI). */
+  computeUnits: { used: number | null; limit: number | null; resetsAt: string | null };
+  rpsCap: number | null;
+  throughput: TimePoint[];
+  errorsSeries: TimePoint[];
+  latencySeries: TimePoint[];
+  perChainLatency: ChainLatency[];
+  activeRoutes: ActiveRoute[];
+  /** Per-chain throughput series for the stacked "requests per chain" chart. */
+  perChainSeries: { spec: string; name: string; color: string; points: TimePoint[] }[];
+  lastUpdated: string | null;
+}
+
 export interface ApiError {
   error: string;
   message: string;
