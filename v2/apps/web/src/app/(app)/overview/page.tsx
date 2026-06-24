@@ -4,153 +4,220 @@ import { useState } from "react";
 import { DEFAULT_WINDOW, type MetricWindow, type OverviewData, type TimePoint } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { WindowSelector } from "@/components/gateway/WindowSelector";
-import { Sparkline } from "@/components/gateway/Sparkline";
-import { MiniBars, MiniSpark } from "@/components/gateway/MiniSpark";
-import { fmtMs, fmtNum, fmtPct } from "@/lib/format";
+import { ChartLegend, LineChart, StackedAreaChart, type Layer } from "@/components/gateway/charts";
+import { fmtNum, fmtPct } from "@/lib/format";
 
-function delta(value: number | null, prior: number | null, opts?: { lowerIsBetter?: boolean; suffix?: string }) {
-  if (value === null || prior === null || prior === 0) return null;
-  const diff = value - prior;
-  if (Math.abs(diff) < 1e-9) return null;
-  const better = opts?.lowerIsBetter ? diff < 0 : diff > 0;
-  const arrow = diff > 0 ? "↑" : "↓";
-  return (
-    <span className={better ? "up" : "down"}>
-      {arrow} {fmtNum(Math.abs(diff))}{opts?.suffix ?? ""} vs prior
-    </span>
-  );
-}
+const vals = (pts: TimePoint[] | undefined) => (pts ?? []).map((p) => p.v ?? 0);
 
-function HeroCard({
+/** KPI card — base. */
+function KPICard({
   label,
   value,
+  deltaNode,
   sub,
   spark,
-  color = "var(--brand)",
-  deltaNode,
+  children,
 }: {
   label: string;
   value: React.ReactNode;
-  sub?: string;
-  spark?: { points: TimePoint[] };
-  color?: string;
   deltaNode?: React.ReactNode;
+  sub?: React.ReactNode;
+  spark?: number[];
+  children?: React.ReactNode;
 }) {
   return (
-    <div className="gw-card">
-      <p className="kpi__label">{label}</p>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div className="kpi__value" style={{ color }}>{value}</div>
-        {spark && <MiniSpark points={spark.points} color={color} width={80} />}
+    <div className="gw-card" style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+      <div className="kpi-label">{label}</div>
+      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginTop: 8, gap: 6 }}>
+        <div className="gw-mono gw-tnum kpi-num">{value}</div>
+        {spark && spark.length > 1 && (
+          <svg width={56} height={22} style={{ display: "block", flexShrink: 0, opacity: 0.75 }}>
+            <polyline
+              points={spark.map((v, i) => {
+                const mn = Math.min(...spark);
+                const rng = Math.max(...spark) - mn || 1;
+                return `${((i / (spark.length - 1)) * 56).toFixed(1)},${(22 - 2 - ((v - mn) / rng) * 18).toFixed(1)}`;
+              }).join(" ")}
+              fill="none"
+              stroke="var(--brand)"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        )}
       </div>
-      {sub && <div className="kpi__sub">{sub}</div>}
-      {deltaNode && <div className="kpi__delta">{deltaNode}</div>}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 7, gap: 6 }}>
+        <div style={{ fontSize: 11, color: "var(--text-3)" }}>{sub}</div>
+        {deltaNode}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function deltaNode(value: number | null | undefined, prior: number | null | undefined, opts?: { lowerIsBetter?: boolean; suffix?: string }) {
+  if (value == null || prior == null || prior === 0) return null;
+  const diff = value - prior;
+  if (Math.abs(diff) < 1e-9) return null;
+  const better = opts?.lowerIsBetter ? diff < 0 : diff > 0;
+  return (
+    <div className="gw-mono" style={{ fontSize: 11, color: better ? "var(--ok)" : "var(--err)", flexShrink: 0 }}>
+      {diff > 0 ? "↑" : "↓"} {fmtNum(Math.abs(diff))}{opts?.suffix ?? ""}
+    </div>
+  );
+}
+
+/** Latency KPI card with p50/p95/p99 selector. */
+function LatencyCard({ data, pctile, setPctile }: { data?: OverviewData; pctile: "p50" | "p95" | "p99"; setPctile: (p: "p50" | "p95" | "p99") => void }) {
+  const k = data ? (pctile === "p50" ? data.p50Ms : pctile === "p99" ? data.p99Ms : data.p95Ms) : undefined;
+  return (
+    <div className="gw-card" style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div className="kpi-label">Latency</div>
+        <div className="gw-segctl" style={{ transform: "scale(0.8)", transformOrigin: "right center" }}>
+          {(["p50", "p95", "p99"] as const).map((p) => (
+            <button key={p} className={pctile === p ? "on" : ""} onClick={() => setPctile(p)} style={{ padding: "3px 7px" }}>{p}</button>
+          ))}
+        </div>
+      </div>
+      <div className="gw-mono gw-tnum kpi-num" style={{ marginTop: 8 }}>{k?.value == null ? "—" : `${Math.round(k.value)} ms`}</div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 7 }}>
+        <div style={{ fontSize: 11, color: "var(--text-3)" }}>tail latency · {pctile}</div>
+        {deltaNode(k?.value, k?.prior, { lowerIsBetter: true, suffix: " ms" })}
+      </div>
+    </div>
+  );
+}
+
+/** Compute units — gated (not a router metric). */
+function SCUCard({ data }: { data?: OverviewData }) {
+  return (
+    <div className="gw-card" style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+      <div className="kpi-label">Compute units</div>
+      {data?.computeUnits.limit == null ? (
+        <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 10, lineHeight: 1.5 }}>
+          Not tracked — the Smart Router doesn&apos;t meter compute units.
+        </div>
+      ) : (
+        <>
+          <div className="gw-mono gw-tnum kpi-num" style={{ marginTop: 8 }}>{fmtNum(data.computeUnits.used)}</div>
+          <div className="gw-bar" style={{ marginTop: 14 }}><span style={{ width: "62%" }} /></div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function ChCard({ title, controls, footer, children }: { title: string; controls?: React.ReactNode; footer?: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <div className="gw-card" style={{ display: "flex", flexDirection: "column", gap: 0, minHeight: 0, overflow: "hidden" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, flexShrink: 0 }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-2)" }}>{title}</div>
+        {controls && <div style={{ display: "flex", alignItems: "center", gap: 8 }}>{controls}</div>}
+      </div>
+      <div style={{ flex: 1, minHeight: 0 }}>{children}</div>
+      {footer && <div style={{ marginTop: 8, flexShrink: 0 }}>{footer}</div>}
     </div>
   );
 }
 
 export default function OverviewPage() {
   const [window, setWindow] = useState<MetricWindow>(DEFAULT_WINDOW);
+  const [pctile, setPctile] = useState<"p50" | "p95" | "p99">("p95");
+  const [stackByChain, setStackByChain] = useState(false);
   const { data } = useApi<OverviewData>(`/api/metrics/overview?window=${window}`);
 
+  const chainLayers: Layer[] = (data?.perChainSeries ?? []).map((s) => ({ name: s.name, color: s.color, values: vals(s.points) }));
+  const latVals = data ? vals(data.latencySeries[pctile]) : [];
+
   return (
-    <div className="gw-page" style={{ maxWidth: 1280 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-        <div>
-          <h1>Overview</h1>
-          <p className="lede">Live metrics across all routes</p>
-        </div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "14px 28px", boxSizing: "border-box" }}>
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <button className="gw-btn" style={{ height: 32, fontSize: 12, padding: "0 10px" }}>
+          <span style={{ display: "inline-flex", gap: 2 }}>
+            <span style={{ width: 4, height: 9, borderRadius: 1, background: "#627EEA" }} />
+            <span style={{ width: 4, height: 9, borderRadius: 1, background: "#14F195" }} />
+            <span style={{ width: 4, height: 9, borderRadius: 1, background: "#0052FF" }} />
+          </span>
+          All chains ▾
+        </button>
+        <div style={{ flex: 1 }} />
         <WindowSelector value={window} onChange={setWindow} />
+        <button className="gw-btn gw-btn--primary" style={{ fontSize: 12, padding: "5px 12px" }}>View full logs ↗</button>
       </div>
 
-      {/* 4 hero KPI cards */}
-      <div className="gw-grid" style={{ gridTemplateColumns: "repeat(4, 1fr)", marginBottom: 16 }}>
-        <HeroCard
-          label="Total requests"
-          value={fmtNum(data?.totalRequests.value)}
-          sub={`${window} window · all routes`}
-          spark={{ points: data?.throughput ?? [] }}
-          deltaNode={delta(data?.totalRequests.value ?? null, data?.totalRequests.prior ?? null)}
+      {/* KPI strip (5 cards) */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10 }}>
+        <KPICard
+          label="Success Rate"
+          value={fmtPct(data?.successRate.value)}
+          sub={`vs prior ${window}`}
+          deltaNode={deltaNode(data?.successRate.value, data?.successRate.prior, { suffix: "" })}
         />
-        <HeroCard
-          label="Throughput"
-          value={<span>{fmtNum(data?.throughputRps.value)} <span style={{ fontSize: 16 }} className="muted">rps</span></span>}
-          sub={data?.rpsCap ? `of ${data.rpsCap} rps cap` : "rps cap not tracked"}
-          color="var(--info)"
-          spark={{ points: data?.throughput ?? [] }}
-        />
-        <HeroCard
-          label="Errors"
+        <LatencyCard data={data} pctile={pctile} setPctile={setPctile} />
+        <KPICard
+          label="Errors Handled"
           value={fmtNum(data?.errors.value)}
           sub={`${fmtPct(data?.errorRate)} error rate`}
-          color="var(--text)"
         />
-        <HeroCard
-          label="Uptime"
-          value={fmtPct(data?.uptime)}
-          sub={`reachability · ${data?.health === "operational" ? "100% now" : "degraded"}`}
-          color="var(--ok)"
+        <KPICard
+          label="RPC Traffic"
+          value={<span>{fmtNum(data?.throughputRps.value)} <span style={{ fontSize: 15 }} className="muted">req/s</span></span>}
+          sub="current throughput"
+          spark={vals(data?.throughput)}
+          deltaNode={deltaNode(data?.throughputRps.value, data?.throughputRps.prior, { suffix: " req/s" })}
         />
+        <SCUCard data={data} />
       </div>
 
-      {/* Compute Units (gated — not a router metric) + P50 latency */}
-      <div className="gw-grid" style={{ gridTemplateColumns: "2fr 1fr", marginBottom: 16 }}>
-        <div className="gw-card gw-card--accent">
-          <p className="kpi__label">Compute units</p>
-          {data?.computeUnits.limit == null ? (
-            <div className="muted" style={{ padding: "12px 0", fontSize: 13 }}>
-              Compute-unit quota isn&apos;t emitted by the Smart Router (it&apos;s a Lava-consumer
-              billing concept). Set a limit per-deployment to track usage here.
+      {/* 2×2 chart grid */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gridTemplateRows: "300px 300px", gap: 10 }}>
+        {/* A — Throughput */}
+        <ChCard
+          title="Throughput · req/s"
+          controls={
+            <button
+              onClick={() => setStackByChain((s) => !s)}
+              style={{ fontSize: 10, padding: "3px 8px", borderRadius: 5, border: "1px solid var(--line)", background: stackByChain ? "var(--brand)" : "transparent", color: stackByChain ? "#fff" : "var(--text-3)", cursor: "pointer", fontFamily: "inherit" }}
+            >
+              Stack by chain
+            </button>
+          }
+          footer={stackByChain ? <ChartLegend items={chainLayers.map((l) => ({ label: l.name, color: l.color, square: true }))} /> : undefined}
+        >
+          {stackByChain
+            ? <StackedAreaChart layers={chainLayers} height={230} />
+            : <LineChart series={[{ values: vals(data?.throughput), color: "var(--brand)", width: 2 }]} height={230} />}
+        </ChCard>
+
+        {/* B — Errors over time */}
+        <ChCard title="Errors over time">
+          <LineChart series={[{ values: vals(data?.errorsSeries), color: "var(--err)", width: 2, fill: true }]} height={230} />
+        </ChCard>
+
+        {/* C — Latency */}
+        <ChCard
+          title="Latency · ms"
+          controls={
+            <div className="gw-segctl" style={{ transform: "scale(0.82)", transformOrigin: "right center" }}>
+              {(["p50", "p95", "p99"] as const).map((p) => (
+                <button key={p} className={pctile === p ? "on" : ""} onClick={() => setPctile(p)} style={{ padding: "3px 7px" }}>{p}</button>
+              ))}
             </div>
-          ) : (
-            <>
-              <div className="kpi__value">
-                {fmtNum(data.computeUnits.used)} <span className="muted" style={{ fontSize: 16 }}>/ {fmtNum(data.computeUnits.limit)}</span>
-              </div>
-              <div className="gw-bar" style={{ marginTop: 14 }}><span style={{ width: "62%" }} /></div>
-            </>
-          )}
-        </div>
-        <div className="gw-card">
-          <p className="kpi__label">P50 latency · ms</p>
-          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 4 }}>
-            {(data?.perChainLatency ?? []).map((c) => (
-              <div key={c.spec} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <span style={{ width: 7, height: 7, borderRadius: "50%", background: c.color }} />
-                <span style={{ flex: 1, fontSize: 13 }}>
-                  {c.name}
-                  {c.degraded && <span className="tag tag--err" style={{ marginLeft: 6, fontSize: 9 }}>degraded</span>}
-                </span>
-                <span className="mono" style={{ fontSize: 12 }}>{fmtMs(c.p50Ms)}</span>
-                <MiniBars points={c.trend} color={c.color} />
-              </div>
-            ))}
-            {data && data.perChainLatency.length === 0 && <span className="muted" style={{ fontSize: 13 }}>No latency data yet.</span>}
-          </div>
-        </div>
-      </div>
+          }
+        >
+          <LineChart series={[{ values: latVals, color: "var(--info)", width: 2 }]} height={230} yFmt={(v) => Math.round(v) + "ms"} />
+        </ChCard>
 
-      {/* Throughput chart + Active routes */}
-      <div className="gw-grid" style={{ gridTemplateColumns: "2fr 1fr" }}>
-        <div className="gw-card">
-          <p className="kpi__label">Throughput · rps</p>
-          <Sparkline points={data?.throughput ?? []} height={200} />
-        </div>
-        <div className="gw-card">
-          <p className="kpi__label">Active routes · requests</p>
-          <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 4 }}>
-            {(data?.activeRoutes ?? []).map((rt) => (
-              <div key={`${rt.spec}-${rt.endpointId}`}>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 4 }}>
-                  <span>{rt.endpointId}</span>
-                  <span className="muted">{fmtNum(rt.requests)}</span>
-                </div>
-                <div className="gw-bar"><span style={{ width: `${Math.round(rt.share * 100)}%`, background: rt.color }} /></div>
-              </div>
-            ))}
-            {data && data.activeRoutes.length === 0 && <span className="muted" style={{ fontSize: 13 }}>No routes with traffic yet.</span>}
-          </div>
-        </div>
+        {/* D — Requests per chain */}
+        <ChCard
+          title="Requests per chain"
+          footer={<ChartLegend items={chainLayers.map((l) => ({ label: l.name, color: l.color, square: true }))} />}
+        >
+          <StackedAreaChart layers={chainLayers} normalized height={230} />
+        </ChCard>
       </div>
     </div>
   );
