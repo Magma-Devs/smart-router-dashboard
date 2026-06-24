@@ -3,8 +3,11 @@
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import type { OverviewData } from "@sr/shared";
 import { NAV_SECTIONS } from "./nav";
 import { IconMoon, IconSun, MagmaLogo } from "./icons";
+import { useApi } from "@/hooks/use-api";
+import { fmtNum } from "@/lib/format";
 
 function ThemeToggle() {
   const [theme, setTheme] = useState<"dark" | "light">("dark");
@@ -59,6 +62,11 @@ function Sidebar() {
 }
 
 function Topbar({ here }: { here: string }) {
+  // Live throughput + health for the top-bar stats (real data; CU/mo is a
+  // Lava-consumer concept the router doesn't emit, so it's omitted here).
+  const { data } = useApi<OverviewData>("/api/metrics/overview?window=1h", 30000);
+  const rps = data?.throughputRps.value;
+  const ok = data?.health === "operational";
   return (
     <header className="gw-top">
       <div className="gw-top__crumbs">
@@ -67,8 +75,14 @@ function Topbar({ here }: { here: string }) {
         <span className="here">{here}</span>
       </div>
       <div className="gw-top__right">
+        {rps != null && (
+          <span className="muted mono" style={{ fontSize: 12 }}>
+            {fmtNum(rps)} RPS
+          </span>
+        )}
         <span className="pill">
-          <span className="dot-ok" /> All systems normal
+          <span className={ok ? "dot-ok" : "dot-warn"} />
+          {ok ? "All systems normal" : data ? "Degraded" : "…"}
         </span>
         <ThemeToggle />
       </div>

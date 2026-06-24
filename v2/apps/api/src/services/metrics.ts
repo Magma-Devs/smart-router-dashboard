@@ -78,6 +78,140 @@ export class MetricsService {
     };
   }
 
+  /**
+   * One-shot payload for the Overview + Dashboard screens. Every value maps to
+   * a real series; quota/cap (Compute Units, RPS cap) are NOT router metrics —
+   * they stay null and the UI shows an honest "not tracked" state.
+   */
+  async overview(window: MetricWindow): Promise<import("@sr/shared").OverviewData> {
+    const win = WINDOWS[window];
+    const end = Math.floor(Date.now() / 1000);
+    const start = end - win.rangeSeconds;
+    const priorStart = start - win.rangeSeconds; // previous equal-length window
+    const r = rangeFor(window);
+
+    // KPI value + its prior-window counterpart (offset PromQL range).
+    const kpi = async (cur: string, prior: string): Promise<{ value: number | null; prior: number | null }> => {
+      const [value, p] = await Promise.all([this.prom.scalar(cur), this.prom.scalar(prior)]);
+      return { value, prior: p };
+    };
+
+    const [
+      totalRequests,
+      throughputRps,
+      successRate,
+      p50,
+      p95,
+      p99,
+      uptime,
+      healthGauge,
+      throughput,
+      errorsSeries,
+      latencySeries,
+      specs,
+    ] = await Promise.all([
+      kpi(qRequestsTotal(undefined, window), `sum(increase(${ROUTER_METRICS.requestsTotal}[${r}] offset ${r}))`),
+      kpi(`sum(rate(${ROUTER_METRICS.requestsTotal}[5m]))`, `sum(rate(${ROUTER_METRICS.requestsTotal}[5m] offset ${r}))`),
+      kpi(qAvailability(undefined, window), `sum(increase(${ROUTER_METRICS.requestsSuccessTotal}[${r}] offset ${r})) / sum(increase(${ROUTER_METRICS.requestsTotal}[${r}] offset ${r}))`),
+      kpi(qLatencyQuantile(0.5, undefined, window), qLatencyQuantile(0.5, undefined, window)),
+      kpi(qLatencyQuantile(0.95, undefined, window), qLatencyQuantile(0.95, undefined, window)),
+      kpi(qLatencyQuantile(0.99, undefined, window), qLatencyQuantile(0.99, undefined, window)),
+      this.prom.scalar(qAvailability(undefined, window)),
+      this.prom.scalar(ROUTER_METRICS.overallHealth),
+      this.prom.queryRange(`sum(rate(${ROUTER_METRICS.requestsTotal}[${win.step}]))`, start, end, win.step),
+      this.prom.queryRange(`sum(rate(${ROUTER_METRICS.requestsTotal}[${win.step}])) - sum(rate(${ROUTER_METRICS.requestsSuccessTotal}[${win.step}]))`, start, end, win.step),
+      this.prom.queryRange(qLatencyQuantile(0.95, undefined, window).replace(`[${r}]`, `[${win.step}]`), start, end, win.step),
+      this.listSpecs(),
+    ]);
+
+    // Errors = total - success over the window.
+    const [reqWin, okWin] = await Promise.all([
+      this.prom.scalar(qRequestsTotal(undefined, window)),
+      this.prom.scalar(`sum(increase(${ROUTER_METRICS.requestsSuccessTotal}[${r}]))`),
+    ]);
+    const errorsCount = reqWin !== null && okWin !== null ? Math.max(0, reqWin - okWin) : null;
+    const priorReq = totalRequests.prior;
+    const errorRate = reqWin && reqWin > 0 && errorsCount !== null ? errorsCount / reqWin : null;
+
+    // Per-chain latency + active routes + per-chain series.
+    const [perChainLatency, activeRoutes, perChainSeries] = await Promise.all([
+      Promise.all(
+        specs.map(async (spec) => {
+          const meta = buildChainMetaByIndex(spec);
+          const [p50c, h, trend] = await Promise.all([
+            this.prom.scalar(qLatencyQuantile(0.5, spec, window)),
+            this.prom.scalar(`${ROUTER_METRICS.overallHealth}`),
+            this.prom.queryRange(
+              `sum(rate(${ROUTER_METRICS.requestsTotal}${selector({ spec })}[${win.step}]))`,
+              start,
+              end,
+              win.step,
+            ),
+          ]);
+          return { spec, name: meta.name, color: meta.color, p50Ms: p50c, trend: toPoints(trend[0]?.values), degraded: h !== null && h < 1 };
+        }),
+      ),
+      this.activeRoutes(window),
+      Promise.all(
+        specs.map(async (spec) => {
+          const meta = buildChainMetaByIndex(spec);
+          const m = await this.prom.queryRange(
+            `sum(rate(${ROUTER_METRICS.requestsTotal}${selector({ spec })}[${win.step}]))`,
+            start,
+            end,
+            win.step,
+          );
+          return { spec, name: meta.name, color: meta.color, points: toPoints(m[0]?.values) };
+        }),
+      ),
+    ]);
+
+    void priorStart;
+    return {
+      totalRequests,
+      throughputRps,
+      errors: { value: errorsCount, prior: priorReq },
+      errorRate,
+      uptime,
+      successRate,
+      p50Ms: p50,
+      p95Ms: p95,
+      p99Ms: p99,
+      health: health(healthGauge),
+      computeUnits: { used: null, limit: null, resetsAt: null },
+      rpsCap: null,
+      throughput: toPoints(throughput[0]?.values),
+      errorsSeries: toPoints(errorsSeries[0]?.values),
+      latencySeries: toPoints(latencySeries[0]?.values),
+      perChainLatency,
+      activeRoutes,
+      perChainSeries,
+      lastUpdated: new Date().toISOString(),
+    };
+  }
+
+  /** Active routes ranked by requests over the window (per backing endpoint). */
+  private async activeRoutes(window: MetricWindow): Promise<import("@sr/shared").ActiveRoute[]> {
+    const rows = await this.prom.query(
+      `sum by (endpoint_id, spec) (increase(${ENDPOINT_METRICS.totalRelaysServiced}[${rangeFor(window)}]))`,
+    );
+    const parsed = rows
+      .map((s) => ({
+        endpointId: s.metric.endpoint_id ?? "",
+        spec: s.metric.spec ?? "",
+        requests: Number(s.value[1]) || 0,
+      }))
+      .filter((x) => x.endpointId)
+      .sort((a, b) => b.requests - a.requests)
+      .slice(0, 8);
+    const max = parsed[0]?.requests || 1;
+    return parsed.map((x) => ({
+      ...x,
+      color: buildChainMetaByIndex(x.spec).color,
+      share: x.requests / max,
+    }));
+  }
+
   async chains(window: MetricWindow): Promise<ChainMetrics[]> {
     const specs = await this.listSpecs();
     return Promise.all(specs.map((spec) => this.chainRow(spec, window)));
