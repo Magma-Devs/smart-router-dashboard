@@ -4,6 +4,7 @@ import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
 import { config } from "./config.js";
 import { errorHandlerPlugin } from "./plugins/error-handler.js";
+import { swaggerPlugin } from "./plugins/swagger.js";
 import { prometheusPlugin } from "./plugins/prometheus.js";
 import { authPlugin } from "./plugins/auth.js";
 import { healthRoutes } from "./routes/health.js";
@@ -27,6 +28,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(rateLimit, { max: config.server.rateLimitMax, timeWindow: "1 minute" });
 
   await app.register(errorHandlerPlugin);
+  // Swagger must be registered before the routes so their schemas are collected.
+  await app.register(swaggerPlugin);
   await app.register(prometheusPlugin);
   await app.register(authPlugin);
 

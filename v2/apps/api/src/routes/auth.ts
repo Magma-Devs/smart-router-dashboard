@@ -16,7 +16,17 @@ interface LoginBody {
 
 /** Minimal session-less basic-auth login, ported from the Python backend. */
 export async function authRoutes(app: FastifyInstance) {
-  app.post("/api/auth/login", async (request, reply) => {
+  app.post("/api/auth/login", {
+    schema: {
+      tags: ["Auth"],
+      summary: "Basic-auth sign-in",
+      body: {
+        type: "object" as const,
+        required: ["username", "password"],
+        properties: { username: { type: "string" as const }, password: { type: "string" as const } },
+      },
+    },
+  }, async (request, reply) => {
     const { username, password } = (request.body ?? {}) as LoginBody;
     if (
       !username ||
@@ -32,5 +42,7 @@ export async function authRoutes(app: FastifyInstance) {
     return { user: { username }, token };
   });
 
-  app.get("/api/auth/status", async () => ({ authEnabled: config.auth.enabled }));
+  app.get("/api/auth/status", { schema: { tags: ["Auth"], summary: "Whether the auth gate is enabled" } }, async () => ({
+    authEnabled: config.auth.enabled,
+  }));
 }
