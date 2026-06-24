@@ -37,18 +37,36 @@ function KpiCard({
   value,
   delta,
   sub,
+  spark,
+  sparkColor = "var(--ok)",
   children,
 }: {
   label: string;
   value: React.ReactNode;
   delta?: React.ReactNode;
   sub?: React.ReactNode;
+  spark?: number[];
+  sparkColor?: string;
   children?: React.ReactNode;
 }) {
   return (
     <div className="gw-card" style={{ display: "flex", flexDirection: "column", gap: 0 }}>
       <div className="kpi-label">{label}</div>
-      <div className="gw-mono gw-tnum kpi-num" style={{ marginTop: 8, fontSize: 30 }}>{value}</div>
+      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginTop: 8, gap: 6 }}>
+        <div className="gw-mono gw-tnum kpi-num" style={{ fontSize: 30 }}>{value}</div>
+        {spark && spark.length > 1 && (
+          <svg width={56} height={26} style={{ display: "block", flexShrink: 0, opacity: 0.8 }}>
+            <polyline
+              points={spark.map((v, i) => {
+                const mn = Math.min(...spark);
+                const rng = Math.max(...spark) - mn || 1;
+                return `${((i / (spark.length - 1)) * 56).toFixed(1)},${(26 - 2 - ((v - mn) / rng) * 22).toFixed(1)}`;
+              }).join(" ")}
+              fill="none" stroke={sparkColor} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
+            />
+          </svg>
+        )}
+      </div>
       {delta}
       {sub && <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 7 }}>{sub}</div>}
       {children}
@@ -120,8 +138,10 @@ export default function DashboardPage() {
           label="Success rate"
           value={<span style={{ color: "var(--ok)" }}>{fmtPct(data?.successRate.value)}</span>}
           delta={deltaNode(data?.successRate.value, data?.successRate.prior, { suffix: "" })}
+          spark={latVals.length ? latVals : vals(data?.throughput)}
+          sparkColor="var(--ok)"
         />
-        <KpiCard label="P95 latency" value={lat?.value == null ? "—" : `${Math.round(lat.value)} ms`} delta={deltaNode(lat?.value, lat?.prior, { lowerIsBetter: true, suffix: " ms" })}>
+        <KpiCard label="P95 latency" value={lat?.value == null ? "—" : `${Math.round(lat.value)} ms`} delta={deltaNode(lat?.value, lat?.prior, { lowerIsBetter: true, suffix: " ms" })} spark={latVals} sparkColor="var(--text-3)">
           <div style={{ marginTop: 10 }}>{seg}</div>
         </KpiCard>
         <KpiCard label="Errors handled" value={fmtNum(data?.errors.value)} sub={`${fmtPct(data?.errorRate)} error rate`}>
@@ -133,8 +153,14 @@ export default function DashboardPage() {
           label="RPC traffic"
           value={<span style={{ color: "var(--info)" }}>{fmtNum(data?.throughputRps.value)} <span style={{ fontSize: 18 }} className="muted">req/s</span></span>}
           delta={deltaNode(data?.throughputRps.value, data?.throughputRps.prior, { suffix: " req/s" })}
+          spark={vals(data?.throughput)}
+          sparkColor="var(--info)"
         />
-        <KpiCard label="SCUs" value={fmtNum(data?.totalRequests.value)} sub={data?.computeUnits.limit == null ? "monthly quota not tracked" : "of monthly quota"} />
+        <KpiCard label="SCUs" value={fmtNum(data?.totalRequests.value)} sub={data?.computeUnits.limit == null ? "monthly quota not tracked" : "of monthly quota"}>
+          <div className="gw-bar gw-bar--green" style={{ height: 4, marginTop: 10 }}>
+            <span style={{ width: data?.computeUnits.limit ? "34%" : "0%" }} />
+          </div>
+        </KpiCard>
       </div>
 
       {/* Throughput + Total errors */}

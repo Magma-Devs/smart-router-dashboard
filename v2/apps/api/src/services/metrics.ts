@@ -333,9 +333,19 @@ export class MetricsService {
       const v = Number(s.value[1]);
       ensure(id, s.metric.spec ?? "").p95Ms = Number.isFinite(v) ? v : null;
     }
-    // Uptime per endpoint = availability score (real, 0..1) when present.
-    for (const row of byId.values()) {
-      row.uptime = row.scores.availability ?? null;
+    // Uptime per endpoint = success/total over the window, keyed by
+    // provider_address (= the endpoint name) on the router request counters.
+    const [okByProv, totByProv] = await Promise.all([
+      this.prom.query(`sum by (provider_address) (increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${r}]))`),
+      this.prom.query(`sum by (provider_address) (increase(${ROUTER_METRICS.requestsTotal}${sel}[${r}]))`),
+    ]);
+    const okMap = new Map(okByProv.map((s) => [s.metric.provider_address ?? "", Number(s.value[1]) || 0]));
+    for (const s of totByProv) {
+      const id = s.metric.provider_address;
+      if (!id) continue;
+      const tot = Number(s.value[1]) || 0;
+      const row = byId.get(id);
+      if (row && tot > 0) row.uptime = (okMap.get(id) ?? 0) / tot;
     }
 
     return [...byId.values()].sort((a, b) => b.requests - a.requests);
