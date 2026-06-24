@@ -154,7 +154,8 @@ export interface OverviewData {
   rpsCap: number | null;
   throughput: TimePoint[];
   errorsSeries: TimePoint[];
-  latencySeries: TimePoint[];
+  /** Latency time-series per percentile (for the p50/p95/p99 chart toggle). */
+  latencySeries: { p50: TimePoint[]; p95: TimePoint[]; p99: TimePoint[] };
   perChainLatency: ChainLatency[];
   activeRoutes: ActiveRoute[];
   /** Per-chain throughput series for the stacked "requests per chain" chart. */

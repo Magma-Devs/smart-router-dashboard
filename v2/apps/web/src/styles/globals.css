@@ -160,3 +160,16 @@ a { color: inherit; text-decoration: none; }
 
 /* segmented mini tabs (p50/p95/p99) */
 .gw-seg--sm button { padding: 3px 9px; font-size: 11px; }
+
+/* ── ported from the SR Dashboard design system ── */
+.gw-mono { font-family: var(--font-mono); font-feature-settings: "tnum"; letter-spacing: -0.01em; }
+.gw-tnum { font-variant-numeric: tabular-nums; }
+
+/* segmented control (p50/p95/p99, Overall/Providers) */
+.gw-segctl { display: inline-flex; padding: 3px; background: var(--bg-2); border-radius: 8px; border: 1px solid var(--line); }
+.gw-segctl button { display: inline-flex; align-items: center; padding: 5px 12px; font-size: 12px; font-weight: 500; border: 0; background: transparent; color: var(--text-3); border-radius: 6px; cursor: pointer; font-family: inherit; }
+.gw-segctl button.on { background: var(--surface); color: var(--text); box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset; }
+
+/* KPI card label */
+.kpi-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.09em; font-weight: 600; color: var(--text-3); }
+.kpi-num { font-size: 26px; font-weight: 700; letter-spacing: -0.03em; line-height: 1; }

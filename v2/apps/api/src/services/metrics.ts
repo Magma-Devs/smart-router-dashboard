@@ -124,6 +124,12 @@ export class MetricsService {
       this.listSpecs(),
     ]);
 
+    // Latency series per percentile for the p50/p95/p99 chart toggle.
+    const [latP50, latP99] = await Promise.all([
+      this.prom.queryRange(qLatencyQuantile(0.5, undefined, window).replace(`[${r}]`, `[${win.step}]`), start, end, win.step),
+      this.prom.queryRange(qLatencyQuantile(0.99, undefined, window).replace(`[${r}]`, `[${win.step}]`), start, end, win.step),
+    ]);
+
     // Errors = total - success over the window.
     const [reqWin, okWin] = await Promise.all([
       this.prom.scalar(qRequestsTotal(undefined, window)),
@@ -182,7 +188,11 @@ export class MetricsService {
       rpsCap: null,
       throughput: toPoints(throughput[0]?.values),
       errorsSeries: toPoints(errorsSeries[0]?.values),
-      latencySeries: toPoints(latencySeries[0]?.values),
+      latencySeries: {
+        p50: toPoints(latP50[0]?.values),
+        p95: toPoints(latencySeries[0]?.values),
+        p99: toPoints(latP99[0]?.values),
+      },
       perChainLatency,
       activeRoutes,
       perChainSeries,
