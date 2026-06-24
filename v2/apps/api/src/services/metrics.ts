@@ -264,7 +264,7 @@ export class MetricsService {
     const sel = selector({ spec });
     const r = rangeFor(window);
 
-    const [requests, scores, healthRows, blocks, inFlight] = await Promise.all([
+    const [requests, scores, healthRows, blocks, inFlight, latency] = await Promise.all([
       this.prom.query(
         `sum by (endpoint_id, spec) (increase(${ENDPOINT_METRICS.totalRelaysServiced}${sel}[${r}]))`,
       ),
@@ -273,6 +273,10 @@ export class MetricsService {
       this.prom.query(`${ENDPOINT_METRICS.latestBlock}${sel}`),
       this.prom.query(
         `sum by (endpoint_id) (${ENDPOINT_METRICS.requestsInFlight}${sel})`,
+      ),
+      // Per-endpoint p95 latency — the endpoint histogram carries endpoint_id.
+      this.prom.query(
+        `histogram_quantile(0.95, sum by (endpoint_id, le) (rate(${ENDPOINT_METRICS.latencyBucket}${sel}[${r}])))`,
       ),
     ]);
 
@@ -322,6 +326,16 @@ export class MetricsService {
       const id = s.metric.endpoint_id;
       if (!id) continue;
       ensure(id, s.metric.spec ?? "").inFlight = Number(s.value[1]) || 0;
+    }
+    for (const s of latency) {
+      const id = s.metric.endpoint_id;
+      if (!id) continue;
+      const v = Number(s.value[1]);
+      ensure(id, s.metric.spec ?? "").p95Ms = Number.isFinite(v) ? v : null;
+    }
+    // Uptime per endpoint = availability score (real, 0..1) when present.
+    for (const row of byId.values()) {
+      row.uptime = row.scores.availability ?? null;
     }
 
     return [...byId.values()].sort((a, b) => b.requests - a.requests);
