@@ -481,3 +481,95 @@ class TestConfigurationService:
         assert "debug" in addons
         assert "archive" in addons
         assert len(addons) == 2  # Should remove duplicates
+
+    # ------------------------------------------------------------------
+    # path-based interface routing resolution
+    # ------------------------------------------------------------------
+
+    def _routers_with_path_based(self, raw):
+        """Helper: write `raw` to core/values.yml and return {id: RouterConfig}."""
+        with patch.object(self.service, "read_yaml_file", return_value=raw):
+            return {r.id: r for r in self.service._read_smart_router_values()}
+
+    def test_path_based_per_router_override_wins(self):
+        """routers[].pathBased overrides the global gateway default."""
+        raw = {
+            "miscellaneous": {"gateway": {"pathBased": {"enabled": False}}},
+            "routers": [
+                {
+                    "id": "tron-mainnet",
+                    "network": "trx",
+                    "pathBased": True,
+                    "nodes": [],
+                },
+                {
+                    "id": "eth-mainnet",
+                    "network": "eth1",
+                    "nodes": [],
+                },
+            ],
+        }
+        routers = self._routers_with_path_based(raw)
+        # Per-router override on tron; eth falls back to the (False) global default.
+        assert routers["tron-mainnet"].path_based is True
+        assert routers["eth-mainnet"].path_based is False
+
+    def test_path_based_global_default_applies_when_unset(self):
+        """gateway.pathBased.enabled is the default for routers that don't set it."""
+        raw = {
+            "miscellaneous": {"gateway": {"pathBased": {"enabled": True}}},
+            "routers": [
+                {"id": "eth-mainnet", "network": "eth1", "nodes": []},
+                # Explicit per-router False still wins over the True global.
+                {
+                    "id": "opt-out",
+                    "network": "x",
+                    "pathBased": False,
+                    "nodes": [],
+                },
+            ],
+        }
+        routers = self._routers_with_path_based(raw)
+        assert routers["eth-mainnet"].path_based is True
+        assert routers["opt-out"].path_based is False
+
+    def test_path_based_defaults_false_without_gateway(self):
+        """No gateway block (and no per-router flag) → path_based is False."""
+        raw = {"routers": [{"id": "eth-mainnet", "network": "eth1", "nodes": []}]}
+        routers = self._routers_with_path_based(raw)
+        assert routers["eth-mainnet"].path_based is False
+
+    def test_path_based_components_response_carries_flag_and_prefix(self):
+        """The components route surfaces path_based + custom_url_prefix per router."""
+        from app.api.routes.components import get_configuration
+
+        raw = {
+            "miscellaneous": {"gateway": {"pathBased": {"enabled": False}}},
+            "routers": [
+                {
+                    "id": "tron-mainnet",
+                    "network": "trx",
+                    "pathBased": True,
+                    "custom_url_prefix": "tron",
+                    "nodes": [
+                        {
+                            "name": "Tatum",
+                            "endpoints": [
+                                {"url": "https://x/jsonrpc", "interface": "jsonrpc"},
+                                {"url": "https://x/", "interface": "rest"},
+                            ],
+                        }
+                    ],
+                }
+            ],
+        }
+        with patch.object(self.service, "read_yaml_file", return_value=raw):
+            import asyncio
+
+            resp = asyncio.run(
+                get_configuration(current_user="u", config_service=self.service)
+            )
+        info = resp.routers["tron-mainnet"]
+        assert info.path_based is True
+        assert info.custom_url_prefix == "tron"
+        assert set(info.interfaces) == {"jsonrpc", "rest"}

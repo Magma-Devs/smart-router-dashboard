@@ -68,6 +68,8 @@ async def get_configuration(
                         nodes=nodes,
                         local_port=router_entry.get("local_port"),
                         local_ports=router_entry.get("local_ports") or {},
+                        path_based=bool(router_entry.get("path_based", False)),
+                        custom_url_prefix=router_entry.get("custom_url_prefix"),
                     )
 
         return ComponentsResponse(

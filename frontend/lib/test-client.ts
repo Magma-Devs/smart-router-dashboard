@@ -12,6 +12,10 @@ export interface TestRequestOptions {
   port?: string;
   /** Chain's local listen port — used in local mode (localhost:<port>). */
   localPort?: number | null;
+  /** Path-based interface routing (<prefix>.<domain>/<interface>); gateway mode. */
+  pathBased?: boolean;
+  /** Host prefix override (chart's custom_url_prefix); defaults to chainId. */
+  urlPrefix?: string | null;
   skipCache?: boolean;
   requestType?: string; // Add request type parameter
   crossValidationMaxParticipants?: number;
@@ -273,6 +277,8 @@ export async function makeTestRequest(options: TestRequestOptions): Promise<Test
     domain = 'lava.lavapro.xyz',
     port = '443',
     localPort,
+    pathBased,
+    urlPrefix,
     skipCache = false,
     requestType,
     crossValidationMaxParticipants,
@@ -300,6 +306,8 @@ export async function makeTestRequest(options: TestRequestOptions): Promise<Test
       port,
       localPort,
       ws: true,
+      pathBased,
+      urlPrefix,
     });
     if (!wsBase) {
       return {
@@ -336,7 +344,15 @@ export async function makeTestRequest(options: TestRequestOptions): Promise<Test
   }
 
   // Build the URL (moved outside try block for error handling)
-  const baseUrl = buildEndpointBaseUrl({ chainId, interfaceType, domain, port, localPort });
+  const baseUrl = buildEndpointBaseUrl({
+    chainId,
+    interfaceType,
+    domain,
+    port,
+    localPort,
+    pathBased,
+    urlPrefix,
+  });
   if (!baseUrl) {
     return {
       status_code: 0,
@@ -642,6 +658,10 @@ export interface BatchRequestOptions {
   port?: string;
   /** Chain's local listen port — used in local mode (localhost:<port>). */
   localPort?: number | null;
+  /** Path-based interface routing (<prefix>.<domain>/<interface>); gateway mode. */
+  pathBased?: boolean;
+  /** Host prefix override (chart's custom_url_prefix); defaults to chainId. */
+  urlPrefix?: string | null;
   skipCache?: boolean;
   maxResponseBytes?: number;
   addonType?: 'none' | 'archive' | 'debug' | 'trace';
@@ -682,6 +702,8 @@ export async function makeBatchRequest(
     domain = 'lava.lavapro.xyz',
     port = '443',
     localPort,
+    pathBased,
+    urlPrefix,
     skipCache = false,
     maxResponseBytes,
     addonType = 'none',
@@ -689,7 +711,15 @@ export async function makeBatchRequest(
   } = options;
 
   const startTime = performance.now();
-  const url = buildEndpointBaseUrl({ chainId, interfaceType: 'jsonrpc', domain, port, localPort });
+  const url = buildEndpointBaseUrl({
+    chainId,
+    interfaceType: 'jsonrpc',
+    domain,
+    port,
+    localPort,
+    pathBased,
+    urlPrefix,
+  });
   if (!url) {
     return {
       status_code: 0,
@@ -977,10 +1007,19 @@ export function generateBatchCurlCommand(
   addonType: 'none' | 'archive' | 'debug' | 'trace' = 'none',
   authorizationHeader?: string,
   localPort?: number | null,
+  pathBased?: boolean,
+  urlPrefix?: string | null,
 ): string {
   const url =
-    buildEndpointBaseUrl({ chainId, interfaceType: 'jsonrpc', domain, port, localPort }) ??
-    `http://localhost:<port>`;
+    buildEndpointBaseUrl({
+      chainId,
+      interfaceType: 'jsonrpc',
+      domain,
+      port,
+      localPort,
+      pathBased,
+      urlPrefix,
+    }) ?? `http://localhost:<port>`;
 
   const batchPayload = requests.map(req => ({
     jsonrpc: '2.0',

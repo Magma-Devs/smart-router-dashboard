@@ -178,6 +178,19 @@ export default function LiveTestPage() {
     }
     return router.local_port ?? null;
   };
+  // Path-based routing options for a router (gateway mode). When `path_based`
+  // is set, the endpoint URL is <prefix>.<domain>/<interface>; `custom_url_prefix`
+  // overrides the host prefix (defaults to the router id). Both come from the
+  // components API, resolved from the helm values.
+  const pathOptsFor = (
+    chainId: string
+  ): { pathBased: boolean; urlPrefix?: string | null } => {
+    const router = apiData?.routers?.[chainId];
+    return {
+      pathBased: Boolean(router?.path_based),
+      urlPrefix: router?.custom_url_prefix ?? null,
+    };
+  };
   const [selectedNetwork, setSelectedNetwork] = useState<string>('');
   const [selectedRouter, setSelectedRouter] = useState<string>('');
   const [selectedInterface, setSelectedInterface] = useState<string>('');
@@ -633,12 +646,14 @@ export default function LiveTestPage() {
       domain,
       port,
       localPort,
+      ...pathOptsFor(selectedRouter),
     });
     setBatchEndpointUrl(endpoint ?? '');
 
     // Only generate curl if we have valid batch requests
     const validRequests = batchRequests.filter(r => r.method.trim() !== '');
     if (validRequests.length > 0) {
+      const { pathBased, urlPrefix } = pathOptsFor(selectedRouter);
       const curl = generateBatchCurlCommand(
         selectedRouter,
         domain,
@@ -648,6 +663,8 @@ export default function LiveTestPage() {
         batchAddonType,
         formatAuthHeader(authorizationHeader) || undefined,
         localPort,
+        pathBased,
+        urlPrefix,
       );
       setBatchCurlCommand(curl);
     } else {
@@ -838,6 +855,7 @@ export default function LiveTestPage() {
         domain,
         port,
         localPort,
+        ...pathOptsFor(selectedRouter),
       };
       const httpBase = buildEndpointBaseUrl(builderArgs) ?? '';
       const wsBase = buildEndpointBaseUrl({ ...builderArgs, ws: true }) ?? '';
@@ -939,6 +957,7 @@ export default function LiveTestPage() {
         domain,
         port,
         localPort,
+        ...pathOptsFor(selectedRouter),
       };
       const httpBase = buildEndpointBaseUrl(builderArgs) ?? '';
       const wsBase = buildEndpointBaseUrl({ ...builderArgs, ws: true }) ?? '';
@@ -1119,6 +1138,7 @@ export default function LiveTestPage() {
           interfaceCommand,
           domain,
           port,
+          ...pathOptsFor(selectedRouter),
           skipCache,
           requestType: selectedRequestType,
           authorizationHeader: formatAuthHeader(authorizationHeader) || undefined,
@@ -1230,6 +1250,7 @@ export default function LiveTestPage() {
         domain,
         port,
         localPort: localPortFor(selectedRouter, selectedInterface),
+        ...pathOptsFor(selectedRouter),
         skipCache,
         requestType: selectedRequestType,
         crossValidationMaxParticipants,
@@ -1377,6 +1398,7 @@ export default function LiveTestPage() {
         domain,
         port,
         localPort: localPortFor(selectedRouter, selectedInterface),
+        ...pathOptsFor(selectedRouter),
         skipCache,
         requestType: selectedRequestType,
         authorizationHeader: formatAuthHeader(authorizationHeader) || undefined,
@@ -1479,6 +1501,7 @@ export default function LiveTestPage() {
             // Batch is JSON-RPC only (makeBatchRequest builds a jsonrpc URL), so
             // resolve the local port for the jsonrpc interface specifically.
             localPort: localPortFor(selectedRouter, 'jsonrpc'),
+            ...pathOptsFor(selectedRouter),
             skipCache,
             addonType: batchAddonType,
             authorizationHeader: formatAuthHeader(authorizationHeader) || undefined,
@@ -1512,6 +1535,7 @@ export default function LiveTestPage() {
             // Batch load test is JSON-RPC only; resolve the jsonrpc local port so
             // it reaches the right localhost:<port> in local mode.
             localPort: localPortFor(selectedRouter, 'jsonrpc'),
+            ...pathOptsFor(selectedRouter),
             skipCache,
             addonType: batchAddonType,
             authorizationHeader: formatAuthHeader(authorizationHeader) || undefined,

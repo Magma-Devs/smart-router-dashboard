@@ -55,7 +55,7 @@ def _normalize_smart_router_config(raw: dict[str, Any]) -> dict[str, Any]:
         return {"routers": []}
 
     if "routers" in raw:
-        return raw
+        return _resolve_path_based(raw)
 
     if "direct-rpc" not in raw:
         return {"routers": []}
@@ -125,6 +125,42 @@ def _normalize_smart_router_config(raw: dict[str, Any]) -> dict[str, Any]:
         router["nodes"].append(node)
 
     return {"routers": list(routers_by_chain.values())}
+
+
+def _resolve_path_based(raw: dict[str, Any]) -> dict[str, Any]:
+    """Stamp each router's effective ``pathBased`` from the helm values.
+
+    The helm chart routes a router path-based when ``routers[].pathBased`` is
+    set, otherwise it falls back to the global ``miscellaneous.gateway.pathBased.enabled``
+    default (see ``httproute.yaml``). Mirror that resolution here so the
+    dashboard builds the matching ``<prefix>.<domain>/<interface>`` URL.
+
+    The per-router value (``pathBased``/``path-based``/``path_based``, any
+    dialect) wins; when absent, the global gateway default applies. The
+    resolved boolean is written back onto each router as ``path_based`` so the
+    downstream ``RouterConfig`` / components route read a single normalized key.
+    The input is not mutated.
+    """
+    gateway = (
+        ((raw.get("miscellaneous") or {}).get("gateway") or {}).get("pathBased") or {}
+    )
+    global_default = bool(gateway.get("enabled", False))
+
+    routers = []
+    for router in raw.get("routers") or []:
+        if not isinstance(router, dict):
+            routers.append(router)
+            continue
+        # Per-router override (any naming dialect) wins; else the global default.
+        override = router.get("pathBased")
+        if override is None:
+            override = router.get("path-based")
+        if override is None:
+            override = router.get("path_based")
+        effective = bool(override) if override is not None else global_default
+        routers.append({**router, "path_based": effective})
+
+    return {**raw, "routers": routers}
 
 
 def _port_from_listen_address(listen: str) -> int | None:
