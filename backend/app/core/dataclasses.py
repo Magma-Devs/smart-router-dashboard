@@ -1,6 +1,6 @@
 from enum import Enum
 
-from pydantic import AliasChoices, AliasGenerator, BaseModel, ConfigDict
+from pydantic import AliasChoices, AliasGenerator, BaseModel, ConfigDict, Field
 
 from app.core.utils import (
     remove_duplicate_addons,
@@ -90,6 +90,17 @@ class RouterConfig(_LenientConfig):
     )
     nodes: list[NodeConfig]
     custom_url_prefix: str | None = None
+    # Whether this router is reached via path-based interface routing
+    # (<prefix>.<domain>/<interface>) instead of the host-based
+    # <prefix>-<interface>.<domain> shape. Resolved on read from the helm
+    # values: routers[].pathBased wins, else gateway.pathBased.enabled.
+    # None/False for SR_CONFIG (local) deployments, which have no gateway.
+    # Authored as camelCase `pathBased` in the helm values; also accept
+    # snake/kebab via the explicit alias choices.
+    path_based: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("path_based", "path-based", "pathBased"),
+    )
     # Local listen port (from SR_CONFIG endpoints[].listen-address) for
     # docker-compose runs where each chain is reached at localhost:<port>.
     # None for helm-values deployments, which route via the gateway.
@@ -191,6 +202,12 @@ class RouterInfo(BaseModel):
     network: str
     interfaces: list[str]
     nodes: list[ComponentNode]
+    # Path-based interface routing in effect for this router. When true the
+    # endpoint URL is <prefix>.<domain>/<interface> instead of the host-based
+    # <prefix>-<interface>.<domain>. `custom_url_prefix` overrides the host
+    # prefix (defaults to the router id, matching the helm chart's HTTPRoute).
+    path_based: bool = False
+    custom_url_prefix: str | None = None
     # Local listen ports for docker-compose runs (localhost:<port>); empty/null
     # when the deployment routes via the gateway (helm values). `local_port` is
     # the back-compat scalar (first interface); `local_ports` maps

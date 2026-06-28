@@ -188,13 +188,20 @@ export function getLocalMode(): boolean {
  *   the chain (so callers can skip / show a hint).
  * - **Gateway mode** (default): `<scheme>://<chain>-<interface>.<domain>:<port>`
  *   — the production shape routed by the gateway on the Host header.
+ * - **Gateway, path-based** (`pathBased: true`): `<scheme>://<prefix>.<domain>:<port>/<interface>`
+ *   — the additive path-based shape (the gateway strips the `/<interface>`
+ *   prefix before the router). `prefix` is `urlPrefix` when set (the chart's
+ *   `custom_url_prefix`), else the lowercased `chainId` (the router id).
  *
- * @param chainId      chain id (any case; lowercased for the subdomain)
+ * @param chainId      chain id / router id (any case; lowercased for the host)
  * @param interfaceType e.g. 'jsonrpc', 'rest', 'tendermintrpc'
  * @param domain        gateway domain (gateway mode only)
  * @param port          gateway port (gateway mode only)
  * @param localPort     chain's local listen port (local mode only)
  * @param ws            build a websocket base (ws/wss) instead of http(s)
+ * @param pathBased     route via <prefix>.<domain>/<interface> (gateway mode)
+ * @param urlPrefix     host prefix override (chart's custom_url_prefix); when
+ *                      omitted the lowercased chainId is used
  */
 export function buildEndpointBaseUrl(params: {
   chainId: string;
@@ -203,8 +210,10 @@ export function buildEndpointBaseUrl(params: {
   port: string;
   localPort?: number | null;
   ws?: boolean;
+  pathBased?: boolean;
+  urlPrefix?: string | null;
 }): string | null {
-  const { chainId, interfaceType, domain, port, localPort, ws } = params;
+  const { chainId, interfaceType, domain, port, localPort, ws, pathBased, urlPrefix } = params;
 
   if (getLocalMode()) {
     if (localPort == null) return null;
@@ -215,6 +224,18 @@ export function buildEndpointBaseUrl(params: {
   }
 
   const scheme = ws ? getWebSocketScheme() : getEndpointScheme();
-  const host = `${chainId.toLowerCase()}-${interfaceType}.${domain}`;
+  const iface = interfaceType.toLowerCase();
+
+  if (pathBased) {
+    // Additive path-based shape: <prefix>.<domain>:<port>/<interface>.
+    // Matches the chart's HTTPRoute (hostname <prefix>.<base_domain>,
+    // PathPrefix /<interface> rewritten to /). The prefix is the chart's
+    // custom_url_prefix when present, else the lowercased router id.
+    const prefix = (urlPrefix || chainId).toLowerCase();
+    return `${scheme}://${prefix}.${domain}:${port}/${iface}`;
+  }
+
+  const prefix = (urlPrefix || chainId).toLowerCase();
+  const host = `${prefix}-${iface}.${domain}`;
   return `${scheme}://${host}:${port}`;
 }
