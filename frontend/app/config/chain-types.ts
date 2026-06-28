@@ -816,9 +816,7 @@ export const chainTypes: ChainType[] = [
           { method: 'GET', label: 'Node Network', params: '/node/network' },
           { method: 'GET', label: 'Runtime Spec', params: '/runtime/spec' },
         ],
-        archive: [
-          { method: 'GET', label: 'Block By Number (Archive)', params: '/blocks/1000000' },
-        ],
+        archive: [{ method: 'GET', label: 'Block By Number (Archive)', params: '/blocks/1000000' }],
         debug: null,
         trace: null,
         batch: {
