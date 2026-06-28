@@ -89,10 +89,7 @@ async function fetchAllMetrics(
   return out;
 }
 
-export async function exportLavaMetrics(
-  timeFrame: string,
-  minutes: number,
-): Promise<ExportResult> {
+export async function exportLavaMetrics(timeFrame: string, minutes: number): Promise<ExportResult> {
   const discoveryQuery = `group by (__name__) (last_over_time({__name__=~"(smartrouter|rpc)_.*"}[${timeFrame}]))`;
   const discovery = await apiClient.get<PromInstantResponse>(
     `/api/metrics/instant?query=${encodeURIComponent(discoveryQuery)}`,
@@ -100,9 +97,7 @@ export async function exportLavaMetrics(
 
   const metricNames = Array.from(
     new Set(
-      (discovery.data?.result || [])
-        .map(r => r.metric?.__name__)
-        .filter((n): n is string => !!n),
+      (discovery.data?.result || []).map(r => r.metric?.__name__).filter((n): n is string => !!n),
     ),
   ).sort();
 

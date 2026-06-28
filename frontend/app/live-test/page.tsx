@@ -74,6 +74,10 @@ interface ApiResponse {
       // each interface to its own port.
       local_port?: number | null;
       local_ports?: Record<string, number> | null;
+      // Path-based interface routing (<prefix>.<domain>/<interface>); resolved
+      // from the helm values. `custom_url_prefix` overrides the host prefix.
+      path_based?: boolean;
+      custom_url_prefix?: string | null;
       nodes: Array<{
         name: string;
         endpoints: Array<{
@@ -182,9 +186,7 @@ export default function LiveTestPage() {
   // is set, the endpoint URL is <prefix>.<domain>/<interface>; `custom_url_prefix`
   // overrides the host prefix (defaults to the router id). Both come from the
   // components API, resolved from the helm values.
-  const pathOptsFor = (
-    chainId: string
-  ): { pathBased: boolean; urlPrefix?: string | null } => {
+  const pathOptsFor = (chainId: string): { pathBased: boolean; urlPrefix?: string | null } => {
     const router = apiData?.routers?.[chainId];
     return {
       pathBased: Boolean(router?.path_based),

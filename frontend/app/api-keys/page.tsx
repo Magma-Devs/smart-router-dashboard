@@ -38,12 +38,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   listKeys,
   createKey,
@@ -206,7 +201,8 @@ export default function ApiKeysPage() {
               <AlertTriangle className='h-12 w-12 text-muted-foreground mx-auto' />
               <h2 className='text-xl font-semibold'>API Key Management Not Enabled</h2>
               <p className='text-muted-foreground max-w-md'>
-                Configure <code className='text-sm bg-muted px-1.5 py-0.5 rounded'>AUTH_GATEWAY_URL</code> to
+                Configure{' '}
+                <code className='text-sm bg-muted px-1.5 py-0.5 rounded'>AUTH_GATEWAY_URL</code> to
                 enable this feature.
               </p>
             </div>
@@ -361,9 +357,7 @@ export default function ApiKeysPage() {
             <>
               <DialogHeader>
                 <DialogTitle>Create API Key</DialogTitle>
-                <DialogDescription>
-                  Create a new API key for programmatic access.
-                </DialogDescription>
+                <DialogDescription>Create a new API key for programmatic access.</DialogDescription>
               </DialogHeader>
               <div className='space-y-4 py-2'>
                 <div className='space-y-2'>
