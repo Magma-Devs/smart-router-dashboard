@@ -468,6 +468,51 @@ export const chainTypes: ChainType[] = [
     value: 'tron',
     label: 'Tron',
     interfaces: {
+      // TRON exposes an EVM-compatible JSON-RPC endpoint (a subset of eth_*
+      // methods). archive (historical eth_* reads) is supported; TRON's
+      // JSON-RPC does not implement debug_*/trace_*, so those stay null.
+      // Whether the archive request type actually appears in the UI is gated
+      // separately on the router carrying an `archive` addon.
+      jsonrpc: {
+        regular: [
+          { method: 'eth_blockNumber', label: 'Block Number', params: '[]' },
+          { method: 'eth_chainId', label: 'Chain ID', params: '[]' },
+          { method: 'eth_gasPrice', label: 'Gas Price', params: '[]' },
+          { method: 'eth_getBlockByNumber', label: 'Get Block', params: '["latest", false]' },
+          {
+            method: 'eth_getBalance',
+            label: 'Get Balance',
+            params: '["0x0000000000000000000000000000000000000000", "latest"]',
+          },
+          { method: 'net_version', label: 'Network Version', params: '[]' },
+        ],
+        archive: [
+          {
+            method: 'eth_getBalance',
+            label: 'Get Balance (Archive)',
+            params: '["0x0000000000000000000000000000000000000000", "0x1"]',
+          },
+          {
+            method: 'eth_getBlockByNumber',
+            label: 'Get Block (Archive)',
+            params: '["0x1", false]',
+          },
+        ],
+        debug: null,
+        trace: null,
+        batch: {
+          regular: [
+            { method: 'eth_blockNumber', label: 'Block Number', defaultParams: '[]' },
+            { method: 'eth_chainId', label: 'Chain ID', defaultParams: '[]' },
+            { method: 'eth_gasPrice', label: 'Gas Price', defaultParams: '[]' },
+            {
+              method: 'eth_getBlockByNumber',
+              label: 'Get Block',
+              defaultParams: '["latest", false]',
+            },
+          ],
+        },
+      },
       rest: {
         regular: [
           { method: 'GET', label: 'Node Info', params: '/wallet/getnodeinfo' },
