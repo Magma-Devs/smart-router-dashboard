@@ -127,7 +127,7 @@ export const chains: Chain[] = [
   {
     value: 'bsc',
     label: 'Binance Smart Chain Mainnet',
-    icon: 'https://info.lavanet.xyz/chains/binance-smart-chain.svg',
+    icon: 'https://info-mainnet.lavanet.xyz/chains/bsc.svg',
     type: 'evm',
     supportedInterfaces: ['jsonrpc'],
     hasWss: true,
@@ -135,7 +135,7 @@ export const chains: Chain[] = [
   {
     value: 'bsct',
     label: 'Binance Smart Chain Testnet',
-    icon: 'https://info.lavanet.xyz/chains/binance-smart-chain.svg',
+    icon: 'https://info-mainnet.lavanet.xyz/chains/bsc.svg',
     type: 'evm',
     supportedInterfaces: ['jsonrpc'],
     hasWss: true,
@@ -225,7 +225,7 @@ export const chains: Chain[] = [
   {
     value: 'hyperliquid',
     label: 'Hyperliquid Mainnet',
-    icon: 'https://info-mainnet.lavanet.xyz/chains/HL-green.svg',
+    icon: 'https://info-mainnet.lavanet.xyz/chains/hyperliquid.svg',
     type: 'evm',
     supportedInterfaces: ['jsonrpc'],
     hasWss: true,
@@ -233,7 +233,7 @@ export const chains: Chain[] = [
   {
     value: 'hyperliquidt',
     label: 'Hyperliquid Testnet',
-    icon: 'https://info-mainnet.lavanet.xyz/chains/HL-green.svg',
+    icon: 'https://info-mainnet.lavanet.xyz/chains/hyperliquid.svg',
     type: 'evm',
     supportedInterfaces: ['jsonrpc'],
     hasWss: true,
@@ -405,7 +405,7 @@ export const chains: Chain[] = [
   {
     value: 'polygon',
     label: 'Polygon Mainnet',
-    icon: 'https://info-mainnet.lavanet.xyz/chains/polygon-pos.svg',
+    icon: 'https://info-mainnet.lavanet.xyz/chains/polygon.svg',
     type: 'evm',
     supportedInterfaces: ['jsonrpc'],
     hasWss: true,
@@ -413,7 +413,7 @@ export const chains: Chain[] = [
   {
     value: 'polygona',
     label: 'Polygon Amoy',
-    icon: 'https://info-mainnet.lavanet.xyz/chains/polygon-pos.svg',
+    icon: 'https://info-mainnet.lavanet.xyz/chains/polygon.svg',
     type: 'evm',
     supportedInterfaces: ['jsonrpc'],
     hasWss: true,
@@ -421,14 +421,14 @@ export const chains: Chain[] = [
   {
     value: 'polkadotassethub',
     label: 'Polkadot Asset Hub Mainnet',
-    icon: 'https://info-mainnet.lavanet.xyz/chains/polkadot.svg',
+    icon: 'https://info-mainnet.lavanet.xyz/chains/polkadotassethub.svg',
     type: 'polkadotassethub',
     supportedInterfaces: ['jsonrpc', 'rest'],
   },
   {
     value: 'polkadotassethubt',
     label: 'Polkadot Asset Hub Westend Testnet',
-    icon: 'https://info-mainnet.lavanet.xyz/chains/polkadot.svg',
+    icon: 'https://info-mainnet.lavanet.xyz/chains/polkadotassethub.svg',
     type: 'polkadotassethub',
     supportedInterfaces: ['jsonrpc', 'rest'],
   },
