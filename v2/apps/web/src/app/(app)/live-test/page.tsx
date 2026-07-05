@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { RouterConfig } from "@sr/shared";
+import type { RouterTopology } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 
 /** Common JSON-RPC probes per interface (kept small; the input is editable). */
@@ -27,9 +27,16 @@ interface TestResult {
 }
 
 export default function LiveTestPage() {
-  const config = useApi<{ routers: RouterConfig[] }>("/api/config/routers", 60000);
+  const config = useApi<{ routers: RouterTopology[] }>("/api/config/routers", 60000);
+  // One selectable row per (chain, interface) that has a local listen port.
   const routers = useMemo(
-    () => (config.data?.routers ?? []).filter((r) => r.listenPort),
+    () =>
+      (config.data?.routers ?? []).flatMap((r) =>
+        (r.interfaces.length ? r.interfaces : [""]).flatMap((iface) => {
+          const port = r.localPorts[iface] ?? r.localPort;
+          return port ? [{ spec: r.spec, apiInterface: iface || "jsonrpc", listenPort: port }] : [];
+        }),
+      ),
     [config.data],
   );
 

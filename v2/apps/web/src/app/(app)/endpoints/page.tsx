@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { RouterConfig } from "@sr/shared";
+import type { RouterTopology } from "@sr/shared";
 import { buildChainMetaByIndex } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 
@@ -39,23 +39,22 @@ function IfaceRow({ iface, host, providerCount, addons }: { iface: string; host:
 }
 
 export default function EndpointsPage() {
-  const { data } = useApi<{ routers: RouterConfig[] }>("/api/config/routers", 60000);
+  const { data } = useApi<{ routers: RouterTopology[] }>("/api/config/routers", 60000);
   const [net, setNet] = useState<NetFilter>("all");
   const [query, setQuery] = useState("");
 
-  // Group routers by spec → one card per chain, each interface a row.
+  // One card per chain; each interface a row (topology is already per-chain).
   const cards = useMemo(() => {
-    const bySpec = new Map<string, RouterConfig[]>();
-    for (const r of data?.routers ?? []) {
-      const list = bySpec.get(r.spec) ?? [];
-      list.push(r);
-      bySpec.set(r.spec, list);
-    }
-    return [...bySpec.entries()]
-      .map(([spec, routers]) => ({ spec, meta: buildChainMetaByIndex(spec), routers }))
-      .filter(({ spec, meta, routers }) => {
+    return (data?.routers ?? [])
+      .map((router) => ({ spec: router.spec, meta: buildChainMetaByIndex(router.spec), router }))
+      .filter(({ spec, meta, router }) => {
         const q = query.toLowerCase();
-        return !q || meta.name.toLowerCase().includes(q) || spec.toLowerCase().includes(q) || routers.some((r) => r.apiInterface.toLowerCase().includes(q));
+        return (
+          !q ||
+          meta.name.toLowerCase().includes(q) ||
+          spec.toLowerCase().includes(q) ||
+          router.interfaces.some((i) => i.toLowerCase().includes(q))
+        );
       });
   }, [data, query]);
 
@@ -87,9 +86,10 @@ export default function EndpointsPage() {
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        {cards.map(({ spec, meta, routers }) => {
-          const totalProviders = routers.reduce((n, r) => n + r.nodes.length, 0);
-          const port = routers[0]?.listenPort;
+        {cards.map(({ spec, meta, router }) => {
+          const totalProviders = router.nodes.length;
+          const port = router.localPort;
+          const ifaces = router.interfaces.length ? router.interfaces : [""];
           return (
             <div className="gw-card" key={spec}>
               {/* Header row: letter badge + chain name + meta */}
@@ -103,16 +103,22 @@ export default function EndpointsPage() {
                 <div style={{ flex: 1 }} />
                 <span className="muted" style={{ fontSize: 12 }}>{totalProviders} provider{totalProviders === 1 ? "" : "s"}</span>
               </div>
-              {/* One row per (interface) */}
-              {routers.map((r, i) => (
-                <IfaceRow
-                  key={i}
-                  iface={r.apiInterface}
-                  host={r.nodes[0]?.url ?? ""}
-                  providerCount={r.nodes.length}
-                  addons={r.nodes.flatMap((n) => n.addons)}
-                />
-              ))}
+              {/* One row per interface */}
+              {ifaces.map((iface) => {
+                const nodes = router.nodes.filter((n) =>
+                  n.endpoints.some((e) => e.interface === iface),
+                );
+                const eps = nodes.flatMap((n) => n.endpoints.filter((e) => e.interface === iface));
+                return (
+                  <IfaceRow
+                    key={iface || "default"}
+                    iface={iface || "jsonrpc"}
+                    host={eps[0]?.urlHost ?? ""}
+                    providerCount={nodes.length}
+                    addons={[...new Set(eps.flatMap((e) => e.addons))]}
+                  />
+                );
+              })}
             </div>
           );
         })}

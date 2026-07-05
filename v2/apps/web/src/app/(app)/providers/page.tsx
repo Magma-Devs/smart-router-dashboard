@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { buildChainMetaByIndex, type MetricWindow, type ProviderMetrics, type RouterConfig } from "@sr/shared";
+import { buildChainMetaByIndex, type MetricWindow, type ProviderMetrics, type RouterTopology } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { ColumnChart } from "@/components/gateway/charts";
 import { fmtMs, fmtNum, fmtPct } from "@/lib/format";
@@ -52,12 +52,14 @@ export default function ProvidersPage() {
   const [window, setWindow] = useState<MetricWindow>("1d");
   const [query, setQuery] = useState("");
   const { data } = useApi<{ providers: ProviderMetrics[] }>(`/api/metrics/providers?window=${window}`);
-  const config = useApi<{ routers: RouterConfig[] }>("/api/config/routers", 60000);
+  const config = useApi<{ routers: RouterTopology[] }>("/api/config/routers", 60000);
 
-  // Map endpoint name → first node url (for the sub-row).
+  // Map endpoint name → first node host (for the sub-row).
   const urlByName = useMemo(() => {
     const m = new Map<string, string>();
-    for (const r of config.data?.routers ?? []) for (const n of r.nodes) if (!m.has(n.name)) m.set(n.name, n.url);
+    for (const r of config.data?.routers ?? [])
+      for (const n of r.nodes)
+        if (!m.has(n.name)) m.set(n.name, n.endpoints[0]?.urlHost ?? "");
     return m;
   }, [config.data]);
 
