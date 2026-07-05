@@ -1,16 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 
 export default function AccountPage() {
-  const router = useRouter();
   const [version, setVersion] = useState<string | null>(null);
-
-  async function signOut() {
-    localStorage.removeItem("sr:token");
-    router.replace("/login");
-  }
 
   // Lazy-load build provenance from the api /version endpoint.
   if (version === null && typeof window !== "undefined") {
@@ -25,15 +18,9 @@ export default function AccountPage() {
   return (
     <div className="gw-page">
       <h1>Account</h1>
-      <p className="lede">Session and build information.</p>
+      <p className="lede">Build information for this deployment.</p>
 
       <div className="gw-grid" style={{ gridTemplateColumns: "1fr 1fr", maxWidth: 720 }}>
-        <div className="gw-card">
-          <p className="gw-card__title">Session</p>
-          <button className="gw-btn" onClick={signOut} style={{ marginTop: 8 }}>
-            Sign out
-          </button>
-        </div>
         <div className="gw-card">
           <p className="gw-card__title">Build</p>
           <div className="mono" style={{ fontSize: 13 }}>{version ?? "…"}</div>
