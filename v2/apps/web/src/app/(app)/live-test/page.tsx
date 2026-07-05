@@ -1,174 +1,222 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import type { RouterTopology } from "@sr/shared";
+/* Live test — the lava-connect "Try me" request console, self-hosted.
+ * One gw-card per chain from the mounted router topology; each available
+ * interface renders a reference-style endpoint row (hover-reveal "Try it" +
+ * copy) that launches the TryMeDrawer against the local listen port.
+ *
+ * Honest-data rules:
+ *  - Endpoint URLs are real local listeners (http://localhost:<port> from
+ *    localPorts[iface] ?? localPort) — helm-values configs have no local
+ *    ports and fall into the empty state.
+ *  - A WS row appears ONLY when the chain's config carries a ws(s)://
+ *    upstream for that interface. The router's fiber listeners register the
+ *    WS upgrade at /ws and /websocket on the same port as HTTP (smart-router
+ *    chainlib jsonRPC.go / tendermintRPC.go), so the URL is
+ *    ws://localhost:<port>/websocket.
+ *  - The drawer's status tag is threaded from /api/metrics/chains; chains
+ *    with no live metrics simply show no tag.
+ */
+
+import { useMemo } from "react";
+import {
+  buildChainMetaByIndex,
+  type ChainMetrics,
+  type HealthState,
+  type RouterTopology,
+} from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
+import { ChainBadge } from "@/components/gateway/ChainBadge";
+import { isCatalogInterface } from "@/components/try-me/chain-methods";
+import { IFACE_LABEL } from "@/components/try-me/drawer";
+import { EndpointRow } from "@/components/try-me/endpoint-row";
 
-/** Common JSON-RPC probes per interface (kept small; the input is editable). */
-const PRESETS: Record<string, { label: string; body: string }[]> = {
-  jsonrpc: [
-    { label: "eth_blockNumber", body: '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' },
-    { label: "eth_chainId", body: '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' },
-    { label: "eth_gasPrice", body: '{"jsonrpc":"2.0","method":"eth_gasPrice","params":[],"id":1}' },
-    { label: "net_version", body: '{"jsonrpc":"2.0","method":"net_version","params":[],"id":1}' },
-  ],
-  tendermintrpc: [
-    { label: "status", body: '{"jsonrpc":"2.0","method":"status","params":[],"id":1}' },
-    { label: "health", body: '{"jsonrpc":"2.0","method":"health","params":[],"id":1}' },
-  ],
-};
+interface RowModel {
+  key: string;
+  iface: string;
+  label: string;
+  url: string;
+}
 
-interface TestResult {
-  ok: boolean;
-  status: number;
-  latencyMs: number;
-  body: string;
-  error?: string;
+/** HTTP interfaces whose listener also accepts a WebSocket upgrade. */
+const WS_CAPABLE = ["jsonrpc", "tendermintrpc"];
+
+function labelFor(iface: string): string {
+  return isCatalogInterface(iface) ? IFACE_LABEL[iface] : iface;
+}
+
+/** True when any upstream node endpoint on this (router, raw iface) is a
+ *  ws(s):// URL — the honest signal that this interface can serve WS. */
+function hasWsUpstream(r: RouterTopology, rawIface: string): boolean {
+  return r.nodes.some((n) =>
+    n.endpoints.some(
+      (e) =>
+        e.interface === rawIface &&
+        (e.urlHost.startsWith("wss://") || e.urlHost.startsWith("ws://")),
+    ),
+  );
+}
+
+/** Whether the mounted config marks an `archive` addon anywhere on the chain
+ *  — gates the drawer's Archive tier. */
+function hasArchiveAddon(r: RouterTopology): boolean {
+  return r.nodes.some((n) => n.endpoints.some((e) => e.addons.includes("archive")));
+}
+
+/** One row per (interface with a local listen port), plus a WS variant when
+ *  the config proves the capability. */
+function rowsForRouter(r: RouterTopology): RowModel[] {
+  const out: RowModel[] = [];
+  const rawIfaces = r.interfaces.length ? r.interfaces : [""];
+  for (const raw of rawIfaces) {
+    const port = r.localPorts[raw] ?? r.localPort;
+    if (!port) continue;
+    // Legacy SR_CONFIG entries that omit api-interface are jsonrpc listeners.
+    const iface = raw || "jsonrpc";
+    out.push({
+      key: iface,
+      iface,
+      label: labelFor(iface),
+      url: `http://localhost:${port}`,
+    });
+    if (WS_CAPABLE.includes(iface) && hasWsUpstream(r, raw)) {
+      const wsIface = `${iface}-ws`;
+      out.push({
+        key: wsIface,
+        iface: wsIface,
+        label: labelFor(wsIface),
+        url: `ws://localhost:${port}/websocket`,
+      });
+    }
+  }
+  return out;
 }
 
 export default function LiveTestPage() {
   const config = useApi<{ routers: RouterTopology[] }>("/api/config/routers", 60000);
-  // One selectable row per (chain, interface) that has a local listen port.
-  const routers = useMemo(
+  const metrics = useApi<{ chains: ChainMetrics[] }>("/api/metrics/chains?window=1d", 60000);
+
+  const healthBySpec = useMemo(() => {
+    const map = new Map<string, HealthState>();
+    for (const c of metrics.data?.chains ?? []) map.set(c.spec, c.health);
+    return map;
+  }, [metrics.data]);
+
+  const cards = useMemo(
     () =>
-      (config.data?.routers ?? []).flatMap((r) =>
-        (r.interfaces.length ? r.interfaces : [""]).flatMap((iface) => {
-          const port = r.localPorts[iface] ?? r.localPort;
-          return port ? [{ spec: r.spec, apiInterface: iface || "jsonrpc", listenPort: port }] : [];
-        }),
-      ),
+      (config.data?.routers ?? [])
+        .map((router) => ({
+          router,
+          rows: rowsForRouter(router),
+          hasArchive: hasArchiveAddon(router),
+        }))
+        .filter((c) => c.rows.length > 0),
     [config.data],
   );
 
-  const [selected, setSelected] = useState<string>("");
-  const [body, setBody] = useState(PRESETS.jsonrpc![0]!.body);
-  const [skipCache, setSkipCache] = useState(false);
-  const [running, setRunning] = useState(false);
-  const [result, setResult] = useState<TestResult | null>(null);
-
-  useEffect(() => {
-    if (!selected && routers[0]) {
-      setSelected(`${routers[0].spec}|${routers[0].apiInterface}`);
-    }
-  }, [routers, selected]);
-
-  const current = routers.find((r) => `${r.spec}|${r.apiInterface}` === selected);
-  const presets = current ? (PRESETS[current.apiInterface] ?? PRESETS.jsonrpc!) : PRESETS.jsonrpc!;
-
-  async function send() {
-    if (!current?.listenPort) return;
-    setRunning(true);
-    setResult(null);
-    const url = `http://localhost:${current.listenPort}`;
-    const headers: Record<string, string> = { "content-type": "application/json" };
-    if (skipCache) headers["x-lava-skip-cache"] = "true";
-    const t0 = performance.now();
-    try {
-      const res = await fetch(url, { method: "POST", headers, body });
-      const text = await res.text();
-      let pretty = text;
-      try {
-        pretty = JSON.stringify(JSON.parse(text), null, 2);
-      } catch {
-        /* leave raw */
-      }
-      setResult({ ok: res.ok, status: res.status, latencyMs: performance.now() - t0, body: pretty });
-    } catch (err) {
-      setResult({
-        ok: false,
-        status: 0,
-        latencyMs: performance.now() - t0,
-        body: "",
-        error: err instanceof Error ? err.message : "Request failed",
-      });
-    } finally {
-      setRunning(false);
-    }
-  }
-
-  function curl(): string {
-    if (!current?.listenPort) return "";
-    const cacheHeader = skipCache ? ` -H 'x-lava-skip-cache: true'` : "";
-    return `curl -X POST http://localhost:${current.listenPort} -H 'content-type: application/json'${cacheHeader} -d '${body}'`;
-  }
+  const loading = !config.data && !config.error;
 
   return (
-    <div className="gw-page">
+    <div className="gw-page fade-in">
       <h1>Live test</h1>
-      <p className="lede">Send a request straight through the router and inspect the response, status, and latency.</p>
+      <p className="lede">
+        Fire real requests through each local router — pick a method, tweak the
+        params, and inspect the response, status, and latency.
+      </p>
 
-      <div className="gw-grid" style={{ gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)" }}>
-        {/* Request builder */}
-        <div className="gw-card">
-          <p className="gw-card__title">Request</p>
-
-          <label className="gw-label">Router</label>
-          <select className="gw-input" value={selected} onChange={(e) => setSelected(e.target.value)}>
-            {routers.length === 0 && <option value="">No local routers found</option>}
-            {routers.map((r) => (
-              <option key={`${r.spec}|${r.apiInterface}`} value={`${r.spec}|${r.apiInterface}`}>
-                {r.spec} · {r.apiInterface} (:{r.listenPort})
-              </option>
-            ))}
-          </select>
-
-          <div style={{ height: 14 }} />
-          <label className="gw-label">Presets</label>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-            {presets.map((p) => (
-              <button key={p.label} className="gw-btn" style={{ fontSize: 12, padding: "5px 10px" }} onClick={() => setBody(p.body)}>
-                {p.label}
-              </button>
-            ))}
+      {loading ? null : cards.length === 0 ? (
+        <div className="gw-empty">
+          <div className="gw-empty__icon">
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="var(--text-3)"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+            </svg>
           </div>
-
-          <div style={{ height: 14 }} />
-          <label className="gw-label">Body</label>
-          <textarea
-            className="gw-input mono"
-            style={{ minHeight: 120, resize: "vertical" }}
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-          />
-
-          <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 14, fontSize: 13 }}>
-            <input type="checkbox" checked={skipCache} onChange={(e) => setSkipCache(e.target.checked)} />
-            Skip cache
-          </label>
-
-          <button className="gw-btn gw-btn--primary" style={{ marginTop: 18, width: "100%", justifyContent: "center" }} onClick={send} disabled={running || !current}>
-            {running ? "Sending…" : "Send request"}
-          </button>
-
-          <div style={{ height: 14 }} />
-          <label className="gw-label">cURL</label>
-          <pre className="mono" style={{ fontSize: 11, background: "var(--bg-2)", padding: 12, borderRadius: 10, overflowX: "auto", margin: 0 }}>{curl()}</pre>
+          <h2>No local routers to test</h2>
+          <p>
+            No router config with local listen ports was found. Mount the
+            smart-router SR_CONFIG (<code>endpoints:</code> +{" "}
+            <code>direct-rpc:</code>) and every chain it serves gets a live
+            request console here. Helm-values configs describe remote gateways
+            without local ports, so there is nothing to dial from this machine.
+          </p>
         </div>
-
-        {/* Response */}
-        <div className="gw-card">
-          <p className="gw-card__title">Response</p>
-          {!result && <div className="muted" style={{ padding: 24, textAlign: "center" }}>Send a request to see the response.</div>}
-          {result && (
-            <>
-              <div style={{ display: "flex", gap: 18, marginBottom: 14 }}>
-                <div>
-                  <div className="gw-card__title" style={{ margin: 0 }}>Status</div>
-                  <span className={`tag ${result.ok ? "tag--ok" : "tag--err"}`}>{result.status || "ERR"}</span>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {cards.map(({ router, rows, hasArchive }) => {
+            const chain = buildChainMetaByIndex(router.spec);
+            const health = healthBySpec.get(router.spec);
+            const showNetwork =
+              router.network &&
+              router.network.toLowerCase() !== router.spec.toLowerCase() &&
+              router.network !== "mainnet";
+            return (
+              <div key={router.id} className="gw-card" style={{ padding: "14px 16px" }}>
+                {/* Chain header */}
+                <div
+                  className="gw-row"
+                  style={{ gap: 10, alignItems: "center", marginBottom: 10 }}
+                >
+                  <ChainBadge spec={router.spec} size={26} />
+                  <span style={{ fontSize: 13, fontWeight: 600 }}>{chain.name}</span>
+                  <span
+                    className="gw-mono"
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 700,
+                      padding: "2px 7px",
+                      borderRadius: 4,
+                      background: "var(--hover)",
+                      color: "var(--text-3)",
+                      letterSpacing: "0.05em",
+                    }}
+                  >
+                    {router.spec}
+                  </span>
+                  {showNetwork && (
+                    <span className="gw-tag" style={{ fontSize: 10, padding: "1px 6px" }}>
+                      {router.network}
+                    </span>
+                  )}
+                  <span style={{ flex: 1 }} />
+                  {router.localPort !== null && (
+                    <span
+                      className="gw-mono"
+                      style={{ fontSize: 11, color: "var(--text-3)", flexShrink: 0 }}
+                    >
+                      localhost:{router.localPort}
+                    </span>
+                  )}
                 </div>
-                <div>
-                  <div className="gw-card__title" style={{ margin: 0 }}>Latency</div>
-                  <strong className="mono">{Math.round(result.latencyMs)} ms</strong>
+
+                {/* Endpoint rows — hover reveals Try it + copy */}
+                <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                  {rows.map((row) => (
+                    <EndpointRow
+                      key={row.key}
+                      spec={router.spec}
+                      network={router.network}
+                      iface={row.iface}
+                      label={row.label}
+                      url={row.url}
+                      hasArchive={hasArchive}
+                      health={health}
+                    />
+                  ))}
                 </div>
               </div>
-              {result.error && <div className="tag tag--err" style={{ marginBottom: 12 }}>{result.error}</div>}
-              {result.body && (
-                <pre className="mono" style={{ fontSize: 12, background: "var(--bg-2)", padding: 14, borderRadius: 10, overflowX: "auto", maxHeight: 380, margin: 0 }}>{result.body}</pre>
-              )}
-            </>
-          )}
+            );
+          })}
         </div>
-      </div>
+      )}
     </div>
   );
 }
