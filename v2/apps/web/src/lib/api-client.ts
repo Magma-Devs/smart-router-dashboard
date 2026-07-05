@@ -14,7 +14,7 @@ function resolveBase(): Promise<string> {
   if (typeof window === "undefined") return Promise.resolve(BUILD_BASE);
   if (!basePromise) {
     basePromise = fetch("/api/config")
-      .then((r) => (r.ok ? (r.json() as Promise<{ apiUrl?: string }>) : {}))
+      .then((r) => (r.ok ? (r.json() as Promise<{ apiUrl?: string }>) : ({} as { apiUrl?: string })))
       .then((c) => c.apiUrl ?? BUILD_BASE)
       .catch(() => BUILD_BASE);
   }
