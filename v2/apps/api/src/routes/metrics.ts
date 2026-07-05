@@ -47,8 +47,8 @@ export async function metricRoutes(app: FastifyInstance) {
   });
 
   // Rich Overview/Dashboard payload (KPIs + deltas + series + per-chain).
-  app.get<{ Querystring: WindowQuery }>("/api/metrics/overview", tag("Rich Overview/Dashboard payload (KPIs, deltas, series, per-chain)", false), async (request) => {
-    return app.metrics.overview(parseWindow(request.query.window));
+  app.get<{ Querystring: WindowQuery }>("/api/metrics/overview", tag("Rich Overview/Dashboard payload (KPIs, deltas, series, per-chain)"), async (request) => {
+    return app.metrics.overview(parseWindow(request.query.window), request.query.spec);
   });
 
   // Per-chain rollup (RouterOverview table).

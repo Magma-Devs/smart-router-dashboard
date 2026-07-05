@@ -143,8 +143,12 @@ export class MetricsService {
    * a real series; quota/cap (Compute Units, RPS cap) are NOT router metrics —
    * they stay null and the UI shows an honest "not tracked" state.
    */
-  async overview(window: MetricWindow): Promise<import("@sr/shared").OverviewData> {
+  async overview(
+    window: MetricWindow,
+    spec?: string,
+  ): Promise<import("@sr/shared").OverviewData> {
     const win = WINDOWS[window];
+    const sel = selector({ spec });
     const end = Math.floor(Date.now() / 1000);
     const start = end - win.rangeSeconds;
     const r = rangeFor(window);
@@ -169,38 +173,38 @@ export class MetricsService {
       latencySeries,
       specs,
     ] = await Promise.all([
-      kpi(qRequestsTotal(undefined, window), qRequestsTotal(undefined, window, r)),
-      kpi(`sum(rate(${ROUTER_METRICS.requestsTotal}[5m]))`, `sum(rate(${ROUTER_METRICS.requestsTotal}[5m] offset ${r}))`),
-      kpi(qAvailability(undefined, window), qAvailability(undefined, window, r)),
-      kpi(qLatencyQuantile(0.5, undefined, window), qLatencyQuantile(0.5, undefined, window, r)),
-      kpi(qLatencyQuantile(0.95, undefined, window), qLatencyQuantile(0.95, undefined, window, r)),
-      kpi(qLatencyQuantile(0.99, undefined, window), qLatencyQuantile(0.99, undefined, window, r)),
-      this.prom.scalar(qAvailability(undefined, window)),
+      kpi(qRequestsTotal(spec, window), qRequestsTotal(spec, window, r)),
+      kpi(`sum(rate(${ROUTER_METRICS.requestsTotal}${sel}[5m]))`, `sum(rate(${ROUTER_METRICS.requestsTotal}${sel}[5m] offset ${r}))`),
+      kpi(qAvailability(spec, window), qAvailability(spec, window, r)),
+      kpi(qLatencyQuantile(0.5, spec, window), qLatencyQuantile(0.5, spec, window, r)),
+      kpi(qLatencyQuantile(0.95, spec, window), qLatencyQuantile(0.95, spec, window, r)),
+      kpi(qLatencyQuantile(0.99, spec, window), qLatencyQuantile(0.99, spec, window, r)),
+      this.prom.scalar(qAvailability(spec, window)),
       this.prom.scalar(ROUTER_METRICS.overallHealth),
-      this.prom.queryRange(`sum(rate(${ROUTER_METRICS.requestsTotal}[${win.step}]))`, start, end, win.step),
-      this.prom.queryRange(`clamp_min(sum(rate(${ROUTER_METRICS.requestsTotal}[${win.step}])) - sum(rate(${ROUTER_METRICS.requestsSuccessTotal}[${win.step}])), 0)`, start, end, win.step),
-      this.prom.queryRange(qLatencyQuantile(0.95, undefined, window).replace(`[${r}]`, `[${win.step}]`), start, end, win.step),
-      this.listSpecs(),
+      this.prom.queryRange(`sum(rate(${ROUTER_METRICS.requestsTotal}${sel}[${win.step}]))`, start, end, win.step),
+      this.prom.queryRange(`clamp_min(sum(rate(${ROUTER_METRICS.requestsTotal}${sel}[${win.step}])) - sum(rate(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${win.step}])), 0)`, start, end, win.step),
+      this.prom.queryRange(qLatencyQuantile(0.95, spec, window).replace(`[${r}]`, `[${win.step}]`), start, end, win.step),
+      spec ? Promise.resolve([spec]) : this.listSpecs(),
     ]);
 
     // Latency series per percentile for the p50/p95/p99 chart toggle.
     const [latP50, latP99] = await Promise.all([
-      this.prom.queryRange(qLatencyQuantile(0.5, undefined, window).replace(`[${r}]`, `[${win.step}]`), start, end, win.step),
-      this.prom.queryRange(qLatencyQuantile(0.99, undefined, window).replace(`[${r}]`, `[${win.step}]`), start, end, win.step),
+      this.prom.queryRange(qLatencyQuantile(0.5, spec, window).replace(`[${r}]`, `[${win.step}]`), start, end, win.step),
+      this.prom.queryRange(qLatencyQuantile(0.99, spec, window).replace(`[${r}]`, `[${win.step}]`), start, end, win.step),
     ]);
 
     // Errors = total − success over the window, for BOTH windows (the prior
     // KPI must be prior ERRORS, not prior requests).
     const [errorsNow, errorsPrior] = await Promise.all([
-      this.prom.scalar(qErrorCount(undefined, window)),
-      this.prom.scalar(qErrorCount(undefined, window, r)),
+      this.prom.scalar(qErrorCount(spec, window)),
+      this.prom.scalar(qErrorCount(spec, window, r)),
     ]);
     const reqWin = totalRequests.value;
     const errorRate =
       reqWin && reqWin > 0 && errorsNow !== null ? errorsNow / reqWin : null;
 
     // Latency histogram distribution (per-bucket counts over the window).
-    const distRows = await this.prom.query(qLatencyDistribution(window));
+    const distRows = await this.prom.query(qLatencyDistribution(window, spec));
     const latencyDistribution = distRows
       .map((s) => ({ le: s.metric.le ?? "", count: Number(s.value[1]) || 0 }))
       .filter((b) => b.le !== "")
@@ -208,7 +212,7 @@ export class MetricsService {
 
     // Per-provider throughput stack (real: provider_address label).
     const provMatrix = await this.prom.queryRange(
-      `sum by (provider_address) (rate(${ROUTER_METRICS.requestsTotal}[${win.step}]))`,
+      `sum by (provider_address) (rate(${ROUTER_METRICS.requestsTotal}${sel}[${win.step}]))`,
       start,
       end,
       win.step,
