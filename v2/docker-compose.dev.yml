@@ -1,6 +1,7 @@
-# Smart Router Dashboard v2 — dev stack with HOT RELOAD.
+# Smart Router Dashboard v2 — dev stack with HOT RELOAD, self-contained.
 #
-#   make dev          (or: docker compose -f docker-compose.dev.yml up --build)
+#   docker compose -f docker-compose.dev.yml --profile router up --build
+#   (omit --profile router when a router already runs on the host's :7779)
 #
 # Mirrors lava-connect's dev pattern:
 #   - a shared Dockerfile.dev image carries node_modules (so mounts don't clobber it)
@@ -9,11 +10,51 @@
 #   - api runs `tsx watch` (restarts on src or shared/dist change)
 #   - web runs `next dev` (Fast Refresh in the browser)
 #
-# Joins the running smart-router_default network for live Prometheus data.
+# Prometheus is bundled (deploy/prometheus.yml scrapes the bundled router
+# AND host.docker.internal:7779). ONE values file (SR_CONFIG_HOST) drives
+# both the router and the api — see docker-compose.yml for details.
 
 name: smart-router-dashboard-dev
 
 services:
+  prometheus:
+    image: prom/prometheus:latest
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+    volumes:
+      - ./deploy/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data-dev:/prometheus
+    ports:
+      - "9090:9090"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+  router:
+    profiles: ["router"]
+    build:
+      context: ${ROUTER_DIR:-../../smart-router}
+      dockerfile: docker/Dockerfile
+    image: smart-router:dashboard-local
+    command:
+      - "values.yml"
+      - "--use-static-spec"
+      - "${SR_SPEC:-specs/}"
+      - "--cors-headers"
+      - "*"
+      - "--log-level"
+      - "${SR_LOG_LEVEL:-info}"
+      - "--log-format"
+      - "${SR_LOG_FORMAT:-json}"
+      - "--skip-websocket-verification"
+    volumes:
+      - ${SR_CONFIG_HOST:-./dev-config/values.yml}:/smart-router/values.yml:ro
+    ports:
+      - "3360:3360"
+      - "7779:7779"
+    restart: unless-stopped
+
   builder:
     build:
       context: .
@@ -23,8 +64,6 @@ services:
     volumes:
       - ./packages/shared/src:/app/packages/shared/src
       - ./packages/shared/dist:/app/packages/shared/dist
-    networks:
-      - srnet
 
   api:
     build:
@@ -48,8 +87,7 @@ services:
       - "8000:8000"
     depends_on:
       - builder
-    networks:
-      - srnet
+      - prometheus
 
   web:
     build:
@@ -74,10 +112,6 @@ services:
       - "3000:3000"
     depends_on:
       - api
-    networks:
-      - srnet
 
-networks:
-  srnet:
-    name: ${SRNET_NAME:-smart-router_default}
-    external: ${SRNET_EXTERNAL:-true}
+volumes:
+  prometheus-data-dev:

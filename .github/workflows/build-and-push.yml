@@ -184,3 +184,114 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           github-token: ${{ secrets.GITHUB_TOKEN }}
+
+  # v2 (TypeScript monorepo under ./v2) — published under NEW image names
+  # (…/api, …/web) so the v1 backend/frontend images above stay untouched
+  # during the transition. Consumed by smart-router's
+  # docker/docker-compose.dashboard.yml.
+  build-and-push-v2:
+    name: Build and Push v2 ${{ matrix.image }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - image: api
+            dockerfile: v2/apps/api/Dockerfile
+          - image: web
+            dockerfile: v2/apps/web/Dockerfile
+      fail-fast: false
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read version from VERSION file
+        id: read-version
+        run: |
+          if [ ! -f VERSION ] || [ -z "$(tr -d ' \n\r' < VERSION)" ]; then
+            echo "Error: VERSION file not found or is empty"
+            exit 1
+          fi
+          VERSION=$(tr -d ' \n\r' < VERSION)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Normalize version tag
+        id: version
+        run: |
+          VERSION="${{ steps.read-version.outputs.version }}"
+          BRANCH_NAME="${{ github.ref_name }}"
+          if [ "$BRANCH_NAME" != "main" ]; then
+            VERSION="${VERSION}-${BRANCH_NAME}"
+          fi
+          MAJOR_MINOR=$(echo "$VERSION" | cut -d'.' -f1,2)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "major_minor=$MAJOR_MINOR" >> $GITHUB_OUTPUT
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check if image version already exists
+        if: github.ref_name == 'main'
+        run: |
+          set +e
+          IMAGE_TAG="ghcr.io/${{ github.repository }}/${{ matrix.image }}:${{ steps.version.outputs.version }}"
+          MANIFEST_OUTPUT=$(docker manifest inspect "$IMAGE_TAG" 2>&1)
+          if [ $? -eq 0 ]; then
+            echo "Error: $IMAGE_TAG already exists — bump VERSION."
+            exit 1
+          fi
+          echo "✓ $IMAGE_TAG does not exist. Safe to proceed."
+
+      - name: Prepare tags
+        id: prepare-tags
+        run: |
+          {
+            echo "type=raw,value=${{ steps.version.outputs.version }}"
+            echo "type=raw,value=${{ steps.version.outputs.major_minor }}"
+            if [ "${{ github.ref_name }}" = "main" ]; then
+              echo "type=raw,value=latest"
+            fi
+          } | tee tags.txt
+          echo "tags<<EOF" >> $GITHUB_OUTPUT
+          cat tags.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.image }}
+          tags: ${{ steps.prepare-tags.outputs.tags }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./v2
+          file: ./${{ matrix.dockerfile }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            APP_VERSION=${{ steps.version.outputs.version }}
+            NEXT_PUBLIC_API_URL=http://localhost:8000
+            NEXT_PUBLIC_LOCAL_MODE=true
+          # Distinct cache scopes — the v1 job's gha cache must not bleed in.
+          cache-from: type=gha,scope=v2-${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=v2-${{ matrix.image }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}

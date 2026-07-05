@@ -1,22 +1,72 @@
-# Smart Router Dashboard v2 — production-style stack (api + web).
+# Smart Router Dashboard v2 — SELF-CONTAINED production-style stack.
 #
-# Assumes a smart-router + Prometheus are already running (e.g. via
-# ~/projects/smart-router `docker/docker-compose.dashboard.yml`, which creates
-# the `smart-router_default` network and a `prometheus` service on :9090).
-# This compose joins that network so the api can scrape Prometheus by name.
+#   # Everything from nothing (router + prometheus + api + web):
+#   docker compose --profile router up --build
 #
-#   docker compose -f docker-compose.yml up --build
+#   # Dashboard + Prometheus only (a router already runs on the host's :7779):
+#   docker compose up --build
 #
 # Endpoints:
 #   http://localhost:3000   dashboard UI
-#   http://localhost:8000   dashboard API (/health, /api/metrics/*)
+#   http://localhost:8000   dashboard API (/health, /api/metrics/*, /docs)
+#   http://localhost:9090   Prometheus
+#   http://localhost:3360   router ETH1 jsonrpc (router profile)
 #
-# SR_CONFIG must point (relative to ~/projects/smart-router) at the same router
-# config the router runs, so the Endpoints/live-test pages reflect the topology.
+# ONE values file drives BOTH the router and the dashboard (the v1 pattern):
+# SR_CONFIG_HOST (default ./dev-config/values.yml) is mounted as the router's
+# config AND as the api's helm-values, so the Endpoints/Providers pages always
+# reflect the running topology. It can be either format the api understands —
+# a raw smart-router SR_CONFIG or helm-chart values.
+#
+# The router profile builds from a smart-router checkout (ROUTER_DIR, default
+# sibling ../../smart-router) because the published release image ships only
+# the binary — no bundled specs/. The checkout image bundles specs/ + the
+# example configs, so it boots offline.
 
 name: smart-router-dashboard
 
 services:
+  prometheus:
+    image: prom/prometheus:latest
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+    volumes:
+      - ./deploy/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+  router:
+    profiles: ["router"]
+    build:
+      context: ${ROUTER_DIR:-../../smart-router}
+      dockerfile: docker/Dockerfile
+    image: smart-router:dashboard-local
+    command:
+      - "values.yml"
+      - "--use-static-spec"
+      - "${SR_SPEC:-specs/}"
+      # The browser live-test panel preflights cross-origin POSTs.
+      - "--cors-headers"
+      - "*"
+      - "--log-level"
+      - "${SR_LOG_LEVEL:-info}"
+      - "--log-format"
+      - "${SR_LOG_FORMAT:-json}"
+      # HTTP-only upstreams boot cleanly; wss subscriptions still work where
+      # a wss url is configured.
+      - "--skip-websocket-verification"
+    volumes:
+      - ${SR_CONFIG_HOST:-./dev-config/values.yml}:/smart-router/values.yml:ro
+    ports:
+      - "3360:3360" # ETH1 jsonrpc (dev-config default)
+      - "7779:7779" # prometheus metrics
+    restart: unless-stopped
+
   api:
     build:
       context: .
@@ -28,9 +78,6 @@ services:
       - NODE_ENV=production
       - API_PORT=8000
       - PROMETHEUS_URL=http://prometheus:9090
-      - AUTH_ENABLED=${AUTH_ENABLED:-false}
-      - AUTH_USERNAME=${DASHBOARD_USERNAME:-admin}
-      - AUTH_PASSWORD=${DASHBOARD_PASSWORD:-password}
       - CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
       - HELM_VALUES_DIR=/app/helm-values
     volumes:
@@ -39,9 +86,9 @@ services:
       - ${SR_CONFIG_HOST:-./dev-config/values.yml}:/app/helm-values/core/values.yml:ro
     ports:
       - "8000:8000"
+    depends_on:
+      - prometheus
     restart: unless-stopped
-    networks:
-      - srnet
 
   web:
     build:
@@ -59,14 +106,6 @@ services:
     depends_on:
       - api
     restart: unless-stopped
-    networks:
-      - srnet
 
-networks:
-  # Join the smart-router stack's network so `prometheus` resolves. Set
-  # SRNET_EXTERNAL=smart-router_default when the router stack is up; otherwise
-  # this falls back to a local bridge (api will 503 metrics until Prometheus
-  # is reachable).
-  srnet:
-    name: ${SRNET_NAME:-smart-router_default}
-    external: ${SRNET_EXTERNAL:-true}
+volumes:
+  prometheus-data:
