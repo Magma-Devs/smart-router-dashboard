@@ -294,6 +294,9 @@ export class MetricsService {
           scores: {},
           health: "unknown",
           latestBlock: null,
+          blockLag: null,
+          role: null,
+          apiInterface: null,
           inFlight: 0,
         };
         byId.set(endpointId, row);

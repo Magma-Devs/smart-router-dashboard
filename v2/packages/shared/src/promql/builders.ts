@@ -3,7 +3,11 @@
  * web for documentation. Every query targets the GROUND-TRUTH metric names in
  * `constants/metrics.ts`.
  */
-import { ENDPOINT_METRICS, ROUTER_METRICS } from "../constants/metrics.js";
+import {
+  ENDPOINT_METRICS,
+  OPTIMIZER_METRICS,
+  ROUTER_METRICS,
+} from "../constants/metrics.js";
 import { WINDOWS, type MetricWindow } from "../constants/windows.js";
 
 /** Build a `{spec="ETH1",...}` label selector; empty string for no filters. */
@@ -18,21 +22,39 @@ export function rangeFor(window: MetricWindow): string {
   return `${WINDOWS[window].rangeSeconds}s`;
 }
 
+/** ` offset 86400s` suffix for prior-window comparisons; empty when unset. */
+function off(offset?: string): string {
+  return offset ? ` offset ${offset}` : "";
+}
+
 /** Total requests over the window (optionally scoped to one spec). */
-export function qRequestsTotal(spec?: string, window: MetricWindow = "1d"): string {
-  return `sum(increase(${ROUTER_METRICS.requestsTotal}${selector({ spec })}[${rangeFor(window)}]))`;
+export function qRequestsTotal(
+  spec?: string,
+  window: MetricWindow = "1d",
+  offset?: string,
+): string {
+  return `sum(increase(${ROUTER_METRICS.requestsTotal}${selector({ spec })}[${rangeFor(window)}]${off(offset)}))`;
 }
 
 /** success / total over the window → availability ratio (0..1). */
-export function qAvailability(spec?: string, window: MetricWindow = "1d"): string {
+export function qAvailability(
+  spec?: string,
+  window: MetricWindow = "1d",
+  offset?: string,
+): string {
   const sel = selector({ spec });
   const r = rangeFor(window);
-  return `sum(increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${r}])) / sum(increase(${ROUTER_METRICS.requestsTotal}${sel}[${r}]))`;
+  const o = off(offset);
+  return `sum(increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${r}]${o})) / sum(increase(${ROUTER_METRICS.requestsTotal}${sel}[${r}]${o}))`;
 }
 
 /** 1 - success/total → error rate (0..1). */
-export function qErrorRate(spec?: string, window: MetricWindow = "1d"): string {
-  return `1 - (${qAvailability(spec, window)})`;
+export function qErrorRate(
+  spec?: string,
+  window: MetricWindow = "1d",
+  offset?: string,
+): string {
+  return `1 - (${qAvailability(spec, window, offset)})`;
 }
 
 /** histogram_quantile over the router latency histogram. */
@@ -40,10 +62,11 @@ export function qLatencyQuantile(
   quantile: number,
   spec?: string,
   window: MetricWindow = "1d",
+  offset?: string,
 ): string {
   const sel = selector({ spec });
   const r = rangeFor(window);
-  return `histogram_quantile(${quantile}, sum by (spec, le) (rate(${ROUTER_METRICS.latencyBucket}${sel}[${r}])))`;
+  return `histogram_quantile(${quantile}, sum by (spec, le) (rate(${ROUTER_METRICS.latencyBucket}${sel}[${r}]${off(offset)})))`;
 }
 
 /** Instant requests/sec (rate over the last 5m). */
@@ -74,4 +97,207 @@ export function qEndpointRequests(spec?: string, window: MetricWindow = "1d"): s
 /** Per-endpoint health gauge by endpoint_id. */
 export function qEndpointHealth(spec?: string): string {
   return `${ENDPOINT_METRICS.overallHealth}${selector({ spec })}`;
+}
+
+/* ── Derived error math (real: total − success, clamped ≥ 0) ─────────────── */
+
+/** Absolute error count over the window (total − success). */
+export function qErrorCount(
+  spec?: string,
+  window: MetricWindow = "1d",
+  offset?: string,
+): string {
+  const sel = selector({ spec });
+  const r = rangeFor(window);
+  const o = off(offset);
+  return `clamp_min(sum(increase(${ROUTER_METRICS.requestsTotal}${sel}[${r}]${o})) - sum(increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${r}]${o})), 0)`;
+}
+
+export type ErrorsGroupBy = "spec" | "provider_address" | "method";
+
+/**
+ * Error counts grouped by a label. The `or … * 0` keeps groups whose success
+ * series is absent (all-errors groups would otherwise vanish from the result).
+ */
+export function qErrorsBy(
+  by: ErrorsGroupBy,
+  window: MetricWindow = "1d",
+  spec?: string,
+): string {
+  const sel = selector({ spec });
+  const r = rangeFor(window);
+  const tot = `sum by (${by}) (increase(${ROUTER_METRICS.requestsTotal}${sel}[${r}]))`;
+  const ok = `sum by (${by}) (increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${r}]))`;
+  return `clamp_min(${tot} - (${ok} or ${tot} * 0), 0)`;
+}
+
+/** Requests grouped by a label over the window. */
+export function qRequestsBy(
+  by: ErrorsGroupBy,
+  window: MetricWindow = "1d",
+  spec?: string,
+): string {
+  return `sum by (${by}) (increase(${ROUTER_METRICS.requestsTotal}${selector({ spec })}[${rangeFor(window)}]))`;
+}
+
+/* ── Series expressions (for query_range; [step] = per-bucket lookback) ──── */
+
+/** Availability ratio series (success/total rate over each step bucket). */
+export function qAvailabilitySeriesExpr(step: string, spec?: string): string {
+  const sel = selector({ spec });
+  return `sum(rate(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${step}])) / sum(rate(${ROUTER_METRICS.requestsTotal}${sel}[${step}]))`;
+}
+
+/** Error-rate series (1 − availability). */
+export function qErrorRateSeriesExpr(step: string, spec?: string): string {
+  return `1 - (${qAvailabilitySeriesExpr(step, spec)})`;
+}
+
+/** Error-count series (errors per step bucket). */
+export function qErrorCountSeriesExpr(step: string, spec?: string): string {
+  const sel = selector({ spec });
+  return `clamp_min(sum(increase(${ROUTER_METRICS.requestsTotal}${sel}[${step}])) - sum(increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${step}])), 0)`;
+}
+
+/** RPS series. */
+export function qRpsSeriesExpr(step: string, spec?: string): string {
+  return `sum(rate(${ROUTER_METRICS.requestsTotal}${selector({ spec })}[${step}]))`;
+}
+
+/** Latency-quantile series over the router histogram. */
+export function qLatencySeriesExpr(
+  quantile: number,
+  step: string,
+  spec?: string,
+): string {
+  return `histogram_quantile(${quantile}, sum by (le) (rate(${ROUTER_METRICS.latencyBucket}${selector({ spec })}[${step}])))`;
+}
+
+/** Per-provider RPS series (stacked provider-mix charts). */
+export function qPerProviderRpsExpr(step: string, spec?: string): string {
+  return `sum by (provider_address) (rate(${ROUTER_METRICS.requestsTotal}${selector({ spec })}[${step}]))`;
+}
+
+/** Per-chain RPS series (stacked per-chain charts). */
+export function qPerSpecRpsExpr(step: string): string {
+  return `sum by (spec) (rate(${ROUTER_METRICS.requestsTotal}[${step}]))`;
+}
+
+/**
+ * Share of traffic served by the named backup providers (0..1 series).
+ * Provider names are regex-escaped and OR-joined.
+ */
+export function qBackupShareExpr(
+  spec: string,
+  backupNames: string[],
+  step: string,
+): string {
+  const escaped = backupNames.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\\\$&"));
+  const sel = selector({ spec });
+  const backupSel = `{spec="${spec}",provider_address=~"${escaped.join("|")}"}`;
+  return `sum(rate(${ROUTER_METRICS.requestsTotal}${backupSel}[${step}])) / sum(rate(${ROUTER_METRICS.requestsTotal}${sel}[${step}]))`;
+}
+
+/* ── Endpoint-scope (per-provider) latency + volume ──────────────────────── */
+
+/** histogram_quantile over ONE endpoint's latency histogram (window scalar). */
+export function qEndpointLatencyQuantile(
+  quantile: number,
+  endpointId: string,
+  window: MetricWindow = "1d",
+): string {
+  return `histogram_quantile(${quantile}, sum by (le) (rate(${ENDPOINT_METRICS.latencyBucket}${selector({ endpoint_id: endpointId })}[${rangeFor(window)}])))`;
+}
+
+/** Latency-quantile series for one endpoint. */
+export function qEndpointLatencySeriesExpr(
+  quantile: number,
+  endpointId: string,
+  step: string,
+): string {
+  return `histogram_quantile(${quantile}, sum by (le) (rate(${ENDPOINT_METRICS.latencyBucket}${selector({ endpoint_id: endpointId })}[${step}])))`;
+}
+
+/** One provider's request-volume series (router scope, by provider_address). */
+export function qProviderVolumeSeriesExpr(
+  providerAddress: string,
+  step: string,
+): string {
+  return `sum(increase(${ROUTER_METRICS.requestsTotal}${selector({ provider_address: providerAddress })}[${step}]))`;
+}
+
+/** One provider's READ-volume series (requests_read_total is real). */
+export function qProviderReadVolumeSeriesExpr(
+  providerAddress: string,
+  step: string,
+): string {
+  return `sum(increase(${ROUTER_METRICS.requestsReadTotal}${selector({ provider_address: providerAddress })}[${step}]))`;
+}
+
+/** Per-provider error rate over the window (router scope). */
+export function qProviderErrorRate(
+  providerAddress: string,
+  window: MetricWindow = "1d",
+): string {
+  const sel = selector({ provider_address: providerAddress });
+  const r = rangeFor(window);
+  return `1 - (sum(increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${r}])) / sum(increase(${ROUTER_METRICS.requestsTotal}${sel}[${r}])))`;
+}
+
+/* ── Health / block-lag / scores / gauges ────────────────────────────────── */
+
+/** Block lag per endpoint: spec-max latest block − each endpoint's block. */
+export function qBlockLagByEndpoint(spec?: string): string {
+  const sel = selector({ spec });
+  return `max by (spec) (${ENDPOINT_METRICS.latestBlock}${sel}) - on(spec) group_right() ${ENDPOINT_METRICS.latestBlock}${sel}`;
+}
+
+/** Block-lag series for ONE endpoint (needs its spec for the max side). */
+export function qEndpointBlockLagSeriesExpr(spec: string, endpointId: string): string {
+  return `max(${ENDPOINT_METRICS.latestBlock}${selector({ spec })}) - max(${ENDPOINT_METRICS.latestBlock}${selector({ spec, endpoint_id: endpointId })})`;
+}
+
+/** Specs whose every endpoint is down (bool per spec). */
+export function qChainDown(): string {
+  return `max by (spec) (${ENDPOINT_METRICS.overallHealth}) == bool 0`;
+}
+
+/** Selection-score expression (gauge; also valid for query_range series). */
+export function qScoreExpr(
+  scoreType: string,
+  spec?: string,
+  endpointId?: string,
+): string {
+  return `avg(${ENDPOINT_METRICS.selectionScore}${selector({ spec, endpoint_id: endpointId, score_type: scoreType })})`;
+}
+
+/** Optimizer-scope composite score per spec (no apiInterface label). */
+export function qOptimizerScore(scoreType: string, spec?: string): string {
+  return `avg(${OPTIMIZER_METRICS.selectionScore}${selector({ spec, score_type: scoreType })})`;
+}
+
+/** Stale responses caught (consistency checks that corrected an answer). */
+export function qConsistencyCaught(
+  window: MetricWindow = "1d",
+  offset?: string,
+): string {
+  return `sum(increase(${ROUTER_METRICS.consistencySuccessTotal}[${rangeFor(window)}]${off(offset)}))`;
+}
+
+/** The four csm_* gauges in one instant query. */
+export function qCsm(): string {
+  return `{__name__=~"${ROUTER_METRICS.csmBlockedProviders}|${ROUTER_METRICS.csmBlockedBackupProviders}|${ROUTER_METRICS.csmReportedProviders}|${ROUTER_METRICS.csmStickySessions}"}`;
+}
+
+/** Latency histogram bucket distribution over the window (per le). */
+export function qLatencyDistribution(
+  window: MetricWindow = "1d",
+  spec?: string,
+): string {
+  return `sum by (le) (increase(${ROUTER_METRICS.latencyBucket}${selector({ spec })}[${rangeFor(window)}]))`;
+}
+
+/** Presence probe: non-empty result ⇒ the family is registered/emitted. */
+export function qPresence(metricName: string): string {
+  return `count({__name__="${metricName}"})`;
 }
