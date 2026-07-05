@@ -55,17 +55,6 @@ export interface ProviderMetrics {
   inFlight: number;
 }
 
-/** Hero cards on the Overview tab. Any field is null when unbacked. */
-export interface DashboardSummary {
-  requestsServed: number;
-  successRate: number | null;
-  effectiveReadP95Ms: number | null;
-  staleResponsesCaught: number | null;
-  providerCount: number;
-  chainCount: number;
-  health: HealthState;
-  lastUpdated: string | null;
-}
 
 
 /** One row in the Traffic "by chain" table. */
@@ -149,6 +138,12 @@ export interface OverviewData {
   errorsSeries: TimePoint[];
   /** Latency time-series per percentile (for the p50/p95/p99 chart toggle). */
   latencySeries: { p50: TimePoint[]; p95: TimePoint[]; p99: TimePoint[] };
+  /** Histogram bucket counts over the window (read-latency distribution). */
+  latencyDistribution: { le: string; count: number }[];
+  /** Per-provider throughput stack (real via the provider_address label). */
+  perProviderSeries: { provider: string; points: TimePoint[] }[];
+  /** Error layers; a single "unclassified" layer until labelled counters fire. */
+  errorLayers: { layer: string; count: number }[];
   perChainLatency: ChainLatency[];
   activeRoutes: ActiveRoute[];
   /** Per-chain throughput series for the stacked "requests per chain" chart. */
