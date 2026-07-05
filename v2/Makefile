@@ -2,64 +2,69 @@
 #
 # Smart Router Dashboard v2 — local stack.
 #
-# `make up` is the one command you need: it brings up the router + Prometheus
-# (from ~/projects/smart-router), builds the dashboard images on an isolated
-# BuildKit builder, and starts the api + web. `make down` tears the dashboard
-# down (leaving the router alone).
+# `make up` is the one command you need: the compose file is self-contained
+# (router profile + Prometheus + api + web). `make down` tears it down.
 #
-# Why the isolated builder: when another project is built on the same Docker
-# daemon, the shared BuildKit cache/context can serve the wrong project's
-# files (you'll see `@info/shared` in an ERR_PNPM_OUTDATED_LOCKFILE). A
-# dedicated builder has its own clean cache, so the build is deterministic.
+# The router profile builds from a smart-router checkout (ROUTER_DIR) because
+# the published release image ships only the binary — no bundled specs/.
+#
+# Why the isolated builder (build-api/build-web): when another project is
+# built on the same Docker daemon, the shared BuildKit cache/context can serve
+# the wrong project's files (you'll see `@info/shared` in an
+# ERR_PNPM_OUTDATED_LOCKFILE). A dedicated builder has its own clean cache.
 
 SHELL := /bin/bash
 
-# Where the smart-router repo lives (for the router + Prometheus stack).
+# Where the smart-router repo lives (router profile build context).
 ROUTER_DIR ?= $(HOME)/projects/smart-router
-SR_CONFIG  ?= config/smartrouter_examples/smartrouter_eth.yml
 SR_SPEC    ?= specs/
 
-# Dashboard image + network.
-BUILDER     ?= srdash-builder
-API_IMAGE   ?= sr-dashboard-api:dev
-WEB_IMAGE   ?= sr-dashboard-web:dev
-NETWORK     ?= smart-router_default
-API_PORT    ?= 8000
-WEB_PORT    ?= 3000
-API_URL     ?= http://localhost:$(API_PORT)
-SR_CONFIG_HOST ?= $(CURDIR)/dev-config/values.yml
+# Image names for local GHCR-parity builds (match the CI-published names).
+BUILDER    ?= srdash-builder
+API_IMAGE  ?= ghcr.io/magma-devs/smart-router-dashboard/api:local
+WEB_IMAGE  ?= ghcr.io/magma-devs/smart-router-dashboard/web:local
+API_PORT   ?= 8000
+WEB_PORT   ?= 3000
+API_URL    ?= http://localhost:$(API_PORT)
 
-.PHONY: up dev dev-down down router build build-api build-web run logs ps clean builder
+.PHONY: up down dev dev-down router logs ps clean builder build build-api build-web typecheck test
 
-## up: router + Prometheus + dashboard, PRODUCTION images (no hot reload)
-up: router build run
+## up: SELF-CONTAINED stack — router + Prometheus + api + web (prod images)
+up:
+	ROUTER_DIR=$(ROUTER_DIR) SR_SPEC=$(SR_SPEC) \
+		docker compose --profile router up -d --build
 	@echo ""
-	@echo "  ✅ Dashboard up (prod images — rebuild on code change with 'make build run'):"
-	@echo "     UI   → http://localhost:$(WEB_PORT)"
-	@echo "     API  → http://localhost:$(API_PORT)"
+	@echo "  ✅ Dashboard up:"
+	@echo "     UI    → http://localhost:$(WEB_PORT)"
+	@echo "     API   → http://localhost:$(API_PORT)"
+	@echo "     Prom  → http://localhost:9090"
+	@echo "     ETH1  → http://localhost:3360"
 
-## dev: router + Prometheus + dashboard with HOT RELOAD (source mounted)
-##      api = tsx watch · web = next dev · shared = tsc --watch (like lava-connect)
-dev: router
+## down: stop the whole stack
+down:
+	docker compose --profile router down
+
+## dev: HOT-RELOAD stack (api = tsx watch · web = next dev · shared = tsc --watch)
+dev:
 	@echo "▶ dev stack with hot reload (first boot runs pnpm install — ~1 min)"
-	docker compose -f docker-compose.dev.yml up --build
-	@echo "     UI → http://localhost:$(WEB_PORT)  ·  API → http://localhost:$(API_PORT)"
+	ROUTER_DIR=$(ROUTER_DIR) SR_SPEC=$(SR_SPEC) \
+		docker compose -f docker-compose.dev.yml --profile router up --build
 
 ## dev-down: stop the hot-reload dev stack
 dev-down:
-	docker compose -f docker-compose.dev.yml down
+	docker compose -f docker-compose.dev.yml --profile router down
 
-## router: bring up smart-router + Prometheus (offline specs, no GitHub)
+## router: bring up ONLY the router + Prometheus from this compose
 router:
-	@echo "▶ router + prometheus (from $(ROUTER_DIR))"
-	cd $(ROUTER_DIR) && SR_CONFIG=$(SR_CONFIG) SR_SPEC=$(SR_SPEC) \
-		docker compose -f docker/docker-compose.dashboard.yml up -d router prometheus
+	ROUTER_DIR=$(ROUTER_DIR) SR_SPEC=$(SR_SPEC) \
+		docker compose --profile router up -d --build router prometheus
 
 ## builder: ensure the isolated BuildKit builder exists
 builder:
 	@docker buildx inspect $(BUILDER) >/dev/null 2>&1 || \
 		docker buildx create --name $(BUILDER) --driver docker-container --bootstrap
 
+## build: build the api + web images under their GHCR names (publish parity)
 build: builder build-api build-web
 
 build-api: builder
@@ -76,32 +81,20 @@ build-web: builder
 		--build-arg NEXT_PUBLIC_LOCAL_MODE=true \
 		--load .
 
-## run: start api + web containers on the router network
-run:
-	@echo "▶ run api + web"
-	-docker rm -f srdash-api srdash-web 2>/dev/null
-	docker run -d --name srdash-api --network $(NETWORK) \
-		-e PROMETHEUS_URL=http://prometheus:9090 \
-		-e HELM_VALUES_DIR=/app/helm-values \
-		-e CORS_ORIGINS=$(API_URL),http://localhost:$(WEB_PORT) \
-		-v $(SR_CONFIG_HOST):/app/helm-values/core/values.yml:ro \
-		-p $(API_PORT):8000 $(API_IMAGE)
-	docker run -d --name srdash-web --network $(NETWORK) \
-		-e NEXT_PUBLIC_API_URL=$(API_URL) -e NEXT_PUBLIC_LOCAL_MODE=true \
-		-p $(WEB_PORT):3000 $(WEB_IMAGE)
-
 ## logs: tail the dashboard containers
 logs:
-	docker logs -f srdash-api & docker logs -f srdash-web
+	docker compose logs -f api web
 
-## ps: show the dashboard + router containers
+## ps: show the stack
 ps:
-	@docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' | grep -E 'srdash|router|prometheus' || true
+	@docker compose --profile router ps
 
-## down: stop the dashboard (leaves the router running)
-down:
-	-docker rm -f srdash-api srdash-web 2>/dev/null
-	@echo "dashboard stopped (router + prometheus left running; stop them from $(ROUTER_DIR))"
+## typecheck / test: workspace gates
+typecheck:
+	pnpm -r typecheck
+
+test:
+	pnpm -r test
 
 ## clean: down + remove the isolated builder
 clean: down

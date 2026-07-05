@@ -1,0 +1,21 @@
+# Prometheus scrape config for the bundled dashboard stack.
+#
+# Two static jobs cover both run modes; a down target is harmless (every
+# dashboard PromQL aggregates with sum()/max(), so the job label is inert):
+#   - smart-router          → the compose-bundled router (profile "router")
+#   - smart-router-external → a router already running on the host's :7779
+#     (reached via host.docker.internal, mapped by extra_hosts in compose)
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: smart-router
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["router:7779"]
+
+  - job_name: smart-router-external
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["host.docker.internal:7779"]
