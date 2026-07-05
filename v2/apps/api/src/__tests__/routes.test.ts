@@ -264,4 +264,44 @@ describe("api routes", () => {
       byChain: [],
     });
   });
+
+  it("GET /api/metrics/dashboard → real KPIs/series; null-gated families stay null", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/metrics/dashboard?window=1d" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    // Real KPIs with prior-window counterparts.
+    expect(body.kpis.successRate.value).toBeCloseTo(0.97);
+    expect(body.kpis.p95Ms.value).toBe(42);
+    expect(body.kpis.errors).toEqual({ value: 3, prior: 3 });
+    expect(body.kpis.rps.value).toBe(1234);
+    // "Errors Handled" needs counters this build doesn't emit ⇒ null, never invented.
+    expect(body.kpis.errorsHandled).toEqual({ value: null, prior: null });
+    // Real series families are present (arrays; empty under the vector mock).
+    expect(Array.isArray(body.series.throughput)).toBe(true);
+    expect(Array.isArray(body.series.errors)).toBe(true);
+    expect(Array.isArray(body.series.latency.p95)).toBe(true);
+    expect(Array.isArray(body.series.perChain)).toBe(true);
+    expect(Array.isArray(body.series.perChainSuccessRate)).toBe(true);
+    expect(Array.isArray(body.series.providerMix)).toBe(true);
+    // Chains meta list for the header multiselect.
+    expect(body.chains).toEqual([
+      { spec: "ETH1", name: "Ethereum", color: "#627EEA", health: "operational" },
+    ]);
+    // Null-gated families: absent from the router ⇒ null, trouble stays [].
+    for (const k of [
+      "scu",
+      "regions",
+      "failoverRatio",
+      "internalAvailability",
+      "cacheHitRate",
+      "errorClasses",
+      "errorsHandledBreakdown",
+      "contribution",
+      "providerAvailability",
+      "scorecard",
+    ]) {
+      expect(body[k]).toBeNull();
+    }
+    expect(body.trouble).toEqual([]);
+  });
 });
