@@ -69,3 +69,27 @@ export type ScoreType = (typeof SCORE_TYPES)[number];
 export const LATENCY_BUCKETS = [
   1, 2, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 30000,
 ] as const;
+
+/**
+ * Families the router registers only once the feature fires (absent from
+ * `/metrics` until then). The API probes these with `qPresence()` and returns
+ * `emitted: false` + nulls instead of inventing values; panels light up
+ * automatically the first time a family appears.
+ */
+export const OPTIONAL_METRICS = {
+  requestsFailedTotal: "smartrouter_requests_failed_total",
+  requestsWriteTotal: "smartrouter_requests_write_total",
+  requestsBatchTotal: "smartrouter_requests_batch_total",
+  nodeErrorsTotal: "smartrouter_node_errors_total",
+  protocolErrorsTotal: "smartrouter_protocol_errors_total",
+  cacheTotalHits: "cache_total_hits",
+  cacheTotalMisses: "cache_total_misses",
+  retriesTotal: "smartrouter_retries_total",
+  retriesSuccessTotal: "smartrouter_retries_success_total",
+  hedgeTotal: "smartrouter_hedge_total",
+  crossValidationTotal: "smartrouter_cross_validation_total",
+  crossValidationSuccessTotal: "smartrouter_cross_validation_success_total",
+  wsConnectionsActive: "smartrouter_ws_connections_active",
+  wsSubscriptionsTotal: "smartrouter_ws_subscriptions_total",
+  wsSubscriptionErrorsTotal: "smartrouter_ws_subscription_errors_total",
+} as const;

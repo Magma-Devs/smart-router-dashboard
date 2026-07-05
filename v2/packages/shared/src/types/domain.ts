@@ -47,6 +47,11 @@ export interface ProviderMetrics {
   scores: Partial<Record<ScoreType, number>>;
   health: HealthState;
   latestBlock: number | null;
+  /** Blocks behind the spec's best endpoint; null when unknown. */
+  blockLag: number | null;
+  /** From config `is_backup` (helm format only); null for SR_CONFIG. */
+  role: "primary" | "backup" | null;
+  apiInterface: string | null;
   inFlight: number;
 }
 
@@ -172,4 +177,203 @@ export interface ApiError {
 export interface MetricsQuery {
   spec?: string;
   window: MetricWindow;
+}
+
+/* ── Hero panel (Metrics · Overview tab) ─────────────────────────────────── */
+
+/**
+ * The six HeroPanel cards. Real: requests, success rate, effective read p95,
+ * stale caught. Null until the router emits the family: retries, cache.
+ */
+export interface HeroSummary {
+  requestsServed: Kpi;
+  successRate: Kpi;
+  /** Documented DERIVED estimate (no cache on this build ⇒ node read p95). */
+  effectiveReadP95Ms: Kpi;
+  staleCaught: Kpi;
+  retriesRecovered: Kpi;
+  cacheOffloadPct: Kpi;
+  providerCount: number;
+  chainCount: number;
+  health: HealthState;
+  /** Which absent-until-fired families were actually present at read time. */
+  emitted: { retries: boolean; cache: boolean };
+  lastUpdated: string | null;
+}
+
+/** One chain in the CurrentlyUnavailable strip (every endpoint down). */
+export interface UnavailableChain {
+  spec: string;
+  name: string;
+  color: string;
+  /** Seconds since the outage began; null when not cheaply derivable. */
+  sinceSeconds: number | null;
+}
+
+/* ── ChainDetail expandable row (Metrics · Overview tab) ─────────────────── */
+
+/** Time-series bundle behind the ChainDetail metric switcher. */
+export interface ChainSeries {
+  spec: string;
+  availability: TimePoint[];
+  p95Ms: TimePoint[];
+  errorRate: TimePoint[];
+  rps: TimePoint[];
+  /** Composite selection-score series; null when never emitted. */
+  qos: TimePoint[] | null;
+  /** Share of traffic on backup providers; null unless config marks backups. */
+  backupShare: TimePoint[] | null;
+}
+
+/* ── Provider deep-dive (Metrics · Providers tab, PMBody) ────────────────── */
+
+export interface ProviderErrorCode {
+  code: string;
+  count: number;
+  lastSeen: string | null;
+}
+
+export interface ProviderRecentError {
+  at: string;
+  method: string | null;
+  code: string | null;
+  message: string;
+}
+
+export interface ProviderDetail {
+  endpointId: string;
+  spec: string;
+  health: HealthState;
+  availability: number | null;
+  requests: number;
+  rpsNow: number | null;
+  p50Ms: number | null;
+  p95Ms: number | null;
+  p99Ms: number | null;
+  errorRate: number | null;
+  blockLag: number | null;
+  inFlight: number;
+  /** score_type → current score. */
+  scores: Partial<Record<ScoreType, number>>;
+  /** score_type → series (selection_score gauge over the window). */
+  scoreSeries: Partial<Record<ScoreType, TimePoint[]>>;
+  latencySeries: { p50: TimePoint[]; p95: TimePoint[]; p99: TimePoint[] };
+  /** Request volume per bucket. `read` is real; write/batch null until emitted. */
+  volume: {
+    total: TimePoint[];
+    read: TimePoint[];
+    write: TimePoint[] | null;
+    batch: TimePoint[] | null;
+  };
+  blockLagSeries: TimePoint[];
+  /** Empty + emitted:false until node/protocol error counters exist. */
+  errorsByCode: ProviderErrorCode[];
+  recentErrors: ProviderRecentError[];
+  emitted: { errorsByCode: boolean; recentErrors: boolean };
+}
+
+/* ── Errors breakdown tab ────────────────────────────────────────────────── */
+
+export interface ErrorHotspot {
+  spec: string;
+  name: string;
+  color: string;
+  provider: string;
+  errors: number;
+  requests: number;
+  errorRate: number | null;
+  trend: TimePoint[];
+}
+
+export interface ErrorPivotRow {
+  key: string;
+  label: string;
+  errors: number;
+  /** Share of all errors (0..1); null when total is zero. */
+  share: number | null;
+}
+
+export interface ErrorsReport {
+  /** Derived: clamp_min(total − success, 0). Real math, not a synthetic. */
+  total: number;
+  trend: TimePoint[];
+  hotspots: ErrorHotspot[];
+  pivots: {
+    chain: ErrorPivotRow[];
+    method: ErrorPivotRow[];
+    /** Populated only when the labelled error counters are emitted. */
+    category: ErrorPivotRow[];
+    code: ErrorPivotRow[];
+    retryability: ErrorPivotRow[];
+  };
+  /** Presence of the optional error families at read time. */
+  families: {
+    requestsFailedTotal: boolean;
+    nodeErrorsTotal: boolean;
+    protocolErrorsTotal: boolean;
+  };
+}
+
+/* ── Traffic tab panels ──────────────────────────────────────────────────── */
+
+export interface CrossValidationReport {
+  emitted: boolean;
+  rounds: number | null;
+  consensusRate: number | null;
+  disagreements: number | null;
+  byChain: { spec: string; rounds: number; consensusRate: number | null }[];
+  /** consistency_* IS real on this build — surfaced under its own name. */
+  consistency: { total: number; caught: number };
+}
+
+export interface WebSocketReport {
+  emitted: boolean;
+  activeConnections: number | null;
+  subscriptions: number | null;
+  subscriptionErrors: number | null;
+  byChain: { spec: string; subscriptions: number; errors: number }[];
+}
+
+/** Read/write/batch rollup for the MethodBreakdown class tabs. */
+export interface MethodClassTotals {
+  read: number;
+  write: number | null;
+  batch: number | null;
+  unclassified: number;
+  emitted: { write: boolean; batch: boolean };
+}
+
+/* ── Router topology (values-file config, both formats) ─────────────────── */
+
+export interface RouterNodeEndpoint {
+  /** Sanitized to scheme+host — upstream paths often embed API keys. */
+  urlHost: string;
+  interface: string;
+  addons: string[];
+}
+
+export interface RouterNode {
+  name: string;
+  isBackup: boolean;
+  endpoints: RouterNodeEndpoint[];
+}
+
+/**
+ * One router (chain) from the mounted values file — normalized from EITHER
+ * the helm-chart `routers:` format OR the router's own SR_CONFIG
+ * (`endpoints:` + `direct-rpc:`) format.
+ */
+export interface RouterTopology {
+  id: string;
+  /** Prometheus spec label correlation (ETH1, SOLANA, …). */
+  spec: string;
+  network: string;
+  pathBased: boolean;
+  customUrlPrefix: string | null;
+  /** First interface's local listen port (SR_CONFIG only). */
+  localPort: number | null;
+  /** api-interface → local listen port (SR_CONFIG only). */
+  localPorts: Record<string, number>;
+  interfaces: string[];
+  nodes: RouterNode[];
 }
