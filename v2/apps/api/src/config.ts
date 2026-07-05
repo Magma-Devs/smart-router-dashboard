@@ -46,14 +46,6 @@ export const config = {
     timeoutMs: envInt("PROMETHEUS_TIMEOUT_MS", 10000),
   },
 
-  /** Basic-auth gate, ported verbatim from the Python backend. */
-  auth: {
-    username: env("AUTH_USERNAME") ?? "admin",
-    password: env("AUTH_PASSWORD") ?? "password",
-    /** When false (default in dev) the auth plugin is a no-op. */
-    enabled: env("AUTH_ENABLED") === "true",
-  },
-
   /** Helm-values / router config the dashboard reflects (read-only). */
   config: {
     valuesDir: env("HELM_VALUES_DIR") ?? "/app/helm-values",

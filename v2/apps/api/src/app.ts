@@ -6,10 +6,8 @@ import { config } from "./config.js";
 import { errorHandlerPlugin } from "./plugins/error-handler.js";
 import { swaggerPlugin } from "./plugins/swagger.js";
 import { prometheusPlugin } from "./plugins/prometheus.js";
-import { authPlugin } from "./plugins/auth.js";
 import { healthRoutes } from "./routes/health.js";
 import { versionRoutes } from "./routes/version.js";
-import { authRoutes } from "./routes/auth.js";
 import { metricRoutes } from "./routes/metrics.js";
 import { configRoutes } from "./routes/config.js";
 
@@ -31,11 +29,9 @@ export async function buildApp(): Promise<FastifyInstance> {
   // Swagger must be registered before the routes so their schemas are collected.
   await app.register(swaggerPlugin);
   await app.register(prometheusPlugin);
-  await app.register(authPlugin);
 
   await app.register(healthRoutes);
   await app.register(versionRoutes);
-  await app.register(authRoutes);
   await app.register(metricRoutes);
   await app.register(configRoutes);
 

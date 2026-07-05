@@ -16,10 +16,7 @@ export class ApiError extends Error {
 }
 
 export async function apiGet<T>(path: string): Promise<T> {
-  const token = typeof window !== "undefined" ? window.localStorage.getItem("sr:token") : null;
-  const res = await fetch(`${BASE}${path}`, {
-    headers: token ? { Authorization: `Basic ${token}` } : undefined,
-  });
+  const res = await fetch(`${BASE}${path}`);
   if (!res.ok) {
     let message = `Request failed (${res.status})`;
     try {

@@ -1,6 +1,6 @@
 "use client";
 
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { OverviewData } from "@sr/shared";
@@ -92,16 +92,6 @@ function Topbar({ here }: { here: string }) {
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const router = useRouter();
-
-  // Lightweight auth gate: when the API has auth enabled, a token is required.
-  useEffect(() => {
-    const token = localStorage.getItem("sr:token");
-    const authEnabled = localStorage.getItem("sr:authEnabled") === "true";
-    if (authEnabled && !token && pathname !== "/login") {
-      router.replace("/login");
-    }
-  }, [pathname, router]);
 
   const here =
     NAV_SECTIONS.flatMap((s) => s.items).find(
