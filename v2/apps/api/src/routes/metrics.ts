@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { DEFAULT_WINDOW, isMetricWindow, type MetricWindow } from "@sr/shared";
+import { WINDOWS, toMetricWindow, type MetricWindow } from "@sr/shared";
 import { sendApiError } from "../plugins/error-handler.js";
 
 interface WindowQuery {
@@ -8,14 +8,19 @@ interface WindowQuery {
 }
 
 function parseWindow(raw: string | undefined): MetricWindow {
-  return raw && isMetricWindow(raw) ? raw : DEFAULT_WINDOW;
+  // Exact key → wire alias (24h ⇒ 1d) → default. Garbage falls back.
+  return toMetricWindow(raw);
 }
 
 /** Shared OpenAPI querystring for window+spec routes. */
 const windowQuerySchema = {
   type: "object" as const,
   properties: {
-    window: { type: "string" as const, enum: ["5m", "1h", "6h", "1d", "7d", "30d"], description: "Time window (default 1d)" },
+    window: {
+      type: "string" as const,
+      enum: [...Object.keys(WINDOWS), "24h"],
+      description: "Time window (default 1d; 24h is an alias of 1d)",
+    },
     spec: { type: "string" as const, description: "Chain spec label, e.g. ETH1 (optional)" },
   },
 };
@@ -36,18 +41,18 @@ export async function metricRoutes(app: FastifyInstance) {
     specs: await app.metrics.listSpecs(),
   }));
 
-  // Overview hero cards.
-  app.get<{ Querystring: WindowQuery }>("/api/metrics/dashboard-summary", tag("Overview hero summary"), async (request) => {
+  // HeroPanel cards (Metrics · Overview tab).
+  app.get<{ Querystring: WindowQuery }>("/api/metrics/dashboard-summary", tag("HeroPanel summary (KPIs + prior-window deltas)", false), async (request) => {
     return app.metrics.dashboardSummary(parseWindow(request.query.window));
   });
 
   // Rich Overview/Dashboard payload (KPIs + deltas + series + per-chain).
-  app.get<{ Querystring: WindowQuery }>("/api/metrics/overview", tag("Rich Overview/Dashboard payload (KPIs, deltas, series, per-chain)"), async (request) => {
+  app.get<{ Querystring: WindowQuery }>("/api/metrics/overview", tag("Rich Overview/Dashboard payload (KPIs, deltas, series, per-chain)", false), async (request) => {
     return app.metrics.overview(parseWindow(request.query.window));
   });
 
-  // Per-chain rollup (Overview "Routers" table).
-  app.get<{ Querystring: WindowQuery }>("/api/metrics/chains", tag("Per-chain rollup"), async (request) => {
+  // Per-chain rollup (RouterOverview table).
+  app.get<{ Querystring: WindowQuery }>("/api/metrics/chains", tag("Per-chain rollup", false), async (request) => {
     return { chains: await app.metrics.chains(parseWindow(request.query.window)) };
   });
 
@@ -68,10 +73,70 @@ export async function metricRoutes(app: FastifyInstance) {
     return app.metrics.traffic(parseWindow(request.query.window));
   });
 
-  // Method-level breakdown (empty when the router emits no `method` label).
-  app.get<{ Querystring: WindowQuery }>("/api/metrics/methods", tag("Method-level breakdown"), async (request) => {
+  // Method-level breakdown + read/write/batch class totals.
+  app.get<{ Querystring: WindowQuery }>("/api/metrics/methods", tag("Method-level breakdown + class totals"), async (request) => {
     const { spec } = request.query;
-    return { methods: await app.metrics.methods(spec, parseWindow(request.query.window)) };
+    return app.metrics.methods(spec, parseWindow(request.query.window));
+  });
+
+  // ChainDetail expandable-row series bundle (metric switcher).
+  app.get<{ Querystring: WindowQuery }>("/api/metrics/chain-series", {
+    schema: {
+      tags: ["Metrics"],
+      summary: "ChainDetail time-series bundle (availability/p95/errors/rps/qos)",
+      querystring: { ...windowQuerySchema, required: ["spec"] },
+    },
+  }, async (request, reply) => {
+    const { spec } = request.query;
+    if (!spec) {
+      sendApiError(reply, 400, "spec is required");
+      return reply;
+    }
+    return app.metricsDetail.chainSeries(spec, parseWindow(request.query.window));
+  });
+
+  // Provider deep-dive (PMBody).
+  app.get<{ Querystring: { window?: string; endpointId?: string } }>("/api/metrics/provider-detail", {
+    schema: {
+      tags: ["Metrics"],
+      summary: "Provider deep-dive (stats, series, QoS sub-scores)",
+      querystring: {
+        type: "object" as const,
+        required: ["endpointId"],
+        properties: {
+          window: windowQuerySchema.properties.window,
+          endpointId: { type: "string" as const, description: "Backing endpoint id (= provider name)" },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const { endpointId } = request.query;
+    if (!endpointId) {
+      sendApiError(reply, 400, "endpointId is required");
+      return reply;
+    }
+    return app.metricsDetail.providerDetail(endpointId, parseWindow(request.query.window));
+  });
+
+  // Errors-breakdown tab (derived totals/hotspots/pivots + family presence).
+  app.get<{ Querystring: WindowQuery }>("/api/metrics/errors", tag("Errors breakdown (hotspots + pivots)"), async (request) => {
+    const { spec } = request.query;
+    return app.metricsDetail.errors(parseWindow(request.query.window), spec);
+  });
+
+  // Chains whose every backing endpoint is down (CurrentlyUnavailable strip).
+  app.get("/api/metrics/unavailable", { schema: { tags: ["Metrics"], summary: "Chains with every endpoint down" } }, async () => ({
+    unavailable: await app.metricsDetail.unavailable(),
+  }));
+
+  // Cross-validation panel (absent-until-fired; consistency_* is real).
+  app.get<{ Querystring: WindowQuery }>("/api/metrics/cross-validation", tag("Cross-validation panel (emitted:false until the family fires)", false), async (request) => {
+    return app.metricsDetail.crossValidation(parseWindow(request.query.window));
+  });
+
+  // WebSocket panel (absent until a subscription opens).
+  app.get<{ Querystring: WindowQuery }>("/api/metrics/websocket", tag("WebSocket panel (emitted:false until ws_* fires)", false), async (request) => {
+    return app.metricsDetail.websocket(parseWindow(request.query.window));
   });
 
   // Raw instant PromQL passthrough (used by ad-hoc panels). Bounded to GET.

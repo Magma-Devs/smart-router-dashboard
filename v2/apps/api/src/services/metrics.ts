@@ -6,18 +6,27 @@
  */
 import {
   ENDPOINT_METRICS,
+  OPTIONAL_METRICS,
   ROUTER_METRICS,
   buildChainMetaByIndex,
   qAvailability,
+  qErrorCount,
   qErrorRate,
+  qErrorsBy,
+  qLatencyDistribution,
   qLatencyQuantile,
   qLatestBlock,
+  qPresence,
+  qRequestsBy,
   qRequestsTotal,
   selector,
   rangeFor,
   type ChainMetrics,
-  type DashboardSummary,
   type HealthState,
+  type HeroSummary,
+  type Kpi,
+  type MethodClassTotals,
+  type MethodUsage,
   type MetricWindow,
   type ProviderMetrics,
   type ScoreType,
@@ -25,14 +34,17 @@ import {
 } from "@sr/shared";
 import { WINDOWS } from "@sr/shared/constants";
 import type { PrometheusClient } from "./prometheus-client.js";
+import type { ConfigurationService } from "./configuration.js";
 
-function health(value: number | null): HealthState {
+export function health(value: number | null): HealthState {
   if (value === null) return "unknown";
   return value >= 1 ? "operational" : "unhealthy";
 }
 
 /** Prometheus matrix `values` → typed points (null when the bucket is empty). */
-function toPoints(values: [number, string][] | undefined): { t: number; v: number | null }[] {
+export function toPoints(
+  values: [number, string][] | undefined,
+): { t: number; v: number | null }[] {
   if (!values) return [];
   return values.map(([t, v]) => {
     const n = Number(v);
@@ -41,7 +53,10 @@ function toPoints(values: [number, string][] | undefined): { t: number; v: numbe
 }
 
 export class MetricsService {
-  constructor(private readonly prom: PrometheusClient) {}
+  constructor(
+    private readonly prom: PrometheusClient,
+    private readonly configSvc?: ConfigurationService,
+  ) {}
 
   /** Distinct spec labels currently present on the requests counter. */
   async listSpecs(): Promise<string[]> {
@@ -52,28 +67,73 @@ export class MetricsService {
       .sort();
   }
 
-  async dashboardSummary(window: MetricWindow): Promise<DashboardSummary> {
+  /** Per-chain health from the ENDPOINT gauge (the router gauge is label-less
+   *  — using it per chain shows every chain with the same status). */
+  private async chainHealth(spec: string): Promise<number | null> {
+    return this.prom.scalar(
+      `max by (spec) (${ENDPOINT_METRICS.overallHealth}${selector({ spec })})`,
+    );
+  }
+
+  /** True when the optional family is registered on this build. */
+  private async familyPresent(metricName: string): Promise<boolean> {
+    const v = await this.prom.scalar(qPresence(metricName));
+    return v !== null && v > 0;
+  }
+
+  /** The six HeroPanel cards (Metrics · Overview tab). */
+  async dashboardSummary(window: MetricWindow): Promise<HeroSummary> {
+    const r = rangeFor(window);
+    const kpi = async (cur: string, prior: string): Promise<Kpi> => {
+      const [value, p] = await Promise.all([this.prom.scalar(cur), this.prom.scalar(prior)]);
+      return { value, prior: p };
+    };
+
+    const [retriesPresent, cachePresent] = await Promise.all([
+      this.familyPresent(OPTIONAL_METRICS.retriesSuccessTotal),
+      this.familyPresent(OPTIONAL_METRICS.cacheTotalHits),
+    ]);
+
     const [requestsServed, successRate, p95, stale, specs, providers, healthGauge] =
       await Promise.all([
-        this.prom.scalar(qRequestsTotal(undefined, window)),
-        this.prom.scalar(qAvailability(undefined, window)),
-        this.prom.scalar(qLatencyQuantile(0.95, undefined, window)),
-        this.prom.scalar(
-          `sum(increase(${ROUTER_METRICS.consistencySuccessTotal}[${rangeFor(window)}]))`,
+        kpi(qRequestsTotal(undefined, window), qRequestsTotal(undefined, window, r)),
+        kpi(qAvailability(undefined, window), qAvailability(undefined, window, r)),
+        // No cache on this build ⇒ the documented derived "effective read p95"
+        // reduces to the node read p95 (the overall router histogram).
+        kpi(qLatencyQuantile(0.95, undefined, window), qLatencyQuantile(0.95, undefined, window, r)),
+        kpi(
+          `sum(increase(${ROUTER_METRICS.consistencySuccessTotal}[${r}]))`,
+          `sum(increase(${ROUTER_METRICS.consistencySuccessTotal}[${r}] offset ${r}))`,
         ),
         this.listSpecs(),
         this.prom.query(`count by (endpoint_id) (${ENDPOINT_METRICS.overallHealth})`),
         this.prom.scalar(ROUTER_METRICS.overallHealth),
       ]);
 
+    const retriesRecovered: Kpi = retriesPresent
+      ? await kpi(
+          `sum(increase(${OPTIONAL_METRICS.retriesSuccessTotal}[${r}]))`,
+          `sum(increase(${OPTIONAL_METRICS.retriesSuccessTotal}[${r}] offset ${r}))`,
+        )
+      : { value: null, prior: null };
+    const cacheOffloadPct: Kpi = cachePresent
+      ? await kpi(
+          `sum(increase(${OPTIONAL_METRICS.cacheTotalHits}[${r}])) / (sum(increase(${OPTIONAL_METRICS.cacheTotalHits}[${r}])) + sum(increase(${OPTIONAL_METRICS.cacheTotalMisses}[${r}])))`,
+          `sum(increase(${OPTIONAL_METRICS.cacheTotalHits}[${r}] offset ${r})) / (sum(increase(${OPTIONAL_METRICS.cacheTotalHits}[${r}] offset ${r})) + sum(increase(${OPTIONAL_METRICS.cacheTotalMisses}[${r}] offset ${r})))`,
+        )
+      : { value: null, prior: null };
+
     return {
-      requestsServed: requestsServed ?? 0,
+      requestsServed,
       successRate,
       effectiveReadP95Ms: p95,
-      staleResponsesCaught: stale,
+      staleCaught: stale,
+      retriesRecovered,
+      cacheOffloadPct,
       providerCount: providers.length,
       chainCount: specs.length,
       health: health(healthGauge),
+      emitted: { retries: retriesPresent, cache: cachePresent },
       lastUpdated: new Date().toISOString(),
     };
   }
@@ -87,11 +147,10 @@ export class MetricsService {
     const win = WINDOWS[window];
     const end = Math.floor(Date.now() / 1000);
     const start = end - win.rangeSeconds;
-    const priorStart = start - win.rangeSeconds; // previous equal-length window
     const r = rangeFor(window);
 
     // KPI value + its prior-window counterpart (offset PromQL range).
-    const kpi = async (cur: string, prior: string): Promise<{ value: number | null; prior: number | null }> => {
+    const kpi = async (cur: string, prior: string): Promise<Kpi> => {
       const [value, p] = await Promise.all([this.prom.scalar(cur), this.prom.scalar(prior)]);
       return { value, prior: p };
     };
@@ -110,16 +169,16 @@ export class MetricsService {
       latencySeries,
       specs,
     ] = await Promise.all([
-      kpi(qRequestsTotal(undefined, window), `sum(increase(${ROUTER_METRICS.requestsTotal}[${r}] offset ${r}))`),
+      kpi(qRequestsTotal(undefined, window), qRequestsTotal(undefined, window, r)),
       kpi(`sum(rate(${ROUTER_METRICS.requestsTotal}[5m]))`, `sum(rate(${ROUTER_METRICS.requestsTotal}[5m] offset ${r}))`),
-      kpi(qAvailability(undefined, window), `sum(increase(${ROUTER_METRICS.requestsSuccessTotal}[${r}] offset ${r})) / sum(increase(${ROUTER_METRICS.requestsTotal}[${r}] offset ${r}))`),
-      kpi(qLatencyQuantile(0.5, undefined, window), qLatencyQuantile(0.5, undefined, window)),
-      kpi(qLatencyQuantile(0.95, undefined, window), qLatencyQuantile(0.95, undefined, window)),
-      kpi(qLatencyQuantile(0.99, undefined, window), qLatencyQuantile(0.99, undefined, window)),
+      kpi(qAvailability(undefined, window), qAvailability(undefined, window, r)),
+      kpi(qLatencyQuantile(0.5, undefined, window), qLatencyQuantile(0.5, undefined, window, r)),
+      kpi(qLatencyQuantile(0.95, undefined, window), qLatencyQuantile(0.95, undefined, window, r)),
+      kpi(qLatencyQuantile(0.99, undefined, window), qLatencyQuantile(0.99, undefined, window, r)),
       this.prom.scalar(qAvailability(undefined, window)),
       this.prom.scalar(ROUTER_METRICS.overallHealth),
       this.prom.queryRange(`sum(rate(${ROUTER_METRICS.requestsTotal}[${win.step}]))`, start, end, win.step),
-      this.prom.queryRange(`sum(rate(${ROUTER_METRICS.requestsTotal}[${win.step}])) - sum(rate(${ROUTER_METRICS.requestsSuccessTotal}[${win.step}]))`, start, end, win.step),
+      this.prom.queryRange(`clamp_min(sum(rate(${ROUTER_METRICS.requestsTotal}[${win.step}])) - sum(rate(${ROUTER_METRICS.requestsSuccessTotal}[${win.step}])), 0)`, start, end, win.step),
       this.prom.queryRange(qLatencyQuantile(0.95, undefined, window).replace(`[${r}]`, `[${win.step}]`), start, end, win.step),
       this.listSpecs(),
     ]);
@@ -130,14 +189,43 @@ export class MetricsService {
       this.prom.queryRange(qLatencyQuantile(0.99, undefined, window).replace(`[${r}]`, `[${win.step}]`), start, end, win.step),
     ]);
 
-    // Errors = total - success over the window.
-    const [reqWin, okWin] = await Promise.all([
-      this.prom.scalar(qRequestsTotal(undefined, window)),
-      this.prom.scalar(`sum(increase(${ROUTER_METRICS.requestsSuccessTotal}[${r}]))`),
+    // Errors = total − success over the window, for BOTH windows (the prior
+    // KPI must be prior ERRORS, not prior requests).
+    const [errorsNow, errorsPrior] = await Promise.all([
+      this.prom.scalar(qErrorCount(undefined, window)),
+      this.prom.scalar(qErrorCount(undefined, window, r)),
     ]);
-    const errorsCount = reqWin !== null && okWin !== null ? Math.max(0, reqWin - okWin) : null;
-    const priorReq = totalRequests.prior;
-    const errorRate = reqWin && reqWin > 0 && errorsCount !== null ? errorsCount / reqWin : null;
+    const reqWin = totalRequests.value;
+    const errorRate =
+      reqWin && reqWin > 0 && errorsNow !== null ? errorsNow / reqWin : null;
+
+    // Latency histogram distribution (per-bucket counts over the window).
+    const distRows = await this.prom.query(qLatencyDistribution(window));
+    const latencyDistribution = distRows
+      .map((s) => ({ le: s.metric.le ?? "", count: Number(s.value[1]) || 0 }))
+      .filter((b) => b.le !== "")
+      .sort((a, b) => Number(a.le) - Number(b.le));
+
+    // Per-provider throughput stack (real: provider_address label).
+    const provMatrix = await this.prom.queryRange(
+      `sum by (provider_address) (rate(${ROUTER_METRICS.requestsTotal}[${win.step}]))`,
+      start,
+      end,
+      win.step,
+    );
+    const perProviderSeries = provMatrix
+      .filter((m) => m.metric.provider_address)
+      .map((m) => ({
+        provider: m.metric.provider_address ?? "",
+        points: toPoints(m.values),
+      }));
+
+    // Error layers: until node/protocol error counters fire there is exactly
+    // one honest layer — "unclassified" (= derived total − success).
+    const errorLayers =
+      errorsNow !== null && errorsNow > 0
+        ? [{ layer: "unclassified", count: errorsNow }]
+        : [];
 
     // Per-chain latency + active routes + per-chain series.
     const [perChainLatency, activeRoutes, perChainSeries] = await Promise.all([
@@ -146,7 +234,7 @@ export class MetricsService {
           const meta = buildChainMetaByIndex(spec);
           const [p50c, h, trend] = await Promise.all([
             this.prom.scalar(qLatencyQuantile(0.5, spec, window)),
-            this.prom.scalar(`${ROUTER_METRICS.overallHealth}`),
+            this.chainHealth(spec),
             this.prom.queryRange(
               `sum(rate(${ROUTER_METRICS.requestsTotal}${selector({ spec })}[${win.step}]))`,
               start,
@@ -172,11 +260,10 @@ export class MetricsService {
       ),
     ]);
 
-    void priorStart;
     return {
       totalRequests,
       throughputRps,
-      errors: { value: errorsCount, prior: priorReq },
+      errors: { value: errorsNow, prior: errorsPrior },
       errorRate,
       uptime,
       successRate,
@@ -193,6 +280,9 @@ export class MetricsService {
         p95: toPoints(latencySeries[0]?.values),
         p99: toPoints(latP99[0]?.values),
       },
+      latencyDistribution,
+      perProviderSeries,
+      errorLayers,
       perChainLatency,
       activeRoutes,
       perChainSeries,
@@ -238,7 +328,7 @@ export class MetricsService {
         this.prom.scalar(
           `avg(${ENDPOINT_METRICS.selectionScore}${selector({ spec, score_type: "composite" })})`,
         ),
-        this.prom.scalar(`${ROUTER_METRICS.overallHealth}`),
+        this.chainHealth(spec),
         this.prom.scalar(qLatestBlock(spec)),
         this.prom.query(
           `count by (endpoint_id) (${ENDPOINT_METRICS.overallHealth}${selector({ spec })})`,
@@ -280,10 +370,30 @@ export class MetricsService {
       ),
     ]);
 
+    // Config-derived identity: node name → role/interface (helm marks backups;
+    // SR_CONFIG has no backup marker, so role stays null there).
+    const roleByName = new Map<string, { role: "primary" | "backup"; iface: string | null }>();
+    if (this.configSvc) {
+      for (const router of this.configSvc.getRouters()) {
+        for (const node of router.nodes) {
+          if (!roleByName.has(node.name)) {
+            roleByName.set(node.name, {
+              role: node.isBackup ? "backup" : "primary",
+              iface: node.endpoints[0]?.interface ?? null,
+            });
+          }
+        }
+      }
+    }
+    const isHelm = this.configSvc
+      ? this.configSvc.getRouters().some((rt) => rt.localPort === null && rt.nodes.length > 0)
+      : false;
+
     const byId = new Map<string, ProviderMetrics>();
     const ensure = (endpointId: string, specLabel: string): ProviderMetrics => {
       let row = byId.get(endpointId);
       if (!row) {
+        const cfg = roleByName.get(endpointId);
         row = {
           endpointId,
           spec: specLabel,
@@ -295,8 +405,9 @@ export class MetricsService {
           health: "unknown",
           latestBlock: null,
           blockLag: null,
-          role: null,
-          apiInterface: null,
+          // Only helm-format configs can mark backups; SR_CONFIG ⇒ null.
+          role: cfg && isHelm ? cfg.role : null,
+          apiInterface: cfg?.iface ?? null,
           inFlight: 0,
         };
         byId.set(endpointId, row);
@@ -336,8 +447,23 @@ export class MetricsService {
       const v = Number(s.value[1]);
       ensure(id, s.metric.spec ?? "").p95Ms = Number.isFinite(v) ? v : null;
     }
-    // Uptime per endpoint = success/total over the window, keyed by
-    // provider_address (= the endpoint name) on the router request counters.
+
+    // Block lag = spec-max latest block − this endpoint's latest block.
+    const maxBySpec = new Map<string, number>();
+    for (const row of byId.values()) {
+      if (row.latestBlock === null) continue;
+      const cur = maxBySpec.get(row.spec) ?? 0;
+      if (row.latestBlock > cur) maxBySpec.set(row.spec, row.latestBlock);
+    }
+    for (const row of byId.values()) {
+      const specMax = maxBySpec.get(row.spec);
+      if (specMax !== undefined && row.latestBlock !== null) {
+        row.blockLag = Math.max(0, specMax - row.latestBlock);
+      }
+    }
+
+    // Uptime + error rate per endpoint = success/total over the window, keyed
+    // by provider_address (= the endpoint name) on the router request counters.
     const [okByProv, totByProv] = await Promise.all([
       this.prom.query(`sum by (provider_address) (increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${r}]))`),
       this.prom.query(`sum by (provider_address) (increase(${ROUTER_METRICS.requestsTotal}${sel}[${r}]))`),
@@ -348,7 +474,10 @@ export class MetricsService {
       if (!id) continue;
       const tot = Number(s.value[1]) || 0;
       const row = byId.get(id);
-      if (row && tot > 0) row.uptime = (okMap.get(id) ?? 0) / tot;
+      if (row && tot > 0) {
+        row.uptime = (okMap.get(id) ?? 0) / tot;
+        row.errorRate = Math.max(0, 1 - row.uptime);
+      }
     }
 
     return [...byId.values()].sort((a, b) => b.requests - a.requests);
@@ -425,36 +554,66 @@ export class MetricsService {
   }
 
   /**
-   * Method-level breakdown. Backed only if the request series carries a
-   * `method` label with values; on this build the latency histogram lacks
-   * `method`, so p95 stays null. Returns [] when nothing is emitted — the UI
-   * then shows the honest empty state rather than inventing rows.
+   * Method-level breakdown + read/write/batch class totals. `read` is real
+   * (requests_read_total); write/batch counters are absent until the router
+   * emits them. Per-method error rate is real (total − success, both carry
+   * `method`); per-method p95 stays null — the latency histogram has no
+   * `method` label on this build (Gap #3).
    */
-  async methods(spec: string | undefined, window: MetricWindow): Promise<
-    { method: string; class: "read" | "write" | "batch" | "unknown"; requests: number; p95Ms: number | null; errorRate: number | null }[]
-  > {
+  async methods(
+    spec: string | undefined,
+    window: MetricWindow,
+  ): Promise<{ methods: MethodUsage[]; classTotals: MethodClassTotals }> {
     const sel = selector({ spec });
     const r = rangeFor(window);
-    const rows = await this.prom.query(
-      `sum by (method) (increase(${ROUTER_METRICS.requestsTotal}${sel}[${r}]))`,
-    );
-    const reads = await this.prom.query(
-      `sum by (method) (increase(${ROUTER_METRICS.requestsReadTotal}${sel}[${r}]))`,
-    );
+    const [rows, reads, errRows, writePresent, batchPresent] = await Promise.all([
+      this.prom.query(qRequestsBy("method", window, spec)),
+      this.prom.query(
+        `sum by (method) (increase(${ROUTER_METRICS.requestsReadTotal}${sel}[${r}]))`,
+      ),
+      this.prom.query(qErrorsBy("method", window, spec)),
+      this.familyPresent(OPTIONAL_METRICS.requestsWriteTotal),
+      this.familyPresent(OPTIONAL_METRICS.requestsBatchTotal),
+    ]);
     const readSet = new Set(reads.map((s) => s.metric.method).filter(Boolean));
+    const errByMethod = new Map(
+      errRows.map((s) => [s.metric.method ?? "", Number(s.value[1]) || 0]),
+    );
 
-    return rows
+    const methods = rows
       .map((s) => {
         const method = s.metric.method ?? "unknown";
+        const requests = Number(s.value[1]) || 0;
+        const errors = errByMethod.get(method) ?? 0;
         return {
           method,
-          class: (readSet.has(method) ? "read" : "unknown") as "read" | "write" | "batch" | "unknown",
-          requests: Number(s.value[1]) || 0,
+          class: (readSet.has(method) ? "read" : "unknown") as MethodUsage["class"],
+          requests,
           p95Ms: null, // histogram has no `method` label on this build (Gap #3)
-          errorRate: null,
+          errorRate: requests > 0 ? errors / requests : null,
         };
       })
       .sort((a, b) => b.requests - a.requests);
+
+    const [readTotal, writeTotal, batchTotal] = await Promise.all([
+      this.prom.scalar(`sum(increase(${ROUTER_METRICS.requestsReadTotal}${sel}[${r}]))`),
+      writePresent
+        ? this.prom.scalar(`sum(increase(${OPTIONAL_METRICS.requestsWriteTotal}${sel}[${r}]))`)
+        : Promise.resolve(null),
+      batchPresent
+        ? this.prom.scalar(`sum(increase(${OPTIONAL_METRICS.requestsBatchTotal}${sel}[${r}]))`)
+        : Promise.resolve(null),
+    ]);
+    const allTotal = methods.reduce((s, m) => s + m.requests, 0);
+    const classTotals: MethodClassTotals = {
+      read: readTotal ?? 0,
+      write: writeTotal,
+      batch: batchTotal,
+      unclassified: Math.max(0, allTotal - (readTotal ?? 0) - (writeTotal ?? 0) - (batchTotal ?? 0)),
+      emitted: { write: writePresent, batch: batchPresent },
+    };
+
+    return { methods, classTotals };
   }
 
   /** RPS time-series for the Traffic chart. */
