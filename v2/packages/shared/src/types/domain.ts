@@ -360,3 +360,146 @@ export interface RouterTopology {
   interfaces: string[];
   nodes: RouterNode[];
 }
+
+/* ── Ops Dashboard page (2-tab surface: Overview + Metrics) ──────────────── */
+
+/** One per-chain series (requests / success-rate / latency per chain). */
+export interface DashboardChainSeries {
+  spec: string;
+  name: string;
+  color: string;
+  points: TimePoint[];
+}
+
+/** One per-provider series (provider mix, per-provider latency). */
+export interface DashboardProviderSeries {
+  /** provider_address / endpoint_id — the resolved provider name. */
+  provider: string;
+  points: TimePoint[];
+}
+
+/** Chain entry for the DashHeader multiselect (series filter is client-side). */
+export interface DashboardChainMeta {
+  spec: string;
+  name: string;
+  color: string;
+  health: HealthState;
+}
+
+/**
+ * Troublesome (chain, client) pair row. The list stays EMPTY until the router
+ * emits labelled error/failover counters — never synthesised from mocks.
+ */
+export interface DashboardTroubleRow {
+  chain: string;
+  client: string;
+  failoverPct: number | null;
+  sr: number | null;
+  p95: number | null;
+  baselineRatio: number | null;
+  failoverCount: number | null;
+  topErr: string | null;
+  topProv: string | null;
+  providers: string[];
+}
+
+/** Provider scorecard row (§18) — whole table null until backed. */
+export interface DashboardScorecardRow {
+  name: string;
+  avail: number | null;
+  p95: number | null;
+  syncLagBlocks: number | null;
+  qos: number | null;
+  incident: string | null;
+}
+
+/** Per-provider availability row (§11) — deg/incident have no metric family. */
+export interface DashboardProviderAvailRow {
+  name: string;
+  chain: string | null;
+  ok: number | null;
+  deg: number | null;
+  fail: number | null;
+  incident: string | null;
+  internal: boolean | null;
+}
+
+/** A labelled stacked layer (error classes, errors-handled interventions). */
+export interface DashboardStackLayer {
+  label: string;
+  color: string;
+  points: TimePoint[];
+}
+
+/**
+ * Payload for the Dashboard page (Overview + Metrics tabs) in one round-trip.
+ *
+ * Contract: real families are computed from live `smartrouter_*` /
+ * `rpc_endpoint_*` series; families the router does not emit are `null`
+ * (the UI renders the design's own empty states) — values are NEVER invented.
+ */
+export interface DashboardData {
+  kpis: {
+    /** Availability ratio 0..1 (success/total over the window). */
+    successRate: Kpi;
+    p95Ms: Kpi;
+    /** Derived error count (total − success, clamped ≥ 0). */
+    errors: Kpi;
+    /** Requests/sec now (5m rate) vs the prior window. */
+    rps: Kpi;
+    /** "Errors Handled" needs failover/hedge/retry counters — null on this build. */
+    errorsHandled: Kpi;
+  };
+  series: {
+    throughput: TimePoint[];
+    /** Derived errors per bucket — the single honest "unclassified" series. */
+    errors: TimePoint[];
+    /** Derived error-rate ratio series (0..1) — feeds the by-class stack's
+     *  single "unclassified" layer until labelled error counters exist. */
+    errorRate: TimePoint[];
+    /** Availability ratio series (0..1) — the Success Rate KPI spark. */
+    successRate: TimePoint[];
+    latency: { p50: TimePoint[]; p95: TimePoint[]; p99: TimePoint[] };
+    perChain: DashboardChainSeries[];
+    /** Per-chain availability ratio series (0..1). */
+    perChainSuccessRate: DashboardChainSeries[];
+    perChainLatency: {
+      p50: DashboardChainSeries[];
+      p95: DashboardChainSeries[];
+      p99: DashboardChainSeries[];
+    };
+    /** Per-provider RPS (router counter, provider_address label). */
+    providerMix: DashboardProviderSeries[];
+    /** Per-provider p95 (endpoint histogram, endpoint_id label). */
+    perProviderLatencyP95: DashboardProviderSeries[];
+  };
+  /** Chains currently emitting metrics (header multiselect options). */
+  chains: DashboardChainMeta[];
+  /** Compute-unit quota is a Magma Cloud concept — not metered here. */
+  scu: { used: number; quotaPct: number } | null;
+  /** No region label on any series — null. */
+  regions: { id: string; label: string; color: string; points: TimePoint[] }[] | null;
+  /** No failover counter family — null. */
+  failoverRatio: TimePoint[] | null;
+  /** Needs internal-vs-fallback classification + failover math — null. */
+  internalAvailability: TimePoint[] | null;
+  /** cache_total_hits/misses absent until the cache fires — null. */
+  cacheHitRate: TimePoint[] | null;
+  /** Labelled error-class layers — null until node/protocol counters exist
+   *  (series.errorRate carries the single derived "unclassified" layer). */
+  errorClasses: DashboardStackLayer[] | null;
+  /** Intervention-category breakdown (failover/hedge/consistency/cache) — null. */
+  errorsHandledBreakdown: DashboardStackLayer[] | null;
+  /** "SR without Smart Router" counterfactual is not computable — null. */
+  contribution: {
+    srWith: number;
+    srWithout: number;
+    savedPts: number;
+    perfPct: number;
+  } | null;
+  providerAvailability: DashboardProviderAvailRow[] | null;
+  scorecard: DashboardScorecardRow[] | null;
+  /** Empty until labelled error counters exist (design's ✓ empty state). */
+  trouble: DashboardTroubleRow[];
+  lastUpdated: string | null;
+}

@@ -3,6 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { PrometheusClient } from "../services/prometheus-client.js";
 import { MetricsService } from "../services/metrics.js";
 import { MetricsDetailService } from "../services/metrics-detail.js";
+import { MetricsDashboardService } from "../services/metrics-dashboard.js";
 import { ConfigurationService } from "../services/configuration.js";
 
 declare module "fastify" {
@@ -10,6 +11,7 @@ declare module "fastify" {
     prom: PrometheusClient;
     metrics: MetricsService;
     metricsDetail: MetricsDetailService;
+    metricsDashboard: MetricsDashboardService;
     routerConfig: ConfigurationService;
   }
 }
@@ -23,4 +25,5 @@ export const prometheusPlugin = fp(async (app: FastifyInstance) => {
   // The config service feeds provider role (primary/backup) + backup-share.
   app.decorate("metrics", new MetricsService(prom, routerConfig));
   app.decorate("metricsDetail", new MetricsDetailService(prom, routerConfig));
+  app.decorate("metricsDashboard", new MetricsDashboardService(prom));
 });

@@ -51,6 +51,12 @@ export async function metricRoutes(app: FastifyInstance) {
     return app.metrics.overview(parseWindow(request.query.window), request.query.spec);
   });
 
+  // Dashboard page payload (Overview + Metrics tabs). The chains multiselect
+  // filters per-chain series CLIENT-side; `spec` is accepted for symmetry.
+  app.get<{ Querystring: WindowQuery }>("/api/metrics/dashboard", tag("Dashboard page payload (KPIs + series; unbacked families null)"), async (request) => {
+    return app.metricsDashboard.dashboard(parseWindow(request.query.window), request.query.spec);
+  });
+
   // Per-chain rollup (RouterOverview table).
   app.get<{ Querystring: WindowQuery }>("/api/metrics/chains", tag("Per-chain rollup", false), async (request) => {
     return { chains: await app.metrics.chains(parseWindow(request.query.window)) };

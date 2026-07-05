@@ -1,0 +1,161 @@
+"use client";
+
+/* Add Provider Sheet — orchestrator, ported from the design prototype
+ * (page-providers.jsx AddProviderSheet). Configure + Node are one merged
+ * step. SELF-HOSTED: the full wizard renders (entry type → preset grid →
+ * configure → JWT → probe chrome) but the final "Save provider" commit is
+ * disabled — the config is a read-only mount. */
+
+import { useEffect, useState } from "react";
+import { SideSheet } from "@/components/gateway/SideSheet";
+import { READONLY_MSG, type ProviderCatalogEntry } from "@/components/providers/catalog";
+import { type LiveChain } from "@/components/providers/bits";
+import { Step1EntryType, StepPickPreset, type EntryType } from "@/components/providers/steps/entry";
+import {
+  NodeConfigSection,
+  StepConfigureA,
+  StepConfigureB,
+  StepCustomUrl,
+  StepJwt,
+  type Caps,
+  type CredData,
+} from "@/components/providers/steps/configure";
+import { ProbeStep } from "@/components/providers/steps/probe";
+
+interface PendingData extends CredData {
+  catalog: ProviderCatalogEntry | null;
+  role?: "primary" | "backup";
+  interfaces?: string[];
+  capabilities?: Partial<Caps>;
+}
+
+export function AddProviderSheet({ open, onClose, existingIds, chains, ifacesBySpec }: {
+  open: boolean;
+  onClose: () => void;
+  /** Catalog ids already matched to config nodes (dims their preset tiles). */
+  existingIds: string[];
+  /** Live chains from the mounted config (spec-keyed). */
+  chains: LiveChain[];
+  /** spec → interfaces the router actually exposes. */
+  ifacesBySpec: Record<string, string[]>;
+}) {
+  const [step, setStep] = useState(1);
+  const [type, setType] = useState<EntryType | null>(null);
+  const [catalog, setCatalog] = useState<ProviderCatalogEntry | null>(null);
+  const [probing, setProbing] = useState(false);
+  const [probeReady, setProbeReady] = useState(false);
+  const [pendingData, setPending] = useState<PendingData | null>(null);
+
+  /* Node config state — lifted here so it's available when credential form submits */
+  const [ncChain, setNcChain] = useState(chains[0]?.spec ?? "");
+  const [ncRole, setNcRole] = useState<"primary" | "backup">("primary");
+  const [ncIface, setNcIface] = useState("jsonrpc");
+  const [ncCaps, setNcCaps] = useState<Caps>({ archive: false, debug: false, trace: false });
+
+  useEffect(() => {
+    if (open) {
+      setStep(1); setType(null); setCatalog(null);
+      setProbing(false); setProbeReady(false); setPending(null);
+      setNcChain(chains[0]?.spec ?? ""); setNcRole("primary"); setNcIface("jsonrpc");
+      setNcCaps({ archive: false, debug: false, trace: false });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  /* Credential form submits:
+     - PROVIDER preset (flow A/B): backend holds chain/interface/caps spec → no node config needed
+     - Custom URL / JWT: user's own node → collect chain/role/interface/caps from NodeConfigSection */
+  const submit = (credData: CredData) => {
+    const isPreset = type === "PROVIDER";
+    if (isPreset) {
+      setPending({ ...credData, catalog });
+    } else {
+      const availIfaces = ifacesBySpec[ncChain] ?? ["jsonrpc"];
+      const liveIface = availIfaces.includes(ncIface) ? ncIface : (availIfaces[0] ?? "jsonrpc");
+      setPending({
+        ...credData, catalog,
+        chainId: ncChain, role: ncRole,
+        interfaces: [liveIface],
+        capabilities: ncCaps,
+      });
+    }
+    setProbing(true);
+  };
+
+  /* Step labels — no separate Node step */
+  const stepLabels: Record<string, string[]> = {
+    PROVIDER: ["Type", "Provider", "Configure"],
+    URL: ["Type", "Configure"],
+    JWT: ["Type", "Configure"],
+    none: ["Type", "Configure"],
+  };
+  const steps = stepLabels[type ?? "none"] ?? ["Type", "Configure"];
+  const isCredStep = !probing && (
+    (type === "URL" && step === 2) ||
+    (type === "JWT" && step === 2) ||
+    (type === "PROVIDER" && step === 3)
+  );
+
+  if (!open) return null;
+  return (
+    <SideSheet
+      open={open}
+      onClose={onClose}
+      wide
+      title="Add a provider"
+      sub="Connect a provider node and Magma routes traffic through it automatically"
+      steps={{ labels: steps, current: step }}
+      footer={probing ? (
+        <>
+          <button className="gw-btn" onClick={() => { setProbing(false); setProbeReady(false); setPending(null); }}>← Back</button>
+          <button className="gw-btn gw-btn--primary" disabled title={READONLY_MSG}>
+            {!probeReady ? "Probing…" : "Save provider"}
+          </button>
+        </>
+      ) : step === 1 ? (
+        <button className="gw-btn" onClick={onClose}>Cancel</button>
+      ) : (
+        <>
+          <button className="gw-btn" onClick={() => setStep((s) => s - 1)}>← Back</button>
+          {isCredStep && (
+            <button className="gw-btn gw-btn--primary"
+              onClick={() => (document.getElementById("__pv-submit") as HTMLButtonElement | null)?.click()}>
+              Add provider
+            </button>
+          )}
+        </>
+      )}
+    >
+      {probing ? (
+        <ProbeStep
+          catalogId={catalog?.id || pendingData?.catalogId}
+          providerName={pendingData?.name}
+          onReady={() => setProbeReady(true)}
+        />
+      ) : (
+        <>
+          {step === 1 && <Step1EntryType onPick={(t) => { setType(t); setStep(2); }} />}
+          {step === 2 && type === "PROVIDER" && <StepPickPreset existingIds={existingIds} onPick={(cat) => { setCatalog(cat); setStep(3); }} />}
+          {step === 2 && type === "URL" && <StepCustomUrl chains={chains} onSubmit={submit} />}
+          {step === 2 && type === "JWT" && <StepJwt catalog={null} chains={chains} onSubmit={submit} />}
+          {step === 3 && type === "PROVIDER" && catalog?.flow === "A" && <StepConfigureA catalog={catalog} onSubmit={submit} onSwitchJwt={() => setType("JWT")} />}
+          {step === 3 && type === "PROVIDER" && catalog?.flow === "B" && <StepConfigureB catalog={catalog} onSubmit={submit} onBack={() => setStep(2)} />}
+          {step === 3 && type === "JWT" && catalog && <StepJwt catalog={catalog} chains={chains} onSubmit={submit} />}
+
+          {/* Node config — only for custom URL / JWT flows (presets: backend manages chain/interface/caps) */}
+          {isCredStep && type !== "PROVIDER" && (
+            <div style={{ borderTop: "1px solid var(--line)", marginTop: 18, paddingTop: 18 }}>
+              <NodeConfigSection
+                chainId={ncChain} setChainId={setNcChain}
+                role={ncRole} setRole={setNcRole}
+                iface={ncIface} setIface={setNcIface}
+                caps={ncCaps} setCaps={setNcCaps}
+                chains={chains} ifacesBySpec={ifacesBySpec}
+              />
+            </div>
+          )}
+        </>
+      )}
+    </SideSheet>
+  );
+}
