@@ -67,18 +67,6 @@ export interface DashboardSummary {
   lastUpdated: string | null;
 }
 
-export interface RouterConfigNode {
-  name: string;
-  url: string;
-  addons: string[];
-}
-
-export interface RouterConfig {
-  spec: string;
-  apiInterface: string;
-  listenPort: number | null;
-  nodes: RouterConfigNode[];
-}
 
 /** One row in the Traffic "by chain" table. */
 export interface ChainTraffic {
