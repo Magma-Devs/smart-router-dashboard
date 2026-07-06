@@ -1,4 +1,4 @@
-FROM node:22-alpine AS builder
+FROM node:24-alpine AS builder
 RUN corepack enable
 WORKDIR /app
 
@@ -18,7 +18,7 @@ ENV NEXT_PUBLIC_LOCAL_MODE=$NEXT_PUBLIC_LOCAL_MODE
 RUN pnpm --filter @sr/shared build && \
     pnpm --filter @sr/web build
 
-FROM node:22-alpine
+FROM node:24-alpine
 WORKDIR /app
 
 COPY --from=builder /app/apps/web/.next/standalone ./
@@ -29,7 +29,7 @@ ENV NODE_ENV=production
 ENV PORT=3000
 USER node
 EXPOSE 3000
-# Hit a concrete page — `/` 307-redirects to /overview, which wget treats as a
-# failure. /overview returns 200.
-HEALTHCHECK --interval=30s --timeout=5s CMD wget -qO- http://127.0.0.1:3000/overview || exit 1
+# /api/config always answers 200 regardless of AUTH_MODE (with auth enabled,
+# /overview 307s to /login, which busybox wget handles inconsistently).
+HEALTHCHECK --interval=30s --timeout=5s CMD wget -qO- http://127.0.0.1:3000/api/config || exit 1
 CMD ["node", "apps/web/server.js"]
