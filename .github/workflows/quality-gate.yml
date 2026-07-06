@@ -6,6 +6,10 @@ on:
   push:
     branches: [main]
 
+# Checkout + run tests only — no write surface needed.
+permissions:
+  contents: read
+
 jobs:
   v2:
     name: v2 Checks (typecheck + test)
