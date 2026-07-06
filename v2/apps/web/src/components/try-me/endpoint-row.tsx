@@ -1,9 +1,19 @@
 "use client";
 
-import { useState, type CSSProperties } from "react";
+import { useState, useSyncExternalStore, type CSSProperties } from "react";
 import type { HealthState } from "@sr/shared";
 import { CopyButton } from "@/components/gateway/CopyButton";
-import { getInterfaceConfig, isCatalogInterface } from "./chain-methods";
+import {
+  getCatalogVersion,
+  getInterfaceConfig,
+  isCatalogInterface,
+  subscribeCatalog,
+} from "./chain-methods";
+
+/** SSR/hydration snapshot: always render as "catalog not loaded yet" so the
+ *  server markup and the client's hydration pass agree; the store then bumps
+ *  to the real version and re-renders with the generated catalog. */
+const getServerCatalogVersion = () => 0;
 import { IconZap, TryMeDrawer } from "./drawer";
 
 interface EndpointRowProps {
@@ -43,6 +53,11 @@ export function EndpointRow({
 }: EndpointRowProps) {
   const [hovered, setHovered] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+
+  // The full spec-index catalog is a dynamically-imported ~590 KB JSON chunk
+  // (see chain-methods.ts) — re-render when it lands so getInterfaceConfig
+  // upgrades from the family fallback to the exact per-spec method list.
+  useSyncExternalStore(subscribeCatalog, getCatalogVersion, getServerCatalogVersion);
 
   const catalogIface = isCatalogInterface(iface) ? iface : null;
   const cfg = catalogIface ? getInterfaceConfig(spec, catalogIface, hasArchive) : null;

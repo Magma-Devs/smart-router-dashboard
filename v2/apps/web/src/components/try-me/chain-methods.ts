@@ -1,22 +1,27 @@
 /**
- * Per-(chain family × interface) catalog of example RPC methods used by the
- * "Try it" drawer. Ported from the lava-connect try-me console
- * (apps/web/src/components/gateway/try-me/chain-methods.ts), adapted for
- * self-hosted reality:
+ * Per-(spec × interface) catalog of RPC methods used by the "Try it" drawer.
  *
- *  - There is no spec service here, so catalogs are STATIC and keyed by chain
- *    family. The family for a router is derived from its Lava spec label
- *    prefix (`ETH1`, `SOLANA`, `LAVA`, …) via `familyForSpec`.
- *  - The `regular` method lists (ids, params, descriptions) are the
- *    design-blessed lists from SR_Dashboard/magma/tryme.jsx (EVM_METHODS /
- *    SOLANA_METHODS / NEAR_METHODS / STARKNET_METHODS / COSMOS_METHODS /
- *    BITCOIN_METHODS), reshaped into `AddonCommand`s.
- *  - The `archive` lists come from the lava-connect catalog (itself vendored
- *    from smart-router data). Archive is only OFFERED for chains whose
- *    mounted config marks an `archive` addon — callers pass `hasArchive` and
- *    the tier is nulled out otherwise. `debug` / `trace` have no self-hosted
- *    gating concept and stay null everywhere (the type keeps the slots so the
- *    drawer's tier machinery matches the reference).
+ * Two sources, in priority order:
+ *
+ *  1. `chain-methods.generated.json` — full lava-specs coverage, produced by
+ *     `scripts/generate-try-me-catalog.mjs` from the spec proposals in
+ *     `lava-specs/` (imports resolved transitively, debug/trace add-on
+ *     collections mapped to tiers, archive synthesised from the collection
+ *     `archive` extension + curated hints). Keyed by exact Lava spec index
+ *     (`ETH1`, `COSMOSHUB`, …); a string value is an alias to an identical
+ *     entry (testnets mostly alias their mainnet).
+ *
+ *  2. The hand-curated FAMILY_METHODS below — fallback for spec indices the
+ *     generated catalog doesn't know (or interfaces a spec doesn't declare),
+ *     resolved by `familyForSpec` prefix matching. This is the pre-generator
+ *     catalog, kept so nothing regresses when the JSON lacks an index.
+ *
+ * The generated JSON is ~590 KB — well over the ~300 KB static-import budget —
+ * so it is loaded with a dynamic `import()` (its own async chunk) kicked off
+ * at module load. Until it resolves, `getInterfaceConfig` serves the family
+ * fallback; components can re-render on arrival via
+ * `subscribeCatalog`/`getCatalogVersion` (see `useSyncExternalStore` in
+ * `EndpointRow`). Tests should `await catalogReady`.
  *
  * `params` is intentionally a JSON string so the drawer can render it directly
  * in a single editable textarea (preserves the user's edits even when the JSON
@@ -32,7 +37,7 @@ export interface AddonCommand {
   label: string;
   /** JSON string for JSON-RPC params, or path string for REST. */
   params: string;
-  /** One-line human description (from the design's method catalogue). */
+  /** One-line human description (from the curated hints). */
   desc?: string;
 }
 
@@ -45,7 +50,7 @@ export interface InterfaceConfig {
   trace: AddonCommand[] | null;
 }
 
-/** Chain families the static catalog covers. */
+/** Chain families the static fallback catalog covers. */
 export type ChainFamily =
   | "evm"
   | "solana"
@@ -71,7 +76,119 @@ export type CatalogInterface =
   | "grpc"
   | "grpc-web";
 
-/* ── Static method catalogs (regular = tryme.jsx, archive = reference) ──── */
+/* ── Generated catalog (full lava-specs coverage) ────────────────────────── */
+
+/** Compact command shape emitted by the generator — see the script header. */
+interface GeneratedCmd {
+  /** Method name / REST path template / grpc `pkg.Service/Method`. */
+  m: string;
+  /** HTTP verb for REST when not GET. */
+  v?: string;
+  /** Curated label when different from `m`. */
+  l?: string;
+  /** Example params (JSON string / concrete REST path) when curated. */
+  p?: string;
+  /** Curated one-line description. */
+  d?: string;
+}
+
+type GeneratedTiers = Partial<Record<Tier, GeneratedCmd[]>>;
+type GeneratedEntry = Partial<Record<CatalogStorageKey, GeneratedTiers>>;
+/** String values alias another index with an identical catalog. */
+type GeneratedCatalog = Record<string, GeneratedEntry | string>;
+
+let generatedCatalog: GeneratedCatalog | null = null;
+let catalogVersion = 0;
+const catalogListeners = new Set<() => void>();
+
+/**
+ * Resolves once the generated catalog chunk has loaded (or failed — the
+ * family fallback then stays in effect). Kicked off at module load.
+ */
+export const catalogReady: Promise<void> = import(
+  "./chain-methods.generated.json"
+).then(
+  (mod) => {
+    generatedCatalog = mod.default as unknown as GeneratedCatalog;
+    catalogVersion = 1;
+    for (const listener of catalogListeners) listener();
+  },
+  () => {
+    /* chunk failed to load — keep serving the family fallback */
+  },
+);
+
+/** Subscribe to catalog arrival — `useSyncExternalStore`-compatible. */
+export function subscribeCatalog(listener: () => void): () => void {
+  catalogListeners.add(listener);
+  return () => catalogListeners.delete(listener);
+}
+
+/** 0 until the generated catalog is loaded, 1 after. */
+export function getCatalogVersion(): number {
+  return catalogVersion;
+}
+
+/** Follow alias strings (`SEP1` → `ETH1`) to the canonical entry. */
+function resolveGeneratedEntry(
+  spec: string,
+): { index: string; entry: GeneratedEntry } | null {
+  if (!generatedCatalog) return null;
+  let index = spec;
+  let entry = generatedCatalog[index];
+  for (let hops = 0; typeof entry === "string" && hops < 4; hops++) {
+    index = entry;
+    entry = generatedCatalog[index];
+  }
+  return entry !== undefined && typeof entry === "object"
+    ? { index, entry }
+    : null;
+}
+
+function expandCommand(cmd: GeneratedCmd, key: CatalogStorageKey): AddonCommand {
+  const method = key === "rest" ? (cmd.v ?? "GET") : cmd.m;
+  const params =
+    cmd.p ?? (key === "rest" ? cmd.m : key === "grpc" ? "{}" : "[]");
+  const out: AddonCommand = { method, label: cmd.l ?? cmd.m, params };
+  if (cmd.d) out.desc = cmd.d;
+  return out;
+}
+
+function expandTier(
+  cmds: GeneratedCmd[] | undefined,
+  key: CatalogStorageKey,
+): AddonCommand[] | null {
+  if (!cmds || cmds.length === 0) return null;
+  return cmds.map((c) => expandCommand(c, key));
+}
+
+/** Expanded `{m,p,d}` → `AddonCommand` configs, memoized per canonical
+ *  (index, storage key) so React memos keyed on the object don't churn. */
+const EXPANDED_CACHE = new Map<string, InterfaceConfig>();
+
+function generatedInterfaceConfig(
+  spec: string,
+  key: CatalogStorageKey,
+): InterfaceConfig | null {
+  const resolved = resolveGeneratedEntry(spec);
+  if (!resolved) return null;
+  const tiers = resolved.entry[key];
+  if (!tiers) return null;
+  const cacheKey = `${resolved.index}|${key}`;
+  let cfg = EXPANDED_CACHE.get(cacheKey);
+  if (!cfg) {
+    cfg = {
+      regular: expandTier(tiers.regular, key) ?? [],
+      archive: expandTier(tiers.archive, key),
+      debug: expandTier(tiers.debug, key),
+      trace: expandTier(tiers.trace, key),
+    };
+    EXPANDED_CACHE.set(cacheKey, cfg);
+  }
+  return cfg;
+}
+
+/* ── Static fallback catalogs (family-keyed, pre-generator) ──────────────── */
 
 const EVM_JSONRPC: InterfaceConfig = {
   regular: [
@@ -379,8 +496,10 @@ function withoutArchive(cfg: InterfaceConfig): InterfaceConfig {
 }
 
 /**
- * Look up the per-tier method catalog for a (spec, iface) pair. Returns null
- * when no catalog exists — caller (`EndpointRow`) hides the Try-it action in
+ * Look up the per-tier method catalog for a (spec, iface) pair. Exact spec
+ * index in the generated catalog wins; the family heuristic covers unknown
+ * indices and interfaces the spec doesn't declare. Returns null when neither
+ * source has a catalog — caller (`EndpointRow`) hides the Try-it action in
  * that case. `hasArchive` reflects whether the chain's mounted config marks
  * an `archive` addon; without it the archive tier is nulled out (never
  * offer methods the deployment can't serve).
@@ -392,8 +511,11 @@ export function getInterfaceConfig(
 ): InterfaceConfig | null {
   if (!isCatalogInterface(iface)) return null;
   const key = storageKey(iface);
-  const family = familyForSpec(spec) ?? FALLBACK_FAMILY[key];
-  const cfg = FAMILY_METHODS[family][key] ?? null;
+  let cfg = generatedInterfaceConfig(spec, key);
+  if (!cfg) {
+    const family = familyForSpec(spec) ?? FALLBACK_FAMILY[key];
+    cfg = FAMILY_METHODS[family][key] ?? null;
+  }
   if (!cfg) return null;
   return hasArchive ? cfg : withoutArchive(cfg);
 }
