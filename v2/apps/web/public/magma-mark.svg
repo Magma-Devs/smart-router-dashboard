@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-label="Magma Devs">
+  <!-- Magma Devs mark — concentric magma-sun circles, tangent at the base. -->
+  <circle cx="128" cy="128" r="108" fill="#EE3D23"/>
+  <circle cx="128" cy="151" r="85"  fill="#F05A28"/>
+  <circle cx="128" cy="171" r="65"  fill="#F68B1F"/>
+  <circle cx="128" cy="189" r="47"  fill="#FAA61A"/>
+  <circle cx="128" cy="206" r="30"  fill="#FFC907"/>
+  <circle cx="128" cy="219" r="17"  fill="#FFE24B"/>
+</svg>

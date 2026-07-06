@@ -8,17 +8,45 @@ const BUILD_BASE =
   process.env.NEXT_PUBLIC_API_URL ??
   (typeof window !== "undefined" ? "" : "http://localhost:8000");
 
-let basePromise: Promise<string> | null = null;
+interface RuntimeConfig {
+  base: string;
+  authMode: "disabled" | "enabled";
+}
 
-function resolveBase(): Promise<string> {
-  if (typeof window === "undefined") return Promise.resolve(BUILD_BASE);
-  if (!basePromise) {
-    basePromise = fetch("/api/config")
-      .then((r) => (r.ok ? (r.json() as Promise<{ apiUrl?: string }>) : ({} as { apiUrl?: string })))
-      .then((c) => c.apiUrl ?? BUILD_BASE)
-      .catch(() => BUILD_BASE);
+let configPromise: Promise<RuntimeConfig> | null = null;
+
+function resolveConfig(): Promise<RuntimeConfig> {
+  if (typeof window === "undefined") {
+    return Promise.resolve({ base: BUILD_BASE, authMode: "disabled" });
   }
-  return basePromise;
+  if (!configPromise) {
+    configPromise = fetch("/api/config")
+      .then((r) =>
+        r.ok
+          ? (r.json() as Promise<{ apiUrl?: string; authMode?: string }>)
+          : ({} as { apiUrl?: string; authMode?: string }),
+      )
+      .then((c) => ({
+        base: c.apiUrl ?? BUILD_BASE,
+        authMode: (c.authMode === "enabled" ? "enabled" : "disabled") as RuntimeConfig["authMode"],
+      }))
+      .catch(() => ({ base: BUILD_BASE, authMode: "disabled" as const }));
+  }
+  return configPromise;
+}
+
+/** Resolve base + (in AUTH_MODE=enabled) wait for the session bridge so
+ *  the first page-load fetches don't race the token and 401. */
+async function requestContext(): Promise<{ base: string; headers: Record<string, string> }> {
+  const cfg = await resolveConfig();
+  const headers: Record<string, string> = {};
+  if (cfg.authMode === "enabled") {
+    const { authReady, getAuthToken } = await import("./auth-store");
+    await authReady();
+    const token = getAuthToken();
+    if (token) headers.Authorization = `Bearer ${token}`;
+  }
+  return { base: cfg.base, headers };
 }
 
 export class ApiError extends Error {
@@ -31,8 +59,8 @@ export class ApiError extends Error {
 }
 
 export async function apiGet<T>(path: string): Promise<T> {
-  const base = await resolveBase();
-  const res = await fetch(`${base}${path}`);
+  const { base, headers } = await requestContext();
+  const res = await fetch(`${base}${path}`, { headers });
   if (!res.ok) {
     let message = `Request failed (${res.status})`;
     try {
@@ -47,10 +75,10 @@ export async function apiGet<T>(path: string): Promise<T> {
 }
 
 export async function apiPost<T>(path: string, body: unknown): Promise<T> {
-  const base = await resolveBase();
+  const { base, headers } = await requestContext();
   const res = await fetch(`${base}${path}`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...headers },
     body: JSON.stringify(body),
   });
   if (!res.ok) {

@@ -2,12 +2,14 @@
 
 import { usePathname } from "next/navigation";
 import Link from "next/link";
-import { useEffect, useState, type ComponentType } from "react";
+import { useEffect, useState, useSyncExternalStore, type ComponentType } from "react";
+import { signOut } from "next-auth/react";
 import type { OverviewData } from "@sr/shared";
 import { NAV_SECTIONS } from "./nav";
 import { IconMoon, IconSun, type IconProps } from "./icons";
 import { useApi } from "@/hooks/use-api";
 import { fmtNum } from "@/lib/format";
+import { getAuthState, getAuthVersion, subscribeAuth } from "@/lib/auth-store";
 
 export function ThemeToggle() {
   const [theme, setTheme] = useState<"dark" | "light">("dark");
@@ -58,21 +60,61 @@ function Sidebar() {
           </div>
         ))}
       </nav>
-      <div className="gw-side__foot">
-        <div className="gw-side__user">
-          <div className="avatar">S</div>
-          <div className="meta">
-            <div className="email">Self-hosted deployment</div>
-            <div>
-              <span className="plan-chip">local</span>
-            </div>
-          </div>
-          <button className="gw-btn gw-btn--ghost" style={{ padding: 6 }} title="No auth on self-hosted deployments" disabled>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-          </button>
-        </div>
-      </div>
+      <SidebarUser />
     </aside>
+  );
+}
+
+/**
+ * Sidebar footer. AUTH_MODE=enabled (session mirrored into the auth
+ * store by ApiTokenBridge) → the signed-in user + a working sign-out.
+ * AUTH_MODE=disabled (store stays empty) → the self-hosted placeholder.
+ */
+function SidebarUser() {
+  useSyncExternalStore(subscribeAuth, getAuthVersion, () => 0);
+  const { user } = getAuthState();
+
+  const logoutIcon = (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+  );
+
+  return (
+    <div className="gw-side__foot">
+      <div className="gw-side__user">
+        {user?.avatarUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={user.avatarUrl}
+            alt=""
+            width={26}
+            height={26}
+            style={{ borderRadius: "50%", flexShrink: 0, objectFit: "cover" }}
+          />
+        ) : (
+          <div className="avatar">{(user?.name ?? user?.email ?? "S").charAt(0).toUpperCase()}</div>
+        )}
+        <div className="meta">
+          <div className="email" title={user?.email}>{user?.email ?? "Self-hosted deployment"}</div>
+          <div>
+            <span className="plan-chip">{user ? user.role : "local"}</span>
+          </div>
+        </div>
+        {user ? (
+          <button
+            className="gw-btn gw-btn--ghost"
+            style={{ padding: 6 }}
+            title="Sign out"
+            onClick={() => void signOut({ redirectTo: "/login" })}
+          >
+            {logoutIcon}
+          </button>
+        ) : (
+          <button className="gw-btn gw-btn--ghost" style={{ padding: 6 }} title="No auth on self-hosted deployments" disabled>
+            {logoutIcon}
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
 
