@@ -5,8 +5,9 @@
 # `make up` is the one command you need: the compose file is self-contained
 # (router profile + Prometheus + api + web). `make down` tears it down.
 #
-# The router profile builds from a smart-router checkout (ROUTER_DIR) because
-# the published release image ships only the binary — no bundled specs/.
+# The router profile pulls the published image (ghcr.io/magma-devs/smart-router
+# :latest) and loads specs straight from the lava-specs GitHub repo — no
+# smart-router checkout, no volume mount.
 #
 # Why the isolated builder (build-api/build-web): when another project is
 # built on the same Docker daemon, the shared BuildKit cache/context can serve
@@ -15,9 +16,14 @@
 
 SHELL := /bin/bash
 
-# Where the smart-router repo lives (router profile build context).
-ROUTER_DIR ?= $(HOME)/projects/smart-router
-SR_SPEC    ?= specs/
+# Optional overrides, forwarded to compose (each has a default IN the compose
+# file, so leave unset for the normal path):
+#   SR_SPEC          spec source for --use-static-spec (default: the lava-specs
+#                    GitHub repo). Point at a local dir or another repo URL.
+#   SR_CONFIG_HOST   the values file mounted into BOTH router and api
+#                    (default: ./dev-config/values.yml — multichain + CV).
+export SR_SPEC ?=
+export SR_CONFIG_HOST ?=
 
 # Image names for local GHCR-parity builds (match the CI-published names).
 BUILDER    ?= srdash-builder
@@ -27,37 +33,46 @@ API_PORT   ?= 8000
 WEB_PORT   ?= 3000
 API_URL    ?= http://localhost:$(API_PORT)
 
-.PHONY: up down dev dev-down router logs ps clean builder build build-api build-web typecheck test
+.PHONY: up down dev dev-down up-auth dev-auth router logs ps clean builder build build-api build-web typecheck test
 
 ## up: SELF-CONTAINED stack — router + Prometheus + api + web (prod images)
 up:
-	ROUTER_DIR=$(ROUTER_DIR) SR_SPEC=$(SR_SPEC) \
-		docker compose --profile router up -d --build
+	docker compose --profile router up -d --build
 	@echo ""
 	@echo "  ✅ Dashboard up:"
 	@echo "     UI    → http://localhost:$(WEB_PORT)"
 	@echo "     API   → http://localhost:$(API_PORT)"
 	@echo "     Prom  → http://localhost:9090"
-	@echo "     ETH1  → http://localhost:3360"
+	@echo "     Router→ http://localhost:3360-3367 (ETH1/SOLANA/BTC/HYPERLIQUID/COSMOSHUB×3/APT1)"
 
-## down: stop the whole stack
+## down: stop the whole stack (auth profile included so postgres stops too)
 down:
-	docker compose --profile router down
+	docker compose --profile router --profile auth down
 
 ## dev: HOT-RELOAD stack (api = tsx watch · web = next dev · shared = tsc --watch)
 dev:
 	@echo "▶ dev stack with hot reload (first boot runs pnpm install — ~1 min)"
-	ROUTER_DIR=$(ROUTER_DIR) SR_SPEC=$(SR_SPEC) \
-		docker compose -f docker-compose.dev.yml --profile router up --build
+	docker compose -f docker-compose.dev.yml --profile router up --build
 
 ## dev-down: stop the hot-reload dev stack
 dev-down:
-	docker compose -f docker-compose.dev.yml --profile router down
+	docker compose -f docker-compose.dev.yml --profile router --profile auth down
+
+## up-auth: prod-style stack WITH authentication (postgres + login) — see docs/AUTH.md.
+## Requires AUTH_SECRET + ADMIN_EMAIL + ADMIN_PASSWORD in the environment.
+up-auth:
+	AUTH_MODE=enabled docker compose --profile router --profile auth up -d --build
+	@echo ""
+	@echo "  🔐 Auth enabled — sign in at http://localhost:$(WEB_PORT)/login"
+
+## dev-auth: hot-reload stack WITH authentication (dev-default admin@example.com / admin1234)
+dev-auth:
+	@echo "▶ dev stack with hot reload + auth (sign in: admin@example.com / admin1234)"
+	AUTH_MODE=enabled docker compose -f docker-compose.dev.yml --profile router --profile auth up --build
 
 ## router: bring up ONLY the router + Prometheus from this compose
 router:
-	ROUTER_DIR=$(ROUTER_DIR) SR_SPEC=$(SR_SPEC) \
-		docker compose --profile router up -d --build router prometheus
+	docker compose --profile router up -d --build router prometheus
 
 ## builder: ensure the isolated BuildKit builder exists
 builder:
