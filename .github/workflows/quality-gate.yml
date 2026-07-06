@@ -7,6 +7,36 @@ on:
     branches: [main]
 
 jobs:
+  v2:
+    name: v2 Checks (typecheck + test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: v2
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Enable corepack and install dependencies
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+
+      - name: Build workspace packages
+        run: pnpm --filter @sr/shared build && pnpm --filter @sr/db build
+
+      - name: Type check (all packages)
+        run: pnpm -r typecheck
+
+      - name: Tests (all packages)
+        run: pnpm -r test
+
+  # ── Legacy v1 checks (backend/ + frontend/) — remove with v1 ──
   frontend:
     name: Frontend Checks
     runs-on: ubuntu-latest

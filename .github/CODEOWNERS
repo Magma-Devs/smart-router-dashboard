@@ -1,0 +1,23 @@
+# Code owners for smart-router-dashboard.
+#
+# GitHub auto-requests a review from the matching owner on every PR that
+# touches a path below, and (when "Require review from Code Owners" is on
+# in branch protection) that review is required to merge.
+#
+# Order matters: the LAST matching pattern wins. The catch-all comes first
+# so more specific rules below can override it.
+
+# Default owner for everything in the repo.
+*                       @Magma-Devs/r-d
+
+# Release & supply-chain surface — changes here build and publish the
+# GHCR images, so they're pinned out explicitly to make the blast radius
+# obvious in review.
+/.github/workflows/     @Magma-Devs/r-d
+/v2/apps/api/Dockerfile @Magma-Devs/r-d
+/v2/apps/web/Dockerfile @Magma-Devs/r-d
+
+# Licensing & legal text — keep dual-license wording under review so a
+# stray edit can't quietly change the commercial terms.
+/LICENSE.md             @Magma-Devs/r-d
+/LICENSING.md           @Magma-Devs/r-d

@@ -1,236 +1,166 @@
+<div align="center">
+
+<a href="https://github.com/Magma-Devs/smart-router-dashboard" target="_blank" rel="noopener noreferrer">
+  <img
+    src="./docs/assets/banner.svg"
+    alt="Smart Router Dashboard — Prometheus-driven observability for the Smart Router"
+    width="100%"
+    style="cursor: pointer;"
+  >
+</a>
+
 # Smart Router Dashboard
 
-A comprehensive dashboard for monitoring and managing Smart Router infrastructure with authentication.
+[![Quality Gate](https://github.com/Magma-Devs/smart-router-dashboard/actions/workflows/quality-gate.yml/badge.svg?branch=main)](https://github.com/Magma-Devs/smart-router-dashboard/actions/workflows/quality-gate.yml)
+[![Release](https://img.shields.io/badge/release-v0.3.1-brightgreen)](https://github.com/Magma-Devs/smart-router-dashboard/releases/latest)
+[![Node](https://img.shields.io/badge/node-24%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
+[![License](https://img.shields.io/badge/license-source--available-orange.svg)](LICENSE.md)
 
-## Features
+</div>
 
-- **Authentication**: HTTP Basic Authentication with configurable credentials
-- **Real-time Metrics**: Prometheus integration for infrastructure monitoring
-- **Configuration Management**: Helm values management (and configuration wizard in DEBUG mode)
-- **Live Testing**: Test your chain configurations in real-time
-- **Responsive UI**: Modern Next.js frontend with Tailwind CSS
+The observability dashboard for the [Smart Router](https://github.com/Magma-Devs/smart-router) — every value on screen maps to a real Prometheus series or renders an honest empty state. No invented numbers, ever.
+
+<div align="center">
+
+[Quick Start](#quick-start) · [How it works](#how-it-works) · [Pages](#pages) · [Authentication](#authentication) · [Development](#development) · [Releases](#releases--images) · [License](#license) · [Contributing](./CONTRIBUTING.md) · [Security](./SECURITY.md)
+
+</div>
+
+---
+
+## What is Smart Router Dashboard
+
+- **Live metrics, honestly sourced** — KPIs, RPS, latency, error breakdowns, provider selection scores: all straight from the router's `smartrouter_*` / `rpc_endpoint_*` Prometheus families. Metric families the router hasn't emitted yet render the design's own empty states and light up automatically when they appear.
+- **Topology-aware** — one values file drives both the router and the dashboard, so the Endpoints/Providers pages always reflect the running configuration.
+- **Live test console** — fire requests at any chain × interface the router serves, straight from the browser, with a full method catalog generated from the [lava-specs](https://github.com/Magma-Devs/lava-specs) repo (126 chains, jsonrpc/rest/tendermint/grpc, archive/debug/trace tiers).
+- **Self-contained** — `make up` gives you router + Prometheus + api + web from nothing. No accounts, no cloud, optional auth.
+- **Optional authentication** — `AUTH_MODE=enabled` adds Auth.js sign-in (email+password + Google/GitHub/Discord) backed by Postgres. Default is open (`disabled`) for private deployments.
+
+> **Repo layout:** the active codebase is [`v2/`](./v2) — a pnpm/TypeScript monorepo (Fastify api + Next.js 16 web + shared packages). The legacy Python/Next stack at the repo root (`backend/`, `frontend/`) is deprecated and will be removed; new work goes to v2.
+
+## Quick Start
+
+Everything below runs from [`v2/`](./v2):
+
+```bash
+cd v2
+make up      # router + Prometheus + api (:8000) + web (:3000), detached
+make ps      # show what's running
+make down    # stop everything
+```
+
+UI → http://localhost:3000 · API → http://localhost:8000 · Prometheus → http://localhost:9090 ·
+router → http://localhost:3360-3367 (ETH1 · SOLANA · BTC · HYPERLIQUID · COSMOSHUB rest/tendermint/grpc · APT1)
+
+The router pulls the published image (`ghcr.io/magma-devs/smart-router:latest`) and loads chain specs straight from the [lava-specs](https://github.com/Magma-Devs/lava-specs) GitHub repo — no checkout, no volume mounts. The default config is multichain with cross-validation policies enabled; see [`v2/dev-config/values.yml`](./v2/dev-config/values.yml).
+
+With a router already running on the host's `:7779`:
+
+```bash
+cd v2 && docker compose up --build     # dashboard + Prometheus only
+```
+
+## How it works
+
+```
+┌─────────────────┐        ┌──────────────────────┐        ┌──────────────┐
+│   apps/web      │  REST  │      apps/api        │ PromQL │  Prometheus  │
+│   Next.js 16    │───────▶│  Fastify 5 (:8000)   │───────▶│   (:9090)    │
+│   (:3000)       │        │  stateless proxy —   │        └──────┬───────┘
+│                 │        │  every endpoint maps │               │ scrape
+│  SWR-style      │        │  to real PromQL      │        ┌──────┴───────┐
+│  hooks + charts │        └──────────┬───────────┘        │ Smart Router │
+└─────────────────┘                   │ reads              │  (:7779)     │
+                                      ▼                    └──────────────┘
+                            mounted values.yml
+                       (same file drives the router)
+```
+
+- The api is a **stateless Prometheus proxy** — no database on the metrics path, per-route caching, unbacked values returned as `null` (never invented).
+- The web is **runtime-configurable** — one published image points at any api host via `DASHBOARD_API_URL`.
+- `AUTH_MODE=enabled` adds a Postgres users store + HS256 JWT gate on `/api/*` — see [Authentication](#authentication).
+
+## Pages
+
+- **Overview** — KPI strip (requests, RPS, errors, success rate, latency) + chart grid, all live
+- **Dashboard** — ops surface, 1h/3h/24h/7d/custom windows, client-side chain multiselect
+- **Providers** — provider cards from the mounted config joined with live per-endpoint stats
+- **Endpoints** — chain-grouped endpoint cards from the values file
+- **Metrics** — four tabs: Overview, Providers deep-dive, Errors breakdown, Traffic
+- **Live test** — POST straight to the router's listen ports from the browser; full per-chain method catalog with archive/debug/trace tiers
+- **/standalone** — the Metrics page without the shell, for sharing or embedding
 
 ## Authentication
 
-The dashboard is protected by HTTP Basic Authentication. All backend endpoints require valid credentials.
+Two modes via `AUTH_MODE` (full guide: [`v2/docs/AUTH.md`](./v2/docs/AUTH.md)):
 
-### Default Credentials
+- **`disabled`** (default) — no login, no database. The dashboard opens straight on Overview. For private/self-hosted deployments.
+- **`enabled`** — Auth.js v5 sign-in backed by Postgres (Drizzle), bcrypt credentials + optional Google/GitHub/Discord (each button appears only when its client id/secret pair is set), HS256 JWT shared between web and api, idempotent `ADMIN_EMAIL`/`ADMIN_PASSWORD` bootstrap seed.
 
-- **Username**: `admin`
-- **Password**: `password`
-
-### Configuration
-
-Credentials are configured via environment variables in the `docker-compose.yml` file:
-
-```yaml
-environment:
-  - AUTH_USERNAME=admin
-  - AUTH_PASSWORD=password
+```bash
+cd v2
+AUTH_MODE=enabled AUTH_SECRET=$(openssl rand -base64 32) \
+ADMIN_EMAIL=you@example.com ADMIN_PASSWORD=change-me \
+  docker compose --profile router --profile auth up -d --build
+# sign in at :3000/login with ADMIN_EMAIL / ADMIN_PASSWORD
+# (the dev compose ships working defaults — see v2/docs/AUTH.md)
 ```
-
-### How It Works
-
-1. **Frontend**: Users must log in through the login form before accessing any protected content
-2. **Backend**: All API endpoints (except `/api/auth/status`) require authentication
-3. **Session Management**: Credentials are stored in sessionStorage and automatically included in API requests
-4. **Logout**: Users can log out through the user menu in the navigation bar
-
-## Getting Started
-
-### Prerequisites
-
-- Docker and Docker Compose
-- Kubernetes cluster access
-- Prometheus instance
-
-### Running the Application
-
-1. **Clone the repository**
-
-   ```bash
-   git clone <repository-url>
-   cd modules/dashboard
-   ```
-
-2. **Configure credentials** (optional - defaults are set)
-   Edit `docker-compose.yml` to change the `AUTH_USERNAME` and `AUTH_PASSWORD` if needed.
-
-3. **Start the services**
-
-   ```bash
-   docker-compose up -d
-   ```
-
-4. **Access the dashboard**
-   - Frontend: http://localhost:3000
-   - Backend API: http://localhost:8000
-   - API Documentation: http://localhost:8000/docs
-
-### Pulling Pre-built Docker Images
-
-Docker images are automatically built and pushed to GitHub Container Registry (GHCR) on each release. To pull and use the pre-built images:
-
-1. **Create a GitHub Personal Access Token (PAT)**
-   - Go to GitHub Settings → Developer settings → Personal access tokens → Tokens (classic)
-   - Create a new token with `read:packages` scope
-   - Copy the token (you'll need it for authentication)
-
-2. **Login to GitHub Container Registry**
-
-   ```bash
-   export GITHUB_PAT=your_personal_access_token
-   echo $GITHUB_PAT | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
-   ```
-
-3. **Pull the images**
-
-   ```bash
-   # Pull backend image
-   docker pull ghcr.io/magma-devs/smart-router-dashboard/backend:latest
-   
-   # Pull frontend image
-   docker pull ghcr.io/magma-devs/smart-router-dashboard/frontend:latest
-   ```
-
-   Or pull a specific version:
-
-   ```bash
-   # Pull specific version (e.g., 1.0.0)
-   docker pull ghcr.io/magma-devs/smart-router-dashboard/backend:1.0.0
-   docker pull ghcr.io/magma-devs/smart-router-dashboard/frontend:1.0.0
-   
-   # Pull latest patch of major.minor version (e.g., 1.0)
-   docker pull ghcr.io/magma-devs/smart-router-dashboard/backend:1.0
-   docker pull ghcr.io/magma-devs/smart-router-dashboard/frontend:1.0
-   ```
-
-4. **Run the containers**
-
-   ```bash
-   # Run backend
-   docker run -d \
-     -p 8000:8000 \
-     -e AUTH_USERNAME=admin \
-     -e AUTH_PASSWORD=password \
-     ghcr.io/magma-devs/smart-router-dashboard/backend:latest
-   
-   # Run frontend
-   docker run -d \
-     -p 3000:3000 \
-     -e NEXT_PUBLIC_API_URL=http://localhost:8000 \
-     ghcr.io/magma-devs/smart-router-dashboard/frontend:latest
-   ```
-
-### First Login
-
-1. Navigate to the dashboard URL
-2. You'll be redirected to the login page
-3. Use the default credentials:
-   - Username: `admin`
-   - Password: `password`
-4. After successful authentication, you'll have access to all dashboard features
-
-## API Endpoints
-
-### Public Endpoints
-
-- `GET /api/health` - Health check
-- `GET /api` - API information
-- `GET /api/auth/status` - Authentication status
-
-### Protected Endpoints (require authentication)
-
-- `POST /api/auth/login` - User login
-- `POST /api/auth/logout` - User logout
-- `GET /api/auth/me` - Current user info
-- `GET /api/metrics/chains` - Chain metrics and KPIs
-- `GET /api/metrics/chains-to-providers` - Chain-to-provider mapping with health data
-- `GET /api/metrics/providers` - Provider metrics
-- `GET /api/components/*` - All component endpoints
-
-## Security Features
-
-- **HTTP Basic Authentication**: Secure credential verification
-- **Session Management**: Automatic credential inclusion in requests
-- **CORS Configuration**: Proper cross-origin resource sharing setup
-- **Input Validation**: Pydantic models for request/response validation
-- **Error Handling**: Secure error messages without information leakage
-
-## Customization
-
-### Changing Credentials
-
-To change the default credentials:
-
-1. Update the environment variables in `docker-compose.yml`:
-
-   ```yaml
-   environment:
-     - AUTH_USERNAME=your_new_username
-     - AUTH_PASSWORD=your_new_password
-   ```
-
-2. Restart the backend service:
-   ```bash
-   docker-compose restart backend
-   ```
-
-### Adding New Protected Endpoints
-
-To protect new endpoints, add the authentication dependency:
-
-```python
-from app.core.auth import get_current_user
-
-@router.get("/your-endpoint")
-async def your_endpoint(current_user: str = Depends(get_current_user)):
-    # Your endpoint logic here
-    pass
-```
-
-## Troubleshooting
-
-### Authentication Issues
-
-- **401 Unauthorized**: Check that credentials are correct
-- **CORS Errors**: Ensure the frontend URL is properly configured
-- **Session Expired**: Clear browser storage and log in again
-
-### Common Problems
-
-1. **Credentials not working**: Verify the environment variables are set correctly
-2. **Frontend not loading**: Check that the frontend service is running
-3. **API calls failing**: Ensure the backend service is accessible and credentials are valid
 
 ## Development
 
-### Backend Development
+```bash
+cd v2
+make dev            # hot-reload docker stack (api tsx watch · web next dev · shared tsc --watch)
 
-The backend is built with FastAPI and includes:
+# or on the host (Node 24 + pnpm 10, needs a Prometheus at PROMETHEUS_URL):
+pnpm install
+pnpm --filter @sr/shared build && pnpm --filter @sr/db build
+pnpm dev            # api :8000, web :3000
+pnpm -r typecheck && pnpm -r test
+```
 
-- **Authentication middleware**: HTTP Basic Auth with session management
-- **Protected route decorators**: Secure endpoint access control
-- **Comprehensive error handling**: Detailed error responses and logging
-- **Prometheus integration**: Real-time metrics collection and monitoring
-- **Type-safe APIs**: Pydantic models for request/response validation
-- **Test coverage**: Comprehensive test suite with dataclass validation
+Project structure:
 
-### Frontend Development
+```
+v2/
+  apps/
+    api/            Fastify 5 REST api — Prometheus proxy + optional auth
+    web/            Next.js 16 App Router frontend
+  packages/
+    shared/         Domain types, PromQL builders, constants
+    db/             Drizzle schema + Postgres client (AUTH_MODE=enabled only)
+  dev-config/       values.yml driving both router and dashboard
+  docs/             AUTH.md · METRICS-MAPPING.md
+  docker-compose.yml / docker-compose.dev.yml / Makefile
+```
 
-The frontend is built with Next.js and includes:
+See [`v2/README.md`](./v2/README.md) for the full run matrix and
+[`v2/CLAUDE.md`](./v2/CLAUDE.md) for the endpoint reference, env vars, and gotchas.
 
-- **Authentication context**: Global auth state management
-- **Protected route components**: Automatic redirect for unauthorized access
-- **Automatic API client**: Auth headers included in all requests
-- **Responsive UI components**: Modern design with Tailwind CSS
-- **Type safety**: Full TypeScript integration with shared type definitions
-- **Flow visualization**: Interactive React Flow diagrams for system monitoring
+## Releases & images
 
-### Code Quality Improvements
+Changes are tracked in [CHANGELOG.md](./CHANGELOG.md). Versioning is driven by the root [`VERSION`](./VERSION) file: pushes to `main` run the
+[Build and Push Images](.github/workflows/build-and-push.yml) workflow, which tags and publishes
 
-- **Shared Types**: Consolidated API types in `/types/metrics.ts`
-- **No Duplication**: Eliminated duplicate type definitions across components
-- **Better Testing**: Dataclass-based validation instead of manual assertions
-- **Import Organization**: Proper import structure and organization
-- **Type Safety**: End-to-end type safety from backend to frontend
+- `ghcr.io/magma-devs/smart-router-dashboard/api` — the v2 Fastify api
+- `ghcr.io/magma-devs/smart-router-dashboard/web` — the v2 Next.js web
+
+Set `DASHBOARD_API_URL` on the web container at runtime to point one published image at any api host.
+
+```bash
+docker pull ghcr.io/magma-devs/smart-router-dashboard/api:latest
+docker pull ghcr.io/magma-devs/smart-router-dashboard/web:latest
+```
+
+## Security
+
+See [SECURITY.md](./SECURITY.md). Do not open public issues for vulnerabilities — email <security@magmadevs.com>.
+
+## License
+
+Dual-licensed: **noncommercial use** is free under the [PolyForm Noncommercial License 1.0.0](./LICENSE.md); **commercial use** requires a separate [Magma Devs Enterprise License](./LICENSING.md) — contact <sales@magmadevs.com>.
+
+## Community
+
+- [Issues](https://github.com/Magma-Devs/smart-router-dashboard/issues) — bugs and feature requests
+- [Smart Router](https://github.com/Magma-Devs/smart-router) — the router this dashboard observes

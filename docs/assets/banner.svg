@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="420" viewBox="0 0 1024 420" role="img" aria-label="Smart Router Dashboard — by Magma Devs">
+  <!--
+    Banner in the smart-router family: white ground, fine pen-sketch line
+    art (dashboard window, server racks, table perspective), the Magma
+    concentric-sun mark, heavy black wordmark. Sketch strokes stay in the
+    #D5D9DE range so the type carries the composition.
+  -->
+  <defs>
+    <clipPath id="frame"><rect width="1024" height="420"/></clipPath>
+  </defs>
+
+  <g clip-path="url(#frame)">
+    <rect width="1024" height="420" fill="#ffffff"/>
+
+    <!-- ── sketch layer ──────────────────────────────────────────────── -->
+    <g stroke="#D5D9DE" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <!-- room: table edge + wall verticals + faint shelf lines -->
+      <path d="M0 318 H1024"/>
+      <path d="M-30 420 L120 318 M1054 420 L904 318"/>
+      <path d="M64 318 V40 M984 318 V40"/>
+      <path d="M64 88 H540 M64 262 H540" stroke-opacity="0.65"/>
+
+      <!-- circuit traces on the table -->
+      <path d="M96 356 L250 356 L292 336"/>
+      <path d="M160 392 L430 392 L482 352 L560 352"/>
+      <path d="M690 380 L830 380 L872 348"/>
+      <path d="M320 406 L520 406"/>
+      <circle cx="96" cy="356" r="4"/>
+      <circle cx="160" cy="392" r="4"/>
+      <circle cx="560" cy="352" r="4"/>
+      <circle cx="690" cy="380" r="4"/>
+      <circle cx="320" cy="406" r="4"/>
+      <circle cx="520" cy="406" r="4"/>
+      <rect x="600" y="392" width="34" height="18" rx="3"/>
+      <path d="M606 392 V386 M616 392 V386 M626 392 V386 M606 416 V410 M616 416 V410 M626 416 V410"/>
+
+      <!-- server rack, right -->
+      <rect x="856" y="64" width="118" height="254" rx="8"/>
+      <path d="M868 96 H962 M868 112 H962 M868 142 H962 M868 158 H962 M868 188 H962 M868 204 H962"/>
+      <circle cx="884" cy="242" r="12"/><circle cx="915" cy="242" r="12"/><circle cx="946" cy="242" r="12"/>
+      <path d="M884 230 V254 M872 242 H896 M915 230 V254 M903 242 H927 M946 230 V254 M934 242 H958"/>
+      <circle cx="884" cy="286" r="12"/><circle cx="915" cy="286" r="12"/><circle cx="946" cy="286" r="12"/>
+      <path d="M884 274 V298 M872 286 H896 M915 274 V298 M903 286 H927 M946 274 V298 M934 286 H958"/>
+      <circle cx="958" cy="80" r="3"/><circle cx="946" cy="80" r="3"/>
+
+      <!-- dashboard browser window, center-right (behind the type) -->
+      <rect x="560" y="58" width="264" height="188" rx="10"/>
+      <path d="M560 86 H824"/>
+      <circle cx="578" cy="72" r="4"/><circle cx="594" cy="72" r="4"/><circle cx="610" cy="72" r="4"/>
+      <!-- axes + gridlines -->
+      <path d="M584 110 H800 M584 150 H800 M584 190 H800"/>
+      <!-- sidebar of tiny stat tiles -->
+      <rect x="584" y="206" width="52" height="24" rx="4"/>
+      <rect x="648" y="206" width="52" height="24" rx="4"/>
+      <rect x="712" y="206" width="52" height="24" rx="4"/>
+
+      <!-- smoke rising off the chart's eruption spike -->
+      <path d="M712 96 C706 84 720 78 714 66 M722 92 C730 80 718 72 728 58 M704 88 C696 80 706 70 700 62" stroke-dasharray="1.5 5"/>
+    </g>
+
+    <!-- eruption chart line — the one saturated stroke in the sketch -->
+    <path d="M584 198 L616 186 L640 192 L664 172 L688 178 L706 118 L714 104 L722 120 L736 170 L762 158 L788 166 L800 152"
+          fill="none" stroke="#F05A28" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="714" cy="104" r="4.5" fill="#EE3D23"/>
+
+    <!-- ── Magma mark ────────────────────────────────────────────────── -->
+    <g transform="translate(150,176)">
+      <circle cx="0" cy="0"  r="62" fill="#EE3D23"/>
+      <circle cx="0" cy="13" r="49" fill="#F05A28"/>
+      <circle cx="0" cy="25" r="37" fill="#F68B1F"/>
+      <circle cx="0" cy="35" r="27" fill="#FAA61A"/>
+      <circle cx="0" cy="45" r="17" fill="#FFC907"/>
+      <circle cx="0" cy="52" r="10" fill="#FFE24B"/>
+    </g>
+
+    <!-- ── wordmark ──────────────────────────────────────────────────── -->
+    <g font-family="Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" fill="#0B0B0C">
+      <text x="248" y="188" font-size="82" font-weight="800" letter-spacing="-3">Smart Router</text>
+      <text x="248" y="272" font-size="82" font-weight="800" letter-spacing="-3">Dashboard</text>
+      <text x="252" y="302" font-size="17" font-weight="500" fill="#6B7280" letter-spacing="0.4">Prometheus-driven observability · by Magma Devs</text>
+    </g>
+  </g>
+</svg>
