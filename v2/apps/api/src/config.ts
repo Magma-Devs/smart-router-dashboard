@@ -51,6 +51,25 @@ export const config = {
     valuesDir: env("HELM_VALUES_DIR") ?? "/app/helm-values",
   },
 
+  /**
+   * Authentication (see docs/AUTH.md).
+   *  - `disabled` (default) — no login, no DB; every route stays open.
+   *  - `enabled`  — Auth.js (web) + HS256 JWT validated here; /api/* routes
+   *    require a Bearer token; Postgres-backed users with an ADMIN_EMAIL /
+   *    ADMIN_PASSWORD bootstrap seed.
+   * NOTE: `secret` is also re-read inside the auth plugin at register time
+   * so test setups that inject AUTH_SECRET late still work.
+   */
+  auth: {
+    mode: (env("AUTH_MODE") ?? "disabled") as "disabled" | "enabled",
+    secret: env("AUTH_SECRET"),
+    databaseUrl: env("DATABASE_URL"),
+    adminEmail: env("ADMIN_EMAIL"),
+    adminPassword: env("ADMIN_PASSWORD"),
+    /** Needed to validate the `aud` claim of Google ID tokens server-side. */
+    googleClientId: env("GOOGLE_CLIENT_ID"),
+  },
+
   tenantId: env("TENANT_ID") ?? "default",
   logLevel: (env("LOG_LEVEL") ?? "info").toLowerCase(),
 
