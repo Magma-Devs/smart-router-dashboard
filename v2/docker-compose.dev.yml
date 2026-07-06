@@ -33,14 +33,17 @@ services:
 
   router:
     profiles: ["router"]
-    build:
-      context: ${ROUTER_DIR:-../../smart-router}
-      dockerfile: docker/Dockerfile
-    image: smart-router:dashboard-local
+    # Pull the latest published router image from GHCR instead of building from
+    # a local checkout. The release image is binary-only (no bundled specs/), so
+    # specs are loaded straight from the lava-specs GitHub repo — no checkout,
+    # no volume mount. --use-static-spec accepts a remote GitHub/GitLab repo URL
+    # in the form https://github.com/{owner}/{repo}/tree/{branch}/{path}.
+    image: ghcr.io/magma-devs/smart-router:latest
+    pull_policy: always
     command:
       - "values.yml"
       - "--use-static-spec"
-      - "${SR_SPEC:-specs/}"
+      - "${SR_SPEC:-https://github.com/Magma-Devs/lava-specs/tree/main}"
       - "--cors-headers"
       - "*"
       - "--log-level"
@@ -51,8 +54,36 @@ services:
     volumes:
       - ${SR_CONFIG_HOST:-./dev-config/values.yml}:/smart-router/values.yml:ro
     ports:
-      - "3360:3360"
+      # Multichain dev-config: one listen port per chain×interface (see
+      # dev-config/values.yml). 3360 ETH1 · 3361 SOLANA · 3362 BTC ·
+      # 3363 HYPERLIQUID · 3364-3366 COSMOSHUB rest/tendermint/grpc · 3367 APT1.
+      - "3360-3367:3360-3367"
       - "7779:7779"
+    restart: unless-stopped
+
+  # Auth backing store — ONLY needed when AUTH_MODE=enabled. Start it with
+  # the `auth` profile: docker compose -f docker-compose.dev.yml --profile
+  # router --profile auth up. The api connects lazily (retry loop) so
+  # AUTH_MODE=disabled keeps the zero-dependency boot. Host port 5434 for
+  # psql debugging (5433 is lava-connect's dev postgres).
+  postgres:
+    profiles: ["auth"]
+    image: postgres:18-alpine
+    environment:
+      - POSTGRES_USER=sr
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-dev}
+      - POSTGRES_DB=sr_dashboard
+    volumes:
+      # PG18 image convention: mount ONE level up from the data dir
+      # (/var/lib/postgresql, not .../data) — the old path errors at boot.
+      - postgres-data-dev:/var/lib/postgresql
+    ports:
+      - "5434:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sr -d sr_dashboard"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     restart: unless-stopped
 
   builder:
@@ -60,10 +91,12 @@ services:
       context: .
       dockerfile: Dockerfile.dev
     working_dir: /app
-    command: pnpm --filter @sr/shared build:watch
+    command: pnpm --parallel --filter @sr/shared --filter @sr/db build:watch
     volumes:
       - ./packages/shared/src:/app/packages/shared/src
       - ./packages/shared/dist:/app/packages/shared/dist
+      - ./packages/db/src:/app/packages/db/src
+      - ./packages/db/dist:/app/packages/db/dist
 
   api:
     build:
@@ -77,11 +110,22 @@ services:
       - PROMETHEUS_URL=http://prometheus:9090
       - HELM_VALUES_DIR=/app/helm-values
       - CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+      # Auth (see docs/AUTH.md): disabled (default) needs none of the rest.
+      - AUTH_MODE=${AUTH_MODE:-disabled}
+      - AUTH_SECRET=${AUTH_SECRET:-dev-secret-change-me-please-32chars!}
+      - DATABASE_URL=${DATABASE_URL:-postgres://sr:dev@postgres:5432/sr_dashboard}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@example.com}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin1234}
+      # Needed api-side to validate the `aud` claim of Google ID tokens.
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
     volumes:
       - ./apps/api/src:/app/apps/api/src
       - ./apps/api/tsconfig.json:/app/apps/api/tsconfig.json
       - ./packages/shared/src:/app/packages/shared/src
       - ./packages/shared/dist:/app/packages/shared/dist
+      - ./packages/db/src:/app/packages/db/src
+      - ./packages/db/dist:/app/packages/db/dist
+      - ./packages/db/migrations:/app/packages/db/migrations
       - ${SR_CONFIG_HOST:-./dev-config/values.yml}:/app/helm-values/core/values.yml:ro
     ports:
       - "8000:8000"
@@ -100,6 +144,19 @@ services:
       - NEXT_PUBLIC_API_URL=http://localhost:8000
       - NEXT_PUBLIC_LOCAL_MODE=true
       - WATCHPACK_POLLING=true
+      # Auth (see docs/AUTH.md) — same AUTH_MODE + AUTH_SECRET as the api.
+      - AUTH_MODE=${AUTH_MODE:-disabled}
+      - AUTH_SECRET=${AUTH_SECRET:-dev-secret-change-me-please-32chars!}
+      - AUTH_URL=${AUTH_URL:-http://localhost:3000}
+      - INTERNAL_API_BASE_URL=http://api:8000
+      # OAuth providers — the login page shows a provider's button only
+      # when its id+secret pair is set.
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID:-}
+      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET:-}
+      - DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID:-}
+      - DISCORD_CLIENT_SECRET=${DISCORD_CLIENT_SECRET:-}
     volumes:
       - ./apps/web/src:/app/apps/web/src
       - ./apps/web/public:/app/apps/web/public
@@ -115,3 +172,4 @@ services:
 
 volumes:
   prometheus-data-dev:
+  postgres-data-dev:
