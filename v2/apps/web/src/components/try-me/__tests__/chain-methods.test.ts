@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import {
+  catalogReady,
   FAMILY_METHODS,
   familyForSpec,
   getInterfaceConfig,
@@ -9,6 +10,10 @@ import {
   storageKey,
   TIER_ORDER,
 } from "../chain-methods";
+
+// The full spec-index catalog is dynamically imported — make sure it's in
+// place before any getInterfaceConfig assertion runs.
+beforeAll(() => catalogReady);
 
 describe("FAMILY_METHODS catalog", () => {
   it("each family has a non-empty regular list for at least one interface", () => {
@@ -134,15 +139,34 @@ describe("getInterfaceConfig", () => {
   });
 
   it("returns null for interfaces with no catalog", () => {
-    // Cosmos family carries rest + tendermintrpc only (rule: no grpc catalog).
-    expect(getInterfaceConfig("LAVA", "grpc", false)).toBeNull();
     // Raw config ids that aren't drawer transports never resolve.
     expect(getInterfaceConfig("ETH1", "websocket", false)).toBeNull();
+    // A known spec with no such interface anywhere: ETH1 declares jsonrpc
+    // only, and the evm fallback family has no rest either.
+    expect(getInterfaceConfig("ETH1", "rest", false)).toBeNull();
+  });
+
+  it("serves grpc for cosmos-family specs from the generated catalog", () => {
+    // Pre-generator the cosmos family had no grpc catalog; the lava-specs
+    // grpc collections now provide one.
+    const cfg = getInterfaceConfig("LAVA", "grpc", false);
+    expect(cfg?.regular.length).toBeGreaterThan(0);
+    expect(cfg?.regular[0]?.method).toContain("/");
   });
 
   it("falls back per-interface for unknown specs (jsonrpc→evm, rest/tendermintrpc→cosmos)", () => {
-    const jsonrpc = getInterfaceConfig("FVM", "jsonrpc", false);
+    // "NOPE" is in no spec file and matches no family prefix.
+    const jsonrpc = getInterfaceConfig("NOPE", "jsonrpc", false);
     expect(jsonrpc?.regular[0]?.method).toBe("eth_blockNumber");
+    const rest = getInterfaceConfig("NOPE", "rest", false);
+    expect(rest?.regular[0]?.params).toBe("/cosmos/base/tendermint/v1beta1/blocks/latest");
+    const tm = getInterfaceConfig("NOPE", "tendermintrpc", false);
+    expect(tm?.regular[0]?.method).toBe("abci_info");
+  });
+
+  it("falls back per-interface for interfaces a known spec doesn't declare", () => {
+    // FVM (Filecoin) declares jsonrpc only — rest/tendermintrpc use the
+    // cosmos fallback so a router exposing them still gets a drawer.
     const rest = getInterfaceConfig("FVM", "rest", false);
     expect(rest?.regular[0]?.params).toBe("/cosmos/base/tendermint/v1beta1/blocks/latest");
     const tm = getInterfaceConfig("FVM", "tendermintrpc", false);
@@ -192,11 +216,86 @@ describe("listMethods", () => {
     expect(methods[0]?.index).toBe(0);
   });
 
-  it("skips nulled tiers (no archive addon → regular only)", () => {
+  it("skips nulled tiers (no archive addon → regular, debug, trace)", () => {
     const cfg = getInterfaceConfig("ETH1", "jsonrpc", false);
     expect(cfg).not.toBeNull();
     if (!cfg) return;
     const tiers = [...new Set(listMethods(cfg).map((m) => m.tier))];
-    expect(tiers).toEqual(["regular"]);
+    expect(tiers).toEqual(["regular", "debug", "trace"]);
+  });
+});
+
+describe("generated lava-specs catalog", () => {
+  it("ETH1 jsonrpc regular includes eth_blockNumber with empty params", () => {
+    const cfg = getInterfaceConfig("ETH1", "jsonrpc", false);
+    const blockNumber = cfg?.regular.find((c) => c.method === "eth_blockNumber");
+    expect(blockNumber).toBeDefined();
+    expect(blockNumber?.params).toBe("[]");
+    // Full spec coverage — way beyond the 11-method curated fallback list.
+    expect(cfg?.regular.length).toBeGreaterThan(20);
+  });
+
+  it("ETH1 exposes debug and trace tiers from the spec's add_on collections", () => {
+    const cfg = getInterfaceConfig("ETH1", "jsonrpc", false);
+    expect(cfg?.debug?.length).toBeGreaterThan(0);
+    expect(cfg?.debug?.some((c) => c.method === "debug_traceTransaction")).toBe(true);
+    expect(cfg?.trace?.length).toBeGreaterThan(0);
+    expect(cfg?.trace?.some((c) => c.method === "trace_block")).toBe(true);
+  });
+
+  it("ETH1 archive tier is synthesised from the archive extension when offered", () => {
+    const cfg = getInterfaceConfig("ETH1", "jsonrpc", true);
+    expect(cfg?.archive?.length).toBeGreaterThan(0);
+    expect(cfg?.archive?.[0]?.method).toBe("eth_getBalance");
+  });
+
+  it("COSMOSHUB inherits rest + tendermintrpc + grpc through transitive imports", () => {
+    // COSMOSHUB → COSMOSSDK50 → COSMOSSDK → IBC/TENDERMINT: none of these
+    // methods are declared on the COSMOSHUB spec itself.
+    const rest = getInterfaceConfig("COSMOSHUB", "rest", false);
+    expect(
+      rest?.regular.some(
+        (c) => c.params === "/cosmos/base/tendermint/v1beta1/blocks/latest",
+      ),
+    ).toBe(true);
+    const tm = getInterfaceConfig("COSMOSHUB", "tendermintrpc", false);
+    expect(tm?.regular.some((c) => c.method === "status")).toBe(true);
+    const grpc = getInterfaceConfig("COSMOSHUB", "grpc", false);
+    expect(
+      grpc?.regular.some(
+        (c) => c.method === "cosmos.base.tendermint.v1beta1.Service/GetLatestBlock",
+      ),
+    ).toBe(true);
+  });
+
+  it("SOLANA jsonrpc regular contains getSlot", () => {
+    const cfg = getInterfaceConfig("SOLANA", "jsonrpc", false);
+    expect(cfg?.regular.some((c) => c.method === "getSlot")).toBe(true);
+  });
+
+  it("unknown indices fall back to the family heuristic", () => {
+    const cfg = getInterfaceConfig("NOPE", "jsonrpc", false);
+    expect(cfg).not.toBeNull();
+    expect(cfg?.regular[0]?.method).toBe("eth_blockNumber");
+    // Identical to the evm fallback config (identity via the stripped cache).
+    expect(cfg).toBe(getInterfaceConfig("NOPE2", "jsonrpc", false));
+  });
+
+  it("REST commands expand with the HTTP verb as method and the path as params", () => {
+    const cfg = getInterfaceConfig("COSMOSHUB", "rest", false);
+    const first = cfg?.regular[0];
+    expect(first?.method).toBe("GET");
+    expect(first?.params.startsWith("/")).toBe(true);
+    expect(first?.label.startsWith("/")).toBe(true);
+  });
+
+  it("expanded configs are identity-stable across calls (memoized)", () => {
+    const a = getInterfaceConfig("COSMOSHUB", "rest", false);
+    const b = getInterfaceConfig("COSMOSHUB", "rest", false);
+    expect(a).toBe(b);
+    // Alias entries (testnet → mainnet) share the canonical expansion.
+    const hub = getInterfaceConfig("COSMOSHUB", "rest", true);
+    const hubT = getInterfaceConfig("COSMOSHUBT", "rest", true);
+    expect(hubT).toBe(hub);
   });
 });
