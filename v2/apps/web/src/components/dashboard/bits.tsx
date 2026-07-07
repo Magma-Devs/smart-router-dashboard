@@ -21,10 +21,17 @@ export function dshFmtComma(n: number | null | undefined): string {
   return (n ?? 0).toLocaleString("en-US");
 }
 
-/** TimePoint[] → number[] for the DSH charts (null buckets → 0, per the
- *  OverviewView convention — the SVG polylines cannot take nulls). */
+/** TimePoint[] → number[] for stats/aggregation (mean, totals). Null buckets
+ *  collapse to 0 — fine for sums/means; use `toNumsGap` for chart lines. */
 export function toNums(pts: TimePoint[] | undefined | null, scale = 1): number[] {
   return (pts ?? []).map((p) => (p.v ?? 0) * scale);
+}
+
+/** TimePoint[] → (number|null)[] preserving gaps, for the multi-series charts
+ *  that BREAK the line at null buckets instead of plunging to 0 (the api
+ *  grid-aligns series with explicit nulls where a chain had no data). */
+export function toNumsGap(pts: TimePoint[] | undefined | null, scale = 1): (number | null)[] {
+  return (pts ?? []).map((p) => (p.v == null ? null : p.v * scale));
 }
 
 /** Mean of a series, or null when empty (for ratio/threshold colouring). */

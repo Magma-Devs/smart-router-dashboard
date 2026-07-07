@@ -2,8 +2,6 @@ import type { ComponentType } from "react";
 import {
   IconChart,
   IconGlobe,
-  IconHome,
-  IconPulse,
   IconServer,
   IconSettings,
   IconUsers,
@@ -24,15 +22,15 @@ export interface NavSection {
 export const NAV_SECTIONS: NavSection[] = [
   {
     label: null,
-    items: [{ href: "/overview", label: "Overview", icon: IconHome }],
+    items: [{ href: "/metrics", label: "Metrics", icon: IconChart }],
   },
   {
     label: "Smart Router",
     items: [
-      { href: "/dashboard", label: "Dashboard", icon: IconPulse },
+      // Overview + Dashboard are hidden from nav (Metrics is the default
+      // surface); their routes still resolve if linked directly.
       { href: "/upstreams", label: "Upstreams", icon: IconServer },
       { href: "/endpoints", label: "Endpoints", icon: IconGlobe },
-      { href: "/metrics", label: "Metrics", icon: IconChart },
     ],
   },
   {

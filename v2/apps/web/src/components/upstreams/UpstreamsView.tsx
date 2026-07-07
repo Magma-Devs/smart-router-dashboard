@@ -23,10 +23,10 @@ import { fmtMs, fmtNum, fmtPct } from "@/lib/format";
 import { UpstreamLogo } from "@/components/upstreams/UpstreamLogo";
 import { KebabMenu, StatusDot, pvStatLabel, type LiveChain } from "@/components/upstreams/bits";
 import {
-  IFACE_LABEL,
   buildUpstreamRows,
   type UpstreamRow,
 } from "@/components/upstreams/catalog";
+import { IfaceTag } from "@/components/endpoints/bits";
 import { AddUpstreamSheet } from "@/components/upstreams/AddUpstreamSheet";
 import { EditUpstreamSheet } from "@/components/upstreams/EditUpstreamSheet";
 import { DeleteConfirm } from "@/components/upstreams/DeleteConfirm";
@@ -292,12 +292,10 @@ export function UpstreamsView() {
                         </div>
                         <span className="gw-mono" style={{ fontSize: 11, color: "var(--text-2)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{row.urlHost || "—"}</span>
                         {/* interface tag + configured capabilities (addons +
-                            derived ws) — real config values, nothing invented */}
-                        {row.iface && (
-                          <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 5px", borderRadius: 3, background: "var(--hover-2)", color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.06em", flexShrink: 0 }}>
-                            {IFACE_LABEL[row.iface] || row.iface}
-                          </span>
-                        )}
+                            derived ws) — real config values, nothing invented.
+                            Same IfaceTag component the Endpoints page uses so
+                            the badge label + colour are consistent. */}
+                        {row.iface && <IfaceTag id={row.iface} />}
                         <CapabilityTags
                           size="xs"
                           capabilities={capabilitiesOf({

@@ -52,6 +52,36 @@ export function toPoints(
   });
 }
 
+/**
+ * Reindex a Prometheus matrix row onto the SHARED (start, end, step) grid.
+ *
+ * `query_range` trims timestamps a series has no data for, so two chains that
+ * started emitting at different times come back with different point counts.
+ * Multi-series charts x-map by index and assume equal lengths — mismatched
+ * lengths render as garbage. This snaps every series to the same grid, filling
+ * absent buckets with null (an honest gap, not an invented value).
+ */
+export function toGridPoints(
+  values: [number, string][] | undefined,
+  start: number,
+  end: number,
+  step: number,
+): { t: number; v: number | null }[] {
+  const byT = new Map<number, number | null>();
+  for (const [t, v] of values ?? []) {
+    const n = Number(v);
+    // Snap the sample to its nearest grid bucket (prom timestamps can drift a
+    // few ms off the exact step multiple).
+    const bucket = start + Math.round((t - start) / step) * step;
+    byT.set(bucket, Number.isFinite(n) ? n : null);
+  }
+  const out: { t: number; v: number | null }[] = [];
+  for (let t = start; t <= end + 1; t += step) {
+    out.push({ t, v: byT.has(t) ? byT.get(t)! : null });
+  }
+  return out;
+}
+
 export class MetricsService {
   constructor(
     private readonly prom: PrometheusClient,

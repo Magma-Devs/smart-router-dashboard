@@ -9,7 +9,7 @@
 import { useMemo, useState } from "react";
 import type { DashboardData } from "@sr/shared";
 import { DSHLine, DSHStack, type DSHSeries, type DSHStackLayer } from "./dsh-charts";
-import { DSHCard, DSHChip, DSHNoData, DSHSection, meanOf, toNums, useChartWidth } from "./bits";
+import { DSHCard, DSHChip, DSHNoData, DSHSection, meanOf, toNums, toNumsGap, useChartWidth } from "./bits";
 
 /** The design's ghost-compare button (chrome; ghost series need a prior-window
  *  series family the API doesn't expose yet). */
@@ -49,12 +49,13 @@ export function MetricsTabSectionA({
 
   const inChainFilter = (spec: string) => chains.length === 0 || chains.includes(spec);
 
-  /* SR per chain — availability ratio × 100. */
+  /* SR per chain — availability ratio × 100. Gap-preserving so a chain with
+     no data in a bucket breaks the line rather than dropping to 0. */
   const srChains = useMemo(
     () =>
       (data?.series.perChainSuccessRate ?? [])
         .filter((c) => inChainFilter(c.spec))
-        .map((c) => ({ id: c.spec, name: c.name, color: c.color, label: c.name, data: toNums(c.points, 100) })),
+        .map((c) => ({ id: c.spec, name: c.name, color: c.color, label: c.name, data: toNumsGap(c.points, 100) })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [data, chains],
   );
@@ -68,8 +69,10 @@ export function MetricsTabSectionA({
     return list
       .filter((c) => inChainFilter(c.spec))
       .map((c) => {
-        const d = toNums(c.points).map((v) => Math.round(v));
-        const mean = meanOf(d) ?? 0;
+        // Chart data keeps gaps (null); the mean is over real samples only.
+        const d = toNumsGap(c.points).map((v) => (v == null ? null : Math.round(v)));
+        const present = d.filter((v): v is number => v != null);
+        const mean = meanOf(present) ?? 0;
         const ratio = refMean && refMean > 0 ? mean / refMean : null;
         const color = ratio == null ? c.color : ratio < 1 ? "var(--ok)" : ratio < 1.5 ? "var(--warn)" : "var(--err)";
         return { id: c.spec, name: c.name, data: d, color, label: c.name + " · " + Math.round(mean) + "ms", ratio };

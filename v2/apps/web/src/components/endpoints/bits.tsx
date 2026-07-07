@@ -21,10 +21,11 @@ export interface IfaceDef {
 }
 
 export const IFACES_DEF: IfaceDef[] = [
-  { id: "jsonrpc", label: "JSON-RPC",  color: "#60a5fa", desc: "HTTP POST — standard JSON-RPC" },
-  { id: "wss",     label: "WebSocket", color: "#34d399", desc: "WSS — persistent connection for subscriptions" },
-  { id: "grpc",    label: "gRPC",      color: "#a78bfa", desc: "HTTP/2 — separate subdomain",              comingSoon: true },
-  { id: "rest",    label: "REST",      color: "#fb923c", desc: "Cosmos LCD · Solana REST · chain-specific", comingSoon: true },
+  { id: "jsonrpc",       label: "JSON-RPC",      color: "#60a5fa", desc: "HTTP POST — standard JSON-RPC" },
+  { id: "wss",           label: "WebSocket",     color: "#34d399", desc: "WSS — persistent connection for subscriptions" },
+  { id: "grpc",          label: "gRPC",          color: "#a78bfa", desc: "HTTP/2 — protobuf" },
+  { id: "rest",          label: "REST",          color: "#fb923c", desc: "Cosmos LCD · Solana REST · chain-specific" },
+  { id: "tendermintrpc", label: "Tendermint RPC", color: "#22d3ee", desc: "Tendermint / CometBFT RPC" },
 ];
 
 /** Config api-interface → design tag id ("websocket" wears the wss tag). */
