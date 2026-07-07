@@ -3,7 +3,6 @@ import {
   IconChart,
   IconGlobe,
   IconHome,
-  IconPlay,
   IconPulse,
   IconServer,
   IconSettings,
@@ -34,7 +33,6 @@ export const NAV_SECTIONS: NavSection[] = [
       { href: "/providers", label: "Providers", icon: IconServer },
       { href: "/endpoints", label: "Endpoints", icon: IconGlobe },
       { href: "/metrics", label: "Metrics", icon: IconChart },
-      { href: "/live-test", label: "Live test", icon: IconPlay },
     ],
   },
   {

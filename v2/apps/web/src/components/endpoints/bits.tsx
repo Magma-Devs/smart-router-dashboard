@@ -135,3 +135,9 @@ export function buildEndpointRows(routers: RouterTopology[]): EndpointRowModel[]
 export function providerCount(ep: EndpointRowModel): number {
   return new Set(ep.nodes.map((n) => n.name)).size;
 }
+
+/** True when any node serving this row carries an `archive` addon — gates
+ *  the Try-now drawer's Archive tier for this specific endpoint. */
+export function epHasArchive(ep: EndpointRowModel): boolean {
+  return ep.nodes.some((n) => n.addons.includes("archive"));
+}
