@@ -1,18 +1,18 @@
 "use client";
 
-/* PMBody — the selected provider's data panels (rows 2–4 of the deep dive).
+/* PMBody — the selected upstream's data panels (rows 2–4 of the deep dive).
  * Ported verbatim from the design prototype (page-provider-metrics.jsx
  * PMBody + pmBuild); the mock's synthetic series are replaced by
- * /api/metrics/provider-detail. Honest-state rules:
+ * /api/metrics/upstream-detail. Honest-state rules:
  *  - volume: `read` is real; write/batch layers appear only once their
  *    counters are emitted (legend chips keep the design chrome);
  *  - node-vs-blockchain error split: the two counters aren't emitted on this
  *    build ⇒ the split rows/bar show "—" (the design's 62/38 was invented);
- *  - disagreement: no per-provider cross-validation metric ⇒ chrome + gap;
+ *  - disagreement: no per-upstream cross-validation metric ⇒ chrome + gap;
  *  - selection score: REAL (rpc_endpoint_selection_score), 0..1 → 0–100. */
 
 import { useState } from "react";
-import type { MetricWindow, ProviderDetail, ProviderMetrics, TimePoint } from "@sr/shared";
+import type { MetricWindow, UpstreamDetail, UpstreamMetrics, TimePoint } from "@sr/shared";
 import { LineChart, StackedAreaChart, type Layer, type Series } from "@/components/gateway/charts";
 import { fmtComma } from "@/lib/format";
 import { nums } from "../bits";
@@ -22,8 +22,8 @@ import { PMErrorCodes, PMRecentErrors } from "./PMErrors";
 const pct = (pts: TimePoint[] | null | undefined): number[] => nums(pts).map((v) => v * 100);
 
 export function PMBody({ pm, detail, name, timeWindow }: {
-  pm: ProviderMetrics;
-  detail: ProviderDetail | undefined;
+  pm: UpstreamMetrics;
+  detail: UpstreamDetail | undefined;
   name: string;
   timeWindow: MetricWindow;
 }) {
@@ -80,7 +80,7 @@ export function PMBody({ pm, detail, name, timeWindow }: {
     <>
       {/* ════ ROW 2 — TRAFFIC & SPEED ════ */}
       <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 12, marginBottom: 12 }}>
-        <PMPanel title="Request volume" tip={"Requests per second this provider served, **split by Read / Write / Batch** (the three mutually-exclusive request types). Read includes archive lookups.\n\nCache hits are excluded — they never reach a provider."}
+        <PMPanel title="Request volume" tip={"Requests per second this upstream served, **split by Read / Write / Batch** (the three mutually-exclusive request types). Read includes archive lookups.\n\nCache hits are excluded — they never reach an upstream."}
           right={<div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center" }}>
             <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11 }}>
               <span style={{ color: "var(--text-3)" }}>All</span>
@@ -151,16 +151,16 @@ export function PMBody({ pm, detail, name, timeWindow }: {
           </div>
         </PMPanel>
 
-        <PMPanel title="Disagreement rate" tip={"How often this provider's responses **conflict with the consensus** of other providers on the same request."}
+        <PMPanel title="Disagreement rate" tip={"How often this upstream's responses **conflict with the consensus** of other upstreams on the same request."}
           right={<span className="gw-mono gw-tnum" style={{ fontSize: 18, fontWeight: 700, color: "var(--text-4)" }}>—</span>}>
           <div style={{ height: 150, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "var(--text-4)", textAlign: "center", lineHeight: 1.6 }}>
-            Cross-validation is not enabled on this build —<br />per-provider disagreement appears once cross_validation_* counters fire.
+            Cross-validation is not enabled on this build —<br />per-upstream disagreement appears once cross_validation_* counters fire.
           </div>
         </PMPanel>
       </div>
 
       {/* ════ ROW 4 — ROUTING (optional) ════ */}
-      <PMPanel full title="Selection score" tip={"Each line is a **0–100 score** (higher = better), **not** a raw measurement — the router converts p95 latency and block lag into scores so they all share one axis.\n\n**Composite QoS** (purple, bold) is the weighted blend the router actually ranks providers on. The three faint lines are its inputs: availability, latency, and sync freshness.\n\nThe dashed **admit ≥ 90** line is the cutoff — when Composite QoS drops below it, the router pulls this provider from rotation until it recovers."}
+      <PMPanel full title="Selection score" tip={"Each line is a **0–100 score** (higher = better), **not** a raw measurement — the router converts p95 latency and block lag into scores so they all share one axis.\n\n**Composite QoS** (purple, bold) is the weighted blend the router actually ranks upstreams on. The three faint lines are its inputs: availability, latency, and sync freshness.\n\nThe dashed **admit ≥ 90** line is the cutoff — when Composite QoS drops below it, the router pulls this upstream from rotation until it recovers."}
         right={<div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
           {scoreLegend.map((it) => (
             <span key={it.lbl} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11 }}>
@@ -174,10 +174,10 @@ export function PMBody({ pm, detail, name, timeWindow }: {
         {score.length ? (
           <div style={{ height: 180 }}><LineChart series={score} id={"pms" + pid} yDomain={[0, 100]} gridCount={4} yFmt={(v) => String(Math.round(v))} target={{ value: 90, color: "var(--text-4)", label: "admit ≥ 90" }} /></div>
         ) : (
-          <div style={{ height: 180, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "var(--text-4)" }}>No selection-score samples for this provider in this window.</div>
+          <div style={{ height: 180, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "var(--text-4)" }}>No selection-score samples for this upstream in this window.</div>
         )}
         <div style={{ marginTop: 8, fontSize: 11, color: "var(--text-4)", lineHeight: 1.5 }}>
-          Scored 0–100, higher is better. Below the dashed <span style={{ color: "var(--text-3)" }}>admit ≥ 90</span> line the router stops sending this provider traffic until its score recovers.
+          Scored 0–100, higher is better. Below the dashed <span style={{ color: "var(--text-3)" }}>admit ≥ 90</span> line the router stops sending this upstream traffic until its score recovers.
         </div>
       </PMPanel>
 

@@ -1,16 +1,16 @@
 "use client";
 
-/* Add Provider Sheet — orchestrator, ported from the design prototype
- * (page-providers.jsx AddProviderSheet). Configure + Node are one merged
+/* Add Upstream Sheet — orchestrator, ported from the design prototype
+ * (page-providers.jsx AddUpstreamSheet). Configure + Node are one merged
  * step. SELF-HOSTED: the full wizard renders (entry type → preset grid →
- * configure → JWT → probe chrome) but the final "Save provider" commit is
+ * configure → JWT → probe chrome) but the final "Save upstream" commit is
  * disabled — the config is a read-only mount. */
 
 import { useEffect, useState } from "react";
 import { SideSheet } from "@/components/gateway/SideSheet";
-import { READONLY_MSG, type ProviderCatalogEntry } from "@/components/providers/catalog";
-import { type LiveChain } from "@/components/providers/bits";
-import { Step1EntryType, StepPickPreset, type EntryType } from "@/components/providers/steps/entry";
+import { READONLY_MSG, type UpstreamCatalogEntry } from "@/components/upstreams/catalog";
+import { type LiveChain } from "@/components/upstreams/bits";
+import { Step1EntryType, StepPickPreset, type EntryType } from "@/components/upstreams/steps/entry";
 import {
   NodeConfigSection,
   StepConfigureA,
@@ -19,17 +19,17 @@ import {
   StepJwt,
   type Caps,
   type CredData,
-} from "@/components/providers/steps/configure";
-import { ProbeStep } from "@/components/providers/steps/probe";
+} from "@/components/upstreams/steps/configure";
+import { ProbeStep } from "@/components/upstreams/steps/probe";
 
 interface PendingData extends CredData {
-  catalog: ProviderCatalogEntry | null;
+  catalog: UpstreamCatalogEntry | null;
   role?: "primary" | "backup";
   interfaces?: string[];
   capabilities?: Partial<Caps>;
 }
 
-export function AddProviderSheet({ open, onClose, existingIds, chains, ifacesBySpec }: {
+export function AddUpstreamSheet({ open, onClose, existingIds, chains, ifacesBySpec }: {
   open: boolean;
   onClose: () => void;
   /** Catalog ids already matched to config nodes (dims their preset tiles). */
@@ -41,7 +41,7 @@ export function AddProviderSheet({ open, onClose, existingIds, chains, ifacesByS
 }) {
   const [step, setStep] = useState(1);
   const [type, setType] = useState<EntryType | null>(null);
-  const [catalog, setCatalog] = useState<ProviderCatalogEntry | null>(null);
+  const [catalog, setCatalog] = useState<UpstreamCatalogEntry | null>(null);
   const [probing, setProbing] = useState(false);
   const [probeReady, setProbeReady] = useState(false);
   const [pendingData, setPending] = useState<PendingData | null>(null);
@@ -63,10 +63,10 @@ export function AddProviderSheet({ open, onClose, existingIds, chains, ifacesByS
   }, [open]);
 
   /* Credential form submits:
-     - PROVIDER preset (flow A/B): backend holds chain/interface/caps spec → no node config needed
+     - UPSTREAM preset (flow A/B): backend holds chain/interface/caps spec → no node config needed
      - Custom URL / JWT: user's own node → collect chain/role/interface/caps from NodeConfigSection */
   const submit = (credData: CredData) => {
-    const isPreset = type === "PROVIDER";
+    const isPreset = type === "UPSTREAM";
     if (isPreset) {
       setPending({ ...credData, catalog });
     } else {
@@ -84,7 +84,7 @@ export function AddProviderSheet({ open, onClose, existingIds, chains, ifacesByS
 
   /* Step labels — no separate Node step */
   const stepLabels: Record<string, string[]> = {
-    PROVIDER: ["Type", "Provider", "Configure"],
+    UPSTREAM: ["Type", "Upstream", "Configure"],
     URL: ["Type", "Configure"],
     JWT: ["Type", "Configure"],
     none: ["Type", "Configure"],
@@ -93,7 +93,7 @@ export function AddProviderSheet({ open, onClose, existingIds, chains, ifacesByS
   const isCredStep = !probing && (
     (type === "URL" && step === 2) ||
     (type === "JWT" && step === 2) ||
-    (type === "PROVIDER" && step === 3)
+    (type === "UPSTREAM" && step === 3)
   );
 
   if (!open) return null;
@@ -102,14 +102,14 @@ export function AddProviderSheet({ open, onClose, existingIds, chains, ifacesByS
       open={open}
       onClose={onClose}
       wide
-      title="Add a provider"
-      sub="Connect a provider node and Magma routes traffic through it automatically"
+      title="Add an upstream"
+      sub="Connect an upstream node and Magma routes traffic through it automatically"
       steps={{ labels: steps, current: step }}
       footer={probing ? (
         <>
           <button className="gw-btn" onClick={() => { setProbing(false); setProbeReady(false); setPending(null); }}>← Back</button>
           <button className="gw-btn gw-btn--primary" disabled title={READONLY_MSG}>
-            {!probeReady ? "Probing…" : "Save provider"}
+            {!probeReady ? "Probing…" : "Save upstream"}
           </button>
         </>
       ) : step === 1 ? (
@@ -120,7 +120,7 @@ export function AddProviderSheet({ open, onClose, existingIds, chains, ifacesByS
           {isCredStep && (
             <button className="gw-btn gw-btn--primary"
               onClick={() => (document.getElementById("__pv-submit") as HTMLButtonElement | null)?.click()}>
-              Add provider
+              Add upstream
             </button>
           )}
         </>
@@ -129,21 +129,21 @@ export function AddProviderSheet({ open, onClose, existingIds, chains, ifacesByS
       {probing ? (
         <ProbeStep
           catalogId={catalog?.id || pendingData?.catalogId}
-          providerName={pendingData?.name}
+          upstreamName={pendingData?.name}
           onReady={() => setProbeReady(true)}
         />
       ) : (
         <>
           {step === 1 && <Step1EntryType onPick={(t) => { setType(t); setStep(2); }} />}
-          {step === 2 && type === "PROVIDER" && <StepPickPreset existingIds={existingIds} onPick={(cat) => { setCatalog(cat); setStep(3); }} />}
+          {step === 2 && type === "UPSTREAM" && <StepPickPreset existingIds={existingIds} onPick={(cat) => { setCatalog(cat); setStep(3); }} />}
           {step === 2 && type === "URL" && <StepCustomUrl chains={chains} onSubmit={submit} />}
           {step === 2 && type === "JWT" && <StepJwt catalog={null} chains={chains} onSubmit={submit} />}
-          {step === 3 && type === "PROVIDER" && catalog?.flow === "A" && <StepConfigureA catalog={catalog} onSubmit={submit} onSwitchJwt={() => setType("JWT")} />}
-          {step === 3 && type === "PROVIDER" && catalog?.flow === "B" && <StepConfigureB catalog={catalog} onSubmit={submit} onBack={() => setStep(2)} />}
+          {step === 3 && type === "UPSTREAM" && catalog?.flow === "A" && <StepConfigureA catalog={catalog} onSubmit={submit} onSwitchJwt={() => setType("JWT")} />}
+          {step === 3 && type === "UPSTREAM" && catalog?.flow === "B" && <StepConfigureB catalog={catalog} onSubmit={submit} onBack={() => setStep(2)} />}
           {step === 3 && type === "JWT" && catalog && <StepJwt catalog={catalog} chains={chains} onSubmit={submit} />}
 
           {/* Node config — only for custom URL / JWT flows (presets: backend manages chain/interface/caps) */}
-          {isCredStep && type !== "PROVIDER" && (
+          {isCredStep && type !== "UPSTREAM" && (
             <div style={{ borderTop: "1px solid var(--line)", marginTop: 18, paddingTop: 18 }}>
               <NodeConfigSection
                 chainId={ncChain} setChainId={setNcChain}

@@ -34,7 +34,7 @@ export function InviteModal({ open, onClose }: { open: boolean; onClose: () => v
           <div style={{ ...labelStyle, marginBottom: 8 }}>Role</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {([
-              { id: "admin", label: "Admin", desc: "Full access — manage routes, providers, billing, and team." },
+              { id: "admin", label: "Admin", desc: "Full access — manage routes, upstreams, billing, and team." },
               { id: "member", label: "Member", desc: "Read access to routes and metrics. Cannot manage billing or team." },
             ] as const).map(r => (
               <button key={r.id} onClick={() => setRole(r.id)} style={{

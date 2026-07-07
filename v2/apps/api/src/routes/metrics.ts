@@ -62,10 +62,10 @@ export async function metricRoutes(app: FastifyInstance) {
     return { chains: await app.metrics.chains(parseWindow(request.query.window)) };
   });
 
-  // Provider roster (optionally scoped to one spec).
-  app.get<{ Querystring: WindowQuery }>("/api/metrics/providers", tag("Provider roster + selection scores"), async (request) => {
+  // Upstream roster (optionally scoped to one spec).
+  app.get<{ Querystring: WindowQuery }>("/api/metrics/upstreams", tag("Upstream roster + selection scores"), async (request) => {
     const { spec } = request.query;
-    return { providers: await app.metrics.providers(spec, parseWindow(request.query.window)) };
+    return { upstreams: await app.metrics.upstreams(spec, parseWindow(request.query.window)) };
   });
 
   // RPS time-series for the Traffic chart.
@@ -101,17 +101,17 @@ export async function metricRoutes(app: FastifyInstance) {
     return app.metricsDetail.chainSeries(spec, parseWindow(request.query.window));
   });
 
-  // Provider deep-dive (PMBody).
-  app.get<{ Querystring: { window?: string; endpointId?: string } }>("/api/metrics/provider-detail", {
+  // Upstream deep-dive (PMBody).
+  app.get<{ Querystring: { window?: string; endpointId?: string } }>("/api/metrics/upstream-detail", {
     schema: {
       tags: ["Metrics"],
-      summary: "Provider deep-dive (stats, series, QoS sub-scores)",
+      summary: "Upstream deep-dive (stats, series, QoS sub-scores)",
       querystring: {
         type: "object" as const,
         required: ["endpointId"],
         properties: {
           window: windowQuerySchema.properties.window,
-          endpointId: { type: "string" as const, description: "Backing endpoint id (= provider name)" },
+          endpointId: { type: "string" as const, description: "Backing endpoint id (= upstream name)" },
         },
       },
     },
@@ -121,7 +121,7 @@ export async function metricRoutes(app: FastifyInstance) {
       sendApiError(reply, 400, "endpointId is required");
       return reply;
     }
-    return app.metricsDetail.providerDetail(endpointId, parseWindow(request.query.window));
+    return app.metricsDetail.upstreamDetail(endpointId, parseWindow(request.query.window));
   });
 
   // Errors-breakdown tab (derived totals/hotspots/pivots + family presence).

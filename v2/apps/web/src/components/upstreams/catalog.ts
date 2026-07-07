@@ -1,13 +1,13 @@
-/* Provider catalogue + chain-hint helpers — ported verbatim from the design
- * prototype (page-providers.jsx: PROVIDER_DOMAINS/COLORS/CATALOG,
+/* Upstream catalogue + chain-hint helpers — ported verbatim from the design
+ * prototype (page-providers.jsx: UPSTREAM_DOMAINS/COLORS/CATALOG,
  * CHAIN_URL_HINTS/parseUrlChain, EVM_CHAINS/CHAIN_IFACES/IFACE_LABEL,
  * parseJwtExpiry, PROBE_CAPS) plus the DESIGN_CHAINS palette from data.jsx.
  *
- * Self-hosted reality: providers come from the read-only mounted values
+ * Self-hosted reality: upstreams come from the read-only mounted values
  * file. Catalog entries drive presentation only (logos, "looks like X"
  * hints) — never data. */
 
-import type { ProviderMetrics, RouterTopology } from "@sr/shared";
+import type { UpstreamMetrics, RouterTopology } from "@sr/shared";
 
 /** The honest-state copy for every config-mutating commit button. */
 export const READONLY_MSG = "Config is a read-only mount on self-hosted — edit the values file";
@@ -15,9 +15,9 @@ export const READONLY_MSG = "Config is a read-only mount on self-hosted — edit
 export const JWT_CLOUD_MSG = "JWT management is a Magma Cloud feature — no tokens exist on this self-hosted deployment";
 
 /* ─────────────────────────────────────────────
-   Provider logos — Clearbit with SVG fallback
+   Upstream logos — Clearbit with SVG fallback
 ───────────────────────────────────────────── */
-export const PROVIDER_DOMAINS: Record<string, string> = {
+export const UPSTREAM_DOMAINS: Record<string, string> = {
   alchemy:     "alchemy.com",
   infura:      "infura.io",
   quicknode:   "quicknode.com",
@@ -32,7 +32,7 @@ export const PROVIDER_DOMAINS: Record<string, string> = {
 };
 
 /* Fallback brand colors when Clearbit fails */
-export const PROVIDER_COLORS: Record<string, string> = {
+export const UPSTREAM_COLORS: Record<string, string> = {
   alchemy: "#0C4EFF", infura: "#FF6B2B", quicknode: "#0070F3",
   ankr: "#2563EB", chainstack: "#16A34A", drpc: "#7C3AED",
   getblock: "#D97706", blockpi: "#DB2777", nodereal: "#0EA5E9",
@@ -40,9 +40,9 @@ export const PROVIDER_COLORS: Record<string, string> = {
 };
 
 /* ─────────────────────────────────────────────
-   Provider catalogue — no chain assumptions
+   Upstream catalogue — no chain assumptions
 ───────────────────────────────────────────── */
-export interface ProviderCatalogEntry {
+export interface UpstreamCatalogEntry {
   id: string;
   name: string;
   flow: "A" | "B";
@@ -51,7 +51,7 @@ export interface ProviderCatalogEntry {
   domainPattern?: RegExp;
 }
 
-export const PROVIDER_CATALOG: ProviderCatalogEntry[] = [
+export const UPSTREAM_CATALOG: UpstreamCatalogEntry[] = [
   { id: "alchemy",     name: "Alchemy",     flow: "A", color: "#0C4EFF", supportsJWT: true  },
   { id: "infura",      name: "Infura",      flow: "A", color: "#FF6B2B", supportsJWT: true  },
   { id: "quicknode",   name: "QuickNode",   flow: "B", color: "#0070F3", supportsJWT: true,  domainPattern: /\.quiknode\.pro/ },
@@ -204,27 +204,27 @@ export function isEvmSpec(spec: string): boolean {
 }
 
 /* ─────────────────────────────────────────────
-   Provider identity — catalog match by urlHost domain (preferred),
+   Upstream identity — catalog match by urlHost domain (preferred),
    falling back to the node name (the design matched by name).
 ───────────────────────────────────────────── */
-export function matchCatalog(name: string, urlHosts: string[]): ProviderCatalogEntry | null {
-  for (const cat of PROVIDER_CATALOG) {
-    const domain = PROVIDER_DOMAINS[cat.id];
+export function matchCatalog(name: string, urlHosts: string[]): UpstreamCatalogEntry | null {
+  for (const cat of UPSTREAM_CATALOG) {
+    const domain = UPSTREAM_DOMAINS[cat.id];
     for (const host of urlHosts) {
       if (domain && host.includes(domain)) return cat;
       if (cat.domainPattern && cat.domainPattern.test(host)) return cat;
     }
   }
   const lower = name.toLowerCase();
-  return PROVIDER_CATALOG.find((c) => lower.includes(c.name.toLowerCase()) || lower.includes(c.id)) ?? null;
+  return UPSTREAM_CATALOG.find((c) => lower.includes(c.name.toLowerCase()) || lower.includes(c.id)) ?? null;
 }
 
 /* ─────────────────────────────────────────────
-   Provider view-model — one row per config node (grouped by node name
-   across routers), stats joined from /api/metrics/providers where
+   Upstream view-model — one row per config node (grouped by node name
+   across routers), stats joined from /api/metrics/upstreams where
    endpointId === node name. All numbers real or null; never invented.
 ───────────────────────────────────────────── */
-export interface ProviderChainRow {
+export interface UpstreamChainRow {
   spec: string;
   network: string;
   role: "primary" | "backup";
@@ -234,13 +234,13 @@ export interface ProviderChainRow {
   routerId: string;
 }
 
-export interface ProviderRow {
+export interface UpstreamRow {
   /** Node name — unique per values file. */
   id: string;
   name: string;
   /** First upstream urlHost (for identity/head rows). */
   url: string;
-  chainRows: ProviderChainRow[];
+  chainRows: UpstreamChainRow[];
   /** Unique spec labels served. */
   chains: string[];
   networks: string[];
@@ -257,11 +257,11 @@ export interface ProviderRow {
   role: "primary" | "backup";
 }
 
-export function buildProviderRows(
+export function buildUpstreamRows(
   routers: RouterTopology[],
-  metrics: ProviderMetrics[] | undefined,
-): ProviderRow[] {
-  const byName = new Map<string, ProviderChainRow[]>();
+  metrics: UpstreamMetrics[] | undefined,
+): UpstreamRow[] {
+  const byName = new Map<string, UpstreamChainRow[]>();
   const order: string[] = [];
   for (const r of routers) {
     for (const n of r.nodes) {
@@ -277,7 +277,7 @@ export function buildProviderRows(
     }
   }
 
-  const metricsByName = new Map<string, ProviderMetrics[]>();
+  const metricsByName = new Map<string, UpstreamMetrics[]>();
   for (const m of metrics ?? []) {
     const arr = metricsByName.get(m.endpointId);
     if (arr) arr.push(m);
@@ -289,7 +289,7 @@ export function buildProviderRows(
     const ms = metricsByName.get(name) ?? [];
     const latVals = ms.map((m) => m.p95Ms).filter((v): v is number => v !== null);
     const upVals = ms.map((m) => m.uptime).filter((v): v is number => v !== null);
-    const status: ProviderRow["status"] = ms.some((m) => m.health === "unhealthy")
+    const status: UpstreamRow["status"] = ms.some((m) => m.health === "unhealthy")
       ? "degraded"
       : ms.some((m) => m.health === "operational")
         ? "healthy"

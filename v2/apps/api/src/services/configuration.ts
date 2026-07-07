@@ -123,7 +123,7 @@ function normalizeSrConfig(raw: Record<string, unknown>): RouterTopology[] {
 
   // Process a provider list into the topology. `direct-rpc` is the primary
   // tier; `backup-direct-rpc` (the router's emergency-fallback section) marks
-  // its nodes isBackup so the Providers/Endpoints UI can tag them "backup".
+  // its nodes isBackup so the Upstreams/Endpoints UI can tag them "backup".
   const addProviders = (key: string, isBackup: boolean): void => {
     for (const provider of asArray(raw[key])) {
       const chainId = asString(provider["chain-id"]);

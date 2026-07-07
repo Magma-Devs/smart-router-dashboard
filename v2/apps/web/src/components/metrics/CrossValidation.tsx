@@ -13,7 +13,7 @@ import { Tip } from "@/components/gateway/Tip";
 import { ThCol } from "@/components/gateway/SortTable";
 import { fmtComma, fmtNum } from "@/lib/format";
 
-const CV_TIP = "A **sampled subset** of requests is sent to several providers at once and their responses compared.\n\n**Matching the majority = agreement; differing = disagreement** — catching wrong, stale, or forked answers that latency and error metrics miss.\n\nCoverage is the **sampled subset only**, not all traffic.";
+const CV_TIP = "A **sampled subset** of requests is sent to several upstreams at once and their responses compared.\n\n**Matching the majority = agreement; differing = disagreement** — catching wrong, stale, or forked answers that latency and error metrics miss.\n\nCoverage is the **sampled subset only**, not all traffic.";
 
 export function CrossValidation({ tw }: { tw: MetricWindow }) {
   const { data: cv } = useApi<CrossValidationReport>(`/api/metrics/cross-validation?window=${tw}`);
@@ -41,7 +41,7 @@ export function CrossValidation({ tw }: { tw: MetricWindow }) {
         </div>
         <div>
           <div className="gw-mono gw-tnum" style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.03em", lineHeight: 1, color: noConsensus == null ? "var(--text-4)" : noConsensus > 0 ? "var(--warn)" : "var(--text)" }}>{noConsensus != null ? fmtComma(noConsensus) : "—"}</div>
-          <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 8 }}>no consensus — providers disagreed</div>
+          <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 8 }}>no consensus — upstreams disagreed</div>
         </div>
       </div>
 

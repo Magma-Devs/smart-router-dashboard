@@ -30,7 +30,7 @@ export const NAV_SECTIONS: NavSection[] = [
     label: "Smart Router",
     items: [
       { href: "/dashboard", label: "Dashboard", icon: IconPulse },
-      { href: "/providers", label: "Providers", icon: IconServer },
+      { href: "/upstreams", label: "Upstreams", icon: IconServer },
       { href: "/endpoints", label: "Endpoints", icon: IconGlobe },
       { href: "/metrics", label: "Metrics", icon: IconChart },
     ],

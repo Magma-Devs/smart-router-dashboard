@@ -16,21 +16,24 @@ import {
   buildChainMetaByIndex,
   type ChainMetrics,
   type HealthState,
-  type ProviderMetrics,
+  type UpstreamMetrics,
   type RouterTopology,
 } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { CopyButton } from "@/components/gateway/CopyButton";
-import { buildProviderRows } from "@/components/providers/catalog";
+import { buildUpstreamRows } from "@/components/upstreams/catalog";
 import {
   IfaceTag,
   buildEndpointRows,
+  epAddons,
   epHasArchive,
+  epHasWs,
   epLocalHttp,
-  providerCount,
+  upstreamCount,
   type EndpointRowModel,
 } from "@/components/endpoints/bits";
+import { CapabilityTags, capabilitiesOf } from "@/components/gateway/CapabilityTags";
 import { EndpointDetailSheet } from "@/components/endpoints/EndpointDetailSheet";
 import { CreateEndpointSheet } from "@/components/endpoints/CreateEndpointSheet";
 import { TryNowButton } from "@/components/try-me/try-now-button";
@@ -44,7 +47,7 @@ interface CardGroup {
 
 export function EndpointsView() {
   const config = useApi<{ routers: RouterTopology[] }>("/api/config/routers", 60000);
-  const live = useApi<{ providers: ProviderMetrics[] }>("/api/metrics/providers?window=1d");
+  const live = useApi<{ upstreams: UpstreamMetrics[] }>("/api/metrics/upstreams?window=1d");
   // Health per spec — threaded into the Try-now drawer's status tag (omitted
   // when a chain has no live metrics; never a hardcoded status).
   const chainMetrics = useApi<{ chains: ChainMetrics[] }>("/api/metrics/chains?window=1d", 60000);
@@ -62,8 +65,8 @@ export function EndpointsView() {
     for (const c of chainMetrics.data?.chains ?? []) map.set(c.spec, c.health);
     return map;
   }, [chainMetrics.data]);
-  const providers = useMemo(
-    () => buildProviderRows(routers, live.data?.providers),
+  const upstreams = useMemo(
+    () => buildUpstreamRows(routers, live.data?.upstreams),
     [routers, live.data],
   );
 
@@ -170,7 +173,7 @@ export function EndpointsView() {
                 <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                   {group.rows.map((ep) => {
                     const host = ep.port ? `localhost:${ep.port}` : "—";
-                    const cnt = providerCount(ep);
+                    const cnt = upstreamCount(ep);
                     const hovered = hoverId === ep.id;
                     return (
                       <div key={ep.id}
@@ -184,6 +187,13 @@ export function EndpointsView() {
                           border: "1px solid var(--line)", alignItems: "center",
                         }}>
                         <IfaceTag id={ep.iface} />
+                        {/* Configured capabilities on this endpoint (addons +
+                            derived ws) — what the mounted config actually
+                            declares; nothing shown when it declares none. */}
+                        <CapabilityTags
+                          size="xs"
+                          capabilities={capabilitiesOf({ addons: epAddons(ep), hasWs: epHasWs(ep) })}
+                        />
                         <span className="gw-mono" style={{ fontSize: 11, color: "var(--text-2)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
                           {host}
                         </span>
@@ -209,10 +219,10 @@ export function EndpointsView() {
                         <span style={{ fontSize: 11, color: "var(--text-4)", flexShrink: 0, whiteSpace: "nowrap" }}>
                           —
                         </span>
-                        {/* Provider count chip */}
+                        {/* Upstream count chip */}
                         {cnt === 0
-                          ? <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 4, background: "rgba(239,68,68,0.1)", color: "var(--err)", border: "1px solid rgba(239,68,68,0.22)", flexShrink: 0 }}>No providers</span>
-                          : <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 4, background: "var(--hover-2)", color: "var(--text-3)", border: "1px solid var(--line)", flexShrink: 0 }}>{cnt} provider{cnt !== 1 ? "s" : ""}</span>}
+                          ? <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 4, background: "rgba(239,68,68,0.1)", color: "var(--err)", border: "1px solid rgba(239,68,68,0.22)", flexShrink: 0 }}>No upstreams</span>
+                          : <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 4, background: "var(--hover-2)", color: "var(--text-3)", border: "1px solid var(--line)", flexShrink: 0 }}>{cnt} upstream{cnt !== 1 ? "s" : ""}</span>}
                         {/* JWT suffix — Magma Cloud feature, masked honest */}
                         <span className="gw-mono" style={{ fontSize: 11, color: "var(--text-3)", flexShrink: 0 }}>—</span>
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-4)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><polyline points="9 18 15 12 9 6"/></svg>
@@ -231,7 +241,7 @@ export function EndpointsView() {
         open={showCreate}
         onClose={() => setShowCreate(false)}
         routers={routers}
-        providers={providers}
+        upstreams={upstreams}
         existing={endpoints}
       />
       <EndpointDetailSheet
@@ -239,7 +249,7 @@ export function EndpointsView() {
         ep={liveDetail}
         router={detailRouter}
         onClose={() => setDetailId(null)}
-        providers={providers}
+        upstreams={upstreams}
       />
     </div>
   );

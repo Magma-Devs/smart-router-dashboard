@@ -1,6 +1,6 @@
 "use client";
 
-/* PMPanel / PMStat / PMNoVal — small presentational bits of the Providers
+/* PMPanel / PMStat / PMNoVal — small presentational bits of the Upstreams
  * tab. Ported verbatim from the design prototype (page-provider-metrics.jsx);
  * PMTip is merged into the shared gateway <Tip /> (same markup + styles). */
 

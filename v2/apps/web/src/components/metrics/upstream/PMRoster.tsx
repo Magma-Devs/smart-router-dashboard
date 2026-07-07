@@ -1,19 +1,19 @@
 "use client";
 
-/* PMRoster — every provider matching the filters, key health at a glance.
+/* PMRoster — every upstream matching the filters, key health at a glance.
  * Ported verbatim from the design prototype (page-provider-metrics.jsx
- * PMRoster); rows are live /api/metrics/providers. Sorting uses the ported
+ * PMRoster); rows are live /api/metrics/upstreams. Sorting uses the ported
  * useSort/ThCol with a hidden `natural` key so the initial order matches the
  * API's (requests desc), like the design's unsorted default. */
 
 import { useEffect, useState } from "react";
-import { buildChainMetaByIndex, type MetricWindow, type ProviderMetrics } from "@sr/shared";
+import { buildChainMetaByIndex, type MetricWindow, type UpstreamMetrics } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { Tip } from "@/components/gateway/Tip";
 import { ThCol, useSort } from "@/components/gateway/SortTable";
 
 interface RosterRow {
-  pm: ProviderMetrics;
+  pm: UpstreamMetrics;
   name: string;
   chainName: string;
   chainColor: string;
@@ -21,7 +21,7 @@ interface RosterRow {
   qosVal: number | null;
   /* flat sort accessors (design SV semantics) */
   natural: number;
-  provider: string;
+  upstream: string;
   chain: string;
   block: number;
   requests: number;
@@ -32,12 +32,12 @@ interface RosterRow {
 }
 
 export function PMRoster({ rows, activeName, onSelect, timeWindow }: {
-  rows: ProviderMetrics[];
+  rows: UpstreamMetrics[];
   activeName: string | null;
   onSelect: (name: string) => void;
   timeWindow: MetricWindow;
 }) {
-  const statusDot = (h: ProviderMetrics["health"]) => ({ operational: "var(--ok)", unhealthy: "var(--err)", unknown: "var(--text-4)" }[h] || "var(--ok)");
+  const statusDot = (h: UpstreamMetrics["health"]) => ({ operational: "var(--ok)", unhealthy: "var(--err)", unknown: "var(--text-4)" }[h] || "var(--ok)");
   const fmtReq = (n: number) => (n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? (n / 1e3).toFixed(1) + "K" : Math.round(n).toString());
   const fmtBlock = (n: number) => n.toLocaleString("en-US");
   const PAGE = 8;
@@ -54,7 +54,7 @@ export function PMRoster({ rows, activeName, onSelect, timeWindow }: {
       hasData: v.requests > 0,
       qosVal,
       natural: i,
-      provider: v.endpointId.toLowerCase(),
+      upstream: v.endpointId.toLowerCase(),
       chain: meta.name.toLowerCase(),
       block: v.latestBlock ?? -1,
       requests: v.requests || 0,
@@ -74,15 +74,15 @@ export function PMRoster({ rows, activeName, onSelect, timeWindow }: {
   return (
     <div className="gw-card" style={{ padding: 0, overflow: "hidden", marginBottom: 18 }}>
       <div style={{ padding: "11px 14px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 6 }}>
-        <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-2)" }}>All providers</span>
-        <Tip text="Every provider × chain you've configured. Uptime reflects the time window selected above. Click a row to drill into its full metrics below." />
+        <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-2)" }}>All upstreams</span>
+        <Tip text="Every upstream × chain you've configured. Uptime reflects the time window selected above. Click a row to drill into its full metrics below." />
         <div style={{ flex: 1 }} />
-        <span style={{ fontSize: 11, color: "var(--text-3)" }}>{rows.length} provider{rows.length === 1 ? "" : "s"} · uptime over {timeWindow}</span>
+        <span style={{ fontSize: 11, color: "var(--text-3)" }}>{rows.length} upstream{rows.length === 1 ? "" : "s"} · uptime over {timeWindow}</span>
       </div>
       <table className="gw-table">
         <thead>
           <tr>
-            <ThCol sortKey="provider" sort={sort} onSort={onSort}>Provider</ThCol>
+            <ThCol sortKey="upstream" sort={sort} onSort={onSort}>Upstream</ThCol>
             <ThCol sortKey="chain" sort={sort} onSort={onSort}>Chain</ThCol>
             <ThCol align="right" sortKey="block" sort={sort} onSort={onSort}>Latest block</ThCol>
             <ThCol align="right" sortKey="requests" sort={sort} onSort={onSort}>Total requests</ThCol>
@@ -136,7 +136,7 @@ export function PMRoster({ rows, activeName, onSelect, timeWindow }: {
             );
           })}
           {rows.length === 0 && (
-            <tr><td colSpan={8} style={{ padding: "24px 16px", textAlign: "center", color: "var(--text-4)", fontSize: 13 }}>No providers configured yet.</td></tr>
+            <tr><td colSpan={8} style={{ padding: "24px 16px", textAlign: "center", color: "var(--text-4)", fontSize: 13 }}>No upstreams configured yet.</td></tr>
           )}
         </tbody>
       </table>
@@ -155,5 +155,5 @@ export function PMRoster({ rows, activeName, onSelect, timeWindow }: {
 /** Keep the roster reusable without its own fetch; the tab supplies rows. */
 export function usePMRosterData(timeWindow: MetricWindow, chainFilter: string | null) {
   const specQ = chainFilter ? `&spec=${encodeURIComponent(chainFilter)}` : "";
-  return useApi<{ providers: ProviderMetrics[] }>(`/api/metrics/providers?window=${timeWindow}${specQ}`);
+  return useApi<{ upstreams: UpstreamMetrics[] }>(`/api/metrics/upstreams?window=${timeWindow}${specQ}`);
 }

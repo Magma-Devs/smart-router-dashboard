@@ -1,16 +1,16 @@
 "use client";
 
-/* PMErrorCodes + PMRecentErrors — the per-provider error-code list and the
+/* PMErrorCodes + PMRecentErrors — the per-upstream error-code list and the
  * "Recent errors" modal. Ported verbatim from the design prototype
- * (page-provider-metrics.jsx). Live: /api/metrics/provider-detail returns
+ * (page-provider-metrics.jsx). Live: /api/metrics/upstream-detail returns
  * errorsByCode/recentErrors EMPTY with emitted:false until the router emits
  * labelled error counters — both render the design's own empty branches. */
 
-import type { ProviderErrorCode, ProviderRecentError } from "@sr/shared";
+import type { UpstreamErrorCode, UpstreamRecentError } from "@sr/shared";
 import { Modal } from "@/components/gateway/Modal";
 import { fmtComma } from "@/lib/format";
 
-export function PMErrorCodes({ codes }: { codes: ProviderErrorCode[] }) {
+export function PMErrorCodes({ codes }: { codes: UpstreamErrorCode[] }) {
   const errs = [...codes].sort((a, b) => b.count - a.count);
   const total = errs.reduce((s, e) => s + e.count, 0);
   if (!errs.length) return <div style={{ fontSize: 12, color: "var(--text-4)", padding: "2px 0" }}>No errors recorded this window.</div>;
@@ -60,7 +60,7 @@ function agoFromIso(at: string): string {
 export function PMRecentErrors({ name, chainName, rows, open, onClose }: {
   name: string;
   chainName: string;
-  rows: ProviderRecentError[];
+  rows: UpstreamRecentError[];
   open: boolean;
   onClose: () => void;
 }) {

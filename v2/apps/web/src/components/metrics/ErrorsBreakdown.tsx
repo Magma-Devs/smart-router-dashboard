@@ -67,7 +67,7 @@ export function ErrorsBreakdown({ chainFilter, win }: { chainFilter: string | nu
 
   const hotspots = [...(data?.hotspots ?? [])].sort((a, b) => (b.errorRate ?? -1) - (a.errorRate ?? -1));
   const total = data?.total ?? 0;
-  const keyOf = (h: { spec: string; provider: string }) => h.spec + "·" + h.provider;
+  const keyOf = (h: { spec: string; upstream: string }) => h.spec + "·" + h.upstream;
   // The design auto-opens the first hotspot; `undefined` = untouched state.
   const effectiveOpen = openId === undefined ? (hotspots[0] ? keyOf(hotspots[0]) : null) : openId;
 
@@ -78,7 +78,7 @@ export function ErrorsBreakdown({ chainFilter, win }: { chainFilter: string | nu
         <div>
           <div style={{ fontSize: 15, fontWeight: 600, letterSpacing: "-0.01em" }}>Errors</div>
           <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 3 }}>
-            <span className="gw-mono gw-tnum" style={{ fontWeight: 700, color: "var(--text)" }}>{fmtComma(total)}</span>{" "}errors this window, across <span className="gw-mono gw-tnum">{hotspots.length}</span> chain · provider pair{hotspots.length === 1 ? "" : "s"}
+            <span className="gw-mono gw-tnum" style={{ fontWeight: 700, color: "var(--text)" }}>{fmtComma(total)}</span>{" "}errors this window, across <span className="gw-mono gw-tnum">{hotspots.length}</span> chain · upstream pair{hotspots.length === 1 ? "" : "s"}
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>

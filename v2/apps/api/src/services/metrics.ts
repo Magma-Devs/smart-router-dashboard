@@ -28,7 +28,7 @@ import {
   type MethodClassTotals,
   type MethodUsage,
   type MetricWindow,
-  type ProviderMetrics,
+  type UpstreamMetrics,
   type ScoreType,
   type TimeSeries,
 } from "@sr/shared";
@@ -94,7 +94,7 @@ export class MetricsService {
       this.familyPresent(OPTIONAL_METRICS.cacheTotalHits),
     ]);
 
-    const [requestsServed, successRate, p95, stale, specs, providers, healthGauge] =
+    const [requestsServed, successRate, p95, stale, specs, upstreams, healthGauge] =
       await Promise.all([
         kpi(qRequestsTotal(undefined, window), qRequestsTotal(undefined, window, r)),
         kpi(qAvailability(undefined, window), qAvailability(undefined, window, r)),
@@ -130,7 +130,7 @@ export class MetricsService {
       staleCaught: stale,
       retriesRecovered,
       cacheOffloadPct,
-      providerCount: providers.length,
+      upstreamCount: upstreams.length,
       chainCount: specs.length,
       health: health(healthGauge),
       emitted: { retries: retriesPresent, cache: cachePresent },
@@ -217,10 +217,10 @@ export class MetricsService {
       end,
       win.step,
     );
-    const perProviderSeries = provMatrix
+    const perUpstreamSeries = provMatrix
       .filter((m) => m.metric.provider_address)
       .map((m) => ({
-        provider: m.metric.provider_address ?? "",
+        upstream: m.metric.provider_address ?? "",
         points: toPoints(m.values),
       }));
 
@@ -285,7 +285,7 @@ export class MetricsService {
         p99: toPoints(latP99[0]?.values),
       },
       latencyDistribution,
-      perProviderSeries,
+      perUpstreamSeries,
       errorLayers,
       perChainLatency,
       activeRoutes,
@@ -323,7 +323,7 @@ export class MetricsService {
 
   private async chainRow(spec: string, window: MetricWindow): Promise<ChainMetrics> {
     const meta = buildChainMetaByIndex(spec);
-    const [requests, availability, errorRate, p95, qos, healthGauge, latestBlock, providers] =
+    const [requests, availability, errorRate, p95, qos, healthGauge, latestBlock, upstreams] =
       await Promise.all([
         this.prom.scalar(qRequestsTotal(spec, window)),
         this.prom.scalar(qAvailability(spec, window)),
@@ -350,11 +350,11 @@ export class MetricsService {
       qos,
       health: health(healthGauge),
       latestBlock,
-      providerCount: providers.length,
+      upstreamCount: upstreams.length,
     };
   }
 
-  async providers(spec: string | undefined, window: MetricWindow): Promise<ProviderMetrics[]> {
+  async upstreams(spec: string | undefined, window: MetricWindow): Promise<UpstreamMetrics[]> {
     const sel = selector({ spec });
     const r = rangeFor(window);
 
@@ -393,8 +393,8 @@ export class MetricsService {
       ? this.configSvc.getRouters().some((rt) => rt.localPort === null && rt.nodes.length > 0)
       : false;
 
-    const byId = new Map<string, ProviderMetrics>();
-    const ensure = (endpointId: string, specLabel: string): ProviderMetrics => {
+    const byId = new Map<string, UpstreamMetrics>();
+    const ensure = (endpointId: string, specLabel: string): UpstreamMetrics => {
       let row = byId.get(endpointId);
       if (!row) {
         const cfg = roleByName.get(endpointId);

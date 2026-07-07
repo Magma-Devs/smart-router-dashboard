@@ -12,23 +12,23 @@ import { useEffect, useMemo, useState } from "react";
 import {
   CHAIN_IFACES,
   IFACE_LABEL,
-  PROVIDER_CATALOG,
+  UPSTREAM_CATALOG,
   isEvmSpec,
   parseJwtExpiry,
   specToDesignChainId,
-  type ProviderCatalogEntry,
-} from "@/components/providers/catalog";
+  type UpstreamCatalogEntry,
+} from "@/components/upstreams/catalog";
 import {
   EncNote,
   FE,
   FL,
   Hint,
-  ProviderIdentityRow,
+  UpstreamIdentityRow,
   SecretInput,
   UrlParserPreview,
   type LiveChain,
-} from "@/components/providers/bits";
-import { ProviderLogo } from "@/components/providers/ProviderLogo";
+} from "@/components/upstreams/bits";
+import { UpstreamLogo } from "@/components/upstreams/UpstreamLogo";
 
 /** Credential-form payload (the design's onSubmit object shapes, unified). */
 export interface CredData {
@@ -55,7 +55,7 @@ export interface Caps { archive: boolean; debug: boolean; trace: boolean }
    ADD SHEET — Step 3A (account API key)
 ───────────────────────────────────────────── */
 export function StepConfigureA({ catalog, onSubmit, onSwitchJwt }: {
-  catalog: ProviderCatalogEntry;
+  catalog: UpstreamCatalogEntry;
   onSubmit: (d: CredData) => void;
   onSwitchJwt: () => void;
 }) {
@@ -70,7 +70,7 @@ export function StepConfigureA({ catalog, onSubmit, onSwitchJwt }: {
   };
   return (
     <div style={{ display: "grid", gap: 16 }}>
-      <ProviderIdentityRow catalog={catalog} sub="Account API key · Step 3 of 3" />
+      <UpstreamIdentityRow catalog={catalog} sub="Account API key · Step 3 of 3" />
       <div>
         <FL>Display name <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>(optional)</span></FL>
         <input className="gw-input" value={name} onChange={(e) => setName(e.target.value)} maxLength={60} />
@@ -96,7 +96,7 @@ export function StepConfigureA({ catalog, onSubmit, onSwitchJwt }: {
    ADD SHEET — Step 3B (paste endpoint URLs)
 ───────────────────────────────────────────── */
 export function StepConfigureB({ catalog, onSubmit, onBack }: {
-  catalog: ProviderCatalogEntry;
+  catalog: UpstreamCatalogEntry;
   onSubmit: (d: CredData) => void;
   onBack: () => void;
 }) {
@@ -107,9 +107,9 @@ export function StepConfigureB({ catalog, onSubmit, onBack }: {
   const [hVal, setHVal] = useState("");
   const [errors, setE] = useState<{ raw?: string }>({});
   const valid = raw.split("\n").map((u) => u.trim()).filter((u) => u.startsWith("https://") || u.startsWith("wss://"));
-  const altProvider = useMemo(() => {
-    const u = raw.split("\n").find((line) => { const a = PROVIDER_CATALOG.find((p) => p.domainPattern && p.domainPattern.test(line)); return a && a.id !== catalog.id; });
-    return u ? PROVIDER_CATALOG.find((p) => p.domainPattern && p.domainPattern.test(u)) : null;
+  const altUpstream = useMemo(() => {
+    const u = raw.split("\n").find((line) => { const a = UPSTREAM_CATALOG.find((p) => p.domainPattern && p.domainPattern.test(line)); return a && a.id !== catalog.id; });
+    return u ? UPSTREAM_CATALOG.find((p) => p.domainPattern && p.domainPattern.test(u)) : null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [raw]);
   const validate = () => {
@@ -119,7 +119,7 @@ export function StepConfigureB({ catalog, onSubmit, onBack }: {
   };
   return (
     <div style={{ display: "grid", gap: 16 }}>
-      <ProviderIdentityRow catalog={catalog} sub="Endpoint URLs · Step 3 of 3" />
+      <UpstreamIdentityRow catalog={catalog} sub="Endpoint URLs · Step 3 of 3" />
       <div>
         <FL>Display name <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>(optional)</span></FL>
         <input className="gw-input" value={name} onChange={(e) => setName(e.target.value)} maxLength={60} />
@@ -129,7 +129,7 @@ export function StepConfigureB({ catalog, onSubmit, onBack }: {
         <textarea className="gw-input gw-mono" rows={5} value={raw} onChange={(e) => setRaw(e.target.value)}
           placeholder={"https://your-endpoint.quiknode.pro/abc123/\nhttps://your-endpoint-2.quiknode.pro/def456/"} style={{ fontSize: 11, resize: "vertical" }} />
         <FE msg={errors.raw} />
-        {altProvider && <Hint type="warn">Looks like a <strong>{altProvider.name}</strong> endpoint — <button onClick={onBack} style={{ border: "none", background: "none", color: "var(--brand)", cursor: "pointer", padding: 0, fontSize: 12, fontWeight: 600, fontFamily: "inherit" }}>use that preset instead</button>.</Hint>}
+        {altUpstream && <Hint type="warn">Looks like a <strong>{altUpstream.name}</strong> endpoint — <button onClick={onBack} style={{ border: "none", background: "none", color: "var(--brand)", cursor: "pointer", padding: 0, fontSize: 12, fontWeight: 600, fontFamily: "inherit" }}>use that preset instead</button>.</Hint>}
         <UrlParserPreview urls={raw.split("\n")} catalog={catalog} />
       </div>
       <div>
@@ -161,7 +161,7 @@ export function StepCustomUrl({ chains, onSubmit }: { chains: LiveChain[]; onSub
   const [hName, setHName] = useState("x-api-key");
   const [hVal, setHVal] = useState("");
   const [errors, setE] = useState<{ name?: string; url?: string }>({});
-  const knownProvider = useMemo(() => PROVIDER_CATALOG.find((p) => p.domainPattern && p.domainPattern.test(url)), [url]);
+  const knownUpstream = useMemo(() => UPSTREAM_CATALOG.find((p) => p.domainPattern && p.domainPattern.test(url)), [url]);
   const looksPrivate = useMemo(() => /^https?:\/\/(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|localhost|127\.|.*\.internal\b|.*\.lan\b)/.test(url), [url]);
   const validate = () => {
     const e: { name?: string; url?: string } = {};
@@ -188,8 +188,8 @@ export function StepCustomUrl({ chains, onSubmit }: { chains: LiveChain[]; onSub
       <div><FL>Endpoint URL <span style={{ color: "var(--err)" }}>*</span></FL>
         <input className="gw-input gw-mono" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://your-node.example.com/rpc" style={{ fontSize: 12 }} />
         <FE msg={errors.url} />
-        {knownProvider && <Hint type="warn">Looks like <strong>{knownProvider.name}</strong> — you can use that preset for easier setup.</Hint>}
-        {looksPrivate && !knownProvider && <Hint type="info">This looks like a private node — make sure it&apos;s reachable from our routing layer.</Hint>}
+        {knownUpstream && <Hint type="warn">Looks like <strong>{knownUpstream.name}</strong> — you can use that preset for easier setup.</Hint>}
+        {looksPrivate && !knownUpstream && <Hint type="info">This looks like a private node — make sure it&apos;s reachable from our routing layer.</Hint>}
       </div>
       <div><FL>Chain <span style={{ color: "var(--err)" }}>*</span></FL>
         <select className="gw-input" value={chainId} onChange={(e) => setChainId(e.target.value)} style={{ fontSize: 13 }}>
@@ -218,7 +218,7 @@ export function StepCustomUrl({ chains, onSubmit }: { chains: LiveChain[]; onSub
    ADD SHEET — JWT flow
 ───────────────────────────────────────────── */
 export function StepJwt({ catalog, chains, onSubmit }: {
-  catalog: ProviderCatalogEntry | null;
+  catalog: UpstreamCatalogEntry | null;
   chains: LiveChain[];
   onSubmit: (d: CredData) => void;
 }) {
@@ -258,7 +258,7 @@ export function StepJwt({ catalog, chains, onSubmit }: {
     <div style={{ display: "grid", gap: 16 }}>
       <div style={{ display: "flex", gap: 12, alignItems: "center", padding: "12px 14px", borderRadius: 10, background: "var(--bg)", border: "1px solid var(--line)" }}>
         {catalog
-          ? <ProviderLogo id={catalog.id} size={36} />
+          ? <UpstreamLogo id={catalog.id} size={36} />
           : <div style={{ width: 36, height: 36, borderRadius: 9, background: "var(--surface-2)", border: "1px solid var(--line-2)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-2)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/></svg>
             </div>
@@ -273,7 +273,7 @@ export function StepJwt({ catalog, chains, onSubmit }: {
         <input className="gw-input" value={name} onChange={(e) => setName(e.target.value)} maxLength={60} /><FE msg={errors.name} />
       </div>
       <div><FL>Endpoint URL <span style={{ color: "var(--err)" }}>*</span></FL>
-        <input className="gw-input gw-mono" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://your-provider.example.com/rpc" style={{ fontSize: 12 }} /><FE msg={errors.url} />
+        <input className="gw-input gw-mono" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://your-upstream.example.com/rpc" style={{ fontSize: 12 }} /><FE msg={errors.url} />
       </div>
       <div><FL>Chain</FL>
         <select className="gw-input" value={chainId} onChange={(e) => setCh(e.target.value)} style={{ fontSize: 13 }}>

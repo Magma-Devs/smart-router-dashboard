@@ -1,18 +1,18 @@
 "use client";
 
-/* ProviderMetricsTab — the Providers tab: roster of every provider + the
- * selected provider's at-a-glance cards and deep-dive body. Ported verbatim
+/* UpstreamMetricsTab — the Upstreams tab: roster of every upstream + the
+ * selected upstream's at-a-glance cards and deep-dive body. Ported verbatim
  * from the design prototype (page-provider-metrics.jsx ProviderMetricsTab).
- * Live data: /api/metrics/providers (roster) + /api/metrics/provider-detail
- * (fetched when a provider is selected). Honest-state notes:
+ * Live data: /api/metrics/upstreams (roster) + /api/metrics/upstream-detail
+ * (fetched when an upstream is selected). Honest-state notes:
  *  - the design derived p50/p99 from p95×0.55/×1.85 — live uses the REAL
- *    histogram quantiles from provider-detail ("—" while loading);
+ *    histogram quantiles from upstream-detail ("—" while loading);
  *  - the 1h/24h/7d availability mini-boxes only have a live value for the
  *    currently-selected window; the other boxes render "—" (no refetch fan-out);
  *  - the mock's "last probe 12s ago" has no backing metric and is dropped. */
 
 import { useEffect, useState } from "react";
-import { buildChainMetaByIndex, WINDOWS, type MetricWindow, type ProviderDetail } from "@sr/shared";
+import { buildChainMetaByIndex, WINDOWS, type MetricWindow, type UpstreamDetail } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { fmtNum } from "@/lib/format";
 import { PMRoster, usePMRosterData } from "./PMRoster";
@@ -20,15 +20,15 @@ import { PMStat, PMNoVal } from "./PMPanel";
 import { PMEmpty } from "./PMEmpty";
 import { PMBody } from "./PMBody";
 
-export function ProviderMetricsTab({ timeWindow, chainFilter }: {
+export function UpstreamMetricsTab({ timeWindow, chainFilter }: {
   timeWindow: MetricWindow;
   chainFilter: string | null;
 }) {
   const rosterRes = usePMRosterData(timeWindow, chainFilter);
-  const entries = rosterRes.data?.providers ?? [];
+  const entries = rosterRes.data?.upstreams ?? [];
 
   const [provName, setProvName] = useState<string | null>(null);
-  // jump the deep-dive to the first provider on the filtered chain
+  // jump the deep-dive to the first upstream on the filtered chain
   useEffect(() => { setProvName(null); }, [chainFilter]);
 
   const visible = entries;
@@ -36,8 +36,8 @@ export function ProviderMetricsTab({ timeWindow, chainFilter }: {
   const activeName = selValid ? provName : (visible[0]?.endpointId ?? null);
   const pm = activeName ? visible.find((e) => e.endpointId === activeName) ?? null : null;
 
-  const detailRes = useApi<ProviderDetail>(
-    activeName ? `/api/metrics/provider-detail?endpointId=${encodeURIComponent(activeName)}&window=${timeWindow}` : null,
+  const detailRes = useApi<UpstreamDetail>(
+    activeName ? `/api/metrics/upstream-detail?endpointId=${encodeURIComponent(activeName)}&window=${timeWindow}` : null,
   );
   const detail = detailRes.data;
 
@@ -53,12 +53,12 @@ export function ProviderMetricsTab({ timeWindow, chainFilter }: {
 
   return (
     <div>
-      {/* ── roster of every provider — click a row to drill in below ── */}
+      {/* ── roster of every upstream — click a row to drill in below ── */}
       <PMRoster rows={visible} activeName={activeName} onSelect={setProvName} timeWindow={timeWindow} />
 
       {pm && activeName && (
         <>
-          {/* ── selected-provider deep dive ── */}
+          {/* ── selected-upstream deep dive ── */}
           <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "4px 0 14px" }}>
             <span style={{ width: 9, height: 9, borderRadius: 2, background: buildChainMetaByIndex(pm.spec).color || "#888", flexShrink: 0 }} />
             <span style={{ fontSize: 14, fontWeight: 700 }}>{activeName}</span>
@@ -110,7 +110,7 @@ export function ProviderMetricsTab({ timeWindow, chainFilter }: {
               ) : <PMNoVal />}
             </PMStat>
 
-            <PMStat label="Latency" tip={"Typical response time for this provider.\n\nThe large figure is the **median** (≈ the average request); **p95 / p99** are the tail percentiles."}>
+            <PMStat label="Latency" tip={"Typical response time for this upstream.\n\nThe large figure is the **median** (≈ the average request); **p95 / p99** are the tail percentiles."}>
               {hasData ? (
                 <>
                   <div className="gw-mono gw-tnum" style={{ fontSize: 26, fontWeight: 700, lineHeight: 1 }}>{detail?.p50Ms != null ? Math.round(detail.p50Ms) : "—"}<span style={{ fontSize: 13, color: "var(--text-3)", fontWeight: 500 }}> ms</span></div>
@@ -123,7 +123,7 @@ export function ProviderMetricsTab({ timeWindow, chainFilter }: {
               ) : <PMNoVal />}
             </PMStat>
 
-            <PMStat label="Error rate" tip="Share of requests to this provider that **failed before** Smart Router retried or failed over.">
+            <PMStat label="Error rate" tip="Share of requests to this upstream that **failed before** Smart Router retried or failed over.">
               {hasData ? (
                 <>
                   <div className="gw-mono gw-tnum" style={{ fontSize: 26, fontWeight: 700, lineHeight: 1, color: errPct == null ? "var(--text-4)" : errPct < 0.5 ? "var(--ok)" : errPct < 1.5 ? "var(--warn)" : "var(--err)" }}>{errPct != null ? errPct.toFixed(2) + "%" : "—"}</div>

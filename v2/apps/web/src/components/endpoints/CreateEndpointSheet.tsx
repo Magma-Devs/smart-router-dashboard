@@ -1,9 +1,9 @@
 "use client";
 
 /* Create endpoint sheet — the design's multi-step wizard (page-endpoints.jsx
- * CreateEndpointSheet: Chain → Interface → Providers → JWT). SELF-HOSTED:
+ * CreateEndpointSheet: Chain → Interface → Upstreams → JWT). SELF-HOSTED:
  * the full wizard chrome renders over LIVE config data (chains = the mounted
- * routers, providers = the config nodes), but "Create endpoint" is disabled —
+ * routers, upstreams = the config nodes), but "Create endpoint" is disabled —
  * the config is a read-only mount. The JWT reveal step is never reached and
  * no token is ever fabricated (the design's genJwt is deliberately not
  * ported). */
@@ -12,8 +12,8 @@ import { useEffect, useMemo, useState } from "react";
 import type { RouterTopology } from "@sr/shared";
 import { buildChainMetaByIndex } from "@sr/shared";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
-import { Hint } from "@/components/providers/bits";
-import { READONLY_MSG, type ProviderRow } from "@/components/providers/catalog";
+import { Hint } from "@/components/upstreams/bits";
+import { READONLY_MSG, type UpstreamRow } from "@/components/upstreams/catalog";
 import {
   EpStepBar,
   IFACES_DEF,
@@ -21,17 +21,17 @@ import {
   type EndpointRowModel,
 } from "@/components/endpoints/bits";
 
-export function CreateEndpointSheet({ open, onClose, routers, providers, existing }: {
+export function CreateEndpointSheet({ open, onClose, routers, upstreams, existing }: {
   open: boolean;
   onClose: () => void;
   routers: RouterTopology[];
-  providers: ProviderRow[];
+  upstreams: UpstreamRow[];
   existing: EndpointRowModel[];
 }) {
   const [step, setStep] = useState(1);
   const [chain, setChain] = useState<string | null>(null);
   const [iface, setIface] = useState("jsonrpc");
-  const [selProviders, setSelProviders] = useState<string[] | null>(null); // null = not yet initialised
+  const [selUpstreams, setSelUpstreams] = useState<string[] | null>(null); // null = not yet initialised
 
   /* Chains covered by the mounted config. */
   const availableChains = useMemo(() => {
@@ -47,30 +47,30 @@ export function CreateEndpointSheet({ open, onClose, routers, providers, existin
 
   const cfgIface = configIfaceForTag(iface);
 
-  /* All providers compatible with the selected interface.
+  /* All upstreams compatible with the selected interface.
      No chain filter — user picks from everything they have connected. */
-  const chainProviders = useMemo(() => {
-    return providers.filter((p) => !p.interfaces.length || p.interfaces.includes(cfgIface));
-  }, [providers, cfgIface]);
+  const chainUpstreams = useMemo(() => {
+    return upstreams.filter((p) => !p.interfaces.length || p.interfaces.includes(cfgIface));
+  }, [upstreams, cfgIface]);
 
   useEffect(() => {
     if (open) {
       setStep(1);
       setChain(null);
       setIface("jsonrpc");
-      setSelProviders(null);
+      setSelUpstreams(null);
     }
   }, [open]);
 
-  /* When chain or chainProviders change, reset selections */
+  /* When chain or chainUpstreams change, reset selections */
   useEffect(() => {
-    setSelProviders(chainProviders.map((p) => p.id));
-  }, [chainProviders]);
+    setSelUpstreams(chainUpstreams.map((p) => p.id));
+  }, [chainUpstreams]);
 
-  const toggleProvider = (id: string) =>
-    setSelProviders((prev) => (prev ?? []).includes(id) ? (prev ?? []).filter((x) => x !== id) : [...(prev ?? []), id]);
+  const toggleUpstream = (id: string) =>
+    setSelUpstreams((prev) => (prev ?? []).includes(id) ? (prev ?? []).filter((x) => x !== id) : [...(prev ?? []), id]);
 
-  const stepLabels = ["Chain", "Interface", "Providers", "JWT"];
+  const stepLabels = ["Chain", "Interface", "Upstreams", "JWT"];
   const conflict = !!chain && existing.some((e) => e.spec === chain && e.iface === cfgIface);
   const hostPreview = (() => {
     if (!chain) return "—";
@@ -90,7 +90,7 @@ export function CreateEndpointSheet({ open, onClose, routers, providers, existin
           <div>
             <p className="gw-sheet__title">New endpoint</p>
             <p className="gw-sheet__sub">
-              Stable local URL served by your configured providers.
+              Stable local URL served by your configured upstreams.
             </p>
           </div>
           <button className="gw-btn gw-btn--ghost" style={{ padding: 5 }} onClick={onClose}>
@@ -172,37 +172,37 @@ export function CreateEndpointSheet({ open, onClose, routers, providers, existin
             </div>
           )}
 
-          {/* Step 3 — Providers */}
+          {/* Step 3 — Upstreams */}
           {step === 3 && (
             <div style={{ display: "grid", gap: 10 }}>
               {/* Select all / deselect all */}
-              {chainProviders.length > 0 && (
+              {chainUpstreams.length > 0 && (
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                   <span style={{ fontSize: 12, color: "var(--text-3)" }}>
-                    {(selProviders || []).length} of {chainProviders.length} selected
+                    {(selUpstreams || []).length} of {chainUpstreams.length} selected
                   </span>
                   <div style={{ display: "flex", gap: 8 }}>
                     <button className="gw-btn" style={{ fontSize: 11, padding: "3px 9px" }}
-                      onClick={() => setSelProviders(chainProviders.map((p) => p.id))}>
+                      onClick={() => setSelUpstreams(chainUpstreams.map((p) => p.id))}>
                       Select all
                     </button>
                     <button className="gw-btn" style={{ fontSize: 11, padding: "3px 9px" }}
-                      onClick={() => setSelProviders([])}>
+                      onClick={() => setSelUpstreams([])}>
                       Deselect all
                     </button>
                   </div>
                 </div>
               )}
-              {chainProviders.length === 0 ? (
+              {chainUpstreams.length === 0 ? (
                 <div style={{ padding: "16px", borderRadius: 9, background: "var(--bg)", border: "1px solid var(--line)", textAlign: "center" }}>
-                  <div style={{ fontSize: 13, color: "var(--text-3)", marginBottom: 6 }}>No providers for {chain ? buildChainMetaByIndex(chain).name : "this chain"} support {cfgIface}.</div>
-                  <div style={{ fontSize: 11, color: "var(--text-4)" }}>Add a compatible provider on the Providers page first.</div>
+                  <div style={{ fontSize: 13, color: "var(--text-3)", marginBottom: 6 }}>No upstreams for {chain ? buildChainMetaByIndex(chain).name : "this chain"} support {cfgIface}.</div>
+                  <div style={{ fontSize: 11, color: "var(--text-4)" }}>Add a compatible upstream on the Upstreams page first.</div>
                 </div>
               ) : (
-                chainProviders.map((pv) => {
-                  const on = (selProviders || []).includes(pv.id);
+                chainUpstreams.map((pv) => {
+                  const on = (selUpstreams || []).includes(pv.id);
                   return (
-                    <button key={pv.id} onClick={() => toggleProvider(pv.id)} style={{
+                    <button key={pv.id} onClick={() => toggleUpstream(pv.id)} style={{
                       display: "flex", alignItems: "center", gap: 12, padding: "11px 14px",
                       borderRadius: 9, cursor: "pointer", fontFamily: "inherit", textAlign: "left", width: "100%",
                       border: "1px solid " + (on ? "rgba(255,57,0,0.3)" : "var(--line)"),

@@ -2,17 +2,17 @@
 
 /* Small shared components — ported verbatim from the design prototype
  * (page-providers.jsx): StatusDot, EyeIcon, SecretInput, FL, FE, Hint,
- * EncNote, KebabMenu, UrlParserPreview, ProviderIdentityRow, SheetStepBar. */
+ * EncNote, KebabMenu, UrlParserPreview, UpstreamIdentityRow, SheetStepBar. */
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { labelStyle } from "@/lib/styles";
-import { ProviderLogo } from "@/components/providers/ProviderLogo";
+import { UpstreamLogo } from "@/components/upstreams/UpstreamLogo";
 import {
-  PROVIDER_CATALOG,
+  UPSTREAM_CATALOG,
   designChainById,
   parseUrlChain,
-  type ProviderCatalogEntry,
-} from "@/components/providers/catalog";
+  type UpstreamCatalogEntry,
+} from "@/components/upstreams/catalog";
 
 export const pvStatLabel: CSSProperties = { fontSize: 9, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600 };
 
@@ -154,28 +154,28 @@ export function KebabMenu({ items }: { items: KebabItem[] }) {
 /* ─────────────────────────────────────────────
    URL parser preview (for multi-URL flow)
 ───────────────────────────────────────────── */
-export function UrlParserPreview({ urls, catalog }: { urls: string[]; catalog?: ProviderCatalogEntry | null }) {
+export function UrlParserPreview({ urls, catalog }: { urls: string[]; catalog?: UpstreamCatalogEntry | null }) {
   const rows = urls.filter((u) => u.trim()).map((url) => {
     const chain = parseUrlChain(url);
-    const wrongProvider = !!(catalog?.domainPattern && url.startsWith("https") && !catalog.domainPattern.test(url));
-    const altProvider = wrongProvider ? PROVIDER_CATALOG.find((p) => p.domainPattern && p.domainPattern.test(url)) : null;
-    return { url, chain, wrongProvider, altProvider };
+    const wrongUpstream = !!(catalog?.domainPattern && url.startsWith("https") && !catalog.domainPattern.test(url));
+    const altUpstream = wrongUpstream ? UPSTREAM_CATALOG.find((p) => p.domainPattern && p.domainPattern.test(url)) : null;
+    return { url, chain, wrongUpstream, altUpstream };
   });
   if (!rows.length) return null;
   return (
     <div className="gw-url-preview" style={{ marginTop: 8 }}>
       {rows.map((row, i) => (
         <div key={i} className="gw-url-preview-row" style={{
-          borderColor: row.wrongProvider ? "rgba(239,68,68,0.2)" : row.chain ? "rgba(34,197,94,0.15)" : "rgba(245,158,11,0.2)",
-          background:  row.wrongProvider ? "rgba(239,68,68,0.04)" : row.chain ? "rgba(34,197,94,0.04)" : "rgba(245,158,11,0.04)",
+          borderColor: row.wrongUpstream ? "rgba(239,68,68,0.2)" : row.chain ? "rgba(34,197,94,0.15)" : "rgba(245,158,11,0.2)",
+          background:  row.wrongUpstream ? "rgba(239,68,68,0.04)" : row.chain ? "rgba(34,197,94,0.04)" : "rgba(245,158,11,0.04)",
         }}>
-          <span style={{ fontSize: 13, flexShrink: 0 }}>{row.wrongProvider ? "⚠" : row.chain ? "✓" : "?"}</span>
+          <span style={{ fontSize: 13, flexShrink: 0 }}>{row.wrongUpstream ? "⚠" : row.chain ? "✓" : "?"}</span>
           <span className="gw-mono" style={{ fontSize: 10, color: "var(--text-3)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {row.url.length > 54 ? row.url.slice(0, 54) + "…" : row.url}
           </span>
           {row.chain && <span style={{ fontSize: 10, fontWeight: 600, color: designChainById(row.chain)?.color || "var(--ok)", flexShrink: 0 }}>{designChainById(row.chain)?.name}</span>}
-          {!row.chain && !row.wrongProvider && <span style={{ fontSize: 10, color: "var(--warn)", flexShrink: 0 }}>chain unknown</span>}
-          {row.wrongProvider && row.altProvider && <span style={{ fontSize: 10, color: "var(--err)", flexShrink: 0 }}>looks like {row.altProvider.name}</span>}
+          {!row.chain && !row.wrongUpstream && <span style={{ fontSize: 10, color: "var(--warn)", flexShrink: 0 }}>chain unknown</span>}
+          {row.wrongUpstream && row.altUpstream && <span style={{ fontSize: 10, color: "var(--err)", flexShrink: 0 }}>looks like {row.altUpstream.name}</span>}
         </div>
       ))}
     </div>
@@ -183,12 +183,12 @@ export function UrlParserPreview({ urls, catalog }: { urls: string[]; catalog?: 
 }
 
 /* ─────────────────────────────────────────────
-   Provider identity row (shared in forms)
+   Upstream identity row (shared in forms)
 ───────────────────────────────────────────── */
-export function ProviderIdentityRow({ catalog, sub }: { catalog: ProviderCatalogEntry; sub: React.ReactNode }) {
+export function UpstreamIdentityRow({ catalog, sub }: { catalog: UpstreamCatalogEntry; sub: React.ReactNode }) {
   return (
     <div style={{ display: "flex", gap: 12, alignItems: "center", padding: "12px 14px", borderRadius: 10, background: "var(--bg)", border: "1px solid var(--line)" }}>
-      <ProviderLogo id={catalog.id} size={36} />
+      <UpstreamLogo id={catalog.id} size={36} />
       <div>
         <div style={{ fontSize: 13, fontWeight: 600 }}>{catalog.name}</div>
         <div style={{ fontSize: 11, color: "var(--text-3)" }}>{sub}</div>

@@ -5,23 +5,23 @@
  * Step1EntryType + StepPickPreset). */
 
 import { useState } from "react";
-import { ProviderLogo } from "@/components/providers/ProviderLogo";
-import { PROVIDER_CATALOG, type ProviderCatalogEntry } from "@/components/providers/catalog";
+import { UpstreamLogo } from "@/components/upstreams/UpstreamLogo";
+import { UPSTREAM_CATALOG, type UpstreamCatalogEntry } from "@/components/upstreams/catalog";
 
-export type EntryType = "PROVIDER" | "URL" | "JWT";
+export type EntryType = "UPSTREAM" | "URL" | "JWT";
 
 export function Step1EntryType({ onPick }: { onPick: (t: EntryType) => void }) {
   const items: { id: EntryType; icon: React.ReactNode; label: string; caption: string }[] = [
     {
-      id: "PROVIDER",
+      id: "UPSTREAM",
       icon: (
         <div style={{ display: "flex", gap: 3, flexWrap: "wrap", width: 44, justifyContent: "center" }}>
           {(["alchemy", "infura", "quicknode", "ankr"] as const).map((id) => (
-            <ProviderLogo key={id} id={id} size={16} />
+            <UpstreamLogo key={id} id={id} size={16} />
           ))}
         </div>
       ),
-      label: "Provider preset",
+      label: "Upstream preset",
       caption: "Alchemy, Infura, QuickNode and more — paste your API key and you're done.",
     },
     {
@@ -33,7 +33,7 @@ export function Step1EntryType({ onPick }: { onPick: (t: EntryType) => void }) {
         </svg>
       ),
       label: "Custom URL",
-      caption: "Your own node, a private cluster, or any provider not listed above.",
+      caption: "Your own node, a private cluster, or any upstream not listed above.",
     },
     {
       id: "JWT",
@@ -69,11 +69,11 @@ export function Step1EntryType({ onPick }: { onPick: (t: EntryType) => void }) {
 }
 
 /* ─────────────────────────────────────────────
-   ADD SHEET — Step 2 (PROVIDER): pick preset
+   ADD SHEET — Step 2 (UPSTREAM): pick preset
 ───────────────────────────────────────────── */
-export function StepPickPreset({ existingIds, onPick }: { existingIds: string[]; onPick: (cat: ProviderCatalogEntry) => void }) {
+export function StepPickPreset({ existingIds, onPick }: { existingIds: string[]; onPick: (cat: UpstreamCatalogEntry) => void }) {
   const [search, setSearch] = useState("");
-  const filtered = PROVIDER_CATALOG.filter((p) => !search || p.name.toLowerCase().includes(search.toLowerCase()));
+  const filtered = UPSTREAM_CATALOG.filter((p) => !search || p.name.toLowerCase().includes(search.toLowerCase()));
   return (
     <div style={{ display: "grid", gap: 14 }}>
       <div style={{ position: "relative" }}>
@@ -81,7 +81,7 @@ export function StepPickPreset({ existingIds, onPick }: { existingIds: string[];
           style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }}>
           <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
         </svg>
-        <input className="gw-input" type="search" placeholder="Search providers…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ paddingLeft: 32 }} />
+        <input className="gw-input" type="search" placeholder="Search upstreams…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ paddingLeft: 32 }} />
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 8 }}>
         {filtered.map((cat) => {
@@ -94,14 +94,14 @@ export function StepPickPreset({ existingIds, onPick }: { existingIds: string[];
                 fontFamily: "inherit", transition: "border-color 0.1s, background 0.1s", width: "100%", textAlign: "left", position: "relative" }}
               onMouseEnter={(e) => { if (!disabled) { e.currentTarget.style.borderColor = "var(--line-2)"; e.currentTarget.style.background = "var(--hover)"; } }}
               onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--line)"; e.currentTarget.style.background = disabled ? "transparent" : "var(--bg)"; }}>
-              <ProviderLogo id={cat.id} size={28} />
+              <UpstreamLogo id={cat.id} size={28} />
               <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>{cat.name}</span>
               {disabled && <span style={{ marginLeft: "auto", fontSize: 9, color: "var(--text-4)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>connected</span>}
             </button>
           );
         })}
       </div>
-      {!filtered.length && <div style={{ textAlign: "center", padding: "20px 0", color: "var(--text-3)", fontSize: 13 }}>No providers match &quot;{search}&quot;</div>}
+      {!filtered.length && <div style={{ textAlign: "center", padding: "20px 0", color: "var(--text-3)", fontSize: 13 }}>No upstreams match &quot;{search}&quot;</div>}
     </div>
   );
 }

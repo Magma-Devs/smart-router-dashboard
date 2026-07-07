@@ -32,11 +32,11 @@ export interface ChainMetrics {
   qos: number | null;
   health: HealthState;
   latestBlock: number | null;
-  providerCount: number;
+  upstreamCount: number;
 }
 
 /** Per backing-endpoint roster row. */
-export interface ProviderMetrics {
+export interface UpstreamMetrics {
   endpointId: string;
   spec: string;
   requests: number;
@@ -140,8 +140,8 @@ export interface OverviewData {
   latencySeries: { p50: TimePoint[]; p95: TimePoint[]; p99: TimePoint[] };
   /** Histogram bucket counts over the window (read-latency distribution). */
   latencyDistribution: { le: string; count: number }[];
-  /** Per-provider throughput stack (real via the provider_address label). */
-  perProviderSeries: { provider: string; points: TimePoint[] }[];
+  /** Per-upstream throughput stack (real via the provider_address label). */
+  perUpstreamSeries: { upstream: string; points: TimePoint[] }[];
   /** Error layers; a single "unclassified" layer until labelled counters fire. */
   errorLayers: { layer: string; count: number }[];
   perChainLatency: ChainLatency[];
@@ -176,7 +176,7 @@ export interface HeroSummary {
   staleCaught: Kpi;
   retriesRecovered: Kpi;
   cacheOffloadPct: Kpi;
-  providerCount: number;
+  upstreamCount: number;
   chainCount: number;
   health: HealthState;
   /** Which absent-until-fired families were actually present at read time. */
@@ -204,26 +204,26 @@ export interface ChainSeries {
   rps: TimePoint[];
   /** Composite selection-score series; null when never emitted. */
   qos: TimePoint[] | null;
-  /** Share of traffic on backup providers; null unless config marks backups. */
+  /** Share of traffic on backup upstreams; null unless config marks backups. */
   backupShare: TimePoint[] | null;
 }
 
-/* ── Provider deep-dive (Metrics · Providers tab, PMBody) ────────────────── */
+/* ── Upstream deep-dive (Metrics · Upstreams tab, PMBody) ────────────────── */
 
-export interface ProviderErrorCode {
+export interface UpstreamErrorCode {
   code: string;
   count: number;
   lastSeen: string | null;
 }
 
-export interface ProviderRecentError {
+export interface UpstreamRecentError {
   at: string;
   method: string | null;
   code: string | null;
   message: string;
 }
 
-export interface ProviderDetail {
+export interface UpstreamDetail {
   endpointId: string;
   spec: string;
   health: HealthState;
@@ -250,8 +250,8 @@ export interface ProviderDetail {
   };
   blockLagSeries: TimePoint[];
   /** Empty + emitted:false until node/protocol error counters exist. */
-  errorsByCode: ProviderErrorCode[];
-  recentErrors: ProviderRecentError[];
+  errorsByCode: UpstreamErrorCode[];
+  recentErrors: UpstreamRecentError[];
   emitted: { errorsByCode: boolean; recentErrors: boolean };
 }
 
@@ -261,7 +261,7 @@ export interface ErrorHotspot {
   spec: string;
   name: string;
   color: string;
-  provider: string;
+  upstream: string;
   errors: number;
   requests: number;
   errorRate: number | null;
@@ -371,10 +371,10 @@ export interface DashboardChainSeries {
   points: TimePoint[];
 }
 
-/** One per-provider series (provider mix, per-provider latency). */
-export interface DashboardProviderSeries {
-  /** provider_address / endpoint_id — the resolved provider name. */
-  provider: string;
+/** One per-upstream series (upstream mix, per-upstream latency). */
+export interface DashboardUpstreamSeries {
+  /** provider_address / endpoint_id — the resolved upstream name. */
+  upstream: string;
   points: TimePoint[];
 }
 
@@ -400,10 +400,10 @@ export interface DashboardTroubleRow {
   failoverCount: number | null;
   topErr: string | null;
   topProv: string | null;
-  providers: string[];
+  upstreams: string[];
 }
 
-/** Provider scorecard row (§18) — whole table null until backed. */
+/** Upstream scorecard row (§18) — whole table null until backed. */
 export interface DashboardScorecardRow {
   name: string;
   avail: number | null;
@@ -413,8 +413,8 @@ export interface DashboardScorecardRow {
   incident: string | null;
 }
 
-/** Per-provider availability row (§11) — deg/incident have no metric family. */
-export interface DashboardProviderAvailRow {
+/** Per-upstream availability row (§11) — deg/incident have no metric family. */
+export interface DashboardUpstreamAvailRow {
   name: string;
   chain: string | null;
   ok: number | null;
@@ -469,9 +469,9 @@ export interface DashboardData {
       p99: DashboardChainSeries[];
     };
     /** Per-provider RPS (router counter, provider_address label). */
-    providerMix: DashboardProviderSeries[];
-    /** Per-provider p95 (endpoint histogram, endpoint_id label). */
-    perProviderLatencyP95: DashboardProviderSeries[];
+    upstreamMix: DashboardUpstreamSeries[];
+    /** Per-upstream p95 (endpoint histogram, endpoint_id label). */
+    perUpstreamLatencyP95: DashboardUpstreamSeries[];
   };
   /** Chains currently emitting metrics (header multiselect options). */
   chains: DashboardChainMeta[];
@@ -497,7 +497,7 @@ export interface DashboardData {
     savedPts: number;
     perfPct: number;
   } | null;
-  providerAvailability: DashboardProviderAvailRow[] | null;
+  upstreamAvailability: DashboardUpstreamAvailRow[] | null;
   scorecard: DashboardScorecardRow[] | null;
   /** Empty until labelled error counters exist (design's ✓ empty state). */
   trouble: DashboardTroubleRow[];

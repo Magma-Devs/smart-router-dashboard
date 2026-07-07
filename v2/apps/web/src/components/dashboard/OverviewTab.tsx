@@ -11,8 +11,8 @@ import type { DashboardData } from "@sr/shared";
 import { DSHBar, DSHLine, DSHStack, type DSHSeries, type DSHStackLayer } from "./dsh-charts";
 import { DSHCard, DSHChip, DSHKpi, DSHLgnd, dshFmtComma, dshFmtNum, meanOf, toNums, useChartWidth } from "./bits";
 
-/** Design palette for provider series (the prototype's PROV_LAT/thrStk order). */
-const PROVIDER_PALETTE = ["#60a5fa", "#fb923c", "#fda4af", "#fed7aa", "#94a3b8"];
+/** Design palette for upstream series (the prototype's PROV_LAT/thrStk order). */
+const UPSTREAM_PALETTE = ["#60a5fa", "#fb923c", "#fda4af", "#fed7aa", "#94a3b8"];
 
 export function OverviewTab({
   win,
@@ -46,12 +46,12 @@ export function OverviewTab({
   const srSpark = useMemo(() => toNums(data?.series.successRate, 100), [data]);
   const rpsSpark = thrData;
 
-  /* Per-provider throughput stack (real: provider_address label). */
+  /* Per-upstream throughput stack (real: provider_address label). */
   const thrStk = useMemo<(DSHStackLayer & { label: string })[]>(
     () =>
-      (data?.series.providerMix ?? []).map((p, pi) => ({
-        label: p.provider,
-        color: PROVIDER_PALETTE[pi % PROVIDER_PALETTE.length]!,
+      (data?.series.upstreamMix ?? []).map((p, pi) => ({
+        label: p.upstream,
+        color: UPSTREAM_PALETTE[pi % UPSTREAM_PALETTE.length]!,
         data: toNums(p.points),
       })),
     [data],
@@ -65,17 +65,17 @@ export function OverviewTab({
     return d.length ? [{ data: d, color: "var(--text-2)", label: latP }] : [];
   }, [data, latP]);
 
-  /* Per-provider p95 with the design's ratio-vs-baseline colouring. The
+  /* Per-upstream p95 with the design's ratio-vs-baseline colouring. The
      baseline is the overall p95 mean of the SAME window (real data). */
   const provLatSeries = useMemo(() => {
     const refMean = meanOf(toNums(data?.series.latency.p95));
-    return (data?.series.perProviderLatencyP95 ?? []).map((p, pi) => {
+    return (data?.series.perUpstreamLatencyP95 ?? []).map((p, pi) => {
       const d = toNums(p.points).map((v) => Math.round(v));
       const mean = meanOf(d);
       const ratio = refMean && refMean > 0 && mean != null ? mean / refMean : null;
-      const baseColor = PROVIDER_PALETTE[pi % PROVIDER_PALETTE.length]!;
+      const baseColor = UPSTREAM_PALETTE[pi % UPSTREAM_PALETTE.length]!;
       const color = ratio == null || ratio < 1 ? baseColor : ratio < 1.5 ? "#fbbf24" : "#f87171";
-      return { name: p.provider, data: d, color, label: p.provider };
+      return { name: p.upstream, data: d, color, label: p.upstream };
     });
   }, [data]);
 
@@ -168,7 +168,7 @@ export function OverviewTab({
               background: stackByProv ? "rgba(255,57,0,0.08)" : "transparent",
               color: stackByProv ? "var(--brand)" : "var(--text-3)",
               cursor: "pointer", fontFamily: "var(--font-ui)", fontWeight: 500,
-            }}>Stack by provider</button>
+            }}>Stack by upstream</button>
           }>
           <div ref={rThr}>
             {stackByProv
@@ -196,12 +196,12 @@ export function OverviewTab({
             <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
               <DSHChip options={["p50", "p95", "p99"]} value={latP} onChange={setLatP} />
               <div style={{ width: 1, height: 14, background: "var(--line)", flexShrink: 0 }} />
-              <DSHChip options={["Overall", "Per provider"]} value={latMode} onChange={setLatMode} />
+              <DSHChip options={["Overall", "Per upstream"]} value={latMode} onChange={setLatMode} />
             </div>
           }>
           <div ref={rLat}>
             <DSHLine
-              series={latMode === "Per provider"
+              series={latMode === "Per upstream"
                 ? provLatSeries.filter((s) => !hiddenProvs.includes(s.name))
                 : latSeries}
               width={wLat} height={240} win={win}
@@ -210,7 +210,7 @@ export function OverviewTab({
               onClick={() => setTab("metrics")}
             />
           </div>
-          {latMode === "Per provider" && (
+          {latMode === "Per upstream" && (
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               {provLatSeries.map((s) => {
                 const hidden = hiddenProvs.includes(s.name);

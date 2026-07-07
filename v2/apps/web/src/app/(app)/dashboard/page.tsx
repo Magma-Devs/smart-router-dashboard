@@ -61,8 +61,8 @@ export default function DashboardPage() {
     () => (data?.chains ?? []).map((c) => ({ id: c.spec, name: c.name, color: c.color })),
     [data],
   );
-  const providerOptions = useMemo(
-    () => (data?.series.providerMix ?? []).map((p) => ({ id: p.provider, name: p.provider })),
+  const upstreamOptions = useMemo(
+    () => (data?.series.upstreamMix ?? []).map((p) => ({ id: p.upstream, name: p.upstream })),
     [data],
   );
 
@@ -74,7 +74,7 @@ export default function DashboardPage() {
         chains={chains}
         setChains={setChains}
         chainOptions={chainOptions}
-        providerOptions={providerOptions}
+        upstreamOptions={upstreamOptions}
       />
 
       {/* Tab bar */}

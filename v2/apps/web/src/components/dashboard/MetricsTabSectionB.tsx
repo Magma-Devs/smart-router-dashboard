@@ -2,7 +2,7 @@
 
 /* MetricsTabSectionB — "B · Resilience & operational economics", port of the
    design prototype's DSHMetrics section B (SR_Dashboard/magma/
-   page-dashboard.jsx ~1527-1671). Provider mix is live; failover ratio,
+   page-dashboard.jsx ~1527-1671). Upstream mix is live; failover ratio,
    internal availability, errors-handled interventions, SLO contribution and
    cache are null-gated families that render the design's muted "—" state. */
 
@@ -11,13 +11,13 @@ import type { DashboardData } from "@sr/shared";
 import { DSHDualAxis, DSHLine, DSHStack, type DSHStackLayer } from "./dsh-charts";
 import { DSHCard, DSHNoData, DSHSection, dshFmtNum, toNums, useChartWidth } from "./bits";
 
-/** Design palette for provider layers (the prototype's provMix order). */
-const PROVIDER_PALETTE = ["#60a5fa", "#fb923c", "#fda4af", "#fed7aa", "#94a3b8"];
+/** Design palette for upstream layers (the prototype's provMix order). */
+const UPSTREAM_PALETTE = ["#60a5fa", "#fb923c", "#fda4af", "#fed7aa", "#94a3b8"];
 
 const EH_DESCS: Record<string, string> = {
   "Failover": "Retried on different upstream after error/timeout; retry succeeded",
   "Hedge wins": "Parallel hedge returned faster than primary",
-  "Consistency": "Stale provider data rejected; fresher provider responded",
+  "Consistency": "Stale upstream data rejected; fresher upstream responded",
   "Cache checks": "Cache served while revalidating in parallel",
 };
 
@@ -31,12 +31,12 @@ export function MetricsTabSectionB({
   const [foCompare, setFoCmp] = useState(false);
   const [ehIsolate, setEhIso] = useState<string | null>(null);
 
-  /* Provider mix as per-bucket % shares (the design's mock is already %;
+  /* Upstream mix as per-bucket % shares (the design's mock is already %;
      the live payload is raw rps → normalise at the call site). */
   const provMix = useMemo<(DSHStackLayer & { label: string })[]>(() => {
-    const raw = (data?.series.providerMix ?? []).map((p, pi) => ({
-      label: p.provider,
-      color: PROVIDER_PALETTE[pi % PROVIDER_PALETTE.length]!,
+    const raw = (data?.series.upstreamMix ?? []).map((p, pi) => ({
+      label: p.upstream,
+      color: UPSTREAM_PALETTE[pi % UPSTREAM_PALETTE.length]!,
       data: toNums(p.points),
     }));
     const n = Math.max(0, ...raw.map((s) => s.data.length));
@@ -69,14 +69,14 @@ export function MetricsTabSectionB({
   return (
     <section>
       <DSHSection letter="B" title="Resilience & operational economics" />
-      {/* §12 Provider mix */}
-      <DSHCard title="Provider mix" sub="% of traffic per provider" style={{ marginBottom: 14 }}>
+      {/* §12 Upstream mix */}
+      <DSHCard title="Upstream mix" sub="% of traffic per upstream" style={{ marginBottom: 14 }}>
         <div ref={r_sb1}>
           {provMix.some((s) => s.data.length > 0)
             ? <DSHStack stacks={provMix} width={w_sb1} height={280} yFmt={(v) => v.toFixed(0) + "%"} />
             : <DSHNoData height={280} />}
         </div>
-        {/* The design groups Internal vs Paid fallback via provider metadata
+        {/* The design groups Internal vs Paid fallback via upstream metadata
             the router config doesn't classify — a flat legend stays honest. */}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {provMix.map((s) => {
@@ -107,7 +107,7 @@ export function MetricsTabSectionB({
               left={{ data: failoverD, color: "#fb923c", label: "Failover ratio" }}
               right={{ data: inAvailD, color: "#60a5fa", label: "Internal availability" }}
               width={w_sb3} height={300} win={win}
-              caption="When internal providers degrade, failover engages. Together they keep your Success Rate up."
+              caption="When internal upstreams degrade, failover engages. Together they keep your Success Rate up."
             />
           ) : (
             /* Needs a failover counter family the router doesn't emit. */

@@ -1,40 +1,40 @@
 "use client";
 
-/* Edit Provider Sheet — ported from the design prototype (page-providers.jsx
- * EditProviderSheet: name + role form). SELF-HOSTED: the form renders and is
+/* Edit Upstream Sheet — ported from the design prototype (page-providers.jsx
+ * EditUpstreamSheet: name + role form). SELF-HOSTED: the form renders and is
  * editable, but "Save changes" is disabled — the config is a read-only mount. */
 
 import { useEffect, useState } from "react";
-import { ProviderLogo } from "@/components/providers/ProviderLogo";
-import { FE, FL, Hint } from "@/components/providers/bits";
-import { READONLY_MSG, type ProviderRow } from "@/components/providers/catalog";
+import { UpstreamLogo } from "@/components/upstreams/UpstreamLogo";
+import { FE, FL, Hint } from "@/components/upstreams/bits";
+import { READONLY_MSG, type UpstreamRow } from "@/components/upstreams/catalog";
 
-export function EditProviderSheet({ open, onClose, provider }: {
+export function EditUpstreamSheet({ open, onClose, upstream }: {
   open: boolean;
   onClose: () => void;
-  provider: ProviderRow | null;
+  upstream: UpstreamRow | null;
 }) {
   const [name, setName] = useState("");
   const [role, setRole] = useState<"primary" | "backup">("primary");
   const errors: { name?: string } = {};
 
   useEffect(() => {
-    if (open && provider) {
-      setName(provider.name);
-      setRole(provider.role || "primary");
+    if (open && upstream) {
+      setName(upstream.name);
+      setRole(upstream.role || "primary");
     }
-  }, [open, provider]);
+  }, [open, upstream]);
 
-  if (!open || !provider) return null;
+  if (!open || !upstream) return null;
   return (
     <div className="gw-sheet-bg" onClick={onClose}>
       <div className="gw-sheet gw-sheet--wide" onClick={(e) => e.stopPropagation()}>
         <div className="gw-sheet__head">
           <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0 }}>
-            {provider.catalogId ? <ProviderLogo id={provider.catalogId} size={30} /> : <div style={{ width: 30, height: 30, borderRadius: 7, background: "var(--surface-2)", border: "1px solid var(--line)", flexShrink: 0 }} />}
+            {upstream.catalogId ? <UpstreamLogo id={upstream.catalogId} size={30} /> : <div style={{ width: 30, height: 30, borderRadius: 7, background: "var(--surface-2)", border: "1px solid var(--line)", flexShrink: 0 }} />}
             <div style={{ minWidth: 0 }}>
-              <p className="gw-sheet__title" style={{ margin: 0 }}>{provider.name}</p>
-              <p className="gw-sheet__sub" style={{ margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{provider.url || "—"}</p>
+              <p className="gw-sheet__title" style={{ margin: 0 }}>{upstream.name}</p>
+              <p className="gw-sheet__sub" style={{ margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{upstream.url || "—"}</p>
             </div>
           </div>
           <button className="gw-btn gw-btn--ghost" style={{ padding: 5, flexShrink: 0 }} onClick={onClose}>

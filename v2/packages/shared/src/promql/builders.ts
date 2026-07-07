@@ -173,8 +173,8 @@ export function qLatencySeriesExpr(
   return `histogram_quantile(${quantile}, sum by (le) (rate(${ROUTER_METRICS.latencyBucket}${selector({ spec })}[${step}])))`;
 }
 
-/** Per-provider RPS series (stacked provider-mix charts). */
-export function qPerProviderRpsExpr(step: string, spec?: string): string {
+/** Per-upstream RPS series (stacked upstream-mix charts). */
+export function qPerUpstreamRpsExpr(step: string, spec?: string): string {
   return `sum by (provider_address) (rate(${ROUTER_METRICS.requestsTotal}${selector({ spec })}[${step}]))`;
 }
 
@@ -184,8 +184,8 @@ export function qPerSpecRpsExpr(step: string): string {
 }
 
 /**
- * Share of traffic served by the named backup providers (0..1 series).
- * Provider names are regex-escaped and OR-joined.
+ * Share of traffic served by the named backup upstreams (0..1 series).
+ * Upstream names are regex-escaped and OR-joined.
  */
 export function qBackupShareExpr(
   spec: string,
@@ -198,7 +198,7 @@ export function qBackupShareExpr(
   return `sum(rate(${ROUTER_METRICS.requestsTotal}${backupSel}[${step}])) / sum(rate(${ROUTER_METRICS.requestsTotal}${sel}[${step}]))`;
 }
 
-/* ── Endpoint-scope (per-provider) latency + volume ──────────────────────── */
+/* ── Endpoint-scope (per-upstream) latency + volume ──────────────────────── */
 
 /** histogram_quantile over ONE endpoint's latency histogram (window scalar). */
 export function qEndpointLatencyQuantile(
@@ -218,28 +218,28 @@ export function qEndpointLatencySeriesExpr(
   return `histogram_quantile(${quantile}, sum by (le) (rate(${ENDPOINT_METRICS.latencyBucket}${selector({ endpoint_id: endpointId })}[${step}])))`;
 }
 
-/** One provider's request-volume series (router scope, by provider_address). */
-export function qProviderVolumeSeriesExpr(
-  providerAddress: string,
+/** One upstream's request-volume series (router scope, by provider_address). */
+export function qUpstreamVolumeSeriesExpr(
+  upstreamAddress: string,
   step: string,
 ): string {
-  return `sum(increase(${ROUTER_METRICS.requestsTotal}${selector({ provider_address: providerAddress })}[${step}]))`;
+  return `sum(increase(${ROUTER_METRICS.requestsTotal}${selector({ provider_address: upstreamAddress })}[${step}]))`;
 }
 
-/** One provider's READ-volume series (requests_read_total is real). */
-export function qProviderReadVolumeSeriesExpr(
-  providerAddress: string,
+/** One upstream's READ-volume series (requests_read_total is real). */
+export function qUpstreamReadVolumeSeriesExpr(
+  upstreamAddress: string,
   step: string,
 ): string {
-  return `sum(increase(${ROUTER_METRICS.requestsReadTotal}${selector({ provider_address: providerAddress })}[${step}]))`;
+  return `sum(increase(${ROUTER_METRICS.requestsReadTotal}${selector({ provider_address: upstreamAddress })}[${step}]))`;
 }
 
-/** Per-provider error rate over the window (router scope). */
-export function qProviderErrorRate(
-  providerAddress: string,
+/** Per-upstream error rate over the window (router scope). */
+export function qUpstreamErrorRate(
+  upstreamAddress: string,
   window: MetricWindow = "1d",
 ): string {
-  const sel = selector({ provider_address: providerAddress });
+  const sel = selector({ provider_address: upstreamAddress });
   const r = rangeFor(window);
   return `1 - (sum(increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${r}])) / sum(increase(${ROUTER_METRICS.requestsTotal}${sel}[${r}])))`;
 }
