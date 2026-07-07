@@ -25,7 +25,7 @@ The compose stack is **self-contained**: bundled Prometheus + an optional
 `router` profile that builds the Smart Router from a checkout.
 
 ```bash
-make up      # SELF-CONTAINED stack: router + Prometheus + api + web (detached)
+make up      # SELF-CONTAINED stack: router + Prometheus + api + web + logs (Grafana :3001), detached
 make ps      # what's running
 make down    # stop everything
 make dev     # hot-reload stack (api tsx watch · web next dev · shared tsc --watch)

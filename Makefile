@@ -34,26 +34,30 @@ API_PORT   ?= 8000
 WEB_PORT   ?= 3000
 API_URL    ?= http://localhost:$(API_PORT)
 
-.PHONY: up down dev dev-down up-auth dev-auth up-logs dev-logs router logs ps clean builder build build-api build-web typecheck test
+.PHONY: up down dev dev-down up-auth dev-auth router ps clean builder build build-api build-web typecheck test
 
-## up: SELF-CONTAINED stack — router + Prometheus + api + web (prod images)
+## up: SELF-CONTAINED stack — router + Prometheus + api + web + logs (Loki/Grafana)
 up:
-	docker compose --profile router up -d --build
+	docker compose --profile router --profile logs up -d --build
 	@echo ""
 	@echo "  ✅ Dashboard up:"
-	@echo "     UI    → http://localhost:$(WEB_PORT)"
-	@echo "     API   → http://localhost:$(API_PORT)"
-	@echo "     Prom  → http://localhost:9090"
-	@echo "     Router→ http://localhost:3360-3367 (ETH1/SOLANA/BTC/HYPERLIQUID/COSMOSHUB×3/APT1)"
+	@echo "     UI      → http://localhost:$(WEB_PORT)"
+	@echo "     API     → http://localhost:$(API_PORT)"
+	@echo "     Prom    → http://localhost:9090"
+	@echo "     Grafana → http://localhost:3001  (admin / admin) → \"Smart Router Dashboard Logs\""
+	@echo "     Router  → http://localhost:3360-3367 (ETH1/SOLANA/BTC/HYPERLIQUID/COSMOSHUB×3/APT1)"
+	@echo ""
+	@echo "  logs    → docker compose logs -f   (make dev runs in the foreground and streams them)"
 
 ## down: stop the whole stack (auth + logs profiles included so everything stops)
 down:
 	docker compose --profile router --profile auth --profile logs down
 
-## dev: HOT-RELOAD stack (api = tsx watch · web = next dev · shared = tsc --watch)
+## dev: HOT-RELOAD stack (api = tsx watch · web = next dev · shared = tsc --watch) + logs (Loki/Grafana → :3001)
+## Runs in the FOREGROUND and streams every container's logs — Ctrl-C to stop.
 dev:
-	@echo "▶ dev stack with hot reload (first boot runs pnpm install — ~1 min)"
-	docker compose -f docker-compose.dev.yml --profile router up --build
+	@echo "▶ dev stack with hot reload + logs (Grafana → http://localhost:3001, admin/admin; first boot runs pnpm install — ~1 min)"
+	docker compose -f docker-compose.dev.yml --profile router --profile logs up --build
 
 ## dev-down: stop the hot-reload dev stack
 dev-down:
@@ -61,31 +65,17 @@ dev-down:
 
 ## up-auth: prod-style stack WITH authentication (postgres + login) — see docs/AUTH.md.
 ## Requires AUTH_SECRET + ADMIN_EMAIL + ADMIN_PASSWORD in the environment.
+## (logs profile is on by default here too — Grafana → :3001.)
 up-auth:
-	AUTH_MODE=enabled docker compose --profile router --profile auth up -d --build
+	AUTH_MODE=enabled docker compose --profile router --profile auth --profile logs up -d --build
 	@echo ""
 	@echo "  🔐 Auth enabled — sign in at http://localhost:$(WEB_PORT)/login"
+	@echo "     Grafana → http://localhost:3001  (admin / admin)"
 
 ## dev-auth: hot-reload stack WITH authentication (dev-default admin@example.com / admin1234)
 dev-auth:
-	@echo "▶ dev stack with hot reload + auth (sign in: admin@example.com / admin1234)"
-	AUTH_MODE=enabled docker compose -f docker-compose.dev.yml --profile router --profile auth up --build
-
-## up-logs: prod-style stack + logs (Loki/Promtail/Grafana). Grafana → :3001
-up-logs:
-	docker compose --profile router --profile logs up -d --build
-	@echo ""
-	@echo "  ✅ Dashboard + logs up:"
-	@echo "     UI      → http://localhost:$(WEB_PORT)"
-	@echo "     API     → http://localhost:$(API_PORT)"
-	@echo "     Prom    → http://localhost:9090"
-	@echo "     Grafana → http://localhost:3001  (admin / admin) → \"Smart Router Dashboard Logs\""
-	@echo "     Loki    → http://localhost:3100"
-
-## dev-logs: HOT-RELOAD stack + logs (Loki/Promtail/Grafana). Grafana → :3001
-dev-logs:
-	@echo "▶ dev stack with hot reload + logs (Grafana → http://localhost:3001, admin/admin)"
-	docker compose -f docker-compose.dev.yml --profile router --profile logs up --build
+	@echo "▶ dev stack with hot reload + auth (sign in: admin@example.com / admin1234; Grafana → :3001)"
+	AUTH_MODE=enabled docker compose -f docker-compose.dev.yml --profile router --profile auth --profile logs up --build
 
 ## router: bring up ONLY the router + Prometheus from this compose
 router:
@@ -112,10 +102,6 @@ build-web: builder
 		--build-arg NEXT_PUBLIC_API_URL=$(API_URL) \
 		--build-arg NEXT_PUBLIC_LOCAL_MODE=true \
 		--load .
-
-## logs: tail the dashboard containers
-logs:
-	docker compose logs -f api web
 
 ## ps: show the stack
 ps:

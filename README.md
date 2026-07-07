@@ -41,7 +41,7 @@ The observability dashboard for the [Smart Router](https://github.com/Magma-Devs
 ## Quick Start
 
 ```bash
-make up      # router + Prometheus + api (:8000) + web (:3000), detached
+make up      # router + Prometheus + api (:8000) + web (:3000) + logs (Grafana :3001), detached
 make ps      # show what's running
 make down    # stop everything
 ```
