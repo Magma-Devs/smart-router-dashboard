@@ -69,7 +69,7 @@ function makeTimeLabels(win: string, n: number): DSHTimeLabel[] {
 }
 
 export interface DSHSeries {
-  data: number[];
+  data: (number | null)[];
   color: string;
   label?: string;
   ghost?: boolean;
@@ -118,13 +118,23 @@ export function DSHLine({
   if (!width || !series || !series.length) return <div style={{ height: height }} />;
   const pL = 46, pR = 14, pT = 8, pB = 28;
   const iW = width - pL - pR, iH = height - pT - pB;
-  const n = series[0]!.data.length;
-  const allV = series.reduce<number[]>((a, s) => a.concat(s.data), []);
-  const mnV = yDomain ? yDomain[0] : Math.min(...allV);
-  const mxV = yDomain ? yDomain[1] : Math.max(...allV);
+  // Use the longest series so a shorter one never over-runs the x-axis; the
+  // api grid-aligns them so this is normally uniform, but stay defensive.
+  const n = Math.max(...series.map((s) => s.data.length));
+  const allV = series
+    .reduce<(number | null)[]>((a, s) => a.concat(s.data), [])
+    .filter((v): v is number => v != null);
+  const mnV = yDomain ? yDomain[0] : (allV.length ? Math.min(...allV) : 0);
+  const mxV = yDomain ? yDomain[1] : (allV.length ? Math.max(...allV) : 1);
   const rng = mxV - mnV || 1;
   const xs = (i: number) => pL + (i / Math.max(n - 1, 1)) * iW;
-  const ys = (v: number) => pT + iH - ((v - mnV) / rng) * iH;
+  // Clamp to the y-domain so a single low-sample outlier (e.g. a 10-min
+  // bucket with 1/7 success = 14%) sits on the floor instead of plunging
+  // off-canvas and back, which reads as a full-height vertical spike.
+  const ys = (v: number) => {
+    const c = Math.max(mnV, Math.min(mxV, v));
+    return pT + iH - ((c - mnV) / rng) * iH;
+  };
   const fmt = yFmt || ((v: number) => (v >= 1000 ? fmtNum(v) : Math.round(v)));
   const timeLbls = makeTimeLabels(win || "24h", n);
 
@@ -167,18 +177,31 @@ export function DSHLine({
             fill={bgBand === "ok" ? "#22c55e" : bgBand === "warn" ? "#f59e0b" : "#ef4444"}
             fillOpacity="0.055" />
         )}
-        {/* Series */}
+        {/* Series — null buckets are dropped and the remaining points are
+            connected into ONE line (a data gap bridges rather than plunges
+            to 0). For sparse ratio series this reads as a continuous trend;
+            a lone point renders as a dot. */}
         {series.map((s, si) => {
-          const pts = s.data.map((v, i) => xs(i) + "," + ys(v)).join(" ");
-          const aPts = xs(0) + "," + (pT + iH) + " " + pts + " " + xs(n - 1) + "," + (pT + iH);
+          const present = s.data
+            .map((v, i) => ({ i, v }))
+            .filter((p): p is { i: number; v: number } => p.v != null);
+          if (!present.length) return null;
+          const pts = present.map((p) => xs(p.i) + "," + ys(p.v)).join(" ");
+          const a0 = xs(present[0]!.i), a1 = xs(present[present.length - 1]!.i);
           return (
             <g key={si}>
-              {showArea && <polygon points={aPts} fill={s.color} fillOpacity="0.10" />}
-              <polyline points={pts} fill="none" stroke={s.color}
-                strokeWidth={s.ghost ? 1 : 1.5}
-                strokeDasharray={s.ghost ? "4 3" : undefined}
-                strokeOpacity={s.ghost ? 0.45 : 1}
-                strokeLinejoin="round" strokeLinecap="round" />
+              {showArea && present.length > 1 && (
+                <polygon points={`${a0},${pT + iH} ${pts} ${a1},${pT + iH}`} fill={s.color} fillOpacity="0.10" />
+              )}
+              {present.length === 1 ? (
+                <circle cx={xs(present[0]!.i)} cy={ys(present[0]!.v)} r="2" fill={s.color} />
+              ) : (
+                <polyline points={pts} fill="none" stroke={s.color}
+                  strokeWidth={s.ghost ? 1 : 1.5}
+                  strokeDasharray={s.ghost ? "4 3" : undefined}
+                  strokeOpacity={s.ghost ? 0.45 : 1}
+                  strokeLinejoin="round" strokeLinecap="round" />
+              )}
             </g>
           );
         })}

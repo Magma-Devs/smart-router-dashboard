@@ -34,7 +34,6 @@ export function EndpointDetailSheet({ open, ep, router, onClose, upstreams }: {
   onClose: () => void;
   upstreams: UpstreamRow[];
 }) {
-  const [confirmDelete, setConfirmDelete] = useState(false);
   const [editingUpstreams, setEditingUpstreams] = useState(false);
   const [localUpstreamIds, setLocalUpstreamIds] = useState<string[]>([]);
 
@@ -51,7 +50,6 @@ export function EndpointDetailSheet({ open, ep, router, onClose, upstreams }: {
 
   useEffect(() => {
     if (open) {
-      setConfirmDelete(false);
       setEditingUpstreams(false);
       setLocalUpstreamIds(nodeGroups.map((n) => n.name));
     }
@@ -241,28 +239,11 @@ export function EndpointDetailSheet({ open, ep, router, onClose, upstreams }: {
 
         </div>
 
-        {/* Foot */}
+        {/* Foot — endpoints come from the read-only mounted config, so there
+            is no delete action; edit the values file to remove one. */}
         <div className="gw-sheet__foot">
-          {confirmDelete ? (
-            <>
-              <span style={{ fontSize: 12, color: "var(--err)", flex: 1 }}>Delete this endpoint permanently?</span>
-              <button className="gw-btn" style={{ fontSize: 12 }} onClick={() => setConfirmDelete(false)}>Cancel</button>
-              <button className="gw-btn gw-btn--danger"
-                style={{ fontSize: 12, background: "var(--err)", color: "#fff", borderColor: "var(--err)" }}
-                disabled title={READONLY_MSG}>
-                Confirm delete
-              </button>
-            </>
-          ) : (
-            <>
-              <button className="gw-btn gw-btn--danger" style={{ marginRight: "auto", fontSize: 12 }}
-                onClick={() => setConfirmDelete(true)}>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6"/></svg>
-                Delete endpoint
-              </button>
-              <button className="gw-btn gw-btn--primary" onClick={onClose}>Done</button>
-            </>
-          )}
+          <span style={{ fontSize: 11, color: "var(--text-4)", flex: 1 }}>Defined in the mounted values file · read-only</span>
+          <button className="gw-btn gw-btn--primary" onClick={onClose}>Done</button>
         </div>
 
       </div>

@@ -252,9 +252,9 @@ export const authConfig = {
       const path = url.pathname;
       const signedIn = !!auth?.user;
 
-      // Already-signed-in users land on /overview if they hit /login.
+      // Already-signed-in users land on /metrics if they hit /login.
       if (path === "/login") {
-        return signedIn ? Response.redirect(new URL("/overview", url)) : true;
+        return signedIn ? Response.redirect(new URL("/metrics", url)) : true;
       }
       // Auth.js's own endpoints + the runtime-config route stay public.
       if (path.startsWith("/api/auth") || path === "/api/config") return true;

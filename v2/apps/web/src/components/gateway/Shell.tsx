@@ -94,7 +94,12 @@ function SidebarUser() {
           <div className="avatar">{(user?.name ?? user?.email ?? "S").charAt(0).toUpperCase()}</div>
         )}
         <div className="meta">
-          <div className="email" title={user?.email}>{user?.email ?? "Self-hosted deployment"}</div>
+          {/* Signed in → the account's display name (the admin seed is
+              "Admin"), email on hover. Signed out (AUTH_MODE=disabled) → the
+              self-hosted placeholder. */}
+          <div className="email" title={user?.email}>
+            {user ? (user.name ?? user.email) : "Self-hosted deployment"}
+          </div>
           <div>
             <span className="plan-chip">{user ? user.role : "local"}</span>
           </div>

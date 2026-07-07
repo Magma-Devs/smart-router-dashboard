@@ -29,9 +29,9 @@ import {
   type Kpi,
   type MetricWindow,
 } from "@sr/shared";
-import { WINDOWS } from "@sr/shared/constants";
+import { WINDOWS, stepSeconds } from "@sr/shared/constants";
 import type { PromMatrixSample, PrometheusClient } from "./prometheus-client.js";
-import { health, toPoints } from "./metrics.js";
+import { health, toGridPoints } from "./metrics.js";
 
 export class MetricsDashboardService {
   constructor(private readonly prom: PrometheusClient) {}
@@ -39,6 +39,7 @@ export class MetricsDashboardService {
   /** Matrix rows grouped by `spec` → named/coloured chain series. */
   private chainSeries(
     matrix: PromMatrixSample[],
+    grid: { start: number; end: number; step: number },
     onlySpec?: string,
   ): DashboardChainSeries[] {
     const rows: DashboardChainSeries[] = [];
@@ -46,7 +47,14 @@ export class MetricsDashboardService {
       const spec = m.metric.spec;
       if (!spec || (onlySpec && spec !== onlySpec)) continue;
       const meta = buildChainMetaByIndex(spec);
-      rows.push({ spec, name: meta.name, color: meta.color, points: toPoints(m.values) });
+      // Grid-align: every per-chain series MUST share one time axis, else the
+      // multi-series chart (which x-maps by index) renders garbage.
+      rows.push({
+        spec,
+        name: meta.name,
+        color: meta.color,
+        points: toGridPoints(m.values, grid.start, grid.end, grid.step),
+      });
     }
     return rows.sort((a, b) => a.name.localeCompare(b.name));
   }
@@ -55,12 +63,13 @@ export class MetricsDashboardService {
   private upstreamSeries(
     matrix: PromMatrixSample[],
     label: "provider_address" | "endpoint_id",
+    grid: { start: number; end: number; step: number },
   ): DashboardUpstreamSeries[] {
     const rows: DashboardUpstreamSeries[] = [];
     for (const m of matrix) {
       const upstream = m.metric[label];
       if (!upstream) continue;
-      rows.push({ upstream, points: toPoints(m.values) });
+      rows.push({ upstream, points: toGridPoints(m.values, grid.start, grid.end, grid.step) });
     }
     return rows.sort((a, b) => a.upstream.localeCompare(b.upstream));
   }
@@ -69,7 +78,9 @@ export class MetricsDashboardService {
     const win = WINDOWS[window];
     const end = Math.floor(Date.now() / 1000);
     const start = end - win.rangeSeconds;
-    const step = win.step;
+    const step = win.step; // Prometheus duration string (e.g. "5m") for queryRange
+    const stepSec = stepSeconds(window); // numeric seconds for grid alignment
+    const grid = { start, end, step: stepSec };
     const r = rangeFor(window);
     const sel = selector({ spec });
 
@@ -166,24 +177,26 @@ export class MetricsDashboardService {
         errorsHandled: { value: null, prior: null },
       },
       series: {
-        throughput: toPoints(throughput[0]?.values),
-        errors: toPoints(errorsSeries[0]?.values),
-        errorRate: toPoints(errorRateSeries[0]?.values),
-        successRate: toPoints(srSeries[0]?.values),
+        // All series share ONE (start, end, step) grid so multi-series charts
+        // (which x-map by point index) line up; absent buckets become null.
+        throughput: toGridPoints(throughput[0]?.values, start, end, stepSec),
+        errors: toGridPoints(errorsSeries[0]?.values, start, end, stepSec),
+        errorRate: toGridPoints(errorRateSeries[0]?.values, start, end, stepSec),
+        successRate: toGridPoints(srSeries[0]?.values, start, end, stepSec),
         latency: {
-          p50: toPoints(latP50[0]?.values),
-          p95: toPoints(latP95[0]?.values),
-          p99: toPoints(latP99[0]?.values),
+          p50: toGridPoints(latP50[0]?.values, start, end, stepSec),
+          p95: toGridPoints(latP95[0]?.values, start, end, stepSec),
+          p99: toGridPoints(latP99[0]?.values, start, end, stepSec),
         },
-        perChain: this.chainSeries(perSpecRps, spec),
-        perChainSuccessRate: this.chainSeries(perSpecSr, spec),
+        perChain: this.chainSeries(perSpecRps, grid, spec),
+        perChainSuccessRate: this.chainSeries(perSpecSr, grid, spec),
         perChainLatency: {
-          p50: this.chainSeries(chainLatP50, spec),
-          p95: this.chainSeries(chainLatP95, spec),
-          p99: this.chainSeries(chainLatP99, spec),
+          p50: this.chainSeries(chainLatP50, grid, spec),
+          p95: this.chainSeries(chainLatP95, grid, spec),
+          p99: this.chainSeries(chainLatP99, grid, spec),
         },
-        upstreamMix: this.upstreamSeries(upstreamMix, "provider_address"),
-        perUpstreamLatencyP95: this.upstreamSeries(upstreamLatP95, "endpoint_id"),
+        upstreamMix: this.upstreamSeries(upstreamMix, "provider_address", grid),
+        perUpstreamLatencyP95: this.upstreamSeries(upstreamLatP95, "endpoint_id", grid),
       },
       chains,
       scu: null,
