@@ -64,6 +64,31 @@ describe("ConfigurationService · SR_CONFIG format", () => {
     expect(eth.localPorts).toEqual({ jsonrpc: 3360 });
   });
 
+  it("marks backup-direct-rpc providers isBackup", () => {
+    const eth = serviceFor(`
+endpoints:
+  - listen-address: "0.0.0.0:3360"
+    chain-id: "ETH1"
+    api-interface: "jsonrpc"
+direct-rpc:
+  - name: "eth-primary"
+    chain-id: "ETH1"
+    api-interface: "jsonrpc"
+    node-urls:
+      - url: "https://eth-rpc.example.com"
+backup-direct-rpc:
+  - name: "eth-backup"
+    chain-id: "ETH1"
+    api-interface: "jsonrpc"
+    node-urls:
+      - url: "https://eth-fallback.example.com"
+`).getRouters()[0]!;
+    const primary = eth.nodes.find((n) => n.name === "eth-primary");
+    const backup = eth.nodes.find((n) => n.name === "eth-backup");
+    expect(primary?.isBackup).toBe(false);
+    expect(backup?.isBackup).toBe(true);
+  });
+
   it("keeps per-interface ports when one chain exposes several interfaces", () => {
     const routers = serviceFor(`
 endpoints:

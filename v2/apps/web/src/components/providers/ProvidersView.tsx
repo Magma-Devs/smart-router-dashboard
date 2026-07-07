@@ -257,8 +257,9 @@ export function ProvidersView() {
                     const ch = buildChainMetaByIndex(row.spec);
                     return (
                       <div key={i} className="gw-row" style={{ gap: 8, padding: "6px 10px", background: "var(--hover)", borderRadius: 6, border: "1px solid var(--line)" }}>
-                        {/* Chain name + role inline */}
+                        {/* Chain icon + name + role inline */}
                         <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0, minWidth: 140 }}>
+                          <ChainBadge spec={row.spec} size={16} />
                           <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-2)" }}>{ch.name}</span>
                           {row.role === "primary" && (
                             <span style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 10, color: "var(--ok)", fontWeight: 500 }}>

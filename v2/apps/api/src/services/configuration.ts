@@ -120,44 +120,53 @@ function normalizeSrConfig(raw: Record<string, unknown>): RouterTopology[] {
   }
 
   const byChain = new Map<string, RouterTopology>();
-  for (const provider of asArray(raw["direct-rpc"])) {
-    const chainId = asString(provider["chain-id"]);
-    if (!chainId) continue;
-    const iface = asString(provider["api-interface"]);
 
-    let router = byChain.get(chainId);
-    if (!router) {
-      const ports = portsByChain.get(chainId) ?? {};
-      const firstPort = Object.values(ports)[0] ?? null;
-      router = {
-        id: chainId,
-        spec: chainId,
-        network: chainId.toLowerCase(),
-        pathBased: false,
-        customUrlPrefix: null,
-        localPort: firstPort,
-        localPorts: ports,
-        interfaces: [],
-        nodes: [],
-      };
-      byChain.set(chainId, router);
+  // Process a provider list into the topology. `direct-rpc` is the primary
+  // tier; `backup-direct-rpc` (the router's emergency-fallback section) marks
+  // its nodes isBackup so the Providers/Endpoints UI can tag them "backup".
+  const addProviders = (key: string, isBackup: boolean): void => {
+    for (const provider of asArray(raw[key])) {
+      const chainId = asString(provider["chain-id"]);
+      if (!chainId) continue;
+      const iface = asString(provider["api-interface"]);
+
+      let router = byChain.get(chainId);
+      if (!router) {
+        const ports = portsByChain.get(chainId) ?? {};
+        const firstPort = Object.values(ports)[0] ?? null;
+        router = {
+          id: chainId,
+          spec: chainId,
+          network: chainId.toLowerCase(),
+          pathBased: false,
+          customUrlPrefix: null,
+          localPort: firstPort,
+          localPorts: ports,
+          interfaces: [],
+          nodes: [],
+        };
+        byChain.set(chainId, router);
+      }
+
+      const endpoints = asArray(provider["node-urls"])
+        .filter((nu) => asString(nu["url"]))
+        .map((nu) => ({
+          urlHost: maskNodeUrl(asString(nu["url"])),
+          interface: iface,
+          addons: Array.isArray(nu["addons"]) ? nu["addons"].map(String) : [],
+        }));
+
+      router.nodes.push({
+        name: asString(provider["name"]) || chainId,
+        isBackup,
+        endpoints,
+      });
+      router.interfaces = dedupe([...router.interfaces, iface]);
     }
+  };
 
-    const endpoints = asArray(provider["node-urls"])
-      .filter((nu) => asString(nu["url"]))
-      .map((nu) => ({
-        urlHost: maskNodeUrl(asString(nu["url"])),
-        interface: iface,
-        addons: Array.isArray(nu["addons"]) ? nu["addons"].map(String) : [],
-      }));
-
-    router.nodes.push({
-      name: asString(provider["name"]) || chainId,
-      isBackup: false, // SR_CONFIG has no backup marker
-      endpoints,
-    });
-    router.interfaces = dedupe([...router.interfaces, iface]);
-  }
+  addProviders("direct-rpc", false);
+  addProviders("backup-direct-rpc", true);
 
   return [...byChain.values()];
 }
