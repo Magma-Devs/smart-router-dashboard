@@ -19,9 +19,9 @@ Only the latest released minor version line receives security patches. Subscribe
 
 In scope:
 
-- The dashboard api and web apps under `v2/` and the published Docker images at `ghcr.io/magma-devs/smart-router-dashboard/{api,web}`.
+- The dashboard api and web apps (`apps/api`, `apps/web`) and the published Docker images at `ghcr.io/magma-devs/smart-router-dashboard/{backend,frontend}`.
 - The authentication layer (Auth.js sign-in, JWT validation, the users database) when `AUTH_MODE=enabled`.
-- The release pipeline configuration (`.github/workflows/`, `v2/apps/*/Dockerfile`).
+- The release pipeline configuration (`.github/workflows/`, `apps/*/Dockerfile`).
 
 Out of scope:
 

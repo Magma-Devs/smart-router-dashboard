@@ -1,26 +1,23 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
 # ============================================
-# Frontend (Next.js/Node.js)
+# Node / pnpm monorepo
 # ============================================
 
 # Dependencies
 node_modules/
-frontend/node_modules/
 .pnp
 .pnp.js
 
 # Next.js
 .next/
-frontend/.next/
 out/
-frontend/out/
 
-# Production builds
+# Build output
 build/
 dist/
-frontend/build/
-frontend/dist/
+*.tsbuildinfo
+next-env.d.ts
 
 # Debug logs
 npm-debug.log*
@@ -29,79 +26,8 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-# TypeScript
-*.tsbuildinfo
-next-env.d.ts
-frontend/next-env.d.ts
-
 # Vercel
 .vercel
-frontend/.vercel
-
-# ============================================
-# Backend (Python)
-# ============================================
-
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-backend/__pycache__/
-backend/**/__pycache__/
-
-# Virtual environments
-venv/
-env/
-ENV/
-env.bak/
-venv.bak/
-.venv
-backend/venv/
-backend/env/
-backend/.venv
-
-# Python distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-# Only ignore Python lib directories, not frontend/lib
-backend/lib/
-# Ignore root-level lib/ but allow frontend/lib/
-/lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
-
-# Explicitly allow frontend/lib/ (must come after lib/ ignore)
-!frontend/lib/
-
-# PyCharm
-.idea/
-
-# pytest
-.pytest_cache/
-.coverage
-htmlcov/
-.tox/
-.hypothesis/
-
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
 
 # ============================================
 # Environment Variables
@@ -119,7 +45,6 @@ dmypy.json
 # Docker
 # ============================================
 
-# Docker volumes and data
 docker-data/
 .docker/
 
@@ -131,7 +56,7 @@ docker-data/
 .vscode/
 *.code-workspace
 
-# IntelliJ / PyCharm
+# IntelliJ
 .idea/
 *.iml
 *.iws
@@ -141,12 +66,9 @@ docker-data/
 *.sublime-project
 *.sublime-workspace
 
-# Vim
+# Vim / Emacs
 *.swp
 *.swo
-*~
-
-# Emacs
 *~
 \#*\#
 .\#*
@@ -190,7 +112,6 @@ $RECYCLE.BIN/
 *.lnk
 
 # Linux
-*~
 .fuse_hidden*
 .directory
 .Trash-*
@@ -202,11 +123,6 @@ $RECYCLE.BIN/
 
 logs/
 *.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
 
 # ============================================
 # Testing
@@ -214,10 +130,6 @@ lerna-debug.log*
 
 coverage/
 .nyc_output/
-.pytest_cache/
-.coverage
-htmlcov/
-.tox/
 
 # ============================================
 # Temporary files
@@ -226,17 +138,10 @@ htmlcov/
 *.tmp
 *.temp
 *.bak
-*.swp
-*~
 
 # ============================================
 # Project specific
 # ============================================
 
-# Helm values (if sensitive)
-# Uncomment if you don't want to track helm values
-# helm-values/
-# values/
-
-# Scripts (if containing secrets)
-# scripts/secrets.sh
+# Design-drop prototype — kept on disk for reference, never committed.
+SR_Dashboard/

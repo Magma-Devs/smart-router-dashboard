@@ -1,56 +1,259 @@
-version: "3.8"
+# Smart Router Dashboard — dev stack with HOT RELOAD, self-contained.
+#
+#   docker compose -f docker-compose.dev.yml --profile router up --build
+#   (omit --profile router when a router already runs on the host's :7779)
+#
+#   # Add the logs stack (Loki + Promtail + Grafana on :3001):
+#   docker compose -f docker-compose.dev.yml --profile router --profile logs up --build
+#
+# Mirrors lava-connect's dev pattern:
+#   - a shared Dockerfile.dev image carries node_modules (so mounts don't clobber it)
+#   - only source + dist dirs are mounted (NOT the whole tree)
+#   - `builder` runs `tsc --watch` on @sr/shared → dist/ (which api+web read)
+#   - api runs `tsx watch` (restarts on src or shared/dist change)
+#   - web runs `next dev` (Fast Refresh in the browser)
+#
+# Prometheus is bundled (deploy/prometheus.yml scrapes the bundled router
+# AND host.docker.internal:7779). ONE values file (SR_CONFIG_HOST) drives
+# both the router and the api — see docker-compose.yml for details.
+
+name: smart-router-dashboard-dev
 
 services:
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile.dev
+  prometheus:
+    image: prom/prometheus:latest
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
     volumes:
-      - ./frontend/app:/app/app
-      - ./frontend/components:/app/components
-      - ./frontend/hooks:/app/hooks
-      - ./frontend/lib:/app/lib
-      - ./frontend/services:/app/services
-      - ./frontend/types:/app/types
-      - ./frontend/public:/app/public
-    environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8000
-      - NEXT_PUBLIC_DOMAIN=localhost
-      - NEXT_PUBLIC_PORT=8000
-      - NEXT_PUBLIC_PROMETHEUS_URL=http://prometheus.lava.lavapro.xyz:80
-      - WATCHPACK_POLLING=true
-      - CHOKIDAR_USEPOLLING=true
+      - ./deploy/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data-dev:/prometheus
     ports:
-      - "3000:3000"
+      - "9090:9090"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
-    stdin_open: true
-    tty: true
-    networks:
-      - smart-router
-  backend:
+
+  router:
+    profiles: ["router"]
+    # Published router image from GHCR (override with SR_ROUTER_IMAGE). Pinned
+    # to :main because the default command uses --cors-expose-headers, which
+    # ships on :main and rolls into :latest on the next tagged release — switch
+    # the default back to :latest once it's there. The release image is
+    # binary-only (no bundled specs/), so specs load straight from the
+    # lava-specs GitHub repo — no checkout, no volume mount.
+    image: ${SR_ROUTER_IMAGE:-ghcr.io/magma-devs/smart-router:main}
+    pull_policy: ${SR_ROUTER_PULL:-always}
+    command:
+      - "values.yml"
+      - "--use-static-spec"
+      - "${SR_SPEC:-https://github.com/Magma-Devs/lava-specs/tree/main}"
+      # GitHub PAT for fetching specs from the lava-specs GitHub repo above.
+      # Unauthenticated GitHub API is rate-limited to 60 req/hour; a token lifts
+      # that to 5,000/hour (and unlocks private repos). Empty by default — the
+      # router treats "" as unauthenticated, so leave SR_GITHUB_TOKEN unset for
+      # the normal public-repo path and set it only if you hit rate limits.
+      - "--github-token"
+      - "${SR_GITHUB_TOKEN:-}"
+      - "--cors-headers"
+      - "*"
+      # Expose the router's relay-provenance headers so the dashboard's Live
+      # test can show which upstream served a request (and "Cached" on a cache
+      # hit). Read by the browser from the Lava-Provider-Address response header.
+      - "--cors-expose-headers"
+      - "Lava-Provider-Address,Lava-Retries,Provider-Latest-Block,lava-cross-validation-agreeing-providers,lava-cross-validation-disagreeing-providers"
+      - "--log-level"
+      - "${SR_LOG_LEVEL:-info}"
+      - "--log-format"
+      - "${SR_LOG_FORMAT:-json}"
+      - "--skip-websocket-verification"
+    volumes:
+      - ${SR_CONFIG_HOST:-./dev-config/values.yml}:/smart-router/values.yml:ro
+    ports:
+      # Multichain dev-config: one listen port per chain×interface (see
+      # dev-config/values.yml). 3360 ETH1 · 3361 SOLANA · 3362 BTC ·
+      # 3363 HYPERLIQUID · 3364-3366 COSMOSHUB rest/tendermint/grpc · 3367 APT1.
+      - "3360-3367:3360-3367"
+      - "7779:7779"
+    restart: unless-stopped
+
+  # Auth backing store — ONLY needed when AUTH_MODE=enabled. Start it with
+  # the `auth` profile: docker compose -f docker-compose.dev.yml --profile
+  # router --profile auth up. The api connects lazily (retry loop) so
+  # AUTH_MODE=disabled keeps the zero-dependency boot. Host port 5434 for
+  # psql debugging (5433 is lava-connect's dev postgres).
+  postgres:
+    profiles: ["auth"]
+    image: postgres:18-alpine
+    environment:
+      - POSTGRES_USER=sr
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-dev}
+      - POSTGRES_DB=sr_dashboard
+    volumes:
+      # PG18 image convention: mount ONE level up from the data dir
+      # (/var/lib/postgresql, not .../data) — the old path errors at boot.
+      - postgres-data-dev:/var/lib/postgresql
+    ports:
+      - "5434:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sr -d sr_dashboard"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  # ---- Logs stack (opt-in via `--profile logs`) --------------------------
+  # Loki + Promtail + Grafana. Promtail tails this project's container logs
+  # (api/web/prometheus/router), parses the router's zerolog JSON, and pushes
+  # to Loki; Grafana shows them on a pre-provisioned board. No change to any
+  # other service — discovery is via Docker labels. Grafana is on host :3001
+  # (web owns :3000). Start with e.g.:
+  #   docker compose -f docker-compose.dev.yml --profile router --profile logs up --build
+  loki:
+    profiles: ["logs"]
+    image: grafana/loki:3.4.2
+    command: ["-config.file=/etc/loki/loki-config.yml"]
+    volumes:
+      - ./deploy/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki-data-dev:/loki
+    ports:
+      - "3100:3100"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:3100/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  promtail:
+    profiles: ["logs"]
+    image: grafana/promtail:3.4.2
+    command: ["-config.file=/etc/promtail/promtail-config.yml"]
+    volumes:
+      - ./deploy/promtail-config.dev.yml:/etc/promtail/promtail-config.yml:ro
+      # Read-only Docker socket for container discovery + log tailing.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - promtail-positions-dev:/tmp
+    restart: unless-stopped
+    depends_on:
+      - loki
+
+  grafana:
+    profiles: ["logs"]
+    image: grafana/grafana:11.5.2
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USERNAME:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/smart-router-dashboard-logs.json
+      # Grafana listens on :3000 inside the container; only the HOST port is
+      # remapped to :3001 so it doesn't clash with web (:3000).
+      - GF_SERVER_ROOT_URL=http://localhost:3001/
+    volumes:
+      - ./deploy/grafana/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+      - ./deploy/grafana/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
+      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data-dev:/var/lib/grafana
+    ports:
+      - "3001:3000"
+    restart: unless-stopped
+    depends_on:
+      - loki
+
+  builder:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: Dockerfile.dev
+    working_dir: /app
+    command: pnpm --parallel --filter @sr/shared --filter @sr/db build:watch
+    volumes:
+      - ./packages/shared/src:/app/packages/shared/src
+      - ./packages/shared/dist:/app/packages/shared/dist
+      - ./packages/db/src:/app/packages/db/src
+      - ./packages/db/dist:/app/packages/db/dist
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    working_dir: /app
+    command: pnpm --filter @sr/api dev
+    environment:
+      - NODE_ENV=development
+      - API_PORT=8000
+      - PROMETHEUS_URL=http://prometheus:9090
+      - HELM_VALUES_DIR=/app/helm-values
+      - CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+      # Auth (see docs/AUTH.md): disabled (default) needs none of the rest.
+      - AUTH_MODE=${AUTH_MODE:-disabled}
+      - AUTH_SECRET=${AUTH_SECRET:-dev-secret-change-me-please-32chars!}
+      - DATABASE_URL=${DATABASE_URL:-postgres://sr:dev@postgres:5432/sr_dashboard}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@example.com}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin1234}
+      # Needed api-side to validate the `aud` claim of Google ID tokens.
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+    volumes:
+      - ./apps/api/src:/app/apps/api/src
+      - ./apps/api/tsconfig.json:/app/apps/api/tsconfig.json
+      - ./packages/shared/src:/app/packages/shared/src
+      - ./packages/shared/dist:/app/packages/shared/dist
+      - ./packages/db/src:/app/packages/db/src
+      - ./packages/db/dist:/app/packages/db/dist
+      - ./packages/db/migrations:/app/packages/db/migrations
+      - ${SR_CONFIG_HOST:-./dev-config/values.yml}:/app/helm-values/core/values.yml:ro
     ports:
       - "8000:8000"
-    volumes:
-      - ./backend:/app
-      - ./dev-config:/app/helm-values
-    environment:
-      - DEBUG=true
-      - LOG_LEVEL=DEBUG
-      - PROMETHEUS_URL=http://prometheus.lava.lavapro.xyz:80
-      - TENANT_ID=default
-      - AUTH_USERNAME=admin
-      - AUTH_PASSWORD=password
-      - AUTH_GATEWAY_URL=http://auth-gateway:8081
-      - AUTH_GATEWAY_ADMIN_TOKEN=dev-secret
-      - CORS_ORIGINS=["http://localhost:3000","http://127.0.0.1:3000","http://0.0.0.0:3000"]
-    restart: unless-stopped
-    networks:
-      - smart-router
+    depends_on:
+      - builder
+      - prometheus
 
-networks:
-  smart-router:
-    name: smart-router
-    driver: bridge
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    working_dir: /app
+    command: pnpm --filter @sr/web dev
+    environment:
+      - NODE_ENV=development
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NEXT_PUBLIC_LOCAL_MODE=true
+      - WATCHPACK_POLLING=true
+      # Base URL of the Grafana that hosts the logs board — the "View full logs"
+      # button links here (read at runtime via /api/config). Defaults to the
+      # bundled `logs` profile's Grafana on :3001; override to point elsewhere.
+      - DASHBOARD_GRAFANA_URL=${DASHBOARD_GRAFANA_URL:-http://localhost:3001}
+      # Auth (see docs/AUTH.md) — same AUTH_MODE + AUTH_SECRET as the api.
+      - AUTH_MODE=${AUTH_MODE:-disabled}
+      - AUTH_SECRET=${AUTH_SECRET:-dev-secret-change-me-please-32chars!}
+      - AUTH_URL=${AUTH_URL:-http://localhost:3000}
+      - INTERNAL_API_BASE_URL=http://api:8000
+      # OAuth providers — the login page shows a provider's button only
+      # when its id+secret pair is set.
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID:-}
+      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET:-}
+      - DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID:-}
+      - DISCORD_CLIENT_SECRET=${DISCORD_CLIENT_SECRET:-}
+    volumes:
+      - ./apps/web/src:/app/apps/web/src
+      - ./apps/web/public:/app/apps/web/public
+      - ./apps/web/next.config.mjs:/app/apps/web/next.config.mjs
+      - ./apps/web/tsconfig.json:/app/apps/web/tsconfig.json
+      - ./apps/web/next-env.d.ts:/app/apps/web/next-env.d.ts
+      - ./packages/shared/src:/app/packages/shared/src
+      - ./packages/shared/dist:/app/packages/shared/dist
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+volumes:
+  prometheus-data-dev:
+  postgres-data-dev:
+  loki-data-dev:
+  promtail-positions-dev:
+  grafana-data-dev:

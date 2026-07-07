@@ -9,17 +9,26 @@ env:
   REGISTRY: ghcr.io
 
 jobs:
+  # The dashboard is a pnpm/TypeScript monorepo at the repo root:
+  #   apps/api  → published as …/backend   (Fastify Prometheus proxy)
+  #   apps/web  → published as …/frontend  (Next.js UI)
+  # The image names (backend/frontend) are the ones the smart-router helm
+  # chart consumes, so the build target (api/web) maps onto them here.
   build-and-push:
-    name: Build and Push ${{ matrix.image }}
+    name: Build and Push ${{ matrix.name }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        image: [backend, frontend]
+        include:
+          - name: frontend
+            dockerfile: apps/web/Dockerfile
+          - name: backend
+            dockerfile: apps/api/Dockerfile
       fail-fast: false
     permissions:
       contents: read
       packages: write
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -42,23 +51,23 @@ jobs:
         if: github.ref_name == 'main'
         run: |
           NEW_VERSION="${{ steps.read-version.outputs.version }}"
-          
+
           # Get latest tag (remove 'v' prefix if present)
           LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-          
+
           if [ -z "$LATEST_TAG" ]; then
             echo "No previous tags found. This appears to be the first release."
             echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
             echo "is_first_release=true" >> $GITHUB_OUTPUT
             exit 0
           fi
-          
+
           # Remove 'v' prefix from tag for comparison
           LATEST_VERSION="${LATEST_TAG#v}"
-          
+
           echo "Latest tag: $LATEST_TAG (version: $LATEST_VERSION)"
           echo "New version: $NEW_VERSION"
-          
+
           # Compare versions using sort -V (version sort)
           if [ "$(printf '%s\n' "$LATEST_VERSION" "$NEW_VERSION" | sort -V | head -n1)" = "$NEW_VERSION" ]; then
             if [ "$LATEST_VERSION" = "$NEW_VERSION" ]; then
@@ -70,7 +79,7 @@ jobs:
             echo "Please bump the version in the VERSION file before releasing."
             exit 1
           fi
-          
+
           echo "✓ Version validated: $NEW_VERSION > $LATEST_VERSION"
           echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
           echo "is_first_release=false" >> $GITHUB_OUTPUT
@@ -84,14 +93,14 @@ jobs:
           else
             VERSION="${{ steps.read-version.outputs.version }}"
           fi
-          
+
           BRANCH_NAME="${{ github.ref_name }}"
-          
+
           # If branch is not main, append branch name to version
           if [ "$BRANCH_NAME" != "main" ]; then
             VERSION="${VERSION}-${BRANCH_NAME}"
           fi
-          
+
           # Extract major.minor version
           MAJOR_MINOR=$(echo "$VERSION" | cut -d'.' -f1,2)
           echo "version=$VERSION" >> $GITHUB_OUTPUT
@@ -115,18 +124,18 @@ jobs:
         run: |
           set +e  # Don't stop on errors
           set -x  # Enable debug output
-          IMAGE_NAME="ghcr.io/magma-devs/smart-router-dashboard/${{ matrix.image }}"
+          IMAGE_NAME="${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.name }}"
           VERSION="${{ steps.version.outputs.version }}"
           IMAGE_TAG="${IMAGE_NAME}:${VERSION}"
-          
+
           echo "Checking if image tag already exists: $IMAGE_TAG"
-          
+
           # Use Docker manifest inspect to check if the tag exists
           # Exit code 0 = manifest exists, exit code 1 = doesn't exist (manifest unknown)
           echo run: docker manifest inspect "$IMAGE_TAG"
           MANIFEST_OUTPUT=$(docker manifest inspect "$IMAGE_TAG" 2>&1)
           EXIT_CODE=$?
-          
+
           if [ $EXIT_CODE -eq 0 ]; then
             echo "Error: Image tag $IMAGE_TAG already exists in the registry"
             echo "Cannot overwrite existing version. Please bump the version in the VERSION file."
@@ -157,132 +166,24 @@ jobs:
               echo "type=raw,value=latest"
             fi
           } | tee tags.txt
-          
+
           # Output tags as multiline string
           echo "tags<<EOF" >> $GITHUB_OUTPUT
           cat tags.txt >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
-          
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.image }}
-          tags: ${{ steps.prepare-tags.outputs.tags }}
-
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v6
-        with:
-          context: ./${{ matrix.image }}
-          file: ./${{ matrix.image }}/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          build-args: |
-            APP_VERSION=${{ steps.version.outputs.version }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-  # v2 (TypeScript monorepo under ./v2) — published under NEW image names
-  # (…/api, …/web) so the v1 backend/frontend images above stay untouched
-  # during the transition. Consumed by smart-router's
-  # docker/docker-compose.dashboard.yml.
-  build-and-push-v2:
-    name: Build and Push v2 ${{ matrix.image }}
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - image: api
-            dockerfile: v2/apps/api/Dockerfile
-          - image: web
-            dockerfile: v2/apps/web/Dockerfile
-      fail-fast: false
-    permissions:
-      contents: read
-      packages: write
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Read version from VERSION file
-        id: read-version
-        run: |
-          if [ ! -f VERSION ] || [ -z "$(tr -d ' \n\r' < VERSION)" ]; then
-            echo "Error: VERSION file not found or is empty"
-            exit 1
-          fi
-          VERSION=$(tr -d ' \n\r' < VERSION)
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-
-      - name: Normalize version tag
-        id: version
-        run: |
-          VERSION="${{ steps.read-version.outputs.version }}"
-          BRANCH_NAME="${{ github.ref_name }}"
-          if [ "$BRANCH_NAME" != "main" ]; then
-            VERSION="${VERSION}-${BRANCH_NAME}"
-          fi
-          MAJOR_MINOR=$(echo "$VERSION" | cut -d'.' -f1,2)
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "major_minor=$MAJOR_MINOR" >> $GITHUB_OUTPUT
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Check if image version already exists
-        if: github.ref_name == 'main'
-        run: |
-          set +e
-          IMAGE_TAG="ghcr.io/${{ github.repository }}/${{ matrix.image }}:${{ steps.version.outputs.version }}"
-          MANIFEST_OUTPUT=$(docker manifest inspect "$IMAGE_TAG" 2>&1)
-          if [ $? -eq 0 ]; then
-            echo "Error: $IMAGE_TAG already exists — bump VERSION."
-            exit 1
-          fi
-          echo "✓ $IMAGE_TAG does not exist. Safe to proceed."
-
-      - name: Prepare tags
-        id: prepare-tags
-        run: |
-          {
-            echo "type=raw,value=${{ steps.version.outputs.version }}"
-            echo "type=raw,value=${{ steps.version.outputs.major_minor }}"
-            if [ "${{ github.ref_name }}" = "main" ]; then
-              echo "type=raw,value=latest"
-            fi
-          } | tee tags.txt
-          echo "tags<<EOF" >> $GITHUB_OUTPUT
-          cat tags.txt >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.image }}
+          images: ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.name }}
           tags: ${{ steps.prepare-tags.outputs.tags }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
-          context: ./v2
-          file: ./${{ matrix.dockerfile }}
+          context: .
+          file: ${{ matrix.dockerfile }}
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
@@ -291,7 +192,6 @@ jobs:
             APP_VERSION=${{ steps.version.outputs.version }}
             NEXT_PUBLIC_API_URL=http://localhost:8000
             NEXT_PUBLIC_LOCAL_MODE=true
-          # Distinct cache scopes — the v1 job's gha cache must not bleed in.
-          cache-from: type=gha,scope=v2-${{ matrix.image }}
-          cache-to: type=gha,mode=max,scope=v2-${{ matrix.image }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
           github-token: ${{ secrets.GITHUB_TOKEN }}

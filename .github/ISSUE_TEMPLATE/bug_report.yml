@@ -32,7 +32,7 @@ body:
     attributes:
       label: Dashboard Version
       description: The dashboard version/commit (see the Account page or `GET /version` on the api)
-      placeholder: v2, main, ghcr tag, etc.
+      placeholder: 0.4.0, main, ghcr tag, etc.
     validations:
       required: true
 
