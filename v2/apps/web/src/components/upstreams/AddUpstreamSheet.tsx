@@ -7,7 +7,7 @@
  * disabled — the config is a read-only mount. */
 
 import { useEffect, useState } from "react";
-import { SideSheet } from "@/components/gateway/SideSheet";
+import { Modal } from "@/components/gateway/Modal";
 import { READONLY_MSG, type UpstreamCatalogEntry } from "@/components/upstreams/catalog";
 import { type LiveChain } from "@/components/upstreams/bits";
 import { Step1EntryType, StepPickPreset, type EntryType } from "@/components/upstreams/steps/entry";
@@ -98,13 +98,18 @@ export function AddUpstreamSheet({ open, onClose, existingIds, chains, ifacesByS
 
   if (!open) return null;
   return (
-    <SideSheet
+    <Modal
       open={open}
       onClose={onClose}
       wide
-      title="Add an upstream"
-      sub="Connect an upstream node and Magma routes traffic through it automatically"
-      steps={{ labels: steps, current: step }}
+      title={
+        <div>
+          <div>Add an upstream</div>
+          <div style={{ fontSize: 12, fontWeight: 400, color: "var(--text-3)", marginTop: 2 }}>
+            Connect an upstream node and Magma routes traffic through it automatically
+          </div>
+        </div>
+      }
       footer={probing ? (
         <>
           <button className="gw-btn" onClick={() => { setProbing(false); setProbeReady(false); setPending(null); }}>← Back</button>
@@ -126,6 +131,30 @@ export function AddUpstreamSheet({ open, onClose, existingIds, chains, ifacesByS
         </>
       )}
     >
+      {/* Magma Cloud-only: on self-hosted, upstreams come from the read-only
+          mounted values file — this whole add flow is a preview of the Cloud
+          experience and can't persist here. */}
+      <div style={{
+        display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 16,
+        padding: "9px 11px", borderRadius: 8, fontSize: 12,
+        background: "rgba(255,168,10,0.08)", border: "1px solid rgba(255,168,10,0.22)", color: "var(--text-2)",
+      }}>
+        <span style={{ color: "#ffa80a", flexShrink: 0, marginTop: 1 }}>ⓘ</span>
+        <span>Adding upstreams is a <strong>Magma Cloud</strong> feature. On this self-hosted deployment upstreams are defined in the read-only mounted values file — edit that file to change them.</span>
+      </div>
+
+      {/* Step indicator (SideSheet used to render this via its `steps` prop). */}
+      <div className="gw-sheet__steps" style={{ marginBottom: 16 }}>
+        {steps.map((s, i) => {
+          const idx = i + 1, isDone = step > idx, isActive = step === idx;
+          return (
+            <div key={i} className={"gw-sheet__step" + (isActive ? " active" : "") + (isDone ? " done" : "")}>
+              <span className="gw-sheet__step-num">{isDone ? "✓" : idx}</span>{s}
+            </div>
+          );
+        })}
+      </div>
+
       {probing ? (
         <ProbeStep
           catalogId={catalog?.id || pendingData?.catalogId}
@@ -156,6 +185,6 @@ export function AddUpstreamSheet({ open, onClose, existingIds, chains, ifacesByS
           )}
         </>
       )}
-    </SideSheet>
+    </Modal>
   );
 }

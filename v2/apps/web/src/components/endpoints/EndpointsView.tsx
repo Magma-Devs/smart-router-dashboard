@@ -105,18 +105,15 @@ export function EndpointsView() {
   const detailRouter = liveDetail ? routers.find((r) => r.id === liveDetail.routerId) ?? null : null;
 
   const loading = !config.data && !config.error;
-  const openCreate = () => setShowCreate(true);
 
   return (
     <div className="gw-page fade-in">
 
-      {/* Header */}
+      {/* Header — "New endpoint" is hidden: endpoints come from the read-only
+          mounted config, so there's nothing to create here (a Magma Cloud
+          action). Restore the button when a create flow is wired. */}
       <div className="gw-row" style={{ justifyContent: "space-between", marginBottom: 20 }}>
         <h1>Endpoints</h1>
-        <button className="gw-btn gw-btn--primary" onClick={openCreate}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          New endpoint
-        </button>
       </div>
 
       {/* Search + filter */}
@@ -144,7 +141,6 @@ export function EndpointsView() {
           </div>
           <h2>No endpoints yet</h2>
           <p>No router config mounted — set HELM_VALUES_DIR / mount core/values.yml and its chains and interfaces will appear here.</p>
-          <button className="gw-btn gw-btn--primary" onClick={openCreate}>New endpoint</button>
         </div>
       ) : chainGroups.length === 0 ? (
         <div style={{ textAlign: "center", padding: "48px 0", color: "var(--text-3)", fontSize: 13 }}>

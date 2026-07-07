@@ -190,9 +190,7 @@ export function EndpointDetailSheet({ open, ep, router, onClose, upstreams }: {
                             <span style={{ fontSize: 12, fontWeight: 500, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{n.name}</span>
                             {!n.isBackup && <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 4, background: "rgba(34,197,94,0.1)", color: "var(--ok)", border: "1px solid rgba(34,197,94,0.2)", flexShrink: 0 }}>Primary</span>}
                             {n.isBackup && <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 4, background: "rgba(96,165,250,0.1)", color: "#60a5fa", border: "1px solid rgba(96,165,250,0.2)", flexShrink: 0 }}>Backup</span>}
-                            <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 4, background: "var(--hover-2)", color: "var(--text-3)", flexShrink: 0 }}>
-                              {ep.iface.toUpperCase()}
-                            </span>
+                            <IfaceTag id={ep.iface} />
                             <span className={statusTagCls(pv?.status)} style={{ fontSize: 10, padding: "1px 6px", flexShrink: 0 }}>
                               {pv?.status ?? "—"}
                             </span>
