@@ -78,7 +78,12 @@ export function EndpointsView() {
         ep.spec.toLowerCase().includes(q) ||
         host.toLowerCase().includes(q) ||
         ep.iface.toLowerCase().includes(q);
-      const matchNet = netFilter === "all" || (ep.network || "mainnet") === netFilter;
+      // Mainnet/testnet comes from the chain map (ep.network is the lowercased
+      // spec index, never literally "mainnet"/"testnet").
+      const isMainnet = c.mainnet;
+      const matchNet =
+        netFilter === "all" ||
+        (netFilter === "mainnet" ? isMainnet : !isMainnet);
       return matchSearch && matchNet;
     });
     const map = new Map<string, CardGroup>();
