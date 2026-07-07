@@ -78,12 +78,19 @@ direct-rpc:
   # reads.
 
   # ---- Ethereum (ETH1, chainId 0x1) ----
+  # `addons` on a node-url advertise the extra capabilities that upstream
+  # serves (archive state, debug_*/trace_* namespaces). The dashboard surfaces
+  # them as capability chips on the Upstreams + Endpoints pages; the Try-now
+  # console unlocks the matching tiers. Declared here on eth-publicnode so the
+  # feature is visible out-of-the-box — set them to match what YOUR upstream
+  # actually supports.
   - name: "eth-publicnode"
     group-label: "publicnode"
     chain-id: "ETH1"
     api-interface: "jsonrpc"
     node-urls:
       - url: "https://ethereum-rpc.publicnode.com"
+        addons: ["archive", "debug", "trace"]
       - url: "wss://ethereum-rpc.publicnode.com"
 
   - name: "eth-tenderly"

@@ -74,8 +74,8 @@ export function TroubleDetail({
           <DSHNoData height={100} />
         </div>
         <div>
-          <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-2)", marginBottom: 8 }}>Providers on this pair</div>
-          {item.providers.map((p) => {
+          <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-2)", marginBottom: 8 }}>Upstreams on this pair</div>
+          {item.upstreams.map((p) => {
             const isInt = p.toLowerCase().includes("self");
             return (
               <div key={p} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0" }}>

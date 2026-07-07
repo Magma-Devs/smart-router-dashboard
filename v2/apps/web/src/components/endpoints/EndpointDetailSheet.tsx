@@ -15,8 +15,8 @@ import type { RouterTopology } from "@sr/shared";
 import { buildChainMetaByIndex } from "@sr/shared";
 import { labelStyle } from "@/lib/styles";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
-import { Hint } from "@/components/providers/bits";
-import { JWT_CLOUD_MSG, READONLY_MSG, type ProviderRow } from "@/components/providers/catalog";
+import { Hint } from "@/components/upstreams/bits";
+import { JWT_CLOUD_MSG, READONLY_MSG, type UpstreamRow } from "@/components/upstreams/catalog";
 import {
   IfaceTag,
   UrlBlock,
@@ -27,16 +27,16 @@ import {
 
 interface NodeGroup { name: string; isBackup: boolean; hosts: string[] }
 
-export function EndpointDetailSheet({ open, ep, router, onClose, providers }: {
+export function EndpointDetailSheet({ open, ep, router, onClose, upstreams }: {
   open: boolean;
   ep: EndpointRowModel | null;
   router: RouterTopology | null;
   onClose: () => void;
-  providers: ProviderRow[];
+  upstreams: UpstreamRow[];
 }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [editingProviders, setEditingProviders] = useState(false);
-  const [localProviderIds, setLocalProviderIds] = useState<string[]>([]);
+  const [editingUpstreams, setEditingUpstreams] = useState(false);
+  const [localUpstreamIds, setLocalUpstreamIds] = useState<string[]>([]);
 
   /* One entry per upstream node (its urlHost list joined for display). */
   const nodeGroups = useMemo<NodeGroup[]>(() => {
@@ -52,8 +52,8 @@ export function EndpointDetailSheet({ open, ep, router, onClose, providers }: {
   useEffect(() => {
     if (open) {
       setConfirmDelete(false);
-      setEditingProviders(false);
-      setLocalProviderIds(nodeGroups.map((n) => n.name));
+      setEditingUpstreams(false);
+      setLocalUpstreamIds(nodeGroups.map((n) => n.name));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, ep?.id]);
@@ -63,7 +63,7 @@ export function EndpointDetailSheet({ open, ep, router, onClose, providers }: {
   const chain = buildChainMetaByIndex(ep.spec);
   const host = ep.port !== null ? `localhost:${ep.port}` : "—";
   const wsPort = router?.localPorts["websocket"] ?? null;
-  const providerByName = (name: string): ProviderRow | undefined => providers.find((p) => p.id === name);
+  const upstreamByName = (name: string): UpstreamRow | undefined => upstreams.find((p) => p.id === name);
   const statusTagCls = (s: string | undefined) =>
     "gw-tag" + (s === "healthy" ? " gw-tag--ok" : s === "degraded" ? " gw-tag--warn" : "");
 
@@ -94,7 +94,7 @@ export function EndpointDetailSheet({ open, ep, router, onClose, providers }: {
         {/* Body */}
         <div className="gw-sheet__body" style={{ display: "grid", gap: 14, alignContent: "start" }}>
 
-          {/* URLs + Providers */}
+          {/* URLs + Upstreams */}
           <div>
             <div style={{ ...labelStyle, marginBottom: 7 }}>Endpoint URL</div>
             <div style={{ display: "grid", gap: 5 }}>
@@ -108,43 +108,43 @@ export function EndpointDetailSheet({ open, ep, router, onClose, providers }: {
               {ep.iface === "jsonrpc" && wsPort !== null && <UrlBlock label="WSS" url={epLocalWs(wsPort)} />}
             </div>
 
-            {/* Participating providers */}
+            {/* Participating upstreams */}
             <div style={{ marginTop: 12 }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 7 }}>
                 <div style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.07em", color: "var(--text-3)" }}>Served by</div>
-                {!editingProviders
-                  ? <button className="gw-btn" style={{ fontSize: 11, padding: "2px 8px" }} onClick={() => setEditingProviders(true)}>Edit</button>
+                {!editingUpstreams
+                  ? <button className="gw-btn" style={{ fontSize: 11, padding: "2px 8px" }} onClick={() => setEditingUpstreams(true)}>Edit</button>
                   : <div style={{ display: "flex", gap: 6 }}>
                       <button className="gw-btn" style={{ fontSize: 11, padding: "2px 8px" }}
-                        onClick={() => { setEditingProviders(false); setLocalProviderIds(nodeGroups.map((n) => n.name)); }}>Cancel</button>
+                        onClick={() => { setEditingUpstreams(false); setLocalUpstreamIds(nodeGroups.map((n) => n.name)); }}>Cancel</button>
                       <button className="gw-btn gw-btn--primary" style={{ fontSize: 11, padding: "2px 8px" }}
                         disabled title={READONLY_MSG}>Save</button>
                     </div>
                 }
               </div>
 
-              {editingProviders ? (
-                /* Edit mode — checkboxes for all compatible providers */
+              {editingUpstreams ? (
+                /* Edit mode — checkboxes for all compatible upstreams */
                 (() => {
-                  const compatible = providers.filter((p) =>
+                  const compatible = upstreams.filter((p) =>
                     p.chains.includes(ep.spec) &&
                     (!p.interfaces.length || p.interfaces.includes(ep.iface))
                   );
-                  const toggle = (id: string) => setLocalProviderIds((prev) =>
+                  const toggle = (id: string) => setLocalUpstreamIds((prev) =>
                     prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
                   );
                   return (
                     <div style={{ display: "grid", gap: 5 }}>
                       <div style={{ display: "flex", gap: 8, marginBottom: 4 }}>
                         <button className="gw-btn" style={{ fontSize: 10, padding: "2px 8px" }}
-                          onClick={() => setLocalProviderIds(compatible.map((p) => p.id))}>Select all</button>
+                          onClick={() => setLocalUpstreamIds(compatible.map((p) => p.id))}>Select all</button>
                         <button className="gw-btn" style={{ fontSize: 10, padding: "2px 8px" }}
-                          onClick={() => setLocalProviderIds([])}>Deselect all</button>
+                          onClick={() => setLocalUpstreamIds([])}>Deselect all</button>
                       </div>
                       {compatible.length === 0 ? (
-                        <div style={{ fontSize: 12, color: "var(--text-3)", padding: "8px 0" }}>No compatible providers for this chain and interface.</div>
+                        <div style={{ fontSize: 12, color: "var(--text-3)", padding: "8px 0" }}>No compatible upstreams for this chain and interface.</div>
                       ) : compatible.map((pv) => {
-                        const on = localProviderIds.includes(pv.id);
+                        const on = localUpstreamIds.includes(pv.id);
                         return (
                           <button key={pv.id} onClick={() => toggle(pv.id)} style={{
                             display: "flex", alignItems: "center", gap: 10, padding: "9px 12px",
@@ -181,11 +181,11 @@ export function EndpointDetailSheet({ open, ep, router, onClose, providers }: {
                     <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 11px", borderRadius: 7,
                       background: "rgba(239,68,68,0.05)", border: "1px solid rgba(239,68,68,0.18)" }}>
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--err)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                      <span style={{ fontSize: 12, color: "var(--err)" }}>No providers — endpoint will return errors.</span>
+                      <span style={{ fontSize: 12, color: "var(--err)" }}>No upstreams — endpoint will return errors.</span>
                     </div>
                   ) : (
                     nodeGroups.map((n) => {
-                      const pv = providerByName(n.name);
+                      const pv = upstreamByName(n.name);
                       return (
                         <div key={n.name} style={{ padding: "7px 10px", borderRadius: 7, background: "var(--hover)", border: "1px solid var(--line)" }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 9 }}>

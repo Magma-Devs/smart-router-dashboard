@@ -3,7 +3,7 @@
 /* MetricsTabSectionA — "A · Customer SLO over time", port of the design
    prototype's DSHMetrics section A (SR_Dashboard/magma/page-dashboard.jsx
    ~1307-1525). Per-chain SR / latency / the derived error-rate stack are
-   live; per-provider availability (§11) and per-region latency (§10) are
+   live; per-upstream availability (§11) and per-region latency (§10) are
    null-gated families that render the design's muted "—" state. */
 
 import { useMemo, useState } from "react";
@@ -88,7 +88,7 @@ export function MetricsTabSectionA({
   }, [data]);
 
   const sortedProvAvail = useMemo(() => {
-    const rows = data?.providerAvailability ?? [];
+    const rows = data?.upstreamAvailability ?? [];
     return rows.slice().sort((a, b) => {
       const av = (a as unknown as Record<string, unknown>)[provSort.col];
       const bv = (b as unknown as Record<string, unknown>)[provSort.col];
@@ -215,21 +215,21 @@ export function MetricsTabSectionA({
           {errIsolate && <button onClick={() => setErrIso(null)} style={{ fontSize: 10, color: "var(--brand)", background: "none", border: "none", cursor: "pointer", fontFamily: "var(--font-ui)", padding: "2px 5px" }}>Show all</button>}
         </div>
       </DSHCard>
-      {/* §11 — Per-provider availability */}
+      {/* §11 — Per-upstream availability */}
       <div style={{ background: "var(--bg)", border: "1px solid var(--line)", borderRadius: 10, overflow: "hidden", marginBottom: 14 }}>
         <div style={{ padding: "10px 16px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-2)" }}>Per-provider availability</span>
+          <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-2)" }}>Per-upstream availability</span>
           <div style={{ flex: 1 }} />
           <CompareBtn on={provCompare} onClick={() => setProvCmp(!provCompare)} />
         </div>
-        {data?.providerAvailability == null || sortedProvAvail.length === 0 ? (
+        {data?.upstreamAvailability == null || sortedProvAvail.length === 0 ? (
           /* Degraded/incident columns need probe families this build doesn't emit. */
           <DSHNoData height={72} />
         ) : (
           <table className="gw-table">
             <thead>
               <tr>
-                <th>Provider</th>
+                <th>Upstream</th>
                 <th style={{ textAlign: "right", cursor: "pointer" }} onClick={() => sortProv("ok")}>Successful {provSort.col === "ok" ? (provSort.dir > 0 ? "↑" : "↓") : ""}</th>
                 <th style={{ textAlign: "right", cursor: "pointer" }} onClick={() => sortProv("deg")}>Degraded {provSort.col === "deg" ? (provSort.dir > 0 ? "↑" : "↓") : ""}</th>
                 <th style={{ textAlign: "right", cursor: "pointer" }} onClick={() => sortProv("fail")}>Failed {provSort.col === "fail" ? (provSort.dir > 0 ? "↑" : "↓") : ""}</th>

@@ -9,10 +9,10 @@
 import { useEffect, useMemo, useState } from "react";
 import type { RouterTopology } from "@sr/shared";
 import { Modal } from "@/components/gateway/Modal";
-import { StatusDot } from "@/components/providers/bits";
-import type { ProviderRow } from "@/components/providers/catalog";
+import { StatusDot } from "@/components/upstreams/bits";
+import type { UpstreamRow } from "@/components/upstreams/catalog";
 
-const NO_PORT_MSG = "No local listen port for this provider's chains in the mounted config";
+const NO_PORT_MSG = "No local listen port for this upstream's chains in the mounted config";
 
 /** POST-able probe per api-interface (mirrors the Live test presets). */
 const TEST_PRESETS: Record<string, { method: string; body: string }> = {
@@ -23,10 +23,10 @@ const TEST_PRESETS: Record<string, { method: string; body: string }> = {
 interface TestTarget { port: number; iface: string; method: string; body: string }
 interface TestOutcome { ms: number; detail: string }
 
-export function TestModal({ open, onClose, provider, routers }: {
+export function TestModal({ open, onClose, upstream, routers }: {
   open: boolean;
   onClose: () => void;
-  provider: ProviderRow | null;
+  upstream: UpstreamRow | null;
   routers: RouterTopology[];
 }) {
   const [stage, setStage] = useState<"idle" | "running" | "ok" | "err">("idle");
@@ -35,9 +35,9 @@ export function TestModal({ open, onClose, provider, routers }: {
 
   useEffect(() => { if (!open) { setStage("idle"); setOutcome(null); setErrMsg(""); } }, [open]);
 
-  /* First (router, interface) of this provider with a POST-able local port. */
+  /* First (router, interface) of this upstream with a POST-able local port. */
   const target = useMemo<TestTarget | null>(() => {
-    for (const row of provider?.chainRows ?? []) {
+    for (const row of upstream?.chainRows ?? []) {
       const router = routers.find((r) => r.id === row.routerId);
       if (!router) continue;
       for (const iface of [row.iface, ...router.interfaces]) {
@@ -48,7 +48,7 @@ export function TestModal({ open, onClose, provider, routers }: {
       }
     }
     return null;
-  }, [provider, routers]);
+  }, [upstream, routers]);
 
   const run = async () => {
     if (!target) return;
@@ -90,13 +90,13 @@ export function TestModal({ open, onClose, provider, routers }: {
             title={target ? undefined : NO_PORT_MSG}>Run test</button>
         )}
       </>}>
-      {provider && (
+      {upstream && (
         <div style={{ display: "grid", gap: 14 }}>
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-            <StatusDot status={provider.status} />
+            <StatusDot status={upstream.status} />
             <div>
-              <div style={{ fontSize: 13, fontWeight: 500 }}>{provider.name}</div>
-              <div className="gw-secret">{target ? `http://localhost:${target.port}` : provider.url || "—"}</div>
+              <div style={{ fontSize: 13, fontWeight: 500 }}>{upstream.name}</div>
+              <div className="gw-secret">{target ? `http://localhost:${target.port}` : upstream.url || "—"}</div>
             </div>
           </div>
           {!target && (

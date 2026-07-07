@@ -80,7 +80,7 @@ export function ChainDetail({ r, onChainClick, win }: { r: ChainDetailRow; onCha
       : { key: "qos", label: "QoS", cur: "—", note: "no data", color: "#a78bfa", values: [], times: [], yFmt: (v: number) => v.toFixed(0) },
     buShare
       ? { key: "routing", label: "Primary vs backup", cur: Math.round(curBU) + "% backup", color: "#fb923c", values: buShare.values, times: buShare.times, yFmt: (v: number) => v.toFixed(0) + "%", yDomain: [0, 100], caption: "share of traffic on backup — 0% = all primary" }
-      : { key: "routing", label: "Primary vs backup", cur: "100% primary", note: "no backup", color: "#fb923c", values: zeroTimes.map(() => 0), times: zeroTimes, yFmt: (v: number) => v.toFixed(0) + "%", yDomain: [0, 100], caption: r.hasBackup ? "backup share unavailable for this window" : "single provider — no backup configured" },
+      : { key: "routing", label: "Primary vs backup", cur: "100% primary", note: "no backup", color: "#fb923c", values: zeroTimes.map(() => 0), times: zeroTimes, yFmt: (v: number) => v.toFixed(0) + "%", yDomain: [0, 100], caption: r.hasBackup ? "backup share unavailable for this window" : "single upstream — no backup configured" },
   ];
 
   const m = metrics.find((x) => x.key === selKey) || metrics[0]!;
@@ -122,7 +122,7 @@ export function ChainDetail({ r, onChainClick, win }: { r: ChainDetailRow; onCha
           )}
         </div>
         <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-end" }}>
-          <button onClick={(e) => { e.stopPropagation(); onChainClick(r.spec); }} style={{ border: "none", background: "none", color: "var(--brand)", cursor: "pointer", fontSize: 12, fontWeight: 600, fontFamily: "inherit", padding: 0 }}>View providers →</button>
+          <button onClick={(e) => { e.stopPropagation(); onChainClick(r.spec); }} style={{ border: "none", background: "none", color: "var(--brand)", cursor: "pointer", fontSize: 12, fontWeight: 600, fontFamily: "inherit", padding: 0 }}>View upstreams →</button>
         </div>
       </div>
     </td>

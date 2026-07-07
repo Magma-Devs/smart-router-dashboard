@@ -22,7 +22,7 @@ export function HeroPanel({ tw }: { tw: MetricWindow }) {
   const reqServed = data?.requestsServed.value ?? null;
   const effP95 = data?.effectiveReadP95Ms.value ?? null;
   const stale = data?.staleCaught.value ?? null;
-  const provCount = data?.providerCount ?? 0;
+  const provCount = data?.upstreamCount ?? 0;
 
   const headline: {
     label: string;
@@ -47,7 +47,7 @@ export function HeroPanel({ tw }: { tw: MetricWindow }) {
     note: string;
   }[] = [
     { display: reqServed != null ? fmtNum(reqServed) : "—", label: "Requests served", tipKey: "reqServed", color: "var(--text-3)",
-      note: "across " + provCount + " provider" + (provCount === 1 ? "" : "s") },
+      note: "across " + provCount + " upstream" + (provCount === 1 ? "" : "s") },
     { display: effP95 != null
         ? <span style={{ color: "var(--ok)", display: "inline-flex", alignItems: "baseline", gap: 6 }}>{Math.round(effP95)} ms</span>
         : "—",

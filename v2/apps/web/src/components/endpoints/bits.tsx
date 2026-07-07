@@ -131,8 +131,8 @@ export function buildEndpointRows(routers: RouterTopology[]): EndpointRowModel[]
   return out;
 }
 
-/** Unique node names serving a row (the design's provider count). */
-export function providerCount(ep: EndpointRowModel): number {
+/** Unique node names serving a row (the design's upstream count). */
+export function upstreamCount(ep: EndpointRowModel): number {
   return new Set(ep.nodes.map((n) => n.name)).size;
 }
 
@@ -140,4 +140,22 @@ export function providerCount(ep: EndpointRowModel): number {
  *  the Try-now drawer's Archive tier for this specific endpoint. */
 export function epHasArchive(ep: EndpointRowModel): boolean {
   return ep.nodes.some((n) => n.addons.includes("archive"));
+}
+
+/** Union of addon capabilities across the endpoint's upstreams, plus a `ws`
+ *  marker when the endpoint's interface serves websockets. Feeds the
+ *  CapabilityTags chips on the Endpoints page. */
+export function epAddons(ep: EndpointRowModel): string[] {
+  const set = new Set<string>();
+  for (const n of ep.nodes) for (const a of n.addons) set.add(a);
+  return [...set];
+}
+
+/** Whether this endpoint's interface is (or pairs with) a websocket transport
+ *  — jsonrpc/tendermintrpc listeners also accept a ws upgrade. */
+export function epHasWs(ep: EndpointRowModel): boolean {
+  return (
+    ep.iface.endsWith("-ws") ||
+    ep.nodes.some((n) => n.urlHost.startsWith("ws://") || n.urlHost.startsWith("wss://"))
+  );
 }

@@ -25,8 +25,8 @@ import {
 import { CHAIN_CLR } from "@/lib/colors";
 import { fmtComma } from "@/lib/format";
 
-/** Palette for per-provider series (the prototype's PROV_META is mock-only). */
-const PROVIDER_PALETTE = ["#60a5fa", "#22c55e", "#f59e0b", "#a78bfa", "#f472b6", "#2dd4bf"];
+/** Palette for per-upstream series (the prototype's PROV_META is mock-only). */
+const UPSTREAM_PALETTE = ["#60a5fa", "#22c55e", "#f59e0b", "#a78bfa", "#f472b6", "#2dd4bf"];
 
 const nums = (pts: TimePoint[] | undefined): number[] => (pts ?? []).map((p) => p.v ?? 0);
 
@@ -205,7 +205,7 @@ export function OverviewView() {
   const { timeWindow, setTimeWindow } = useFilters();
   const [chainFilter, setChainFilter] = useState("all");
   const [showStack, setShowStack] = useState(false);
-  const [latMode, setLatMode] = useState<"overall" | "per-provider">("overall");
+  const [latMode, setLatMode] = useState<"overall" | "per-upstream">("overall");
   const [latPct, setLatPct] = useState<"p50" | "p95" | "p99">("p95");
 
   const specQ = chainFilter !== "all" ? `&spec=${chainFilter}` : "";
@@ -263,10 +263,10 @@ export function OverviewView() {
     }));
   }, [data?.perChainSeries]);
 
-  const provLayers = (data?.perProviderSeries ?? []).map((p, i) => ({
-    name: p.provider,
+  const provLayers = (data?.perUpstreamSeries ?? []).map((p, i) => ({
+    name: p.upstream,
     values: nums(p.points),
-    color: PROVIDER_PALETTE[i % PROVIDER_PALETTE.length]!,
+    color: UPSTREAM_PALETTE[i % UPSTREAM_PALETTE.length]!,
   }));
 
   const kpiDelta = (value: number | null | undefined, prior: number | null | undefined) =>
@@ -321,7 +321,7 @@ export function OverviewView() {
         {/* A — Throughput */}
         <ChCard
           title="Throughput · req/s"
-          controls={toggleBtn("Stack by provider", showStack, () => setShowStack((s) => !s))}
+          controls={toggleBtn("Stack by upstream", showStack, () => setShowStack((s) => !s))}
           footer={showStack
             ? <ChartLegend items={provLayers.map((l) => ({ label: l.name, color: l.color, square: true }))} />
             : null}
@@ -354,7 +354,7 @@ export function OverviewView() {
                 ))}
               </div>
               <div className="gw-segctl" style={{ transform: "scale(0.82)", transformOrigin: "right center" }}>
-                {([["overall", "Overall"], ["per-provider", "Providers"]] as const).map(([v, lbl]) => (
+                {([["overall", "Overall"], ["per-upstream", "Upstreams"]] as const).map(([v, lbl]) => (
                   <button key={v} className={latMode === v ? "on" : ""} onClick={() => setLatMode(v)} style={{ padding: "3px 8px" }}>{lbl}</button>
                 ))}
               </div>
@@ -365,7 +365,7 @@ export function OverviewView() {
             <LineChart series={latSeries} id="lat-line" bgBands={latBgBands} yFmt={(v) => Math.round(v) + "ms"} />
           ) : (
             <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "var(--text-3)" }}>
-              Per-provider latency lives in Metrics → Providers.
+              Per-upstream latency lives in Metrics → Upstreams.
             </div>
           )}
         </ChCard>

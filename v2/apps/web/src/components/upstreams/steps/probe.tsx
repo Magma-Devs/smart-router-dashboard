@@ -8,9 +8,9 @@
 
 import { useEffect } from "react";
 import { labelStyle } from "@/lib/styles";
-import { ProviderLogo } from "@/components/providers/ProviderLogo";
-import { Hint } from "@/components/providers/bits";
-import { READONLY_MSG } from "@/components/providers/catalog";
+import { UpstreamLogo } from "@/components/upstreams/UpstreamLogo";
+import { Hint } from "@/components/upstreams/bits";
+import { READONLY_MSG } from "@/components/upstreams/catalog";
 
 function Check({ val }: { val: boolean | null | undefined }) {
   if (val === undefined)
@@ -22,9 +22,9 @@ function Check({ val }: { val: boolean | null | undefined }) {
     : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-4)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>;
 }
 
-export function ProbeStep({ catalogId, providerName, onReady }: {
+export function ProbeStep({ catalogId, upstreamName, onReady }: {
   catalogId?: string | null;
-  providerName?: string;
+  upstreamName?: string;
   onReady?: () => void;
 }) {
   useEffect(() => { onReady?.(); }, [onReady]);
@@ -42,9 +42,9 @@ export function ProbeStep({ catalogId, providerName, onReady }: {
     <div style={{ display: "grid", gap: 16 }}>
       {/* Identity row */}
       <div style={{ display: "flex", gap: 12, alignItems: "center", padding: "12px 14px", borderRadius: 10, background: "var(--bg)", border: "1px solid var(--line)" }}>
-        <ProviderLogo id={catalogId ?? undefined} size={34} />
+        <UpstreamLogo id={catalogId ?? undefined} size={34} />
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 13, fontWeight: 600 }}>{providerName || catalogId || "Custom"}</div>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>{upstreamName || catalogId || "Custom"}</div>
           <div style={{ fontSize: 11, color: "var(--text-3)" }}>
             Capability probes not run — self-hosted
           </div>

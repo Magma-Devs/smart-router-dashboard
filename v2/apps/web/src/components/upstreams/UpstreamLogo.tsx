@@ -1,16 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { PROVIDER_COLORS, PROVIDER_DOMAINS } from "@/components/providers/catalog";
+import { UPSTREAM_COLORS, UPSTREAM_DOMAINS } from "@/components/upstreams/catalog";
 
-/* Ported verbatim from the design prototype (page-providers.jsx ProviderLogo):
+/* Ported verbatim from the design prototype (page-providers.jsx UpstreamLogo):
  * Clearbit favicon with an SVG server-icon fallback. Deliberately a plain
  * <img> with onError fallback — NOT next/image (external host, no loader). */
 
-export function ProviderLogo({ id, size = 28 }: { id?: string | null; size?: number }) {
+export function UpstreamLogo({ id, size = 28 }: { id?: string | null; size?: number }) {
   const [failed, setFailed] = useState(false);
-  const domain = id ? PROVIDER_DOMAINS[id] : undefined;
-  const color = id ? PROVIDER_COLORS[id] : undefined;
+  const domain = id ? UPSTREAM_DOMAINS[id] : undefined;
+  const color = id ? UPSTREAM_COLORS[id] : undefined;
   const r = Math.round(size * 0.28);
 
   if (!domain || failed) {
@@ -33,7 +33,7 @@ export function ProviderLogo({ id, size = 28 }: { id?: string | null; size?: num
     <img
       src={`https://logo.clearbit.com/${domain}`}
       width={size} height={size}
-      alt={id ?? "provider"}
+      alt={id ?? "upstream"}
       onError={() => setFailed(true)}
       style={{ borderRadius: r, flexShrink: 0, display: "block", objectFit: "cover",
         background: "var(--surface-2)" }}

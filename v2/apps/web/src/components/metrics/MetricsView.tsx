@@ -2,11 +2,11 @@
 
 /* MetricsView — the Metrics page body, ported verbatim from the design
  * prototype (page-metrics.jsx MetricsPage): RouterHeader, the four tabs
- * (Overview / Providers / Errors breakdown / Traffic), and the cross-tab
+ * (Overview / Upstreams / Errors breakdown / Traffic), and the cross-tab
  * chain-filter banner. Exported standalone so both /metrics and the
  * chrome-less /standalone route can render it. timeWindow comes from the
  * shared FiltersProvider; chainFilter is page-level state that narrows every
- * tab (and is set by RouterOverview's "View providers →" drill-in). */
+ * tab (and is set by RouterOverview's "View upstreams →" drill-in). */
 
 import { useMemo, useState } from "react";
 import { buildChainMetaByIndex } from "@sr/shared";
@@ -21,9 +21,9 @@ import { CrossValidation } from "./CrossValidation";
 import { WebSocketPanel } from "./WebSocketPanel";
 import { MethodBreakdown } from "./MethodBreakdown";
 import { ErrorsBreakdown } from "./ErrorsBreakdown";
-import { ProviderMetricsTab } from "./provider/ProviderMetricsTab";
+import { UpstreamMetricsTab } from "./upstream/UpstreamMetricsTab";
 
-type Tab = "metrics" | "providers" | "errors" | "traffic";
+type Tab = "metrics" | "upstreams" | "errors" | "traffic";
 
 export function MetricsView() {
   const { timeWindow, setTimeWindow } = useFilters();
@@ -55,7 +55,7 @@ export function MetricsView() {
           timeWindow={timeWindow} setTimeWindow={setTimeWindow} />
       </div>
       <div style={{ display: "flex", borderBottom: "1px solid var(--line)", marginBottom: 24 }}>
-        {([["metrics", "Overview"], ["providers", "Providers"], ["errors", "Errors breakdown"], ["traffic", "Traffic"]] as [Tab, string][]).map(([k, l]) => (
+        {([["metrics", "Overview"], ["upstreams", "Upstreams"], ["errors", "Errors breakdown"], ["traffic", "Traffic"]] as [Tab, string][]).map(([k, l]) => (
           <button key={k} onClick={() => setTab(k)} style={{
             padding: "8px 20px", border: "none", background: "transparent",
             fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: "inherit",
@@ -79,7 +79,7 @@ export function MetricsView() {
         <>
           <HeroPanel tw={timeWindow} />
           <CurrentlyUnavailable />
-          <RouterOverview chainFilter={activeChain} timeWindow={timeWindow} onChainClick={(ch) => { setChainFilter(ch); setTab("providers"); }} />
+          <RouterOverview chainFilter={activeChain} timeWindow={timeWindow} onChainClick={(ch) => { setChainFilter(ch); setTab("upstreams"); }} />
         </>
       )}
       {tab === "traffic" && (
@@ -94,7 +94,7 @@ export function MetricsView() {
           <MethodBreakdown win={timeWindow} chainFilter={activeChain} />
         </>
       )}
-      {tab === "providers" && <ProviderMetricsTab timeWindow={timeWindow} chainFilter={activeChain} />}
+      {tab === "upstreams" && <UpstreamMetricsTab timeWindow={timeWindow} chainFilter={activeChain} />}
       {tab === "errors" && <ErrorsBreakdown chainFilter={activeChain} win={timeWindow} />}
     </div>
   );

@@ -1,8 +1,8 @@
 "use client";
 
-/* RouterOverview — one row per chain router, aggregating its providers.
+/* RouterOverview — one row per chain router, aggregating its upstreams.
  * Ported verbatim from the design prototype (page-metrics.jsx RouterOverview);
- * rows are live /api/metrics/chains and the network / primary-provider /
+ * rows are live /api/metrics/chains and the network / primary-upstream /
  * P·B sub-lines come from the mounted config (/api/config/routers). Where the
  * topology is unknown those sub-lines are omitted rather than invented.
  * Sorting uses the ported useSort/ThCol; a hidden `natural` key preserves the
@@ -18,7 +18,7 @@ import { fmtNum } from "@/lib/format";
 import { ChainDetail, type ChainDetailRow } from "./ChainDetail";
 import { useState } from "react";
 
-const ROUTER_SR_TIP = "**Chain-level availability** — successful requests ÷ total, **rolled up across every provider** on the chain (what your apps actually got).\n\nSame definition as per-provider Availability in the Providers tab.";
+const ROUTER_SR_TIP = "**Chain-level availability** — successful requests ÷ total, **rolled up across every upstream** on the chain (what your apps actually got).\n\nSame definition as per-upstream Availability in the Upstreams tab.";
 
 type RoStatus = "up" | "down" | "unknown";
 
@@ -42,7 +42,7 @@ interface RoRow {
   /* flat sort accessors (design SORT_VAL semantics) */
   natural: number;
   router: string;
-  providers: number;
+  upstreams: number;
   requests: number;
   avail: number;
   p95: number;
@@ -75,13 +75,13 @@ export function RouterOverview({ onChainClick, chainFilter, timeWindow }: {
     return {
       spec: c.spec, name: c.name, color: c.color,
       network: t?.network ?? null,
-      provCount: c.providerCount, nPrimary, nBackup, primaryName,
-      otherCount: Math.max(0, c.providerCount - 1),
+      provCount: c.upstreamCount, nPrimary, nBackup, primaryName,
+      otherCount: Math.max(0, c.upstreamCount - 1),
       availPct, p95Ms: c.p95Ms, errPct, qosVal, reqCount: c.requests, statusKind,
       detail: { spec: c.spec, availPct, p95Ms: c.p95Ms, errPct, qos: qosVal, requests: c.requests, hasBackup: (nBackup ?? 0) > 0 },
       natural: 0,
       router: c.name.toLowerCase(),
-      providers: c.providerCount,
+      upstreams: c.upstreamCount,
       requests: c.requests,
       avail: availPct ?? -1,
       p95: c.p95Ms ?? Infinity,
@@ -103,7 +103,7 @@ export function RouterOverview({ onChainClick, chainFilter, timeWindow }: {
     <div className="gw-card" style={{ padding: 0, overflow: "hidden", marginBottom: 14 }}>
       <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-2)", flex: 1, display: "inline-flex", alignItems: "center" }}>
-          Routers · how each chain performs<Tip text="**One router per chain × network.** Each aggregates the providers serving it.\n\n**Click a row** to expand its chain-health graphs over the selected window." />
+          Routers · how each chain performs<Tip text="**One router per chain × network.** Each aggregates the upstreams serving it.\n\n**Click a row** to expand its chain-health graphs over the selected window." />
         </div>
         <span style={{ fontSize: 11, color: "var(--text-3)" }}>{routers.length} router{routers.length === 1 ? "" : "s"}</span>
         <div className="gw-segctl">
@@ -116,7 +116,7 @@ export function RouterOverview({ onChainClick, chainFilter, timeWindow }: {
         <thead>
           <tr>
             <ThCol sortKey="router" sort={sort} onSort={onSort}>Router</ThCol>
-            <ThCol align="right" sortKey="providers" sort={sort} onSort={onSort}>Providers</ThCol>
+            <ThCol align="right" sortKey="upstreams" sort={sort} onSort={onSort}>Upstreams</ThCol>
             <ThCol align="right" sortKey="requests" sort={sort} onSort={onSort}>Requests · {timeWindow}</ThCol>
             <ThCol align="right" tip={ROUTER_SR_TIP} sortKey="avail" sort={sort} onSort={onSort}>Availability</ThCol>
             <ThCol align="right" tip={TT.p95} sortKey="p95" sort={sort} onSort={onSort}>P95</ThCol>

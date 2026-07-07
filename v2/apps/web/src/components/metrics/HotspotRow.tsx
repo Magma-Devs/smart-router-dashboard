@@ -1,6 +1,6 @@
 "use client";
 
-/* HotspotRow — one (chain × provider) error hotspot, collapsed summary +
+/* HotspotRow — one (chain × upstream) error hotspot, collapsed summary +
  * expandable detail. Ported verbatim from the design prototype
  * (page-metrics.jsx HotspotRow). Live differences, kept honest:
  *  - severity derives from the real error-rate (the mock hardcoded `sev`);
@@ -22,7 +22,7 @@ export function HotspotRow({ h, open, onToggle, win }: {
   const errPct = h.errorRate != null ? h.errorRate * 100 : null;
   const sev = SEV_STYLE[sevForErrRatePct(errPct)];
   const trend = nums(h.trend);
-  const chartId = "eh" + (h.spec + h.provider).replace(/[^a-zA-Z0-9_-]/g, "");
+  const chartId = "eh" + (h.spec + h.upstream).replace(/[^a-zA-Z0-9_-]/g, "");
 
   return (
     <div className="gw-card" style={{ padding: 0, marginBottom: 8, overflow: "hidden", borderColor: open ? sev.ring : "var(--line)" }}>
@@ -34,7 +34,7 @@ export function HotspotRow({ h, open, onToggle, win }: {
             <span style={{ width: 8, height: 8, borderRadius: 2, background: h.color || "#888", flexShrink: 0 }} />
             <span style={{ fontSize: 14, fontWeight: 600 }}>{h.name}</span>
             <span style={{ fontSize: 13, color: "var(--text-3)" }}>·</span>
-            <span style={{ fontSize: 14, fontWeight: 500, color: "var(--text-2)" }}>{h.provider}</span>
+            <span style={{ fontSize: 14, fontWeight: 500, color: "var(--text-2)" }}>{h.upstream}</span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, fontSize: 11.5, color: "var(--text-3)" }}>
             {h.errors.toLocaleString("en-US")} of {h.requests.toLocaleString("en-US")} requests failed

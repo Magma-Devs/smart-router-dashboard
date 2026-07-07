@@ -34,7 +34,7 @@ export const ROUTER_METRICS = {
   csmStickySessions: "smartrouter_csm_sticky_sessions",
 } as const;
 
-/** Per-endpoint-scope metrics (label `endpoint_id` = the resolved provider name). */
+/** Per-endpoint-scope metrics (label `endpoint_id` = the resolved upstream name). */
 export const ENDPOINT_METRICS = {
   overallHealth: "rpc_endpoint_overall_health",
   latestBlock: "rpc_endpoint_latest_block",

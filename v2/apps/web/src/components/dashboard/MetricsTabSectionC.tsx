@@ -3,7 +3,7 @@
 /* MetricsTabSectionC — "C · Root cause", port of the design prototype's
    DSHMetrics section C (SR_Dashboard/magma/page-dashboard.jsx ~1673-1827).
    Trouble pairs stay empty until labelled error counters exist (design's ✓
-   empty state); the provider scorecard is null-gated; the method-level table
+   empty state); the upstream scorecard is null-gated; the method-level table
    reads the REAL /api/metrics/methods endpoint (calls + error rate live,
    p95/baseline honest "—" — the histogram has no method label). */
 
@@ -100,7 +100,7 @@ export function MetricsTabSectionC({
           <table className="gw-table">
             <thead>
               <tr>
-                {([["Chain", "chain"], ["Client", "client"], ["Failover %", "failoverPct"], ["SR %", "sr"], ["P95 latency", "p95"], ["Top error", "topErr"], ["Top provider", "topProv"]] as [string, string][]).map((h) => (
+                {([["Chain", "chain"], ["Client", "client"], ["Failover %", "failoverPct"], ["SR %", "sr"], ["P95 latency", "p95"], ["Top error", "topErr"], ["Top upstream", "topProv"]] as [string, string][]).map((h) => (
                   <th key={h[0]} style={{ cursor: "pointer", textAlign: ["failoverPct", "sr", "p95"].includes(h[1]) ? "right" : undefined }} onClick={() => sortTr(h[1])}>{h[0]}{trSort.col === h[1] ? (trSort.dir > 0 ? " ↑" : " ↓") : ""}</th>
                 ))}
               </tr>
@@ -137,9 +137,9 @@ export function MetricsTabSectionC({
         )}
       </div>
 
-      {/* §18 Provider scorecard */}
+      {/* §18 Upstream scorecard */}
       <div style={{ background: "var(--bg)", border: "1px solid var(--line)", borderRadius: 10, overflow: "hidden", marginBottom: 14 }}>
-        <div style={{ padding: "10px 16px", borderBottom: "1px solid var(--line)", fontSize: 12, fontWeight: 600, color: "var(--text-2)" }}>Provider scorecard</div>
+        <div style={{ padding: "10px 16px", borderBottom: "1px solid var(--line)", fontSize: 12, fontWeight: 600, color: "var(--text-2)" }}>Upstream scorecard</div>
         {data?.scorecard == null || sortedScorecard.length === 0 ? (
           /* Sync-lag/incident/QoS scorecard families aren't emitted — null-gated. */
           <DSHNoData height={72} />
@@ -147,7 +147,7 @@ export function MetricsTabSectionC({
           <table className="gw-table">
             <thead>
               <tr>
-                {([["Provider", "name"], ["Availability", "avail"], ["P95 latency", "p95"], ["Sync lag", "syncLagBlocks"], ["QoS", "qos"], ["Last incident", "incident"]] as [string, string][]).map((h) => (
+                {([["Upstream", "name"], ["Availability", "avail"], ["P95 latency", "p95"], ["Sync lag", "syncLagBlocks"], ["QoS", "qos"], ["Last incident", "incident"]] as [string, string][]).map((h) => (
                   <th key={h[0]} style={{ cursor: "pointer", textAlign: ["avail", "p95", "qos"].includes(h[1]) ? "right" : undefined }} onClick={() => sortSc(h[1])}>{h[0]}{scSort.col === h[1] ? (scSort.dir > 0 ? " ↑" : " ↓") : ""}</th>
                 ))}
               </tr>

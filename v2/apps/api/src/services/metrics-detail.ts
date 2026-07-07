@@ -1,6 +1,6 @@
 /**
  * Deep-dive metrics behind the design's drill-in surfaces: ChainDetail series,
- * the provider PMBody, the Errors-breakdown tab, CurrentlyUnavailable, and the
+ * the upstream PMBody, the Errors-breakdown tab, CurrentlyUnavailable, and the
  * cross-validation / websocket Traffic panels. Same honesty contract as
  * MetricsService: absent families ⇒ nulls/empty + `emitted:false`, never
  * invented numbers. Optional families are probed with qPresence so panels
@@ -25,9 +25,9 @@ import {
   qLatencySeriesExpr,
   qOptimizerScore,
   qPresence,
-  qProviderErrorRate,
-  qProviderReadVolumeSeriesExpr,
-  qProviderVolumeSeriesExpr,
+  qUpstreamErrorRate,
+  qUpstreamReadVolumeSeriesExpr,
+  qUpstreamVolumeSeriesExpr,
   qRequestsBy,
   qRpsSeriesExpr,
   qScoreExpr,
@@ -38,7 +38,7 @@ import {
   type CrossValidationReport,
   type ErrorsReport,
   type MetricWindow,
-  type ProviderDetail,
+  type UpstreamDetail,
   type ScoreType,
   type TimePoint,
   type UnavailableChain,
@@ -104,7 +104,7 @@ export class MetricsDetailService {
   }
 
   /** PMBody payload for one backing endpoint. */
-  async providerDetail(endpointId: string, window: MetricWindow): Promise<ProviderDetail> {
+  async upstreamDetail(endpointId: string, window: MetricWindow): Promise<UpstreamDetail> {
     const { step } = this.windowBounds(window);
     const r = rangeFor(window);
     const epSel = selector({ endpoint_id: endpointId });
@@ -132,7 +132,7 @@ export class MetricsDetailService {
       this.prom.scalar(
         `sum(increase(${ROUTER_METRICS.requestsSuccessTotal}${provSel}[${r}])) / sum(increase(${ROUTER_METRICS.requestsTotal}${provSel}[${r}]))`,
       ),
-      this.prom.scalar(qProviderErrorRate(endpointId, window)),
+      this.prom.scalar(qUpstreamErrorRate(endpointId, window)),
       this.prom.scalar(qEndpointLatencyQuantile(0.5, endpointId, window)),
       this.prom.scalar(qEndpointLatencyQuantile(0.95, endpointId, window)),
       this.prom.scalar(qEndpointLatencyQuantile(0.99, endpointId, window)),
@@ -153,8 +153,8 @@ export class MetricsDetailService {
       this.series(qEndpointLatencySeriesExpr(0.5, endpointId, step), window),
       this.series(qEndpointLatencySeriesExpr(0.95, endpointId, step), window),
       this.series(qEndpointLatencySeriesExpr(0.99, endpointId, step), window),
-      this.series(qProviderVolumeSeriesExpr(endpointId, step), window),
-      this.series(qProviderReadVolumeSeriesExpr(endpointId, step), window),
+      this.series(qUpstreamVolumeSeriesExpr(endpointId, step), window),
+      this.series(qUpstreamReadVolumeSeriesExpr(endpointId, step), window),
       spec
         ? this.series(qEndpointBlockLagSeriesExpr(spec, endpointId), window)
         : Promise.resolve([] as TimePoint[]),
@@ -252,33 +252,33 @@ export class MetricsDetailService {
         .filter((p) => p.key && p.errors > 0)
         .sort((a, b) => b.errors - a.errors);
 
-    // Hotspots: (chain × provider) pairs with errors, worst first; sparkline
+    // Hotspots: (chain × upstream) pairs with errors, worst first; sparkline
     // trends only for the top rows (bounded fan-out).
     const hotspotRows = byPairRows
       .map((s) => {
         const pairSpec = s.metric.spec ?? "";
-        const provider = s.metric.provider_address ?? "";
+        const upstream = s.metric.provider_address ?? "";
         const errors = Number(s.value[1]) || 0;
-        const requests = reqByPair.get(`${pairSpec}|${provider}`) ?? 0;
+        const requests = reqByPair.get(`${pairSpec}|${upstream}`) ?? 0;
         const meta = buildChainMetaByIndex(pairSpec);
         return {
           spec: pairSpec,
           name: meta.name,
           color: meta.color,
-          provider,
+          upstream,
           errors,
           requests,
           errorRate: requests > 0 ? errors / requests : null,
           trend: [] as TimePoint[],
         };
       })
-      .filter((h) => h.spec && h.provider && h.errors > 0)
+      .filter((h) => h.spec && h.upstream && h.errors > 0)
       .sort((a, b) => b.errors - a.errors);
 
     await Promise.all(
       hotspotRows.slice(0, 5).map(async (h) => {
         h.trend = await this.series(
-          `clamp_min(sum(increase(${ROUTER_METRICS.requestsTotal}${selector({ spec: h.spec, provider_address: h.provider })}[${step}])) - sum(increase(${ROUTER_METRICS.requestsSuccessTotal}${selector({ spec: h.spec, provider_address: h.provider })}[${step}])), 0)`,
+          `clamp_min(sum(increase(${ROUTER_METRICS.requestsTotal}${selector({ spec: h.spec, provider_address: h.upstream })}[${step}])) - sum(increase(${ROUTER_METRICS.requestsSuccessTotal}${selector({ spec: h.spec, provider_address: h.upstream })}[${step}])), 0)`,
           window,
         );
       }),

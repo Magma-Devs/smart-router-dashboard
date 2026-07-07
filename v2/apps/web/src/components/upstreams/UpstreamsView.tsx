@@ -1,9 +1,9 @@
 "use client";
 
-/* Providers page — ported from the design prototype (page-providers.jsx
+/* Upstreams page — ported from the design prototype (page-providers.jsx
  * ProvidersPage). SELF-HOSTED REALITY: the roster is the mounted values
  * file (GET /api/config/routers), grouped one card per config node; live
- * stats join from GET /api/metrics/providers (endpointId = node name).
+ * stats join from GET /api/metrics/upstreams (endpointId = node name).
  * All mutating flows render the full design UI with their commit buttons
  * disabled (read-only mount); the Test modal fires a real local POST. */
 
@@ -12,24 +12,25 @@ import { useRouter } from "next/navigation";
 import {
   buildChainMetaByIndex,
   type OverviewData,
-  type ProviderMetrics,
+  type UpstreamMetrics,
   type RouterTopology,
 } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { CopyButton } from "@/components/gateway/CopyButton";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
+import { CapabilityTags, capabilitiesOf } from "@/components/gateway/CapabilityTags";
 import { fmtMs, fmtNum, fmtPct } from "@/lib/format";
-import { ProviderLogo } from "@/components/providers/ProviderLogo";
-import { KebabMenu, StatusDot, pvStatLabel, type LiveChain } from "@/components/providers/bits";
+import { UpstreamLogo } from "@/components/upstreams/UpstreamLogo";
+import { KebabMenu, StatusDot, pvStatLabel, type LiveChain } from "@/components/upstreams/bits";
 import {
   IFACE_LABEL,
-  buildProviderRows,
-  type ProviderRow,
-} from "@/components/providers/catalog";
-import { AddProviderSheet } from "@/components/providers/AddProviderSheet";
-import { EditProviderSheet } from "@/components/providers/EditProviderSheet";
-import { DeleteConfirm } from "@/components/providers/DeleteConfirm";
-import { TestModal } from "@/components/providers/TestModal";
+  buildUpstreamRows,
+  type UpstreamRow,
+} from "@/components/upstreams/catalog";
+import { AddUpstreamSheet } from "@/components/upstreams/AddUpstreamSheet";
+import { EditUpstreamSheet } from "@/components/upstreams/EditUpstreamSheet";
+import { DeleteConfirm } from "@/components/upstreams/DeleteConfirm";
+import { TestModal } from "@/components/upstreams/TestModal";
 
 /* ─────────────────────────────────────────────
    Stat strip (design: intentionally empty)
@@ -61,30 +62,30 @@ function bucketize(values: number[], n: number): number[] {
   return out;
 }
 
-export function ProvidersView() {
+export function UpstreamsView() {
   const router = useRouter();
   const config = useApi<{ routers: RouterTopology[] }>("/api/config/routers", 60000);
-  /* Provider roster stats — fixed 1d window ("Req today"). */
-  const live = useApi<{ providers: ProviderMetrics[] }>("/api/metrics/providers?window=1d");
+  /* Upstream roster stats — fixed 1d window ("Req today"). */
+  const live = useApi<{ upstreams: UpstreamMetrics[] }>("/api/metrics/upstreams?window=1d");
 
   const [degradedFilter, setDegradedFilter] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
-  const [editPv, setEditPv] = useState<ProviderRow | null>(null);
-  const [deletePv, setDeletePv] = useState<ProviderRow | null>(null);
-  const [testPv, setTestPv] = useState<ProviderRow | null>(null);
+  const [editPv, setEditPv] = useState<UpstreamRow | null>(null);
+  const [deletePv, setDeletePv] = useState<UpstreamRow | null>(null);
+  const [testPv, setTestPv] = useState<UpstreamRow | null>(null);
   const [usagePeriod, setUsagePeriod] = useState<"24h" | "7d">("24h");
   const [search, setSearch] = useState("");
   const [netFilter, setNetFilter] = useState<"all" | "mainnet" | "testnet">("all");
-  const [newChainCtas, setNewChainCtas] = useState<{ chainId: string; providerName: string }[]>([]);
+  const [newChainCtas, setNewChainCtas] = useState<{ chainId: string; upstreamName: string }[]>([]);
 
   /* Usage section — window-scoped fetches (real series; SWR dedupes 24h/1d). */
   const apiWin = usagePeriod === "24h" ? "1d" : "7d";
-  const liveWin = useApi<{ providers: ProviderMetrics[] }>(`/api/metrics/providers?window=${apiWin}`);
+  const liveWin = useApi<{ upstreams: UpstreamMetrics[] }>(`/api/metrics/upstreams?window=${apiWin}`);
   const overview = useApi<OverviewData>(`/api/metrics/overview?window=${apiWin}`, 30000);
 
   const routers = useMemo(() => config.data?.routers ?? [], [config.data]);
-  const providers = useMemo(
-    () => buildProviderRows(routers, live.data?.providers),
+  const upstreams = useMemo(
+    () => buildUpstreamRows(routers, live.data?.upstreams),
     [routers, live.data],
   );
 
@@ -109,12 +110,12 @@ export function ProvidersView() {
   }, [routers]);
 
   const existingIds = useMemo(
-    () => providers.map((p) => p.catalogId).filter((id): id is string => id !== null),
-    [providers],
+    () => upstreams.map((p) => p.catalogId).filter((id): id is string => id !== null),
+    [upstreams],
   );
 
   const displayed = useMemo(() => {
-    return providers.filter((pv) => {
+    return upstreams.filter((pv) => {
       const matchDegraded = !degradedFilter || pv.status === "degraded";
       const matchSearch = !search.trim() ||
         pv.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -122,7 +123,7 @@ export function ProvidersView() {
       const matchNet = netFilter === "all" || pv.networks.includes(netFilter);
       return matchDegraded && matchSearch && matchNet;
     });
-  }, [providers, degradedFilter, search, netFilter]);
+  }, [upstreams, degradedFilter, search, netFilter]);
 
   const loading = !config.data && !config.error;
 
@@ -138,20 +139,20 @@ export function ProvidersView() {
     <div className="gw-page fade-in">
       <div className="gw-row" style={{ justifyContent: "space-between", marginBottom: 20 }}>
         <div>
-          <h1>Providers</h1>
-          <p className="lede">The upstream RPC providers this router routes through · config <span className="gw-mono" style={{ color: "var(--text-2)" }}>read-only mount</span>.</p>
+          <h1>Upstreams</h1>
+          <p className="lede">The upstream RPC nodes this router routes through · config <span className="gw-mono" style={{ color: "var(--text-2)" }}>read-only mount</span>.</p>
         </div>
         <button className="gw-btn gw-btn--primary" onClick={() => setShowAdd(true)}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          Add provider
+          Add upstream
         </button>
       </div>
 
       <StatStrip />
 
-      {/* First-provider CTAs — one per newly-covered chain (design flow;
+      {/* First-upstream CTAs — one per newly-covered chain (design flow;
           unreachable on self-hosted since adds never commit) */}
-      {newChainCtas.map(({ chainId, providerName }) => {
+      {newChainCtas.map(({ chainId, upstreamName }) => {
         const chain = buildChainMetaByIndex(chainId);
         return (
           <div key={chainId} style={{
@@ -162,7 +163,7 @@ export function ProvidersView() {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><polyline points="20 6 9 17 4 12"/></svg>
             <ChainBadge spec={chainId} size={20} />
             <span style={{ fontSize: 13, flex: 1 }}>
-              <strong>{providerName}</strong> is your first provider for <strong>{chain.name}</strong>.
+              <strong>{upstreamName}</strong> is your first upstream for <strong>{chain.name}</strong>.
             </span>
             <button className="gw-btn gw-btn--primary" style={{ fontSize: 12, padding: "5px 12px", flexShrink: 0 }}
               onClick={() => { router.push("/endpoints"); setNewChainCtas((fc) => fc.filter((c) => c.chainId !== chainId)); }}>
@@ -183,7 +184,7 @@ export function ProvidersView() {
             style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }}>
             <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
           </svg>
-          <input className="gw-input" type="search" placeholder="Search providers…" value={search}
+          <input className="gw-input" type="search" placeholder="Search upstreams…" value={search}
             onChange={(e) => setSearch(e.target.value)} style={{ paddingLeft: 32 }} />
         </div>
         <div className="gw-segctl">
@@ -196,19 +197,19 @@ export function ProvidersView() {
       {degradedFilter && (
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, padding: "8px 14px", borderRadius: 8, background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.18)", fontSize: 12, color: "var(--warn)" }}>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-          Showing degraded providers only —{" "}
+          Showing degraded upstreams only —{" "}
           <button onClick={() => setDegradedFilter(false)} style={{ border: "none", background: "none", color: "var(--brand)", cursor: "pointer", padding: 0, fontSize: 12, fontWeight: 600, fontFamily: "inherit" }}>clear filter</button>
         </div>
       )}
 
-      {loading ? null : providers.length === 0 ? (
+      {loading ? null : upstreams.length === 0 ? (
         <div className="gw-empty">
           <div className="gw-empty__icon">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
           </div>
-          <h2>No providers yet</h2>
-          <p>The mounted values file has no provider nodes. Add your first provider — Alchemy, Infura, QuickNode, or your own node — by editing the values file.</p>
-          <button className="gw-btn gw-btn--primary" onClick={() => setShowAdd(true)}>Add provider</button>
+          <h2>No upstreams yet</h2>
+          <p>The mounted values file has no upstream nodes. Add your first upstream — Alchemy, Infura, QuickNode, or your own node — by editing the values file.</p>
+          <button className="gw-btn gw-btn--primary" onClick={() => setShowAdd(true)}>Add upstream</button>
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -219,10 +220,25 @@ export function ProvidersView() {
                 <div className="gw-row" style={{ gap: 14, justifyContent: "space-between", flexWrap: "wrap", marginBottom: 12 }}>
                   <div className="gw-row" style={{ gap: 10 }}>
                     {pv.catalogId
-                      ? <ProviderLogo id={pv.catalogId} size={28} />
+                      ? <UpstreamLogo id={pv.catalogId} size={28} />
                       : <InitialBadge name={pv.name} spec={pv.chains[0]} size={28} />}
                     <div className="gw-row" style={{ gap: 8 }}>
                       <span style={{ fontSize: 13, fontWeight: 600 }}>{pv.name}</span>
+                      {/* Chain identity — an upstream serves a specific chain;
+                          surface its icon + name so the card is legible on its
+                          own (not just from the rows below). */}
+                      {pv.chains[0] && (
+                        <span className="gw-row" style={{ gap: 5, alignItems: "center" }}>
+                          <span style={{ color: "var(--text-4)" }}>·</span>
+                          <ChainBadge spec={pv.chains[0]} size={15} />
+                          <span style={{ fontSize: 12, color: "var(--text-2)" }}>
+                            {buildChainMetaByIndex(pv.chains[0]).name}
+                          </span>
+                          {pv.chains.length > 1 && (
+                            <span style={{ fontSize: 10, color: "var(--text-3)" }}>+{pv.chains.length - 1}</span>
+                          )}
+                        </span>
+                      )}
                       {pv.status === "—"
                         ? <span style={{ fontSize: 10, color: "var(--text-4)" }}>no data</span>
                         : <span className={"gw-tag gw-tag--" + statColor(pv.status)} style={{ fontSize: 10, padding: "1px 6px", display: "inline-flex", gap: 5, alignItems: "center" }}><StatusDot status={pv.status} />{pv.status}</span>}
@@ -275,17 +291,20 @@ export function ProvidersView() {
                           )}
                         </div>
                         <span className="gw-mono" style={{ fontSize: 11, color: "var(--text-2)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{row.urlHost || "—"}</span>
-                        {/* interface + addon capability tags — real config values */}
+                        {/* interface tag + configured capabilities (addons +
+                            derived ws) — real config values, nothing invented */}
                         {row.iface && (
                           <span style={{ fontSize: 9, fontWeight: 700, padding: "2px 5px", borderRadius: 3, background: "var(--hover-2)", color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.06em", flexShrink: 0 }}>
                             {IFACE_LABEL[row.iface] || row.iface}
                           </span>
                         )}
-                        {row.addons.map((k) => (
-                          <span key={k} style={{ fontSize: 9, fontWeight: 700, padding: "2px 5px", borderRadius: 3, background: "rgba(96,165,250,0.1)", color: "#60a5fa", textTransform: "uppercase", letterSpacing: "0.06em", flexShrink: 0 }}>
-                            {k}
-                          </span>
-                        ))}
+                        <CapabilityTags
+                          size="xs"
+                          capabilities={capabilitiesOf({
+                            addons: row.addons,
+                            hasWs: row.urlHost.startsWith("ws://") || row.urlHost.startsWith("wss://") || row.iface.endsWith("-ws"),
+                          })}
+                        />
                         {row.urlHost ? <CopyButton text={row.urlHost} /> : null}
                       </div>
                     );
@@ -297,19 +316,19 @@ export function ProvidersView() {
         </div>
       )}
 
-      {providers.length > 0 && (() => {
+      {upstreams.length > 0 && (() => {
         const reqTotal = liveWin.data
-          ? liveWin.data.providers.reduce((a, p) => a + p.requests, 0)
+          ? liveWin.data.upstreams.reduce((a, p) => a + p.requests, 0)
           : null;
         const rpsValues = (overview.data?.throughput ?? []).map((p) => p.v ?? 0);
         const peakRps = rpsValues.length ? Math.round(Math.max(...rpsValues)) : null;
         const series = bucketize(rpsValues, usagePeriod === "24h" ? 24 : 28);
         const seriesMax = Math.max(...series, 1e-9);
-        const byProvider = [...providers]
+        const byUpstream = [...upstreams]
           .filter((p) => (p.requests ?? 0) > 0)
           .sort((a, b) => (b.requests ?? 0) - (a.requests ?? 0))
           .slice(0, 5);
-        const maxReq = byProvider.length ? (byProvider[0]?.requests ?? 1) : 1;
+        const maxReq = byUpstream.length ? (byUpstream[0]?.requests ?? 1) : 1;
         return (
           <>
             <h2 style={{ fontSize: 18, fontWeight: 600, letterSpacing: "-0.015em", margin: "32px 0 14px" }}>Usage</h2>
@@ -346,9 +365,9 @@ export function ProvidersView() {
               </div>
 
               <div className="gw-card">
-                <div style={pvStatLabel}>By provider · req today</div>
+                <div style={pvStatLabel}>By upstream · req today</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 11, marginTop: 14 }}>
-                  {byProvider.map((pv) => {
+                  {byUpstream.map((pv) => {
                     const ch = pv.chains[0] ? buildChainMetaByIndex(pv.chains[0]) : null;
                     return (
                       <div key={pv.id}>
@@ -362,7 +381,7 @@ export function ProvidersView() {
                       </div>
                     );
                   })}
-                  {byProvider.length === 0 && (
+                  {byUpstream.length === 0 && (
                     <span style={{ fontSize: 12, color: "var(--text-3)" }}>No traffic yet.</span>
                   )}
                 </div>
@@ -372,10 +391,10 @@ export function ProvidersView() {
         );
       })()}
 
-      <AddProviderSheet open={showAdd} onClose={() => setShowAdd(false)} existingIds={existingIds} chains={chains} ifacesBySpec={ifacesBySpec} />
-      <EditProviderSheet open={!!editPv} onClose={() => setEditPv(null)} provider={editPv} />
-      <DeleteConfirm open={!!deletePv} onClose={() => setDeletePv(null)} provider={deletePv} />
-      <TestModal open={!!testPv} onClose={() => setTestPv(null)} provider={testPv} routers={routers} />
+      <AddUpstreamSheet open={showAdd} onClose={() => setShowAdd(false)} existingIds={existingIds} chains={chains} ifacesBySpec={ifacesBySpec} />
+      <EditUpstreamSheet open={!!editPv} onClose={() => setEditPv(null)} upstream={editPv} />
+      <DeleteConfirm open={!!deletePv} onClose={() => setDeletePv(null)} upstream={deletePv} />
+      <TestModal open={!!testPv} onClose={() => setTestPv(null)} upstream={testPv} routers={routers} />
     </div>
   );
 }

@@ -15,14 +15,14 @@ import {
   qErrorCountSeriesExpr,
   qRpsSeriesExpr,
   qLatencySeriesExpr,
-  qPerProviderRpsExpr,
+  qPerUpstreamRpsExpr,
   qPerSpecRpsExpr,
   qBackupShareExpr,
   qEndpointLatencyQuantile,
   qEndpointLatencySeriesExpr,
-  qProviderVolumeSeriesExpr,
-  qProviderReadVolumeSeriesExpr,
-  qProviderErrorRate,
+  qUpstreamVolumeSeriesExpr,
+  qUpstreamReadVolumeSeriesExpr,
+  qUpstreamErrorRate,
   qBlockLagByEndpoint,
   qEndpointBlockLagSeriesExpr,
   qChainDown,
@@ -215,11 +215,11 @@ describe("series expressions", () => {
       'histogram_quantile(0.5, sum by (le) (rate(smartrouter_end_to_end_latency_milliseconds_bucket{spec="ETH1"}[10m])))',
     );
   });
-  it("per-provider and per-spec stacks group correctly", () => {
-    expect(qPerProviderRpsExpr("10m")).toContain("sum by (provider_address)");
+  it("per-upstream and per-spec stacks group correctly", () => {
+    expect(qPerUpstreamRpsExpr("10m")).toContain("sum by (provider_address)");
     expect(qPerSpecRpsExpr("10m")).toContain("sum by (spec)");
   });
-  it("backup share regex-escapes provider names", () => {
+  it("backup share regex-escapes upstream names", () => {
     const q = qBackupShareExpr("ETH1", ["eth.backup"], "10m");
     expect(q).toContain('provider_address=~"eth\\\\.backup"');
     expect(q).toContain('{spec="ETH1"}');
@@ -236,15 +236,15 @@ describe("endpoint-scope builders", () => {
     expect(qEndpointLatencySeriesExpr(0.5, "eth-lava", "10m")).toContain("[10m]");
   });
   it("provider volume + read volume target router counters by provider_address", () => {
-    expect(qProviderVolumeSeriesExpr("eth-lava", "10m")).toContain(
+    expect(qUpstreamVolumeSeriesExpr("eth-lava", "10m")).toContain(
       'smartrouter_requests_total{provider_address="eth-lava"}',
     );
-    expect(qProviderReadVolumeSeriesExpr("eth-lava", "10m")).toContain(
+    expect(qUpstreamReadVolumeSeriesExpr("eth-lava", "10m")).toContain(
       'smartrouter_requests_read_total{provider_address="eth-lava"}',
     );
   });
   it("provider error rate is 1 − success/total scoped by provider_address", () => {
-    const q = qProviderErrorRate("eth-lava", "1d");
+    const q = qUpstreamErrorRate("eth-lava", "1d");
     expect(q.startsWith("1 - (")).toBe(true);
     expect(q).toContain('provider_address="eth-lava"');
   });

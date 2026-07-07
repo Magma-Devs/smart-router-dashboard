@@ -178,7 +178,7 @@ describe("api routes", () => {
     expect(Array.isArray(body.throughput)).toBe(true);
     expect(Array.isArray(body.activeRoutes)).toBe(true);
     expect(Array.isArray(body.latencyDistribution)).toBe(true);
-    expect(Array.isArray(body.perProviderSeries)).toBe(true);
+    expect(Array.isArray(body.perUpstreamSeries)).toBe(true);
     expect(body.errorLayers).toEqual([{ layer: "unclassified", count: 3 }]);
     // Quota/cap are never invented — always null on this build.
     expect(body.computeUnits.limit).toBeNull();
@@ -202,11 +202,11 @@ describe("api routes", () => {
     expect(body.backupShare).toBeNull();
   });
 
-  it("GET /api/metrics/provider-detail requires endpointId; errors stay empty until emitted", async () => {
-    const missing = await app.inject({ method: "GET", url: "/api/metrics/provider-detail?window=1d" });
+  it("GET /api/metrics/upstream-detail requires endpointId; errors stay empty until emitted", async () => {
+    const missing = await app.inject({ method: "GET", url: "/api/metrics/upstream-detail?window=1d" });
     expect(missing.statusCode).toBe(400);
 
-    const res = await app.inject({ method: "GET", url: "/api/metrics/provider-detail?endpointId=eth-lava&window=1d" });
+    const res = await app.inject({ method: "GET", url: "/api/metrics/upstream-detail?endpointId=eth-lava&window=1d" });
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.endpointId).toBe("eth-lava");
@@ -227,7 +227,7 @@ describe("api routes", () => {
     expect(body.pivots.method[0]).toMatchObject({ key: "eth_blockNumber", errors: 3 });
     expect(body.pivots.category).toEqual([]);
     expect(body.pivots.code).toEqual([]);
-    expect(body.hotspots[0]).toMatchObject({ spec: "ETH1", provider: "eth-lava", errors: 3, requests: 100 });
+    expect(body.hotspots[0]).toMatchObject({ spec: "ETH1", upstream: "eth-lava", errors: 3, requests: 100 });
     expect(body.hotspots[0].errorRate).toBeCloseTo(0.03);
     expect(body.families).toEqual({
       requestsFailedTotal: false,
@@ -282,7 +282,7 @@ describe("api routes", () => {
     expect(Array.isArray(body.series.latency.p95)).toBe(true);
     expect(Array.isArray(body.series.perChain)).toBe(true);
     expect(Array.isArray(body.series.perChainSuccessRate)).toBe(true);
-    expect(Array.isArray(body.series.providerMix)).toBe(true);
+    expect(Array.isArray(body.series.upstreamMix)).toBe(true);
     // Chains meta list for the header multiselect.
     expect(body.chains).toEqual([
       { spec: "ETH1", name: "Ethereum", color: "#627EEA", health: "operational" },
@@ -297,7 +297,7 @@ describe("api routes", () => {
       "errorClasses",
       "errorsHandledBreakdown",
       "contribution",
-      "providerAvailability",
+      "upstreamAvailability",
       "scorecard",
     ]) {
       expect(body[k]).toBeNull();

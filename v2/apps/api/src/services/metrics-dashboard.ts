@@ -2,7 +2,7 @@
  * Ops Dashboard payload (Dashboard page, Overview + Metrics tabs) in one
  * round-trip. Every populated field maps to a real `smartrouter_*` /
  * `rpc_endpoint_*` series; families the router does not emit (failover ratio,
- * cache, regions, SCU quota, labelled error classes, provider incidents,
+ * cache, regions, SCU quota, labelled error classes, upstream incidents,
  * errors-handled interventions) come back as `null` so the UI renders the
  * design's own empty states — values are never invented.
  */
@@ -17,7 +17,7 @@ import {
   qErrorRateSeriesExpr,
   qLatencyQuantile,
   qLatencySeriesExpr,
-  qPerProviderRpsExpr,
+  qPerUpstreamRpsExpr,
   qPerSpecRpsExpr,
   qRpsSeriesExpr,
   rangeFor,
@@ -25,7 +25,7 @@ import {
   type DashboardChainMeta,
   type DashboardChainSeries,
   type DashboardData,
-  type DashboardProviderSeries,
+  type DashboardUpstreamSeries,
   type Kpi,
   type MetricWindow,
 } from "@sr/shared";
@@ -51,18 +51,18 @@ export class MetricsDashboardService {
     return rows.sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  /** Matrix rows keyed by a provider-name label → provider series. */
-  private providerSeries(
+  /** Matrix rows keyed by an upstream-name label → upstream series. */
+  private upstreamSeries(
     matrix: PromMatrixSample[],
     label: "provider_address" | "endpoint_id",
-  ): DashboardProviderSeries[] {
-    const rows: DashboardProviderSeries[] = [];
+  ): DashboardUpstreamSeries[] {
+    const rows: DashboardUpstreamSeries[] = [];
     for (const m of matrix) {
-      const provider = m.metric[label];
-      if (!provider) continue;
-      rows.push({ provider, points: toPoints(m.values) });
+      const upstream = m.metric[label];
+      if (!upstream) continue;
+      rows.push({ upstream, points: toPoints(m.values) });
     }
-    return rows.sort((a, b) => a.provider.localeCompare(b.provider));
+    return rows.sort((a, b) => a.upstream.localeCompare(b.upstream));
   }
 
   async dashboard(window: MetricWindow, spec?: string): Promise<DashboardData> {
@@ -87,8 +87,8 @@ export class MetricsDashboardService {
       qLatencyQuantile(q, undefined, window).replace(`[${r}]`, `[${step}]`);
     // Per-chain availability-ratio series (success/total grouped by spec).
     const perSpecSrExpr = `sum by (spec) (rate(${ROUTER_METRICS.requestsSuccessTotal}[${step}])) / sum by (spec) (rate(${ROUTER_METRICS.requestsTotal}[${step}]))`;
-    // Per-provider p95 — the endpoint histogram carries endpoint_id.
-    const perProviderLatencyExpr = `histogram_quantile(0.95, sum by (endpoint_id, le) (rate(${ENDPOINT_METRICS.latencyBucket}${sel}[${step}])))`;
+    // Per-upstream p95 — the endpoint histogram carries endpoint_id.
+    const perUpstreamLatencyExpr = `histogram_quantile(0.95, sum by (endpoint_id, le) (rate(${ENDPOINT_METRICS.latencyBucket}${sel}[${step}])))`;
 
     const [successRate, p95Ms, rps, errorsNow, errorsPrior] = await Promise.all([
       kpi(qAvailability(spec, window), qAvailability(spec, window, r)),
@@ -114,8 +114,8 @@ export class MetricsDashboardService {
       chainLatP50,
       chainLatP95,
       chainLatP99,
-      providerMix,
-      providerLatP95,
+      upstreamMix,
+      upstreamLatP95,
       specRows,
       healthRows,
     ] = await Promise.all([
@@ -131,8 +131,8 @@ export class MetricsDashboardService {
       range(perSpecLatencyExpr(0.5)),
       range(perSpecLatencyExpr(0.95)),
       range(perSpecLatencyExpr(0.99)),
-      range(qPerProviderRpsExpr(step, spec)),
-      range(perProviderLatencyExpr),
+      range(qPerUpstreamRpsExpr(step, spec)),
+      range(perUpstreamLatencyExpr),
       this.prom.query(`count by (spec) (${ROUTER_METRICS.requestsTotal})`),
       this.prom.query(`max by (spec) (${ENDPOINT_METRICS.overallHealth})`),
     ]);
@@ -182,8 +182,8 @@ export class MetricsDashboardService {
           p95: this.chainSeries(chainLatP95, spec),
           p99: this.chainSeries(chainLatP99, spec),
         },
-        providerMix: this.providerSeries(providerMix, "provider_address"),
-        perProviderLatencyP95: this.providerSeries(providerLatP95, "endpoint_id"),
+        upstreamMix: this.upstreamSeries(upstreamMix, "provider_address"),
+        perUpstreamLatencyP95: this.upstreamSeries(upstreamLatP95, "endpoint_id"),
       },
       chains,
       scu: null,
@@ -194,7 +194,7 @@ export class MetricsDashboardService {
       errorClasses: null,
       errorsHandledBreakdown: null,
       contribution: null,
-      providerAvailability: null,
+      upstreamAvailability: null,
       scorecard: null,
       trouble: [],
       lastUpdated: new Date().toISOString(),

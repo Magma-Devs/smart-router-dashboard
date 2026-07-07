@@ -1,6 +1,6 @@
 "use client";
 
-/* PMEmpty — explicit empty state for a provider with no recent traffic.
+/* PMEmpty — explicit empty state for an upstream with no recent traffic.
  * Ported verbatim from the design prototype (page-provider-metrics.jsx). */
 
 export function PMEmpty({ name, chainName }: { name: string; chainName: string }) {
@@ -12,7 +12,7 @@ export function PMEmpty({ name, chainName }: { name: string; chainName: string }
       <div>
         <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text-2)" }}>No recent traffic for {name}</div>
         <div style={{ fontSize: 13, color: "var(--text-3)", marginTop: 6, maxWidth: 380, lineHeight: 1.6 }}>
-          This provider is configured on {chainName} and probes are passing, but it hasn&apos;t served live requests in the selected window. Traffic &amp; latency panels appear once the router sends it requests.
+          This upstream is configured on {chainName} and probes are passing, but it hasn&apos;t served live requests in the selected window. Traffic &amp; latency panels appear once the router sends it requests.
         </div>
       </div>
       <span style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 11px", borderRadius: 999, border: "1px solid var(--line)", fontSize: 11, color: "var(--text-2)" }}>

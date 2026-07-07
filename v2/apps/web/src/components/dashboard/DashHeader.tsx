@@ -5,7 +5,7 @@
    QUIRK ported as-is: `position: sticky; top: 52` (the prototype topbar is
    52px). The staff-only customer <select> is intentionally skipped; the
    identity block renders the self-hosted deployment identity instead.
-   The Methods/Providers secondary filters are header-local chrome exactly as
+   The Methods/Upstreams secondary filters are header-local chrome exactly as
    in the design (their state is never consumed by the charts). */
 
 import { useState } from "react";
@@ -30,14 +30,14 @@ export function DashHeader({
   chains,
   setChains,
   chainOptions,
-  providerOptions,
+  upstreamOptions,
 }: {
   win: string;
   setWin: (w: string) => void;
   chains: string[];
   setChains: (ids: string[]) => void;
   chainOptions: DshOption[];
-  providerOptions: DshOption[];
+  upstreamOptions: DshOption[];
 }) {
   const [showFilter, setShowFilter] = useState(false);
   const [showCustom, setShowCustom] = useState(false);
@@ -45,9 +45,9 @@ export function DashHeader({
   const [csStart, setCsStart] = useState(new Date(Date.now() - 86400000).toISOString().slice(0, 10));
   const [csEnd, setCsEnd] = useState(new Date().toISOString().slice(0, 10));
   const [methods, setMethods] = useState<string[]>([]);
-  const [providers, setProviders] = useState<string[]>([]);
+  const [upstreams, setUpstreams] = useState<string[]>([]);
 
-  const hasSecondary = methods.length > 0 || providers.length > 0;
+  const hasSecondary = methods.length > 0 || upstreams.length > 0;
   const isCustomWin = win.startsWith("custom:");
 
   function applyCustom() {
@@ -124,10 +124,10 @@ export function DashHeader({
         <div style={{ padding: "8px 24px 10px", borderTop: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 10, background: "var(--hover)", flexWrap: "wrap" }}>
           <span style={{ fontSize: 10, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>Filters</span>
           <DshMultiSelect label="Methods" options={ALL_METHODS} value={methods} onChange={setMethods} />
-          <DshMultiSelect label="Providers" options={providerOptions} value={providers} onChange={setProviders} />
+          <DshMultiSelect label="Upstreams" options={upstreamOptions} value={upstreams} onChange={setUpstreams} />
           {hasSecondary && (
             <button className="gw-btn gw-btn--ghost"
-              onClick={() => { setMethods([]); setProviders([]); }}
+              onClick={() => { setMethods([]); setUpstreams([]); }}
               style={{ fontSize: 11, padding: "3px 9px", color: "var(--text-3)" }}>Clear</button>
           )}
         </div>
