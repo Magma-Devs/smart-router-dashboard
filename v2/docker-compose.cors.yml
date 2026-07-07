@@ -1,0 +1,32 @@
+# Opt-in overlay: run a router that exposes its relay-provenance headers so
+# the dashboard's Live-test console can show which upstream served a request
+# (and "Cached" on a cache hit). Layer it on top of the dev stack:
+#
+#   SR_ROUTER_IMAGE=ghcr.io/magma-devs/smart-router:main \
+#   docker compose -f docker-compose.dev.yml -f docker-compose.cors.yml \
+#     --profile router up
+#
+# Needs a router carrying --cors-expose-headers (Magma-Devs/smart-router#199,
+# merged). It ships on the :main image today; it rolls into :latest on the
+# next tagged release — at which point you can drop the SR_ROUTER_IMAGE
+# override. Kept as a separate overlay (not baked into docker-compose.dev.yml)
+# so the default `make dev` keeps working on whatever :latest currently is,
+# even if that predates the flag (which it would reject).
+services:
+  router:
+    command:
+      - "values.yml"
+      - "--use-static-spec"
+      - "${SR_SPEC:-https://github.com/Magma-Devs/lava-specs/tree/main}"
+      - "--cors-headers"
+      - "*"
+      # The response headers the browser is allowed to read. Lava-Provider-
+      # Address carries the serving upstream (or "Cached" on a cache hit); the
+      # rest expose retry / block / cross-validation provenance.
+      - "--cors-expose-headers"
+      - "Lava-Provider-Address,Lava-Retries,Provider-Latest-Block,lava-cross-validation-agreeing-providers,lava-cross-validation-disagreeing-providers"
+      - "--log-level"
+      - "${SR_LOG_LEVEL:-info}"
+      - "--log-format"
+      - "${SR_LOG_FORMAT:-json}"
+      - "--skip-websocket-verification"

@@ -33,13 +33,13 @@ services:
 
   router:
     profiles: ["router"]
-    # Pull the latest published router image from GHCR instead of building from
-    # a local checkout. The release image is binary-only (no bundled specs/), so
-    # specs are loaded straight from the lava-specs GitHub repo — no checkout,
-    # no volume mount. --use-static-spec accepts a remote GitHub/GitLab repo URL
-    # in the form https://github.com/{owner}/{repo}/tree/{branch}/{path}.
-    image: ghcr.io/magma-devs/smart-router:latest
-    pull_policy: always
+    # Pull the latest published router image from GHCR (override with
+    # SR_ROUTER_IMAGE to run a locally-built router, e.g. one carrying the
+    # --cors-expose-headers flag before it lands in :latest). The release
+    # image is binary-only (no bundled specs/), so specs load straight from
+    # the lava-specs GitHub repo — no checkout, no volume mount.
+    image: ${SR_ROUTER_IMAGE:-ghcr.io/magma-devs/smart-router:latest}
+    pull_policy: ${SR_ROUTER_PULL:-always}
     command:
       - "values.yml"
       - "--use-static-spec"
