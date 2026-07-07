@@ -44,13 +44,15 @@ services:
 
   router:
     profiles: ["router"]
-    # Pull the latest published router image from GHCR instead of building from
-    # a local checkout. The release image is binary-only (no bundled specs/), so
-    # specs are loaded straight from the lava-specs GitHub repo — no checkout,
-    # no volume mount. --use-static-spec accepts a remote GitHub/GitLab repo URL
-    # in the form https://github.com/{owner}/{repo}/tree/{branch}/{path}.
-    image: ghcr.io/magma-devs/smart-router:latest
-    pull_policy: always
+    # Published router image from GHCR (override with SR_ROUTER_IMAGE). Pinned
+    # to :main because the command uses --cors-expose-headers, which ships on
+    # :main and rolls into :latest on the next tagged release — switch back to
+    # :latest once it's there. The release image is binary-only (no bundled
+    # specs/), so specs are loaded straight from the lava-specs GitHub repo —
+    # no checkout, no volume mount. --use-static-spec accepts a remote GitHub/
+    # GitLab repo URL in the form https://github.com/{owner}/{repo}/tree/{branch}.
+    image: ${SR_ROUTER_IMAGE:-ghcr.io/magma-devs/smart-router:main}
+    pull_policy: ${SR_ROUTER_PULL:-always}
     command:
       - "values.yml"
       - "--use-static-spec"
@@ -58,6 +60,11 @@ services:
       # The browser live-test panel preflights cross-origin POSTs.
       - "--cors-headers"
       - "*"
+      # Expose the router's relay-provenance headers so the dashboard's Live
+      # test can show which upstream served a request (and "Cached" on a cache
+      # hit). Read by the browser from the Lava-Provider-Address response header.
+      - "--cors-expose-headers"
+      - "Lava-Provider-Address,Lava-Retries,Provider-Latest-Block,lava-cross-validation-agreeing-providers,lava-cross-validation-disagreeing-providers"
       - "--log-level"
       - "${SR_LOG_LEVEL:-info}"
       - "--log-format"
