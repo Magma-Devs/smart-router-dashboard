@@ -112,11 +112,22 @@ normal path):
 SR_CONFIG_HOST=./dev-config/other.yml make dev   # different values file
 SR_SPEC=./local-specs make dev                   # local spec dir instead of GitHub
 SR_SPEC=https://github.com/OWNER/REPO/tree/BRANCH make up   # a different spec repo
+SR_GITHUB_TOKEN=ghp_xxx make dev                 # PAT for GitHub spec fetch (see below)
 ```
+
+`SR_GITHUB_TOKEN` is passed to the router's `--github-token`: it authenticates
+the GitHub spec fetch (`SR_SPEC` GitHub URLs), lifting the API rate limit from
+60 to 5,000 req/hour and unlocking private spec repos. **Empty by default** —
+unset, the router fetches public specs unauthenticated; set it only if you hit
+GitHub rate limits or point `SR_SPEC` at a private repo.
 
 Prebuilt dashboard images are published to
 `ghcr.io/magma-devs/smart-router-dashboard/{api,web}`; set `DASHBOARD_API_URL`
 on the web container at runtime to point one published image at any api host.
+Likewise `DASHBOARD_GRAFANA_URL` sets where the **"View full logs"** button
+links — it defaults to the bundled `logs` profile's Grafana (`:3001`); point it
+at your Grafana origin in a real deployment (read at runtime via `/api/config`,
+so no rebuild needed).
 
 See **[CLAUDE.md](CLAUDE.md)** for the endpoint reference, env vars, and gotchas.
 For the metric catalog, per-endpoint PromQL, and gap analysis, see

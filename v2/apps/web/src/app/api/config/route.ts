@@ -18,5 +18,13 @@ export function GET() {
     // Lets the browser-side api-client know whether to wait for the
     // session bridge and attach a Bearer token (see lib/api-client.ts).
     authMode: process.env.AUTH_MODE === "enabled" ? "enabled" : "disabled",
+    // Base URL of the Grafana that hosts the logs board — the "View full logs"
+    // button links here. Set DASHBOARD_GRAFANA_URL in the container env to point
+    // at any Grafana (the bundled `logs` profile publishes it on :3001). Default
+    // matches that profile so the button works out of the box locally.
+    grafanaUrl:
+      process.env.DASHBOARD_GRAFANA_URL ??
+      process.env.NEXT_PUBLIC_GRAFANA_URL ??
+      "http://localhost:3001",
   });
 }
