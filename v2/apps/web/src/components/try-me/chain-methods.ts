@@ -31,6 +31,8 @@
  * `command.params` is the path appended to the local endpoint URL.
  */
 
+import { familyForSpecIndex, isKnownSpecIndex } from "@sr/shared";
+
 export interface AddonCommand {
   /** JSON-RPC method name, or HTTP verb for REST commands. */
   method: string;
@@ -412,32 +414,25 @@ export const FAMILY_METHODS: Record<
  * matches — callers fall back per-interface (jsonrpc → evm, rest /
  * tendermintrpc → cosmos) so unknown chains still get a sensible catalog.
  */
+/** The generated chain-map assigns each index one of 19 chain-type families
+ *  (from lava-specs + the v1 overlay). The try-me catalog only curates method
+ *  sets for these 6; every other family collapses to its closest match so an
+ *  unknown index still gets a sensible fallback drawer. (The generated
+ *  per-spec catalog is tried first anyway — this only fires for indices the
+ *  generator didn't emit.) */
+const MAP_FAMILY_TO_CATALOG: Record<string, ChainFamily> = {
+  evm: "evm",
+  "evm-arbitrum": "evm",
+  avalanchep: "evm",
+  cosmos: "cosmos",
+  solana: "solana",
+  near: "near",
+  starknet: "starknet",
+  bitcoin: "bitcoin",
+};
+
 export function familyForSpec(spec: string): ChainFamily | null {
-  const u = spec.toUpperCase();
-  if (
-    u.startsWith("ETH1") ||
-    u.startsWith("BASE") ||
-    u.startsWith("ARB") ||
-    u.startsWith("OPT") ||
-    u.startsWith("POLYGON") ||
-    u.startsWith("BSC") ||
-    u.startsWith("HYPERLIQUID")
-  ) {
-    return "evm";
-  }
-  if (u.startsWith("SOLANA")) return "solana";
-  if (u.startsWith("NEAR")) return "near";
-  if (u.startsWith("STRK")) return "starknet";
-  if (
-    u.startsWith("COSMOS") ||
-    u.startsWith("LAVA") ||
-    u.startsWith("OSMOSIS") ||
-    u.startsWith("AXELAR")
-  ) {
-    return "cosmos";
-  }
-  if (u.startsWith("BTC")) return "bitcoin";
-  return null;
+  return MAP_FAMILY_TO_CATALOG[familyForSpecIndex(spec)] ?? null;
 }
 
 /** Fallback family per storage key for specs no prefix rule covers. */
@@ -513,8 +508,18 @@ export function getInterfaceConfig(
   const key = storageKey(iface);
   let cfg = generatedInterfaceConfig(spec, key);
   if (!cfg) {
-    const family = familyForSpec(spec) ?? FALLBACK_FAMILY[key];
-    cfg = FAMILY_METHODS[family][key] ?? null;
+    // Fallback catalog for a spec the generator didn't emit. Use the spec's
+    // own family; if that family lacks a method set for THIS interface, use
+    // the per-interface default family (rest/tendermintrpc/grpc → cosmos) so
+    // an unknown chain a router exposes over any interface still gets a
+    // drawer. `getKnownFamily` returns null for a genuinely-known spec
+    // (already in the map) so we don't invent a rest catalog for an
+    // EVM-only chain that merely happens to be missing from the JSON.
+    const family = familyForSpec(spec);
+    cfg = family ? FAMILY_METHODS[family][key] ?? null : null;
+    if (!cfg && !isKnownSpecIndex(spec)) {
+      cfg = FAMILY_METHODS[FALLBACK_FAMILY[key]][key] ?? null;
+    }
   }
   if (!cfg) return null;
   return hasArchive ? cfg : withoutArchive(cfg);

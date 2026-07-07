@@ -44,12 +44,12 @@ describe("FAMILY_METHODS catalog", () => {
 });
 
 describe("familyForSpec", () => {
-  it("maps spec label prefixes onto catalog families", () => {
+  it("maps each spec index onto a catalog family via the generated chain map", () => {
     expect(familyForSpec("ETH1")).toBe("evm");
     expect(familyForSpec("BASE")).toBe("evm");
-    expect(familyForSpec("ARBITRUM")).toBe("evm");
+    expect(familyForSpec("ARBITRUM")).toBe("evm"); // evm-arbitrum collapses to evm
     expect(familyForSpec("OPTM")).toBe("evm");
-    expect(familyForSpec("POLYGON1")).toBe("evm");
+    expect(familyForSpec("POLYGON")).toBe("evm");
     expect(familyForSpec("BSC")).toBe("evm");
     expect(familyForSpec("HYPERLIQUID")).toBe("evm");
     expect(familyForSpec("SOLANA")).toBe("solana");
@@ -62,14 +62,11 @@ describe("familyForSpec", () => {
     expect(familyForSpec("BTC")).toBe("bitcoin");
   });
 
-  it("is case-insensitive on the spec label", () => {
-    expect(familyForSpec("eth1")).toBe("evm");
-    expect(familyForSpec("lava")).toBe("cosmos");
-  });
-
-  it("returns null for specs no prefix rule covers", () => {
-    expect(familyForSpec("FVM")).toBeNull();
-    expect(familyForSpec("")).toBeNull();
+  it("defaults an unknown index to evm (the map's fallback family)", () => {
+    // The generated per-spec catalog is tried before this fallback ever
+    // fires, so a coarse default is safe here.
+    expect(familyForSpec("TOTALLY_UNKNOWN")).toBe("evm");
+    expect(familyForSpec("")).toBe("evm");
   });
 });
 
@@ -164,13 +161,12 @@ describe("getInterfaceConfig", () => {
     expect(tm?.regular[0]?.method).toBe("abci_info");
   });
 
-  it("falls back per-interface for interfaces a known spec doesn't declare", () => {
-    // FVM (Filecoin) declares jsonrpc only — rest/tendermintrpc use the
-    // cosmos fallback so a router exposing them still gets a drawer.
-    const rest = getInterfaceConfig("FVM", "rest", false);
-    expect(rest?.regular[0]?.params).toBe("/cosmos/base/tendermint/v1beta1/blocks/latest");
-    const tm = getInterfaceConfig("FVM", "tendermintrpc", false);
-    expect(tm?.regular[0]?.method).toBe("abci_info");
+  it("does NOT invent a catalog for an interface a KNOWN spec doesn't serve", () => {
+    // FVM (Filecoin) is in the chain map as jsonrpc-only. A router wouldn't
+    // expose it over rest/tendermintrpc, so those return null rather than a
+    // bogus cosmos catalog (the per-interface fallback is for UNKNOWN specs).
+    expect(getInterfaceConfig("FVM", "rest", false)).toBeNull();
+    expect(getInterfaceConfig("FVM", "tendermintrpc", false)).toBeNull();
   });
 
   it("WS variants reuse the catalog of their HTTP counterpart", () => {

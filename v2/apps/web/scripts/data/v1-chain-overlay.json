@@ -1,0 +1,674 @@
+{
+ "ARBITRUM": {
+  "family": "evm-arbitrum",
+  "icon": "arbitrum-one",
+  "interfaces": [
+   "jsonrpc"
+  ],
+  "hasWss": true
+ },
+ "ARBITRUMN": {
+  "family": "evm-arbitrum",
+  "icon": "arbitrum-nova",
+  "interfaces": [
+   "jsonrpc"
+  ],
+  "hasWss": true
+ },
+ "ARBITRUMS": {
+  "family": "evm-arbitrum",
+  "icon": "arbitrum-nova",
+  "interfaces": [
+   "jsonrpc"
+  ],
+  "hasWss": true
+ },
+ "AVAX": {
+  "family": "evm",
+  "icon": "avalanche",
+  "interfaces": [
+   "jsonrpc"
+  ],
+  "hasWss": true
+ },
+ "AVAXT": {
+  "family": "evm",
+  "icon": "avalanche",
+  "interfaces": [
+   "jsonrpc"
+  ],
+  "hasWss": true
+ },
+ "AVALANCHEC": {
+  "family": "evm",
+  "icon": "avalanche",
+  "interfaces": [
+   "jsonrpc"
+  ],
+  "hasWss": true
+ },
+ "AVALANCHECT": {
+  "family": "evm",
+  "icon": "avalanche",
+  "interfaces": [
+   "jsonrpc"
+  ],
+  "hasWss": true
+ },
+ "AVALANCHEP": {
+  "family": "avalanchep",
+  "icon": "avalanche",
+  "interfaces": [
+   "jsonrpc"
+  ],
+  "hasWss": false
+ },
+ "AVALANCHEPT": {
+  "family": "avalanchep",
+  "icon": "avalanche",
+  "interfaces": [
+   "jsonrpc"
+  ],
+  "hasWss": false
+ },
+ "AXELAR": {
+  "family": "cosmos",
+  "icon": "axelar",
+  "interfaces": [
+   "rest",
+   "tendermintrpc",
+   "grpc"
+  ],
+  "hasWss": false
+ },
+ "AXELART": {
+  "family": "cosmos",
+  "icon": "axelar",
+  "interfaces": [
+   "rest",
+   "tendermintrpc",
+   "grpc"
+  ],
+  "hasWss": false
+ },
+ "BASE": {
+  "family": "evm",
+  "icon": "base",
+  "interfaces": [
+   "jsonrpc"
+  ],
+  "hasWss": true
+ },
+ "BASES": {
+  "family": "evm",
+  "icon": "base",
+  "interfaces": [
+   "jsonrpc"
+  ],
+  "hasWss": true
+ },
+ "BLAST": {
+  "family": "evm",
+  "icon": "blast",
+  "interfaces": [
+   "jsonrpc"
+  ],
+  "hasWss": true
+ },
+ "BLASTSP": {
+  "family": "evm",
+  "icon": "blast",
+  "interfaces": [
+   "jsonrpc"
+  ],
+  "hasWss": true
+ },
+ "BSC": {
+  "family": "evm",
+  "icon": "bsc",
+  "interfaces": [
+   "jsonrpc"
+  ],
+  "hasWss": true
+ },
+ "BSCT": {
+  "family": "evm",
+  "icon": "bsc",
+  "interfaces": [
+   "jsonrpc"
+  ],
+  "hasWss": true
+ },
+ "CARDANO": {
+  "family": "cardano",
+  "icon": "cardano",
+  "interfaces": [
+   "rest"
+  ],
+  "hasWss": false
+ },
+ "CARDANOT": {
+  "family": "cardano",
+  "icon": "cardano",
+  "interfaces": [
+   "rest"
+  ],
+  "hasWss": false
+ },
+ "CASPER": {
+  "family": "casper",
+  "icon": "casper",
+  "interfaces": [
+   "jsonrpc"
+  ],
+  "hasWss": false
+ },
+ "CASPERT": {
+  "family": "casper",
+  "icon": "casper",
+  "interfaces": [
+   "jsonrpc"
+  ],
+  "hasWss": false
+ },
+ "CELO": {
+  "family": "evm",
+  "icon": "celo",
+  "interfaces": [
+   "jsonrpc"
+  ],
+  "hasWss": true
+ },
+ "ALFAJORES": {
+  "family": "evm",
+  "icon": "celo",
+  "interfaces": [
+   "jsonrpc"
+  ],
+  "hasWss": true
+ },
+ "COSMOSHUB": {
+  "family": "cosmos",
+  "icon": "cosmos-hub",
+  "interfaces": [
+   "rest",
+   "tendermintrpc",
+   "grpc"
+  ],
+  "hasWss": false
+ },
+ "COSMOSHUBT": {
+  "family": "cosmos",
+  "icon": "cosmos-hub",
+  "interfaces": [
+   "rest",
+   "tendermintrpc",
+   "grpc"
+  ],
+  "hasWss": false
+ },
+ "ETH1": {
+  "family": "evm",
+  "icon": "ethereum",
+  "interfaces": [
+   "jsonrpc"
+  ],
+  "hasWss": true
+ },
+ "SEP1": {
+  "family": "evm",
+  "icon": "ethereum",
+  "interfaces": [
+   "jsonrpc"
+  ],
+  "hasWss": true
+ },
+ "HOL1": {
+  "family": "evm",
+  "icon": "ethereum",
+  "interfaces": [
+   "jsonrpc"
+  ],
+  "hasWss": true
+ },
+ "HYPERLIQUID": {
+  "family": "evm",
+  "icon": "hyperliquid",
+  "interfaces": [
+   "jsonrpc"
+  ],
+  "hasWss": true
+ },
+ "HYPERLIQUIDT": {
+  "family": "evm",
+  "icon": "hyperliquid",
+  "interfaces": [
+   "jsonrpc"
+  ],
+  "hasWss": true
+ },
+ "HEDERA": {
+  "family": "hedera",
+  "icon": "hedera",
+  "interfaces": [
+   "jsonrpc",
+   "rest"
+  ],
+  "hasWss": false
+ },
+ "HEDERAT": {
+  "family": "hedera",
+  "icon": "hedera",
+  "interfaces": [
+   "jsonrpc",
+   "rest"
+  ],
+  "hasWss": false
+ },
+ "IOTA": {
+  "family": "iota",
+  "icon": "iota",
+  "interfaces": [
+   "jsonrpc"
+  ],
+  "hasWss": false
+ },
+ "IOTAT": {
+  "family": "iota",
+  "icon": "iota",
+  "interfaces": [
+   "jsonrpc"
+  ],
+  "hasWss": false
+ },
+ "EVMOS": {
+  "family": "cosmos",
+  "icon": "evmos",
+  "interfaces": [
+   "rest",
+   "tendermintrpc",
+   "jsonrpc",
+   "grpc"
+  ],
+  "hasWss": false
+ },
+ "EVMOST": {
+  "family": "cosmos",
+  "icon": "evmos",
+  "interfaces": [
+   "rest",
+   "tendermintrpc",
+   "jsonrpc",
+   "grpc"
+  ],
+  "hasWss": false
+ },
+ "FTM250": {
+  "family": "evm",
+  "icon": "fantom",
+  "interfaces": [
+   "jsonrpc"
+  ],
+  "hasWss": true
+ },
+ "FTM4002": {
+  "family": "evm",
+  "icon": "fantom",
+  "interfaces": [
+   "jsonrpc"
+  ],
+  "hasWss": true
+ },
+ "FUSE": {
+  "family": "evm",
+  "icon": "fuse",
+  "interfaces": [
+   "jsonrpc"
+  ],
+  "hasWss": true
+ },
+ "SPARK": {
+  "family": "evm",
+  "icon": "fuse",
+  "interfaces": [
+   "jsonrpc"
+  ],
+  "hasWss": true
+ },
+ "FVM": {
+  "family": "evm",
+  "icon": "filecoin",
+  "interfaces": [
+   "jsonrpc"
+  ],
+  "hasWss": true
+ },
+ "FVMT": {
+  "family": "evm",
+  "icon": "filecoin",
+  "interfaces": [
+   "jsonrpc"
+  ],
+  "hasWss": true
+ },
+ "LAVA": {
+  "family": "cosmos",
+  "icon": "lava",
+  "interfaces": [
+   "rest",
+   "tendermintrpc",
+   "grpc"
+  ],
+  "hasWss": false
+ },
+ "LAV1": {
+  "family": "cosmos",
+  "icon": "lava",
+  "interfaces": [
+   "rest",
+   "tendermintrpc",
+   "grpc"
+  ],
+  "hasWss": false
+ },
+ "MONAD": {
+  "family": "evm",
+  "icon": "monad",
+  "interfaces": [
+   "jsonrpc"
+  ],
+  "hasWss": true
+ },
+ "MONADT": {
+  "family": "evm",
+  "icon": "monad",
+  "interfaces": [
+   "jsonrpc"
+  ],
+  "hasWss": true
+ },
+ "MOVEMENT": {
+  "family": "cosmos",
+  "icon": "movement",
+  "interfaces": [
+   "rest"
+  ],
+  "hasWss": false
+ },
+ "MOVEMENTT": {
+  "family": "cosmos",
+  "icon": "movement",
+  "interfaces": [
+   "rest"
+  ],
+  "hasWss": false
+ },
+ "NEAR": {
+  "family": "near",
+  "icon": "near",
+  "interfaces": [
+   "jsonrpc"
+  ],
+  "hasWss": false
+ },
+ "NEART": {
+  "family": "near",
+  "icon": "near",
+  "interfaces": [
+   "jsonrpc"
+  ],
+  "hasWss": false
+ },
+ "OPTM": {
+  "family": "evm",
+  "icon": "optimism",
+  "interfaces": [
+   "jsonrpc"
+  ],
+  "hasWss": true
+ },
+ "OPTMS": {
+  "family": "evm",
+  "icon": "optimism",
+  "interfaces": [
+   "jsonrpc"
+  ],
+  "hasWss": true
+ },
+ "POLYGON": {
+  "family": "evm",
+  "icon": "polygon",
+  "interfaces": [
+   "jsonrpc"
+  ],
+  "hasWss": true
+ },
+ "POLYGONA": {
+  "family": "evm",
+  "icon": "polygon",
+  "interfaces": [
+   "jsonrpc"
+  ],
+  "hasWss": true
+ },
+ "POLKADOTASSETHUB": {
+  "family": "polkadotassethub",
+  "icon": "polkadotassethub",
+  "interfaces": [
+   "jsonrpc",
+   "rest"
+  ],
+  "hasWss": false
+ },
+ "POLKADOTASSETHUBT": {
+  "family": "polkadotassethub",
+  "icon": "polkadotassethub",
+  "interfaces": [
+   "jsonrpc",
+   "rest"
+  ],
+  "hasWss": false
+ },
+ "SOLANA": {
+  "family": "solana",
+  "icon": "solana",
+  "interfaces": [
+   "jsonrpc"
+  ],
+  "hasWss": true
+ },
+ "SOLANAT": {
+  "family": "solana",
+  "icon": "solana",
+  "interfaces": [
+   "jsonrpc"
+  ],
+  "hasWss": true
+ },
+ "STRGZ": {
+  "family": "cosmos",
+  "icon": "stargaze",
+  "interfaces": [
+   "rest",
+   "tendermintrpc",
+   "grpc"
+  ],
+  "hasWss": false
+ },
+ "STRGZT": {
+  "family": "cosmos",
+  "icon": "stargaze",
+  "interfaces": [
+   "rest",
+   "tendermintrpc",
+   "grpc"
+  ],
+  "hasWss": false
+ },
+ "STRK": {
+  "family": "starknet",
+  "icon": "starknet",
+  "interfaces": [
+   "jsonrpc"
+  ],
+  "hasWss": false
+ },
+ "STRKS": {
+  "family": "starknet",
+  "icon": "starknet",
+  "interfaces": [
+   "jsonrpc"
+  ],
+  "hasWss": false
+ },
+ "TEZOS": {
+  "family": "tezos",
+  "icon": "tezos",
+  "interfaces": [
+   "rest"
+  ],
+  "hasWss": false
+ },
+ "TEZOST": {
+  "family": "tezos",
+  "icon": "tezos",
+  "interfaces": [
+   "rest"
+  ],
+  "hasWss": false
+ },
+ "TON": {
+  "family": "ton",
+  "icon": "ton",
+  "interfaces": [
+   "rest"
+  ],
+  "hasWss": false
+ },
+ "TONT": {
+  "family": "ton",
+  "icon": "ton",
+  "interfaces": [
+   "rest"
+  ],
+  "hasWss": false
+ },
+ "TRX": {
+  "family": "tron",
+  "icon": "tron",
+  "interfaces": [
+   "rest"
+  ],
+  "hasWss": false
+ },
+ "TRXT": {
+  "family": "tron",
+  "icon": "tron",
+  "interfaces": [
+   "rest"
+  ],
+  "hasWss": false
+ },
+ "UNION": {
+  "family": "cosmos",
+  "icon": "union",
+  "interfaces": [
+   "rest",
+   "tendermintrpc",
+   "grpc"
+  ],
+  "hasWss": false
+ },
+ "UNIONT": {
+  "family": "cosmos",
+  "icon": "union",
+  "interfaces": [
+   "rest",
+   "tendermintrpc",
+   "grpc"
+  ],
+  "hasWss": false
+ },
+ "XLM": {
+  "family": "xlm",
+  "icon": "stellar",
+  "interfaces": [
+   "rest",
+   "jsonrpc"
+  ],
+  "hasWss": false
+ },
+ "XLMT": {
+  "family": "xlm",
+  "icon": "stellar",
+  "interfaces": [
+   "rest",
+   "jsonrpc"
+  ],
+  "hasWss": false
+ },
+ "XRP": {
+  "family": "xrp",
+  "icon": "xrp",
+  "interfaces": [
+   "jsonrpc"
+  ],
+  "hasWss": false
+ },
+ "XRPT": {
+  "family": "xrp",
+  "icon": "xrp",
+  "interfaces": [
+   "jsonrpc"
+  ],
+  "hasWss": false
+ },
+ "APT1": {
+  "family": "aptos",
+  "icon": "aptos",
+  "interfaces": [
+   "rest"
+  ],
+  "hasWss": false
+ },
+ "BTC": {
+  "family": "bitcoin",
+  "icon": "bitcoin",
+  "interfaces": [
+   "jsonrpc"
+  ],
+  "hasWss": false
+ },
+ "BTCT": {
+  "family": "bitcoin",
+  "icon": "bitcoin",
+  "interfaces": [
+   "jsonrpc"
+  ],
+  "hasWss": false
+ },
+ "BCH": {
+  "family": "bitcoin",
+  "icon": "bitcoincash",
+  "interfaces": [
+   "jsonrpc"
+  ],
+  "hasWss": false
+ },
+ "BCHT": {
+  "family": "bitcoin",
+  "icon": "bitcoincash",
+  "interfaces": [
+   "jsonrpc"
+  ],
+  "hasWss": false
+ },
+ "SONIC": {
+  "family": "evm",
+  "icon": "sonic",
+  "interfaces": [
+   "jsonrpc"
+  ],
+  "hasWss": true
+ }
+}
