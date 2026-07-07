@@ -1,0 +1,63 @@
+# Promtail config for the PROD-style logs stack (`logs` profile in docker-compose.yml).
+#
+# Promtail reads the Docker daemon socket and tails the stdout/stderr of every
+# container in THIS compose project (label filter below), parses the router's
+# zerolog JSON so `level` becomes a queryable label, and pushes to Loki. It
+# also captures the api / web / prometheus container logs (plain text — shipped
+# as-is). No change to any service is needed; discovery is via Docker labels.
+#
+# The ONLY difference from promtail-config.dev.yml is the project name the
+# filter keeps: docker-compose.yml sets name: smart-router-dashboard.
+
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+  log_level: warn
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: smart-router-dashboard-containers
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+
+    relabel_configs:
+      # Keep only this compose project's containers. Docker Compose stamps
+      # com.docker.compose.project=<name> on every container it creates; the
+      # prod compose sets `name: smart-router-dashboard`.
+      - source_labels: ["__meta_docker_container_label_com_docker_compose_project"]
+        regex: smart-router-dashboard
+        action: keep
+
+      # Low-cardinality Docker metadata → Loki labels (every distinct label set
+      # is a separate stream, so keep this small).
+      - source_labels: ["__meta_docker_container_label_com_docker_compose_service"]
+        target_label: service
+      - source_labels: ["__meta_docker_container_name"]
+        regex: "/(.*)"
+        target_label: container
+      - source_labels: ["__meta_docker_container_label_com_docker_compose_project"]
+        target_label: compose_project
+
+    pipeline_stages:
+      # The router logs zerolog JSON. Non-JSON lines (api/web/prometheus, or the
+      # router's first few text bootstrap lines) leave these stages as no-ops and
+      # ship raw.
+      - json:
+          expressions:
+            level: level
+            # zerolog writes the event time under "time" as a Unix-nanosecond
+            # number (the router sets zerolog.TimeFieldFormat = TimeFormatUnixNano).
+            ts: time
+            msg: message
+      - labels:
+          level:
+      - timestamp:
+          source: ts
+          format: UnixNs
+          action_on_failure: skip
