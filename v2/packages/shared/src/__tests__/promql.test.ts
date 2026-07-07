@@ -87,15 +87,26 @@ describe("query builders use the real metric names", () => {
 });
 
 describe("buildChainMetaByIndex", () => {
-  it("resolves a known spec", () => {
+  it("resolves a known spec with a brand color", () => {
     const m = buildChainMetaByIndex("ETH1");
     expect(m.name).toBe("Ethereum");
     expect(m.color).toBe("#627EEA");
+  });
+  it("resolves the display name from the lava-specs map (not the raw index)", () => {
+    // Regression: these specs used to fall through to `name: <index>` and the
+    // UI showed "HYPERLIQUID" / "APT1" / "BTC" — now the real spec name shows.
+    expect(buildChainMetaByIndex("HYPERLIQUID").name).toBe("Hyperliquid");
+    expect(buildChainMetaByIndex("APT1").name).toBe("Aptos");
+    expect(buildChainMetaByIndex("BTC").name).toBe("Bitcoin");
+  });
+  it("keeps the testnet qualifier on testnet specs", () => {
+    expect(buildChainMetaByIndex("HYPERLIQUIDT").name).toBe("Hyperliquid Testnet");
   });
   it("synthesises a fallback for an unknown spec", () => {
     const m = buildChainMetaByIndex("WEIRD9");
     expect(m.name).toBe("WEIRD9");
     expect(m.spec).toBe("WEIRD9");
+    expect(m.color).toBe("#6B7280");
   });
 });
 

@@ -71,6 +71,21 @@ const OUT_PATH = path.resolve(
   __dirname,
   "../src/components/try-me/chain-methods.generated.json",
 );
+// Spec-index → human display name, emitted alongside the method catalog so
+// the dashboard shows the real chain name (from each spec's `name` field)
+// instead of the raw index. Consumed by packages/shared buildChainMetaByIndex.
+const NAMES_OUT_PATH = path.resolve(
+  __dirname,
+  "../../../packages/shared/src/constants/chain-names.generated.json",
+);
+
+/** The spec `name` (e.g. "Hyperliquid Mainnet") trimmed for card display:
+ *  drop a trailing "Mainnet" (the network is shown separately), keep
+ *  "Testnet"/other qualifiers so testnet specs stay distinguishable. */
+function displayName(rawName, index) {
+  if (typeof rawName !== "string" || rawName.trim() === "") return index;
+  return rawName.replace(/\s+mainnet$/i, "").trim() || rawName.trim();
+}
 
 /* ── Curated hints ───────────────────────────────────────────────────────── */
 /** Single source for example params / descriptions / labels. `only` scopes a
@@ -564,6 +579,15 @@ for (const index of [...specsByIndex.keys()].sort()) {
 const json = JSON.stringify(out);
 writeFileSync(OUT_PATH, `${json}\n`);
 
+// Names map — EVERY spec index (incl. those with no method catalog), so the
+// dashboard resolves a real name for any `spec` label a metric might carry.
+// Sorted for a diff-clean, deterministic file.
+const names = {};
+for (const index of [...specsByIndex.keys()].sort()) {
+  names[index] = displayName(specsByIndex.get(index).spec.name, index);
+}
+writeFileSync(NAMES_OUT_PATH, `${JSON.stringify(names, null, 2)}\n`);
+
 /* ── Summary ─────────────────────────────────────────────────────────────── */
 
 const kb = (n) => `${(n / 1024).toFixed(1)} KB`;
@@ -573,6 +597,7 @@ console.log(`specs emitted    ${Object.keys(out).length} (${aliased} aliased to 
 console.log(`iface entries    ${ifaceEntries} (canonical, aliases excluded)`);
 console.log(`methods by tier  regular=${tierTotals.regular} archive=${tierTotals.archive} debug=${tierTotals.debug} trace=${tierTotals.trace}`);
 console.log(`output           ${OUT_PATH} (${kb(Buffer.byteLength(json))})`);
+console.log(`names            ${NAMES_OUT_PATH} (${Object.keys(names).length} chains)`);
 if (skipped.length > 0) {
   console.log(`skipped          ${skipped.length}`);
   for (const s of skipped) console.log(`  - ${s.index ?? s.file}: ${s.reason}`);
