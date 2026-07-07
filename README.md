@@ -12,7 +12,7 @@
 # Smart Router Dashboard
 
 [![Quality Gate](https://github.com/Magma-Devs/smart-router-dashboard/actions/workflows/quality-gate.yml/badge.svg?branch=main)](https://github.com/Magma-Devs/smart-router-dashboard/actions/workflows/quality-gate.yml)
-[![Release](https://img.shields.io/badge/release-v0.3.1-brightgreen)](https://github.com/Magma-Devs/smart-router-dashboard/releases/latest)
+[![Release](https://img.shields.io/badge/release-v0.4.0-brightgreen)](https://github.com/Magma-Devs/smart-router-dashboard/releases/latest)
 [![Node](https://img.shields.io/badge/node-24%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 [![License](https://img.shields.io/badge/license-source--available-orange.svg)](LICENSE.md)
 
@@ -36,14 +36,11 @@ The observability dashboard for the [Smart Router](https://github.com/Magma-Devs
 - **Self-contained** — `make up` gives you router + Prometheus + api + web from nothing. No accounts, no cloud, optional auth.
 - **Optional authentication** — `AUTH_MODE=enabled` adds Auth.js sign-in (email+password + Google/GitHub/Discord) backed by Postgres. Default is open (`disabled`) for private deployments.
 
-> **Repo layout:** the active codebase is [`v2/`](./v2) — a pnpm/TypeScript monorepo (Fastify api + Next.js 16 web + shared packages). The legacy Python/Next stack at the repo root (`backend/`, `frontend/`) is deprecated and will be removed; new work goes to v2.
+> **Repo layout:** a pnpm/TypeScript monorepo — `apps/api` (Fastify 5 Prometheus proxy) + `apps/web` (Next.js 16) + `packages/shared` + `packages/db`. Everything runs from the repo root.
 
 ## Quick Start
 
-Everything below runs from [`v2/`](./v2):
-
 ```bash
-cd v2
 make up      # router + Prometheus + api (:8000) + web (:3000), detached
 make ps      # show what's running
 make down    # stop everything
@@ -52,12 +49,12 @@ make down    # stop everything
 UI → http://localhost:3000 · API → http://localhost:8000 · Prometheus → http://localhost:9090 ·
 router → http://localhost:3360-3367 (ETH1 · SOLANA · BTC · HYPERLIQUID · COSMOSHUB rest/tendermint/grpc · APT1)
 
-The router pulls the published image (`ghcr.io/magma-devs/smart-router:latest`) and loads chain specs straight from the [lava-specs](https://github.com/Magma-Devs/lava-specs) GitHub repo — no checkout, no volume mounts. The default config is multichain with cross-validation policies enabled; see [`v2/dev-config/values.yml`](./v2/dev-config/values.yml).
+The router pulls the published image (`ghcr.io/magma-devs/smart-router:latest`) and loads chain specs straight from the [lava-specs](https://github.com/Magma-Devs/lava-specs) GitHub repo — no checkout, no volume mounts. The default config is multichain with cross-validation policies enabled; see [`dev-config/values.yml`](./dev-config/values.yml).
 
 With a router already running on the host's `:7779`:
 
 ```bash
-cd v2 && docker compose up --build     # dashboard + Prometheus only
+docker compose up --build     # dashboard + Prometheus only
 ```
 
 ## How it works
@@ -92,24 +89,22 @@ cd v2 && docker compose up --build     # dashboard + Prometheus only
 
 ## Authentication
 
-Two modes via `AUTH_MODE` (full guide: [`v2/docs/AUTH.md`](./v2/docs/AUTH.md)):
+Two modes via `AUTH_MODE` (full guide: [`docs/AUTH.md`](./docs/AUTH.md)):
 
 - **`disabled`** (default) — no login, no database. The dashboard opens straight on Overview. For private/self-hosted deployments.
 - **`enabled`** — Auth.js v5 sign-in backed by Postgres (Drizzle), bcrypt credentials + optional Google/GitHub/Discord (each button appears only when its client id/secret pair is set), HS256 JWT shared between web and api, idempotent `ADMIN_EMAIL`/`ADMIN_PASSWORD` bootstrap seed.
 
 ```bash
-cd v2
 AUTH_MODE=enabled AUTH_SECRET=$(openssl rand -base64 32) \
 ADMIN_EMAIL=you@example.com ADMIN_PASSWORD=change-me \
   docker compose --profile router --profile auth up -d --build
 # sign in at :3000/login with ADMIN_EMAIL / ADMIN_PASSWORD
-# (the dev compose ships working defaults — see v2/docs/AUTH.md)
+# (the dev compose ships working defaults — see docs/AUTH.md)
 ```
 
 ## Development
 
 ```bash
-cd v2
 make dev            # hot-reload docker stack (api tsx watch · web next dev · shared tsc --watch)
 
 # or on the host (Node 24 + pnpm 10, needs a Prometheus at PROMETHEUS_URL):
@@ -122,34 +117,32 @@ pnpm -r typecheck && pnpm -r test
 Project structure:
 
 ```
-v2/
-  apps/
-    api/            Fastify 5 REST api — Prometheus proxy + optional auth
-    web/            Next.js 16 App Router frontend
-  packages/
-    shared/         Domain types, PromQL builders, constants
-    db/             Drizzle schema + Postgres client (AUTH_MODE=enabled only)
-  dev-config/       values.yml driving both router and dashboard
-  docs/             AUTH.md · METRICS-MAPPING.md
-  docker-compose.yml / docker-compose.dev.yml / Makefile
+apps/
+  api/            Fastify 5 REST api — Prometheus proxy + optional auth
+  web/            Next.js 16 App Router frontend
+packages/
+  shared/         Domain types, PromQL builders, constants
+  db/             Drizzle schema + Postgres client (AUTH_MODE=enabled only)
+dev-config/       values.yml driving both router and dashboard
+docs/             AUTH.md · METRICS-MAPPING.md
+docker-compose.yml / docker-compose.dev.yml / Makefile
 ```
 
-See [`v2/README.md`](./v2/README.md) for the full run matrix and
-[`v2/CLAUDE.md`](./v2/CLAUDE.md) for the endpoint reference, env vars, and gotchas.
+See [`CLAUDE.md`](./CLAUDE.md) for the endpoint reference, env vars, and gotchas.
 
 ## Releases & images
 
 Changes are tracked in [CHANGELOG.md](./CHANGELOG.md). Versioning is driven by the root [`VERSION`](./VERSION) file: pushes to `main` run the
 [Build and Push Images](.github/workflows/build-and-push.yml) workflow, which tags and publishes
 
-- `ghcr.io/magma-devs/smart-router-dashboard/api` — the v2 Fastify api
-- `ghcr.io/magma-devs/smart-router-dashboard/web` — the v2 Next.js web
+- `ghcr.io/magma-devs/smart-router-dashboard/backend` — the Fastify api (`apps/api`)
+- `ghcr.io/magma-devs/smart-router-dashboard/frontend` — the Next.js web (`apps/web`)
 
 Set `DASHBOARD_API_URL` on the web container at runtime to point one published image at any api host.
 
 ```bash
-docker pull ghcr.io/magma-devs/smart-router-dashboard/api:latest
-docker pull ghcr.io/magma-devs/smart-router-dashboard/web:latest
+docker pull ghcr.io/magma-devs/smart-router-dashboard/backend:latest
+docker pull ghcr.io/magma-devs/smart-router-dashboard/frontend:latest
 ```
 
 ## Security

@@ -21,7 +21,7 @@ I have...
 * [ ] reviewed "Files changed" and left comments if necessary
 * [ ] included the necessary unit and integration tests (`pnpm -r test`)
 * [ ] confirmed `pnpm -r typecheck` passes
-* [ ] updated the relevant documentation (README, v2/CLAUDE.md, docs/)
+* [ ] updated the relevant documentation (README, CLAUDE.md, docs/)
 * [ ] confirmed all CI checks have passed
 
 ## Reviewers Checklist
