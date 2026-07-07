@@ -12,10 +12,12 @@ repo root — `apps/`, `packages/`, `docker-compose*.yml`, `Makefile`.
 > **lava-connect is the shape reference only.** We copy its *tooling, structure,
 > and conventions* (strict TS, Node16 ESM `.js` suffixes, Fastify plugin/route/
 > service layout, pnpm workspace, vitest, Docker patterns) — NOT its domain.
-> This product has **no database, no billing, no users — and no auth**. There
-> is no login page, no `/api/auth/*`, no `AUTH_*` env vars; every route is
-> public. It reads live metrics from Prometheus and router topology from a
-> mounted config file.
+> This product has **no billing and no users table by default**. It reads live
+> metrics from Prometheus and router topology from a mounted config file.
+> **Auth is optional**: `AUTH_MODE=disabled` (the default) leaves every route
+> public with no database; `AUTH_MODE=enabled` adds an Auth.js login, a JWT gate
+> on `/api/*`, `/auth/*` routes, and a Postgres `users` table (`packages/db`).
+> See [`docs/AUTH.md`](docs/AUTH.md).
 
 ## Quick start
 
@@ -60,7 +62,7 @@ paths/ports via Makefile/compose vars (`ROUTER_DIR`, `SR_CONFIG_HOST`,
 │ apps/web      │───────▶│ apps/api            │─────────▶│ Prometheus │
 │ Next.js 16    │        │ Fastify 5 (:8000)   │          │ (:9090,    │
 │ (:3000)       │        │ stateless proxy     │          │  bundled)  │
-│ SWR · @sr/*   │        │ no DB · no auth     │          └─────┬──────┘
+│ SWR · @sr/*   │        │ optional auth/DB    │          └─────┬──────┘
 └──────┬───────┘        └──────────┬──────────┘        scrapes :7779
        │ GET /api/config           │ reads               ┌─────┴──────┐
        │ (runtime api url)         └─ values file ──────▶│ smart-router│
@@ -182,7 +184,9 @@ Dashboard page's chip row uses internally).
 
 ## API endpoints
 
-All endpoints are **public** (no auth) and return `application/json`.
+All endpoints return `application/json`. With `AUTH_MODE=disabled` (default)
+every route is public; with `AUTH_MODE=enabled` the `/api/*` routes require a
+valid Bearer JWT (health/version and `/auth/*` stay public). See [`docs/AUTH.md`](docs/AUTH.md).
 
 | Endpoint | Params | Returns |
 |---|---|---|
@@ -226,6 +230,16 @@ API (`apps/api/src/config.ts` is the source of truth):
 | `GIT_COMMIT` / `APP_VERSION` | `unknown` / `0.0.0` | surfaced by `/version` |
 | `NODE_ENV` | `production` | non-prod enables `/docs` + pretty logs |
 
+Auth (only read when `AUTH_MODE=enabled`; the metrics path never touches the DB):
+
+| Variable | Default | Notes |
+|---|---|---|
+| `AUTH_MODE` | `disabled` | `enabled` turns on the JWT gate + `/auth/*` + Postgres |
+| `AUTH_SECRET` | (unset) | HS256 signing secret shared with the web (must match) |
+| `DATABASE_URL` | (unset) | Postgres connection string for the `users` table |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | (unset) | idempotent bootstrap-admin seed on first boot |
+| `GOOGLE_CLIENT_ID` | (unset) | validates the `aud` claim of Google ID tokens server-side |
+
 Web — build-time vs. **runtime**:
 
 | Variable | Default | Notes |
@@ -235,6 +249,9 @@ Web — build-time vs. **runtime**:
 | `DASHBOARD_API_URL` | (unset) | **runtime** override — read from the container env per-request by `GET /api/config`, so one published image serves any host |
 | `DASHBOARD_LOCAL_MODE` | (unset) | runtime override of `localMode`, same mechanism |
 | `DASHBOARD_GRAFANA_URL` | `http://localhost:3001` | Grafana base URL the "View full logs" button links to — runtime override via `/api/config`, same mechanism (falls back to `NEXT_PUBLIC_GRAFANA_URL`) |
+| `AUTH_MODE` / `AUTH_SECRET` | `disabled` / (unset) | must match the api; `enabled` renders the login page + edge gate |
+| `INTERNAL_API_BASE_URL` | (falls back to api url) | server-side api URL for Auth.js callbacks (compose sets `http://api:8000`) |
+| `{GOOGLE,GITHUB,DISCORD}_CLIENT_{ID,SECRET}` | (unset) | each provider's button appears only when its id+secret pair is set |
 
 The browser resolves its api base **once per session** from `/api/config`
 (`DASHBOARD_API_URL` → `NEXT_PUBLIC_API_URL` → `http://localhost:8000`),
