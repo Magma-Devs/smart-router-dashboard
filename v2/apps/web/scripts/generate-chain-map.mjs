@@ -33,10 +33,11 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OVERLAY_PATH = path.resolve(__dirname, "data/v1-chain-overlay.json");
 const ICONS_DIR = path.resolve(__dirname, "../public/chains");
-const OUT_PATH = path.resolve(
-  __dirname,
-  "../../../packages/shared/src/constants/chain-map.generated.json",
-);
+// CHAIN_MAP_OUT lets the CI drift check (check-chain-map.mjs) write to a temp
+// file instead of overwriting the committed one.
+const OUT_PATH =
+  process.env.CHAIN_MAP_OUT ??
+  path.resolve(__dirname, "../../../packages/shared/src/constants/chain-map.generated.json");
 
 const GH_OWNER = "Magma-Devs";
 const GH_REPO = "lava-specs";

@@ -149,12 +149,13 @@ export function EndpointsView() {
             return (
               <div key={group.routerId} className="gw-card" style={{ padding: "14px 16px" }}>
 
-                {/* Chain header */}
+                {/* Chain header. No raw-index chip — the name + brand icon
+                    identify the chain; only flag genuine testnets. */}
                 <div className="gw-row" style={{ gap: 10, alignItems: "center", marginBottom: 10 }}>
                   <ChainBadge spec={group.spec} size={26} />
                   <span style={{ fontSize: 13, fontWeight: 600 }}>{chain.name}</span>
-                  {group.network && group.network !== "mainnet" && (
-                    <span className="gw-tag" style={{ fontSize: 10, padding: "1px 6px" }}>{group.network}</span>
+                  {!chain.mainnet && (
+                    <span className="gw-tag" style={{ fontSize: 10, padding: "1px 6px" }}>testnet</span>
                   )}
                 </div>
 

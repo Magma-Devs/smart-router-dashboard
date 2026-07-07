@@ -105,6 +105,10 @@ describe("buildChainMetaByIndex", () => {
     expect(buildChainMetaByIndex("COSMOSHUB").family).toBe("cosmos");
     expect(buildChainMetaByIndex("BTC").family).toBe("bitcoin");
   });
+  it("flags mainnet vs testnet", () => {
+    expect(buildChainMetaByIndex("ETH1").mainnet).toBe(true);
+    expect(buildChainMetaByIndex("HYPERLIQUIDT").mainnet).toBe(false);
+  });
   it("keeps the testnet qualifier on testnet specs", () => {
     expect(buildChainMetaByIndex("HYPERLIQUIDT").name).toBe("Hyperliquid Testnet");
   });

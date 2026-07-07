@@ -60,6 +60,8 @@ export interface ChainMeta {
   iconUrl: string;
   /** Interfaces the spec serves (jsonrpc, rest, tendermintrpc, grpc). */
   interfaces: string[];
+  /** False for testnet specs (drives the "testnet" chip). */
+  mainnet: boolean;
   /** Hex color for the icon-fallback letter tint. */
   color: string;
 }
@@ -100,6 +102,7 @@ export function buildChainMetaByIndex(spec: string): ChainMeta {
     icon,
     iconUrl: `/chains/${icon}.svg`,
     interfaces: e?.interfaces ?? [],
+    mainnet: e?.mainnet ?? true,
     color: COLORS[spec] ?? FALLBACK_COLOR,
   };
 }
