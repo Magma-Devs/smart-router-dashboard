@@ -33,12 +33,13 @@ services:
 
   router:
     profiles: ["router"]
-    # Pull the latest published router image from GHCR (override with
-    # SR_ROUTER_IMAGE to run a locally-built router, e.g. one carrying the
-    # --cors-expose-headers flag before it lands in :latest). The release
-    # image is binary-only (no bundled specs/), so specs load straight from
-    # the lava-specs GitHub repo — no checkout, no volume mount.
-    image: ${SR_ROUTER_IMAGE:-ghcr.io/magma-devs/smart-router:latest}
+    # Published router image from GHCR (override with SR_ROUTER_IMAGE). Pinned
+    # to :main because the default command uses --cors-expose-headers, which
+    # ships on :main and rolls into :latest on the next tagged release — switch
+    # the default back to :latest once it's there. The release image is
+    # binary-only (no bundled specs/), so specs load straight from the
+    # lava-specs GitHub repo — no checkout, no volume mount.
+    image: ${SR_ROUTER_IMAGE:-ghcr.io/magma-devs/smart-router:main}
     pull_policy: ${SR_ROUTER_PULL:-always}
     command:
       - "values.yml"
@@ -46,6 +47,11 @@ services:
       - "${SR_SPEC:-https://github.com/Magma-Devs/lava-specs/tree/main}"
       - "--cors-headers"
       - "*"
+      # Expose the router's relay-provenance headers so the dashboard's Live
+      # test can show which upstream served a request (and "Cached" on a cache
+      # hit). Read by the browser from the Lava-Provider-Address response header.
+      - "--cors-expose-headers"
+      - "Lava-Provider-Address,Lava-Retries,Provider-Latest-Block,lava-cross-validation-agreeing-providers,lava-cross-validation-disagreeing-providers"
       - "--log-level"
       - "${SR_LOG_LEVEL:-info}"
       - "--log-format"
