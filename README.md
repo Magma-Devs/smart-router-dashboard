@@ -33,7 +33,8 @@ The observability dashboard for the [Smart Router](https://github.com/Magma-Devs
 - **Live metrics, honestly sourced** — KPIs, RPS, latency, error breakdowns, provider selection scores: all straight from the router's `smartrouter_*` / `rpc_endpoint_*` Prometheus families. Metric families the router hasn't emitted yet render the design's own empty states and light up automatically when they appear.
 - **Topology-aware** — one values file drives both the router and the dashboard, so the Endpoints/Providers pages always reflect the running configuration.
 - **Live test console** — fire requests at any chain × interface the router serves, straight from the browser, with a full method catalog generated from the [lava-specs](https://github.com/Magma-Devs/lava-specs) repo (126 chains, jsonrpc/rest/tendermint/grpc, archive/debug/trace tiers).
-- **Self-contained** — `make up` gives you router + Prometheus + api + web from nothing. No accounts, no cloud, optional auth.
+- **Self-contained** — `make up` gives you router + Prometheus + api + web + a Loki/Grafana logs stack from nothing. No accounts, no cloud, optional auth.
+- **Logs out of the box** — Promtail tails every container into Loki; Grafana (`:3001`) opens on a bundled logs dashboard. On by default; no extra flags.
 - **Optional authentication** — `AUTH_MODE=enabled` adds Auth.js sign-in (email+password + Google/GitHub/Discord) backed by Postgres. Default is open (`disabled`) for private deployments.
 
 > **Repo layout:** a pnpm/TypeScript monorepo — `apps/api` (Fastify 5 Prometheus proxy) + `apps/web` (Next.js 16) + `packages/shared` + `packages/db`. Everything runs from the repo root.
@@ -47,6 +48,7 @@ make down    # stop everything
 ```
 
 UI → http://localhost:3000 · API → http://localhost:8000 · Prometheus → http://localhost:9090 ·
+Grafana (logs) → http://localhost:3001 (`admin`/`admin`) · Loki → http://localhost:3100 ·
 router → http://localhost:3360-3367 (ETH1 · SOLANA · BTC · HYPERLIQUID · COSMOSHUB rest/tendermint/grpc · APT1)
 
 The router pulls the published image (`ghcr.io/magma-devs/smart-router:latest`) and loads chain specs straight from the [lava-specs](https://github.com/Magma-Devs/lava-specs) GitHub repo — no checkout, no volume mounts. The default config is multichain with cross-validation policies enabled; see [`dev-config/values.yml`](./dev-config/values.yml).
@@ -54,8 +56,11 @@ The router pulls the published image (`ghcr.io/magma-devs/smart-router:latest`) 
 With a router already running on the host's `:7779`:
 
 ```bash
-docker compose up --build     # dashboard + Prometheus only
+docker compose up --build                    # dashboard + Prometheus only
+docker compose --profile logs up --build     # + Loki/Promtail/Grafana (:3001)
 ```
+
+> `make up` / `make dev` enable the `logs` profile for you — the bare `docker compose up` above does not, so add `--profile logs` if you want Grafana on the router-already-running path.
 
 ## How it works
 
@@ -71,10 +76,18 @@ docker compose up --build     # dashboard + Prometheus only
                                       ▼                    └──────────────┘
                             mounted values.yml
                        (same file drives the router)
+
+  logs profile (on by default in make up / make dev):
+
+  all containers ──stdout──▶ ┌──────────┐ push  ┌──────────┐ LogQL ┌──────────┐
+  (web·api·router·prom)      │ Promtail │──────▶│   Loki   │◀──────│ Grafana  │
+                             └──────────┘       │  (:3100) │       │  (:3001) │
+                                                └──────────┘       └──────────┘
 ```
 
 - The api is a **stateless Prometheus proxy** — no database on the metrics path, per-route caching, unbacked values returned as `null` (never invented).
 - The web is **runtime-configurable** — one published image points at any api host via `DASHBOARD_API_URL`.
+- **Logs are on by default.** A Loki + Promtail + Grafana stack (`logs` compose profile, part of `make up`/`make dev`) tails every container's stdout into Loki; Grafana (`:3001`, `admin`/`admin`) opens on a bundled "Smart Router Dashboard Logs" dashboard. Anonymous viewer access is enabled, so no login is needed to read logs.
 - `AUTH_MODE=enabled` adds a Postgres users store + HS256 JWT gate on `/api/*` — see [Authentication](#authentication).
 
 ## Pages
