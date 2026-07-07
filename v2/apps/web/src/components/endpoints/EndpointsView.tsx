@@ -5,11 +5,17 @@
  * segctl. SELF-HOSTED REALITY: an "endpoint" is one (router × interface)
  * surface from the mounted values file; its URL is the local listen port
  * (http://localhost:<port>). JWT suffix / last-used are Magma-Cloud data —
- * they render "—" (never fabricated). */
+ * they render "—" (never fabricated).
+ *
+ * Each row with a local port carries a hover-revealed "Try now" button that
+ * opens the TryMe request console inline (the former standalone Live-test
+ * tab, folded in here so testing lives next to the endpoint it targets). */
 
 import { useMemo, useState } from "react";
 import {
   buildChainMetaByIndex,
+  type ChainMetrics,
+  type HealthState,
   type ProviderMetrics,
   type RouterTopology,
 } from "@sr/shared";
@@ -20,12 +26,14 @@ import { buildProviderRows } from "@/components/providers/catalog";
 import {
   IfaceTag,
   buildEndpointRows,
+  epHasArchive,
   epLocalHttp,
   providerCount,
   type EndpointRowModel,
 } from "@/components/endpoints/bits";
 import { EndpointDetailSheet } from "@/components/endpoints/EndpointDetailSheet";
 import { CreateEndpointSheet } from "@/components/endpoints/CreateEndpointSheet";
+import { TryNowButton } from "@/components/try-me/try-now-button";
 
 interface CardGroup {
   routerId: string;
@@ -37,14 +45,23 @@ interface CardGroup {
 export function EndpointsView() {
   const config = useApi<{ routers: RouterTopology[] }>("/api/config/routers", 60000);
   const live = useApi<{ providers: ProviderMetrics[] }>("/api/metrics/providers?window=1d");
+  // Health per spec — threaded into the Try-now drawer's status tag (omitted
+  // when a chain has no live metrics; never a hardcoded status).
+  const chainMetrics = useApi<{ chains: ChainMetrics[] }>("/api/metrics/chains?window=1d", 60000);
 
   const [showCreate, setShowCreate] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [hoverId, setHoverId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [netFilter, setNetFilter] = useState<"all" | "mainnet" | "testnet">("all");
 
   const routers = useMemo(() => config.data?.routers ?? [], [config.data]);
   const endpoints = useMemo(() => buildEndpointRows(routers), [routers]);
+  const healthBySpec = useMemo(() => {
+    const map = new Map<string, HealthState>();
+    for (const c of chainMetrics.data?.chains ?? []) map.set(c.spec, c.health);
+    return map;
+  }, [chainMetrics.data]);
   const providers = useMemo(
     () => buildProviderRows(routers, live.data?.providers),
     [routers, live.data],
@@ -141,25 +158,42 @@ export function EndpointsView() {
                   )}
                 </div>
 
-                {/* Endpoint rows — compact, click to open sheet */}
+                {/* Endpoint rows — compact, click to open sheet. Hover reveals
+                    a "Try now" button that fires a live request against the
+                    local listen port (the former Live-test console, inline). */}
                 <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                   {group.rows.map((ep) => {
                     const host = ep.port ? `localhost:${ep.port}` : "—";
                     const cnt = providerCount(ep);
+                    const hovered = hoverId === ep.id;
                     return (
                       <div key={ep.id}
                         className="gw-row"
                         onClick={() => setDetailId(ep.id)}
-                        onMouseEnter={(e) => e.currentTarget.style.background = "var(--hover-2)"}
-                        onMouseLeave={(e) => e.currentTarget.style.background = "var(--hover)"}
+                        onMouseEnter={() => setHoverId(ep.id)}
+                        onMouseLeave={() => setHoverId((cur) => (cur === ep.id ? null : cur))}
                         style={{
                           gap: 8, padding: "8px 10px", borderRadius: 6, cursor: "pointer",
-                          background: "var(--hover)", border: "1px solid var(--line)", alignItems: "center",
+                          background: hovered ? "var(--hover-2)" : "var(--hover)",
+                          border: "1px solid var(--line)", alignItems: "center",
                         }}>
                         <IfaceTag id={ep.iface} />
                         <span className="gw-mono" style={{ fontSize: 11, color: "var(--text-2)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
                           {host}
                         </span>
+                        {/* Try now — inline request console; only when the row
+                            has a local port to dial. Hidden until row hover. */}
+                        {ep.port !== null && (
+                          <TryNowButton
+                            spec={ep.spec}
+                            network={ep.network}
+                            iface={ep.iface}
+                            url={epLocalHttp(ep.port)}
+                            hasArchive={epHasArchive(ep)}
+                            health={healthBySpec.get(ep.spec)}
+                            visible={hovered}
+                          />
+                        )}
                         {ep.port !== null && (
                           <span onClick={(e) => e.stopPropagation()}>
                             <CopyButton text={epLocalHttp(ep.port)} />
