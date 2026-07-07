@@ -377,6 +377,10 @@ export function TryMeDrawer({
   const [response, setResponse] = useState<unknown>(null);
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
   const [httpStatus, setHttpStatus] = useState<number | null>(null);
+  /** Raw `Lava-Provider-Address` response header — which upstream(s) served
+   *  the relay, or "Cached" when the router answered from cache. Null when the
+   *  header wasn't readable (e.g. not CORS-exposed by the router). */
+  const [servedBy, setServedBy] = useState<string | null>(null);
   const [wsPhase, setWsPhase] = useState<WsPhase>(null);
   const [codeTab, setCodeTab] = useState<CodeTab>("CLI");
   const [visible, setVisible] = useState(false);
@@ -459,6 +463,7 @@ export function TryMeDrawer({
     setResponse(null);
     setLatencyMs(null);
     setHttpStatus(null);
+    setServedBy(null);
     setWsPhase(null);
     const t0 = performance.now();
     try {
@@ -504,6 +509,10 @@ export function TryMeDrawer({
           }
           setLatencyMs(dt);
           setHttpStatus(res.status);
+          // Which upstream served the relay — the router's Lava-Provider-Address
+          // header (a real endpoint name, or "Cached" on a cache hit). Readable
+          // only when the router CORS-exposes it; null otherwise.
+          setServedBy(res.headers.get("Lava-Provider-Address"));
           const errored =
             !res.ok ||
             (typeof json === "object" && json !== null && "error" in json);
@@ -827,6 +836,39 @@ export function TryMeDrawer({
                     {latencyMs} ms
                   </span>
                 )}
+                {/* Which upstream served the relay (Lava-Provider-Address).
+                    "Cached" → the router answered from its cache; otherwise the
+                    real upstream name(s). Shown only when the header is
+                    readable — never guessed. */}
+                {servedBy && (() => {
+                  const isCached = /(^|,)\s*Cached\s*$/i.test(servedBy);
+                  const upstreams = servedBy
+                    .split(",")
+                    .map((s) => s.trim())
+                    .filter((s) => s && !/^Cached$/i.test(s));
+                  if (isCached) {
+                    return (
+                      <span
+                        className="gw-tag"
+                        title="Served from the router's cache (Lava-Provider-Address: Cached)"
+                        style={{ fontSize: 11, color: "#22d3ee", background: "rgba(34,211,238,0.12)", borderColor: "rgba(34,211,238,0.25)", display: "inline-flex", alignItems: "center", gap: 4 }}
+                      >
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></svg>
+                        cached{upstreams.length ? ` · ${upstreams.join(", ")}` : ""}
+                      </span>
+                    );
+                  }
+                  return (
+                    <span
+                      className="gw-tag"
+                      title="Upstream that served this relay (Lava-Provider-Address)"
+                      style={{ fontSize: 11, color: "var(--text-3)", display: "inline-flex", alignItems: "center", gap: 4, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                    >
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg>
+                      via {upstreams.join(", ") || servedBy}
+                    </span>
+                  );
+                })()}
               </div>
             </div>
           ) : (
