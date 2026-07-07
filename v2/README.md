@@ -28,8 +28,9 @@ The **router** and **Prometheus** services are identical in both. The router
 loads specs straight from the **lava-specs GitHub repo** — no smart-router
 checkout, no volume mount.
 
-Both stacks bind the same host ports (3000 / 8000 / 9090 / 3360-3367), so run
-**one at a time** — `make down` / `make dev-down` before switching.
+Both stacks bind the same host ports (3000 / 8000 / 9090 / 3360-3367, plus
+3100 / 3001 with the `logs` profile), so run **one at a time** — `make down` /
+`make dev-down` before switching.
 
 ### Prod-style stack
 
@@ -70,6 +71,28 @@ ADMIN_PASSWORD=change-me make up-auth
 Email+password always; Google / GitHub / Discord buttons appear on the login
 page automatically when their `*_CLIENT_ID`/`*_CLIENT_SECRET` pairs are set.
 Full guide: [docs/AUTH.md](docs/AUTH.md).
+
+### With logs (Loki + Grafana)
+
+An opt-in `logs` profile adds **Loki + Promtail + Grafana** that capture the
+stack's container logs (router / api / web / prometheus) and show them in a
+pre-provisioned Grafana board — Promtail parses the router's zerolog JSON so
+`level` is a queryable label. Nothing else changes; discovery is via Docker
+labels.
+
+```bash
+make dev-logs   # hot-reload stack + logs (foreground)
+make up-logs    # prod-style stack + logs (detached)
+
+# equivalently, without make:
+docker compose -f docker-compose.dev.yml --profile router --profile logs up --build
+docker compose --profile router --profile logs up --build   # prod-style
+```
+
+Grafana → http://localhost:3001 (`admin` / `admin`), opens on **"Smart Router
+Dashboard Logs"**. Loki API → http://localhost:3100. Grafana is on **:3001**
+(not :3000) on purpose — the web UI owns :3000, so logs run alongside it. The
+`logs` profile composes with `auth` too (`--profile auth --profile logs`).
 
 UI → http://localhost:3000 · API → http://localhost:8000 ·
 Prometheus → http://localhost:9090 · router → http://localhost:3360-3367
