@@ -40,6 +40,31 @@ jobs:
       - name: Tests (all packages)
         run: pnpm -r test
 
+  spec-drift:
+    name: Chain map ↔ lava-specs drift
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: v2
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # Regenerate the chain map from the live Magma-Devs/lava-specs repo and
+      # fail if it differs from the committed file — i.e. upstream added a
+      # chain / renamed one / changed its interfaces and the dashboard is
+      # stale. Network/API failures soft-skip so upstream flakiness can't block
+      # a merge. GITHUB_TOKEN raises the GitHub API rate limit.
+      - name: Check chain-map is in sync with lava-specs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node apps/web/scripts/check-chain-map.mjs
+
   # ── Legacy v1 checks (backend/ + frontend/) — remove with v1 ──
   frontend:
     name: Frontend Checks
