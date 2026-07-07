@@ -1,0 +1,14 @@
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<linearGradient id="elysSilver" x1="6" y1="3" x2="18" y2="21" gradientUnits="userSpaceOnUse">
+<stop offset="0" stop-color="#FFFFFF"/>
+<stop offset="0.5" stop-color="#C8CDD6"/>
+<stop offset="1" stop-color="#8A909B"/>
+</linearGradient>
+</defs>
+<circle cx="12" cy="12" r="12" fill="#0A1422"/>
+<!-- left leaf-stroke: sweeps from top-center down the left and curls back to bottom-center -->
+<path d="M11.3 3.4c-1.7 2.0-4.7 3.6-5.9 6.2-1.2 2.6-0.5 5.6 1.7 7.4 1.4 1.2 2.9 1.9 3.9 3.6 0.2-2.0-0.9-3.3-2.0-4.4-1.4-1.4-1.8-3.0-1.0-4.6 0.7-1.5 2.3-2.5 3.3-4.0z" fill="url(#elysSilver)"/>
+<!-- right leaf-stroke: mirror, top-center down the right curling to bottom -->
+<path d="M12.7 3.4c1.7 2.0 4.7 3.6 5.9 6.2 1.2 2.6 0.5 5.6-1.7 7.4-1.4 1.2-2.9 1.9-3.9 3.6-0.2-2.0 0.9-3.3 2.0-4.4 1.4-1.4 1.8-3.0 1.0-4.6-0.7-1.5-2.3-2.5-3.3-4.0z" fill="url(#elysSilver)"/>
+</svg>
