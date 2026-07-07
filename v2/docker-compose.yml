@@ -61,6 +61,13 @@ services:
       - "values.yml"
       - "--use-static-spec"
       - "${SR_SPEC:-https://github.com/Magma-Devs/lava-specs/tree/main}"
+      # GitHub PAT for fetching specs from the lava-specs GitHub repo above.
+      # Unauthenticated GitHub API is rate-limited to 60 req/hour; a token lifts
+      # that to 5,000/hour (and unlocks private repos). Empty by default — the
+      # router treats "" as unauthenticated, so leave SR_GITHUB_TOKEN unset for
+      # the normal public-repo path and set it only if you hit rate limits.
+      - "--github-token"
+      - "${SR_GITHUB_TOKEN:-}"
       # The browser live-test panel preflights cross-origin POSTs.
       - "--cors-headers"
       - "*"
@@ -211,6 +218,11 @@ services:
       - NODE_ENV=production
       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000}
       - NEXT_PUBLIC_LOCAL_MODE=true
+      # Base URL of the Grafana that hosts the logs board — the "View full logs"
+      # button links here (read at runtime via /api/config, so one published
+      # image serves any host). Defaults to the bundled `logs` profile's Grafana
+      # on :3001; set it to your Grafana origin in a real deployment.
+      - DASHBOARD_GRAFANA_URL=${DASHBOARD_GRAFANA_URL:-http://localhost:3001}
       # Auth (see docs/AUTH.md) — same AUTH_MODE + AUTH_SECRET as the api.
       - AUTH_MODE=${AUTH_MODE:-disabled}
       - AUTH_SECRET=${AUTH_SECRET:-}

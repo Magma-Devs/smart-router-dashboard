@@ -236,6 +236,7 @@ Web — build-time vs. **runtime**:
 | `NEXT_PUBLIC_LOCAL_MODE` | `false` | build-time default for the `localMode` flag |
 | `DASHBOARD_API_URL` | (unset) | **runtime** override — read from the container env per-request by `GET /api/config`, so one published image serves any host |
 | `DASHBOARD_LOCAL_MODE` | (unset) | runtime override of `localMode`, same mechanism |
+| `DASHBOARD_GRAFANA_URL` | `http://localhost:3001` | Grafana base URL the "View full logs" button links to — runtime override via `/api/config`, same mechanism (falls back to `NEXT_PUBLIC_GRAFANA_URL`) |
 
 The browser resolves its api base **once per session** from `/api/config`
 (`DASHBOARD_API_URL` → `NEXT_PUBLIC_API_URL` → `http://localhost:8000`),
