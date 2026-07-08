@@ -10,6 +10,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { MetricWindow, TrafficSummary } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { Tip } from "@/components/gateway/Tip";
+import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { LineChart, SparkLine } from "@/components/gateway/charts";
 import { roFmtTime } from "@/components/metrics/InteractiveChart";
 import { fmtNum } from "@/lib/format";
@@ -114,7 +115,7 @@ export function TrafficUsage({ win, chainFilter }: { win: MetricWindow; chainFil
                 style={{ cursor: "pointer", background: on ? "rgba(255,57,0,0.06)" : undefined, boxShadow: on ? "inset 2px 0 0 var(--brand)" : undefined }}>
                 <td>
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ width: 7, height: 7, borderRadius: 2, background: c.color, flexShrink: 0 }} />
+                    <ChainBadge spec={c.key} size={16} />
                     <span style={{ fontSize: 12.5, color: "var(--text-2)", fontWeight: on ? 700 : 400 }}>{c.name}</span>
                     {c.net === "testnet" && <span style={{ fontSize: 9, color: "var(--text-4)" }}>testnet</span>}
                   </span>

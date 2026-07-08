@@ -17,6 +17,7 @@ import {
   type MetricWindow,
 } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
+import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { TroubleDetail } from "./TroubleDetail";
 import { DSHChip, DSHNoData, DSHSection, dshFmtComma, dshFmtNum } from "./bits";
 
@@ -116,7 +117,7 @@ export function MetricsTabSectionC({
                     <td>
                       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                         <span style={{ width: 6, height: 6, borderRadius: "50%", background: pillC, flexShrink: 0 }} />
-                        <span style={{ width: 7, height: 7, borderRadius: "50%", background: ch.color || "#888", flexShrink: 0 }} />
+                        <ChainBadge spec={t.chain} size={16} />
                         <span style={{ fontSize: 12 }}>{ch.name || t.chain}</span>
                       </div>
                     </td>

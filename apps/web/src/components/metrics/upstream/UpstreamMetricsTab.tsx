@@ -16,6 +16,7 @@ import { buildChainMetaByIndex, WINDOWS, type MetricWindow, type UpstreamDetail 
 import { useApi } from "@/hooks/use-api";
 import { fmtNum } from "@/lib/format";
 import { uptimeColor } from "@/lib/colors";
+import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { PMRoster, usePMRosterData } from "./PMRoster";
 import { PMStat, PMNoVal } from "./PMPanel";
 import { PMEmpty } from "./PMEmpty";
@@ -61,7 +62,7 @@ export function UpstreamMetricsTab({ timeWindow, chainFilter }: {
         <>
           {/* ── selected-upstream deep dive ── */}
           <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "4px 0 14px" }}>
-            <span style={{ width: 9, height: 9, borderRadius: 2, background: buildChainMetaByIndex(pm.spec).color || "#888", flexShrink: 0 }} />
+            <ChainBadge spec={pm.spec} size={16} />
             <span style={{ fontSize: 14, fontWeight: 700 }}>{activeName}</span>
             <span style={{ fontSize: 12, color: "var(--text-3)" }}>· {chainName} · detailed metrics</span>
           </div>

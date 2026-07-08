@@ -11,6 +11,7 @@
 
 import type { ErrorHotspot, MetricWindow } from "@sr/shared";
 import { LineChart } from "@/components/gateway/charts";
+import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { nums, SEV_STYLE, sevForErrRatePct } from "./bits";
 
 export function HotspotRow({ h, open, onToggle, win }: {
@@ -31,7 +32,7 @@ export function HotspotRow({ h, open, onToggle, win }: {
         {/* who */}
         <div style={{ minWidth: 0, flex: "1.3 1 0" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ width: 8, height: 8, borderRadius: 2, background: h.color || "#888", flexShrink: 0 }} />
+            <ChainBadge spec={h.spec} size={16} />
             <span style={{ fontSize: 14, fontWeight: 600 }}>{h.name}</span>
             <span style={{ fontSize: 13, color: "var(--text-3)" }}>·</span>
             <span style={{ fontSize: 14, fontWeight: 500, color: "var(--text-2)" }}>{h.upstream}</span>

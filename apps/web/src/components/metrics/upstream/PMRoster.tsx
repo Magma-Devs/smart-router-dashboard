@@ -10,6 +10,7 @@ import { useEffect, useState } from "react";
 import { buildChainMetaByIndex, type MetricWindow, type UpstreamMetrics } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { uptimeColor } from "@/lib/colors";
+import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { Tip } from "@/components/gateway/Tip";
 import { ThCol, useSort } from "@/components/gateway/SortTable";
 
@@ -109,7 +110,7 @@ export function PMRoster({ rows, activeName, onSelect, timeWindow }: {
                 </td>
                 <td>
                   <span style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                    <span style={{ width: 7, height: 7, borderRadius: 2, background: r.chainColor || "#888", flexShrink: 0 }} />
+                    <ChainBadge spec={r.pm.spec} size={16} />
                     <span style={{ fontSize: 12, color: "var(--text-2)" }}>{r.chainName}</span>
                   </span>
                 </td>

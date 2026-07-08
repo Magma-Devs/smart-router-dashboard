@@ -10,6 +10,7 @@
 import { buildChainMetaByIndex, type CrossValidationReport, type MetricWindow } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { Tip } from "@/components/gateway/Tip";
+import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { ThCol } from "@/components/gateway/SortTable";
 import { fmtComma, fmtNum } from "@/lib/format";
 
@@ -81,7 +82,7 @@ export function CrossValidation({ tw }: { tw: MetricWindow }) {
               <tr key={p.spec}>
                 <td>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ width: 8, height: 8, borderRadius: 2, background: meta.color || "#888", flexShrink: 0 }} />
+                    <ChainBadge spec={p.spec} size={16} />
                     <span style={{ fontSize: 13, fontWeight: 500 }}>{meta.name}</span>
                   </div>
                 </td>

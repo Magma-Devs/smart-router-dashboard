@@ -13,6 +13,7 @@ import { buildChainMetaByIndex } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { useFilters } from "@/components/gateway/FiltersProvider";
 import { RouterHeader } from "@/components/gateway/RouterHeader";
+import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { HeroPanel } from "./HeroPanel";
 import { CurrentlyUnavailable } from "./CurrentlyUnavailable";
 import { RouterOverview } from "./RouterOverview";
@@ -68,7 +69,7 @@ export function MetricsView() {
 
       {activeChain && (
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20, padding: "9px 14px", borderRadius: 9, background: "rgba(255,57,0,0.06)", border: "1px solid rgba(255,57,0,0.22)" }}>
-          <span style={{ width: 8, height: 8, borderRadius: 3, background: chainObj?.color || "var(--brand)", flexShrink: 0 }} />
+          <ChainBadge spec={activeChain} size={16} />
           <span style={{ fontSize: 13, color: "var(--text-2)" }}>Viewing <strong style={{ color: "var(--text)" }}>{chainObj ? chainObj.name : activeChain}</strong> — clear to see all chains.</span>
           <span style={{ flex: 1 }} />
           <button onClick={() => setChainFilter("all")} style={{ border: "none", background: "none", color: "var(--brand)", cursor: "pointer", padding: 0, fontSize: 13, fontWeight: 600, fontFamily: "inherit" }}>Clear filter</button>
