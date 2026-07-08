@@ -33,7 +33,10 @@ export function qRequestsTotal(
   window: MetricWindow = "1d",
   offset?: string,
 ): string {
-  return `sum(increase(${ROUTER_METRICS.requestsTotal}${selector({ spec })}[${rangeFor(window)}]${off(offset)}))`;
+  // round(): increase() extrapolates to the window edges and returns a float, so
+  // a young counter yields e.g. 239.1 "requests" — a request count is inherently
+  // a whole number, so round it back to an integer.
+  return `round(sum(increase(${ROUTER_METRICS.requestsTotal}${selector({ spec })}[${rangeFor(window)}]${off(offset)})))`;
 }
 
 /** success / total over the window → availability ratio (0..1).
