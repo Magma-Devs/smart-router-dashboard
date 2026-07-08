@@ -48,7 +48,7 @@ export function CloudNotice({
       </svg>
       <span>
         <strong style={{ color: "var(--text)", fontWeight: 600 }}>
-          {`${feature} ${feature.endsWith("s") ? "are" : "is"} a Magma Cloud feature.`}
+          {`${feature} ${feature.endsWith("s") ? "are" : "is"} a Magma Cloud feature.`}
         </strong>
         {detail ? ` ${detail}` : null}
       </span>
