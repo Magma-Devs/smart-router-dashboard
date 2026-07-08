@@ -14,3 +14,25 @@ export const ERR_LBL: Record<string, string> = {
 };
 
 export const ERR_HANDLED_CLR: string[] = ["var(--ok)", "var(--info)", "var(--warn)", "var(--text-3)"];
+
+/* ── Uptime / availability thresholds (single source of truth) ──────────────
+   Percentage boundaries for the green / amber / red status colour used on every
+   uptime + availability figure (upstream cards, roster, deep-dive, routers).
+     green  (ok)   ≥ 99.9%
+     amber  (warn) ≥ 99%   (and < 99.9%)
+     red    (err)  < 99%                                                       */
+export const UPTIME_OK_PCT = 99.9;
+export const UPTIME_WARN_PCT = 99;
+
+/** CSS colour var for an availability/uptime PERCENTAGE (0..100). */
+export function uptimeColor(pct: number | null): string {
+  if (pct === null) return "var(--text-4)";
+  if (pct >= UPTIME_OK_PCT) return "var(--ok)";
+  if (pct >= UPTIME_WARN_PCT) return "var(--warn)";
+  return "var(--err)";
+}
+
+/** Same, for a 0..1 FRACTION (some callers hold uptime as a ratio). */
+export function uptimeColorFrac(frac: number | null): string {
+  return uptimeColor(frac === null ? null : frac * 100);
+}

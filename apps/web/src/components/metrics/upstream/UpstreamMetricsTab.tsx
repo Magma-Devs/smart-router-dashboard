@@ -15,6 +15,7 @@ import { useEffect, useState } from "react";
 import { buildChainMetaByIndex, WINDOWS, type MetricWindow, type UpstreamDetail } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { fmtNum } from "@/lib/format";
+import { uptimeColor } from "@/lib/colors";
 import { PMRoster, usePMRosterData } from "./PMRoster";
 import { PMStat, PMNoVal } from "./PMPanel";
 import { PMEmpty } from "./PMEmpty";
@@ -47,7 +48,7 @@ export function UpstreamMetricsTab({ timeWindow, chainFilter }: {
   const availPct = pm?.uptime != null ? pm.uptime * 100 : null;
   const errPct = pm?.errorRate != null ? pm.errorRate * 100 : null;
   const p95 = detail?.p95Ms ?? pm?.p95Ms ?? null;
-  const availCol = (a: number) => (a >= 99.9 ? "var(--ok)" : a >= 99 ? "var(--warn)" : "var(--err)");
+  const availCol = uptimeColor;
   /** The design's fixed 1h/24h/7d context boxes; "24h" is the wire alias of "1d". */
   const winMatches = (k: string) => timeWindow === k || (k === "24h" && timeWindow === "1d");
 

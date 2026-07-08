@@ -20,6 +20,7 @@ import { CopyButton } from "@/components/gateway/CopyButton";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { CapabilityTags, capabilitiesOf } from "@/components/gateway/CapabilityTags";
 import { fmtMs, fmtNum, fmtPct } from "@/lib/format";
+import { uptimeColorFrac } from "@/lib/colors";
 import { UpstreamLogo } from "@/components/upstreams/UpstreamLogo";
 import { KebabMenu, StatusDot, pvStatLabel, type LiveChain } from "@/components/upstreams/bits";
 import {
@@ -251,7 +252,7 @@ export function UpstreamsView() {
                     </div>
                     <div style={{ textAlign: "right" }}>
                       <div style={pvStatLabel}>Uptime</div>
-                      <div className="gw-mono gw-tnum" style={{ fontSize: 12, marginTop: 2, color: pv.uptime !== null && pv.uptime < 0.99 ? "var(--warn)" : "var(--text-2)" }}>{fmtPct(pv.uptime)}</div>
+                      <div className="gw-mono gw-tnum" style={{ fontSize: 12, marginTop: 2, color: uptimeColorFrac(pv.uptime) }}>{fmtPct(pv.uptime)}</div>
                     </div>
                     <div style={{ textAlign: "right" }}>
                       <div style={pvStatLabel}>Req today</div>

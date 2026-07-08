@@ -9,6 +9,7 @@
 import { useEffect, useState } from "react";
 import { buildChainMetaByIndex, type MetricWindow, type UpstreamMetrics } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
+import { uptimeColor } from "@/lib/colors";
 import { Tip } from "@/components/gateway/Tip";
 import { ThCol, useSort } from "@/components/gateway/SortTable";
 
@@ -126,7 +127,7 @@ export function PMRoster({ rows, activeName, onSelect, timeWindow }: {
                 ) : (
                   <>
                     <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12, color: "var(--text)" }}>{fmtReq(v.requests)}</span></td>
-                    <td style={{ textAlign: "right" }}>{(() => { const a = v.uptime != null ? v.uptime * 100 : null; return a != null ? <span className="gw-mono gw-tnum" style={{ fontSize: 12, color: a >= 99.9 ? "var(--ok)" : a >= 99 ? "var(--warn)" : "var(--err)" }}>{a.toFixed(2)}%</span> : <span style={{ fontSize: 12, color: "var(--text-4)" }}>—</span>; })()}</td>
+                    <td style={{ textAlign: "right" }}>{(() => { const a = v.uptime != null ? v.uptime * 100 : null; return a != null ? <span className="gw-mono gw-tnum" style={{ fontSize: 12, color: uptimeColor(a) }}>{a.toFixed(2)}%</span> : <span style={{ fontSize: 12, color: "var(--text-4)" }}>—</span>; })()}</td>
                     <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{v.p95Ms != null ? Math.round(v.p95Ms) + " ms" : "—"}</span></td>
                     <td style={{ textAlign: "right" }}>{(() => { const e = v.errorRate != null ? v.errorRate * 100 : null; return e != null ? <span className="gw-mono gw-tnum" style={{ fontSize: 12, color: e < 0.5 ? "var(--text-3)" : e < 1.5 ? "var(--warn)" : "var(--err)" }}>{e.toFixed(2)}%</span> : <span style={{ fontSize: 12, color: "var(--text-4)" }}>—</span>; })()}</td>
                     <td style={{ textAlign: "right" }}>{r.qosVal != null ? <span className="gw-mono gw-tnum" style={{ fontSize: 13, fontWeight: 700, color: r.qosVal > 97 ? "var(--ok)" : r.qosVal > 90 ? "var(--warn)" : "var(--err)" }}>{Math.round(r.qosVal)}</span> : <span style={{ fontSize: 12, color: "var(--text-4)" }}>—</span>}</td>
