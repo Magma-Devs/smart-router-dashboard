@@ -25,6 +25,12 @@ SHELL := /bin/bash
 export SR_SPEC ?=
 export SR_CONFIG_HOST ?=
 
+# Build provenance surfaced by GET /version + the Account page. Read from the
+# VERSION file and git so `make up` stamps the real version instead of the
+# compose default (0.0.0 / dev). Overridable from the environment.
+export APP_VERSION ?= $(shell tr -d ' \n\r' < VERSION 2>/dev/null || echo 0.0.0)
+export GIT_COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo dev)
+
 # Image names for local GHCR-parity builds (match the CI-published names:
 # api → backend, web → frontend — the names the smart-router helm chart uses).
 BUILDER    ?= srdash-builder
