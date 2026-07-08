@@ -56,9 +56,11 @@ function jsonInline(body: unknown | null): string {
 
 // ──────────────── HTTP ────────────────
 
-function httpCli(req: ResolvedHttp): SnippetBlock[] {
+function httpCli(req: ResolvedHttp, extra: Record<string, string> = {}): SnippetBlock[] {
+  const extraCurl = Object.entries(extra).map(([k, v]) => `  -H "${k}: ${v}" \\`);
   if (req.httpMethod === "GET") {
-    return [{ language: "bash", code: `curl -s "${req.url}"` }];
+    if (extraCurl.length === 0) return [{ language: "bash", code: `curl -s "${req.url}"` }];
+    return [{ language: "bash", code: [`curl -s "${req.url}" \\`, ...extraCurl.map((l, i) => (i === extraCurl.length - 1 ? l.replace(/ \\$/, "") : l))].join("\n") }];
   }
   return [
     {
@@ -66,18 +68,26 @@ function httpCli(req: ResolvedHttp): SnippetBlock[] {
       code: [
         `curl -s -X POST "${req.url}" \\`,
         `  -H "Content-Type: ${req.contentType ?? "application/json"}" \\`,
+        ...extraCurl,
         `  -d '${jsonInline(req.body)}'`,
       ].join("\n"),
     },
   ];
 }
 
-function httpPython(req: ResolvedHttp): SnippetBlock[] {
+function httpPython(req: ResolvedHttp, extra: Record<string, string> = {}): SnippetBlock[] {
   const install: SnippetBlock = {
     label: "Installation",
     language: "bash",
     code: "pip install requests",
   };
+  const hdrEntries = [
+    `"Content-Type": "${req.contentType ?? "application/json"}"`,
+    ...Object.entries(extra).map(([k, v]) => `"${k}": "${v}"`),
+  ];
+  const extraKw = Object.keys(extra).length
+    ? `${INDENT}headers={${Object.entries(extra).map(([k, v]) => `"${k}": "${v}"`).join(", ")}},`
+    : null;
   if (req.httpMethod === "GET") {
     return [
       install,
@@ -87,7 +97,8 @@ function httpPython(req: ResolvedHttp): SnippetBlock[] {
         code: [
           `import requests`,
           ``,
-          `r = requests.get("${req.url}")`,
+          extraKw ? `r = requests.get(` : `r = requests.get("${req.url}")`,
+          ...(extraKw ? [`${INDENT}"${req.url}",`, extraKw, `)`] : []),
           `print(r.json())`,
         ].join("\n"),
       },
@@ -105,7 +116,7 @@ function httpPython(req: ResolvedHttp): SnippetBlock[] {
         `r = requests.post(`,
         `${INDENT}"${req.url}",`,
         `${INDENT}json=payload,`,
-        `${INDENT}headers={"Content-Type": "${req.contentType ?? "application/json"}"},`,
+        `${INDENT}headers={${hdrEntries.join(", ")}},`,
         `)`,
         `print(r.json())`,
       ].join("\n"),
@@ -113,8 +124,42 @@ function httpPython(req: ResolvedHttp): SnippetBlock[] {
   ];
 }
 
-function httpGo(req: ResolvedHttp): SnippetBlock[] {
+function httpGo(req: ResolvedHttp, extra: Record<string, string> = {}): SnippetBlock[] {
   // Go HTTP is stdlib (net/http), no install required.
+  const hasExtra = Object.keys(extra).length > 0;
+  if (req.httpMethod === "POST" && hasExtra) {
+    // http.Post can't set custom headers — use NewRequest + client.Do.
+    const setHeaders = [
+      `${INDENT}req.Header.Set("Content-Type", "${req.contentType ?? "application/json"}")`,
+      ...Object.entries(extra).map(([k, v]) => `${INDENT}req.Header.Set("${k}", "${v}")`),
+    ];
+    return [
+      {
+        language: "go",
+        code: [
+          `package main`,
+          ``,
+          `import (`,
+          `${INDENT}"bytes"`,
+          `${INDENT}"fmt"`,
+          `${INDENT}"io"`,
+          `${INDENT}"net/http"`,
+          `)`,
+          ``,
+          `func main() {`,
+          `${INDENT}body := []byte(\`${jsonInline(req.body)}\`)`,
+          `${INDENT}req, _ := http.NewRequest("POST", "${req.url}", bytes.NewReader(body))`,
+          ...setHeaders,
+          `${INDENT}resp, err := http.DefaultClient.Do(req)`,
+          `${INDENT}if err != nil { panic(err) }`,
+          `${INDENT}defer resp.Body.Close()`,
+          `${INDENT}out, _ := io.ReadAll(resp.Body)`,
+          `${INDENT}fmt.Println(string(out))`,
+          `}`,
+        ].join("\n"),
+      },
+    ];
+  }
   if (req.httpMethod === "GET") {
     return [
       {
@@ -169,13 +214,20 @@ function httpGo(req: ResolvedHttp): SnippetBlock[] {
   ];
 }
 
-function httpJs(req: ResolvedHttp): SnippetBlock[] {
+function httpJs(req: ResolvedHttp, extra: Record<string, string> = {}): SnippetBlock[] {
+  const hdrs = [
+    `"Content-Type": "${req.contentType ?? "application/json"}"`,
+    ...Object.entries(extra).map(([k, v]) => `"${k}": "${v}"`),
+  ].join(", ");
   if (req.httpMethod === "GET") {
+    const getInit = Object.keys(extra).length
+      ? `, { headers: { ${Object.entries(extra).map(([k, v]) => `"${k}": "${v}"`).join(", ")} } }`
+      : "";
     return [
       {
         language: "javascript",
         code: [
-          `const res = await fetch("${req.url}");`,
+          `const res = await fetch("${req.url}"${getInit});`,
           `const data = await res.json();`,
           `console.log(data);`,
         ].join("\n"),
@@ -188,7 +240,7 @@ function httpJs(req: ResolvedHttp): SnippetBlock[] {
       code: [
         `const res = await fetch("${req.url}", {`,
         `${INDENT}method: "POST",`,
-        `${INDENT}headers: { "Content-Type": "${req.contentType ?? "application/json"}" },`,
+        `${INDENT}headers: { ${hdrs} },`,
         `${INDENT}body: JSON.stringify(${jsonPretty(req.body)
           .split("\n")
           .map((line, i) => (i === 0 ? line : INDENT + line))
@@ -458,13 +510,18 @@ function grpcJs(req: ResolvedGrpc): SnippetBlock[] {
 
 // ──────────────── Dispatch ────────────────
 
-export function snippetsFor(req: ResolvedRequest): Snippets {
+export function snippetsFor(req: ResolvedRequest, selectUpstream?: string): Snippets {
   if (req.transport === "http") {
+    // Pin header threads into HTTP snippets so a copied curl/fetch reproduces the
+    // same upstream-pinned call the live Send makes.
+    const extra: Record<string, string> = selectUpstream
+      ? { "lava-select-provider": selectUpstream }
+      : {};
     return {
-      cli: httpCli(req),
-      python: httpPython(req),
-      go: httpGo(req),
-      javascript: httpJs(req),
+      cli: httpCli(req, extra),
+      python: httpPython(req, extra),
+      go: httpGo(req, extra),
+      javascript: httpJs(req, extra),
     };
   }
   if (req.transport === "ws") {

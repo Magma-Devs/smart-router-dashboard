@@ -379,6 +379,7 @@ export function TryMeDrawer({
     first ? defaultParamsFor(first.command, iface) : "",
   );
   const [status, setStatus] = useState<Status>("idle");
+  const [showAllCmds, setShowAllCmds] = useState(false);
   const [response, setResponse] = useState<unknown>(null);
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
   const [httpStatus, setHttpStatus] = useState<number | null>(null);
@@ -442,8 +443,9 @@ export function TryMeDrawer({
 
   const handleTierChange = (tier: Tier) => {
     setSelectedTier(tier);
+    setShowAllCmds(false);
     // Snap selection to the first method in the newly-selected tier so
-    // the command dropdown lands on a real value rather than ""/empty.
+    // the command list lands on a real value rather than ""/empty.
     if ((cfg[tier]?.length ?? 0) > 0) {
       handleSelect(keyOf(tier, 0));
     }
@@ -458,8 +460,8 @@ export function TryMeDrawer({
   const buildError: string | null = built && !built.ok ? built.error : null;
 
   const snippets = useMemo<Snippets | null>(
-    () => (resolved ? snippetsFor(resolved) : null),
-    [resolved],
+    () => (resolved ? snippetsFor(resolved, selectUpstream) : null),
+    [resolved, selectUpstream],
   );
 
   const send = useCallback(async () => {
@@ -727,25 +729,50 @@ export function TryMeDrawer({
 
           <div>
             <div style={SECTION_LABEL}>Command</div>
-            <select
-              value={selKey}
-              onChange={(e) => handleSelect(e.target.value)}
-              style={{ ...FIELD_INPUT, fontSize: 12 }}
-            >
-              {(cfg[selectedTier] ?? []).map((cmd, i) => (
-                <option key={i} value={keyOf(selectedTier, i)}>
-                  {cmd.label === cmd.method ? cmd.label : `${cmd.label} · ${cmd.method}`}
-                </option>
-              ))}
-            </select>
-            {selected && (
-              <div
-                className="gw-mono"
-                style={{ fontSize: 11, color: "var(--text-3)", marginTop: 6 }}
-              >
-                {selected.command.method}
-              </div>
-            )}
+            {/* Curated inline command list — friendly label on the left, the raw
+                method after it. A compact non-scrolling set (first N) with a
+                "show all" toggle, so the common calls are one click away without
+                a long dropdown to scroll. */}
+            {(() => {
+              const all = cfg[selectedTier] ?? [];
+              const CURATED = 6;
+              const list = showAllCmds ? all : all.slice(0, CURATED);
+              const hidden = all.length - list.length;
+              return (
+                <>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    {list.map((cmd, i) => {
+                      const key = keyOf(selectedTier, i);
+                      const on = key === selKey;
+                      return (
+                        <button
+                          key={i}
+                          onClick={() => handleSelect(key)}
+                          style={{
+                            display: "flex", alignItems: "baseline", gap: 8, width: "100%",
+                            padding: "7px 10px", borderRadius: 8, cursor: "pointer", textAlign: "left",
+                            fontFamily: "inherit",
+                            border: "1px solid " + (on ? "var(--brand)" : "var(--line)"),
+                            background: on ? "rgba(255,57,0,0.06)" : "var(--bg)",
+                          }}
+                        >
+                          <span style={{ fontSize: 12.5, fontWeight: 600, color: on ? "var(--text)" : "var(--text-2)", flexShrink: 0 }}>{cmd.label}</span>
+                          <span className="gw-mono" style={{ fontSize: 11, color: "var(--text-3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cmd.method}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {(hidden > 0 || showAllCmds) && all.length > CURATED && (
+                    <button
+                      onClick={() => setShowAllCmds((s) => !s)}
+                      style={{ marginTop: 6, border: "none", background: "none", color: "var(--brand)", cursor: "pointer", padding: 0, fontSize: 11, fontWeight: 600, fontFamily: "inherit" }}
+                    >
+                      {showAllCmds ? "Show fewer" : `Show all ${all.length} methods`}
+                    </button>
+                  )}
+                </>
+              );
+            })()}
             {selected?.command.desc && (
               <div
                 style={{
