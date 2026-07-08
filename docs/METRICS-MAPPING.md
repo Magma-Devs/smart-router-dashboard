@@ -58,18 +58,48 @@ API returns `null` / empty **plus an explicit flag** — `emitted: false`
 **Panels light up automatically the first time a family appears**; no code
 change or redeploy needed.
 
+## Counter semantics — ground truth (verified by controlled experiment)
+
+Established 2026-07-08 with an exact known load (90s idle fingerprint + 40
+client requests) against the live router:
+
+- **`smartrouter_requests_total` counts RELAYS, not client requests.** A
+  2-participant cross-validated request increments it twice (one per
+  `provider_address`; ≡ `total_relays_serviced`), cache-served requests appear
+  as `provider_address="Cached"`, and the router's own chain-tracker/probe
+  traffic lands in it while fully idle. Use it ONLY for per-provider/relay
+  lenses.
+- **`smartrouter_end_to_end_latency_milliseconds_count` is the client-request
+  counter** — exactly one increment per client request (matched 40/40; flat at
+  idle), labels `{spec, apiInterface, function}` where `function` = the method.
+  Every "requests served"/per-chain/per-method/RPS figure reads THIS.
+- **`requests_success_total` is TRANSPORT success** — an upstream answering
+  with a JSON-RPC error object (e.g. `-32601`) still counts as success (it
+  increments `node_errors_total` instead). "Success rate" tooltips say so.
+  Derived errors (`total − success`) therefore = transport/routing failures.
+- **`consistency_total`** = reads that enforced a minimum seen block;
+  **`consistency_success_total`** = checks that PASSED; stale responses caught
+  = **`consistency_failed_total`** (lazily registered — absent family means
+  zero failures, not "unknown").
+- Unknown methods are forwarded and minted as `Default-<method>` label values
+  (unbounded caller-controlled cardinality — flagged to the router team).
+
 ## UI value → query
 
 | UI value | Builder (`@sr/shared/promql`) |
 |---|---|
-| Requests served | `qRequestsTotal(spec, window)` |
+| Requests served (client-scoped) | `qClientRequestsTotal(spec, window)` = `round(sum(increase(…latency_milliseconds_count[$w])))` |
+| Requests by chain / method (client-scoped) | `qClientRequestsBy("spec" \| "function")` |
+| Relays (per-provider lens only) | `qRequestsTotal(spec, window)` — see semantics above |
 | Success rate / Availability | `qAvailability(spec, window)` = `clamp_max(success / total, 1)` — the clamp guards against `increase()` extrapolation pushing the ratio above 1 on a counter younger than the window (would render as a >100% success rate) |
 | Error rate | `qErrorRate(spec, window)` = `1 − qAvailability` — non-negative because availability is clamped ≤ 1 |
-| Error count (derived) | `qErrorCount` = `clamp_min(total − success, 0)` |
-| Errors by chain/method/provider | `qErrorsBy(label)` — the `or … * 0` keeps all-error groups whose success series is absent |
+| Error count (derived, whole) | `qErrorCount` = `round(clamp_min(total − success, 0))` |
+| Errors by chain/method/provider | `qErrorsBy(label)` — rounded; the `or … * 0` keeps all-error groups whose success series is absent |
+| Node / protocol error counts | `qLabelledErrorsTotal` / `qLabelledErrorsBy` over `smartrouter_{node,protocol}_errors_total` `{spec, apiInterface, provider_address, method}` |
 | P50/P95/P99 latency | `qLatencyQuantile(q, spec, window)` |
+| **Per-method P95** | `qMethodLatencyQuantile(q, window, spec)` — the histogram's method label is named **`function`** (the "no method label" note in the design doc was wrong) |
 | Latency distribution (buckets) | `qLatencyDistribution` = `sum by (le) (increase(…_bucket[$w]))` |
-| RPS series | `qRpsSeriesExpr(step, spec)` = `sum(rate(smartrouter_requests_total[step]))` |
+| RPS (client-scoped) | `qClientRps` / `qClientRpsSeriesExpr(step, spec)` = `sum(rate(…latency_milliseconds_count[step]))` |
 | Per-chain / per-provider RPS stacks | `qPerSpecRpsExpr` / `qPerProviderRpsExpr` |
 | Availability / error-rate series | `qAvailabilitySeriesExpr` (also `clamp_max(…, 1)`) / `qErrorRateSeriesExpr` / `qErrorCountSeriesExpr` |
 | Latest block | `qLatestBlock(spec)` |
@@ -80,7 +110,7 @@ change or redeploy needed.
 | Block lag | `qBlockLagByEndpoint` / `qEndpointBlockLagSeriesExpr` = spec-max `latest_block` − endpoint's |
 | Backup traffic share | `qBackupShareExpr(spec, backupNames, step)` — names from the helm config's `is_backup` |
 | Chains fully down | `qChainDown()` = `max by (spec) (rpc_endpoint_overall_health) == bool 0` |
-| Stale caught | `qConsistencyCaught` = `sum(increase(consistency_success_total[$w]))` |
+| Stale caught | `qConsistencyCaught` = `round(sum(increase(consistency_failed_total[$w])))` — failed checks; `qConsistencyChecked` = checks run. `consistency_success_total` counts checks that PASSED and must never surface as "caught" |
 | Family present? | `qPresence(metricName)` |
 
 ## Endpoint → PromQL (what each route runs)
@@ -100,8 +130,8 @@ change or redeploy needed.
 | `/api/metrics/provider-detail` | router counters scoped by `provider_address` (requests, 5m RPS, availability, `qProviderErrorRate`); `qEndpointLatencyQuantile` + per-quantile series; `qProviderVolumeSeriesExpr` + read variant; `selection_score` gauge + a series per **emitted** score type; `qEndpointBlockLagSeriesExpr`; `qPresence` on node/protocol error counters (gates the errors-by-code panel) |
 | `/api/metrics/errors` | `qErrorCount` + `qErrorCountSeriesExpr`; pivots via `qErrorsBy("spec"/"method")`; hotspots = `clamp_min(total − success, 0)` grouped by `(spec, provider_address)` (with the `or … * 0` guard); per-hotspot trend series for the top 5 only (bounded fan-out); `qPresence` on the three error families |
 | `/api/metrics/unavailable` | `qChainDown()` |
-| `/api/metrics/cross-validation` | `qPresence(smartrouter_cross_validation_total)`; when present: `sum(increase(cross_validation_{total,success}_total[$w]))` + by-spec rounds. **Always**: `sum(increase(consistency_{total,success}_total[$w]))` — consistency is real on this build |
-| `/api/metrics/websocket` | `qPresence(smartrouter_ws_connections_active)`; when present: `sum(ws_connections_active)`, `sum(increase(ws_subscriptions_total[$w]))`, subscription errors, by-spec |
+| `/api/metrics/cross-validation` | `qPresence(smartrouter_cross_validation_requests_total)` — the REAL family names are `…cross_validation_{requests,success,failed,failures}_total` (+`provider_{agreements,disagreements}_total`; there is NO bare `…cross_validation_total`). When present: rounds/consensus per spec, `failures_total{reason}` breakdown, disagreements = `reason="no-agreement"`. **Always**: consistency `total` (checks run) + `caught` (`consistency_failed_total`, 0 when never fired) |
+| `/api/metrics/websocket` | `qPresence(smartrouter_ws_subscriptions_total)`; when present: **lifetime totals** (instant `sum(…)`, labelled "since router start") — windowed `increase()` misses a young counter's first increment (counter birth), which read as "0 subscriptions" right after a real one |
 | `/api/metrics/query` | whatever you pass — raw instant query, GET-bounded |
 
 ## Gaps — absent on this build (nulls + `emitted:false`, never invented)
@@ -116,11 +146,14 @@ as not to disturb the other agent's checkout):
 | `cache_total_{hits,misses}` | `dashboard-summary.cacheOffloadPct = {null,null}` + `emitted.cache:false`; `dashboard.cacheHitRate: null` | Cache offload / hit rate |
 | `smartrouter_retries_{total,success}_total` | `dashboard-summary.retriesRecovered = {null,null}` + `emitted.retries:false` | "Recovered by retries" hero card |
 | `smartrouter_hedge_total` | `dashboard.kpis.errorsHandled: {null,null}`; `errorsHandledBreakdown`/`failoverRatio`/`internalAvailability`/`contribution: null` | Errors-handled / hedge win / failover panels |
-| `smartrouter_cross_validation_{total,success}_total` | `/cross-validation` → `emitted:false`, null rounds/consensus/disagreements, empty `byChain` (`consistency` stays real) | Cross-validation panel |
-| `smartrouter_requests_failed_total`, `smartrouter_{node,protocol}_errors_total` | `errors.pivots.{category,code,retryability}: []` + `families.*:false`; `overview.errorLayers` = single `unclassified` layer; `provider-detail.errorsByCode: []` + `emitted.errorsByCode:false`; `dashboard.errorClasses: null`, `trouble: []` | Errors by code/category, retryability, trouble table |
-| `smartrouter_requests_{write,batch}_total` | `methods.classTotals.{write,batch}: null` + `emitted` flags; `provider-detail.volume.{write,batch}: null` | Read/write/batch class split |
-| `smartrouter_ws_{connections_active,subscriptions_total,subscription_errors_total}` | `/websocket` → `emitted:false` + nulls | WebSocket panel |
-| latency `method` label on the router histogram | `methods[].p95Ms: null` (Gap #3) | Per-method P95 |
+| `smartrouter_cross_validation_{requests,success,failed,failures}_total` + `provider_{agreements,disagreements}_total` | `/cross-validation` → `emitted:false`, null rounds/consensus/disagreements, empty `byChain` (`consistency` stays real). Fires on the first policy-matched request | Cross-validation panel + per-upstream disagreement rate |
+| `smartrouter_{node,protocol}_errors_total` `{spec, apiInterface, provider_address, method}` | when absent: zero node/protocol errors in `errors.pivots.category` + `upstream-detail.errorSplit`; when present: category pivot, per-hotspot `nodeMethods`, upstream node-vs-transport split all light up. `pivots.code` stays `[]` — there is **no `code` label** on these counters | Error classes, node-errors-by-method |
+| `smartrouter_consistency_failed_total` | absent ⇒ `staleCaught`/`consistency.caught` = 0 (a true zero — the check never failed) | "Stale responses caught" tile |
+| `smartrouter_requests_{write,batch}_total` | `methods.classTotals.{write,batch}: null` + `emitted` flags; `upstream-detail.volume.{write,batch}: null` | Read/write/batch class split |
+| `smartrouter_ws_{connections_active,subscriptions_total,subscription_errors_total}` | `/websocket` → `emitted:false` + nulls; once present, totals are lifetime | WebSocket panel |
+
+> **Per-method P95 is no longer a gap**: the router histogram's method label
+> is named `function` — `qMethodLatencyQuantile` reads it directly.
 
 > **Per-provider P95 is no longer a gap**: it's sourced from
 > `rpc_endpoint_end_to_end_latency_milliseconds_bucket` (which carries
