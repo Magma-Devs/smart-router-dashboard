@@ -379,7 +379,6 @@ export function TryMeDrawer({
     first ? defaultParamsFor(first.command, iface) : "",
   );
   const [status, setStatus] = useState<Status>("idle");
-  const [showAllCmds, setShowAllCmds] = useState(false);
   const [response, setResponse] = useState<unknown>(null);
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
   const [httpStatus, setHttpStatus] = useState<number | null>(null);
@@ -443,9 +442,8 @@ export function TryMeDrawer({
 
   const handleTierChange = (tier: Tier) => {
     setSelectedTier(tier);
-    setShowAllCmds(false);
     // Snap selection to the first method in the newly-selected tier so
-    // the command list lands on a real value rather than ""/empty.
+    // the command dropdown lands on a real value rather than ""/empty.
     if ((cfg[tier]?.length ?? 0) > 0) {
       handleSelect(keyOf(tier, 0));
     }
@@ -695,6 +693,16 @@ export function TryMeDrawer({
             flex: 1,
           }}
         >
+          {selectUpstream && (
+            <div style={{
+              display: "flex", alignItems: "center", gap: 9, padding: "9px 12px", borderRadius: 8,
+              background: "rgba(255,57,0,0.06)", border: "1px solid rgba(255,57,0,0.22)",
+              fontSize: 12, color: "var(--text-2)", lineHeight: 1.5,
+            }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--brand)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>
+              <span>Pinned to <strong style={{ color: "var(--text)", fontFamily: "var(--font-mono)", fontWeight: 600 }}>{selectUpstream}</strong> — sent with the <span className="gw-mono">lava-select-provider</span> header so the router routes this request to that upstream (a cache hit may still answer as &quot;Cached&quot;).</span>
+            </div>
+          )}
           {availableTiers.length > 1 && (
             <div>
               <div style={SECTION_LABEL}>Request Type</div>
@@ -729,50 +737,25 @@ export function TryMeDrawer({
 
           <div>
             <div style={SECTION_LABEL}>Command</div>
-            {/* Curated inline command list — friendly label on the left, the raw
-                method after it. A compact non-scrolling set (first N) with a
-                "show all" toggle, so the common calls are one click away without
-                a long dropdown to scroll. */}
-            {(() => {
-              const all = cfg[selectedTier] ?? [];
-              const CURATED = 6;
-              const list = showAllCmds ? all : all.slice(0, CURATED);
-              const hidden = all.length - list.length;
-              return (
-                <>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                    {list.map((cmd, i) => {
-                      const key = keyOf(selectedTier, i);
-                      const on = key === selKey;
-                      return (
-                        <button
-                          key={i}
-                          onClick={() => handleSelect(key)}
-                          style={{
-                            display: "flex", alignItems: "baseline", gap: 8, width: "100%",
-                            padding: "7px 10px", borderRadius: 8, cursor: "pointer", textAlign: "left",
-                            fontFamily: "inherit",
-                            border: "1px solid " + (on ? "var(--brand)" : "var(--line)"),
-                            background: on ? "rgba(255,57,0,0.06)" : "var(--bg)",
-                          }}
-                        >
-                          <span style={{ fontSize: 12.5, fontWeight: 600, color: on ? "var(--text)" : "var(--text-2)", flexShrink: 0 }}>{cmd.label}</span>
-                          <span className="gw-mono" style={{ fontSize: 11, color: "var(--text-3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cmd.method}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                  {(hidden > 0 || showAllCmds) && all.length > CURATED && (
-                    <button
-                      onClick={() => setShowAllCmds((s) => !s)}
-                      style={{ marginTop: 6, border: "none", background: "none", color: "var(--brand)", cursor: "pointer", padding: 0, fontSize: 11, fontWeight: 600, fontFamily: "inherit" }}
-                    >
-                      {showAllCmds ? "Show fewer" : `Show all ${all.length} methods`}
-                    </button>
-                  )}
-                </>
-              );
-            })()}
+            <select
+              value={selKey}
+              onChange={(e) => handleSelect(e.target.value)}
+              style={{ ...FIELD_INPUT, fontSize: 12 }}
+            >
+              {(cfg[selectedTier] ?? []).map((cmd, i) => (
+                <option key={i} value={keyOf(selectedTier, i)}>
+                  {cmd.label === cmd.method ? cmd.label : `${cmd.label} · ${cmd.method}`}
+                </option>
+              ))}
+            </select>
+            {selected && (
+              <div
+                className="gw-mono"
+                style={{ fontSize: 11, color: "var(--text-3)", marginTop: 6 }}
+              >
+                {selected.command.method}
+              </div>
+            )}
             {selected?.command.desc && (
               <div
                 style={{
