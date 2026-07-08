@@ -39,7 +39,16 @@ export function configIfaceForTag(id: string): string {
 }
 
 export function epLocalHttp(port: number): string { return `http://localhost:${port}`; }
-export function epLocalWs(port: number): string { return `ws://localhost:${port}`; }
+/**
+ * WebSocket URL for a local listen port. The router serves WS on the SAME
+ * port as the base interface but ONLY on a path: `/ws` for jsonrpc,
+ * `/websocket` for tendermintrpc (verified against the live router — a bare
+ * `ws://host:port` handshake is rejected with HTTP 405).
+ */
+export function epLocalWs(port: number, iface?: string): string {
+  const path = iface && iface.startsWith("tendermintrpc") ? "/websocket" : "/ws";
+  return `ws://localhost:${port}${path}`;
+}
 
 export function IfaceTag({ id }: { id: string }) {
   const tagId = tagIdForIface(id);

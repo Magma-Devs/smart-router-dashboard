@@ -202,8 +202,12 @@ export function UpstreamsView() {
                     const tryIface = isWsRow
                       ? (row.iface.startsWith("tendermintrpc") ? "tendermintrpc-ws" : "jsonrpc-ws")
                       : row.iface;
+                    // WS is served on the same port but ONLY under a path
+                    // (/ws for jsonrpc, /websocket for tendermint) — a bare
+                    // ws://host:port handshake is rejected with HTTP 405.
+                    const wsPath = row.iface.startsWith("tendermintrpc") ? "/websocket" : "/ws";
                     const tryUrl = localPort !== null
-                      ? `${isWsRow ? "ws" : "http"}://localhost:${localPort}`
+                      ? (isWsRow ? `ws://localhost:${localPort}${wsPath}` : `http://localhost:${localPort}`)
                       : null;
                     return (
                       <div key={i} className="gw-row" style={{ gap: 8, padding: "6px 10px", background: "var(--hover)", borderRadius: 6, border: "1px solid var(--line)" }}>

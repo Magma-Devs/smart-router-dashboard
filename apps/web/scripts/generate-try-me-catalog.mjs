@@ -86,13 +86,22 @@ const JSONRPC_HINTS = [
   { m: "eth_chainId", p: "[]", d: "Returns the chain ID of the current network." },
   { m: "eth_getBalance", p: '["0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045", "latest"]', d: "Returns the Ether balance of an address in wei." },
   { m: "eth_getBlockByNumber", p: '["latest", false]', d: "Returns block info for a given block number." },
-  { m: "eth_getTransactionByHash", p: '["0x..."]', d: "Returns a transaction matching the given hash." },
-  { m: "eth_getTransactionReceipt", p: '["0x..."]', d: "Returns the receipt of a transaction by hash." },
+  // ETH1 gets a WORKING stable example (the beacon deposit-contract deployment
+  // tx — full nodes always serve it). The catalog is shared across the EVM
+  // family, so the generic entries below ship WITHOUT params (one hash cannot
+  // exist on every EVM chain — the old '["0x..."]' placeholder just produced
+  // "cannot unmarshal hex string of odd length" on Send).
+  { m: "eth_getTransactionByHash", p: '["0xe75fb554e433e03763a1560646ee22dcb74e5274b34c5ad644e7c0f619a7e1d0"]', d: "Returns a transaction matching the given hash.", only: ["ETH1"] },
+  { m: "eth_getTransactionReceipt", p: '["0xe75fb554e433e03763a1560646ee22dcb74e5274b34c5ad644e7c0f619a7e1d0"]', d: "Returns the receipt of a transaction by hash.", only: ["ETH1"] },
+  { m: "eth_getTransactionByHash", d: "Returns a transaction matching the given hash — paste a tx hash from this chain." },
+  { m: "eth_getTransactionReceipt", d: "Returns the receipt of a transaction by hash — paste a tx hash from this chain." },
   { m: "eth_getTransactionCount", p: '["0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045", "latest"]', d: "Returns the number of transactions sent from an address." },
   { m: "eth_gasPrice", p: "[]", d: "Returns the current gas price in wei." },
   { m: "eth_maxPriorityFeePerGas", p: "[]", d: "Returns the current max priority fee per gas in wei." },
   { m: "eth_feeHistory", p: '["0x5", "latest", []]', d: "Returns historical gas fee data." },
-  { m: "eth_estimateGas", p: '[{"to":"0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48","value":"0x0"}]', d: "Estimates the gas needed for a transaction." },
+  // Plain value transfer to an EOA — estimates cleanly on every EVM chain
+  // (the previous USDC-contract target REVERTED: its fallback rejects ETH).
+  { m: "eth_estimateGas", p: '[{"to":"0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045","value":"0x0"}]', d: "Estimates the gas needed for a transaction." },
   { m: "eth_call", p: '[{"to":"0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48","data":"0x18160ddd"}, "latest"]', d: "Executes a read-only call — great for reading contract state (e.g. ERC-20 totalSupply)." },
   { m: "eth_getLogs", p: '[{"address":"0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48","fromBlock":"latest","toBlock":"latest"}]', d: "Returns logs matching a given filter object." },
   { m: "eth_getCode", p: '["0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", "latest"]', d: "Returns the bytecode at a given address." },
@@ -100,6 +109,9 @@ const JSONRPC_HINTS = [
   { m: "eth_syncing", p: "[]", d: "Returns sync status, or false when in sync." },
   { m: "net_version", p: "[]", d: "Returns the current network ID as a string." },
   { m: "web3_clientVersion", p: "[]", d: "Returns the current client version string." },
+  // WS-only (the drawer hides them on plain HTTP interfaces).
+  { m: "eth_subscribe", p: '["newHeads"]', d: "Subscribe to new block headers over WebSocket." },
+  { m: "eth_unsubscribe", p: '["<subscription id>"]', d: "Cancel a WebSocket subscription by id." },
   // EVM debug add-on
   { m: "debug_traceTransaction", p: '["0x...", {"tracer":"callTracer"}]', d: "Traces a transaction's execution with the given tracer." },
   { m: "debug_traceBlockByNumber", p: '["latest", {"tracer":"callTracer"}]', d: "Traces every transaction in a block by number." },
@@ -120,8 +132,11 @@ const JSONRPC_HINTS = [
   { m: "getSlot", p: "[]", d: "Returns the current slot." },
   { m: "getBalance", p: '["11111111111111111111111111111111"]', d: "Returns the lamport balance of the account at the provided pubkey.", only: ["SOLANA", "KOII"] },
   { m: "getBlockHeight", p: "[]", d: "Returns the current block height of the node." },
-  { m: "getBlock", p: '[430, {"maxSupportedTransactionVersion":0}]', d: "Returns identity and transaction information about a confirmed block.", only: ["SOLANA", "KOII"] },
-  { m: "getTransaction", p: '["base58 tx signature…", {"maxSupportedTransactionVersion":0}]', d: "Returns transaction details for a confirmed transaction.", only: ["SOLANA", "KOII"] },
+  // No static params: public Solana nodes prune aggressively, so any baked-in
+  // slot/signature dies within days (slot 430 → "Block cleaned up"). The
+  // description guides the caller instead of a fake placeholder.
+  { m: "getBlock", d: "Returns identity and transaction information about a confirmed block — pass a recent slot (get one with getSlot), e.g. [SLOT, {\"maxSupportedTransactionVersion\":0}].", only: ["SOLANA", "KOII"] },
+  { m: "getTransaction", d: "Returns transaction details for a confirmed transaction — paste a recent tx signature, e.g. [\"SIGNATURE\", {\"maxSupportedTransactionVersion\":0}].", only: ["SOLANA", "KOII"] },
   { m: "getAccountInfo", p: '["11111111111111111111111111111111"]', d: "Returns all information associated with the account.", only: ["SOLANA", "KOII"] },
   { m: "getEpochInfo", p: "[]", d: "Returns information about the current epoch." },
   { m: "getHealth", p: "[]", d: "Returns the health of the node." },
@@ -145,7 +160,12 @@ const JSONRPC_HINTS = [
   { m: "getblockcount", p: "[]", d: "Returns the current block height." },
   { m: "getbestblockhash", p: "[]", d: "Returns the hash of the chain tip." },
   { m: "getblockhash", p: "[800000]", d: "Returns the hash of the block at the given height." },
-  { m: "getblockheader", p: '["<blockhash>"]', d: "Returns the header of the given block." },
+  // BTC gets the genesis-block hash — stable forever on every full node. The
+  // other bitcoin-family chains (BCH/DOGE/LTC) have different genesis hashes,
+  // so their entry ships without params (the old '<blockhash>' literal just
+  // errored on Send).
+  { m: "getblockheader", p: '["000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"]', d: "Returns the header of the given block.", only: ["BTC"] },
+  { m: "getblockheader", d: "Returns the header of the given block — pass a block hash (get one with getbestblockhash)." },
   { m: "getnetworkinfo", p: "[]", d: "Returns P2P networking state." },
   { m: "getmempoolinfo", p: "[]", d: "Returns mempool state info." },
   { m: "getdifficulty", p: "[]", d: "Returns the current proof-of-work difficulty." },
@@ -177,7 +197,9 @@ const REST_HINTS = [
   { m: "/cosmos/base/tendermint/v1beta1/blocks/latest", d: "Returns the latest block." },
   { m: "/cosmos/base/tendermint/v1beta1/node_info", d: "Returns connected node info." },
   { m: "/cosmos/base/tendermint/v1beta1/syncing", d: "Returns the node's syncing state." },
-  { m: "/cosmos/base/tendermint/v1beta1/blocks/{height}", p: "/cosmos/base/tendermint/v1beta1/blocks/340801", d: "Returns the block at the given height." },
+  // No static height: the public Cosmos REST nodes in the demo config are
+  // PRUNED (skip-verifications: pruning), so a baked-in old height 500s.
+  { m: "/cosmos/base/tendermint/v1beta1/blocks/{height}", d: "Returns the block at the given height — replace {height} with a recent height (see /blocks/latest). Old heights need an archive node." },
   { m: "/cosmos/staking/v1beta1/validators", d: "Returns all validators." },
   { m: "/cosmos/bank/v1beta1/supply", d: "Returns total coin supply." },
   { m: "/cosmos/bank/v1beta1/balances/{address}", d: "Returns all balances of the given address." },
@@ -206,6 +228,9 @@ const REST_HINTS = [
 ];
 
 const TENDERMINT_HINTS = [
+  // WS-only (the drawer hides them on plain HTTP interfaces).
+  { m: "subscribe", p: '{"query":"tm.event=\'NewBlock\'"}', d: "Subscribe to events over WebSocket (e.g. new blocks)." },
+  { m: "unsubscribe", p: '{"query":"tm.event=\'NewBlock\'"}', d: "Unsubscribe from a WebSocket event query." },
   { m: "status", p: "[]", d: "Returns node status: node info, sync info, validator info." },
   { m: "health", p: "[]", d: "Returns node health — empty result means healthy." },
   { m: "abci_info", p: "[]", d: "Returns ABCI application data." },
@@ -223,7 +248,8 @@ const GRPC_HINTS = [
   { m: "cosmos.base.tendermint.v1beta1.Service/GetLatestBlock", p: "{}", d: "Returns the latest block." },
   { m: "cosmos.base.tendermint.v1beta1.Service/GetNodeInfo", p: "{}", d: "Returns connected node info." },
   { m: "cosmos.base.tendermint.v1beta1.Service/GetSyncing", p: "{}", d: "Returns the node's syncing state." },
-  { m: "cosmos.base.tendermint.v1beta1.Service/GetBlockByHeight", p: '{"height":"340801"}', d: "Returns the block at the given height." },
+  // No static height — the demo config's public nodes are pruned.
+  { m: "cosmos.base.tendermint.v1beta1.Service/GetBlockByHeight", d: "Returns the block at the given height — pass a recent height, e.g. {\"height\":\"<recent>\"}." },
   { m: "cosmos.bank.v1beta1.Query/TotalSupply", p: "{}", d: "Returns total coin supply." },
   { m: "cosmos.staking.v1beta1.Query/Validators", p: "{}", d: "Returns all validators." },
 ];
@@ -438,7 +464,9 @@ function buildCmds(iface, specIndex, apiMap) {
   const cmds = [];
   const used = new Set();
   for (const hint of hints) {
-    if (!nameSet.has(hint.m) || !hintApplies(hint, specIndex)) continue;
+    // First applicable hint per method wins — scoped hints (`only`) precede
+    // their generic fallback in HINTS, so a spec never gets both.
+    if (used.has(hint.m) || !nameSet.has(hint.m) || !hintApplies(hint, specIndex)) continue;
     cmds.push(makeCmd(iface, hint.m, apiMap.get(hint.m).verb, hint));
     used.add(hint.m);
   }
