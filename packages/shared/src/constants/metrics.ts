@@ -80,6 +80,8 @@ export const OPTIONAL_METRICS = {
   requestsFailedTotal: "smartrouter_requests_failed_total",
   requestsWriteTotal: "smartrouter_requests_write_total",
   requestsBatchTotal: "smartrouter_requests_batch_total",
+  // {spec, apiInterface, provider_address, method} — upstream returned a
+  // JSON-RPC error object (counts as SUCCESS on requests_success_total).
   nodeErrorsTotal: "smartrouter_node_errors_total",
   protocolErrorsTotal: "smartrouter_protocol_errors_total",
   cacheTotalHits: "cache_total_hits",
@@ -87,8 +89,26 @@ export const OPTIONAL_METRICS = {
   retriesTotal: "smartrouter_retries_total",
   retriesSuccessTotal: "smartrouter_retries_success_total",
   hedgeTotal: "smartrouter_hedge_total",
-  crossValidationTotal: "smartrouter_cross_validation_total",
+  hedgeSuccessTotal: "smartrouter_hedge_success_total",
+  hedgeFailedTotal: "smartrouter_hedge_failed_total",
+  // Cross-validation families as the router ACTUALLY registers them
+  // (protocol/metrics/smartrouter_metrics_manager.go — there is NO bare
+  // `smartrouter_cross_validation_total`):
+  //   requests/success/failed          {spec, apiInterface, method}
+  //   failures                         {…, reason}   (bounded reason enum)
+  //   provider_{agreements,disagreements} {…, provider_address}
+  crossValidationRequestsTotal: "smartrouter_cross_validation_requests_total",
   crossValidationSuccessTotal: "smartrouter_cross_validation_success_total",
+  crossValidationFailedTotal: "smartrouter_cross_validation_failed_total",
+  crossValidationFailuresTotal: "smartrouter_cross_validation_failures_total",
+  crossValidationAgreementsTotal:
+    "smartrouter_cross_validation_provider_agreements_total",
+  crossValidationDisagreementsTotal:
+    "smartrouter_cross_validation_provider_disagreements_total",
+  // Consistency check that FAILED (min-seen-block could not be enforced) —
+  // registered lazily like the rest; consistency_total/_success_total in
+  // ROUTER_METRICS count checks run / checks passed.
+  consistencyFailedTotal: "smartrouter_consistency_failed_total",
   wsConnectionsActive: "smartrouter_ws_connections_active",
   wsSubscriptionsTotal: "smartrouter_ws_subscriptions_total",
   wsSubscriptionErrorsTotal: "smartrouter_ws_subscription_errors_total",

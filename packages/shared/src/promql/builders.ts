@@ -27,7 +27,16 @@ function off(offset?: string): string {
   return offset ? ` offset ${offset}` : "";
 }
 
-/** Total requests over the window (optionally scoped to one spec). */
+/**
+ * Total RELAYS over the window (optionally scoped to one spec).
+ *
+ * ⚠ `smartrouter_requests_total` is RELAY-scoped: a cross-validated request
+ * increments it once per participant, cache-served requests appear under
+ * `provider_address="Cached"`, and router-internal tracker/probe traffic lands
+ * here too. For CLIENT-facing request counts use `qClientRequests*` (the
+ * end-to-end latency histogram `_count`, which increments exactly once per
+ * client request and stays flat when only probes run — verified empirically).
+ */
 export function qRequestsTotal(
   spec?: string,
   window: MetricWindow = "1d",
@@ -37,6 +46,45 @@ export function qRequestsTotal(
   // a young counter yields e.g. 239.1 "requests" — a request count is inherently
   // a whole number, so round it back to an integer.
   return `round(sum(increase(${ROUTER_METRICS.requestsTotal}${selector({ spec })}[${rangeFor(window)}]${off(offset)})))`;
+}
+
+/* ── Client-scoped request counts (latency-histogram _count) ─────────────── */
+
+/** Client requests served over the window (one increment per client request). */
+export function qClientRequestsTotal(
+  spec?: string,
+  window: MetricWindow = "1d",
+  offset?: string,
+): string {
+  return `round(sum(increase(${ROUTER_METRICS.latencyCount}${selector({ spec })}[${rangeFor(window)}]${off(offset)})))`;
+}
+
+/** Client requests grouped by a label (`spec` or `function` = method). */
+export function qClientRequestsBy(
+  by: "spec" | "function",
+  window: MetricWindow = "1d",
+  spec?: string,
+): string {
+  return `round(sum by (${by}) (increase(${ROUTER_METRICS.latencyCount}${selector({ spec })}[${rangeFor(window)}])))`;
+}
+
+/** Instant client requests/sec (rate over the last 5m). */
+export function qClientRps(spec?: string): string {
+  return `sum(rate(${ROUTER_METRICS.latencyCount}${selector({ spec })}[5m]))`;
+}
+
+/** Client RPS series. */
+export function qClientRpsSeriesExpr(step: string, spec?: string): string {
+  return `sum(rate(${ROUTER_METRICS.latencyCount}${selector({ spec })}[${step}]))`;
+}
+
+/** Per-method p95/p50/… — the histogram DOES carry the method (as `function`). */
+export function qMethodLatencyQuantile(
+  quantile: number,
+  window: MetricWindow = "1d",
+  spec?: string,
+): string {
+  return `histogram_quantile(${quantile}, sum by (function, le) (rate(${ROUTER_METRICS.latencyBucket}${selector({ spec })}[${rangeFor(window)}])))`;
 }
 
 /** success / total over the window → availability ratio (0..1).
@@ -111,7 +159,7 @@ export function qEndpointHealth(spec?: string): string {
 
 /* ── Derived error math (real: total − success, clamped ≥ 0) ─────────────── */
 
-/** Absolute error count over the window (total − success). */
+/** Absolute error count over the window (total − success), whole number. */
 export function qErrorCount(
   spec?: string,
   window: MetricWindow = "1d",
@@ -120,7 +168,7 @@ export function qErrorCount(
   const sel = selector({ spec });
   const r = rangeFor(window);
   const o = off(offset);
-  return `clamp_min(sum(increase(${ROUTER_METRICS.requestsTotal}${sel}[${r}]${o})) - sum(increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${r}]${o})), 0)`;
+  return `round(clamp_min(sum(increase(${ROUTER_METRICS.requestsTotal}${sel}[${r}]${o})) - sum(increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${r}]${o})), 0))`;
 }
 
 export type ErrorsGroupBy = "spec" | "provider_address" | "method";
@@ -138,16 +186,40 @@ export function qErrorsBy(
   const r = rangeFor(window);
   const tot = `sum by (${by}) (increase(${ROUTER_METRICS.requestsTotal}${sel}[${r}]))`;
   const ok = `sum by (${by}) (increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${r}]))`;
-  return `clamp_min(${tot} - (${ok} or ${tot} * 0), 0)`;
+  return `round(clamp_min(${tot} - (${ok} or ${tot} * 0), 0))`;
 }
 
-/** Requests grouped by a label over the window. */
+/** Relays grouped by a label over the window (whole numbers). */
 export function qRequestsBy(
   by: ErrorsGroupBy,
   window: MetricWindow = "1d",
   spec?: string,
 ): string {
-  return `sum by (${by}) (increase(${ROUTER_METRICS.requestsTotal}${selector({ spec })}[${rangeFor(window)}]))`;
+  return `round(sum by (${by}) (increase(${ROUTER_METRICS.requestsTotal}${selector({ spec })}[${rangeFor(window)}])))`;
+}
+
+/**
+ * Labelled error counters grouped by a label (whole numbers). Valid for
+ * `smartrouter_node_errors_total` / `smartrouter_protocol_errors_total`
+ * ({spec, apiInterface, provider_address, method}) once the family exists.
+ */
+export function qLabelledErrorsBy(
+  metricName: string,
+  by: "spec" | "method" | "provider_address",
+  window: MetricWindow = "1d",
+  spec?: string,
+): string {
+  return `round(sum by (${by}) (increase(${metricName}${selector({ spec })}[${rangeFor(window)}])))`;
+}
+
+/** Total of a labelled error counter over the window (whole number). */
+export function qLabelledErrorsTotal(
+  metricName: string,
+  window: MetricWindow = "1d",
+  spec?: string,
+  offset?: string,
+): string {
+  return `round(sum(increase(${metricName}${selector({ spec })}[${rangeFor(window)}]${off(offset)})))`;
 }
 
 /* ── Series expressions (for query_range; [step] = per-bucket lookback) ──── */
@@ -164,10 +236,10 @@ export function qErrorRateSeriesExpr(step: string, spec?: string): string {
   return `1 - (${qAvailabilitySeriesExpr(step, spec)})`;
 }
 
-/** Error-count series (errors per step bucket). */
+/** Error-count series (whole errors per step bucket). */
 export function qErrorCountSeriesExpr(step: string, spec?: string): string {
   const sel = selector({ spec });
-  return `clamp_min(sum(increase(${ROUTER_METRICS.requestsTotal}${sel}[${step}])) - sum(increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${step}])), 0)`;
+  return `round(clamp_min(sum(increase(${ROUTER_METRICS.requestsTotal}${sel}[${step}])) - sum(increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${step}])), 0))`;
 }
 
 /** RPS series. */
@@ -287,12 +359,31 @@ export function qOptimizerScore(scoreType: string, spec?: string): string {
   return `avg(${OPTIMIZER_METRICS.selectionScore}${selector({ spec, score_type: scoreType })})`;
 }
 
-/** Stale responses caught (consistency checks that corrected an answer). */
+/**
+ * Consistency checks RUN over the window (smartrouter_consistency_total =
+ * "relay requests that enforced a minimum seen block").
+ */
+export function qConsistencyChecked(
+  window: MetricWindow = "1d",
+  offset?: string,
+  spec?: string,
+): string {
+  return `round(sum(increase(${ROUTER_METRICS.consistencyTotal}${selector({ spec })}[${rangeFor(window)}]${off(offset)})))`;
+}
+
+/**
+ * Stale responses actually CAUGHT = consistency checks that FAILED
+ * (smartrouter_consistency_failed_total — lazily registered; absent family
+ * means zero failures, not "unknown"). NOTE: consistency_success_total counts
+ * checks that PASSED — using it here would report every healthy read as a
+ * "caught stale response" (the bug this replaced).
+ */
 export function qConsistencyCaught(
   window: MetricWindow = "1d",
   offset?: string,
+  spec?: string,
 ): string {
-  return `sum(increase(${ROUTER_METRICS.consistencySuccessTotal}[${rangeFor(window)}]${off(offset)}))`;
+  return `round(sum(increase(smartrouter_consistency_failed_total${selector({ spec })}[${rangeFor(window)}]${off(offset)})))`;
 }
 
 /** The four csm_* gauges in one instant query. */
