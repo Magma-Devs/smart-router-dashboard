@@ -28,7 +28,6 @@ import {
   type UpstreamRow,
 } from "@/components/upstreams/catalog";
 import { IfaceTag } from "@/components/endpoints/bits";
-import { AddUpstreamSheet } from "@/components/upstreams/AddUpstreamSheet";
 import { EditUpstreamSheet } from "@/components/upstreams/EditUpstreamSheet";
 import { DeleteConfirm } from "@/components/upstreams/DeleteConfirm";
 import { TestModal } from "@/components/upstreams/TestModal";
@@ -70,7 +69,6 @@ export function UpstreamsView() {
   const live = useApi<{ upstreams: UpstreamMetrics[] }>("/api/metrics/upstreams?window=1d");
 
   const [degradedFilter, setDegradedFilter] = useState(false);
-  const [showAdd, setShowAdd] = useState(false);
   const [editPv, setEditPv] = useState<UpstreamRow | null>(null);
   const [deletePv, setDeletePv] = useState<UpstreamRow | null>(null);
   const [testPv, setTestPv] = useState<UpstreamRow | null>(null);
@@ -101,20 +99,6 @@ export function UpstreamsView() {
     return out;
   }, [routers]);
 
-  const ifacesBySpec = useMemo(() => {
-    const m: Record<string, string[]> = {};
-    for (const r of routers) {
-      const cur = m[r.spec] ?? [];
-      m[r.spec] = [...new Set([...cur, ...r.interfaces])];
-    }
-    return m;
-  }, [routers]);
-
-  const existingIds = useMemo(
-    () => upstreams.map((p) => p.catalogId).filter((id): id is string => id !== null),
-    [upstreams],
-  );
-
   const displayed = useMemo(() => {
     return upstreams.filter((pv) => {
       const matchDegraded = !degradedFilter || pv.status === "degraded";
@@ -143,10 +127,6 @@ export function UpstreamsView() {
           <h1>Upstreams</h1>
           <p className="lede">The upstream RPC nodes this router routes through · config <span className="gw-mono" style={{ color: "var(--text-2)" }}>read-only mount</span>.</p>
         </div>
-        <button className="gw-btn gw-btn--primary" onClick={() => setShowAdd(true)}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          Add upstream
-        </button>
       </div>
 
       <StatStrip />
@@ -210,7 +190,6 @@ export function UpstreamsView() {
           </div>
           <h2>No upstreams yet</h2>
           <p>The mounted values file has no upstream nodes. Add your first upstream — Alchemy, Infura, QuickNode, or your own node — by editing the values file.</p>
-          <button className="gw-btn gw-btn--primary" onClick={() => setShowAdd(true)}>Add upstream</button>
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -225,20 +204,12 @@ export function UpstreamsView() {
                       : <InitialBadge name={pv.name} spec={pv.chains[0]} size={28} />}
                     <div className="gw-row" style={{ gap: 8 }}>
                       <span style={{ fontSize: 13, fontWeight: 600 }}>{pv.name}</span>
-                      {/* Chain identity — an upstream serves a specific chain;
-                          surface its icon + name so the card is legible on its
-                          own (not just from the rows below). */}
-                      {pv.chains[0] && (
-                        <span className="gw-row" style={{ gap: 5, alignItems: "center" }}>
-                          <span style={{ color: "var(--text-4)" }}>·</span>
-                          <ChainBadge spec={pv.chains[0]} size={15} />
-                          <span style={{ fontSize: 12, color: "var(--text-2)" }}>
-                            {buildChainMetaByIndex(pv.chains[0]).name}
-                          </span>
-                          {pv.chains.length > 1 && (
-                            <span style={{ fontSize: 10, color: "var(--text-3)" }}>+{pv.chains.length - 1}</span>
-                          )}
-                        </span>
+                      {/* The chain-tinted avatar + the per-endpoint rows below
+                          already carry the chain identity, so we don't repeat the
+                          icon + name here — only flag when an upstream spans more
+                          than one chain, which the rows alone don't make obvious. */}
+                      {pv.chains.length > 1 && (
+                        <span style={{ fontSize: 10, color: "var(--text-3)" }}>+{pv.chains.length - 1} more chains</span>
                       )}
                       {pv.status === "—"
                         ? <span style={{ fontSize: 10, color: "var(--text-4)" }}>no data</span>
@@ -390,7 +361,6 @@ export function UpstreamsView() {
         );
       })()}
 
-      <AddUpstreamSheet open={showAdd} onClose={() => setShowAdd(false)} existingIds={existingIds} chains={chains} ifacesBySpec={ifacesBySpec} />
       <EditUpstreamSheet open={!!editPv} onClose={() => setEditPv(null)} upstream={editPv} />
       <DeleteConfirm open={!!deletePv} onClose={() => setDeletePv(null)} upstream={deletePv} />
       <TestModal open={!!testPv} onClose={() => setTestPv(null)} upstream={testPv} routers={routers} />
