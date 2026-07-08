@@ -58,9 +58,9 @@ export default function TeamPage() {
               <tr>
                 <td>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <InitialsAvatar name="Self-hosted" size={30} />
+                    <InitialsAvatar name="Admin" size={30} />
                     <div>
-                      <div style={{ fontSize: 13, fontWeight: 600 }}>Self-hosted deployment</div>
+                      <div style={{ fontSize: 13, fontWeight: 600 }}>Admin</div>
                       <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 1 }}>—</div>
                     </div>
                   </div>
