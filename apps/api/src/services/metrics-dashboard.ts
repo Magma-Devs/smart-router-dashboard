@@ -97,7 +97,7 @@ export class MetricsDashboardService {
     const perSpecLatencyExpr = (q: number) =>
       qLatencyQuantile(q, undefined, window).replace(`[${r}]`, `[${step}]`);
     // Per-chain availability-ratio series (success/total grouped by spec).
-    const perSpecSrExpr = `sum by (spec) (rate(${ROUTER_METRICS.requestsSuccessTotal}[${step}])) / sum by (spec) (rate(${ROUTER_METRICS.requestsTotal}[${step}]))`;
+    const perSpecSrExpr = `clamp_max(sum by (spec) (rate(${ROUTER_METRICS.requestsSuccessTotal}[${step}])) / sum by (spec) (rate(${ROUTER_METRICS.requestsTotal}[${step}])), 1)`;
     // Per-upstream p95 — the endpoint histogram carries endpoint_id.
     const perUpstreamLatencyExpr = `histogram_quantile(0.95, sum by (endpoint_id, le) (rate(${ENDPOINT_METRICS.latencyBucket}${sel}[${step}])))`;
 

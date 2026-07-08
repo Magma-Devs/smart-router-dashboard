@@ -128,7 +128,7 @@ export class MetricsDetailService {
       this.prom.scalar(`sum(increase(${ROUTER_METRICS.requestsTotal}${provSel}[${r}]))`),
       this.prom.scalar(`sum(rate(${ROUTER_METRICS.requestsTotal}${provSel}[5m]))`),
       this.prom.scalar(
-        `sum(increase(${ROUTER_METRICS.requestsSuccessTotal}${provSel}[${r}])) / sum(increase(${ROUTER_METRICS.requestsTotal}${provSel}[${r}]))`,
+        `clamp_max(sum(increase(${ROUTER_METRICS.requestsSuccessTotal}${provSel}[${r}])) / sum(increase(${ROUTER_METRICS.requestsTotal}${provSel}[${r}])), 1)`,
       ),
       this.prom.scalar(qUpstreamErrorRate(endpointId, window)),
       this.prom.scalar(qEndpointLatencyQuantile(0.5, endpointId, window)),
