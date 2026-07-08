@@ -15,7 +15,7 @@ import type { RouterTopology } from "@sr/shared";
 import { buildChainMetaByIndex } from "@sr/shared";
 import { labelStyle } from "@/lib/styles";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
-import { Hint } from "@/components/upstreams/bits";
+import { CloudNotice } from "@/components/gateway/CloudNotice";
 import { JWT_CLOUD_MSG, READONLY_MSG, type UpstreamRow } from "@/components/upstreams/catalog";
 import {
   IfaceTag,
@@ -230,7 +230,7 @@ export function EndpointDetailSheet({ open, ep, router, onClose, upstreams }: {
                     Revoke
                   </button>
                 </div>
-                <Hint type="info">{JWT_CLOUD_MSG}. Local endpoints answer unauthenticated on their listen port.</Hint>
+                <CloudNotice feature="JWT management" detail="no tokens exist on this self-hosted deployment — local endpoints answer unauthenticated on their listen port." compact />
               </div>
             </div>
           </div>
