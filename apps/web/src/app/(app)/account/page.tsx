@@ -11,6 +11,7 @@
 
 import type { CSSProperties } from "react";
 import { useApi } from "@/hooks/use-api";
+import { CloudNotice } from "@/components/gateway/CloudNotice";
 
 interface VersionInfo {
   commit: string;
@@ -68,7 +69,7 @@ export default function AccountPage() {
 
       <div className="gw-card" style={{ marginBottom: 14 }}>
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Connected accounts</div>
-        <div style={{ fontSize: 12, color: "var(--text-3)", marginBottom: 12 }}>{NOT_AVAILABLE}.</div>
+        <div style={{ marginBottom: 12 }}><CloudNotice feature="OAuth sign-in" detail="this deployment uses a single shared login, so there are no per-user connected accounts." compact /></div>
         <div style={{ display: "grid", gap: 7 }}>
           {providers.map(p => (
             <div key={p.id} className="gw-row" style={{ padding: "9px 11px", borderRadius: 7, background: "var(--bg)", border: "1px solid var(--line)", gap: 10 }}>
@@ -81,7 +82,7 @@ export default function AccountPage() {
 
       <div className="gw-card" style={{ marginBottom: 14 }}>
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Change password</div>
-        <div style={{ fontSize: 12, color: "var(--text-3)", marginBottom: 12 }}>{NOT_AVAILABLE}.</div>
+        <div style={{ marginBottom: 12 }}><CloudNotice feature="Password management" detail="this deployment authenticates with a single shared login configured at deploy time." compact /></div>
         <div style={{ display: "grid", gap: 9, maxWidth: 360 }}>
           <input className="gw-input" type="password" placeholder="Current password" disabled />
           <input className="gw-input" type="password" placeholder="New password" disabled />

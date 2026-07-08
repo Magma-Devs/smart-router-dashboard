@@ -41,7 +41,7 @@ export function InviteModal({ open, onClose }: { open: boolean; onClose: () => v
                 display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 12px",
                 borderRadius: 8, border: "1px solid " + (role === r.id ? "var(--brand)" : "var(--line)"),
                 background: role === r.id ? "rgba(255,57,0,0.04)" : "var(--surface)",
-                cursor: "pointer", textAlign: "left", fontFamily: "inherit",
+                cursor: "pointer", textAlign: "left", fontFamily: "inherit", color: "var(--text)",
               }}>
                 <div style={{
                   width: 14, height: 14, borderRadius: "50%", flexShrink: 0, marginTop: 2,
@@ -49,15 +49,20 @@ export function InviteModal({ open, onClose }: { open: boolean; onClose: () => v
                   background: role === r.id ? "var(--brand)" : "transparent",
                 }} />
                 <div>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>{r.label}</div>
-                  <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 1 }}>{r.desc}</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>{r.label}</div>
+                  <div style={{ fontSize: 12, color: "var(--text-2)", marginTop: 1 }}>{r.desc}</div>
                 </div>
               </button>
             ))}
           </div>
         </div>
-        <div style={{ padding: "10px 12px", borderRadius: 8, background: "var(--hover)", fontSize: 12, color: "var(--text-3)" }}>
-          Team accounts are a Magma Cloud feature — this self-hosted deployment uses a single shared login, so invitations can&apos;t be sent from here.
+        <div style={{
+          display: "flex", alignItems: "flex-start", gap: 9, padding: "10px 12px", borderRadius: 8,
+          background: "rgba(96,165,250,0.08)", border: "1px solid rgba(96,165,250,0.22)",
+          fontSize: 12, color: "var(--text-2)", lineHeight: 1.5,
+        }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--info)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+          <span><strong style={{ color: "var(--text)", fontWeight: 600 }}>Team accounts are a Magma&nbsp;Cloud feature.</strong> This self-hosted deployment uses a single shared login, so invitations can&apos;t be sent from here.</span>
         </div>
       </div>
     </Modal>
