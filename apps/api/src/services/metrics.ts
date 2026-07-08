@@ -10,12 +10,18 @@ import {
   ROUTER_METRICS,
   buildChainMetaByIndex,
   qAvailability,
+  qClientRequestsBy,
+  qClientRequestsTotal,
+  qClientRps,
+  qClientRpsSeriesExpr,
+  qConsistencyCaught,
   qErrorCount,
   qErrorRate,
   qErrorsBy,
   qLatencyDistribution,
   qLatencyQuantile,
   qLatestBlock,
+  qMethodLatencyQuantile,
   qPresence,
   qRequestsBy,
   qRequestsTotal,
@@ -122,22 +128,29 @@ export class MetricsService {
       return { value, prior: p };
     };
 
-    const [retriesPresent, cachePresent] = await Promise.all([
+    const [retriesPresent, cachePresent, consistencyFailedPresent] = await Promise.all([
       this.familyPresent(OPTIONAL_METRICS.retriesSuccessTotal),
       this.familyPresent(OPTIONAL_METRICS.cacheTotalHits),
+      this.familyPresent(OPTIONAL_METRICS.consistencyFailedTotal),
     ]);
 
-    const [requestsServed, successRate, p95, stale, specs, upstreams, healthGauge] =
+    const [requestsServed, successRate, p95, staleKpi, specs, upstreams, healthGauge] =
       await Promise.all([
-        kpi(qRequestsTotal(spec, window), qRequestsTotal(spec, window, r)),
+        // CLIENT-scoped: the latency-histogram _count increments exactly once
+        // per client request. requests_total is relay-scoped (per participant,
+        // probes included) — see qRequestsTotal's doc note.
+        kpi(qClientRequestsTotal(spec, window), qClientRequestsTotal(spec, window, r)),
         kpi(qAvailability(spec, window), qAvailability(spec, window, r)),
         // No cache on this build ⇒ the documented derived "effective read p95"
         // reduces to the node read p95 (the overall router histogram).
         kpi(qLatencyQuantile(0.95, spec, window), qLatencyQuantile(0.95, spec, window, r)),
-        kpi(
-          `sum(increase(${ROUTER_METRICS.consistencySuccessTotal}${specSel}[${r}]))`,
-          `sum(increase(${ROUTER_METRICS.consistencySuccessTotal}${specSel}[${r}] offset ${r}))`,
-        ),
+        // Stale caught = consistency checks that FAILED. An absent
+        // consistency_failed_total family means zero failures since boot, so
+        // the honest value is 0 — success_total counts checks that PASSED and
+        // must never be shown here.
+        consistencyFailedPresent
+          ? kpi(qConsistencyCaught(window, undefined, spec), qConsistencyCaught(window, r, spec))
+          : Promise.resolve({ value: 0, prior: 0 } as Kpi),
         this.listSpecs(),
         // Endpoint health keys on `endpoint_id`, NOT `spec`, so it can't be
         // spec-filtered here — upstreamCount + health stay account-wide even
@@ -145,11 +158,12 @@ export class MetricsService {
         this.prom.query(`count by (endpoint_id) (${ENDPOINT_METRICS.overallHealth})`),
         this.prom.scalar(ROUTER_METRICS.overallHealth),
       ]);
+    const stale = staleKpi;
 
     const retriesRecovered: Kpi = retriesPresent
       ? await kpi(
-          `sum(increase(${OPTIONAL_METRICS.retriesSuccessTotal}${specSel}[${r}]))`,
-          `sum(increase(${OPTIONAL_METRICS.retriesSuccessTotal}${specSel}[${r}] offset ${r}))`,
+          `round(sum(increase(${OPTIONAL_METRICS.retriesSuccessTotal}${specSel}[${r}])))`,
+          `round(sum(increase(${OPTIONAL_METRICS.retriesSuccessTotal}${specSel}[${r}] offset ${r})))`,
         )
       : { value: null, prior: null };
     const cacheOffloadPct: Kpi = cachePresent
@@ -210,16 +224,18 @@ export class MetricsService {
       latencySeries,
       specs,
     ] = await Promise.all([
-      kpi(qRequestsTotal(spec, window), qRequestsTotal(spec, window, r)),
-      kpi(`sum(rate(${ROUTER_METRICS.requestsTotal}${sel}[5m]))`, `sum(rate(${ROUTER_METRICS.requestsTotal}${sel}[5m] offset ${r}))`),
+      // Client-scoped requests + RPS (histogram _count) — relay-scoped
+      // requests_total stays only where the per-provider lens is the point.
+      kpi(qClientRequestsTotal(spec, window), qClientRequestsTotal(spec, window, r)),
+      kpi(qClientRps(spec), `sum(rate(${ROUTER_METRICS.latencyCount}${sel}[5m] offset ${r}))`),
       kpi(qAvailability(spec, window), qAvailability(spec, window, r)),
       kpi(qLatencyQuantile(0.5, spec, window), qLatencyQuantile(0.5, spec, window, r)),
       kpi(qLatencyQuantile(0.95, spec, window), qLatencyQuantile(0.95, spec, window, r)),
       kpi(qLatencyQuantile(0.99, spec, window), qLatencyQuantile(0.99, spec, window, r)),
       this.prom.scalar(qAvailability(spec, window)),
       this.prom.scalar(ROUTER_METRICS.overallHealth),
-      this.prom.queryRange(`sum(rate(${ROUTER_METRICS.requestsTotal}${sel}[${win.step}]))`, start, end, win.step),
-      this.prom.queryRange(`clamp_min(sum(rate(${ROUTER_METRICS.requestsTotal}${sel}[${win.step}])) - sum(rate(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${win.step}])), 0)`, start, end, win.step),
+      this.prom.queryRange(qClientRpsSeriesExpr(win.step, spec), start, end, win.step),
+      this.prom.queryRange(`round(clamp_min(sum(increase(${ROUTER_METRICS.requestsTotal}${sel}[${win.step}])) - sum(increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${win.step}])), 0))`, start, end, win.step),
       this.prom.queryRange(qLatencyQuantile(0.95, spec, window).replace(`[${r}]`, `[${win.step}]`), start, end, win.step),
       spec ? Promise.resolve([spec]) : this.listSpecs(),
     ]);
@@ -276,12 +292,7 @@ export class MetricsService {
           const [p50c, h, trend] = await Promise.all([
             this.prom.scalar(qLatencyQuantile(0.5, spec, window)),
             this.chainHealth(spec),
-            this.prom.queryRange(
-              `sum(rate(${ROUTER_METRICS.requestsTotal}${selector({ spec })}[${win.step}]))`,
-              start,
-              end,
-              win.step,
-            ),
+            this.prom.queryRange(qClientRpsSeriesExpr(win.step, spec), start, end, win.step),
           ]);
           return { spec, name: meta.name, color: meta.color, p50Ms: p50c, trend: toPoints(trend[0]?.values), degraded: h !== null && h < 1 };
         }),
@@ -291,7 +302,7 @@ export class MetricsService {
         specs.map(async (spec) => {
           const meta = buildChainMetaByIndex(spec);
           const m = await this.prom.queryRange(
-            `sum(rate(${ROUTER_METRICS.requestsTotal}${selector({ spec })}[${win.step}]))`,
+            qClientRpsSeriesExpr(win.step, spec),
             start,
             end,
             win.step,
@@ -340,7 +351,7 @@ export class MetricsService {
       .map((s) => ({
         endpointId: s.metric.endpoint_id ?? "",
         spec: s.metric.spec ?? "",
-        requests: Number(s.value[1]) || 0,
+        requests: Math.round(Number(s.value[1]) || 0),
       }))
       .filter((x) => x.endpointId)
       .sort((a, b) => b.requests - a.requests)
@@ -362,7 +373,7 @@ export class MetricsService {
     const meta = buildChainMetaByIndex(spec);
     const [requests, availability, errorRate, p95, qos, healthGauge, latestBlock, upstreams] =
       await Promise.all([
-        this.prom.scalar(qRequestsTotal(spec, window)),
+        this.prom.scalar(qClientRequestsTotal(spec, window)),
         this.prom.scalar(qAvailability(spec, window)),
         this.prom.scalar(qErrorRate(spec, window)),
         this.prom.scalar(qLatencyQuantile(0.95, spec, window)),
@@ -459,7 +470,8 @@ export class MetricsService {
     for (const s of requests) {
       const id = s.metric.endpoint_id;
       if (!id) continue;
-      ensure(id, s.metric.spec ?? "").requests = Number(s.value[1]) || 0;
+      // Relay counts are whole events — round off increase() extrapolation.
+      ensure(id, s.metric.spec ?? "").requests = Math.round(Number(s.value[1]) || 0);
     }
     for (const s of scores) {
       const id = s.metric.endpoint_id;
@@ -548,13 +560,8 @@ export class MetricsService {
     const specs = await this.listSpecs();
 
     const [aggMatrix, totalAll] = await Promise.all([
-      this.prom.queryRange(
-        `sum(rate(${ROUTER_METRICS.requestsTotal}[${win.step}]))`,
-        start,
-        end,
-        win.step,
-      ),
-      this.prom.scalar(qRequestsTotal(undefined, window)),
+      this.prom.queryRange(qClientRpsSeriesExpr(win.step), start, end, win.step),
+      this.prom.scalar(qClientRequestsTotal(undefined, window)),
     ]);
     const aggPoints = toPoints(aggMatrix[0]?.values);
 
@@ -562,13 +569,8 @@ export class MetricsService {
       specs.map(async (spec) => {
         const meta = buildChainMetaByIndex(spec);
         const [trendMatrix, requests] = await Promise.all([
-          this.prom.queryRange(
-            `sum(rate(${ROUTER_METRICS.requestsTotal}${selector({ spec })}[${win.step}]))`,
-            start,
-            end,
-            win.step,
-          ),
-          this.prom.scalar(qRequestsTotal(spec, window)),
+          this.prom.queryRange(qClientRpsSeriesExpr(win.step, spec), start, end, win.step),
+          this.prom.scalar(qClientRequestsTotal(spec, window)),
         ]);
         const trend = toPoints(trendMatrix[0]?.values);
         const last = trend.length ? trend[trend.length - 1] : undefined;
@@ -595,11 +597,15 @@ export class MetricsService {
   }
 
   /**
-   * Method-level breakdown + read/write/batch class totals. `read` is real
-   * (requests_read_total); write/batch counters are absent until the router
-   * emits them. Per-method error rate is real (total − success, both carry
-   * `method`); per-method p95 stays null — the latency histogram has no
-   * `method` label on this build (Gap #3).
+   * Method-level breakdown + read/write/batch class totals.
+   *
+   * Requests are CLIENT-scoped: the latency histogram increments once per
+   * client request and carries the method as its `function` label — this also
+   * makes per-method p95 REAL (the "no method label" note in the design doc
+   * was wrong; the label is just named `function`, not `method`).
+   * Error rates stay relay-scoped (errors ÷ relays, both from the
+   * `method`-labelled relay counters) so a cross-validated failure doesn't
+   * produce a >100% rate against the client denominator.
    */
   async methods(
     spec: string | undefined,
@@ -607,62 +613,77 @@ export class MetricsService {
   ): Promise<{ methods: MethodUsage[]; classTotals: MethodClassTotals }> {
     const sel = selector({ spec });
     const r = rangeFor(window);
-    const [rows, reads, errRows, writePresent, batchPresent] = await Promise.all([
-      this.prom.query(qRequestsBy("method", window, spec)),
-      this.prom.query(
-        `sum by (method) (increase(${ROUTER_METRICS.requestsReadTotal}${sel}[${r}]))`,
-      ),
-      this.prom.query(qErrorsBy("method", window, spec)),
-      this.familyPresent(OPTIONAL_METRICS.requestsWriteTotal),
-      this.familyPresent(OPTIONAL_METRICS.requestsBatchTotal),
-    ]);
+    const [rows, p95Rows, reads, relayRows, errRows, writePresent, batchPresent] =
+      await Promise.all([
+        this.prom.query(qClientRequestsBy("function", window, spec)),
+        this.prom.query(qMethodLatencyQuantile(0.95, window, spec)),
+        this.prom.query(
+          `sum by (method) (increase(${ROUTER_METRICS.requestsReadTotal}${sel}[${r}]))`,
+        ),
+        this.prom.query(qRequestsBy("method", window, spec)),
+        this.prom.query(qErrorsBy("method", window, spec)),
+        this.familyPresent(OPTIONAL_METRICS.requestsWriteTotal),
+        this.familyPresent(OPTIONAL_METRICS.requestsBatchTotal),
+      ]);
     const readSet = new Set(reads.map((s) => s.metric.method).filter(Boolean));
+    const relayByMethod = new Map(
+      relayRows.map((s) => [s.metric.method ?? "", Number(s.value[1]) || 0]),
+    );
     const errByMethod = new Map(
       errRows.map((s) => [s.metric.method ?? "", Number(s.value[1]) || 0]),
+    );
+    const p95ByMethod = new Map(
+      p95Rows
+        .map((s) => [s.metric.function ?? "", Number(s.value[1])] as const)
+        .filter(([, v]) => Number.isFinite(v)),
     );
 
     const methods = rows
       .map((s) => {
-        const method = s.metric.method ?? "unknown";
+        const method = s.metric.function ?? "unknown";
         const requests = Number(s.value[1]) || 0;
         const errors = errByMethod.get(method) ?? 0;
+        const relays = relayByMethod.get(method) ?? 0;
         return {
           method,
           class: (readSet.has(method) ? "read" : "unknown") as MethodUsage["class"],
           requests,
-          p95Ms: null, // histogram has no `method` label on this build (Gap #3)
-          errorRate: requests > 0 ? errors / requests : null,
+          p95Ms: p95ByMethod.get(method) ?? null,
+          errorRate: relays > 0 ? errors / relays : null,
         };
       })
+      .filter((m) => m.requests > 0)
       .sort((a, b) => b.requests - a.requests);
 
-    const [readTotal, writeTotal, batchTotal] = await Promise.all([
-      this.prom.scalar(`sum(increase(${ROUTER_METRICS.requestsReadTotal}${sel}[${r}]))`),
+    const [writeTotal, batchTotal] = await Promise.all([
       writePresent
-        ? this.prom.scalar(`sum(increase(${OPTIONAL_METRICS.requestsWriteTotal}${sel}[${r}]))`)
+        ? this.prom.scalar(`round(sum(increase(${OPTIONAL_METRICS.requestsWriteTotal}${sel}[${r}])))`)
         : Promise.resolve(null),
       batchPresent
-        ? this.prom.scalar(`sum(increase(${OPTIONAL_METRICS.requestsBatchTotal}${sel}[${r}]))`)
+        ? this.prom.scalar(`round(sum(increase(${OPTIONAL_METRICS.requestsBatchTotal}${sel}[${r}])))`)
         : Promise.resolve(null),
     ]);
+    // Class totals on the same client-scoped counts as the rows, so the class
+    // tabs and the table always reconcile.
+    const readTotal = methods.reduce((s, m) => s + (m.class === "read" ? m.requests : 0), 0);
     const allTotal = methods.reduce((s, m) => s + m.requests, 0);
     const classTotals: MethodClassTotals = {
-      read: readTotal ?? 0,
+      read: readTotal,
       write: writeTotal,
       batch: batchTotal,
-      unclassified: Math.max(0, allTotal - (readTotal ?? 0) - (writeTotal ?? 0) - (batchTotal ?? 0)),
+      unclassified: Math.max(0, allTotal - readTotal - (writeTotal ?? 0) - (batchTotal ?? 0)),
       emitted: { write: writePresent, batch: batchPresent },
     };
 
     return { methods, classTotals };
   }
 
-  /** RPS time-series for the Traffic chart. */
+  /** RPS time-series for the Traffic chart (client-scoped). */
   async rpsSeries(spec: string | undefined, window: MetricWindow): Promise<TimeSeries> {
     const win = WINDOWS[window];
     const end = Math.floor(Date.now() / 1000);
     const start = end - win.rangeSeconds;
-    const expr = `sum(rate(${ROUTER_METRICS.requestsTotal}${selector({ spec })}[${win.step}]))`;
+    const expr = qClientRpsSeriesExpr(win.step, spec);
     const matrix = await this.prom.queryRange(expr, start, end, win.step);
     const first = matrix[0];
     return {

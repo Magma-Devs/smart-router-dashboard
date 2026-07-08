@@ -80,7 +80,7 @@ export async function metricRoutes(app: FastifyInstance) {
   });
 
   // Method-level breakdown + read/write/batch class totals.
-  app.get<{ Querystring: WindowQuery }>("/api/metrics/methods", tag("Method-level breakdown + class totals"), async (request) => {
+  app.get<{ Querystring: WindowQuery }>("/api/metrics/methods", tag("Method-level breakdown (client-scoped requests, real per-method p95) + class totals"), async (request) => {
     const { spec } = request.query;
     return app.metrics.methods(spec, parseWindow(request.query.window));
   });
@@ -136,12 +136,12 @@ export async function metricRoutes(app: FastifyInstance) {
   }));
 
   // Cross-validation panel (absent-until-fired; consistency_* is real).
-  app.get<{ Querystring: WindowQuery }>("/api/metrics/cross-validation", tag("Cross-validation panel (emitted:false until the family fires)", false), async (request) => {
+  app.get<{ Querystring: WindowQuery }>("/api/metrics/cross-validation", tag("Cross-validation panel (rounds/consensus/reasons; emitted:false until the family fires)", false), async (request) => {
     return app.metricsDetail.crossValidation(parseWindow(request.query.window));
   });
 
   // WebSocket panel (absent until a subscription opens).
-  app.get<{ Querystring: WindowQuery }>("/api/metrics/websocket", tag("WebSocket panel (emitted:false until ws_* fires)", false), async (request) => {
+  app.get<{ Querystring: WindowQuery }>("/api/metrics/websocket", tag("WebSocket panel (lifetime totals since router start; emitted:false until ws_* fires)", false), async (request) => {
     return app.metricsDetail.websocket(parseWindow(request.query.window));
   });
 

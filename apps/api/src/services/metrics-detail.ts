@@ -169,18 +169,70 @@ export class MetricsDetailService {
       }),
     );
 
-    // Error catalogs need labelled error counters the router doesn't emit yet.
     const [nodeErrs, protoErrs] = await Promise.all([
       this.familyPresent(OPTIONAL_METRICS.nodeErrorsTotal),
       this.familyPresent(OPTIONAL_METRICS.protocolErrorsTotal),
     ]);
+
+    const availOver = (w: MetricWindow) =>
+      this.prom.scalar(
+        `clamp_max(sum(increase(${ROUTER_METRICS.requestsSuccessTotal}${provSel}[${rangeFor(w)}])) / sum(increase(${ROUTER_METRICS.requestsTotal}${provSel}[${rangeFor(w)}])), 1)`,
+      );
+
+    const [
+      last1h,
+      last24h,
+      last7d,
+      transportErrors,
+      nodeErrorCount,
+      protoErrorCount,
+      nodeByMethodRows,
+      cvAgree,
+      cvDisagree,
+    ] = await Promise.all([
+      availOver("1h"),
+      availOver("1d"),
+      availOver("7d"),
+      this.prom.scalar(
+        `round(clamp_min(sum(increase(${ROUTER_METRICS.requestsTotal}${provSel}[${r}])) - sum(increase(${ROUTER_METRICS.requestsSuccessTotal}${provSel}[${r}])), 0))`,
+      ),
+      nodeErrs
+        ? this.prom.scalar(
+            `round(sum(increase(${OPTIONAL_METRICS.nodeErrorsTotal}${provSel}[${r}])))`,
+          )
+        : Promise.resolve(0),
+      protoErrs
+        ? this.prom.scalar(
+            `round(sum(increase(${OPTIONAL_METRICS.protocolErrorsTotal}${provSel}[${r}])))`,
+          )
+        : Promise.resolve(0),
+      nodeErrs
+        ? this.prom.query(
+            `round(sum by (method) (increase(${OPTIONAL_METRICS.nodeErrorsTotal}${provSel}[${r}])))`,
+          )
+        : Promise.resolve([] as Awaited<ReturnType<PrometheusClient["query"]>>),
+      this.prom.scalar(
+        `round(sum(increase(${OPTIONAL_METRICS.crossValidationAgreementsTotal}${provSel}[${r}])))`,
+      ),
+      this.prom.scalar(
+        `round(sum(increase(${OPTIONAL_METRICS.crossValidationDisagreementsTotal}${provSel}[${r}])))`,
+      ),
+    ]);
+
+    const nodeErrorsByMethod = nodeByMethodRows
+      .map((s) => ({ method: s.metric.method ?? "unknown", count: Number(s.value[1]) || 0 }))
+      .filter((x) => x.count > 0)
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 8);
+    const agree = cvAgree ?? 0;
+    const disagree = cvDisagree ?? 0;
 
     return {
       endpointId,
       spec,
       health: health(healthVal),
       availability,
-      requests: requests ?? 0,
+      requests: Math.round(requests ?? 0),
       rpsNow,
       p50Ms: p50,
       p95Ms: p95,
@@ -193,6 +245,20 @@ export class MetricsDetailService {
       latencySeries: { p50: latP50, p95: latP95, p99: latP99 },
       volume: { total: volTotal, read: volRead, write: null, batch: null },
       blockLagSeries,
+      availabilityWindows: { last1h, last24h, last7d },
+      errorSplit: {
+        node: nodeErrorCount ?? 0,
+        protocol: protoErrorCount ?? 0,
+        transport: transportErrors ?? 0,
+      },
+      nodeErrorsByMethod,
+      crossValidation: {
+        agreements: agree,
+        disagreements: disagree,
+        disagreementRate: agree + disagree > 0 ? disagree / (agree + disagree) : null,
+      },
+      // node_errors_total has no `code` label — a per-code catalog can't be
+      // built honestly; nodeErrorsByMethod above is the real breakdown.
       errorsByCode: [],
       recentErrors: [],
       emitted: { errorsByCode: nodeErrs || protoErrs, recentErrors: false },
@@ -212,7 +278,7 @@ export class MetricsDetailService {
         this.prom.query(qErrorsBy("method", window, spec)),
         // Hotspots need BOTH labels on one vector.
         this.prom.query(
-          `clamp_min(sum by (spec, provider_address) (increase(${ROUTER_METRICS.requestsTotal}${selector({ spec })}[${rangeFor(window)}])) - (sum by (spec, provider_address) (increase(${ROUTER_METRICS.requestsSuccessTotal}${selector({ spec })}[${rangeFor(window)}])) or sum by (spec, provider_address) (increase(${ROUTER_METRICS.requestsTotal}${selector({ spec })}[${rangeFor(window)}])) * 0), 0)`,
+          `round(clamp_min(sum by (spec, provider_address) (increase(${ROUTER_METRICS.requestsTotal}${selector({ spec })}[${rangeFor(window)}])) - (sum by (spec, provider_address) (increase(${ROUTER_METRICS.requestsSuccessTotal}${selector({ spec })}[${rangeFor(window)}])) or sum by (spec, provider_address) (increase(${ROUTER_METRICS.requestsTotal}${selector({ spec })}[${rangeFor(window)}])) * 0), 0))`,
         ),
         Promise.all([
           this.familyPresent(OPTIONAL_METRICS.requestsFailedTotal),
@@ -222,8 +288,43 @@ export class MetricsDetailService {
       ]);
 
     const requestsByPair = await this.prom.query(
-      `sum by (spec, provider_address) (increase(${ROUTER_METRICS.requestsTotal}${selector({ spec })}[${rangeFor(window)}]))`,
+      `round(sum by (spec, provider_address) (increase(${ROUTER_METRICS.requestsTotal}${selector({ spec })}[${rangeFor(window)}])))`,
     );
+
+    // Real error-class breakdown. `transport` = derived relay failures
+    // (total − success; node errors count as transport SUCCESS — verified
+    // empirically: a -32601 reply increments requests_success_total). node /
+    // protocol come from the labelled counters; absent family ⇒ zero events.
+    const [nodePresent, protoPresent] = [families[1], families[2]];
+    const sel = selector({ spec });
+    const rr = rangeFor(window);
+    const [nodeTotal, protoTotal, nodeByPairMethod] = await Promise.all([
+      nodePresent
+        ? this.prom.scalar(
+            `round(sum(increase(${OPTIONAL_METRICS.nodeErrorsTotal}${sel}[${rr}])))`,
+          )
+        : Promise.resolve(0),
+      protoPresent
+        ? this.prom.scalar(
+            `round(sum(increase(${OPTIONAL_METRICS.protocolErrorsTotal}${sel}[${rr}])))`,
+          )
+        : Promise.resolve(0),
+      nodePresent
+        ? this.prom.query(
+            `round(sum by (spec, provider_address, method) (increase(${OPTIONAL_METRICS.nodeErrorsTotal}${sel}[${rr}])))`,
+          )
+        : Promise.resolve([] as Awaited<ReturnType<PrometheusClient["query"]>>),
+    ]);
+    const nodeMethodsByPair = new Map<string, { method: string; count: number }[]>();
+    for (const s of nodeByPairMethod) {
+      const key = `${s.metric.spec ?? ""}|${s.metric.provider_address ?? ""}`;
+      const count = Number(s.value[1]) || 0;
+      if (count <= 0) continue;
+      const list = nodeMethodsByPair.get(key) ?? [];
+      list.push({ method: s.metric.method ?? "unknown", count });
+      nodeMethodsByPair.set(key, list);
+    }
+    for (const list of nodeMethodsByPair.values()) list.sort((a, b) => b.count - a.count);
     const reqByPair = new Map(
       requestsByPair.map((s) => [
         `${s.metric.spec ?? ""}|${s.metric.provider_address ?? ""}`,
@@ -268,19 +369,32 @@ export class MetricsDetailService {
           requests,
           errorRate: requests > 0 ? errors / requests : null,
           trend: [] as TimePoint[],
+          nodeMethods: (nodeMethodsByPair.get(`${pairSpec}|${upstream}`) ?? []).slice(0, 5),
         };
       })
-      .filter((h) => h.spec && h.upstream && h.errors > 0)
+      .filter((h) => h.spec && h.upstream && (h.errors > 0 || h.nodeMethods.length > 0))
       .sort((a, b) => b.errors - a.errors);
 
     await Promise.all(
       hotspotRows.slice(0, 5).map(async (h) => {
+        // round(): un-rounded increase() extrapolation can put a bucket ABOVE
+        // the window's headline total (e.g. a 77 spike on 60 errors) — whole
+        // errors per bucket keep the trend reconcilable with the total.
         h.trend = await this.series(
-          `clamp_min(sum(increase(${ROUTER_METRICS.requestsTotal}${selector({ spec: h.spec, provider_address: h.upstream })}[${step}])) - sum(increase(${ROUTER_METRICS.requestsSuccessTotal}${selector({ spec: h.spec, provider_address: h.upstream })}[${step}])), 0)`,
+          `round(clamp_min(sum(increase(${ROUTER_METRICS.requestsTotal}${selector({ spec: h.spec, provider_address: h.upstream })}[${step}])) - sum(increase(${ROUTER_METRICS.requestsSuccessTotal}${selector({ spec: h.spec, provider_address: h.upstream })}[${step}])), 0))`,
           window,
         );
       }),
     );
+
+    // Error classes: transport failures (derived), node errors (upstream
+    // answered with a JSON-RPC error), protocol errors. All whole numbers.
+    const classCounts = [
+      { key: "node-error", label: "Node errors (upstream JSON-RPC)", errors: nodeTotal ?? 0 },
+      { key: "protocol-error", label: "Protocol errors", errors: protoTotal ?? 0 },
+      { key: "transport", label: "Transport / routing failures", errors: totalErrors },
+    ].filter((c) => c.errors > 0);
+    const classSum = classCounts.reduce((s, c) => s + c.errors, 0);
 
     return {
       total: totalErrors,
@@ -289,8 +403,14 @@ export class MetricsDetailService {
       pivots: {
         chain: pivotRows(byChainRows, "spec"),
         method: pivotRows(byMethodRows, "method"),
-        // Populated only when the labelled error counters exist on the build.
-        category: [],
+        category: classCounts.map((c) => ({
+          key: c.key,
+          label: c.label,
+          errors: c.errors,
+          share: classSum > 0 ? c.errors / classSum : null,
+        })),
+        // node_errors_total carries no `code` label on this build — a per-code
+        // catalog stays honestly empty (the method split above is the real one).
         code: [],
         retryability: [],
       },
@@ -321,15 +441,31 @@ export class MetricsDetailService {
       .filter((c) => c.spec);
   }
 
-  /** Cross-validation panel; consistency_* is real and reported alongside. */
+  /**
+   * Cross-validation panel — built on the families the router ACTUALLY
+   * registers (`…cross_validation_requests_total` etc.; there is no bare
+   * `…cross_validation_total`, which is why this panel used to stay dark
+   * forever). consistency_* is real and reported alongside.
+   */
   async crossValidation(window: MetricWindow): Promise<CrossValidationReport> {
     const r = rangeFor(window);
-    const emitted = await this.familyPresent(OPTIONAL_METRICS.crossValidationTotal);
-
-    const [consTotal, consCaught] = await Promise.all([
-      this.prom.scalar(`sum(increase(${ROUTER_METRICS.consistencyTotal}[${r}]))`),
-      this.prom.scalar(`sum(increase(${ROUTER_METRICS.consistencySuccessTotal}[${r}]))`),
+    const [emitted, consistencyFailedPresent] = await Promise.all([
+      this.familyPresent(OPTIONAL_METRICS.crossValidationRequestsTotal),
+      this.familyPresent(OPTIONAL_METRICS.consistencyFailedTotal),
     ]);
+
+    // total = checks run; caught = checks that FAILED (an absent
+    // consistency_failed_total family means zero failures since boot).
+    // consistency_success_total counts checks that PASSED — never "caught".
+    const [consTotal, consCaught] = await Promise.all([
+      this.prom.scalar(`round(sum(increase(${ROUTER_METRICS.consistencyTotal}[${r}])))`),
+      consistencyFailedPresent
+        ? this.prom.scalar(
+            `round(sum(increase(${OPTIONAL_METRICS.consistencyFailedTotal}[${r}])))`,
+          )
+        : Promise.resolve(0),
+    ]);
+    const consistency = { total: consTotal ?? 0, caught: consCaught ?? 0 };
 
     if (!emitted) {
       return {
@@ -337,35 +473,82 @@ export class MetricsDetailService {
         rounds: null,
         consensusRate: null,
         disagreements: null,
+        failuresByReason: [],
         byChain: [],
-        consistency: { total: consTotal ?? 0, caught: consCaught ?? 0 },
+        consistency,
       };
     }
 
-    const [rounds, ok, byChainRows] = await Promise.all([
-      this.prom.scalar(`sum(increase(${OPTIONAL_METRICS.crossValidationTotal}[${r}]))`),
-      this.prom.scalar(`sum(increase(${OPTIONAL_METRICS.crossValidationSuccessTotal}[${r}]))`),
+    const [rounds, ok, reasonRows, bySpecRounds, bySpecOk, bySpecNoAgree] = await Promise.all([
+      this.prom.scalar(
+        `round(sum(increase(${OPTIONAL_METRICS.crossValidationRequestsTotal}[${r}])))`,
+      ),
+      this.prom.scalar(
+        `round(sum(increase(${OPTIONAL_METRICS.crossValidationSuccessTotal}[${r}])))`,
+      ),
       this.prom.query(
-        `sum by (spec) (increase(${OPTIONAL_METRICS.crossValidationTotal}[${r}]))`,
+        `round(sum by (reason) (increase(${OPTIONAL_METRICS.crossValidationFailuresTotal}[${r}])))`,
+      ),
+      this.prom.query(
+        `round(sum by (spec) (increase(${OPTIONAL_METRICS.crossValidationRequestsTotal}[${r}])))`,
+      ),
+      this.prom.query(
+        `round(sum by (spec) (increase(${OPTIONAL_METRICS.crossValidationSuccessTotal}[${r}])))`,
+      ),
+      this.prom.query(
+        `round(sum by (spec) (increase(${OPTIONAL_METRICS.crossValidationFailuresTotal}{reason="no-agreement"}[${r}])))`,
       ),
     ]);
+
+    const okBySpec = new Map(
+      bySpecOk.map((s) => [s.metric.spec ?? "", Number(s.value[1]) || 0]),
+    );
+    const noAgreeBySpec = new Map(
+      bySpecNoAgree.map((s) => [s.metric.spec ?? "", Number(s.value[1]) || 0]),
+    );
+    const failuresByReason = reasonRows
+      .map((s) => ({ reason: s.metric.reason ?? "unknown", count: Number(s.value[1]) || 0 }))
+      .filter((x) => x.count > 0)
+      .sort((a, b) => b.count - a.count);
+    // True disagreements = rounds that failed because responses didn't match —
+    // NOT rounds−success (that would count capacity/timeout failures too).
+    const disagreements =
+      failuresByReason.find((x) => x.reason === "no-agreement")?.count ?? 0;
+
     return {
       emitted: true,
       rounds,
       consensusRate: rounds && rounds > 0 && ok !== null ? ok / rounds : null,
-      disagreements: rounds !== null && ok !== null ? Math.max(0, rounds - ok) : null,
-      byChain: byChainRows.map((s) => ({
-        spec: s.metric.spec ?? "",
-        rounds: Number(s.value[1]) || 0,
-        consensusRate: null,
-      })),
-      consistency: { total: consTotal ?? 0, caught: consCaught ?? 0 },
+      disagreements,
+      failuresByReason,
+      byChain: bySpecRounds
+        .map((s) => {
+          const spec = s.metric.spec ?? "";
+          const rds = Number(s.value[1]) || 0;
+          const okc = okBySpec.get(spec) ?? 0;
+          return {
+            spec,
+            rounds: rds,
+            consensusRate: rds > 0 ? okc / rds : null,
+            disagreements: noAgreeBySpec.get(spec) ?? 0,
+          };
+        })
+        .filter((c) => c.spec && c.rounds > 0),
+      consistency,
     };
   }
 
-  /** WebSocket panel; ws_* counters appear once a subscription opens. */
-  async websocket(window: MetricWindow): Promise<WebSocketReport> {
-    const emitted = await this.familyPresent(OPTIONAL_METRICS.wsConnectionsActive);
+  /**
+   * WebSocket panel; ws_* counters appear once a subscription opens.
+   *
+   * Totals are LIFETIME (instant sums), not windowed increase(): these
+   * counters are tiny and a windowed increase() misses a young counter's
+   * first increment entirely (counter birth), showing "0 subscriptions"
+   * right after a real subscription fired. The UI labels them
+   * "since router start".
+   */
+  async websocket(_window: MetricWindow): Promise<WebSocketReport> {
+    const emitted = await this.familyPresent(OPTIONAL_METRICS.wsSubscriptionsTotal);
     if (!emitted) {
       return {
         emitted: false,
@@ -375,22 +558,33 @@ export class MetricsDetailService {
         byChain: [],
       };
     }
-    const r = rangeFor(window);
-    const [active, subs, errs, byChainRows] = await Promise.all([
-      this.prom.scalar(`sum(${OPTIONAL_METRICS.wsConnectionsActive})`),
-      this.prom.scalar(`sum(increase(${OPTIONAL_METRICS.wsSubscriptionsTotal}[${r}]))`),
-      this.prom.scalar(`sum(increase(${OPTIONAL_METRICS.wsSubscriptionErrorsTotal}[${r}]))`),
-      this.prom.query(`sum by (spec) (increase(${OPTIONAL_METRICS.wsSubscriptionsTotal}[${r}]))`),
-    ]);
+    const [active, subs, errs, byChainRows, errsByChainRows, activeByChainRows] =
+      await Promise.all([
+        this.prom.scalar(`sum(${OPTIONAL_METRICS.wsConnectionsActive})`),
+        this.prom.scalar(`round(sum(${OPTIONAL_METRICS.wsSubscriptionsTotal}))`),
+        this.prom.scalar(`round(sum(${OPTIONAL_METRICS.wsSubscriptionErrorsTotal}))`),
+        this.prom.query(`round(sum by (spec) (${OPTIONAL_METRICS.wsSubscriptionsTotal}))`),
+        this.prom.query(`round(sum by (spec) (${OPTIONAL_METRICS.wsSubscriptionErrorsTotal}))`),
+        // Live per-chain connections — the gauge carries `spec`.
+        this.prom.query(`sum by (spec) (${OPTIONAL_METRICS.wsConnectionsActive})`),
+      ]);
+    const errsBySpec = new Map(
+      errsByChainRows.map((s) => [s.metric.spec ?? "", Number(s.value[1]) || 0]),
+    );
+    const activeBySpec = new Map(
+      activeByChainRows.map((s) => [s.metric.spec ?? "", Number(s.value[1]) || 0]),
+    );
     return {
       emitted: true,
       activeConnections: active,
       subscriptions: subs,
-      subscriptionErrors: errs,
+      // Errors counter absent (never fired) ⇒ zero errors, not unknown.
+      subscriptionErrors: errs ?? 0,
       byChain: byChainRows.map((s) => ({
         spec: s.metric.spec ?? "",
+        active: activeBySpec.get(s.metric.spec ?? "") ?? 0,
         subscriptions: Number(s.value[1]) || 0,
-        errors: 0,
+        errors: errsBySpec.get(s.metric.spec ?? "") ?? 0,
       })),
     };
   }
