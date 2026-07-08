@@ -96,6 +96,7 @@ client requests) against the live router:
 | Error count (derived, whole) | `qErrorCount` = `round(clamp_min(total − success, 0))` |
 | Errors by chain/method/provider | `qErrorsBy(label)` — rounded; the `or … * 0` keeps all-error groups whose success series is absent |
 | Node / protocol error counts | `qLabelledErrorsTotal` / `qLabelledErrorsBy` over `smartrouter_{node,protocol}_errors_total` `{spec, apiInterface, provider_address, method}` |
+| Classified error pivots (code / category / retryability) | `smartrouter_errors_total` `{chain_id, error_category ∈ internal\|external, error_name, retryable}` — ⚠ `chain_id`, not `spec`; NO provider label |
 | P50/P95/P99 latency | `qLatencyQuantile(q, spec, window)` |
 | **Per-method P95** | `qMethodLatencyQuantile(q, window, spec)` — the histogram's method label is named **`function`** (the "no method label" note in the design doc was wrong) |
 | Latency distribution (buckets) | `qLatencyDistribution` = `sum by (le) (increase(…_bucket[$w]))` |
@@ -147,7 +148,7 @@ as not to disturb the other agent's checkout):
 | `smartrouter_retries_{total,success}_total` | `dashboard-summary.retriesRecovered = {null,null}` + `emitted.retries:false` | "Recovered by retries" hero card |
 | `smartrouter_hedge_total` | `dashboard.kpis.errorsHandled: {null,null}`; `errorsHandledBreakdown`/`failoverRatio`/`internalAvailability`/`contribution: null` | Errors-handled / hedge win / failover panels |
 | `smartrouter_cross_validation_{requests,success,failed,failures}_total` + `provider_{agreements,disagreements}_total` | `/cross-validation` → `emitted:false`, null rounds/consensus/disagreements, empty `byChain` (`consistency` stays real). Fires on the first policy-matched request | Cross-validation panel + per-upstream disagreement rate |
-| `smartrouter_{node,protocol}_errors_total` `{spec, apiInterface, provider_address, method}` | when absent: zero node/protocol errors in `errors.pivots.category` + `upstream-detail.errorSplit`; when present: category pivot, per-hotspot `nodeMethods`, upstream node-vs-transport split all light up. `pivots.code` stays `[]` — there is **no `code` label** on these counters | Error classes, node-errors-by-method |
+| `smartrouter_{node,protocol}_errors_total` `{spec, apiInterface, provider_address, method}` | when absent: zero node/protocol errors in `errors.pivots.category` + `upstream-detail.errorSplit`; when present: class fallback pivot, per-hotspot `nodeMethods`, upstream node-vs-transport split all light up. `pivots.{code,category,retryability}` come from the separate classified `smartrouter_errors_total{chain_id, error_category, error_name, retryable}` family once IT fires (no provider label → per-upstream by-code stays empty) | Error classes, node-errors-by-method |
 | `smartrouter_consistency_failed_total` | absent ⇒ `staleCaught`/`consistency.caught` = 0 (a true zero — the check never failed) | "Stale responses caught" tile |
 | `smartrouter_requests_{write,batch}_total` | `methods.classTotals.{write,batch}: null` + `emitted` flags; `upstream-detail.volume.{write,batch}: null` | Read/write/batch class split |
 | `smartrouter_ws_{connections_active,subscriptions_total,subscription_errors_total}` | `/websocket` → `emitted:false` + nulls; once present, totals are lifetime | WebSocket panel |

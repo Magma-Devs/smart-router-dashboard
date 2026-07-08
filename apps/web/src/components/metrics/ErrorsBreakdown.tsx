@@ -102,9 +102,13 @@ export function ErrorsBreakdown({ chainFilter, win }: { chainFilter: string | nu
         </>
       )}
 
-      {/* Real error classes (node / protocol / transport). node_errors_total
-          carries no `code` label, so the class pivot IS the honest catalog. */}
-      {view === "types" && <ErrorTypesView rows={data?.pivots.category ?? []} />}
+      {/* Per-code catalog from smartrouter_errors_total{error_name} when the
+          classified family has fired; class/category pivot as the fallback. */}
+      {view === "types" && (
+        <ErrorTypesView
+          rows={(data?.pivots.code?.length ? data.pivots.code : data?.pivots.category) ?? []}
+        />
+      )}
     </div>
   );
 }

@@ -257,8 +257,9 @@ export class MetricsDetailService {
         disagreements: disagree,
         disagreementRate: agree + disagree > 0 ? disagree / (agree + disagree) : null,
       },
-      // node_errors_total has no `code` label — a per-code catalog can't be
-      // built honestly; nodeErrorsByMethod above is the real breakdown.
+      // The classified errors_total carries codes but NO provider label, so a
+      // per-UPSTREAM by-code catalog still can't be built honestly;
+      // nodeErrorsByMethod above is the per-upstream breakdown.
       errorsByCode: [],
       recentErrors: [],
       emitted: { errorsByCode: nodeErrs || protoErrs, recentErrors: false },
@@ -298,6 +299,42 @@ export class MetricsDetailService {
     const [nodePresent, protoPresent] = [families[1], families[2]];
     const sel = selector({ spec });
     const rr = rangeFor(window);
+
+    // Classified errors — smartrouter_errors_total carries {chain_id (NOT
+    // spec), error_category ∈ internal|external, error_name, retryable}.
+    // When present it powers the code / category / retryability pivots the
+    // design asked for.
+    const classifiedPresent = await this.familyPresent(
+      OPTIONAL_METRICS.errorsClassifiedTotal,
+    );
+    const clSel = selector({ chain_id: spec });
+    const clQ = (by: string) =>
+      this.prom.query(
+        `round(sum by (${by}) (increase(${OPTIONAL_METRICS.errorsClassifiedTotal}${clSel}[${rr}])))`,
+      );
+    const [byName, byCategory, byRetryable] = classifiedPresent
+      ? await Promise.all([clQ("error_name"), clQ("error_category"), clQ("retryable")])
+      : [[], [], []];
+    const classifiedRows = (
+      rows: Awaited<ReturnType<PrometheusClient["query"]>>,
+      label: string,
+      pretty: (v: string) => string,
+    ) => {
+      const parsed = rows
+        .map((s) => ({ key: s.metric[label] ?? "", errors: Number(s.value[1]) || 0 }))
+        .filter((r) => r.key && r.errors > 0);
+      const sum = parsed.reduce((a, r) => a + r.errors, 0);
+      return parsed
+        .map((r) => ({ key: r.key, label: pretty(r.key), errors: r.errors, share: sum > 0 ? r.errors / sum : null }))
+        .sort((a, b) => b.errors - a.errors);
+    };
+    const codePivot = classifiedRows(byName, "error_name", (v) => v);
+    const categoryClassified = classifiedRows(byCategory, "error_category", (v) =>
+      v === "internal" ? "Internal (router / transport)" : v === "external" ? "External (upstream)" : v,
+    );
+    const retryabilityPivot = classifiedRows(byRetryable, "retryable", (v) =>
+      v === "true" ? "Retryable" : "Non-retryable",
+    );
     const [nodeTotal, protoTotal, nodeByPairMethod] = await Promise.all([
       nodePresent
         ? this.prom.scalar(
@@ -403,16 +440,20 @@ export class MetricsDetailService {
       pivots: {
         chain: pivotRows(byChainRows, "spec"),
         method: pivotRows(byMethodRows, "method"),
-        category: classCounts.map((c) => ({
-          key: c.key,
-          label: c.label,
-          errors: c.errors,
-          share: classSum > 0 ? c.errors / classSum : null,
-        })),
-        // node_errors_total carries no `code` label on this build — a per-code
-        // catalog stays honestly empty (the method split above is the real one).
-        code: [],
-        retryability: [],
+        // Design semantics: WHO caused it (internal vs external), from the
+        // classified counter; the node/protocol/transport class split is the
+        // honest fallback until that family fires.
+        category: categoryClassified.length
+          ? categoryClassified
+          : classCounts.map((c) => ({
+              key: c.key,
+              label: c.label,
+              errors: c.errors,
+              share: classSum > 0 ? c.errors / classSum : null,
+            })),
+        // Real per-code catalog from smartrouter_errors_total{error_name}.
+        code: codePivot,
+        retryability: retryabilityPivot,
       },
       families: {
         requestsFailedTotal: families[0],
