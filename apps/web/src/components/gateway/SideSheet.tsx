@@ -1,5 +1,7 @@
 "use client";
 
+import { createPortal } from "react-dom";
+
 /* Ported from the design prototype (page-providers.jsx SideSheet + the
    gw-sheet__head/title/sub/body/foot/steps structure of its call sites,
    incl. SheetStepBar). */
@@ -17,6 +19,9 @@ export interface SideSheetProps {
   title: React.ReactNode;
   sub?: React.ReactNode;
   wide?: boolean;
+  /** Render as a centered, dimmed modal (portaled to <body>) instead of a
+   *  right-edge sheet. */
+  center?: boolean;
   footer?: React.ReactNode;
   steps?: SideSheetSteps;
   children?: React.ReactNode;
@@ -32,11 +37,11 @@ export function SheetStat({ label, value, color }: { label: React.ReactNode; val
   );
 }
 
-export function SideSheet({ open, onClose, title, sub, wide, footer, steps, children }: SideSheetProps) {
+export function SideSheet({ open, onClose, title, sub, wide, center, footer, steps, children }: SideSheetProps) {
   if (!open) return null;
-  return (
-    <div className="gw-sheet-bg" onClick={onClose}>
-      <div className={"gw-sheet" + (wide ? " gw-sheet--wide" : "")} onClick={(e) => e.stopPropagation()}>
+  const sheet = (
+    <div className={"gw-sheet-bg" + (center ? " gw-sheet-bg--center" : "")} onClick={onClose}>
+      <div className={"gw-sheet" + (wide ? " gw-sheet--wide" : "") + (center ? " gw-sheet--center" : "")} onClick={(e) => e.stopPropagation()}>
         <div className="gw-sheet__head">
           <div>
             <p className="gw-sheet__title">{title}</p>
@@ -66,4 +71,7 @@ export function SideSheet({ open, onClose, title, sub, wide, footer, steps, chil
       </div>
     </div>
   );
+  // Centered modals portal to <body> to escape the page's transform ancestor
+  // (fade-in), which otherwise breaks position:fixed centering.
+  return center ? createPortal(sheet, document.body) : sheet;
 }

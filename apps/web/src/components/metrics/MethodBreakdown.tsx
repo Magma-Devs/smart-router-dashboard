@@ -102,6 +102,7 @@ export function MethodBreakdown({ win, chainFilter }: { win: MetricWindow; chain
       {sheet && (
         <SideSheet
           open
+          center
           onClose={() => setSheet(null)}
           title={<span style={{ fontFamily: "var(--font-mono)" }}>{sheet.method}</span>}
           sub={sheet.class}
