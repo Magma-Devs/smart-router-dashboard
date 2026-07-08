@@ -6,6 +6,11 @@ emits `smartrouter_*` / `rpc_endpoint_*` / `rpc_optimizer_*`. The catalog lives
 in `packages/shared/src/constants/metrics.ts`; the typed query builders in
 `packages/shared/src/promql/builders.ts`.
 
+> **Scrape the router exactly once.** Every query aggregates with `sum()`, so if
+> Prometheus scrapes the same router through two targets (e.g. `router:7779`
+> *and* `host.docker.internal:7779`), all counts double. `deploy/prometheus.yml`
+> uses a single `host.docker.internal:7779` target for that reason.
+
 ## Label conventions
 
 | UI concept | Prometheus label |
@@ -58,15 +63,15 @@ change or redeploy needed.
 | UI value | Builder (`@sr/shared/promql`) |
 |---|---|
 | Requests served | `qRequestsTotal(spec, window)` |
-| Success rate / Availability | `qAvailability(spec, window)` |
-| Error rate | `qErrorRate(spec, window)` |
+| Success rate / Availability | `qAvailability(spec, window)` = `clamp_max(success / total, 1)` — the clamp guards against `increase()` extrapolation pushing the ratio above 1 on a counter younger than the window (would render as a >100% success rate) |
+| Error rate | `qErrorRate(spec, window)` = `1 − qAvailability` — non-negative because availability is clamped ≤ 1 |
 | Error count (derived) | `qErrorCount` = `clamp_min(total − success, 0)` |
 | Errors by chain/method/provider | `qErrorsBy(label)` — the `or … * 0` keeps all-error groups whose success series is absent |
 | P50/P95/P99 latency | `qLatencyQuantile(q, spec, window)` |
 | Latency distribution (buckets) | `qLatencyDistribution` = `sum by (le) (increase(…_bucket[$w]))` |
 | RPS series | `qRpsSeriesExpr(step, spec)` = `sum(rate(smartrouter_requests_total[step]))` |
 | Per-chain / per-provider RPS stacks | `qPerSpecRpsExpr` / `qPerProviderRpsExpr` |
-| Availability / error-rate series | `qAvailabilitySeriesExpr` / `qErrorRateSeriesExpr` / `qErrorCountSeriesExpr` |
+| Availability / error-rate series | `qAvailabilitySeriesExpr` (also `clamp_max(…, 1)`) / `qErrorRateSeriesExpr` / `qErrorCountSeriesExpr` |
 | Latest block | `qLatestBlock(spec)` |
 | QoS / per-endpoint scores | `qScoreExpr` (`rpc_endpoint_selection_score`) / `qOptimizerScore` (`rpc_optimizer_selection_score`) |
 | Per-provider p95 | `qEndpointLatencyQuantile` — the **endpoint** histogram carries `endpoint_id` (the router histogram doesn't) |
