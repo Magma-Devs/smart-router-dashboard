@@ -46,6 +46,26 @@ export const IFACE_LABEL: Record<CatalogInterface, string> = {
   "grpc-web": "gRPC-Web",
 };
 
+/** Curated common methods per interface — the generated catalog can list 50+
+ *  methods, so the Command dropdown defaults to this short set (like
+ *  lava-connect's hand-picked list) with a "show all" escape hatch. Matched by
+ *  the method name; anything not listed is hidden until the user expands. */
+const COMMON_METHODS: Partial<Record<CatalogInterface, string[]>> = {
+  jsonrpc: [
+    "eth_blockNumber", "eth_chainId", "eth_gasPrice", "eth_getBalance",
+    "net_version", "eth_syncing", "eth_getBlockByNumber", "eth_call",
+    // Solana jsonrpc common set (same interface key)
+    "getLatestBlockhash", "getSlot", "getBlockHeight", "getEpochInfo", "getHealth", "getVersion",
+    // Bitcoin
+    "getblockcount", "getblockchaininfo", "getbestblockhash",
+    // Hyperliquid / misc
+    "eth_getTransactionByHash", "eth_getTransactionReceipt",
+  ],
+  rest: ["/", "/cosmos/base/tendermint/v1beta1/blocks/latest", "/blocks/by_height/{height}"],
+  tendermintrpc: ["status", "health", "block", "abci_info", "net_info"],
+  grpc: ["cosmos.base.tendermint.v1beta1.Service/GetLatestBlock", "cosmos.base.tendermint.v1beta1.Service/GetNodeInfo"],
+};
+
 interface TryMeDrawerProps {
   /** Lava spec label (`ETH1`, `SOLANA`, …) — display metadata is resolved
    *  via `buildChainMetaByIndex`. */
@@ -379,6 +399,7 @@ export function TryMeDrawer({
     first ? defaultParamsFor(first.command, iface) : "",
   );
   const [status, setStatus] = useState<Status>("idle");
+  const [showAllCmds, setShowAllCmds] = useState(false);
   const [response, setResponse] = useState<unknown>(null);
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
   const [httpStatus, setHttpStatus] = useState<number | null>(null);
@@ -442,6 +463,7 @@ export function TryMeDrawer({
 
   const handleTierChange = (tier: Tier) => {
     setSelectedTier(tier);
+    setShowAllCmds(false);
     // Snap selection to the first method in the newly-selected tier so
     // the command dropdown lands on a real value rather than ""/empty.
     if ((cfg[tier]?.length ?? 0) > 0) {
@@ -742,12 +764,41 @@ export function TryMeDrawer({
               onChange={(e) => handleSelect(e.target.value)}
               style={{ ...FIELD_INPUT, fontSize: 12 }}
             >
-              {(cfg[selectedTier] ?? []).map((cmd, i) => (
-                <option key={i} value={keyOf(selectedTier, i)}>
-                  {cmd.label === cmd.method ? cmd.label : `${cmd.label} · ${cmd.method}`}
-                </option>
-              ))}
+              {(() => {
+                const allCmds = cfg[selectedTier] ?? [];
+                const common = COMMON_METHODS[iface];
+                // Keep original indices so keyOf(selectedTier, i) stays valid.
+                const withIdx = allCmds.map((cmd, i) => ({ cmd, i }));
+                const curated = common
+                  ? withIdx.filter(({ cmd }) => common.includes(cmd.method))
+                  : withIdx;
+                // Always keep the current selection visible even if not curated.
+                const shown = showAllCmds || curated.length === 0
+                  ? withIdx
+                  : (curated.some(({ i }) => keyOf(selectedTier, i) === selKey)
+                      ? curated
+                      : [...withIdx.filter(({ i }) => keyOf(selectedTier, i) === selKey), ...curated]);
+                return shown.map(({ cmd, i }) => (
+                  <option key={i} value={keyOf(selectedTier, i)}>
+                    {cmd.label === cmd.method ? cmd.label : `${cmd.label} · ${cmd.method}`}
+                  </option>
+                ));
+              })()}
             </select>
+            {(() => {
+              const allCmds = cfg[selectedTier] ?? [];
+              const common = COMMON_METHODS[iface];
+              const curatedCount = common ? allCmds.filter((c) => common.includes(c.method)).length : allCmds.length;
+              if (!common || allCmds.length <= curatedCount) return null;
+              return (
+                <button
+                  onClick={() => setShowAllCmds((s) => !s)}
+                  style={{ marginTop: 6, border: "none", background: "none", color: "var(--brand)", cursor: "pointer", padding: 0, fontSize: 11, fontWeight: 600, fontFamily: "inherit" }}
+                >
+                  {showAllCmds ? "Show common methods only" : `Show all ${allCmds.length} methods`}
+                </button>
+              );
+            })()}
             {selected && (
               <div
                 className="gw-mono"
