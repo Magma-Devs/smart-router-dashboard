@@ -1,39 +1,25 @@
-# Smart Router Direct RPC Configuration — multi-chain + CROSS-VALIDATION
-# Mode: Direct connections to public endpoints (no Lava providers!)
+# Smart Router Direct RPC config — multi-chain demo + per-method cross-validation.
+# Direct public endpoints only (no Lava providers). Chains with two RELIABLE
+# vendor groups carry a corroboration policy; BTC/HYPERLIQUID (single source)
+# and SOLANA (second source rate-limits) are served without one.
 #
-# Same upstream layout as smartrouter_multichain.yml — every bundled example
-# chain on its own port — but this variant ALSO enables per-method
-# cross-validation so reads are corroborated across two distinct vendor groups
-# before being returned. Only chains with TWO public vendor groups carry a
-# policy (BTC and HYPERLIQUID have a single public source here, so they're served
-# without corroboration).
+#   3360  ETH1        jsonrpc        publicnode + tenderly + mevblocker
+#   3361  SOLANA      jsonrpc        publicnode + solana-labs
+#   3362  BTC         jsonrpc        publicnode
+#   3363  HYPERLIQUID jsonrpc        hyperliquid.xyz
+#   3364  COSMOSHUB   rest           publicnode + polkachu
+#   3365  COSMOSHUB   tendermintrpc  publicnode + polkachu
+#   3366  COSMOSHUB   grpc           publicnode + polkachu
+#   3367  APT1        rest           publicnode + aptos-labs
 #
-#   3360  ETH1        jsonrpc        ethereum-rpc.publicnode.com + mainnet.gateway.tenderly.co
-#   3361  SOLANA      jsonrpc        solana-rpc.publicnode.com   + api.mainnet-beta.solana.com
-#   3362  BTC         jsonrpc        bitcoin-rpc.publicnode.com
-#   3363  HYPERLIQUID jsonrpc        rpc.hyperliquid.xyz/evm
-#   3364  COSMOSHUB   rest           cosmos-rest.publicnode.com  + cosmos-api.polkachu.com
-#   3365  COSMOSHUB   tendermintrpc  cosmos-rpc.publicnode.com   + cosmos-rpc.polkachu.com
-#   3366  COSMOSHUB   grpc           cosmos-grpc.publicnode.com  + cosmos-grpc.polkachu.com
-#   3367  APT1        rest           aptos-rest.publicnode.com   + fullnode.mainnet.aptoslabs.com
-#
-# ETH1 requires a ws:// leg, so it pairs an https url with a wss one. SOLANA,
-# BTC, HYPERLIQUID (jsonrpc) and APT1 (rest) are HTTP-only here, so start the
-# router with --skip-websocket-verification (the docker-compose example does this).
-#
-# Specs resolve from the lava-specs GitHub repo (the dashboard compose passes
-# --use-static-spec https://github.com/Magma-Devs/lava-specs/tree/main): ETH1,
-# SOLANA, BTC, HYPERLIQUID, APT1, and COSMOSHUB (imports COSMOSSDK50 + COSMOSWASM,
-# which pull in COSMOSSDK -> IBC + TENDERMINT) — all present in the repo.
+# Several upstreams are HTTP-only → start with --skip-websocket-verification
+# (the compose does). Specs come from the lava-specs repo (--use-static-spec).
 
-# Prometheus metrics (scrape at http://<host>:7779/metrics). Set to
-# "disabled" to turn off. Read via viper, so the --metrics-listen-address
-# flag overrides this if both are set.
+# Prometheus scrape address (the --metrics-listen-address flag overrides).
 metrics-listen-address: "0.0.0.0:7779"
 
-# NOTE: the external RAM relay cache is wired via the router's --cache-be FLAG
-# (compose sets it from SR_CACHE_BE when the `cache` profile is on — see
-# docker-compose.yml / `make up-cache`), NOT from this file. No edit needed here.
+# Relay cache is wired via the router's --cache-be flag (compose/SR_CACHE_BE),
+# not from this file.
 
 endpoints:
   - listen-address: "0.0.0.0:3360"
@@ -77,31 +63,12 @@ endpoints:
     network-address: "0.0.0.0:3367"
 
 direct-rpc:
-  # Two distinct sources per chain<>interface where a second public vendor
-  # exists. The cross-validation block below requires both groups to corroborate
-  # reads.
-
-  # ---- Ethereum (ETH1, chainId 0x1) ----
-  # `addons` on a node-url advertise the extra capabilities that upstream
-  # serves (archive state, debug_*/trace_* namespaces). The dashboard surfaces
-  # them as capability chips on the Upstreams + Endpoints pages; the Try-now
-  # console unlocks the matching tiers. Declared here on eth-publicnode so the
-  # feature is visible out-of-the-box — set them to match what YOUR upstream
-  # actually supports.
   - name: "eth-publicnode"
     group-label: "publicnode"
     chain-id: "ETH1"
     api-interface: "jsonrpc"
-    # Only advertise addons the upstream ACTUALLY serves — the router verifies
-    # each on startup (e.g. it probes debug_getRawHeader for `debug`) and, if the
-    # probe fails, EXCLUDES the whole provider. That drops ETH1 to a single group
-    # and violates the cross-validation min-groups:2 policy below, killing the
-    # router. publicnode's free ETH endpoint serves archive state but NOT the
-    # debug_* / trace_* namespaces, so we claim archive only. (Point this at an
-    # upstream that serves debug/trace to re-enable those tiers.)
     node-urls:
       - url: "https://ethereum-rpc.publicnode.com"
-        addons: ["archive"]
       - url: "wss://ethereum-rpc.publicnode.com"
 
   - name: "eth-tenderly"
@@ -110,7 +77,16 @@ direct-rpc:
     api-interface: "jsonrpc"
     node-urls:
       - url: "https://mainnet.gateway.tenderly.co"
+        addons: ["archive"]
       - url: "wss://mainnet.gateway.tenderly.co"
+
+  - name: "eth-mevblocker"
+    group-label: "mevblocker"
+    chain-id: "ETH1"
+    api-interface: "jsonrpc"
+    node-urls:
+      - url: "https://rpc.mevblocker.io"
+        addons: ["archive"]
 
   # ---- Solana (SOLANA) — HTTP-only ----
   - name: "sol-publicnode"
@@ -119,8 +95,6 @@ direct-rpc:
     api-interface: "jsonrpc"
     node-urls:
       - url: "https://solana-rpc.publicnode.com"
-        # PublicNode's free tier blocks getProgramAccounts (the spec's
-        # tokens-owner-indexed verification), so skip that startup check here.
         skip-verifications:
           - tokens-owner-indexed
 
@@ -131,7 +105,7 @@ direct-rpc:
     node-urls:
       - url: "https://api.mainnet-beta.solana.com"
 
-  # ---- Bitcoin (BTC) — single public source; served without corroboration ----
+  # ---- Bitcoin (BTC) — single public source ----
   - name: "btc-publicnode"
     group-label: "publicnode"
     chain-id: "BTC"
@@ -139,7 +113,7 @@ direct-rpc:
     node-urls:
       - url: "https://bitcoin-rpc.publicnode.com"
 
-  # ---- Hyperliquid (HYPERLIQUID) — single public source; served without corroboration ----
+  # ---- Hyperliquid (HYPERLIQUID) — single public source ----
   - name: "hyperliquid-official"
     group-label: "hyperliquid"
     chain-id: "HYPERLIQUID"
@@ -147,7 +121,8 @@ direct-rpc:
     node-urls:
       - url: "https://rpc.hyperliquid.xyz/evm"
 
-  # ---- Cosmos Hub (COSMOSHUB) — REST + Tendermint RPC + gRPC, two sources each ----
+  # ---- Cosmos Hub (COSMOSHUB) — rest + tendermintrpc + grpc, two vendors each.
+  # Public nodes are pruned → skip the pruning probe.
   - name: "cosmos-rest-publicnode"
     group-label: "publicnode"
     chain-id: "COSMOSHUB"
@@ -186,7 +161,7 @@ direct-rpc:
     chain-id: "COSMOSHUB"
     api-interface: "tendermintrpc"
     node-urls:
-      # Polkachu serves tendermint over HTTP only (no websocket leg).
+      # HTTP only — polkachu has no websocket leg.
       - url: "https://cosmos-rpc.polkachu.com"
         timeout: 10s
         skip-verifications:
@@ -210,7 +185,7 @@ direct-rpc:
     api-interface: "grpc"
     node-urls:
       - url: "grpc://cosmos-grpc.polkachu.com:14990"
-        # Polkachu's gRPC is plaintext (no TLS), so explicitly allow it.
+        # Plaintext gRPC.
         grpc-config:
           allow-insecure: true
         skip-verifications:
@@ -234,29 +209,40 @@ direct-rpc:
       - url: "https://fullnode.mainnet.aptoslabs.com/v1"
         timeout: 10s
 
-# Emergency fallback tier. Providers here are ONLY consulted once every primary
-# `direct-rpc` provider for a chain<>interface is exhausted (the router logs
-# "[BackupProviders] Static providers exhausted — entering backup fallback").
-# Same schema as direct-rpc; a distinct vendor per chain so a backup never
-# shares an upstream with the primary it's covering. Cross-validation policies
-# target the primary groups only — backups just keep the endpoint serving, they
-# don't participate in corroboration.
-#
-# Only providers confirmed to PASS the router's startup verification are kept
-# here — a backup that fails verification is excluded at boot and can't fail
-# over, so it's just noise. In this all-keyless-public setup only COSMOSHUB
-# tendermintrpc has a second verified vendor (ecostake). The rest of the chains
-# have no reliable keyless second source today:
-#   ETH1        cloudflare-eth returns a non-standard eth_blockNumber shape
-#               (GET_BLOCKNUM parse fail); llamarpc's ws is 521.
-#   BTC / SOLANA / APT1   Ankr now requires an API key (401/403); aptos public
-#               nodes 429.
-# They run on their two verified primary sources without a backup. To extend the
-# failover tier, add a keyed/private URL here (same schema) — e.g. an Alchemy/
-# Infura/QuickNode endpoint whose key lives in the mounted config, or a
-# self-hosted node — and it lights up automatically once it verifies.
+# Emergency fallback tier — consulted only when every primary for a
+# chain<>interface is exhausted. Distinct vendor from the primaries it covers;
+# cross-validation targets primaries only. Keep ONLY backups that pass startup
+# verification. No keyless second vendor exists today for SOLANA / BTC / APT1 /
+# COSMOSHUB grpc (tested 2026-07) — add a keyed/private URL to cover those.
 backup-direct-rpc:
-  # ---- Cosmos Hub (COSMOSHUB) Tendermint RPC — ecostake fallback (verified) ----
+  - name: "eth-flashbots-backup"
+    group-label: "flashbots"
+    chain-id: "ETH1"
+    api-interface: "jsonrpc"
+    node-urls:
+      - url: "https://rpc.flashbots.net"
+        timeout: 10s
+        skip-verifications:
+          - pruning
+
+  - name: "hyperliquid-purroofgroup-backup"
+    group-label: "purroofgroup"
+    chain-id: "HYPERLIQUID"
+    api-interface: "jsonrpc"
+    node-urls:
+      - url: "https://rpc.purroofgroup.com/evm"
+        timeout: 10s
+
+  - name: "cosmos-rest-ecostake-backup"
+    group-label: "ecostake"
+    chain-id: "COSMOSHUB"
+    api-interface: "rest"
+    node-urls:
+      - url: "https://rest-cosmoshub.ecostake.com"
+        timeout: 10s
+        skip-verifications:
+          - pruning
+
   - name: "cosmos-tendermintrpc-ecostake-backup"
     group-label: "ecostake"
     chain-id: "COSMOSHUB"
@@ -267,48 +253,31 @@ backup-direct-rpc:
         skip-verifications:
           - pruning
 
-# Per-method cross-validation. Each knob resolves as clamp(caller, floor, cap):
-# floor = operator minimum the caller may exceed, cap = operator maximum that
-# overrides a stricter caller. A bare number N means {floor: N}. chain-id/
-# api-interface match case-insensitively; method exactly. Policies on stateful
-# (write) methods are rejected at startup.
-#
-# Each policy below targets a chain<>interface served by two group-labels
-# (publicnode + a second vendor). The meaningful diversity bar is min-groups: 2 —
-# both vendors must corroborate.
+# Per-method cross-validation. Knobs resolve as clamp(caller, floor, cap);
+# a bare number N = {floor: N}. Policies on stateful methods are rejected.
+# RULES OF THUMB (tested 2026-07):
+#   • Only methods with byte-identical responses across vendors can carry
+#     agreement-threshold: 2 (receipts differ per vendor — blobGasUsed;
+#     getEpochInfo changes every slot → both were removed).
+#   • REST method names are the spec's PATH PATTERNS, not gRPC names.
+#   • Every group referenced must survive startup verification, or the
+#     policy fails with "maxParticipants exceeds available candidates".
 cross-validation:
   policies:
-    # ETH1 — balance reads corroborated by both vendors before returning.
+    # ETH1 — balance reads corroborated across two groups (works for archive
+    # blocks too: tenderly + mevblocker both serve archive).
     - chain-id: ETH1
       api-interface: jsonrpc
       method: eth_getBalance
       enabled: true
-      agreement-threshold: 2          # both sources must return identical responses
-      max-participants: 2             # fan out to both
-      min-groups: 2                   # spanning both distinct group-labels (publicnode + tenderly)
-
-    # ETH1 — receipts must be unanimous across both groups.
-    - chain-id: ETH1
-      api-interface: jsonrpc
-      method: eth_getTransactionReceipt
-      enabled: true
       agreement-threshold: 2
       max-participants: 2
       min-groups: 2
 
-    # SOLANA — epoch info corroborated across both groups.
-    - chain-id: SOLANA
-      api-interface: jsonrpc
-      method: getEpochInfo
-      enabled: true
-      agreement-threshold: 2
-      max-participants: 2
-      min-groups: 2
-
-    # COSMOSHUB REST — corroborate a bank balance query across both vendors.
+    # COSMOSHUB REST — bank balance corroborated across both vendors.
     - chain-id: COSMOSHUB
       api-interface: rest
-      method: cosmos.bank.v1beta1.Query/Balance
+      method: /cosmos/bank/v1beta1/balances/{address}/by_denom
       enabled: true
       agreement-threshold: 2
       max-participants: 2
