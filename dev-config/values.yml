@@ -88,9 +88,16 @@ direct-rpc:
     group-label: "publicnode"
     chain-id: "ETH1"
     api-interface: "jsonrpc"
+    # Only advertise addons the upstream ACTUALLY serves — the router verifies
+    # each on startup (e.g. it probes debug_getRawHeader for `debug`) and, if the
+    # probe fails, EXCLUDES the whole provider. That drops ETH1 to a single group
+    # and violates the cross-validation min-groups:2 policy below, killing the
+    # router. publicnode's free ETH endpoint serves archive state but NOT the
+    # debug_* / trace_* namespaces, so we claim archive only. (Point this at an
+    # upstream that serves debug/trace to re-enable those tiers.)
     node-urls:
       - url: "https://ethereum-rpc.publicnode.com"
-        addons: ["archive", "debug", "trace"]
+        addons: ["archive"]
       - url: "wss://ethereum-rpc.publicnode.com"
 
   - name: "eth-tenderly"
