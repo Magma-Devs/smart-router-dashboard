@@ -204,16 +204,21 @@ export function UpstreamsView() {
                       : <InitialBadge name={pv.name} spec={pv.chains[0]} size={28} />}
                     <div className="gw-row" style={{ gap: 8 }}>
                       <span style={{ fontSize: 13, fontWeight: 600 }}>{pv.name}</span>
-                      {/* The chain-tinted avatar + the per-endpoint rows below
-                          already carry the chain identity, so we don't repeat the
-                          icon + name here — only flag when an upstream spans more
-                          than one chain, which the rows alone don't make obvious. */}
-                      {pv.chains.length > 1 && (
-                        <span style={{ fontSize: 10, color: "var(--text-3)" }}>+{pv.chains.length - 1} more chains</span>
+                      {/* Chain identity lives HERE (icon + name), so the
+                          per-endpoint rows below don't repeat it. */}
+                      {pv.chains[0] && (
+                        <span className="gw-row" style={{ gap: 5, alignItems: "center" }}>
+                          <span style={{ color: "var(--text-4)" }}>·</span>
+                          <ChainBadge spec={pv.chains[0]} size={15} />
+                          <span style={{ fontSize: 12, color: "var(--text-2)" }}>{buildChainMetaByIndex(pv.chains[0]).name}</span>
+                          {pv.chains.length > 1 && (
+                            <span style={{ fontSize: 10, color: "var(--text-3)" }}>+{pv.chains.length - 1}</span>
+                          )}
+                        </span>
                       )}
-                      {pv.status === "—"
-                        ? <span style={{ fontSize: 10, color: "var(--text-4)" }}>no data</span>
-                        : <span className={"gw-tag gw-tag--" + statColor(pv.status)} style={{ fontSize: 10, padding: "1px 6px", display: "inline-flex", gap: 5, alignItems: "center" }}><StatusDot status={pv.status} />{pv.status}</span>}
+                      {pv.status !== "—" && (
+                        <span className={"gw-tag gw-tag--" + statColor(pv.status)} style={{ fontSize: 10, padding: "1px 6px", display: "inline-flex", gap: 5, alignItems: "center" }}><StatusDot status={pv.status} />{pv.status}</span>
+                      )}
                     </div>
                   </div>
                   <div className="gw-row" style={{ gap: 18 }}>
@@ -242,13 +247,13 @@ export function UpstreamsView() {
                 {/* endpoint rows, one per (chain, upstream endpoint) served */}
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   {pv.chainRows.map((row, i) => {
-                    const ch = buildChainMetaByIndex(row.spec);
                     return (
                       <div key={i} className="gw-row" style={{ gap: 8, padding: "6px 10px", background: "var(--hover)", borderRadius: 6, border: "1px solid var(--line)" }}>
-                        {/* Chain icon + name + role inline */}
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0, minWidth: 140 }}>
-                          <ChainBadge spec={row.spec} size={16} />
-                          <span style={{ fontSize: 11, fontWeight: 500, color: "var(--text-2)" }}>{ch.name}</span>
+                        {/* Role inline — the chain identity is on the card header,
+                            not repeated per row. Only reserve the slot when the
+                            config actually marks a role (helm is_backup). */}
+                        {(row.role === "primary" || row.role === "backup") && (
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0, minWidth: 78 }}>
                           {row.role === "primary" && (
                             <span style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 10, color: "var(--ok)", fontWeight: 500 }}>
                               <svg width="5" height="5" viewBox="0 0 6 6"><circle cx="3" cy="3" r="3" fill="currentColor"/></svg>
@@ -262,6 +267,7 @@ export function UpstreamsView() {
                             </span>
                           )}
                         </div>
+                        )}
                         <span className="gw-mono" style={{ fontSize: 11, color: "var(--text-2)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{row.urlHost || "—"}</span>
                         {/* interface tag + configured capabilities (addons +
                             derived ws) — real config values, nothing invented.
