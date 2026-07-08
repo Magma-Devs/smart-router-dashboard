@@ -156,10 +156,12 @@ export function ChainLogo({ spec, size = 16 }: { spec: string; size?: number }) 
 }
 
 export function MagmaLogo({ size = 28 }: { size?: number }) {
-  // The orange-gradient Magma mark (PNG ships in /public).
-  // eslint-disable-next-line @next/next/no-img-element
+  // The orange-gradient Magma mark (PNG ships in /public). A plain <img> is
+  // deliberate here — next/image's optimizer adds no value for a tiny static
+  // brand mark and would pull the whole loader pipeline into every shell render.
   return (
     <img
+      // eslint-disable-next-line @next/next/no-img-element
       src="/magma-logo.png"
       width={size}
       height={size}

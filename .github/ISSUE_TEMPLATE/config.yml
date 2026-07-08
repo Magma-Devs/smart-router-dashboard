@@ -1,0 +1,14 @@
+# Force reporters through the structured templates below (no blank issues),
+# and offer the right off-GitHub channels for things that don't belong in the
+# public tracker.
+blank_issues_enabled: false
+contact_links:
+  - name: 🔒 Report a security vulnerability
+    url: https://github.com/Magma-Devs/smart-router-dashboard/security/advisories/new
+    about: Do NOT open a public issue. Report privately here or email security@magmadevs.com (see SECURITY.md).
+  - name: 💬 Questions & usage help
+    url: https://github.com/Magma-Devs/smart-router-dashboard/discussions
+    about: Ask questions and share ideas in Discussions rather than the issue tracker.
+  - name: 🛰️ Smart Router (the router this dashboard observes)
+    url: https://github.com/Magma-Devs/smart-router/issues
+    about: Bugs in the router itself (not the dashboard) belong on the smart-router repo.

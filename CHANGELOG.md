@@ -5,6 +5,28 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Added
+
+- **Linting & formatting.** A root ESLint flat config (`typescript-eslint` +
+  `eslint-plugin-react-hooks` + `@next/eslint-plugin-next`) and Prettier, wired
+  as `pnpm lint` / `pnpm format`. The Quality Gate now runs `pnpm lint` before
+  typecheck + tests. React-Compiler-strictness rules are surfaced as warnings so
+  existing patterns are visible without blocking CI.
+- **Contributor scaffolding.** `.env.example` (every runtime knob, from
+  `config.ts`), `.nvmrc` (Node 24), `.editorconfig`, and an issue-template
+  `config.yml` routing security reports and questions off the public tracker.
+- README: a **Testing & CI** section, a pointer to the api's `/docs` OpenAPI
+  explorer, and `.env.example` / `.nvmrc` references.
+
+### Fixed
+
+- Root `package.json` `engines.node` was `>=22` while the Dockerfiles, CI, and
+  README all target Node 24 — aligned to `>=24`.
+- Removed a dead `next lint` script (no ESLint was installed for it), dead
+  imports in `metrics-detail.ts` / `OverviewView.tsx`, and a mis-placed
+  `eslint-disable` directive in `icons.tsx`; tidied two flagged issues in
+  `json-display.tsx`.
+
 ## [0.4.0]
 
 ### Changed
