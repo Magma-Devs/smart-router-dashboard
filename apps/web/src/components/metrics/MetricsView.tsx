@@ -77,7 +77,7 @@ export function MetricsView() {
 
       {tab === "metrics" && (
         <>
-          <HeroPanel tw={timeWindow} />
+          <HeroPanel tw={timeWindow} spec={activeChain} />
           <CurrentlyUnavailable />
           <RouterOverview chainFilter={activeChain} timeWindow={timeWindow} onChainClick={(ch) => { setChainFilter(ch); setTab("upstreams"); }} />
         </>
