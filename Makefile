@@ -39,7 +39,7 @@ API_URL    ?= http://localhost:$(API_PORT)
 ## up: SELF-CONTAINED stack — router + Prometheus + api + web + logs (Loki/Grafana)
 up:
 	docker compose --profile router --profile logs up -d --build
-	@echo ""
+	@echo ""f
 	@echo "  ✅ Dashboard up:"
 	@echo "     UI      → http://localhost:$(WEB_PORT)"
 	@echo "     API     → http://localhost:$(API_PORT)"
@@ -49,9 +49,18 @@ up:
 	@echo ""
 	@echo "  logs    → docker compose logs -f   (make dev runs in the foreground and streams them)"
 
-## down: stop the whole stack (auth + logs profiles included so everything stops)
+## up-cache: like `up`, plus the smart-router cache sidecar (:20100, metrics :5555)
+## Uncomment `cache-be: "cache:20100"` in dev-config/values.yml first so the
+## router actually routes reads through it.
+up-cache:
+	docker compose --profile router --profile cache --profile logs up -d --build
+	@echo ""
+	@echo "  ✅ Dashboard + cache up. Cache metrics → http://localhost:5555/metrics"
+	@echo "     (router uses it only if dev-config/values.yml sets cache-be: \"cache:20100\")"
+
+## down: stop the whole stack (auth + logs + cache profiles included so everything stops)
 down:
-	docker compose --profile router --profile auth --profile logs down
+	docker compose --profile router --profile auth --profile logs --profile cache down
 
 ## dev: HOT-RELOAD stack (api = tsx watch · web = next dev · shared = tsc --watch) + logs (Loki/Grafana → :3001)
 ## Runs in the FOREGROUND and streams every container's logs — Ctrl-C to stop.

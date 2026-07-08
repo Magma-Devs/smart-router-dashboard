@@ -75,6 +75,31 @@ services:
       # 3363 HYPERLIQUID · 3364-3366 COSMOSHUB rest/tendermint/grpc · 3367 APT1.
       - "3360-3367:3360-3367"
       - "7779:7779"
+    depends_on:
+      cache:
+        condition: service_healthy
+        required: false # cache is opt-in (--profile cache)
+    restart: unless-stopped
+
+  # ---- Cache sidecar (opt-in via `--profile cache`) ----------------------
+  # smart-router RAM relay cache on :20100 (metrics :5555). The router uses it
+  # only when its config declares `cache-be: cache:20100` (commented out in
+  # dev-config/values.yml). Mirrors smart-router/docker/docker-compose.cache.yml.
+  cache:
+    profiles: ["cache"]
+    image: ${SR_ROUTER_IMAGE:-ghcr.io/magma-devs/smart-router:main}
+    pull_policy: ${SR_ROUTER_PULL:-always}
+    command: ["cache", "0.0.0.0:20100", "--metrics_address", "0.0.0.0:5555"]
+    expose:
+      - "20100"
+    ports:
+      - "5555:5555"
+    healthcheck:
+      test: ["CMD", "/busybox/wget", "-qO-", "http://localhost:5555/metrics"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
     restart: unless-stopped
 
   # Auth backing store — ONLY needed when AUTH_MODE=enabled. Start it with

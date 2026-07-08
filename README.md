@@ -41,9 +41,10 @@ The observability dashboard for the [Smart Router](https://github.com/Magma-Devs
 ## Quick Start
 
 ```bash
-make up      # router + Prometheus + api (:8000) + web (:3000) + logs (Grafana :3001), detached
-make ps      # show what's running
-make down    # stop everything
+make up        # router + Prometheus + api (:8000) + web (:3000) + logs (Grafana :3001), detached
+make up-cache  # ...plus the smart-router cache sidecar (:20100, metrics :5555)
+make ps        # show what's running
+make down      # stop everything
 ```
 
 UI → http://localhost:3000 · API → http://localhost:8000 · Prometheus → http://localhost:9090 ·
@@ -56,6 +57,22 @@ With a router already running on the host's `:7779`:
 ```bash
 docker compose up --build     # dashboard + Prometheus only
 ```
+
+### Relay cache (optional)
+
+The stack can run the smart-router's RAM relay **cache** sidecar (mirrors
+`smart-router/docker/docker-compose.cache.yml`). It's opt-in behind the `cache`
+profile and off by default. To enable it, uncomment `cache-be: "cache:20100"` in
+[`dev-config/values.yml`](./dev-config/values.yml) so the router routes reads
+through it, then:
+
+```bash
+make up-cache   # or: docker compose --profile router --profile cache up --build
+```
+
+The cache listens on `:20100` and exposes its own Prometheus metrics on `:5555`
+(scraped as the `smart-router-cache` job). With the profile off, the router uses
+its in-process cache and the `cache-be` line is inert.
 
 ## How it works
 
