@@ -15,6 +15,7 @@ import { Tip } from "@/components/gateway/Tip";
 import { ThCol, useSort } from "@/components/gateway/SortTable";
 import { TT } from "@/lib/tooltips";
 import { fmtNum } from "@/lib/format";
+import { uptimeColor } from "@/lib/colors";
 import { ChainDetail, type ChainDetailRow } from "./ChainDetail";
 import { useState } from "react";
 
@@ -96,7 +97,7 @@ export function RouterOverview({ onChainClick, chainFilter, timeWindow }: {
   const routers = base.filter((r) => (net === "all" || r.network === net) && (!chainFilter || r.spec === chainFilter));
   const { sorted: sortedRouters, sort, onSort } = useSort<RoRow>(routers, { key: "natural", dir: "asc" });
 
-  const srColor = (v: number | null) => v == null ? "var(--text-4)" : v >= 99.9 ? "var(--ok)" : v >= 99 ? "var(--warn)" : "var(--err)";
+  const srColor = uptimeColor;
   const statusMeta: Record<RoStatus, [string, string]> = { up: ["var(--ok)", "Operational"], down: ["var(--err)", "Unhealthy"], unknown: ["var(--text-4)", "—"] };
 
   return (
