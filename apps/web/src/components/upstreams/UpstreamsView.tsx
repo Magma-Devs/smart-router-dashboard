@@ -11,7 +11,6 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   buildChainMetaByIndex,
-  type OverviewData,
   type UpstreamMetrics,
   type RouterTopology,
 } from "@sr/shared";
@@ -41,21 +40,6 @@ function InitialBadge({ name, spec, size = 28 }: { name: string; spec?: string; 
   );
 }
 
-/** Mean-downsample a series into n buckets (presentation only — the chart
- *  draws the design's fixed-bar layout over the real throughput series). */
-function bucketize(values: number[], n: number): number[] {
-  if (values.length === 0) return [];
-  if (values.length <= n) return values;
-  const out: number[] = [];
-  const size = values.length / n;
-  for (let i = 0; i < n; i++) {
-    const lo = Math.floor(i * size), hi = Math.max(lo + 1, Math.floor((i + 1) * size));
-    const slice = values.slice(lo, hi);
-    out.push(slice.reduce((a, b) => a + b, 0) / slice.length);
-  }
-  return out;
-}
-
 export function UpstreamsView() {
   const router = useRouter();
   const config = useApi<{ routers: RouterTopology[] }>("/api/config/routers", 60000);
@@ -63,15 +47,9 @@ export function UpstreamsView() {
   const live = useApi<{ upstreams: UpstreamMetrics[] }>("/api/metrics/upstreams?window=1d");
 
   const [degradedFilter, setDegradedFilter] = useState(false);
-  const [usagePeriod, setUsagePeriod] = useState<"24h" | "7d">("24h");
   const [search, setSearch] = useState("");
   const [netFilter, setNetFilter] = useState<"all" | "mainnet" | "testnet">("all");
   const [newChainCtas, setNewChainCtas] = useState<{ chainId: string; upstreamName: string }[]>([]);
-
-  /* Usage section — window-scoped fetches (real series; SWR dedupes 24h/1d). */
-  const apiWin = usagePeriod === "24h" ? "1d" : "7d";
-  const liveWin = useApi<{ upstreams: UpstreamMetrics[] }>(`/api/metrics/upstreams?window=${apiWin}`);
-  const overview = useApi<OverviewData>(`/api/metrics/overview?window=${apiWin}`, 30000);
 
   const routers = useMemo(() => config.data?.routers ?? [], [config.data]);
   const upstreams = useMemo(
@@ -257,81 +235,6 @@ export function UpstreamsView() {
           })}
         </div>
       )}
-
-      {upstreams.length > 0 && (() => {
-        const reqTotal = liveWin.data
-          ? liveWin.data.upstreams.reduce((a, p) => a + p.requests, 0)
-          : null;
-        const rpsValues = (overview.data?.throughput ?? []).map((p) => p.v ?? 0);
-        const peakRps = rpsValues.length ? Math.round(Math.max(...rpsValues)) : null;
-        const series = bucketize(rpsValues, usagePeriod === "24h" ? 24 : 28);
-        const seriesMax = Math.max(...series, 1e-9);
-        const byUpstream = [...upstreams]
-          .filter((p) => (p.requests ?? 0) > 0)
-          .sort((a, b) => (b.requests ?? 0) - (a.requests ?? 0))
-          .slice(0, 5);
-        const maxReq = byUpstream.length ? (byUpstream[0]?.requests ?? 1) : 1;
-        return (
-          <>
-            <h2 style={{ fontSize: 18, fontWeight: 600, letterSpacing: "-0.015em", margin: "32px 0 14px" }}>Usage</h2>
-            <div className="gw-grid" style={{ gridTemplateColumns: "2fr 1fr" }}>
-              <div className="gw-card">
-                <div className="gw-row" style={{ justifyContent: "space-between", marginBottom: 16, alignItems: "flex-start" }}>
-                  <div>
-                    <div style={pvStatLabel}>Requests · {usagePeriod === "24h" ? "last 24h" : "last 7d"}</div>
-                    <div className="gw-mono gw-tnum" style={{ fontSize: 24, fontWeight: 600, marginTop: 6 }}>{fmtNum(reqTotal)}</div>
-                  </div>
-                  <div className="gw-row" style={{ gap: 14, alignItems: "flex-start" }}>
-                    <div style={{ textAlign: "right" }}>
-                      <div style={pvStatLabel}>Peak RPS</div>
-                      <div className="gw-mono gw-tnum" style={{ fontSize: 24, fontWeight: 600, marginTop: 6 }}>{peakRps === null ? "—" : fmtNum(peakRps)}</div>
-                    </div>
-                    <div className="gw-segctl" style={{ marginTop: 2 }}>
-                      {(["24h", "7d"] as const).map((per) => (
-                        <button key={per} className={usagePeriod === per ? "on" : ""} onClick={() => setUsagePeriod(per)}>{per}</button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-                <div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: 64 }}>
-                  {series.map((v, i) => {
-                    const pct = (v / seriesMax) * 100;
-                    return (
-                      <div key={i} style={{ flex: 1, height: `${pct}%`, background: "var(--brand)", opacity: 0.55 + (pct / 100) * 0.45, borderRadius: 2 }} />
-                    );
-                  })}
-                  {series.length === 0 && (
-                    <div style={{ flex: 1, alignSelf: "center", textAlign: "center", fontSize: 12, color: "var(--text-3)" }}>No traffic in this window.</div>
-                  )}
-                </div>
-              </div>
-
-              <div className="gw-card">
-                <div style={pvStatLabel}>By upstream · req today</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 11, marginTop: 14 }}>
-                  {byUpstream.map((pv) => {
-                    const ch = pv.chains[0] ? buildChainMetaByIndex(pv.chains[0]) : null;
-                    return (
-                      <div key={pv.id}>
-                        <div className="gw-row" style={{ justifyContent: "space-between", marginBottom: 4, gap: 8 }}>
-                          <span style={{ fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pv.name}</span>
-                          <span className="gw-mono gw-tnum" style={{ fontSize: 11, color: "var(--text-3)", flexShrink: 0 }}>{fmtNum(pv.requests)}</span>
-                        </div>
-                        <div style={{ height: 4, background: "var(--hover)", borderRadius: 2, overflow: "hidden" }}>
-                          <div style={{ width: `${Math.round(((pv.requests ?? 0) / maxReq) * 100)}%`, height: "100%", background: ch?.color || "var(--brand)", opacity: 0.85 }} />
-                        </div>
-                      </div>
-                    );
-                  })}
-                  {byUpstream.length === 0 && (
-                    <span style={{ fontSize: 12, color: "var(--text-3)" }}>No traffic yet.</span>
-                  )}
-                </div>
-              </div>
-            </div>
-          </>
-        );
-      })()}
 
     </div>
   );
