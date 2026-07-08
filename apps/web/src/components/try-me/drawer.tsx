@@ -536,7 +536,10 @@ export function TryMeDrawer({
   const drawer = (
     <>
       <div
-        onClick={close}
+        // The drawer is portaled to <body>, but React events still bubble
+        // through the COMPONENT tree — without stopPropagation these clicks reach
+        // the endpoint row's onClick and open the detail sheet. Stop them here.
+        onClick={(e) => { e.stopPropagation(); close(); }}
         style={{
           position: "fixed",
           inset: 0,
@@ -551,6 +554,7 @@ export function TryMeDrawer({
         role="dialog"
         aria-modal="true"
         aria-label={`Try ${chain.name} ${spec}`}
+        onClick={(e) => e.stopPropagation()}
         style={{
           position: "fixed",
           top: 0,
