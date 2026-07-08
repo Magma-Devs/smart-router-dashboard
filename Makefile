@@ -50,13 +50,12 @@ up:
 	@echo "  logs    → docker compose logs -f   (make dev runs in the foreground and streams them)"
 
 ## up-cache: like `up`, plus the smart-router cache sidecar (:20100, metrics :5555)
-## Uncomment `cache-be: "cache:20100"` in dev-config/values.yml first so the
-## router actually routes reads through it.
+## Wires the router to the cache via --cache-be — no values.yml edit needed.
 up-cache:
-	docker compose --profile router --profile cache --profile logs up -d --build
+	SR_CACHE_BE=cache:20100 docker compose --profile router --profile cache --profile logs up -d --build
 	@echo ""
 	@echo "  ✅ Dashboard + cache up. Cache metrics → http://localhost:5555/metrics"
-	@echo "     (router uses it only if dev-config/values.yml sets cache-be: \"cache:20100\")"
+	@echo "     Router is wired to the cache via --cache-be cache:20100."
 
 ## down: stop the whole stack (auth + logs + cache profiles included so everything stops)
 down:

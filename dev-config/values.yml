@@ -31,13 +31,9 @@
 # flag overrides this if both are set.
 metrics-listen-address: "0.0.0.0:7779"
 
-# External RAM relay cache (the smart-router `cache` sidecar). Uncomment to
-# route reads through it, then start the stack with the cache profile:
-#   docker compose --profile router --profile cache up --build
-# The cache service (docker-compose.yml, --profile cache) listens on this
-# address; its own Prometheus metrics are on :5555. Left off by default — the
-# router uses its in-process cache and this line is inert.
-# cache-be: "cache:20100"
+# NOTE: the external RAM relay cache is wired via the router's --cache-be FLAG
+# (compose sets it from SR_CACHE_BE when the `cache` profile is on — see
+# docker-compose.yml / `make up-cache`), NOT from this file. No edit needed here.
 
 endpoints:
   - listen-address: "0.0.0.0:3360"

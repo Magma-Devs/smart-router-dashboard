@@ -83,6 +83,13 @@ services:
       # HTTP-only upstreams boot cleanly; wss subscriptions still work where
       # a wss url is configured.
       - "--skip-websocket-verification"
+      # External relay cache address. Empty by default (router runs its
+      # in-process cache); `make up-cache` / the `cache` profile set
+      # SR_CACHE_BE=cache:20100 to route reads through the sidecar. An empty
+      # value is a no-op (router only inits the cache when the addr is non-empty)
+      # and an unreachable addr is logged, not fatal.
+      - "--cache-be"
+      - "${SR_CACHE_BE:-}"
     volumes:
       - ${SR_CONFIG_HOST:-./dev-config/values.yml}:/smart-router/values.yml:ro
     ports:
