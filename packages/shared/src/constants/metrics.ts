@@ -84,6 +84,10 @@ export const OPTIONAL_METRICS = {
   // JSON-RPC error object (counts as SUCCESS on requests_success_total).
   nodeErrorsTotal: "smartrouter_node_errors_total",
   protocolErrorsTotal: "smartrouter_protocol_errors_total",
+  // CLASSIFIED error counter — ⚠ labels {chain_id, error_category, error_name,
+  // retryable}: chain_id (NOT spec), category ∈ {internal, external}, bounded
+  // error_name codes (e.g. PROTOCOL_CONNECTION_RESET). No provider label.
+  errorsClassifiedTotal: "smartrouter_errors_total",
   cacheTotalHits: "cache_total_hits",
   cacheTotalMisses: "cache_total_misses",
   retriesTotal: "smartrouter_retries_total",

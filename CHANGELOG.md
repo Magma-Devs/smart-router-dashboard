@@ -47,9 +47,12 @@ controlled ground-truth experiment (exact known load + idle fingerprint).
 
 ### Added
 
-- **Error-class breakdown** — node / protocol / transport pivots, per-hotspot
-  node-errors-by-method, and a node-vs-transport split (+ per-method list and
-  cross-validation agree/disagree rate) in the upstream deep-dive.
+- **Error-class breakdown** — real code / category / retryability pivots from
+  the classified `smartrouter_errors_total{chain_id, error_category,
+  error_name, retryable}` family (node/protocol/transport class split as the
+  fallback), per-hotspot node-errors-by-method, and a node-vs-transport split
+  (+ per-method list and cross-validation agree/disagree rate) in the
+  upstream deep-dive.
 - **Per-method P95** — the router histogram's method label is named
   `function`; the "no method label" design-doc gap was wrong.
 - **Try-now relay badges** — `Lava-Retries` retry indicator and a
