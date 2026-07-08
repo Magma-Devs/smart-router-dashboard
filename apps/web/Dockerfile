@@ -27,6 +27,11 @@ COPY --from=builder /app/apps/web/public apps/web/public
 
 ENV NODE_ENV=production
 ENV PORT=3000
+# Next standalone server.js defaults to HOSTNAME=localhost, which resolves to
+# ::1 (IPv6) in this image — so the IPv4 healthcheck below (127.0.0.1) gets
+# "connection refused" and the container reports unhealthy even while serving
+# fine on the published port. Bind all interfaces so both paths work.
+ENV HOSTNAME=0.0.0.0
 USER node
 EXPOSE 3000
 # /api/config always answers 200 regardless of AUTH_MODE (with auth enabled,
