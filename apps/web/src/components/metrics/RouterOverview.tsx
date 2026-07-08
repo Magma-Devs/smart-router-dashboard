@@ -9,9 +9,10 @@
  * design's initial order (down chains first, then by volume). */
 
 import { Fragment } from "react";
-import type { ChainMetrics, MetricWindow, RouterTopology } from "@sr/shared";
+import { buildChainMetaByIndex, type ChainMetrics, type MetricWindow, type RouterTopology } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { Tip } from "@/components/gateway/Tip";
+import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { ThCol, useSort } from "@/components/gateway/SortTable";
 import { TT } from "@/lib/tooltips";
 import { fmtNum } from "@/lib/format";
@@ -94,7 +95,16 @@ export function RouterOverview({ onChainClick, chainFilter, timeWindow }: {
     .sort((a, b) => (a.status - b.status) || (b.requests - a.requests))
     .map((r, i) => ({ ...r, natural: i }));
 
-  const routers = base.filter((r) => (net === "all" || r.network === net) && (!chainFilter || r.spec === chainFilter));
+  // Classify mainnet/testnet from the SPEC metadata — r.network is the chain
+  // slug (eth1/solana/…), never "mainnet"/"testnet", so comparing against it
+  // matched zero rows.
+  const routers = base.filter((r) => {
+    if (net !== "all") {
+      const isMainnet = buildChainMetaByIndex(r.spec).mainnet;
+      if (net === "mainnet" ? !isMainnet : isMainnet) return false;
+    }
+    return !chainFilter || r.spec === chainFilter;
+  });
   const { sorted: sortedRouters, sort, onSort } = useSort<RoRow>(routers, { key: "natural", dir: "asc" });
 
   const srColor = uptimeColor;
@@ -137,7 +147,7 @@ export function RouterOverview({ onChainClick, chainFilter, timeWindow }: {
                 title={r.name + " — click for chain health"}>
                 <td>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <span style={{ width: 9, height: 9, borderRadius: 3, background: r.color || "#888", flexShrink: 0 }} />
+                    <ChainBadge spec={r.spec} size={22} />
                     <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         <span style={{ fontSize: 13, fontWeight: 600 }}>{r.name}</span>
