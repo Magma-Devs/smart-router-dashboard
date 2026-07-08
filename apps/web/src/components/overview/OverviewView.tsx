@@ -8,7 +8,6 @@
 import { useMemo, useState } from "react";
 import {
   buildChainMetaByIndex,
-  type MetricWindow,
   type OverviewData,
   type TimePoint,
 } from "@sr/shared";

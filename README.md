@@ -108,11 +108,17 @@ ADMIN_EMAIL=you@example.com ADMIN_PASSWORD=change-me \
 make dev            # hot-reload docker stack (api tsx watch · web next dev · shared tsc --watch)
 
 # or on the host (Node 24 + pnpm 10, needs a Prometheus at PROMETHEUS_URL):
+cp .env.example .env   # optional — every var has a compose default
 pnpm install
 pnpm --filter @sr/shared build && pnpm --filter @sr/db build
 pnpm dev            # api :8000, web :3000
 pnpm -r typecheck && pnpm -r test
 ```
+
+The repo pins Node via [`.nvmrc`](./.nvmrc) (`nvm use`) and ships an
+[`.env.example`](./.env.example) documenting every runtime knob — copy it to
+`.env` for host dev, or read it as the reference for self-hosting one published
+image against your own router.
 
 Project structure:
 
@@ -129,6 +135,26 @@ docker-compose.yml / docker-compose.dev.yml / Makefile
 ```
 
 See [`CLAUDE.md`](./CLAUDE.md) for the endpoint reference, env vars, and gotchas.
+
+## Testing & CI
+
+```bash
+pnpm lint            # eslint (flat config) across the whole monorepo
+pnpm -r typecheck    # strict TS across every package
+pnpm -r test         # vitest — api routes, PromQL builders, config parser, auth, chain catalog
+pnpm format          # prettier --write (format:check to verify only)
+```
+
+Every push and PR to `main` runs the [Quality Gate](.github/workflows/quality-gate.yml):
+lint + typecheck + the full vitest suite, plus a **chain-map drift check** that
+regenerates the chain catalog from the live [lava-specs](https://github.com/Magma-Devs/lava-specs)
+repo and fails if the committed map is stale. Renovate-style dependency bumps
+arrive via [Dependabot](.github/dependabot.yml) (npm + GitHub Actions, weekly).
+
+When `NODE_ENV` isn't `production`, the api also serves an interactive
+**OpenAPI 3.1 explorer at [`/docs`](http://localhost:8000/docs)** (raw spec at
+`/docs/json`) covering every api route — see [`CLAUDE.md`](./CLAUDE.md) for the
+full endpoint reference.
 
 ## Releases & images
 

@@ -3,7 +3,7 @@
 import type { CSSProperties } from "react";
 
 const TOKEN_RE =
-  /("(?:\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(?:\s*:)?|\b(?:true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g;
+  /("(?:\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(?:\s*:)?|\b(?:true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)/g;
 
 const ESCAPES: Record<string, string> = {
   "&": "&amp;",
@@ -20,7 +20,7 @@ function escapeHtml(s: string): string {
  *  `dangerouslySetInnerHTML`. */
 export function highlightJson(input: string): string {
   return escapeHtml(input).replace(TOKEN_RE, (match) => {
-    let color = "color:#f9a8d4"; // fallback (shouldn't trigger)
+    let color: string;
     if (/^"/.test(match)) {
       color = /:$/.test(match) ? "color:var(--text)" : "color:var(--ok)";
     } else if (/^(?:true|false)$/.test(match)) {
