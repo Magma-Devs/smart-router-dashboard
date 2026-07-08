@@ -67,6 +67,10 @@ services:
       - "--log-format"
       - "${SR_LOG_FORMAT:-json}"
       - "--skip-websocket-verification"
+      # External relay cache address — empty = in-process cache; the `cache`
+      # profile / `make up-cache` set SR_CACHE_BE=cache:20100. See docker-compose.yml.
+      - "--cache-be"
+      - "${SR_CACHE_BE:-}"
     volumes:
       - ${SR_CONFIG_HOST:-./dev-config/values.yml}:/smart-router/values.yml:ro
     ports:

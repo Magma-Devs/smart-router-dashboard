@@ -62,17 +62,18 @@ docker compose up --build     # dashboard + Prometheus only
 
 The stack can run the smart-router's RAM relay **cache** sidecar (mirrors
 `smart-router/docker/docker-compose.cache.yml`). It's opt-in behind the `cache`
-profile and off by default. To enable it, uncomment `cache-be: "cache:20100"` in
-[`dev-config/values.yml`](./dev-config/values.yml) so the router routes reads
-through it, then:
+profile and off by default:
 
 ```bash
-make up-cache   # or: docker compose --profile router --profile cache up --build
+make up-cache
+# or: SR_CACHE_BE=cache:20100 docker compose --profile router --profile cache up --build
 ```
 
-The cache listens on `:20100` and exposes its own Prometheus metrics on `:5555`
-(scraped as the `smart-router-cache` job). With the profile off, the router uses
-its in-process cache and the `cache-be` line is inert.
+`make up-cache` wires the router to the cache via the `--cache-be` flag
+(`SR_CACHE_BE=cache:20100`) — no `values.yml` edit needed. The cache listens on
+`:20100` and exposes its own Prometheus metrics on `:5555` (scraped as the
+`smart-router-cache` job). With the profile off, `SR_CACHE_BE` is empty and the
+router uses its in-process cache.
 
 ## How it works
 
