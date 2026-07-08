@@ -28,7 +28,10 @@ import {
   qChainDown,
   qScoreExpr,
   qOptimizerScore,
+  qClientRequestsBy,
+  qClientRequestsTotal,
   qConsistencyCaught,
+  qMethodLatencyQuantile,
   qCsm,
   qLatencyDistribution,
   qPresence,
@@ -180,20 +183,21 @@ describe("offset (prior-window) variants", () => {
 });
 
 describe("derived error math", () => {
-  it("qErrorCount is clamp_min(total − success, 0)", () => {
+  it("qErrorCount is round(clamp_min(total − success, 0)) — whole errors", () => {
     expect(qErrorCount("ETH1", "1d")).toBe(
-      'clamp_min(sum(increase(smartrouter_requests_total{spec="ETH1"}[86400s])) - sum(increase(smartrouter_requests_success_total{spec="ETH1"}[86400s])), 0)',
+      'round(clamp_min(sum(increase(smartrouter_requests_total{spec="ETH1"}[86400s])) - sum(increase(smartrouter_requests_success_total{spec="ETH1"}[86400s])), 0))',
     );
   });
   it("qErrorsBy keeps all-error groups via `or … * 0`", () => {
     const q = qErrorsBy("provider_address", "1d");
     expect(q).toContain("sum by (provider_address)");
     expect(q).toContain("or sum by (provider_address) (increase(smartrouter_requests_total[86400s])) * 0");
-    expect(q.startsWith("clamp_min(")).toBe(true);
+    // round(): error counts are whole events, never increase() fractions.
+    expect(q.startsWith("round(clamp_min(")).toBe(true);
   });
-  it("qRequestsBy groups requests by the label", () => {
+  it("qRequestsBy groups whole-number relays by the label", () => {
     expect(qRequestsBy("method", "1h", "ETH1")).toBe(
-      'sum by (method) (increase(smartrouter_requests_total{spec="ETH1"}[3600s]))',
+      'round(sum by (method) (increase(smartrouter_requests_total{spec="ETH1"}[3600s])))',
     );
   });
 });
@@ -277,9 +281,22 @@ describe("health / lag / score / gauge builders", () => {
       'avg(rpc_optimizer_selection_score{spec="ETH1",score_type="composite"})',
     );
   });
-  it("consistency caught sums the success counter", () => {
+  it("consistency caught reads the FAILED counter — success = checks that passed", () => {
     expect(qConsistencyCaught("1d")).toBe(
-      "sum(increase(smartrouter_consistency_success_total[86400s]))",
+      "round(sum(increase(smartrouter_consistency_failed_total[86400s])))",
+    );
+  });
+  it("client request counts read the latency-histogram _count", () => {
+    expect(qClientRequestsTotal("ETH1", "1d")).toBe(
+      'round(sum(increase(smartrouter_end_to_end_latency_milliseconds_count{spec="ETH1"}[86400s])))',
+    );
+    expect(qClientRequestsBy("function", "1d")).toBe(
+      "round(sum by (function) (increase(smartrouter_end_to_end_latency_milliseconds_count[86400s])))",
+    );
+  });
+  it("per-method p95 groups the histogram by its `function` label", () => {
+    expect(qMethodLatencyQuantile(0.95, "1d", "ETH1")).toBe(
+      'histogram_quantile(0.95, sum by (function, le) (rate(smartrouter_end_to_end_latency_milliseconds_bucket{spec="ETH1"}[86400s])))',
     );
   });
   it("csm gauge probe matches the four csm series", () => {

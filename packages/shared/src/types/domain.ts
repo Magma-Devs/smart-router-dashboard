@@ -249,7 +249,29 @@ export interface UpstreamDetail {
     batch: TimePoint[] | null;
   };
   blockLagSeries: TimePoint[];
-  /** Empty + emitted:false until node/protocol error counters exist. */
+  /** Availability over fixed sub-windows (independent of the page window). */
+  availabilityWindows: {
+    last1h: number | null;
+    last24h: number | null;
+    last7d: number | null;
+  };
+  /**
+   * Whole-number error split over the window. `transport` = derived
+   * relay failures (total − success). `node`/`protocol` come from the
+   * lazily-registered labelled counters — an absent family means the event
+   * never fired since boot, so 0 is the honest value.
+   */
+  errorSplit: { node: number; protocol: number; transport: number };
+  /** Node errors by method for this upstream (real once the family fires). */
+  nodeErrorsByMethod: { method: string; count: number }[];
+  /** Cross-validation participation: how often this upstream agreed. */
+  crossValidation: {
+    agreements: number;
+    disagreements: number;
+    /** disagreements / (agreements + disagreements); null when no rounds. */
+    disagreementRate: number | null;
+  };
+  /** Per-code catalog stays empty — node_errors_total has no `code` label. */
   errorsByCode: UpstreamErrorCode[];
   recentErrors: UpstreamRecentError[];
   emitted: { errorsByCode: boolean; recentErrors: boolean };
@@ -266,6 +288,9 @@ export interface ErrorHotspot {
   requests: number;
   errorRate: number | null;
   trend: TimePoint[];
+  /** Top node-error methods for this (chain × upstream) pair — real once
+   *  node_errors_total fires; empty (never null) before that. */
+  nodeMethods: { method: string; count: number }[];
 }
 
 export interface ErrorPivotRow {
@@ -303,9 +328,23 @@ export interface CrossValidationReport {
   emitted: boolean;
   rounds: number | null;
   consensusRate: number | null;
+  /** Rounds that failed with reason="no-agreement" (true disagreements). */
   disagreements: number | null;
-  byChain: { spec: string; rounds: number; consensusRate: number | null }[];
-  /** consistency_* IS real on this build — surfaced under its own name. */
+  /** Failure breakdown from cross_validation_failures_total{reason}. */
+  failuresByReason: { reason: string; count: number }[];
+  byChain: {
+    spec: string;
+    rounds: number;
+    consensusRate: number | null;
+    disagreements: number;
+  }[];
+  /**
+   * consistency_* IS real on this build. `total` = checks run (reads that
+   * enforced a minimum seen block); `caught` = checks that FAILED
+   * (consistency_failed_total; 0 when the family never fired). NOTE:
+   * consistency_success_total counts checks that PASSED — it must never be
+   * displayed as "stale caught".
+   */
   consistency: { total: number; caught: number };
 }
 
@@ -314,7 +353,8 @@ export interface WebSocketReport {
   activeConnections: number | null;
   subscriptions: number | null;
   subscriptionErrors: number | null;
-  byChain: { spec: string; subscriptions: number; errors: number }[];
+  /** `active` is the live per-chain gauge (ws_connections_active by spec). */
+  byChain: { spec: string; active: number; subscriptions: number; errors: number }[];
 }
 
 /** Read/write/batch rollup for the MethodBreakdown class tabs. */
