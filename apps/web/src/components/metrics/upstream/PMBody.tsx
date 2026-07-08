@@ -17,7 +17,7 @@ import { LineChart, StackedAreaChart, type Layer, type Series } from "@/componen
 import { fmtComma } from "@/lib/format";
 import { nums } from "../bits";
 import { PMPanel } from "./PMPanel";
-import { PMErrorCodes, PMRecentErrors } from "./PMErrors";
+import { PMRecentErrors } from "./PMErrors";
 
 const pct = (pts: TimePoint[] | null | undefined): number[] => nums(pts).map((v) => v * 100);
 
@@ -52,9 +52,14 @@ export function PMBody({ pm, detail, name, timeWindow }: {
   ];
   const latColors = ["#38bdf8", "#3b82f6", "#f97316"];
 
-  /* node vs blockchain split — counters absent on this build ⇒ "—" */
-  const totalErr = pm.errorRate != null ? Math.round((pm.requests || 0) * pm.errorRate) : null;
-  const splitKnown = false; // node_errors_total / protocol_errors_total not emitted yet
+  /* Real error split from the API: node (upstream JSON-RPC error replies),
+   * protocol, transport (derived relay failures). Whole numbers. */
+  const split = detail?.errorSplit ?? null;
+  const totalErr = split ? split.node + split.protocol + split.transport : null;
+  const splitPct = (n: number) =>
+    totalErr && totalErr > 0 ? Math.round((n / totalErr) * 100) : 0;
+  const cvStats = detail?.crossValidation ?? null;
+  const disagreePct = cvStats?.disagreementRate != null ? cvStats.disagreementRate * 100 : null;
 
   /* selection score — real 0..1 gauges → the design's 0–100 axis */
   const score: Series[] = [
@@ -113,49 +118,84 @@ export function PMBody({ pm, detail, name, timeWindow }: {
 
       {/* ════ ROW 3 — ERRORS ════ */}
       <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 12, marginBottom: 12, alignItems: "start" }}>
-        <PMPanel title="Errors · node vs blockchain" tip={"**Node errors** — the endpoint returned a bad answer: 5xx, internal error, or stale data.\n\n**Blockchain errors** — the request failed at the chain/transport layer: connection refused, timeout, or transport failure."}>
+        <PMPanel title="Errors · node vs transport" tip={"**Node errors** — the upstream answered with a JSON-RPC error object (invalid params, method not found, …). These count as transport SUCCESS on the availability figures.\n\n**Transport / routing** — the relay itself failed: connection refused, timeout, rate-limit, cross-validation shortfall.\n\n**Protocol errors** — protocol-level failures the router attributes to this upstream."}>
           <div style={{ display: "flex", flexDirection: "column", gap: 16, padding: "2px 0 4px" }}>
             <div>
               <div className="gw-mono gw-tnum" style={{ fontSize: 30, fontWeight: 700, lineHeight: 1, color: totalErr == null ? "var(--text-4)" : totalErr === 0 ? "var(--ok)" : "var(--text)" }}>{totalErr != null ? fmtComma(totalErr) : "—"}</div>
               <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 6 }}>total errors · {timeWindow}</div>
             </div>
             <div style={{ height: 8, borderRadius: 999, overflow: "hidden", display: "flex", background: "var(--bg-2)" }}>
-              {splitKnown && (
+              {split && totalErr != null && totalErr > 0 && (
                 <>
-                  <div style={{ width: "0%", background: "#f97316" }} />
-                  <div style={{ width: "0%", background: "#fbbf24" }} />
+                  <div style={{ width: `${splitPct(split.node)}%`, background: "#f97316" }} />
+                  <div style={{ width: `${splitPct(split.protocol)}%`, background: "#a78bfa" }} />
+                  <div style={{ width: `${splitPct(split.transport)}%`, background: "#fbbf24" }} />
                 </>
               )}
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ width: 8, height: 8, borderRadius: 2, background: "#f97316", flexShrink: 0 }} />
-                <span style={{ fontSize: 12.5, color: "var(--text-2)", flex: 1 }}>Node errors</span>
-                <span style={{ fontSize: 11, color: "var(--text-4)" }}>—</span>
-                <span className="gw-mono gw-tnum" style={{ fontSize: 13, fontWeight: 600, minWidth: 56, textAlign: "right", color: "var(--text-4)" }}>—</span>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ width: 8, height: 8, borderRadius: 2, background: "#fbbf24", flexShrink: 0 }} />
-                <span style={{ fontSize: 12.5, color: "var(--text-2)", flex: 1 }}>Blockchain errors</span>
-                <span style={{ fontSize: 11, color: "var(--text-4)" }}>—</span>
-                <span className="gw-mono gw-tnum" style={{ fontSize: 13, fontWeight: 600, minWidth: 56, textAlign: "right", color: "var(--text-4)" }}>—</span>
-              </div>
-              <div style={{ fontSize: 11, color: "var(--text-4)", lineHeight: 1.5 }}>Split appears once node_errors_total / protocol_errors_total are emitted by the router.</div>
+              {(
+                [
+                  ["Node errors (JSON-RPC)", "#f97316", split?.node ?? null],
+                  ["Protocol errors", "#a78bfa", split?.protocol ?? null],
+                  ["Transport / routing", "#fbbf24", split?.transport ?? null],
+                ] as const
+              ).map(([lbl, c, v]) => (
+                <div key={lbl} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: 2, background: c, flexShrink: 0 }} />
+                  <span style={{ fontSize: 12.5, color: "var(--text-2)", flex: 1 }}>{lbl}</span>
+                  <span style={{ fontSize: 11, color: "var(--text-4)" }}>{v != null && totalErr ? `${splitPct(v)}%` : ""}</span>
+                  <span className="gw-mono gw-tnum" style={{ fontSize: 13, fontWeight: 600, minWidth: 56, textAlign: "right", color: v == null ? "var(--text-4)" : "var(--text)" }}>{v != null ? fmtComma(v) : "—"}</span>
+                </div>
+              ))}
             </div>
             <div style={{ height: 1, background: "var(--line)" }} />
             <div>
-              <div style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.07em", color: "var(--text-3)", marginBottom: 11 }}>By error code <span style={{ textTransform: "none", letterSpacing: 0, fontWeight: 400, color: "var(--text-4)" }}>— chain / upstream vs router</span></div>
-              <PMErrorCodes codes={detail?.errorsByCode ?? []} />
+              <div style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.07em", color: "var(--text-3)", marginBottom: 11 }}>Node errors by method <span style={{ textTransform: "none", letterSpacing: 0, fontWeight: 400, color: "var(--text-4)" }}>— node_errors_total has no code label, the method split is the real one</span></div>
+              {(detail?.nodeErrorsByMethod?.length ?? 0) > 0 ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {detail!.nodeErrorsByMethod.map((m) => (
+                    <div key={m.method} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span className="gw-mono" style={{ fontSize: 11.5, color: "var(--text-2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{m.method}</span>
+                      <span className="gw-mono gw-tnum" style={{ fontSize: 12, fontWeight: 700 }}>{fmtComma(m.count)}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ fontSize: 12, color: "var(--text-4)" }}>No node errors this window.</div>
+              )}
             </div>
             <button onClick={() => setLogOpen(true)} className="gw-btn gw-btn--ghost" style={{ fontSize: 12, alignSelf: "flex-start", padding: "6px 11px" }}>Recent errors →</button>
           </div>
         </PMPanel>
 
-        <PMPanel title="Disagreement rate" tip={"How often this upstream's responses **conflict with the consensus** of other upstreams on the same request."}
-          right={<span className="gw-mono gw-tnum" style={{ fontSize: 18, fontWeight: 700, color: "var(--text-4)" }}>—</span>}>
-          <div style={{ height: 150, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "var(--text-4)", textAlign: "center", lineHeight: 1.6 }}>
-            Cross-validation is not enabled on this build —<br />per-upstream disagreement appears once cross_validation_* counters fire.
-          </div>
+        <PMPanel title="Disagreement rate" tip={"How often this upstream's responses **conflict with the consensus** of other upstreams on the same cross-validated request (provider agreements vs disagreements)."}
+          right={<span className="gw-mono gw-tnum" style={{ fontSize: 18, fontWeight: 700, color: disagreePct == null ? "var(--text-4)" : disagreePct > 0 ? "var(--warn)" : "var(--ok)" }}>{disagreePct != null ? disagreePct.toFixed(2) + "%" : "—"}</span>}>
+          {cvStats && (cvStats.agreements > 0 || cvStats.disagreements > 0) ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 14, padding: "8px 0" }}>
+              <div style={{ height: 8, borderRadius: 999, overflow: "hidden", display: "flex", background: "var(--bg-2)" }}>
+                <div style={{ width: `${(cvStats.agreements / (cvStats.agreements + cvStats.disagreements)) * 100}%`, background: "var(--ok)" }} />
+                <div style={{ width: `${(cvStats.disagreements / (cvStats.agreements + cvStats.disagreements)) * 100}%`, background: "var(--warn)" }} />
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: 2, background: "var(--ok)", flexShrink: 0 }} />
+                  <span style={{ fontSize: 12.5, color: "var(--text-2)", flex: 1 }}>Agreed with consensus</span>
+                  <span className="gw-mono gw-tnum" style={{ fontSize: 13, fontWeight: 600 }}>{fmtComma(cvStats.agreements)}</span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: 2, background: "var(--warn)", flexShrink: 0 }} />
+                  <span style={{ fontSize: 12.5, color: "var(--text-2)", flex: 1 }}>Disagreed</span>
+                  <span className="gw-mono gw-tnum" style={{ fontSize: 13, fontWeight: 600, color: cvStats.disagreements > 0 ? "var(--warn)" : "var(--text)" }}>{fmtComma(cvStats.disagreements)}</span>
+                </div>
+              </div>
+              <div style={{ fontSize: 11, color: "var(--text-4)", lineHeight: 1.5 }}>Cross-validated rounds this upstream participated in · {timeWindow}</div>
+            </div>
+          ) : (
+            <div style={{ height: 150, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "var(--text-4)", textAlign: "center", lineHeight: 1.6 }}>
+              This upstream hasn&apos;t participated in a cross-validated round this window —<br />rates appear once a cross-validation policy fans a request out to it.
+            </div>
+          )}
         </PMPanel>
       </div>
 

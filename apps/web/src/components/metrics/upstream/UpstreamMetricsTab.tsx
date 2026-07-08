@@ -89,12 +89,21 @@ export function UpstreamMetricsTab({ timeWindow, chainFilter }: {
                   <div className="gw-mono gw-tnum" style={{ fontSize: 26, fontWeight: 700, lineHeight: 1, color: availCol(availPct) }}>{availPct.toFixed(2)}%</div>
                   <div style={{ fontSize: 11, color: "var(--text-3)", margin: "7px 0 9px" }}>success rate · {timeWindow}</div>
                   <div style={{ display: "flex", gap: 6 }}>
-                    {([["1h", "Last 1h"], ["24h", "Last 24h"], ["7d", "Last 7d"]] as const).map(([k, lbl]) => {
+                    {/* Fixed sub-windows from the API (availabilityWindows) —
+                        real values regardless of the page window. */}
+                    {(
+                      [
+                        ["1h", "Last 1h", detail?.availabilityWindows?.last1h],
+                        ["24h", "Last 24h", detail?.availabilityWindows?.last24h],
+                        ["7d", "Last 7d", detail?.availabilityWindows?.last7d],
+                      ] as const
+                    ).map(([k, lbl, v]) => {
                       const on = winMatches(k);
+                      const pct = v != null ? v * 100 : null;
                       return (
                         <div key={k} style={{ flex: 1, padding: "5px 6px", borderRadius: 6, background: on ? "var(--hover)" : "transparent", border: `1px solid ${on ? "var(--line-2)" : "var(--line)"}` }}>
                           <div style={{ fontSize: 9, color: "var(--text-4)", textTransform: "uppercase", letterSpacing: "0.04em", whiteSpace: "nowrap" }}>{lbl}</div>
-                          <div className="gw-mono gw-tnum" style={{ fontSize: 12, fontWeight: 600, marginTop: 2, color: on ? availCol(availPct) : "var(--text-4)" }}>{on ? availPct.toFixed(2) + "%" : "—"}</div>
+                          <div className="gw-mono gw-tnum" style={{ fontSize: 12, fontWeight: 600, marginTop: 2, color: pct != null ? availCol(pct) : "var(--text-4)" }}>{pct != null ? pct.toFixed(2) + "%" : "—"}</div>
                         </div>
                       );
                     })}

@@ -9,10 +9,10 @@
  * fake "recent failure samples"; live there is no per-method sample source,
  * so that section states the gap instead. */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { MethodClassTotals, MethodUsage, MetricWindow } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
-import { ThCol } from "@/components/gateway/SortTable";
+import { ThCol, useSort } from "@/components/gateway/SortTable";
 import { SideSheet, SheetStat } from "@/components/gateway/SideSheet";
 import { fmtNum } from "@/lib/format";
 import { labelStyle } from "@/lib/styles";
@@ -31,9 +31,14 @@ export function MethodBreakdown({ win, chainFilter }: { win: MetricWindow; chain
   const specQ = chainFilter ? `&spec=${encodeURIComponent(chainFilter)}` : "";
   const { data } = useApi<{ methods: MethodUsage[]; classTotals: MethodClassTotals }>(`/api/metrics/methods?window=${win}${specQ}`);
 
-  const rows = [...(data?.methods ?? [])]
-    .filter((m) => cls === "all" || m.class === CLS_TO_CLASS[cls])
-    .sort((a, b) => (b.errorRate ?? -1) - (a.errorRate ?? -1));
+  const filtered = useMemo(
+    () => (data?.methods ?? []).filter((m) => cls === "all" || m.class === CLS_TO_CLASS[cls]),
+    [data, cls],
+  );
+  // Every column click-sortable (same useSort semantics as the other tables);
+  // default keeps the old behaviour — worst error rate first.
+  const { sorted: rows, sort, onSort } = useSort(filtered, { key: "errorRate", dir: "desc" });
+  const handleSort = (key: keyof MethodUsage & string) => { setPage(0); onSort(key); };
   const pageCount = Math.max(1, Math.ceil(rows.length / PER_PAGE));
   const curPage = Math.min(page, pageCount - 1);
   const pageRows = rows.slice(curPage * PER_PAGE, (curPage + 1) * PER_PAGE);
@@ -58,13 +63,25 @@ export function MethodBreakdown({ win, chainFilter }: { win: MetricWindow; chain
             ))}
           </div>
         </div>
-        <table className="gw-table">
+        {/* table-layout: fixed + colgroup — long REST paths (e.g. deep /ibc/…
+            templates) must ellipsize inside the Method column instead of
+            squeezing the numeric columns until "243 ms" wraps and the P95
+            header clips. */}
+        <table className="gw-table" style={{ tableLayout: "fixed", width: "100%" }}>
+          <colgroup>
+            <col />
+            <col style={{ width: 88 }} />
+            <col style={{ width: 110 }} />
+            <col style={{ width: 100 }} />
+            <col style={{ width: 118 }} />
+          </colgroup>
           <thead>
             <tr>
-              <ThCol>Method</ThCol><ThCol>Class</ThCol>
-              <ThCol align="right">Requests</ThCol>
-              <ThCol align="right">P95</ThCol>
-              <ThCol align="right">Error rate</ThCol>
+              <ThCol sortKey="method" sort={sort} onSort={handleSort}>Method</ThCol>
+              <ThCol sortKey="class" sort={sort} onSort={handleSort}>Class</ThCol>
+              <ThCol align="right" sortKey="requests" sort={sort} onSort={handleSort}>Requests</ThCol>
+              <ThCol align="right" sortKey="p95Ms" sort={sort} onSort={handleSort}>P95</ThCol>
+              <ThCol align="right" sortKey="errorRate" sort={sort} onSort={handleSort}>Error rate</ThCol>
             </tr>
           </thead>
           <tbody>
@@ -72,11 +89,13 @@ export function MethodBreakdown({ win, chainFilter }: { win: MetricWindow; chain
               const ep = errPct(m);
               return (
                 <tr key={m.method} style={{ cursor: "pointer" }} onClick={() => setSheet(m)}>
-                  <td><span className="gw-mono" style={{ fontSize: 12 }}>{m.method}</span></td>
+                  <td style={{ maxWidth: 0 }}>
+                    <span className="gw-mono" title={m.method} style={{ fontSize: 12, display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.method}</span>
+                  </td>
                   <td><span className="gw-tag" style={{ fontSize: 10 }}>{m.class}</span></td>
-                  <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{fmtNum(m.requests)}</span></td>
-                  <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{m.p95Ms != null ? Math.round(m.p95Ms) + " ms" : "—"}</span></td>
-                  <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12, color: ep == null ? "var(--text-4)" : ep > 0.5 ? "var(--err)" : ep > 0.1 ? "var(--warn)" : "var(--text-3)" }}>{ep != null ? ep.toFixed(2) + "%" : "—"}</span></td>
+                  <td style={{ textAlign: "right", whiteSpace: "nowrap" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{fmtNum(m.requests)}</span></td>
+                  <td style={{ textAlign: "right", whiteSpace: "nowrap" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{m.p95Ms != null ? Math.round(m.p95Ms) + " ms" : "—"}</span></td>
+                  <td style={{ textAlign: "right", whiteSpace: "nowrap" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12, color: ep == null ? "var(--text-4)" : ep > 0.5 ? "var(--err)" : ep > 0.1 ? "var(--warn)" : "var(--text-3)" }}>{ep != null ? ep.toFixed(2) + "%" : "—"}</span></td>
                 </tr>
               );
             })}

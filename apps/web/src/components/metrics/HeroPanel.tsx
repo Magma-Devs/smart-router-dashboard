@@ -56,7 +56,7 @@ export function HeroPanel({ tw, spec }: { tw: MetricWindow; spec?: string | null
       label: "Effective read p95", tipKey: "effReadP95", color: "var(--ok)",
       note: data?.emitted.cache ? "includes cache-served reads" : "no cache on this build — node read p95" },
     { display: stale != null ? fmtNum(stale) : "—", label: "stale responses caught", tipKey: "staleDetected", color: "var(--warn)",
-      note: "stale head replaced" },
+      note: stale === 0 ? "no stale responses — all consistency checks passed" : "consistency check failed — response behind seen head" },
   ];
 
   return (

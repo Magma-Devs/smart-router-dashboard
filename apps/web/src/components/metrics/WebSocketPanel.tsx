@@ -11,7 +11,7 @@ import { Tip } from "@/components/gateway/Tip";
 import { ThCol } from "@/components/gateway/SortTable";
 import { fmtComma, fmtNum } from "@/lib/format";
 
-const WS_TIP = "Long-lived WebSocket activity.\n\n**Active connections** is a live count — callers connected right now.\n\n**Subscriptions** and **subscription errors** are totals over the selected window; error rate = errors ÷ subscriptions.";
+const WS_TIP = "Long-lived WebSocket activity.\n\n**Active connections** is a live count — callers connected right now.\n\n**Subscriptions** and **subscription errors** are lifetime totals since the router started — these counters are too small for windowed math (a window misses the counter's very first increment). Error rate = errors ÷ subscriptions.";
 
 export function WebSocketPanel({ tw }: { tw: MetricWindow }) {
   const { data: ws } = useApi<WebSocketReport>(`/api/metrics/websocket?window=${tw}`);
@@ -38,7 +38,7 @@ export function WebSocketPanel({ tw }: { tw: MetricWindow }) {
         </div>
         <div>
           <div className="gw-mono gw-tnum" style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.03em", lineHeight: 1, color: subs == null ? "var(--text-4)" : "var(--text)" }}>{subs != null ? fmtNum(subs) : "—"}</div>
-          <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 8 }}>subscriptions · {tw}</div>
+          <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 8 }}>subscriptions · since router start</div>
         </div>
         <div>
           <div className="gw-mono gw-tnum" style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.03em", lineHeight: 1, color: errRate != null ? errColor(errRate) : "var(--text-4)" }}>{errRate != null ? errRate.toFixed(2) + "%" : "—"}</div>
@@ -68,10 +68,10 @@ export function WebSocketPanel({ tw }: { tw: MetricWindow }) {
                 <td>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <span style={{ width: 8, height: 8, borderRadius: 2, background: meta.color || "#888", flexShrink: 0 }} />
-                    <span style={{ fontSize: 13, fontWeight: 500 }}>{meta.name}</span>
+                    <span style={{ fontSize: 13, fontWeight: 500, whiteSpace: "nowrap" }}>{meta.name}</span>
                   </div>
                 </td>
-                <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12, color: "var(--text-4)" }}>—</span></td>
+                <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12, color: c.active > 0 ? "var(--text-2)" : "var(--text-4)" }}>{fmtNum(c.active)}</span></td>
                 <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12, color: "var(--text-2)" }}>{fmtNum(c.subscriptions)}</span></td>
                 <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12.5, fontWeight: 700, color: errColor(rate) }}>{rate.toFixed(2)}%</span></td>
               </tr>
@@ -79,7 +79,7 @@ export function WebSocketPanel({ tw }: { tw: MetricWindow }) {
           })}
           {ws && ws.byChain.length === 0 && (
             <tr><td colSpan={4} style={{ padding: "20px 12px", textAlign: "center", color: "var(--text-4)", fontSize: 12.5 }}>
-              {ws.emitted ? "No WebSocket subscriptions this window." : "ws_* counters appear once a subscription is opened on this build."}
+              {ws.emitted ? "No WebSocket subscriptions yet." : "ws_* counters appear once a subscription is opened on this build."}
             </td></tr>
           )}
         </tbody>

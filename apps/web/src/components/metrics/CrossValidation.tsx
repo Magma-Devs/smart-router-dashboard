@@ -46,6 +46,17 @@ export function CrossValidation({ tw }: { tw: MetricWindow }) {
         </div>
       </div>
 
+      {/* failure-reason breakdown (real: cross_validation_failures_total{reason}) */}
+      {(cv?.failuresByReason?.length ?? 0) > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: -12, marginBottom: 24 }}>
+          {cv!.failuresByReason.map((f) => (
+            <span key={f.reason} className="gw-mono" style={{ fontSize: 11, padding: "4px 10px", borderRadius: 999, border: "1px solid var(--line)", color: "var(--text-3)" }}>
+              {f.reason}: <strong style={{ color: "var(--text)" }}>{fmtComma(f.count)}</strong>
+            </span>
+          ))}
+        </div>
+      )}
+
       {/* REAL consistency counters — always emitted on this build */}
       <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-3)", marginBottom: 12 }}>
         Consistency checks <span style={{ textTransform: "none", letterSpacing: 0, fontWeight: 400, color: "var(--text-4)" }}>— always-on head-freshness verification (consistency_total)</span>
@@ -59,7 +70,10 @@ export function CrossValidation({ tw }: { tw: MetricWindow }) {
           <div className="gw-mono gw-tnum" style={{ fontSize: 18, fontWeight: 700, letterSpacing: "-0.03em", lineHeight: 1, color: consistency.caught > 0 ? "var(--warn)" : "var(--text)" }}>{fmtComma(consistency.caught)}</div>
           <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 8 }}>stale responses caught</div>
         </div>
-        <div />
+        <div>
+          <div className="gw-mono gw-tnum" style={{ fontSize: 18, fontWeight: 700, letterSpacing: "-0.03em", lineHeight: 1, color: "var(--ok)" }}>{fmtComma(Math.max(0, consistency.total - consistency.caught))}</div>
+          <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 8 }}>checks passed</div>
+        </div>
       </div>
 
       {/* per-chain disagreement table */}
@@ -87,8 +101,8 @@ export function CrossValidation({ tw }: { tw: MetricWindow }) {
                   </div>
                 </td>
                 <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12, color: "var(--text-2)" }}>{fmtComma(p.rounds)}</span></td>
-                <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12, color: "var(--text-4)" }}>—</span></td>
-                <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12.5, fontWeight: 700, color: "var(--text-4)" }}>—</span></td>
+                <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12, color: p.disagreements > 0 ? "var(--warn)" : "var(--text-2)" }}>{fmtComma(p.disagreements)}</span></td>
+                <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12.5, fontWeight: 700, color: p.disagreements > 0 ? "var(--warn)" : "var(--text-2)" }}>{p.rounds > 0 ? ((p.disagreements / p.rounds) * 100).toFixed(2) + "%" : "—"}</span></td>
               </tr>
             );
           })}

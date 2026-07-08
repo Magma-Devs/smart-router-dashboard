@@ -18,9 +18,9 @@ function ErrorTypesView({ rows }: { rows: ErrorPivotRow[] }) {
   if (!rows.length) {
     return (
       <div className="gw-card" style={{ padding: "40px 24px", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
-        <span style={{ fontSize: 13, color: "var(--text-3)" }}>No labelled error codes this window.</span>
+        <span style={{ fontSize: 13, color: "var(--text-3)" }}>No errors this window.</span>
         <span style={{ fontSize: 12, color: "var(--text-4)", maxWidth: 460, lineHeight: 1.6 }}>
-          The error-type catalog appears once the router emits labelled error counters (node_errors_total / protocol_errors_total).
+          Error classes (node / protocol / transport) appear here as soon as any request fails.
         </span>
       </div>
     );
@@ -102,7 +102,9 @@ export function ErrorsBreakdown({ chainFilter, win }: { chainFilter: string | nu
         </>
       )}
 
-      {view === "types" && <ErrorTypesView rows={data?.pivots.code ?? []} />}
+      {/* Real error classes (node / protocol / transport). node_errors_total
+          carries no `code` label, so the class pivot IS the honest catalog. */}
+      {view === "types" && <ErrorTypesView rows={data?.pivots.category ?? []} />}
     </div>
   );
 }
