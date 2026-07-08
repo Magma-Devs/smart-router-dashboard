@@ -103,11 +103,11 @@ export function EndpointDetailSheet({ open, ep, router, onClose, upstreams }: {
               {ep.port === null ? (
                 <div style={{ fontSize: 12, color: "var(--text-3)" }}>No local listen port in the mounted config.</div>
               ) : ep.iface === "websocket" ? (
-                <UrlBlock label="WebSocket" url={epLocalWs(ep.port)} />
+                <UrlBlock label="WebSocket" url={epLocalWs(ep.port, ep.iface)} />
               ) : (
                 <UrlBlock label="HTTP POST" url={epLocalHttp(ep.port)} />
               )}
-              {ep.iface === "jsonrpc" && wsPort !== null && <UrlBlock label="WSS" url={epLocalWs(wsPort)} />}
+              {ep.iface === "jsonrpc" && wsPort !== null && <UrlBlock label="WSS" url={epLocalWs(wsPort, "jsonrpc")} />}
             </div>
 
             {/* Participating upstreams */}

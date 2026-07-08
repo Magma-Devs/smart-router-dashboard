@@ -409,7 +409,13 @@ export function TryMeDrawer({
   onClose,
 }: TryMeDrawerProps) {
   const chain = buildChainMetaByIndex(spec);
-  const flat = useMemo(() => listMethods(cfg), [cfg]);
+  const flat = useMemo(() => {
+    const all = listMethods(cfg);
+    // Subscription methods ride a WebSocket — over plain HTTP they can only
+    // fail ("notifications not supported"), so offer them on -ws variants only.
+    if (iface.endsWith("-ws")) return all;
+    return all.filter((m) => !/(un)?subscribe$/i.test(m.command.method));
+  }, [cfg, iface]);
   /** Tiers in render order that actually have methods on this iface. */
   const availableTiers = useMemo(
     () => TIER_ORDER.filter((t) => (cfg[t]?.length ?? 0) > 0),
@@ -437,6 +443,13 @@ export function TryMeDrawer({
    *  the relay, or "Cached" when the router answered from cache. Null when the
    *  header wasn't readable (e.g. not CORS-exposed by the router). */
   const [servedBy, setServedBy] = useState<string | null>(null);
+  // Per-request relay telemetry from the router's CORS-exposed headers:
+  // Lava-Retries (how many times the relay was retried before succeeding) and
+  // Lava-Cross-Validation-Status/…-Agreeing-Providers.
+  const [retries, setRetries] = useState<number | null>(null);
+  const [cvStatus, setCvStatus] = useState<string | null>(null);
+  const [cvAgreeing, setCvAgreeing] = useState<string | null>(null);
+  const [cvDisagreeing, setCvDisagreeing] = useState<string | null>(null);
   const [wsPhase, setWsPhase] = useState<WsPhase>(null);
   const [codeTab, setCodeTab] = useState<CodeTab>("CLI");
   const [visible, setVisible] = useState(false);
@@ -521,6 +534,10 @@ export function TryMeDrawer({
     setLatencyMs(null);
     setHttpStatus(null);
     setServedBy(null);
+    setRetries(null);
+    setCvStatus(null);
+    setCvAgreeing(null);
+    setCvDisagreeing(null);
     setWsPhase(null);
     const t0 = performance.now();
     try {
@@ -570,6 +587,11 @@ export function TryMeDrawer({
           // header (a real endpoint name, or "Cached" on a cache hit). Readable
           // only when the router CORS-exposes it; null otherwise.
           setServedBy(res.headers.get("Lava-Provider-Address"));
+          const retriesHdr = res.headers.get("Lava-Retries");
+          setRetries(retriesHdr !== null && retriesHdr !== "" ? Number(retriesHdr) || 0 : null);
+          setCvStatus(res.headers.get("Lava-Cross-Validation-Status"));
+          setCvAgreeing(res.headers.get("Lava-Cross-Validation-Agreeing-Providers"));
+          setCvDisagreeing(res.headers.get("Lava-Cross-Validation-Disagreeing-Providers"));
           const errored =
             !res.ok ||
             (typeof json === "object" && json !== null && "error" in json);
@@ -973,6 +995,36 @@ export function TryMeDrawer({
                     >
                       <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg>
                       via {upstreams.join(", ") || servedBy}
+                    </span>
+                  );
+                })()}
+                {/* Retry indicator — the router's Lava-Retries header counts how
+                    many times this relay was retried before the answer you got. */}
+                {retries !== null && retries > 0 && (
+                  <span
+                    className="gw-tag"
+                    title={`This relay was retried ${retries}× before succeeding (Lava-Retries)`}
+                    style={{ fontSize: 11, color: "var(--warn)", background: "rgba(251,191,36,0.10)", borderColor: "rgba(251,191,36,0.25)", display: "inline-flex", alignItems: "center", gap: 4 }}
+                  >
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                    retried {retries}×
+                  </span>
+                )}
+                {/* Cross-validation outcome. The router CORS-exposes only the
+                    agreeing/disagreeing provider lists (plus Lava-Retries) —
+                    NOT Lava-Cross-Validation-Status — so the badge keys on
+                    those; a browser can never read the status header. */}
+                {(cvStatus || cvAgreeing || cvDisagreeing) && (() => {
+                  const disagreed = !!(cvDisagreeing && cvDisagreeing.trim());
+                  const ok = !disagreed && cvStatus !== "failed";
+                  return (
+                    <span
+                      className="gw-tag"
+                      title={`Cross-validated${cvStatus ? ` · ${cvStatus}` : ""}${cvAgreeing ? ` · agreeing: ${cvAgreeing}` : ""}${disagreed ? ` · disagreeing: ${cvDisagreeing}` : ""}`}
+                      style={{ fontSize: 11, color: ok ? "var(--ok)" : "var(--warn)", background: ok ? "rgba(34,197,94,0.10)" : "rgba(251,191,36,0.10)", borderColor: ok ? "rgba(34,197,94,0.25)" : "rgba(251,191,36,0.25)", display: "inline-flex", alignItems: "center", gap: 4, maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                    >
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="10"/></svg>
+                      cross-validated{cvAgreeing ? ` · ${cvAgreeing}` : ""}{disagreed ? ` · disagreed: ${cvDisagreeing}` : ""}
                     </span>
                   );
                 })()}
