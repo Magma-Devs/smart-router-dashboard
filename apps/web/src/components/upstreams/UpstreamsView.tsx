@@ -15,7 +15,6 @@ import {
   type RouterTopology,
 } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
-import { CopyButton } from "@/components/gateway/CopyButton";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { CapabilityTags, capabilitiesOf } from "@/components/gateway/CapabilityTags";
 import { fmtMs, fmtNum, fmtPct } from "@/lib/format";
@@ -192,10 +191,20 @@ export function UpstreamsView() {
                 {/* endpoint rows, one per (chain, upstream endpoint) served */}
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   {pv.chainRows.map((row, i) => {
-                    // Resolve the local listen port for this (router, interface)
-                    // so the row's Try-now dials the right http://localhost:<port>.
+                    // Resolve the local listen port for this (router, interface).
+                    // The router serves WebSocket on the SAME port as the base
+                    // interface (there's no separate ws port), so a ws row dials
+                    // ws://localhost:<port> with the -ws catalog interface — which
+                    // makes the Try-me drawer use its WebSocket transport.
                     const rtr = routers.find((r) => r.id === row.routerId);
+                    const isWsRow = row.urlHost.startsWith("ws://") || row.urlHost.startsWith("wss://") || row.iface.endsWith("-ws");
                     const localPort = rtr?.localPorts[row.iface] ?? null;
+                    const tryIface = isWsRow
+                      ? (row.iface.startsWith("tendermintrpc") ? "tendermintrpc-ws" : "jsonrpc-ws")
+                      : row.iface;
+                    const tryUrl = localPort !== null
+                      ? `${isWsRow ? "ws" : "http"}://localhost:${localPort}`
+                      : null;
                     return (
                       <div key={i} className="gw-row" style={{ gap: 8, padding: "6px 10px", background: "var(--hover)", borderRadius: 6, border: "1px solid var(--line)" }}>
                         {/* Role inline — the chain identity is on the card header,
@@ -217,12 +226,7 @@ export function UpstreamsView() {
                           )}
                         </div>
                         )}
-                        {/* URL + its copy button, grouped so copy sits right next
-                            to the URL rather than at the far edge of the row. */}
-                        <span style={{ display: "flex", alignItems: "center", gap: 6, flex: 1, minWidth: 0 }}>
-                          <span className="gw-mono" style={{ fontSize: 11, color: "var(--text-2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{row.urlHost || "—"}</span>
-                          {row.urlHost ? <CopyButton text={row.urlHost} /> : null}
-                        </span>
+                        <span className="gw-mono" style={{ fontSize: 11, color: "var(--text-2)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{row.urlHost || "—"}</span>
                         {/* interface tag + configured capabilities (addons +
                             derived ws) — real config values, nothing invented.
                             Same IfaceTag component the Endpoints page uses so
@@ -238,13 +242,14 @@ export function UpstreamsView() {
                         {/* Try now — opens the Try-me drawer preselecting THIS
                             interface. Only when the router exposes a local port
                             for it (nothing to dial otherwise). */}
-                        {localPort !== null && (
+                        {tryUrl !== null && (
                           <TryNowButton
                             spec={row.spec}
                             network={row.network}
-                            iface={row.iface}
-                            url={`http://localhost:${localPort}`}
+                            iface={tryIface}
+                            url={tryUrl}
                             hasArchive={pv.chainRows.some((r) => r.spec === row.spec && r.addons.includes("archive"))}
+                            selectUpstream={pv.name}
                             visible
                           />
                         )}

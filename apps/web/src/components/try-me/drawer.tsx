@@ -58,6 +58,10 @@ interface TryMeDrawerProps {
   /** Live health from /api/metrics/chains, when the page has it. The status
    *  tag is omitted entirely when undefined — never a hardcoded status. */
   health?: HealthState;
+  /** When set, pin the relay to THIS provider via the router's
+   *  `lava-select-provider` header (HTTP only — browsers can't set custom
+   *  headers on a WebSocket handshake). Used by the per-upstream Try-now. */
+  selectUpstream?: string;
   onClose: () => void;
 }
 
@@ -351,6 +355,7 @@ export function TryMeDrawer({
   cfg,
   endpointUrl,
   health,
+  selectUpstream,
   onClose,
 }: TryMeDrawerProps) {
   const chain = buildChainMetaByIndex(spec);
@@ -488,16 +493,16 @@ export function TryMeDrawer({
           return;
         }
         case "http": {
-          const init: RequestInit =
-            resolved.httpMethod === "POST"
-              ? {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": resolved.contentType ?? "application/json",
-                  },
-                  body: JSON.stringify(resolved.body),
-                }
-              : {};
+          // Pin the relay to a specific upstream when the caller asked for it
+          // (per-upstream Try-now) — the router routes it to that upstream only.
+          const headers: Record<string, string> = {};
+          if (selectUpstream) headers["lava-select-provider"] = selectUpstream;
+          const init: RequestInit = { headers };
+          if (resolved.httpMethod === "POST") {
+            init.method = "POST";
+            headers["Content-Type"] = resolved.contentType ?? "application/json";
+            init.body = JSON.stringify(resolved.body);
+          }
           const res = await fetch(resolved.url, init);
           const dt = Math.round(performance.now() - t0);
           let json: unknown;
