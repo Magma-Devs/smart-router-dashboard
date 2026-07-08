@@ -46,24 +46,54 @@ export const IFACE_LABEL: Record<CatalogInterface, string> = {
   "grpc-web": "gRPC-Web",
 };
 
-/** Curated common methods per interface — the generated catalog can list 50+
- *  methods, so the Command dropdown defaults to this short set (like
- *  lava-connect's hand-picked list) with a "show all" escape hatch. Matched by
- *  the method name; anything not listed is hidden until the user expands. */
-const COMMON_METHODS: Partial<Record<CatalogInterface, string[]>> = {
-  jsonrpc: [
-    "eth_blockNumber", "eth_chainId", "eth_gasPrice", "eth_getBalance",
-    "net_version", "eth_syncing", "eth_getBlockByNumber", "eth_call",
-    // Solana jsonrpc common set (same interface key)
-    "getLatestBlockhash", "getSlot", "getBlockHeight", "getEpochInfo", "getHealth", "getVersion",
+/** Curated common methods per interface, method → friendly label. The generated
+ *  catalog lists 50+ methods with no friendly names, so the Command dropdown
+ *  defaults to this short curated set (labels like lava-connect: "Block Number ·
+ *  eth_blockNumber") with a "show all" escape hatch. Order here is the display
+ *  order; anything not listed is hidden until the user expands. */
+const COMMON_METHODS: Partial<Record<CatalogInterface, Record<string, string>>> = {
+  jsonrpc: {
+    // EVM
+    eth_blockNumber: "Block Number",
+    eth_chainId: "Chain ID",
+    eth_gasPrice: "Gas Price",
+    eth_getBalance: "Get Balance",
+    eth_getBlockByNumber: "Get Block",
+    eth_getTransactionByHash: "Get Transaction",
+    eth_getTransactionReceipt: "Get Receipt",
+    eth_call: "Call",
+    net_version: "Network Version",
+    eth_syncing: "Syncing Status",
+    // Solana
+    getLatestBlockhash: "Latest Blockhash",
+    getSlot: "Slot",
+    getBlockHeight: "Block Height",
+    getEpochInfo: "Epoch Info",
+    getHealth: "Health",
+    getVersion: "Version",
     // Bitcoin
-    "getblockcount", "getblockchaininfo", "getbestblockhash",
-    // Hyperliquid / misc
-    "eth_getTransactionByHash", "eth_getTransactionReceipt",
-  ],
-  rest: ["/", "/cosmos/base/tendermint/v1beta1/blocks/latest", "/blocks/by_height/{height}"],
-  tendermintrpc: ["status", "health", "block", "abci_info", "net_info"],
-  grpc: ["cosmos.base.tendermint.v1beta1.Service/GetLatestBlock", "cosmos.base.tendermint.v1beta1.Service/GetNodeInfo"],
+    getblockcount: "Block Count",
+    getblockchaininfo: "Blockchain Info",
+    getbestblockhash: "Best Block Hash",
+  },
+  rest: {
+    "/cosmos/base/tendermint/v1beta1/blocks/latest": "Latest Block",
+    "/cosmos/base/tendermint/v1beta1/node_info": "Node Info",
+    "/cosmos/base/tendermint/v1beta1/syncing": "Syncing",
+    "/blocks/by_height/{height}": "Block by Height",
+    "/": "Ledger Info",
+  },
+  tendermintrpc: {
+    status: "Status",
+    health: "Health",
+    block: "Block",
+    abci_info: "ABCI Info",
+    net_info: "Net Info",
+  },
+  grpc: {
+    "cosmos.base.tendermint.v1beta1.Service/GetLatestBlock": "Latest Block",
+    "cosmos.base.tendermint.v1beta1.Service/GetNodeInfo": "Node Info",
+  },
 };
 
 interface TryMeDrawerProps {
@@ -766,30 +796,37 @@ export function TryMeDrawer({
             >
               {(() => {
                 const allCmds = cfg[selectedTier] ?? [];
-                const common = COMMON_METHODS[iface];
+                const labels = COMMON_METHODS[iface];
                 // Keep original indices so keyOf(selectedTier, i) stays valid.
                 const withIdx = allCmds.map((cmd, i) => ({ cmd, i }));
-                const curated = common
-                  ? withIdx.filter(({ cmd }) => common.includes(cmd.method))
+                // Curated set, ordered by the COMMON_METHODS map, each with a
+                // friendly label. Fall back to the raw list when no curation
+                // exists for this interface.
+                const curated = labels
+                  ? Object.keys(labels)
+                      .map((m) => withIdx.find(({ cmd }) => cmd.method === m))
+                      .filter((x): x is { cmd: (typeof withIdx)[number]["cmd"]; i: number } => !!x)
                   : withIdx;
-                // Always keep the current selection visible even if not curated.
                 const shown = showAllCmds || curated.length === 0
                   ? withIdx
                   : (curated.some(({ i }) => keyOf(selectedTier, i) === selKey)
                       ? curated
                       : [...withIdx.filter(({ i }) => keyOf(selectedTier, i) === selKey), ...curated]);
-                return shown.map(({ cmd, i }) => (
-                  <option key={i} value={keyOf(selectedTier, i)}>
-                    {cmd.label === cmd.method ? cmd.label : `${cmd.label} · ${cmd.method}`}
-                  </option>
-                ));
+                return shown.map(({ cmd, i }) => {
+                  const friendly = labels?.[cmd.method] ?? (cmd.label !== cmd.method ? cmd.label : null);
+                  return (
+                    <option key={i} value={keyOf(selectedTier, i)}>
+                      {friendly ? `${friendly} · ${cmd.method}` : cmd.method}
+                    </option>
+                  );
+                });
               })()}
             </select>
             {(() => {
               const allCmds = cfg[selectedTier] ?? [];
-              const common = COMMON_METHODS[iface];
-              const curatedCount = common ? allCmds.filter((c) => common.includes(c.method)).length : allCmds.length;
-              if (!common || allCmds.length <= curatedCount) return null;
+              const labels = COMMON_METHODS[iface];
+              const curatedCount = labels ? allCmds.filter((c) => labels[c.method]).length : allCmds.length;
+              if (!labels || allCmds.length <= curatedCount) return null;
               return (
                 <button
                   onClick={() => setShowAllCmds((s) => !s)}
