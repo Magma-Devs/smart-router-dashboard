@@ -56,6 +56,35 @@
 
 html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: var(--font-ui); font-size: 14px; line-height: 1.5; letter-spacing: -0.005em; }
 * { box-sizing: border-box; }
+
+/* Themed scrollbars — track/thumb pull from the design tokens so they follow
+   the light/dark theme (and any future token override). Firefox uses the
+   standard scrollbar-* props; Chrome/Safari/Edge use the ::-webkit pseudos. */
+* {
+  scrollbar-width: thin;                       /* Firefox */
+  scrollbar-color: var(--line-2) transparent;  /* thumb, track */
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--line-2);
+  border-radius: 8px;
+  /* transparent border keeps the thumb visually inset from the track edge */
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-4);
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
 .gw-mono { font-family: var(--font-mono); font-feature-settings: "tnum"; letter-spacing: -0.01em; }
 .gw-tnum { font-variant-numeric: tabular-nums; }
 
