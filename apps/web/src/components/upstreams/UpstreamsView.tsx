@@ -24,6 +24,7 @@ import { UpstreamLogo } from "@/components/upstreams/UpstreamLogo";
 import { StatusDot, pvStatLabel } from "@/components/upstreams/bits";
 import { buildUpstreamRows } from "@/components/upstreams/catalog";
 import { IfaceTag } from "@/components/endpoints/bits";
+import { TryNowButton } from "@/components/try-me/try-now-button";
 
 /* ─────────────────────────────────────────────
    Stat strip (design: intentionally empty)
@@ -191,6 +192,10 @@ export function UpstreamsView() {
                 {/* endpoint rows, one per (chain, upstream endpoint) served */}
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   {pv.chainRows.map((row, i) => {
+                    // Resolve the local listen port for this (router, interface)
+                    // so the row's Try-now dials the right http://localhost:<port>.
+                    const rtr = routers.find((r) => r.id === row.routerId);
+                    const localPort = rtr?.localPorts[row.iface] ?? null;
                     return (
                       <div key={i} className="gw-row" style={{ gap: 8, padding: "6px 10px", background: "var(--hover)", borderRadius: 6, border: "1px solid var(--line)" }}>
                         {/* Role inline — the chain identity is on the card header,
@@ -212,7 +217,12 @@ export function UpstreamsView() {
                           )}
                         </div>
                         )}
-                        <span className="gw-mono" style={{ fontSize: 11, color: "var(--text-2)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{row.urlHost || "—"}</span>
+                        {/* URL + its copy button, grouped so copy sits right next
+                            to the URL rather than at the far edge of the row. */}
+                        <span style={{ display: "flex", alignItems: "center", gap: 6, flex: 1, minWidth: 0 }}>
+                          <span className="gw-mono" style={{ fontSize: 11, color: "var(--text-2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{row.urlHost || "—"}</span>
+                          {row.urlHost ? <CopyButton text={row.urlHost} /> : null}
+                        </span>
                         {/* interface tag + configured capabilities (addons +
                             derived ws) — real config values, nothing invented.
                             Same IfaceTag component the Endpoints page uses so
@@ -225,7 +235,19 @@ export function UpstreamsView() {
                             hasWs: row.urlHost.startsWith("ws://") || row.urlHost.startsWith("wss://") || row.iface.endsWith("-ws"),
                           })}
                         />
-                        {row.urlHost ? <CopyButton text={row.urlHost} /> : null}
+                        {/* Try now — opens the Try-me drawer preselecting THIS
+                            interface. Only when the router exposes a local port
+                            for it (nothing to dial otherwise). */}
+                        {localPort !== null && (
+                          <TryNowButton
+                            spec={row.spec}
+                            network={row.network}
+                            iface={row.iface}
+                            url={`http://localhost:${localPort}`}
+                            hasArchive={pv.chainRows.some((r) => r.spec === row.spec && r.addons.includes("archive"))}
+                            visible
+                          />
+                        )}
                       </div>
                     );
                   })}
