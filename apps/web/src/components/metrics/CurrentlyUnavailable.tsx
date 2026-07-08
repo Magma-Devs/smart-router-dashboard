@@ -8,6 +8,7 @@
 
 import type { UnavailableChain } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
+import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { fmtSince } from "./bits";
 
 export function CurrentlyUnavailable() {
@@ -23,7 +24,7 @@ export function CurrentlyUnavailable() {
       <div style={{ display: "flex", flexDirection: "column" }}>
         {rows.map((r, i) => (
           <div key={r.spec} style={{ display: "flex", alignItems: "center", gap: 14, padding: "13px 16px", borderBottom: i < rows.length - 1 ? "1px solid var(--line)" : "none" }}>
-            <span style={{ width: 9, height: 9, borderRadius: 3, background: r.color || "#888", flexShrink: 0 }} />
+            <ChainBadge spec={r.spec} size={18} />
             <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 150 }}>
               <span style={{ fontSize: 13, fontWeight: 600 }}>{r.name}</span>
               <span style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", padding: "1px 6px", borderRadius: 4, color: "var(--err)", background: "rgba(239,68,68,0.12)" }}>Unavailable</span>
