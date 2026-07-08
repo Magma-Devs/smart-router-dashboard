@@ -11,6 +11,7 @@
  *    config), as is the delete confirmation's commit. */
 
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import type { RouterTopology } from "@sr/shared";
 import { buildChainMetaByIndex } from "@sr/shared";
 import { labelStyle } from "@/lib/styles";
@@ -65,7 +66,10 @@ export function EndpointDetailSheet({ open, ep, router, onClose, upstreams }: {
   const statusTagCls = (s: string | undefined) =>
     "gw-tag" + (s === "healthy" ? " gw-tag--ok" : s === "degraded" ? " gw-tag--warn" : "");
 
-  return (
+  // Portal to <body>: the page uses a `transform` (fade-in) ancestor, which
+  // makes position:fixed resolve against it instead of the viewport — so an
+  // un-portaled backdrop wouldn't cover the shell or truly center.
+  const sheet = (
     <div className="gw-sheet-bg gw-sheet-bg--center" onClick={onClose}>
       <div className="gw-sheet gw-sheet--wide gw-sheet--center" onClick={(e) => e.stopPropagation()}>
 
@@ -247,4 +251,6 @@ export function EndpointDetailSheet({ open, ep, router, onClose, upstreams }: {
       </div>
     </div>
   );
+
+  return createPortal(sheet, document.body);
 }
