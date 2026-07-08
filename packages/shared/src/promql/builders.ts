@@ -36,7 +36,14 @@ export function qRequestsTotal(
   return `sum(increase(${ROUTER_METRICS.requestsTotal}${selector({ spec })}[${rangeFor(window)}]${off(offset)}))`;
 }
 
-/** success / total over the window → availability ratio (0..1). */
+/** success / total over the window → availability ratio (0..1).
+ *
+ * clamp_max(…, 1): increase()/rate() EXTRAPOLATE to the window edges, so over a
+ * counter younger than the window the numerator and denominator are projected
+ * independently and their ratio can drift above 1.0 (e.g. a 103% "success
+ * rate"). Ratios here are definitionally ≤ 1, so clamp it — the artifact is
+ * worst right after a fresh router boot and vanishes once there's a full window
+ * of history, but the clamp keeps the KPI honest at every age. */
 export function qAvailability(
   spec?: string,
   window: MetricWindow = "1d",
@@ -45,7 +52,7 @@ export function qAvailability(
   const sel = selector({ spec });
   const r = rangeFor(window);
   const o = off(offset);
-  return `sum(increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${r}]${o})) / sum(increase(${ROUTER_METRICS.requestsTotal}${sel}[${r}]${o}))`;
+  return `clamp_max(sum(increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${r}]${o})) / sum(increase(${ROUTER_METRICS.requestsTotal}${sel}[${r}]${o})), 1)`;
 }
 
 /** 1 - success/total → error rate (0..1). */
@@ -142,10 +149,11 @@ export function qRequestsBy(
 
 /* ── Series expressions (for query_range; [step] = per-bucket lookback) ──── */
 
-/** Availability ratio series (success/total rate over each step bucket). */
+/** Availability ratio series (success/total rate over each step bucket).
+ *  clamp_max(…, 1): same rate()-extrapolation guard as qAvailability. */
 export function qAvailabilitySeriesExpr(step: string, spec?: string): string {
   const sel = selector({ spec });
-  return `sum(rate(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${step}])) / sum(rate(${ROUTER_METRICS.requestsTotal}${sel}[${step}]))`;
+  return `clamp_max(sum(rate(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${step}])) / sum(rate(${ROUTER_METRICS.requestsTotal}${sel}[${step}])), 1)`;
 }
 
 /** Error-rate series (1 − availability). */

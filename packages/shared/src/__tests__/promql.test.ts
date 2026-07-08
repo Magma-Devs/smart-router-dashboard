@@ -69,9 +69,12 @@ describe("query builders use the real metric names", () => {
       'sum(increase(smartrouter_requests_total{spec="ETH1"}[86400s]))',
     );
   });
-  it("qAvailability is success/total", () => {
+  it("qAvailability is success/total, clamped to ≤ 1", () => {
     expect(qAvailability("ETH1", "1h")).toContain("smartrouter_requests_success_total");
     expect(qAvailability("ETH1", "1h")).toContain("smartrouter_requests_total");
+    // clamp_max(…, 1): increase() extrapolation can push the ratio > 1 on a
+    // young counter, which would render as a >100% success rate.
+    expect(qAvailability("ETH1", "1h")).toContain("clamp_max(");
   });
   it("qErrorRate is 1 - availability", () => {
     expect(qErrorRate("ETH1", "1h").startsWith("1 - (")).toBe(true);
@@ -196,9 +199,11 @@ describe("derived error math", () => {
 });
 
 describe("series expressions", () => {
-  it("availability series is a rate ratio over the step", () => {
+  it("availability series is a rate ratio over the step, clamped to ≤ 1", () => {
+    // clamp_max(…, 1) guards against rate() extrapolation pushing the ratio
+    // above 1 on a counter younger than the step window (the >100% artifact).
     expect(qAvailabilitySeriesExpr("10m", "ETH1")).toBe(
-      'sum(rate(smartrouter_requests_success_total{spec="ETH1"}[10m])) / sum(rate(smartrouter_requests_total{spec="ETH1"}[10m]))',
+      'clamp_max(sum(rate(smartrouter_requests_success_total{spec="ETH1"}[10m])) / sum(rate(smartrouter_requests_total{spec="ETH1"}[10m])), 1)',
     );
   });
   it("error-rate series is 1 − availability series", () => {

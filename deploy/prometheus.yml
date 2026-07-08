@@ -1,10 +1,14 @@
 # Prometheus scrape config for the bundled dashboard stack.
 #
-# Two static jobs cover both run modes; a down target is harmless (every
-# dashboard PromQL aggregates with sum()/max(), so the job label is inert):
-#   - smart-router          → the compose-bundled router (profile "router")
-#   - smart-router-external → a router already running on the host's :7779
-#     (reached via host.docker.internal, mapped by extra_hosts in compose)
+# ONE target on purpose. Both run modes reach the router at the SAME endpoint:
+#   - `make up` (bundled `router` profile) publishes 7779:7779 to the host, so
+#     host.docker.internal:7779 hits it.
+#   - `docker compose up` (dashboard only) expects a router already on the
+#     host's :7779 — also host.docker.internal:7779.
+# Scraping BOTH router:7779 and host.docker.internal:7779 (the old config) meant
+# scraping the same process twice; sum() then added both copies, inflating every
+# series — e.g. a success rate above 100%. host.docker.internal:7779 covers both
+# modes with no double-count.
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
@@ -13,9 +17,12 @@ scrape_configs:
   - job_name: smart-router
     metrics_path: /metrics
     static_configs:
-      - targets: ["router:7779"]
+      - targets: ["host.docker.internal:7779"]
 
-  - job_name: smart-router-external
+  # The cache sidecar's own metrics (--profile cache; distinct process from the
+  # router, so this is NOT a double-scrape). Down when the cache is off, which
+  # is harmless — nothing queries it unless the cache is running.
+  - job_name: smart-router-cache
     metrics_path: /metrics
     static_configs:
-      - targets: ["host.docker.internal:7779"]
+      - targets: ["host.docker.internal:5555"]
