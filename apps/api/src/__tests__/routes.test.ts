@@ -39,8 +39,17 @@ function mockPrometheus(): void {
       result = [{ metric: {}, value: [1, "5"] }];
     } else if (query.includes("consistency_total")) {
       result = [{ metric: {}, value: [1, "7"] }];
+    } else if (query.includes("sum by (function, le)")) {
+      // Per-method p95 — the histogram's method label is named `function`.
+      result = [{ metric: { function: "eth_blockNumber" }, value: [1, "42"] }];
     } else if (query.includes("histogram_quantile")) {
       result = [{ metric: {}, value: [1, "42"] }];
+    } else if (query.includes("sum by (function)")) {
+      // Client-scoped per-method requests (histogram _count by function).
+      result = [{ metric: { function: "eth_blockNumber" }, value: [1, "100"] }];
+    } else if (query.includes("smartrouter_end_to_end_latency_milliseconds_count")) {
+      // Client-scoped request totals (one increment per client request).
+      result = [{ metric: {}, value: [1, "1234"] }];
     } else if (query.includes("selection_score")) {
       result = [
         {
@@ -113,7 +122,9 @@ describe("api routes", () => {
     const body = res.json();
     expect(body.requestsServed).toEqual({ value: 1234, prior: 1234 });
     expect(body.successRate.value).toBeCloseTo(0.97);
-    expect(body.staleCaught.value).toBe(5);
+    // consistency_failed_total is absent in the mock ⇒ zero stale responses
+    // caught (NOT consistency_success_total — that counts checks that PASSED).
+    expect(body.staleCaught).toEqual({ value: 0, prior: 0 });
     // retries/cache families are absent on this build ⇒ null, flagged, never invented.
     expect(body.retriesRecovered).toEqual({ value: null, prior: null });
     expect(body.cacheOffloadPct).toEqual({ value: null, prior: null });
@@ -157,10 +168,10 @@ describe("api routes", () => {
     const body = res.json();
     expect(Array.isArray(body.methods)).toBe(true);
     expect(body.methods[0]).toMatchObject({ method: "eth_blockNumber", class: "read" });
-    // Per-method error rate is real derived math: 3 errors / 100 requests.
+    // Per-method error rate is real derived math: 3 errors / 100 relays.
     expect(body.methods[0].errorRate).toBeCloseTo(0.03);
-    // p95 must stay null — the histogram has no method label on this build.
-    expect(body.methods[0].p95Ms).toBeNull();
+    // Per-method p95 is REAL — the histogram's method label is named `function`.
+    expect(body.methods[0].p95Ms).toBe(42);
     expect(body.classTotals.read).toBe(100);
     expect(body.classTotals.write).toBeNull();
     expect(body.classTotals.batch).toBeNull();
@@ -225,9 +236,13 @@ describe("api routes", () => {
     expect(body.total).toBe(3);
     expect(body.pivots.chain[0]).toMatchObject({ key: "ETH1", errors: 3 });
     expect(body.pivots.method[0]).toMatchObject({ key: "eth_blockNumber", errors: 3 });
-    expect(body.pivots.category).toEqual([]);
+    // Error classes are real: node/protocol families absent ⇒ transport only.
+    expect(body.pivots.category).toEqual([
+      { key: "transport", label: "Transport / routing failures", errors: 3, share: 1 },
+    ]);
+    // No `code` label exists on node_errors_total — per-code stays empty.
     expect(body.pivots.code).toEqual([]);
-    expect(body.hotspots[0]).toMatchObject({ spec: "ETH1", upstream: "eth-lava", errors: 3, requests: 100 });
+    expect(body.hotspots[0]).toMatchObject({ spec: "ETH1", upstream: "eth-lava", errors: 3, requests: 100, nodeMethods: [] });
     expect(body.hotspots[0].errorRate).toBeCloseTo(0.03);
     expect(body.families).toEqual({
       requestsFailedTotal: false,
@@ -249,8 +264,11 @@ describe("api routes", () => {
     expect(body.emitted).toBe(false);
     expect(body.rounds).toBeNull();
     expect(body.consensusRate).toBeNull();
-    // consistency_* IS real on this build and must come through.
-    expect(body.consistency).toEqual({ total: 7, caught: 5 });
+    expect(body.failuresByReason).toEqual([]);
+    // consistency_total IS real; caught = consistency_failed_total which is
+    // absent in the mock ⇒ 0 (success_total counts checks that PASSED and
+    // must never surface as "caught").
+    expect(body.consistency).toEqual({ total: 7, caught: 0 });
   });
 
   it("GET /api/metrics/websocket → emitted:false, all nulls until ws_* fires", async () => {

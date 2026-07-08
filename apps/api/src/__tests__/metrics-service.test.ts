@@ -43,9 +43,32 @@ describe("MetricsService query construction (bug regressions)", () => {
   it("prior errors come from the derived error count, offset by the window", async () => {
     const { prom, queries } = capturingProm();
     await new MetricsService(prom).overview("1h");
+    // round(clamp_min(total − success)) — whole errors, offset one window back.
     expect(
-      queries.some((q) => q.startsWith("clamp_min(") && q.includes("offset 3600s")),
+      queries.some((q) => q.includes("clamp_min(") && q.includes("offset 3600s")),
     ).toBe(true);
+  });
+
+  it("requests served / RPS are CLIENT-scoped (histogram _count), not relay-scoped", async () => {
+    const { prom, queries } = capturingProm();
+    await new MetricsService(prom).dashboardSummary("1d");
+    // requestsServed must read the end-to-end latency histogram count — the
+    // only counter that increments once per client request (requests_total
+    // counts relays: cross-validation fan-out + tracker probes included).
+    expect(
+      queries.some((q) =>
+        q.includes("round(sum(increase(smartrouter_end_to_end_latency_milliseconds_count"),
+      ),
+    ).toBe(true);
+  });
+
+  it("stale caught reads consistency_failed_total, never consistency_success_total", async () => {
+    const { prom, queries } = capturingProm();
+    await new MetricsService(prom).dashboardSummary("1d");
+    // success_total counts checks that PASSED — displaying it as "stale
+    // caught" was the original bug. With the failed family absent (this fake
+    // returns no presence), no consistency_success query may run for the tile.
+    expect(queries.every((q) => !q.includes("consistency_success_total"))).toBe(true);
   });
 
   it("per-chain health reads the spec-labelled ENDPOINT gauge, not the global router gauge", async () => {
