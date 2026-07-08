@@ -41,6 +41,7 @@ interface Metric {
   yFmt: (v: number) => string;
   target?: { value: number; label: string };
   yDomain?: [number, number];
+  yMaxCap?: number;
 }
 
 const pct = (pts: TimePoint[] | null | undefined) => {
@@ -70,13 +71,16 @@ export function ChainDetail({ r, onChainClick, win }: { r: ChainDetailRow; onCha
   const avgRps = r.requests / WINDOWS[win].rangeSeconds;
   const zeroTimes = rps.times.length ? rps.times : roTimes(win, 24);
 
+  // Percentage charts cap the auto y-domain at 100 — padding above the data
+  // must never fabricate a ">100%" axis. Sub-1 RPS keeps decimals.
+  const rpsFmt = (v: number) => (v > 0 && v < 1 ? v.toFixed(2) : fmtNum(Math.round(v)));
   const metrics: Metric[] = [
-    ...(r.availPct != null ? [{ key: "avail", label: "Availability", cur: r.availPct.toFixed(2) + "%", color: "#22c55e", values: avail.values, times: avail.times, yFmt: (v: number) => v.toFixed(2) + "%", target: { value: 99.9, label: "99.9%" } }] : []),
+    ...(r.availPct != null ? [{ key: "avail", label: "Availability", cur: r.availPct.toFixed(2) + "%", color: "#22c55e", values: avail.values, times: avail.times, yFmt: (v: number) => v.toFixed(2) + "%", target: { value: 99.9, label: "99.9%" }, yMaxCap: 100 }] : []),
     ...(r.p95Ms != null ? [{ key: "p95", label: "P95 latency", cur: Math.round(r.p95Ms) + " ms", color: "#3b82f6", values: p95.values, times: p95.times, yFmt: (v: number) => Math.round(v) + " ms" }] : []),
-    ...(r.errPct != null ? [{ key: "err", label: "Error rate", cur: r.errPct.toFixed(2) + "%", color: "#f97316", values: err.values, times: err.times, yFmt: (v: number) => v.toFixed(2) + "%" }] : []),
-    { key: "rps", label: "Requests / sec", cur: fmtNum(Math.round(avgRps)), color: "var(--brand)", values: rps.values, times: rps.times, yFmt: (v: number) => fmtNum(Math.round(v)) },
+    ...(r.errPct != null ? [{ key: "err", label: "Error rate", cur: r.errPct.toFixed(2) + "%", color: "#f97316", values: err.values, times: err.times, yFmt: (v: number) => v.toFixed(2) + "%", yMaxCap: 100 }] : []),
+    { key: "rps", label: "Requests / sec", cur: avgRps > 0 && avgRps < 1 ? avgRps.toFixed(2) : fmtNum(Math.round(avgRps)), color: "var(--brand)", values: rps.values, times: rps.times, yFmt: rpsFmt },
     qos
-      ? { key: "qos", label: "QoS", cur: r.qos != null ? String(Math.round(r.qos)) : "—", note: "composite", color: "#a78bfa", values: qos.values, times: qos.times, yFmt: (v: number) => v.toFixed(0), target: { value: 90, label: "admit ≥ 90" } }
+      ? { key: "qos", label: "QoS", cur: r.qos != null ? String(Math.round(r.qos)) : "—", note: "composite", color: "#a78bfa", values: qos.values, times: qos.times, yFmt: (v: number) => v.toFixed(0), target: { value: 90, label: "admit ≥ 90" }, yMaxCap: 100 }
       : { key: "qos", label: "QoS", cur: "—", note: "no data", color: "#a78bfa", values: [], times: [], yFmt: (v: number) => v.toFixed(0) },
     buShare
       ? { key: "routing", label: "Primary vs backup", cur: Math.round(curBU) + "% backup", color: "#fb923c", values: buShare.values, times: buShare.times, yFmt: (v: number) => v.toFixed(0) + "%", yDomain: [0, 100], caption: "share of traffic on backup — 0% = all primary" }
@@ -116,7 +120,7 @@ export function ChainDetail({ r, onChainClick, win }: { r: ChainDetailRow; onCha
             <span style={{ fontSize: 10.5, color: "var(--text-4)", fontFamily: "var(--font-mono)" }}>{from} → now</span>
           </div>
           {m.values.length ? (
-            <InteractiveChart key={m.key} values={m.values} color={m.color} yFmt={m.yFmt} target={m.target} yDomain={m.yDomain} times={m.times} win={win} />
+            <InteractiveChart key={m.key} values={m.values} color={m.color} yFmt={m.yFmt} target={m.target} yDomain={m.yDomain} yMaxCap={m.yMaxCap} times={m.times} win={win} />
           ) : (
             <div style={{ height: 180, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "var(--text-4)" }}>No samples in this window.</div>
           )}

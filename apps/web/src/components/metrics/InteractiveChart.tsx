@@ -39,6 +39,7 @@ export function InteractiveChart({
   yFmt,
   target,
   yDomain,
+  yMaxCap,
   times,
   win,
   height = 180,
@@ -48,6 +49,9 @@ export function InteractiveChart({
   yFmt?: (v: number) => string | number;
   target?: InteractiveChartTarget;
   yDomain?: [number, number];
+  /** Hard ceiling for the auto y-domain (e.g. 100 for percentage charts, so
+   *  padding never fabricates a ">100%" axis tick). */
+  yMaxCap?: number;
   times: Date[];
   win: string;
   height?: number;
@@ -62,11 +66,18 @@ export function InteractiveChart({
   if (target && !yDomain) { minV = Math.min(minV, target.value); maxV = Math.max(maxV, target.value); }
   const pad = (maxV - minV) * 0.14 || 1;
   const dlo = yDomain ? yDomain[0] : minV - pad;
-  const dhi = yDomain ? yDomain[1] : maxV + pad;
+  const dhi = yDomain
+    ? yDomain[1]
+    : yMaxCap != null
+      ? Math.min(maxV + pad, yMaxCap)
+      : maxV + pad;
   const range = dhi - dlo || 1;
   const cx = (i: number) => padL + (n > 1 ? (i / (n - 1)) * iW : iW / 2);
   const cy = (v: number) => padTop + iH - ((v - dlo) / range) * iH;
-  const fmt = yFmt || ((v: number) => Math.round(v));
+  // Sub-1 values must keep decimals — Math.round would render every RPS tick
+  // on a low-traffic router as "0".
+  const fmt =
+    yFmt || ((v: number) => (Math.abs(v) > 0 && Math.abs(v) < 1 ? v.toFixed(2) : Math.round(v)));
   const gVals = Array.from({ length: 5 }, (_, i) => dlo + (range * i) / 4);
   const linePts = values.map((v, i) => `${cx(i).toFixed(1)},${cy(v).toFixed(1)}`).join(" ");
   const areaD = `M ${cx(0).toFixed(1)},${(padTop + iH).toFixed(1)} ` + values.map((v, i) => `L ${cx(i).toFixed(1)},${cy(v).toFixed(1)}`).join(" ") + ` L ${cx(n - 1).toFixed(1)},${(padTop + iH).toFixed(1)} Z`;

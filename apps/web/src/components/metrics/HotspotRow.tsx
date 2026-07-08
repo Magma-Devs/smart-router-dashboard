@@ -12,6 +12,7 @@
 import type { ErrorHotspot, MetricWindow } from "@sr/shared";
 import { LineChart } from "@/components/gateway/charts";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
+import { roFmtTime } from "@/components/metrics/InteractiveChart";
 import { nums, SEV_STYLE, sevForErrRatePct } from "./bits";
 
 export function HotspotRow({ h, open, onToggle, win }: {
@@ -24,6 +25,14 @@ export function HotspotRow({ h, open, onToggle, win }: {
   const sev = SEV_STYLE[sevForErrRatePct(errPct)];
   const trend = nums(h.trend);
   const chartId = "eh" + (h.spec + h.upstream).replace(/[^a-zA-Z0-9_-]/g, "");
+  // X labels from the REAL trend timestamps — the chart's default labels
+  // assume a 24h span and lie on every other window.
+  const ts = h.trend.filter((p) => p.t).map((p) => new Date(p.t * 1000));
+  const tick = (f: number) => ts[Math.round((ts.length - 1) * f)];
+  const xLabels =
+    ts.length > 1
+      ? [0, 0.25, 0.5, 0.75, 1].map((f) => (tick(f) ? roFmtTime(tick(f)!, win) : ""))
+      : undefined;
 
   return (
     <div className="gw-card" style={{ padding: 0, marginBottom: 8, overflow: "hidden", borderColor: open ? sev.ring : "var(--line)" }}>
@@ -61,15 +70,42 @@ export function HotspotRow({ h, open, onToggle, win }: {
       {open && (
         <div style={{ borderTop: "1px solid var(--line)", padding: "14px 16px", display: "grid", gridTemplateColumns: "1.1fr 1fr", gap: 22 }}>
           <div>
-            <div style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: "0.07em", color: "var(--text-3)", fontWeight: 600, marginBottom: 4 }}>Error types driving this</div>
-            <div style={{ fontSize: 12, color: "var(--text-4)", padding: "8px 0" }}>
-              No labelled error codes on this build yet — the per-code breakdown appears once the router emits node_errors_total / protocol_errors_total.
+            {/* The failure count/rate above counts TRANSPORT failures only
+                (timeouts, connection errors, rate limits, HTTP 5xx, cv
+                shortfall). Node errors are a SEPARATE class — the upstream
+                answered, with a JSON-RPC error — and count as served, so the
+                two lists must never be presented as one breakdown. */}
+            <div style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: "0.07em", color: "var(--text-3)", fontWeight: 600, marginBottom: 4 }}>What the failures are</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0" }}>
+              <span style={{ width: 8, height: 8, borderRadius: 2, background: sev.c, flexShrink: 0 }} />
+              <span style={{ fontSize: 12, color: "var(--text-2)", flex: 1 }}>Transport / routing failures</span>
+              <span className="gw-mono gw-tnum" style={{ fontSize: 12, fontWeight: 700 }}>{h.errors.toLocaleString("en-US")}</span>
             </div>
+            <div style={{ fontSize: 11, color: "var(--text-4)", lineHeight: 1.5, marginBottom: 10 }}>
+              timeouts, connection/rate-limit errors, HTTP 5xx, cross-validation shortfalls — the count behind the {errPct != null ? errPct.toFixed(2) + "%" : ""} rate above
+            </div>
+            <div style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: "0.07em", color: "var(--text-3)", fontWeight: 600, marginBottom: 4 }}>
+              Node errors by method <span style={{ textTransform: "none", letterSpacing: 0, fontWeight: 400, color: "var(--text-4)" }}>— upstream answered with a JSON-RPC error; counted as served, NOT in the failure rate</span>
+            </div>
+            {h.nodeMethods.length > 0 ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "6px 0" }}>
+                {h.nodeMethods.map((m) => (
+                  <div key={m.method} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span className="gw-mono" title={m.method} style={{ fontSize: 11.5, color: "var(--text-2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{m.method}</span>
+                    <span className="gw-mono gw-tnum" style={{ fontSize: 11.5, fontWeight: 700 }}>{m.count.toLocaleString("en-US")}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ fontSize: 12, color: "var(--text-4)", padding: "6px 0" }}>
+                None this window.
+              </div>
+            )}
           </div>
           <div>
             <div style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: "0.07em", color: "var(--text-3)", fontWeight: 600, marginBottom: 8 }}>Errors over time <span style={{ color: "var(--text-4)" }}>· {win}</span></div>
             {trend.length > 1 ? (
-              <div style={{ height: 96 }}><LineChart series={[{ values: trend, color: sev.c, width: 2 }]} id={chartId} yFmt={(v) => String(Math.round(v))} gridCount={3} /></div>
+              <div style={{ height: 96 }}><LineChart series={[{ values: trend, color: sev.c, width: 2 }]} id={chartId} yFmt={(v) => String(Math.round(v))} gridCount={3} xLabels={xLabels} /></div>
             ) : (
               <div style={{ height: 96, display: "flex", alignItems: "center", fontSize: 12, color: "var(--text-4)" }}>Trend is charted for the top 5 hotspots.</div>
             )}

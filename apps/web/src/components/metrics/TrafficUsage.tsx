@@ -70,7 +70,10 @@ export function TrafficUsage({ win, chainFilter }: { win: MetricWindow; chainFil
   const pageRows = filtered.slice(curPage * PER, curPage * PER + PER);
   useEffect(() => { setPage(0); }, [query]);
 
-  const rpsFmt = (v: number) => (v >= 1000 ? (v / 1000).toFixed(1) + "k" : Math.round(v).toString());
+  // Sub-1 RPS keeps decimals — a low-traffic router would otherwise render
+  // every axis tick and the "rps now" readout as "0".
+  const rpsFmt = (v: number) =>
+    v >= 1000 ? (v / 1000).toFixed(1) + "k" : v > 0 && v < 1 ? v.toFixed(2) : Math.round(v).toString();
   const sel: React.CSSProperties = { height: 28, padding: "0 10px", borderRadius: 7, border: "1px solid var(--line-2)", background: "var(--bg)", color: "var(--text)", fontSize: 12, fontFamily: "inherit", outline: "none" };
 
   return (
@@ -81,7 +84,7 @@ export function TrafficUsage({ win, chainFilter }: { win: MetricWindow; chainFil
         {focus && !chainFilter && <button onClick={() => setLocalFocus(null)} style={{ border: "none", background: "none", color: "var(--brand)", cursor: "pointer", fontSize: 11.5, fontWeight: 600, fontFamily: "inherit", padding: 0, marginLeft: 8 }}>← All chains</button>}
         <Tip text={"Total throughput across every chain over the **selected time window**, with a per-chain breakdown below.\n\nThe chart sums all chains; the table ranks them by volume — search to find a specific chain."} />
         <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "baseline", gap: 6 }}>
-          <span className="gw-mono gw-tnum" style={{ fontSize: 16, fontWeight: 700, color: "var(--text)" }}>{curShown != null ? rpsFmt(Math.round(curShown)) : "—"}</span>
+          <span className="gw-mono gw-tnum" style={{ fontSize: 16, fontWeight: 700, color: "var(--text)" }}>{curShown != null ? rpsFmt(curShown) : "—"}</span>
           <span style={{ fontSize: 11, color: "var(--text-4)" }}>rps now{focus ? "" : " · " + perChain.length + " chain" + (perChain.length === 1 ? "" : "s")}</span>
         </span>
       </div>
