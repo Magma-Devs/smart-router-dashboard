@@ -13,8 +13,10 @@ import { Tip } from "@/components/gateway/Tip";
 import { TT } from "@/lib/tooltips";
 import { fmtNum } from "@/lib/format";
 
-export function HeroPanel({ tw }: { tw: MetricWindow }) {
-  const { data } = useApi<HeroSummary>(`/api/metrics/dashboard-summary?window=${tw}`);
+export function HeroPanel({ tw, spec }: { tw: MetricWindow; spec?: string | null }) {
+  const { data } = useApi<HeroSummary>(
+    `/api/metrics/dashboard-summary?window=${tw}${spec ? `&spec=${encodeURIComponent(spec)}` : ""}`,
+  );
 
   const sr = data?.successRate.value ?? null;             // ratio 0..1
   const retries = data?.retriesRecovered.value ?? null;   // count (null until family fires)

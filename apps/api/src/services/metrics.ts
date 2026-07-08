@@ -112,8 +112,11 @@ export class MetricsService {
   }
 
   /** The six HeroPanel cards (Metrics · Overview tab). */
-  async dashboardSummary(window: MetricWindow): Promise<HeroSummary> {
+  async dashboardSummary(window: MetricWindow, spec?: string): Promise<HeroSummary> {
     const r = rangeFor(window);
+    // Label selector for the metrics that carry a `spec` label, so the hero
+    // KPIs scope to the selected chain (empty = account-wide across all chains).
+    const specSel = spec ? `{spec="${spec}"}` : "";
     const kpi = async (cur: string, prior: string): Promise<Kpi> => {
       const [value, p] = await Promise.all([this.prom.scalar(cur), this.prom.scalar(prior)]);
       return { value, prior: p };
@@ -126,30 +129,33 @@ export class MetricsService {
 
     const [requestsServed, successRate, p95, stale, specs, upstreams, healthGauge] =
       await Promise.all([
-        kpi(qRequestsTotal(undefined, window), qRequestsTotal(undefined, window, r)),
-        kpi(qAvailability(undefined, window), qAvailability(undefined, window, r)),
+        kpi(qRequestsTotal(spec, window), qRequestsTotal(spec, window, r)),
+        kpi(qAvailability(spec, window), qAvailability(spec, window, r)),
         // No cache on this build ⇒ the documented derived "effective read p95"
         // reduces to the node read p95 (the overall router histogram).
-        kpi(qLatencyQuantile(0.95, undefined, window), qLatencyQuantile(0.95, undefined, window, r)),
+        kpi(qLatencyQuantile(0.95, spec, window), qLatencyQuantile(0.95, spec, window, r)),
         kpi(
-          `sum(increase(${ROUTER_METRICS.consistencySuccessTotal}[${r}]))`,
-          `sum(increase(${ROUTER_METRICS.consistencySuccessTotal}[${r}] offset ${r}))`,
+          `sum(increase(${ROUTER_METRICS.consistencySuccessTotal}${specSel}[${r}]))`,
+          `sum(increase(${ROUTER_METRICS.consistencySuccessTotal}${specSel}[${r}] offset ${r}))`,
         ),
         this.listSpecs(),
+        // Endpoint health keys on `endpoint_id`, NOT `spec`, so it can't be
+        // spec-filtered here — upstreamCount + health stay account-wide even
+        // when a chain is selected (the KPIs above are the ones that scope).
         this.prom.query(`count by (endpoint_id) (${ENDPOINT_METRICS.overallHealth})`),
         this.prom.scalar(ROUTER_METRICS.overallHealth),
       ]);
 
     const retriesRecovered: Kpi = retriesPresent
       ? await kpi(
-          `sum(increase(${OPTIONAL_METRICS.retriesSuccessTotal}[${r}]))`,
-          `sum(increase(${OPTIONAL_METRICS.retriesSuccessTotal}[${r}] offset ${r}))`,
+          `sum(increase(${OPTIONAL_METRICS.retriesSuccessTotal}${specSel}[${r}]))`,
+          `sum(increase(${OPTIONAL_METRICS.retriesSuccessTotal}${specSel}[${r}] offset ${r}))`,
         )
       : { value: null, prior: null };
     const cacheOffloadPct: Kpi = cachePresent
       ? await kpi(
-          `sum(increase(${OPTIONAL_METRICS.cacheTotalHits}[${r}])) / (sum(increase(${OPTIONAL_METRICS.cacheTotalHits}[${r}])) + sum(increase(${OPTIONAL_METRICS.cacheTotalMisses}[${r}])))`,
-          `sum(increase(${OPTIONAL_METRICS.cacheTotalHits}[${r}] offset ${r})) / (sum(increase(${OPTIONAL_METRICS.cacheTotalHits}[${r}] offset ${r})) + sum(increase(${OPTIONAL_METRICS.cacheTotalMisses}[${r}] offset ${r})))`,
+          `sum(increase(${OPTIONAL_METRICS.cacheTotalHits}${specSel}[${r}])) / (sum(increase(${OPTIONAL_METRICS.cacheTotalHits}${specSel}[${r}])) + sum(increase(${OPTIONAL_METRICS.cacheTotalMisses}${specSel}[${r}])))`,
+          `sum(increase(${OPTIONAL_METRICS.cacheTotalHits}${specSel}[${r}] offset ${r})) / (sum(increase(${OPTIONAL_METRICS.cacheTotalHits}${specSel}[${r}] offset ${r})) + sum(increase(${OPTIONAL_METRICS.cacheTotalMisses}${specSel}[${r}] offset ${r})))`,
         )
       : { value: null, prior: null };
 
@@ -161,7 +167,8 @@ export class MetricsService {
       retriesRecovered,
       cacheOffloadPct,
       upstreamCount: upstreams.length,
-      chainCount: specs.length,
+      // When scoped to one chain, chainCount is 1 (if that spec has traffic).
+      chainCount: spec ? (specs.includes(spec) ? 1 : 0) : specs.length,
       health: health(healthGauge),
       emitted: { retries: retriesPresent, cache: cachePresent },
       lastUpdated: new Date().toISOString(),

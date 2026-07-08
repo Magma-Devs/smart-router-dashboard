@@ -43,7 +43,7 @@ export async function metricRoutes(app: FastifyInstance) {
 
   // HeroPanel cards (Metrics · Overview tab).
   app.get<{ Querystring: WindowQuery }>("/api/metrics/dashboard-summary", tag("HeroPanel summary (KPIs + prior-window deltas)", false), async (request) => {
-    return app.metrics.dashboardSummary(parseWindow(request.query.window));
+    return app.metrics.dashboardSummary(parseWindow(request.query.window), request.query.spec);
   });
 
   // Rich Overview/Dashboard payload (KPIs + deltas + series + per-chain).
