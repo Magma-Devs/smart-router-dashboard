@@ -93,26 +93,18 @@ export default function AccountPage() {
 
       <div className="gw-card" style={{ marginBottom: 14 }}>
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Active sessions</div>
-        <div style={{ display: "grid", gap: 7 }}>
-          <div className="gw-row" style={{ padding: "9px 11px", borderRadius: 7, background: "var(--bg)", border: "1px solid var(--line)", gap: 10 }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 500 }}>Session tracking</div>
-              <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 1 }}>{NOT_AVAILABLE} — this dashboard uses a single shared login.</div>
-            </div>
-          </div>
-        </div>
+        <CloudNotice feature="Session tracking" detail="this dashboard uses a single shared login, so there are no per-user sessions to list." compact />
       </div>
 
       <div className="gw-card" style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 4 }}>Sign out from all devices</div>
-        <div style={{ fontSize: 12, color: "var(--text-3)", marginBottom: 12 }}>{NOT_AVAILABLE} — there are no per-user sessions to invalidate.</div>
+        <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 12 }}>Sign out from all devices</div>
+        <div style={{ marginBottom: 12 }}><CloudNotice feature="Per-device sessions" detail="there are no per-user sessions to invalidate on this deployment." compact /></div>
         <button className="gw-btn" disabled title={NOT_AVAILABLE}>Sign out everywhere</button>
       </div>
 
       <div className="gw-card" style={{ borderColor: "rgba(239,68,68,0.3)" }}>
-        <div style={{ fontSize: 13, fontWeight: 500, color: "var(--err)", marginBottom: 4 }}>Delete account</div>
-        <div style={{ fontSize: 12, color: "var(--text-3)", marginBottom: 12 }}>{NOT_AVAILABLE} — this deployment has no account store to delete from.</div>
+        <div style={{ fontSize: 13, fontWeight: 500, color: "var(--err)", marginBottom: 12 }}>Delete account</div>
+        <div style={{ marginBottom: 12 }}><CloudNotice feature="Account deletion" detail="this deployment has no per-user account store to delete from." compact /></div>
         <button className="gw-btn gw-btn--danger" disabled title={NOT_AVAILABLE}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6"/></svg>
           Delete account
