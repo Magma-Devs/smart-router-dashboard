@@ -64,9 +64,9 @@ describe("rangeFor", () => {
 });
 
 describe("query builders use the real metric names", () => {
-  it("qRequestsTotal targets smartrouter_requests_total", () => {
+  it("qRequestsTotal targets smartrouter_requests_total, rounded to an integer", () => {
     expect(qRequestsTotal("ETH1", "1d")).toBe(
-      'sum(increase(smartrouter_requests_total{spec="ETH1"}[86400s]))',
+      'round(sum(increase(smartrouter_requests_total{spec="ETH1"}[86400s])))',
     );
   });
   it("qAvailability is success/total, clamped to ≤ 1", () => {
@@ -164,7 +164,7 @@ describe("windows catalog", () => {
 describe("offset (prior-window) variants", () => {
   it("qRequestsTotal appends offset to the range selector", () => {
     expect(qRequestsTotal("ETH1", "1d", "86400s")).toBe(
-      'sum(increase(smartrouter_requests_total{spec="ETH1"}[86400s] offset 86400s))',
+      'round(sum(increase(smartrouter_requests_total{spec="ETH1"}[86400s] offset 86400s)))',
     );
   });
   it("qAvailability offsets both legs", () => {
