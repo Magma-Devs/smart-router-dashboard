@@ -5,6 +5,76 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.5.0]
+
+Metrics-correctness overhaul, verified against the live router with a
+controlled ground-truth experiment (exact known load + idle fingerprint).
+
+### Fixed
+
+- **Client-scoped request counts.** "Requests served", per-chain/per-method
+  requests and every RPS figure now read the end-to-end latency histogram
+  `_count` — the only counter that increments once per client request.
+  `smartrouter_requests_total` counts *relays* (cross-validation fan-out,
+  cache hits as `provider_address="Cached"`, router tracker probes) and stays
+  only behind per-upstream/relay lenses.
+- **"Stale responses caught" semantics.** Now reads
+  `consistency_failed_total` (checks that FAILED). It previously displayed
+  `consistency_success_total` — checks that *passed* — so every healthy read
+  counted as a caught stale response.
+- **Cross-validation panel never lit up.** The catalog probed a
+  `smartrouter_cross_validation_total` family that does not exist; the real
+  families are `…cross_validation_{requests,success,failed,failures}_total`
+  (+ per-provider agreements/disagreements).
+- **Whole-number counts.** `round()` on every count query — request/error/
+  retry counts no longer render as `increase()` extrapolation fractions
+  ("12.2 retries", "111.7 requests").
+- **WebSocket URLs.** The router serves ws only under `/ws` (jsonrpc) /
+  `/websocket` (tendermint); Try-now and the endpoint sheets no longer emit
+  bare `ws://host:port` URLs that 405.
+- **Try-now examples that could never succeed** — placeholder tx hashes,
+  a pruned Solana slot, pruned Cosmos heights, an estimateGas call that
+  always reverted, `<blockhash>` literals. Subscribe methods are hidden on
+  non-ws interfaces. 28/28 curated examples pass against the live stack.
+- **Charts.** Availability y-axis can no longer exceed 100%; sub-1 RPS axis
+  ticks keep decimals instead of rendering "0"; hotspot error trends use the
+  real window timestamps (previously hardcoded −24h labels) and rounded
+  buckets; method-table columns no longer collapse under long REST paths.
+- **Config.** `dev-config/values.yml`: archive reads corroborate across
+  tenderly + mevblocker (publicnode's archive claim removed — token-gated at
+  relay despite passing the startup probe); broken cross-validation policies
+  removed/corrected (REST method names are path patterns); comments slimmed.
+
+### Added
+
+- **Error-class breakdown** — node / protocol / transport pivots, per-hotspot
+  node-errors-by-method, and a node-vs-transport split (+ per-method list and
+  cross-validation agree/disagree rate) in the upstream deep-dive.
+- **Per-method P95** — the router histogram's method label is named
+  `function`; the "no method label" design-doc gap was wrong.
+- **Try-now relay badges** — `Lava-Retries` retry indicator and a
+  cross-validated badge (agreeing/disagreeing providers from the CORS-exposed
+  headers).
+- **Upstream availability sub-windows** (fixed 1h/24h/7d) in the deep-dive.
+- **WebSocket panel**: lifetime totals (windowed `increase()` misses a young
+  counter's first increment), per-chain live connection counts, ws
+  subscription examples in the Try-now catalog.
+- **Sortable method-level breakdown table.**
+- **Verified backup tier** in `dev-config/values.yml` for ETH1 (flashbots),
+  HYPERLIQUID (purroofgroup) and COSMOSHUB rest (ecostake), alongside the
+  existing tendermint backup — every entry passes router startup
+  verification. No keyless distinct-vendor backup exists today for
+  SOLANA / BTC / APT1 / COSMOSHUB grpc.
+- **Docs**: `docs/METRICS-MAPPING.md` "Counter semantics — ground truth"
+  section (relay- vs client-scoped counters, transport-success semantics,
+  consistency counter meanings) + refreshed mapping tables.
+
+### Changed
+
+- Success-rate tiles/tooltips now state the transport semantics explicitly:
+  an upstream answering with a JSON-RPC error object counts as a successful
+  relay (it increments `node_errors_total`, not the failure rate).
+
 ## [0.4.1]
 
 ### Added
