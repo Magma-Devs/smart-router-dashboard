@@ -66,8 +66,8 @@ export function EndpointDetailSheet({ open, ep, router, onClose, upstreams }: {
     "gw-tag" + (s === "healthy" ? " gw-tag--ok" : s === "degraded" ? " gw-tag--warn" : "");
 
   return (
-    <div className="gw-sheet-bg" onClick={onClose}>
-      <div className="gw-sheet gw-sheet--wide" onClick={(e) => e.stopPropagation()}>
+    <div className="gw-sheet-bg gw-sheet-bg--center" onClick={onClose}>
+      <div className="gw-sheet gw-sheet--wide gw-sheet--center" onClick={(e) => e.stopPropagation()}>
 
         {/* Head */}
         <div className="gw-sheet__head">

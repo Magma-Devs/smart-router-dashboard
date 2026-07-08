@@ -561,7 +561,7 @@ export function TryMeDrawer({
           right: 0,
           bottom: 0,
           zIndex: 41,
-          width: "min(640px, 100vw)",
+          width: "min(860px, 100vw)",
           background: "var(--surface)",
           borderLeft: "1px solid var(--line-2)",
           boxShadow: "-20px 0 60px rgba(0,0,0,0.5)",
