@@ -91,6 +91,36 @@ services:
       # 3363 HYPERLIQUID · 3364-3366 COSMOSHUB rest/tendermint/grpc · 3367 APT1.
       - "3360-3367:3360-3367"
       - "7779:7779" # prometheus metrics
+    depends_on:
+      cache:
+        condition: service_healthy
+        required: false # cache is opt-in (--profile cache); router runs without it
+    restart: unless-stopped
+
+  # ---- Cache sidecar (opt-in via `--profile cache`) ----------------------
+  # The smart-router's RAM-based relay cache. Runs the SAME router image with
+  # the `cache` subcommand, listening on :20100 (metrics on :5555). The router
+  # only USES it when its config declares `cache-be: cache:20100` — the
+  # dev-config/values.yml has that line commented out; uncomment it (and start
+  # with --profile cache) to route reads through the cache. With the cache off,
+  # the router falls back to its in-process cache and the line is a no-op.
+  # Mirrors smart-router/docker/docker-compose.cache.yml.
+  cache:
+    profiles: ["cache"]
+    image: ${SR_ROUTER_IMAGE:-ghcr.io/magma-devs/smart-router:main}
+    pull_policy: ${SR_ROUTER_PULL:-always}
+    command: ["cache", "0.0.0.0:20100", "--metrics_address", "0.0.0.0:5555"]
+    expose:
+      - "20100"
+    ports:
+      - "5555:5555" # cache prometheus metrics
+    healthcheck:
+      # distroless:debug ships busybox at /busybox
+      test: ["CMD", "/busybox/wget", "-qO-", "http://localhost:5555/metrics"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
     restart: unless-stopped
 
   # ---- Logs stack (opt-in via `--profile logs`) --------------------------
