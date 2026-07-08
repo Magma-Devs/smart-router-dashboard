@@ -12,7 +12,7 @@
 # Smart Router Dashboard
 
 [![Quality Gate](https://github.com/Magma-Devs/smart-router-dashboard/actions/workflows/quality-gate.yml/badge.svg?branch=main)](https://github.com/Magma-Devs/smart-router-dashboard/actions/workflows/quality-gate.yml)
-[![Release](https://img.shields.io/badge/release-v0.4.0-brightgreen)](https://github.com/Magma-Devs/smart-router-dashboard/releases/latest)
+[![Release](https://img.shields.io/badge/release-v0.4.1-brightgreen)](https://github.com/Magma-Devs/smart-router-dashboard/releases/latest)
 [![Node](https://img.shields.io/badge/node-24%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 [![License](https://img.shields.io/badge/license-source--available-orange.svg)](LICENSE.md)
 
