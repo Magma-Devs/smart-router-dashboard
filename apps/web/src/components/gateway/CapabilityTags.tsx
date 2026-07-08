@@ -52,14 +52,18 @@ export function CapabilityTags({
             key={c}
             title={m.title}
             style={{
+              // Extensions/addons read as MODIFIERS on the interface, so they use
+              // an outlined (bordered, transparent-fill) style — visually distinct
+              // from the solid-tint interface-type tag next to them.
               fontSize: fs,
-              fontWeight: 700,
+              fontWeight: 600,
               padding: pad,
-              borderRadius: 3,
-              background: m.color + "18",
+              borderRadius: 999,
+              background: "transparent",
+              border: "1px solid " + m.color + "66",
               color: m.color,
               textTransform: "uppercase",
-              letterSpacing: "0.05em",
+              letterSpacing: "0.04em",
               lineHeight: 1.4,
             }}
           >

@@ -29,6 +29,9 @@ interface TryNowButtonProps {
   health?: HealthState;
   /** Optional visibility control for hover-reveal parents (Endpoints rows). */
   visible?: boolean;
+  /** Pin the relay to a specific provider via `lava-select-provider` (HTTP
+   *  only). Set by the per-upstream Try-now so the call hits that upstream. */
+  selectUpstream?: string;
 }
 
 /**
@@ -48,6 +51,7 @@ export function TryNowButton({
   hasArchive,
   health,
   visible = true,
+  selectUpstream,
 }: TryNowButtonProps) {
   const [drawerOpen, setDrawerOpen] = useState(false);
 
@@ -94,6 +98,7 @@ export function TryNowButton({
           cfg={cfg}
           endpointUrl={url}
           health={health}
+          selectUpstream={selectUpstream}
           onClose={() => setDrawerOpen(false)}
         />
       )}
