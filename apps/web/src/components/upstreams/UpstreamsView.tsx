@@ -22,15 +22,9 @@ import { CapabilityTags, capabilitiesOf } from "@/components/gateway/CapabilityT
 import { fmtMs, fmtNum, fmtPct } from "@/lib/format";
 import { uptimeColorFrac } from "@/lib/colors";
 import { UpstreamLogo } from "@/components/upstreams/UpstreamLogo";
-import { KebabMenu, StatusDot, pvStatLabel, type LiveChain } from "@/components/upstreams/bits";
-import {
-  buildUpstreamRows,
-  type UpstreamRow,
-} from "@/components/upstreams/catalog";
+import { StatusDot, pvStatLabel } from "@/components/upstreams/bits";
+import { buildUpstreamRows } from "@/components/upstreams/catalog";
 import { IfaceTag } from "@/components/endpoints/bits";
-import { EditUpstreamSheet } from "@/components/upstreams/EditUpstreamSheet";
-import { DeleteConfirm } from "@/components/upstreams/DeleteConfirm";
-import { TestModal } from "@/components/upstreams/TestModal";
 
 /* ─────────────────────────────────────────────
    Stat strip (design: intentionally empty)
@@ -69,9 +63,6 @@ export function UpstreamsView() {
   const live = useApi<{ upstreams: UpstreamMetrics[] }>("/api/metrics/upstreams?window=1d");
 
   const [degradedFilter, setDegradedFilter] = useState(false);
-  const [editPv, setEditPv] = useState<UpstreamRow | null>(null);
-  const [deletePv, setDeletePv] = useState<UpstreamRow | null>(null);
-  const [testPv, setTestPv] = useState<UpstreamRow | null>(null);
   const [usagePeriod, setUsagePeriod] = useState<"24h" | "7d">("24h");
   const [search, setSearch] = useState("");
   const [netFilter, setNetFilter] = useState<"all" | "mainnet" | "testnet">("all");
@@ -88,17 +79,6 @@ export function UpstreamsView() {
     [routers, live.data],
   );
 
-  const chains: LiveChain[] = useMemo(() => {
-    const seen = new Set<string>();
-    const out: LiveChain[] = [];
-    for (const r of routers) {
-      if (seen.has(r.spec)) continue;
-      seen.add(r.spec);
-      out.push({ spec: r.spec, name: buildChainMetaByIndex(r.spec).name });
-    }
-    return out;
-  }, [routers]);
-
   const displayed = useMemo(() => {
     return upstreams.filter((pv) => {
       const matchDegraded = !degradedFilter || pv.status === "degraded";
@@ -113,12 +93,6 @@ export function UpstreamsView() {
   const loading = !config.data && !config.error;
 
   const statColor = (s: string) => s === "healthy" ? "ok" : s === "degraded" ? "warn" : "err";
-
-  const menuIcons = {
-    test:  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>,
-    edit:  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>,
-    trash: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>,
-  };
 
   return (
     <div className="gw-page fade-in">
@@ -234,14 +208,6 @@ export function UpstreamsView() {
                       <div style={pvStatLabel}>Req today</div>
                       <div className="gw-mono gw-tnum" style={{ fontSize: 12, marginTop: 2 }}>{fmtNum(pv.requests)}</div>
                     </div>
-                    <KebabMenu items={[
-                      { label: "Test connection", icon: menuIcons.test, onClick: () => setTestPv(pv) },
-                      { label: "Edit", icon: menuIcons.edit, onClick: () => setEditPv(pv) },
-                      { separator: true },
-                      { info: true, label: "Defined in the mounted values file" },
-                      { separator: true },
-                      { label: "Remove", icon: menuIcons.trash, onClick: () => setDeletePv(pv), danger: true },
-                    ]} />
                   </div>
                 </div>
                 {/* endpoint rows, one per (chain, upstream endpoint) served */}
@@ -367,9 +333,6 @@ export function UpstreamsView() {
         );
       })()}
 
-      <EditUpstreamSheet open={!!editPv} onClose={() => setEditPv(null)} upstream={editPv} />
-      <DeleteConfirm open={!!deletePv} onClose={() => setDeletePv(null)} upstream={deletePv} />
-      <TestModal open={!!testPv} onClose={() => setTestPv(null)} upstream={testPv} routers={routers} />
     </div>
   );
 }

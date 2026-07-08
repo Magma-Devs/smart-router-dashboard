@@ -7,7 +7,7 @@
  * file. Catalog entries drive presentation only (logos, "looks like X"
  * hints) — never data. */
 
-import type { UpstreamMetrics, RouterTopology } from "@sr/shared";
+import { buildChainMetaByIndex, type UpstreamMetrics, type RouterTopology } from "@sr/shared";
 
 /** The honest-state copy for every config-mutating commit button. */
 export const READONLY_MSG = "Config is a read-only mount on self-hosted — edit the values file";
@@ -302,7 +302,9 @@ export function buildUpstreamRows(
       url: hosts[0] ?? "",
       chainRows,
       chains: [...new Set(chainRows.map((c) => c.spec))],
-      networks: [...new Set(chainRows.map((c) => c.network))],
+      // mainnet/testnet classification (for the net filter) derived from each
+      // served chain's spec metadata — NOT c.network, which is the chain slug.
+      networks: [...new Set(chainRows.map((c) => (buildChainMetaByIndex(c.spec).mainnet ? "mainnet" : "testnet")))],
       interfaces: [...new Set(chainRows.map((c) => c.iface).filter(Boolean))],
       catalogId: catalog?.id ?? null,
       status,
