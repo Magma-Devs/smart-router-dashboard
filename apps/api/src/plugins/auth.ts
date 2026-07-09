@@ -1,5 +1,6 @@
 import fp from "fastify-plugin";
 import jwt from "@fastify/jwt";
+import rateLimit from "@fastify/rate-limit";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 /** Bind session JWTs to a known issuer/audience so another HS256 token
@@ -84,6 +85,11 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
       allowedIss: SESSION_JWT_ISSUER,
       allowedAud: SESSION_JWT_AUDIENCE,
     },
+  });
+
+  await app.register(rateLimit, {
+    max: 100,
+    timeWindow: "1 minute",
   });
 
   app.decorateRequest("authUser", null);
