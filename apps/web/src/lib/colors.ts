@@ -1,19 +1,45 @@
-/* Color maps — ported verbatim from the design prototype
-   (page-overview.jsx lines 4–14). */
+/* Color maps — chain colors ported from the design prototype; series and
+   percentile colors come from the validated tokens in globals.css. */
 
-export const CHAIN_CLR: Record<string, string> = { Ethereum: "#627EEA", Solana: "#14F195", Arbitrum: "#28A0F0", Base: "#0052FF", Polygon: "#8247E5", Other: "#52525b" };
+/* ── Categorical series palette ──────────────────────────────────────────────
+   ONE palette for every "which series is this" color in the app (upstream
+   mixes, read/write/batch splits, score types …). Slots are theme-aware CSS
+   variables validated for colorblind separation + surface contrast in BOTH
+   themes (see globals.css). Rules:
+     - assign in sequence from slot 1 — never skip, never re-sort by rank
+     - never cycle: a 9th series folds into "Other" (SERIES_OTHER)
+     - status colors (--ok/--warn/--err) are reserved for series that MEAN
+       good/bad — never for identity                                         */
+export const SERIES: readonly string[] = [
+  "var(--series-1)", "var(--series-2)", "var(--series-3)", "var(--series-4)",
+  "var(--series-5)", "var(--series-6)", "var(--series-7)", "var(--series-8)",
+];
+export const SERIES_OTHER = "var(--series-other)";
 
-export const ERR_CLR: Record<string, string> = {
-  client_error: "#64748b", server_error: "#ef4444", timeout: "#f97316",
-  rate_limited: "#fbbf24", stale_data: "#a78bfa", upstream_unavailable: "#dc2626",
-};
+/** Slot color for series index i; anything past the 8 slots is "Other". */
+export function seriesColor(i: number): string {
+  return SERIES[i] ?? SERIES_OTHER;
+}
 
-export const ERR_LBL: Record<string, string> = {
-  client_error: "Client 4xx", server_error: "Server 5xx", timeout: "Timeout",
-  rate_limited: "Rate limited", stale_data: "Stale data", upstream_unavailable: "Unavail.",
-};
+/* Color follows the ENTITY, not its row number: a chain filter or window
+   switch that prunes the upstream list must not repaint the survivors. Slots
+   are handed out per upstream name on first appearance and held for the whole
+   browser session; the 9th+ distinct name shares the non-identity gray. */
+const SLOT_BY_UPSTREAM = new Map<string, string>();
+export function upstreamSlot(name: string): string {
+  let c = SLOT_BY_UPSTREAM.get(name);
+  if (c === undefined) {
+    c = SLOT_BY_UPSTREAM.size < SERIES.length ? SERIES[SLOT_BY_UPSTREAM.size]! : SERIES_OTHER;
+    SLOT_BY_UPSTREAM.set(name, c);
+  }
+  return c;
+}
 
-export const ERR_HANDLED_CLR: string[] = ["var(--ok)", "var(--info)", "var(--warn)", "var(--text-3)"];
+/* Ordinal percentile ramp — p50/p95/p99 are ORDERED, so they take one hue at
+   three lightness steps (validated --ordinal), not three different hues. */
+export const PCTL_CLR = { p50: "var(--ord-1)", p95: "var(--ord-2)", p99: "var(--ord-3)" } as const;
+
+export const CHAIN_CLR: Record<string, string> = { Ethereum: "#627EEA", Solana: "#14F195", Arbitrum: "#28A0F0", Base: "#0052FF", Polygon: "#8247E5", Other: "var(--series-other)" };
 
 /* ── Uptime / availability thresholds (single source of truth) ──────────────
    Percentage boundaries for the green / amber / red status colour used on every

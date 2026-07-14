@@ -8,11 +8,9 @@
 
 import { useMemo, useState } from "react";
 import type { DashboardData } from "@sr/shared";
-import { DSHDualAxis, DSHLine, DSHStack, type DSHStackLayer } from "./dsh-charts";
+import { DSHLine, DSHStack, type DSHStackLayer } from "./dsh-charts";
 import { DSHCard, DSHNoData, DSHSection, dshFmtNum, toNums, useChartWidth } from "./bits";
-
-/** Design palette for upstream layers (the prototype's provMix order). */
-const UPSTREAM_PALETTE = ["#60a5fa", "#fb923c", "#fda4af", "#fed7aa", "#94a3b8"];
+import { SERIES_OTHER, upstreamSlot } from "@/lib/colors";
 
 const EH_DESCS: Record<string, string> = {
   "Failover": "Retried on different upstream after error/timeout; retry succeeded",
@@ -28,20 +26,27 @@ export function MetricsTabSectionB({
   win: string;
   data: DashboardData | undefined;
 }) {
-  const [foCompare, setFoCmp] = useState(false);
   const [ehIsolate, setEhIso] = useState<string | null>(null);
 
   /* Upstream mix as per-bucket % shares (the design's mock is already %;
-     the live payload is raw rps → normalise at the call site). */
+     the live payload is raw rps → normalise at the call site). Fixed slot per
+     upstream NAME (stable across filters/windows), never cycled — a 9th+
+     upstream folds into "Other". */
   const provMix = useMemo<(DSHStackLayer & { label: string })[]>(() => {
-    const raw = (data?.series.upstreamMix ?? []).map((p, pi) => ({
-      label: p.upstream,
-      color: UPSTREAM_PALETTE[pi % UPSTREAM_PALETTE.length]!,
-      data: toNums(p.points),
-    }));
-    const n = Math.max(0, ...raw.map((s) => s.data.length));
-    const tots = Array.from({ length: n }, (_, i) => raw.reduce((sum, s) => sum + (s.data[i] ?? 0), 0));
-    return raw.map((s) => ({
+    const raw = (data?.series.upstreamMix ?? []).map((p) => ({ label: p.upstream, data: toNums(p.points) }));
+    const layers = raw.slice(0, 8).map((p) => ({ ...p, color: upstreamSlot(p.label) }));
+    const rest = raw.slice(8);
+    if (rest.length) {
+      const nr = Math.max(...rest.map((l) => l.data.length));
+      layers.push({
+        label: `Other (${rest.length})`,
+        color: SERIES_OTHER,
+        data: Array.from({ length: nr }, (_, i) => rest.reduce((s, l) => s + (l.data[i] ?? 0), 0)),
+      });
+    }
+    const n = Math.max(0, ...layers.map((s) => s.data.length));
+    const tots = Array.from({ length: n }, (_, i) => layers.reduce((sum, s) => sum + (s.data[i] ?? 0), 0));
+    return layers.map((s) => ({
       ...s,
       data: s.data.map((v, i) => Math.round((v / (tots[i] || 1)) * 1000) / 10),
     }));
@@ -73,7 +78,7 @@ export function MetricsTabSectionB({
       <DSHCard title="Upstream mix" sub="% of traffic per upstream" style={{ marginBottom: 14 }}>
         <div ref={r_sb1}>
           {provMix.some((s) => s.data.length > 0)
-            ? <DSHStack stacks={provMix} width={w_sb1} height={280} yFmt={(v) => v.toFixed(0) + "%"} />
+            ? <DSHStack stacks={provMix} width={w_sb1} height={280} yMax={100} yFmt={(v) => v.toFixed(0) + "%"} />
             : <DSHNoData height={280} />}
         </div>
         {/* The design groups Internal vs Paid fallback via upstream metadata
@@ -91,35 +96,40 @@ export function MetricsTabSectionB({
           })}
         </div>
       </DSHCard>
-      {/* §13 Failover ratio vs internal availability — dual-axis */}
-      <DSHCard title="Failover ratio vs internal availability" style={{ marginBottom: 14 }}
-        controls={
-          <button onClick={() => setFoCmp(!foCompare)} style={{
-            fontSize: 10, padding: "2px 8px", borderRadius: 4, border: "1px solid var(--line)",
-            background: foCompare ? "rgba(255,57,0,0.08)" : "transparent",
-            color: foCompare ? "var(--brand)" : "var(--text-3)",
-            cursor: "pointer", fontFamily: "var(--font-ui)", fontWeight: 500,
-          }}>Compare to last week</button>
-        }>
+      {/* §13 Failover ratio & internal availability — two measures of very
+          different scale, so two stacked panels sharing the time axis, each
+          with its own y-scale. Never a dual-axis chart. */}
+      <DSHCard title="Failover ratio & internal availability" style={{ marginBottom: 14 }}>
         <div ref={r_sb3}>
           {failoverD.length && inAvailD.length ? (
-            <DSHDualAxis
-              left={{ data: failoverD, color: "#fb923c", label: "Failover ratio" }}
-              right={{ data: inAvailD, color: "#60a5fa", label: "Internal availability" }}
-              width={w_sb3} height={300} win={win}
-              caption="When internal upstreams degrade, failover engages. Together they keep your Success Rate up."
-            />
+            <>
+              <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 2 }}>
+                <span style={{ width: 10, height: 2, background: "var(--series-8)", borderRadius: 1, flexShrink: 0 }} />
+                <span style={{ fontSize: 10, color: "var(--text-3)", fontFamily: "var(--font-ui)" }}>Failover ratio</span>
+              </div>
+              <DSHLine
+                series={[{ data: failoverD, color: "var(--series-8)", label: "Failover ratio" }]}
+                width={w_sb3} height={150} win={win} yFmt={(v) => v.toFixed(1) + "%"}
+              />
+              <div style={{ display: "flex", alignItems: "center", gap: 5, margin: "10px 0 2px" }}>
+                <span style={{ width: 10, height: 2, background: "var(--series-1)", borderRadius: 1, flexShrink: 0 }} />
+                <span style={{ fontSize: 10, color: "var(--text-3)", fontFamily: "var(--font-ui)" }}>Internal availability</span>
+              </div>
+              <DSHLine
+                series={[{ data: inAvailD, color: "var(--series-1)", label: "Internal availability" }]}
+                width={w_sb3} height={150} win={win}
+                yDomain={[Math.floor(Math.min(...inAvailD) * 0.996), 100]}
+                yFmt={(v) => v.toFixed(2) + "%"}
+              />
+              <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 10, lineHeight: 1.6, fontStyle: "italic" }}>
+                When internal upstreams degrade, failover engages. Together they keep your Success Rate up.
+              </div>
+            </>
           ) : (
             /* Needs a failover counter family the router doesn't emit. */
             <DSHNoData height={300} />
           )}
         </div>
-        {failoverD.length > 0 && inAvailD.length > 0 && (
-          <div style={{ display: "flex", gap: 14, marginTop: 4 }}>
-            <span style={{ display: "flex", alignItems: "center", gap: 5 }}><span style={{ width: 10, height: 2, background: "#fb923c", borderRadius: 1, flexShrink: 0 }} /><span style={{ fontSize: 10, color: "var(--text-3)", fontFamily: "var(--font-ui)" }}>Failover ratio (left axis)</span></span>
-            <span style={{ display: "flex", alignItems: "center", gap: 5 }}><span style={{ width: 10, height: 2, background: "#60a5fa", borderRadius: 1, flexShrink: 0 }} /><span style={{ fontSize: 10, color: "var(--text-3)", fontFamily: "var(--font-ui)" }}>Internal availability (right axis)</span></span>
-          </div>
-        )}
       </DSHCard>
       {/* §14 Errors Handled breakdown */}
       <DSHCard title="Errors Handled" sub="by intervention category" style={{ marginBottom: 14 }}>
@@ -181,9 +191,9 @@ export function MetricsTabSectionB({
           <div ref={r_cache}>
             {cacheHitData.length ? (
               <DSHLine
-                series={[{ data: cacheHitData, color: "var(--text-2)", label: "hit rate %" }]}
+                series={[{ data: cacheHitData, color: "var(--series-1)", label: "hit rate %" }]}
                 width={w_cache} height={180} win={win}
-                thresholds={[{ value: 40, label: "40% target", color: "rgba(255,255,255,0.18)" }]}
+                thresholds={[{ value: 40, label: "40% target", color: "var(--line-2)" }]}
                 yFmt={(v) => Math.round(v) + "%"}
               />
             ) : (

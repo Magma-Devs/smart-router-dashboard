@@ -1,4 +1,22 @@
 {
+  "0G": {
+    "name": "0G",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "0GT": {
+    "name": "0G Galileo Testnet",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": false
+  },
   "AGR": {
     "name": "Agoric",
     "family": "cosmos",
@@ -21,12 +39,48 @@
     ],
     "mainnet": false
   },
+  "ALEO": {
+    "name": "Aleo",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "rest"
+    ],
+    "mainnet": true
+  },
+  "ALEOT": {
+    "name": "Aleo Testnet",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "rest"
+    ],
+    "mainnet": false
+  },
   "ALFAJORES": {
     "name": "Celo Alfajores Testnet",
     "family": "evm",
     "icon": "celo",
     "interfaces": [
       "jsonrpc"
+    ],
+    "mainnet": false
+  },
+  "ALGORAND": {
+    "name": "algorand",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "rest"
+    ],
+    "mainnet": true
+  },
+  "ALGORANDT": {
+    "name": "algorand testnet",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "rest"
     ],
     "mainnet": false
   },
@@ -61,6 +115,42 @@
     "name": "Arbitrum Sepolia Testnet",
     "family": "evm-arbitrum",
     "icon": "arbitrum-nova",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": false
+  },
+  "ARWEAVE": {
+    "name": "Arweave",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "rest"
+    ],
+    "mainnet": true
+  },
+  "ARWEAVET": {
+    "name": "Arweave Testnet",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "rest"
+    ],
+    "mainnet": false
+  },
+  "ASTAR": {
+    "name": "Astar",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "ASTART": {
+    "name": "Shibuya Testnet",
+    "family": "evm",
+    "icon": "default",
     "interfaces": [
       "jsonrpc"
     ],
@@ -142,6 +232,28 @@
     ],
     "mainnet": false
   },
+  "BABYLON": {
+    "name": "babylon",
+    "family": "cosmos",
+    "icon": "default",
+    "interfaces": [
+      "rest",
+      "grpc",
+      "tendermintrpc"
+    ],
+    "mainnet": true
+  },
+  "BABYLONT": {
+    "name": "babylon testnet",
+    "family": "cosmos",
+    "icon": "default",
+    "interfaces": [
+      "rest",
+      "grpc",
+      "tendermintrpc"
+    ],
+    "mainnet": false
+  },
   "BASE": {
     "name": "Base",
     "family": "evm",
@@ -205,6 +317,24 @@
     ],
     "mainnet": false
   },
+  "BITTENSOR": {
+    "name": "bittensor",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "BITTENSORT": {
+    "name": "bittensor testnet",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": false
+  },
   "BLAST": {
     "name": "Blast",
     "family": "evm",
@@ -218,6 +348,24 @@
     "name": "Blast Sepolia Testnet",
     "family": "evm",
     "icon": "blast",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": false
+  },
+  "BOB": {
+    "name": "bob",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "BOBT": {
+    "name": "bob testnet",
+    "family": "evm",
+    "icon": "default",
     "interfaces": [
       "jsonrpc"
     ],
@@ -420,6 +568,24 @@
     ],
     "mainnet": true
   },
+  "DASH": {
+    "name": "Dash",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "DASHT": {
+    "name": "Dash Testnet",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": false
+  },
   "DOGE": {
     "name": "Dogecoin",
     "family": "bitcoin",
@@ -438,6 +604,28 @@
     ],
     "mainnet": false
   },
+  "DYDX": {
+    "name": "dydx",
+    "family": "cosmos",
+    "icon": "default",
+    "interfaces": [
+      "rest",
+      "grpc",
+      "tendermintrpc"
+    ],
+    "mainnet": true
+  },
+  "DYDXT": {
+    "name": "dydx testnet",
+    "family": "cosmos",
+    "icon": "default",
+    "interfaces": [
+      "rest",
+      "grpc",
+      "tendermintrpc"
+    ],
+    "mainnet": false
+  },
   "ELYS": {
     "name": "Elys Testnet",
     "family": "cosmos",
@@ -446,6 +634,42 @@
       "rest",
       "grpc",
       "tendermintrpc"
+    ],
+    "mainnet": false
+  },
+  "ENJIN": {
+    "name": "Enjin Matrixchain",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "ENJINT": {
+    "name": "Enjin Canary Matrixchain",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "ETC": {
+    "name": "ethereum classic",
+    "family": "evm",
+    "icon": "ethereum",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "ETCT": {
+    "name": "ethereum classic testnet",
+    "family": "evm",
+    "icon": "ethereum",
+    "interfaces": [
+      "jsonrpc"
     ],
     "mainnet": false
   },
@@ -494,6 +718,24 @@
     ],
     "mainnet": false
   },
+  "ETHEREUMPOW": {
+    "name": "EthereumPoW",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "ETHEREUMPOWT": {
+    "name": "EthereumPoW Iceberg Testnet",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": false
+  },
   "ETHERMINT": {
     "name": "Ethermint",
     "family": "cosmos",
@@ -524,6 +766,64 @@
       "rest",
       "grpc",
       "tendermintrpc",
+      "jsonrpc"
+    ],
+    "mainnet": false
+  },
+  "FETCHAI": {
+    "name": "Fetch.ai",
+    "family": "cosmos",
+    "icon": "default",
+    "interfaces": [
+      "rest",
+      "grpc",
+      "tendermintrpc"
+    ],
+    "mainnet": true
+  },
+  "FETCHAIT": {
+    "name": "Fetch.ai Testnet",
+    "family": "cosmos",
+    "icon": "default",
+    "interfaces": [
+      "rest",
+      "grpc",
+      "tendermintrpc"
+    ],
+    "mainnet": false
+  },
+  "FLARE": {
+    "name": "Flare",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "FLARET": {
+    "name": "Flare Testnet Coston2",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": false
+  },
+  "FLOW": {
+    "name": "flow",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "FLOWT": {
+    "name": "flow testnet",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
       "jsonrpc"
     ],
     "mainnet": false
@@ -659,6 +959,24 @@
     ],
     "mainnet": false
   },
+  "INK": {
+    "name": "ink",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "INKT": {
+    "name": "ink sepolia testnet",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": false
+  },
   "IOTA": {
     "name": "IOTA",
     "family": "iota",
@@ -708,6 +1026,28 @@
     ],
     "mainnet": false
   },
+  "KAVA": {
+    "name": "Kava",
+    "family": "cosmos",
+    "icon": "default",
+    "interfaces": [
+      "rest",
+      "grpc",
+      "tendermintrpc"
+    ],
+    "mainnet": true
+  },
+  "KAVAT": {
+    "name": "Kava Testnet",
+    "family": "cosmos",
+    "icon": "default",
+    "interfaces": [
+      "rest",
+      "grpc",
+      "tendermintrpc"
+    ],
+    "mainnet": false
+  },
   "KOII": {
     "name": "Koii",
     "family": "evm",
@@ -720,6 +1060,44 @@
     "family": "evm",
     "icon": "koii",
     "interfaces": [],
+    "mainnet": false
+  },
+  "KUSAMA": {
+    "name": "kusama",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "KUSAMAASSETHUB": {
+    "name": "Kusama Asset Hub",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "jsonrpc",
+      "rest"
+    ],
+    "mainnet": true
+  },
+  "KUSAMAASSETHUBT": {
+    "name": "Westend Asset Hub Testnet",
+    "family": "evm",
+    "icon": "polkadotassethub",
+    "interfaces": [
+      "jsonrpc",
+      "rest"
+    ],
+    "mainnet": false
+  },
+  "KUSAMAT": {
+    "name": "westend testnet",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "jsonrpc"
+    ],
     "mainnet": false
   },
   "LAV1": {
@@ -743,6 +1121,24 @@
       "tendermintrpc"
     ],
     "mainnet": true
+  },
+  "LINEA": {
+    "name": "linea",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "LINEAT": {
+    "name": "linea sepolia testnet",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": false
   },
   "LTC": {
     "name": "Litecoin",
@@ -781,11 +1177,38 @@
     "mainnet": false
   },
   "MANTLE": {
+    "name": "Mantle",
+    "family": "evm",
+    "icon": "mantle",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "MANTLET": {
     "name": "Mantle Testnet",
     "family": "evm",
     "icon": "mantle",
     "interfaces": [
       "jsonrpc"
+    ],
+    "mainnet": false
+  },
+  "MINA": {
+    "name": "Mina",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "rest"
+    ],
+    "mainnet": true
+  },
+  "MINAT": {
+    "name": "Mina Devnet",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "rest"
     ],
     "mainnet": false
   },
@@ -802,6 +1225,60 @@
     "name": "Monad Testnet",
     "family": "evm",
     "icon": "monad",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": false
+  },
+  "MONERO": {
+    "name": "monero",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "MONEROT": {
+    "name": "monero testnet",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": false
+  },
+  "MOONBEAM": {
+    "name": "moonbeam",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "MOONBEAMT": {
+    "name": "moonbeam testnet moonbase alpha",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": false
+  },
+  "MOONRIVER": {
+    "name": "Moonriver",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "MOONRIVERT": {
+    "name": "Moonriver Testnet",
+    "family": "evm",
+    "icon": "default",
     "interfaces": [
       "jsonrpc"
     ],
@@ -834,6 +1311,24 @@
     ],
     "mainnet": false
   },
+  "MULTIVERSX": {
+    "name": "MultiversX",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "rest"
+    ],
+    "mainnet": true
+  },
+  "MULTIVERSXT": {
+    "name": "MultiversX Testnet",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "rest"
+    ],
+    "mainnet": false
+  },
   "NAMTSE": {
     "name": "Namada SE Testnet",
     "family": "cosmos",
@@ -858,6 +1353,46 @@
     "icon": "near",
     "interfaces": [
       "jsonrpc"
+    ],
+    "mainnet": false
+  },
+  "NEOX": {
+    "name": "Neo X",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "NEOXT": {
+    "name": "Neo X Testnet",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": false
+  },
+  "NEUTRON": {
+    "name": "Neutron",
+    "family": "cosmos",
+    "icon": "default",
+    "interfaces": [
+      "rest",
+      "grpc",
+      "tendermintrpc"
+    ],
+    "mainnet": true
+  },
+  "NEUTRONT": {
+    "name": "Neutron Testnet",
+    "family": "cosmos",
+    "icon": "default",
+    "interfaces": [
+      "rest",
+      "grpc",
+      "tendermintrpc"
     ],
     "mainnet": false
   },
@@ -901,6 +1436,52 @@
     ],
     "mainnet": false
   },
+  "PLASMA": {
+    "name": "plasma",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "PLASMAT": {
+    "name": "plasma testnet",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": false
+  },
+  "PLUME": {
+    "name": "plume",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "PLUMET": {
+    "name": "plume testnet",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": false
+  },
+  "POLKADOT": {
+    "name": "polkadot",
+    "family": "polkadotassethub",
+    "icon": "default",
+    "interfaces": [
+      "jsonrpc",
+      "rest"
+    ],
+    "mainnet": true
+  },
   "POLKADOTASSETHUB": {
     "name": "Polkadot Asset Hub",
     "family": "polkadotassethub",
@@ -921,6 +1502,16 @@
     ],
     "mainnet": false
   },
+  "POLKADOTT": {
+    "name": "westend testnet",
+    "family": "polkadotassethub",
+    "icon": "default",
+    "interfaces": [
+      "jsonrpc",
+      "rest"
+    ],
+    "mainnet": false
+  },
   "POLYGON": {
     "name": "Polygon",
     "family": "evm",
@@ -934,6 +1525,24 @@
     "name": "Polygon Amoy Testnet",
     "family": "evm",
     "icon": "polygon",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": false
+  },
+  "POLYMESH": {
+    "name": "Polymesh",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "POLYMESHT": {
+    "name": "Polymesh Testnet",
+    "family": "evm",
+    "icon": "default",
     "interfaces": [
       "jsonrpc"
     ],
@@ -976,6 +1585,30 @@
       "rest",
       "grpc",
       "tendermintrpc"
+    ],
+    "mainnet": false
+  },
+  "SEI": {
+    "name": "sei",
+    "family": "cosmos",
+    "icon": "default",
+    "interfaces": [
+      "rest",
+      "grpc",
+      "tendermintrpc",
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "SEIT": {
+    "name": "sei testnet",
+    "family": "cosmos",
+    "icon": "default",
+    "interfaces": [
+      "rest",
+      "grpc",
+      "tendermintrpc",
+      "jsonrpc"
     ],
     "mainnet": false
   },
@@ -1053,6 +1686,42 @@
     ],
     "mainnet": true
   },
+  "STACKS": {
+    "name": "stacks",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "rest"
+    ],
+    "mainnet": true
+  },
+  "STACKST": {
+    "name": "stacks testnet",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "rest"
+    ],
+    "mainnet": false
+  },
+  "STORY": {
+    "name": "story",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "STORYT": {
+    "name": "story testnet",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": false
+  },
   "STRGZ": {
     "name": "Stargaze",
     "family": "cosmos",
@@ -1124,6 +1793,24 @@
     ],
     "mainnet": false
   },
+  "TEMPO": {
+    "name": "Tempo",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "TEMPOT": {
+    "name": "Tempo Testnet Moderato",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": false
+  },
   "TENDERMINT": {
     "name": "Tendermint",
     "family": "cosmos",
@@ -1148,6 +1835,26 @@
     "icon": "tezos",
     "interfaces": [
       "rest"
+    ],
+    "mainnet": false
+  },
+  "THORCHAIN": {
+    "name": "thorchain",
+    "family": "cosmos",
+    "icon": "default",
+    "interfaces": [
+      "rest",
+      "tendermintrpc"
+    ],
+    "mainnet": true
+  },
+  "THORCHAINT": {
+    "name": "thorchain testnet",
+    "family": "cosmos",
+    "icon": "default",
+    "interfaces": [
+      "rest",
+      "tendermintrpc"
     ],
     "mainnet": false
   },
@@ -1189,6 +1896,24 @@
     ],
     "mainnet": false
   },
+  "UNICHAIN": {
+    "name": "unichain",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "UNICHAINT": {
+    "name": "unichain testnet",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": false
+  },
   "UNIONT": {
     "name": "Union Testnet",
     "family": "cosmos",
@@ -1197,6 +1922,24 @@
       "rest",
       "grpc",
       "tendermintrpc"
+    ],
+    "mainnet": false
+  },
+  "WEMIX": {
+    "name": "WEMIX",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "WEMIXT": {
+    "name": "WEMIX Testnet",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "jsonrpc"
     ],
     "mainnet": false
   },
@@ -1213,6 +1956,24 @@
     "name": "Worldchain Sepolia Testnet",
     "family": "evm",
     "icon": "worldchain",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": false
+  },
+  "XDC": {
+    "name": "xdc network",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "XDCT": {
+    "name": "xdc network testnet",
+    "family": "evm",
+    "icon": "default",
     "interfaces": [
       "jsonrpc"
     ],

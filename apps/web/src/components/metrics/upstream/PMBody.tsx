@@ -14,6 +14,7 @@
 import { useState } from "react";
 import type { MetricWindow, UpstreamDetail, UpstreamMetrics, TimePoint } from "@sr/shared";
 import { LineChart, StackedAreaChart, type Layer, type Series } from "@/components/gateway/charts";
+import { PCTL_CLR, seriesColor } from "@/lib/colors";
 import { fmtComma } from "@/lib/format";
 import { nums } from "../bits";
 import { PMPanel } from "./PMPanel";
@@ -32,25 +33,26 @@ export function PMBody({ pm, detail, name, timeWindow }: {
 
   /* volume layers — only counters that exist (read is real on this build) */
   const volume: Layer[] = [
-    { name: "Read", values: nums(detail?.volume.read), color: "#3b82f6" },
-    ...(detail?.volume.write ? [{ name: "Write", values: nums(detail.volume.write), color: "#f97316" }] : []),
-    ...(detail?.volume.batch ? [{ name: "Batch", values: nums(detail.volume.batch), color: "#a78bfa" }] : []),
+    { name: "Read", values: nums(detail?.volume.read), color: seriesColor(0) },
+    ...(detail?.volume.write ? [{ name: "Write", values: nums(detail.volume.write), color: seriesColor(1) }] : []),
+    ...(detail?.volume.batch ? [{ name: "Batch", values: nums(detail.volume.batch), color: seriesColor(2) }] : []),
   ];
   const rpsNow = detail?.rpsNow ?? null;
   const fmtAll = (n: number) => (n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? (n / 1e3).toFixed(1) + "K" : String(Math.round(n)));
 
-  /* latency series + legend scalars */
+  /* latency series + legend scalars — percentiles are ORDERED, so they wear
+     the ordinal one-hue ramp (p50 → p99), not three different hues */
   const latency: Series[] = [
-    { values: nums(detail?.latencySeries.p50), color: "#38bdf8", width: 1.5 },
-    { values: nums(detail?.latencySeries.p95), color: "#3b82f6", width: 2 },
-    { values: nums(detail?.latencySeries.p99), color: "#f97316", width: 1.5 },
+    { values: nums(detail?.latencySeries.p50), color: PCTL_CLR.p50, width: 1.5, name: "p50" },
+    { values: nums(detail?.latencySeries.p95), color: PCTL_CLR.p95, width: 2, name: "p95" },
+    { values: nums(detail?.latencySeries.p99), color: PCTL_CLR.p99, width: 1.5, name: "p99" },
   ];
   const latLegend: [string, number | null][] = [
     ["median", detail?.p50Ms ?? null],
     ["p95", detail?.p95Ms ?? pm.p95Ms],
     ["p99", detail?.p99Ms ?? null],
   ];
-  const latColors = ["#38bdf8", "#3b82f6", "#f97316"];
+  const latColors = [PCTL_CLR.p50, PCTL_CLR.p95, PCTL_CLR.p99];
 
   /* Real error split from the API: node (upstream JSON-RPC error replies),
    * protocol, transport (derived relay failures). Whole numbers. */
@@ -61,22 +63,25 @@ export function PMBody({ pm, detail, name, timeWindow }: {
   const cvStats = detail?.crossValidation ?? null;
   const disagreePct = cvStats?.disagreementRate != null ? cvStats.disagreementRate * 100 : null;
 
-  /* selection score — real 0..1 gauges → the design's 0–100 axis */
+  /* selection score — real 0..1 gauges → the design's 0–100 axis. Score types
+     are identities → categorical slots 1–4 in sequence (slot 5 violet fails
+     the CVD check against slot-1 blue on one plot — validated, ΔE 2.5 protan);
+     the composite hero line carries emphasis via weight instead. */
   const score: Series[] = [
-    ...(detail?.scoreSeries.availability ? [{ values: pct(detail.scoreSeries.availability), color: "#22c55e", width: 1.4, opacity: 0.55 }] : []),
-    ...(detail?.scoreSeries.latency ? [{ values: pct(detail.scoreSeries.latency), color: "#3b82f6", width: 1.4, opacity: 0.55 }] : []),
-    ...(detail?.scoreSeries.sync ? [{ values: pct(detail.scoreSeries.sync), color: "#38bdf8", width: 1.4, opacity: 0.55 }] : []),
-    ...(detail?.scoreSeries.composite ? [{ values: pct(detail.scoreSeries.composite), color: "#a78bfa", width: 2.6 }] : []),
+    ...(detail?.scoreSeries.availability ? [{ values: pct(detail.scoreSeries.availability), color: seriesColor(0), width: 1.4, opacity: 0.55, name: "availability" }] : []),
+    ...(detail?.scoreSeries.latency ? [{ values: pct(detail.scoreSeries.latency), color: seriesColor(1), width: 1.4, opacity: 0.55, name: "latency" }] : []),
+    ...(detail?.scoreSeries.sync ? [{ values: pct(detail.scoreSeries.sync), color: seriesColor(2), width: 1.4, opacity: 0.55, name: "freshness" }] : []),
+    ...(detail?.scoreSeries.composite ? [{ values: pct(detail.scoreSeries.composite), color: seriesColor(3), width: 2.6, name: "composite" }] : []),
   ];
   const sc = (t: "availability" | "latency" | "sync" | "composite") => {
     const v = detail?.scores[t];
     return v != null ? Math.round(v * 100) : null;
   };
   const scoreLegend: { lbl: string; val: number | null; color: string; raw: string | null; hero?: boolean }[] = [
-    { lbl: "Composite QoS", val: sc("composite"), color: "#a78bfa", raw: null, hero: true },
-    { lbl: "Availability", val: sc("availability"), color: "#22c55e", raw: sc("availability") != null ? sc("availability") + "% up" : null },
-    { lbl: "Latency", val: sc("latency"), color: "#3b82f6", raw: pm.p95Ms != null ? Math.round(pm.p95Ms) + "ms p95" : null },
-    { lbl: "Freshness", val: sc("sync"), color: "#38bdf8", raw: detail?.blockLag != null ? detail.blockLag + " blk lag" : null },
+    { lbl: "Composite QoS", val: sc("composite"), color: seriesColor(3), raw: null, hero: true },
+    { lbl: "Availability", val: sc("availability"), color: seriesColor(0), raw: sc("availability") != null ? sc("availability") + "% up" : null },
+    { lbl: "Latency", val: sc("latency"), color: seriesColor(1), raw: pm.p95Ms != null ? Math.round(pm.p95Ms) + "ms p95" : null },
+    { lbl: "Freshness", val: sc("sync"), color: seriesColor(2), raw: detail?.blockLag != null ? detail.blockLag + " blk lag" : null },
   ];
 
   const chainName = detail?.spec || pm.spec;
@@ -92,7 +97,7 @@ export function PMBody({ pm, detail, name, timeWindow }: {
               <span className="gw-mono gw-tnum" style={{ color: "var(--text)", fontWeight: 700 }}>{rpsNow != null ? fmtAll(rpsNow) : "—"}</span>
               <span style={{ color: "var(--text-4)" }}>rps</span>
             </span>
-            {([["Read", "#3b82f6"], ["Write", "#f97316"], ["Batch", "#a78bfa"]] as const).map(([lbl, c]) => (
+            {([["Read", seriesColor(0)], ["Write", seriesColor(1)], ["Batch", seriesColor(2)]] as const).map(([lbl, c]) => (
               <span key={lbl} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11 }}>
                 <span style={{ width: 9, height: 9, borderRadius: 2, background: c, flexShrink: 0 }} />
                 <span style={{ color: "var(--text-3)" }}>{lbl}</span>
@@ -127,18 +132,18 @@ export function PMBody({ pm, detail, name, timeWindow }: {
             <div style={{ height: 8, borderRadius: 999, overflow: "hidden", display: "flex", background: "var(--bg-2)" }}>
               {split && totalErr != null && totalErr > 0 && (
                 <>
-                  <div style={{ width: `${splitPct(split.node)}%`, background: "#f97316" }} />
-                  <div style={{ width: `${splitPct(split.protocol)}%`, background: "#a78bfa" }} />
-                  <div style={{ width: `${splitPct(split.transport)}%`, background: "#fbbf24" }} />
+                  <div style={{ width: `${splitPct(split.node)}%`, background: seriesColor(0) }} />
+                  <div style={{ width: `${splitPct(split.protocol)}%`, background: seriesColor(1), boxShadow: "-2px 0 0 var(--surface)" }} />
+                  <div style={{ width: `${splitPct(split.transport)}%`, background: seriesColor(2), boxShadow: "-2px 0 0 var(--surface)" }} />
                 </>
               )}
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {(
                 [
-                  ["Node errors (JSON-RPC)", "#f97316", split?.node ?? null],
-                  ["Protocol errors", "#a78bfa", split?.protocol ?? null],
-                  ["Transport / routing", "#fbbf24", split?.transport ?? null],
+                  ["Node errors (JSON-RPC)", seriesColor(0), split?.node ?? null],
+                  ["Protocol errors", seriesColor(1), split?.protocol ?? null],
+                  ["Transport / routing", seriesColor(2), split?.transport ?? null],
                 ] as const
               ).map(([lbl, c, v]) => (
                 <div key={lbl} style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -200,7 +205,7 @@ export function PMBody({ pm, detail, name, timeWindow }: {
       </div>
 
       {/* ════ ROW 4 — ROUTING (optional) ════ */}
-      <PMPanel full title="Selection score" tip={"Each line is a **0–100 score** (higher = better), **not** a raw measurement — the router converts p95 latency and block lag into scores so they all share one axis.\n\n**Composite QoS** (purple, bold) is the weighted blend the router actually ranks upstreams on. The three faint lines are its inputs: availability, latency, and sync freshness.\n\nThe dashed **admit ≥ 90** line is the cutoff — when Composite QoS drops below it, the router pulls this upstream from rotation until it recovers."}
+      <PMPanel full title="Selection score" tip={"Each line is a **0–100 score** (higher = better), **not** a raw measurement — the router converts p95 latency and block lag into scores so they all share one axis.\n\n**Composite QoS** (the bold line) is the weighted blend the router actually ranks upstreams on. The three faint lines are its inputs: availability, latency, and sync freshness.\n\nThe dashed **admit ≥ 90** line is the cutoff — when Composite QoS drops below it, the router pulls this upstream from rotation until it recovers."}
         right={<div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
           {scoreLegend.map((it) => (
             <span key={it.lbl} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11 }}>

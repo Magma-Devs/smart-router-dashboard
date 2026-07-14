@@ -10,9 +10,7 @@ import { useMemo, useState } from "react";
 import type { DashboardData } from "@sr/shared";
 import { DSHBar, DSHLine, DSHStack, type DSHSeries, type DSHStackLayer } from "./dsh-charts";
 import { DSHCard, DSHChip, DSHKpi, DSHLgnd, dshFmtComma, dshFmtNum, meanOf, toNums, useChartWidth } from "./bits";
-
-/** Design palette for upstream series (the prototype's PROV_LAT/thrStk order). */
-const UPSTREAM_PALETTE = ["#60a5fa", "#fb923c", "#fda4af", "#fed7aa", "#94a3b8"];
+import { PCTL_CLR, SERIES_OTHER, upstreamSlot } from "@/lib/colors";
 
 export function OverviewTab({
   win,
@@ -46,38 +44,53 @@ export function OverviewTab({
   const srSpark = useMemo(() => toNums(data?.series.successRate, 100), [data]);
   const rpsSpark = thrData;
 
-  /* Per-upstream throughput stack (real: provider_address label). */
-  const thrStk = useMemo<(DSHStackLayer & { label: string })[]>(
-    () =>
-      (data?.series.upstreamMix ?? []).map((p, pi) => ({
-        label: p.upstream,
-        color: UPSTREAM_PALETTE[pi % UPSTREAM_PALETTE.length]!,
-        data: toNums(p.points),
-      })),
-    [data],
-  );
+  /* Per-upstream throughput stack (real: provider_address label). Fixed slot
+     per upstream NAME (stable across filters/windows), never cycled — a 9th+
+     upstream folds into "Other". */
+  const thrStk = useMemo<(DSHStackLayer & { label: string })[]>(() => {
+    const raw = (data?.series.upstreamMix ?? []).map((p) => ({ label: p.upstream, data: toNums(p.points) }));
+    const layers = raw.slice(0, 8).map((p) => ({ ...p, color: upstreamSlot(p.label) }));
+    const rest = raw.slice(8);
+    if (rest.length) {
+      const n = Math.max(...rest.map((l) => l.data.length));
+      layers.push({
+        label: `Other (${rest.length})`,
+        color: SERIES_OTHER,
+        data: Array.from({ length: n }, (_, i) => rest.reduce((s, l) => s + (l.data[i] ?? 0), 0)),
+      });
+    }
+    return layers;
+  }, [data]);
 
   /* Overall latency series for the selected percentile. */
   const latSeries = useMemo<DSHSeries[]>(() => {
     const src = data?.series.latency;
     if (!src) return [];
     const d = toNums(latP === "p50" ? src.p50 : latP === "p99" ? src.p99 : src.p95);
-    return d.length ? [{ data: d, color: "var(--text-2)", label: latP }] : [];
+    // percentile ramp step for the selected percentile (ordinal encoding)
+    const c = PCTL_CLR[latP as keyof typeof PCTL_CLR] ?? PCTL_CLR.p95;
+    return d.length ? [{ data: d, color: c, label: latP }] : [];
   }, [data, latP]);
 
-  /* Per-upstream p95 with the design's ratio-vs-baseline colouring. The
-     baseline is the overall p95 mean of the SAME window (real data). */
+  /* Per-upstream p95 vs the overall p95 mean of the SAME window (real data).
+     The line keeps its per-NAME slot color — color follows the entity, never
+     its value — and the "runs hot" state moves to an icon + label in the
+     legend (status is never carried by color alone, never repaints identity).
+     Lines cap at the 8 slots: gray is not an identity, so a 9th+ upstream is
+     dropped with a visible "+N more" note instead of an ambiguous gray line. */
+  const provLatAll = data?.series.perUpstreamLatencyP95 ?? [];
   const provLatSeries = useMemo(() => {
     const refMean = meanOf(toNums(data?.series.latency.p95));
-    return (data?.series.perUpstreamLatencyP95 ?? []).map((p, pi) => {
+    return provLatAll.slice(0, 8).map((p) => {
       const d = toNums(p.points).map((v) => Math.round(v));
       const mean = meanOf(d);
       const ratio = refMean && refMean > 0 && mean != null ? mean / refMean : null;
-      const baseColor = UPSTREAM_PALETTE[pi % UPSTREAM_PALETTE.length]!;
-      const color = ratio == null || ratio < 1 ? baseColor : ratio < 1.5 ? "#fbbf24" : "#f87171";
-      return { name: p.upstream, data: d, color, label: p.upstream };
+      const slow: "warn" | "err" | null = ratio == null || ratio < 1 ? null : ratio < 1.5 ? "warn" : "err";
+      return { name: p.upstream, data: d, color: upstreamSlot(p.upstream), label: p.upstream, slow };
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
+  const provLatOverflow = Math.max(0, provLatAll.length - 8);
 
   /* Latency status band: current p95 vs the prior window's p95 (real prior). */
   const latBandStatus = useMemo<"ok" | "warn" | "err" | undefined>(() => {
@@ -104,7 +117,7 @@ export function OverviewTab({
     if (rest.length) {
       const n = Math.max(...rest.map((c) => c.data.length));
       const other = Array.from({ length: n }, (_, i) => rest.reduce((s, c) => s + (c.data[i] ?? 0), 0));
-      stacks.push({ id: "other", name: "Other", label: "Other (" + rest.length + " chains)", color: "#64748b", data: other });
+      stacks.push({ id: "other", name: "Other", label: "Other (" + rest.length + " chains)", color: SERIES_OTHER, data: other });
     }
     stacks.sort((a, b) => a.data.reduce((s, v) => s + v, 0) - b.data.reduce((s, v) => s + v, 0));
     return stacks;
@@ -227,9 +240,20 @@ export function OverviewTab({
                   }}>
                     <span style={{ width: 10, height: 3, background: s.color, borderRadius: 2, display: "inline-block" }} />
                     <span style={{ fontSize: 10, color: "var(--text-3)", fontFamily: "var(--font-ui)" }}>{s.name}</span>
+                    {s.slow && (
+                      <span title={s.slow === "err" ? "p95 well above the overall baseline (≥1.5×)" : "p95 above the overall baseline"}
+                        style={{ fontSize: 9, color: s.slow === "err" ? "var(--err)" : "var(--warn)", fontFamily: "var(--font-ui)" }}>
+                        ▲ slow
+                      </span>
+                    )}
                   </button>
                 );
               })}
+              {provLatOverflow > 0 && (
+                <span style={{ fontSize: 10, color: "var(--text-4)", fontFamily: "var(--font-ui)", padding: "2px 4px" }}>
+                  +{provLatOverflow} more — see Metrics → Upstreams
+                </span>
+              )}
             </div>
           )}
         </DSHCard>
