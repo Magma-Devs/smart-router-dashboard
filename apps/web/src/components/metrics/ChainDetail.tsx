@@ -10,6 +10,7 @@ import { useState } from "react";
 import { WINDOWS, type ChainSeries, type MetricWindow, type TimePoint } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { InteractiveChart, roFmtTime, roTimes } from "@/components/metrics/InteractiveChart";
+import { PCTL_CLR, seriesColor } from "@/lib/colors";
 import { fmtNum } from "@/lib/format";
 import { seriesXY } from "./bits";
 import { useFilters } from "@/components/gateway/FiltersProvider";
@@ -50,11 +51,12 @@ const pct = (pts: TimePoint[] | null | undefined) => {
   return { values: values.map((v) => v * 100), times };
 };
 
-/** Shared shape of the routing switcher tile across its three data states. */
+/** Shared shape of the routing switcher tile across its three data states.
+ *  Color: the routing metric keeps the app's learned backup orange (slot 8). */
 const ROUTING = {
   key: "routing",
   label: "Primary vs backup",
-  color: "#fb923c",
+  color: seriesColor(7),
   yFmt: (v: number) => v.toFixed(0) + "%",
   yDomain: [0, 100] as [number, number],
 };
@@ -102,14 +104,18 @@ export function ChainDetail({ r, onChainClick, win }: { r: ChainDetailRow; onCha
   // Percentage charts cap the auto y-domain at 100 — padding above the data
   // must never fabricate a ">100%" axis. Sub-1 RPS keeps decimals.
   const rpsFmt = (v: number) => (v > 0 && v < 1 ? v.toFixed(2) : fmtNum(Math.round(v)));
+  // Colors: availability/error-rate MEAN good/bad → status tokens; p95 wears
+  // its ordinal percentile step; QoS matches the composite slot used on the
+  // upstream deep-dive (color follows the entity). One series per chart — no
+  // legend needed.
   const metrics: Metric[] = [
-    ...(r.availPct != null ? [{ key: "avail", label: "Availability", cur: r.availPct.toFixed(2) + "%", color: "#22c55e", values: avail.values, times: avail.times, yFmt: (v: number) => v.toFixed(2) + "%", target: { value: 99.9, label: "99.9%" }, yMaxCap: 100 }] : []),
-    ...(r.p95Ms != null ? [{ key: "p95", label: "P95 latency", cur: Math.round(r.p95Ms) + " ms", color: "#3b82f6", values: p95.values, times: p95.times, yFmt: (v: number) => Math.round(v) + " ms" }] : []),
-    ...(r.errPct != null ? [{ key: "err", label: "Error rate", cur: r.errPct.toFixed(2) + "%", color: "#f97316", values: err.values, times: err.times, yFmt: (v: number) => v.toFixed(2) + "%", yMaxCap: 100 }] : []),
+    ...(r.availPct != null ? [{ key: "avail", label: "Availability", cur: r.availPct.toFixed(2) + "%", color: "var(--ok)", values: avail.values, times: avail.times, yFmt: (v: number) => v.toFixed(2) + "%", target: { value: 99.9, label: "99.9%" }, yMaxCap: 100 }] : []),
+    ...(r.p95Ms != null ? [{ key: "p95", label: "P95 latency", cur: Math.round(r.p95Ms) + " ms", color: PCTL_CLR.p95, values: p95.values, times: p95.times, yFmt: (v: number) => Math.round(v) + " ms" }] : []),
+    ...(r.errPct != null ? [{ key: "err", label: "Error rate", cur: r.errPct.toFixed(2) + "%", color: "var(--err)", values: err.values, times: err.times, yFmt: (v: number) => v.toFixed(2) + "%", yMaxCap: 100 }] : []),
     { key: "rps", label: "Requests / sec", cur: avgRps > 0 && avgRps < 1 ? avgRps.toFixed(2) : fmtNum(Math.round(avgRps)), color: "var(--brand)", values: rps.values, times: rps.times, yFmt: rpsFmt },
     qos
-      ? { key: "qos", label: "QoS", cur: r.qos != null ? String(Math.round(r.qos)) : "—", note: "composite", color: "#a78bfa", values: qos.values, times: qos.times, yFmt: (v: number) => v.toFixed(0), target: { value: 90, label: "admit ≥ 90" }, yMaxCap: 100 }
-      : { key: "qos", label: "QoS", cur: "—", note: "no data", color: "#a78bfa", values: [], times: [], yFmt: (v: number) => v.toFixed(0) },
+      ? { key: "qos", label: "QoS", cur: r.qos != null ? String(Math.round(r.qos)) : "—", note: "composite", color: seriesColor(3), values: qos.values, times: qos.times, yFmt: (v: number) => v.toFixed(0), target: { value: 90, label: "admit ≥ 90" }, yMaxCap: 100 }
+      : { key: "qos", label: "QoS", cur: "—", note: "no data", color: seriesColor(3), values: [], times: [], yFmt: (v: number) => v.toFixed(0) },
     primaryShare && curPrimary !== null
       ? { ...ROUTING, cur: fmtPrimaryShare(curPrimary) + "% primary", values: primaryShare.values, times: primaryShare.times, caption: "share of traffic served by primary upstreams — 100% = nothing failed over" }
       : r.hasBackup

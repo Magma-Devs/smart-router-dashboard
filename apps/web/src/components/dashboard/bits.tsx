@@ -15,6 +15,9 @@ export function dshFmtNum(n: number | null | undefined): string {
   if (n >= 1e9) return (n / 1e9).toFixed(n >= 1e10 ? 0 : 1).replace(/\.0$/, "") + "B";
   if (n >= 1e6) return (n / 1e6).toFixed(n >= 1e7 ? 0 : 1).replace(/\.0$/, "") + "M";
   if (n >= 1e3) return (n / 1e3).toFixed(n >= 1e4 ? 0 : 1).replace(/\.0$/, "") + "K";
+  // sub-1 axis values (fractional req/s) — never print raw float precision
+  if (n > 0 && n < 1) return n.toFixed(2);
+  if (!Number.isInteger(n)) return n.toFixed(1);
   return String(n);
 }
 export function dshFmtComma(n: number | null | undefined): string {

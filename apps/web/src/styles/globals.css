@@ -29,6 +29,24 @@
   --hover: rgba(255, 255, 255, 0.04);
   --hover-2: rgba(255, 255, 255, 0.08);
   --shadow-1: 0 1px 0 rgba(255, 255, 255, 0.04) inset;
+  /* Categorical chart series — fixed slot order (the order is the
+     colorblind-safety mechanism; assign in sequence, never cycle).
+     Validated: dataviz validator, dark set on surface #131317
+     (worst adjacent CVD ΔE 10.3 → floor band, requires legend/labels). */
+  --series-1: #3987e5;
+  --series-2: #199e70;
+  --series-3: #c98500;
+  --series-4: #008300;
+  --series-5: #9085e9;
+  --series-6: #e66767;
+  --series-7: #d55181;
+  --series-8: #d95926;
+  --series-other: #71717a; /* the ">8 series" fold — deliberately gray, not an identity */
+  /* Ordinal percentile ramp p50→p95→p99 — one hue, monotone lightness
+     (dark mode: higher percentile = lighter). Validated --ordinal on #131317. */
+  --ord-1: #1c5cab;
+  --ord-2: #3987e5;
+  --ord-3: #86b6ef;
 }
 [data-theme="light"] {
   --bg: #fafaf9;
@@ -48,6 +66,22 @@
   --hover: rgba(0, 0, 0, 0.03);
   --hover-2: rgba(0, 0, 0, 0.06);
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.04);
+  /* Same eight hues stepped for the light surface (#ffffff) — not a second
+     palette. Validated: worst adjacent CVD ΔE 24.2; slots 2/3/7 sit below
+     3:1 contrast → relief rule (legend + tooltip + table views). */
+  --series-1: #2a78d6;
+  --series-2: #1baf7a;
+  --series-3: #eda100;
+  --series-4: #008300;
+  --series-5: #4a3aa7;
+  --series-6: #e34948;
+  --series-7: #e87ba4;
+  --series-8: #eb6834;
+  --series-other: #71717a;
+  /* Ordinal percentile ramp p50→p95→p99 (light mode: higher = darker). */
+  --ord-1: #86b6ef;
+  --ord-2: #2a78d6;
+  --ord-3: #104281;
 }
 [data-density="compact"]     { --row-y: 8px;  --pad-card: 14px; --gap-card: 10px; }
 [data-density="comfortable"] { --row-y: 14px; --pad-card: 22px; --gap-card: 18px; }
