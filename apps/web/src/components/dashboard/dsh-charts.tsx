@@ -84,11 +84,6 @@ export interface DSHBreakdown {
   color: string;
   data: number[];
 }
-export interface DSHAxisSeries {
-  data: number[];
-  color: string;
-  label: string;
-}
 
 /* ── Multi-series line chart ───────────────────────────────────────────────── */
 export function DSHLine({
@@ -174,7 +169,7 @@ export function DSHLine({
         {/* Status band */}
         {bgBand && (
           <rect x={pL} y={pT} width={iW} height={iH}
-            fill={bgBand === "ok" ? "#22c55e" : bgBand === "warn" ? "#f59e0b" : "#ef4444"}
+            fill={bgBand === "ok" ? "var(--ok)" : bgBand === "warn" ? "var(--warn)" : "var(--err)"}
             fillOpacity="0.055" />
         )}
         {/* Series — null buckets are dropped and the remaining points are
@@ -212,10 +207,10 @@ export function DSHLine({
           return (
             <g key={ti}>
               <line x1={pL} x2={pL + iW} y1={ty} y2={ty}
-                stroke={th.color || "rgba(255,255,255,0.18)"} strokeWidth="1"
+                stroke={th.color || "var(--line-2)"} strokeWidth="1"
                 strokeDasharray="4 3" />
               {th.label && <text x={pL + iW + 4} y={ty + 3.5} fontSize="8"
-                fill={th.color || "rgba(255,255,255,0.35)"} fontFamily="var(--font-mono)">{th.label}</text>}
+                fill={th.color || "var(--text-4)"} fontFamily="var(--font-mono)">{th.label}</text>}
             </g>
           );
         })}
@@ -273,18 +268,21 @@ export function DSHStack({
   width,
   height = 140,
   yFmt,
+  yMax,
 }: {
   stacks?: DSHStackLayer[];
   width?: number;
   height?: number;
   yFmt?: (v: number) => string | number;
+  /** axis cap — percentage stacks auto-scale but never fabricate a >100% axis */
+  yMax?: number;
 }) {
   if (!width || !stacks || !stacks.length) return <div style={{ height: height }} />;
   const pL = 42, pR = 12, pT = 8, pB = 20;
   const iW = width - pL - pR, iH = height - pT - pB;
   const n = stacks[0]!.data.length;
   const tots = Array.from({ length: n }, (_, i) => stacks.reduce((s, st) => s + st.data[i]!, 0));
-  const top = Math.max(...tots) * 1.06 || 1;
+  const top = Math.min(Math.max(...tots) * 1.06 || 1, yMax ?? Infinity);
   const xs = (i: number) => pL + (i / (n - 1)) * iW;
   const ys = (v: number) => pT + iH - (v / top) * iH;
   const fmt = yFmt || ((v: number) => (v >= 1000 ? fmtNum(v) : Math.round(v)));
@@ -436,106 +434,6 @@ export function DSHBar({
           )}
         </div>
       )}
-    </div>
-  );
-}
-
-/* ── Dual-axis line chart (warm left / cool right) ────────────────────────── */
-export function DSHDualAxis({
-  left,
-  right,
-  width,
-  height = 300,
-  win,
-  caption,
-}: {
-  left?: DSHAxisSeries;
-  right?: DSHAxisSeries;
-  width?: number;
-  height?: number;
-  win?: string;
-  caption?: React.ReactNode;
-}) {
-  const [hover, setHov] = useState<{ i: number; x: number } | null>(null);
-  if (!width || !left || !right) return <div style={{ height: height }} />;
-  const pL = 52, pR = 52, pT = 12, pB = 28;
-  const iW = width - pL - pR, iH = height - pT - pB;
-  const n = Math.min(left.data.length, right.data.length);
-  const lMin = 0, lMax = Math.max(...left.data) * 1.2 || 10;
-  const rRaw = right.data.slice(0, n);
-  const rMin = Math.floor(Math.min(...rRaw) * 0.996);
-  const rMax = 100;
-  const lRng = lMax - lMin || 1, rRng = rMax - rMin || 1;
-  const xs = (i: number) => pL + (i / Math.max(n - 1, 1)) * iW;
-  const yl = (v: number) => pT + iH - ((v - lMin) / lRng) * iH;
-  const yr = (v: number) => pT + iH - ((v - rMin) / rRng) * iH;
-  const timeLbls = makeTimeLabels(win || "24h", n);
-  const lPts = left.data.slice(0, n).map((v, i) => xs(i) + "," + yl(v)).join(" ");
-  const rPts = rRaw.map((v, i) => xs(i) + "," + yr(v)).join(" ");
-  function handleMM(e: React.MouseEvent<SVGSVGElement>) {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const ci = Math.max(0, Math.min(n - 1, Math.round(((e.clientX - rect.left - pL) / iW) * (n - 1))));
-    setHov({ i: ci, x: xs(ci) });
-  }
-  const tipX = hover ? Math.min(hover.x + 10, width - 175) : 0;
-  const hovL = hover ? left.data[hover.i] : null;
-  const hovR = hover ? rRaw[hover.i] : null;
-  return (
-    <div>
-      <div style={{ position: "relative" }} onMouseLeave={() => setHov(null)}>
-        <svg width={width} height={height} style={{ overflow: "visible", display: "block", cursor: "crosshair" }} onMouseMove={handleMM}>
-          {[0, 0.25, 0.5, 0.75, 1].map((t) => {
-            const yp = pT + iH * (1 - t);
-            return (
-              <g key={t}>
-                <line x1={pL} x2={pL + iW} y1={yp} y2={yp} stroke="var(--line)" strokeWidth="1" />
-                <text x={pL - 5} y={yp + 3.5} fontSize="9" fill={left.color} textAnchor="end" fontFamily="var(--font-mono)">{(lMin + t * lRng).toFixed(1)}%</text>
-                <text x={pL + iW + 5} y={yp + 3.5} fontSize="9" fill={right.color} textAnchor="start" fontFamily="var(--font-mono)">{(rMin + t * rRng).toFixed(2)}%</text>
-              </g>
-            );
-          })}
-          {timeLbls.map((tl) => {
-            const anchor = tl.i === 0 ? "start" : tl.i === n - 1 ? "end" : "middle";
-            return <text key={tl.i} x={xs(tl.i)} y={pT + iH + 18} fontSize="9" fill="var(--text-3)" textAnchor={anchor} fontFamily="var(--font-mono)">{tl.label}</text>;
-          })}
-          <text x={pL - 38} y={pT + iH / 2} fontSize="8" fill={left.color} textAnchor="middle" fontFamily="var(--font-ui)"
-            transform={"rotate(-90," + (pL - 38) + "," + (pT + iH / 2) + ")"}>{"Failover ratio"}</text>
-          <text x={pL + iW + 38} y={pT + iH / 2} fontSize="8" fill={right.color} textAnchor="middle" fontFamily="var(--font-ui)"
-            transform={"rotate(90," + (pL + iW + 38) + "," + (pT + iH / 2) + ")"}>{"Internal availability"}</text>
-          <polyline points={lPts} fill="none" stroke={left.color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
-          <polyline points={rPts} fill="none" stroke={right.color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
-          {hover && (
-            <g pointerEvents="none">
-              <line x1={hover.x} x2={hover.x} y1={pT} y2={pT + iH} stroke="var(--text-3)" strokeWidth="1" strokeDasharray="3 2" />
-              {hovL != null && <circle cx={hover.x} cy={yl(hovL)} r="3.5" fill={left.color} stroke="var(--bg)" strokeWidth="1.5" />}
-              {hovR != null && <circle cx={hover.x} cy={yr(hovR)} r="3.5" fill={right.color} stroke="var(--bg)" strokeWidth="1.5" />}
-            </g>
-          )}
-        </svg>
-        {hover && (
-          <div style={{
-            position: "absolute", left: tipX, top: pT + 4,
-            background: "var(--bg)", border: "1px solid var(--line)",
-            borderRadius: 7, padding: "8px 11px", fontSize: 11, pointerEvents: "none",
-            zIndex: 20, boxShadow: "0 4px 16px rgba(0,0,0,0.35)", minWidth: 168,
-          }}>
-            <div style={{ fontSize: 9, color: "var(--text-3)", marginBottom: 5, fontFamily: "var(--font-mono)", borderBottom: "1px solid var(--line)", paddingBottom: 4 }}>
-              {timeLbls.find((t) => t.i === hover.i)?.label || ""}
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 3 }}>
-              <span style={{ width: 10, height: 2, background: left.color, borderRadius: 1, flexShrink: 0 }} />
-              <span style={{ fontSize: 10, color: "var(--text-3)", flex: 1 }}>{left.label}</span>
-              <span style={{ fontFamily: "var(--font-mono)", color: left.color }}>{(hovL || 0).toFixed(1)}%</span>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-              <span style={{ width: 10, height: 2, background: right.color, borderRadius: 1, flexShrink: 0 }} />
-              <span style={{ fontSize: 10, color: "var(--text-3)", flex: 1 }}>{right.label}</span>
-              <span style={{ fontFamily: "var(--font-mono)", color: right.color }}>{(hovR || 0).toFixed(2)}%</span>
-            </div>
-          </div>
-        )}
-      </div>
-      {caption && <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 10, lineHeight: 1.6, fontStyle: "italic" }}>{caption}</div>}
     </div>
   );
 }
