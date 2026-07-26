@@ -5,6 +5,56 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.6.0]
+
+Chain-coverage refresh. The **Chain map ↔ lava-specs drift** gate had been red
+on `main` since lava-specs added 89 chains; regenerating it surfaced three
+correctness bugs in the generator that this release also fixes.
+
+### Added
+
+- **89 chains** from lava-specs — 0G, Akash, Aleo, Algorand, Arweave, Babylon,
+  Bittensor, Cronos, dYdX, Ethereum Classic, Flare, Flow, Kava, Kusama, Linea,
+  Mina, Monero, Moonbeam, Neutron, Plasma, Plume, Polkadot, Sei, Stacks, Story,
+  THORChain, Unichain, XDC and more (+ testnets). The chain map goes 134 → 215
+  entries and the try-me method catalog 126 → 215, so every new chain arrives
+  with its real per-spec methods rather than a family fallback.
+- **41 chain icons**. The 89 new chains would otherwise have arrived with 93
+  entries on the `default.svg` fallback; 2 remain (RACE and its testnet, which
+  publish only a wordmark — illegible at icon size). Glyphs
+  come from [@web3icons](https://github.com/0xa3k5/web3icons) (MIT),
+  [cosmos/chain-registry](https://github.com/cosmos/chain-registry) (Apache-2.0)
+  and each project's own published asset; circle colours are read from the
+  icon's own backdrop rather than chosen by hand. `public/chains/README.md` now
+  documents the house style, provenance and how to add one.
+- **Eight chain-type families** — `substrate`, `monero`, `aleo`, `algorand`,
+  `arweave`, `mina`, `multiversx`, `stacks` — so chains that had no correct
+  value in `ChainFamily` stop borrowing one.
+
+### Fixed
+
+- **Chains labelled EVM that answer no `eth_*` method.** `deriveFamily` ended in
+  a blanket `return "evm"` with a hardcoded index-prefix list as its only
+  non-EVM detection, so 26 map entries were wrong — Monero, Stacks, Algorand,
+  Aleo, Arweave, Mina, MultiversX, Enjin, Polymesh, Dash, Kusama and Koii among
+  them. Classification now follows `imports` transitively (Dash inherits from
+  BTC, Koii from SOLANA) and reads the RPC surface actually served. Chains that
+  serve `eth_*` *and* substrate RPC — Astar, Moonbeam, Moonriver, Bittensor —
+  stay `evm`, since that is the surface the gateway offers. This also stopped
+  the Try-it drawer offering `eth_blockNumber` for Monero in the window before
+  the generated catalog chunk lands.
+- **Lowercase display names.** lava-specs is inconsistent about casing —
+  `"Ethereum Mainnet"` next to `"akash mainnet"` — and the raw name was passed
+  through, so 50 chains rendered lowercase. Normalised per word, leaving
+  deliberate casing intact (`zkSync Era`, `MultiversX`, `BSC`, `Cosmos SDK v50`).
+- **Abstract base specs listed as chains.** `IBC`, `TENDERMINT`, `ETHERMINT`,
+  `COSMOSWASM` and the four `COSMOSSDK*` specs are `enabled: false` upstream and
+  exist only to be imported, but were emitted into `KNOWN_CHAINS`, which backs
+  lists and pickers.
+- **Testnets that are branded differently from their mainnet** — Astar's
+  Shibuya, Polkadot's and Kusama's Westend — no longer fall back to the default
+  icon; icon inheritance now pairs them by spec index.
+
 ## [0.5.0]
 
 Metrics-correctness overhaul, verified against the live router with a
