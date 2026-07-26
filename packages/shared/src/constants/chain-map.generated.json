@@ -2,7 +2,7 @@
   "0G": {
     "name": "0G",
     "family": "evm",
-    "icon": "default",
+    "icon": "0g",
     "interfaces": [
       "jsonrpc"
     ],
@@ -11,7 +11,7 @@
   "0GT": {
     "name": "0G Galileo Testnet",
     "family": "evm",
-    "icon": "default",
+    "icon": "0g",
     "interfaces": [
       "jsonrpc"
     ],
@@ -64,7 +64,7 @@
   "ALEO": {
     "name": "Aleo",
     "family": "evm",
-    "icon": "default",
+    "icon": "aleo",
     "interfaces": [
       "rest"
     ],
@@ -73,7 +73,7 @@
   "ALEOT": {
     "name": "Aleo Testnet",
     "family": "evm",
-    "icon": "default",
+    "icon": "aleo",
     "interfaces": [
       "rest"
     ],
@@ -172,7 +172,7 @@
   "ASTART": {
     "name": "Shibuya Testnet",
     "family": "evm",
-    "icon": "default",
+    "icon": "astar",
     "interfaces": [
       "jsonrpc"
     ],
@@ -733,7 +733,7 @@
   "ETHEREUMPOW": {
     "name": "EthereumPoW",
     "family": "evm",
-    "icon": "default",
+    "icon": "ethereumpow",
     "interfaces": [
       "jsonrpc"
     ],
@@ -742,7 +742,7 @@
   "ETHEREUMPOWT": {
     "name": "EthereumPoW Iceberg Testnet",
     "family": "evm",
-    "icon": "default",
+    "icon": "ethereumpow",
     "interfaces": [
       "jsonrpc"
     ],
@@ -1086,7 +1086,7 @@
   "KUSAMAT": {
     "name": "Westend Testnet",
     "family": "evm",
-    "icon": "default",
+    "icon": "kusama",
     "interfaces": [
       "jsonrpc"
     ],
@@ -1497,7 +1497,7 @@
   "POLKADOTT": {
     "name": "Westend Testnet",
     "family": "polkadotassethub",
-    "icon": "default",
+    "icon": "polkadot",
     "interfaces": [
       "jsonrpc",
       "rest"
@@ -1717,7 +1717,7 @@
   "STORY": {
     "name": "Story",
     "family": "evm",
-    "icon": "default",
+    "icon": "story",
     "interfaces": [
       "jsonrpc"
     ],
@@ -1726,7 +1726,7 @@
   "STORYT": {
     "name": "Story Testnet",
     "family": "evm",
-    "icon": "default",
+    "icon": "story",
     "interfaces": [
       "jsonrpc"
     ],
