@@ -270,6 +270,20 @@ for (const indices of byBase.values()) {
   }
 }
 
+// Third pass: a testnet that is *branded* differently from its mainnet still
+// belongs to it — Astar's testnet is "Shibuya", Polkadot's is "Westend" — so
+// grouping by name can't pair them. The spec index does: testnets are the
+// mainnet index plus a trailing "T". Only fills gaps, and only from a parent
+// that actually exists, so it can never override a real match.
+for (const [index, e] of Object.entries(out)) {
+  if (e.icon !== "default" || e.mainnet || !index.endsWith("T")) continue;
+  const parent = out[index.slice(0, -1)];
+  if (!parent || parent.icon === "default") continue;
+  e.icon = parent.icon;
+  inherited += 1;
+  defaultIcon -= 1;
+}
+
 // Deterministic key order for a diff-clean file.
 const sorted = {};
 for (const k of Object.keys(out).sort()) sorted[k] = out[k];
