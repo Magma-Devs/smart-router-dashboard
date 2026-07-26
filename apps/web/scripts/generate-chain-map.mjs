@@ -218,6 +218,12 @@ for (const { json } of specFiles) {
   for (const spec of specs) {
     const index = spec.index;
     if (!index || out[index]) continue;
+    // Abstract base specs (IBC, TENDERMINT, COSMOSSDK*, ETHERMINT, …) are
+    // `enabled: false` upstream: they exist only to be `imports`-ed by real
+    // chains and are never served on their own. Emitting them put them in
+    // KNOWN_CHAINS, which backs lists/pickers. Same rule the try-me catalog
+    // generator applies.
+    if (spec.enabled === false) continue;
 
     const name = displayName(spec.name, index);
     const interfaces = specInterfaces(spec);

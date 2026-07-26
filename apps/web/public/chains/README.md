@@ -1,0 +1,39 @@
+# Chain icons
+
+One SVG per chain, named by the slug `generate-chain-map.mjs` resolves for that
+spec (see `resolveIcon()`). `default.svg` is the neutral fallback used when a
+chain has no vendored icon — the dashboard degrades to it gracefully, so a
+missing file is never a rendering error.
+
+## House style
+
+24×24, a brand-coloured circle, and the glyph scaled to 0.72 and centred:
+
+```svg
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="...">
+  <circle cx="12" cy="12" r="12" fill="#BRAND"/>
+  <g transform="translate(12 12) scale(0.72) translate(-12 -12)">…glyph…</g>
+</svg>
+```
+
+The glyph is white on a dark circle, near-black (`#111`) on a light one. A glyph
+whose own outline is square (e.g. `neutron`) is inset further than 0.72 so its
+diagonal still clears the circle.
+
+## Provenance
+
+Most icons are derived from [`@web3icons`](https://github.com/0xa3k5/web3icons)
+(MIT) — the `mono` variant supplies the glyph, and the circle colour is read
+from that icon's own `background` variant backdrop, so no colour is invented.
+`neutron` and `babylon` come from
+[`cosmos/chain-registry`](https://github.com/cosmos/chain-registry) (Apache-2.0).
+
+Chain logos remain the trademarks of their respective projects and are used here
+only to identify the chain.
+
+## Adding one
+
+Drop `<slug>.svg` in this directory following the house style, then re-run
+`node apps/web/scripts/generate-chain-map.mjs` and commit the regenerated map.
+Adding a **mainnet** icon is usually enough — testnet siblings inherit it in the
+generator's second pass.
