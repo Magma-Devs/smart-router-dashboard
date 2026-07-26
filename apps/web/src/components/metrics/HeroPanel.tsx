@@ -37,7 +37,7 @@ export function HeroPanel({ tw, spec }: { tw: MetricWindow; spec?: string | null
       sub: <>&nbsp;</>, tipKey: "effectiveSR" },
     { label: "successful retries", value: retries != null ? fmtNum(retries) : "—", color: retries != null ? "var(--ok)" : "var(--text-4)",
       sub: retries != null ? <>recovered on retry — same or another endpoint</> : <>retry counters not emitted by this build yet</>, tipKey: "successfulRetries" },
-    { label: "Cache offload", value: cachePct != null ? <>{Math.round(cachePct * 100)}%</> : "—", color: cachePct != null ? "#38bdf8" : "var(--text-4)",
+    { label: "Cache offload", value: cachePct != null ? <>{Math.round(cachePct * 100)}%</> : "—", color: cachePct != null ? "var(--info)" : "var(--text-4)",
       sub: cachePct != null ? <>of reads served from cache · {(cachePct * 100).toFixed(0)}% hit rate</> : <>cache not enabled on this build</>, tipKey: "cacheOffload" },
   ];
 

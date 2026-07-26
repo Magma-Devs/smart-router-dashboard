@@ -21,11 +21,8 @@ import {
   SparkLine,
   StackedAreaChart,
 } from "@/components/gateway/charts";
-import { CHAIN_CLR } from "@/lib/colors";
+import { CHAIN_CLR, PCTL_CLR, SERIES_OTHER, upstreamSlot } from "@/lib/colors";
 import { fmtComma } from "@/lib/format";
-
-/** Palette for per-upstream series (the prototype's PROV_META is mock-only). */
-const UPSTREAM_PALETTE = ["#60a5fa", "#22c55e", "#f59e0b", "#a78bfa", "#f472b6", "#2dd4bf"];
 
 const nums = (pts: TimePoint[] | undefined): number[] => (pts ?? []).map((p) => p.v ?? 0);
 
@@ -239,7 +236,8 @@ export function OverviewView() {
   const latSeries = [
     {
       values: nums(data?.latencySeries[latPct]),
-      color: "var(--info)",
+      // percentile ramp step for the selected percentile (ordinal encoding)
+      color: PCTL_CLR[latPct],
       width: 2,
     },
   ];
@@ -262,11 +260,19 @@ export function OverviewView() {
     }));
   }, [data?.perChainSeries]);
 
-  const provLayers = (data?.perUpstreamSeries ?? []).map((p, i) => ({
-    name: p.upstream,
-    values: nums(p.points),
-    color: UPSTREAM_PALETTE[i % UPSTREAM_PALETTE.length]!,
-  }));
+  // Fixed slot per upstream NAME (stable across chain filters and polls),
+  // never cycled — a 9th+ upstream folds into "Other".
+  const provRaw = (data?.perUpstreamSeries ?? []).map((p) => ({ name: p.upstream, values: nums(p.points) }));
+  const provLayers = provRaw.slice(0, 8).map((p) => ({ ...p, color: upstreamSlot(p.name) }));
+  const provRest = provRaw.slice(8);
+  if (provRest.length) {
+    const buckets = Math.max(...provRest.map((l) => l.values.length));
+    provLayers.push({
+      name: `Other (${provRest.length})`,
+      values: Array.from({ length: buckets }, (_, i) => provRest.reduce((s, l) => s + (l.values[i] ?? 0), 0)),
+      color: SERIES_OTHER,
+    });
+  }
 
   const kpiDelta = (value: number | null | undefined, prior: number | null | undefined) =>
     value != null && prior != null ? value - prior : null;

@@ -67,7 +67,7 @@ export function WebSocketPanel({ tw }: { tw: MetricWindow }) {
               <tr key={c.spec}>
                 <td>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ width: 8, height: 8, borderRadius: 2, background: meta.color || "#888", flexShrink: 0 }} />
+                    <span style={{ width: 8, height: 8, borderRadius: 2, background: meta.color || "var(--series-other)", flexShrink: 0 }} />
                     <span style={{ fontSize: 13, fontWeight: 500, whiteSpace: "nowrap" }}>{meta.name}</span>
                   </div>
                 </td>

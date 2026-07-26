@@ -80,7 +80,7 @@ export function TroubleDetail({
             return (
               <div key={p} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0" }}>
                 <span style={{ fontSize: 11, color: "var(--text-2)", flex: 1 }}>{p}</span>
-                <span style={{ fontSize: 9, padding: "2px 6px", borderRadius: 3, fontWeight: 600, background: isInt ? "rgba(96,165,250,0.12)" : "rgba(251,146,60,0.12)", color: isInt ? "#60a5fa" : "#fb923c" }}>{isInt ? "Internal" : "Fallback"}</span>
+                <span style={{ fontSize: 9, padding: "2px 6px", borderRadius: 3, fontWeight: 600, background: isInt ? "rgba(96,165,250,0.12)" : "rgba(251,146,60,0.12)", color: isInt ? "var(--info)" : "var(--warn)" }}>{isInt ? "Internal" : "Fallback"}</span>
               </div>
             );
           })}

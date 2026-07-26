@@ -75,6 +75,8 @@ export interface Series {
   fill?: boolean;
   dashed?: boolean;
   opacity?: number;
+  /** shown in the hover tooltip (and useful for multi-series readouts) */
+  name?: string;
 }
 export interface Layer {
   name: string;
@@ -124,8 +126,9 @@ export function LineChart({
   const [ref, w, oh] = useChartDims(600, height || 200);
   const h = height || oh;
   const prog = useAnimProg(id + (series?.[0]?.values?.length ?? 0));
+  const [hover, setHover] = useState<{ i: number; x: number } | null>(null);
 
-  const containerStyle: React.CSSProperties = { width: "100%", height: height ? height : "100%", overflow: "hidden" };
+  const containerStyle: React.CSSProperties = { width: "100%", height: height ? height : "100%", overflow: "hidden", position: "relative" };
   if (!series?.length) return <div ref={ref} style={containerStyle} />;
 
   const all = series.flatMap((s) => s.values ?? []).filter((v) => v != null && isFinite(v));
@@ -154,9 +157,16 @@ export function LineChart({
     });
   const gVals = Array.from({ length: gridCount + 1 }, (_, i) => lo + (range * i) / gridCount);
 
+  const onMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const ci = Math.max(0, Math.min(n - 1, Math.round(((mx - padX) / Math.max(iW, 1)) * (n - 1))));
+    setHover({ i: ci, x: cx(ci) });
+  };
+
   return (
-    <div ref={ref} style={containerStyle}>
-      <svg width={w} height={h} style={{ overflow: "visible", display: "block" }}>
+    <div ref={ref} style={containerStyle} onMouseLeave={() => setHover(null)}>
+      <svg width={w} height={h} style={{ overflow: "visible", display: "block", cursor: "crosshair" }} onMouseMove={onMove}>
         <defs>
           <clipPath id={clipId}>
             <rect x={padX} y={padY - 4} width={Math.max(0, iW * prog)} height={iH + 8} />
@@ -222,7 +232,35 @@ export function LineChart({
         {xLabels !== null && (xLabels || X_DEFAULT).map((lab, _i, _a) => (
           <text key={"x" + _i} x={padX + (_a.length > 1 ? (_i / (_a.length - 1)) * iW : iW / 2)} y={padY + iH + 13} fontSize="9" fill="var(--text-4)" fontFamily="var(--font-mono)" textAnchor={_i === 0 ? "start" : _i === _a.length - 1 ? "end" : "middle"}>{lab}</text>
         ))}
+        {/* Crosshair + point markers (hover layer) */}
+        {hover && (
+          <g pointerEvents="none">
+            <line x1={hover.x} x2={hover.x} y1={padY} y2={padY + iH} stroke="var(--text-3)" strokeWidth="1" strokeDasharray="3 2" />
+            {series.map((s, si) => {
+              const v = s.values?.[hover.i];
+              if (v == null || !isFinite(v)) return null;
+              return <circle key={si} cx={hover.x} cy={cy(v)} r="3.5" fill={s.color || "var(--brand)"} stroke="var(--surface)" strokeWidth="1.5" />;
+            })}
+          </g>
+        )}
       </svg>
+      {/* Tooltip — values only (per-point timestamps aren't carried here;
+          showing the nearest tick would fake precision) */}
+      {hover && series.some((s) => s.values?.[hover.i] != null && isFinite(s.values[hover.i]!)) && (
+        <div style={{ position: "absolute", left: Math.min(hover.x + 10, Math.max(0, w - 130)), top: padY + 4, background: "var(--surface-2)", border: "1px solid var(--line-2)", borderRadius: 7, padding: "6px 10px", fontSize: 11, pointerEvents: "none", zIndex: 20, boxShadow: "0 4px 16px rgba(0,0,0,0.3)", minWidth: 76 }}>
+          {series.map((s, si) => {
+            const v = s.values?.[hover.i];
+            if (v == null || !isFinite(v)) return null;
+            return (
+              <div key={si} style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: si < series.length - 1 ? 3 : 0 }}>
+                <span style={{ width: 8, height: 2, background: s.color || "var(--brand)", borderRadius: 1, flexShrink: 0 }} />
+                {s.name && <span style={{ color: "var(--text-3)", fontSize: 10, flex: 1, paddingRight: 6 }}>{s.name}</span>}
+                <span style={{ fontFamily: "var(--font-mono)", color: "var(--text)", marginLeft: "auto" }}>{fmt(v)}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -250,8 +288,9 @@ export function StackedAreaChart({
   const [ref, w, oh] = useChartDims(600, height || 200);
   const h = height || oh;
   const prog = useAnimProg(id + (layers?.[0]?.values?.length ?? 0));
+  const [hover, setHover] = useState<{ i: number; x: number } | null>(null);
 
-  const containerStyle: React.CSSProperties = { width: "100%", height: height ? height : "100%", overflow: "hidden" };
+  const containerStyle: React.CSSProperties = { width: "100%", height: height ? height : "100%", overflow: "hidden", position: "relative" };
   if (!layers?.length || !layers[0]!.values?.length) return <div ref={ref} style={containerStyle} />;
 
   const n = layers[0]!.values.length;
@@ -266,10 +305,18 @@ export function StackedAreaChart({
   const clipId = `${id}cp`;
   const gVals = [0.25, 0.5, 0.75, 1.0].map((f) => maxV * f);
   const fmt = (v: number) => (normalized ? v.toFixed(0) + "%" : v >= 1000 ? (v / 1000).toFixed(1) + "k" : Math.round(v).toString());
+  const tipFmt = (v: number) => (normalized ? v.toFixed(1) + "%" : v.toLocaleString("en-US", { maximumFractionDigits: 0 }));
+
+  const onMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const ci = Math.max(0, Math.min(n - 1, Math.round(((mx - padX) / Math.max(iW, 1)) * (n - 1))));
+    setHover({ i: ci, x: cx(ci) });
+  };
 
   return (
-    <div ref={ref} style={containerStyle}>
-      <svg width={w} height={h} style={{ overflow: "visible", display: "block" }}>
+    <div ref={ref} style={containerStyle} onMouseLeave={() => setHover(null)}>
+      <svg width={w} height={h} style={{ overflow: "visible", display: "block", cursor: "crosshair" }} onMouseMove={onMove}>
         <defs>
           <clipPath id={clipId}><rect x={padX} y={padY} width={Math.max(0, iW * prog)} height={iH + 2} /></clipPath>
         </defs>
@@ -299,7 +346,23 @@ export function StackedAreaChart({
         {xLabels !== null && (xLabels || X_DEFAULT).map((lab, _i, _a) => (
           <text key={"x" + _i} x={padX + (_a.length > 1 ? (_i / (_a.length - 1)) * iW : iW / 2)} y={padY + iH + 13} fontSize="9" fill="var(--text-4)" fontFamily="var(--font-mono)" textAnchor={_i === 0 ? "start" : _i === _a.length - 1 ? "end" : "middle"}>{lab}</text>
         ))}
+        {/* Crosshair (hover layer) */}
+        {hover && (
+          <line x1={hover.x} x2={hover.x} y1={padY} y2={padY + iH} stroke="var(--text-3)" strokeWidth="1" strokeDasharray="3 2" pointerEvents="none" />
+        )}
       </svg>
+      {/* Tooltip — per-layer values at the hovered bucket */}
+      {hover && (
+        <div style={{ position: "absolute", left: Math.min(hover.x + 10, Math.max(0, w - 150)), top: padY + 4, background: "var(--surface-2)", border: "1px solid var(--line-2)", borderRadius: 7, padding: "6px 10px", fontSize: 11, pointerEvents: "none", zIndex: 20, boxShadow: "0 4px 16px rgba(0,0,0,0.3)", minWidth: 96 }}>
+          {layers.map((l, li) => (
+            <div key={li} style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: li < layers.length - 1 ? 3 : 0 }}>
+              <span style={{ width: 8, height: 8, background: l.color, borderRadius: 2, flexShrink: 0, opacity: 0.85 }} />
+              <span style={{ color: "var(--text-3)", fontSize: 10, flex: 1, paddingRight: 6 }}>{l.name}</span>
+              <span style={{ fontFamily: "var(--font-mono)", color: "var(--text)", marginLeft: "auto" }}>{tipFmt(l.values[hover.i] ?? 0)}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -329,7 +392,7 @@ export function ColumnChart({
   const prog = useAnimProg(id + (stacks?.[0]?.values?.length ?? 0));
   const [hov, setHov] = useState<number | null>(null);
 
-  const containerStyle: React.CSSProperties = { width: "100%", height: height ? height : "100%", overflow: "hidden" };
+  const containerStyle: React.CSSProperties = { width: "100%", height: height ? height : "100%", overflow: "hidden", position: "relative" };
   if (!stacks?.length || !stacks[0]!.values?.length) return <div ref={ref} style={containerStyle} />;
 
   const n = stacks[0]!.values.length;
@@ -343,9 +406,18 @@ export function ColumnChart({
   const cy = (v: number) => padY + iH - (v / maxV) * iH;
   const gVals = [0.25, 0.5, 0.75, 1.0].map((f) => Math.round(maxV * f));
 
+  const onMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    // divide-guard belongs on iW, not the per-bucket width — guarding the
+    // bucket width remaps every bucket once bars get narrower than 1px
+    const ci = Math.max(0, Math.min(n - 1, Math.floor(((mx - padX) / Math.max(iW, 1)) * n)));
+    setHov(ci);
+  };
+
   return (
-    <div ref={ref} style={containerStyle}>
-      <svg width={w} height={h} style={{ overflow: "visible", display: "block" }}>
+    <div ref={ref} style={containerStyle} onMouseLeave={() => setHov(null)}>
+      <svg width={w} height={h} style={{ overflow: "visible", display: "block" }} onMouseMove={onMove}>
         {gVals.map((v, i) => (
           <g key={i}>
             <line x1={padX} x2={padX + iW} y1={cy(v)} y2={cy(v)} stroke="var(--line)" strokeWidth="1" />
@@ -359,7 +431,7 @@ export function ColumnChart({
           const isSpike = highlightSpikes && total > avg * 2.2;
           let cum = 0;
           return (
-            <g key={i} onMouseEnter={() => setHov(i)} onMouseLeave={() => setHov(null)}>
+            <g key={i}>
               {stacks.map((s, si) => {
                 const v = s.values[i] || 0;
                 if (v === 0) { cum += v; return null; }
@@ -372,7 +444,7 @@ export function ColumnChart({
                     rx={si === stacks.length - 1 ? 1.5 : 0} />
                 );
               })}
-              {hov === i && <rect x={bx(i) - 1} y={padY} width={barW + 2} height={iH} fill="white" opacity="0.04" rx="2" />}
+              {hov === i && <rect x={bx(i) - 1} y={padY} width={barW + 2} height={iH} fill="var(--text)" opacity="0.04" rx="2" pointerEvents="none" />}
             </g>
           );
         })}
@@ -380,6 +452,28 @@ export function ColumnChart({
           <text key={"x" + _i} x={padX + (_a.length > 1 ? (_i / (_a.length - 1)) * iW : iW / 2)} y={padY + iH + 13} fontSize="9" fill="var(--text-4)" fontFamily="var(--font-mono)" textAnchor={_i === 0 ? "start" : _i === _a.length - 1 ? "end" : "middle"}>{lab}</text>
         ))}
       </svg>
+      {/* Tooltip — total + per-stack values at the hovered bucket */}
+      {hov != null && totals[hov] != null && totals[hov]! > 0 && (
+        <div style={{ position: "absolute", left: Math.min(bx(hov) + barW + 8, Math.max(0, w - 150)), top: padY + 4, background: "var(--surface-2)", border: "1px solid var(--line-2)", borderRadius: 7, padding: "6px 10px", fontSize: 11, pointerEvents: "none", zIndex: 20, boxShadow: "0 4px 16px rgba(0,0,0,0.3)", minWidth: 96 }}>
+          {stacks.length > 1 && (
+            <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 3 }}>
+              <span style={{ color: "var(--text-3)", fontSize: 10, flex: 1, paddingRight: 6 }}>total</span>
+              <span style={{ fontFamily: "var(--font-mono)", color: "var(--text)", marginLeft: "auto" }}>{totals[hov]!.toLocaleString("en-US", { maximumFractionDigits: 0 })}</span>
+            </div>
+          )}
+          {stacks.map((s, si) => {
+            const v = s.values[hov] ?? 0;
+            if (v === 0) return null;
+            return (
+              <div key={si} style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: si < stacks.length - 1 ? 3 : 0 }}>
+                <span style={{ width: 8, height: 8, background: s.color, borderRadius: 2, flexShrink: 0, opacity: 0.85 }} />
+                <span style={{ color: "var(--text-3)", fontSize: 10, flex: 1, paddingRight: 6 }}>{s.name}</span>
+                <span style={{ fontFamily: "var(--font-mono)", color: "var(--text)", marginLeft: "auto" }}>{v.toLocaleString("en-US", { maximumFractionDigits: 0 })}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
