@@ -41,7 +41,18 @@ export type ChainFamily =
   | "tezos"
   | "iota"
   | "avalanchep"
-  | "polkadotassethub";
+  /** Polkadot/Kusama relay chains and their asset hubs. */
+  | "polkadotassethub"
+  /** Substrate chains outside the Polkadot ecosystem (Bittensor, Enjin,
+   *  Polymesh). They speak jsonrpc but serve no `eth_*` method. */
+  | "substrate"
+  | "monero"
+  | "aleo"
+  | "algorand"
+  | "arweave"
+  | "mina"
+  | "multiversx"
+  | "stacks";
 
 interface ChainMapEntry {
   name: string;

@@ -111,6 +111,36 @@ describe("buildChainMetaByIndex", () => {
     expect(buildChainMetaByIndex("COSMOSHUB").family).toBe("cosmos");
     expect(buildChainMetaByIndex("BTC").family).toBe("bitcoin");
   });
+  it("classifies non-EVM chains by what they actually serve", () => {
+    // Regression: `deriveFamily` used to end in a blanket `return "evm"`, so
+    // every chain outside its index-prefix list was labelled EVM regardless of
+    // the RPC surface. None of these answer a single eth_* method.
+    expect(buildChainMetaByIndex("MONERO").family).toBe("monero");
+    expect(buildChainMetaByIndex("STACKS").family).toBe("stacks");
+    expect(buildChainMetaByIndex("ALGORAND").family).toBe("algorand");
+    expect(buildChainMetaByIndex("ARWEAVE").family).toBe("arweave");
+    expect(buildChainMetaByIndex("MINA").family).toBe("mina");
+    expect(buildChainMetaByIndex("ALEO").family).toBe("aleo");
+    expect(buildChainMetaByIndex("MULTIVERSX").family).toBe("multiversx");
+    // Substrate with no EVM layer at all.
+    expect(buildChainMetaByIndex("ENJIN").family).toBe("substrate");
+    expect(buildChainMetaByIndex("POLYMESH").family).toBe("substrate");
+    // Kusama is substrate too, grouped with the Polkadot relay chains.
+    expect(buildChainMetaByIndex("KUSAMA").family).toBe("polkadotassethub");
+  });
+  it("inherits a forked chain's family from its imports", () => {
+    // Dash imports BTC and Koii imports SOLANA; neither index shares a prefix
+    // with its parent, so only the import closure gets these right.
+    expect(buildChainMetaByIndex("DASH").family).toBe("bitcoin");
+    expect(buildChainMetaByIndex("KOII").family).toBe("solana");
+  });
+  it("keeps EVM-compatible chains on evm even when they also speak substrate", () => {
+    // Astar/Moonbeam/Moonriver/Bittensor serve both eth_* and substrate RPC —
+    // eth_* wins, since that is the surface the gateway offers.
+    for (const spec of ["ASTAR", "MOONBEAM", "MOONRIVER", "BITTENSOR"]) {
+      expect(buildChainMetaByIndex(spec).family).toBe("evm");
+    }
+  });
   it("flags mainnet vs testnet", () => {
     expect(buildChainMetaByIndex("ETH1").mainnet).toBe(true);
     expect(buildChainMetaByIndex("HYPERLIQUIDT").mainnet).toBe(false);
