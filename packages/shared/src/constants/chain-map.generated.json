@@ -63,7 +63,7 @@
   },
   "ALEO": {
     "name": "Aleo",
-    "family": "evm",
+    "family": "aleo",
     "icon": "aleo",
     "interfaces": [
       "rest"
@@ -72,7 +72,7 @@
   },
   "ALEOT": {
     "name": "Aleo Testnet",
-    "family": "evm",
+    "family": "aleo",
     "icon": "aleo",
     "interfaces": [
       "rest"
@@ -90,7 +90,7 @@
   },
   "ALGORAND": {
     "name": "Algorand",
-    "family": "evm",
+    "family": "algorand",
     "icon": "algorand",
     "interfaces": [
       "rest"
@@ -99,7 +99,7 @@
   },
   "ALGORANDT": {
     "name": "Algorand Testnet",
-    "family": "evm",
+    "family": "algorand",
     "icon": "algorand",
     "interfaces": [
       "rest"
@@ -144,7 +144,7 @@
   },
   "ARWEAVE": {
     "name": "Arweave",
-    "family": "evm",
+    "family": "arweave",
     "icon": "arweave",
     "interfaces": [
       "rest"
@@ -153,7 +153,7 @@
   },
   "ARWEAVET": {
     "name": "Arweave Testnet",
-    "family": "evm",
+    "family": "arweave",
     "icon": "arweave",
     "interfaces": [
       "rest"
@@ -582,7 +582,7 @@
   },
   "DASH": {
     "name": "Dash",
-    "family": "evm",
+    "family": "bitcoin",
     "icon": "dash",
     "interfaces": [
       "jsonrpc"
@@ -591,7 +591,7 @@
   },
   "DASHT": {
     "name": "Dash Testnet",
-    "family": "evm",
+    "family": "bitcoin",
     "icon": "dash",
     "interfaces": [
       "jsonrpc"
@@ -651,7 +651,7 @@
   },
   "ENJIN": {
     "name": "Enjin Matrixchain",
-    "family": "evm",
+    "family": "substrate",
     "icon": "enjin",
     "interfaces": [
       "jsonrpc"
@@ -660,7 +660,7 @@
   },
   "ENJINT": {
     "name": "Enjin Canary Matrixchain",
-    "family": "evm",
+    "family": "substrate",
     "icon": "enjin",
     "interfaces": [
       "jsonrpc"
@@ -1042,21 +1042,21 @@
   },
   "KOII": {
     "name": "Koii",
-    "family": "evm",
+    "family": "solana",
     "icon": "koii",
     "interfaces": [],
     "mainnet": true
   },
   "KOIIT": {
     "name": "Koii Testnet",
-    "family": "evm",
+    "family": "solana",
     "icon": "koii",
     "interfaces": [],
     "mainnet": false
   },
   "KUSAMA": {
     "name": "Kusama",
-    "family": "evm",
+    "family": "polkadotassethub",
     "icon": "kusama",
     "interfaces": [
       "jsonrpc"
@@ -1065,7 +1065,7 @@
   },
   "KUSAMAASSETHUB": {
     "name": "Kusama Asset Hub",
-    "family": "evm",
+    "family": "polkadotassethub",
     "icon": "kusama",
     "interfaces": [
       "jsonrpc",
@@ -1075,7 +1075,7 @@
   },
   "KUSAMAASSETHUBT": {
     "name": "Westend Asset Hub Testnet",
-    "family": "evm",
+    "family": "polkadotassethub",
     "icon": "polkadotassethub",
     "interfaces": [
       "jsonrpc",
@@ -1085,7 +1085,7 @@
   },
   "KUSAMAT": {
     "name": "Westend Testnet",
-    "family": "evm",
+    "family": "polkadotassethub",
     "icon": "kusama",
     "interfaces": [
       "jsonrpc"
@@ -1188,7 +1188,7 @@
   },
   "MINA": {
     "name": "Mina",
-    "family": "evm",
+    "family": "mina",
     "icon": "mina",
     "interfaces": [
       "rest"
@@ -1197,7 +1197,7 @@
   },
   "MINAT": {
     "name": "Mina Devnet",
-    "family": "evm",
+    "family": "mina",
     "icon": "mina",
     "interfaces": [
       "rest"
@@ -1224,7 +1224,7 @@
   },
   "MONERO": {
     "name": "Monero",
-    "family": "evm",
+    "family": "monero",
     "icon": "monero",
     "interfaces": [
       "jsonrpc"
@@ -1233,7 +1233,7 @@
   },
   "MONEROT": {
     "name": "Monero Testnet",
-    "family": "evm",
+    "family": "monero",
     "icon": "monero",
     "interfaces": [
       "jsonrpc"
@@ -1305,7 +1305,7 @@
   },
   "MULTIVERSX": {
     "name": "MultiversX",
-    "family": "evm",
+    "family": "multiversx",
     "icon": "multiversx",
     "interfaces": [
       "rest"
@@ -1314,7 +1314,7 @@
   },
   "MULTIVERSXT": {
     "name": "MultiversX Testnet",
-    "family": "evm",
+    "family": "multiversx",
     "icon": "multiversx",
     "interfaces": [
       "rest"
@@ -1524,7 +1524,7 @@
   },
   "POLYMESH": {
     "name": "Polymesh",
-    "family": "evm",
+    "family": "substrate",
     "icon": "polymesh",
     "interfaces": [
       "jsonrpc"
@@ -1533,7 +1533,7 @@
   },
   "POLYMESHT": {
     "name": "Polymesh Testnet",
-    "family": "evm",
+    "family": "substrate",
     "icon": "polymesh",
     "interfaces": [
       "jsonrpc"
@@ -1698,7 +1698,7 @@
   },
   "STACKS": {
     "name": "Stacks",
-    "family": "evm",
+    "family": "stacks",
     "icon": "stacks",
     "interfaces": [
       "rest"
@@ -1707,7 +1707,7 @@
   },
   "STACKST": {
     "name": "Stacks Testnet",
-    "family": "evm",
+    "family": "stacks",
     "icon": "stacks",
     "interfaces": [
       "rest"

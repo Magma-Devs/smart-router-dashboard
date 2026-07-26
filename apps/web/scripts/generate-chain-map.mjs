@@ -153,39 +153,120 @@ function resolveIcon(index, name, overlaySlug) {
 }
 
 /**
+ * Every spec by index, including `enabled: false` base specs — they are not
+ * emitted as chains but a real chain's family often hangs off what it imports.
+ * Populated once the spec files are read (see main).
+ */
+const specsByIndex = new Map();
+
+/** Transitive `imports` closure for a spec index. A testnet usually imports its
+ *  mainnet, which in turn imports the base spec, so the useful marker (ETH1,
+ *  BTC, SOLANA, COSMOSSDK*) is frequently two hops up. */
+function importClosure(index, seen = new Set()) {
+  for (const imp of specsByIndex.get(index)?.imports ?? []) {
+    const up = String(imp).toUpperCase();
+    if (seen.has(up)) continue;
+    seen.add(up);
+    importClosure(up, seen);
+  }
+  return seen;
+}
+
+/** Every api name a spec serves, following imports. Lets us classify by the
+ *  RPC surface actually exposed instead of guessing from the index. */
+function methodNames(index, seen = new Set(), out = new Set()) {
+  if (seen.has(index)) return out;
+  seen.add(index);
+  const spec = specsByIndex.get(index);
+  if (!spec) return out;
+  for (const c of spec.api_collections ?? []) {
+    for (const a of c.apis ?? []) if (a.name) out.add(a.name);
+  }
+  for (const imp of spec.imports ?? []) methodNames(String(imp).toUpperCase(), seen, out);
+  return out;
+}
+
+/** True when the chain actually answers Ethereum JSON-RPC. This is what makes a
+ *  chain "EVM" for our purposes — it is the surface the gateway serves and the
+ *  method set the try-me drawer should offer. Note it is not exclusive: Astar,
+ *  Moonbeam, Moonriver and Bittensor serve eth_* *and* substrate RPC, and EVM
+ *  is the more useful family for them. */
+function servesEvm(index) {
+  for (const n of methodNames(index)) if (n.startsWith("eth_")) return true;
+  return false;
+}
+
+/** Substrate/polkadot-SDK nodes all expose the same JSON-RPC surface. Checked
+ *  after `servesEvm`, so this only claims chains with no EVM layer at all
+ *  (Enjin, Polymesh) rather than the EVM-compatible parachains. */
+function isSubstrate(index) {
+  const m = methodNames(index);
+  return (
+    m.has("account_nextIndex") ||
+    m.has("author_submitExtrinsic") ||
+    m.has("state_getRuntimeVersion") ||
+    m.has("chain_getFinalizedHead")
+  );
+}
+
+/**
  * Derive a chain-type family from the spec when v1 doesn't cover it.
- * Uses the served interfaces + a few index heuristics. Conservative: the
- * family only drives the try-me method fallback + grouping, and an unknown
- * chain still renders fine (name + icon + real per-spec methods).
+ *
+ * Ordered strongest-evidence-first: what the spec *imports* and the RPC surface
+ * it actually serves beat any index-name heuristic. `evm` is the last resort
+ * and is only reached by a jsonrpc chain that showed no other marker — it used
+ * to be a blanket catch-all, which silently labelled every non-EVM chain
+ * outside the prefix list (Monero, Stacks, Algorand, Dash, …) as EVM.
  */
 function deriveFamily(index, interfaces, imports) {
   const has = (i) => interfaces.includes(i);
-  const imp = (imports ?? []).map((s) => s.toUpperCase());
-  const impHas = (p) => imp.some((s) => s.includes(p));
+  const imp = new Set([...(imports ?? []).map((s) => String(s).toUpperCase()), ...importClosure(index)]);
+  const impHas = (p) => [...imp].some((s) => s.includes(p));
+  const idx = (...p) => p.some((s) => index.startsWith(s));
 
+  // Cosmos first: a cosmos chain with an EVM module (Sei, Kava, Canto) imports
+  // ETH1 too, and its cosmos identity is the more useful grouping.
   if (has("tendermintrpc") || has("grpc") || impHas("COSMOS") || impHas("TENDERMINT") || impHas("IBC")) {
     return "cosmos";
   }
-  if (index.startsWith("SOLANA")) return "solana";
-  if (index.startsWith("NEAR")) return "near";
-  if (index.startsWith("STRK")) return "starknet";
-  if (index.startsWith("BTC") || index.startsWith("LTC") || index.startsWith("DOGE") || index.startsWith("BCH")) {
-    return "bitcoin";
-  }
-  if (index.startsWith("APT")) return "aptos";
-  if (index.startsWith("SUI")) return "aptos";
-  if (index.startsWith("XRP")) return "xrp";
-  if (index.startsWith("XLM")) return "xlm";
-  if (index.startsWith("TRX")) return "tron";
-  if (index.startsWith("TON")) return "ton";
-  if (index.startsWith("HEDERA")) return "hedera";
-  if (index.startsWith("CARDANO")) return "cardano";
-  if (index.startsWith("CASPER")) return "casper";
-  if (index.startsWith("TEZOS")) return "tezos";
-  if (index.startsWith("IOTA")) return "iota";
-  if (index.startsWith("POLKADOT") || index.startsWith("WESTEND")) return "polkadotassethub";
-  // jsonrpc-only, no cosmos markers → assume EVM (the largest family).
-  if (has("jsonrpc")) return "evm";
+
+  // Polkadot ecosystem (relay chains + asset hubs) — substrate, but grouped
+  // under the pre-existing family the v1 overlay already uses for them.
+  if (idx("POLKADOT", "WESTEND", "KUSAMA")) return "polkadotassethub";
+  // Serving eth_* is what makes a chain EVM here, and it wins over the
+  // substrate check: Astar/Moonbeam/Moonriver/Bittensor speak both.
+  if (servesEvm(index)) return "evm";
+  // Substrate chains with no EVM layer at all.
+  if (isSubstrate(index)) return "substrate";
+
+  // Import-driven: a fork inherits its parent's family (Dash imports BTC,
+  // Koii imports SOLANA) even when its index shares no prefix.
+  if (imp.has("BTC")) return "bitcoin";
+  if (imp.has("SOLANA")) return "solana";
+
+  if (idx("SOLANA")) return "solana";
+  if (idx("NEAR")) return "near";
+  if (idx("STRK")) return "starknet";
+  if (idx("BTC", "LTC", "DOGE", "BCH", "DASH")) return "bitcoin";
+  if (idx("APT", "SUI")) return "aptos";
+  if (idx("XRP")) return "xrp";
+  if (idx("XLM")) return "xlm";
+  if (idx("TRX")) return "tron";
+  if (idx("TON")) return "ton";
+  if (idx("HEDERA")) return "hedera";
+  if (idx("CARDANO")) return "cardano";
+  if (idx("CASPER")) return "casper";
+  if (idx("TEZOS")) return "tezos";
+  if (idx("IOTA")) return "iota";
+  if (idx("MONERO")) return "monero";
+  if (idx("ALEO")) return "aleo";
+  if (idx("ALGORAND")) return "algorand";
+  if (idx("ARWEAVE")) return "arweave";
+  if (idx("MINA")) return "mina";
+  if (idx("MULTIVERSX")) return "multiversx";
+  if (idx("STACKS")) return "stacks";
+
+  if (imp.has("ETH1") || has("jsonrpc")) return "evm";
   return "evm";
 }
 
@@ -207,6 +288,14 @@ const overlay = JSON.parse(readFileSync(OVERLAY_PATH, "utf8"));
 const specFiles = process.env.LAVA_SPECS_DIR
   ? loadSpecFilesFromDisk(process.env.LAVA_SPECS_DIR)
   : await loadSpecFilesFromGitHub();
+
+// Index every spec — disabled base specs included — before deriving anything,
+// so family resolution can walk `imports` and read the inherited RPC surface.
+for (const { json } of specFiles) {
+  for (const spec of json?.proposal?.specs ?? []) {
+    if (spec.index && !specsByIndex.has(spec.index)) specsByIndex.set(spec.index, spec);
+  }
+}
 
 const out = {};
 let derived = 0;
