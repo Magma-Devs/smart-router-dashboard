@@ -273,6 +273,27 @@ describe("generated lava-specs catalog", () => {
     }
   });
 
+  it("resolves their testnets through the catalog's mainnet alias", () => {
+    // Testnets are stored as a string alias to the mainnet entry, so they take
+    // a different branch to the one above. Without it the drawer would be
+    // empty on exactly the chains people try first.
+    const polymeshT = getInterfaceConfig("POLYMESHT", "jsonrpc", false);
+    expect(polymeshT?.regular.length).toBeGreaterThan(0);
+    expect(polymeshT?.regular.some((c) => c.method === "chain_getBlock")).toBe(true);
+    expect(polymeshT?.regular.some((c) => c.method.startsWith("eth_"))).toBe(false);
+    // The alias must land on the same catalog as its mainnet.
+    expect(polymeshT?.regular.length).toBe(getInterfaceConfig("POLYMESH", "jsonrpc", false)?.regular.length);
+
+    for (const [spec, iface] of [
+      ["MONEROT", "jsonrpc"],
+      ["ENJINT", "jsonrpc"],
+      ["STACKST", "rest"],
+      ["ALEOT", "rest"],
+    ] as const) {
+      expect(getInterfaceConfig(spec, iface, false)?.regular.length, `${spec} is empty`).toBeGreaterThan(0);
+    }
+  });
+
   it("COSMOSHUB inherits rest + tendermintrpc + grpc through transitive imports", () => {
     // COSMOSHUB → COSMOSSDK50 → COSMOSSDK → IBC/TENDERMINT: none of these
     // methods are declared on the COSMOSHUB spec itself.
