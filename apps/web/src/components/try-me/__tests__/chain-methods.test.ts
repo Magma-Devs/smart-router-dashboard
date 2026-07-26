@@ -62,6 +62,17 @@ describe("familyForSpec", () => {
     expect(familyForSpec("BTC")).toBe("bitcoin");
   });
 
+  it("returns null for map families the static catalog doesn't curate", () => {
+    // The chain map assigns 27 chain-type families; FAMILY_METHODS curates
+    // method sets for 6. The rest resolve to null *on purpose* — serving a
+    // near-miss family here would offer methods the chain cannot answer.
+    // Regression: these all used to derive as `evm`, so the drawer offered
+    // eth_* for Monero and Stacks whenever the generated chunk hadn't landed.
+    for (const spec of ["MONERO", "STACKS", "ALGORAND", "ARWEAVE", "MINA", "ALEO", "MULTIVERSX", "ENJIN", "POLYMESH"]) {
+      expect(familyForSpec(spec), `${spec} should not borrow a catalog family`).toBeNull();
+    }
+  });
+
   it("defaults an unknown index to evm (the map's fallback family)", () => {
     // The generated per-spec catalog is tried before this fallback ever
     // fires, so a coarse default is safe here.
@@ -243,6 +254,23 @@ describe("generated lava-specs catalog", () => {
     const cfg = getInterfaceConfig("ETH1", "jsonrpc", true);
     expect(cfg?.archive?.length).toBeGreaterThan(0);
     expect(cfg?.archive?.[0]?.method).toBe("eth_getBalance");
+  });
+
+  it("serves real methods for chains whose family has no curated fallback", () => {
+    // These have no FAMILY_METHODS entry, so the generated catalog is the only
+    // source — if it ever stopped covering them the drawer would vanish.
+    const monero = getInterfaceConfig("MONERO", "jsonrpc", false);
+    expect(monero?.regular.some((c) => c.method === "get_block_count")).toBe(true);
+    expect(monero?.regular.some((c) => c.method.startsWith("eth_"))).toBe(false);
+
+    const enjin = getInterfaceConfig("ENJIN", "jsonrpc", false);
+    expect(enjin?.regular.some((c) => c.method === "account_nextIndex")).toBe(true);
+    expect(enjin?.regular.some((c) => c.method.startsWith("eth_"))).toBe(false);
+
+    for (const spec of ["STACKS", "ALGORAND", "ARWEAVE", "MINA", "ALEO", "MULTIVERSX"]) {
+      const cfg = getInterfaceConfig(spec, "rest", false);
+      expect(cfg?.regular.length, `${spec} rest catalog is empty`).toBeGreaterThan(0);
+    }
   });
 
   it("COSMOSHUB inherits rest + tendermintrpc + grpc through transitive imports", () => {
