@@ -80,9 +80,42 @@ function loadSpecFilesFromDisk(dir) {
 
 const TESTNET_RE = /\b(testnet|sepolia|holesky|hoodi|devnet|preprod|shasta|shadownet|alfajores|amoy|blaze|arabica|mocha|artio|bartio|se)\b/i;
 
+/**
+ * Brands whose canonical casing plain capitalization would get wrong. Keyed
+ * by the all-lowercase form; only consulted when upstream wrote the word in
+ * all-lowercase, so a spec that already cases it deliberately wins.
+ */
+const WORD_CASE = {
+  bob: "BOB",
+  dydx: "dYdX",
+  race: "RACE",
+  thorchain: "THORChain",
+  xdc: "XDC",
+};
+
+/**
+ * Title-case a single word without flattening intentional casing. lava-specs
+ * is inconsistent — "Ethereum Mainnet" and "BSC Mainnet" sit next to "akash
+ * mainnet" and "dydx testnet" — so names are normalized here rather than
+ * trusting upstream. A blanket .toTitleCase() would corrupt the specs that
+ * are already right (zkSync → Zksync, MultiversX → Multiversx, BSC → Bsc),
+ * hence the word-level rules.
+ */
+function titleCaseWord(word) {
+  const lower = word.toLowerCase();
+  // Upstream wrote it lowercase and it's a brand we know the casing for.
+  if (word === lower && WORD_CASE[lower]) return WORD_CASE[lower];
+  // Any existing capital means the spec cased it on purpose — leave it be.
+  if (/[A-Z]/.test(word)) return word;
+  // Version / numeric tokens ("v50") must not become "V50".
+  if (/^v?\d/.test(word)) return word;
+  return word.charAt(0).toUpperCase() + word.slice(1);
+}
+
 function displayName(rawName, index) {
   if (typeof rawName !== "string" || !rawName.trim()) return index;
-  return rawName.replace(/\s+mainnet$/i, "").trim() || rawName.trim();
+  const trimmed = rawName.replace(/\s+mainnet$/i, "").trim() || rawName.trim();
+  return trimmed.split(/\s+/).map(titleCaseWord).join(" ");
 }
 
 function isMainnet(name, index) {

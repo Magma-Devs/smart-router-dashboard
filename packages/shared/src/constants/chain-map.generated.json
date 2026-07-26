@@ -40,7 +40,7 @@
     "mainnet": false
   },
   "AKASH": {
-    "name": "akash",
+    "name": "Akash",
     "family": "cosmos",
     "icon": "default",
     "interfaces": [
@@ -51,7 +51,7 @@
     "mainnet": true
   },
   "AKASHT": {
-    "name": "akash testnet",
+    "name": "Akash Testnet",
     "family": "cosmos",
     "icon": "default",
     "interfaces": [
@@ -89,7 +89,7 @@
     "mainnet": false
   },
   "ALGORAND": {
-    "name": "algorand",
+    "name": "Algorand",
     "family": "evm",
     "icon": "default",
     "interfaces": [
@@ -98,7 +98,7 @@
     "mainnet": true
   },
   "ALGORANDT": {
-    "name": "algorand testnet",
+    "name": "Algorand Testnet",
     "family": "evm",
     "icon": "default",
     "interfaces": [
@@ -255,7 +255,7 @@
     "mainnet": false
   },
   "BABYLON": {
-    "name": "babylon",
+    "name": "Babylon",
     "family": "cosmos",
     "icon": "default",
     "interfaces": [
@@ -266,7 +266,7 @@
     "mainnet": true
   },
   "BABYLONT": {
-    "name": "babylon testnet",
+    "name": "Babylon Testnet",
     "family": "cosmos",
     "icon": "default",
     "interfaces": [
@@ -340,7 +340,7 @@
     "mainnet": false
   },
   "BITTENSOR": {
-    "name": "bittensor",
+    "name": "Bittensor",
     "family": "evm",
     "icon": "default",
     "interfaces": [
@@ -349,7 +349,7 @@
     "mainnet": true
   },
   "BITTENSORT": {
-    "name": "bittensor testnet",
+    "name": "Bittensor Testnet",
     "family": "evm",
     "icon": "default",
     "interfaces": [
@@ -376,7 +376,7 @@
     "mainnet": false
   },
   "BOB": {
-    "name": "bob",
+    "name": "BOB",
     "family": "evm",
     "icon": "default",
     "interfaces": [
@@ -385,7 +385,7 @@
     "mainnet": true
   },
   "BOBT": {
-    "name": "bob testnet",
+    "name": "BOB Testnet",
     "family": "evm",
     "icon": "default",
     "interfaces": [
@@ -523,7 +523,7 @@
     "mainnet": true
   },
   "CODEX": {
-    "name": "codex",
+    "name": "Codex",
     "family": "evm",
     "icon": "default",
     "interfaces": [
@@ -532,7 +532,7 @@
     "mainnet": true
   },
   "CODEXT": {
-    "name": "codex testnet",
+    "name": "Codex Testnet",
     "family": "evm",
     "icon": "default",
     "interfaces": [
@@ -609,7 +609,7 @@
     "mainnet": true
   },
   "CRONOS": {
-    "name": "cronos",
+    "name": "Cronos",
     "family": "evm",
     "icon": "default",
     "interfaces": [
@@ -618,7 +618,7 @@
     "mainnet": true
   },
   "CRONOST": {
-    "name": "cronos testnet",
+    "name": "Cronos Testnet",
     "family": "evm",
     "icon": "default",
     "interfaces": [
@@ -663,7 +663,7 @@
     "mainnet": false
   },
   "DYDX": {
-    "name": "dydx",
+    "name": "dYdX",
     "family": "cosmos",
     "icon": "default",
     "interfaces": [
@@ -674,7 +674,7 @@
     "mainnet": true
   },
   "DYDXT": {
-    "name": "dydx testnet",
+    "name": "dYdX Testnet",
     "family": "cosmos",
     "icon": "default",
     "interfaces": [
@@ -714,7 +714,7 @@
     "mainnet": true
   },
   "ETC": {
-    "name": "ethereum classic",
+    "name": "Ethereum Classic",
     "family": "evm",
     "icon": "ethereum",
     "interfaces": [
@@ -723,7 +723,7 @@
     "mainnet": true
   },
   "ETCT": {
-    "name": "ethereum classic testnet",
+    "name": "Ethereum Classic Testnet",
     "family": "evm",
     "icon": "ethereum",
     "interfaces": [
@@ -869,7 +869,7 @@
     "mainnet": false
   },
   "FLOW": {
-    "name": "flow",
+    "name": "Flow",
     "family": "evm",
     "icon": "default",
     "interfaces": [
@@ -878,7 +878,7 @@
     "mainnet": true
   },
   "FLOWT": {
-    "name": "flow testnet",
+    "name": "Flow Testnet",
     "family": "evm",
     "icon": "default",
     "interfaces": [
@@ -1018,7 +1018,7 @@
     "mainnet": false
   },
   "INK": {
-    "name": "ink",
+    "name": "Ink",
     "family": "evm",
     "icon": "default",
     "interfaces": [
@@ -1027,7 +1027,7 @@
     "mainnet": true
   },
   "INKT": {
-    "name": "ink sepolia testnet",
+    "name": "Ink Sepolia Testnet",
     "family": "evm",
     "icon": "default",
     "interfaces": [
@@ -1121,7 +1121,7 @@
     "mainnet": false
   },
   "KUSAMA": {
-    "name": "kusama",
+    "name": "Kusama",
     "family": "evm",
     "icon": "default",
     "interfaces": [
@@ -1150,7 +1150,7 @@
     "mainnet": false
   },
   "KUSAMAT": {
-    "name": "westend testnet",
+    "name": "Westend Testnet",
     "family": "evm",
     "icon": "default",
     "interfaces": [
@@ -1181,7 +1181,7 @@
     "mainnet": true
   },
   "LINEA": {
-    "name": "linea",
+    "name": "Linea",
     "family": "evm",
     "icon": "default",
     "interfaces": [
@@ -1190,7 +1190,7 @@
     "mainnet": true
   },
   "LINEAT": {
-    "name": "linea sepolia testnet",
+    "name": "Linea Sepolia Testnet",
     "family": "evm",
     "icon": "default",
     "interfaces": [
@@ -1289,7 +1289,7 @@
     "mainnet": false
   },
   "MONERO": {
-    "name": "monero",
+    "name": "Monero",
     "family": "evm",
     "icon": "default",
     "interfaces": [
@@ -1298,7 +1298,7 @@
     "mainnet": true
   },
   "MONEROT": {
-    "name": "monero testnet",
+    "name": "Monero Testnet",
     "family": "evm",
     "icon": "default",
     "interfaces": [
@@ -1307,7 +1307,7 @@
     "mainnet": false
   },
   "MOONBEAM": {
-    "name": "moonbeam",
+    "name": "Moonbeam",
     "family": "evm",
     "icon": "default",
     "interfaces": [
@@ -1316,7 +1316,7 @@
     "mainnet": true
   },
   "MOONBEAMT": {
-    "name": "moonbeam testnet moonbase alpha",
+    "name": "Moonbeam Testnet Moonbase Alpha",
     "family": "evm",
     "icon": "default",
     "interfaces": [
@@ -1495,7 +1495,7 @@
     "mainnet": false
   },
   "PLASMA": {
-    "name": "plasma",
+    "name": "Plasma",
     "family": "evm",
     "icon": "default",
     "interfaces": [
@@ -1504,7 +1504,7 @@
     "mainnet": true
   },
   "PLASMAT": {
-    "name": "plasma testnet",
+    "name": "Plasma Testnet",
     "family": "evm",
     "icon": "default",
     "interfaces": [
@@ -1513,7 +1513,7 @@
     "mainnet": false
   },
   "PLUME": {
-    "name": "plume",
+    "name": "Plume",
     "family": "evm",
     "icon": "default",
     "interfaces": [
@@ -1522,7 +1522,7 @@
     "mainnet": true
   },
   "PLUMET": {
-    "name": "plume testnet",
+    "name": "Plume Testnet",
     "family": "evm",
     "icon": "default",
     "interfaces": [
@@ -1531,7 +1531,7 @@
     "mainnet": false
   },
   "POLKADOT": {
-    "name": "polkadot",
+    "name": "Polkadot",
     "family": "polkadotassethub",
     "icon": "default",
     "interfaces": [
@@ -1561,7 +1561,7 @@
     "mainnet": false
   },
   "POLKADOTT": {
-    "name": "westend testnet",
+    "name": "Westend Testnet",
     "family": "polkadotassethub",
     "icon": "default",
     "interfaces": [
@@ -1607,7 +1607,7 @@
     "mainnet": false
   },
   "RACE": {
-    "name": "race",
+    "name": "RACE",
     "family": "evm",
     "icon": "default",
     "interfaces": [
@@ -1616,7 +1616,7 @@
     "mainnet": true
   },
   "RACET": {
-    "name": "race testnet",
+    "name": "RACE Testnet",
     "family": "evm",
     "icon": "default",
     "interfaces": [
@@ -1665,7 +1665,7 @@
     "mainnet": false
   },
   "SEI": {
-    "name": "sei",
+    "name": "Sei",
     "family": "cosmos",
     "icon": "default",
     "interfaces": [
@@ -1677,7 +1677,7 @@
     "mainnet": true
   },
   "SEIT": {
-    "name": "sei testnet",
+    "name": "Sei Testnet",
     "family": "cosmos",
     "icon": "default",
     "interfaces": [
@@ -1763,7 +1763,7 @@
     "mainnet": true
   },
   "STACKS": {
-    "name": "stacks",
+    "name": "Stacks",
     "family": "evm",
     "icon": "default",
     "interfaces": [
@@ -1772,7 +1772,7 @@
     "mainnet": true
   },
   "STACKST": {
-    "name": "stacks testnet",
+    "name": "Stacks Testnet",
     "family": "evm",
     "icon": "default",
     "interfaces": [
@@ -1781,7 +1781,7 @@
     "mainnet": false
   },
   "STORY": {
-    "name": "story",
+    "name": "Story",
     "family": "evm",
     "icon": "default",
     "interfaces": [
@@ -1790,7 +1790,7 @@
     "mainnet": true
   },
   "STORYT": {
-    "name": "story testnet",
+    "name": "Story Testnet",
     "family": "evm",
     "icon": "default",
     "interfaces": [
@@ -1915,7 +1915,7 @@
     "mainnet": false
   },
   "THORCHAIN": {
-    "name": "thorchain",
+    "name": "THORChain",
     "family": "cosmos",
     "icon": "default",
     "interfaces": [
@@ -1925,7 +1925,7 @@
     "mainnet": true
   },
   "THORCHAINT": {
-    "name": "thorchain testnet",
+    "name": "THORChain Testnet",
     "family": "cosmos",
     "icon": "default",
     "interfaces": [
@@ -1973,7 +1973,7 @@
     "mainnet": false
   },
   "UNICHAIN": {
-    "name": "unichain",
+    "name": "Unichain",
     "family": "evm",
     "icon": "default",
     "interfaces": [
@@ -1982,7 +1982,7 @@
     "mainnet": true
   },
   "UNICHAINT": {
-    "name": "unichain testnet",
+    "name": "Unichain Testnet",
     "family": "evm",
     "icon": "default",
     "interfaces": [
@@ -2038,7 +2038,7 @@
     "mainnet": false
   },
   "XDC": {
-    "name": "xdc network",
+    "name": "XDC Network",
     "family": "evm",
     "icon": "default",
     "interfaces": [
@@ -2047,7 +2047,7 @@
     "mainnet": true
   },
   "XDCT": {
-    "name": "xdc network testnet",
+    "name": "XDC Network Testnet",
     "family": "evm",
     "icon": "default",
     "interfaces": [
