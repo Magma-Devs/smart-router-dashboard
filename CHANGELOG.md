@@ -59,6 +59,8 @@ bugs, all fixed in the generators rather than patched into the output.
 - **Differently-branded testnets missing their mainnet's icon.** Icon
   inheritance paired testnets by a trailing `T` only, so Berachain's Bepolia
   (`BERAB` ← `BERA`) fell to `default.svg`. It now walks index prefixes.
+- **Arbitrum Sepolia rendered Arbitrum Nova's logo** — the v1 overlay had it on
+  `arbitrum-nova.svg`. It is a testnet of Arbitrum One and now shows that icon.
 
 ## [0.6.0]
 
