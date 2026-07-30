@@ -78,7 +78,10 @@ const OUT_PATH = path.resolve(
 /* ── Curated hints ───────────────────────────────────────────────────────── */
 /** Single source for example params / descriptions / labels. `only` scopes a
  *  hint to spec-index prefixes (used where the same method name means
- *  different things on different chains). Order = display order. */
+ *  different things on different chains); adding `exact: true` matches the
+ *  index itself instead of a prefix, for hints carrying data that is valid on
+ *  ONE network only (a genesis hash — BTC's does not hold on BTCS/BTCT4).
+ *  Order = display order. */
 
 const JSONRPC_HINTS = [
   // EVM
@@ -163,8 +166,9 @@ const JSONRPC_HINTS = [
   // BTC gets the genesis-block hash — stable forever on every full node. The
   // other bitcoin-family chains (BCH/DOGE/LTC) have different genesis hashes,
   // so their entry ships without params (the old '<blockhash>' literal just
-  // errored on Send).
-  { m: "getblockheader", p: '["000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"]', d: "Returns the header of the given block.", only: ["BTC"] },
+  // errored on Send). `exact` matters here: BTC's test networks (BTCT, BTCS,
+  // BTCT4) all start with "BTC" and none of them shares its genesis hash.
+  { m: "getblockheader", p: '["000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"]', d: "Returns the header of the given block.", only: ["BTC"], exact: true },
   { m: "getblockheader", d: "Returns the header of the given block — pass a block hash (get one with getbestblockhash)." },
   { m: "getnetworkinfo", p: "[]", d: "Returns P2P networking state." },
   { m: "getmempoolinfo", p: "[]", d: "Returns mempool state info." },
@@ -172,11 +176,16 @@ const JSONRPC_HINTS = [
   // Filecoin
   { m: "Filecoin.ChainHead", p: "[]", d: "Returns the current head of the chain." },
   { m: "Filecoin.Version", p: "[]", d: "Returns the node version." },
-  // Polkadot / Substrate
+  // Polkadot / Substrate (relay chains, asset hubs, and the parachains whose
+  // base surface is substrate — Hydration, Bittensor, Enjin, Polymesh)
   { m: "chain_getBlock", p: "[]", d: "Returns the latest block." },
   { m: "chain_getBlockHash", p: "[]", d: "Returns the hash of the latest block." },
+  { m: "chain_getFinalizedHead", p: "[]", d: "Returns the hash of the last finalized block." },
   { m: "system_chain", p: "[]", d: "Returns the chain name." },
   { m: "system_health", p: "[]", d: "Returns node health information." },
+  { m: "system_version", p: "[]", d: "Returns the node's client version." },
+  { m: "system_properties", p: "[]", d: "Returns chain properties: token symbol, decimals, ss58 prefix." },
+  { m: "state_getRuntimeVersion", p: "[]", d: "Returns the runtime version (spec name + spec version)." },
   // Sui / IOTA
   { m: "sui_getChainIdentifier", p: "[]", d: "Returns the chain identifier." },
   { m: "sui_getLatestCheckpointSequenceNumber", p: "[]", d: "Returns the sequence number of the latest checkpoint." },
@@ -203,12 +212,47 @@ const REST_HINTS = [
   { m: "/cosmos/staking/v1beta1/validators", d: "Returns all validators." },
   { m: "/cosmos/bank/v1beta1/supply", d: "Returns total coin supply." },
   { m: "/cosmos/bank/v1beta1/balances/{address}", d: "Returns all balances of the given address." },
-  // Aptos / Movement (fullnode API is mounted under /v1 on the endpoint)
-  { m: "/", d: "Returns ledger info of the node (API root)." },
-  { m: "/-/healthy", d: "Node health check." },
-  { m: "/accounts/{address}", d: "Returns account authentication key and sequence number." },
-  { m: "/blocks/by_height/{block_height}", d: "Returns the block at the given height." },
-  { m: "/estimate_gas_price", d: "Returns the estimated gas price." },
+  // Aptos / Movement (fullnode API is mounted under /v1 on the endpoint).
+  // Scoped: `/` is also served by Arweave and Stellar, and
+  // `/accounts/{address}` by VeChain, where these descriptions are wrong.
+  { m: "/", d: "Returns ledger info of the node (API root).", only: ["APT", "MOVEMENT"] },
+  { m: "/-/healthy", d: "Node health check.", only: ["APT", "MOVEMENT"] },
+  { m: "/accounts/{address}", d: "Returns account authentication key and sequence number.", only: ["APT", "MOVEMENT"] },
+  { m: "/blocks/by_height/{block_height}", d: "Returns the block at the given height.", only: ["APT", "MOVEMENT"] },
+  { m: "/estimate_gas_price", d: "Returns the estimated gas price.", only: ["APT", "MOVEMENT"] },
+  // EOS (nodeos chain API — every path is POST; only get_info needs no body)
+  { m: "/v1/chain/get_info", v: "POST", d: "Returns chain state: chain id, head block, server version." },
+  { m: "/v1/chain/get_block_info", v: "POST", d: "Returns block info — POST body {\"block_num\": <height>}." },
+  { m: "/v1/chain/get_account", v: "POST", d: "Returns an account's resources and permissions — POST body {\"account_name\":\"<name>\"}." },
+  { m: "/v1/chain/get_table_rows", v: "POST", d: "Reads rows from a contract table — POST body {\"code\":…,\"scope\":…,\"table\":…,\"json\":true}." },
+  { m: "/v1/chain/get_producers", v: "POST", d: "Returns the producer schedule — POST body {\"json\":true,\"limit\":10}." },
+  { m: "/v1/trace_api/get_block", v: "POST", d: "Returns a block's action traces — POST body {\"block_num\": <height>}." },
+  // VeChain Thor
+  { m: "/blocks/{revision}", p: "/blocks/best", d: "Returns a block by number, id, or \"best\" for the chain head." },
+  { m: "/accounts/{address}", p: "/accounts/0x0000000000000000000000000000456E65726779", d: "Returns an address's VET balance, VTHO energy and code flag.", only: ["VECHAIN"] },
+  { m: "/node/network/peers", d: "Returns the node's connected peers." },
+  { m: "/fees/priority", d: "Returns the suggested priority fee." },
+  { m: "/fees/history", d: "Returns recent fee history." },
+  // TON HTTP API — toncenter v2 (/v2/get*) plus tonindex v3 (/v3/*). Ice Open
+  // Network is a TON fork and serves the same paths, so the address examples
+  // are scoped to TON (a TON address does not exist on ION) and every chain
+  // gets the paramless variant below.
+  { m: "/v2/getMasterchainInfo", d: "Returns the masterchain state — the latest known block." },
+  { m: "/v3/masterchainInfo", d: "Returns the masterchain state — the latest known block." },
+  { m: "/v2/getAddressInformation", p: "/v2/getAddressInformation?address=EQAAFhjXzKuQ5N0c96nsdZQWATcJm909LYSaCAvWFxVJP80D", d: "Returns balance, state and code for an address.", only: ["TON"] },
+  { m: "/v2/getAddressInformation", d: "Returns balance, state and code for an address — append ?address=<address>." },
+  { m: "/v3/addressInformation", p: "/v3/addressInformation?address=EQAAFhjXzKuQ5N0c96nsdZQWATcJm909LYSaCAvWFxVJP80D", d: "Returns balance, state and code for an address.", only: ["TON"] },
+  { m: "/v3/addressInformation", d: "Returns balance, state and code for an address — append ?address=<address>." },
+  { m: "/v3/blocks", d: "Lists recent blocks, newest first." },
+  { m: "/v3/transactions", d: "Lists recent transactions, newest first." },
+  // Concordium (node REST proxy — {…} segments are placeholders to replace)
+  { m: "/v0/consensusInfo", d: "Returns consensus state: best block, epoch and finalization info." },
+  { m: "/v0/chainParameters", d: "Returns the current chain parameters." },
+  { m: "/v0/genesisHash", d: "Returns the genesis block hash." },
+  { m: "/v0/blocksAtHeight/{blockHeight}", p: "/v0/blocksAtHeight/1", d: "Returns the block hashes at the given absolute height." },
+  { m: "/v0/blockInfo/{blockHash}", d: "Returns info for a block — replace {blockHash} with a hash from /v0/consensusInfo." },
+  { m: "/v0/accBalance/{account address}", d: "Returns an account's balance — replace the segment with a Concordium address." },
+  { m: "/v0/transactionCost", d: "Returns the current transaction cost estimate." },
   // Ethereum Beacon API
   { m: "/eth/v1/beacon/genesis", d: "Returns beacon chain genesis details." },
   { m: "/eth/v1/node/health", d: "Node health check." },
@@ -219,9 +263,6 @@ const REST_HINTS = [
   // Tron
   { m: "/wallet/getnowblock", v: "POST", d: "Returns the latest block." },
   { m: "/wallet/getnodeinfo", d: "Returns node runtime info." },
-  // TON (toncenter-style HTTP API)
-  { m: "/getMasterchainInfo", d: "Returns the masterchain state." },
-  { m: "/getAddressInformation", p: "/getAddressInformation?address=EQAAFhjXzKuQ5N0c96nsdZQWATcJm909LYSaCAvWFxVJP80D", d: "Returns basic information about the address." },
   // Hedera mirror node
   { m: "/api/v1/accounts/{idOrAliasOrEvmAddress}", p: "/api/v1/accounts/0.0.1", d: "Returns info for the given account." },
   { m: "/api/v1/transactions", d: "Lists recent transactions." },
@@ -245,6 +286,12 @@ const TENDERMINT_HINTS = [
 ];
 
 const GRPC_HINTS = [
+  // Concordium — its own `concordium.v2.Queries` service, not cosmos.
+  { m: "concordium.v2.Queries/GetConsensusInfo", p: "{}", d: "Returns consensus state: best block, epoch and finalization info." },
+  { m: "concordium.v2.Queries/GetTokenomicsInfo", d: "Returns the reward/tokenomics state — pass {} for the last final block." },
+  { m: "concordium.v2.Queries/GetCryptographicParameters", d: "Returns the chain's cryptographic parameters — pass {} for the last final block." },
+  { m: "concordium.v2.Queries/GetBlockInfo", d: "Returns info for a block — pass {} for the last final block, or {\"given\":{\"hash\":\"<block hash>\"}}." },
+  { m: "concordium.v2.Queries/GetBlocks", p: "{}", d: "Streams block summaries as they are baked." },
   { m: "cosmos.base.tendermint.v1beta1.Service/GetLatestBlock", p: "{}", d: "Returns the latest block." },
   { m: "cosmos.base.tendermint.v1beta1.Service/GetNodeInfo", p: "{}", d: "Returns connected node info." },
   { m: "cosmos.base.tendermint.v1beta1.Service/GetSyncing", p: "{}", d: "Returns the node's syncing state." },
@@ -453,7 +500,10 @@ const defaultParamsFor = (iface, method) =>
   iface === "rest" ? method : iface === "grpc" ? "{}" : "[]";
 
 function hintApplies(hint, specIndex) {
-  return !hint.only || hint.only.some((pfx) => specIndex.startsWith(pfx));
+  if (!hint.only) return true;
+  return hint.only.some((sel) =>
+    hint.exact ? specIndex === sel : specIndex.startsWith(sel),
+  );
 }
 
 /** Build one tier's Cmd list: hinted first (hint order), rest alphabetical. */

@@ -41,6 +41,12 @@ export type ChainFamily =
   | "tezos"
   | "iota"
   | "avalanchep"
+  | "concordium"
+  /** Native L1 surfaces that also expose an eth_* compatibility layer — the
+   *  native API is the grouping, same call the cosmos family makes for the
+   *  cosmos chains with an EVM module. */
+  | "eos"
+  | "vechain"
   /** Polkadot/Kusama relay chains and their asset hubs. */
   | "polkadotassethub"
   /** Substrate chains outside the Polkadot ecosystem (Bittensor, Enjin,

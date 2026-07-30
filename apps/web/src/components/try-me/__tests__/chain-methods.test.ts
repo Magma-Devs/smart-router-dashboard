@@ -68,7 +68,7 @@ describe("familyForSpec", () => {
     // near-miss family here would offer methods the chain cannot answer.
     // Regression: these all used to derive as `evm`, so the drawer offered
     // eth_* for Monero and Stacks whenever the generated chunk hadn't landed.
-    for (const spec of ["MONERO", "STACKS", "ALGORAND", "ARWEAVE", "MINA", "ALEO", "MULTIVERSX", "ENJIN", "POLYMESH"]) {
+    for (const spec of ["MONERO", "STACKS", "ALGORAND", "ARWEAVE", "MINA", "ALEO", "MULTIVERSX", "ENJIN", "POLYMESH", "CONCORDIUM", "EOS", "VECHAIN", "ION"]) {
       expect(familyForSpec(spec), `${spec} should not borrow a catalog family`).toBeNull();
     }
   });
@@ -316,6 +316,43 @@ describe("generated lava-specs catalog", () => {
   it("SOLANA jsonrpc regular contains getSlot", () => {
     const cfg = getInterfaceConfig("SOLANA", "jsonrpc", false);
     expect(cfg?.regular.some((c) => c.method === "getSlot")).toBe(true);
+  });
+
+  it("covers the newly-onboarded chains on every interface they serve", () => {
+    // None of these has a curated FAMILY_METHODS fallback, so the generated
+    // catalog is the drawer's only source.
+    const eos = getInterfaceConfig("EOS", "rest", false);
+    expect(eos?.regular.some((c) => c.params === "/v1/chain/get_info")).toBe(true);
+    const vechain = getInterfaceConfig("VECHAIN", "rest", false);
+    expect(vechain?.regular.some((c) => c.params === "/blocks/best")).toBe(true);
+    const ion = getInterfaceConfig("ION", "rest", false);
+    expect(ion?.regular.some((c) => c.params === "/v3/masterchainInfo")).toBe(true);
+    const ccdGrpc = getInterfaceConfig("CONCORDIUM", "grpc", false);
+    expect(
+      ccdGrpc?.regular.some(
+        (c) => c.method === "concordium.v2.Queries/GetConsensusInfo",
+      ),
+    ).toBe(true);
+    const hydration = getInterfaceConfig("HYDRATION", "jsonrpc", false);
+    expect(hydration?.regular.some((c) => c.method === "chain_getBlock")).toBe(true);
+    const zcash = getInterfaceConfig("ZCASH", "jsonrpc", false);
+    expect(zcash?.regular.some((c) => c.method === "getblockchaininfo")).toBe(true);
+  });
+
+  it("keeps network-specific example params off sibling networks", () => {
+    // BTC's genesis hash is a valid getblockheader arg on mainnet ONLY. The
+    // signet / testnet4 specs share the "BTC" index prefix, so a prefix-scoped
+    // hint used to hand them a hash their chain has never seen.
+    const btc = getInterfaceConfig("BTC", "jsonrpc", false);
+    expect(
+      btc?.regular.find((c) => c.method === "getblockheader")?.params,
+    ).toContain("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f");
+    for (const spec of ["BTCS", "BTCT4", "BTCT"]) {
+      const cfg = getInterfaceConfig(spec, "jsonrpc", false);
+      const header = cfg?.regular.find((c) => c.method === "getblockheader");
+      expect(header, `${spec} serves getblockheader`).toBeDefined();
+      expect(header?.params, `${spec} carries BTC's genesis hash`).toBe("[]");
+    }
   });
 
   it("unknown indices fall back to the family heuristic", () => {

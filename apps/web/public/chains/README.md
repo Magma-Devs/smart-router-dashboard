@@ -25,8 +25,15 @@ diagonal still clears the circle.
 Most icons are derived from [`@web3icons`](https://github.com/0xa3k5/web3icons)
 (MIT) — the `mono` variant supplies the glyph, and the circle colour is read
 from that icon's own `background` variant backdrop, so no colour is invented.
+Where web3icons has no `networks/` entry it has the chain's token: `concordium`
+(CCD), `vechain` (VET), `zcash` (ZEC), `oasis` (ROSE), `hydration` (HDX) and
+`ion` (ICE) come from `tokens/mono/`. When the backdrop is a gradient rather
+than a flat fill (VET, HDX) the circle takes one of that gradient's own stops.
 `neutron` and `babylon` come from
 [`cosmos/chain-registry`](https://github.com/cosmos/chain-registry) (Apache-2.0).
+
+`race` (and its testnet) are the only entries still on `default.svg` — the
+project publishes a wordmark only, which is illegible at icon size.
 
 Chain logos remain the trademarks of their respective projects and are used here
 only to identify the chain.
@@ -35,5 +42,6 @@ only to identify the chain.
 
 Drop `<slug>.svg` in this directory following the house style, then re-run
 `node apps/web/scripts/generate-chain-map.mjs` and commit the regenerated map.
-Adding a **mainnet** icon is usually enough — testnet siblings inherit it in the
-generator's second pass.
+Adding a **mainnet** icon is usually enough — testnet siblings inherit it, by
+base name first and then by index prefix (`BERAB` → `BERA`), so a testnet with
+its own brand ("Bepolia", "Shibuya", "Westend") is covered too.
