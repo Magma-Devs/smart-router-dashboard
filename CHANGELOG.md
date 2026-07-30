@@ -5,6 +5,59 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+Chain-coverage sync. The **Chain map ↔ lava-specs drift** gate went red again
+when lava-specs added 23 chains; regenerating surfaced four more classification
+bugs, all fixed in the generators rather than patched into the output.
+
+### Added
+
+- **23 chains** from lava-specs — Concordium, EOS, Hydration, Ice Open Network,
+  Oasis, VeChain, X Layer, Zcash, Bitcoin Signet/Testnet4, Berachain Bepolia,
+  Solana Devnet, Aptos Testnet, Ethereum Hoodi and Tron Nile (+ testnets). The
+  chain map goes 215 → 238 entries and the try-me catalog with it, so each
+  arrives with its real per-spec methods.
+- **Eight chain icons** — `concordium`, `eos`, `hydration`, `ion`, `oasis`,
+  `vechain`, `x-layer`, `zcash` — taking the map from 19 `default.svg` entries
+  down to 2 (RACE and its testnet, unchanged). Same provenance rule as before:
+  glyph from [@web3icons](https://github.com/0xa3k5/web3icons) (MIT), circle
+  colour read from that icon's own backdrop.
+- **Three chain-type families** — `concordium`, `eos`, `vechain`.
+- **Curated try-me methods** for the surfaces that had none: EOS's nodeos chain
+  API, VeChain Thor's REST, Concordium's `concordium.v2.Queries` gRPC and node
+  REST, and the TON HTTP API — which also gives **TON itself** its first hints
+  (its curated paths predated the toncenter `/v2` + tonindex `/v3` split, so
+  they matched nothing). Four more substrate hints reach every polkadot-SDK
+  chain, Hydration included.
+
+### Fixed
+
+- **Concordium classified as cosmos.** Serving gRPC counted as cosmos evidence;
+  Concordium serves its own `concordium.v2.Queries` service over it. The cosmos
+  test is now the cosmos-SDK surface itself (`/cosmos/…` paths, `cosmos.*`
+  services) or a cosmos import.
+- **Ice Open Network classified as EVM.** REST-only, no `eth_*` anywhere: it hit
+  the generator's blanket `evm` fallback. It is a TON fork serving the identical
+  `/v2` + `/v3` paths, and is now grouped with TON.
+- **Native L1s labelled by their EVM compatibility layer.** EOS, VeChain and
+  Tron Nile serve `eth_*` alongside a full native API (nodeos chain API, Thor
+  REST, `/wallet/*`); the native identity is now the family — the same call the
+  cosmos branch already made for Sei/Kava/Canto. Chains whose base surface is
+  EVM (Oasis, X Layer, Berachain, Hydration) stay `evm`.
+- **Bitcoin's Signet and Testnet4 flagged as mainnet.** "Signet" names no
+  network the testnet regex knew, and `\btestnet\b` cannot match "Testnet4".
+  Enjin's test network — branded "Canary Matrixchain" — is caught too, by
+  pairing a `<mainnet-index>T` index with its parent.
+- **BTC's genesis hash offered on its test networks.** `getblockheader`'s
+  example param was scoped by index *prefix*, so BTCT/BTCS/BTCT4 all inherited a
+  block hash their chain has never seen. Hints carrying single-network data are
+  now scoped to an exact index.
+- **Aptos descriptions on other chains' paths.** `/accounts/{address}` also
+  belongs to VeChain, and `/` to Arweave and Stellar; the Aptos hints are now
+  scoped, and VeChain has its own.
+- **Differently-branded testnets missing their mainnet's icon.** Icon
+  inheritance paired testnets by a trailing `T` only, so Berachain's Bepolia
+  (`BERAB` ← `BERA`) fell to `default.svg`. It now walks index prefixes.
+
 ## [0.6.0]
 
 Chain-coverage refresh. The **Chain map ↔ lava-specs drift** gate had been red

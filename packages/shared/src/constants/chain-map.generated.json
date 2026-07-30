@@ -115,6 +115,15 @@
     ],
     "mainnet": true
   },
+  "APTOST": {
+    "name": "Aptos Testnet",
+    "family": "aptos",
+    "icon": "aptos",
+    "interfaces": [
+      "rest"
+    ],
+    "mainnet": false
+  },
   "ARBITRUM": {
     "name": "Arbitrum",
     "family": "evm-arbitrum",
@@ -321,6 +330,15 @@
     ],
     "mainnet": false
   },
+  "BERAB": {
+    "name": "Berachain Bepolia Testnet",
+    "family": "evm",
+    "icon": "bera",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": false
+  },
   "BERAT": {
     "name": "Berachain Artio Testnet",
     "family": "evm",
@@ -420,8 +438,26 @@
     ],
     "mainnet": true
   },
+  "BTCS": {
+    "name": "Bitcoin Signet",
+    "family": "bitcoin",
+    "icon": "bitcoin",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": false
+  },
   "BTCT": {
     "name": "Bitcoin Testnet",
+    "family": "bitcoin",
+    "icon": "bitcoin",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": false
+  },
+  "BTCT4": {
+    "name": "Bitcoin Testnet4",
     "family": "bitcoin",
     "icon": "bitcoin",
     "interfaces": [
@@ -537,6 +573,25 @@
     "icon": "codex",
     "interfaces": [
       "jsonrpc"
+    ],
+    "mainnet": false
+  },
+  "CONCORDIUM": {
+    "name": "Concordium",
+    "family": "concordium",
+    "icon": "concordium",
+    "interfaces": [
+      "grpc",
+      "rest"
+    ],
+    "mainnet": true
+  },
+  "CONCORDIUMT": {
+    "name": "Concordium Testnet",
+    "family": "concordium",
+    "icon": "concordium",
+    "interfaces": [
+      "grpc"
     ],
     "mainnet": false
   },
@@ -665,7 +720,27 @@
     "interfaces": [
       "jsonrpc"
     ],
+    "mainnet": false
+  },
+  "EOS": {
+    "name": "EOS",
+    "family": "eos",
+    "icon": "eos",
+    "interfaces": [
+      "rest",
+      "jsonrpc"
+    ],
     "mainnet": true
+  },
+  "EOST": {
+    "name": "EOS Testnet",
+    "family": "eos",
+    "icon": "eos",
+    "interfaces": [
+      "rest",
+      "jsonrpc"
+    ],
+    "mainnet": false
   },
   "ETC": {
     "name": "Ethereum Classic",
@@ -902,10 +977,37 @@
     ],
     "mainnet": false
   },
+  "HOD1": {
+    "name": "Ethereum Testnet Hoodi",
+    "family": "evm",
+    "icon": "ethereum",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": false
+  },
   "HOL1": {
     "name": "Ethereum Testnet Holesky",
     "family": "evm",
     "icon": "ethereum",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": false
+  },
+  "HYDRATION": {
+    "name": "Hydration",
+    "family": "evm",
+    "icon": "hydration",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "HYDRATIONT": {
+    "name": "Hydration Testnet",
+    "family": "evm",
+    "icon": "hydration",
     "interfaces": [
       "jsonrpc"
     ],
@@ -966,6 +1068,24 @@
     "icon": "ink",
     "interfaces": [
       "jsonrpc"
+    ],
+    "mainnet": false
+  },
+  "ION": {
+    "name": "Ice Open Network",
+    "family": "ton",
+    "icon": "ion",
+    "interfaces": [
+      "rest"
+    ],
+    "mainnet": true
+  },
+  "IONT": {
+    "name": "Ice Open Network Testnet",
+    "family": "ton",
+    "icon": "ion",
+    "interfaces": [
+      "rest"
     ],
     "mainnet": false
   },
@@ -1388,6 +1508,42 @@
     ],
     "mainnet": false
   },
+  "OASIS": {
+    "name": "Oasis",
+    "family": "evm",
+    "icon": "oasis",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "OASIST": {
+    "name": "Oasis Testnet",
+    "family": "evm",
+    "icon": "oasis",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": false
+  },
+  "OKB": {
+    "name": "X Layer",
+    "family": "evm",
+    "icon": "x-layer",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "OKBT": {
+    "name": "X Layer Testnet",
+    "family": "evm",
+    "icon": "x-layer",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": false
+  },
   "OPTM": {
     "name": "Optimism",
     "family": "evm",
@@ -1651,6 +1807,15 @@
     ],
     "mainnet": true
   },
+  "SOLANAD": {
+    "name": "Solana Devnet",
+    "family": "solana",
+    "icon": "solana",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": false
+  },
   "SOLANAT": {
     "name": "Solana Testnet",
     "family": "solana",
@@ -1887,6 +2052,16 @@
     ],
     "mainnet": true
   },
+  "TRXN": {
+    "name": "Tron Nile Testnet",
+    "family": "tron",
+    "icon": "tron",
+    "interfaces": [
+      "rest",
+      "jsonrpc"
+    ],
+    "mainnet": false
+  },
   "TRXT": {
     "name": "Tron Shasta Testnet",
     "family": "tron",
@@ -1923,6 +2098,26 @@
       "rest",
       "grpc",
       "tendermintrpc"
+    ],
+    "mainnet": false
+  },
+  "VECHAIN": {
+    "name": "VeChain",
+    "family": "vechain",
+    "icon": "vechain",
+    "interfaces": [
+      "rest",
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "VECHAINT": {
+    "name": "VeChain Testnet",
+    "family": "vechain",
+    "icon": "vechain",
+    "interfaces": [
+      "rest",
+      "jsonrpc"
     ],
     "mainnet": false
   },
@@ -2013,6 +2208,24 @@
     "name": "Ripple Testnet",
     "family": "xrp",
     "icon": "xrp",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": false
+  },
+  "ZCASH": {
+    "name": "Zcash",
+    "family": "bitcoin",
+    "icon": "zcash",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "ZCASHT": {
+    "name": "Zcash Testnet",
+    "family": "bitcoin",
+    "icon": "zcash",
     "interfaces": [
       "jsonrpc"
     ],

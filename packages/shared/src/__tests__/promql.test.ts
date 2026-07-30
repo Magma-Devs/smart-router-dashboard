@@ -128,6 +128,20 @@ describe("buildChainMetaByIndex", () => {
     // Kusama is substrate too, grouped with the Polkadot relay chains.
     expect(buildChainMetaByIndex("KUSAMA").family).toBe("polkadotassethub");
   });
+  it("classifies a native L1 API surface over its eth_* compatibility layer", () => {
+    // Each of these serves eth_* alongside a full native API (nodeos chain
+    // API, VeChain Thor REST, Tron /wallet/*). The native identity is the
+    // useful grouping — same call the cosmos branch makes for Sei/Kava.
+    expect(buildChainMetaByIndex("EOS").family).toBe("eos");
+    expect(buildChainMetaByIndex("VECHAIN").family).toBe("vechain");
+    expect(buildChainMetaByIndex("TRXN").family).toBe("tron");
+    // gRPC alone is not cosmos evidence — Concordium serves its own
+    // `concordium.v2.Queries` service and used to be labelled cosmos.
+    expect(buildChainMetaByIndex("CONCORDIUM").family).toBe("concordium");
+    // Ice Open Network is a TON fork: no eth_* at all, same /v2 + /v3 TON
+    // HTTP API. It used to hit the generator's blanket evm fallback.
+    expect(buildChainMetaByIndex("ION").family).toBe("ton");
+  });
   it("inherits a forked chain's family from its imports", () => {
     // Dash imports BTC and Koii imports SOLANA; neither index shares a prefix
     // with its parent, so only the import closure gets these right.
@@ -144,6 +158,20 @@ describe("buildChainMetaByIndex", () => {
   it("flags mainnet vs testnet", () => {
     expect(buildChainMetaByIndex("ETH1").mainnet).toBe(true);
     expect(buildChainMetaByIndex("HYPERLIQUIDT").mainnet).toBe(false);
+  });
+  it("flags test networks the word 'testnet' doesn't name", () => {
+    // Bitcoin's other public test networks: "Signet" says nothing, and
+    // "Testnet4" has no word boundary before the 4.
+    expect(buildChainMetaByIndex("BTCS").mainnet).toBe(false);
+    expect(buildChainMetaByIndex("BTCT4").mainnet).toBe(false);
+    // Enjin's test network is branded "Canary Matrixchain" — only the
+    // <mainnet-index> + "T" pairing catches it.
+    expect(buildChainMetaByIndex("ENJINT").mainnet).toBe(false);
+  });
+  it("pairs a differently-branded testnet with its mainnet's icon", () => {
+    // Berachain's testnet is "Bepolia" (BERAB ← BERA), so neither the name
+    // slug nor a trailing-"T" rule can find the donor.
+    expect(buildChainMetaByIndex("BERAB").iconUrl).toBe("/chains/bera.svg");
   });
   it("keeps the testnet qualifier on testnet specs", () => {
     expect(buildChainMetaByIndex("HYPERLIQUIDT").name).toBe("Hyperliquid Testnet");

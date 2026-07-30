@@ -78,7 +78,10 @@ function loadSpecFilesFromDisk(dir) {
 
 /* ── helpers ─────────────────────────────────────────────────────────────── */
 
-const TESTNET_RE = /\b(testnet|sepolia|holesky|hoodi|devnet|preprod|shasta|shadownet|alfajores|amoy|blaze|arabica|mocha|artio|bartio|se)\b/i;
+// `testnet\d*` because Bitcoin's is literally "Testnet4" (a plain \btestnet\b
+// misses it — there is no word boundary between the "t" and the "4"), and
+// `signet` because Bitcoin's other public test network is named that instead.
+const TESTNET_RE = /\b(testnet\d*|signet|sepolia|holesky|hoodi|devnet|preprod|shasta|shadownet|alfajores|amoy|blaze|arabica|mocha|artio|bartio|se)\b/i;
 
 /**
  * Brands whose canonical casing plain capitalization would get wrong. Keyed
@@ -223,12 +226,39 @@ function deriveFamily(index, interfaces, imports) {
   const imp = new Set([...(imports ?? []).map((s) => String(s).toUpperCase()), ...importClosure(index)]);
   const impHas = (p) => [...imp].some((s) => s.includes(p));
   const idx = (...p) => p.some((s) => index.startsWith(s));
+  const methods = methodNames(index);
+  /** True when the chain serves any of these exact api names. */
+  const serves = (...names) => names.some((n) => methods.has(n));
+  /** True when any served api name starts with one of these prefixes. */
+  const servesPrefix = (...prefixes) =>
+    [...methods].some((n) => prefixes.some((p) => n.startsWith(p)));
 
   // Cosmos first: a cosmos chain with an EVM module (Sei, Kava, Canto) imports
-  // ETH1 too, and its cosmos identity is the more useful grouping.
-  if (has("tendermintrpc") || has("grpc") || impHas("COSMOS") || impHas("TENDERMINT") || impHas("IBC")) {
+  // ETH1 too, and its cosmos identity is the more useful grouping. gRPC alone
+  // is NOT cosmos evidence — Concordium serves its own `concordium.v2.*`
+  // service over grpc — so the marker is the cosmos-SDK surface itself
+  // (`/cosmos/…` REST paths, `cosmos.*` grpc services) or a cosmos import.
+  if (
+    has("tendermintrpc") ||
+    impHas("COSMOS") ||
+    impHas("TENDERMINT") ||
+    impHas("IBC") ||
+    servesPrefix("/cosmos/", "cosmos.")
+  ) {
     return "cosmos";
   }
+
+  // Native L1 API surfaces that ALSO ship an EVM compatibility layer. Same
+  // call the cosmos branch above makes for Sei/Kava/Canto: the native identity
+  // is the useful grouping, so these are matched before `servesEvm`. Keyed on
+  // methods only the native surface has, not on the index name.
+  if (serves("/wallet/getnowblock", "/wallet/getnodeinfo")) return "tron";
+  if (serves("/v1/chain/get_info", "/v1/chain/get_block_info")) return "eos";
+  if (serves("/blocks/{revision}", "/node/network/peers")) return "vechain";
+  // TON's HTTP API (toncenter v2 + tonindex v3). Ice Open Network is a TON
+  // fork and serves the identical paths, so the surface pairs them.
+  if (serves("/v3/runGetMethod", "/v2/sendBoc", "/v3/masterchainInfo")) return "ton";
+  if (servesPrefix("concordium.v2.")) return "concordium";
 
   // Polkadot ecosystem (relay chains + asset hubs) — substrate, but grouped
   // under the pre-existing family the v1 overlay already uses for them.
@@ -360,17 +390,34 @@ for (const indices of byBase.values()) {
 }
 
 // Third pass: a testnet that is *branded* differently from its mainnet still
-// belongs to it — Astar's testnet is "Shibuya", Polkadot's is "Westend" — so
-// grouping by name can't pair them. The spec index does: testnets are the
-// mainnet index plus a trailing "T". Only fills gaps, and only from a parent
+// belongs to it — Astar's testnet is "Shibuya", Polkadot's is "Westend",
+// Berachain's is "Bepolia" — so grouping by name can't pair them. The spec
+// index does: a testnet index is its mainnet's index plus a suffix ("T" for
+// most, "B" for BERAB, "4" for BTCT4), so the longest index prefix that is
+// itself a known chain is the donor. Only fills gaps, and only from a parent
 // that actually exists, so it can never override a real match.
 for (const [index, e] of Object.entries(out)) {
-  if (e.icon !== "default" || e.mainnet || !index.endsWith("T")) continue;
-  const parent = out[index.slice(0, -1)];
-  if (!parent || parent.icon === "default") continue;
-  e.icon = parent.icon;
-  inherited += 1;
-  defaultIcon -= 1;
+  if (e.icon !== "default" || e.mainnet) continue;
+  // Stop at 3 chars: shorter prefixes pair unrelated chains by accident.
+  for (let cut = index.length - 1; cut >= 3; cut -= 1) {
+    const parent = out[index.slice(0, cut)];
+    if (!parent || parent.icon === "default") continue;
+    e.icon = parent.icon;
+    inherited += 1;
+    defaultIcon -= 1;
+    break;
+  }
+}
+
+// Fourth pass: an index that is its mainnet's index plus a trailing "T" is a
+// testnet even when neither the name nor the index says so — Enjin's "Canary
+// Matrixchain" (ENJINT ← ENJIN) is the case that needs it. Same index pairing
+// the icon pass above uses, and it only ever flips true → false.
+let demoted = 0;
+for (const [index, e] of Object.entries(out)) {
+  if (!e.mainnet || !index.endsWith("T") || !out[index.slice(0, -1)]) continue;
+  e.mainnet = false;
+  demoted += 1;
 }
 
 // Deterministic key order for a diff-clean file.
@@ -382,7 +429,9 @@ writeFileSync(OUT_PATH, `${JSON.stringify(sorted, null, 2)}\n`);
 const total = Object.keys(sorted).length;
 console.log(`chains          ${total} (${overlaid} from v1 overlay, ${derived} derived)`);
 console.log(`icons           ${total - defaultIcon} matched a local SVG (${inherited} inherited from a mainnet sibling), ${defaultIcon} → default.svg`);
+const mainnets = Object.values(sorted).filter((v) => v.mainnet).length;
+console.log(`networks        ${mainnets} mainnet, ${total - mainnets} testnet (${demoted} demoted by the index-pair rule)`);
 const famCounts = {};
 for (const v of Object.values(sorted)) famCounts[v.family] = (famCounts[v.family] ?? 0) + 1;
-console.log(`families        ${Object.entries(famCounts).map(([f, n]) => `${f}:${n}`).join(" ")}`);
+console.log(`families        ${Object.entries(famCounts).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([f, n]) => `${f}:${n}`).join(" ")}`);
 console.log(`output          ${OUT_PATH}`);
