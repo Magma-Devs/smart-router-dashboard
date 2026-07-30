@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.7.0]
+
 Chain-coverage sync. The **Chain map ↔ lava-specs drift** gate went red again
 when lava-specs added 23 chains; regenerating surfaced four more classification
 bugs, all fixed in the generators rather than patched into the output.
