@@ -145,7 +145,7 @@
   "ARBITRUMS": {
     "name": "Arbitrum Sepolia Testnet",
     "family": "evm-arbitrum",
-    "icon": "arbitrum-nova",
+    "icon": "arbitrum-one",
     "interfaces": [
       "jsonrpc"
     ],

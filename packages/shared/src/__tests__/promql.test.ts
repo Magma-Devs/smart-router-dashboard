@@ -168,6 +168,12 @@ describe("buildChainMetaByIndex", () => {
     // <mainnet-index> + "T" pairing catches it.
     expect(buildChainMetaByIndex("ENJINT").mainnet).toBe(false);
   });
+  it("gives each Arbitrum network its own logo", () => {
+    // The v1 overlay had Arbitrum Sepolia on arbitrum-nova.svg, so the
+    // dashboard rendered Nova's logo for a testnet of Arbitrum One.
+    expect(buildChainMetaByIndex("ARBITRUMS").iconUrl).toBe("/chains/arbitrum-one.svg");
+    expect(buildChainMetaByIndex("ARBITRUMN").iconUrl).toBe("/chains/arbitrum-nova.svg");
+  });
   it("pairs a differently-branded testnet with its mainnet's icon", () => {
     // Berachain's testnet is "Bepolia" (BERAB ← BERA), so neither the name
     // slug nor a trailing-"T" rule can find the donor.
