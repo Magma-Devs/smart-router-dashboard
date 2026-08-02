@@ -14,6 +14,7 @@ import { useApi } from "@/hooks/use-api";
 import { DashHeader } from "@/components/dashboard/DashHeader";
 import { OverviewTab } from "@/components/dashboard/OverviewTab";
 import { MetricsTab } from "@/components/dashboard/MetricsTab";
+import { useFilters } from "@/components/gateway/FiltersProvider";
 
 /** Design chip → API window (the design says "24h", the API says "1d"). */
 const CHIP_TO_API: Record<string, MetricWindow> = {
@@ -55,7 +56,8 @@ export default function DashboardPage() {
   const [tab, setTab] = useState<"overview" | "metrics">("overview");
 
   const apiWindow = apiWindowFor(win);
-  const { data } = useApi<DashboardData>(`/api/metrics/dashboard?window=${apiWindow}`);
+  const { scopeQ } = useFilters();
+  const { data } = useApi<DashboardData>(`/api/metrics/dashboard?window=${apiWindow}${scopeQ}`);
 
   const chainOptions = useMemo(
     () => (data?.chains ?? []).map((c) => ({ id: c.spec, name: c.name, color: c.color })),

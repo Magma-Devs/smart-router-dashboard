@@ -12,6 +12,7 @@ import type { ErrorPivotRow, ErrorsReport, MetricWindow } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { fmtComma } from "@/lib/format";
 import { HotspotRow } from "./HotspotRow";
+import { useFilters } from "@/components/gateway/FiltersProvider";
 
 /* "Error types" reference view — live counts per error code (code pivot). */
 function ErrorTypesView({ rows }: { rows: ErrorPivotRow[] }) {
@@ -63,7 +64,8 @@ export function ErrorsBreakdown({ chainFilter, win }: { chainFilter: string | nu
   const [openId, setOpenId] = useState<string | null | undefined>(undefined);
 
   const specQ = chainFilter ? `&spec=${encodeURIComponent(chainFilter)}` : "";
-  const { data } = useApi<ErrorsReport>(`/api/metrics/errors?window=${win}${specQ}`);
+  const { scopeQ } = useFilters();
+  const { data } = useApi<ErrorsReport>(`/api/metrics/errors?window=${win}${specQ}${scopeQ}`);
 
   const hotspots = [...(data?.hotspots ?? [])].sort((a, b) => (b.errorRate ?? -1) - (a.errorRate ?? -1));
   const total = data?.total ?? 0;

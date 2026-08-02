@@ -13,11 +13,13 @@ import { Tip } from "@/components/gateway/Tip";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { ThCol } from "@/components/gateway/SortTable";
 import { fmtComma, fmtNum } from "@/lib/format";
+import { useFilters } from "@/components/gateway/FiltersProvider";
 
 const CV_TIP = "A **sampled subset** of requests is sent to several upstreams at once and their responses compared.\n\n**Matching the majority = agreement; differing = disagreement** — catching wrong, stale, or forked answers that latency and error metrics miss.\n\nCoverage is the **sampled subset only**, not all traffic.";
 
 export function CrossValidation({ tw }: { tw: MetricWindow }) {
-  const { data: cv } = useApi<CrossValidationReport>(`/api/metrics/cross-validation?window=${tw}`);
+  const { scopeQ } = useFilters();
+  const { data: cv } = useApi<CrossValidationReport>(`/api/metrics/cross-validation?window=${tw}${scopeQ}`);
 
   const rounds = cv?.rounds ?? null;
   const consensusPct = cv?.consensusRate != null ? cv.consensusRate * 100 : null;

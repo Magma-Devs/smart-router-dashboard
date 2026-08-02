@@ -3,6 +3,7 @@
  * Uses the global `fetch` (Node 22+). Never throws on PromQL "no data" — an
  * empty result set is a valid answer the higher layers degrade on.
  */
+import { applyScope, isValidScope, type MetricScope } from "@sr/shared";
 import { config } from "../config.js";
 
 export interface PromMetric {
@@ -31,7 +32,22 @@ export class PrometheusClient {
   constructor(
     private readonly baseUrl: string = config.prometheus.url,
     private readonly timeoutMs: number = config.prometheus.timeoutMs,
+    /**
+     * Router scope applied to every query this client runs. Injected here
+     * rather than threaded through ~40 builders — see `promql/scope.ts`.
+     */
+    private readonly scope: MetricScope | null = null,
   ) {}
+
+  /**
+   * A client restricted to one router. Returns `this` when the scope is
+   * absent or malformed, so a bad value reads cluster-wide rather than
+   * silently becoming a different query.
+   */
+  withScope(scope: MetricScope | null | undefined): PrometheusClient {
+    if (!isValidScope(scope)) return this;
+    return new PrometheusClient(this.baseUrl, this.timeoutMs, scope);
+  }
 
   private async get<T>(path: string, params: Record<string, string>): Promise<PromResponse<T>> {
     const url = new URL(path, this.baseUrl.endsWith("/") ? this.baseUrl : `${this.baseUrl}/`);
@@ -54,7 +70,9 @@ export class PrometheusClient {
 
   /** Instant query → vector. */
   async query(expr: string): Promise<PromVectorSample[]> {
-    const r = await this.get<PromVectorSample[]>("api/v1/query", { query: expr });
+    const r = await this.get<PromVectorSample[]>("api/v1/query", {
+      query: applyScope(expr, this.scope),
+    });
     return r.status === "success" && r.data ? r.data.result : [];
   }
 
@@ -66,7 +84,7 @@ export class PrometheusClient {
     step: string,
   ): Promise<PromMatrixSample[]> {
     const r = await this.get<PromMatrixSample[]>("api/v1/query_range", {
-      query: expr,
+      query: applyScope(expr, this.scope),
       start: String(startSeconds),
       end: String(endSeconds),
       step,

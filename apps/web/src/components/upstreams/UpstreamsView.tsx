@@ -24,6 +24,7 @@ import { StatusDot, pvStatLabel } from "@/components/upstreams/bits";
 import { buildUpstreamRows } from "@/components/upstreams/catalog";
 import { IfaceTag } from "@/components/endpoints/bits";
 import { TryNowButton } from "@/components/try-me/try-now-button";
+import { useFilters } from "@/components/gateway/FiltersProvider";
 
 /* ─────────────────────────────────────────────
    Stat strip (design: intentionally empty)
@@ -44,7 +45,8 @@ export function UpstreamsView() {
   const router = useRouter();
   const config = useApi<{ routers: RouterTopology[] }>("/api/config/routers", 60000);
   /* Upstream roster stats — fixed 1d window ("Req today"). */
-  const live = useApi<{ upstreams: UpstreamMetrics[] }>("/api/metrics/upstreams?window=1d");
+  const { scopeQ } = useFilters();
+  const live = useApi<{ upstreams: UpstreamMetrics[] }>(`/api/metrics/upstreams?window=1d${scopeQ}`);
 
   const [degradedFilter, setDegradedFilter] = useState(false);
   const [search, setSearch] = useState("");

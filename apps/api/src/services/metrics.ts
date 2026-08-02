@@ -33,6 +33,7 @@ import {
   type Kpi,
   type MethodClassTotals,
   type MethodUsage,
+  isValidScopeLabel,
   type MetricWindow,
   type UpstreamMetrics,
   type ScoreType,
@@ -101,6 +102,19 @@ export class MetricsService {
       .map((r) => r.metric.spec)
       .filter((s): s is string => Boolean(s))
       .sort();
+  }
+
+  /**
+   * Distinct values of the router-scope target label — the deployments this
+   * Prometheus can tell apart. Empty when the collector attaches no such
+   * label (one static scrape target, or a mislabelled `ROUTER_SCOPE_LABEL`):
+   * the aggregation then returns a single row with the label absent, which
+   * filters out. Empty means "can't split", never "no routers".
+   */
+  async listRouterScopes(label: string): Promise<string[]> {
+    if (!isValidScopeLabel(label)) return [];
+    const rows = await this.prom.query(`count by (${label}) (${ROUTER_METRICS.requestsTotal})`);
+    return [...new Set(rows.map((r) => r.metric[label]).filter((v): v is string => Boolean(v)))].sort();
   }
 
   /** Per-chain health from the ENDPOINT gauge (the router gauge is label-less

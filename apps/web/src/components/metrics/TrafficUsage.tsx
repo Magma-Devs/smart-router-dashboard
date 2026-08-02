@@ -15,9 +15,11 @@ import { LineChart, SparkLine } from "@/components/gateway/charts";
 import { roFmtTime } from "@/components/metrics/InteractiveChart";
 import { fmtNum } from "@/lib/format";
 import { nums } from "./bits";
+import { useFilters } from "@/components/gateway/FiltersProvider";
 
 export function TrafficUsage({ win, chainFilter }: { win: MetricWindow; chainFilter: string | null }) {
-  const { data } = useApi<TrafficSummary>(`/api/metrics/traffic?window=${win}`);
+  const { scopeQ } = useFilters();
+  const { data } = useApi<TrafficSummary>(`/api/metrics/traffic?window=${win}${scopeQ}`);
 
   const perChain = useMemo(
     () =>

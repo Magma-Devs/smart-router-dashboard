@@ -19,6 +19,7 @@ import { fmtNum } from "@/lib/format";
 import { uptimeColor } from "@/lib/colors";
 import { ChainDetail, type ChainDetailRow } from "./ChainDetail";
 import { useState } from "react";
+import { useFilters } from "@/components/gateway/FiltersProvider";
 
 const ROUTER_SR_TIP = "**Chain-level availability** — successful requests ÷ total, **rolled up across every upstream** on the chain (what your apps actually got).\n\nSame definition as per-upstream Availability in the Upstreams tab.";
 
@@ -62,7 +63,8 @@ export function RouterOverview({ onChainClick, chainFilter, timeWindow }: {
 }) {
   const [net, setNet] = useState("all");
   const [open, setOpen] = useState<string | null>(null);
-  const { data } = useApi<{ chains: ChainMetrics[] }>(`/api/metrics/chains?window=${timeWindow}`);
+  const { scopeQ } = useFilters();
+  const { data } = useApi<{ chains: ChainMetrics[] }>(`/api/metrics/chains?window=${timeWindow}${scopeQ}`);
   const topo = useApi<{ routers: RouterTopology[] }>("/api/config/routers", 60000);
 
   const base: RoRow[] = (data?.chains ?? []).map((c) => {

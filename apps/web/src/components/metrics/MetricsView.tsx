@@ -27,12 +27,12 @@ import { UpstreamMetricsTab } from "./upstream/UpstreamMetricsTab";
 type Tab = "metrics" | "upstreams" | "errors" | "traffic";
 
 export function MetricsView() {
-  const { timeWindow, setTimeWindow } = useFilters();
+  const { timeWindow, setTimeWindow, withScope } = useFilters();
   const [chainFilter, setChainFilter] = useState("all");
   const [tab, setTab] = useState<Tab>("metrics");
   const activeChain = chainFilter === "all" ? null : chainFilter;
 
-  const specsRes = useApi<{ specs: string[] }>("/api/metrics/specs", 60000);
+  const specsRes = useApi<{ specs: string[] }>(withScope("/api/metrics/specs"), 60000);
   const routedChains = useMemo(
     () =>
       (specsRes.data?.specs ?? []).map((spec) => {

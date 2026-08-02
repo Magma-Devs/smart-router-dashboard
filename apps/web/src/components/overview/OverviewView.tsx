@@ -201,15 +201,15 @@ function ChCard({ title, controls, footer, children }: {
 
 /* ── Overview page ──────────────────────────────────────────────────── */
 export function OverviewView() {
-  const { timeWindow, setTimeWindow } = useFilters();
+  const { timeWindow, setTimeWindow, scopeQ, withScope } = useFilters();
   const [chainFilter, setChainFilter] = useState("all");
   const [showStack, setShowStack] = useState(false);
   const [latMode, setLatMode] = useState<"overall" | "per-upstream">("overall");
   const [latPct, setLatPct] = useState<"p50" | "p95" | "p99">("p95");
 
   const specQ = chainFilter !== "all" ? `&spec=${chainFilter}` : "";
-  const { data } = useApi<OverviewData>(`/api/metrics/overview?window=${timeWindow}${specQ}`);
-  const specsRes = useApi<{ specs: string[] }>("/api/metrics/specs", 60000);
+  const { data } = useApi<OverviewData>(`/api/metrics/overview?window=${timeWindow}${specQ}${scopeQ}`);
+  const specsRes = useApi<{ specs: string[] }>(withScope("/api/metrics/specs"), 60000);
 
   const chainOptions = useMemo(
     () =>
