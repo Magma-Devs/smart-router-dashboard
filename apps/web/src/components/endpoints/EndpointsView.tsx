@@ -27,9 +27,10 @@ import {
   IfaceTag,
   buildEndpointRows,
   epAddons,
+  epDisplayHost,
   epHasArchive,
   epHasWs,
-  epLocalHttp,
+  epHttpUrl,
   upstreamCount,
   type EndpointRowModel,
 } from "@/components/endpoints/bits";
@@ -74,7 +75,7 @@ export function EndpointsView() {
   const chainGroups = useMemo<CardGroup[]>(() => {
     const filtered = endpoints.filter((ep) => {
       const c = buildChainMetaByIndex(ep.spec);
-      const host = ep.port ? `localhost:${ep.port}` : "";
+      const host = epHttpUrl(ep) ?? "";
       const q = search.trim().toLowerCase();
       const matchSearch = !q ||
         c.name.toLowerCase().includes(q) ||
@@ -100,6 +101,19 @@ export function EndpointsView() {
     });
     return [...map.values()];
   }, [endpoints, search, netFilter]);
+
+  /* Specs served by more than one router — the config allows several routers
+     on one chain (different ids/hostnames, same `network`), and those cards
+     need the router id to tell them apart. */
+  const duplicatedSpecs = useMemo(() => {
+    const seen = new Set<string>();
+    const dupes = new Set<string>();
+    for (const r of routers) {
+      if (seen.has(r.spec)) dupes.add(r.spec);
+      seen.add(r.spec);
+    }
+    return dupes;
+  }, [routers]);
 
   const liveDetail = detailId ? endpoints.find((e) => e.id === detailId) ?? null : null;
   const detailRouter = liveDetail ? routers.find((r) => r.id === liveDetail.routerId) ?? null : null;
@@ -154,10 +168,17 @@ export function EndpointsView() {
               <div key={group.routerId} className="gw-card" style={{ padding: "14px 16px" }}>
 
                 {/* Chain header. No raw-index chip — the name + brand icon
-                    identify the chain; only flag genuine testnets. */}
+                    identify the chain; only flag genuine testnets. The router
+                    id is appended only when several routers serve the SAME
+                    chain (e.g. a staging + production pair on one network),
+                    which is the only case where the chain name alone is
+                    ambiguous. */}
                 <div className="gw-row" style={{ gap: 10, alignItems: "center", marginBottom: 10 }}>
                   <ChainBadge spec={group.spec} size={26} />
                   <span style={{ fontSize: 13, fontWeight: 600 }}>{chain.name}</span>
+                  {duplicatedSpecs.has(group.spec) && (
+                    <span className="gw-mono" style={{ fontSize: 11, color: "var(--text-3)" }}>{group.routerId}</span>
+                  )}
                   {!chain.mainnet && (
                     <span className="gw-tag" style={{ fontSize: 10, padding: "1px 6px" }}>testnet</span>
                   )}
@@ -168,7 +189,8 @@ export function EndpointsView() {
                     local listen port (the former Live-test console, inline). */}
                 <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                   {group.rows.map((ep) => {
-                    const host = ep.port ? `localhost:${ep.port}` : "—";
+                    const host = epDisplayHost(ep);
+                    const url = epHttpUrl(ep);
                     const cnt = upstreamCount(ep);
                     const hovered = hoverId === ep.id;
                     return (
@@ -194,21 +216,23 @@ export function EndpointsView() {
                           {host}
                         </span>
                         {/* Try now — inline request console; only when the row
-                            has a local port to dial. Hidden until row hover. */}
-                        {ep.port !== null && (
+                            has an address to dial (gateway URL on a helm
+                            deployment, local listen port on an SR_CONFIG
+                            mount). Hidden until row hover. */}
+                        {url !== null && (
                           <TryNowButton
                             spec={ep.spec}
                             network={ep.network}
                             iface={ep.iface}
-                            url={epLocalHttp(ep.port)}
+                            url={url}
                             hasArchive={epHasArchive(ep)}
                             health={healthBySpec.get(ep.spec)}
                             visible={hovered}
                           />
                         )}
-                        {ep.port !== null && (
+                        {url !== null && (
                           <span onClick={(e) => e.stopPropagation()}>
-                            <CopyButton text={epLocalHttp(ep.port)} />
+                            <CopyButton text={url} />
                           </span>
                         )}
                         {/* Last used — not tracked on self-hosted */}

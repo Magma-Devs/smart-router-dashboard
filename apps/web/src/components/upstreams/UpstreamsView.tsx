@@ -191,24 +191,28 @@ export function UpstreamsView() {
                 {/* endpoint rows, one per (chain, upstream endpoint) served */}
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   {pv.chainRows.map((row, i) => {
-                    // Resolve the local listen port for this (router, interface).
-                    // The router serves WebSocket on the SAME port as the base
-                    // interface (there's no separate ws port), so a ws row dials
-                    // ws://localhost:<port> with the -ws catalog interface — which
-                    // makes the Try-me drawer use its WebSocket transport.
+                    // Resolve this (router, interface)'s dialable address: the
+                    // gateway URL a Kubernetes deployment publishes, else the local
+                    // listen port an SR_CONFIG mount declares. The router serves
+                    // WebSocket on the SAME address as the base interface (no
+                    // separate ws port/host), so a ws row dials it with the -ws
+                    // catalog interface — which makes the Try-me drawer use its
+                    // WebSocket transport.
                     const rtr = routers.find((r) => r.id === row.routerId);
                     const isWsRow = row.urlHost.startsWith("ws://") || row.urlHost.startsWith("wss://") || row.iface.endsWith("-ws");
+                    const publicUrl = rtr?.publicUrls[row.iface] ?? null;
                     const localPort = rtr?.localPorts[row.iface] ?? null;
                     const tryIface = isWsRow
                       ? (row.iface.startsWith("tendermintrpc") ? "tendermintrpc-ws" : "jsonrpc-ws")
                       : row.iface;
-                    // WS is served on the same port but ONLY under a path
+                    // WS is served on the same address but ONLY under a path
                     // (/ws for jsonrpc, /websocket for tendermint) — a bare
-                    // ws://host:port handshake is rejected with HTTP 405.
+                    // ws://host handshake is rejected with HTTP 405.
                     const wsPath = row.iface.startsWith("tendermintrpc") ? "/websocket" : "/ws";
-                    const tryUrl = localPort !== null
-                      ? (isWsRow ? `ws://localhost:${localPort}${wsPath}` : `http://localhost:${localPort}`)
-                      : null;
+                    const baseUrl = publicUrl ?? (localPort !== null ? `http://localhost:${localPort}` : null);
+                    const tryUrl = baseUrl === null
+                      ? null
+                      : isWsRow ? baseUrl.replace(/^http/, "ws") + wsPath : baseUrl;
                     return (
                       <div key={i} className="gw-row" style={{ gap: 8, padding: "6px 10px", background: "var(--hover)", borderRadius: 6, border: "1px solid var(--line)" }}>
                         {/* Role inline — the chain identity is on the card header,

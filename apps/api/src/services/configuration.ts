@@ -4,7 +4,9 @@
  *
  * 1. **Helm-chart values** — `routers:[{id, network, nodes:[{name, is_backup,
  *    endpoints:[{url, interface, addons}]}], custom_url_prefix?, pathBased?}]`
- *    plus the global `miscellaneous.gateway.pathBased.enabled` default.
+ *    plus the global `miscellaneous.gateway.pathBased.enabled` default. When
+ *    the values' Gateway is enabled, each interface also gets its public
+ *    URL (`publicUrls`) — see `readGatewayRouting` below.
  * 2. **Smart-router SR_CONFIG** — the YAML the router itself runs
  *    (`endpoints:` + `direct-rpc:`); providers are grouped by chain-id into
  *    one router per chain, and the `endpoints` block's listen ports become
@@ -62,12 +64,91 @@ function detectFormat(raw: unknown): "helm" | "sr-config" | "unknown" {
   return "unknown";
 }
 
+/**
+ * How the Gateway publishes routers, or null when the mounted values
+ * describe no routable address (gateway disabled, no `base_domain`, or a
+ * listener list with nothing HTTP(S) on it). Mirrors the Gateway + HTTPRoute
+ * shapes the values declare: an HTTPS listener wins over HTTP because
+ * deployments ship both and TLS is the one users dial.
+ */
+interface GatewayRouting {
+  scheme: "http" | "https";
+  /** `":8443"` — empty string for the scheme's default port. */
+  portSuffix: string;
+  /** `chain.interface` (the default) or `chain-interface`. */
+  hostStructure: "chain.interface" | "chain-interface";
+  baseDomain: string;
+}
+
+function readGatewayRouting(raw: Record<string, unknown>): GatewayRouting | null {
+  const baseDomain = asString(raw["base_domain"]).trim();
+  if (!baseDomain) return null;
+
+  const misc = (raw["miscellaneous"] ?? {}) as Record<string, unknown>;
+  const gateway = (misc["gateway"] ?? {}) as Record<string, unknown>;
+  if (gateway["enabled"] !== true) return null;
+
+  const listeners = asArray(gateway["listeners"]);
+  const https = listeners.find(
+    (l) => asString(l["protocol"]).toUpperCase() === "HTTPS" || l["tls"] !== undefined,
+  );
+  const listener = https ?? listeners.find((l) => asString(l["protocol"]).toUpperCase() === "HTTP");
+  if (!listener) return null;
+
+  const scheme = https !== undefined ? "https" : "http";
+  const defaultPort = scheme === "https" ? 443 : 80;
+  const declared = Number(listener["port"]);
+  const port = Number.isInteger(declared) && declared > 0 ? declared : defaultPort;
+
+  return {
+    scheme,
+    portSuffix: port === defaultPort ? "" : `:${port}`,
+    hostStructure:
+      asString(gateway["hostStructure"]) === "chain-interface"
+        ? "chain-interface"
+        : "chain.interface",
+    baseDomain,
+  };
+}
+
+/**
+ * api-interface → public URL, mirroring the deployment's hostname scheme:
+ * `<custom_url_prefix | id-lowered>[-<iface> | .<iface>].<base_domain>`.
+ * grpc interfaces are included — GRPCRoutes publish them on the same
+ * hostname scheme as the HTTPRoutes.
+ */
+function publicUrlsFor(
+  router: Record<string, unknown>,
+  interfaces: string[],
+  gw: GatewayRouting | null,
+): Record<string, string> {
+  if (!gw) return {};
+  // The values resolve `custom_url_prefix | default (id | lower)` — the custom
+  // prefix verbatim, only the id fallback lowercased.
+  const prefix =
+    asString(pick(router, "custom_url_prefix", "custom-url-prefix", "customUrlPrefix")) ||
+    asString(router["id"]).toLowerCase();
+  if (!prefix) return {};
+
+  const urls: Record<string, string> = {};
+  for (const iface of interfaces) {
+    const i = iface.toLowerCase();
+    const host =
+      gw.hostStructure === "chain-interface"
+        ? `${prefix}-${i}.${gw.baseDomain}`
+        : `${prefix}.${i}.${gw.baseDomain}`;
+    urls[iface] = `${gw.scheme}://${host}${gw.portSuffix}`;
+  }
+  return urls;
+}
+
 /** Helm `routers:` shape → RouterTopology[] (pathBased resolved like the chart). */
 function normalizeHelm(raw: Record<string, unknown>): RouterTopology[] {
   const misc = (raw["miscellaneous"] ?? {}) as Record<string, unknown>;
   const gateway = (misc["gateway"] ?? {}) as Record<string, unknown>;
   const pathBasedCfg = (gateway["pathBased"] ?? {}) as Record<string, unknown>;
   const globalPathBased = Boolean(pathBasedCfg["enabled"] ?? false);
+  const gw = readGatewayRouting(raw);
 
   return asArray(raw["routers"]).map((router) => {
     const network = asString(router["network"]).toLowerCase();
@@ -85,6 +166,8 @@ function normalizeHelm(raw: Record<string, unknown>): RouterTopology[] {
         })),
     }));
 
+    const interfaces = dedupe(nodes.flatMap((n) => n.endpoints.map((e) => e.interface)));
+
     return {
       id: asString(router["id"]) || network.toUpperCase(),
       spec: network.toUpperCase(),
@@ -95,7 +178,8 @@ function normalizeHelm(raw: Record<string, unknown>): RouterTopology[] {
         null,
       localPort: null,
       localPorts: {},
-      interfaces: dedupe(nodes.flatMap((n) => n.endpoints.map((e) => e.interface))),
+      publicUrls: publicUrlsFor(router, interfaces, gw),
+      interfaces,
       nodes,
     };
   });
@@ -142,6 +226,9 @@ function normalizeSrConfig(raw: Record<string, unknown>): RouterTopology[] {
           customUrlPrefix: null,
           localPort: firstPort,
           localPorts: ports,
+          // An SR_CONFIG mount describes listen ports, not ingress — the
+          // dashboard has no way to know what fronts them.
+          publicUrls: {},
           interfaces: [],
           nodes: [],
         };

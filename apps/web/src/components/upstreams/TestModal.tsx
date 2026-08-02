@@ -12,7 +12,7 @@ import { Modal } from "@/components/gateway/Modal";
 import { StatusDot } from "@/components/upstreams/bits";
 import type { UpstreamRow } from "@/components/upstreams/catalog";
 
-const NO_PORT_MSG = "No local listen port for this upstream's chains in the mounted config";
+const NO_PORT_MSG = "No routable address for this upstream's chains in the mounted config";
 
 /** POST-able probe per api-interface (mirrors the Live test presets). */
 const TEST_PRESETS: Record<string, { method: string; body: string }> = {
@@ -20,7 +20,7 @@ const TEST_PRESETS: Record<string, { method: string; body: string }> = {
   tendermintrpc: { method: "status", body: '{"jsonrpc":"2.0","method":"status","params":[],"id":1}' },
 };
 
-interface TestTarget { port: number; iface: string; method: string; body: string }
+interface TestTarget { url: string; iface: string; method: string; body: string }
 interface TestOutcome { ms: number; detail: string }
 
 export function TestModal({ open, onClose, upstream, routers }: {
@@ -35,7 +35,9 @@ export function TestModal({ open, onClose, upstream, routers }: {
 
   useEffect(() => { if (!open) { setStage("idle"); setOutcome(null); setErrMsg(""); } }, [open]);
 
-  /* First (router, interface) of this upstream with a POST-able local port. */
+  /* First (router, interface) of this upstream with a POST-able address —
+     the published gateway URL (helm values) or a local listen port
+     (SR_CONFIG). */
   const target = useMemo<TestTarget | null>(() => {
     for (const row of upstream?.chainRows ?? []) {
       const router = routers.find((r) => r.id === row.routerId);
@@ -44,7 +46,8 @@ export function TestModal({ open, onClose, upstream, routers }: {
         const preset = TEST_PRESETS[iface];
         if (!preset) continue;
         const port = router.localPorts[iface] ?? router.localPort;
-        if (port) return { port, iface, method: preset.method, body: preset.body };
+        const url = router.publicUrls[iface] ?? (port ? `http://localhost:${port}` : null);
+        if (url) return { url, iface, method: preset.method, body: preset.body };
       }
     }
     return null;
@@ -57,7 +60,7 @@ export function TestModal({ open, onClose, upstream, routers }: {
     setErrMsg("");
     const t0 = performance.now();
     try {
-      const res = await fetch(`http://localhost:${target.port}`, {
+      const res = await fetch(target.url, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: target.body,
@@ -96,7 +99,7 @@ export function TestModal({ open, onClose, upstream, routers }: {
             <StatusDot status={upstream.status} />
             <div>
               <div style={{ fontSize: 13, fontWeight: 500 }}>{upstream.name}</div>
-              <div className="gw-secret">{target ? `http://localhost:${target.port}` : upstream.url || "—"}</div>
+              <div className="gw-secret">{target ? target.url : upstream.url || "—"}</div>
             </div>
           </div>
           {!target && (
