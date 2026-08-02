@@ -21,8 +21,10 @@ import { JWT_CLOUD_MSG, READONLY_MSG, type UpstreamRow } from "@/components/upst
 import {
   IfaceTag,
   UrlBlock,
-  epLocalHttp,
+  epDisplayHost,
+  epHttpUrl,
   epLocalWs,
+  epPublicWs,
   type EndpointRowModel,
 } from "@/components/endpoints/bits";
 
@@ -60,7 +62,11 @@ export function EndpointDetailSheet({ open, ep, router, onClose, upstreams }: {
   if (!open || !ep) return null;
 
   const chain = buildChainMetaByIndex(ep.spec);
-  const host = ep.port !== null ? `localhost:${ep.port}` : "—";
+  const host = epDisplayHost(ep);
+  const httpUrl = epHttpUrl(ep);
+  // WS pairing: on a Kubernetes deployment the gateway serves the upgrade on this
+  // interface's own hostname; on an SR_CONFIG mount it needs a separate
+  // `websocket` listen port to exist.
   const wsPort = router?.localPorts["websocket"] ?? null;
   const upstreamByName = (name: string): UpstreamRow | undefined => upstreams.find((p) => p.id === name);
   const statusTagCls = (s: string | undefined) =>
@@ -100,14 +106,19 @@ export function EndpointDetailSheet({ open, ep, router, onClose, upstreams }: {
           <div>
             <div style={{ ...labelStyle, marginBottom: 7 }}>Endpoint URL</div>
             <div style={{ display: "grid", gap: 5 }}>
-              {ep.port === null ? (
-                <div style={{ fontSize: 12, color: "var(--text-3)" }}>No local listen port in the mounted config.</div>
-              ) : ep.iface === "websocket" ? (
+              {httpUrl === null ? (
+                <div style={{ fontSize: 12, color: "var(--text-3)" }}>
+                  No routable address in the mounted config — no local listen port, and no
+                  Gateway to publish this router.
+                </div>
+              ) : ep.iface === "websocket" && ep.port !== null ? (
                 <UrlBlock label="WebSocket" url={epLocalWs(ep.port, ep.iface)} />
               ) : (
-                <UrlBlock label="HTTP POST" url={epLocalHttp(ep.port)} />
+                <UrlBlock label="HTTP POST" url={httpUrl} />
               )}
-              {ep.iface === "jsonrpc" && wsPort !== null && <UrlBlock label="WSS" url={epLocalWs(wsPort, "jsonrpc")} />}
+              {ep.iface === "jsonrpc" && (ep.publicUrl
+                ? <UrlBlock label="WSS" url={epPublicWs(ep.publicUrl, "jsonrpc")} />
+                : wsPort !== null && <UrlBlock label="WSS" url={epLocalWs(wsPort, "jsonrpc")} />)}
             </div>
 
             {/* Participating upstreams */}

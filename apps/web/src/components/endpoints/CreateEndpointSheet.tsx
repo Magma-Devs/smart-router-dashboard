@@ -74,6 +74,9 @@ export function CreateEndpointSheet({ open, onClose, routers, upstreams, existin
   const conflict = !!chain && existing.some((e) => e.spec === chain && e.iface === cfgIface);
   const hostPreview = (() => {
     if (!chain) return "—";
+    // Gateway host first (helm values), local listen port second (SR_CONFIG).
+    const published = routers.find((rt) => rt.spec === chain && rt.publicUrls[cfgIface]);
+    if (published) return published.publicUrls[cfgIface]!.replace(/^https?:\/\//, "");
     const r = routers.find((rt) => rt.spec === chain && (rt.localPorts[cfgIface] ?? rt.localPort) !== null);
     const port = r ? (r.localPorts[cfgIface] ?? r.localPort) : null;
     return port !== null && port !== undefined ? `localhost:${port}` : "—";

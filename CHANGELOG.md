@@ -5,6 +5,43 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.8.0]
+
+Kubernetes endpoint addresses. With a helm-values mount the Endpoints,
+Upstreams and Try-me surfaces printed `—` and offered no request console: they
+resolved an endpoint's address from `localPorts`, which only a raw SR_CONFIG
+mount fills in. A Kubernetes deployment has no listen ports — it has Gateway
+hostnames — so the dashboard now derives them from the same values file.
+
+### Added
+
+- **`RouterTopology.publicUrls`** (api-interface → URL) on the helm-values
+  path, mirroring the HTTPRoute / GRPCRoute hostname scheme those values
+  describe: `<custom_url_prefix | id-lowered>` joined to the interface by `.`
+  (the default) or `-` (`hostStructure: chain-interface`), on `base_domain`,
+  over the Gateway's TLS listener — its HTTP listener when there is no TLS
+  one, keeping non-default ports. Verified against a real 27-router values
+  file.
+- **Router id on the Endpoints card header** when several routers serve one
+  chain (a staging + production pair on the same `network`), which is the only
+  case where the chain name alone doesn't identify the card.
+
+### Changed
+
+- **Endpoint addresses resolve public URL → local port → nothing.** Endpoints
+  rows/detail, the Upstreams try-URLs and the connection test all follow that
+  order, so a Kubernetes deployment shows the hostname a user can actually dial and
+  an SR_CONFIG mount is unchanged. Websocket URLs ride the same address,
+  path-scoped (`/ws`, `/websocket`). Where neither format publishes an address
+  the UI still renders `—` and the console stays hidden — nothing fabricated.
+
+### Notes
+
+- Metrics remain **per chain, not per router**: the router labels its series
+  with `spec`, so two routers on one chain aggregate together. Topology,
+  addresses and the UI handle the duplicate-chain case; splitting the numbers
+  would need a router-scope selector through the query builders.
+
 ## [0.7.0]
 
 Chain-coverage sync. The **Chain map ↔ lava-specs drift** gate went red again

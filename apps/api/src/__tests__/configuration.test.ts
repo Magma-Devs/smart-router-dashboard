@@ -130,6 +130,10 @@ direct-rpc:
     expect(routers[0]!.localPort).toBe(4444);
   });
 
+  it("publishes no public URLs — an SR_CONFIG mount describes ports, not ingress", () => {
+    expect(serviceFor(SR_CONFIG_ETH).getRouters()[0]!.publicUrls).toEqual({});
+  });
+
   it("leaves localPort null when there is no endpoints block", () => {
     const routers = serviceFor(`
 direct-rpc:
@@ -276,6 +280,178 @@ routers:
     nodes: []
 `).getRouters();
       expect(routers[0]!.pathBased).toBe(false);
+    });
+  });
+
+  /* Public gateway URLs — mirrors the HTTPRoute + Gateway shapes in the values.
+     These are the addresses a k8s user actually dials, so a drift here
+     prints URLs that resolve nowhere. */
+  describe("publicUrls (mirrors the HTTPRoute hostname scheme)", () => {
+    /** GATEWAY block + `routers:` body, so each case varies only what it tests. */
+    const withGateway = (gateway: string, routers?: string): string => `
+base_domain: rpc.example.com
+miscellaneous:
+  gateway:
+${gateway}
+routers:
+${routers ?? `  - id: Ethereum
+    network: eth1
+    nodes:
+      - name: n1
+        endpoints: [{ url: "https://up1.example.com", interface: jsonrpc }]`}
+`;
+
+    const HTTPS_GATEWAY = `    enabled: true
+    listeners:
+      - { name: http, protocol: HTTP, port: 80 }
+      - { name: https, protocol: HTTPS, port: 443 }`;
+
+    it("renders the chain.interface form (the default) on the TLS listener", () => {
+      const eth = serviceFor(withGateway(HTTPS_GATEWAY)).getRouters()[0]!;
+      expect(eth.publicUrls).toEqual({ jsonrpc: "https://ethereum.jsonrpc.rpc.example.com" });
+    });
+
+    it("renders the chain-interface form when hostStructure selects it", () => {
+      const eth = serviceFor(
+        withGateway(`${HTTPS_GATEWAY}
+    hostStructure: chain-interface`),
+      ).getRouters()[0]!;
+      expect(eth.publicUrls).toEqual({ jsonrpc: "https://ethereum-jsonrpc.rpc.example.com" });
+    });
+
+    it("uses custom_url_prefix verbatim, like the values' own default", () => {
+      const eth = serviceFor(
+        withGateway(
+          HTTPS_GATEWAY,
+          `  - id: HyperliquidProduction
+    network: hyperliquid
+    custom_url_prefix: hyper-l
+    nodes:
+      - name: n1
+        endpoints: [{ url: "https://up1.example.com", interface: jsonrpc }]`,
+        ),
+      ).getRouters()[0]!;
+      expect(eth.publicUrls).toEqual({ jsonrpc: "https://hyper-l.jsonrpc.rpc.example.com" });
+    });
+
+    it("gives every interface its own hostname, grpc included", () => {
+      const lava = serviceFor(
+        withGateway(
+          HTTPS_GATEWAY,
+          `  - id: Lava
+    network: lava
+    nodes:
+      - name: n1
+        endpoints:
+          - { url: "https://a.example.com", interface: rest }
+          - { url: "https://b.example.com", interface: tendermintrpc }
+          - { url: "https://c.example.com", interface: grpc }`,
+        ),
+      ).getRouters()[0]!;
+      expect(lava.publicUrls).toEqual({
+        rest: "https://lava.rest.rpc.example.com",
+        tendermintrpc: "https://lava.tendermintrpc.rpc.example.com",
+        grpc: "https://lava.grpc.rpc.example.com",
+      });
+    });
+
+    it("falls back to the HTTP listener when no TLS listener exists", () => {
+      const eth = serviceFor(
+        withGateway(`    enabled: true
+    listeners:
+      - { name: http, protocol: HTTP, port: 80 }`),
+      ).getRouters()[0]!;
+      expect(eth.publicUrls).toEqual({ jsonrpc: "http://ethereum.jsonrpc.rpc.example.com" });
+    });
+
+    it("keeps a non-default listener port in the URL", () => {
+      const eth = serviceFor(
+        withGateway(`    enabled: true
+    listeners:
+      - { name: https, protocol: HTTPS, port: 8443 }`),
+      ).getRouters()[0]!;
+      expect(eth.publicUrls).toEqual({ jsonrpc: "https://ethereum.jsonrpc.rpc.example.com:8443" });
+    });
+
+    it("treats a tls block as HTTPS even when the protocol says otherwise", () => {
+      const eth = serviceFor(
+        withGateway(`    enabled: true
+    listeners:
+      - name: tls
+        port: 443
+        tls: { mode: Terminate }`),
+      ).getRouters()[0]!;
+      expect(eth.publicUrls).toEqual({ jsonrpc: "https://ethereum.jsonrpc.rpc.example.com" });
+    });
+
+    it("publishes nothing when the gateway is disabled", () => {
+      const eth = serviceFor(
+        withGateway(`    enabled: false
+    listeners:
+      - { name: https, protocol: HTTPS, port: 443 }`),
+      ).getRouters()[0]!;
+      expect(eth.publicUrls).toEqual({});
+    });
+
+    it("publishes nothing without a base_domain or listeners", () => {
+      const noDomain = serviceFor(`
+miscellaneous:
+  gateway:
+    enabled: true
+    listeners:
+      - { name: https, protocol: HTTPS, port: 443 }
+routers:
+  - id: A
+    network: eth1
+    nodes:
+      - name: n1
+        endpoints: [{ url: "https://up.example.com", interface: jsonrpc }]
+`).getRouters()[0]!;
+      expect(noDomain.publicUrls).toEqual({});
+
+      const noListeners = serviceFor(withGateway("    enabled: true")).getRouters()[0]!;
+      expect(noListeners.publicUrls).toEqual({});
+    });
+
+    it("keeps several routers on ONE chain apart by hostname", () => {
+      const routers = serviceFor(
+        withGateway(
+          HTTPS_GATEWAY,
+          `  - id: HyperliquidStaging
+    network: hyperliquid
+    custom_url_prefix: hyperliquid-staging
+    nodes:
+      - name: n1
+        endpoints: [{ url: "https://up1.example.com", interface: jsonrpc }]
+  - id: HyperliquidProduction
+    network: hyperliquid
+    custom_url_prefix: hyper-l
+    nodes:
+      - name: n1
+        endpoints: [{ url: "https://up1.example.com", interface: jsonrpc }]`,
+        ),
+      ).getRouters();
+      expect(routers.map((r) => r.id)).toEqual(["HyperliquidStaging", "HyperliquidProduction"]);
+      // Same chain (one `spec`, so one metrics identity) — distinct addresses.
+      expect(routers.every((r) => r.spec === "HYPERLIQUID")).toBe(true);
+      expect(routers.map((r) => r.publicUrls["jsonrpc"])).toEqual([
+        "https://hyperliquid-staging.jsonrpc.rpc.example.com",
+        "https://hyper-l.jsonrpc.rpc.example.com",
+      ]);
+    });
+
+    it("falls back to the lowercased id when no prefix is set", () => {
+      const eth = serviceFor(
+        withGateway(
+          HTTPS_GATEWAY,
+          `  - id: eth-mainnet
+    network: eth1
+    nodes:
+      - name: n1
+        endpoints: [{ url: "https://up1.example.com", interface: jsonrpc }]`,
+        ),
+      ).getRouters()[0]!;
+      expect(eth.publicUrls).toEqual({ jsonrpc: "https://eth-mainnet.jsonrpc.rpc.example.com" });
     });
   });
 });

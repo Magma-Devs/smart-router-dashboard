@@ -397,6 +397,13 @@ export interface RouterTopology {
   localPort: number | null;
   /** api-interface → local listen port (SR_CONFIG only). */
   localPorts: Record<string, number>;
+  /**
+   * api-interface → public base URL served by the Gateway (helm values only,
+   * and only when `miscellaneous.gateway.enabled`). Mirrors the host-based
+   * HTTPRoute/GRPCRoute hostname scheme; empty when the mounted
+   * config gives no routable address (SR_CONFIG mounts, gateway disabled).
+   */
+  publicUrls: Record<string, string>;
   interfaces: string[];
   nodes: RouterNode[];
 }

@@ -50,6 +50,17 @@ export function epLocalWs(port: number, iface?: string): string {
   return `ws://localhost:${port}${path}`;
 }
 
+/**
+ * WebSocket URL for a PUBLIC (gateway) base URL — same host, ws(s) scheme,
+ * same path rule as the local form. The HTTPRoutes carry no appProtocol on
+ * non-grpc ports, so the gateway serves the HTTP/1.1 upgrade
+ * on the interface's own hostname.
+ */
+export function epPublicWs(baseUrl: string, iface?: string): string {
+  const path = iface && iface.startsWith("tendermintrpc") ? "/websocket" : "/ws";
+  return baseUrl.replace(/^http/, "ws") + path;
+}
+
 export function IfaceTag({ id }: { id: string }) {
   const tagId = tagIdForIface(id);
   const iface = IFACES_DEF.find((i) => i.id === tagId) || { label: id, color: "#888" };
@@ -110,6 +121,8 @@ export interface EndpointRowModel {
   iface: string;
   /** Local listen port for this interface (SR_CONFIG only), else null. */
   port: number | null;
+  /** Public gateway base URL for this interface (helm values only), else null. */
+  publicUrl: string | null;
   /** Upstream node endpoints serving this interface. */
   nodes: EndpointNodeRef[];
 }
@@ -134,11 +147,35 @@ export function buildEndpointRows(routers: RouterTopology[]): EndpointRowModel[]
         network: r.network,
         iface,
         port: r.localPorts[rawIface] ?? r.localPorts[iface] ?? r.localPort,
+        publicUrl: r.publicUrls[rawIface] ?? r.publicUrls[iface] ?? null,
         nodes,
       });
     }
   }
   return out;
+}
+
+/**
+ * The address this row is actually reachable on: the gateway URL a helm
+ * deployment publishes, else the local listen port an SR_CONFIG mount
+ * declares, else null (nothing routable in the mounted config — never a
+ * fabricated host).
+ */
+export function epHttpUrl(ep: EndpointRowModel): string | null {
+  if (ep.publicUrl) return ep.publicUrl;
+  return ep.port !== null ? epLocalHttp(ep.port) : null;
+}
+
+/** Same resolution as `epHttpUrl`, as a ws(s) URL. */
+export function epWsUrl(ep: EndpointRowModel): string | null {
+  if (ep.publicUrl) return epPublicWs(ep.publicUrl, ep.iface);
+  return ep.port !== null ? epLocalWs(ep.port, ep.iface) : null;
+}
+
+/** Host (+ port) for compact display — "—" when nothing is routable. */
+export function epDisplayHost(ep: EndpointRowModel): string {
+  const url = epHttpUrl(ep);
+  return url ? url.replace(/^https?:\/\//, "") : "—";
 }
 
 /** Unique node names serving a row (the design's upstream count). */

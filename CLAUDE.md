@@ -161,7 +161,8 @@ The router's own config yaml is bind-mounted into the api at
    endpoints:[{url, interface, addons}]}], custom_url_prefix?, pathBased?}]`,
    with `pathBased` resolved per-router against the global
    `miscellaneous.gateway.pathBased.enabled` default (chart semantics).
-   Only this format can mark **backup** nodes.
+   Only this format can mark **backup** nodes, and only it yields
+   **`publicUrls`** (below).
 2. **Raw smart-router SR_CONFIG** — the YAML the router itself runs
    (`endpoints:` + `direct-rpc:`). Providers are grouped by chain-id into one
    router per chain; the `endpoints:` listen ports become **`localPorts`,
@@ -171,6 +172,52 @@ The router's own config yaml is bind-mounted into the api at
 Detection is by key: `routers` ⇒ helm; `direct-rpc` ⇒ sr-config; anything else
 yields an empty topology. **Node URLs are masked to scheme+host** — upstream
 provider URLs routinely embed API keys in the path.
+
+### Endpoint addresses (`publicUrls` vs. `localPorts`)
+
+An endpoint's dialable address depends on which format is mounted, and the
+Endpoints / Upstreams / Try-me surfaces resolve it in this order — **public
+gateway URL → local listen port → nothing** (`"—"`, never a fabricated host):
+
+- **Helm values** describe a k8s deployment with no listen ports at all, so
+  `localPorts` is empty and **`publicUrls`** (api-interface → URL) carries the
+  address. It mirrors the HTTPRoute / GRPCRoute hostname scheme those values
+  describe, exactly:
+  `<custom_url_prefix | id-lowered>` + `.<iface>.` (the default) or
+  `-<iface>.` (`miscellaneous.gateway.hostStructure: chain-interface`) +
+  `<base_domain>`, on the scheme/port of the Gateway's TLS listener (HTTP
+  listener when there is no TLS one; non-default ports kept in the URL).
+  Empty when the values publish nothing routable — `gateway.enabled: false`,
+  no `base_domain`, or a listener list with nothing HTTP(S) on it.
+- **SR_CONFIG** describes listen ports but nothing about ingress, so
+  `publicUrls` is empty and `localPorts` carries `http://localhost:<port>`.
+
+Websockets ride the **same** address as the base interface, path-scoped
+(`/ws` for jsonrpc, `/websocket` for tendermintrpc) — a bare host handshake is
+rejected 405. The values set no `appProtocol` on non-grpc ports, so the gateway
+serves the HTTP/1.1 upgrade on the interface's own hostname.
+
+**Several routers may serve one chain** (a staging + production pair on the
+same `network`, distinguished by `id` / `custom_url_prefix`). Topology handles
+that fully — separate cards, separate hostnames, and the Endpoints card header
+appends the router id whenever a spec is duplicated. **Metrics do not**: the
+router labels its series with the chain (`spec`), so two routers on one chain
+aggregate into one set of numbers. Splitting them needs a router-scope
+selector (the per-Service target labels Prometheus already attaches) threaded
+through the query builders — not built.
+
+### Deploying to Kubernetes
+
+A Kubernetes deployment runs the api as the `…/backend` image and the web as
+`…/frontend`. The contract it has to configure:
+
+| | Value |
+|---|---|
+| Backend liveness / readiness | `/health` · `/health/ready` (**not** `/api/health` — that's the retired v1 path). Readiness pings Prometheus, so give it a timeout ≥3s and a failureThreshold >1, or a Prometheus blip evicts the only replica |
+| Backend env | `PROMETHEUS_URL`, `CORS_ORIGINS` (comma list **or** JSON array), `HELM_VALUES_DIR` (default `/app/helm-values`, matching the values mount), `LOG_LEVEL`, `TENANT_ID`, `RATE_LIMIT_MAX`. No basic auth: `AUTH_USERNAME` / `AUTH_PASSWORD` / `DEBUG` / `CORS_ALLOW_CREDENTIALS` / `AUTH_GATEWAY_*` are v1-only and unread here |
+| Frontend runtime env | `DASHBOARD_API_URL` (browser-facing api origin) and `DASHBOARD_GRAFANA_URL`, both read per-request by `GET /api/config` so one image serves any host. `NEXT_PUBLIC_*` are build-time and can't vary per deployment |
+| Frontend liveness / readiness | `/api/config` (`/` also answers — it 307s to `/metrics`) |
+| Values mount | `<HELM_VALUES_DIR>/core/values.yml`, the rendered values. Drives `publicUrls` above, so the pod must roll when they change |
 
 ## Time windows
 
@@ -301,4 +348,5 @@ Compose / Makefile knobs:
 | Metric names | NOT `lava_rpcsmartrouter_*` — see Metrics above. The `../SR_Dashboard/` prototype is authoritative for **pixels**, not for metric names. |
 | Window params | `24h` is a wire alias of `1d`; unknown values silently fall back to `1d` (never a 400). `1h` is in the catalog but not in the page-level select. |
 | Provider `role` | Only the helm values format marks backups (`is_backup`); with a raw SR_CONFIG mount, `role` is null and backup-share panels stay empty — that's honest, not a bug. |
+| Endpoint URLs | `localhost:<port>` comes from SR_CONFIG's listen ports, gateway hostnames from helm values' `publicUrls` — a mount never has both. Anything that renders or dials an endpoint address must resolve public → local → `—` (`epHttpUrl` / `epWsUrl` in `components/endpoints/bits.tsx`), never hardcode `localhost`. |
 | BuildKit cache | `make build*` targets use the isolated `srdash-builder` (see Docker / images / isolation). Plain `docker compose up --build` is fine for the stack itself. |
