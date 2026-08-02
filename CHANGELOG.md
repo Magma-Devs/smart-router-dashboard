@@ -35,12 +35,26 @@ hostnames — so the dashboard now derives them from the same values file.
   path-scoped (`/ws`, `/websocket`). Where neither format publishes an address
   the UI still renders `—` and the console stays hidden — nothing fabricated.
 
-### Notes
-
-- Metrics remain **per chain, not per router**: the router labels its series
-  with `spec`, so two routers on one chain aggregate together. Topology,
-  addresses and the UI handle the duplicate-chain case; splitting the numbers
-  would need a router-scope selector through the query builders.
+- **Router scope — `?router=` on every `/api/metrics/*` route**, so the
+  numbers split per router deployment instead of only per chain. The router
+  labels its series with the chain, so two routers serving one chain summed
+  together; what separates them is the collector's per-target label
+  (`service` under the Prometheus Operator = the router's Service name),
+  named by the new `ROUTER_SCOPE_LABEL` env (default `service`).
+  - **`GET /api/metrics/routers`** lists the values actually present, so the
+    UI can offer exactly the routers this Prometheus can tell apart — `[]`
+    meaning "can't split", never "no routers".
+  - A **`<RouterSelect>`** in the topbar applies the scope to every panel
+    (persisted as `sr:router`). It hides itself below two routers, and a
+    selection that disappears resets to "All routers" rather than silently
+    filtering every panel to nothing.
+  - The matcher is injected into the finished PromQL by `applyScope`
+    (`packages/shared/src/promql/scope.ts`) rather than threaded through ~40
+    builders. It's a PromQL walker, not a regex: the naive version corrupts
+    metric names quoted inside the `{__name__="…"}` presence probes. An
+    absent or malformed `router` value reads cluster-wide rather than
+    becoming a different query. `cache_*` stays cluster-wide by design — the
+    relay cache is a shared sidecar carrying no router's label.
 
 ## [0.7.0]
 

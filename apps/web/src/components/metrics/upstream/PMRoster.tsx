@@ -13,6 +13,7 @@ import { uptimeColor } from "@/lib/colors";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { Tip } from "@/components/gateway/Tip";
 import { ThCol, useSort } from "@/components/gateway/SortTable";
+import { useFilters } from "@/components/gateway/FiltersProvider";
 
 interface RosterRow {
   pm: UpstreamMetrics;
@@ -157,5 +158,6 @@ export function PMRoster({ rows, activeName, onSelect, timeWindow }: {
 /** Keep the roster reusable without its own fetch; the tab supplies rows. */
 export function usePMRosterData(timeWindow: MetricWindow, chainFilter: string | null) {
   const specQ = chainFilter ? `&spec=${encodeURIComponent(chainFilter)}` : "";
-  return useApi<{ upstreams: UpstreamMetrics[] }>(`/api/metrics/upstreams?window=${timeWindow}${specQ}`);
+  const { scopeQ } = useFilters();
+  return useApi<{ upstreams: UpstreamMetrics[] }>(`/api/metrics/upstreams?window=${timeWindow}${specQ}${scopeQ}`);
 }

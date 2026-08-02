@@ -199,12 +199,42 @@ serves the HTTP/1.1 upgrade on the interface's own hostname.
 
 **Several routers may serve one chain** (a staging + production pair on the
 same `network`, distinguished by `id` / `custom_url_prefix`). Topology handles
-that fully — separate cards, separate hostnames, and the Endpoints card header
-appends the router id whenever a spec is duplicated. **Metrics do not**: the
-router labels its series with the chain (`spec`), so two routers on one chain
-aggregate into one set of numbers. Splitting them needs a router-scope
-selector (the per-Service target labels Prometheus already attaches) threaded
-through the query builders — not built.
+that natively — separate cards, separate hostnames, and the Endpoints card
+header appends the router id whenever a spec is duplicated. Metrics need the
+router scope below, because the router labels its series with the chain, not
+with itself.
+
+### Router scope (`?router=`)
+
+`smartrouter_*` carries `spec` (the chain) and no router identity, so two
+routers on one chain sum into a single set of numbers. What *does* separate
+them is the collector: each router is its own scrape target, so Prometheus
+attaches a per-target label — `service` under the Prometheus Operator, whose
+value is the router's Service name (`<router-id-lowered>-router`).
+`ROUTER_SCOPE_LABEL` names that label
+(default `service`; use `job` for a scrape config that names jobs per router).
+
+- **`GET /api/metrics/routers`** → `{ label, routers[] }` — the distinct
+  values actually present. Empty means the collector attaches no such label
+  (one static target, or a mislabelled `ROUTER_SCOPE_LABEL`): "can't split",
+  never "no routers". The web's `<RouterSelect>` hides itself below two
+  values — a filter that can't change anything is worse than none.
+- **Every `/api/metrics/*` route takes `?router=<value>`**, including the raw
+  `/query` passthrough. An absent or malformed value reads cluster-wide
+  rather than silently becoming a different query.
+- The scope is injected into the finished PromQL by `applyScope`
+  (`packages/shared/src/promql/scope.ts`) rather than threaded through ~40
+  builders: every vector selector gains the matcher. It is a small PromQL
+  walker, not a regex — the naive version corrupts metric names quoted inside
+  `{__name__="…"}` (the presence probes) and selectors that already carry
+  labels. `cache_*` is deliberately left cluster-wide: the relay cache is a
+  separate sidecar shared by every router, so it carries no router's label
+  and scoping it would report a zeroed cache rather than an unattributable
+  one.
+- Web side: the scope lives in `FiltersProvider` next to the time window
+  (persisted as `sr:router`), and every metrics URL appends `scopeQ` /
+  `withScope(url)`. A selection that disappears from the list resets to "All
+  routers" instead of silently filtering every panel to nothing.
 
 ### Deploying to Kubernetes
 
@@ -235,13 +265,17 @@ All endpoints return `application/json`. With `AUTH_MODE=disabled` (default)
 every route is public; with `AUTH_MODE=enabled` the `/api/*` routes require a
 valid Bearer JWT (health/version and `/auth/*` stay public). See [`docs/AUTH.md`](docs/AUTH.md).
 
+Every `/api/metrics/*` route also accepts **`router?`** — the router scope
+(see "Router scope" above); omitted = cluster-wide.
+
 | Endpoint | Params | Returns |
 |---|---|---|
 | `GET /docs` · `GET /docs/json` | — | Swagger UI explorer + OpenAPI 3.1 spec. Registered outside production only. |
 | `GET /health` | — | Liveness — `{ health: "ok" }` |
 | `GET /health/ready` | — | Readiness — pings Prometheus; 503 + `components.prometheus:"ping_failed"` on failure |
 | `GET /version` | — | Build provenance — `{ commit, version, env, startedAt, uptimeSec }` |
-| `GET /api/metrics/specs` | — | `{ specs: string[] }` — distinct chains present on the requests counter |
+| `GET /api/metrics/routers` | — | `{ label, routers: string[] }` — router deployments the metrics can be scoped to (distinct values of `ROUTER_SCOPE_LABEL`). `[]` when the collector can't tell routers apart. See "Router scope" |
+| `GET /api/metrics/specs` | `router?` | `{ specs: string[] }` — distinct chains present on the requests counter |
 | `GET /api/metrics/dashboard-summary` | `window` | `HeroSummary` — the six hero cards as `Kpi` `{value, prior}` pairs (`requestsServed`, `successRate`, `effectiveReadP95Ms`, `staleCaught`, `retriesRecovered`, `cacheOffloadPct`) + `providerCount` / `chainCount` / `health` + **`emitted: {retries, cache}`** |
 | `GET /api/metrics/overview` | `window`, `spec?` | `OverviewData` — KPI pairs (requests, RPS, errors, success rate, p50/p95/p99), `errorRate`, `health`, throughput/errors series, `latencySeries` (p50/p95/p99 toggle), **`latencyDistribution`** (histogram buckets), **`perProviderSeries`**, **`errorLayers`** (single `unclassified` layer until labelled counters exist), `perChainLatency`, `activeRoutes`, `perChainSeries`; `computeUnits`/`rpsCap` always null |
 | `GET /api/metrics/dashboard` | `window`, `spec?` | `DashboardData` — the Dashboard page (both tabs) in one round-trip: `kpis` (successRate, p95Ms, errors, rps, errorsHandled=null), `series` (throughput, errors, errorRate, successRate, latency p50/95/99, perChain, perChainSuccessRate, perChainLatency, providerMix, perProviderLatencyP95), `chains` (multiselect options — the series filter is client-side; `spec` accepted for symmetry). Unbacked families (`scu`, `regions`, `failoverRatio`, `internalAvailability`, `cacheHitRate`, `errorClasses`, `errorsHandledBreakdown`, `contribution`, `providerAvailability`, `scorecard`) are `null`, `trouble` is `[]` |
@@ -269,6 +303,7 @@ API (`apps/api/src/config.ts` is the source of truth):
 | `API_HOST` | `0.0.0.0` | |
 | `PROMETHEUS_URL` | `http://localhost:9090` | compose sets `http://prometheus:9090` |
 | `PROMETHEUS_TIMEOUT_MS` | `10000` | per-query abort |
+| `ROUTER_SCOPE_LABEL` | `service` | Target label carrying the router identity for `?router=` (Prometheus Operator's `service`; `job` for a per-router scrape config). Parsed at import — a change needs a restart |
 | `CORS_ORIGINS` | all | comma list or JSON array |
 | `RATE_LIMIT_MAX` | `300` | per IP per minute |
 | `HELM_VALUES_DIR` | `/app/helm-values` | reads `<dir>/core/values.yml` (either format) |

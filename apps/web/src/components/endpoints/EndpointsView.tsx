@@ -38,6 +38,7 @@ import { CapabilityTags, capabilitiesOf } from "@/components/gateway/CapabilityT
 import { EndpointDetailSheet } from "@/components/endpoints/EndpointDetailSheet";
 import { CreateEndpointSheet } from "@/components/endpoints/CreateEndpointSheet";
 import { TryNowButton } from "@/components/try-me/try-now-button";
+import { useFilters } from "@/components/gateway/FiltersProvider";
 
 interface CardGroup {
   routerId: string;
@@ -48,10 +49,11 @@ interface CardGroup {
 
 export function EndpointsView() {
   const config = useApi<{ routers: RouterTopology[] }>("/api/config/routers", 60000);
-  const live = useApi<{ upstreams: UpstreamMetrics[] }>("/api/metrics/upstreams?window=1d");
+  const { scopeQ } = useFilters();
+  const live = useApi<{ upstreams: UpstreamMetrics[] }>(`/api/metrics/upstreams?window=1d${scopeQ}`);
   // Health per spec — threaded into the Try-now drawer's status tag (omitted
   // when a chain has no live metrics; never a hardcoded status).
-  const chainMetrics = useApi<{ chains: ChainMetrics[] }>("/api/metrics/chains?window=1d", 60000);
+  const chainMetrics = useApi<{ chains: ChainMetrics[] }>(`/api/metrics/chains?window=1d${scopeQ}`, 60000);
 
   const [showCreate, setShowCreate] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);

@@ -16,6 +16,7 @@ import { ThCol, useSort } from "@/components/gateway/SortTable";
 import { SideSheet, SheetStat } from "@/components/gateway/SideSheet";
 import { fmtNum } from "@/lib/format";
 import { labelStyle } from "@/lib/styles";
+import { useFilters } from "@/components/gateway/FiltersProvider";
 
 const CLS = ["all", "reads", "writes", "batch"] as const;
 type Cls = (typeof CLS)[number];
@@ -29,7 +30,8 @@ export function MethodBreakdown({ win, chainFilter }: { win: MetricWindow; chain
   const [page, setPage] = useState(0);
 
   const specQ = chainFilter ? `&spec=${encodeURIComponent(chainFilter)}` : "";
-  const { data } = useApi<{ methods: MethodUsage[]; classTotals: MethodClassTotals }>(`/api/metrics/methods?window=${win}${specQ}`);
+  const { scopeQ } = useFilters();
+  const { data } = useApi<{ methods: MethodUsage[]; classTotals: MethodClassTotals }>(`/api/metrics/methods?window=${win}${specQ}${scopeQ}`);
 
   const filtered = useMemo(
     () => (data?.methods ?? []).filter((m) => cls === "all" || m.class === CLS_TO_CLASS[cls]),

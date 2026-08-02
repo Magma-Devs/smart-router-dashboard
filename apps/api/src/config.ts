@@ -44,6 +44,15 @@ export const config = {
   prometheus: {
     url: env("PROMETHEUS_URL") ?? "http://localhost:9090",
     timeoutMs: envInt("PROMETHEUS_TIMEOUT_MS", 10000),
+    /**
+     * Target label that identifies ONE router deployment, used by the
+     * `?router=` scope (see `promql/scope.ts`). The router labels its series
+     * with the chain, not with itself, so telling two routers on one chain
+     * apart relies on a per-target label the collector attaches. `service` is
+     * the Prometheus Operator's (the value being the router's Service name);
+     * point it at `job` for a scrape config that names jobs per router.
+     */
+    routerScopeLabel: env("ROUTER_SCOPE_LABEL") ?? "service",
   },
 
   /** Helm-values / router config the dashboard reflects (read-only). */

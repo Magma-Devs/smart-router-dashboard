@@ -10,11 +10,13 @@ import { useApi } from "@/hooks/use-api";
 import { Tip } from "@/components/gateway/Tip";
 import { ThCol } from "@/components/gateway/SortTable";
 import { fmtComma, fmtNum } from "@/lib/format";
+import { useFilters } from "@/components/gateway/FiltersProvider";
 
 const WS_TIP = "Long-lived WebSocket activity.\n\n**Active connections** is a live count — callers connected right now.\n\n**Subscriptions** and **subscription errors** are lifetime totals since the router started — these counters are too small for windowed math (a window misses the counter's very first increment). Error rate = errors ÷ subscriptions.";
 
 export function WebSocketPanel({ tw }: { tw: MetricWindow }) {
-  const { data: ws } = useApi<WebSocketReport>(`/api/metrics/websocket?window=${tw}`);
+  const { scopeQ } = useFilters();
+  const { data: ws } = useApi<WebSocketReport>(`/api/metrics/websocket?window=${tw}${scopeQ}`);
 
   const active = ws?.activeConnections ?? null;
   const subs = ws?.subscriptions ?? null;

@@ -1,10 +1,12 @@
 import type { FastifyInstance } from "fastify";
 import { WINDOWS, toMetricWindow, type MetricWindow } from "@sr/shared";
 import { sendApiError } from "../plugins/error-handler.js";
+import { config } from "../config.js";
 
 interface WindowQuery {
   window?: string;
   spec?: string;
+  router?: string;
 }
 
 function parseWindow(raw: string | undefined): MetricWindow {
@@ -22,6 +24,20 @@ const windowQuerySchema = {
       description: "Time window (default 1d; 24h is an alias of 1d)",
     },
     spec: { type: "string" as const, description: "Chain spec label, e.g. ETH1 (optional)" },
+    router: {
+      type: "string" as const,
+      description:
+        "Restrict to ONE router deployment — a value of the ROUTER_SCOPE_LABEL target label, as listed by GET /api/metrics/routers (optional; omit for cluster-wide)",
+    },
+  },
+};
+
+/** The window+router subset, for routes that don't take a spec. */
+const windowRouterSchema = {
+  type: "object" as const,
+  properties: {
+    window: windowQuerySchema.properties.window,
+    router: windowQuerySchema.properties.router,
   },
 };
 
@@ -29,60 +45,75 @@ const tag = (summary: string, withSpec = true) => ({
   schema: {
     tags: ["Metrics"],
     summary,
-    querystring: withSpec
-      ? windowQuerySchema
-      : { type: "object" as const, properties: { window: windowQuerySchema.properties.window } },
+    querystring: withSpec ? windowQuerySchema : windowRouterSchema,
   },
 });
 
 export async function metricRoutes(app: FastifyInstance) {
+  // Routers this Prometheus can tell apart — the distinct values of the
+  // ROUTER_SCOPE_LABEL target label. Empty when the collector attaches no such
+  // label (a single static scrape target, say), which is how the UI knows not
+  // to offer the filter rather than offering one that does nothing.
+  app.get("/api/metrics/routers", {
+    schema: { tags: ["Metrics"], summary: "Router deployments the metrics can be scoped to" },
+  }, async () => ({
+    label: config.prometheus.routerScopeLabel,
+    routers: await app.metrics.listRouterScopes(config.prometheus.routerScopeLabel),
+  }));
+
   // List of chains (spec labels) currently emitting metrics.
-  app.get("/api/metrics/specs", { schema: { tags: ["Metrics"], summary: "Chains currently emitting metrics" } }, async () => ({
-    specs: await app.metrics.listSpecs(),
+  app.get<{ Querystring: WindowQuery }>("/api/metrics/specs", {
+    schema: {
+      tags: ["Metrics"],
+      summary: "Chains currently emitting metrics",
+      querystring: { type: "object" as const, properties: { router: windowQuerySchema.properties.router } },
+    },
+  }, async (request) => ({
+    specs: await app.scoped(request.query.router).metrics.listSpecs(),
   }));
 
   // HeroPanel cards (Metrics · Overview tab).
   app.get<{ Querystring: WindowQuery }>("/api/metrics/dashboard-summary", tag("HeroPanel summary (KPIs + prior-window deltas)", false), async (request) => {
-    return app.metrics.dashboardSummary(parseWindow(request.query.window), request.query.spec);
+    return app.scoped(request.query.router).metrics.dashboardSummary(parseWindow(request.query.window), request.query.spec);
   });
 
   // Rich Overview/Dashboard payload (KPIs + deltas + series + per-chain).
   app.get<{ Querystring: WindowQuery }>("/api/metrics/overview", tag("Rich Overview/Dashboard payload (KPIs, deltas, series, per-chain)"), async (request) => {
-    return app.metrics.overview(parseWindow(request.query.window), request.query.spec);
+    return app.scoped(request.query.router).metrics.overview(parseWindow(request.query.window), request.query.spec);
   });
 
   // Dashboard page payload (Overview + Metrics tabs). The chains multiselect
   // filters per-chain series CLIENT-side; `spec` is accepted for symmetry.
   app.get<{ Querystring: WindowQuery }>("/api/metrics/dashboard", tag("Dashboard page payload (KPIs + series; unbacked families null)"), async (request) => {
-    return app.metricsDashboard.dashboard(parseWindow(request.query.window), request.query.spec);
+    return app.scoped(request.query.router).metricsDashboard.dashboard(parseWindow(request.query.window), request.query.spec);
   });
 
   // Per-chain rollup (RouterOverview table).
   app.get<{ Querystring: WindowQuery }>("/api/metrics/chains", tag("Per-chain rollup", false), async (request) => {
-    return { chains: await app.metrics.chains(parseWindow(request.query.window)) };
+    return { chains: await app.scoped(request.query.router).metrics.chains(parseWindow(request.query.window)) };
   });
 
   // Upstream roster (optionally scoped to one spec).
   app.get<{ Querystring: WindowQuery }>("/api/metrics/upstreams", tag("Upstream roster + selection scores"), async (request) => {
     const { spec } = request.query;
-    return { upstreams: await app.metrics.upstreams(spec, parseWindow(request.query.window)) };
+    return { upstreams: await app.scoped(request.query.router).metrics.upstreams(spec, parseWindow(request.query.window)) };
   });
 
   // RPS time-series for the Traffic chart.
   app.get<{ Querystring: WindowQuery }>("/api/metrics/rps", tag("RPS time-series"), async (request) => {
     const { spec } = request.query;
-    return app.metrics.rpsSeries(spec, parseWindow(request.query.window));
+    return app.scoped(request.query.router).metrics.rpsSeries(spec, parseWindow(request.query.window));
   });
 
   // Traffic tab: aggregate RPS-now + per-chain rows (rpsNow, requests, share, trend).
   app.get<{ Querystring: WindowQuery }>("/api/metrics/traffic", tag("Traffic tab (aggregate + per-chain rps/share/trend)", false), async (request) => {
-    return app.metrics.traffic(parseWindow(request.query.window));
+    return app.scoped(request.query.router).metrics.traffic(parseWindow(request.query.window));
   });
 
   // Method-level breakdown + read/write/batch class totals.
   app.get<{ Querystring: WindowQuery }>("/api/metrics/methods", tag("Method-level breakdown (client-scoped requests, real per-method p95) + class totals"), async (request) => {
     const { spec } = request.query;
-    return app.metrics.methods(spec, parseWindow(request.query.window));
+    return app.scoped(request.query.router).metrics.methods(spec, parseWindow(request.query.window));
   });
 
   // ChainDetail expandable-row series bundle (metric switcher).
@@ -98,11 +129,11 @@ export async function metricRoutes(app: FastifyInstance) {
       sendApiError(reply, 400, "spec is required");
       return reply;
     }
-    return app.metricsDetail.chainSeries(spec, parseWindow(request.query.window));
+    return app.scoped(request.query.router).metricsDetail.chainSeries(spec, parseWindow(request.query.window));
   });
 
   // Upstream deep-dive (PMBody).
-  app.get<{ Querystring: { window?: string; endpointId?: string } }>("/api/metrics/upstream-detail", {
+  app.get<{ Querystring: { window?: string; endpointId?: string; router?: string } }>("/api/metrics/upstream-detail", {
     schema: {
       tags: ["Metrics"],
       summary: "Upstream deep-dive (stats, series, QoS sub-scores)",
@@ -111,6 +142,7 @@ export async function metricRoutes(app: FastifyInstance) {
         required: ["endpointId"],
         properties: {
           window: windowQuerySchema.properties.window,
+          router: windowQuerySchema.properties.router,
           endpointId: { type: "string" as const, description: "Backing endpoint id (= upstream name)" },
         },
       },
@@ -121,36 +153,49 @@ export async function metricRoutes(app: FastifyInstance) {
       sendApiError(reply, 400, "endpointId is required");
       return reply;
     }
-    return app.metricsDetail.upstreamDetail(endpointId, parseWindow(request.query.window));
+    return app.scoped(request.query.router).metricsDetail.upstreamDetail(endpointId, parseWindow(request.query.window));
   });
 
   // Errors-breakdown tab (derived totals/hotspots/pivots + family presence).
   app.get<{ Querystring: WindowQuery }>("/api/metrics/errors", tag("Errors breakdown (hotspots + pivots)"), async (request) => {
     const { spec } = request.query;
-    return app.metricsDetail.errors(parseWindow(request.query.window), spec);
+    return app.scoped(request.query.router).metricsDetail.errors(parseWindow(request.query.window), spec);
   });
 
   // Chains whose every backing endpoint is down (CurrentlyUnavailable strip).
-  app.get("/api/metrics/unavailable", { schema: { tags: ["Metrics"], summary: "Chains with every endpoint down" } }, async () => ({
-    unavailable: await app.metricsDetail.unavailable(),
+  app.get<{ Querystring: WindowQuery }>("/api/metrics/unavailable", {
+    schema: {
+      tags: ["Metrics"],
+      summary: "Chains with every endpoint down",
+      querystring: { type: "object" as const, properties: { router: windowQuerySchema.properties.router } },
+    },
+  }, async (request) => ({
+    unavailable: await app.scoped(request.query.router).metricsDetail.unavailable(),
   }));
 
   // Cross-validation panel (absent-until-fired; consistency_* is real).
   app.get<{ Querystring: WindowQuery }>("/api/metrics/cross-validation", tag("Cross-validation panel (rounds/consensus/reasons; emitted:false until the family fires)", false), async (request) => {
-    return app.metricsDetail.crossValidation(parseWindow(request.query.window));
+    return app.scoped(request.query.router).metricsDetail.crossValidation(parseWindow(request.query.window));
   });
 
   // WebSocket panel (absent until a subscription opens).
   app.get<{ Querystring: WindowQuery }>("/api/metrics/websocket", tag("WebSocket panel (lifetime totals since router start; emitted:false until ws_* fires)", false), async (request) => {
-    return app.metricsDetail.websocket(parseWindow(request.query.window));
+    return app.scoped(request.query.router).metricsDetail.websocket(parseWindow(request.query.window));
   });
 
   // Raw instant PromQL passthrough (used by ad-hoc panels). Bounded to GET.
-  app.get<{ Querystring: { query?: string } }>("/api/metrics/query", {
+  app.get<{ Querystring: { query?: string; router?: string } }>("/api/metrics/query", {
     schema: {
       tags: ["Metrics"],
       summary: "Raw instant PromQL passthrough",
-      querystring: { type: "object" as const, required: ["query"], properties: { query: { type: "string" as const } } },
+      querystring: {
+        type: "object" as const,
+        required: ["query"],
+        properties: {
+          query: { type: "string" as const },
+          router: windowQuerySchema.properties.router,
+        },
+      },
     },
   }, async (request, reply) => {
     const expr = request.query.query;
@@ -158,6 +203,11 @@ export async function metricRoutes(app: FastifyInstance) {
       sendApiError(reply, 400, "query is required");
       return reply;
     }
-    return { result: await app.prom.query(expr) };
+    // `router` scopes the passthrough too — the caller asked for one router's
+    // numbers, and the injection understands arbitrary PromQL.
+    const prom = request.query.router
+      ? app.prom.withScope({ label: config.prometheus.routerScopeLabel, value: request.query.router })
+      : app.prom;
+    return { result: await prom.query(expr) };
   });
 }

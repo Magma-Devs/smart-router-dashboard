@@ -12,6 +12,7 @@ import { useApi } from "@/hooks/use-api";
 import { InteractiveChart, roFmtTime, roTimes } from "@/components/metrics/InteractiveChart";
 import { fmtNum } from "@/lib/format";
 import { seriesXY } from "./bits";
+import { useFilters } from "@/components/gateway/FiltersProvider";
 
 /** The already-loaded roster row backing the expanded chain. */
 export interface ChainDetailRow {
@@ -51,7 +52,8 @@ const pct = (pts: TimePoint[] | null | undefined) => {
 
 export function ChainDetail({ r, onChainClick, win }: { r: ChainDetailRow; onChainClick: (spec: string) => void; win: MetricWindow }) {
   const [selKey, setSelKey] = useState<string | null>(null);
-  const { data } = useApi<ChainSeries>(`/api/metrics/chain-series?spec=${encodeURIComponent(r.spec)}&window=${win}`);
+  const { scopeQ } = useFilters();
+  const { data } = useApi<ChainSeries>(`/api/metrics/chain-series?spec=${encodeURIComponent(r.spec)}&window=${win}${scopeQ}`);
 
   if (!data) {
     return (

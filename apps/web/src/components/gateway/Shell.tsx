@@ -8,6 +8,8 @@ import type { OverviewData } from "@sr/shared";
 import { NAV_SECTIONS } from "./nav";
 import { IconMoon, IconSun, type IconProps } from "./icons";
 import { useApi } from "@/hooks/use-api";
+import { useFilters } from "@/components/gateway/FiltersProvider";
+import { RouterSelect } from "@/components/gateway/RouterSelect";
 import { fmtNum } from "@/lib/format";
 import { getAuthState, getAuthVersion, subscribeAuth } from "@/lib/auth-store";
 
@@ -126,7 +128,9 @@ function SidebarUser() {
 function Topbar({ here }: { here: string }) {
   // Live throughput + health for the top-bar stats (real data; CU/mo is a
   // Lava-consumer concept the router doesn't emit, so it's omitted here).
-  const { data } = useApi<OverviewData>("/api/metrics/overview?window=1h", 30000);
+  // Scoped like every other panel, so the pills describe the selected router.
+  const { scopeQ } = useFilters();
+  const { data } = useApi<OverviewData>(`/api/metrics/overview?window=1h${scopeQ}`, 30000);
   const rps = data?.throughputRps.value;
   const ok = data?.health === "operational";
   return (
@@ -144,6 +148,10 @@ function Topbar({ here }: { here: string }) {
           <span className={ok ? "dot-ok" : "dot-warn"} />
           {ok ? "All systems normal" : data ? "Degraded" : "…"}
         </span>
+        {/* Router scope — global, so it sits next to the theme toggle rather
+            than in any one page's header. Hides itself when the metrics can't
+            be split per router. */}
+        <RouterSelect />
         <ThemeToggle />
       </div>
     </header>

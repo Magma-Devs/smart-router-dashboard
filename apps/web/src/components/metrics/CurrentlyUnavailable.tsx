@@ -10,9 +10,11 @@ import type { UnavailableChain } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { fmtSince } from "./bits";
+import { useFilters } from "@/components/gateway/FiltersProvider";
 
 export function CurrentlyUnavailable() {
-  const { data } = useApi<{ unavailable: UnavailableChain[] }>("/api/metrics/unavailable");
+  const { withScope } = useFilters();
+  const { data } = useApi<{ unavailable: UnavailableChain[] }>(withScope("/api/metrics/unavailable"));
   const rows = data?.unavailable ?? [];
   if (!rows.length) return null; // only appears when a route is genuinely down
   return (
