@@ -83,4 +83,43 @@ describe("MetricsService query construction (bug regressions)", () => {
     // it may appear alone (global health) but never filtered per chain.
     expect(queries.every((q) => !q.includes('smartrouter_overall_health{spec='))).toBe(true);
   });
+
+  // MAG-2710: the hero tile read "50.0K across 4 upstreams" while the Routers
+  // table below it showed 1 for the same chain — a chain-scoped numerator
+  // paired with an account-wide upstream count. Both of these passed before
+  // only because every existing dashboardSummary test called it without a spec.
+  it("upstreamCount scopes to the selected chain (MAG-2710)", async () => {
+    const { prom, queries } = capturingProm();
+    await new MetricsService(prom).dashboardSummary("1d", "ETH1");
+    expect(
+      queries.some((q) =>
+        q.includes('count by (endpoint_id) (rpc_endpoint_overall_health{spec="ETH1"}'),
+      ),
+    ).toBe(true);
+    // The unfiltered form is what produced the wrong count — it must be gone.
+    expect(
+      queries.every((q) => !q.includes("count by (endpoint_id) (rpc_endpoint_overall_health)")),
+    ).toBe(true);
+  });
+
+  it("hero health scopes to the selected chain, not the whole deployment (MAG-2710)", async () => {
+    const { prom, queries } = capturingProm();
+    await new MetricsService(prom).dashboardSummary("1d", "ETH1");
+    expect(
+      queries.some((q) => q.includes('max by (spec) (rpc_endpoint_overall_health{spec="ETH1"}')),
+    ).toBe(true);
+    // The label-less router gauge answers "is the deployment healthy", which is
+    // the wrong question once a chain is selected.
+    expect(queries.every((q) => q !== "smartrouter_overall_health")).toBe(true);
+  });
+
+  it("with no chain selected both stay account-wide", async () => {
+    const { prom, queries } = capturingProm();
+    await new MetricsService(prom).dashboardSummary("1d");
+    // selector({ spec: undefined }) collapses to "" — no empty `{}` selector.
+    expect(
+      queries.some((q) => q === "count by (endpoint_id) (rpc_endpoint_overall_health)"),
+    ).toBe(true);
+    expect(queries.some((q) => q === "smartrouter_overall_health")).toBe(true);
+  });
 });
