@@ -27,7 +27,7 @@ import {
   qUpstreamErrorRate,
   qUpstreamReadVolumeSeriesExpr,
   qUpstreamVolumeSeriesExpr,
-  qRpsSeriesExpr,
+  qClientRpsSeriesExpr,
   qScoreExpr,
   rangeFor,
   selector,
@@ -83,7 +83,11 @@ export class MetricsDetailService {
       this.series(qAvailabilitySeriesExpr(step, spec), window),
       this.series(qLatencySeriesExpr(0.95, step, spec), window),
       this.series(qErrorRateSeriesExpr(step, spec), window),
-      this.series(qRpsSeriesExpr(step, spec), window),
+      // CLIENT-scoped, matching the Traffic tab and the hero "Requests served"
+      // card. The relay-scoped counter (qRpsSeriesExpr) counts health probes
+      // and one increment per cross-validation participant, so this chart used
+      // to show a permanent non-zero floor on an idle chain (MAG-2737).
+      this.series(qClientRpsSeriesExpr(step, spec), window),
       this.series(qOptimizerScore("composite", spec), window),
       backupNames.length
         ? this.series(qBackupShareExpr(spec, backupNames, step), window)
