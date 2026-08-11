@@ -9,13 +9,15 @@
 
 import type { HeroSummary, MetricWindow } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
+import { useFilters } from "@/components/gateway/FiltersProvider";
 import { Tip } from "@/components/gateway/Tip";
 import { TT } from "@/lib/tooltips";
 import { fmtNum } from "@/lib/format";
 
 export function HeroPanel({ tw, spec }: { tw: MetricWindow; spec?: string | null }) {
+  const { scopeQ } = useFilters();
   const { data } = useApi<HeroSummary>(
-    `/api/metrics/dashboard-summary?window=${tw}${spec ? `&spec=${encodeURIComponent(spec)}` : ""}`,
+    `/api/metrics/dashboard-summary?window=${tw}${spec ? `&spec=${encodeURIComponent(spec)}` : ""}${scopeQ}`,
   );
 
   const sr = data?.successRate.value ?? null;             // ratio 0..1

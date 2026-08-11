@@ -14,6 +14,7 @@
 import { useEffect, useState } from "react";
 import { buildChainMetaByIndex, WINDOWS, type MetricWindow, type UpstreamDetail } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
+import { useFilters } from "@/components/gateway/FiltersProvider";
 import { fmtNum } from "@/lib/format";
 import { uptimeColor } from "@/lib/colors";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
@@ -26,6 +27,7 @@ export function UpstreamMetricsTab({ timeWindow, chainFilter }: {
   timeWindow: MetricWindow;
   chainFilter: string | null;
 }) {
+  const { scopeQ } = useFilters();
   const rosterRes = usePMRosterData(timeWindow, chainFilter);
   const entries = rosterRes.data?.upstreams ?? [];
 
@@ -39,7 +41,7 @@ export function UpstreamMetricsTab({ timeWindow, chainFilter }: {
   const pm = activeName ? visible.find((e) => e.endpointId === activeName) ?? null : null;
 
   const detailRes = useApi<UpstreamDetail>(
-    activeName ? `/api/metrics/upstream-detail?endpointId=${encodeURIComponent(activeName)}&window=${timeWindow}` : null,
+    activeName ? `/api/metrics/upstream-detail?endpointId=${encodeURIComponent(activeName)}&window=${timeWindow}${scopeQ}` : null,
   );
   const detail = detailRes.data;
 
