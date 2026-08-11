@@ -166,11 +166,20 @@ export class MetricsService {
           ? kpi(qConsistencyCaught(window, undefined, spec), qConsistencyCaught(window, r, spec))
           : Promise.resolve({ value: 0, prior: 0 } as Kpi),
         this.listSpecs(),
-        // Endpoint health keys on `endpoint_id`, NOT `spec`, so it can't be
-        // spec-filtered here — upstreamCount + health stay account-wide even
-        // when a chain is selected (the KPIs above are the ones that scope).
-        this.prom.query(`count by (endpoint_id) (${ENDPOINT_METRICS.overallHealth})`),
-        this.prom.scalar(ROUTER_METRICS.overallHealth),
+        // `rpc_endpoint_overall_health` carries {spec, apiInterface, endpoint_id}
+        // (smartrouter_metrics_manager.go endpointLabels), so it scopes exactly
+        // like the KPIs above — `selector` yields "" with no chain selected,
+        // which is the account-wide count. Unfiltered, this tile paired a
+        // chain-scoped request count with an account-wide upstream count and
+        // read "50.0K across 4 upstreams" on a chain that had one (MAG-2710).
+        this.prom.query(
+          `count by (endpoint_id) (${ENDPOINT_METRICS.overallHealth}${selector({ spec })})`,
+        ),
+        // Same reasoning for health: the ROUTER gauge is label-less, so under a
+        // chain filter it reports the whole deployment. chainHealth() reads the
+        // spec-labelled endpoint gauge — see chains()/chainRow(), which has
+        // always done this correctly.
+        spec ? this.chainHealth(spec) : this.prom.scalar(ROUTER_METRICS.overallHealth),
       ]);
     const stale = staleKpi;
 
