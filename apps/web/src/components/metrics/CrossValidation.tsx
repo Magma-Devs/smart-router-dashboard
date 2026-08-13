@@ -3,9 +3,13 @@
 /* CrossValidation — response-correctness panel. Ported verbatim from the
  * design prototype (page-metrics.jsx CrossValidation). Live data:
  * /api/metrics/cross-validation. When the cross_validation_* family isn't
- * emitted yet the panel keeps FULL design chrome with "—" values — while the
- * router's REAL consistency counters (consistency_total /
- * consistency_success_total) are surfaced in their own strip. */
+ * emitted yet the panel keeps FULL design chrome with "—" values.
+ *
+ * The router's consistency_* counters are a DIFFERENT feature — always-on
+ * head-freshness checks, not sampled multi-upstream comparison — and used to
+ * be rendered here in their own strip. Removed in MAG-2527: not part of the
+ * design, and not cross-validation. `stale responses caught` still shows on
+ * the Metrics tab's HeroPanel; the API keeps returning `consistency`. */
 
 import { buildChainMetaByIndex, type CrossValidationReport, type MetricWindow } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
@@ -24,7 +28,6 @@ export function CrossValidation({ tw }: { tw: MetricWindow }) {
   const rounds = cv?.rounds ?? null;
   const consensusPct = cv?.consensusRate != null ? cv.consensusRate * 100 : null;
   const noConsensus = cv?.disagreements ?? null;
-  const consistency = cv?.consistency ?? { total: 0, caught: 0 };
 
   return (
     <div className="gw-card" style={{ marginBottom: 14 }}>
@@ -58,25 +61,6 @@ export function CrossValidation({ tw }: { tw: MetricWindow }) {
           ))}
         </div>
       )}
-
-      {/* REAL consistency counters — always emitted on this build */}
-      <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-3)", marginBottom: 12 }}>
-        Consistency checks <span style={{ textTransform: "none", letterSpacing: 0, fontWeight: 400, color: "var(--text-4)" }}>— always-on head-freshness verification (consistency_total)</span>
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 20, marginBottom: 24, paddingBottom: 24, borderBottom: "1px solid var(--line)" }}>
-        <div>
-          <div className="gw-mono gw-tnum" style={{ fontSize: 18, fontWeight: 700, letterSpacing: "-0.03em", lineHeight: 1 }}>{fmtNum(consistency.total)}</div>
-          <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 8 }}>responses checked</div>
-        </div>
-        <div>
-          <div className="gw-mono gw-tnum" style={{ fontSize: 18, fontWeight: 700, letterSpacing: "-0.03em", lineHeight: 1, color: consistency.caught > 0 ? "var(--warn)" : "var(--text)" }}>{fmtComma(consistency.caught)}</div>
-          <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 8 }}>stale responses caught</div>
-        </div>
-        <div>
-          <div className="gw-mono gw-tnum" style={{ fontSize: 18, fontWeight: 700, letterSpacing: "-0.03em", lineHeight: 1, color: "var(--ok)" }}>{fmtComma(Math.max(0, consistency.total - consistency.caught))}</div>
-          <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 8 }}>checks passed</div>
-        </div>
-      </div>
 
       {/* per-chain disagreement table */}
       <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-3)", marginBottom: 12 }}>
