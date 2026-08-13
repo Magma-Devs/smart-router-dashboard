@@ -49,7 +49,12 @@ export interface UpstreamMetrics {
   latestBlock: number | null;
   /** Blocks behind the spec's best endpoint; null when unknown. */
   blockLag: number | null;
-  /** From config `is_backup` (helm format only); null for SR_CONFIG. */
+  /**
+   * From the mounted config — helm `is_backup`, or the SR_CONFIG
+   * `backup-direct-rpc` section. Resolved per (upstream, chain): the same
+   * upstream is routinely primary on one chain and backup on another. Null
+   * only when the config doesn't describe this upstream on this chain.
+   */
   role: "primary" | "backup" | null;
   apiInterface: string | null;
   inFlight: number;

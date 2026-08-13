@@ -17,7 +17,7 @@ import { useApi } from "@/hooks/use-api";
 import { fmtNum } from "@/lib/format";
 import { uptimeColor } from "@/lib/colors";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
-import { PMRoster, usePMRosterData } from "./PMRoster";
+import { PMRoster, rosterKey, usePMRosterData } from "./PMRoster";
 import { PMStat, PMNoVal } from "./PMPanel";
 import { PMEmpty } from "./PMEmpty";
 import { PMBody } from "./PMBody";
@@ -29,14 +29,17 @@ export function UpstreamMetricsTab({ timeWindow, chainFilter }: {
   const rosterRes = usePMRosterData(timeWindow, chainFilter);
   const entries = rosterRes.data?.upstreams ?? [];
 
-  const [provName, setProvName] = useState<string | null>(null);
+  // Selection is per (upstream × chain) — see rosterKey. The same upstream on
+  // two chains is two rows with two roles, so the name alone can't address one.
+  const [selKey, setSelKey] = useState<string | null>(null);
   // jump the deep-dive to the first upstream on the filtered chain
-  useEffect(() => { setProvName(null); }, [chainFilter]);
+  useEffect(() => { setSelKey(null); }, [chainFilter]);
 
   const visible = entries;
-  const selValid = visible.some((e) => e.endpointId === provName);
-  const activeName = selValid ? provName : (visible[0]?.endpointId ?? null);
-  const pm = activeName ? visible.find((e) => e.endpointId === activeName) ?? null : null;
+  const selValid = visible.some((e) => rosterKey(e) === selKey);
+  const activeKey = selValid ? selKey : (visible[0] ? rosterKey(visible[0]) : null);
+  const pm = activeKey ? visible.find((e) => rosterKey(e) === activeKey) ?? null : null;
+  const activeName = pm?.endpointId ?? null;
 
   const detailRes = useApi<UpstreamDetail>(
     activeName ? `/api/metrics/upstream-detail?endpointId=${encodeURIComponent(activeName)}&window=${timeWindow}` : null,
@@ -56,7 +59,7 @@ export function UpstreamMetricsTab({ timeWindow, chainFilter }: {
   return (
     <div>
       {/* ── roster of every upstream — click a row to drill in below ── */}
-      <PMRoster rows={visible} activeName={activeName} onSelect={setProvName} timeWindow={timeWindow} />
+      <PMRoster rows={visible} activeKey={activeKey} onSelect={setSelKey} timeWindow={timeWindow} />
 
       {pm && activeName && (
         <>

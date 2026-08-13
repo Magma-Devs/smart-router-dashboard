@@ -427,8 +427,10 @@ export class MetricsService {
       this.prom.query(`${ENDPOINT_METRICS.selectionScore}${sel}`),
       this.prom.query(`${ENDPOINT_METRICS.overallHealth}${sel}`),
       this.prom.query(`${ENDPOINT_METRICS.latestBlock}${sel}`),
+      // `spec` is grouped in so in-flight rows land on the right per-chain row
+      // (the endpoint gauges are labelled {spec, apiInterface, endpoint_id}).
       this.prom.query(
-        `sum by (endpoint_id) (${ENDPOINT_METRICS.requestsInFlight}${sel})`,
+        `sum by (endpoint_id, spec) (${ENDPOINT_METRICS.requestsInFlight}${sel})`,
       ),
       // Per-endpoint p95 latency — the endpoint histogram carries endpoint_id.
       this.prom.query(
@@ -436,14 +438,37 @@ export class MetricsService {
       ),
     ]);
 
-    // Config-derived identity: node name → role/interface (helm marks backups;
-    // SR_CONFIG has no backup marker, so role stays null there).
-    const roleByName = new Map<string, { role: "primary" | "backup"; iface: string | null }>();
+    /**
+     * Rows are one per (upstream × chain) — what the roster's Chain column has
+     * always implied. Keying on the name alone collapsed an upstream serving
+     * two chains into one row whose stats were last-writer-wins, and made the
+     * role unanswerable: an upstream is routinely primary on one chain and
+     * backup on another.
+     */
+    const key = (name: string, spec: string): string => `${name} ${spec}`;
+
+    /**
+     * Config-derived identity: (node, chain) → role/interface.
+     *
+     * BOTH formats mark backups — helm via `is_backup`, SR_CONFIG via the
+     * `backup-direct-rpc` section — so there is no format gate here any more.
+     * The old `isHelm` gate predated SR_CONFIG backup support and silently
+     * pinned `role` to null for every SR_CONFIG mount (MAG-2537 item 2).
+     *
+     * Names are matched case-INSENSITIVELY: these come from the mounted values
+     * file, while `endpoint_id` carries the name the ROUTER was configured
+     * with, and a helm deployment renders one from the other without the case
+     * necessarily surviving (`Blockdaemon` here, `blockdaemon` on the series).
+     */
+    const cfgKey = (name: string, spec: string): string =>
+      key(name.toLowerCase(), spec.toUpperCase());
+    const cfgByNode = new Map<string, { role: "primary" | "backup"; iface: string | null }>();
     if (this.configSvc) {
       for (const router of this.configSvc.getRouters()) {
         for (const node of router.nodes) {
-          if (!roleByName.has(node.name)) {
-            roleByName.set(node.name, {
+          const k = cfgKey(node.name, router.spec);
+          if (!cfgByNode.has(k)) {
+            cfgByNode.set(k, {
               role: node.isBackup ? "backup" : "primary",
               iface: node.endpoints[0]?.interface ?? null,
             });
@@ -451,15 +476,13 @@ export class MetricsService {
         }
       }
     }
-    const isHelm = this.configSvc
-      ? this.configSvc.getRouters().some((rt) => rt.localPort === null && rt.nodes.length > 0)
-      : false;
 
     const byId = new Map<string, UpstreamMetrics>();
     const ensure = (endpointId: string, specLabel: string): UpstreamMetrics => {
-      let row = byId.get(endpointId);
+      const k = key(endpointId, specLabel);
+      let row = byId.get(k);
       if (!row) {
-        const cfg = roleByName.get(endpointId);
+        const cfg = cfgByNode.get(cfgKey(endpointId, specLabel));
         row = {
           endpointId,
           spec: specLabel,
@@ -471,12 +494,13 @@ export class MetricsService {
           health: "unknown",
           latestBlock: null,
           blockLag: null,
-          // Only helm-format configs can mark backups; SR_CONFIG ⇒ null.
-          role: cfg && isHelm ? cfg.role : null,
+          // Null only when the mounted config doesn't describe this upstream
+          // on this chain at all — never because of the config's format.
+          role: cfg?.role ?? null,
           apiInterface: cfg?.iface ?? null,
           inFlight: 0,
         };
-        byId.set(endpointId, row);
+        byId.set(k, row);
       }
       return row;
     };
@@ -531,18 +555,23 @@ export class MetricsService {
 
     // Uptime + error rate per endpoint = success/total over the window, keyed
     // by provider_address (= the endpoint name) on the router request counters.
+    // Grouped by spec as well so a multi-chain upstream doesn't average its
+    // chains together onto whichever row happened to exist.
     const [okByProv, totByProv] = await Promise.all([
-      this.prom.query(`sum by (provider_address) (increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${r}]))`),
-      this.prom.query(`sum by (provider_address) (increase(${ROUTER_METRICS.requestsTotal}${sel}[${r}]))`),
+      this.prom.query(`sum by (provider_address, spec) (increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${r}]))`),
+      this.prom.query(`sum by (provider_address, spec) (increase(${ROUTER_METRICS.requestsTotal}${sel}[${r}]))`),
     ]);
-    const okMap = new Map(okByProv.map((s) => [s.metric.provider_address ?? "", Number(s.value[1]) || 0]));
+    const okMap = new Map(
+      okByProv.map((s) => [key(s.metric.provider_address ?? "", s.metric.spec ?? ""), Number(s.value[1]) || 0]),
+    );
     for (const s of totByProv) {
       const id = s.metric.provider_address;
       if (!id) continue;
+      const k = key(id, s.metric.spec ?? "");
       const tot = Number(s.value[1]) || 0;
-      const row = byId.get(id);
+      const row = byId.get(k);
       if (row && tot > 0) {
-        row.uptime = (okMap.get(id) ?? 0) / tot;
+        row.uptime = (okMap.get(k) ?? 0) / tot;
         row.errorRate = Math.max(0, 1 - row.uptime);
       }
     }

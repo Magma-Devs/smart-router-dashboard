@@ -34,10 +34,19 @@ interface RosterRow {
   qos: number;
 }
 
-export function PMRoster({ rows, activeName, onSelect, timeWindow }: {
+/**
+ * Rows are per (upstream × chain), so the name alone no longer identifies one —
+ * an upstream serving two chains has a row on each, with its own role and its
+ * own numbers. Selection and React keys use this composite.
+ */
+export function rosterKey(v: Pick<UpstreamMetrics, "endpointId" | "spec">): string {
+  return `${v.endpointId} ${v.spec}`;
+}
+
+export function PMRoster({ rows, activeKey, onSelect, timeWindow }: {
   rows: UpstreamMetrics[];
-  activeName: string | null;
-  onSelect: (name: string) => void;
+  activeKey: string | null;
+  onSelect: (key: string) => void;
   timeWindow: MetricWindow;
 }) {
   const statusDot = (h: UpstreamMetrics["health"]) => ({ operational: "var(--ok)", unhealthy: "var(--err)", unknown: "var(--text-4)" }[h] || "var(--ok)");
@@ -98,10 +107,11 @@ export function PMRoster({ rows, activeName, onSelect, timeWindow }: {
         <tbody>
           {pageRows.map((r) => {
             const v = r.pm;
-            const on = r.name === activeName;
+            const k = rosterKey(v);
+            const on = k === activeKey;
             const muted = !r.hasData;
             return (
-              <tr key={r.name} onClick={() => onSelect(r.name)} style={{ cursor: "pointer", background: on ? "rgba(255,57,0,0.06)" : undefined, boxShadow: on ? "inset 2px 0 0 var(--brand)" : undefined }}>
+              <tr key={k} onClick={() => onSelect(k)} style={{ cursor: "pointer", background: on ? "rgba(255,57,0,0.06)" : undefined, boxShadow: on ? "inset 2px 0 0 var(--brand)" : undefined }}>
                 <td>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <span style={{ width: 7, height: 7, borderRadius: 999, background: statusDot(v.health), flexShrink: 0 }} title={v.health} />
