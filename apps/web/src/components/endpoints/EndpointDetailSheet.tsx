@@ -20,6 +20,7 @@ import { CloudNotice } from "@/components/gateway/CloudNotice";
 import { JWT_CLOUD_MSG, READONLY_MSG, type UpstreamRow } from "@/components/upstreams/catalog";
 import {
   IfaceTag,
+  NO_ADDRESS_NOTE,
   UrlBlock,
   epDisplayHost,
   epHttpUrl,
@@ -89,9 +90,9 @@ export function EndpointDetailSheet({ open, ep, router, onClose, upstreams }: {
                 <IfaceTag id={ep.iface} />
               </div>
               <p className="gw-sheet__sub" style={{ margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{host}</p>
-              <p style={{ margin: "3px 0 0", fontSize: 11, color: "var(--text-4)" }}>
-                Last used — · Created —
-              </p>
+              {/* "Last used · Created" was two hardcoded dashes — Magma Cloud
+                  concepts with no self-hosted equivalent, so never "not yet"
+                  but "not ever". Dropped in MAG-2537. */}
             </div>
           </div>
           <button className="gw-btn gw-btn--ghost" style={{ padding: 5, flexShrink: 0 }} onClick={onClose}>
@@ -107,10 +108,7 @@ export function EndpointDetailSheet({ open, ep, router, onClose, upstreams }: {
             <div style={{ ...labelStyle, marginBottom: 7 }}>Endpoint URL</div>
             <div style={{ display: "grid", gap: 5 }}>
               {httpUrl === null ? (
-                <div style={{ fontSize: 12, color: "var(--text-3)" }}>
-                  No routable address in the mounted config — no local listen port, and no
-                  Gateway to publish this router.
-                </div>
+                <div style={{ fontSize: 12, color: "var(--text-3)" }}>{NO_ADDRESS_NOTE}</div>
               ) : ep.iface === "websocket" && ep.port !== null ? (
                 <UrlBlock label="WebSocket" url={epLocalWs(ep.port, ep.iface)} />
               ) : (

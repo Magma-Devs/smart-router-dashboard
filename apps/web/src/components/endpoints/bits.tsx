@@ -178,6 +178,16 @@ export function epDisplayHost(ep: EndpointRowModel): string {
   return url ? url.replace(/^https?:\/\//, "") : "—";
 }
 
+/**
+ * Why an endpoint has no address. A helm mount publishes gateway hostnames and
+ * an SR_CONFIG mount declares listen ports — a mount with neither describes
+ * nothing dialable, and the dashboard will not guess a hostname. Shared so the
+ * row and the detail sheet say the same thing.
+ */
+export const NO_ADDRESS_SHORT = "no address in the mounted config";
+export const NO_ADDRESS_NOTE =
+  "No routable address in the mounted config — no local listen port, and no Gateway to publish this router.";
+
 /** Unique node names serving a row (the design's upstream count). */
 export function upstreamCount(ep: EndpointRowModel): number {
   return new Set(ep.nodes.map((n) => n.name)).size;

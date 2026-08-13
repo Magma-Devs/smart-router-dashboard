@@ -25,6 +25,8 @@ import { CopyButton } from "@/components/gateway/CopyButton";
 import { buildUpstreamRows } from "@/components/upstreams/catalog";
 import {
   IfaceTag,
+  NO_ADDRESS_NOTE,
+  NO_ADDRESS_SHORT,
   buildEndpointRows,
   epAddons,
   epDisplayHost,
@@ -117,6 +119,10 @@ export function EndpointsView() {
     return dupes;
   }, [routers]);
 
+  /* Nothing on the page is dialable. That's one fact about the mounted values
+     file, not N per-row accidents — say it once, where it's actionable. */
+  const noneRoutable = endpoints.length > 0 && endpoints.every((ep) => epHttpUrl(ep) === null);
+
   const liveDetail = detailId ? endpoints.find((e) => e.id === detailId) ?? null : null;
   const detailRouter = liveDetail ? routers.find((r) => r.id === liveDetail.routerId) ?? null : null;
 
@@ -148,6 +154,23 @@ export function EndpointsView() {
           ))}
         </div>
       </div>
+
+      {noneRoutable && (
+        <div style={{ display: "flex", gap: 10, alignItems: "flex-start", marginBottom: 14, padding: "10px 14px", borderRadius: 8, background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.18)", fontSize: 12, color: "var(--text-2)", lineHeight: 1.55 }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--warn)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 3 }}><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <span>
+            <strong style={{ color: "var(--text)" }}>No endpoint here has a routable address.</strong>{" "}
+            The mounted values file publishes no gateway host and declares no local
+            listen ports, so there is nothing to dial — and the dashboard will not
+            guess a hostname. The endpoints themselves are real; only their
+            addresses are unknown. Give the values a{" "}
+            <span className="gw-mono" style={{ color: "var(--text-2)" }}>miscellaneous.gateway</span>{" "}
+            block with a <span className="gw-mono" style={{ color: "var(--text-2)" }}>base_domain</span>,
+            or mount the router&apos;s own config with its{" "}
+            <span className="gw-mono" style={{ color: "var(--text-2)" }}>endpoints:</span> section.
+          </span>
+        </div>
+      )}
 
       {/* Empty */}
       {loading ? null : endpoints.length === 0 ? (
@@ -214,9 +237,19 @@ export function EndpointsView() {
                           size="xs"
                           capabilities={capabilitiesOf({ addons: epAddons(ep), hasWs: epHasWs(ep) })}
                         />
-                        <span className="gw-mono" style={{ fontSize: 11, color: "var(--text-2)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
-                          {host}
-                        </span>
+                        {/* The address, or WHY there isn't one. A bare "—" here
+                            was indistinguishable from a loading state or a bug;
+                            it is in fact a fact about the mounted config, and
+                            the only one an operator can act on. */}
+                        {url === null ? (
+                          <span title={NO_ADDRESS_NOTE} style={{ fontSize: 11, color: "var(--text-4)", fontStyle: "italic", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
+                            {NO_ADDRESS_SHORT}
+                          </span>
+                        ) : (
+                          <span className="gw-mono" style={{ fontSize: 11, color: "var(--text-2)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
+                            {host}
+                          </span>
+                        )}
                         {/* Try now — inline request console; only when the row
                             has an address to dial (gateway URL on a helm
                             deployment, local listen port on an SR_CONFIG
@@ -237,16 +270,16 @@ export function EndpointsView() {
                             <CopyButton text={url} />
                           </span>
                         )}
-                        {/* Last used — not tracked on self-hosted */}
-                        <span style={{ fontSize: 11, color: "var(--text-4)", flexShrink: 0, whiteSpace: "nowrap" }}>
-                          —
-                        </span>
                         {/* Upstream count chip */}
                         {cnt === 0
                           ? <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 4, background: "rgba(239,68,68,0.1)", color: "var(--err)", border: "1px solid rgba(239,68,68,0.22)", flexShrink: 0 }}>No upstreams</span>
                           : <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 4, background: "var(--hover-2)", color: "var(--text-3)", border: "1px solid var(--line)", flexShrink: 0 }}>{cnt} upstream{cnt !== 1 ? "s" : ""}</span>}
-                        {/* JWT suffix — Magma Cloud feature, masked honest */}
-                        <span className="gw-mono" style={{ fontSize: 11, color: "var(--text-3)", flexShrink: 0 }}>—</span>
+                        {/* "Last used" and the JWT suffix used to sit here, both
+                            hardcoded "—". They are Magma Cloud concepts with no
+                            self-hosted equivalent, so they were not "no data
+                            yet" — they were two columns that could never hold a
+                            value. Removed in MAG-2537 rather than left to imply
+                            something is missing. */}
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-4)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><polyline points="9 18 15 12 9 6"/></svg>
                       </div>
                     );
