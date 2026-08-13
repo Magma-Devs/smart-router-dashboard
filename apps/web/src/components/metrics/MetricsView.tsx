@@ -17,7 +17,6 @@ import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { HeroPanel } from "./HeroPanel";
 import { CurrentlyUnavailable } from "./CurrentlyUnavailable";
 import { RouterOverview } from "./RouterOverview";
-import { TrafficUsage } from "./TrafficUsage";
 import { CrossValidation } from "./CrossValidation";
 import { WebSocketPanel } from "./WebSocketPanel";
 import { MethodBreakdown } from "./MethodBreakdown";
@@ -85,8 +84,6 @@ export function MetricsView() {
       )}
       {tab === "traffic" && (
         <>
-          <TrafficUsage win={timeWindow} chainFilter={activeChain} />
-
           <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 12, alignItems: "start", marginBottom: 14 }}>
             <CrossValidation tw={timeWindow} />
             <WebSocketPanel tw={timeWindow} />
