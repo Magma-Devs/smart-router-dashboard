@@ -79,7 +79,7 @@ export class MetricsDetailService {
       .filter((r) => r.spec === spec)
       .flatMap((r) => r.nodes.filter((n) => n.isBackup).map((n) => n.name));
 
-    const [availability, p95Ms, errorRate, rps, qosProbe, backupShare] = await Promise.all([
+    const [availability, p95Ms, errorRate, rps, qosProbe, backupProbe] = await Promise.all([
       this.series(qAvailabilitySeriesExpr(step, spec), window),
       this.series(qLatencySeriesExpr(0.95, step, spec), window),
       this.series(qErrorRateSeriesExpr(step, spec), window),
@@ -97,6 +97,12 @@ export class MetricsDetailService {
       const endpointScore = await this.series(qScoreExpr("composite", spec), window);
       qos = endpointScore.some((p) => p.v !== null) ? endpointScore : null;
     }
+
+    // A backup selector that matched nothing is "no data", NOT "0% backup".
+    // Collapsing the empty matrix to null here keeps the two cases distinct for
+    // the UI — same treatment `qos` above already gets.
+    const backupShare =
+      backupProbe && backupProbe.some((p) => p.v !== null) ? backupProbe : null;
 
     return { spec, availability, p95Ms, errorRate, rps, qos, backupShare };
   }
