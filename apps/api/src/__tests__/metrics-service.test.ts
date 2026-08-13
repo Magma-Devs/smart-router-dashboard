@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { MetricsService } from "../services/metrics.js";
+import { MetricsDetailService } from "../services/metrics-detail.js";
+import type { ConfigurationService } from "../services/configuration.js";
 import type { PrometheusClient } from "../services/prometheus-client.js";
 
 /** Fake Prometheus client that records every instant/range expression. */
@@ -82,5 +84,51 @@ describe("MetricsService query construction (bug regressions)", () => {
     // The label-less router gauge must not be used with a spec in mind:
     // it may appear alone (global health) but never filtered per chain.
     expect(queries.every((q) => !q.includes('smartrouter_overall_health{spec='))).toBe(true);
+  });
+});
+
+describe("MetricsDetailService · chain-series backup share (MAG-2537)", () => {
+  /** A chain whose values file marks one of two upstreams as the backup. */
+  const configWithBackup = {
+    getRouters: () => [
+      {
+        id: "SOLANA",
+        spec: "SOLANA",
+        network: "solana",
+        pathBased: false,
+        customUrlPrefix: null,
+        localPort: null,
+        localPorts: {},
+        publicUrls: {},
+        interfaces: ["jsonrpc"],
+        nodes: [
+          { name: "Tatum", isBackup: false, endpoints: [] },
+          { name: "Blockdaemon", isBackup: true, endpoints: [] },
+        ],
+      },
+    ],
+  } as unknown as ConfigurationService;
+
+  it("matches backup upstreams case-insensitively", async () => {
+    const { prom, queries } = capturingProm();
+    await new MetricsDetailService(prom, configWithBackup).chainSeries("SOLANA", "1d");
+    // The values file says `Blockdaemon`; the router may label its series
+    // `blockdaemon`. Case-sensitive matching returned an empty numerator, which
+    // the UI then rendered as a confident "0% backup".
+    expect(
+      queries.some((q) => q.includes('provider_address=~"(?i)(Blockdaemon)"')),
+    ).toBe(true);
+  });
+
+  it("an unmatched backup selector is null, never a fabricated 0%", async () => {
+    const { prom } = capturingProm();
+    const series = await new MetricsDetailService(prom, configWithBackup).chainSeries(
+      "SOLANA",
+      "1d",
+    );
+    // Empty matrix ⇒ "no data", which must stay distinguishable from a real
+    // measured zero. `[]` is truthy in the web layer, so returning it here is
+    // what let the fabricated tile through.
+    expect(series.backupShare).toBeNull();
   });
 });

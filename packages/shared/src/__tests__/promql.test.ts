@@ -294,8 +294,17 @@ describe("series expressions", () => {
   });
   it("backup share regex-escapes upstream names", () => {
     const q = qBackupShareExpr("ETH1", ["eth.backup"], "10m");
-    expect(q).toContain('provider_address=~"eth\\\\.backup"');
+    expect(q).toContain('provider_address=~"(?i)(eth\\\\.backup)"');
     expect(q).toContain('{spec="ETH1"}');
+  });
+  it("backup share matches upstream names case-insensitively", () => {
+    // The values file may say `Blockdaemon` while the router labels its series
+    // `blockdaemon`; a case-sensitive match returns an empty numerator, which
+    // is indistinguishable from a genuine 0% backup share (MAG-2537).
+    const q = qBackupShareExpr("SOLANA", ["Blockdaemon", "Lava"], "10m");
+    expect(q).toContain('provider_address=~"(?i)(Blockdaemon|Lava)"');
+    // The `(?i)` group must wrap the WHOLE alternation, not just the first arm.
+    expect(q).not.toContain('(?i)Blockdaemon|Lava');
   });
 });
 

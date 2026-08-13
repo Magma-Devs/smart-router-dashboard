@@ -50,6 +50,22 @@ const pct = (pts: TimePoint[] | null | undefined) => {
   return { values: values.map((v) => v * 100), times };
 };
 
+/** Shared shape of the routing switcher tile across its three data states. */
+const ROUTING = {
+  key: "routing",
+  label: "Primary vs backup",
+  color: "#fb923c",
+  yFmt: (v: number) => v.toFixed(0) + "%",
+  yDomain: [0, 100] as [number, number],
+};
+
+/**
+ * Primary share for the tile. A real failover must never round away to a flat
+ * "100%" — that is the one number here an operator would act on.
+ */
+const fmtPrimaryShare = (v: number): string =>
+  v >= 100 ? "100" : v > 99.9 ? "99.9+" : v.toFixed(1);
+
 export function ChainDetail({ r, onChainClick, win }: { r: ChainDetailRow; onChainClick: (spec: string) => void; win: MetricWindow }) {
   const [selKey, setSelKey] = useState<string | null>(null);
   const { scopeQ } = useFilters();
@@ -67,9 +83,19 @@ export function ChainDetail({ r, onChainClick, win }: { r: ChainDetailRow; onCha
   const p95 = seriesXY(data.p95Ms);
   const err = pct(data.errorRate);
   const rps = seriesXY(data.rps);
-  const qos = data.qos ? pct(data.qos) : null;
-  const buShare = data.backupShare ? pct(data.backupShare) : null;
-  const curBU = buShare && buShare.values.length ? buShare.values[buShare.values.length - 1]! : 0;
+  const qos = data.qos?.length ? pct(data.qos) : null;
+  // `[]` is TRUTHY — the old guard let an empty result render a fabricated
+  // "0% backup" over an empty chart. Length-check both series, and state the
+  // routing metric as PRIMARY share (MAG-2537): that's the number an operator
+  // watches, and 100% reads as "nothing failed over".
+  const buShare = data.backupShare?.length ? pct(data.backupShare) : null;
+  const primaryShare = buShare
+    ? { values: buShare.values.map((v) => 100 - v), times: buShare.times }
+    : null;
+  const curPrimary =
+    primaryShare && primaryShare.values.length
+      ? primaryShare.values[primaryShare.values.length - 1]!
+      : null;
   const avgRps = r.requests / WINDOWS[win].rangeSeconds;
   const zeroTimes = rps.times.length ? rps.times : roTimes(win, 24);
 
@@ -84,9 +110,15 @@ export function ChainDetail({ r, onChainClick, win }: { r: ChainDetailRow; onCha
     qos
       ? { key: "qos", label: "QoS", cur: r.qos != null ? String(Math.round(r.qos)) : "—", note: "composite", color: "#a78bfa", values: qos.values, times: qos.times, yFmt: (v: number) => v.toFixed(0), target: { value: 90, label: "admit ≥ 90" }, yMaxCap: 100 }
       : { key: "qos", label: "QoS", cur: "—", note: "no data", color: "#a78bfa", values: [], times: [], yFmt: (v: number) => v.toFixed(0) },
-    buShare
-      ? { key: "routing", label: "Primary vs backup", cur: Math.round(curBU) + "% backup", color: "#fb923c", values: buShare.values, times: buShare.times, yFmt: (v: number) => v.toFixed(0) + "%", yDomain: [0, 100], caption: "share of traffic on backup — 0% = all primary" }
-      : { key: "routing", label: "Primary vs backup", cur: "100% primary", note: "no backup", color: "#fb923c", values: zeroTimes.map(() => 0), times: zeroTimes, yFmt: (v: number) => v.toFixed(0) + "%", yDomain: [0, 100], caption: r.hasBackup ? "backup share unavailable for this window" : "single upstream — no backup configured" },
+    primaryShare && curPrimary !== null
+      ? { ...ROUTING, cur: fmtPrimaryShare(curPrimary) + "% primary", values: primaryShare.values, times: primaryShare.times, caption: "share of traffic served by primary upstreams — 100% = nothing failed over" }
+      : r.hasBackup
+        // Backups ARE configured but nothing came back: honest "—", not a
+        // flat 100% line that would claim they never took traffic.
+        ? { ...ROUTING, cur: "—", note: "no data", values: [], times: [], caption: "backups are configured, but no traffic was attributed to primary or backup in this window" }
+        // No backup node in the config ⇒ 100% primary is a CONFIG fact, not a
+        // measurement, and safe to state.
+        : { ...ROUTING, cur: "100% primary", note: "no backup", values: zeroTimes.map(() => 100), times: zeroTimes, caption: "no backup upstream configured for this chain" },
   ];
 
   const m = metrics.find((x) => x.key === selKey) || metrics[0]!;

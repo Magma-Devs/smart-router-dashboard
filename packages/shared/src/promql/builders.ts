@@ -277,7 +277,13 @@ export function qBackupShareExpr(
 ): string {
   const escaped = backupNames.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\\\$&"));
   const sel = selector({ spec });
-  const backupSel = `{spec="${spec}",provider_address=~"${escaped.join("|")}"}`;
+  // Case-INSENSITIVE on purpose. These names come from the mounted values file,
+  // while `provider_address` carries the name the ROUTER was configured with —
+  // a helm deployment renders one from the other and the case need not survive
+  // (`Blockdaemon` in the values, `blockdaemon` on the series). A case-sensitive
+  // match silently yields an empty numerator, which reads as "0% backup" rather
+  // than "no data" (MAG-2537).
+  const backupSel = `{spec="${spec}",provider_address=~"(?i)(${escaped.join("|")})"}`;
   return `sum(rate(${ROUTER_METRICS.requestsTotal}${backupSel}[${step}])) / sum(rate(${ROUTER_METRICS.requestsTotal}${sel}[${step}]))`;
 }
 
