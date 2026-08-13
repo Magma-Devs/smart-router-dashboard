@@ -105,7 +105,7 @@ apps/web/                 @sr/web — Next.js 16 App Router (:3000)
       overview/         OverviewView (KPI strip + 2×2 chart grid)
       dashboard/        DashHeader · OverviewTab · MetricsTab · TroubleDetail · …
       metrics/          MetricsView (4 tabs) · HeroPanel · RouterOverview ·
-                        ChainDetail · ErrorsBreakdown · TrafficUsage ·
+                        ChainDetail · ErrorsBreakdown ·
                         CrossValidation · WebSocketPanel · provider/ (PM* deep-dive)
       providers/        ProvidersView · Add/Edit sheets · TestModal · catalog
       endpoints/        EndpointsView · detail/create sheets
@@ -282,7 +282,7 @@ Every `/api/metrics/*` route also accepts **`router?`** — the router scope
 | `GET /api/metrics/chains` | `window` | `{ chains: ChainMetrics[] }` — per-chain rollup (requests, availability, errorRate, p95, composite QoS, health, latestBlock, providerCount) for the Routers table |
 | `GET /api/metrics/providers` | `window`, `spec?` | `{ providers: ProviderMetrics[] }` — roster with requests, uptime, p95, **errorRate**, selection scores, health, latestBlock, **blockLag**, **role** (`primary`/`backup` from helm `is_backup`; null for SR_CONFIG), **apiInterface**, inFlight |
 | `GET /api/metrics/rps` | `window`, `spec?` | `TimeSeries` — `{ label, points: {t, v}[] }` |
-| `GET /api/metrics/traffic` | `window` | Traffic tab — aggregate `rpsNow` + series + per-chain rows (`rpsNow`, `requests`, `share`, `trend` sparkline) |
+| `GET /api/metrics/traffic` | `window` | Aggregate `rpsNow` + series + per-chain rows (`rpsNow`, `requests`, `share`, `trend` sparkline). **No web consumer** — the Traffic tab's RPS card was removed in MAG-2448; kept as a documented read surface |
 | `GET /api/metrics/methods` | `window`, `spec?` | `{ methods: MethodUsage[], classTotals: MethodClassTotals }` — per-method CLIENT requests/class/errorRate + **real `p95Ms`** (the histogram's method label is named `function`); classTotals: `read` real, `write`/`batch` null + `emitted` flags, `unclassified` remainder |
 | `GET /api/metrics/chain-series` | **`spec`** (required), `window` | `ChainSeries` — the ChainDetail metric-switcher bundle: availability / p95 / errorRate / rps series + `qos` (optimizer-scope score, endpoint-scope fallback; null when never emitted) + `backupShare` (only when the config marks backups). 400 without `spec` |
 | `GET /api/metrics/provider-detail` | **`endpointId`** (required), `window` | `ProviderDetail` — PMBody deep-dive: health, availability, requests, rpsNow, p50/95/99, errorRate, blockLag, inFlight, score gauges + per-score-type series, latency/volume/block-lag series (`volume.read` real; write/batch null); `errorsByCode`/`recentErrors` empty + `emitted` flags. 400 without `endpointId` |
