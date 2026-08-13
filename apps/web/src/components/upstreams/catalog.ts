@@ -248,12 +248,6 @@ export interface UpstreamRow {
   catalogId: string | null;
   /** "—" = no metrics reported in the window (unknown, not "down"). */
   status: "healthy" | "degraded" | "—";
-  /** Worst (max) p95 across served specs. */
-  latencyMs: number | null;
-  /** Most conservative (min) uptime across served specs, 0..1. */
-  uptime: number | null;
-  /** Sum of requests across served specs; null when no metrics at all. */
-  requests: number | null;
   role: "primary" | "backup";
 }
 
@@ -287,8 +281,6 @@ export function buildUpstreamRows(
   return order.map((name) => {
     const chainRows = byName.get(name) ?? [];
     const ms = metricsByName.get(name) ?? [];
-    const latVals = ms.map((m) => m.p95Ms).filter((v): v is number => v !== null);
-    const upVals = ms.map((m) => m.uptime).filter((v): v is number => v !== null);
     const status: UpstreamRow["status"] = ms.some((m) => m.health === "unhealthy")
       ? "degraded"
       : ms.some((m) => m.health === "operational")
@@ -308,9 +300,6 @@ export function buildUpstreamRows(
       interfaces: [...new Set(chainRows.map((c) => c.iface).filter(Boolean))],
       catalogId: catalog?.id ?? null,
       status,
-      latencyMs: latVals.length ? Math.max(...latVals) : null,
-      uptime: upVals.length ? Math.min(...upVals) : null,
-      requests: ms.length ? ms.reduce((s, m) => s + m.requests, 0) : null,
       role: chainRows[0]?.role ?? "primary",
     };
   });

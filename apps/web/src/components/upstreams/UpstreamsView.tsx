@@ -17,10 +17,8 @@ import {
 import { useApi } from "@/hooks/use-api";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { CapabilityTags, capabilitiesOf } from "@/components/gateway/CapabilityTags";
-import { fmtMs, fmtNum, fmtPct } from "@/lib/format";
-import { uptimeColorFrac } from "@/lib/colors";
 import { UpstreamLogo } from "@/components/upstreams/UpstreamLogo";
-import { StatusDot, pvStatLabel } from "@/components/upstreams/bits";
+import { StatusDot } from "@/components/upstreams/bits";
 import { buildUpstreamRows } from "@/components/upstreams/catalog";
 import { IfaceTag } from "@/components/endpoints/bits";
 import { TryNowButton } from "@/components/try-me/try-now-button";
@@ -158,37 +156,23 @@ export function UpstreamsView() {
                       : <InitialBadge name={pv.name} spec={pv.chains[0]} size={28} />}
                     <div className="gw-row" style={{ gap: 8 }}>
                       <span style={{ fontSize: 13, fontWeight: 600 }}>{pv.name}</span>
-                      {/* Chain identity lives HERE (icon + name), so the
-                          per-endpoint rows below don't repeat it. */}
-                      {pv.chains[0] && (
-                        <span className="gw-row" style={{ gap: 5, alignItems: "center" }}>
-                          <span style={{ color: "var(--text-4)" }}>·</span>
-                          <ChainBadge spec={pv.chains[0]} size={15} />
-                          <span style={{ fontSize: 12, color: "var(--text-2)" }}>{buildChainMetaByIndex(pv.chains[0]).name}</span>
-                          {pv.chains.length > 1 && (
-                            <span style={{ fontSize: 10, color: "var(--text-3)" }}>+{pv.chains.length - 1}</span>
-                          )}
-                        </span>
+                      {/* Chain identity moved DOWN to the endpoint rows
+                          (MAG-2537 item 4). One upstream commonly backs several
+                          chains on the very same hostname, so naming a single
+                          chain up here read as "mostly this one" when it was
+                          really "one of these". The header keeps a bare count. */}
+                      {pv.chains.length > 1 && (
+                        <span style={{ fontSize: 11, color: "var(--text-3)" }}>· {pv.chains.length} chains</span>
                       )}
                       {pv.status !== "—" && (
                         <span className={"gw-tag gw-tag--" + statColor(pv.status)} style={{ fontSize: 10, padding: "1px 6px", display: "inline-flex", gap: 5, alignItems: "center" }}><StatusDot status={pv.status} />{pv.status}</span>
                       )}
                     </div>
                   </div>
-                  <div className="gw-row" style={{ gap: 18 }}>
-                    <div style={{ textAlign: "right" }}>
-                      <div style={pvStatLabel}>Latency</div>
-                      <div className="gw-mono gw-tnum" style={{ fontSize: 12, marginTop: 2 }}>{fmtMs(pv.latencyMs)}</div>
-                    </div>
-                    <div style={{ textAlign: "right" }}>
-                      <div style={pvStatLabel}>Uptime</div>
-                      <div className="gw-mono gw-tnum" style={{ fontSize: 12, marginTop: 2, color: uptimeColorFrac(pv.uptime) }}>{fmtPct(pv.uptime)}</div>
-                    </div>
-                    <div style={{ textAlign: "right" }}>
-                      <div style={pvStatLabel}>Req today</div>
-                      <div className="gw-mono gw-tnum" style={{ fontSize: 12, marginTop: 2 }}>{fmtNum(pv.requests)}</div>
-                    </div>
-                  </div>
+                  {/* Latency / Uptime / Req-today deliberately absent: they were
+                      a per-upstream roll-up ACROSS chains, which is not a
+                      number anyone can act on — the Metrics → Upstreams tab
+                      carries the real per-chain figures. Dropped in MAG-2537. */}
                 </div>
                 {/* endpoint rows, one per (chain, upstream endpoint) served */}
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -236,6 +220,14 @@ export function UpstreamsView() {
                           )}
                         </div>
                         )}
+                        {/* Which chain THIS endpoint serves. An upstream backing
+                            a mainnet and its testnet shows two rows with byte-
+                            identical hostnames; without the chip they are
+                            indistinguishable (MAG-2537 item 4). */}
+                        <span className="gw-row" style={{ gap: 5, alignItems: "center", flexShrink: 0 }}>
+                          <ChainBadge spec={row.spec} size={14} />
+                          <span style={{ fontSize: 11, color: "var(--text-2)", whiteSpace: "nowrap" }}>{buildChainMetaByIndex(row.spec).name}</span>
+                        </span>
                         <span className="gw-mono" style={{ fontSize: 11, color: "var(--text-2)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{row.urlHost || "—"}</span>
                         {/* interface tag + configured capabilities (addons +
                             derived ws) — real config values, nothing invented.
