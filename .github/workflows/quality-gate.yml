@@ -1,8 +1,12 @@
 name: Quality Gate
 
 on:
+  # Every pull request, whatever it targets — NOT just PRs into main.
+  # This epic stacks PRs (slice 2 onto slice 1, the audit writer onto that),
+  # and with a `branches: [main]` filter those never ran the gate at all: the
+  # only checks that fired were the image builds, so a stacked PR showed a
+  # green tick that meant nothing about lint, types, or tests.
   pull_request:
-    branches: [main]
   push:
     branches: [main]
 

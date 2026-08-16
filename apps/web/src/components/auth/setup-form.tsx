@@ -90,9 +90,13 @@ export function SetupForm({ mode }: { mode: "managed" | "onprem" }) {
         </div>
 
         <p style={{ fontSize: 12.5, color: "var(--text-2)", marginTop: 0, marginBottom: 20, lineHeight: 1.6 }}>
-          Nothing else opens until this is done. You&apos;ll need the setup token
-          {mode === "onprem" ? " printed by the installer" : " we sent you"} — it proves
-          you&apos;re the person who installed this, and it&apos;s only needed once.
+          {/* Explicit separators: JSX trims the whitespace bordering an
+              expression, and React splits the text nodes, so a bare " — " here
+              renders flush against the preceding word. */}
+          Nothing else opens until this is done. You&apos;ll need the setup token{" "}
+          {mode === "onprem" ? "printed by the installer" : "we sent you"}
+          {" — "}it proves you&apos;re the person who installed this, and it&apos;s
+          only needed once.
         </p>
 
         <form onSubmit={onSubmit} style={{ display: "grid", gap: 12 }}>
@@ -109,7 +113,9 @@ export function SetupForm({ mode }: { mode: "managed" | "onprem" }) {
             />
           </label>
           <label style={labelStyle}>
-            Your name <span style={{ color: "var(--text-3)" }}>(optional)</span>
+            <span>
+              Your name <span style={{ color: "var(--text-3)" }}>(optional)</span>
+            </span>
             <input
               className="gw-input"
               type="text"
