@@ -5,6 +5,18 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.11.2]
+
+### Added
+
+- **A RACE icon — every chain in the map now has one.** RACE and its testnet
+  were the last two on `default.svg`, written off as "wordmark only, illegible
+  at icon size". Its wordmark turns out to draw R-A-C-E as thin outlines of
+  ascending height on a shared baseline: the outlines can't survive 24px, but
+  the staircase can. The glyph is those four columns at the mark's measured
+  proportions, and the circle takes a stop from the wordmark's own
+  copper-to-peach gradient. `icons 245 matched a local SVG, 0 → default.svg`.
+
 ## [0.11.1]
 
 ### Changed

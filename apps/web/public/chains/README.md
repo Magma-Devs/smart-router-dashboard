@@ -41,8 +41,20 @@ silhouette of the Trusted Smart Chain gem traced from the mark on
 [trustedsmartchain.com](https://trustedsmartchain.com); its logo is a gold-to-blue
 gradient, so per the rule above the circle takes the blue stop.
 
-`race` (and its testnet) are the only entries still on `default.svg` — the
-project publishes a wordmark only, which is illegible at icon size.
+`race` is abstracted rather than traced. RACE publishes no icon separate from
+its wordmark, and the wordmark is unusual: the four letters are drawn as thin
+outlines of ascending height, sharing a baseline, so the lockup reads as a
+staircase. The outlines themselves cannot survive 24px, but the staircase can —
+the glyph is the four ascending columns at the mark's own proportions (measured
+off the [chain-registry](https://github.com/ethereum-lists/chains) icon: bars
+38.5 wide on a 49 pitch, heights 32% / 51% / 76% / 100%). Its wordmark carries a
+copper-to-peach gradient rather than a flat fill, so per the rule above the
+circle takes one of that gradient's own stops (`#965D3C`, sampled at its dark
+end). Adapted to a squarer footprint, since the source lockup is 184×417 and
+would otherwise leave the circle mostly empty.
+
+Every chain in the map now resolves to a vendored SVG; `default.svg` stays as
+the fallback for whatever arrives next.
 
 Chain logos remain the trademarks of their respective projects and are used here
 only to identify the chain.

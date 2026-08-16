@@ -61,9 +61,14 @@ resync, not a follow-up.**
    then by index prefix (`BERAB` → `BERA`), so a testnet with its own brand name
    is covered too. Re-run the generator afterwards and commit the regenerated
    map with the SVG.
-5. **Leaving one on the fallback is a decision, not an oversight.** `RACE`
-   publishes a wordmark only, illegible at 24px, and the README says so. If you
-   leave a chain on `default.svg`, add the same one-line reason there.
+5. **A wordmark is not a dead end.** RACE sat on the fallback for months as
+   "wordmark only, illegible at icon size" — but its wordmark draws the four
+   letters as ascending columns, and that rhythm survives 24px even though the
+   letterforms don't. Look for the structural idea in the mark before giving
+   up, and if you do abstract rather than trace, say which in the README.
+6. **Leaving one on the fallback is still a decision, not an oversight** — just
+   write the reason next to it. Every chain resolves to a vendored SVG today,
+   so a new `no icon` line means a chain arrived since the last resync.
 
 ## What to check after regenerating — this is the part that needs judgement
 
