@@ -156,13 +156,20 @@ export function UpstreamsView() {
                       : <InitialBadge name={pv.name} spec={pv.chains[0]} size={28} />}
                     <div className="gw-row" style={{ gap: 8 }}>
                       <span style={{ fontSize: 13, fontWeight: 600 }}>{pv.name}</span>
-                      {/* Chain identity moved DOWN to the endpoint rows
-                          (MAG-2537 item 4). One upstream commonly backs several
-                          chains on the very same hostname, so naming a single
-                          chain up here read as "mostly this one" when it was
-                          really "one of these". The header keeps a bare count. */}
-                      {pv.chains.length > 1 && (
-                        <span style={{ fontSize: 11, color: "var(--text-3)" }}>· {pv.chains.length} chains</span>
+                      {/* Header keeps the upstream's headline chain; the rows
+                          below now each name their own (MAG-2537 item 4), so
+                          this repeats the first row. Left alone deliberately —
+                          the ticket asked to add the chips and remove the three
+                          stats, nothing about the header. */}
+                      {pv.chains[0] && (
+                        <span className="gw-row" style={{ gap: 5, alignItems: "center" }}>
+                          <span style={{ color: "var(--text-4)" }}>·</span>
+                          <ChainBadge spec={pv.chains[0]} size={15} />
+                          <span style={{ fontSize: 12, color: "var(--text-2)" }}>{buildChainMetaByIndex(pv.chains[0]).name}</span>
+                          {pv.chains.length > 1 && (
+                            <span style={{ fontSize: 10, color: "var(--text-3)" }}>+{pv.chains.length - 1}</span>
+                          )}
+                        </span>
                       )}
                       {pv.status !== "—" && (
                         <span className={"gw-tag gw-tag--" + statColor(pv.status)} style={{ fontSize: 10, padding: "1px 6px", display: "inline-flex", gap: 5, alignItems: "center" }}><StatusDot status={pv.status} />{pv.status}</span>
