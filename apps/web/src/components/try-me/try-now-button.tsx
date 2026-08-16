@@ -29,8 +29,10 @@ interface TryNowButtonProps {
   wsUrl?: string | null;
   /** Open the drawer on the WebSocket transport (a ws-flagged upstream row). */
   initialTransport?: "http" | "ws";
-  /** Whether this chain's mounted config marks an `archive` addon anywhere. */
-  hasArchive: boolean;
+  /** Add-ons the mounted config declares on this endpoint's upstreams
+   *  (`archive`, `debug`, `trace`). Tiers the deployment can't serve are not
+   *  offered — the router answers "No Providers For Addon" for those. */
+  addons: readonly string[];
   /** Live health from /api/metrics/chains (omitted when unknown). */
   health?: HealthState;
   /** Optional visibility control for hover-reveal parents (Endpoints rows). */
@@ -56,7 +58,7 @@ export function TryNowButton({
   url,
   wsUrl = null,
   initialTransport = "http",
-  hasArchive,
+  addons,
   health,
   visible = true,
   selectUpstream,
@@ -69,7 +71,7 @@ export function TryNowButton({
   useSyncExternalStore(subscribeCatalog, getCatalogVersion, getServerCatalogVersion);
 
   const catalogIface = isCatalogInterface(iface) ? iface : null;
-  const cfg = catalogIface ? getInterfaceConfig(spec, catalogIface, hasArchive) : null;
+  const cfg = catalogIface ? getInterfaceConfig(spec, catalogIface, addons) : null;
   if (!catalogIface || !cfg) return null;
 
   return (
