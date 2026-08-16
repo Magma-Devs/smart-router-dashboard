@@ -32,6 +32,15 @@ than a flat fill (VET, HDX) the circle takes one of that gradient's own stops.
 `neutron` and `babylon` come from
 [`cosmos/chain-registry`](https://github.com/cosmos/chain-registry) (Apache-2.0).
 
+Where web3icons has no entry at all, the glyph is reduced from the project's own
+brand asset. `canton` is the swept-diamond "C" from
+[canton.network](https://www.canton.network)'s logo, collapsed to its silhouette
+— a 270° arc with the radial butt caps the diamond sweep produces — with the
+circle taking that logo's own black, and the glyph its lime. `tsc` is the
+silhouette of the Trusted Smart Chain gem traced from the mark on
+[trustedsmartchain.com](https://trustedsmartchain.com); its logo is a gold-to-blue
+gradient, so per the rule above the circle takes the blue stop.
+
 `race` (and its testnet) are the only entries still on `default.svg` — the
 project publishes a wordmark only, which is illegible at icon size.
 
