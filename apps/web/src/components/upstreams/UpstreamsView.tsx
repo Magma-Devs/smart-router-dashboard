@@ -17,10 +17,8 @@ import {
 import { useApi } from "@/hooks/use-api";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { CapabilityTags, capabilitiesOf } from "@/components/gateway/CapabilityTags";
-import { fmtMs, fmtNum, fmtPct } from "@/lib/format";
-import { uptimeColorFrac } from "@/lib/colors";
 import { UpstreamLogo } from "@/components/upstreams/UpstreamLogo";
-import { StatusDot, pvStatLabel } from "@/components/upstreams/bits";
+import { StatusDot } from "@/components/upstreams/bits";
 import {
   buildUpstreamRows,
   groupByChain,
@@ -328,7 +326,7 @@ export function UpstreamsView() {
             return (
               <div key={pv.id} className="gw-card" style={{ padding: "14px 16px", transition: "background 0.4s" }}>
                 {/* header */}
-                <div className="gw-row" style={{ gap: 14, justifyContent: "space-between", flexWrap: "wrap", marginBottom: 12 }}>
+                <div className="gw-row" style={{ gap: 14, flexWrap: "wrap", marginBottom: 12 }}>
                   <div className="gw-row" style={{ gap: 10 }}>
                     {pv.catalogId
                       ? <UpstreamLogo id={pv.catalogId} size={28} />
@@ -350,20 +348,6 @@ export function UpstreamsView() {
                       {pv.status !== "—" && (
                         <span className={"gw-tag gw-tag--" + statColor(pv.status)} style={{ fontSize: 10, padding: "1px 6px", display: "inline-flex", gap: 5, alignItems: "center" }}><StatusDot status={pv.status} />{pv.status}</span>
                       )}
-                    </div>
-                  </div>
-                  <div className="gw-row" style={{ gap: 18 }}>
-                    <div style={{ textAlign: "right" }}>
-                      <div style={pvStatLabel}>Latency</div>
-                      <div className="gw-mono gw-tnum" style={{ fontSize: 12, marginTop: 2 }}>{fmtMs(pv.latencyMs)}</div>
-                    </div>
-                    <div style={{ textAlign: "right" }}>
-                      <div style={pvStatLabel}>Uptime</div>
-                      <div className="gw-mono gw-tnum" style={{ fontSize: 12, marginTop: 2, color: uptimeColorFrac(pv.uptime) }}>{fmtPct(pv.uptime)}</div>
-                    </div>
-                    <div style={{ textAlign: "right" }}>
-                      <div style={pvStatLabel}>Req today</div>
-                      <div className="gw-mono gw-tnum" style={{ fontSize: 12, marginTop: 2 }}>{fmtNum(pv.requests)}</div>
                     </div>
                   </div>
                 </div>
