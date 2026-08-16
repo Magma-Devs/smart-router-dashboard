@@ -460,6 +460,26 @@ export function isCatalogInterface(iface: string): iface is CatalogInterface {
   return (SUPPORTED_CATALOG_INTERFACES as string[]).includes(iface);
 }
 
+/**
+ * The WebSocket twin of an interface, or null when it has none. The router
+ * serves the upgrade on the SAME listen address as the base interface (path
+ * -scoped: `/ws`, `/websocket`), so the two are one endpoint with two
+ * transports — which is what the Try-it drawer's transport toggle switches
+ * between. REST and gRPC have no ws form.
+ */
+export function wsVariantOf(iface: CatalogInterface): CatalogInterface | null {
+  if (iface === "jsonrpc" || iface === "jsonrpc-ws") return "jsonrpc-ws";
+  if (iface === "tendermintrpc" || iface === "tendermintrpc-ws") return "tendermintrpc-ws";
+  return null;
+}
+
+/** The plain-HTTP twin of an interface — identity for the ones already HTTP. */
+export function httpVariantOf(iface: CatalogInterface): CatalogInterface {
+  if (iface === "jsonrpc-ws") return "jsonrpc";
+  if (iface === "tendermintrpc-ws") return "tendermintrpc";
+  return iface;
+}
+
 /** Collapse the drawer-facing iface to the storage key the catalog is keyed by. */
 export function storageKey(iface: CatalogInterface): CatalogStorageKey {
   if (iface === "jsonrpc-ws") return "jsonrpc";

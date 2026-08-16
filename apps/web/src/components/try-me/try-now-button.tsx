@@ -21,8 +21,14 @@ interface TryNowButtonProps {
   network: string;
   /** Raw config interface id for this endpoint row. */
   iface: string;
-  /** Concrete local URL — `http://localhost:<port>` (or ws:// for a WS row). */
+  /** Concrete address for the HTTP transport — the published gateway URL, or
+   *  `http://localhost:<port>` on an SR_CONFIG mount. */
   url: string;
+  /** The same endpoint's WebSocket address, when it serves one. Set ⇒ the
+   *  drawer offers a HTTP / WebSocket toggle. */
+  wsUrl?: string | null;
+  /** Open the drawer on the WebSocket transport (a ws-flagged upstream row). */
+  initialTransport?: "http" | "ws";
   /** Whether this chain's mounted config marks an `archive` addon anywhere. */
   hasArchive: boolean;
   /** Live health from /api/metrics/chains (omitted when unknown). */
@@ -48,6 +54,8 @@ export function TryNowButton({
   network,
   iface,
   url,
+  wsUrl = null,
+  initialTransport = "http",
   hasArchive,
   health,
   visible = true,
@@ -97,6 +105,8 @@ export function TryNowButton({
           iface={catalogIface}
           cfg={cfg}
           endpointUrl={url}
+          wsUrl={wsUrl}
+          initialTransport={initialTransport}
           health={health}
           selectUpstream={selectUpstream}
           onClose={() => setDrawerOpen(false)}
