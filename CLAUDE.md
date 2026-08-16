@@ -15,9 +15,13 @@ repo root — `apps/`, `packages/`, `docker-compose*.yml`, `Makefile`.
 > This product has **no billing and no users table by default**. It reads live
 > metrics from Prometheus and router topology from a mounted config file.
 > **Auth is optional**: `AUTH_MODE=disabled` (the default) leaves every route
-> public with no database; `AUTH_MODE=enabled` adds an Auth.js login, a JWT gate
-> on `/api/*`, `/auth/*` routes, and a Postgres `users` table (`packages/db`).
-> See [`docs/AUTH.md`](docs/AUTH.md).
+> public with no database; `AUTH_MODE=enabled` adds an Auth.js login, a gate on
+> `/api/*`, `/auth/*` routes, and Postgres-backed `users` + `sessions`
+> (`packages/db`). Sessions are **server-side**: the token carries a `sid`, the
+> api resolves it to a live session and the live user row on every request, and
+> four cumulative roles (`read_only · requester · approver · admin`) gate from
+> that row — so revoking a session or demoting someone takes effect on the
+> request in flight, not at their next sign-in. See [`docs/AUTH.md`](docs/AUTH.md).
 
 ## Quick start
 
@@ -306,6 +310,7 @@ API (`apps/api/src/config.ts` is the source of truth):
 | `ROUTER_SCOPE_LABEL` | `service` | Target label carrying the router identity for `?router=` (Prometheus Operator's `service`; `job` for a per-router scrape config). Parsed at import — a change needs a restart |
 | `CORS_ORIGINS` | all | comma list or JSON array |
 | `RATE_LIMIT_MAX` | `300` | per IP per minute |
+| `TRUST_PROXY` | `1` | how far `X-Forwarded-For` is believed when deriving `request.ip` (hop count, proxy IP/CIDR list, or `false`). Not `true` — this api is public, and trusting every hop lets any caller choose their apparent address |
 | `HELM_VALUES_DIR` | `/app/helm-values` | reads `<dir>/core/values.yml` (either format) |
 | `LOG_LEVEL` | `info` | |
 | `TENANT_ID` | `default` | parsed, reserved — not read by any route yet |
@@ -316,11 +321,12 @@ Auth (only read when `AUTH_MODE=enabled`; the metrics path never touches the DB)
 
 | Variable | Default | Notes |
 |---|---|---|
-| `AUTH_MODE` | `disabled` | `enabled` turns on the JWT gate + `/auth/*` + Postgres |
+| `AUTH_MODE` | `disabled` | `enabled` turns on the session gate + `/auth/*` + Postgres |
 | `AUTH_SECRET` | (unset) | HS256 signing secret shared with the web (must match) |
-| `DATABASE_URL` | (unset) | Postgres connection string for the `users` table |
+| `DATABASE_URL` | (unset) | Postgres connection string for `users` + `sessions` |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | (unset) | idempotent bootstrap-admin seed on first boot |
 | `GOOGLE_CLIENT_ID` | (unset) | validates the `aud` claim of Google ID tokens server-side |
+| `INTERNAL_AUTH_SECRET` | (unset) | shared with the web; gates whether forwarded browser IP / User-Agent are trusted on `/auth/sign-in`. Unset ⇒ the api records what it observes |
 
 Web — build-time vs. **runtime**:
 
