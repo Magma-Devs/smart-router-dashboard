@@ -161,6 +161,19 @@ describe("buildRequest — REST", () => {
     if (!result.ok) return;
     expect(result.request.url).toBe(COSMOS_REST);
   });
+
+  it("sends a POST path as POST, with no body", () => {
+    // Tron's wallet API and EOS's chain API are POST-only. The catalog puts
+    // the verb in `method` and the arguments in the path, so there is a verb
+    // to honour and nothing to put in a body.
+    const tron = { method: "POST", label: "/wallet/getnowblock", params: "/wallet/getnowblock" };
+    const result = buildRequest("rest", tron, tron.params, "http://localhost:3368");
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.request.transport !== "http") return;
+    expect(result.request.httpMethod).toBe("POST");
+    expect(result.request.body).toBeNull();
+    expect(result.request.url).toBe("http://localhost:3368/wallet/getnowblock");
+  });
 });
 
 describe("buildRequest — WebSocket", () => {
