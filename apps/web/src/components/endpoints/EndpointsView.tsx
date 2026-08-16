@@ -31,6 +31,7 @@ import {
   epHasArchive,
   epHasWs,
   epHttpUrl,
+  epWsUrl,
   upstreamCount,
   type EndpointRowModel,
 } from "@/components/endpoints/bits";
@@ -227,6 +228,10 @@ export function EndpointsView() {
                             network={ep.network}
                             iface={ep.iface}
                             url={url}
+                            // Same endpoint over its ws upgrade, when the
+                            // config declares a websocket upstream for it —
+                            // the drawer offers both transports.
+                            wsUrl={epHasWs(ep) ? epWsUrl(ep) : null}
                             hasArchive={epHasArchive(ep)}
                             health={healthBySpec.get(ep.spec)}
                             visible={hovered}

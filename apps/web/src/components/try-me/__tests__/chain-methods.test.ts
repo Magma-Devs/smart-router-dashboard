@@ -1,6 +1,8 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import {
   catalogReady,
+  httpVariantOf,
+  wsVariantOf,
   FAMILY_METHODS,
   familyForSpec,
   getInterfaceConfig,
@@ -14,6 +16,38 @@ import {
 // The full spec-index catalog is dynamically imported — make sure it's in
 // place before any getInterfaceConfig assertion runs.
 beforeAll(() => catalogReady);
+
+describe("transport twins", () => {
+  it("pairs the ws-capable interfaces both ways", () => {
+    expect(wsVariantOf("jsonrpc")).toBe("jsonrpc-ws");
+    expect(wsVariantOf("jsonrpc-ws")).toBe("jsonrpc-ws");
+    expect(wsVariantOf("tendermintrpc")).toBe("tendermintrpc-ws");
+    expect(httpVariantOf("jsonrpc-ws")).toBe("jsonrpc");
+    expect(httpVariantOf("tendermintrpc-ws")).toBe("tendermintrpc");
+    expect(httpVariantOf("rest")).toBe("rest");
+  });
+
+  it("has no ws form for REST or gRPC", () => {
+    expect(wsVariantOf("rest")).toBeNull();
+    expect(wsVariantOf("grpc")).toBeNull();
+    expect(wsVariantOf("grpc-web")).toBeNull();
+  });
+
+  it("both transports read the same catalog", () => {
+    // The drawer keeps one cfg across a transport switch — it must be the
+    // same object, or the toggle would silently change the method list.
+    expect(getInterfaceConfig("ETH1", "jsonrpc-ws", false)).toBe(
+      getInterfaceConfig("ETH1", "jsonrpc", false),
+    );
+    expect(storageKey("jsonrpc-ws")).toBe(storageKey("jsonrpc"));
+  });
+
+  it("offers subscriptions in the catalog for the ws transport to expose", () => {
+    const cfg = getInterfaceConfig("ETH1", "jsonrpc-ws", false);
+    const subs = listMethods(cfg!).filter((m) => /^eth_(un)?subscribe$/.test(m.command.method));
+    expect(subs.length).toBe(2);
+  });
+});
 
 describe("gRPC surfaces with no method catalog", () => {
   it("returns an EMPTY config, never null — the console still opens", () => {
