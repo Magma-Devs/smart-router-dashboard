@@ -14,6 +14,7 @@ import { metricRoutes } from "./routes/metrics.js";
 import { configRoutes } from "./routes/config.js";
 import { upstreamRoutes } from "./routes/upstreams.js";
 import { authRoutes } from "./routes/auth.js";
+import { teamRoutes } from "./routes/team.js";
 import { announceSetupToken } from "./services/setup.js";
 
 /**
@@ -65,6 +66,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     await app.register(dbPlugin);
     await app.register(authPlugin);
     await app.register(authRoutes);
+    await app.register(teamRoutes);
 
     // Once the database is up, mint + log the first-run token if this install
     // still needs one. Not awaited: `dbReady` retries forever by design, and

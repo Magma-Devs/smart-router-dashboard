@@ -455,6 +455,11 @@ Every `/api/metrics/*` route also accepts **`router?`** — the router scope
 | `GET /docs` · `GET /docs/json` | — | Swagger UI explorer + OpenAPI 3.1 spec. Registered outside production only. |
 | `GET /auth/bootstrap` | — | `{ needsSetup, mode }` — whether this deployment still needs its first admin (derived from "no active users", never a flag), and which shape it is. Never reveals the setup token. Public |
 | `POST /auth/setup` | — | Creates the first admin on a fresh install: `{ token, email, password, name? }` → `{ user }`. Opens no session — the web signs in straight afterwards on the ordinary credentials path. 403 on a wrong token, 409 once claimed. Public |
+| `POST /auth/invite/preview` | — | `{ token }` → `{ email, role, expiresAt }` — what an invitation link is for. Public; the token travels in the body, never a URL |
+| `POST /auth/invite/accept` | — | Redeem: `{ token, password }` or `{ token, googleIdToken }` → `{ user, sessionId }`. The account is created with the **invited** address |
+| `GET /api/team/invites` | — | Invitations not yet redeemed, each with `state` (`pending`/`expired`/`revoked`). Admin |
+| `POST /api/team/invites` | — | `{ email, role }` → the invitation, plus `url` on-prem (shown once). 409 if already a member or already invited. Admin |
+| `POST /api/team/invites/:id/resend` · `DELETE …/:id` | — | New link (invalidating the old) / revoke. 410 once redeemed. Admin |
 | `GET /health` | — | Liveness — `{ health: "ok" }` |
 | `GET /health/ready` | — | Readiness — runs `vector(1)` against the store (not `-/ready`, which Mimir and a query-only proxy don't serve) with the configured credential; 503 + `components.prometheus:"ping_failed"` on failure, including a 401 |
 | `GET /version` | — | Build provenance — `{ commit, version, env, startedAt, uptimeSec }` |
@@ -521,6 +526,7 @@ Auth (only read when `AUTH_MODE=enabled`; the metrics path never touches the DB)
 | `SETUP_TOKEN` | (generated) | First-run token, required to create the first admin. Must be ≥ 16 characters; unset (or shorter) ⇒ generated once at boot, on an install that still needs setting up, and logged at `warn` |
 | `SETUP_TOKEN_FILE` | (unset) | Path to write a generated token to (mode 0600), so an init container or mounted volume can surface it |
 | `PASSWORD_BREACH_CHECK` | `hibp` | `off` disables the HaveIBeenPwned check — the honest setting for an air-gapped install, rather than relying on a silent timeout |
+| `PUBLIC_WEB_ORIGIN` | (unset) | browser-facing origin of the web app, used to build invitation and password-reset links. Routes that need it fail loudly when it is unset rather than guessing a host |
 
 Web — build-time vs. **runtime**:
 
