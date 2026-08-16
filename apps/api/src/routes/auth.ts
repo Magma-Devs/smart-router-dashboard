@@ -17,6 +17,12 @@ import {
   redeemInvitation,
   type InviteLookup,
 } from "../services/invitations.js";
+import {
+  consumePasswordReset,
+  createPasswordReset,
+  resetUrl,
+} from "../services/password-reset.js";
+import { checkLock, clearFailures, recordFailure } from "../services/lockout.js";
 import { noopAuditWriter, type AuditWriter } from "../services/audit.js";
 import {
   completeSetup,
@@ -50,6 +56,15 @@ interface InviteAcceptBody {
   password?: string;
   googleIdToken?: string;
   name?: string;
+}
+
+interface ForgotBody {
+  email: string;
+}
+
+interface ResetBody {
+  token: string;
+  password: string;
 }
 
 interface SetupBody {
@@ -411,6 +426,110 @@ export async function authRoutes(app: FastifyInstance) {
   );
 
   app.post(
+    "/auth/password/forgot",
+    {
+      config: { rateLimit: STRICT_AUTH_RATE_LIMIT },
+      schema: {
+        tags: ["Auth"],
+        summary: "Request a reset link (managed only — on-prem has no mail server)",
+        body: {
+          type: "object" as const,
+          required: ["email"],
+          properties: { email: { type: "string" as const, format: "email" } },
+        },
+      },
+    },
+    async (request, reply) => {
+      if (config.deploymentMode !== "managed") {
+        // On-prem has nowhere to send it. Saying so is better than accepting
+        // the request and silently doing nothing.
+        return reply.code(404).send({
+          statusCode: 404,
+          error: "Not Found",
+          message: "Self-serve password reset is not available on this deployment. Ask an administrator.",
+        });
+      }
+      const db = dbOr503(reply);
+      if (!db) return reply;
+      const { email } = request.body as ForgotBody;
+      const client = resolveClientContext(request, undefined, internalSecret);
+
+      const user = await findUserByEmail(db, email);
+      if (user?.passwordHash) {
+        const created = await createPasswordReset(db, { userId: user.id, mode: "managed" });
+        await audit.write({
+          action: "password.reset_requested",
+          actor: { id: user.id, kind: "user" },
+          access: { ip: client.ip, client: client.userAgent, sessionId: null },
+        });
+        // TODO(slice: email adapter) — managed delivery. Until the adapter
+        // lands the link is logged, which is visible to an operator and to
+        // nobody else. It is never returned in the response.
+        request.log.warn(
+          { resetFor: user.email, expiresAt: created.expiresAt },
+          "password reset link generated (no mail transport configured)",
+        );
+      }
+
+      // Always 202, whether or not the address exists, and whether or not the
+      // account has a password at all. Anything else turns this into a way to
+      // ask "is this person a member?".
+      return reply.code(202).send({ ok: true });
+    },
+  );
+
+  app.post(
+    "/auth/password/reset",
+    {
+      config: { rateLimit: STRICT_AUTH_RATE_LIMIT },
+      schema: {
+        tags: ["Auth"],
+        summary: "Set a new password from a reset link. Does not sign anyone in.",
+        body: {
+          type: "object" as const,
+          required: ["token", "password"],
+          properties: {
+            token: { type: "string" as const, minLength: 1 },
+            password: { type: "string" as const, minLength: 1 },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const db = dbOr503(reply);
+      if (!db) return reply;
+      const body = request.body as ResetBody;
+      const client = resolveClientContext(request, undefined, internalSecret);
+
+      const problem = await validatePassword(body.password, request.log);
+      if (problem) {
+        return reply
+          .code(400)
+          .send({ statusCode: 400, error: "Bad Request", message: problem.message });
+      }
+
+      const outcome = await consumePasswordReset(db, body.token, body.password);
+      if (!outcome.ok) {
+        return reply.code(410).send({
+          statusCode: 410,
+          error: "Gone",
+          message: "That reset link is no longer valid. Ask for a new one.",
+        });
+      }
+
+      await audit.write({
+        action: "password.reset_completed",
+        actor: { id: outcome.user.id, kind: "user" },
+        access: { ip: client.ip, client: client.userAgent, sessionId: null },
+      });
+
+      // No session. The person proves the new password works by using it —
+      // and a reset link that signs you in is a reset link worth stealing.
+      return { ok: true };
+    },
+  );
+
+  app.post(
     "/auth/sign-in",
     {
       config: { rateLimit: STRICT_AUTH_RATE_LIMIT },
@@ -442,11 +561,31 @@ export async function authRoutes(app: FastifyInstance) {
       const body = request.body as SignInBody;
       const client = resolveClientContext(request, body.clientContext, internalSecret);
 
+      // Per-account lockout, checked before the password is even looked at.
+      // The per-IP limiter alone is walked past by anyone rotating addresses.
+      const lock = await checkLock(db, body.email);
+      if (lock.locked) {
+        await audit.write({
+          action: "signin.blocked",
+          actor: { id: null, kind: "user", },
+          access: { ip: client.ip, client: client.userAgent, sessionId: null },
+          note: "too many failed attempts",
+        });
+        return reply.code(423).send({
+          statusCode: 423,
+          error: "Locked",
+          message: "Too many failed attempts. Try again later.",
+        });
+      }
+
       const user = await findUserByEmail(db, body.email);
       // Identical response for unknown email and wrong password — no
       // account enumeration through the sign-in surface.
       const ok = user?.passwordHash ? await verifyPassword(body.password, user.passwordHash) : false;
       if (!user || !ok) {
+        // Counted on the submitted address whether or not it exists, so a
+        // lockout says nothing about whether an account is there.
+        await recordFailure(db, body.email);
         await audit.write({
           action: "signin.failed",
           actor: { id: user?.id ?? null, kind: "user" },
@@ -457,6 +596,8 @@ export async function authRoutes(app: FastifyInstance) {
           .code(401)
           .send({ statusCode: 401, error: "Unauthorized", message: "Invalid email or password" });
       }
+
+      await clearFailures(db, body.email);
 
       const session = await createSession(db, {
         userId: user.id,

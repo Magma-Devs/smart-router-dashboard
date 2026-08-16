@@ -358,6 +358,9 @@ export const authConfig = {
       if (path.startsWith("/invite/")) {
         return signedIn ? Response.redirect(new URL("/overview", url)) : true;
       }
+      // Reset links are usable while signed in — the usual reason someone
+      // follows one is that they think somebody else is signed in as them.
+      if (path.startsWith("/reset/") || path === "/forgot-password") return true;
       // Auth.js's own endpoints + the runtime-config route stay public.
       if (path.startsWith("/api/auth") || path === "/api/config") return true;
       // Static assets.
