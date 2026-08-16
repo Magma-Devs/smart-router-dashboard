@@ -8,6 +8,7 @@
  * hints) — never data. */
 
 import { buildChainMetaByIndex, type UpstreamMetrics, type RouterTopology } from "@sr/shared";
+import type { DirectTarget } from "@/components/try-me/direct-request";
 
 /** The honest-state copy for every config-mutating commit button. */
 export const READONLY_MSG = "Config is a read-only mount on self-hosted — edit the values file";
@@ -203,6 +204,44 @@ export function isEvmSpec(spec: string): boolean {
   return id !== null && EVM_CHAINS.has(id);
 }
 
+/** True for a `ws://` / `wss://` masked host. */
+function isWsHost(urlHost: string): boolean {
+  return urlHost.startsWith("ws://") || urlHost.startsWith("wss://");
+}
+
+/**
+ * The direct-relay identity behind one endpoint row: this endpoint plus its
+ * opposite-transport sibling on the same node, because the Try-me drawer's
+ * HTTP/WS toggle has to switch upstream endpoints (they are separate
+ * `node-urls` entries), not just the request envelope.
+ *
+ * Null when the row is the placeholder for a node with no endpoints at all,
+ * or when the api marked the endpoint undialable (a `grpcs://` url).
+ */
+export function directTargetFor(
+  upstream: UpstreamRow,
+  row: UpstreamChainRow,
+): DirectTarget | null {
+  if (row.endpointIndex < 0 || !row.directable) return null;
+  const siblings = upstream.chainRows.filter(
+    (r) => r.routerId === row.routerId && r.endpointIndex >= 0 && r.directable,
+  );
+  const rowIsWs = isWsHost(row.urlHost);
+  const opposite = siblings.find(
+    (r) => r.endpointIndex !== row.endpointIndex && isWsHost(r.urlHost) !== rowIsWs,
+  );
+  const ws = rowIsWs ? row : opposite && isWsHost(opposite.urlHost) ? opposite : null;
+  const http = rowIsWs ? (opposite ?? null) : row;
+  return {
+    routerId: row.routerId,
+    node: upstream.name,
+    httpIndex: http?.endpointIndex ?? null,
+    wsIndex: ws?.endpointIndex ?? null,
+    httpHost: http?.urlHost ?? null,
+    wsHost: ws?.urlHost ?? null,
+  };
+}
+
 /* ─────────────────────────────────────────────
    Upstream identity — catalog match by urlHost domain (preferred),
    falling back to the node name (the design matched by name).
@@ -232,6 +271,12 @@ export interface UpstreamChainRow {
   iface: string;
   addons: string[];
   routerId: string;
+  /** Position in the owning node's endpoint list — the handle the direct
+   *  relay resolves back to a full url server-side. -1 for the placeholder
+   *  row a node with no endpoints gets. */
+  endpointIndex: number;
+  /** Whether the api can dial this endpoint directly (http/ws, not grpc). */
+  directable: boolean;
 }
 
 export interface UpstreamRow {
@@ -269,10 +314,10 @@ export function buildUpstreamRows(
       if (!rows) { rows = []; byName.set(n.name, rows); order.push(n.name); }
       const role: "primary" | "backup" = n.isBackup ? "backup" : "primary";
       if (n.endpoints.length === 0) {
-        rows.push({ spec: r.spec, network: r.network, role, urlHost: "", iface: "", addons: [], routerId: r.id });
+        rows.push({ spec: r.spec, network: r.network, role, urlHost: "", iface: "", addons: [], routerId: r.id, endpointIndex: -1, directable: false });
       }
       for (const ep of n.endpoints) {
-        rows.push({ spec: r.spec, network: r.network, role, urlHost: ep.urlHost, iface: ep.interface, addons: ep.addons, routerId: r.id });
+        rows.push({ spec: r.spec, network: r.network, role, urlHost: ep.urlHost, iface: ep.interface, addons: ep.addons, routerId: r.id, endpointIndex: ep.index, directable: ep.directable });
       }
     }
   }

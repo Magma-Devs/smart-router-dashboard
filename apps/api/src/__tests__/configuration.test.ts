@@ -497,3 +497,64 @@ describe("portFromListenAddress", () => {
     expect(portFromListenAddress(undefined)).toBeNull();
   });
 });
+
+/* ── Direct-relay resolution ──────────────────────────────────────────────
+   The masked topology and the private url map are built in ONE pass, so the
+   index a row publishes and the url the relay dials can never drift apart. */
+
+describe("ConfigurationService.resolveEndpointUrl", () => {
+  it("returns the FULL url — the part getRouters() masks away (SR_CONFIG)", () => {
+    const svc = serviceFor(SR_CONFIG_ETH);
+    const masked = svc.getRouters()[0]!.nodes[0]!.endpoints[0]!;
+    expect(masked.urlHost).toBe("https://eth1.lava.build");
+    expect(svc.resolveEndpointUrl({ routerId: "ETH1", node: "eth-lava", endpointIndex: 0 })).toBe(
+      "https://eth1.lava.build/lava-referer-secret-key/",
+    );
+  });
+
+  it("indexes each node's endpoints in publication order", () => {
+    const svc = serviceFor(SR_CONFIG_ETH);
+    const endpoints = svc.getRouters()[0]!.nodes[0]!.endpoints;
+    expect(endpoints.map((e) => e.index)).toEqual([0, 1]);
+    expect(svc.resolveEndpointUrl({ routerId: "ETH1", node: "eth-lava", endpointIndex: 1 })).toBe(
+      "wss://eth1.lava.build/websocket",
+    );
+  });
+
+  it("resolves helm-format endpoints by the router id it publishes", () => {
+    const svc = serviceFor(HELM_FULL);
+    // `id: Ethereum` — NOT the uppercased network, which is what `spec` is.
+    expect(svc.resolveEndpointUrl({ routerId: "Ethereum", node: "lava", endpointIndex: 0 })).toBe(
+      "https://eth1.lava.build/some/keyed/path",
+    );
+    expect(svc.resolveEndpointUrl({ routerId: "ETH1", node: "lava", endpointIndex: 0 })).toBeNull();
+  });
+
+  it("returns null for anything the values file doesn't name", () => {
+    const svc = serviceFor(SR_CONFIG_ETH);
+    expect(svc.resolveEndpointUrl({ routerId: "ETH1", node: "eth-lava", endpointIndex: 9 })).toBeNull();
+    expect(svc.resolveEndpointUrl({ routerId: "ETH1", node: "ghost", endpointIndex: 0 })).toBeNull();
+    expect(svc.resolveEndpointUrl({ routerId: "NOPE", node: "eth-lava", endpointIndex: 0 })).toBeNull();
+  });
+
+  it("marks http/ws endpoints directable and grpc ones not", () => {
+    const svc = serviceFor(`
+endpoints:
+  - listen-address: "0.0.0.0:3366"
+    chain-id: "COSMOSHUB"
+    api-interface: "grpc"
+direct-rpc:
+  - name: "cosmos-grpc"
+    chain-id: "COSMOSHUB"
+    api-interface: "grpc"
+    node-urls:
+      - url: "grpcs://cosmos-grpc.publicnode.com:443"
+`);
+    const ep = svc.getRouters()[0]!.nodes[0]!.endpoints[0]!;
+    expect(ep.directable).toBe(false);
+    // Still resolvable — the ROUTE refuses the scheme, so the reason a caller
+    // gets is about gRPC, not a phantom "no such endpoint".
+    expect(svc.resolveEndpointUrl({ routerId: "COSMOSHUB", node: "cosmos-grpc", endpointIndex: 0 }))
+      .toBe("grpcs://cosmos-grpc.publicnode.com:443");
+  });
+});

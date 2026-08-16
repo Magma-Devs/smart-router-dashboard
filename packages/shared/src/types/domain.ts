@@ -373,6 +373,19 @@ export interface RouterNodeEndpoint {
   urlHost: string;
   interface: string;
   addons: string[];
+  /**
+   * Position within the owning node's `endpoints` array — the opaque handle
+   * `POST /api/upstreams/relay` resolves back to the FULL (credentialed) url
+   * server-side. The dashboard never ships that url to the browser, so this
+   * index is how the UI names an upstream endpoint it wants dialed directly.
+   */
+  index: number;
+  /**
+   * Whether the api can dial this endpoint directly on the user's behalf.
+   * True for http(s) and ws(s) urls; false for grpc(s), which needs a gRPC
+   * client the relay doesn't carry.
+   */
+  directable: boolean;
 }
 
 export interface RouterNode {
@@ -406,6 +419,44 @@ export interface RouterTopology {
   publicUrls: Record<string, string>;
   interfaces: string[];
   nodes: RouterNode[];
+}
+
+/* ── Direct-to-upstream relay (bypasses the router) ─────────────────────── */
+
+/**
+ * Which configured upstream endpoint to dial. NOT a url — the browser never
+ * holds one, because `maskNodeUrl` strips the path/query where upstream API
+ * keys live. The api resolves this triple against the same mounted values
+ * file it serves the topology from.
+ */
+export interface UpstreamEndpointRef {
+  routerId: string;
+  /** Node name (`eth-publicnode`) — unique per router in the values file. */
+  node: string;
+  endpointIndex: number;
+}
+
+export interface UpstreamRelayRequest extends UpstreamEndpointRef {
+  httpMethod: "GET" | "POST";
+  /** REST only — appended to the resolved url's path, never replacing it. */
+  path?: string;
+  body?: unknown;
+  /** `ws` opens a single-shot WebSocket, sends `body`, resolves on the reply. */
+  transport?: "http" | "ws";
+}
+
+export interface UpstreamRelayResponse {
+  /** The UPSTREAM's status code — the relay itself answers 200 even when the
+   *  upstream errors, so the drawer renders the upstream's own body. Null on
+   *  the ws transport (no HTTP status in a socket reply). */
+  httpStatus: number | null;
+  /** Measured around the api→upstream call. NOT comparable to the browser's
+   *  round-trip against the router — a different pair of hops. */
+  latencyMs: number;
+  body: unknown;
+  /** Set when the upstream body exceeded the relay's size cap. */
+  truncated: boolean;
+  transport: "http" | "ws";
 }
 
 /* ── Ops Dashboard page (2-tab surface: Overview + Metrics) ──────────────── */

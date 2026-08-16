@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { RouterTopology } from "@sr/shared";
-import { buildUpstreamRows, groupByChain } from "../catalog";
+import { buildUpstreamRows, directTargetFor, groupByChain } from "../catalog";
 
 /** Two chains, three upstreams, one of them serving both chains over two
  *  transports — the shape the grouping has to survive. */
@@ -20,14 +20,14 @@ const ROUTERS: RouterTopology[] = [
         name: "publicnode",
         isBackup: false,
         endpoints: [
-          { urlHost: "https://ethereum-rpc.publicnode.com", interface: "jsonrpc", addons: [] },
-          { urlHost: "wss://ethereum-rpc.publicnode.com", interface: "jsonrpc", addons: [] },
+          { urlHost: "https://ethereum-rpc.publicnode.com", interface: "jsonrpc", addons: [], index: 0, directable: true },
+          { urlHost: "wss://ethereum-rpc.publicnode.com", interface: "jsonrpc", addons: [], index: 1, directable: true },
         ],
       },
       {
         name: "flashbots",
         isBackup: true,
-        endpoints: [{ urlHost: "https://rpc.flashbots.net", interface: "jsonrpc", addons: [] }],
+        endpoints: [{ urlHost: "https://rpc.flashbots.net", interface: "jsonrpc", addons: [], index: 0, directable: true }],
       },
     ],
   },
@@ -45,12 +45,12 @@ const ROUTERS: RouterTopology[] = [
       {
         name: "publicnode",
         isBackup: false,
-        endpoints: [{ urlHost: "https://cosmos-rest.publicnode.com", interface: "rest", addons: [] }],
+        endpoints: [{ urlHost: "https://cosmos-rest.publicnode.com", interface: "rest", addons: [], index: 0, directable: true }],
       },
       {
         name: "polkachu",
         isBackup: false,
-        endpoints: [{ urlHost: "https://cosmos-api.polkachu.com", interface: "rest", addons: [] }],
+        endpoints: [{ urlHost: "https://cosmos-api.polkachu.com", interface: "rest", addons: [], index: 0, directable: true }],
       },
     ],
   },
@@ -102,5 +102,49 @@ describe("groupByChain", () => {
 
   it("returns nothing for an empty roster", () => {
     expect(groupByChain([])).toEqual([]);
+  });
+});
+
+/* ── Direct-relay identity ────────────────────────────────────────────────
+   The drawer's HTTP/WS toggle has to switch upstream ENDPOINTS, not just
+   envelopes: a node's http and ws urls are separate entries in the values
+   file, each with its own index. */
+
+describe("directTargetFor", () => {
+  const upstreams = buildUpstreamRows(ROUTERS, undefined);
+  const publicnode = upstreams.find((u) => u.name === "publicnode")!;
+  const flashbots = upstreams.find((u) => u.name === "flashbots")!;
+
+  it("pairs an http row with its ws sibling on the same node", () => {
+    const httpRow = publicnode.chainRows.find((r) => r.urlHost.startsWith("https://"))!;
+    expect(directTargetFor(publicnode, httpRow)).toEqual({
+      routerId: "eth-router",
+      node: "publicnode",
+      httpIndex: 0,
+      wsIndex: 1,
+      httpHost: "https://ethereum-rpc.publicnode.com",
+      wsHost: "wss://ethereum-rpc.publicnode.com",
+    });
+  });
+
+  it("resolves the same pair from the ws row", () => {
+    const wsRow = publicnode.chainRows.find((r) => r.urlHost.startsWith("wss://"))!;
+    expect(directTargetFor(publicnode, wsRow)).toMatchObject({ httpIndex: 0, wsIndex: 1 });
+  });
+
+  it("reports no ws endpoint when the node has none", () => {
+    const row = flashbots.chainRows[0]!;
+    expect(directTargetFor(flashbots, row)).toMatchObject({ httpIndex: 0, wsIndex: null, wsHost: null });
+  });
+
+  it("does not pair across routers — the relay key is (router, node, index)", () => {
+    // `publicnode` also serves COSMOSHUB from a different router; its rows
+    // must not leak into the ETH1 target.
+    const cosmosRow = publicnode.chainRows.find((r) => r.routerId === "cosmos-router")!;
+    expect(directTargetFor(publicnode, cosmosRow)).toMatchObject({
+      routerId: "cosmos-router",
+      httpHost: "https://cosmos-rest.publicnode.com",
+      wsIndex: null,
+    });
   });
 });

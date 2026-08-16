@@ -20,7 +20,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse } from "yaml";
-import type { RouterNode, RouterTopology } from "@sr/shared";
+import type { RouterNode, RouterTopology, UpstreamEndpointRef } from "@sr/shared";
 import { config } from "../config.js";
 
 /** First defined value among several key dialects (snake/kebab/camel). */
@@ -46,6 +46,20 @@ export function maskNodeUrl(url: string): string {
     return `${u.protocol}//${u.host}`;
   } catch {
     return "";
+  }
+}
+
+/**
+ * Whether the relay can dial this url on the user's behalf. http(s) and
+ * ws(s) only — a `grpcs://` upstream needs a gRPC client the api doesn't
+ * carry, and anything else isn't a transport we speak.
+ */
+export function isDirectable(url: string): boolean {
+  try {
+    const proto = new URL(url).protocol;
+    return proto === "http:" || proto === "https:" || proto === "ws:" || proto === "wss:";
+  } catch {
+    return false;
   }
 }
 
@@ -142,8 +156,19 @@ function publicUrlsFor(
   return urls;
 }
 
+/**
+ * Key under which a node endpoint's FULL (credentialed) url is recorded while
+ * the topology is normalized. Recording it in the same pass that builds the
+ * masked view is deliberate: a second, independent traversal could drift from
+ * the one that assigned the indices, and then the relay would dial the wrong
+ * upstream.
+ */
+export function endpointKey(routerId: string, node: string, index: number): string {
+  return `${routerId} ${node} ${index}`;
+}
+
 /** Helm `routers:` shape → RouterTopology[] (pathBased resolved like the chart). */
-function normalizeHelm(raw: Record<string, unknown>): RouterTopology[] {
+function normalizeHelm(raw: Record<string, unknown>, urls: Map<string, string>): RouterTopology[] {
   const misc = (raw["miscellaneous"] ?? {}) as Record<string, unknown>;
   const gateway = (misc["gateway"] ?? {}) as Record<string, unknown>;
   const pathBasedCfg = (gateway["pathBased"] ?? {}) as Record<string, unknown>;
@@ -153,23 +178,33 @@ function normalizeHelm(raw: Record<string, unknown>): RouterTopology[] {
   return asArray(raw["routers"]).map((router) => {
     const network = asString(router["network"]).toLowerCase();
     const override = pick(router, "pathBased", "path-based", "path_based");
+    const routerId = asString(router["id"]) || network.toUpperCase();
 
-    const nodes: RouterNode[] = asArray(router["nodes"]).map((node) => ({
-      name: asString(node["name"]) || network,
-      isBackup: Boolean(pick(node, "is_backup", "is-backup", "isBackup") ?? false),
-      endpoints: asArray(node["endpoints"])
-        .filter((ep) => asString(ep["url"]))
-        .map((ep) => ({
-          urlHost: maskNodeUrl(asString(ep["url"])),
-          interface: asString(ep["interface"]),
-          addons: Array.isArray(ep["addons"]) ? ep["addons"].map(String) : [],
-        })),
-    }));
+    const nodes: RouterNode[] = asArray(router["nodes"]).map((node) => {
+      const name = asString(node["name"]) || network;
+      return {
+        name,
+        isBackup: Boolean(pick(node, "is_backup", "is-backup", "isBackup") ?? false),
+        endpoints: asArray(node["endpoints"])
+          .filter((ep) => asString(ep["url"]))
+          .map((ep, index) => {
+            const url = asString(ep["url"]);
+            urls.set(endpointKey(routerId, name, index), url);
+            return {
+              urlHost: maskNodeUrl(url),
+              interface: asString(ep["interface"]),
+              addons: Array.isArray(ep["addons"]) ? ep["addons"].map(String) : [],
+              index,
+              directable: isDirectable(url),
+            };
+          }),
+      };
+    });
 
     const interfaces = dedupe(nodes.flatMap((n) => n.endpoints.map((e) => e.interface)));
 
     return {
-      id: asString(router["id"]) || network.toUpperCase(),
+      id: routerId,
       spec: network.toUpperCase(),
       network,
       pathBased: override !== undefined ? Boolean(override) : globalPathBased,
@@ -186,7 +221,7 @@ function normalizeHelm(raw: Record<string, unknown>): RouterTopology[] {
 }
 
 /** SR_CONFIG shape → RouterTopology[] (grouped by chain, per-interface ports). */
-function normalizeSrConfig(raw: Record<string, unknown>): RouterTopology[] {
+function normalizeSrConfig(raw: Record<string, unknown>, urls: Map<string, string>): RouterTopology[] {
   // (chain-id → api-interface → port). Keyed per interface because one chain
   // can expose several interfaces on different ports (LAVA rest:3360 +
   // tendermintrpc:3361); "" buckets legacy entries that omit api-interface.
@@ -235,19 +270,22 @@ function normalizeSrConfig(raw: Record<string, unknown>): RouterTopology[] {
         byChain.set(chainId, router);
       }
 
+      const name = asString(provider["name"]) || chainId;
       const endpoints = asArray(provider["node-urls"])
         .filter((nu) => asString(nu["url"]))
-        .map((nu) => ({
-          urlHost: maskNodeUrl(asString(nu["url"])),
-          interface: iface,
-          addons: Array.isArray(nu["addons"]) ? nu["addons"].map(String) : [],
-        }));
+        .map((nu, index) => {
+          const url = asString(nu["url"]);
+          urls.set(endpointKey(router.id, name, index), url);
+          return {
+            urlHost: maskNodeUrl(url),
+            interface: iface,
+            addons: Array.isArray(nu["addons"]) ? nu["addons"].map(String) : [],
+            index,
+            directable: isDirectable(url),
+          };
+        });
 
-      router.nodes.push({
-        name: asString(provider["name"]) || chainId,
-        isBackup,
-        endpoints,
-      });
+      router.nodes.push({ name, isBackup, endpoints });
       router.interfaces = dedupe([...router.interfaces, iface]);
     }
   };
@@ -274,16 +312,38 @@ export class ConfigurationService {
     }
   }
 
-  /** The normalized topology from EITHER supported values-file format. */
-  getRouters(): RouterTopology[] {
+  /**
+   * Normalize the mounted values file into BOTH the masked topology the api
+   * serves and the private url map the relay resolves against. The file is
+   * re-read per call (it is a live mount — the operator can edit it under a
+   * running api), so both views are always the same generation of the file.
+   */
+  private normalize(): { routers: RouterTopology[]; urls: Map<string, string> } {
     const raw = this.readRaw();
+    const urls = new Map<string, string>();
     switch (detectFormat(raw)) {
       case "helm":
-        return normalizeHelm(raw as Record<string, unknown>);
+        return { routers: normalizeHelm(raw as Record<string, unknown>, urls), urls };
       case "sr-config":
-        return normalizeSrConfig(raw as Record<string, unknown>);
+        return { routers: normalizeSrConfig(raw as Record<string, unknown>, urls), urls };
       default:
-        return [];
+        return { routers: [], urls };
     }
+  }
+
+  /** The normalized topology from EITHER supported values-file format. */
+  getRouters(): RouterTopology[] {
+    return this.normalize().routers;
+  }
+
+  /**
+   * The FULL url of one configured node endpoint — path, query and any API
+   * key the operator put in it. THE ONLY function that returns an unmasked
+   * upstream url; its single caller is the direct-relay route, which dials it
+   * server-side and never echoes it back. Null when the triple names nothing
+   * in the current values file.
+   */
+  resolveEndpointUrl(ref: UpstreamEndpointRef): string | null {
+    return this.normalize().urls.get(endpointKey(ref.routerId, ref.node, ref.endpointIndex)) ?? null;
   }
 }
