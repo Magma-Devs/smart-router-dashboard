@@ -150,6 +150,8 @@ Every dead-link reason — used, revoked, expired, never issued — returns the 
 message. The holder can't act on the difference, and distinguishing them would
 tell a stranger which of those a guessed token hit.
 
+<img src="./assets/invite-redemption.png" alt="The invitation redemption page: a card headed &quot;Join this dashboard&quot;, with a panel restating the invitation — the address it was sent to, shown as fixed text rather than an editable field, the role Approver, and a line describing what that role can do. Below it, optional name, password and repeat-password fields, a note that any characters are accepted from 8 to 64 and checked against known breached passwords, and an Accept invitation button." width="440">
+
 > **OAuth is link-only from here on.** `upsertOAuthUser` used to fall through to
 > an insert, which was correct while accounts came only from a seed. With
 > invitations that is a hole big enough to walk through: anyone with a Google
