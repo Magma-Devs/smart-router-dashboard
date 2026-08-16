@@ -15,6 +15,13 @@
       "when": 1786867200000,
       "tag": "0001_accounts",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1786953600000,
+      "tag": "0003_invitations",
+      "breakpoints": true
     }
   ]
 }
