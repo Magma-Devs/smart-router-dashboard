@@ -344,15 +344,24 @@ function wsJs(req: ResolvedWs): SnippetBlock[] {
 
 /** grpcurl, grpcio and grpc-go all dial `host:port`, NOT a URL — a scheme in
  *  there is a "dial tcp: address http://…: too many colons" error. Endpoint
- *  rows carry an http(s):// address for every interface, so the stripping
+ *  rows carry an http(s):// address for every interface, so the rewrite
  *  happens here rather than at the caller. (The gRPC-Web JS client is the one
  *  consumer that wants the URL intact — it reads `req.url` directly.) */
 function grpcDialAddress(req: ResolvedGrpc): string {
-  return stripScheme(req.url);
+  return dialAuthority(req.url);
 }
 
-function stripScheme(url: string): string {
-  return url.replace(/^[a-z]+:\/\//i, "");
+/**
+ * `scheme://host[:port][/path]` → `host:port`. The port is NOT optional:
+ * grpcurl refuses a bare hostname ("missing port in address"), and a
+ * published gateway URL carries no port at all when it sits on the scheme's
+ * default — so the scheme's default is what gets appended. A path is dropped;
+ * a gRPC dial address has no room for one.
+ */
+function dialAuthority(url: string): string {
+  const authority = url.replace(/^[a-z]+:\/\//i, "").replace(/\/.*$/, "");
+  if (/:\d+$/.test(authority)) return authority;
+  return `${authority}:${isPlaintext(url) ? "80" : "443"}`;
 }
 
 /** A `http://` endpoint is not TLS, and grpcurl/grpc-go default to TLS. */
@@ -381,7 +390,7 @@ function grpcCli(req: ResolvedGrpc): SnippetBlock[] {
  * offer is the call that asks the endpoint itself what it serves.
  */
 export function grpcDiscoveryCli(url: string): string {
-  const addr = stripScheme(url);
+  const addr = dialAuthority(url);
   const flags = isPlaintext(url) ? "-plaintext " : "";
   return [
     `# What does this endpoint serve?`,

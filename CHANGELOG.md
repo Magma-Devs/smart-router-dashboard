@@ -5,6 +5,21 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.9.1]
+
+### Fixed
+
+- **The gRPC dial address the Try-it snippets print had no port on a
+  Kubernetes deployment.** A published gateway hostname sits on the scheme's
+  default port, so `publicUrls` carries no `:port` suffix — and grpcurl
+  refuses a bare host (`missing port in address`), so every copied command
+  from a deployed gRPC endpoint failed. The scheme's default is appended when
+  the address carries none (`sui-testnet-grpc.<domain>:443`), an explicit port
+  is left alone, and a path is dropped — a gRPC dial address has no room for
+  one. Shipped in 0.9.0 the address was already scheme-stripped; this is the
+  half of the same fix that only shows up against a Gateway, not a local
+  listen port.
+
 ## [0.9.0]
 
 Try-it console. Its Command dropdown named ~20 curated methods per interface
