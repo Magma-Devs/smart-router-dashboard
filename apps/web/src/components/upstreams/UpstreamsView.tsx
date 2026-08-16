@@ -21,6 +21,7 @@ import { UpstreamLogo } from "@/components/upstreams/UpstreamLogo";
 import { StatusDot } from "@/components/upstreams/bits";
 import {
   buildUpstreamRows,
+  directTargetFor,
   groupByChain,
   type UpstreamChainRow,
   type UpstreamRow,
@@ -141,6 +142,9 @@ function EndpointRow({
           initialTransport={isWsRow ? "ws" : "http"}
           addons={[...new Set(upstream.chainRows.filter((r) => r.spec === row.spec).flatMap((r) => r.addons))]}
           selectUpstream={upstream.name}
+          // Lets the drawer offer "Direct to upstream" — the same request sent
+          // by the api straight to THIS node-url, with the router left out.
+          directTarget={directTargetFor(upstream, row)}
           visible
         />
       )}

@@ -8,6 +8,7 @@ import {
   isCatalogInterface,
   subscribeCatalog,
 } from "./chain-methods";
+import type { DirectTarget } from "./direct-request";
 import { IconZap, TryMeDrawer } from "./drawer";
 
 /** SSR/hydration snapshot: render as "catalog not loaded yet" so server and
@@ -40,6 +41,11 @@ interface TryNowButtonProps {
   /** Pin the relay to a specific provider via `lava-select-provider` (HTTP
    *  only). Set by the per-upstream Try-now so the call hits that upstream. */
   selectUpstream?: string;
+  /** Identity of the upstream endpoint(s) behind this row, enabling the
+   *  drawer's "Direct to upstream" mode — the api dials the upstream itself,
+   *  with the router out of the path. Null on router-level rows (Endpoints),
+   *  which have no single upstream to bypass to. */
+  directTarget?: DirectTarget | null;
 }
 
 /**
@@ -62,6 +68,7 @@ export function TryNowButton({
   health,
   visible = true,
   selectUpstream,
+  directTarget = null,
 }: TryNowButtonProps) {
   const [drawerOpen, setDrawerOpen] = useState(false);
 
@@ -111,6 +118,7 @@ export function TryNowButton({
           initialTransport={initialTransport}
           health={health}
           selectUpstream={selectUpstream}
+          directTarget={directTarget}
           onClose={() => setDrawerOpen(false)}
         />
       )}

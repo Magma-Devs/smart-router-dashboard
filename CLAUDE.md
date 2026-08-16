@@ -67,8 +67,17 @@ paths/ports via Makefile/compose vars (`ROUTER_DIR`, `SR_CONFIG_HOST`,
        │ GET /api/config           │ reads               ┌─────┴──────┐
        │ (runtime api url)         └─ values file ──────▶│ smart-router│
        └─ browser POSTs to router :3360 (Live test)      │ (profile)  │
-                                                          └────────────┘
+                                                          └─────┬──────┘
+                        POST /api/upstreams/relay               │
+       api ─────────────────────────────────────────────▶ upstream RPC
+       (Try-me "Direct to upstream" — router left out)     (vendor endpoint)
 ```
+
+The api's one **outbound** path besides Prometheus is that relay: the Try-me
+drawer's "Direct to upstream" mode. The browser can't make that call itself —
+node urls are masked to scheme+host before they leave the api, because that is
+where API keys live — so the api dials the upstream and hands back only the
+answer. See [`docs/UPSTREAM-DIRECT-TEST.md`](docs/UPSTREAM-DIRECT-TEST.md).
 
 **ONE values file drives both the router and the dashboard** (the v1 pattern):
 `SR_CONFIG_HOST` (default `./dev-config/values.yml`) is mounted as the router's
@@ -307,7 +316,8 @@ Every `/api/metrics/*` route also accepts **`router?`** — the router scope
 | `GET /api/metrics/cross-validation` | `window` | `CrossValidationReport` — `emitted:false` + nulls until `cross_validation_*` fires; **`consistency` (total/caught) is real either way**, but **no web consumer** since MAG-2527 removed the strip that rendered it (consistency checks are head-freshness verification, not cross-validation). `caught` still surfaces as the hero's `staleCaught` |
 | `GET /api/metrics/websocket` | `window` | `WebSocketReport` — `emitted:false` + nulls until `ws_*` fires (first subscription) |
 | `GET /api/metrics/query` | **`query`** (required) | Raw **instant** PromQL passthrough — `{ result }`. 400 without `query` |
-| `GET /api/config/routers` | — | `{ routers: RouterTopology[] }` — live topology from the mounted values file (either format), node URLs masked to scheme+host |
+| `GET /api/config/routers` | — | `{ routers: RouterTopology[] }` — live topology from the mounted values file (either format), node URLs masked to scheme+host. Each endpoint also carries `index` (the handle the relay below resolves) + `directable` |
+| `POST /api/upstreams/relay` | body: `{routerId, node, endpointIndex, transport?, httpMethod?, path?, body?}` | Fires ONE request straight at a configured upstream, router excluded — `{httpStatus, latencyMs, body, truncated, transport}`. The target is resolved from the values file, never taken from the caller; the resolved url is never returned and is scrubbed out of the upstream's own body. Upstream 4xx/5xx come back **200** with their status inside; 502/504 mean our hop failed. Off with `UPSTREAM_RELAY_ENABLED=false`. See [`docs/UPSTREAM-DIRECT-TEST.md`](docs/UPSTREAM-DIRECT-TEST.md) |
 
 ## Environment variables
 
@@ -323,6 +333,10 @@ API (`apps/api/src/config.ts` is the source of truth):
 | `CORS_ORIGINS` | all | comma list or JSON array |
 | `RATE_LIMIT_MAX` | `300` | per IP per minute |
 | `HELM_VALUES_DIR` | `/app/helm-values` | reads `<dir>/core/values.yml` (either format) |
+| `UPSTREAM_RELAY_ENABLED` | `true` | `false` 404s `POST /api/upstreams/relay`. With `AUTH_MODE=disabled` anyone who can reach the api can spend the operator's upstream quota through it, using credentials only the api holds — turn it off where that isn't acceptable |
+| `UPSTREAM_RELAY_TIMEOUT_MS` | `10000` | deadline on the api→upstream call |
+| `UPSTREAM_RELAY_MAX_BODY_BYTES` | `262144` | upstream responses past this come back `truncated: true` |
+| `UPSTREAM_RELAY_RATE_LIMIT_MAX` | `20` | per IP per minute, tighter than `RATE_LIMIT_MAX` |
 | `LOG_LEVEL` | `info` | |
 | `TENANT_ID` | `default` | parsed, reserved — not read by any route yet |
 | `GIT_COMMIT` / `APP_VERSION` | `unknown` / `0.0.0` | surfaced by `/version` |
