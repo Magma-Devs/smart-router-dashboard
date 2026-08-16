@@ -50,7 +50,13 @@ export const IFACE_LABEL: Record<CatalogInterface, string> = {
  *  catalog lists 50+ methods with no friendly names, so the Command dropdown
  *  defaults to this short curated set (labels like lava-connect: "Block Number ·
  *  eth_blockNumber") with a "show all" escape hatch. Order here is the display
- *  order; anything not listed is hidden until the user expands. */
+ *  order; anything not listed is hidden until the user expands.
+ *
+ *  Keys are matched against a command's method id, so ALL FOUR tiers read from
+ *  this one map: the debug/trace entries only ever match commands in the
+ *  debug/trace tiers (their method ids are namespaced), which is what gives
+ *  those tiers the same "Friendly Name · method_id" dropdown and the same
+ *  curated-subset + "show all" behaviour the regular tier has. */
 const COMMON_METHODS: Partial<Record<CatalogInterface, Record<string, string>>> = {
   jsonrpc: {
     // EVM
@@ -75,6 +81,41 @@ const COMMON_METHODS: Partial<Record<CatalogInterface, Record<string, string>>> 
     getblockcount: "Block Count",
     getblockchaininfo: "Blockchain Info",
     getbestblockhash: "Best Block Hash",
+    // EVM debug add-on (the `debug` tier) — same treatment as the regular
+    // tier: the add-on tiers were the only ones landing in the dropdown as
+    // bare method ids.
+    debug_traceTransaction: "Trace Transaction",
+    debug_traceBlockByNumber: "Trace Block by Number",
+    debug_traceBlockByHash: "Trace Block by Hash",
+    debug_traceBlock: "Trace Block (RLP)",
+    debug_traceCall: "Trace Call",
+    debug_getRawTransaction: "Raw Transaction",
+    debug_getRawReceipts: "Raw Receipts",
+    debug_getRawBlock: "Raw Block",
+    debug_getRawHeader: "Raw Header",
+    debug_storageRangeAt: "Storage Range",
+    debug_getBadBlocks: "Bad Blocks",
+    // EVM trace add-on (OpenEthereum-style) + Arbitrum's arbtrace_* twin
+    trace_block: "Block Traces",
+    trace_transaction: "Transaction Traces",
+    trace_call: "Trace Call",
+    trace_callMany: "Trace Calls (batch)",
+    trace_filter: "Filter Traces",
+    trace_get: "Get Trace",
+    trace_rawTransaction: "Trace Raw Transaction",
+    trace_replayTransaction: "Replay Transaction",
+    trace_replayBlockTransactions: "Replay Block",
+    arbtrace_block: "Block Traces",
+    arbtrace_transaction: "Transaction Traces",
+    arbtrace_call: "Trace Call",
+    arbtrace_callMany: "Trace Calls (batch)",
+    arbtrace_filter: "Filter Traces",
+    arbtrace_replayTransaction: "Replay Transaction",
+    arbtrace_replayBlockTransactions: "Replay Block",
+    // Starknet's trace tier
+    starknet_traceTransaction: "Trace Transaction",
+    starknet_traceBlockTransactions: "Trace Block",
+    starknet_simulateTransactions: "Simulate Transactions",
   },
   rest: {
     "/cosmos/base/tendermint/v1beta1/blocks/latest": "Latest Block",
