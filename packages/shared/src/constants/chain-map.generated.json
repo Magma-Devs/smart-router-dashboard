@@ -477,6 +477,24 @@
     ],
     "mainnet": true
   },
+  "CANTON": {
+    "name": "Canton",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "rest"
+    ],
+    "mainnet": true
+  },
+  "CANTONT": {
+    "name": "Canton Testnet",
+    "family": "evm",
+    "icon": "default",
+    "interfaces": [
+      "rest"
+    ],
+    "mainnet": false
+  },
   "CARDANO": {
     "name": "Cardano",
     "family": "cardano",
@@ -1640,6 +1658,16 @@
     ],
     "mainnet": true
   },
+  "POLKADOTASSETHUBP": {
+    "name": "Paseo Asset Hub Testnet",
+    "family": "polkadotassethub",
+    "icon": "polkadotassethub",
+    "interfaces": [
+      "jsonrpc",
+      "rest"
+    ],
+    "mainnet": false
+  },
   "POLKADOTASSETHUBT": {
     "name": "Westend Asset Hub Testnet",
     "family": "polkadotassethub",
@@ -1959,12 +1987,32 @@
     ],
     "mainnet": false
   },
-  "SUIT": {
+  "SUI": {
+    "name": "Sui",
+    "family": "aptos",
+    "icon": "sui",
+    "interfaces": [
+      "jsonrpc",
+      "grpc"
+    ],
+    "mainnet": true
+  },
+  "SUID": {
     "name": "Sui Devnet",
     "family": "aptos",
     "icon": "sui",
     "interfaces": [
-      "jsonrpc"
+      "grpc"
+    ],
+    "mainnet": false
+  },
+  "SUIT": {
+    "name": "Sui Testnet",
+    "family": "aptos",
+    "icon": "sui",
+    "interfaces": [
+      "jsonrpc",
+      "grpc"
     ],
     "mainnet": false
   },
@@ -2068,6 +2116,30 @@
     "icon": "tron",
     "interfaces": [
       "rest",
+      "jsonrpc"
+    ],
+    "mainnet": false
+  },
+  "TSC": {
+    "name": "Trusted Smart Chain",
+    "family": "cosmos",
+    "icon": "default",
+    "interfaces": [
+      "rest",
+      "grpc",
+      "tendermintrpc",
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "TSCT": {
+    "name": "Trusted Smart Chain Testnet",
+    "family": "cosmos",
+    "icon": "default",
+    "interfaces": [
+      "rest",
+      "grpc",
+      "tendermintrpc",
       "jsonrpc"
     ],
     "mainnet": false

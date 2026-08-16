@@ -396,12 +396,20 @@ for (const indices of byBase.values()) {
 // most, "B" for BERAB, "4" for BTCT4), so the longest index prefix that is
 // itself a known chain is the donor. Only fills gaps, and only from a parent
 // that actually exists, so it can never override a real match.
+//
+// The FIRST prefix that names a real chain is the parent, whether or not it
+// has an icon to give. Treating an icon-less parent as "keep shortening" walks
+// straight past it into an unrelated chain that merely shares a prefix:
+// CANTONT (Canton Testnet) → CANTON exists but has no icon → CANTO (Canto, a
+// different chain entirely) → Canton Testnet wears Canto's logo. Same failure
+// as ARBS/ARBN in 0aea45b.
 for (const [index, e] of Object.entries(out)) {
   if (e.icon !== "default" || e.mainnet) continue;
   // Stop at 3 chars: shorter prefixes pair unrelated chains by accident.
   for (let cut = index.length - 1; cut >= 3; cut -= 1) {
     const parent = out[index.slice(0, cut)];
-    if (!parent || parent.icon === "default") continue;
+    if (!parent) continue; // no chain at this prefix — keep shortening
+    if (parent.icon === "default") break; // real parent, nothing to inherit
     e.icon = parent.icon;
     inherited += 1;
     defaultIcon -= 1;
