@@ -5,6 +5,54 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.9.0]
+
+Try-it console. Its Command dropdown named ~20 curated methods per interface
+and printed raw ids for everything else, REST resolved no names at all, and a
+gRPC-only endpoint had no console to open. This release makes the console read
+the same on every interface, tier and transport.
+
+### Added
+
+- **A derived display name for every method.** Curated names still win; the
+  rest are read out of the method id itself — namespace dropped, camelCase and
+  snake_case split, acronyms kept whole, and a vocabulary segmenter for the
+  run-together ids bitcoin-family and Tron use (`getblockcount` → "Get Block
+  Count"). Covers 89% of the catalog's 1174 JSON-RPC ids, 97% of its gRPC ids
+  and 91% of its 2817 REST paths. It fails closed: an id it can't read
+  renders exactly as it did before, because a wrong name is worse than none.
+- **Curated names for the debug and trace tiers** (11 + 16 entries), which
+  were the only tiers with none — so those tiers now open on the methods
+  worth trying instead of listing geth's full 75-method debug surface.
+- **A HTTP / WebSocket toggle in the drawer.** A ws-capable endpoint is one
+  endpoint with two transports (the router serves the upgrade on the base
+  interface's address, path-scoped), and the console now drives both:
+  the dial address, the request envelope and the subscription methods follow
+  the toggle. The Endpoints page previously reached only HTTP and the
+  Upstreams page only ws.
+- **A real WebSocket reachability check.** On the ws transport the drawer's
+  status tag is this browser's own handshake against the exact URL Send will
+  use — not the chain's Prometheus health, which says nothing about whether
+  the upgrade is served. Click it to re-check.
+- **A console for gRPC endpoints with no method catalog.** Only 28 spec
+  indices declare a gRPC collection; a deployment can publish a GRPCRoute for
+  any chain (Tron's native API is gRPC). Those endpoints now open on server-
+  reflection discovery — no borrowed methods from another chain's catalog.
+
+### Fixed
+
+- **REST commands were keyed by their HTTP verb.** A REST command's `method`
+  is `GET`/`POST` and its path lives in the label, so every curated lookup
+  asked for "GET" and missed: no REST name ever resolved, the curated subset
+  was always empty (so the dropdown listed all 213 Cosmos paths at once
+  behind a "Show all" button that did nothing), and the line under the
+  dropdown showed a bare verb. Keys are now the path, and the request line
+  reads `POST /wallet/getnowblock`.
+- **gRPC snippets dialed a URL.** grpcurl, grpcio and grpc-go take
+  `host:port`; they were handed the endpoint row's `http://host:port`, which
+  grpcurl reads as part of the hostname. They also defaulted to TLS against
+  plain-HTTP listen ports — all three now switch on the endpoint's scheme.
+
 ## [0.8.0]
 
 Kubernetes endpoint addresses. With a helm-values mount the Endpoints,
