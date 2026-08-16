@@ -153,6 +153,9 @@ importers:
 
   packages/db:
     dependencies:
+      '@sr/shared':
+        specifier: workspace:*
+        version: link:../shared
       bcryptjs:
         specifier: ^3.0.3
         version: 3.0.3
