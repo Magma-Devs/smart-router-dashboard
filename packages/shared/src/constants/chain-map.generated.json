@@ -136,7 +136,7 @@
   "ARBITRUMN": {
     "name": "Arbitrum Nova Testnet",
     "family": "evm-arbitrum",
-    "icon": "arbitrum-one",
+    "icon": "arbitrum-nova",
     "interfaces": [
       "jsonrpc"
     ],

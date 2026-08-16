@@ -57,24 +57,30 @@ resync, not a follow-up.**
    glyph scaled 0.72 and centred, white on dark / `#111` on light. Never invent
    a colour: take it from the source icon's backdrop, or one stop of its
    gradient when the backdrop is a gradient.
-4. **Mainnet only is usually enough — and usually correct.** Testnet siblings
-   inherit by base name and then by index prefix (`BERAB` → `BERA`), so a
-   testnet with its own brand name is covered too. Vendoring a separate SVG for
-   a testnet index is how one chain ends up looking like two: `arbitrum-nova`
-   did that until it was removed, because lava-specs models Nova as
-   `ARBITRUMN`, a testnet inside `arbitrum.json`. Re-run the generator
-   afterwards and commit the regenerated map with the SVG.
-   **Watch for silent borrowing in the other direction too.** `resolveIcon`
-   falls back to the first segment of the name slug, so "Ethereum Classic"
-   resolved to `ethereum` and wore the wrong chain's logo for as long as nobody
-   looked. A chain whose name starts with another chain's name needs its own
-   icon, not a fallback.
-5. **A wordmark is not a dead end.** RACE sat on the fallback for months as
+4. **Mainnet only is usually enough.** Testnet siblings inherit by base name
+   and then by index prefix (`BERAB` → `BERA`), so a testnet with its own brand
+   name is covered too — `ARBITRUMS` (Arbitrum Sepolia) has no icon of its own
+   and shouldn't. Re-run the generator afterwards and commit the regenerated
+   map with the SVG.
+5. **Two ways a chain ends up under the wrong mark**, both worth a look on
+   every resync:
+   - *Borrowing.* `resolveIcon` falls back to the first segment of the name
+     slug, so "Ethereum Classic" resolved to `ethereum` and wore another
+     chain's logo for as long as nobody checked. A chain whose name starts
+     with another chain's name needs its own icon.
+   - *A wrong upstream name.* The spec's `name` is what decides mainnet vs
+     testnet and therefore what inherits from what — and it can be wrong.
+     Arbitrum Nova (chain 42170, a production AnyTrust network) was named
+     "Arbitrum Nova Testnet", which filed it under Testnet and folded it into
+     Arbitrum One's branding. When the name looks wrong, check
+     [ethereum-lists/chains](https://github.com/ethereum-lists/chains) and fix
+     it upstream rather than working around it here.
+6. **A wordmark is not a dead end.** RACE sat on the fallback for months as
    "wordmark only, illegible at icon size" — but its wordmark draws the four
    letters as ascending columns, and that rhythm survives 24px even though the
    letterforms don't. Look for the structural idea in the mark before giving
    up, and if you do abstract rather than trace, say which in the README.
-6. **Leaving one on the fallback is still a decision, not an oversight** — just
+7. **Leaving one on the fallback is still a decision, not an oversight** — just
    write the reason next to it. Every chain resolves to a vendored SVG today,
    so a new `no icon` line means a chain arrived since the last resync.
 

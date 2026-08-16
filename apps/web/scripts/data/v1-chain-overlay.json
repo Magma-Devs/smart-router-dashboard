@@ -9,7 +9,7 @@
  },
  "ARBITRUMN": {
   "family": "evm-arbitrum",
-  "icon": "arbitrum-one",
+  "icon": "arbitrum-nova",
   "interfaces": [
    "jsonrpc"
   ],

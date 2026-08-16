@@ -63,14 +63,23 @@ first segment of the name slug, and `ethereum` exists.
 Every chain in the map now resolves to a vendored SVG; `default.svg` stays as
 the fallback for whatever arrives next.
 
+`arbitrum-nova` is web3icons' `networks/mono/arbitrum-nova` on the `#EF8220`
+its `background` variant uses — Nova's own orange, not Arbitrum One's navy
+(`#213147`). It keeps a separate icon **because it is a separate chain**: Nova
+is chain 42170, a production AnyTrust network, while `arbitrum-one` is 42161
+and `arbitrum-sepolia` (which does inherit) is the testnet. lava-specs called
+it "Arbitrum Nova Testnet" until
+[lava-specs#112](https://github.com/Magma-Devs/lava-specs/pull/112), so the
+map may still classify it as a testnet until that lands and the catalog is
+regenerated.
+
 ## One icon per chain, not per network
 
 A testnet index inherits its mainnet's icon (by base name, then index prefix),
-so vendoring a separate SVG for one is how a chain ends up looking like two.
-`arbitrum-nova.svg` was exactly that: lava-specs models Nova as `ARBITRUMN`,
-"Arbitrum Nova Testnet" inside `arbitrum.json`, so it inherits `arbitrum-one`
-like `ARBITRUMS` (Sepolia) always did. If upstream ever promotes Nova to its
-own spec, it earns its own icon then.
+so vendoring a separate SVG for a genuine testnet is how one chain ends up
+looking like two — `ARBITRUMS` (Arbitrum Sepolia) correctly has none. The test
+is whether it's a distinct network, not whether the spec's name says
+"Testnet": that name is upstream metadata and it has been wrong.
 
 Chain logos remain the trademarks of their respective projects and are used here
 only to identify the chain.

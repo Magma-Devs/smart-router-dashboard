@@ -16,12 +16,18 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   web3icons (`networks/mono` glyph on the `#01C853` of its `background`
   variant, with the `#111` glyph the house style calls for on a circle that
   light).
-- **Arbitrum Nova looked like a separate chain.** lava-specs models it as
-  `ARBITRUMN` — "Arbitrum Nova Testnet" inside `arbitrum.json` — so it should
-  inherit `arbitrum-one` the way `ARBITRUMS` (Sepolia) does. It carried its
-  own `arbitrum-nova.svg`, left over from the v1 icon set, making one chain
-  read as two. Icon removed and the v1 overlay's slug corrected; the map
-  regenerates with Nova inheriting.
+- **Arbitrum Nova's icon was the v1 one, unvouched for.** Nova keeps a
+  separate mark — it is a separate chain, 42170, a production AnyTrust network
+  next to Arbitrum One's 42161 — but the SVG carried over from v1 with no
+  provenance entry. Re-vendored from web3icons `networks/mono/arbitrum-nova`
+  on the `#EF8220` of its `background` variant: Nova's own orange, not
+  Arbitrum One's navy. Arbitrum Sepolia, the real testnet, keeps inheriting
+  `arbitrum-one` as it should.
+  The map still classifies Nova as a testnet, because lava-specs names it
+  "Arbitrum Nova Testnet" — fixed upstream in
+  [lava-specs#112](https://github.com/Magma-Devs/lava-specs/pull/112); the
+  next resync after that merges flips it to mainnet (115 mainnets / 130
+  testnets) and CI's drift gate will require it.
 
 ## [0.11.2]
 
