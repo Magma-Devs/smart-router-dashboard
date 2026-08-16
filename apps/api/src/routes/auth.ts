@@ -8,10 +8,16 @@ import {
   upsertOAuthUser,
   type OAuthProvider,
 } from "../services/users.js";
-import { verifyPassword } from "../services/password.js";
+import { validatePassword, verifyPassword } from "../services/password.js";
 import { verifyOAuthToken } from "../services/oauth.js";
 import { createSession, revokeSession, type ClientContext } from "../services/sessions.js";
 import { noopAuditWriter, type AuditWriter } from "../services/audit.js";
+import {
+  completeSetup,
+  needsSetup,
+  resolveSetupToken,
+  setupTokenMatches,
+} from "../services/setup.js";
 import { requireAuth } from "../plugins/auth.js";
 import { config } from "../config.js";
 
@@ -27,6 +33,13 @@ interface SignInBody {
   email: string;
   password: string;
   clientContext?: ForwardedClientContext;
+}
+
+interface SetupBody {
+  token: string;
+  email: string;
+  password: string;
+  name?: string;
 }
 
 interface OAuthBody {
@@ -118,6 +131,112 @@ export async function authRoutes(app: FastifyInstance) {
     }
     return app.db;
   }
+
+  app.get(
+    "/auth/bootstrap",
+    {
+      schema: {
+        tags: ["Auth"],
+        summary: "Whether this deployment still needs its first admin, and which shape it is",
+      },
+    },
+    async (request, reply) => {
+      const db = dbOr503(reply);
+      if (!db) return reply;
+      // Deliberately says nothing about the setup token. Anyone can ask whether
+      // an install is unclaimed — that is visible from the login page anyway —
+      // but only someone with log or filesystem access can claim it.
+      return { needsSetup: await needsSetup(db), mode: config.deploymentMode };
+    },
+  );
+
+  app.post(
+    "/auth/setup",
+    {
+      config: { rateLimit: STRICT_AUTH_RATE_LIMIT },
+      schema: {
+        tags: ["Auth"],
+        summary: "Create the first admin on a fresh install. Requires the installer's setup token.",
+        body: {
+          type: "object" as const,
+          required: ["token", "email", "password"],
+          properties: {
+            token: { type: "string" as const, minLength: 1 },
+            email: { type: "string" as const, format: "email" },
+            password: { type: "string" as const, minLength: 1 },
+            name: { type: "string" as const },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const db = dbOr503(reply);
+      if (!db) return reply;
+      const body = request.body as SetupBody;
+      const client = resolveClientContext(request, undefined, internalSecret);
+
+      // Cheap check first, so an already-claimed install doesn't become a
+      // token-guessing oracle. The authoritative check runs inside the
+      // transaction below, under a lock.
+      if (!(await needsSetup(db))) {
+        return reply.code(409).send({
+          statusCode: 409,
+          error: "Conflict",
+          message: "This deployment has already been set up",
+        });
+      }
+
+      if (!setupTokenMatches(body.token, resolveSetupToken(app.log))) {
+        request.log.warn(
+          { ip: client.ip },
+          "first-run setup attempted with an incorrect token",
+        );
+        return reply.code(403).send({
+          statusCode: 403,
+          error: "Forbidden",
+          message: "That setup token is not correct. It is printed by the installer.",
+        });
+      }
+
+      const problem = await validatePassword(body.password, request.log);
+      if (problem) {
+        return reply
+          .code(400)
+          .send({ statusCode: 400, error: "Bad Request", message: problem.message });
+      }
+
+      const outcome = await completeSetup(db, {
+        email: body.email,
+        password: body.password,
+        name: body.name ?? null,
+      });
+      if (!outcome.ok) {
+        // Lost the race against another first-run request.
+        return reply.code(409).send({
+          statusCode: 409,
+          error: "Conflict",
+          message: "This deployment has already been set up",
+        });
+      }
+
+      const session = await createSession(db, {
+        userId: outcome.user.id,
+        authMethod: "password",
+        client,
+      });
+      await recordSignIn(db, outcome.user.id);
+      await audit.write({
+        action: "setup.completed",
+        actor: { id: outcome.user.id, kind: "user" },
+        target: { type: "member", id: outcome.user.id, name: outcome.user.email },
+        access: { ip: client.ip, client: client.userAgent, sessionId: session.id },
+      });
+
+      return reply
+        .code(201)
+        .send({ user: toPublicUser(outcome.user), sessionId: session.id });
+    },
+  );
 
   app.post(
     "/auth/sign-in",
