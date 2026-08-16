@@ -167,6 +167,10 @@ describe("buildChainMetaByIndex", () => {
     // Enjin's test network is branded "Canary Matrixchain" — only the
     // <mainnet-index> + "T" pairing catches it.
     expect(buildChainMetaByIndex("ENJINT").mainnet).toBe(false);
+    // Arbitrum Nova is a mainnet whose index merely ends in a letter the
+    // testnet rules like. The spec says so; nothing here may re-demote it.
+    expect(buildChainMetaByIndex("ARBITRUMN").mainnet).toBe(true);
+    expect(buildChainMetaByIndex("ARBITRUMN").name).toBe("Arbitrum Nova");
   });
   it("gives each Arbitrum network its own logo", () => {
     // The v1 overlay had Arbitrum Sepolia on arbitrum-nova.svg, so the
