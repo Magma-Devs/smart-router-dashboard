@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   index,
   inet,
+  integer,
   pgEnum,
   pgTable,
   text,
@@ -158,3 +159,56 @@ export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type Session = typeof sessions.$inferSelect;
 export type NewSession = typeof sessions.$inferInsert;
+
+/**
+ * invitations — the only way an account comes into existence, apart from
+ * first-run setup.
+ *
+ * The raw token exists **only inside the link**; the row stores its SHA-256, so
+ * a database read can't be turned into a working invitation. Single-use is a
+ * conditional UPDATE rather than a read-then-write (see `services/invitations.ts`),
+ * and the redemption runs in one transaction with the account insert — a crash
+ * between them can't leave a redeemed invite with no account, or an account
+ * with a still-live invite.
+ *
+ * See `docs/ACCOUNTS-DESIGN.md` §4.3 and §6.2.
+ */
+export const invitations = pgTable(
+  "invitations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** Stored lowercased. The account is created with **this** address, never
+     *  the one the redeemer submits — that is what makes "redeemable only by
+     *  the address it was sent to" structural rather than a check someone can
+     *  forget to write. */
+    email: varchar("email", { length: 255 }).notNull(),
+    role: userRoleEnum("role").notNull(),
+    /** SHA-256 of the raw token. */
+    tokenHash: text("token_hash").notNull(),
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    /** Managed 7 days · on-prem 24 hours, where the link travels over a channel
+     *  we don't control. */
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    redeemedAt: timestamp("redeemed_at", { withTimezone: true }),
+    redeemedUserId: uuid("redeemed_user_id"),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    revokedBy: uuid("revoked_by"),
+    /** Stamped the first time an expired invite is observed, so `invite.expired`
+     *  fires exactly once without needing a sweeper to notice. */
+    expiredNotedAt: timestamp("expired_noted_at", { withTimezone: true }),
+    resendCount: integer("resend_count").notNull().default(0),
+  },
+  (table) => [
+    uniqueIndex("invitations_token_hash_idx").on(table.tokenHash),
+    /** "is this address already invited?" — the pending set only. */
+    index("invitations_pending_email_idx")
+      .on(sql`lower(${table.email})`)
+      .where(sql`${table.redeemedAt} is null and ${table.revokedAt} is null`),
+  ],
+);
+
+export type Invitation = typeof invitations.$inferSelect;
+export type NewInvitation = typeof invitations.$inferInsert;
