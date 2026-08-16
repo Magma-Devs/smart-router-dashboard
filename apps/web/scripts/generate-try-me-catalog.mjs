@@ -199,6 +199,36 @@ const JSONRPC_HINTS = [
   // Casper
   { m: "info_get_status", p: "[]", d: "Returns the current node status." },
   { m: "chain_get_state_root_hash", p: "[]", d: "Returns the latest state root hash." },
+  // XRP Ledger — rippled's JSON-RPC takes ONE object inside the params array,
+  // so `[{}]` is the empty request, not `[]`. Verified against s1.ripple.com.
+  { m: "server_info", p: "[{}]", d: "Returns the server's state and the ledger range it holds.", only: ["XRP"] },
+  { m: "server_state", p: "[{}]", d: "Returns machine-readable server state.", only: ["XRP"] },
+  { m: "fee", p: "[{}]", d: "Returns the current transaction cost, in drops.", only: ["XRP"] },
+  { m: "ledger_current", p: "[{}]", d: "Returns the index of the ledger currently being built.", only: ["XRP"] },
+  { m: "ledger_closed", p: "[{}]", d: "Returns the hash and index of the most recently closed ledger.", only: ["XRP"] },
+  { m: "ping", p: "[{}]", d: "Round-trip check — returns an empty success.", only: ["XRP"] },
+  { m: "random", p: "[{}]", d: "Returns a random number from the server, for client-side seeding.", only: ["XRP"] },
+  // Monero — object params, not an array. Verified against a public node;
+  // `sync_info` is left out because restricted RPCs refuse it.
+  { m: "get_info", p: "{}", d: "Returns node and chain state: height, difficulty, connections.", only: ["MONERO"] },
+  { m: "get_block_count", p: "{}", d: "Returns the current block height.", only: ["MONERO"] },
+  { m: "get_last_block_header", p: "{}", d: "Returns the header of the chain tip.", only: ["MONERO"] },
+  { m: "get_fee_estimate", p: "{}", d: "Returns the estimated per-byte fee.", only: ["MONERO"] },
+  { m: "get_version", p: "{}", d: "Returns the node's RPC version and hard-fork table.", only: ["MONERO"] },
+  { m: "hard_fork_info", p: "{}", d: "Returns the state of the current hard fork.", only: ["MONERO"] },
+  // Avalanche P-chain — object params. Only the two verified against
+  // api.avax.network before it rate-limited; the rest of platform.* stays
+  // uncurated rather than guessed at.
+  { m: "platform.getHeight", p: "{}", d: "Returns the height of the last accepted P-chain block.", only: ["AVALANCHEP"] },
+  { m: "platform.getBlockchains", p: "{}", d: "Returns every blockchain the network validates.", only: ["AVALANCHEP"] },
+  // Celestia node API — the spec marks these DEFAULT (no block argument),
+  // unlike header.GetByHeight and friends. NOT live-fired: the node API is
+  // auth-gated, so there is no public endpoint to check against.
+  { m: "header.NetworkHead", p: "[]", d: "Returns the network head the node has synced to.", only: ["CELESTIA"] },
+  { m: "header.LocalHead", p: "[]", d: "Returns this node's local chain head.", only: ["CELESTIA"] },
+  { m: "header.SyncState", p: "[]", d: "Returns the header sync state.", only: ["CELESTIA"] },
+  { m: "node.Ready", p: "[]", d: "Reports whether the node is ready to serve requests.", only: ["CELESTIA"] },
+  { m: "das.SamplingStats", p: "[]", d: "Returns data-availability sampling statistics.", only: ["CELESTIA"] },
 ];
 
 const REST_HINTS = [
@@ -220,13 +250,15 @@ const REST_HINTS = [
   { m: "/accounts/{address}", d: "Returns account authentication key and sequence number.", only: ["APT", "MOVEMENT"] },
   { m: "/blocks/by_height/{block_height}", d: "Returns the block at the given height.", only: ["APT", "MOVEMENT"] },
   { m: "/estimate_gas_price", d: "Returns the estimated gas price.", only: ["APT", "MOVEMENT"] },
-  // EOS (nodeos chain API — every path is POST; only get_info needs no body)
+  // EOS (nodeos chain API — every path is POST; only get_info needs no body).
+  // `needs` marks the ones whose path is concrete but whose BODY isn't: the
+  // path alone can't carry a block number or an account name.
   { m: "/v1/chain/get_info", v: "POST", d: "Returns chain state: chain id, head block, server version." },
-  { m: "/v1/chain/get_block_info", v: "POST", d: "Returns block info — POST body {\"block_num\": <height>}." },
-  { m: "/v1/chain/get_account", v: "POST", d: "Returns an account's resources and permissions — POST body {\"account_name\":\"<name>\"}." },
-  { m: "/v1/chain/get_table_rows", v: "POST", d: "Reads rows from a contract table — POST body {\"code\":…,\"scope\":…,\"table\":…,\"json\":true}." },
-  { m: "/v1/chain/get_producers", v: "POST", d: "Returns the producer schedule — POST body {\"json\":true,\"limit\":10}." },
-  { m: "/v1/trace_api/get_block", v: "POST", d: "Returns a block's action traces — POST body {\"block_num\": <height>}." },
+  { m: "/v1/chain/get_block_info", v: "POST", needs: true, d: "Returns block info — POST body {\"block_num\": <height>}." },
+  { m: "/v1/chain/get_account", v: "POST", needs: true, d: "Returns an account's resources and permissions — POST body {\"account_name\":\"<name>\"}." },
+  { m: "/v1/chain/get_table_rows", v: "POST", needs: true, d: "Reads rows from a contract table — POST body {\"code\":…,\"scope\":…,\"table\":…,\"json\":true}." },
+  { m: "/v1/chain/get_producers", v: "POST", needs: true, d: "Returns the producer schedule — POST body {\"json\":true,\"limit\":10}." },
+  { m: "/v1/trace_api/get_block", v: "POST", needs: true, d: "Returns a block's action traces — POST body {\"block_num\": <height>}." },
   // VeChain Thor
   { m: "/blocks/{revision}", p: "/blocks/best", d: "Returns a block by number, id, or \"best\" for the chain head." },
   { m: "/accounts/{address}", p: "/accounts/0x0000000000000000000000000000456E65726779", d: "Returns an address's VET balance, VTHO energy and code flag.", only: ["VECHAIN"] },
@@ -268,21 +300,34 @@ const REST_HINTS = [
   { m: "/api/v1/transactions", d: "Lists recent transactions." },
 ];
 
+/**
+ * CometBFT's JSON-RPC wants an empty OBJECT for "no arguments", never an
+ * empty array: any method with optional parameters answers `params: {}` and
+ * rejects `params: []` with "error converting json params to arguments:
+ * expected 1 parameters ([height]), got 0". Verified against a live
+ * cosmoshub-4 RPC through the router — hence `{}` throughout, and
+ * `defaultParamsFor` matching it for the uncurated tail.
+ */
 const TENDERMINT_HINTS = [
   // WS-only (the drawer hides them on plain HTTP interfaces).
   { m: "subscribe", p: '{"query":"tm.event=\'NewBlock\'"}', d: "Subscribe to events over WebSocket (e.g. new blocks)." },
   { m: "unsubscribe", p: '{"query":"tm.event=\'NewBlock\'"}', d: "Unsubscribe from a WebSocket event query." },
-  { m: "status", p: "[]", d: "Returns node status: node info, sync info, validator info." },
-  { m: "health", p: "[]", d: "Returns node health — empty result means healthy." },
-  { m: "abci_info", p: "[]", d: "Returns ABCI application data." },
-  { m: "net_info", p: "[]", d: "Returns active peer network info." },
-  { m: "block", p: "[]", d: "Returns the block at the given height (latest when omitted)." },
-  { m: "block_results", p: "[]", d: "Returns execution results for the block at the given height." },
-  { m: "blockchain", p: "[]", d: "Returns block headers for a height range." },
-  { m: "genesis", p: "[]", d: "Returns the genesis document." },
-  { m: "validators", p: "[]", d: "Returns the validator set at the given height." },
-  { m: "consensus_state", p: "[]", d: "Returns a snapshot of the consensus state." },
-  { m: "num_unconfirmed_txs", p: "[]", d: "Returns the number of unconfirmed transactions." },
+  { m: "status", p: "{}", d: "Returns node status: node info, sync info, validator info." },
+  { m: "health", p: "{}", d: "Returns node health — empty result means healthy." },
+  { m: "abci_info", p: "{}", d: "Returns ABCI application data." },
+  { m: "net_info", p: "{}", d: "Returns active peer network info." },
+  { m: "block", p: "{}", d: "Returns the block at the given height — the latest when no height is given." },
+  { m: "block_results", p: "{}", d: "Returns execution results for a block — the latest when no height is given." },
+  { m: "blockchain", p: "{}", d: "Returns block headers for a height range — the last 20 by default." },
+  { m: "header", p: "{}", d: "Returns a block header — the latest when no height is given." },
+  { m: "commit", p: "{}", d: "Returns the commit for a block — the latest when no height is given." },
+  { m: "consensus_params", p: "{}", d: "Returns the consensus parameters at a height — the latest by default." },
+  { m: "validators", p: "{}", d: "Returns the validator set at a height — the latest by default." },
+  { m: "consensus_state", p: "{}", d: "Returns a snapshot of the consensus state." },
+  { m: "num_unconfirmed_txs", p: "{}", d: "Returns the number of unconfirmed transactions." },
+  // `genesis` is deliberately uncurated: on any chain with a sizable genesis
+  // document the node refuses it outright ("genesis response is large, please
+  // use the genesis_chunked API instead"), so it can't be offered as runnable.
 ];
 
 const GRPC_HINTS = [
@@ -445,7 +490,15 @@ function resolveSpec(index, stack = new Set()) {
       if (!api.name) continue;
       // A child re-declaring an api with enabled:false disables the
       // inherited one — record it, filter at emit time.
-      target.apis.set(api.name, { enabled: api.enabled !== false, verb: cd.type ?? "" });
+      target.apis.set(api.name, {
+        enabled: api.enabled !== false,
+        verb: cd.type ?? "",
+        // block_parsing is the only machine-readable arity signal the specs
+        // carry: a PARSE_BY_ARG / PARSE_CANONICAL rule names the ARGUMENT the
+        // block sits in, so the method demonstrably takes positional args.
+        // DEFAULT / EMPTY say nothing either way.
+        block: api.block_parsing ?? null,
+      });
     }
   }
 
@@ -497,7 +550,13 @@ function expandInheritance(colls) {
 /* ── Catalog assembly ────────────────────────────────────────────────────── */
 
 const defaultParamsFor = (iface, method) =>
-  iface === "rest" ? method : iface === "grpc" ? "{}" : "[]";
+  iface === "rest"
+    ? method
+    // CometBFT reads an empty ARRAY as "zero arguments supplied" and errors on
+    // any method with optional ones; an empty object is the no-arguments call.
+    : iface === "grpc" || iface === "tendermintrpc"
+      ? "{}"
+      : "[]";
 
 function hintApplies(hint, specIndex) {
   if (!hint.only) return true;
@@ -517,23 +576,77 @@ function buildCmds(iface, specIndex, apiMap) {
     // First applicable hint per method wins — scoped hints (`only`) precede
     // their generic fallback in HINTS, so a spec never gets both.
     if (used.has(hint.m) || !nameSet.has(hint.m) || !hintApplies(hint, specIndex)) continue;
-    cmds.push(makeCmd(iface, hint.m, apiMap.get(hint.m).verb, hint));
+    cmds.push(makeCmd(iface, hint.m, apiMap.get(hint.m).verb, hint, apiMap.get(hint.m)));
     used.add(hint.m);
   }
   for (const name of names.sort()) {
     if (used.has(name)) continue;
-    cmds.push(makeCmd(iface, name, apiMap.get(name).verb, null));
+    cmds.push(makeCmd(iface, name, apiMap.get(name).verb, null, apiMap.get(name)));
   }
   return cmds;
 }
 
-function makeCmd(iface, name, verb, hint) {
+/**
+ * Params that still need the caller to fill something in: an ellipsis
+ * stand-in (`["0x..."]`), an angle-bracket slot (`<subscription id>`), or a
+ * REST path template (`/blocks/{height}`). A JSON object is NOT a
+ * placeholder — `{"tracer":"callTracer"}` is a complete value — hence the
+ * quote-free character class.
+ */
+const PLACEHOLDER = /\.\.\.|<[^>]{2,}>|\{[a-z_ ]+\}/i;
+
+/** Does the spec's block_parsing prove the method takes positional args? */
+function specTakesArgs(block) {
+  const func = block?.parser_func ?? "";
+  if (func !== "PARSE_BY_ARG" && func !== "PARSE_CANONICAL") return false;
+  return /^\d+$/.test(String(block?.parser_arg?.[0] ?? ""));
+}
+
+/**
+ * Can this command be sent AS IS, or does the caller have to type something
+ * first? Three states, and the third admits to not knowing:
+ *
+ *   r=1  ready    — what ships with it is already a complete request.
+ *   n=1  needs    — it demonstrably takes input we cannot supply: a
+ *                   placeholder, a hint that documents the argument instead
+ *                   of curating one, or the spec's own arity rule.
+ *   —    unknown  — no hint, no arity rule. Rendered unmarked; claiming
+ *                   either way would go past what the data says.
+ *
+ * This cannot be recovered from the emitted JSON later: a hint of `p: "[]"`
+ * is dropped for equalling the default, which leaves a no-argument method
+ * indistinguishable from an uncurated one. So it is decided here, while the
+ * hint is still in hand.
+ */
+function runnability(iface, cmd, hint, api) {
+  const params = cmd.p ?? defaultParamsFor(iface, cmd.m);
+  if (hint?.needs || PLACEHOLDER.test(params)) return { n: 1 };
+  if (iface === "rest") {
+    // A write endpoint never runs out of the box — it wants a signed payload,
+    // and several specs declare one as GET (Aptos's encode_submission answers
+    // 405 to the GET its own collection type implies).
+    if (/(submit|broadcast|simulate|encode|sign|estimate_gas_unit)/i.test(cmd.m)) return {};
+    // A GET path with nothing to substitute is already a whole request. A
+    // POST may still want a body, so only a curated one counts as ready.
+    const verb = cmd.v ?? "GET";
+    return verb === "GET" || hint ? { r: 1 } : {};
+  }
+  // Elsewhere the params ARE the request, so only a curated example proves it.
+  if (hint?.p !== undefined) return { r: 1 };
+  // A hint that describes the argument instead of curating one is this
+  // table's way of saying no static value can work here.
+  if (hint) return { n: 1 };
+  return specTakesArgs(api?.block) ? { n: 1 } : {};
+}
+
+function makeCmd(iface, name, verb, hint, api) {
   const cmd = { m: iface === "rest" && !name.startsWith("/") ? `/${name}` : name };
   const effVerb = hint?.v ?? verb;
   if (iface === "rest" && effVerb && effVerb !== "GET") cmd.v = effVerb;
   if (hint?.l && hint.l !== cmd.m) cmd.l = hint.l;
   if (hint?.p !== undefined && hint.p !== defaultParamsFor(iface, cmd.m)) cmd.p = hint.p;
   if (hint?.d) cmd.d = hint.d;
+  Object.assign(cmd, runnability(iface, cmd, hint, api));
   return cmd;
 }
 
@@ -597,7 +710,7 @@ function buildSpecEntry(index) {
         const m = iface === "rest" && !hint.m.startsWith("/") ? `/${hint.m}` : hint.m;
         if (!regularNames.has(hint.m) && !regularNames.has(m)) continue;
         if (!hintApplies(hint, index)) continue;
-        cmds.push(makeCmd(iface, hint.m, "GET", hint));
+        cmds.push(makeCmd(iface, hint.m, "GET", hint, null));
       }
       if (cmds.length > 0) ifaceEntry.archive = cmds;
     }
