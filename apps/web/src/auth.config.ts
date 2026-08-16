@@ -345,6 +345,13 @@ export const authConfig = {
       if (path === "/login") {
         return signedIn ? Response.redirect(new URL("/metrics", url)) : true;
       }
+      // First-run setup is reachable without a session — on a fresh install
+      // there is nobody to be yet. The page itself refuses once an account
+      // exists, and so does the api; the gate can't tell, because the edge
+      // can't reach the database.
+      if (path === "/setup") {
+        return signedIn ? Response.redirect(new URL("/overview", url)) : true;
+      }
       // Auth.js's own endpoints + the runtime-config route stay public.
       if (path.startsWith("/api/auth") || path === "/api/config") return true;
       // Static assets.
