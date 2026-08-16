@@ -690,8 +690,13 @@ export function TryMeDrawer({
           const init: RequestInit = { headers };
           if (resolved.httpMethod === "POST") {
             init.method = "POST";
-            headers["Content-Type"] = resolved.contentType ?? "application/json";
-            init.body = JSON.stringify(resolved.body);
+            // A REST POST carries its arguments in the PATH (body null) —
+            // sending "null" as a body is what a nodeos / java-tron endpoint
+            // rejects. Only the JSON-RPC envelope has a body to send.
+            if (resolved.body !== null) {
+              headers["Content-Type"] = resolved.contentType ?? "application/json";
+              init.body = JSON.stringify(resolved.body);
+            }
           }
           const res = await fetch(resolved.url, init);
           const dt = Math.round(performance.now() - t0);

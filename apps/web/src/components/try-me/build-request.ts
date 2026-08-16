@@ -85,11 +85,15 @@ export function buildRequest(
     if (path && !path.startsWith("/")) {
       return { ok: false, error: "REST path must start with '/'" };
     }
+    // A REST command's `method` IS its verb, and the catalog knows which
+    // paths are POST-only (Tron's whole wallet API, EOS's chain API). Sending
+    // everything as GET made the request line — `POST /wallet/getnowblock` —
+    // a description of something the drawer wasn't doing.
     return {
       ok: true,
       request: {
         transport: "http",
-        httpMethod: "GET",
+        httpMethod: command.method === "POST" ? "POST" : "GET",
         url: stripTrailingSlash(endpointUrl) + path,
         body: null,
         contentType: null,
