@@ -22,8 +22,48 @@ node apps/web/scripts/check-spec-sync.mjs      # must print ✓ for all three
 ```
 
 Regenerate BOTH. The chain map alone was gated for a long time, and the method
-catalog silently fell seven specs behind: the new chains rendered everywhere in
-the UI while their Try-it drawers fell back to a family guess.
+catalog drifted in both directions behind it: Trusted Smart Chain rendered with
+a name and icon while its Try-it drawer fell back to a family guess, and Ronin
+kept serving 57 methods for months after its spec was deleted upstream — it had
+already left the *gated* map.
+
+## Icons — a new chain arrives without one
+
+`generate-chain-map.mjs` matches each chain to a local SVG in
+`apps/web/public/chains/` and falls back to `default.svg` when there is none.
+The fallback renders fine, so nothing breaks and nothing complains: a new chain
+just quietly appears without its brand. **Vendoring the icon is part of the
+resync, not a follow-up.**
+
+1. **Read the generator's icon line.** It prints the count and then names every
+   chain on the fallback:
+
+   ```
+   icons           243 matched a local SVG (98 inherited from a mainnet sibling), 2 → default.svg
+     no icon       RACE, RACET (testnet)
+   ```
+
+2. **Source it the way the existing ones were sourced.**
+   [`apps/web/public/chains/README.md`](../../apps/web/public/chains/README.md)
+   is the authority and documents the order:
+   [`@web3icons`](https://github.com/0xa3k5/web3icons) `networks/mono` for the
+   glyph with the circle colour read off that icon's own `background` variant →
+   its `tokens/mono/` entry when the network has none (Concordium, VeChain,
+   Zcash, Oasis, Hydration, ION) →
+   [`cosmos/chain-registry`](https://github.com/cosmos/chain-registry) (Neutron,
+   Babylon) → the project's own brand asset, reduced to a silhouette, when
+   web3icons has nothing at all (Canton, TSC).
+3. **Follow the house style** from that README — 24×24, brand-coloured circle,
+   glyph scaled 0.72 and centred, white on dark / `#111` on light. Never invent
+   a colour: take it from the source icon's backdrop, or one stop of its
+   gradient when the backdrop is a gradient.
+4. **Mainnet only is usually enough.** Testnet siblings inherit by base name and
+   then by index prefix (`BERAB` → `BERA`), so a testnet with its own brand name
+   is covered too. Re-run the generator afterwards and commit the regenerated
+   map with the SVG.
+5. **Leaving one on the fallback is a decision, not an oversight.** `RACE`
+   publishes a wordmark only, illegible at 24px, and the README says so. If you
+   leave a chain on `default.svg`, add the same one-line reason there.
 
 ## What to check after regenerating — this is the part that needs judgement
 
@@ -38,8 +78,9 @@ the runnable ones, so a chain with none opens on a list where nothing works.
    the roll-call file.
 2. **A new chain in a known family needs nothing.** Hints are keyed by METHOD
    NAME, not by chain, so a new EVM chain inherits the `eth_*` hints and a new
-   Cosmos chain the cosmos ones — CANTON, TSC and POLKADOTASSETHUBP each landed
-   with 23–108 runnable commands and no hand-written line.
+   Cosmos chain the cosmos ones — TSC arrived with 57 JSON-RPC and 242 REST
+   methods and runnable defaults on all four interfaces, with no hand-written
+   line.
 3. **A new chain FAMILY needs hints**, in `generate-try-me-catalog.mjs`'s hint
    tables (`JSONRPC_HINTS`, `REST_HINTS`, `TENDERMINT_HINTS`, `GRPC_HINTS`).
    Scope them with `only: ["SPECPREFIX"]` when the method name is generic.
@@ -68,6 +109,9 @@ the runnable ones, so a chain with none opens on a list where nothing works.
 
 ## Related
 
+- [`apps/web/public/chains/README.md`](../../apps/web/public/chains/README.md) —
+  icon sources, house style, and the per-icon provenance note each vendored SVG
+  carries. Add one when you add an icon.
 - `.claude/rules/testing.md` — `chain-methods.test.ts` asserts the head is
   non-empty and placeholder-free for a sample of chains; extend that sample
   when you add a family.
