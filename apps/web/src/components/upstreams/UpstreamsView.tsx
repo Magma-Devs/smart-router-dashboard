@@ -21,7 +21,12 @@ import { fmtMs, fmtNum, fmtPct } from "@/lib/format";
 import { uptimeColorFrac } from "@/lib/colors";
 import { UpstreamLogo } from "@/components/upstreams/UpstreamLogo";
 import { StatusDot, pvStatLabel } from "@/components/upstreams/bits";
-import { buildUpstreamRows } from "@/components/upstreams/catalog";
+import {
+  buildUpstreamRows,
+  groupByChain,
+  type UpstreamChainRow,
+  type UpstreamRow,
+} from "@/components/upstreams/catalog";
 import { IfaceTag } from "@/components/endpoints/bits";
 import { TryNowButton } from "@/components/try-me/try-now-button";
 import { useFilters } from "@/components/gateway/FiltersProvider";
@@ -31,6 +36,10 @@ import { useFilters } from "@/components/gateway/FiltersProvider";
 ───────────────────────────────────────────── */
 function StatStrip() { return null; }
 
+/** How the roster is carved up. Both groupings render the same endpoint
+ *  rows off the same model — only the card each row sits in changes. */
+type GroupBy = "chain" | "provider";
+
 /** Initial-badge fallback for unmatched (BYO) nodes — chain-colored. */
 function InitialBadge({ name, spec, size = 28 }: { name: string; spec?: string; size?: number }) {
   const color = spec ? buildChainMetaByIndex(spec).color : "var(--surface-2)";
@@ -38,6 +47,106 @@ function InitialBadge({ name, spec, size = 28 }: { name: string; spec?: string; 
     <span style={{ width: size, height: size, borderRadius: Math.round(size * 0.28), background: color, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: Math.round(size * 0.43), flexShrink: 0 }}>
       {name.slice(0, 1).toUpperCase()}
     </span>
+  );
+}
+
+/**
+ * One upstream endpoint. Shared by both groupings, so a row reads the same
+ * whichever card it sits in — only the identity it has to spell out changes:
+ * a provider card's header already names the upstream, a chain card's names
+ * the chain.
+ */
+function EndpointRow({
+  upstream,
+  row,
+  routers,
+  showUpstream = false,
+}: {
+  upstream: UpstreamRow;
+  row: UpstreamChainRow;
+  routers: RouterTopology[];
+  showUpstream?: boolean;
+}) {
+  // Resolve this (router, interface)'s dialable address: the gateway URL a
+  // Kubernetes deployment publishes, else the local listen port an SR_CONFIG
+  // mount declares. The router serves WebSocket on the SAME address as the
+  // base interface (no separate ws port/host), so a ws row dials it with the
+  // -ws catalog interface — which makes the Try-me drawer use its WebSocket
+  // transport.
+  const rtr = routers.find((r) => r.id === row.routerId);
+  const isWsRow = row.urlHost.startsWith("ws://") || row.urlHost.startsWith("wss://") || row.iface.endsWith("-ws");
+  const publicUrl = rtr?.publicUrls[row.iface] ?? null;
+  const localPort = rtr?.localPorts[row.iface] ?? null;
+  // WS is served on the same address but ONLY under a path (/ws for jsonrpc,
+  // /websocket for tendermint) — a bare ws://host handshake is rejected with
+  // HTTP 405.
+  const wsPath = row.iface.startsWith("tendermintrpc") ? "/websocket" : "/ws";
+  const tryUrl = publicUrl ?? (localPort !== null ? `http://localhost:${localPort}` : null);
+  // Both transports go to the drawer; a ws-flagged upstream opens on
+  // WebSocket, and either can be toggled to.
+  const tryWsUrl = tryUrl === null ? null : tryUrl.replace(/^http/, "ws") + wsPath;
+  return (
+    <div className="gw-row" style={{ gap: 8, padding: "6px 10px", background: "var(--hover)", borderRadius: 6, border: "1px solid var(--line)" }}>
+      {/* Upstream identity — only on a chain card, whose header names the
+          chain instead. */}
+      {showUpstream && (
+        <div className="gw-row" style={{ gap: 7, flexShrink: 0, minWidth: 150 }}>
+          {upstream.catalogId
+            ? <UpstreamLogo id={upstream.catalogId} size={18} />
+            : <InitialBadge name={upstream.name} spec={row.spec} size={18} />}
+          <span style={{ fontSize: 12, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {upstream.name}
+          </span>
+        </div>
+      )}
+      {/* Role inline — the chain identity is on the card header, not repeated
+          per row. Only reserve the slot when the config actually marks a role
+          (helm is_backup). */}
+      {(row.role === "primary" || row.role === "backup") && (
+      <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0, minWidth: 78 }}>
+        {row.role === "primary" && (
+          <span style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 10, color: "var(--ok)", fontWeight: 500 }}>
+            <svg width="5" height="5" viewBox="0 0 6 6"><circle cx="3" cy="3" r="3" fill="currentColor"/></svg>
+            primary
+          </span>
+        )}
+        {row.role === "backup" && (
+          <span style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 10, color: "#60a5fa", fontWeight: 500 }}>
+            <svg width="5" height="5" viewBox="0 0 6 6"><circle cx="3" cy="3" r="3" fill="currentColor"/></svg>
+            backup
+          </span>
+        )}
+      </div>
+      )}
+      <span className="gw-mono" style={{ fontSize: 11, color: "var(--text-2)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{row.urlHost || "—"}</span>
+      {/* interface tag + configured capabilities (addons + derived ws) — real
+          config values, nothing invented. Same IfaceTag component the
+          Endpoints page uses so the badge label + colour are consistent. */}
+      {row.iface && <IfaceTag id={row.iface} />}
+      <CapabilityTags
+        size="xs"
+        capabilities={capabilitiesOf({
+          addons: row.addons,
+          hasWs: row.urlHost.startsWith("ws://") || row.urlHost.startsWith("wss://") || row.iface.endsWith("-ws"),
+        })}
+      />
+      {/* Try now — opens the Try-me drawer preselecting THIS interface. Only
+          when the router exposes an address for it (nothing to dial
+          otherwise). */}
+      {tryUrl !== null && (
+        <TryNowButton
+          spec={row.spec}
+          network={row.network}
+          iface={row.iface}
+          url={tryUrl}
+          wsUrl={tryWsUrl}
+          initialTransport={isWsRow ? "ws" : "http"}
+          hasArchive={upstream.chainRows.some((r) => r.spec === row.spec && r.addons.includes("archive"))}
+          selectUpstream={upstream.name}
+          visible
+        />
+      )}
+    </div>
   );
 }
 
@@ -51,6 +160,10 @@ export function UpstreamsView() {
   const [degradedFilter, setDegradedFilter] = useState(false);
   const [search, setSearch] = useState("");
   const [netFilter, setNetFilter] = useState<"all" | "mainnet" | "testnet">("all");
+  /* Chain-first by default: "who serves this chain" is the question the page
+     gets asked most, and it is the one the provider grouping answered worst
+     (an upstream's chains were a "+4" next to its name). */
+  const [groupBy, setGroupBy] = useState<GroupBy>("chain");
   const [newChainCtas, setNewChainCtas] = useState<{ chainId: string; upstreamName: string }[]>([]);
 
   const routers = useMemo(() => config.data?.routers ?? [], [config.data]);
@@ -67,6 +180,30 @@ export function UpstreamsView() {
         pv.url.toLowerCase().includes(search.toLowerCase());
       const matchNet = netFilter === "all" || pv.networks.includes(netFilter);
       return matchDegraded && matchSearch && matchNet;
+    });
+  }, [upstreams, degradedFilter, search, netFilter]);
+
+  /* Chain grouping filters per ROW, not per upstream: a chain card survives
+     when the query matches the chain itself OR any upstream serving it, so
+     both "Ethereum" and "publicnode" find something. */
+  const chainGroups = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const groups = groupByChain(upstreams).map((group) => ({
+      ...group,
+      rows: group.rows.filter(({ upstream }) =>
+        (!degradedFilter || upstream.status === "degraded") &&
+        (!q ||
+          buildChainMetaByIndex(group.spec).name.toLowerCase().includes(q) ||
+          group.spec.toLowerCase().includes(q) ||
+          upstream.name.toLowerCase().includes(q) ||
+          upstream.url.toLowerCase().includes(q)),
+      ),
+    }));
+    return groups.filter((group) => {
+      if (group.rows.length === 0) return false;
+      if (netFilter === "all") return true;
+      const mainnet = buildChainMetaByIndex(group.spec).mainnet;
+      return netFilter === "mainnet" ? mainnet : !mainnet;
     });
   }, [upstreams, degradedFilter, search, netFilter]);
 
@@ -127,6 +264,14 @@ export function UpstreamsView() {
             <button key={val} className={netFilter === val ? "on" : ""} onClick={() => setNetFilter(val)}>{lbl}</button>
           ))}
         </div>
+        <span style={{ flex: 1 }} />
+        {/* One roster, two ways to carve it: by the chain an endpoint serves,
+            or by the upstream that serves it. */}
+        <div className="gw-segctl">
+          {([["chain", "By chain"], ["provider", "By provider"]] as const).map(([val, lbl]) => (
+            <button key={val} className={groupBy === val ? "on" : ""} onClick={() => setGroupBy(val)}>{lbl}</button>
+          ))}
+        </div>
       </div>
 
       {degradedFilter && (
@@ -144,6 +289,38 @@ export function UpstreamsView() {
           </div>
           <h2>No upstreams yet</h2>
           <p>The mounted values file has no upstream nodes. Add your first upstream — Alchemy, Infura, QuickNode, or your own node — by editing the values file.</p>
+        </div>
+      ) : groupBy === "chain" ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {chainGroups.map((group) => {
+            const chain = buildChainMetaByIndex(group.spec);
+            return (
+              <div key={group.spec} className="gw-card" style={{ padding: "14px 16px" }}>
+                {/* header — the chain this card is about; the rows below name
+                    the upstream instead. */}
+                <div className="gw-row" style={{ gap: 10, marginBottom: 12 }}>
+                  <ChainBadge spec={group.spec} size={28} />
+                  <span style={{ fontSize: 13, fontWeight: 600 }}>{chain.name}</span>
+                  <span className="gw-mono" style={{ fontSize: 11, color: "var(--text-3)" }}>{group.spec}</span>
+                  {!chain.mainnet && (
+                    <span className="gw-tag" style={{ fontSize: 10, padding: "1px 6px" }}>testnet</span>
+                  )}
+                  <span style={{ flex: 1 }} />
+                  <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 4, background: "var(--hover-2)", color: "var(--text-3)", border: "1px solid var(--line)", flexShrink: 0 }}>
+                    {group.providers} upstream{group.providers !== 1 ? "s" : ""}
+                  </span>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {group.rows.map(({ upstream, row }, i) => (
+                    <EndpointRow key={i} upstream={upstream} row={row} routers={routers} showUpstream />
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+          {chainGroups.length === 0 && (
+            <p className="lede" style={{ padding: "12px 2px" }}>No chains match this filter.</p>
+          )}
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -192,79 +369,9 @@ export function UpstreamsView() {
                 </div>
                 {/* endpoint rows, one per (chain, upstream endpoint) served */}
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  {pv.chainRows.map((row, i) => {
-                    // Resolve this (router, interface)'s dialable address: the
-                    // gateway URL a Kubernetes deployment publishes, else the local
-                    // listen port an SR_CONFIG mount declares. The router serves
-                    // WebSocket on the SAME address as the base interface (no
-                    // separate ws port/host), so a ws row dials it with the -ws
-                    // catalog interface — which makes the Try-me drawer use its
-                    // WebSocket transport.
-                    const rtr = routers.find((r) => r.id === row.routerId);
-                    const isWsRow = row.urlHost.startsWith("ws://") || row.urlHost.startsWith("wss://") || row.iface.endsWith("-ws");
-                    const publicUrl = rtr?.publicUrls[row.iface] ?? null;
-                    const localPort = rtr?.localPorts[row.iface] ?? null;
-                    // WS is served on the same address but ONLY under a path
-                    // (/ws for jsonrpc, /websocket for tendermint) — a bare
-                    // ws://host handshake is rejected with HTTP 405.
-                    const wsPath = row.iface.startsWith("tendermintrpc") ? "/websocket" : "/ws";
-                    const tryUrl = publicUrl ?? (localPort !== null ? `http://localhost:${localPort}` : null);
-                    // Both transports go to the drawer; a ws-flagged upstream
-                    // opens on WebSocket, and either can be toggled to.
-                    const tryWsUrl = tryUrl === null ? null : tryUrl.replace(/^http/, "ws") + wsPath;
-                    return (
-                      <div key={i} className="gw-row" style={{ gap: 8, padding: "6px 10px", background: "var(--hover)", borderRadius: 6, border: "1px solid var(--line)" }}>
-                        {/* Role inline — the chain identity is on the card header,
-                            not repeated per row. Only reserve the slot when the
-                            config actually marks a role (helm is_backup). */}
-                        {(row.role === "primary" || row.role === "backup") && (
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0, minWidth: 78 }}>
-                          {row.role === "primary" && (
-                            <span style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 10, color: "var(--ok)", fontWeight: 500 }}>
-                              <svg width="5" height="5" viewBox="0 0 6 6"><circle cx="3" cy="3" r="3" fill="currentColor"/></svg>
-                              primary
-                            </span>
-                          )}
-                          {row.role === "backup" && (
-                            <span style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 10, color: "#60a5fa", fontWeight: 500 }}>
-                              <svg width="5" height="5" viewBox="0 0 6 6"><circle cx="3" cy="3" r="3" fill="currentColor"/></svg>
-                              backup
-                            </span>
-                          )}
-                        </div>
-                        )}
-                        <span className="gw-mono" style={{ fontSize: 11, color: "var(--text-2)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{row.urlHost || "—"}</span>
-                        {/* interface tag + configured capabilities (addons +
-                            derived ws) — real config values, nothing invented.
-                            Same IfaceTag component the Endpoints page uses so
-                            the badge label + colour are consistent. */}
-                        {row.iface && <IfaceTag id={row.iface} />}
-                        <CapabilityTags
-                          size="xs"
-                          capabilities={capabilitiesOf({
-                            addons: row.addons,
-                            hasWs: row.urlHost.startsWith("ws://") || row.urlHost.startsWith("wss://") || row.iface.endsWith("-ws"),
-                          })}
-                        />
-                        {/* Try now — opens the Try-me drawer preselecting THIS
-                            interface. Only when the router exposes a local port
-                            for it (nothing to dial otherwise). */}
-                        {tryUrl !== null && (
-                          <TryNowButton
-                            spec={row.spec}
-                            network={row.network}
-                            iface={row.iface}
-                            url={tryUrl}
-                            wsUrl={tryWsUrl}
-                            initialTransport={isWsRow ? "ws" : "http"}
-                            hasArchive={pv.chainRows.some((r) => r.spec === row.spec && r.addons.includes("archive"))}
-                            selectUpstream={pv.name}
-                            visible
-                          />
-                        )}
-                      </div>
-                    );
-                  })}
+                  {pv.chainRows.map((row, i) => (
+                    <EndpointRow key={i} upstream={pv} row={row} routers={routers} />
+                  ))}
                 </div>
               </div>
             );
