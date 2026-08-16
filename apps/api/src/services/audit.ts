@@ -95,8 +95,14 @@ export interface AuditWriter {
    * mutation it records commit or roll back together — a log that can disagree
    * with the thing it describes is worse than no log.
    *
-   * Implementations must not throw for reasons the caller can't act on; a
-   * failed write is logged, not propagated into a user-facing 500.
+   * **Failure behaviour depends on `tx`, and the asymmetry is deliberate:**
+   *
+   *  - **Standalone** (no `tx`) — swallow and report out of band. A sign-in must
+   *    not 500 because the log is unwell.
+   *  - **Inside a transaction** — propagate. Swallowing buys nothing there: the
+   *    failed insert has already aborted the caller's transaction, so their
+   *    commit fails either way, and catching it would turn "the row and the
+   *    mutation land together" into a silent maybe.
    */
   write(event: AuditEvent, tx?: Database): Promise<void>;
 }
