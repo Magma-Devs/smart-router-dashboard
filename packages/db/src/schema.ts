@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
-  boolean,
+  index,
+  inet,
   pgEnum,
   pgTable,
   text,
@@ -11,25 +12,49 @@ import {
 } from "drizzle-orm/pg-core";
 
 /**
- * Role for future admin surfaces. `admin` is the seeded operator account;
- * `member` is everyone else. The dashboard has no per-role UI yet — the
- * enum exists so adding one later is a code change, not a migration.
+ * Cumulative roles — each includes everything below it, so callers compare
+ * ordinals (`roleAtLeast` in `@sr/shared`) rather than expanding a permission
+ * matrix. `read_only` sees the dashboard and the audit log; `requester`
+ * proposes config changes; `approver` approves others'; `admin` also manages
+ * people and may self-approve.
+ *
+ * `requester` / `approver` are enforced by the config-approval flow (MAG-2731);
+ * this package only defines the vocabulary and the ordering.
  */
-export const userRoleEnum = pgEnum("user_role", ["admin", "member"]);
+export const userRoleEnum = pgEnum("user_role", [
+  "read_only",
+  "requester",
+  "approver",
+  "admin",
+]);
 
 /**
- * users — the canonical user record for AUTH_MODE=enabled. Identity only:
- * email + bcrypt password hash for credentials sign-in, and one nullable
- * provider-id column per supported OAuth provider (Google / GitHub /
- * Discord). Ported from lava-connect's users table, minus everything the
- * dashboard doesn't have (plans, billing, account states, notifications).
+ * Account state. Replaces the old `is_suspended` boolean — two overlapping
+ * "can this person sign in" concepts is a bug factory.
+ *
+ *  - `active`    — normal.
+ *  - `suspended` — can't sign in; reversible.
+ *  - `removed`   — the person left. **A state change, not a row deletion**: their
+ *                  sessions die immediately, their name stays in the audit log
+ *                  permanently, and the partial unique index below frees their
+ *                  email so it can be invited again under a new account.
+ */
+export const userStatusEnum = pgEnum("user_status", ["active", "suspended", "removed"]);
+
+/**
+ * users — the canonical account record for AUTH_MODE=enabled. Identity plus
+ * lifecycle: email + bcrypt hash for credentials sign-in, one nullable
+ * provider-id column per supported OAuth provider, role, status, and the two
+ * timestamps the member list reads.
+ *
+ * See `docs/ACCOUNTS-DESIGN.md` §4.1.
  */
 export const users = pgTable(
   "users",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     email: varchar("email", { length: 255 }).notNull(),
-    /** Display name. Pulled from the OAuth profile or the seed. */
+    /** Display name. Pulled from the OAuth profile, the invite, or the seed. */
     name: varchar("name", { length: 255 }),
     /** Profile avatar URL, captured from the first linked OAuth provider
      *  that supplies one. Backfill-only: once set it is never overwritten. */
@@ -42,24 +67,94 @@ export const users = pgTable(
     githubId: varchar("github_id", { length: 255 }).unique(),
     /** Discord user id (snowflake). */
     discordId: varchar("discord_id", { length: 255 }).unique(),
-    role: userRoleEnum("role").notNull().default("member"),
-    /** Suspended users can't sign in. */
-    isSuspended: boolean("is_suspended").notNull().default(false),
-    /** Cutoff timestamp for session revocation. RESERVED — no api check
-     *  reads it yet (lava-connect's requireAuthFresh pattern would reject
-     *  JWTs with `iat` at or before this). Until that lands, force-expire
-     *  every session by rotating AUTH_SECRET. See docs/AUTH.md → "Session
-     *  lifetime & revocation". */
+    role: userRoleEnum("role").notNull().default("read_only"),
+    status: userStatusEnum("status").notNull().default("active"),
+    /** Who removed this person and when. Set together with `status='removed'`;
+     *  `removed_by` is intentionally not a foreign key so the record survives
+     *  the remover's own removal. */
+    removedAt: timestamp("removed_at", { withTimezone: true }),
+    removedBy: uuid("removed_by"),
+    /** Last time the password was set (by the holder — an admin never sets
+     *  someone else's). Displayed on the account page; drives nothing, because
+     *  there is deliberately no forced expiry. */
+    passwordUpdatedAt: timestamp("password_updated_at", { withTimezone: true }),
+    /** Newest `sessions.last_seen_at` across the person's sessions, denormalised
+     *  so the member list is one query. Written at most once a minute per
+     *  session — see `services/sessions.ts`. */
+    lastActiveAt: timestamp("last_active_at", { withTimezone: true }),
+    /** Bulk revocation cutoff: any JWT with `iat` at or before this is refused.
+     *  Stamped on password change/reset, sign-out-everywhere, and removal.
+     *
+     *  This coexists with `sessions.revoked_at` deliberately — the cutoff kills
+     *  every outstanding token in one write without enumerating rows, while a
+     *  session row is what makes per-device revoke and the sessions list
+     *  possible. Neither replaces the other (design §5.3). */
     signedOutAllAt: timestamp("signed_out_all_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     lastSignInAt: timestamp("last_sign_in_at", { withTimezone: true }),
   },
   (table) => [
-    /** Functional unique index on `lower(email)` so case-variant duplicates
-     *  can never coexist even if a code path forgets to normalize. */
-    uniqueIndex("users_email_lower_idx").on(sql`lower(${table.email})`),
+    /** Functional unique index on `lower(email)`, **scoped to active accounts**.
+     *  Unconditional would make "a removed person's email can be invited again"
+     *  impossible; case-variant duplicates still can't coexist among the living
+     *  even if a code path forgets to normalize. */
+    uniqueIndex("users_email_lower_idx")
+      .on(sql`lower(${table.email})`)
+      .where(sql`${table.status} = 'active'`),
+  ],
+);
+
+/**
+ * sessions — one row per sign-in. The session id travels in the JWT's `sid`
+ * claim and the api resolves this row on every authenticated request, which is
+ * what makes revocation immediate rather than "at next sign-in".
+ *
+ * Rows are **not** deleted on revoke: a revoked session is evidence, and
+ * MAG-2770's access events reference it. Expired rows are pruned on a schedule.
+ *
+ * See `docs/ACCOUNTS-DESIGN.md` §4.2 and §5.
+ */
+export const sessions = pgTable(
+  "sessions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    /** Heartbeat, throttled to one write per minute per session. Feeds
+     *  `users.last_active_at` and the "last active" column. */
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    /** 30 days from creation. No idle timeout — people use this dashboard all
+     *  day and shouldn't be retyping passwords. */
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    /** Null when the holder revoked it themselves or the system did. */
+    revokedBy: uuid("revoked_by"),
+    /** `self` · `sign_out_all` · `password_change` · `member_removed` · `admin`.
+     *  A varchar rather than an enum so later slices can add reasons without a
+     *  migration; the closed set lives in `services/sessions.ts`. */
+    revokedReason: varchar("revoked_reason", { length: 32 }),
+    /** The browser's address, not the web pod's — see design §5.2. */
+    ip: inet("ip"),
+    userAgent: text("user_agent"),
+    /** Parsed once at creation ("Chrome 141 / macOS"), never on read: this is
+     *  what the audit log records, and it must not shift if the parser changes. */
+    client: varchar("client", { length: 128 }),
+    /** `password` · `google` · `github` · `discord` · `invite`. */
+    authMethod: varchar("auth_method", { length: 32 }).notNull(),
+  },
+  (table) => [
+    /** The hot path: "this user's live sessions". */
+    index("sessions_user_active_idx")
+      .on(table.userId)
+      .where(sql`${table.revokedAt} is null`),
+    /** For the prune job. */
+    index("sessions_expires_at_idx").on(table.expiresAt),
   ],
 );
 
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
+export type Session = typeof sessions.$inferSelect;
+export type NewSession = typeof sessions.$inferInsert;
