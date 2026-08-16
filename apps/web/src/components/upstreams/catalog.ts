@@ -315,3 +315,51 @@ export function buildUpstreamRows(
     };
   });
 }
+
+/* ─────────────────────────────────────────────
+   Chain-first view of the same rows. The roster is built per upstream (one
+   card per config node); grouping it by the chain each endpoint serves
+   answers the other question this page gets asked — "who serves Ethereum?"
+   — off exactly the same data, so the two groupings can never disagree.
+───────────────────────────────────────────── */
+
+/** One upstream endpoint carrying the upstream it belongs to: a chain card's
+ *  rows can't read that off their header the way provider rows can. */
+export interface ChainUpstreamRow {
+  upstream: UpstreamRow;
+  row: UpstreamChainRow;
+}
+
+export interface ChainGroup {
+  /** Lava spec index — `ETH1`, `COSMOSHUB`, … */
+  spec: string;
+  rows: ChainUpstreamRow[];
+  /** Distinct upstreams serving the chain. `rows` counts ENDPOINTS — one
+   *  upstream serving http + ws is two rows but one provider. */
+  providers: number;
+}
+
+/**
+ * Group upstream endpoints by the chain they serve, in the order the chains
+ * first appear in the upstream list — the order the values file declares
+ * them, which is the ordering rule the provider grouping already follows.
+ */
+export function groupByChain(upstreams: UpstreamRow[]): ChainGroup[] {
+  const bySpec = new Map<string, ChainUpstreamRow[]>();
+  const order: string[] = [];
+  for (const upstream of upstreams) {
+    for (const row of upstream.chainRows) {
+      let rows = bySpec.get(row.spec);
+      if (!rows) {
+        rows = [];
+        bySpec.set(row.spec, rows);
+        order.push(row.spec);
+      }
+      rows.push({ upstream, row });
+    }
+  }
+  return order.map((spec) => {
+    const rows = bySpec.get(spec) ?? [];
+    return { spec, rows, providers: new Set(rows.map((r) => r.upstream.id)).size };
+  });
+}
