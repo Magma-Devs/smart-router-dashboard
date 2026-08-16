@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ResolvedRequest } from "../build-request";
-import { snippetsFor, type SnippetBlock } from "../snippets";
+import { grpcDiscoveryCli, snippetsFor, type SnippetBlock } from "../snippets";
 
 /** Pull out the Script block (after Installation) for multi-block snippets,
  *  falling back to the only block for single-block snippets. */
@@ -241,5 +241,49 @@ describe("snippetsFor — gRPC", () => {
     const cli = snippetsFor(GRPC_WEB).cli[0]?.code ?? "";
     expect(cli).toContain("localhost:3363");
     expect(cli).not.toContain("https://");
+  });
+
+  it("gRPC: strips the scheme the endpoint rows carry", () => {
+    // What EndpointsView actually passes: an http:// listen port. grpcurl
+    // reads a scheme as part of the host ("too many colons"), and defaults to
+    // TLS against a port that has none.
+    const local = { ...GRPC, url: "http://localhost:3366" } as ResolvedRequest;
+    const cli = snippetsFor(local).cli[0]?.code ?? "";
+    expect(cli).toContain("localhost:3366");
+    expect(cli).not.toContain("http://");
+    expect(cli).toContain("-plaintext");
+    // A published gateway hostname is TLS — no flag.
+    const gw = { ...GRPC, url: "https://cosmoshub.grpc.example.com" } as ResolvedRequest;
+    expect(snippetsFor(gw).cli[0]?.code ?? "").not.toContain("-plaintext");
+  });
+
+  it("gRPC: a published gateway URL still dials a port", () => {
+    // A gateway hostname on the scheme's default port carries no `:port`, and
+    // grpcurl refuses a bare host ("missing port in address").
+    const gw = { ...GRPC, url: "https://sui-testnet-grpc.example.com" } as ResolvedRequest;
+    expect(snippetsFor(gw).cli[0]?.code ?? "").toContain(
+      "sui-testnet-grpc.example.com:443",
+    );
+    const plain = { ...GRPC, url: "http://sui-testnet-grpc.example.com" } as ResolvedRequest;
+    expect(snippetsFor(plain).cli[0]?.code ?? "").toContain(
+      "sui-testnet-grpc.example.com:80",
+    );
+    // An explicit port is left alone, and a path has no place in a dial address.
+    const explicit = { ...GRPC, url: "https://gw.example.com:8443/grpc" } as ResolvedRequest;
+    expect(snippetsFor(explicit).cli[0]?.code ?? "").toContain("gw.example.com:8443");
+    expect(snippetsFor(explicit).cli[0]?.code ?? "").not.toContain("/grpc");
+    // Discovery dials the same address.
+    expect(grpcDiscoveryCli("https://sui-testnet-grpc.example.com")).toContain(
+      "sui-testnet-grpc.example.com:443 list",
+    );
+  });
+
+  it("discovery snippet asks the endpoint what it serves", () => {
+    const cli = grpcDiscoveryCli("http://localhost:3366");
+    expect(cli).toContain("grpcurl -plaintext localhost:3366 list");
+    expect(cli).toContain("describe <service>");
+    expect(grpcDiscoveryCli("https://cosmoshub.grpc.example.com")).not.toContain(
+      "-plaintext",
+    );
   });
 });

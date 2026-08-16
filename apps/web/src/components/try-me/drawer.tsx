@@ -35,7 +35,12 @@ import {
   friendlyName,
 } from "./method-label";
 import { JsonDisplay } from "./json-display";
-import { snippetsFor, type SnippetBlock, type Snippets } from "./snippets";
+import {
+  grpcDiscoveryCli,
+  snippetsFor,
+  type SnippetBlock,
+  type Snippets,
+} from "./snippets";
 
 type CodeTab = "CLI" | "Python" | "Go" | "JavaScript";
 type Status = "idle" | "loading" | "ok" | "error";
@@ -792,6 +797,24 @@ export function TryMeDrawer({
             </div>
           )}
 
+          {flat.length === 0 ? (
+            /* A gRPC surface with no method catalog (see GRPC_NO_CATALOG).
+               There is no method list to offer, so offer the call that asks
+               the endpoint what it serves. */
+            <div>
+              <div style={SECTION_LABEL}>Discover services</div>
+              <div style={{ ...INFO_BANNER, marginBottom: 10 }}>
+                <IconInfo size={13} style={{ flexShrink: 0, marginTop: 1 }} />
+                <span>
+                  {chain.name}&apos;s spec declares no gRPC method list, so this
+                  console has none to show. Server reflection asks the endpoint
+                  itself what it serves.
+                </span>
+              </div>
+              <CodeBlock code={grpcDiscoveryCli(endpointUrl)} language="bash" />
+            </div>
+          ) : (
+          <>
           <div>
             <div style={SECTION_LABEL}>Command</div>
             <select
@@ -864,6 +887,8 @@ export function TryMeDrawer({
               </div>
             )}
           </div>
+          </>
+          )}
 
           {canFire ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -992,7 +1017,7 @@ export function TryMeDrawer({
                 })()}
               </div>
             </div>
-          ) : (
+          ) : flat.length === 0 ? null : (
             // gRPC needs HTTP/2 trailers (not exposed to fetch) and gRPC-Web
             // needs protobuf encoding. Show the snippets but disable Send.
             <div style={INFO_BANNER}>
