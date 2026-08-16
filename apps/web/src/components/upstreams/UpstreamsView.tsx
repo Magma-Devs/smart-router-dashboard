@@ -139,7 +139,7 @@ function EndpointRow({
           url={tryUrl}
           wsUrl={tryWsUrl}
           initialTransport={isWsRow ? "ws" : "http"}
-          hasArchive={upstream.chainRows.some((r) => r.spec === row.spec && r.addons.includes("archive"))}
+          addons={[...new Set(upstream.chainRows.filter((r) => r.spec === row.spec).flatMap((r) => r.addons))]}
           selectUpstream={upstream.name}
           visible
         />

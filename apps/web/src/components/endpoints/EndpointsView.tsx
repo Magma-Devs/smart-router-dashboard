@@ -232,7 +232,7 @@ export function EndpointsView() {
                             // config declares a websocket upstream for it —
                             // the drawer offers both transports.
                             wsUrl={epHasWs(ep) ? epWsUrl(ep) : null}
-                            hasArchive={epHasArchive(ep)}
+                            addons={epAddons(ep)}
                             health={healthBySpec.get(ep.spec)}
                             visible={hovered}
                           />
