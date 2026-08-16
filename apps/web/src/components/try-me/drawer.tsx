@@ -27,6 +27,7 @@ import {
   type Tier,
 } from "./chain-methods";
 import { CodeBlock } from "./code-block";
+import { COMMON_METHODS, friendlyName } from "./method-label";
 import { JsonDisplay } from "./json-display";
 import { snippetsFor, type SnippetBlock, type Snippets } from "./snippets";
 
@@ -44,97 +45,6 @@ export const IFACE_LABEL: Record<CatalogInterface, string> = {
   "tendermintrpc-ws": "Tendermint RPC over WS",
   grpc: "gRPC",
   "grpc-web": "gRPC-Web",
-};
-
-/** Curated common methods per interface, method → friendly label. The generated
- *  catalog lists 50+ methods with no friendly names, so the Command dropdown
- *  defaults to this short curated set (labels like lava-connect: "Block Number ·
- *  eth_blockNumber") with a "show all" escape hatch. Order here is the display
- *  order; anything not listed is hidden until the user expands.
- *
- *  Keys are matched against a command's method id, so ALL FOUR tiers read from
- *  this one map: the debug/trace entries only ever match commands in the
- *  debug/trace tiers (their method ids are namespaced), which is what gives
- *  those tiers the same "Friendly Name · method_id" dropdown and the same
- *  curated-subset + "show all" behaviour the regular tier has. */
-const COMMON_METHODS: Partial<Record<CatalogInterface, Record<string, string>>> = {
-  jsonrpc: {
-    // EVM
-    eth_blockNumber: "Block Number",
-    eth_chainId: "Chain ID",
-    eth_gasPrice: "Gas Price",
-    eth_getBalance: "Get Balance",
-    eth_getBlockByNumber: "Get Block",
-    eth_getTransactionByHash: "Get Transaction",
-    eth_getTransactionReceipt: "Get Receipt",
-    eth_call: "Call",
-    net_version: "Network Version",
-    eth_syncing: "Syncing Status",
-    // Solana
-    getLatestBlockhash: "Latest Blockhash",
-    getSlot: "Slot",
-    getBlockHeight: "Block Height",
-    getEpochInfo: "Epoch Info",
-    getHealth: "Health",
-    getVersion: "Version",
-    // Bitcoin
-    getblockcount: "Block Count",
-    getblockchaininfo: "Blockchain Info",
-    getbestblockhash: "Best Block Hash",
-    // EVM debug add-on (the `debug` tier) — same treatment as the regular
-    // tier: the add-on tiers were the only ones landing in the dropdown as
-    // bare method ids.
-    debug_traceTransaction: "Trace Transaction",
-    debug_traceBlockByNumber: "Trace Block by Number",
-    debug_traceBlockByHash: "Trace Block by Hash",
-    debug_traceBlock: "Trace Block (RLP)",
-    debug_traceCall: "Trace Call",
-    debug_getRawTransaction: "Raw Transaction",
-    debug_getRawReceipts: "Raw Receipts",
-    debug_getRawBlock: "Raw Block",
-    debug_getRawHeader: "Raw Header",
-    debug_storageRangeAt: "Storage Range",
-    debug_getBadBlocks: "Bad Blocks",
-    // EVM trace add-on (OpenEthereum-style) + Arbitrum's arbtrace_* twin
-    trace_block: "Block Traces",
-    trace_transaction: "Transaction Traces",
-    trace_call: "Trace Call",
-    trace_callMany: "Trace Calls (batch)",
-    trace_filter: "Filter Traces",
-    trace_get: "Get Trace",
-    trace_rawTransaction: "Trace Raw Transaction",
-    trace_replayTransaction: "Replay Transaction",
-    trace_replayBlockTransactions: "Replay Block",
-    arbtrace_block: "Block Traces",
-    arbtrace_transaction: "Transaction Traces",
-    arbtrace_call: "Trace Call",
-    arbtrace_callMany: "Trace Calls (batch)",
-    arbtrace_filter: "Filter Traces",
-    arbtrace_replayTransaction: "Replay Transaction",
-    arbtrace_replayBlockTransactions: "Replay Block",
-    // Starknet's trace tier
-    starknet_traceTransaction: "Trace Transaction",
-    starknet_traceBlockTransactions: "Trace Block",
-    starknet_simulateTransactions: "Simulate Transactions",
-  },
-  rest: {
-    "/cosmos/base/tendermint/v1beta1/blocks/latest": "Latest Block",
-    "/cosmos/base/tendermint/v1beta1/node_info": "Node Info",
-    "/cosmos/base/tendermint/v1beta1/syncing": "Syncing",
-    "/blocks/by_height/{height}": "Block by Height",
-    "/": "Ledger Info",
-  },
-  tendermintrpc: {
-    status: "Status",
-    health: "Health",
-    block: "Block",
-    abci_info: "ABCI Info",
-    net_info: "Net Info",
-  },
-  grpc: {
-    "cosmos.base.tendermint.v1beta1.Service/GetLatestBlock": "Latest Block",
-    "cosmos.base.tendermint.v1beta1.Service/GetNodeInfo": "Node Info",
-  },
 };
 
 interface TryMeDrawerProps {
@@ -876,7 +786,10 @@ export function TryMeDrawer({
                       ? curated
                       : [...withIdx.filter(({ i }) => keyOf(selectedTier, i) === selKey), ...curated]);
                 return shown.map(({ cmd, i }) => {
-                  const friendly = labels?.[cmd.method] ?? (cmd.label !== cmd.method ? cmd.label : null);
+                  // Curated name → the catalog's own label → one derived from
+                  // the method id, so the "Show all" long tail reads like the
+                  // curated head instead of dropping to bare ids.
+                  const friendly = friendlyName(iface, cmd);
                   return (
                     <option key={i} value={keyOf(selectedTier, i)}>
                       {friendly ? `${friendly} · ${cmd.method}` : cmd.method}
