@@ -107,6 +107,8 @@ Generating rather than disabling setup is deliberate: an operator who
 forgot to configure a token should still be able to finish the install,
 from a value only log or filesystem access reveals.
 
+<img src="./assets/first-run-setup.png" alt="The first-run page: a single card headed &quot;Set up this dashboard — create the first administrator&quot;, explaining that nothing else opens until this is done and that the setup token is printed by the installer. Fields for the setup token, an optional name, email, password and repeat password, with a note that any characters are accepted from 8 to 64, that the password is checked against known breached passwords, and that there are no other rules and it never expires." width="450">
+
 `POST /auth/setup` re-checks the zero-user condition **inside the
 transaction**, behind an advisory lock — the check outside it is only
 advice, and two people opening the page at the same moment would otherwise
