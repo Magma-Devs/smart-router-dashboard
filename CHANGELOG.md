@@ -5,6 +5,32 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.10.0]
+
+Upstreams roster, grouped the way it gets read.
+
+### Added
+
+- **Group by chain (default) or by provider**, as a toggle beside the search
+  and network filters. The roster only ever grouped one way — a card per
+  config node, with the chains it serves compressed into its header as
+  "Ethereum +4" — which answers "what does this upstream do" and hides "who
+  serves this chain, and which of them is the backup". Both groupings read
+  off the same rows, so they cannot disagree: a chain card names the chain,
+  counts distinct upstreams (one serving http + ws is two rows but one
+  upstream), and its rows carry the upstream identity that a provider card
+  puts in its header. Chain grouping filters per row, so the search box
+  matches either the chain or an upstream serving it.
+
+### Removed
+
+- **The latency / uptime / req-today strip on the upstream card header.**
+  Latency was the worst p95 across every chain the upstream serves and
+  uptime the most conservative minimum — aggregates that can't overstate,
+  and therefore describe no single chain; req-today summed the same way over
+  a fixed 1d window the card never named. The per-chain figures stay on the
+  Metrics page, where they carry a window and a chain.
+
 ## [0.9.1]
 
 ### Fixed
