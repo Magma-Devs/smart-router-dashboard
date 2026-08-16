@@ -18,6 +18,7 @@ import {
   type ResolvedRequest,
 } from "./build-request";
 import {
+  headCommands,
   httpVariantOf,
   ifaceCanFire,
   storageKey,
@@ -592,17 +593,34 @@ export function TryMeDrawer({
   };
 
   /** Commands in the selected tier, with their catalog index kept so
-   *  keyOf(tier, i) stays valid however the list is filtered. */
+   *  keyOf(tier, i) stays valid however the list is filtered. Read off
+   *  `flat`, not `cfg`, so the dropdown can never offer a command the
+   *  transport filter has removed — a subscription listed over plain HTTP
+   *  selected to nothing, because `selected` looks it up in `flat`. */
   const tierCmds = useMemo(
-    () => (cfg[selectedTier] ?? []).map((cmd, i) => ({ cmd, i })),
-    [cfg, selectedTier],
+    () =>
+      flat
+        .filter((m) => m.tier === selectedTier)
+        .map((m) => ({ cmd: m.command, i: m.index })),
+    [flat, selectedTier],
   );
-  /** The curated subset, in COMMON_METHODS order — that map is the display
-   *  order, not the catalog's. */
+  /** What the dropdown opens on: commands that run AS-IS on this chain.
+   *  Curated names lead (COMMON_METHODS key order is the display order), the
+   *  rest of the runnable set follows in catalog order. Anything needing
+   *  params is behind "Show all", labelled. */
   const curatedCmds = useMemo(() => {
     const order = Object.keys(COMMON_METHODS[storageKey(iface)] ?? {});
-    return order
-      .map((key) => tierCmds.find(({ cmd }) => commandKey(iface, cmd) === key))
+    const rank = new Map(order.map((key, i) => [key, i]));
+    const head = headCommands(
+      tierCmds.map(({ cmd }) => cmd),
+      (cmd) => rank.has(commandKey(iface, cmd)),
+    ).sort((a, b) => {
+      const ra = rank.get(commandKey(iface, a)) ?? Number.MAX_SAFE_INTEGER;
+      const rb = rank.get(commandKey(iface, b)) ?? Number.MAX_SAFE_INTEGER;
+      return ra - rb;
+    });
+    return head
+      .map((cmd) => tierCmds.find((row) => row.cmd === cmd))
       .filter((row): row is (typeof tierCmds)[number] => !!row);
   }, [tierCmds, iface]);
   const curatedCount = curatedCmds.length;
@@ -1002,9 +1020,12 @@ export function TryMeDrawer({
                 // reads like the curated head instead of dropping to bare ids.
                 const friendly = friendlyName(iface, cmd);
                 const id = commandKey(iface, cmd);
+                // The head runs as-is; the long tail behind it doesn't, so
+                // say which entries want something typed in first.
+                const suffix = cmd.needsInput ? " — needs params" : "";
                 return (
                   <option key={i} value={keyOf(selectedTier, i)}>
-                    {friendly ? `${friendly} · ${id}` : id}
+                    {friendly ? `${friendly} · ${id}${suffix}` : `${id}${suffix}`}
                   </option>
                 );
               })}
@@ -1014,15 +1035,26 @@ export function TryMeDrawer({
                 onClick={() => setShowAllCmds((s) => !s)}
                 style={{ marginTop: 6, border: "none", background: "none", color: "var(--brand)", cursor: "pointer", padding: 0, fontSize: 11, fontWeight: 600, fontFamily: "inherit" }}
               >
-                {showAllCmds ? "Show common methods only" : `Show all ${tierCmds.length} methods`}
+                {showAllCmds ? "Show runnable methods only" : `Show all ${tierCmds.length} methods`}
               </button>
             )}
             {selected && (
-              <div
-                className="gw-mono"
-                style={{ fontSize: 11, color: "var(--text-3)", marginTop: 6 }}
-              >
-                {commandSignature(iface, selected.command)}
+              <div className="gw-row" style={{ gap: 7, marginTop: 6, alignItems: "center" }}>
+                <span className="gw-mono" style={{ fontSize: 11, color: "var(--text-3)" }}>
+                  {commandSignature(iface, selected.command)}
+                </span>
+                {/* The head is sendable as-is; everything else is either
+                    known to need input or unproven, and says so rather than
+                    letting Send fail with an unexplained RPC error. */}
+                {selected.command.needsInput && (
+                  <span
+                    className="gw-tag"
+                    title="This method takes arguments the catalog can't supply — fill the params in below before sending."
+                    style={{ fontSize: 10, color: "var(--warn)", background: "rgba(251,191,36,0.10)", borderColor: "rgba(251,191,36,0.25)" }}
+                  >
+                    needs params
+                  </span>
+                )}
               </div>
             )}
             {selected?.command.desc && (
