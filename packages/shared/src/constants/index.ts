@@ -3,3 +3,4 @@ export * from "./windows.js";
 export * from "./chains.js";
 export * from "./explorers.js";
 export * from "./roles.js";
+export * from "./audit-events.js";

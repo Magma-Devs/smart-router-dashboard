@@ -17,6 +17,13 @@
       "breakpoints": true
     },
     {
+      "idx": 2,
+      "version": "7",
+      "when": 1786953600000,
+      "tag": "0002_audit",
+      "breakpoints": true
+    },
+    {
       "idx": 3,
       "version": "7",
       "when": 1786953600000,
