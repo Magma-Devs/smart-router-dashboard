@@ -49,12 +49,20 @@ export async function checkLock(db: Database, email: string): Promise<LockState>
  */
 export async function recordFailure(db: Database, email: string): Promise<LockState> {
   const key = email.toLowerCase();
-  const now = new Date();
-  const windowFloor = new Date(now.getTime() - LOCKOUT_WINDOW_MS);
+
+  // The window boundary is computed **in SQL**, from the database's clock.
+  //
+  // Two reasons, one of which cost an afternoon. It is more correct — the app
+  // and the database can disagree about the time, and this is a security
+  // window. And a bare JS `Date` interpolated into a `sql` template is not
+  // portable: pglite accepts it, postgres-js throws
+  // `ERR_INVALID_ARG_TYPE: Received an instance of Date`. Tests that only ever
+  // run on pglite will not catch that.
+  const windowFloor = sql`now() - make_interval(secs => ${LOCKOUT_WINDOW_MS / 1000})`;
 
   const rows = await db
     .insert(loginAttempts)
-    .values({ email: key, failedCount: 1, windowStart: now })
+    .values({ email: key, failedCount: 1 })
     .onConflictDoUpdate({
       target: loginAttempts.email,
       set: {
@@ -63,7 +71,7 @@ export async function recordFailure(db: Database, email: string): Promise<LockSt
         failedCount: sql`case when ${loginAttempts.windowStart} < ${windowFloor}
                               then 1 else ${loginAttempts.failedCount} + 1 end`,
         windowStart: sql`case when ${loginAttempts.windowStart} < ${windowFloor}
-                              then ${now} else ${loginAttempts.windowStart} end`,
+                              then now() else ${loginAttempts.windowStart} end`,
       },
     })
     .returning();
