@@ -134,13 +134,13 @@
     "mainnet": true
   },
   "ARBITRUMN": {
-    "name": "Arbitrum Nova Testnet",
+    "name": "Arbitrum Nova",
     "family": "evm-arbitrum",
     "icon": "arbitrum-nova",
     "interfaces": [
       "jsonrpc"
     ],
-    "mainnet": false
+    "mainnet": true
   },
   "ARBITRUMS": {
     "name": "Arbitrum Sepolia Testnet",
