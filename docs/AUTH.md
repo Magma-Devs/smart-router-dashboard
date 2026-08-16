@@ -1,5 +1,9 @@
 # Authentication
 
+> This describes what ships today. The named-user account system that replaces
+> it — roles, sessions, invitations, credential lifecycle — is designed in
+> [`ACCOUNTS-DESIGN.md`](ACCOUNTS-DESIGN.md) (MAG-2729) and not yet built.
+
 The dashboard has two auth modes, selected by the `AUTH_MODE` env var
 (same value on the api **and** the web):
 
