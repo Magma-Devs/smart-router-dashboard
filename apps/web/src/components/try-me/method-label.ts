@@ -142,9 +142,20 @@ export const COMMON_METHODS: Partial<
     abci_info: "ABCI Info",
     net_info: "Net Info",
   },
+  // gRPC keys are `pkg.Service/Method`. A Cosmos SDK chain serves 215 of them;
+  // these are the ones worth opening on.
   grpc: {
     "cosmos.base.tendermint.v1beta1.Service/GetLatestBlock": "Latest Block",
     "cosmos.base.tendermint.v1beta1.Service/GetNodeInfo": "Node Info",
+    "cosmos.base.tendermint.v1beta1.Service/GetSyncing": "Syncing",
+    "cosmos.base.tendermint.v1beta1.Service/GetBlockByHeight": "Block by Height",
+    "cosmos.bank.v1beta1.Query/TotalSupply": "Total Supply",
+    "cosmos.staking.v1beta1.Query/Validators": "Validators",
+    "cosmos.auth.v1beta1.Query/Accounts": "Accounts",
+    "cosmos.gov.v1.Query/Proposals": "Proposals",
+    // Concordium runs its own service, not the Cosmos one.
+    "concordium.v2.Queries/GetConsensusInfo": "Consensus Info",
+    "concordium.v2.Queries/GetBlockInfo": "Block Info",
   },
 };
 

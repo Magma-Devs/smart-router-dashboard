@@ -342,23 +342,57 @@ function wsJs(req: ResolvedWs): SnippetBlock[] {
 
 // ──────────────── gRPC / gRPC-Web ────────────────
 
+/** grpcurl, grpcio and grpc-go all dial `host:port`, NOT a URL — a scheme in
+ *  there is a "dial tcp: address http://…: too many colons" error. Endpoint
+ *  rows carry an http(s):// address for every interface, so the stripping
+ *  happens here rather than at the caller. (The gRPC-Web JS client is the one
+ *  consumer that wants the URL intact — it reads `req.url` directly.) */
 function grpcDialAddress(req: ResolvedGrpc): string {
-  if (req.transport === "grpc") return req.url;
-  return req.url.replace(/^https?:\/\//, "");
+  return stripScheme(req.url);
+}
+
+function stripScheme(url: string): string {
+  return url.replace(/^[a-z]+:\/\//i, "");
+}
+
+/** A `http://` endpoint is not TLS, and grpcurl/grpc-go default to TLS. */
+function isPlaintext(url: string): boolean {
+  return url.startsWith("http://") || url.startsWith("ws://");
 }
 
 function grpcCli(req: ResolvedGrpc): SnippetBlock[] {
+  const flags = isPlaintext(req.url) ? "-plaintext " : "";
   return [
     {
       language: "bash",
       code: [
         `grpcurl \\`,
-        `  -d '${jsonInline(req.body)}' \\`,
+        `  ${flags}-d '${jsonInline(req.body)}' \\`,
         `  ${grpcDialAddress(req)} \\`,
         `  ${req.fqMethod}`,
       ].join("\n"),
     },
   ];
+}
+
+/**
+ * Server-reflection discovery for a gRPC endpoint with no method catalog —
+ * the spec behind it declares no gRPC collection, so the only honest thing to
+ * offer is the call that asks the endpoint itself what it serves.
+ */
+export function grpcDiscoveryCli(url: string): string {
+  const addr = stripScheme(url);
+  const flags = isPlaintext(url) ? "-plaintext " : "";
+  return [
+    `# What does this endpoint serve?`,
+    `grpcurl ${flags}${addr} list`,
+    ``,
+    `# What is in a service?`,
+    `grpcurl ${flags}${addr} describe <service>`,
+    ``,
+    `# Call one of its methods`,
+    `grpcurl ${flags}-d '{}' ${addr} <service>/<Method>`,
+  ].join("\n");
 }
 
 function grpcPython(req: ResolvedGrpc): SnippetBlock[] {
@@ -391,9 +425,14 @@ function grpcPython(req: ResolvedGrpc): SnippetBlock[] {
         `from ${stubMod}_pb2 import ${req.methodName}Request`,
         `from ${stubMod}_pb2_grpc import ${stubName}Stub`,
         ``,
-        `channel = grpc.secure_channel(`,
-        `    "${grpcDialAddress(req)}", grpc.ssl_channel_credentials()`,
-        `)`,
+        // A local router listen port is not TLS; a gateway hostname is.
+        ...(isPlaintext(req.url)
+          ? [`channel = grpc.insecure_channel("${grpcDialAddress(req)}")`]
+          : [
+              `channel = grpc.secure_channel(`,
+              `    "${grpcDialAddress(req)}", grpc.ssl_channel_credentials()`,
+              `)`,
+            ]),
         `stub = ${stubName}Stub(channel)`,
         `request = ${req.methodName}Request(**${jsonPretty(req.body)})`,
         `response = stub.${req.methodName}(request)`,
@@ -438,12 +477,17 @@ function grpcGo(req: ResolvedGrpc): SnippetBlock[] {
         `${INDENT}"context"`,
         `${INDENT}"fmt"`,
         `${INDENT}"google.golang.org/grpc"`,
-        `${INDENT}"google.golang.org/grpc/credentials"`,
+        // Same plaintext-vs-TLS split as the Python snippet.
+        isPlaintext(req.url)
+          ? `${INDENT}"google.golang.org/grpc/credentials/insecure"`
+          : `${INDENT}"google.golang.org/grpc/credentials"`,
         `${INDENT}pb "./gen/${stubMod}"`,
         `)`,
         ``,
         `func main() {`,
-        `${INDENT}creds := credentials.NewClientTLSFromCert(nil, "")`,
+        isPlaintext(req.url)
+          ? `${INDENT}creds := insecure.NewCredentials()`
+          : `${INDENT}creds := credentials.NewClientTLSFromCert(nil, "")`,
         `${INDENT}conn, err := grpc.NewClient(`,
         `${INDENT}${INDENT}"${grpcDialAddress(req)}",`,
         `${INDENT}${INDENT}grpc.WithTransportCredentials(creds),`,

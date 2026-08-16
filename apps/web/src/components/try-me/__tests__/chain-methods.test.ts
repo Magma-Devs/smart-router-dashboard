@@ -15,6 +15,28 @@ import {
 // place before any getInterfaceConfig assertion runs.
 beforeAll(() => catalogReady);
 
+describe("gRPC surfaces with no method catalog", () => {
+  it("returns an EMPTY config, never null — the console still opens", () => {
+    // APT1 is a known spec whose proposal declares rest only. A deployment can
+    // still publish a GRPCRoute for it.
+    const cfg = getInterfaceConfig("APT1", "grpc", false);
+    expect(cfg).not.toBeNull();
+    expect(cfg?.regular).toEqual([]);
+    expect(listMethods(cfg!)).toEqual([]);
+  });
+
+  it("does not borrow another chain's gRPC methods", () => {
+    const cosmos = getInterfaceConfig("COSMOSHUB", "grpc", false);
+    expect((cosmos?.regular.length ?? 0) > 0).toBe(true);
+    expect(getInterfaceConfig("APT1", "grpc", false)?.regular).toEqual([]);
+  });
+
+  it("still hides the console for a non-gRPC interface with no catalog", () => {
+    // Bitcoin has no REST surface anywhere — nothing honest to render.
+    expect(getInterfaceConfig("BTC", "rest", false)).toBeNull();
+  });
+});
+
 describe("FAMILY_METHODS catalog", () => {
   it("each family has a non-empty regular list for at least one interface", () => {
     for (const [family, interfaces] of Object.entries(FAMILY_METHODS)) {
