@@ -150,6 +150,22 @@ no redeploy.
 Chains are keyed by **Lava spec index** (the `spec` label: `ETH1`, `BASE`, …),
 not a human chain id — resolve display metadata via `buildChainMetaByIndex`.
 
+### Resyncing chains with lava-specs
+
+Three committed files are generated from the lava-specs repo — the chain map,
+the Try-it method catalog, and the roll-call of surfaces with no runnable
+default (`apps/web/scripts/data/no-runnable-defaults.generated.json`). CI's
+**Chain catalogs ↔ lava-specs drift** job regenerates all three and fails when
+any is stale, so a resync means running both generators and committing the
+result, never hand-editing.
+
+The part that needs judgement is what happens after: the Try-it drawer opens
+only on commands that can be sent AS-IS, so a chain family nobody has curated
+hints for arrives with an empty default list. **Read
+[`.claude/rules/chain-resync.md`](.claude/rules/chain-resync.md) before doing a
+resync** — it covers the procedure, when hints are needed, and the rule that a
+curated example must be fired against a real endpoint before it ships.
+
 ## Config passing (values file — BOTH formats)
 
 The router's own config yaml is bind-mounted into the api at

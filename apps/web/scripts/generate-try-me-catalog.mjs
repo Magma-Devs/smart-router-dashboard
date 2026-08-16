@@ -67,10 +67,19 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SPECS_DIR =
   process.env.LAVA_SPECS_DIR ??
   path.resolve(__dirname, "../../../../lava-specs");
-const OUT_PATH = path.resolve(
-  __dirname,
-  "../src/components/try-me/chain-methods.generated.json",
-);
+const OUT_PATH =
+  process.env.TRY_ME_OUT ??
+  path.resolve(__dirname, "../src/components/try-me/chain-methods.generated.json");
+/**
+ * Committed roll-call of (spec × interface) pairs whose regular tier has NO
+ * command that can be sent as-is. It exists to be diffed: a chain family
+ * nobody has curated hints for lands as a line in this file, which the drift
+ * check turns into a failure instead of a silent gap in the drawer. See
+ * `.claude/rules/chain-resync.md`.
+ */
+const NO_RUNNABLE_PATH =
+  process.env.NO_RUNNABLE_OUT ??
+  path.resolve(__dirname, "data/no-runnable-defaults.generated.json");
 // NOTE: chain display NAMES / families / icons are produced by the separate
 // generate-chain-map.mjs (→ packages/shared/.../chain-map.generated.json).
 // This script owns only the per-spec METHOD catalog.
@@ -344,6 +353,15 @@ const GRPC_HINTS = [
   { m: "cosmos.base.tendermint.v1beta1.Service/GetBlockByHeight", d: "Returns the block at the given height — pass a recent height, e.g. {\"height\":\"<recent>\"}." },
   { m: "cosmos.bank.v1beta1.Query/TotalSupply", p: "{}", d: "Returns total coin supply." },
   { m: "cosmos.staking.v1beta1.Query/Validators", p: "{}", d: "Returns all validators." },
+  // Sui's gRPC v2 API. Each verified with `grpcurl -d '{}'` against
+  // fullnode.mainnet.sui.io:443 — an empty request means "latest" here.
+  // StateService/ListBalances is deliberately absent: it answers
+  // "InvalidArgument: missing owner".
+  { m: "sui.rpc.v2.LedgerService/GetServiceInfo", p: "{}", d: "Returns chain id, epoch and checkpoint height.", only: ["SUI"] },
+  { m: "sui.rpc.v2.LedgerService/GetEpoch", p: "{}", d: "Returns the current epoch — first checkpoint, reference gas price.", only: ["SUI"] },
+  { m: "sui.rpc.v2.LedgerService/GetCheckpoint", p: "{}", d: "Returns the latest checkpoint when no sequence number is given.", only: ["SUI"] },
+  { m: "sui.rpc.v2.LedgerService/ListCheckpoints", p: "{}", d: "Lists checkpoints from the oldest available watermark.", only: ["SUI"] },
+  { m: "sui.rpc.v2.LedgerService/ListEvents", p: "{}", d: "Lists recent events.", only: ["SUI"] },
 ];
 
 const HINTS = {
@@ -758,6 +776,26 @@ for (const index of [...specsByIndex.keys()].sort()) {
 const json = JSON.stringify(out);
 writeFileSync(OUT_PATH, `${json}\n`);
 
+/* ── Runnable-defaults roll-call ─────────────────────────────────────────── */
+
+/* Which (spec × interface) pairs ended up with nothing the drawer can offer
+   as a working default. Aliases resolve to their canonical entry, so a chain
+   that aliases a covered one is covered too. */
+const noRunnable = [];
+let readyTotal = 0;
+for (const index of Object.keys(out).sort()) {
+  let entry = out[index];
+  for (let hops = 0; typeof entry === "string" && hops < 4; hops++) entry = out[entry];
+  if (typeof entry !== "object") continue;
+  for (const iface of Object.keys(entry).sort()) {
+    const regular = entry[iface].regular ?? [];
+    const ready = regular.filter((c) => c.r).length;
+    readyTotal += ready;
+    if (ready === 0) noRunnable.push(`${index}/${iface}`);
+  }
+}
+writeFileSync(NO_RUNNABLE_PATH, `${JSON.stringify(noRunnable, null, 2)}\n`);
+
 /* ── Summary ─────────────────────────────────────────────────────────────── */
 
 const kb = (n) => `${(n / 1024).toFixed(1)} KB`;
@@ -766,7 +804,10 @@ console.log(`specs indexed    ${specsByIndex.size}`);
 console.log(`specs emitted    ${Object.keys(out).length} (${aliased} aliased to an identical entry)`);
 console.log(`iface entries    ${ifaceEntries} (canonical, aliases excluded)`);
 console.log(`methods by tier  regular=${tierTotals.regular} archive=${tierTotals.archive} debug=${tierTotals.debug} trace=${tierTotals.trace}`);
+console.log(`runnable         ${readyTotal} commands can be sent as-is`);
 console.log(`output           ${OUT_PATH} (${kb(Buffer.byteLength(json))})`);
+console.log(`no runnable      ${noRunnable.length} (spec × iface) pairs → ${NO_RUNNABLE_PATH}`);
+for (const pair of noRunnable) console.log(`  - ${pair}: no command runs without caller input`);
 if (skipped.length > 0) {
   console.log(`skipped          ${skipped.length}`);
   for (const s of skipped) console.log(`  - ${s.index ?? s.file}: ${s.reason}`);
