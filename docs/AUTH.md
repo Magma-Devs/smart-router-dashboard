@@ -215,6 +215,8 @@ session alive would defeat the entire exercise.
 It does **not** sign anyone in. A reset link that logs you in is a reset link
 worth stealing.
 
+<img src="./assets/password-reset.png" alt="The password reset page: a card headed &quot;Choose a new password&quot;, with new-password and repeat-password fields and a note that setting it signs out every device on the account, that any characters are accepted from 8 to 64, and that the password is checked against known breached passwords." width="420">
+
 `/auth/password/forgot` always answers `202`, whether or not the address exists
 and whether or not the account has a password at all — anything else turns it
 into a way to ask "is this person a member?". On-prem it answers `404` with a
@@ -412,3 +414,16 @@ This matters because the behaviour the schema leans on hardest is exactly
 what a hand-rolled fake cannot reproduce — the partial unique index on
 `lower(email)`, conditional single-use updates whose correctness depends
 on a real rowcount, and cascade-on-delete.
+
+> **Where pglite is not enough.** It is a real Postgres, but it is reached
+> through a different driver, and the drivers do not agree about parameter
+> serialisation. A bare JS `Date` interpolated into a `sql` template works
+> under pglite and throws under postgres-js
+> (`ERR_INVALID_ARG_TYPE: Received an instance of Date`) — so a green test
+> suite is not proof the production driver is happy.
+>
+> This bit once, in the lockout counter, and was caught only by running the
+> real stack. Prefer computing values **in SQL** (`now()`,
+> `make_interval(...)`) over interpolating JS values into raw templates: it
+> sidesteps the divergence, and for anything time-based it is more correct
+> anyway, since the app and the database can disagree about the clock.
