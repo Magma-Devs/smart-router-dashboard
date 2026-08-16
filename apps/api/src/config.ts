@@ -173,6 +173,12 @@ export const config = {
    */
   deploymentMode: (env("DEPLOYMENT_MODE") ?? "onprem") as "managed" | "onprem",
 
+  /** Browser-facing origin of the web app, used to build invitation and
+   *  password-reset links. There is no sane default: guessing a host would
+   *  produce a link that looks right and goes nowhere, so the routes that need
+   *  it fail loudly instead. */
+  publicWebOrigin: env("PUBLIC_WEB_ORIGIN"),
+
   logLevel: (env("LOG_LEVEL") ?? "info").toLowerCase(),
 
   build: {
