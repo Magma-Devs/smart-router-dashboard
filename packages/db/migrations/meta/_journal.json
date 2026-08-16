@@ -22,6 +22,13 @@
       "when": 1786953600000,
       "tag": "0003_invitations",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1787040000000,
+      "tag": "0004_password_lifecycle",
+      "breakpoints": true
     }
   ]
 }

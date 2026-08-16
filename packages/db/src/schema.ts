@@ -212,3 +212,55 @@ export const invitations = pgTable(
 
 export type Invitation = typeof invitations.$inferSelect;
 export type NewInvitation = typeof invitations.$inferInsert;
+
+/**
+ * password_resets — a single-use link that lets someone set their own password.
+ *
+ * `created_by` is the column an auditor looks for: null means the holder asked
+ * for it themselves (managed, "forgot password"), set means an admin generated
+ * it (on-prem, where there is no mail server). An admin generating a *link* is
+ * the whole design — **nobody ever sets somebody else's password**, so an admin
+ * cannot take an account over silently.
+ */
+export const passwordResets = pgTable(
+  "password_resets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** SHA-256 of the raw token; the raw value exists only in the link. */
+    tokenHash: text("token_hash").notNull(),
+    createdBy: uuid("created_by"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    /** Managed 1 hour · on-prem 24 hours. */
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("password_resets_token_hash_idx").on(table.tokenHash),
+    index("password_resets_user_idx").on(table.userId),
+  ],
+);
+
+export type PasswordReset = typeof passwordResets.$inferSelect;
+
+/**
+ * login_attempts — per-account sign-in lockout.
+ *
+ * The per-IP limit is not the control that matters: a distributed attacker
+ * rotating addresses walks straight past it. This counts failures against the
+ * *identity* being targeted, so the wall is in front of the account rather than
+ * in front of one network path.
+ *
+ * Keyed on the submitted address whether or not it exists, so being locked out
+ * reveals nothing about whether an account is there.
+ */
+export const loginAttempts = pgTable("login_attempts", {
+  email: varchar("email", { length: 255 }).primaryKey(),
+  failedCount: integer("failed_count").notNull().default(0),
+  windowStart: timestamp("window_start", { withTimezone: true }).notNull().defaultNow(),
+  lockedUntil: timestamp("locked_until", { withTimezone: true }),
+});
+
+export type LoginAttempt = typeof loginAttempts.$inferSelect;
