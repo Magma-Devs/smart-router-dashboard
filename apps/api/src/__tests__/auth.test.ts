@@ -5,10 +5,14 @@ import { buildApp } from "../app.js";
 import { SESSION_JWT_AUDIENCE, SESSION_JWT_ISSUER } from "../plugins/auth.js";
 
 /**
- * AUTH_MODE behaviour. The db plugin connects lazily in the background, so
- * `enabled` apps boot fine against an unreachable DATABASE_URL — exactly
- * the property these tests rely on: the JWT gate works without a database;
- * only /auth/* flows need one (and 503 until it's up).
+ * AUTH_MODE wiring, and what happens with **no reachable database**.
+ *
+ * The db plugin connects lazily in the background, so `enabled` apps boot fine
+ * against an unroutable DATABASE_URL — which is what lets these tests pin the
+ * signature/issuer/audience checks and the fail-closed behaviour in isolation.
+ *
+ * Everything that needs real rows — sessions, revocation, roles — lives in
+ * `auth-gate.test.ts` and `sessions.test.ts`, against pglite.
  */
 
 const SECRET = "test-secret-for-auth-tests-32-chars!";
@@ -35,8 +39,16 @@ afterEach(async () => {
   }
 });
 
-async function mintToken(overrides: { iss?: string; aud?: string; secret?: string } = {}): Promise<string> {
-  return new SignJWT({ sub: "00000000-0000-4000-8000-000000000001", email: "t@example.com", role: "member" })
+async function mintToken(
+  overrides: { iss?: string; aud?: string; secret?: string; sid?: string | null } = {},
+): Promise<string> {
+  const sid = overrides.sid === null ? {} : { sid: overrides.sid ?? "00000000-0000-4000-8000-0000000000ff" };
+  return new SignJWT({
+    sub: "00000000-0000-4000-8000-000000000001",
+    email: "t@example.com",
+    role: "read_only",
+    ...sid,
+  })
     .setProtectedHeader({ alg: "HS256", typ: "JWT" })
     .setIssuer(overrides.iss ?? SESSION_JWT_ISSUER)
     .setAudience(overrides.aud ?? SESSION_JWT_AUDIENCE)
@@ -89,9 +101,13 @@ describe("AUTH_MODE=enabled", () => {
       app = await enabledApp();
       const res = await app.inject({ method: "GET", url: "/api/metrics/specs" });
       expect(res.statusCode).toBe(401);
+      expect(res.json().code).toBe("AUTH_REQUIRED");
     });
 
-    it("admits /api/* with a valid Bearer", async () => {
+    it("503s /api/* for a well-formed token while the database is unreachable", async () => {
+      // Fail CLOSED. A signature check alone cannot tell whether the session
+      // was revoked or the account removed, so briefly refusing service beats
+      // an auth check that quietly stops checking.
       app = await enabledApp();
       const token = await mintToken();
       const res = await app.inject({
@@ -99,7 +115,22 @@ describe("AUTH_MODE=enabled", () => {
         url: "/api/metrics/specs",
         headers: { authorization: `Bearer ${token}` },
       });
-      expect(res.statusCode).not.toBe(401);
+      expect(res.statusCode).toBe(503);
+      expect(res.json().code).toBe("AUTH_UNAVAILABLE");
+    });
+
+    it("rejects a token carrying no session id", async () => {
+      // Such a token addresses no session row, so nothing about it can be
+      // checked or revoked — it must not be a way to bypass the store.
+      app = await enabledApp();
+      const token = await mintToken({ sid: null });
+      const res = await app.inject({
+        method: "GET",
+        url: "/api/metrics/specs",
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(res.statusCode).toBe(401);
+      expect(res.json().code).toBe("SESSION_INVALID");
     });
 
     it("rejects a token signed with the wrong secret", async () => {
