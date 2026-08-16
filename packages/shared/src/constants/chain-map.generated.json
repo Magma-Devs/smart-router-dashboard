@@ -1727,7 +1727,7 @@
   "RACE": {
     "name": "RACE",
     "family": "evm",
-    "icon": "default",
+    "icon": "race",
     "interfaces": [
       "jsonrpc"
     ],
@@ -1736,7 +1736,7 @@
   "RACET": {
     "name": "RACE Testnet",
     "family": "evm",
-    "icon": "default",
+    "icon": "race",
     "interfaces": [
       "jsonrpc"
     ],
