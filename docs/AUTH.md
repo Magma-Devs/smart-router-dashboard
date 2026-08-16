@@ -13,6 +13,9 @@ JWT codec, same plugin layout, same seed semantics.
 
 ## How it works (enabled)
 
+<img src="./assets/auth-session-flow.svg" alt="Two bands. Signing in: the browser posts to the web tier, whose authorize() callback is the only place that sees the browser and forwards the caller's IP and User-Agent to the api with an internal secret; the api verifies the password, inserts a sessions row, and returns its id, which the web signs into the token as the sid claim. Every later request: the api verifies the signature, requires a sid, requires the database, then makes one indexed read joining sessions to users, each check with its own refusal code — and two separate levers, sessions.revoked_at for one device and users.signed_out_all_at for every outstanding token, are what make that read refuse." width="100%">
+
+
 ```
 Browser ── credentials ──▶ Next.js (Auth.js v5)
                              │  authorize(creds, request)

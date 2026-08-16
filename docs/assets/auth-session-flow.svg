@@ -1,0 +1,157 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="892" viewBox="0 0 1200 892" role="img" aria-labelledby="t d">
+  <title id="t">Session lifecycle — opening a session, and spending it</title>
+  <desc id="d">Two bands. Above: signing in. The browser posts to the web tier, whose authorize() callback is the only place that sees the browser; it forwards the caller's IP and User-Agent to the api alongside an internal secret. The api verifies the password, inserts a sessions row, and returns its id, which the web signs into the token as the sid claim. Below: every later request. The api verifies the signature, requires a sid, requires the database, then makes one indexed read joining sessions to users — which is what makes revocation, removal and demotion take effect on the request in flight. Each check has its own refusal code. Two separate revocation levers feed that read: sessions.revoked_at kills one device, users.signed_out_all_at kills every outstanding token in one write.</desc>
+
+  <!--
+    Same family as banner.svg: white ground, fine #D5D9DE rules, heavy near-black
+    type. Self-contained white panel so it reads on GitHub's dark theme too.
+    Magma vermilion (#FF3900) is spent only on refusals and on the one read that
+    is the point of the change.
+  -->
+
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#131922"/>
+    </marker>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#FF3900"/>
+    </marker>
+    <marker id="ag" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#0E6A69"/>
+    </marker>
+    <style>
+      .h  { font: 700 21px ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica, sans-serif; fill: #131922; }
+      .sh { font: 400 13px ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica, sans-serif; fill: #6B7684; }
+      .bh { font: 700 12px ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica, sans-serif; fill: #131922; letter-spacing: .1em; }
+      .ln { font: 600 12.5px ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica, sans-serif; fill: #131922; }
+      .m  { font: 400 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #131922; }
+      .ms { font: 400 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #6B7684; }
+      .mr { font: 600 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #FF3900; }
+      .n  { font: 400 11.5px ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica, sans-serif; fill: #6B7684; }
+      .nb { font: 600 11.5px ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica, sans-serif; fill: #131922; }
+      .ac { font: 600 11.5px ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica, sans-serif; fill: #C42D00; }
+    </style>
+  </defs>
+
+  <rect width="1200" height="892" fill="#ffffff"/>
+
+  <!-- ══ header ═══════════════════════════════════════════════════════════ -->
+  <text class="h" x="56" y="52">Opening a session, and spending it</text>
+  <text class="sh" x="56" y="74">MAG-2729 slice 1 · the api resolves a token to a row, and the row decides</text>
+  <path d="M56 92 H1144" stroke="#D5D9DE" stroke-width="1.4"/>
+
+  <!-- ══ BAND A — signing in ══════════════════════════════════════════════ -->
+  <text class="bh" x="56" y="126">SIGNING IN</text>
+
+  <!-- lanes -->
+  <g stroke="#D5D9DE" stroke-width="1.2" stroke-dasharray="3 4">
+    <path d="M150 152 V378"/><path d="M420 152 V378"/><path d="M760 152 V378"/><path d="M1060 152 V378"/>
+  </g>
+  <g class="ln" text-anchor="middle">
+    <text x="150" y="148">Browser</text>
+    <text x="420" y="148">Web · Auth.js</text>
+    <text x="760" y="148">API · Fastify</text>
+    <text x="1060" y="148">Postgres</text>
+  </g>
+
+  <!-- 1. browser -> web -->
+  <path d="M150 180 H414" stroke="#131922" stroke-width="1.4" marker-end="url(#a)"/>
+  <text class="m" x="160" y="174">POST /login</text>
+
+  <!-- 2. web self-call, highlighted: the only place that sees the browser -->
+  <rect x="238" y="192" width="364" height="44" rx="6" fill="#FFF1ED" stroke="#FF3900" stroke-width="1.2"/>
+  <text class="m" x="252" y="211" fill="#C42D00">authorize(credentials, request)</text>
+  <text class="ms" x="252" y="228" fill="#C42D00">the only place in this flow that sees the browser</text>
+
+  <!-- 3. web -> api -->
+  <path d="M420 262 H754" stroke="#131922" stroke-width="1.4" marker-end="url(#a)"/>
+  <text class="m" x="430" y="256">POST /auth/sign-in { …, clientContext }</text>
+  <text class="ms" x="430" y="278">X-Internal-Auth — without it the api ignores clientContext</text>
+
+  <!-- 4. api -> postgres -->
+  <path d="M760 308 H1054" stroke="#131922" stroke-width="1.4" marker-end="url(#a)"/>
+  <text class="m" x="770" y="302">INSERT sessions</text>
+  <text class="ms" x="770" y="324">ip · client · auth_method · expires_at</text>
+
+  <!-- 5. api -> web -->
+  <path d="M754 352 H426" stroke="#131922" stroke-width="1.4" marker-end="url(#a)"/>
+  <text class="m" x="470" y="346">{ user, sessionId }</text>
+
+  <!-- 6. web -> browser -->
+  <path d="M414 376 H156" stroke="#131922" stroke-width="1.4" marker-end="url(#a)"/>
+  <text class="m" x="176" y="370">cookie · HS256 JWT,  sid = sessionId</text>
+
+  <!-- band A note -->
+  <path d="M56 404 H1144" stroke="#D5D9DE" stroke-width="1.4"/>
+
+  <!-- ══ BAND B — every later request ═════════════════════════════════════ -->
+  <text class="bh" x="56" y="440">EVERY LATER REQUEST</text>
+
+  <rect x="56" y="458" width="150" height="44" rx="6" fill="#ffffff" stroke="#C3CCD8" stroke-width="1.2"/>
+  <text class="ln" x="131" y="478" text-anchor="middle">Browser</text>
+  <text class="ms" x="131" y="494" text-anchor="middle">Bearer …</text>
+  <path d="M206 480 H286" stroke="#131922" stroke-width="1.4" marker-end="url(#a)"/>
+
+  <!-- the gate -->
+  <rect x="292" y="446" width="470" height="352" rx="10" fill="#ffffff" stroke="#C3CCD8" stroke-width="1.4"/>
+  <text class="bh" x="312" y="472">THE GATE</text>
+
+  <g stroke="#D5D9DE" stroke-width="1.1">
+    <path d="M292 484 H762"/><path d="M292 534 H762"/><path d="M292 584 H762"/><path d="M292 728 H762"/>
+  </g>
+
+  <!-- check 1 -->
+  <text class="nb" x="312" y="512">signature · issuer · audience</text>
+  <path d="M770 505 H872" stroke="#FF3900" stroke-width="1.3" marker-end="url(#ar)"/>
+  <text class="mr" x="880" y="509">401 AUTH_REQUIRED</text>
+
+  <!-- check 2 -->
+  <text class="nb" x="312" y="562">sid claim present</text>
+  <text class="n" x="312" y="576">a token addressing no session can never be revoked</text>
+  <path d="M770 555 H872" stroke="#FF3900" stroke-width="1.3" marker-end="url(#ar)"/>
+  <text class="mr" x="880" y="559">401 SESSION_INVALID</text>
+
+  <!-- check 3 -->
+  <text class="nb" x="312" y="612">database reachable</text>
+  <text class="n" x="312" y="626">fails closed — a signature alone cannot tell you it was revoked</text>
+  <path d="M770 605 H872" stroke="#FF3900" stroke-width="1.3" marker-end="url(#ar)"/>
+  <text class="mr" x="880" y="609">503 AUTH_UNAVAILABLE</text>
+
+  <!-- check 4: the one read -->
+  <rect x="304" y="640" width="446" height="78" rx="7" fill="#FFF1ED" stroke="#FF3900" stroke-width="1.3"/>
+  <text class="nb" x="318" y="662" fill="#C42D00">one indexed read — sessions joined to users</text>
+  <text class="ms" x="318" y="681" fill="#C42D00">session live?          not revoked, not expired</text>
+  <text class="ms" x="318" y="697" fill="#C42D00">account active?        status = 'active'</text>
+  <text class="ms" x="318" y="713" fill="#C42D00">token not cut off?     iat &gt; signed_out_all_at</text>
+  <g stroke="#FF3900" stroke-width="1.3">
+    <path d="M758 663 H872" marker-end="url(#ar)"/>
+    <path d="M758 690 H872" marker-end="url(#ar)"/>
+    <path d="M758 713 H872" marker-end="url(#ar)"/>
+  </g>
+  <text class="mr" x="880" y="667">401 SESSION_INVALID</text>
+  <text class="mr" x="880" y="694">403 ACCOUNT_INACTIVE</text>
+  <text class="mr" x="880" y="717">401 SESSION_INVALID</text>
+
+  <!-- check 5 -->
+  <text class="nb" x="312" y="756">role — read from the row, not the token</text>
+  <text class="n" x="312" y="770">so a demotion lands on the session already in flight</text>
+  <path d="M770 752 H872" stroke="#FF3900" stroke-width="1.3" marker-end="url(#ar)"/>
+  <text class="mr" x="880" y="756">403 FORBIDDEN</text>
+
+  <!-- pass -->
+  <path d="M527 798 V830" stroke="#0E6A69" stroke-width="1.6" marker-end="url(#ag)"/>
+  <rect x="440" y="834" width="174" height="34" rx="6" fill="#E2F1F0" stroke="#0E6A69" stroke-width="1.2"/>
+  <text class="ln" x="527" y="856" text-anchor="middle" fill="#0A5150">handler</text>
+
+  <!-- ══ the two revocation levers ════════════════════════════════════════ -->
+  <rect x="880" y="752" width="264" height="120" rx="8" fill="#ffffff" stroke="#C3CCD8" stroke-width="1.2"/>
+  <text class="bh" x="898" y="775">TWO LEVERS, BOTH NEEDED</text>
+  <text class="n" x="898" y="791">what makes the read above refuse</text>
+  <text class="m" x="898" y="814">sessions.revoked_at</text>
+  <text class="n" x="898" y="828">one device</text>
+  <text class="m" x="898" y="849">users.signed_out_all_at</text>
+  <text class="n" x="898" y="863">every outstanding token, one write</text>
+
+  <!-- footnote -->
+  <text class="n" x="56" y="884">The token still carries a role. It is advisory — kept so the web can render affordances without a round-trip — and never what authorisation reads.</text>
+</svg>
