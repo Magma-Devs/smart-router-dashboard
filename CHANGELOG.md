@@ -5,6 +5,19 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.10.1]
+
+### Fixed
+
+- **The Try-it method catalog had drifted from lava-specs in both
+  directions**: Trusted Smart Chain (`TSC` / `TSCT`) was missing, and Ronin
+  (`RONIN` / `RONINT`) lingered after its spec was removed upstream. Only the
+  chain map was gated by CI, so the two generated catalogs could — and did —
+  disagree: Ronin was already gone from the map while still carrying 57
+  JSON-RPC methods here, and TSC rendered with a name and icon but fell back
+  to a family guess in the Try-it drawer. Regenerated from
+  `Magma-Devs/lava-specs@main`; no other spec moved.
+
 ## [0.10.0]
 
 Upstreams roster, grouped the way it gets read.
