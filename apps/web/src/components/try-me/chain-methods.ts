@@ -476,6 +476,22 @@ export function ifaceCanFire(iface: CatalogInterface): boolean {
   return iface !== "grpc" && iface !== "grpc-web";
 }
 
+/**
+ * A gRPC surface the catalog knows no methods for. EMPTY, not null: the
+ * generator only emits a `grpc` entry for the 28 spec indices whose proposals
+ * declare a gRPC collection, but a deployment can publish a GRPCRoute for any
+ * chain it likes — and the drawer has something honest to say about all of
+ * them (the dial address, and the server-reflection call that asks the
+ * endpoint itself what it serves). Hiding "Try now" for want of a method list
+ * left those endpoints with no console at all.
+ */
+const GRPC_NO_CATALOG: InterfaceConfig = {
+  regular: [],
+  archive: null,
+  debug: null,
+  trace: null,
+};
+
 /** Identity-stable archive-stripped variants, so React memos keyed on the
  *  config object don't churn when a chain has no archive addon. */
 const STRIPPED_CACHE = new Map<InterfaceConfig, InterfaceConfig>();
@@ -520,6 +536,9 @@ export function getInterfaceConfig(
     if (!cfg && !isKnownSpecIndex(spec)) {
       cfg = FAMILY_METHODS[FALLBACK_FAMILY[key]][key] ?? null;
     }
+    // Never borrow another chain's gRPC methods — an EVM chain's gRPC surface
+    // is not cosmos's — but never hide the console either.
+    if (!cfg && key === "grpc") return GRPC_NO_CATALOG;
   }
   if (!cfg) return null;
   return hasArchive ? cfg : withoutArchive(cfg);
