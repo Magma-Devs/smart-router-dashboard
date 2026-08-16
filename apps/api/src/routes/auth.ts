@@ -6,11 +6,17 @@ import {
   recordSignIn,
   toPublicUser,
   upsertOAuthUser,
+  OAuthAccountNotFoundError,
   type OAuthProvider,
 } from "../services/users.js";
 import { validatePassword, verifyPassword } from "../services/password.js";
 import { verifyOAuthToken } from "../services/oauth.js";
 import { createSession, revokeSession, type ClientContext } from "../services/sessions.js";
+import {
+  lookupInvitation,
+  redeemInvitation,
+  type InviteLookup,
+} from "../services/invitations.js";
 import { noopAuditWriter, type AuditWriter } from "../services/audit.js";
 import {
   completeSetup,
@@ -33,6 +39,17 @@ interface SignInBody {
   email: string;
   password: string;
   clientContext?: ForwardedClientContext;
+}
+
+interface InvitePreviewBody {
+  token: string;
+}
+
+interface InviteAcceptBody {
+  token: string;
+  password?: string;
+  googleIdToken?: string;
+  name?: string;
 }
 
 interface SetupBody {
@@ -238,6 +255,161 @@ export async function authRoutes(app: FastifyInstance) {
     },
   );
 
+  /** One message for every dead-invite reason. A link that was revoked, one
+   *  that expired, and one that was already used are all "this link no longer
+   *  works" to the person holding it — and distinguishing them out loud would
+   *  tell a stranger which of those a guessed token hit. */
+  const INVITE_GONE = "That invitation link is no longer valid. Ask an administrator for a new one.";
+
+  /** `invite.expired` fires from wherever the expiry is first *observed* —
+   *  which is a read, not a scheduled sweep, so there is nothing to run. */
+  async function auditExpiryOnce(lookup: InviteLookup): Promise<void> {
+    if (lookup.ok || !lookup.justExpired || !lookup.invitation) return;
+    await audit.write({
+      action: "invite.expired",
+      actor: { id: null, kind: "system" },
+      target: { type: "invite", id: lookup.invitation.id, name: lookup.invitation.email },
+    });
+  }
+
+  app.post(
+    "/auth/invite/preview",
+    {
+      config: { rateLimit: STRICT_AUTH_RATE_LIMIT },
+      schema: {
+        tags: ["Auth"],
+        summary: "What an invitation link is for, so the redemption page can show it",
+        body: {
+          type: "object" as const,
+          required: ["token"],
+          properties: { token: { type: "string" as const, minLength: 1 } },
+        },
+      },
+    },
+    async (request, reply) => {
+      const db = dbOr503(reply);
+      if (!db) return reply;
+      const { token } = request.body as InvitePreviewBody;
+
+      const lookup = await lookupInvitation(db, token);
+      if (!lookup.ok) {
+        await auditExpiryOnce(lookup);
+        return reply
+          .code(lookup.reason === "not_found" ? 404 : 410)
+          .send({ statusCode: lookup.reason === "not_found" ? 404 : 410, error: "Gone", message: INVITE_GONE });
+      }
+
+      // Only what the page needs to render, and nothing about the account it
+      // will become. The address is already in the holder's possession.
+      return {
+        email: lookup.invitation.email,
+        role: lookup.invitation.role,
+        expiresAt: lookup.invitation.expiresAt.toISOString(),
+      };
+    },
+  );
+
+  app.post(
+    "/auth/invite/accept",
+    {
+      config: { rateLimit: STRICT_AUTH_RATE_LIMIT },
+      schema: {
+        tags: ["Auth"],
+        summary: "Redeem an invitation: create the account and open a session",
+        body: {
+          type: "object" as const,
+          required: ["token"],
+          properties: {
+            token: { type: "string" as const, minLength: 1 },
+            password: { type: "string" as const, minLength: 1 },
+            googleIdToken: { type: "string" as const, minLength: 1 },
+            name: { type: "string" as const },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const db = dbOr503(reply);
+      if (!db) return reply;
+      const body = request.body as InviteAcceptBody;
+      const client = resolveClientContext(request, undefined, internalSecret);
+
+      let verifiedEmail: string | undefined;
+      let provider: { column: "googleId"; id: string } | undefined;
+
+      if (body.googleIdToken) {
+        try {
+          const profile = await verifyOAuthToken("google", body.googleIdToken);
+          if (!profile.email) throw new Error("no verified email");
+          verifiedEmail = profile.email;
+          provider = { column: "googleId", id: profile.providerId };
+        } catch {
+          return reply.code(401).send({
+            statusCode: 401,
+            error: "Unauthorized",
+            message: "Google sign-in could not be verified.",
+          });
+        }
+      } else if (body.password) {
+        const problem = await validatePassword(body.password, request.log);
+        if (problem) {
+          return reply
+            .code(400)
+            .send({ statusCode: 400, error: "Bad Request", message: problem.message });
+        }
+      } else {
+        return reply.code(400).send({
+          statusCode: 400,
+          error: "Bad Request",
+          message: "Choose a password or sign in with Google.",
+        });
+      }
+
+      const result = await redeemInvitation(db, {
+        rawToken: body.token,
+        password: body.password,
+        verifiedEmail,
+        provider,
+        name: body.name ?? null,
+      });
+
+      if (!result.ok) {
+        if (result.reason === "email_mismatch") {
+          // Named deliberately: an honest person who signed in with the wrong
+          // Google account needs to know which address to use. They already
+          // hold the link, so this reveals nothing they didn't have.
+          const lookup = await lookupInvitation(db, body.token);
+          const invited = lookup.ok ? lookup.invitation.email : "the invited address";
+          return reply.code(403).send({
+            statusCode: 403,
+            error: "Forbidden",
+            message: `This invitation is for ${invited}. Sign in with that account to accept it.`,
+          });
+        }
+        return reply
+          .code(result.reason === "not_found" ? 404 : 410)
+          .send({ statusCode: result.reason === "not_found" ? 404 : 410, error: "Gone", message: INVITE_GONE });
+      }
+
+      const session = await createSession(db, {
+        userId: result.user.id,
+        authMethod: provider ? "google" : "invite",
+        client,
+      });
+      await recordSignIn(db, result.user.id);
+      await audit.write({
+        action: "invite.redeemed",
+        actor: { id: result.user.id, kind: "user" },
+        target: { type: "invite", id: result.invitation.id, name: result.invitation.email },
+        access: { ip: client.ip, client: client.userAgent, sessionId: session.id },
+      });
+
+      return reply
+        .code(201)
+        .send({ user: toPublicUser(result.user), sessionId: session.id });
+    },
+  );
+
   app.post(
     "/auth/sign-in",
     {
@@ -353,6 +525,14 @@ export async function authRoutes(app: FastifyInstance) {
       try {
         user = await upsertOAuthUser(db, provider, profile);
       } catch (err) {
+        if (err instanceof OAuthAccountNotFoundError) {
+          // Not 401: the token was fine, the account simply doesn't exist. A
+          // person who was never invited should be told that, not left
+          // retrying their password.
+          return reply
+            .code(403)
+            .send({ statusCode: 403, error: "Forbidden", message: err.message });
+        }
         return reply
           .code(400)
           .send({ statusCode: 400, error: "Bad Request", message: (err as Error).message });
