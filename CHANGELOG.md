@@ -5,6 +5,24 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.11.3]
+
+### Fixed
+
+- **Ethereum Classic wore Ethereum's logo.** `resolveIcon` falls back to the
+  first segment of a chain's name slug, and `ethereum` exists — so ETC and
+  ETCT rendered under the wrong chain's mark, the same silent borrowing that
+  once gave CANTONT Canto's logo. Vendored `ethereum-classic.svg` from
+  web3icons (`networks/mono` glyph on the `#01C853` of its `background`
+  variant, with the `#111` glyph the house style calls for on a circle that
+  light).
+- **Arbitrum Nova looked like a separate chain.** lava-specs models it as
+  `ARBITRUMN` — "Arbitrum Nova Testnet" inside `arbitrum.json` — so it should
+  inherit `arbitrum-one` the way `ARBITRUMS` (Sepolia) does. It carried its
+  own `arbitrum-nova.svg`, left over from the v1 icon set, making one chain
+  read as two. Icon removed and the v1 overlay's slug corrected; the map
+  regenerates with Nova inheriting.
+
 ## [0.11.2]
 
 ### Added

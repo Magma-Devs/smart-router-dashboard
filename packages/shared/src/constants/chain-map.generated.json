@@ -136,7 +136,7 @@
   "ARBITRUMN": {
     "name": "Arbitrum Nova Testnet",
     "family": "evm-arbitrum",
-    "icon": "arbitrum-nova",
+    "icon": "arbitrum-one",
     "interfaces": [
       "jsonrpc"
     ],
@@ -763,7 +763,7 @@
   "ETC": {
     "name": "Ethereum Classic",
     "family": "evm",
-    "icon": "ethereum",
+    "icon": "ethereum-classic",
     "interfaces": [
       "jsonrpc"
     ],
@@ -772,7 +772,7 @@
   "ETCT": {
     "name": "Ethereum Classic Testnet",
     "family": "evm",
-    "icon": "ethereum",
+    "icon": "ethereum-classic",
     "interfaces": [
       "jsonrpc"
     ],
