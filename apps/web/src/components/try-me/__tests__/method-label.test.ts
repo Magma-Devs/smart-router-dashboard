@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   COMMON_METHODS,
+  commandKey,
+  commandSignature,
   friendlyName,
   humanizeMethod,
+  humanizePath,
   isCommonMethod,
+  restPath,
 } from "../method-label";
 import type { AddonCommand } from "../chain-methods";
 
@@ -84,5 +88,64 @@ describe("friendlyName", () => {
       expect(friendlyName("jsonrpc", cmd({ method })), method).toBe(label);
       expect(isCommonMethod("jsonrpc", cmd({ method })), method).toBe(true);
     }
+  });
+});
+
+describe("REST commands", () => {
+  // A REST command's `method` is the HTTP verb; the path lives in the label
+  // (template) or, when the catalog curated a label, in the params.
+  const listed = cmd({ method: "POST", label: "/wallet/getnowblock", params: "/wallet/getnowblock" });
+  const archived = cmd({
+    method: "GET",
+    label: "Block (Archive)",
+    params: "/cosmos/base/tendermint/v1beta1/blocks/340801",
+  });
+
+  it("keys on the path, never on the verb", () => {
+    expect(commandKey("rest", listed)).toBe("/wallet/getnowblock");
+    expect(restPath(archived)).toBe("/cosmos/base/tendermint/v1beta1/blocks/340801");
+    // Non-REST interfaces keep keying on the method id.
+    expect(commandKey("jsonrpc", cmd({ method: "eth_blockNumber" }))).toBe("eth_blockNumber");
+  });
+
+  it("resolves curated names that the verb-keyed lookup could never hit", () => {
+    expect(friendlyName("rest", listed)).toBe("Latest Block");
+    expect(isCommonMethod("rest", listed)).toBe(true);
+    expect(
+      friendlyName("rest", cmd({ method: "GET", label: "/cosmos/base/tendermint/v1beta1/node_info", params: "/cosmos/base/tendermint/v1beta1/node_info" })),
+    ).toBe("Node Info");
+  });
+
+  it("derives a name from the path when nothing is curated", () => {
+    expect(humanizePath("/wallet/getassetissuelist")).toBe("Get Asset Issue List");
+    expect(humanizePath("/eth/v1/beacon/states/{state_id}/finality_checkpoints")).toBe(
+      "Finality Checkpoints",
+    );
+    // A version segment identifies nothing, a qualifier drags its noun along.
+    expect(humanizePath("/v1/chain/get_info")).toBe("Get Info");
+    expect(humanizePath("/cosmos/staking/v1alpha1/validators")).toBe("Validators");
+    expect(humanizePath("/cosmos/base/tendermint/v1beta1/blocks/latest")).toBe("Blocks Latest");
+    expect(humanizePath("/")).toBeNull();
+  });
+
+  it("matches version segments in one pass", () => {
+    // Regression: the first spelling of this rule nested a quantifier inside
+    // another, and a segment that never matches took 17s at 31 characters.
+    // 5000 iterations of the pathological input finish in milliseconds now.
+    const evil = `/wallet/v0${"a".repeat(40)}!`;
+    const started = performance.now();
+    for (let i = 0; i < 5000; i++) humanizePath(evil);
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
+
+  it("shows the verb WITH the path as the request line", () => {
+    expect(commandSignature("rest", listed)).toBe("POST /wallet/getnowblock");
+    expect(commandSignature("jsonrpc", cmd({ method: "eth_call" }))).toBe("eth_call");
+  });
+
+  it("reads the same curated names over a -ws transport as over HTTP", () => {
+    const block = cmd({ method: "eth_blockNumber" });
+    expect(friendlyName("jsonrpc-ws", block)).toBe(friendlyName("jsonrpc", block));
+    expect(isCommonMethod("jsonrpc-ws", block)).toBe(true);
   });
 });

@@ -19,6 +19,7 @@ import {
 } from "./build-request";
 import {
   ifaceCanFire,
+  storageKey,
   TIER_ORDER,
   listMethods,
   type AddonCommand,
@@ -27,7 +28,12 @@ import {
   type Tier,
 } from "./chain-methods";
 import { CodeBlock } from "./code-block";
-import { COMMON_METHODS, friendlyName } from "./method-label";
+import {
+  COMMON_METHODS,
+  commandKey,
+  commandSignature,
+  friendlyName,
+} from "./method-label";
 import { JsonDisplay } from "./json-display";
 import { snippetsFor, type SnippetBlock, type Snippets } from "./snippets";
 
@@ -465,6 +471,32 @@ export function TryMeDrawer({
     }
   };
 
+  /** Commands in the selected tier, with their catalog index kept so
+   *  keyOf(tier, i) stays valid however the list is filtered. */
+  const tierCmds = useMemo(
+    () => (cfg[selectedTier] ?? []).map((cmd, i) => ({ cmd, i })),
+    [cfg, selectedTier],
+  );
+  /** The curated subset, in COMMON_METHODS order — that map is the display
+   *  order, not the catalog's. */
+  const curatedCmds = useMemo(() => {
+    const order = Object.keys(COMMON_METHODS[storageKey(iface)] ?? {});
+    return order
+      .map((key) => tierCmds.find(({ cmd }) => commandKey(iface, cmd) === key))
+      .filter((row): row is (typeof tierCmds)[number] => !!row);
+  }, [tierCmds, iface]);
+  const curatedCount = curatedCmds.length;
+  /** What the dropdown lists: the curated subset until the user expands, with
+   *  the current selection kept in view when it isn't part of it. */
+  const shownCmds = useMemo(() => {
+    if (showAllCmds || curatedCount === 0) return tierCmds;
+    if (curatedCmds.some(({ i }) => keyOf(selectedTier, i) === selKey)) return curatedCmds;
+    return [
+      ...tierCmds.filter(({ i }) => keyOf(selectedTier, i) === selKey),
+      ...curatedCmds,
+    ];
+  }, [showAllCmds, curatedCount, curatedCmds, tierCmds, selectedTier, selKey]);
+
   const built = useMemo(() => {
     if (!selected) return null;
     return buildRequest(iface, selected.command, paramsText, endpointUrl);
@@ -767,57 +799,33 @@ export function TryMeDrawer({
               onChange={(e) => handleSelect(e.target.value)}
               style={{ ...FIELD_INPUT, fontSize: 12 }}
             >
-              {(() => {
-                const allCmds = cfg[selectedTier] ?? [];
-                const labels = COMMON_METHODS[iface];
-                // Keep original indices so keyOf(selectedTier, i) stays valid.
-                const withIdx = allCmds.map((cmd, i) => ({ cmd, i }));
-                // Curated set, ordered by the COMMON_METHODS map, each with a
-                // friendly label. Fall back to the raw list when no curation
-                // exists for this interface.
-                const curated = labels
-                  ? Object.keys(labels)
-                      .map((m) => withIdx.find(({ cmd }) => cmd.method === m))
-                      .filter((x): x is { cmd: (typeof withIdx)[number]["cmd"]; i: number } => !!x)
-                  : withIdx;
-                const shown = showAllCmds || curated.length === 0
-                  ? withIdx
-                  : (curated.some(({ i }) => keyOf(selectedTier, i) === selKey)
-                      ? curated
-                      : [...withIdx.filter(({ i }) => keyOf(selectedTier, i) === selKey), ...curated]);
-                return shown.map(({ cmd, i }) => {
-                  // Curated name → the catalog's own label → one derived from
-                  // the method id, so the "Show all" long tail reads like the
-                  // curated head instead of dropping to bare ids.
-                  const friendly = friendlyName(iface, cmd);
-                  return (
-                    <option key={i} value={keyOf(selectedTier, i)}>
-                      {friendly ? `${friendly} · ${cmd.method}` : cmd.method}
-                    </option>
-                  );
-                });
-              })()}
+              {shownCmds.map(({ cmd, i }) => {
+                // Curated name → the catalog's own label → one derived from
+                // the method id or REST path, so the "Show all" long tail
+                // reads like the curated head instead of dropping to bare ids.
+                const friendly = friendlyName(iface, cmd);
+                const id = commandKey(iface, cmd);
+                return (
+                  <option key={i} value={keyOf(selectedTier, i)}>
+                    {friendly ? `${friendly} · ${id}` : id}
+                  </option>
+                );
+              })}
             </select>
-            {(() => {
-              const allCmds = cfg[selectedTier] ?? [];
-              const labels = COMMON_METHODS[iface];
-              const curatedCount = labels ? allCmds.filter((c) => labels[c.method]).length : allCmds.length;
-              if (!labels || allCmds.length <= curatedCount) return null;
-              return (
-                <button
-                  onClick={() => setShowAllCmds((s) => !s)}
-                  style={{ marginTop: 6, border: "none", background: "none", color: "var(--brand)", cursor: "pointer", padding: 0, fontSize: 11, fontWeight: 600, fontFamily: "inherit" }}
-                >
-                  {showAllCmds ? "Show common methods only" : `Show all ${allCmds.length} methods`}
-                </button>
-              );
-            })()}
+            {curatedCount > 0 && tierCmds.length > curatedCount && (
+              <button
+                onClick={() => setShowAllCmds((s) => !s)}
+                style={{ marginTop: 6, border: "none", background: "none", color: "var(--brand)", cursor: "pointer", padding: 0, fontSize: 11, fontWeight: 600, fontFamily: "inherit" }}
+              >
+                {showAllCmds ? "Show common methods only" : `Show all ${tierCmds.length} methods`}
+              </button>
+            )}
             {selected && (
               <div
                 className="gw-mono"
                 style={{ fontSize: 11, color: "var(--text-3)", marginTop: 6 }}
               >
-                {selected.command.method}
+                {commandSignature(iface, selected.command)}
               </div>
             )}
             {selected?.command.desc && (

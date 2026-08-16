@@ -18,7 +18,12 @@
  * be split into real words is left alone rather than title-cased blindly.
  */
 
-import type { AddonCommand, CatalogInterface } from "./chain-methods";
+import { storageKey } from "./chain-methods";
+import type {
+  AddonCommand,
+  CatalogInterface,
+  CatalogStorageKey,
+} from "./chain-methods";
 
 /** Curated common methods per interface, method → friendly label. The generated
  *  catalog lists 50+ methods with no friendly names, so the Command dropdown
@@ -26,13 +31,17 @@ import type { AddonCommand, CatalogInterface } from "./chain-methods";
  *  eth_blockNumber") with a "show all" escape hatch. Order here is the display
  *  order; anything not listed is hidden until the user expands.
  *
- *  Keys are matched against a command's method id, so ALL FOUR tiers read from
- *  this one map: the debug/trace entries only ever match commands in the
- *  debug/trace tiers (their method ids are namespaced), which is what gives
- *  those tiers the same "Friendly Name · method_id" dropdown and the same
- *  curated-subset + "show all" behaviour the regular tier has. */
+ *  Keys are matched against a command's `commandKey` — the method id, or the
+ *  path for REST — so ALL FOUR tiers read from this one map: the debug/trace
+ *  entries only ever match commands in the debug/trace tiers (their method ids
+ *  are namespaced), which is what gives those tiers the same "Friendly Name ·
+ *  method_id" dropdown and the same curated-subset + "show all" behaviour the
+ *  regular tier has.
+ *
+ *  Keyed by STORAGE key, not by drawer interface: a `-ws` transport serves the
+ *  same methods as its HTTP twin and reads the same curated names. */
 export const COMMON_METHODS: Partial<
-  Record<CatalogInterface, Record<string, string>>
+  Record<CatalogStorageKey, Record<string, string>>
 > = {
   jsonrpc: {
     // EVM
@@ -93,12 +102,38 @@ export const COMMON_METHODS: Partial<
     starknet_traceBlockTransactions: "Trace Block",
     starknet_simulateTransactions: "Simulate Transactions",
   },
+  // REST keys are PATHS — a REST command's `method` is its HTTP verb, so the
+  // path is the only thing that identifies it.
   rest: {
+    // Cosmos SDK
     "/cosmos/base/tendermint/v1beta1/blocks/latest": "Latest Block",
     "/cosmos/base/tendermint/v1beta1/node_info": "Node Info",
     "/cosmos/base/tendermint/v1beta1/syncing": "Syncing",
-    "/blocks/by_height/{height}": "Block by Height",
+    "/cosmos/base/tendermint/v1beta1/blocks/{height}": "Block by Height",
+    "/cosmos/staking/v1beta1/validators": "Validators",
+    "/cosmos/bank/v1beta1/supply": "Total Supply",
+    // Aptos / Movement
     "/": "Ledger Info",
+    "/blocks/by_height/{height}": "Block by Height",
+    "/blocks/by_height/{block_height}": "Block by Height",
+    "/estimate_gas_price": "Estimate Gas Price",
+    // Tron
+    "/wallet/getnowblock": "Latest Block",
+    "/wallet/getnodeinfo": "Node Info",
+    "/wallet/getblockbynum": "Block by Number",
+    "/wallet/getchainparameters": "Chain Parameters",
+    "/wallet/getaccount": "Get Account",
+    "/wallet/gettransactionbyid": "Get Transaction",
+    // Ethereum Beacon API
+    "/eth/v1/node/health": "Node Health",
+    "/eth/v1/node/version": "Node Version",
+    "/eth/v1/beacon/genesis": "Genesis",
+    "/eth/v1/beacon/headers": "Latest Headers",
+    // TON
+    "/v2/getMasterchainInfo": "Masterchain Info",
+    "/v3/masterchainInfo": "Masterchain Info",
+    // EOS
+    "/v1/chain/get_info": "Chain Info",
   },
   tendermintrpc: {
     status: "Status",
@@ -150,33 +185,41 @@ const ACRONYMS: Record<string, string> = {
  * word missing here only means the id renders as-is.
  */
 const VOCAB = [
-  "account", "accounts", "address", "addresses", "all", "any", "approve",
-  "asset", "assets", "at", "available", "balance", "bandwidth", "best",
-  "best", "block", "blockchain", "blocks", "broadcast", "brokerage",
+  "account", "address", "all", "any", "approve",
+  "asset", "at", "available", "balance", "bandwidth", "best",
+  "best", "block", "blockchain", "broadcast", "brokerage",
   "burn", "by", "cancel", "chain", "check", "clear", "code", "coin", "coinbase",
   "committee", "config", "confirm", "connection", "connections", "constant",
   "contract", "count", "create", "current", "data", "deploy", "deposit",
   "delegate", "delegated", "delegation", "difficulty", "energy", "epoch",
-  "estimate", "event", "events", "exchange", "exit", "fee", "fees", "filter",
+  "estimate", "event", "exchange", "exit", "fee", "filter",
   "finality", "for", "fork", "freeze", "from", "genesis", "get", "hash",
-  "header", "headers", "height", "hex", "history", "id", "identity", "in",
-  "index", "info", "is", "issue", "key", "keys", "latest", "ledger", "limit",
-  "list", "log", "logs", "market", "memo", "mempool", "merkle", "metadata",
+  "header", "height", "hex", "history", "id", "identity", "in",
+  "index", "info", "is", "issue", "key", "latest", "ledger", "limit",
+  "list", "log", "market", "memo", "mempool", "merkle", "metadata",
   "mining", "mint", "name", "net", "network", "new", "next", "node", "nodes",
-  "now", "num", "number", "of", "order", "orders", "pair", "pairs", "params",
-  "peer", "peers", "pending", "permission", "price", "proof", "proposal",
-  "proposals", "raw", "receipt", "receipts", "reserve", "resource",
-  "resources", "reward", "rewards", "root", "sign", "size", "slot", "smart",
+  "now", "num", "number", "of", "order", "pair", "params",
+  "peer", "pending", "permission", "price", "proof", "proposal",
+  "raw", "receipt", "reserve", "resource",
+  "reward", "root", "sign", "size", "slot", "smart",
   "stake", "state", "subscribe", "status", "storage", "sub", "supply", "swap", "sync",
-  "syncing", "time", "to", "token", "tokens", "total", "transaction",
-  "transactions", "transfer", "trigger", "tx", "uptime", "unfreeze",
-  "unstake", "update", "validate", "validator", "validators", "verify",
-  "version", "vote", "votes", "wallet", "withdraw", "witness", "witnesses",
+  "syncing", "time", "to", "token", "total", "transaction",
+  "transfer", "trigger", "tx", "uptime", "unfreeze",
+  "unstake", "update", "validate", "validator", "verify",
+  "version", "vote", "wallet", "withdraw", "witness",
+  // stems the shipped REST paths need
+  "annotation", "bonded", "checkpoint", "delegator", "denom", "descriptor",
+  "grant", "healthy", "inflation", "module", "reflection", "signing",
+  "spendable", "subspace", "unbonding",
 ];
 
 const VOCAB_SET = new Set(VOCAB);
 /** Longest first so the segmenter tries "blockchain" before "block". */
 const VOCAB_BY_LENGTH = [...VOCAB].sort((a, b) => b.length - a.length);
+
+/** Plural forms are matched off the singular so the vocabulary stays a list of
+ *  stems — `balances`, `checkpoints`, `validators` need no entries of their own. */
+const PLURALS = ["", "s", "es"];
 
 /** Split a run-together lowercase token into vocabulary words, or null when
  *  no full segmentation exists. Backtracking (not greedy): "blockchain" wins
@@ -188,12 +231,15 @@ function segment(token: string, memo = new Map<string, string[] | null>()): stri
   if (cached !== undefined) return cached;
   memo.set(token, null); // guard against re-entering the same suffix
   for (const word of VOCAB_BY_LENGTH) {
-    if (!token.startsWith(word)) continue;
-    const rest = segment(token.slice(word.length), memo);
-    if (rest) {
-      const out = [word, ...rest];
-      memo.set(token, out);
-      return out;
+    for (const plural of PLURALS) {
+      const candidate = word + plural;
+      if (!token.startsWith(candidate)) continue;
+      const rest = segment(token.slice(candidate.length), memo);
+      if (rest) {
+        const out = [candidate, ...rest];
+        memo.set(token, out);
+        return out;
+      }
     }
   }
   // Trailing version suffix — `…v2`, `…v3` on Tron's wallet paths.
@@ -285,24 +331,89 @@ export function humanizeMethod(raw: string): string | null {
 }
 
 /**
- * The display name for a catalog command: curated first, then the catalog's
- * own label when it carries one (archive commands ship "Get Balance
- * (Archive)"), then a name derived from the method id. Null when none of
- * those beats the bare id — callers then render the id alone.
+ * Path segments that identify nothing: an api version (`v1`, `v1beta1`), or a
+ * `{placeholder}` the caller has to fill in.
+ *
+ * Both tests are single-pass on purpose. The obvious spelling of the version
+ * rule — `v\d+([a-z]+\d*)*` — nests one quantifier inside another, so a
+ * segment like `v0aaaa…` that never matches makes the engine try every way of
+ * splitting the letter run: 17 SECONDS on a 31-character segment (CodeQL
+ * js/redos). A trailing `[a-z0-9]*` accepts the same real segments with no
+ * ambiguity to backtrack through.
+ */
+function skipSegment(segment: string): boolean {
+  if (segment.startsWith("{") && segment.endsWith("}")) return true;
+  return /^v\d+[a-z0-9]*$/i.test(segment);
+}
+
+/** Segments too vague to name a path on their own — they qualify the segment
+ *  before them (`/blocks/latest`), so that one comes along. */
+const QUALIFIER_SEGMENTS = new Set([
+  "latest", "all", "head", "best", "current", "root", "info",
+]);
+
+/**
+ * Read a display name out of a REST path — `/wallet/getnowblock` → "Get Now
+ * Block", `/eth/v1/beacon/states/{state_id}/finality_checkpoints` → "Finality
+ * Checkpoints". Null when the tail segments yield no readable words.
+ */
+export function humanizePath(path: string): string | null {
+  const segments = path.split("/").filter((s) => s && !skipSegment(s));
+  const last = segments[segments.length - 1];
+  if (!last) return null;
+  const prev = segments[segments.length - 2];
+  const tail =
+    QUALIFIER_SEGMENTS.has(last.toLowerCase()) && prev ? `${prev} ${last}` : last;
+  const words = splitWords(tail);
+  return words ? words.map(titleCase).join(" ") : null;
+}
+
+/**
+ * The path a REST command calls. `AddonCommand.method` holds its HTTP VERB,
+ * so the path lives in `label` (the template, `/blocks/{height}`) unless the
+ * catalog replaced the label with a curated name — then `params` carries the
+ * concrete path.
+ */
+export function restPath(cmd: AddonCommand): string {
+  return cmd.label.startsWith("/") ? cmd.label : cmd.params;
+}
+
+/** What identifies a command in the curated map: its method id, or its path
+ *  for REST (whose method id is just `GET`/`POST`). */
+export function commandKey(iface: CatalogInterface, cmd: AddonCommand): string {
+  return storageKey(iface) === "rest" ? restPath(cmd) : cmd.method;
+}
+
+/** The line under the Command dropdown: the request this command sends —
+ *  `eth_getBalance`, or `POST /wallet/getnowblock` for REST, where the verb
+ *  alone said nothing about which endpoint is being called. */
+export function commandSignature(iface: CatalogInterface, cmd: AddonCommand): string {
+  return storageKey(iface) === "rest"
+    ? `${cmd.method} ${restPath(cmd)}`
+    : cmd.method;
+}
+
+/**
+ * The display name for a catalog command: the catalog's own label when it
+ * carries one (archive commands ship "Get Balance (Archive)"), then the
+ * curated map, then a name derived from the id/path. Null when none of those
+ * beats the bare id — callers then render the id alone.
  */
 export function friendlyName(
   iface: CatalogInterface,
   cmd: AddonCommand,
 ): string | null {
-  const curated = COMMON_METHODS[iface]?.[cmd.method];
+  const key = commandKey(iface, cmd);
   // The catalog's own label wins over the curated map: it is set per-command
-  // by the generator's hints, so it is the more specific of the two.
-  if (cmd.label !== cmd.method) return cmd.label;
+  // by the generator's hints, so it is the more specific of the two. For REST
+  // the label IS the path, which names nothing the signature line doesn't.
+  if (cmd.label !== cmd.method && cmd.label !== key) return cmd.label;
+  const curated = COMMON_METHODS[storageKey(iface)]?.[key];
   if (curated) return curated;
-  return humanizeMethod(cmd.method);
+  return storageKey(iface) === "rest" ? humanizePath(key) : humanizeMethod(key);
 }
 
 /** Whether this command is in the curated subset the dropdown opens on. */
 export function isCommonMethod(iface: CatalogInterface, cmd: AddonCommand): boolean {
-  return COMMON_METHODS[iface]?.[cmd.method] !== undefined;
+  return COMMON_METHODS[storageKey(iface)]?.[commandKey(iface, cmd)] !== undefined;
 }
