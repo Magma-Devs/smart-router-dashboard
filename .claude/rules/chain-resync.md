@@ -57,10 +57,18 @@ resync, not a follow-up.**
    glyph scaled 0.72 and centred, white on dark / `#111` on light. Never invent
    a colour: take it from the source icon's backdrop, or one stop of its
    gradient when the backdrop is a gradient.
-4. **Mainnet only is usually enough.** Testnet siblings inherit by base name and
-   then by index prefix (`BERAB` → `BERA`), so a testnet with its own brand name
-   is covered too. Re-run the generator afterwards and commit the regenerated
-   map with the SVG.
+4. **Mainnet only is usually enough — and usually correct.** Testnet siblings
+   inherit by base name and then by index prefix (`BERAB` → `BERA`), so a
+   testnet with its own brand name is covered too. Vendoring a separate SVG for
+   a testnet index is how one chain ends up looking like two: `arbitrum-nova`
+   did that until it was removed, because lava-specs models Nova as
+   `ARBITRUMN`, a testnet inside `arbitrum.json`. Re-run the generator
+   afterwards and commit the regenerated map with the SVG.
+   **Watch for silent borrowing in the other direction too.** `resolveIcon`
+   falls back to the first segment of the name slug, so "Ethereum Classic"
+   resolved to `ethereum` and wore the wrong chain's logo for as long as nobody
+   looked. A chain whose name starts with another chain's name needs its own
+   icon, not a fallback.
 5. **A wordmark is not a dead end.** RACE sat on the fallback for months as
    "wordmark only, illegible at icon size" — but its wordmark draws the four
    letters as ascending columns, and that rhythm survives 24px even though the

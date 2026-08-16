@@ -53,8 +53,24 @@ circle takes one of that gradient's own stops (`#965D3C`, sampled at its dark
 end). Adapted to a squarer footprint, since the source lockup is 184×417 and
 would otherwise leave the circle mostly empty.
 
+`ethereum-classic` is web3icons' `networks/mono` glyph on the `#01C853` its
+`background` variant uses. Its glyph is `#111`, not white: that green is light
+enough that white sits at roughly 2:1 against it, which is the case the house
+style covers (`flow`, `astar`, `blast` do the same). Before it was vendored,
+Ethereum Classic wore **Ethereum's** icon — `resolveIcon` falls back to the
+first segment of the name slug, and `ethereum` exists.
+
 Every chain in the map now resolves to a vendored SVG; `default.svg` stays as
 the fallback for whatever arrives next.
+
+## One icon per chain, not per network
+
+A testnet index inherits its mainnet's icon (by base name, then index prefix),
+so vendoring a separate SVG for one is how a chain ends up looking like two.
+`arbitrum-nova.svg` was exactly that: lava-specs models Nova as `ARBITRUMN`,
+"Arbitrum Nova Testnet" inside `arbitrum.json`, so it inherits `arbitrum-one`
+like `ARBITRUMS` (Sepolia) always did. If upstream ever promotes Nova to its
+own spec, it earns its own icon then.
 
 Chain logos remain the trademarks of their respective projects and are used here
 only to identify the chain.
