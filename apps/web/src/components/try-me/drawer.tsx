@@ -18,8 +18,10 @@ import {
   type ResolvedRequest,
 } from "./build-request";
 import {
+  httpVariantOf,
   ifaceCanFire,
   storageKey,
+  wsVariantOf,
   TIER_ORDER,
   listMethods,
   type AddonCommand,
@@ -45,6 +47,14 @@ import {
 type CodeTab = "CLI" | "Python" | "Go" | "JavaScript";
 type Status = "idle" | "loading" | "ok" | "error";
 type WsPhase = "connecting" | "open" | null;
+/** Which of the endpoint's two transports the console is driving. */
+type Transport = "http" | "ws";
+/** Live reachability of the WebSocket transport, measured by opening one. */
+type WsProbe = "checking" | "online" | "offline";
+
+/** Give up on a handshake that hasn't opened by then — a router that accepts
+ *  the TCP connection but never upgrades would otherwise hang the tag. */
+const WS_PROBE_TIMEOUT_MS = 6_000;
 
 /** Human-facing label for the iface — shown as a pill in the drawer header
  *  so the user can see at a glance which transport they're firing against. */
@@ -64,9 +74,16 @@ interface TryMeDrawerProps {
   spec: string;
   /** Network name from the router topology (`mainnet`, `testnet`, …). */
   network: string;
+  /** Transport the console drives. `wsUrl` adds its WebSocket twin. */
   iface: CatalogInterface;
   cfg: InterfaceConfig;
   endpointUrl: string;
+  /** WebSocket address for the SAME endpoint (the router serves the upgrade
+   *  on the base interface's address, path-scoped). Set ⇒ the drawer offers a
+   *  HTTP / WebSocket toggle; null ⇒ HTTP only. */
+  wsUrl?: string | null;
+  /** Which transport to open on. A ws-flagged upstream row opens on "ws". */
+  initialTransport?: Transport;
   /** Live health from /api/metrics/chains, when the page has it. The status
    *  tag is omitted entirely when undefined — never a hardcoded status. */
   health?: HealthState;
@@ -363,14 +380,31 @@ async function sendWebSocket(
 export function TryMeDrawer({
   spec,
   network,
-  iface,
+  iface: openedIface,
   cfg,
-  endpointUrl,
+  endpointUrl: httpUrl,
+  wsUrl = null,
+  initialTransport = "http",
   health,
   selectUpstream,
   onClose,
 }: TryMeDrawerProps) {
   const chain = buildChainMetaByIndex(spec);
+  const baseIface = httpVariantOf(openedIface);
+  const wsIface = wsVariantOf(openedIface);
+  /** Both transports are the same endpoint, so the toggle needs a ws address
+   *  and an interface that HAS a ws form (REST and gRPC don't). */
+  const canToggleTransport = wsUrl !== null && wsIface !== null;
+  const [transport, setTransport] = useState<Transport>(
+    canToggleTransport && initialTransport === "ws" ? "ws" : "http",
+  );
+  const onWs = transport === "ws" && wsIface !== null && wsUrl !== null;
+  /* The transport actually being driven. The two share a method catalog
+     (`storageKey` collapses `-ws`), so switching changes only the dial
+     address, the request envelope, and whether subscriptions are offered.
+     Everything below reads these — never the props. */
+  const iface = onWs ? wsIface : baseIface;
+  const endpointUrl = onWs ? wsUrl : httpUrl;
   const flat = useMemo(() => {
     const all = listMethods(cfg);
     // Subscription methods ride a WebSocket — over plain HTTP they can only
@@ -413,6 +447,9 @@ export function TryMeDrawer({
   const [cvAgreeing, setCvAgreeing] = useState<string | null>(null);
   const [cvDisagreeing, setCvDisagreeing] = useState<string | null>(null);
   const [wsPhase, setWsPhase] = useState<WsPhase>(null);
+  const [wsProbe, setWsProbe] = useState<WsProbe | null>(null);
+  /** Bumped to re-run the probe on demand (clicking the tag). */
+  const [probeNonce, setProbeNonce] = useState(0);
   const [codeTab, setCodeTab] = useState<CodeTab>("CLI");
   const [visible, setVisible] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -454,17 +491,95 @@ export function TryMeDrawer({
     return flat.find((m) => m.tier === parsed.tier && m.index === parsed.index) ?? null;
   }, [flat, selKey]);
 
+  /** Drop everything the LAST send produced — a result belongs to the exact
+   *  (command, transport) that produced it. */
+  const resetResult = useCallback(() => {
+    setStatus("idle");
+    setResponse(null);
+    setLatencyMs(null);
+    setHttpStatus(null);
+    setServedBy(null);
+    setRetries(null);
+    setCvStatus(null);
+    setCvAgreeing(null);
+    setCvDisagreeing(null);
+    setWsPhase(null);
+  }, []);
+
   const handleSelect = (next: string) => {
     setSelKey(next);
     const parsed = parseKey(next);
     if (!parsed) return;
     const cmd = flat.find((m) => m.tier === parsed.tier && m.index === parsed.index);
     if (cmd) setParamsText(defaultParamsFor(cmd.command, iface));
-    setStatus("idle");
-    setResponse(null);
-    setLatencyMs(null);
-    setHttpStatus(null);
+    resetResult();
   };
+
+  /* Live reachability of the WebSocket transport — measured by opening one
+     from THIS browser, not read off a metrics series. A chain's Prometheus
+     health says nothing about whether the ws upgrade is served (the router
+     answers HTTP on the same port either way), and it is the browser's own
+     handshake that has to succeed for Send to work here. */
+  useEffect(() => {
+    if (!onWs) {
+      setWsProbe(null);
+      return;
+    }
+    let settled = false;
+    setWsProbe("checking");
+    let socket: WebSocket;
+    try {
+      socket = new WebSocket(endpointUrl);
+    } catch {
+      setWsProbe("offline");
+      return;
+    }
+    const finish = (state: WsProbe) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      setWsProbe(state);
+      try {
+        socket.close();
+      } catch {
+        /* already closing */
+      }
+    };
+    const timer = setTimeout(() => finish("offline"), WS_PROBE_TIMEOUT_MS);
+    // OPEN is the whole test: the router rejects a bare handshake with 405,
+    // so reaching open means this exact URL serves WebSocket.
+    socket.onopen = () => finish("online");
+    socket.onerror = () => finish("offline");
+    socket.onclose = () => finish("offline");
+    return () => {
+      settled = true;
+      clearTimeout(timer);
+      try {
+        socket.close();
+      } catch {
+        /* already closing */
+      }
+    };
+  }, [onWs, endpointUrl, probeNonce]);
+
+  const switchTransport = (next: Transport) => {
+    if (next === transport) return;
+    setTransport(next);
+    setShowAllCmds(false);
+    resetResult();
+  };
+
+  /* Switching transport re-filters the method list (subscriptions are offered
+     over a socket only), so a selection can go stale. Snap to the first method
+     the new transport does offer. */
+  useEffect(() => {
+    if (flat.length === 0) return;
+    if (flat.some((m) => keyOf(m.tier, m.index) === selKey)) return;
+    const next = flat[0]!;
+    setSelectedTier(next.tier);
+    setSelKey(keyOf(next.tier, next.index));
+    setParamsText(defaultParamsFor(next.command, iface));
+  }, [flat, selKey, iface]);
 
   const handleTierChange = (tier: Tier) => {
     setSelectedTier(tier);
@@ -704,10 +819,37 @@ export function TryMeDrawer({
                 : ""}
             </div>
           </div>
-          {health !== undefined && (
-            <span className={healthTagClass(health)} style={{ fontSize: 10 }}>
-              {health}
-            </span>
+          {/* On WebSocket the status is the browser's own handshake against
+              this exact URL — the chain's Prometheus health can't tell you
+              whether the upgrade is served. Click to re-check. */}
+          {onWs ? (
+            <button
+              type="button"
+              onClick={() => setProbeNonce((n) => n + 1)}
+              className={
+                wsProbe === "online"
+                  ? "gw-tag gw-tag--ok"
+                  : wsProbe === "offline"
+                    ? "gw-tag gw-tag--err"
+                    : "gw-tag"
+              }
+              title={
+                wsProbe === "online"
+                  ? `WebSocket handshake to ${endpointUrl} succeeded from this browser — click to re-check`
+                  : wsProbe === "offline"
+                    ? `WebSocket handshake to ${endpointUrl} failed from this browser — click to re-check`
+                    : `Opening a WebSocket to ${endpointUrl}…`
+              }
+              style={{ fontSize: 10, cursor: "pointer", flexShrink: 0 }}
+            >
+              ws · {wsProbe ?? "checking"}
+            </button>
+          ) : (
+            health !== undefined && (
+              <span className={healthTagClass(health)} style={{ fontSize: 10 }}>
+                {health}
+              </span>
+            )
           )}
           <button
             ref={closeButtonRef}
@@ -729,6 +871,38 @@ export function TryMeDrawer({
           }}
         >
           <div className="gw-row" style={{ gap: 8 }}>
+            {/* One endpoint, two transports: the router serves the WebSocket
+                upgrade on the same address, path-scoped. Switching swaps the
+                dial address shown here and the envelope Send puts on the
+                wire. */}
+            {canToggleTransport && (
+              <div className="gw-row" style={{ gap: 0, flexShrink: 0, border: "1px solid var(--line-2)", borderRadius: 6, overflow: "hidden" }}>
+                {(["http", "ws"] as const).map((t) => {
+                  const active = t === transport;
+                  return (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => switchTransport(t)}
+                      title={t === "http" ? "Send over HTTP" : `Send over WebSocket (${wsUrl})`}
+                      style={{
+                        padding: "3px 9px",
+                        fontSize: 10,
+                        fontWeight: active ? 700 : 500,
+                        border: "none",
+                        background: active ? "rgba(255,57,0,0.12)" : "transparent",
+                        color: active ? "var(--brand)" : "var(--text-3)",
+                        cursor: "pointer",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.05em",
+                      }}
+                    >
+                      {t === "http" ? "HTTP" : "WS"}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
             <span
               className="gw-mono"
               style={{
