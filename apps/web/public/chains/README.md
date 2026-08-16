@@ -49,6 +49,11 @@ only to identify the chain.
 
 ## Adding one
 
+Usually you are here because a chain resync brought in a chain with no icon —
+`generate-chain-map.mjs` names them under `no icon` in its summary, and
+[`.claude/rules/chain-resync.md`](../../../../.claude/rules/chain-resync.md)
+covers where vendoring fits in that procedure.
+
 Drop `<slug>.svg` in this directory following the house style, then re-run
 `node apps/web/scripts/generate-chain-map.mjs` and commit the regenerated map.
 Adding a **mainnet** icon is usually enough — testnet siblings inherit it, by

@@ -5,6 +5,19 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.11.1]
+
+### Changed
+
+- **`generate-chain-map.mjs` names the chains that fell back to `default.svg`**,
+  instead of only counting them. A chain with no vendored icon renders fine —
+  which is exactly why nobody notices it arrived without its brand — so the
+  resync procedure now has something to act on, and the chain-resync rule
+  carries the sourcing steps (web3icons `mono` + its `background` colour →
+  `tokens/mono` → cosmos/chain-registry → the project's own asset) alongside
+  the house style. Leaving a chain on the fallback stays a legitimate choice;
+  it just has to be a recorded one.
+
 ## [0.11.0]
 
 Try-it defaults that work. Every command the drawer opens on can be sent
