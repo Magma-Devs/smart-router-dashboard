@@ -4,6 +4,7 @@ import GitHub from "next-auth/providers/github";
 import Discord from "next-auth/providers/discord";
 import Credentials from "next-auth/providers/credentials";
 import { jwtVerify, SignJWT } from "jose";
+import type { Role } from "@sr/shared";
 
 /**
  * Auth.js v5 configuration (ported from lava-connect's auth.config.ts,
@@ -19,7 +20,19 @@ import { jwtVerify, SignJWT } from "jose";
  * [...nextauth] route all no-op/404 in disabled mode.
  */
 
-export type UserRole = "admin" | "member";
+/**
+ * The four roles, from `@sr/shared` — one definition, so the web can't drift
+ * into disagreeing with the api about who may do what.
+ *
+ * A **type-only** re-export on purpose: `proxy.ts` pulls this module into the
+ * edge bundle, and a value import of `@sr/shared` would drag the metric catalog
+ * and the chain map along with it. `import type` is erased at compile time, so
+ * this costs the bundle nothing.
+ */
+export type UserRole = Role;
+
+/** Least privilege — what an unknown or missing role decays to. */
+const DEFAULT_ROLE: UserRole = "read_only";
 
 /** Server-side base URL for talking to the api from inside Auth.js
  *  callbacks. In docker compose the api is reachable as `http://api:8000`
@@ -42,10 +55,49 @@ interface SignInUserPayload {
   role: UserRole;
 }
 
+/** `/auth/sign-in` and `/auth/oauth/:provider` open the session row and return
+ *  its id; it rides in the token's `sid` claim and the api resolves it on every
+ *  request. A token without one is refused, so this is not optional. */
+interface SignInResponse {
+  user: SignInUserPayload;
+  sessionId: string;
+}
+
+/**
+ * What the browser told *us*, forwarded to the api so the session row and the
+ * audit log record the person's own address rather than this container's.
+ *
+ * The api only believes it alongside `INTERNAL_AUTH_SECRET`; without that it
+ * falls back to what it observes, so an attacker calling the public sign-in
+ * endpoint directly cannot choose the address recorded against their attempts.
+ */
+function clientContextFrom(headers: Headers | null): {
+  clientContext?: { ip?: string; userAgent?: string };
+  internalHeaders: Record<string, string>;
+} {
+  const secret = process.env.INTERNAL_AUTH_SECRET;
+  if (!headers || !secret) return { internalHeaders: {} };
+
+  // The ingress appends the real client; take the left-most entry, which is the
+  // originating address in the standard X-Forwarded-For ordering.
+  const forwardedFor = headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+  const ip = forwardedFor || headers.get("x-real-ip") || undefined;
+  const userAgent = headers.get("user-agent") ?? undefined;
+  if (!ip && !userAgent) return { internalHeaders: {} };
+
+  return {
+    clientContext: { ...(ip ? { ip } : {}), ...(userAgent ? { userAgent } : {}) },
+    internalHeaders: { "X-Internal-Auth": secret },
+  };
+}
+
 declare module "next-auth" {
   interface User {
     role?: UserRole;
     avatarUrl?: string | null;
+    /** Set by `authorize()` / `signIn()` from the api's response, then copied
+     *  onto the token exactly once per sign-in. */
+    sessionId?: string;
   }
   interface Session {
     user: {
@@ -108,25 +160,32 @@ providers.push(
       email: { label: "Email", type: "email" },
       password: { label: "Password", type: "password" },
     },
-    async authorize(credentials) {
+    // The second argument is the browser's own request to
+    // /api/auth/callback/credentials — the only place in this flow that can see
+    // the client. Auth.js v5 passes it; omitting it (as this once did) leaves
+    // the api recording the web container's address for every sign-in, and
+    // every access event in the audit log inherits that.
+    async authorize(credentials, request) {
       const email = credentials?.email;
       const password = credentials?.password;
       if (typeof email !== "string" || typeof password !== "string") return null;
 
+      const { clientContext, internalHeaders } = clientContextFrom(request?.headers ?? null);
       try {
         const res = await fetch(`${apiBase}/auth/sign-in`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, password }),
+          headers: { "Content-Type": "application/json", ...internalHeaders },
+          body: JSON.stringify({ email, password, ...(clientContext ? { clientContext } : {}) }),
         });
         if (!res.ok) return null;
-        const body = (await res.json()) as { user: SignInUserPayload };
+        const body = (await res.json()) as SignInResponse;
         return {
           id: body.user.id,
           email: body.user.email,
           name: body.user.name,
           avatarUrl: body.user.avatarUrl ?? null,
           role: body.user.role,
+          sessionId: body.sessionId,
         };
       } catch {
         return null;
@@ -153,7 +212,10 @@ export const authConfig = {
         email: (token.email as string) ?? "",
         name: (token.name as string | undefined) ?? null,
         avatarUrl: (token.avatarUrl as string | null | undefined) ?? null,
-        role: (token.role as UserRole) ?? "member",
+        role: (token.role as UserRole) ?? DEFAULT_ROLE,
+        // The session this cookie addresses. Persisted here so it survives the
+        // decode on the next request — anything not in these claims is dropped.
+        sid: (token.sid as string | undefined) ?? "",
       };
       return await new SignJWT(claims)
         .setProtectedHeader({ alg: "HS256", typ: "JWT" })
@@ -177,7 +239,8 @@ export const authConfig = {
           email: payload.email as string,
           name: (payload.name as string | undefined) ?? null,
           avatarUrl: (payload.avatarUrl as string | null | undefined) ?? null,
-          role: (payload.role as UserRole) ?? "member",
+          role: (payload.role as UserRole) ?? DEFAULT_ROLE,
+          sid: (payload.sid as string | undefined) ?? undefined,
         };
       } catch {
         return null;
@@ -197,19 +260,33 @@ export const authConfig = {
       const token = provider === "google" ? account.id_token : account.access_token;
       if (!token) return false;
 
+      // This callback gets no `request`, so reach for the ambient one. Imported
+      // dynamically because `proxy.ts` pulls this module into the edge bundle,
+      // where `next/headers` doesn't exist — and never runs this callback.
+      let requestHeaders: Headers | null = null;
+      try {
+        const { headers } = await import("next/headers");
+        requestHeaders = await headers();
+      } catch {
+        // No ambient request scope: fall through with no client context. The
+        // api then records what it observes rather than nothing.
+      }
+      const { clientContext, internalHeaders } = clientContextFrom(requestHeaders);
+
       try {
         const res = await fetch(`${apiBase}/auth/oauth/${provider}`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ token }),
+          headers: { "Content-Type": "application/json", ...internalHeaders },
+          body: JSON.stringify({ token, ...(clientContext ? { clientContext } : {}) }),
         });
         if (!res.ok) return false;
-        const body = (await res.json()) as { user: SignInUserPayload };
+        const body = (await res.json()) as SignInResponse;
         user.id = body.user.id;
         user.email = body.user.email;
         user.name = body.user.name ?? null;
         user.avatarUrl = body.user.avatarUrl ?? null;
         user.role = body.user.role;
+        user.sessionId = body.sessionId;
         return true;
       } catch {
         return false;
@@ -222,22 +299,34 @@ export const authConfig = {
         token.email = user.email;
         token.name = user.name ?? null;
         token.avatarUrl = user.avatarUrl ?? null;
+        // `user` is present only on the sign-in call, so the session id is
+        // fixed here exactly once and every later refresh reuses it. Minting or
+        // defaulting it further down (in `session()`, which runs on every read)
+        // would hand each refresh a different id, and the audit log's `session`
+        // field — the thing that ties a run of actions to one sign-in — would
+        // stop meaning anything.
+        token.sid = user.sessionId;
       }
       return token;
     },
     async session({ session, token }) {
       session.user.id = (token.id as string) ?? "";
-      session.user.role = (token.role as UserRole) ?? "member";
+      session.user.role = (token.role as UserRole) ?? DEFAULT_ROLE;
       session.user.email = (token.email as string) ?? session.user.email;
       session.user.name = (token.name as string | null | undefined) ?? null;
       session.user.avatarUrl = (token.avatarUrl as string | null | undefined) ?? null;
       // Re-sign the api Bearer here — the custom `encode` only persists
       // the base claims into the cookie, so a token stashed on `token`
       // would be dropped on the next decode (lava-connect's lesson).
+      //
+      // `sid` is carried through, never generated: the api refuses a token
+      // whose session id doesn't resolve, so a fabricated one would 401 the
+      // whole surface rather than fail open.
       session.accessToken = await new SignJWT({
         sub: session.user.id,
         email: session.user.email,
         role: session.user.role,
+        sid: (token.sid as string | undefined) ?? "",
       })
         .setProtectedHeader({ alg: "HS256", typ: "JWT" })
         .setIssuer(SESSION_JWT_ISSUER)

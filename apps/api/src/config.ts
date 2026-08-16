@@ -13,6 +13,21 @@ function envInt(name: string, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+/**
+ * Parse `TRUST_PROXY` into what Fastify's `trustProxy` option accepts:
+ * a hop count (number), an explicit proxy list (string), or `false`.
+ * `true` is deliberately NOT reachable — see `server.trustProxy`.
+ */
+function envTrustProxy(name: string): number | string | false {
+  const raw = env(name)?.trim();
+  if (raw === undefined || raw === "") return 1;
+  if (raw === "false" || raw === "0") return false;
+  const hops = Number(raw);
+  if (Number.isInteger(hops) && hops > 0) return hops;
+  // Anything else is a proxy list ("10.0.0.0/8, 192.168.1.1").
+  return raw;
+}
+
 function envList(name: string): string[] | true {
   const raw = env(name);
   if (!raw) return true;
@@ -39,6 +54,21 @@ export const config = {
     host: env("API_HOST") ?? "0.0.0.0",
     corsOrigins: envList("CORS_ORIGINS"),
     rateLimitMax: envInt("RATE_LIMIT_MAX", 300),
+    /**
+     * How far to trust `X-Forwarded-For` when deriving `request.ip`, which
+     * feeds both the per-IP rate limit and the audit log's access events.
+     *
+     * Default `1` — trust exactly the immediate peer. Behind our ingress that
+     * yields the browser's real address and ignores anything a client tried to
+     * prepend. Accepts a hop count, a comma list of proxy IPs/CIDRs (tightest,
+     * use it when you know the ingress range), or `false` to trust nothing.
+     *
+     * It was `true` — trust every hop — which on a publicly reachable api lets
+     * any caller claim any address and so walk past the per-IP limit entirely.
+     * Per-*account* lockout is the real control regardless; this is
+     * defence-in-depth and an audit-quality question.
+     */
+    trustProxy: envTrustProxy("TRUST_PROXY"),
   },
 
   prometheus: {
@@ -77,6 +107,18 @@ export const config = {
     adminPassword: env("ADMIN_PASSWORD"),
     /** Needed to validate the `aud` claim of Google ID tokens server-side. */
     googleClientId: env("GOOGLE_CLIENT_ID"),
+    /**
+     * Shared secret proving a request came from our own web tier.
+     *
+     * `/auth/sign-in` is publicly reachable, so the browser details the web
+     * forwards on the caller's behalf (`clientContext`) are forgeable — and
+     * those become the IP and device on the audit log's access events. With
+     * this set, forwarded context is honoured only when the caller presents
+     * the secret; without it the api falls back to what it observes itself,
+     * so a direct caller records their own address rather than a chosen one.
+     * Unset ⇒ forwarded context is always ignored (safe, less useful).
+     */
+    internalSecret: env("INTERNAL_AUTH_SECRET"),
   },
 
   tenantId: env("TENANT_ID") ?? "default",
