@@ -5,6 +5,52 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.11.0]
+
+Try-it defaults that work. Every command the drawer opens on can be sent
+as-is, on every chain — and the ones that can't say so.
+
+### Added
+
+- **A runnability state on every catalog command.** `ready` (what ships with
+  it is already a complete request), `needs params` (a placeholder, a hint
+  that documents the argument instead of curating one, or the spec's own
+  `block_parsing` naming a positional argument), or neither — unmarked,
+  because the catalog doesn't know and won't guess. 1263 JSON-RPC, 2960 REST,
+  405 Tendermint and 149 gRPC commands are runnable, covering 163 of the 170
+  (spec × interface) pairs.
+- **The dropdown opens on the runnable ones**, a dozen at most, curated names
+  leading. A curated name no longer earns its place on its own:
+  `eth_getTransactionByHash` leads on ETH1, where the hint carries a real tx
+  hash, and sits behind "Show all" on every other EVM chain, where it
+  doesn't. Everything behind "Show all" that needs input is labelled, in the
+  list and on the selected command.
+- **Runnable defaults for four surfaces that had none** — XRP Ledger (whose
+  JSON-RPC takes `[{}]`, not `[]`), Monero, Avalanche P-chain and Celestia's
+  node API. Verified against public endpoints except Celestia's, which is
+  auth-gated.
+
+### Fixed
+
+- **CometBFT calls shipped an envelope that could only fail.** `params: []`
+  is rejected by every Tendermint method with optional arguments ("expected 1
+  parameters ([height]), got 0"), so `block`, `block_results`, `blockchain`,
+  `validators`, `commit` and `header` errored on Send. An empty object is
+  CometBFT's no-arguments call; all Tendermint params and the interface
+  default are `{}` now.
+- **Add-on tiers were offered on deployments that can't serve them.** The
+  ETH1 spec declares `debug_*` and `trace_*`, so both tiers appeared against
+  a router with no such upstream, where every send returns "No Providers For
+  Addon". Tiers now follow the add-ons the mounted values file declares, the
+  way archive already did.
+- **REST commands were sent as GET whatever their verb said** — Tron's wallet
+  API and EOS's chain API are POST, and the drawer's request line had been
+  printing a verb it wasn't using. A REST POST goes out bodyless, since its
+  arguments are in the path.
+- **A subscription listed over plain HTTP selected to nothing**: the dropdown
+  was built from the unfiltered tier while the selection was looked up in the
+  transport-filtered list.
+
 ## [0.10.0]
 
 Upstreams roster, grouped the way it gets read.
