@@ -14,8 +14,6 @@ import {
   type UpstreamCatalogEntry,
 } from "@/components/upstreams/catalog";
 
-export const pvStatLabel: CSSProperties = { fontSize: 9, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600 };
-
 export function StatusDot({ status }: { status: string }) {
   /* Honest extra branch: "—" (no metrics in window) renders a neutral dot —
      the design's else-branch red dot would falsely signal "down". */
