@@ -164,10 +164,14 @@ pnpm format          # prettier --write (format:check to verify only)
 ```
 
 Every push and PR to `main` runs the [Quality Gate](.github/workflows/quality-gate.yml):
-lint + typecheck + the full vitest suite, plus a **chain-map drift check** that
-regenerates the chain catalog from the live [lava-specs](https://github.com/Magma-Devs/lava-specs)
-repo and fails if the committed map is stale. Renovate-style dependency bumps
-arrive via [Dependabot](.github/dependabot.yml) (npm + GitHub Actions, weekly).
+lint + typecheck + the full vitest suite, plus a **spec drift check** that
+regenerates the chain map, the Try-it method catalog and the runnable-defaults
+roll-call from the live [lava-specs](https://github.com/Magma-Devs/lava-specs)
+repo and fails if any committed copy is stale. Resyncing is a documented
+procedure — see [`.claude/rules/chain-resync.md`](.claude/rules/chain-resync.md),
+which also covers what to do about a new chain whose methods all need caller
+input. Renovate-style dependency bumps arrive via
+[Dependabot](.github/dependabot.yml) (npm + GitHub Actions, weekly).
 
 When `NODE_ENV` isn't `production`, the api also serves an interactive
 **OpenAPI 3.1 explorer at [`/docs`](http://localhost:8000/docs)** (raw spec at
