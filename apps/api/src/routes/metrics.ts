@@ -96,7 +96,17 @@ export async function metricRoutes(app: FastifyInstance) {
     return app.scoped(request.query.router).metricsDashboard.dashboard(parseWindow(request.query.window), request.query.spec);
   });
 
-  // Per-chain rollup (RouterOverview table).
+  // Per-ROUTER rollup (the Routers table). One row per config router — see the
+  // service comment for what can and cannot be attributed to one.
+  app.get<{ Querystring: WindowQuery }>("/api/metrics/routers-rollup", tag("Per-router rollup (one row per config router)", false), async (request) => {
+    return {
+      routers: await app
+        .scoped(request.query.router)
+        .metrics.routers(parseWindow(request.query.window), config.prometheus.routerScopeLabel),
+    };
+  });
+
+  // Per-chain rollup.
   app.get<{ Querystring: WindowQuery }>("/api/metrics/chains", tag("Per-chain rollup", false), async (request) => {
     return { chains: await app.scoped(request.query.router).metrics.chains(parseWindow(request.query.window)) };
   });
