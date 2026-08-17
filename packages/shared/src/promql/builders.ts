@@ -341,6 +341,96 @@ export function qBlockLagByEndpoint(spec?: string): string {
   return `max by (spec) (${ENDPOINT_METRICS.latestBlock}${sel}) - on(spec) group_right() ${ENDPOINT_METRICS.latestBlock}${sel}`;
 }
 
+/* ── Block tips (latest block per router / per upstream) ─────────────────── */
+
+/**
+ * The TIP-STALENESS window. Long enough that a slow chain's normal inter-block
+ * gap doesn't read as frozen, short enough that a genuinely stuck endpoint
+ * surfaces within a poll or two.
+ */
+export const TIP_WINDOW = "15m";
+
+/** `TIP_WINDOW` in seconds, for the "did this chain produce blocks?" test. */
+export const TIP_WINDOW_SECONDS = 15 * 60;
+
+/**
+ * Chain block RATE in blocks/sec, from the per-endpoint gauge (which advances
+ * every poll — the router gauge is far coarser, see `qRouterTips`).
+ *
+ * This is the unit converter that makes a block delta comparable ACROSS chains:
+ * APT1 moves ~28 versions/sec and ETH1 ~0.08 blocks/sec, so a raw "7000 blocks
+ * behind" is 4 minutes on one chain and four centuries on the other. Every
+ * `behind` number the UI shows in seconds is a block delta divided by this.
+ */
+export function qBlockRateBySpec(spec?: string): string {
+  return `max by (spec) (deriv(${ENDPOINT_METRICS.latestBlock}${selector({ spec })}[${TIP_WINDOW}]))`;
+}
+
+/** Best (highest) upstream tip per chain — the reference every lag measures against. */
+export function qBestTipBySpec(spec?: string): string {
+  return `max by (spec) (${ENDPOINT_METRICS.latestBlock}${selector({ spec })})`;
+}
+
+/**
+ * Router tips split by DEPLOYMENT and interface.
+ *
+ * `smartrouter_latest_block` carries only `{spec, apiInterface}` — the router
+ * labels its series with the chain, not with itself — so two deployments
+ * serving one chain are told apart solely by the scrape target label
+ * (`ROUTER_SCOPE_LABEL`, `service` under the Prometheus Operator). Grouping BY
+ * that label is what turns one flattened number into a row per router; an
+ * invalid or absent label degrades to the interface-only split rather than
+ * emitting a query Prometheus rejects.
+ *
+ * ⚠ This gauge refreshes far more coarsely than the per-endpoint one (it moves
+ * on accepted tip observations, not on every poll), so its delta against the
+ * best upstream is dominated by refresh cadence on fast chains. Report it in
+ * SECONDS (see `qBlockRateBySpec`), never as a raw block count.
+ */
+export function qRouterTips(scopeLabel?: string, spec?: string): string {
+  const by = scopeLabel && isValidScopeLabelName(scopeLabel)
+    ? `${scopeLabel}, spec, apiInterface`
+    : "spec, apiInterface";
+  return `max by (${by}) (${ROUTER_METRICS.latestBlock}${selector({ spec })})`;
+}
+
+/** Per-upstream tips, keeping the interface split a per-endpoint_id roll-up loses. */
+export function qUpstreamTips(spec?: string): string {
+  return `max by (spec, endpoint_id, apiInterface) (${ENDPOINT_METRICS.latestBlock}${selector({ spec })})`;
+}
+
+/**
+ * How many times each ROUTER tip changed over `TIP_WINDOW` — i.e. the gauge's
+ * own refresh cadence, which is the yardstick its lag has to be judged against.
+ *
+ * `smartrouter_latest_block` moves on accepted tip observations, not on every
+ * poll, so it sits a refresh-interval behind the upstream gauge BY CONSTRUCTION.
+ * Comparing it to a fixed seconds threshold paints every healthy router amber;
+ * comparing it to `TIP_WINDOW ÷ changes` asks the only question that matters —
+ * is this router further behind than its own update rate explains?
+ */
+export function qRouterTipChanges(scopeLabel?: string, spec?: string): string {
+  const by = scopeLabel && isValidScopeLabelName(scopeLabel)
+    ? `${scopeLabel}, spec, apiInterface`
+    : "spec, apiInterface";
+  return `max by (${by}) (changes(${ROUTER_METRICS.latestBlock}${selector({ spec })}[${TIP_WINDOW}]))`;
+}
+
+/**
+ * How many times each upstream tip CHANGED over `TIP_WINDOW`. Zero means the
+ * gauge is frozen — but only counts as stale once the chain is fast enough to
+ * have produced blocks in that window (the caller pairs this with
+ * `qBlockRateBySpec`), otherwise every Bitcoin poll would flag stale.
+ */
+export function qTipChanges(spec?: string): string {
+  return `changes(${ENDPOINT_METRICS.latestBlock}${selector({ spec })}[${TIP_WINDOW}])`;
+}
+
+/** A label name Prometheus accepts in a `by (…)` clause. Mirrors `scope.ts`. */
+function isValidScopeLabelName(label: string): boolean {
+  return /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(label);
+}
+
 /** Block-lag series for ONE endpoint (needs its spec for the max side). */
 export function qEndpointBlockLagSeriesExpr(spec: string, endpointId: string): string {
   return `max(${ENDPOINT_METRICS.latestBlock}${selector({ spec })}) - max(${ENDPOINT_METRICS.latestBlock}${selector({ spec, endpoint_id: endpointId })})`;

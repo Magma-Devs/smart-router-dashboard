@@ -9,13 +9,16 @@
 import { useEffect, useState } from "react";
 import { buildChainMetaByIndex, type MetricWindow, type UpstreamMetrics } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
-import { uptimeColor } from "@/lib/colors";
+import { tipLagColor, uptimeColor } from "@/lib/colors";
+import { fmtLag } from "@/lib/format";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { HealthDot } from "@/components/gateway/HealthTag";
 import { Tip } from "@/components/gateway/Tip";
 import { ThCol, useSort } from "@/components/gateway/SortTable";
 import { useFilters } from "@/components/gateway/FiltersProvider";
 import { useRouterFilter } from "@/hooks/use-router-options";
+
+const BEHIND_TIP = "**How far this upstream trails the chain's best upstream** — blocks behind ÷ the chain's own block rate, so the number is in seconds and comparable across chains.\n\n`—` means it IS the best tip seen. **Stale** means the tip gauge never moved over the last 15 minutes while the chain kept producing blocks: the upstream is stuck, not merely slow.";
 
 interface RosterRow {
   pm: UpstreamMetrics;
@@ -32,6 +35,7 @@ interface RosterRow {
   router: string;
   chain: string;
   block: number;
+  behind: number;
   requests: number;
   uptime: number;
   latency: number;
@@ -72,6 +76,9 @@ export function PMRoster({ rows, activeName, onSelect, timeWindow }: {
       router: (leadRouter(v.routerIds) ?? "").toLowerCase(),
       chain: meta.name.toLowerCase(),
       block: v.latestBlock ?? -1,
+      // Sort by TIME behind, not blocks: the roster mixes chains, and a block
+      // count ranks a 2-second Aptos lag above a 10-minute Ethereum one.
+      behind: v.behindSec ?? (v.latestBlock == null ? Infinity : -1),
       requests: v.requests || 0,
       uptime: v.uptime ?? -1,
       latency: v.p95Ms ?? Infinity,
@@ -101,6 +108,7 @@ export function PMRoster({ rows, activeName, onSelect, timeWindow }: {
             <ThCol sortKey="router" sort={sort} onSort={onSort}>Router</ThCol>
             <ThCol sortKey="chain" sort={sort} onSort={onSort}>Chain</ThCol>
             <ThCol align="right" sortKey="block" sort={sort} onSort={onSort}>Latest block</ThCol>
+            <ThCol align="right" tip={BEHIND_TIP} sortKey="behind" sort={sort} onSort={onSort}>Behind</ThCol>
             <ThCol align="right" sortKey="requests" sort={sort} onSort={onSort}>Total requests</ThCol>
             <ThCol align="right" sortKey="uptime" sort={sort} onSort={onSort}>Uptime</ThCol>
             <ThCol align="right" sortKey="latency" sort={sort} onSort={onSort}>Latency</ThCol>
@@ -155,6 +163,18 @@ export function PMRoster({ rows, activeName, onSelect, timeWindow }: {
                     <span style={{ display: "inline-flex", alignItems: "center", gap: 6, justifyContent: "flex-end" }}>
                       <span className="gw-mono gw-tnum" style={{ fontSize: 12, color: "var(--text)" }}>{fmtBlock(v.latestBlock)}</span>
                     </span>
+                  ) : <span style={{ fontSize: 12, color: "var(--text-4)" }}>—</span>}
+                </td>
+                <td style={{ textAlign: "right" }}>
+                  {v.stale ? (
+                    <span style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", padding: "1px 6px", borderRadius: 4, color: "var(--err)", background: "rgba(239,68,68,0.12)" }}>Stale</span>
+                  ) : v.behindSec != null && v.behindSec >= 1 ? (
+                    <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-end" }}>
+                      <span className="gw-mono gw-tnum" style={{ fontSize: 12, color: tipLagColor(v.behindSec) }}>{fmtLag(v.behindSec)}</span>
+                      {v.blockLag != null && v.blockLag > 0 && (
+                        <span className="gw-tnum" style={{ fontSize: 10, color: "var(--text-4)" }}>{v.blockLag.toLocaleString("en-US")} blk</span>
+                      )}
+                    </div>
                   ) : <span style={{ fontSize: 12, color: "var(--text-4)" }}>—</span>}
                 </td>
                 {muted ? (

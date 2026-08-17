@@ -20,14 +20,23 @@ import {
   qErrorsBy,
   qLatencyDistribution,
   qLatencyQuantile,
+  qBestTipBySpec,
+  qBlockRateBySpec,
   qLatestBlock,
   qMethodLatencyQuantile,
   qPresence,
   qRequestsBy,
   qRequestsTotal,
+  qRouterTipChanges,
+  qRouterTips,
+  qTipChanges,
+  qUpstreamTips,
+  TIP_WINDOW_SECONDS,
   selector,
   rangeFor,
+  type BlockHeights,
   type ChainMetrics,
+  type ChainTips,
   type HealthState,
   type HeroSummary,
   type Kpi,
@@ -35,7 +44,9 @@ import {
   type MethodUsage,
   isValidScopeLabel,
   type MetricWindow,
+  type RouterTip,
   type UpstreamMetrics,
+  type UpstreamTip,
   type ScoreType,
   type TimeSeries,
 } from "@sr/shared";
@@ -46,6 +57,21 @@ import type { ConfigurationService } from "./configuration.js";
 export function health(value: number | null): HealthState {
   if (value === null) return "unknown";
   return value >= 1 ? "operational" : "unhealthy";
+}
+
+/**
+ * A tip gauge is STALE when it never moved over the staleness window *and* the
+ * chain was fast enough to have produced blocks in it.
+ *
+ * The second clause is what keeps slow chains honest: Bitcoin averages a block
+ * every ~9 minutes, so a frozen-looking gauge is its normal resting state and
+ * flagging it would cry wolf on every poll. Requiring ≥ 2 expected blocks means
+ * only a chain that should visibly have advanced can be called stuck. Unknown
+ * inputs are never stale — absence of evidence isn't evidence of a freeze.
+ */
+export function isStale(changes: number | undefined, blocksPerSec: number | undefined): boolean {
+  if (changes === undefined || blocksPerSec === undefined || blocksPerSec <= 0) return false;
+  return changes === 0 && blocksPerSec * TIP_WINDOW_SECONDS >= 2;
 }
 
 /** Prometheus matrix `values` → typed points (null when the bucket is empty). */
@@ -426,6 +452,172 @@ export class MetricsService {
   }
 
   /**
+   * Latest block per ROUTER and per UPSTREAM, for one chain or all of them.
+   *
+   * Instant-only: these are gauges, so there is no window parameter — the
+   * lag arithmetic is between series read at the same moment.
+   *
+   * Everything is measured against the chain's BEST upstream tip, and every
+   * lag is also reported in seconds via the chain's block rate. That second
+   * form is the one the UI leads with: the router gauge refreshes far more
+   * coarsely than the endpoint gauge, so on a fast chain (APT1 moves ~28
+   * versions/sec) its raw delta reads in the thousands while representing a
+   * few seconds of real drift. Reporting only blocks would make healthy
+   * routers look broken.
+   */
+  async blockTips(scopeLabel: string, spec?: string): Promise<BlockHeights> {
+    const label = isValidScopeLabel(scopeLabel) ? scopeLabel : null;
+
+    const [bestRows, rateRows, routerRows, routerChangeRows, upstreamRows, changeRows, healthRows] =
+      await Promise.all([
+        this.prom.query(qBestTipBySpec(spec)),
+        this.prom.query(qBlockRateBySpec(spec)),
+        this.prom.query(qRouterTips(label ?? undefined, spec)),
+        this.prom.query(qRouterTipChanges(label ?? undefined, spec)),
+        this.prom.query(qUpstreamTips(spec)),
+        this.prom.query(qTipChanges(spec)),
+        this.prom.query(`${ENDPOINT_METRICS.overallHealth}${selector({ spec })}`),
+      ]);
+
+    const num = (v: string): number | null => {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : null;
+    };
+    const best = new Map<string, number>();
+    for (const r of bestRows) {
+      const v = num(r.value[1]);
+      if (r.metric.spec && v !== null) best.set(r.metric.spec, v);
+    }
+    const rate = new Map<string, number>();
+    for (const r of rateRows) {
+      const v = num(r.value[1]);
+      // A negative deriv is a chain reset or a re-adopted tip, not a rate.
+      if (r.metric.spec && v !== null && v > 0) rate.set(r.metric.spec, v);
+    }
+    // changes() and the health gauge key on (endpoint_id, apiInterface), the
+    // same identity the tip rows carry — an endpoint serving two interfaces is
+    // two independent tips and must not collapse.
+    const key = (id: string, iface: string) => `${id}\u0000${iface}`;
+    const changes = new Map<string, number>();
+    for (const r of changeRows) {
+      const v = num(r.value[1]);
+      if (r.metric.endpoint_id && v !== null) {
+        changes.set(key(r.metric.endpoint_id, r.metric.apiInterface ?? ""), v);
+      }
+    }
+    const healthByKey = new Map<string, number>();
+    for (const r of healthRows) {
+      const v = num(r.value[1]);
+      if (r.metric.endpoint_id && v !== null) {
+        healthByKey.set(key(r.metric.endpoint_id, r.metric.apiInterface ?? ""), v);
+      }
+    }
+
+    /** Block delta → seconds, or null when the chain's rate is unmeasurable. */
+    const secondsBehind = (specLabel: string, blocks: number | null): number | null => {
+      const bps = rate.get(specLabel);
+      if (blocks === null || bps === undefined) return null;
+      return blocks / bps;
+    };
+
+    const bySpec = new Map<string, ChainTips>();
+    const ensure = (specLabel: string): ChainTips => {
+      let row = bySpec.get(specLabel);
+      if (!row) {
+        const meta = buildChainMetaByIndex(specLabel);
+        row = {
+          spec: specLabel,
+          name: meta.name,
+          color: meta.color,
+          blocksPerSec: rate.get(specLabel) ?? null,
+          bestBlock: best.get(specLabel) ?? null,
+          routers: [],
+          upstreams: [],
+        };
+        bySpec.set(specLabel, row);
+      }
+      return row;
+    };
+
+    // The router gauge's own refresh cadence, keyed the same way its tips are.
+    const routerKey = (routerId: string | null, specLabel: string, iface: string) =>
+      `${routerId ?? ""}\u0000${specLabel}\u0000${iface}`;
+    const refreshSec = new Map<string, number>();
+    for (const r of routerChangeRows) {
+      const changesCount = num(r.value[1]);
+      if (!r.metric.spec || changesCount === null || changesCount <= 0) continue;
+      refreshSec.set(
+        routerKey(label ? (r.metric[label] ?? null) : null, r.metric.spec, r.metric.apiInterface ?? ""),
+        TIP_WINDOW_SECONDS / changesCount,
+      );
+    }
+
+    for (const r of routerRows) {
+      const specLabel = r.metric.spec;
+      if (!specLabel) continue;
+      const block = num(r.value[1]);
+      const reference = best.get(specLabel);
+      const behindBlocks =
+        block !== null && reference !== undefined ? Math.max(0, reference - block) : null;
+      const tip: RouterTip = {
+        router: label ? (r.metric[label] ?? null) : null,
+        apiInterface: r.metric.apiInterface ?? "",
+        block,
+        behindBlocks,
+        behindSec: secondsBehind(specLabel, behindBlocks),
+        refreshSec:
+          refreshSec.get(
+            routerKey(
+              label ? (r.metric[label] ?? null) : null,
+              specLabel,
+              r.metric.apiInterface ?? "",
+            ),
+          ) ?? null,
+      };
+      ensure(specLabel).routers.push(tip);
+    }
+
+    for (const r of upstreamRows) {
+      const specLabel = r.metric.spec;
+      const endpointId = r.metric.endpoint_id;
+      if (!specLabel || !endpointId) continue;
+      const iface = r.metric.apiInterface ?? "";
+      const block = num(r.value[1]);
+      const reference = best.get(specLabel);
+      const behindBlocks =
+        block !== null && reference !== undefined ? Math.max(0, reference - block) : null;
+      const tip: UpstreamTip = {
+        endpointId,
+        apiInterface: iface,
+        block,
+        behindBlocks,
+        behindSec: secondsBehind(specLabel, behindBlocks),
+        stale: isStale(changes.get(key(endpointId, iface)), rate.get(specLabel)),
+        health: health(healthByKey.get(key(endpointId, iface)) ?? null),
+      };
+      ensure(specLabel).upstreams.push(tip);
+    }
+
+    for (const chain of bySpec.values()) {
+      chain.routers.sort(
+        (a, b) =>
+          (a.router ?? "").localeCompare(b.router ?? "") ||
+          a.apiInterface.localeCompare(b.apiInterface),
+      );
+      chain.upstreams.sort(
+        (a, b) =>
+          a.endpointId.localeCompare(b.endpointId) ||
+          a.apiInterface.localeCompare(b.apiInterface),
+      );
+    }
+
+    return {
+      routerLabel: label,
+      chains: [...bySpec.values()].sort((a, b) => a.spec.localeCompare(b.spec)),
+    };
+  }
+
+  /**
    * @param routerId Keep only upstreams the named CONFIG router declares. A
    *   different axis from the `?router=` scope this service is constructed
    *   with: that one narrows the PromQL to a collector target label, this one
@@ -440,7 +632,8 @@ export class MetricsService {
     const sel = selector({ spec });
     const r = rangeFor(window);
 
-    const [requests, scores, healthRows, blocks, inFlight, latency] = await Promise.all([
+    const [requests, scores, healthRows, blocks, inFlight, latency, rateRows, changeRows] =
+      await Promise.all([
       this.prom.query(
         `sum by (endpoint_id, spec) (increase(${ENDPOINT_METRICS.totalRelaysServiced}${sel}[${r}]))`,
       ),
@@ -454,6 +647,10 @@ export class MetricsService {
       this.prom.query(
         `histogram_quantile(0.95, sum by (endpoint_id, le) (rate(${ENDPOINT_METRICS.latencyBucket}${sel}[${r}])))`,
       ),
+      // Block rate + tip-change count turn the raw block lag below into the
+      // seconds-behind figure the roster leads with, and into a stale flag.
+      this.prom.query(qBlockRateBySpec(spec)),
+      this.prom.query(qTipChanges(spec)),
     ]);
 
     // Config-derived identity: node name → role/interface (helm marks backups;
@@ -497,6 +694,8 @@ export class MetricsService {
           health: "unknown",
           latestBlock: null,
           blockLag: null,
+          behindSec: null,
+          stale: false,
           // Only helm-format configs can mark backups; SR_CONFIG ⇒ null.
           role: cfg && isHelm ? cfg.role : null,
           apiInterface: cfg?.iface ?? null,
@@ -554,6 +753,31 @@ export class MetricsService {
       if (specMax !== undefined && row.latestBlock !== null) {
         row.blockLag = Math.max(0, specMax - row.latestBlock);
       }
+    }
+
+    // Same lag in seconds — a block count only means something once divided by
+    // the chain's own block rate (see blockTips). Rows keep `blockLag` too, so
+    // a caller that wants the raw delta still has it.
+    const rateBySpec = new Map<string, number>();
+    for (const s2 of rateRows) {
+      const v = Number(s2.value[1]);
+      if (s2.metric.spec && Number.isFinite(v) && v > 0) rateBySpec.set(s2.metric.spec, v);
+    }
+    // The roster keys rows by endpoint_id alone, so an endpoint on two
+    // interfaces gets the WORST (lowest) change count of the two — a freeze on
+    // either interface is worth surfacing on the row.
+    const changesById = new Map<string, number>();
+    for (const s2 of changeRows) {
+      const id = s2.metric.endpoint_id;
+      const v = Number(s2.value[1]);
+      if (!id || !Number.isFinite(v)) continue;
+      const cur = changesById.get(id);
+      if (cur === undefined || v < cur) changesById.set(id, v);
+    }
+    for (const row of byId.values()) {
+      const bps = rateBySpec.get(row.spec);
+      row.behindSec = row.blockLag !== null && bps !== undefined ? row.blockLag / bps : null;
+      row.stale = isStale(changesById.get(row.endpointId), bps);
     }
 
     // Uptime + error rate per endpoint = success/total over the window, keyed

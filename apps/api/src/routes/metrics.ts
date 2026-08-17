@@ -111,6 +111,25 @@ export async function metricRoutes(app: FastifyInstance) {
     };
   });
 
+  // Latest block per router + per upstream (instant gauges — no window).
+  app.get<{ Querystring: WindowQuery }>("/api/metrics/block-heights", {
+    schema: {
+      tags: ["Metrics"],
+      summary: "Latest block per router deployment and per upstream, with lag in seconds",
+      querystring: {
+        type: "object" as const,
+        properties: {
+          spec: windowQuerySchema.properties.spec,
+          router: windowQuerySchema.properties.router,
+        },
+      },
+    },
+  }, async (request) => {
+    return app
+      .scoped(request.query.router)
+      .metrics.blockTips(config.prometheus.routerScopeLabel, request.query.spec);
+  });
+
   // RPS time-series for the Traffic chart.
   app.get<{ Querystring: WindowQuery }>("/api/metrics/rps", tag("RPS time-series"), async (request) => {
     const { spec } = request.query;
