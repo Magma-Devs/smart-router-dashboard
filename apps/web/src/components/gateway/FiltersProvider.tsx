@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
-import { isMetricWindow, type MetricWindow } from "@sr/shared";
+import { DEFAULT_WINDOW, isMetricWindow, type MetricWindow } from "@sr/shared";
 
 /** The filters every dashboard screen shares, in two lifetimes.
  *
@@ -66,7 +66,7 @@ interface FiltersContextValue {
 const FiltersContext = createContext<FiltersContextValue | null>(null);
 
 export function FiltersProvider({ children }: { children: React.ReactNode }) {
-  const [timeWindow, setTimeWindowState] = useState<MetricWindow>("1d");
+  const [timeWindow, setTimeWindowState] = useState<MetricWindow>(DEFAULT_WINDOW);
   const [narrowing, setNarrowing] = useState<Narrowing>({ path: "", ...NOTHING });
   const pathname = usePathname();
 

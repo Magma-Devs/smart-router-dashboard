@@ -5,6 +5,32 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.15.0]
+
+The dashboard opened on a day. The question people open it to answer is "what
+is happening now".
+
+### Changed
+
+- **The default time window is 30 minutes.** Over a day, a chain that has been
+  failing for ten minutes is 0.7% of the window judging it — the average absorbs
+  the incident that made you open the page. The cost is honest and worth naming:
+  uptime, availability and error rate ride far fewer samples over half an hour,
+  so they swing more, and on a quiet deployment a 30-minute window can sit below
+  the traffic floor and read `0` / `—` where the day view showed numbers. The
+  window picker is unchanged and one click away.
+- **One source of truth for it.** The default lived in three disconnected
+  places, only one of which the UI read: `DEFAULT_WINDOW` (the api's parse path
+  for an absent `window=`), a `useState("1d")` literal in `FiltersProvider`
+  (what every page actually opened on), and ~18 `window = "1d"` parameter
+  defaults across the PromQL builders. All three now read `DEFAULT_WINDOW`, so
+  the next change to it is one line. A test pins the value on its own, so
+  changing what the product opens on stays a deliberate edit.
+
+Fixed short windows are left alone on purpose: the topbar status strip's own
+`window=1h` call, the upstream deep-dive's 1h / 24h / 7d context boxes, and the
+custom-range parser's fallback. None of them is "the default window".
+
 ## [0.14.0]
 
 Which block is each router on, and how far behind is each upstream? Both gauges

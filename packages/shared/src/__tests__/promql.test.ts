@@ -48,6 +48,7 @@ import {
   WINDOW_OPTIONS,
   isMetricWindow,
   toMetricWindow,
+  DEFAULT_WINDOW,
   stepSeconds,
 } from "../constants/windows.js";
 
@@ -233,8 +234,17 @@ describe("windows catalog", () => {
   it("toMetricWindow resolves keys, aliases, and garbage", () => {
     expect(toMetricWindow("7d")).toBe("7d");
     expect(toMetricWindow("24h")).toBe("1d");
-    expect(toMetricWindow("bogus")).toBe("1d");
-    expect(toMetricWindow(undefined)).toBe("1d");
+    // Garbage and absence land on the default — asserted against the constant,
+    // so changing the default stays a one-line edit rather than a test hunt.
+    expect(toMetricWindow("bogus")).toBe(DEFAULT_WINDOW);
+    expect(toMetricWindow(undefined)).toBe(DEFAULT_WINDOW);
+  });
+
+  it("the default window is 30 minutes", () => {
+    // Pinned on its own: what the dashboard opens on is a product decision, so
+    // changing it should be a deliberate edit here, not a silent side effect.
+    expect(DEFAULT_WINDOW).toBe("30m");
+    expect(WINDOWS[DEFAULT_WINDOW].rangeSeconds).toBe(1800);
   });
 });
 

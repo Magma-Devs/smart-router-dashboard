@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { WINDOWS, toMetricWindow, type MetricWindow } from "@sr/shared";
+import { DEFAULT_WINDOW, WINDOWS, toMetricWindow, type MetricWindow } from "@sr/shared";
 import { sendApiError } from "../plugins/error-handler.js";
 import { config } from "../config.js";
 
@@ -24,7 +24,7 @@ const windowQuerySchema = {
     window: {
       type: "string" as const,
       enum: [...Object.keys(WINDOWS), "24h"],
-      description: "Time window (default 1d; 24h is an alias of 1d)",
+      description: `Time window (default ${DEFAULT_WINDOW}; 24h is an alias of 1d)`,
     },
     spec: { type: "string" as const, description: "Chain spec label, e.g. ETH1 (optional)" },
     router: {
