@@ -5,6 +5,41 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.16.2]
+
+### Fixed
+
+- **A gated upstream answered 401 on the direct leg while the router's leg
+  answered 200.** A vendor key does not always live in the url: `auth-config`
+  on a node url puts it in a header (`Authorization: Bearer …`) or a query
+  string, and the router attaches it to every relay it sends there. The
+  direct-to-upstream relay dialed the bare url, so for those endpoints the
+  comparison read as an upstream fault — the one reading it cannot make, since
+  the only difference was a header the dashboard never sent. The relay now
+  sends the endpoint's `auth-config` headers (on the ws handshake too) and
+  appends its `auth-query` the way the router's own `AddAuthPath` appends it,
+  and `redactSecrets` scrubs that credential out of whatever the upstream
+  echoes back.
+- **A credential the values file names but doesn't carry now says so.** The
+  chart runs `envsubst` over the rendered router config, so a token is often
+  written `${VENDOR_TOKEN}` and handed to the router's container from
+  `miscellaneous.routers.env`. Placeholders resolve against that block's
+  literal `value:` entries — and only those; a `secretRef` lives in a
+  Kubernetes Secret the dashboard doesn't mount, and the api's own environment
+  is deliberately not a source (a values file could otherwise name
+  `${AUTH_SECRET}` and have the relay carry the dashboard's signing key to an
+  upstream host). What can't be resolved answers `422` naming the missing
+  variable instead of dialing a literal `${VAR}`.
+- **"Test connection" tested whichever upstream the router felt like.** The
+  per-upstream modal POSTed through the router with no pin, so a green
+  "Connection successful" said nothing about the upstream whose row opened it.
+  It now sends `lava-select-provider`, like the Try-now drawer.
+- **The relay resolves a node name the way the pin header is folded.** Exact
+  match first, then lowercased with spaces to dashes — the chart's own folding.
+  The two halves of the drawer address an upstream by one vocabulary whichever
+  casing the caller holds, and a folded name two nodes answer to resolves to
+  nothing rather than to a coin flip.
+
 ## [0.16.1]
 
 ### Fixed
@@ -34,6 +69,7 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   17s · 2 ifaces` sub-line was a per-interface diagnostic in a rollup table. The
   per-upstream lag stays on the Metrics · Upstreams roster, and the full
   per-interface detail stays on `GET /api/metrics/block-heights`.
+
 ## [0.16.0]
 
 ### Added
