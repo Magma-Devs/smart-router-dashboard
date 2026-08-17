@@ -81,7 +81,9 @@ export function auditFlag(value: boolean | null | undefined): string {
  * rather than `localeCompare`, so the ordering does not depend on the server's
  * locale.
  */
-export function auditList(values: readonly (string | null | undefined)[] | null | undefined): string {
+export function auditList(
+  values: readonly (string | null | undefined)[] | null | undefined,
+): string {
   if (!values) return AUDIT_NONE;
   const cleaned = [...new Set(values.map((v) => (v ?? "").trim()).filter((v) => v !== ""))];
   if (cleaned.length === 0) return AUDIT_NONE;

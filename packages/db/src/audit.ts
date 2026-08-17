@@ -102,11 +102,7 @@ export interface AuditWriter {
  */
 export interface AuditViolation {
   action: string;
-  reason:
-    | "unknown-action"
-    | "context-not-allowed"
-    | "changes-not-expected"
-    | "write-failed";
+  reason: "unknown-action" | "context-not-allowed" | "changes-not-expected" | "write-failed";
   detail?: unknown;
 }
 

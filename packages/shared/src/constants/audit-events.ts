@@ -12,6 +12,14 @@
  * Mirrors the shape of `constants/metrics.ts`: a ground-truth catalog plus the
  * helpers that read it. See `docs/ACCOUNTS-DESIGN.md` §10 for the writer
  * interface these names travel through.
+ *
+ * **Enumerate this catalog with `AUDIT_ACTIONS`, never by scanning the source.**
+ * Prettier's `quoteProps: "as-needed"` quotes a key only when it has to, so
+ * `signout` is bare while every dotted name is quoted — a `"([a-z.]+)":` sweep
+ * silently misses it and reports the event as absent. That has already cost one
+ * person a detour. The exported array is the answer and is always complete;
+ * making the source uniform instead would mean either fighting the formatter on
+ * every write or reformatting 127 unrelated files.
  */
 
 /**
@@ -213,7 +221,8 @@ export const AUDIT_EVENTS = {
   },
   "member.role_changed": {
     group: "people",
-    description: "A person's role was changed. Takes effect on their current session, not at next sign-in.",
+    description:
+      "A person's role was changed. Takes effect on their current session, not at next sign-in.",
     carriesChanges: true,
     carriesAccessContext: false,
     origin: "MAG-2729",
@@ -261,7 +270,8 @@ export const AUDIT_EVENTS = {
   // CHECK constraint.
   "provider.added": {
     group: "config",
-    description: "An upstream provider was added, with its chain, role, interface and capabilities.",
+    description:
+      "An upstream provider was added, with its chain, role, interface and capabilities.",
     carriesChanges: true,
     carriesAccessContext: false,
     origin: "MAG-2731",
@@ -275,7 +285,8 @@ export const AUDIT_EVENTS = {
   },
   "provider.renamed": {
     group: "config",
-    description: "A provider's display name changed. Needs no approval, so it is logged and not gated.",
+    description:
+      "A provider's display name changed. Needs no approval, so it is logged and not gated.",
     carriesChanges: true,
     carriesAccessContext: false,
     origin: "MAG-2731",
@@ -334,7 +345,8 @@ export const AUDIT_EVENTS = {
   },
   "apikey.created": {
     group: "config",
-    description: "An API key was created for a named route. Its value is shown once and never recorded here.",
+    description:
+      "An API key was created for a named route. Its value is shown once and never recorded here.",
     carriesChanges: false,
     carriesAccessContext: false,
     origin: "MAG-2731",
@@ -350,14 +362,16 @@ export const AUDIT_EVENTS = {
   // ── Approval ──────────────────────────────────────────────────────────────
   "change.requested": {
     group: "approval",
-    description: "A configuration change was submitted for approval. There is no draft state — submitting is the act.",
+    description:
+      "A configuration change was submitted for approval. There is no draft state — submitting is the act.",
     carriesChanges: false,
     carriesAccessContext: false,
     origin: "MAG-2731",
   },
   "change.approved": {
     group: "approval",
-    description: "An approver cleared a change proposed by someone else, and it applied immediately.",
+    description:
+      "An approver cleared a change proposed by someone else, and it applied immediately.",
     carriesChanges: false,
     carriesAccessContext: false,
     origin: "MAG-2731",
