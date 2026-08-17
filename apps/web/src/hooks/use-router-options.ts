@@ -110,13 +110,19 @@ export function useRouterFilter(): {
    *  router narrows the list instead of making the control disappear. */
   totalRouters: number;
 } {
-  const { chain, routerId, setRouterId, setRouter } = useFilters();
+  const { chain, setChain, routerId, setRouterId, setRouter } = useFilters();
   const { routers: all, scopeUnavailable } = useRouterOptions();
   const routers = chain ? all.filter((r) => r.spec === chain) : all;
   const effective = routerId !== null && routers.some((r) => r.id === routerId) ? routerId : null;
   const select = (id: string | null) => {
     setRouterId(id);
-    setRouter(id === null ? null : (all.find((r) => r.id === id)?.scopeValue ?? null));
+    const picked = id === null ? null : (all.find((r) => r.id === id) ?? null);
+    setRouter(picked?.scopeValue ?? null);
+    // A config router serves ONE chain, so picking it also picks that chain —
+    // which is what narrows the panels that aggregate by chain and can't be
+    // attributed to a router any other way. Setting it rather than deriving it
+    // keeps the chain box honest about what is being shown.
+    if (picked) setChain(picked.spec);
   };
   return {
     routerId: effective,
