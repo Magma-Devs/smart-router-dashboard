@@ -17,7 +17,9 @@ import { useApi } from "@/hooks/use-api";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { ChainSelect } from "@/components/gateway/ChainSelect";
 import { WindowSelect } from "@/components/gateway/WindowSelect";
-import { useChainOptions, withMutedRows } from "@/hooks/use-chain-options";
+import { RouterFilterSelect } from "@/components/gateway/RouterFilterSelect";
+import { useChainFilter, useChainOptions, withMutedRows } from "@/hooks/use-chain-options";
+import { useRouterFilter } from "@/hooks/use-router-options";
 import { CapabilityTags, capabilitiesOf } from "@/components/gateway/CapabilityTags";
 import { UpstreamLogo } from "@/components/upstreams/UpstreamLogo";
 import { HealthTag } from "@/components/gateway/HealthTag";
@@ -162,7 +164,11 @@ export function UpstreamsView() {
   /* The shared window (and router scope) the metrics screens use — this page
      used to pin 1d while honouring the scope, which made it the one screen
      where the window selector's absence was a silent override. */
-  const { timeWindow, setTimeWindow, chain, setChain, scopeQ } = useFilters();
+  const { timeWindow, setTimeWindow, scopeQ } = useFilters();
+  const { chain, select: selectChain } = useChainFilter();
+  /* Effective router selection — the hook drops one the chain filter excluded,
+     so the cards can't be narrowed by a router the picker no longer shows. */
+  const { routerId } = useRouterFilter();
   const live = useApi<{ upstreams: UpstreamMetrics[] }>(`/api/metrics/upstreams?window=${timeWindow}${scopeQ}`);
 
   const [unhealthyOnly, setUnhealthyOnly] = useState(false);
@@ -204,9 +210,12 @@ export function UpstreamsView() {
         pv.url.toLowerCase().includes(search.toLowerCase());
       const matchNet = netFilter === "all" || pv.networks.includes(netFilter);
       const matchChain = !activeChain || pv.chains.includes(activeChain);
-      return matchHealth && matchSearch && matchNet && matchChain;
+      // The shared router filter — an upstream belongs to the routers whose
+      // config declares it (`routerId` on each of its endpoint rows).
+      const matchRouter = !routerId || pv.chainRows.some((r) => r.routerId === routerId);
+      return matchHealth && matchSearch && matchNet && matchChain && matchRouter;
     });
-  }, [upstreams, unhealthyOnly, search, netFilter, activeChain]);
+  }, [upstreams, unhealthyOnly, search, netFilter, activeChain, routerId]);
 
   /* Chain grouping filters per ROW, not per upstream: a chain card survives
      when the query matches the chain itself OR any upstream serving it, so
@@ -215,7 +224,8 @@ export function UpstreamsView() {
     const q = search.trim().toLowerCase();
     const groups = groupByChain(upstreams).map((group) => ({
       ...group,
-      rows: group.rows.filter(({ upstream }) =>
+      rows: group.rows.filter(({ upstream, row }) =>
+        (!routerId || row.routerId === routerId) &&
         (!unhealthyOnly || upstream.health === "unhealthy") &&
         (!q ||
           buildChainMetaByIndex(group.spec).name.toLowerCase().includes(q) ||
@@ -231,7 +241,7 @@ export function UpstreamsView() {
       const mainnet = buildChainMetaByIndex(group.spec).mainnet;
       return netFilter === "mainnet" ? mainnet : !mainnet;
     });
-  }, [upstreams, unhealthyOnly, search, netFilter, activeChain]);
+  }, [upstreams, unhealthyOnly, search, netFilter, activeChain, routerId]);
 
   const loading = !config.data && !config.error;
   /* Nothing to show. The router grouping renders the routers themselves, so a
@@ -297,10 +307,14 @@ export function UpstreamsView() {
         {chainOptions.length > 1 && (
           <ChainSelect
             value={activeChain ?? "all"}
-            onChange={(v) => setChain(v === "all" ? null : v)}
+            onChange={(v) => selectChain(v === "all" ? null : v)}
             chains={chainOptions}
           />
         )}
+        {/* Router filter — also shared. This page is built out of the config,
+            so it needs no caveat: every grouping here can name the router an
+            endpoint belongs to. */}
+        <RouterFilterSelect />
         <div className="gw-segctl">
           {([["all", "All"], ["mainnet", "Mainnet"], ["testnet", "Testnet"]] as const).map(([val, lbl]) => (
             <button key={val} className={netFilter === val ? "on" : ""} onClick={() => setNetFilter(val)}>{lbl}</button>
@@ -346,7 +360,7 @@ export function UpstreamsView() {
           )}
         </div>
       ) : groupBy === "router" ? (
-        <RouterGroups routers={routers} upstreams={upstreams} search={search} netFilter={netFilter} chainFilter={activeChain} />
+        <RouterGroups routers={routers} upstreams={upstreams} search={search} netFilter={netFilter} chainFilter={activeChain} routerFilter={routerId} />
       ) : groupBy === "chain" ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {chainGroups.map((group) => {
@@ -413,7 +427,8 @@ export function UpstreamsView() {
                     the filter excludes. */}
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   {pv.chainRows
-                    .filter((row) => !activeChain || row.spec === activeChain)
+                    .filter((row) => (!activeChain || row.spec === activeChain) &&
+                                     (!routerId || row.routerId === routerId))
                     .map((row, i) => (
                       <EndpointRow key={i} upstream={pv} row={row} routers={routers} />
                     ))}

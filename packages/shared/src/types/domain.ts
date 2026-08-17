@@ -53,6 +53,19 @@ export interface UpstreamMetrics {
   role: "primary" | "backup" | null;
   apiInterface: string | null;
   inFlight: number;
+  /**
+   * Config routers that declare this upstream — `[]` when no values file is
+   * mounted, one id normally, SEVERAL when routers share a node name.
+   *
+   * It comes from the config, not from the series, because no series carries a
+   * router: `rpc_endpoint_*` is labelled `endpoint_id` + `spec` (+ the
+   * collector's target labels) and nothing else. So the numbers on this row
+   * are that node's, and they are the named router's only as far as the node
+   * name is that router's alone — two routers declaring one name on one chain
+   * share a single series, which is why this is a list and why the UI marks
+   * those rows instead of splitting them.
+   */
+  routerIds: string[];
 }
 
 

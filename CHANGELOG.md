@@ -5,6 +5,45 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.13.0]
+
+Which router served this? The roster could only be sliced by chain — and a
+chain can have several routers.
+
+### Added
+
+- **A router filter next to the chain one**, defaulting to all routers. Its
+  options are the mounted config's routers, because that is the only place two
+  routers on one chain are distinguishable: no series carries a router. Picking
+  a chain narrows the list to the routers serving it, and picking a chain that
+  excludes the selected router clears the selection rather than leaving a filter
+  that has quietly stopped applying.
+- **A Router column on the Metrics · Upstreams roster**, from `routerIds` on
+  every upstream row (new on `UpstreamMetrics`, joined from the values file in
+  the api). Two routers declaring one node name share a single series, so such a
+  row is marked `+1 shared` — the numbers are both routers' traffic together,
+  and splitting them would be an invention. Sortable, and it leads with the
+  router you filtered on.
+- **`GET /api/metrics/upstreams?routerId=`** — keeps one config router's rows.
+  A different axis from the existing `?router=`, which narrows the PromQL by the
+  collector's target label; the doc now has a table telling them apart.
+
+### Changed
+
+- **One router control instead of two.** The topbar's scope-only dropdown is
+  gone; the header filter sets both axes — the config id always, and the label
+  scope when the collector actually reports a matching target. Where it can't
+  (no per-router target label, the common case), the page says so: the roster is
+  filtered, the chain-level panels stay deployment-wide, because no metric
+  records which router served a request.
+- **The router list names routers, not chains.** The chain is shown only when
+  the router's own name isn't already it — an SR_CONFIG mount names each router
+  after the chain it serves, and repeating that turned the list into a list of
+  chains.
+- **The Upstreams page honours the router filter too**, in all three groupings,
+  since the same selection is shared across the app.
+
+
 ## [0.12.0]
 
 One page for the mounted config. The Endpoints tab is gone — the surface it

@@ -110,8 +110,8 @@ apps/web/                 @sr/web — Next.js 16 App Router (:3000)
     app/api/config/     runtime-config route (DASHBOARD_API_URL → browser)
     components/
       gateway/          Shell · Sidebar/Topbar · RouterHeader · FiltersProvider ·
-                        WindowSelect · ChainSelect · HealthTag · charts ·
-                        SortTable · SideSheet · icons
+                        WindowSelect · ChainSelect · RouterFilterSelect ·
+                        HealthTag · charts · SortTable · SideSheet · icons
       overview/         OverviewView (KPI strip + 2×2 chart grid)
       dashboard/        DashHeader · OverviewTab · MetricsTab · TroubleDetail · …
       metrics/          MetricsView (4 tabs) · HeroPanel · RouterOverview ·
@@ -232,7 +232,35 @@ card header appends the router id whenever a spec is duplicated. Metrics need th
 router scope below, because the router labels its series with the chain, not
 with itself.
 
-### Router scope (`?router=`)
+### Two router axes (`?router=` vs. `?routerId=`)
+
+"Router" means two things here, and the UI has one control for both:
+
+| | `?router=` (scope) | `?routerId=` (config) |
+|---|---|---|
+| Identity | a value of `ROUTER_SCOPE_LABEL` — the collector's per-target label | an `id` from `GET /api/config/routers` |
+| Comes from | Prometheus target labels | the mounted values file |
+| Narrows | the PromQL, so **chain-level** series split per router | **rows** — which upstreams a response lists |
+| Available | only when the collector labels targets per router (often not) | always, whenever a values file is mounted |
+| Read by | every `/api/metrics/*` route | `/api/metrics/upstreams` |
+
+Per-upstream rows can always be attributed, because `rpc_endpoint_*` carries
+`endpoint_id` and the config says which router declares that node — that's
+`routerIds` on `UpstreamMetrics` (a LIST: two routers declaring one node name
+share one series, which the roster marks rather than splitting). Chain-level
+aggregates can only be split by the scope label, so with no such label a router
+selection narrows the roster and the UI says the other panels stay
+deployment-wide instead of implying otherwise.
+
+Web side, `useRouterFilter()` (`hooks/use-router-options.ts`) is the only place
+a router selection is made: it sets the config id and, when that router maps to
+a scrape target the collector actually reports, the scope too. The list is
+narrowed by the chain filter, and `useChainFilter()` clears a router the new
+chain excludes — the pair stays consistent without an effect watching for it.
+`<RouterFilterSelect>` renders it next to `<ChainSelect>`, and hides itself only
+when the deployment has fewer than two routers at all.
+
+#### The scope label
 
 `smartrouter_*` carries `spec` (the chain) and no router identity, so two
 routers on one chain sum into a single set of numbers. What *does* separate
@@ -245,8 +273,8 @@ value is the router's Service name (`<router-id-lowered>-router`).
 - **`GET /api/metrics/routers`** → `{ label, routers[] }` — the distinct
   values actually present. Empty means the collector attaches no such label
   (one static target, or a mislabelled `ROUTER_SCOPE_LABEL`): "can't split",
-  never "no routers". The web's `<RouterSelect>` hides itself below two
-  values — a filter that can't change anything is worse than none.
+  never "no routers" — the config still knows the routers, which is why the
+  filter is built on the config list and treats a scrape value as a bonus.
 - **Every `/api/metrics/*` route takes `?router=<value>`**, including the raw
   `/query` passthrough. An absent or malformed value reads cluster-wide
   rather than silently becoming a different query.
@@ -278,6 +306,9 @@ state can't be worded or sourced two ways:
   traffic yet", Upstreams greys "not in config") rather than hiding it, which
   would read as "not configured". The selection itself is `chain` on
   `FiltersProvider`, never page state.
+- **`useRouterFilter()`** (`hooks/use-router-options.ts`) is the router
+  filter's only entry point — one selection, both router axes (see "Two router
+  axes"), chain-narrowed list, `routerId` on `FiltersProvider` (`sr:routerId`).
 - **`lib/health.ts`** owns the words and colours for `HealthState`
   (`operational | unhealthy | unknown`) — **Operational / Unhealthy / —** — and
   `<HealthTag>` / `<HealthDot>` are how they reach the screen. `unknown` means
@@ -330,7 +361,7 @@ Every `/api/metrics/*` route also accepts **`router?`** — the router scope
 | `GET /api/metrics/overview` | `window`, `spec?` | `OverviewData` — KPI pairs (requests, RPS, errors, success rate, p50/p95/p99), `errorRate`, `health`, throughput/errors series, `latencySeries` (p50/p95/p99 toggle), **`latencyDistribution`** (histogram buckets), **`perProviderSeries`**, **`errorLayers`** (single `unclassified` layer until labelled counters exist), `perChainLatency`, `activeRoutes`, `perChainSeries`; `computeUnits`/`rpsCap` always null |
 | `GET /api/metrics/dashboard` | `window`, `spec?` | `DashboardData` — the Dashboard page (both tabs) in one round-trip: `kpis` (successRate, p95Ms, errors, rps, errorsHandled=null), `series` (throughput, errors, errorRate, successRate, latency p50/95/99, perChain, perChainSuccessRate, perChainLatency, providerMix, perProviderLatencyP95), `chains` (multiselect options — the series filter is client-side; `spec` accepted for symmetry). Unbacked families (`scu`, `regions`, `failoverRatio`, `internalAvailability`, `cacheHitRate`, `errorClasses`, `errorsHandledBreakdown`, `contribution`, `providerAvailability`, `scorecard`) are `null`, `trouble` is `[]` |
 | `GET /api/metrics/chains` | `window` | `{ chains: ChainMetrics[] }` — per-chain rollup (requests, availability, errorRate, p95, composite QoS, health, latestBlock, providerCount) for the Routers table |
-| `GET /api/metrics/providers` | `window`, `spec?` | `{ providers: ProviderMetrics[] }` — roster with requests, uptime, p95, **errorRate**, selection scores, health, latestBlock, **blockLag**, **role** (`primary`/`backup` from helm `is_backup`; null for SR_CONFIG), **apiInterface**, inFlight |
+| `GET /api/metrics/upstreams` | `window`, `spec?`, **`routerId?`** | `{ upstreams: UpstreamMetrics[] }` — roster with requests, uptime, p95, **errorRate**, selection scores, health, latestBlock, **blockLag**, **role** (`primary`/`backup` from helm `is_backup`; null for SR_CONFIG), **apiInterface**, inFlight, **`routerIds`** (the config routers declaring the upstream — several when they share a node name). `routerId` keeps only one router's rows; it filters against the values file and does NOT narrow the PromQL (that's `router` — see "Two router axes") |
 | `GET /api/metrics/rps` | `window`, `spec?` | `TimeSeries` — `{ label, points: {t, v}[] }` |
 | `GET /api/metrics/traffic` | `window` | Aggregate `rpsNow` + series + per-chain rows (`rpsNow`, `requests`, `share`, `trend` sparkline). **No web consumer** — the Traffic tab's RPS card was removed in MAG-2448; kept as a documented read surface |
 | `GET /api/metrics/methods` | `window`, `spec?` | `{ methods: MethodUsage[], classTotals: MethodClassTotals }` — per-method CLIENT requests/class/errorRate + **real `p95Ms`** (the histogram's method label is named `function`); classTotals: `read` real, `write`/`batch` null + `emitted` flags, `unclassified` remainder |
