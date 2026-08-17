@@ -13,6 +13,7 @@ import { useApi } from "@/hooks/use-api";
 import { fmtComma } from "@/lib/format";
 import { HotspotRow } from "./HotspotRow";
 import { useFilters } from "@/components/gateway/FiltersProvider";
+import { useRouterFilter } from "@/hooks/use-router-options";
 
 /* "Error types" reference view — live counts per error code (code pivot). */
 function ErrorTypesView({ rows }: { rows: ErrorPivotRow[] }) {
@@ -29,6 +30,15 @@ function ErrorTypesView({ rows }: { rows: ErrorPivotRow[] }) {
   const grand = rows.reduce((s, r) => s + r.errors, 0) || 1;
   return (
     <div className="gw-card" style={{ padding: 0, overflow: "hidden" }}>
+      {/* These counts come from the router's classified error counter, which
+          counts EVERY error event — including the upstream replies that the
+          relay went on to serve. The headline above counts failed relays only,
+          so the two legitimately differ; saying so beats leaving the reader to
+          reconcile them. */}
+      <div style={{ padding: "10px 16px", borderBottom: "1px solid var(--line)", fontSize: 11, color: "var(--text-3)", lineHeight: 1.5 }}>
+        Every error event the router classified — including upstream replies it
+        recovered from, which is why this can exceed the failed-relay count above.
+      </div>
       {rows.map((e, idx) => {
         const muted = e.errors === 0;
         return (
@@ -65,9 +75,23 @@ export function ErrorsBreakdown({ chainFilter, win }: { chainFilter: string | nu
 
   const specQ = chainFilter ? `&spec=${encodeURIComponent(chainFilter)}` : "";
   const { scopeQ } = useFilters();
-  const { data } = useApi<ErrorsReport>(`/api/metrics/errors?window=${win}${specQ}${scopeQ}`);
+  // The hotspots below are (chain × upstream) pairs, so the router filter CAN
+  // narrow them — the api resolves the upstream against the values file. The
+  // pivots in the "Error types" view can't be attributed and stay as they are.
+  const { routerIdQ } = useRouterFilter();
+  const { data } = useApi<ErrorsReport>(`/api/metrics/errors?window=${win}${specQ}${routerIdQ}${scopeQ}`);
 
-  const hotspots = [...(data?.hotspots ?? [])].sort((a, b) => (b.errorRate ?? -1) - (a.errorRate ?? -1));
+  /* Failing pairs first by rate, then the node-error-only ones (see
+     HotspotRow) — the api already orders them that way; this keeps it after
+     the rate re-sort. */
+  const all = [...(data?.hotspots ?? [])];
+  const failing = all
+    .filter((h) => h.errors > 0)
+    .sort((a, b) => (b.errorRate ?? -1) - (a.errorRate ?? -1));
+  const nodeOnly = all
+    .filter((h) => h.errors === 0)
+    .sort((a, b) => b.nodeErrors - a.nodeErrors);
+  const hotspots = [...failing, ...nodeOnly];
   const total = data?.total ?? 0;
   const keyOf = (h: { spec: string; upstream: string }) => h.spec + "·" + h.upstream;
   // The design auto-opens the first hotspot; `undefined` = untouched state.
@@ -80,7 +104,12 @@ export function ErrorsBreakdown({ chainFilter, win }: { chainFilter: string | nu
         <div>
           <div style={{ fontSize: 15, fontWeight: 600, letterSpacing: "-0.01em" }}>Errors</div>
           <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 3 }}>
-            <span className="gw-mono gw-tnum" style={{ fontWeight: 700, color: "var(--text)" }}>{fmtComma(total)}</span>{" "}errors this window, across <span className="gw-mono gw-tnum">{hotspots.length}</span> chain · upstream pair{hotspots.length === 1 ? "" : "s"}
+            <span className="gw-mono gw-tnum" style={{ fontWeight: 700, color: "var(--text)" }}>{fmtComma(total)}</span>{" "}errors this window, across <span className="gw-mono gw-tnum">{failing.length}</span> chain · upstream pair{failing.length === 1 ? "" : "s"}
+            {/* Node-error pairs are counted apart: they failed nothing, so
+                folding them into the pair count overstated the damage. */}
+            {nodeOnly.length > 0 && (
+              <> · <span className="gw-mono gw-tnum">{nodeOnly.length}</span> more answered with node errors only</>
+            )}
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
