@@ -4,11 +4,7 @@ import { requireAuth } from "../plugins/auth.js";
 import { lazyAuditWriter, type AuditWriter } from "../services/audit.js";
 import { validatePassword, verifyPassword } from "../services/password.js";
 import { changeOwnPassword } from "../services/password-reset.js";
-import {
-  listActiveSessions,
-  revokeSession,
-  signOutEverywhere,
-} from "../services/sessions.js";
+import { listActiveSessions, revokeSession, signOutEverywhere } from "../services/sessions.js";
 
 interface ChangePasswordBody {
   current: string;
@@ -25,9 +21,11 @@ export async function accountRoutes(app: FastifyInstance) {
 
   function dbOr503(reply: FastifyReply): Database | null {
     if (!app.db) {
-      void reply
-        .code(503)
-        .send({ statusCode: 503, error: "Service Unavailable", message: "auth database not ready" });
+      void reply.code(503).send({
+        statusCode: 503,
+        error: "Service Unavailable",
+        message: "auth database not ready",
+      });
       return null;
     }
     return app.db;

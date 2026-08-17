@@ -13,16 +13,8 @@ import { validatePassword, verifyPassword } from "../services/password.js";
 import { verifyOAuthToken } from "../services/oauth.js";
 import { createSession, revokeSession, type ClientContext } from "../services/sessions.js";
 import { normalizeIp, parseClient } from "../services/client-context.js";
-import {
-  lookupInvitation,
-  redeemInvitation,
-  type InviteLookup,
-} from "../services/invitations.js";
-import {
-  consumePasswordReset,
-  createPasswordReset,
-  resetUrl,
-} from "../services/password-reset.js";
+import { lookupInvitation, redeemInvitation, type InviteLookup } from "../services/invitations.js";
+import { consumePasswordReset, createPasswordReset, resetUrl } from "../services/password-reset.js";
 import { checkLock, clearFailures, recordFailure } from "../services/lockout.js";
 import { lazyAuditWriter, type AuditWriter } from "../services/audit.js";
 import {
@@ -181,9 +173,11 @@ export async function authRoutes(app: FastifyInstance) {
   /** The db plugin connects lazily; 503 (not 500) while it settles. */
   function dbOr503(reply: FastifyReply): Database | null {
     if (!app.db) {
-      void reply
-        .code(503)
-        .send({ statusCode: 503, error: "Service Unavailable", message: "auth database not ready" });
+      void reply.code(503).send({
+        statusCode: 503,
+        error: "Service Unavailable",
+        message: "auth database not ready",
+      });
       return null;
     }
     return app.db;
@@ -244,10 +238,7 @@ export async function authRoutes(app: FastifyInstance) {
       }
 
       if (!setupTokenMatches(body.token, resolveSetupToken(app.log))) {
-        request.log.warn(
-          { ip: client.ip },
-          "first-run setup attempted with an incorrect token",
-        );
+        request.log.warn({ ip: client.ip }, "first-run setup attempted with an incorrect token");
         return reply.code(403).send({
           statusCode: 403,
           error: "Forbidden",
@@ -289,9 +280,7 @@ export async function authRoutes(app: FastifyInstance) {
         access: { ...client.access, sessionId: session.id },
       });
 
-      return reply
-        .code(201)
-        .send({ user: toPublicUser(outcome.user), sessionId: session.id });
+      return reply.code(201).send({ user: toPublicUser(outcome.user), sessionId: session.id });
     },
   );
 
@@ -299,7 +288,8 @@ export async function authRoutes(app: FastifyInstance) {
    *  that expired, and one that was already used are all "this link no longer
    *  works" to the person holding it — and distinguishing them out loud would
    *  tell a stranger which of those a guessed token hit. */
-  const INVITE_GONE = "That invitation link is no longer valid. Ask an administrator for a new one.";
+  const INVITE_GONE =
+    "That invitation link is no longer valid. Ask an administrator for a new one.";
 
   /** `invite.expired` fires from wherever the expiry is first *observed* —
    *  which is a read, not a scheduled sweep, so there is nothing to run. */
@@ -334,9 +324,11 @@ export async function authRoutes(app: FastifyInstance) {
       const lookup = await lookupInvitation(db, token);
       if (!lookup.ok) {
         await auditExpiryOnce(lookup);
-        return reply
-          .code(lookup.reason === "not_found" ? 404 : 410)
-          .send({ statusCode: lookup.reason === "not_found" ? 404 : 410, error: "Gone", message: INVITE_GONE });
+        return reply.code(lookup.reason === "not_found" ? 404 : 410).send({
+          statusCode: lookup.reason === "not_found" ? 404 : 410,
+          error: "Gone",
+          message: INVITE_GONE,
+        });
       }
 
       // Only what the page needs to render, and nothing about the account it
@@ -426,9 +418,11 @@ export async function authRoutes(app: FastifyInstance) {
             message: `This invitation is for ${invited}. Sign in with that account to accept it.`,
           });
         }
-        return reply
-          .code(result.reason === "not_found" ? 404 : 410)
-          .send({ statusCode: result.reason === "not_found" ? 404 : 410, error: "Gone", message: INVITE_GONE });
+        return reply.code(result.reason === "not_found" ? 404 : 410).send({
+          statusCode: result.reason === "not_found" ? 404 : 410,
+          error: "Gone",
+          message: INVITE_GONE,
+        });
       }
 
       const session = await createSession(db, {
@@ -446,9 +440,7 @@ export async function authRoutes(app: FastifyInstance) {
         target: { type: "invite", id: result.invitation.id, name: result.invitation.email },
       });
 
-      return reply
-        .code(201)
-        .send({ user: toPublicUser(result.user), sessionId: session.id });
+      return reply.code(201).send({ user: toPublicUser(result.user), sessionId: session.id });
     },
   );
 
@@ -473,7 +465,8 @@ export async function authRoutes(app: FastifyInstance) {
         return reply.code(404).send({
           statusCode: 404,
           error: "Not Found",
-          message: "Self-serve password reset is not available on this deployment. Ask an administrator.",
+          message:
+            "Self-serve password reset is not available on this deployment. Ask an administrator.",
         });
       }
       const db = dbOr503(reply);
@@ -610,7 +603,9 @@ export async function authRoutes(app: FastifyInstance) {
       const user = await findUserByEmail(db, body.email);
       // Identical response for unknown email and wrong password — no
       // account enumeration through the sign-in surface.
-      const ok = user?.passwordHash ? await verifyPassword(body.password, user.passwordHash) : false;
+      const ok = user?.passwordHash
+        ? await verifyPassword(body.password, user.passwordHash)
+        : false;
       if (!user || !ok) {
         // Counted on the submitted address whether or not it exists, so a
         // lockout says nothing about whether an account is there.
@@ -653,7 +648,8 @@ export async function authRoutes(app: FastifyInstance) {
       config: { rateLimit: STRICT_AUTH_RATE_LIMIT },
       schema: {
         tags: ["Auth"],
-        summary: "Verify a Google/GitHub/Discord token server-side, upsert the user, open a session",
+        summary:
+          "Verify a Google/GitHub/Discord token server-side, upsert the user, open a session",
         params: {
           type: "object" as const,
           required: ["provider"],
@@ -689,9 +685,11 @@ export async function authRoutes(app: FastifyInstance) {
         profile = await verifyOAuthToken(provider, token);
       } catch (err) {
         request.log.warn({ provider, err: (err as Error).message }, "oauth verification failed");
-        return reply
-          .code(401)
-          .send({ statusCode: 401, error: "Unauthorized", message: `${provider} token verification failed` });
+        return reply.code(401).send({
+          statusCode: 401,
+          error: "Unauthorized",
+          message: `${provider} token verification failed`,
+        });
       }
 
       let user;
@@ -711,9 +709,11 @@ export async function authRoutes(app: FastifyInstance) {
           .send({ statusCode: 400, error: "Bad Request", message: (err as Error).message });
       }
       if (user.status !== "active") {
-        return reply
-          .code(403)
-          .send({ statusCode: 403, error: "Forbidden", message: "This account is no longer active" });
+        return reply.code(403).send({
+          statusCode: 403,
+          error: "Forbidden",
+          message: "This account is no longer active",
+        });
       }
 
       const session = await createSession(db, {

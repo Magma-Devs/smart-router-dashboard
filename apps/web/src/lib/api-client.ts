@@ -5,8 +5,7 @@
  * lets a single published web image point at any api host.
  */
 const BUILD_BASE =
-  process.env.NEXT_PUBLIC_API_URL ??
-  (typeof window !== "undefined" ? "" : "http://localhost:8000");
+  process.env.NEXT_PUBLIC_API_URL ?? (typeof window !== "undefined" ? "" : "http://localhost:8000");
 
 interface RuntimeConfig {
   base: string;

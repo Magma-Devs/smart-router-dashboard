@@ -46,7 +46,9 @@ export function RemoveMemberModal({
       title="Remove member"
       footer={
         <>
-          <button className="gw-btn" onClick={onClose}>Cancel</button>
+          <button className="gw-btn" onClick={onClose}>
+            Cancel
+          </button>
           <button className="gw-btn gw-btn--danger" disabled={busy} onClick={() => void remove()}>
             {busy ? "Removing…" : `Remove ${member?.name || member?.email || ""}`}
           </button>
@@ -56,7 +58,9 @@ export function RemoveMemberModal({
       <div style={{ display: "grid", gap: 12, fontSize: 13, lineHeight: 1.6 }}>
         <div>
           <strong>{member?.name || member?.email}</strong>
-          {member?.name ? <span style={{ color: "var(--text-3)" }}> ({member.email})</span> : null}{" "}
+          {member?.name ? (
+            <span style={{ color: "var(--text-3)" }}> ({member.email})</span>
+          ) : null}{" "}
           will lose access immediately — on whatever they have open right now, not at their next
           sign-in.
         </div>
@@ -66,7 +70,11 @@ export function RemoveMemberModal({
           <li>Their name stays in the audit log permanently.</li>
           <li>Their address can be invited again later, as a new account.</li>
         </ul>
-        {error && <div role="alert" style={{ fontSize: 12, color: "var(--err)" }}>{error}</div>}
+        {error && (
+          <div role="alert" style={{ fontSize: 12, color: "var(--err)" }}>
+            {error}
+          </div>
+        )}
       </div>
     </Modal>
   );

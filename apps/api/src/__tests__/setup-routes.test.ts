@@ -138,7 +138,9 @@ describe("POST /auth/setup", () => {
 
   it("closes the door behind itself", async () => {
     app = await buildSetupApp();
-    expect((await setup({ token: TOKEN, email: "one@example.com", password: GOOD_PASSWORD })).statusCode).toBe(201);
+    expect(
+      (await setup({ token: TOKEN, email: "one@example.com", password: GOOD_PASSWORD })).statusCode,
+    ).toBe(201);
 
     const second = await setup({ token: TOKEN, email: "two@example.com", password: GOOD_PASSWORD });
     expect(second.statusCode).toBe(409);
@@ -150,7 +152,11 @@ describe("POST /auth/setup", () => {
     app = await buildSetupApp();
     await t.db.insert(users).values({ email: "someone@example.com", role: "admin" });
 
-    const res = await setup({ token: TOKEN, email: "attacker@example.com", password: GOOD_PASSWORD });
+    const res = await setup({
+      token: TOKEN,
+      email: "attacker@example.com",
+      password: GOOD_PASSWORD,
+    });
     expect(res.statusCode).toBe(409);
   });
 
@@ -164,7 +170,9 @@ describe("POST /auth/setup", () => {
 
   it("reopens for an install whose accounts have all been removed", async () => {
     app = await buildSetupApp();
-    await t.db.insert(users).values({ email: "gone@example.com", role: "admin", status: "removed" });
+    await t.db
+      .insert(users)
+      .values({ email: "gone@example.com", role: "admin", status: "removed" });
     expect((await bootstrap()).json().needsSetup).toBe(true);
 
     const res = await setup({ token: TOKEN, email: "new@example.com", password: GOOD_PASSWORD });

@@ -142,7 +142,9 @@ describe("invitations", () => {
       expect(redeemed.user.email).toBe("dana@example.com");
       expect(redeemed.user.role).toBe("approver");
       expect(redeemed.user.status).toBe("active");
-      expect(await verifyPassword("a-perfectly-fine-passphrase", redeemed.user.passwordHash!)).toBe(true);
+      expect(await verifyPassword("a-perfectly-fine-passphrase", redeemed.user.passwordHash!)).toBe(
+        true,
+      );
     });
 
     it("refuses a Google account for a different address", async () => {
@@ -155,7 +157,9 @@ describe("invitations", () => {
         provider: { column: "googleId", id: "google-123" },
       });
       expect(redeemed).toEqual({ ok: false, reason: "email_mismatch" });
-      expect(await t.db.select().from(users).where(eq(users.email, "dana@example.com"))).toHaveLength(0);
+      expect(
+        await t.db.select().from(users).where(eq(users.email, "dana@example.com")),
+      ).toHaveLength(0);
     });
 
     it("links the provider id when the address matches", async () => {
@@ -269,8 +273,12 @@ describe("invitations", () => {
 
   describe("inviteUrl", () => {
     it("builds a web link and tolerates a trailing slash", () => {
-      expect(inviteUrl("https://dash.example.com", "tok")).toBe("https://dash.example.com/invite/tok");
-      expect(inviteUrl("https://dash.example.com/", "tok")).toBe("https://dash.example.com/invite/tok");
+      expect(inviteUrl("https://dash.example.com", "tok")).toBe(
+        "https://dash.example.com/invite/tok",
+      );
+      expect(inviteUrl("https://dash.example.com/", "tok")).toBe(
+        "https://dash.example.com/invite/tok",
+      );
     });
   });
 });

@@ -45,9 +45,11 @@ export async function teamRoutes(app: FastifyInstance) {
 
   function dbOr503(reply: FastifyReply): Database | null {
     if (!app.db) {
-      void reply
-        .code(503)
-        .send({ statusCode: 503, error: "Service Unavailable", message: "auth database not ready" });
+      void reply.code(503).send({
+        statusCode: 503,
+        error: "Service Unavailable",
+        message: "auth database not ready",
+      });
       return null;
     }
     return app.db;
@@ -105,7 +107,10 @@ export async function teamRoutes(app: FastifyInstance) {
           required: ["email", "role"],
           properties: {
             email: { type: "string" as const, format: "email" },
-            role: { type: "string" as const, enum: ["read_only", "requester", "approver", "admin"] },
+            role: {
+              type: "string" as const,
+              enum: ["read_only", "requester", "approver", "admin"],
+            },
           },
         },
       },
@@ -312,7 +317,9 @@ export async function teamPasswordRoutes(app: FastifyInstance) {
 
       const created = await createPasswordReset(db, {
         userId: target.id,
-        mode: (process.env.DEPLOYMENT_MODE as "managed" | "onprem" | undefined) ?? config.deploymentMode,
+        mode:
+          (process.env.DEPLOYMENT_MODE as "managed" | "onprem" | undefined) ??
+          config.deploymentMode,
         // The column an auditor reads: an admin started this, not the holder.
         createdBy: me.id,
       });
@@ -390,7 +397,9 @@ export async function teamMemberRoutes(app: FastifyInstance) {
 
   app.get(
     "/api/team/members.csv",
-    { schema: { tags: ["Team"], summary: "The member list as CSV — the artifact auditors ask for" } },
+    {
+      schema: { tags: ["Team"], summary: "The member list as CSV — the artifact auditors ask for" },
+    },
     async (request, reply) => {
       if (!requireRole(request, reply, "read_only")) return reply;
       const conn = db(reply);
@@ -433,7 +442,10 @@ export async function teamMemberRoutes(app: FastifyInstance) {
           type: "object" as const,
           required: ["role"],
           properties: {
-            role: { type: "string" as const, enum: ["read_only", "requester", "approver", "admin"] },
+            role: {
+              type: "string" as const,
+              enum: ["read_only", "requester", "approver", "admin"],
+            },
           },
         },
       },
@@ -458,9 +470,12 @@ export async function teamMemberRoutes(app: FastifyInstance) {
           ? reply.code(409).send({
               statusCode: 409,
               error: "Conflict",
-              message: "You cannot change your own role. Promote someone else first, then step down.",
+              message:
+                "You cannot change your own role. Promote someone else first, then step down.",
             })
-          : reply.code(404).send({ statusCode: 404, error: "Not Found", message: "No such member." });
+          : reply
+              .code(404)
+              .send({ statusCode: 404, error: "Not Found", message: "No such member." });
       }
 
       await audit.write({
@@ -472,7 +487,10 @@ export async function teamMemberRoutes(app: FastifyInstance) {
 
       // Losing the ability to approve has the same consequence as leaving, for
       // anything currently waiting on them.
-      if (!roleAtLeast(result.user.role, "approver") && roleAtLeast(result.previousRole, "approver")) {
+      if (
+        !roleAtLeast(result.user.role, "approver") &&
+        roleAtLeast(result.previousRole, "approver")
+      ) {
         await onMemberDeactivated(conn, result.user.id, "demoted");
       }
 
@@ -508,7 +526,9 @@ export async function teamMemberRoutes(app: FastifyInstance) {
               error: "Conflict",
               message: "You cannot remove yourself.",
             })
-          : reply.code(404).send({ statusCode: 404, error: "Not Found", message: "No such member." });
+          : reply
+              .code(404)
+              .send({ statusCode: 404, error: "Not Found", message: "No such member." });
       }
 
       // No `changes`: MAG-2770's catalog says this verb carries no diff, and it

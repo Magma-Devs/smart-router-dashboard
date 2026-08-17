@@ -45,7 +45,14 @@ export default function AccountPage() {
     { id: "github", label: "GitHub" },
     { id: "discord", label: "Discord" },
   ];
-  const fl: CSSProperties = { fontSize: 11, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600, marginBottom: 8 };
+  const fl: CSSProperties = {
+    fontSize: 11,
+    color: "var(--text-3)",
+    textTransform: "uppercase",
+    letterSpacing: "0.07em",
+    fontWeight: 600,
+    marginBottom: 8,
+  };
 
   const build = [
     { label: "Version", value: version?.version ?? "—" },
@@ -65,19 +72,44 @@ export default function AccountPage() {
         {build.map((f, i) => (
           <div key={f.label} style={{ marginBottom: i === build.length - 1 ? 0 : 12 }}>
             <div style={fl}>{f.label}</div>
-            <div className="gw-mono" style={{ fontSize: 11, color: "var(--text-3)" }}>{f.value}</div>
+            <div className="gw-mono" style={{ fontSize: 11, color: "var(--text-3)" }}>
+              {f.value}
+            </div>
           </div>
         ))}
       </div>
 
       <div className="gw-card" style={{ marginBottom: 14 }}>
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Connected accounts</div>
-        <div style={{ marginBottom: 12 }}><CloudNotice feature="Linking a provider" detail="you sign in with the method you joined with. Attaching another provider to an existing account isn't available yet." compact /></div>
+        <div style={{ marginBottom: 12 }}>
+          <CloudNotice
+            feature="Linking a provider"
+            detail="you sign in with the method you joined with. Attaching another provider to an existing account isn't available yet."
+            compact
+          />
+        </div>
         <div style={{ display: "grid", gap: 7 }}>
-          {providers.map(p => (
-            <div key={p.id} className="gw-row" style={{ padding: "9px 11px", borderRadius: 7, background: "var(--bg)", border: "1px solid var(--line)", gap: 10 }}>
+          {providers.map((p) => (
+            <div
+              key={p.id}
+              className="gw-row"
+              style={{
+                padding: "9px 11px",
+                borderRadius: 7,
+                background: "var(--bg)",
+                border: "1px solid var(--line)",
+                gap: 10,
+              }}
+            >
               <div style={{ fontSize: 13, fontWeight: 500, flex: 1 }}>{p.label}</div>
-              <button className="gw-btn" style={{ fontSize: 11, padding: "5px 9px" }} disabled title={NOT_AVAILABLE}>Connect</button>
+              <button
+                className="gw-btn"
+                style={{ fontSize: 11, padding: "5px 9px" }}
+                disabled
+                title={NOT_AVAILABLE}
+              >
+                Connect
+              </button>
             </div>
           ))}
         </div>
@@ -88,10 +120,30 @@ export default function AccountPage() {
       <SessionsCard />
 
       <div className="gw-card" style={{ borderColor: "rgba(239,68,68,0.3)" }}>
-        <div style={{ fontSize: 13, fontWeight: 500, color: "var(--err)", marginBottom: 12 }}>Delete account</div>
-        <div style={{ marginBottom: 12 }}><CloudNotice feature="Deleting your own account" detail="ask an administrator to remove you. Removal is a state change, not a deletion — your name stays in the audit log, which is what makes the trail readable." compact /></div>
+        <div style={{ fontSize: 13, fontWeight: 500, color: "var(--err)", marginBottom: 12 }}>
+          Delete account
+        </div>
+        <div style={{ marginBottom: 12 }}>
+          <CloudNotice
+            feature="Deleting your own account"
+            detail="ask an administrator to remove you. Removal is a state change, not a deletion — your name stays in the audit log, which is what makes the trail readable."
+            compact
+          />
+        </div>
         <button className="gw-btn gw-btn--danger" disabled title={NOT_AVAILABLE}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6"/></svg>
+          <svg
+            width="13"
+            height="13"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <polyline points="3 6 5 6 21 6" />
+            <path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6" />
+          </svg>
           Delete account
         </button>
       </div>

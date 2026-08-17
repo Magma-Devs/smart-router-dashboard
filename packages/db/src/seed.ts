@@ -28,10 +28,7 @@ export interface SeedResult {
  *
  * Hashing uses bcrypt at cost 12.
  */
-export async function seedAdmin(
-  db: Database,
-  opts: SeedAdminOptions,
-): Promise<SeedResult> {
+export async function seedAdmin(db: Database, opts: SeedAdminOptions): Promise<SeedResult> {
   // Scoped to active accounts throughout: a removed person's row keeps their
   // email (that is what makes the audit trail readable), so an unscoped lookup
   // would try to promote a departed account, and an unscoped count would treat

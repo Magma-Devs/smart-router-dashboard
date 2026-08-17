@@ -35,10 +35,7 @@ export type AuditAction = AuditActionOf<"access" | "accounts" | "people" | "setu
  */
 export type AuditEvent = Omit<AuditEventInput, "action"> & { action: AuditAction };
 
-/** Derived rather than imported by name: `@sr/db`'s barrel doesn't re-export
- *  these, and deriving avoids appending to a file the other ticket owns. */
-export type AuditActor = AuditEventInput["actor"];
-export type AuditChange = NonNullable<AuditEventInput["changes"]>[number];
+export type { AuditActor, AuditChange } from "@sr/db";
 
 export interface AuditWriter {
   /**
@@ -98,10 +95,7 @@ export function noopAuditWriter(log: FastifyBaseLogger): AuditWriter {
  * would capture that null and silently discard events for the life of the
  * process; binding per write costs a closure and is always correct.
  */
-export function lazyAuditWriter(app: {
-  db: Database | null;
-  log: FastifyBaseLogger;
-}): AuditWriter {
+export function lazyAuditWriter(app: { db: Database | null; log: FastifyBaseLogger }): AuditWriter {
   return {
     write(event, tx) {
       const writer = app.db ? auditWriter(app.db, app.log) : noopAuditWriter(app.log);

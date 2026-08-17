@@ -1,12 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
-import {
-  invitations,
-  users,
-  type Database,
-  type Invitation,
-  type User,
-} from "@sr/db";
+import { invitations, users, type Database, type Invitation, type User } from "@sr/db";
 import type { Role } from "@sr/shared";
 import { hashPassword } from "./password.js";
 
@@ -100,10 +94,7 @@ export async function createInvitation(
 }
 
 /** A live (unredeemed, unrevoked, unexpired) invitation for this address. */
-export async function findPendingByEmail(
-  db: Database,
-  email: string,
-): Promise<Invitation | null> {
+export async function findPendingByEmail(db: Database, email: string): Promise<Invitation | null> {
   const rows = await db
     .select()
     .from(invitations)
@@ -199,10 +190,7 @@ export interface RedeemInput {
  * Zero rows affected means somebody else got there first, and the whole
  * transaction unwinds — so a race can't produce two accounts from one invite.
  */
-export async function redeemInvitation(
-  db: Database,
-  input: RedeemInput,
-): Promise<RedeemResult> {
+export async function redeemInvitation(db: Database, input: RedeemInput): Promise<RedeemResult> {
   const lookup = await lookupInvitation(db, input.rawToken);
   if (!lookup.ok) return { ok: false, reason: lookup.reason };
   const invitation = lookup.invitation;
@@ -275,7 +263,9 @@ export async function resendInvitation(
       expiredNotedAt: null,
       resendCount: sql`${invitations.resendCount} + 1`,
     })
-    .where(and(eq(invitations.id, id), isNull(invitations.redeemedAt), isNull(invitations.revokedAt)))
+    .where(
+      and(eq(invitations.id, id), isNull(invitations.redeemedAt), isNull(invitations.revokedAt)),
+    )
     .returning();
 
   const invitation = rows[0];
@@ -291,7 +281,9 @@ export async function revokeInvitation(
   const rows = await db
     .update(invitations)
     .set({ revokedAt: new Date(), revokedBy: by })
-    .where(and(eq(invitations.id, id), isNull(invitations.redeemedAt), isNull(invitations.revokedAt)))
+    .where(
+      and(eq(invitations.id, id), isNull(invitations.redeemedAt), isNull(invitations.revokedAt)),
+    )
     .returning();
   return rows[0] ?? null;
 }

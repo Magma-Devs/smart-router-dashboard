@@ -78,7 +78,13 @@ export function InviteForm({
       <div className="gw-card" style={{ width: "100%", maxWidth: 420, padding: 32 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/magma-logo.png" width={32} height={32} alt="Magma" style={{ objectFit: "contain" }} />
+          <img
+            src="/magma-logo.png"
+            width={32}
+            height={32}
+            alt="Magma"
+            style={{ objectFit: "contain" }}
+          />
           <div>
             <div style={{ fontWeight: 700, fontSize: 16 }}>Join this dashboard</div>
             <div style={{ fontSize: 12, color: "var(--text-3)" }}>Smart Router Dashboard</div>
@@ -98,13 +104,31 @@ export function InviteForm({
             gap: 8,
           }}
         >
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "baseline" }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 12,
+              alignItems: "baseline",
+            }}
+          >
             <span style={{ fontSize: 11, color: "var(--text-3)" }}>Invitation for</span>
-            <span className="gw-mono" style={{ fontSize: 12.5, fontWeight: 600 }}>{email}</span>
+            <span className="gw-mono" style={{ fontSize: 12.5, fontWeight: 600 }}>
+              {email}
+            </span>
           </div>
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "baseline" }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 12,
+              alignItems: "baseline",
+            }}
+          >
             <span style={{ fontSize: 11, color: "var(--text-3)" }}>Role</span>
-            <span className="gw-tag gw-tag--info" style={{ fontSize: 11 }}>{ROLE_LABELS[role]}</span>
+            <span className="gw-tag gw-tag--info" style={{ fontSize: 11 }}>
+              {ROLE_LABELS[role]}
+            </span>
           </div>
           <div style={{ fontSize: 11.5, color: "var(--text-3)", lineHeight: 1.5 }}>
             {ROLE_DESCRIPTIONS[role]}
@@ -180,8 +204,8 @@ export function InviteForm({
           </label>
 
           <p style={{ fontSize: 11.5, color: "var(--text-3)", margin: "2px 0 0", lineHeight: 1.5 }}>
-            Any characters, 8 to 64. Checked against known breached passwords — there are no
-            other rules, and it never expires.
+            Any characters, 8 to 64. Checked against known breached passwords — there are no other
+            rules, and it never expires.
           </p>
 
           {(error ?? (mismatch ? "Those passwords don't match." : null)) && (
@@ -230,13 +254,16 @@ export function InviteDead() {
         padding: 24,
       }}
     >
-      <div className="gw-card" style={{ width: "100%", maxWidth: 400, padding: 32, textAlign: "center" }}>
+      <div
+        className="gw-card"
+        style={{ width: "100%", maxWidth: 400, padding: 32, textAlign: "center" }}
+      >
         <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 8 }}>
           This invitation link no longer works
         </div>
         <p style={{ fontSize: 13, color: "var(--text-2)", lineHeight: 1.6, margin: "0 0 20px" }}>
-          It may already have been used, or it may have expired. Ask an administrator to send
-          you a new one.
+          It may already have been used, or it may have expired. Ask an administrator to send you a
+          new one.
         </p>
         <a className="gw-btn" href="/login" style={{ justifyContent: "center" }}>
           Go to sign in
