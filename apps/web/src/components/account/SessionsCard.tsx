@@ -53,30 +53,51 @@ export function SessionsCard() {
       <div className="gw-row" style={{ justifyContent: "space-between", marginBottom: 12 }}>
         <div style={{ fontSize: 13, fontWeight: 600 }}>Active sessions</div>
         {sessions.length > 1 && (
-          <button className="gw-btn" style={{ fontSize: 11, padding: "4px 9px" }}
-            disabled={busy === "all"} onClick={() => void revokeAll()}>
+          <button
+            className="gw-btn"
+            style={{ fontSize: 11, padding: "4px 9px" }}
+            disabled={busy === "all"}
+            onClick={() => void revokeAll()}
+          >
             Sign out everywhere
           </button>
         )}
       </div>
       <div style={{ display: "grid", gap: 7 }}>
         {sessions.map((s) => (
-          <div key={s.id} className="gw-row" style={{
-            padding: "10px 11px", borderRadius: 7, background: "var(--bg)",
-            border: "1px solid " + (s.current ? "var(--brand)" : "var(--line)"), gap: 10,
-          }}>
+          <div
+            key={s.id}
+            className="gw-row"
+            style={{
+              padding: "10px 11px",
+              borderRadius: 7,
+              background: "var(--bg)",
+              border: "1px solid " + (s.current ? "var(--brand)" : "var(--line)"),
+              gap: 10,
+            }}
+          >
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 13, fontWeight: 500 }}>
                 {s.client ?? "Unrecognised device"}
-                {s.current && <span style={{ color: "var(--brand)", fontWeight: 600 }}> · this device</span>}
+                {s.current && (
+                  <span style={{ color: "var(--brand)", fontWeight: 600 }}> · this device</span>
+                )}
               </div>
-              <div className="gw-mono" style={{ fontSize: 11, color: "var(--text-3)", marginTop: 2 }}>
-                {s.ip ?? "—"} · signed in {relativeTime(s.createdAt)} · seen {relativeTime(s.lastSeenAt)}
+              <div
+                className="gw-mono"
+                style={{ fontSize: 11, color: "var(--text-3)", marginTop: 2 }}
+              >
+                {s.ip ?? "—"} · signed in {relativeTime(s.createdAt)} · seen{" "}
+                {relativeTime(s.lastSeenAt)}
               </div>
             </div>
             {!s.current && (
-              <button className="gw-btn" style={{ fontSize: 11, padding: "4px 9px" }}
-                disabled={busy === s.id} onClick={() => void revoke(s.id)}>
+              <button
+                className="gw-btn"
+                style={{ fontSize: 11, padding: "4px 9px" }}
+                disabled={busy === s.id}
+                onClick={() => void revoke(s.id)}
+              >
                 Sign out
               </button>
             )}

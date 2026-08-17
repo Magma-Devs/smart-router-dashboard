@@ -22,12 +22,7 @@ import {
  * `requester` / `approver` are enforced by the config-approval flow (MAG-2731);
  * this package only defines the vocabulary and the ordering.
  */
-export const userRoleEnum = pgEnum("user_role", [
-  "read_only",
-  "requester",
-  "approver",
-  "admin",
-]);
+export const userRoleEnum = pgEnum("user_role", ["read_only", "requester", "approver", "admin"]);
 
 /**
  * Account state. Replaces the old `is_suspended` boolean — two overlapping

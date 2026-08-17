@@ -105,9 +105,15 @@ export default function TeamPage() {
       {members.data?.soleAdmin && isAdmin && (
         <div
           style={{
-            display: "flex", gap: 10, alignItems: "flex-start",
-            background: "rgba(255,57,0,0.05)", border: "1px solid rgba(255,57,0,0.25)",
-            borderRadius: 8, padding: "10px 12px", marginBottom: 16, fontSize: 12.5,
+            display: "flex",
+            gap: 10,
+            alignItems: "flex-start",
+            background: "rgba(255,57,0,0.05)",
+            border: "1px solid rgba(255,57,0,0.25)",
+            borderRadius: 8,
+            padding: "10px 12px",
+            marginBottom: 16,
+            fontSize: 12.5,
           }}
         >
           <span>
@@ -117,17 +123,32 @@ export default function TeamPage() {
         </div>
       )}
 
-      <div className="gw-row" style={{ gap: 0, borderBottom: "1px solid var(--line)", marginBottom: 20 }}>
+      <div
+        className="gw-row"
+        style={{ gap: 0, borderBottom: "1px solid var(--line)", marginBottom: 20 }}
+      >
         {TABS.filter((t) => t === "members" || isAdmin).map((t) => (
-          <button key={t} onClick={() => setTab(t)} style={{
-            padding: "8px 16px", fontSize: 13, fontWeight: tab === t ? 600 : 400,
-            border: "none", background: "transparent", cursor: "pointer",
-            color: tab === t ? "var(--text)" : "var(--text-3)",
-            borderBottom: `2px solid ${tab === t ? "var(--brand)" : "transparent"}`,
-            marginBottom: -1, fontFamily: "var(--font-ui)", textTransform: "capitalize",
-          }}>
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            style={{
+              padding: "8px 16px",
+              fontSize: 13,
+              fontWeight: tab === t ? 600 : 400,
+              border: "none",
+              background: "transparent",
+              cursor: "pointer",
+              color: tab === t ? "var(--text)" : "var(--text-3)",
+              borderBottom: `2px solid ${tab === t ? "var(--brand)" : "transparent"}`,
+              marginBottom: -1,
+              fontFamily: "var(--font-ui)",
+              textTransform: "capitalize",
+            }}
+          >
             {t}
-            {t === "invites" && invites.data?.invites.length ? ` (${invites.data.invites.length})` : ""}
+            {t === "invites" && invites.data?.invites.length
+              ? ` (${invites.data.invites.length})`
+              : ""}
           </button>
         ))}
       </div>
@@ -157,13 +178,22 @@ export default function TeamPage() {
                         <div>
                           <div style={{ fontSize: 13, fontWeight: 600 }}>
                             {m.name || m.email}
-                            {self && <span style={{ color: "var(--text-3)", fontWeight: 400 }}> · you</span>}
+                            {self && (
+                              <span style={{ color: "var(--text-3)", fontWeight: 400 }}>
+                                {" "}
+                                · you
+                              </span>
+                            )}
                           </div>
-                          <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 1 }}>{m.email}</div>
+                          <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 1 }}>
+                            {m.email}
+                          </div>
                         </div>
                       </div>
                     </td>
-                    <td><RoleBadge role={m.role} /></td>
+                    <td>
+                      <RoleBadge role={m.role} />
+                    </td>
                     <td>
                       {/* Not "No" — two-factor doesn't exist yet, and "No" would
                           be true today and wrong the day it ships. */}
@@ -205,13 +235,16 @@ export default function TeamPage() {
         </div>
       )}
 
-      {tab === "invites" && isAdmin && (
-        invites.data?.invites.length ? (
+      {tab === "invites" &&
+        isAdmin &&
+        (invites.data?.invites.length ? (
           <div className="gw-card" style={{ padding: 0, overflow: "hidden" }}>
             <table className="gw-table">
               <thead>
                 <tr>
-                  <th>Email</th><th>Role</th><th>State</th>
+                  <th>Email</th>
+                  <th>Role</th>
+                  <th>State</th>
                   <th style={{ textAlign: "right" }}>Sent</th>
                   <th style={{ textAlign: "right" }}>Expires</th>
                   <th></th>
@@ -221,14 +254,20 @@ export default function TeamPage() {
                 {invites.data.invites.map((i) => (
                   <tr key={i.id}>
                     <td style={{ fontSize: 13 }}>{i.email}</td>
-                    <td><RoleBadge role={i.role} /></td>
+                    <td>
+                      <RoleBadge role={i.role} />
+                    </td>
                     <td>
                       <span className={"gw-tag" + (i.state === "pending" ? " gw-tag--info" : "")}>
                         {i.state}
                       </span>
                     </td>
-                    <td style={{ textAlign: "right", fontSize: 12, color: "var(--text-3)" }}>{shortDate(i.createdAt)}</td>
-                    <td style={{ textAlign: "right", fontSize: 12, color: "var(--text-3)" }}>{shortDate(i.expiresAt)}</td>
+                    <td style={{ textAlign: "right", fontSize: 12, color: "var(--text-3)" }}>
+                      {shortDate(i.createdAt)}
+                    </td>
+                    <td style={{ textAlign: "right", fontSize: 12, color: "var(--text-3)" }}>
+                      {shortDate(i.expiresAt)}
+                    </td>
                     <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                       {i.state !== "revoked" && (
                         <>
@@ -256,11 +295,16 @@ export default function TeamPage() {
               </tbody>
             </table>
             {freshLink && (
-              <div style={{ padding: "12px 14px", borderTop: "1px solid var(--line)", fontSize: 12 }}>
+              <div
+                style={{ padding: "12px 14px", borderTop: "1px solid var(--line)", fontSize: 12 }}
+              >
                 <div style={{ marginBottom: 6, color: "var(--text-2)" }}>
                   New link — the previous one no longer works. Shown once.
                 </div>
-                <div className="gw-mono" style={{ fontSize: 11, wordBreak: "break-all", userSelect: "all" }}>
+                <div
+                  className="gw-mono"
+                  style={{ fontSize: 11, wordBreak: "break-all", userSelect: "all" }}
+                >
                   {freshLink.url}
                 </div>
               </div>
@@ -274,8 +318,7 @@ export default function TeamPage() {
               Invite teammate
             </button>
           </div>
-        )
-      )}
+        ))}
 
       <InviteModal
         open={showInvite}

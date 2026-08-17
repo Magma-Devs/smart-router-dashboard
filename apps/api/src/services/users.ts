@@ -70,11 +70,7 @@ export async function upsertOAuthUser(
 ): Promise<User> {
   const idColumn = PROVIDER_ID_COLUMN[provider];
 
-  const byProvider = await db
-    .select()
-    .from(users)
-    .where(eq(idColumn, profile.providerId))
-    .limit(1);
+  const byProvider = await db.select().from(users).where(eq(idColumn, profile.providerId)).limit(1);
   if (byProvider[0]) {
     const u = byProvider[0];
     // A provider id still points at a removed or suspended account. Refuse

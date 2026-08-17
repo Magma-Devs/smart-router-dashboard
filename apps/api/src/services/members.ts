@@ -58,8 +58,7 @@ export async function countAdmins(db: Database): Promise<number> {
 }
 
 export type MemberMutation =
-  | { ok: true; user: User; previousRole?: Role }
-  | { ok: false; reason: "not_found" | "self" };
+  { ok: true; user: User; previousRole?: Role } | { ok: false; reason: "not_found" | "self" };
 
 /**
  * Change someone's role.

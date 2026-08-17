@@ -27,12 +27,7 @@ export const TOUCH_INTERVAL_MS = 60_000;
 
 /** Why a session ended. Closed set; `sessions.revoked_reason` is a varchar so
  *  later slices can extend this without a migration. */
-export type RevokeReason =
-  | "self"
-  | "sign_out_all"
-  | "password_change"
-  | "member_removed"
-  | "admin";
+export type RevokeReason = "self" | "sign_out_all" | "password_change" | "member_removed" | "admin";
 
 /** What the api could observe about the caller's device. Both halves are
  *  best-effort: a sign-in must never fail for lack of them. */
@@ -53,22 +48,13 @@ export interface CreateSessionInput {
  * to responses; keeping the rules here rather than in the auth plugin means
  * they are testable in one place and can't drift between call sites.
  */
-export type SessionRejection =
-  | "not_found"
-  | "revoked"
-  | "expired"
-  | "user_inactive"
-  | "signed_out";
+export type SessionRejection = "not_found" | "revoked" | "expired" | "user_inactive" | "signed_out";
 
 export type SessionCheck =
-  | { ok: true; session: Session; user: User }
-  | { ok: false; reason: SessionRejection };
+  { ok: true; session: Session; user: User } | { ok: false; reason: SessionRejection };
 
 /** Open a session. Returns the row so the caller can put its id in the token. */
-export async function createSession(
-  db: Database,
-  input: CreateSessionInput,
-): Promise<Session> {
+export async function createSession(db: Database, input: CreateSessionInput): Promise<Session> {
   const rows = await db
     .insert(sessions)
     .values({

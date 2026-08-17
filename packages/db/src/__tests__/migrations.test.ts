@@ -41,10 +41,7 @@ describe("0001_accounts", () => {
       "admin",
     ]);
 
-    const [created] = await t.db
-      .insert(users)
-      .values({ email: "nobody@example.com" })
-      .returning();
+    const [created] = await t.db.insert(users).values({ email: "nobody@example.com" }).returning();
     expect(created?.role).toBe("read_only");
     expect(created?.status).toBe("active");
   });
@@ -59,25 +56,17 @@ describe("0001_accounts", () => {
 
   it("rejects a duplicate email among active accounts", async () => {
     await t.db.insert(users).values({ email: "dup@example.com" });
-    await expect(
-      t.db.insert(users).values({ email: "DUP@example.com" }),
-    ).rejects.toThrow();
+    await expect(t.db.insert(users).values({ email: "DUP@example.com" })).rejects.toThrow();
   });
 
   it("frees a removed person's email for a fresh account", async () => {
-    const [first] = await t.db
-      .insert(users)
-      .values({ email: "leaver@example.com" })
-      .returning();
+    const [first] = await t.db.insert(users).values({ email: "leaver@example.com" }).returning();
     await t.db.execute(
       sql`update users set status = 'removed', removed_at = now() where id = ${first!.id}`,
     );
 
     // The whole point of the partial index: this must not throw.
-    const [second] = await t.db
-      .insert(users)
-      .values({ email: "leaver@example.com" })
-      .returning();
+    const [second] = await t.db.insert(users).values({ email: "leaver@example.com" }).returning();
     expect(second?.id).not.toBe(first?.id);
     expect(second?.status).toBe("active");
   });

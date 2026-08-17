@@ -80,7 +80,13 @@ export function SetupForm({ mode }: { mode: "managed" | "onprem" }) {
       <div className="gw-card" style={{ width: "100%", maxWidth: 420, padding: 32 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/magma-logo.png" width={32} height={32} alt="Magma" style={{ objectFit: "contain" }} />
+          <img
+            src="/magma-logo.png"
+            width={32}
+            height={32}
+            alt="Magma"
+            style={{ objectFit: "contain" }}
+          />
           <div>
             <div style={{ fontWeight: 700, fontSize: 16 }}>Set up this dashboard</div>
             <div style={{ fontSize: 12, color: "var(--text-3)" }}>
@@ -89,14 +95,22 @@ export function SetupForm({ mode }: { mode: "managed" | "onprem" }) {
           </div>
         </div>
 
-        <p style={{ fontSize: 12.5, color: "var(--text-2)", marginTop: 0, marginBottom: 20, lineHeight: 1.6 }}>
+        <p
+          style={{
+            fontSize: 12.5,
+            color: "var(--text-2)",
+            marginTop: 0,
+            marginBottom: 20,
+            lineHeight: 1.6,
+          }}
+        >
           {/* Explicit separators: JSX trims the whitespace bordering an
               expression, and React splits the text nodes, so a bare " — " here
               renders flush against the preceding word. */}
           Nothing else opens until this is done. You&apos;ll need the setup token{" "}
           {mode === "onprem" ? "printed by the installer" : "we sent you"}
-          {" — "}it proves you&apos;re the person who installed this, and it&apos;s
-          only needed once.
+          {" — "}it proves you&apos;re the person who installed this, and it&apos;s only needed
+          once.
         </p>
 
         <form onSubmit={onSubmit} style={{ display: "grid", gap: 12 }}>
@@ -165,8 +179,8 @@ export function SetupForm({ mode }: { mode: "managed" | "onprem" }) {
           </label>
 
           <p style={{ fontSize: 11.5, color: "var(--text-3)", margin: "2px 0 0", lineHeight: 1.5 }}>
-            Any characters, 8 to 64. Checked against known breached passwords — there are no
-            other rules, and it never expires.
+            Any characters, 8 to 64. Checked against known breached passwords — there are no other
+            rules, and it never expires.
           </p>
 
           {(error ?? (mismatch ? "Those passwords don't match." : null)) && (

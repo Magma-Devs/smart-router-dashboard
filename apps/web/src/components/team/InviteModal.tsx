@@ -30,7 +30,11 @@ export function InviteModal({
   const [copied, setCopied] = useState(false);
 
   function reset() {
-    setEmail(""); setRole("read_only"); setError(null); setResult(null); setCopied(false);
+    setEmail("");
+    setRole("read_only");
+    setError(null);
+    setResult(null);
+    setCopied(false);
   }
 
   async function submit() {
@@ -52,14 +56,33 @@ export function InviteModal({
   return (
     <Modal
       open={open}
-      onClose={() => { reset(); onClose(); }}
+      onClose={() => {
+        reset();
+        onClose();
+      }}
       title={result ? "Invitation created" : "Invite teammate"}
       footer={
         result ? (
-          <button className="gw-btn gw-btn--primary" onClick={() => { reset(); onClose(); }}>Done</button>
+          <button
+            className="gw-btn gw-btn--primary"
+            onClick={() => {
+              reset();
+              onClose();
+            }}
+          >
+            Done
+          </button>
         ) : (
           <>
-            <button className="gw-btn" onClick={() => { reset(); onClose(); }}>Cancel</button>
+            <button
+              className="gw-btn"
+              onClick={() => {
+                reset();
+                onClose();
+              }}
+            >
+              Cancel
+            </button>
             <button
               className="gw-btn gw-btn--primary"
               disabled={busy || !email}
@@ -86,8 +109,13 @@ export function InviteModal({
               <div
                 className="gw-mono"
                 style={{
-                  fontSize: 11.5, background: "var(--bg)", border: "1px solid var(--line)",
-                  borderRadius: 7, padding: "10px 12px", wordBreak: "break-all", userSelect: "all",
+                  fontSize: 11.5,
+                  background: "var(--bg)",
+                  border: "1px solid var(--line)",
+                  borderRadius: 7,
+                  padding: "10px 12px",
+                  wordBreak: "break-all",
+                  userSelect: "all",
                 }}
               >
                 {result.url}
@@ -131,18 +159,30 @@ export function InviteModal({
                   key={r}
                   onClick={() => setRole(r)}
                   style={{
-                    display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 12px",
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: 10,
+                    padding: "10px 12px",
                     borderRadius: 8,
                     border: "1px solid " + (role === r ? "var(--brand)" : "var(--line)"),
                     background: role === r ? "rgba(255,57,0,0.04)" : "var(--surface)",
-                    cursor: "pointer", textAlign: "left", fontFamily: "inherit", color: "var(--text)",
+                    cursor: "pointer",
+                    textAlign: "left",
+                    fontFamily: "inherit",
+                    color: "var(--text)",
                   }}
                 >
-                  <div style={{
-                    width: 14, height: 14, borderRadius: "50%", flexShrink: 0, marginTop: 2,
-                    border: "2px solid " + (role === r ? "var(--brand)" : "var(--line-2)"),
-                    background: role === r ? "var(--brand)" : "transparent",
-                  }} />
+                  <div
+                    style={{
+                      width: 14,
+                      height: 14,
+                      borderRadius: "50%",
+                      flexShrink: 0,
+                      marginTop: 2,
+                      border: "2px solid " + (role === r ? "var(--brand)" : "var(--line-2)"),
+                      background: role === r ? "var(--brand)" : "transparent",
+                    }}
+                  />
                   <div>
                     <div style={{ fontSize: 13, fontWeight: 600 }}>{ROLE_LABELS[r]}</div>
                     <div style={{ fontSize: 11.5, color: "var(--text-3)", marginTop: 2 }}>
@@ -154,7 +194,9 @@ export function InviteModal({
             </div>
           </div>
           {error && (
-            <div role="alert" style={{ fontSize: 12, color: "var(--err)" }}>{error}</div>
+            <div role="alert" style={{ fontSize: 12, color: "var(--err)" }}>
+              {error}
+            </div>
           )}
         </div>
       )}

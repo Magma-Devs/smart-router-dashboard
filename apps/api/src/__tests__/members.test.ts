@@ -2,12 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { createTestDb, type TestDb } from "@sr/db/testing";
 import { invitations, sessions, users, type User } from "@sr/db";
-import {
-  changeMemberRole,
-  countAdmins,
-  listMembers,
-  removeMember,
-} from "../services/members.js";
+import { changeMemberRole, countAdmins, listMembers, removeMember } from "../services/members.js";
 import { createInvitation } from "../services/invitations.js";
 import { createSession, listActiveSessions } from "../services/sessions.js";
 
@@ -88,7 +83,9 @@ describe("members", () => {
     });
 
     it("refuses self-demotion", async () => {
-      expect(await changeMemberRole(t.db, { id: admin.id, role: "read_only", actorId: admin.id })).toEqual({
+      expect(
+        await changeMemberRole(t.db, { id: admin.id, role: "read_only", actorId: admin.id }),
+      ).toEqual({
         ok: false,
         reason: "self",
       });
@@ -96,7 +93,9 @@ describe("members", () => {
 
     it("refuses someone already removed", async () => {
       await removeMember(t.db, { id: member.id, actorId: admin.id });
-      expect(await changeMemberRole(t.db, { id: member.id, role: "admin", actorId: admin.id })).toEqual({
+      expect(
+        await changeMemberRole(t.db, { id: member.id, role: "admin", actorId: admin.id }),
+      ).toEqual({
         ok: false,
         reason: "not_found",
       });
@@ -118,8 +117,16 @@ describe("members", () => {
     });
 
     it("kills their sessions within the same transaction", async () => {
-      await createSession(t.db, { userId: member.id, authMethod: "password", client: { ip: null, userAgent: null } });
-      await createSession(t.db, { userId: member.id, authMethod: "password", client: { ip: null, userAgent: null } });
+      await createSession(t.db, {
+        userId: member.id,
+        authMethod: "password",
+        client: { ip: null, userAgent: null },
+      });
+      await createSession(t.db, {
+        userId: member.id,
+        authMethod: "password",
+        client: { ip: null, userAgent: null },
+      });
 
       await removeMember(t.db, { id: member.id, actorId: admin.id });
 

@@ -162,7 +162,10 @@ describe("completeSetup", () => {
     const first = await completeSetup(t.db, { email: "one@example.com", password: "x".repeat(12) });
     expect(first.ok).toBe(true);
 
-    const second = await completeSetup(t.db, { email: "two@example.com", password: "y".repeat(12) });
+    const second = await completeSetup(t.db, {
+      email: "two@example.com",
+      password: "y".repeat(12),
+    });
     expect(second).toEqual({ ok: false, reason: "already_set_up" });
 
     const rows = await t.db.select().from(users);
@@ -170,7 +173,9 @@ describe("completeSetup", () => {
   });
 
   it("re-opens for a deployment whose accounts are all removed", async () => {
-    await t.db.insert(users).values({ email: "gone@example.com", status: "removed", role: "admin" });
+    await t.db
+      .insert(users)
+      .values({ email: "gone@example.com", status: "removed", role: "admin" });
     const outcome = await completeSetup(t.db, {
       email: "new@example.com",
       password: "correct horse battery staple",

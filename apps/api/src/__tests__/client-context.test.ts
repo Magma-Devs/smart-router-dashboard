@@ -68,7 +68,16 @@ describe("normalizeIp", () => {
 
   it("rejects anything Postgres `inet` would throw on", () => {
     // A malformed proxy header must not be able to fail a sign-in.
-    for (const value of ["", "  ", "not-an-ip", "999.1.1.1", "10.0.0", "localhost", null, undefined]) {
+    for (const value of [
+      "",
+      "  ",
+      "not-an-ip",
+      "999.1.1.1",
+      "10.0.0",
+      "localhost",
+      null,
+      undefined,
+    ]) {
       expect(normalizeIp(value), `should reject ${String(value)}`).toBeNull();
     }
   });

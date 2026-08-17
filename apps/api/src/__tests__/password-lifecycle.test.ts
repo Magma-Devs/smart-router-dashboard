@@ -92,7 +92,9 @@ describe("password reset", () => {
 
   it("is single-use", async () => {
     const created = await createPasswordReset(t.db, { userId: user.id, mode: "managed" });
-    expect((await consumePasswordReset(t.db, created.rawToken, "a-brand-new-passphrase")).ok).toBe(true);
+    expect((await consumePasswordReset(t.db, created.rawToken, "a-brand-new-passphrase")).ok).toBe(
+      true,
+    );
     expect(await consumePasswordReset(t.db, created.rawToken, "another-passphrase-here")).toEqual({
       ok: false,
       reason: "used",
@@ -149,8 +151,16 @@ describe("changing your own password", () => {
       authMethod: "password",
       client: { ip: null, userAgent: null },
     });
-    await createSession(t.db, { userId: user.id, authMethod: "password", client: { ip: null, userAgent: null } });
-    await createSession(t.db, { userId: user.id, authMethod: "password", client: { ip: null, userAgent: null } });
+    await createSession(t.db, {
+      userId: user.id,
+      authMethod: "password",
+      client: { ip: null, userAgent: null },
+    });
+    await createSession(t.db, {
+      userId: user.id,
+      authMethod: "password",
+      client: { ip: null, userAgent: null },
+    });
 
     await changeOwnPassword(t.db, user.id, "a-brand-new-passphrase", mine.id);
 

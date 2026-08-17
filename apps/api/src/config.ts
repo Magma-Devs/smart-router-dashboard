@@ -42,7 +42,10 @@ function envList(name: string): string[] | true {
       /* fall through to comma split */
     }
   }
-  return trimmed.split(",").map((o) => o.trim()).filter(Boolean);
+  return trimmed
+    .split(",")
+    .map((o) => o.trim())
+    .filter(Boolean);
 }
 
 export const config = {

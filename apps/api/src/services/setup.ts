@@ -101,9 +101,7 @@ export async function needsSetup(db: Database): Promise<boolean> {
   return (await countActiveUsers(db)) === 0;
 }
 
-export type SetupOutcome =
-  | { ok: true; user: User }
-  | { ok: false; reason: "already_set_up" };
+export type SetupOutcome = { ok: true; user: User } | { ok: false; reason: "already_set_up" };
 
 /**
  * Create the first admin.
