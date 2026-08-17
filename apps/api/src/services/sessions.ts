@@ -83,6 +83,12 @@ export async function createSession(
 
   const created = rows[0];
   if (!created) throw new Error("session insert returned no row");
+
+  // Signing in is activity. Without this the member list shows "last active: —"
+  // for somebody who arrived ten seconds ago, because `touchSession` is
+  // throttled to once a minute and has therefore never run for a new session.
+  await db.update(users).set({ lastActiveAt: created.createdAt }).where(eq(users.id, input.userId));
+
   return created;
 }
 
