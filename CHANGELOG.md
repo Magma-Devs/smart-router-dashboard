@@ -28,8 +28,38 @@ chain can have several routers.
   A different axis from the existing `?router=`, which narrows the PromQL by the
   collector's target label; the doc now has a table telling them apart.
 
+- **The router filter reaches the error hotspots too** —
+  `GET /api/metrics/errors?routerId=` filters the (chain × upstream) pairs
+  through the same config join, since a hotspot names an upstream. The pivots
+  behind "Error types" aggregate by chain / method / code and can't be
+  attributed, so they are left alone rather than filtered to look narrowed.
+- **A title on the Metrics page.** It had none, so the filters were the first
+  thing on it and nothing said where you were.
+
 ### Changed
 
+- **The chain and router filters belong to the page you set them on.** They
+  narrow WHICH data a screen shows, and a narrowing that outlives its screen is
+  a trap — you arrive somewhere showing a slice of reality with no memory of
+  having asked for one. Navigating clears them (returning to a page too, not
+  just leaving it), nothing is persisted, and tab switches within a page keep
+  them because the tabs are one screen. The time window still persists: how far
+  back you like to look isn't a claim about what you're looking at.
+- **Picking a router picks its chain.** A config router serves exactly one, so
+  this narrows the panels that aggregate by chain — the only way they can be
+  narrowed at all — and the chain box says so instead of the page quietly
+  filtering more than it shows.
+- **A pair that failed nothing is no longer listed as a failing one.** The
+  errors breakdown includes (chain × upstream) pairs whose upstream answered with
+  JSON-RPC errors — served relays, not failures — and showed them as
+  `0.00% · 0 errors`, which read as padding and made a chain filter look like it
+  hadn't applied. Such a row now states the number it does have ("no failed
+  relays · 3 answered with a node error"), stays out of the severity palette,
+  sorts below the real failures, and is counted apart in the header.
+- **"Error types" says what it counts.** Those are all classified error events,
+  including the upstream replies the router recovered from, so they can exceed
+  the failed-relay total above them — which looked like a contradiction with no
+  line of text to explain it.
 - **One router control instead of two.** The topbar's scope-only dropdown is
   gone; the header filter sets both axes — the config id always, and the label
   scope when the collector actually reports a matching target. Where it can't
@@ -87,10 +117,9 @@ carried is the Upstreams page's third grouping, and its default.
   it was the most prominent. `unknown` still means "no metrics in this window",
   never "down".
 - **The chain filter is shared, and so is its list.** It lives on
-  `FiltersProvider` next to the time window and the router scope (persisted as
-  `sr:chain`), so narrowing to a chain on Metrics and walking to Upstreams
-  keeps it — previously each page held its own copy and the selection silently
-  reset, while the two controls beside it survived. Its options come from
+  `FiltersProvider` next to the time window and the router scope, so both pages
+  read one selection instead of each holding its own copy. (It is scoped to the
+  page you set it on — see 0.13.0, which settled that.) Its options come from
   `useChainOptions()`: the union of the chains the config declares and the
   chains the metrics report traffic for, with each page dimming what it can't
   populate ("no traffic yet" on Metrics, "not in config" on Upstreams) instead

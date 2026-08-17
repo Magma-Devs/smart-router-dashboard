@@ -304,6 +304,14 @@ export interface ErrorHotspot {
   /** Top node-error methods for this (chain × upstream) pair — real once
    *  node_errors_total fires; empty (never null) before that. */
   nodeMethods: { method: string; count: number }[];
+  /**
+   * ALL node errors on the pair (not just the `nodeMethods` top slice). A pair
+   * can sit at `errors: 0` and still be here on the strength of this: the
+   * upstream answered with a JSON-RPC error, which the relay counts as served.
+   * Kept separate from `errors` because they are different failures and adding
+   * them would misstate both.
+   */
+  nodeErrors: number;
 }
 
 export interface ErrorPivotRow {

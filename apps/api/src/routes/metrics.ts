@@ -170,8 +170,10 @@ export async function metricRoutes(app: FastifyInstance) {
 
   // Errors-breakdown tab (derived totals/hotspots/pivots + family presence).
   app.get<{ Querystring: WindowQuery }>("/api/metrics/errors", tag("Errors breakdown (hotspots + pivots)"), async (request) => {
-    const { spec } = request.query;
-    return app.scoped(request.query.router).metricsDetail.errors(parseWindow(request.query.window), spec);
+    const { spec, routerId } = request.query;
+    return app
+      .scoped(request.query.router)
+      .metricsDetail.errors(parseWindow(request.query.window), spec, routerId);
   });
 
   // Chains whose every backing endpoint is down (CurrentlyUnavailable strip).

@@ -52,6 +52,19 @@ export function MetricsView() {
 
   return (
     <div className="gw-page gw-metrics-inter" style={{ paddingBottom: 60 }}>
+      {/* Title block, the shape every other page uses — the page had none, so
+          the filters were the first thing on it and nothing said where you
+          were. */}
+      <div className="gw-row" style={{ justifyContent: "space-between", marginBottom: 20 }}>
+        <div>
+          <h1>Metrics</h1>
+          <p className="lede">
+            How this deployment is serving traffic — throughput, latency, errors and
+            per-upstream health · live from{" "}
+            <span className="gw-mono" style={{ color: "var(--text-2)" }}>Prometheus</span>.
+          </p>
+        </div>
+      </div>
       <div style={{ marginBottom: 20 }}>
         <RouterHeader chains={routedChains} chainFilter={activeChain ?? "all"} setChainFilter={setChainFilter}
           timeWindow={timeWindow} setTimeWindow={setTimeWindow} />
@@ -68,7 +81,9 @@ export function MetricsView() {
         ))}
       </div>
 
-      {activeChain && (
+      {/* Only when the chain is the whole story — a router selection implies its
+          chain and its own banner says so, so two banners would say it twice. */}
+      {activeChain && !activeRouter && (
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20, padding: "9px 14px", borderRadius: 9, background: "rgba(255,57,0,0.06)", border: "1px solid rgba(255,57,0,0.22)" }}>
           <ChainBadge spec={activeChain} size={16} />
           <span style={{ fontSize: 13, color: "var(--text-2)" }}>Viewing <strong style={{ color: "var(--text)" }}>{chainObj ? chainObj.name : activeChain}</strong> — clear to see all chains.</span>
@@ -88,7 +103,7 @@ export function MetricsView() {
           <span style={{ fontSize: 13, color: "var(--text-2)" }}>
             Router <strong className="gw-mono" style={{ color: "var(--text)" }}>{activeRouter.id}</strong>
             {scopeUnavailable
-              ? " — the upstream roster is filtered to what it declares; the chain-level panels stay deployment-wide, because no metric says which router served a request."
+              ? ` — its upstreams and error hotspots are filtered to what it declares, and the rest of the page to ${activeRouter.chainName}, its chain. Panels that aggregate by chain can't go further: no metric says which router served a request, so a second router on ${activeRouter.chainName} would be counted in with it.`
               : " — every panel is scoped to it."}
           </span>
           <span style={{ flex: 1 }} />

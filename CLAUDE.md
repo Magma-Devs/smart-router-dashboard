@@ -244,13 +244,16 @@ with itself.
 | Available | only when the collector labels targets per router (often not) | always, whenever a values file is mounted |
 | Read by | every `/api/metrics/*` route | `/api/metrics/upstreams` |
 
-Per-upstream rows can always be attributed, because `rpc_endpoint_*` carries
-`endpoint_id` and the config says which router declares that node — that's
-`routerIds` on `UpstreamMetrics` (a LIST: two routers declaring one node name
-share one series, which the roster marks rather than splitting). Chain-level
-aggregates can only be split by the scope label, so with no such label a router
-selection narrows the roster and the UI says the other panels stay
-deployment-wide instead of implying otherwise.
+Anything keyed per UPSTREAM can be attributed, because the config says which
+router declares a node: the roster (`routerIds` on `UpstreamMetrics` — a LIST,
+since two routers declaring one node name share one series, which the UI marks
+rather than splitting) and the error hotspots (`?routerId=` on
+`/api/metrics/errors`, which filters the (chain × upstream) pairs and leaves the
+pivots alone). Anything that aggregates BY CHAIN can't be: no series says which
+router served a request. So a router selection also sets the chain — a config
+router serves exactly one — which narrows those panels as far as the data
+honestly allows, and the UI states that a second router on the same chain is
+counted in with it.
 
 Web side, `useRouterFilter()` (`hooks/use-router-options.ts`) is the only place
 a router selection is made: it sets the config id and, when that router maps to
@@ -287,10 +290,11 @@ value is the router's Service name (`<router-id-lowered>-router`).
   separate sidecar shared by every router, so it carries no router's label
   and scoping it would report a zeroed cache rather than an unattributable
   one.
-- Web side: the scope lives in `FiltersProvider` next to the time window and
-  the chain (persisted as `sr:router` / `sr:window` / `sr:chain` — all three
-  survive a page walk, so narrowing the chain on Metrics and opening Upstreams
-  keeps it), and every metrics URL appends `scopeQ` /
+- Web side: the scope lives in `FiltersProvider` next to the chain and the time
+  window, in two lifetimes — **the window persists** (`sr:window`, a viewing
+  preference), **the chain and the router belong to the page** that set them
+  (in-memory, stamped with the pathname, gone when you navigate — a narrowing
+  that outlives its screen is a trap). Every metrics URL appends `scopeQ` /
   `withScope(url)`. A selection that disappears from the list resets to "All
   routers" instead of silently filtering every panel to nothing.
 
