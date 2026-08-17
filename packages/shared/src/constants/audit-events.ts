@@ -211,12 +211,14 @@ export const AUDIT_EVENTS = {
     carriesAccessContext: false,
     origin: "MAG-2729",
   },
+  // The one people event with context: it is done by the new person, from
+  // outside, and MAG-2729's table has it carry "who, from which invite, IP".
   "invite.redeemed": {
     group: "people",
     description:
       "An invitation was redeemed and the account created. Only the invited address can redeem it.",
     carriesChanges: false,
-    carriesAccessContext: false,
+    carriesAccessContext: true,
     origin: "MAG-2729",
   },
   "member.role_changed": {

@@ -27,6 +27,10 @@ const PASSWORD = "thistle-cobalt-marina-7781";
 
 let app: FastifyInstance | null = null;
 let t: TestDb;
+/** Every catalog violation reported during a test. A violation means this
+ *  codebase and MAG-2770's catalog disagree — the row still lands, so nothing
+ *  else would ever surface it. */
+let violations: unknown[] = [];
 const savedEnv: Record<string, string | undefined> = {};
 
 function setEnv(vars: Record<string, string | undefined>): void {
@@ -51,9 +55,20 @@ beforeEach(async () => {
   });
   app = await buildApp();
   app.db = t.db;
+
+  violations = [];
+  const realError = app.log.error.bind(app.log);
+  app.log.error = ((obj: unknown, msg?: string) => {
+    if (typeof msg === "string" && msg.includes("violated the catalog")) violations.push(obj);
+    return realError(obj as never, msg as never);
+  }) as typeof app.log.error;
 });
 
 afterEach(async () => {
+  // Asserted for every test, not in one of them: any flow that emits a verb the
+  // catalog doesn't know, or context it forbids, fails here rather than
+  // producing a quietly-wrong log.
+  expect(violations, "emissions must match MAG-2770's catalog").toEqual([]);
   await app?.close();
   app = null;
   await t.close();
@@ -197,6 +212,67 @@ describe("events reach the log", () => {
       headers: { authorization: `Bearer ${token}` },
     });
     expect(await actions()).toContain("member.removed");
+  });
+
+  it("survives a real browser's User-Agent, which is longer than the column", async () => {
+    // The access columns hold the PARSED device string and a normalised
+    // address, not the raw header. Raw UAs run past varchar(128) on most real
+    // browsers, the insert throws, and — because these are standalone writes —
+    // the writer swallows and reports. The row vanishes and the log looks
+    // healthy, which is worse than a uniform failure.
+    const uas = [
+      // Edge / Windows, 129 chars
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36 Edg/141.0.2623.112",
+      // Chrome / Android, 140
+      "Mozilla/5.0 (Linux; Android 15; Pixel 9 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36 EdgA/141.0",
+      // Safari / iOS, 135
+      "Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1",
+    ];
+
+    for (const ua of uas) {
+      expect(ua.length, "test fixture should exceed the column").toBeGreaterThan(128);
+      await app!.inject({
+        method: "POST",
+        url: "/auth/sign-in",
+        headers: { "user-agent": ua },
+        payload: { email: "ghost@example.com", password: "wrong" },
+      });
+    }
+
+    const recorded = (await actions()).filter((a) => a === "signin.failed");
+    expect(recorded).toHaveLength(uas.length);
+  });
+
+  it("names the address on a failed sign-in, even with no account behind it", async () => {
+    // "Someone failed to sign in" without saying as whom cannot distinguish a
+    // typo from a run of guesses across a list of addresses — which is the
+    // investigation this row exists for.
+    await app!.inject({
+      method: "POST",
+      url: "/auth/sign-in",
+      payload: { email: "victim@example.com", password: "wrong" },
+    });
+
+    const rows = await t.db.execute<{ actor_email: string | null }>(
+      sql`select actor_email from audit_events where action = 'signin.failed'`,
+    );
+    expect(rows.rows[0]?.actor_email).toBe("victim@example.com");
+  });
+
+  it("names the account on a lockout", async () => {
+    for (let i = 0; i < 6; i++) {
+      await app!.inject({
+        method: "POST",
+        url: "/auth/sign-in",
+        payload: { email: "target@example.com", password: "wrong" },
+      });
+    }
+    const rows = await t.db.execute<{ actor_email: string | null }>(
+      sql`select actor_email from audit_events where action = 'signin.blocked'`,
+    );
+    expect(rows.rows.length).toBeGreaterThan(0);
+    // A lockout row that doesn't name the account can't be acted on.
+    expect(rows.rows[0]?.actor_email).toBe("target@example.com");
   });
 
   it("keeps writing when one event is malformed — the log is not all-or-nothing", async () => {
