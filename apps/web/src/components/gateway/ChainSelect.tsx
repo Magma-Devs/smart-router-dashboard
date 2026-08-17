@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ChainBadge } from "./ChainBadge";
 
 /* Ported verbatim from the design prototype (page-overview.jsx ChainSelect);
@@ -16,10 +16,19 @@ export interface ChainSelectProps {
   /** "all" or a spec label. */
   value: string;
   onChange: (v: string) => void;
+  /** Any order — the list is sorted by chain name for display. */
   chains: ChainOption[];
 }
 
-export function ChainSelect({ value, onChange, chains }: ChainSelectProps) {
+export function ChainSelect({ value, onChange, chains: unsorted }: ChainSelectProps) {
+  /* Alphabetical by name, ascending. The callers' own orders are meaningless
+     to someone hunting for a chain: the metrics list arrives in whatever order
+     Prometheus returns its label values, the config list in the order the
+     values file happens to declare its routers. */
+  const chains = useMemo(
+    () => [...unsorted].sort((a, b) => a.name.localeCompare(b.name)),
+    [unsorted],
+  );
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
