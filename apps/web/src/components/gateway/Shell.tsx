@@ -9,7 +9,6 @@ import { NAV_SECTIONS } from "./nav";
 import { IconMoon, IconSun, type IconProps } from "./icons";
 import { useApi } from "@/hooks/use-api";
 import { useFilters } from "@/components/gateway/FiltersProvider";
-import { RouterSelect } from "@/components/gateway/RouterSelect";
 import { fmtNum } from "@/lib/format";
 import { getAuthState, getAuthVersion, subscribeAuth } from "@/lib/auth-store";
 
@@ -154,7 +153,9 @@ function Topbar({ here }: { here: string }) {
         {/* Router scope — global, so it sits next to the theme toggle rather
             than in any one page's header. Hides itself when the metrics can't
             be split per router. */}
-        <RouterSelect />
+        {/* The router filter lives in the page header next to the chain one
+            (RouterFilterSelect) — it sets the label scope this control used to
+            own, plus the config-router filter, so one control does both. */}
         <ThemeToggle />
       </div>
     </header>

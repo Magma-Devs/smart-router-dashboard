@@ -135,8 +135,11 @@ describe("router scope (?router=) coverage", () => {
   });
 
   it("the router list itself stays unscoped", () => {
-    const select = readFileSync(join(SRC, "components/gateway/RouterSelect.tsx"), "utf8");
-    const [routers] = metricsUrlLiterals(select).filter((u) =>
+    // Lives in the router-options hook (it was RouterSelect's own fetch before
+    // the two router axes were folded into one control). Scoping it to the
+    // current selection would make every other router unreachable.
+    const hook = readFileSync(join(SRC, "hooks/use-router-options.ts"), "utf8");
+    const [routers] = metricsUrlLiterals(hook).filter((u) =>
       u.literal.startsWith("/api/metrics/routers"),
     );
     expect(routers).toBeDefined();

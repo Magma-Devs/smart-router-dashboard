@@ -21,6 +21,7 @@ import { isMetricWindow, type MetricWindow } from "@sr/shared";
 const STORAGE_KEY = "sr:window";
 const ROUTER_KEY = "sr:router";
 const CHAIN_KEY = "sr:chain";
+const ROUTER_ID_KEY = "sr:routerId";
 
 interface FiltersContextValue {
   timeWindow: MetricWindow;
@@ -31,6 +32,15 @@ interface FiltersContextValue {
   /** Spec index of the selected chain; null = every chain. */
   chain: string | null;
   setChain: (c: string | null) => void;
+  /**
+   * Config router id of the selected router; null = every router. The OTHER
+   * router axis: `router` above is the collector's target label and narrows the
+   * PromQL, this one identifies an entry in the mounted values file and filters
+   * rows by what that entry declares. One chain can have several config
+   * routers, and no series carries which — see `hooks/use-router-options.ts`.
+   */
+  routerId: string | null;
+  setRouterId: (id: string | null) => void;
   /** `&router=…` (or "") to append to a metrics URL that already has params. */
   scopeQ: string;
   /** Same scope for a URL whose param list may be empty. */
@@ -43,6 +53,7 @@ export function FiltersProvider({ children }: { children: React.ReactNode }) {
   const [timeWindow, setTimeWindowState] = useState<MetricWindow>("1d");
   const [router, setRouterState] = useState<string | null>(null);
   const [chain, setChainState] = useState<string | null>(null);
+  const [routerId, setRouterIdState] = useState<string | null>(null);
 
   useEffect(() => {
     // Read once on mount — this effect only runs client-side, so no SSR access.
@@ -53,6 +64,8 @@ export function FiltersProvider({ children }: { children: React.ReactNode }) {
       if (savedRouter) setRouterState(savedRouter);
       const savedChain = window.localStorage.getItem(CHAIN_KEY);
       if (savedChain) setChainState(savedChain);
+      const savedRouterId = window.localStorage.getItem(ROUTER_ID_KEY);
+      if (savedRouterId) setRouterIdState(savedRouterId);
     } catch {
       /* localStorage unavailable (private mode etc.) — keep the default. */
     }
@@ -87,6 +100,16 @@ export function FiltersProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const setRouterId = useCallback((id: string | null) => {
+    setRouterIdState(id);
+    try {
+      if (id) window.localStorage.setItem(ROUTER_ID_KEY, id);
+      else window.localStorage.removeItem(ROUTER_ID_KEY);
+    } catch {
+      /* best-effort persistence */
+    }
+  }, []);
+
   const value = useMemo(() => {
     const param = router ? `router=${encodeURIComponent(router)}` : "";
     return {
@@ -96,11 +119,13 @@ export function FiltersProvider({ children }: { children: React.ReactNode }) {
       setRouter,
       chain,
       setChain,
+      routerId,
+      setRouterId,
       scopeQ: param ? `&${param}` : "",
       // Keeps the URL (and so the SWR cache key) clean when nothing is scoped.
       withScope: (url: string) => (param ? `${url}${url.includes("?") ? "&" : "?"}${param}` : url),
     };
-  }, [timeWindow, setTimeWindow, router, setRouter, chain, setChain]);
+  }, [timeWindow, setTimeWindow, router, setRouter, chain, setChain, routerId, setRouterId]);
 
   return <FiltersContext.Provider value={value}>{children}</FiltersContext.Provider>;
 }

@@ -6,7 +6,10 @@ import { config } from "../config.js";
 interface WindowQuery {
   window?: string;
   spec?: string;
+  /** Collector target-label scope — narrows the PromQL (see `promql/scope.ts`). */
   router?: string;
+  /** Config router id — filters rows by the mounted values file, not the query. */
+  routerId?: string;
 }
 
 function parseWindow(raw: string | undefined): MetricWindow {
@@ -28,6 +31,11 @@ const windowQuerySchema = {
       type: "string" as const,
       description:
         "Restrict to ONE router deployment — a value of the ROUTER_SCOPE_LABEL target label, as listed by GET /api/metrics/routers (optional; omit for cluster-wide)",
+    },
+    routerId: {
+      type: "string" as const,
+      description:
+        "Restrict to the upstreams ONE config router declares — an id from GET /api/config/routers. A different axis from `router`: this filters rows against the mounted values file, it does not narrow the PromQL. Read by /api/metrics/upstreams (optional)",
     },
   },
 };
@@ -93,10 +101,14 @@ export async function metricRoutes(app: FastifyInstance) {
     return { chains: await app.scoped(request.query.router).metrics.chains(parseWindow(request.query.window)) };
   });
 
-  // Upstream roster (optionally scoped to one spec).
+  // Upstream roster (optionally scoped to one spec and/or one config router).
   app.get<{ Querystring: WindowQuery }>("/api/metrics/upstreams", tag("Upstream roster + selection scores"), async (request) => {
-    const { spec } = request.query;
-    return { upstreams: await app.scoped(request.query.router).metrics.upstreams(spec, parseWindow(request.query.window)) };
+    const { spec, routerId } = request.query;
+    return {
+      upstreams: await app
+        .scoped(request.query.router)
+        .metrics.upstreams(spec, parseWindow(request.query.window), routerId),
+    };
   });
 
   // RPS time-series for the Traffic chart.

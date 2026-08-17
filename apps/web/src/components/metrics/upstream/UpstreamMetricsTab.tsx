@@ -28,13 +28,13 @@ export function UpstreamMetricsTab({ timeWindow, chainFilter }: {
   timeWindow: MetricWindow;
   chainFilter: string | null;
 }) {
-  const { scopeQ } = useFilters();
+  const { scopeQ, routerId } = useFilters();
   const rosterRes = usePMRosterData(timeWindow, chainFilter);
   const entries = rosterRes.data?.upstreams ?? [];
 
   const [provName, setProvName] = useState<string | null>(null);
-  // jump the deep-dive to the first upstream on the filtered chain
-  useEffect(() => { setProvName(null); }, [chainFilter]);
+  // jump the deep-dive to the first upstream on the filtered chain / router
+  useEffect(() => { setProvName(null); }, [chainFilter, routerId]);
 
   const visible = entries;
   const selValid = visible.some((e) => e.endpointId === provName);
