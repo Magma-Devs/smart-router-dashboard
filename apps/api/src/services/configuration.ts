@@ -167,6 +167,13 @@ export function endpointKey(routerId: string, node: string, index: number): stri
   return `${routerId} ${node} ${index}`;
 }
 
+/* Temporary: mirror the chart's `lower | replace " " "-"` so node names match
+   what the router registers (and reports on `provider_address`). Drop once the
+   router matches `lava-select-provider` case-insensitively. */
+export function normalizeHelmNodeName(name: string): string {
+  return name.toLowerCase().replace(/ /g, "-");
+}
+
 /** Helm `routers:` shape → RouterTopology[] (pathBased resolved like the chart). */
 function normalizeHelm(raw: Record<string, unknown>, urls: Map<string, string>): RouterTopology[] {
   const misc = (raw["miscellaneous"] ?? {}) as Record<string, unknown>;
@@ -181,7 +188,7 @@ function normalizeHelm(raw: Record<string, unknown>, urls: Map<string, string>):
     const routerId = asString(router["id"]) || network.toUpperCase();
 
     const nodes: RouterNode[] = asArray(router["nodes"]).map((node) => {
-      const name = asString(node["name"]) || network;
+      const name = normalizeHelmNodeName(asString(node["name"])) || network;
       return {
         name,
         isBackup: Boolean(pick(node, "is_backup", "is-backup", "isBackup") ?? false),
