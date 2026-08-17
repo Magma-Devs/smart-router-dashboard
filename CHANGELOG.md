@@ -19,6 +19,15 @@ carried is the Upstreams page's third grouping, and its default.
   The page already carved this config three ways in prose — "what does this
   router publish", "who serves this chain", "what does this upstream serve" —
   and the first of them was the one living on its own tab.
+- **The Metrics page's chain picker, on the Upstreams page too**, narrowing
+  all three groupings: the routers publishing that chain, its own chain card,
+  or just the upstreams behind it (a provider card drops the rows for chains
+  the filter excludes rather than showing them under a narrowed page). It reads
+  the chains the *config* declares, not the ones `/api/metrics/specs` reports —
+  a configured chain nobody has called yet still has endpoints to show — and it
+  hides itself on a single-chain deployment, where it could only ever restate
+  the page. A selection that leaves the config reads as "All chains" instead of
+  narrowing everything to nothing.
 - **The Try-it console reads identically in the new grouping**, because it is
   the same call: the endpoint's own address, its ws upgrade when the config
   declares one, its upstreams' add-ons, and the chain's live health. Nothing is

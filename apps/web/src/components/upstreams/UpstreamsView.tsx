@@ -15,6 +15,7 @@ import {
 } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
+import { ChainSelect, type ChainOption } from "@/components/gateway/ChainSelect";
 import { CapabilityTags, capabilitiesOf } from "@/components/gateway/CapabilityTags";
 import { UpstreamLogo } from "@/components/upstreams/UpstreamLogo";
 import { StatusDot } from "@/components/upstreams/bits";
@@ -162,6 +163,11 @@ export function UpstreamsView() {
   const [degradedFilter, setDegradedFilter] = useState(false);
   const [search, setSearch] = useState("");
   const [netFilter, setNetFilter] = useState<"all" | "mainnet" | "testnet">("all");
+  /* Chain filter — the Metrics page's own picker, page-level state there and
+     here. It reads the CONFIG's chains, not the metrics' (`/api/metrics/specs`
+     lists chains that have served traffic): a configured chain nobody has
+     called yet still has endpoints and upstreams to show. */
+  const [chainFilter, setChainFilter] = useState("all");
   /* Router-first by default: the endpoints a router publishes are what a
      self-hosted deployment reaches for — the address to dial, what it serves,
      and how many upstreams stand behind it. The chain and provider groupings
@@ -174,6 +180,20 @@ export function UpstreamsView() {
     () => buildUpstreamRows(routers, live.data?.upstreams),
     [routers, live.data],
   );
+  /* Chains the mounted config declares, in the order it declares them. */
+  const configChains = useMemo<ChainOption[]>(
+    () => [...new Set(routers.map((r) => r.spec))].map((spec) => {
+      const meta = buildChainMetaByIndex(spec);
+      return { spec, name: meta.name, color: meta.color };
+    }),
+    [routers],
+  );
+  /* The chain actually filtered on. A selection that leaves the config (values
+     reloaded without that chain) reads as "All chains" instead of narrowing
+     everything to nothing — the same rule the router scope follows, derived
+     rather than reset so the box and the cards can't disagree. */
+  const activeChain =
+    chainFilter !== "all" && configChains.some((c) => c.spec === chainFilter) ? chainFilter : null;
 
   const displayed = useMemo(() => {
     return upstreams.filter((pv) => {
@@ -182,9 +202,10 @@ export function UpstreamsView() {
         pv.name.toLowerCase().includes(search.toLowerCase()) ||
         pv.url.toLowerCase().includes(search.toLowerCase());
       const matchNet = netFilter === "all" || pv.networks.includes(netFilter);
-      return matchDegraded && matchSearch && matchNet;
+      const matchChain = !activeChain || pv.chains.includes(activeChain);
+      return matchDegraded && matchSearch && matchNet && matchChain;
     });
-  }, [upstreams, degradedFilter, search, netFilter]);
+  }, [upstreams, degradedFilter, search, netFilter, activeChain]);
 
   /* Chain grouping filters per ROW, not per upstream: a chain card survives
      when the query matches the chain itself OR any upstream serving it, so
@@ -204,11 +225,12 @@ export function UpstreamsView() {
     }));
     return groups.filter((group) => {
       if (group.rows.length === 0) return false;
+      if (activeChain && group.spec !== activeChain) return false;
       if (netFilter === "all") return true;
       const mainnet = buildChainMetaByIndex(group.spec).mainnet;
       return netFilter === "mainnet" ? mainnet : !mainnet;
     });
-  }, [upstreams, degradedFilter, search, netFilter]);
+  }, [upstreams, degradedFilter, search, netFilter, activeChain]);
 
   const loading = !config.data && !config.error;
   /* Nothing to show. The router grouping renders the routers themselves, so a
@@ -272,6 +294,10 @@ export function UpstreamsView() {
             placeholder={groupBy === "router" ? "Search chains, interfaces…" : "Search upstreams…"} value={search}
             onChange={(e) => setSearch(e.target.value)} style={{ paddingLeft: 32 }} />
         </div>
+        {/* Chain filter — the Metrics page's picker, on the config's chains. */}
+        {configChains.length > 1 && (
+          <ChainSelect value={activeChain ?? "all"} onChange={setChainFilter} chains={configChains} />
+        )}
         <div className="gw-segctl">
           {([["all", "All"], ["mainnet", "Mainnet"], ["testnet", "Testnet"]] as const).map(([val, lbl]) => (
             <button key={val} className={netFilter === val ? "on" : ""} onClick={() => setNetFilter(val)}>{lbl}</button>
@@ -313,7 +339,7 @@ export function UpstreamsView() {
           )}
         </div>
       ) : groupBy === "router" ? (
-        <RouterGroups routers={routers} upstreams={upstreams} search={search} netFilter={netFilter} />
+        <RouterGroups routers={routers} upstreams={upstreams} search={search} netFilter={netFilter} chainFilter={activeChain} />
       ) : groupBy === "chain" ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {chainGroups.map((group) => {
@@ -377,15 +403,22 @@ export function UpstreamsView() {
                     </div>
                   </div>
                 </div>
-                {/* endpoint rows, one per (chain, upstream endpoint) served */}
+                {/* endpoint rows, one per (chain, upstream endpoint) served —
+                    narrowed to the picked chain, so a card never lists chains
+                    the filter excludes. */}
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  {pv.chainRows.map((row, i) => (
-                    <EndpointRow key={i} upstream={pv} row={row} routers={routers} />
-                  ))}
+                  {pv.chainRows
+                    .filter((row) => !activeChain || row.spec === activeChain)
+                    .map((row, i) => (
+                      <EndpointRow key={i} upstream={pv} row={row} routers={routers} />
+                    ))}
                 </div>
               </div>
             );
           })}
+          {displayed.length === 0 && (
+            <p className="lede" style={{ padding: "12px 2px" }}>No upstreams match this filter.</p>
+          )}
         </div>
       )}
 
