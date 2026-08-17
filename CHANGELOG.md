@@ -5,6 +5,30 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.11.4]
+
+### Fixed
+
+- **The upstream roster called every provider by a name the router does not
+  answer to.** The values file names upstreams for people — `Lava`,
+  `Blockdaemon`, `Tatum` — and the chart folds that to
+  `lower | replace " " "-"` on the way into the router's own config. The
+  router registers the folded string, publishes it on the `provider_address`
+  and `endpoint_id` Prometheus labels, and matches the `lava-select-provider`
+  header against it exactly. The dashboard reflected the unfolded name, so it
+  addressed `Lava` where everything downstream says `lava`, and two things
+  broke quietly on the back of one mismatch: every upstream card read "no
+  data" (the metrics join never matched, while the traffic sat right there
+  under the lowercased label), and every "send this straight to the upstream"
+  relay came back `-32000 Selected provider not available`.
+
+  Helm node names are now folded the way the chart folds them. This is a
+  stopgap — the router is being taught to match the header case-insensitively
+  ([smart-router#285](https://github.com/Magma-Devs/smart-router/pull/285)),
+  and the shim comes out once that ships. SR_CONFIG deployments are left
+  verbatim: that file *is* the router's config, so its `name:` is already the
+  registered provider name.
+
 ## [0.11.3]
 
 ### Fixed
