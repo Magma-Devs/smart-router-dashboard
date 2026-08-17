@@ -1,14 +1,16 @@
 # Chain resync (lava-specs → committed catalogs)
 
-Three committed files are **generated from lava-specs**. Never hand-edit them:
+Five committed files are **generated from lava-specs**. Never hand-edit them:
 
 | File | Generator | What it drives |
 |------|-----------|----------------|
 | `packages/shared/src/constants/chain-map.generated.json` | `apps/web/scripts/generate-chain-map.mjs` | chain names, families, icons, mainnet flag |
+| `packages/shared/src/constants/chain-explorers.generated.json` | `apps/web/scripts/generate-chain-explorers.mjs` | the block explorer each chain links to |
+| `apps/web/scripts/data/no-explorer.generated.json` | (same run as the explorers) | roll-call of chains with no explorer |
 | `apps/web/src/components/try-me/chain-methods.generated.json` | `apps/web/scripts/generate-try-me-catalog.mjs` | the Try-it drawer's per-chain method catalog |
 | `apps/web/scripts/data/no-runnable-defaults.generated.json` | (same run as the catalog) | roll-call of surfaces with no working default |
 
-`node apps/web/scripts/check-spec-sync.mjs` regenerates all three from the live
+`node apps/web/scripts/check-spec-sync.mjs` regenerates all five from the live
 repo and fails on any difference. It runs in CI as **Chain catalogs ↔
 lava-specs drift**, and soft-skips when GitHub is unreachable.
 
@@ -16,16 +18,72 @@ lava-specs drift**, and soft-skips when GitHub is unreachable.
 
 ```bash
 git clone https://github.com/Magma-Devs/lava-specs /tmp/lava-specs
+export LAVA_SPECS_DIR=/tmp/lava-specs
 node apps/web/scripts/generate-chain-map.mjs
-LAVA_SPECS_DIR=/tmp/lava-specs node apps/web/scripts/generate-try-me-catalog.mjs
-node apps/web/scripts/check-spec-sync.mjs      # must print ✓ for all three
+node apps/web/scripts/generate-chain-explorers.mjs
+node apps/web/scripts/generate-try-me-catalog.mjs
+node apps/web/scripts/check-spec-sync.mjs      # must print ✓ for all five
 ```
 
-Regenerate BOTH. The chain map alone was gated for a long time, and the method
+Regenerate ALL THREE — the map first, since the explorer catalog is keyed off
+it. The chain map alone was gated for a long time, and the method
 catalog drifted in both directions behind it: Trusted Smart Chain rendered with
 a name and icon while its Try-it drawer fell back to a family guess, and Ronin
 kept serving 57 methods for months after its spec was deleted upstream — it had
 already left the *gated* map.
+
+## Explorers — a new chain arrives without one
+
+Same failure shape as the icons, one step further out: a chain with no explorer
+renders perfectly well, and nothing on the dashboard can be checked against the
+public chain. `generate-chain-explorers.mjs` names them, and the roll-call file
+is committed so the gap is a reviewed decision rather than an accident.
+
+1. **Read the generator's tail.** It prints the coverage, then every chain with
+   no explorer, then every chain whose link shape nobody has verified:
+
+   ```
+   explorers       210/245 chains (92 chainlist, 38 chain-registry, 80 curated)
+   verification    130 registry-asserted, 58 checked by hand, 22 unverified
+   declared none   AGRT, ALEOT, CANTON, …
+   ```
+
+2. **A new chain in a covered family usually needs nothing.** An EVM chain
+   whose spec declares a `chain-id` verification is resolved straight out of
+   chainlist, and a cosmos chain out of chain-registry — but only if the
+   committed registry snapshot has that chain id, which it will not for a
+   brand-new one. Re-fetch:
+
+   ```bash
+   node apps/web/scripts/generate-chain-explorers.mjs --refresh
+   ```
+
+3. **Read the chain-id name mismatches.** The generator prints every case where
+   the chainlist row's name does not resemble the spec's. Most are aliases
+   (BSC/BNB, Mordor/ETC testnet). Some are collisions, and a collision hands a
+   chain another chain's explorer — Astar Shibuya wore Japan Open Chain's, and
+   Hyperliquid wore Wanchain Testnet's, until the overlay corrected both.
+
+4. **Anything else is curated**, in
+   `apps/web/scripts/data/explorer-overlay.json`. Open the deep link in a
+   browser before you write a `kind` down, and record what you did in
+   `verified`. `probe-explorers.mjs` proves the host is up and the route
+   exists; it cannot prove the page rendered the block you asked for, because
+   most explorers answer 200 for any path under their router.
+
+5. **A shape you cannot check is not a shape you invent.** Use `home` and the
+   entry offers only the explorer's front page — honest, and still useful. A
+   `block` template always takes a HEIGHT; an explorer whose block page needs a
+   hash ships `tx`/`address` only. `explorerUrl()` returning null is a
+   supported outcome the UI handles; a link that 404s is not.
+
+6. **Accepting a gap is allowed**, and is recorded the same way as everything
+   else: `"CANTON": { "none": "Canton's network is permissioned — no public
+   block explorer" }`. Commit the roll-call file with the entry in it; the diff
+   records the decision.
+
+Full reference, including the kind table and the registry snapshot:
+[`docs/CHAINS.md`](../../docs/CHAINS.md).
 
 ## Icons — a new chain arrives without one
 
@@ -128,6 +186,9 @@ the runnable ones, so a chain with none opens on a list where nothing works.
 
 ## Related
 
+- [`docs/CHAINS.md`](../../docs/CHAINS.md) — the full chain-catalog reference:
+  what each generated file holds, how the explorer join key works, the link-shape
+  kind table, and the verification statuses.
 - [`apps/web/public/chains/README.md`](../../apps/web/public/chains/README.md) —
   icon sources, house style, and the per-icon provenance note each vendored SVG
   carries. Add one when you add an icon.

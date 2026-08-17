@@ -1,0 +1,1025 @@
+{
+  "AGRT": {
+    "none": "not in cosmos/chain-registry and no public explorer verified"
+  },
+  "ALEO": {
+    "explorers": [
+      {
+        "name": "Aleoscan",
+        "url": "https://aleoscan.io",
+        "kind": "home",
+        "verified": "unverified — bot challenge (HTTP 403) from the build network",
+        "source": "curated"
+      }
+    ]
+  },
+  "ALEOT": {
+    "none": "no public explorer verified for this testnet"
+  },
+  "ALGORAND": {
+    "explorers": [
+      {
+        "name": "Allo",
+        "url": "https://allo.info",
+        "kind": "block-tx-account",
+        "verified": "browser 2026-08-17 — block page watched rendering the requested height",
+        "source": "curated"
+      }
+    ]
+  },
+  "ALGORANDT": {
+    "explorers": [
+      {
+        "name": "Lora",
+        "url": "https://lora.algokit.io/testnet",
+        "kind": "eip3091",
+        "verified": "browser 2026-08-17 — block page watched rendering the requested height",
+        "source": "curated — testnet.allo.info does not resolve"
+      }
+    ]
+  },
+  "APT1": {
+    "explorers": [
+      {
+        "name": "Aptos Explorer",
+        "url": "https://explorer.aptoslabs.com",
+        "kind": "block-txn-account",
+        "suffix": "?network=mainnet",
+        "verified": "browser 2026-08-17 — block page watched rendering the requested height",
+        "source": "curated"
+      }
+    ]
+  },
+  "APTOST": {
+    "explorers": [
+      {
+        "name": "Aptos Explorer",
+        "url": "https://explorer.aptoslabs.com",
+        "kind": "block-txn-account",
+        "suffix": "?network=testnet",
+        "verified": "browser 2026-08-17 — block page watched rendering the requested height (mainnet network; the suffix selects the network)",
+        "source": "curated"
+      }
+    ]
+  },
+  "ARWEAVE": {
+    "explorers": [
+      {
+        "name": "ViewBlock",
+        "url": "https://viewblock.io/arweave",
+        "kind": "eip3091",
+        "verified": "unverified — home reachable, deep-link shape not watched",
+        "source": "curated"
+      }
+    ]
+  },
+  "ARWEAVET": {
+    "none": "no public explorer verified for this testnet"
+  },
+  "ASTART": {
+    "explorers": [
+      {
+        "name": "Blockscout",
+        "url": "https://shibuya.blockscout.com",
+        "kind": "eip3091",
+        "verified": "browser 2026-08-17 — block page watched rendering the requested height",
+        "source": "curated — chainlist's row for this chain id is a DIFFERENT chain (Japan Open Chain also claims 81)"
+      }
+    ]
+  },
+  "AVALANCHEP": {
+    "explorers": [
+      {
+        "name": "Avalanche Subnets",
+        "url": "https://subnets.avax.network/p-chain",
+        "kind": "home",
+        "verified": "home probed 2026-08-17",
+        "source": "curated"
+      }
+    ]
+  },
+  "AVALANCHEPT": {
+    "explorers": [
+      {
+        "name": "Avalanche Subnets",
+        "url": "https://subnets-test.avax.network/p-chain",
+        "kind": "home",
+        "verified": "home probed 2026-08-17",
+        "source": "curated"
+      }
+    ]
+  },
+  "BABYLONT": {
+    "none": "not in cosmos/chain-registry and no public explorer verified"
+  },
+  "BCH": {
+    "explorers": [
+      {
+        "name": "Blockchair",
+        "url": "https://blockchair.com/bitcoin-cash",
+        "kind": "home",
+        "verified": "unverified — bot challenge (HTTP 401) from the build network",
+        "source": "curated — blockchair is unreachable from the build network, so only its home page is offered"
+      }
+    ]
+  },
+  "BCHT": {
+    "none": "no public explorer verified for this testnet"
+  },
+  "BITTENSOR": {
+    "explorers": [
+      {
+        "name": "Taostats",
+        "url": "https://evm.taostats.io",
+        "kind": "home",
+        "verified": "home probed 2026-08-17",
+        "source": "curated"
+      }
+    ]
+  },
+  "BITTENSORT": {
+    "none": "no public explorer verified for this testnet"
+  },
+  "BTC": {
+    "explorers": [
+      {
+        "name": "mempool.space",
+        "url": "https://mempool.space",
+        "kind": "eip3091",
+        "verified": "browser 2026-08-17 — block page watched rendering the requested height",
+        "source": "curated"
+      }
+    ]
+  },
+  "BTCS": {
+    "explorers": [
+      {
+        "name": "mempool.space",
+        "url": "https://mempool.space/signet",
+        "kind": "eip3091",
+        "verified": "browser 2026-08-17 — same site and path shape as the verified BTC entry",
+        "source": "curated"
+      }
+    ]
+  },
+  "BTCT": {
+    "explorers": [
+      {
+        "name": "mempool.space",
+        "url": "https://mempool.space/testnet",
+        "kind": "eip3091",
+        "verified": "browser 2026-08-17 — same site and path shape as the verified BTC entry",
+        "source": "curated"
+      }
+    ]
+  },
+  "BTCT4": {
+    "explorers": [
+      {
+        "name": "mempool.space",
+        "url": "https://mempool.space/testnet4",
+        "kind": "eip3091",
+        "verified": "browser 2026-08-17 — same site and path shape as the verified BTC entry",
+        "source": "curated"
+      }
+    ]
+  },
+  "CANTON": {
+    "none": "Canton's network is permissioned — no public block explorer"
+  },
+  "CANTONT": {
+    "none": "Canton's network is permissioned — no public block explorer"
+  },
+  "CARDANO": {
+    "explorers": [
+      {
+        "name": "Cardanoscan",
+        "url": "https://cardanoscan.io",
+        "kind": "block-transaction-address",
+        "verified": "unverified — bot challenge (HTTP 403) from the build network",
+        "source": "curated"
+      }
+    ]
+  },
+  "CARDANOT": {
+    "explorers": [
+      {
+        "name": "Cardanoscan",
+        "url": "https://preprod.cardanoscan.io",
+        "kind": "block-transaction-address",
+        "verified": "unverified — bot challenge (HTTP 403) from the build network",
+        "source": "curated"
+      }
+    ]
+  },
+  "CASPER": {
+    "explorers": [
+      {
+        "name": "cspr.live",
+        "url": "https://cspr.live",
+        "kind": "home",
+        "verified": "home probed 2026-08-17",
+        "source": "curated — the block page is addressed by hash"
+      }
+    ]
+  },
+  "CASPERT": {
+    "explorers": [
+      {
+        "name": "cspr.live",
+        "url": "https://testnet.cspr.live",
+        "kind": "home",
+        "verified": "home probed 2026-08-17",
+        "source": "curated"
+      }
+    ]
+  },
+  "CONCORDIUM": {
+    "explorers": [
+      {
+        "name": "CCDExplorer",
+        "url": "https://ccdexplorer.io",
+        "kind": "home",
+        "verified": "home probed 2026-08-17",
+        "source": "curated"
+      }
+    ]
+  },
+  "CONCORDIUMT": {
+    "explorers": [
+      {
+        "name": "CCDExplorer",
+        "url": "https://testnet.ccdexplorer.io",
+        "kind": "home",
+        "verified": "unverified — HTTP ERR from the build network",
+        "source": "curated"
+      }
+    ]
+  },
+  "DASH": {
+    "explorers": [
+      {
+        "name": "Blockchair",
+        "url": "https://blockchair.com/dash",
+        "kind": "home",
+        "verified": "unverified — HTTP ERR from the build network",
+        "source": "curated — blockchair is unreachable from the build network, so only its home page is offered"
+      }
+    ]
+  },
+  "DASHT": {
+    "none": "no public explorer verified for this testnet"
+  },
+  "DOGE": {
+    "explorers": [
+      {
+        "name": "Blockchair",
+        "url": "https://blockchair.com/dogecoin",
+        "kind": "home",
+        "verified": "unverified — HTTP ERR from the build network",
+        "source": "curated — blockchair is unreachable from the build network, so only its home page is offered"
+      }
+    ]
+  },
+  "DOGET": {
+    "none": "no public explorer verified for this testnet"
+  },
+  "ELYS": {
+    "none": "not in cosmos/chain-registry and no public explorer verified"
+  },
+  "ENJIN": {
+    "explorers": [
+      {
+        "name": "Subscan",
+        "url": "https://enjin.subscan.io",
+        "kind": "block-extrinsic-account",
+        "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
+        "source": "curated — Subscan runs one deployment per network on a shared codebase"
+      }
+    ]
+  },
+  "ENJINT": {
+    "explorers": [
+      {
+        "name": "Subscan",
+        "url": "https://canary-matrix.subscan.io",
+        "kind": "block-extrinsic-account",
+        "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
+        "source": "curated — Subscan runs one deployment per network on a shared codebase"
+      }
+    ]
+  },
+  "EOS": {
+    "none": "bloks.io now redirects to explorer.xprnetwork.org, a different chain; no other EOS explorer verified"
+  },
+  "EOST": {
+    "none": "no public explorer verified for this testnet"
+  },
+  "ETHBEACON": {
+    "explorers": [
+      {
+        "name": "beaconcha.in",
+        "url": "https://beaconcha.in",
+        "kind": "custom",
+        "tpl": {
+          "block": "https://beaconcha.in/slot/{block}"
+        },
+        "verified": "unverified — bot challenge (HTTP 403) from the build network",
+        "source": "curated — the consensus layer is addressed by SLOT, which is what the router reports as this spec's latest block"
+      }
+    ]
+  },
+  "ETHBEACONHOL": {
+    "explorers": [
+      {
+        "name": "beaconcha.in",
+        "url": "https://holesky.beaconcha.in",
+        "kind": "custom",
+        "tpl": {
+          "block": "https://holesky.beaconcha.in/slot/{block}"
+        },
+        "verified": "unverified — HTTP ERR from the build network",
+        "source": "curated — the consensus layer is addressed by SLOT, which is what the router reports as this spec's latest block"
+      }
+    ]
+  },
+  "ETHBEACONHOODI": {
+    "explorers": [
+      {
+        "name": "beaconcha.in",
+        "url": "https://hoodi.beaconcha.in",
+        "kind": "custom",
+        "tpl": {
+          "block": "https://hoodi.beaconcha.in/slot/{block}"
+        },
+        "verified": "unverified — home reachable, deep-link shape not watched",
+        "source": "curated — the consensus layer is addressed by SLOT, which is what the router reports as this spec's latest block"
+      }
+    ]
+  },
+  "ETHBEACONSEP": {
+    "explorers": [
+      {
+        "name": "beaconcha.in",
+        "url": "https://sepolia.beaconcha.in",
+        "kind": "custom",
+        "tpl": {
+          "block": "https://sepolia.beaconcha.in/slot/{block}"
+        },
+        "verified": "unverified — home reachable, deep-link shape not watched",
+        "source": "curated — the consensus layer is addressed by SLOT, which is what the router reports as this spec's latest block"
+      }
+    ]
+  },
+  "ETHEREUMPOW": {
+    "explorers": [
+      {
+        "name": "OKLink",
+        "url": "https://www.oklink.com/ethw",
+        "kind": "home",
+        "verified": "home probed 2026-08-17",
+        "source": "curated — chainlist's row for this chain id is a DIFFERENT chain (Smart Bitcoin Cash Testnet also claims 10001)"
+      }
+    ]
+  },
+  "ETHEREUMPOWT": {
+    "none": "no public explorer verified for the Iceberg testnet"
+  },
+  "FUELNETWORK": {
+    "explorers": [
+      {
+        "name": "Fuel Explorer",
+        "url": "https://app.fuel.network",
+        "kind": "home",
+        "verified": "home probed 2026-08-17",
+        "source": "curated"
+      }
+    ]
+  },
+  "HEDERA": {
+    "explorers": [
+      {
+        "name": "HashScan",
+        "url": "https://hashscan.io/mainnet",
+        "kind": "eip3091",
+        "verified": "browser 2026-08-17 — block page watched rendering the requested height",
+        "source": "curated — chainlist's 295 row omits HashScan, which its own 296 row lists as EIP3091"
+      }
+    ]
+  },
+  "HYDRATION": {
+    "explorers": [
+      {
+        "name": "Subscan",
+        "url": "https://hydration.subscan.io",
+        "kind": "block-extrinsic-account",
+        "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
+        "source": "curated — Subscan runs one deployment per network on a shared codebase"
+      }
+    ]
+  },
+  "HYDRATIONT": {
+    "none": "no public explorer verified for this testnet"
+  },
+  "HYPERLIQUID": {
+    "explorers": [
+      {
+        "name": "HyperEVMScan",
+        "url": "https://hyperevmscan.io",
+        "kind": "home",
+        "verified": "home probed 2026-08-17",
+        "source": "curated — chainlist's row for this chain id is a DIFFERENT chain (Wanchain Testnet also claims 999)"
+      }
+    ]
+  },
+  "HYPERLIQUIDT": {
+    "none": "testnet.purrsec.com answers 404 and no other testnet explorer verified"
+  },
+  "ION": {
+    "none": "no public explorer verified for Ice Open Network"
+  },
+  "IONT": {
+    "none": "no public explorer verified for Ice Open Network"
+  },
+  "IOTA": {
+    "explorers": [
+      {
+        "name": "IOTA Explorer",
+        "url": "https://explorer.iota.org",
+        "kind": "home",
+        "verified": "home probed 2026-08-17",
+        "source": "curated"
+      }
+    ]
+  },
+  "IOTAT": {
+    "none": "no public explorer verified for this testnet"
+  },
+  "KAVAT": {
+    "none": "testnet.mintscan.io does not resolve and no other testnet explorer verified"
+  },
+  "KOII": {
+    "none": "no public explorer verified"
+  },
+  "KOIIT": {
+    "none": "no public explorer verified"
+  },
+  "KUSAMA": {
+    "explorers": [
+      {
+        "name": "Subscan",
+        "url": "https://kusama.subscan.io",
+        "kind": "block-extrinsic-account",
+        "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
+        "source": "curated — Subscan runs one deployment per network on a shared codebase"
+      }
+    ]
+  },
+  "KUSAMAASSETHUB": {
+    "explorers": [
+      {
+        "name": "Subscan",
+        "url": "https://assethub-kusama.subscan.io",
+        "kind": "block-extrinsic-account",
+        "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
+        "source": "curated — Subscan runs one deployment per network on a shared codebase"
+      }
+    ]
+  },
+  "KUSAMAASSETHUBT": {
+    "explorers": [
+      {
+        "name": "Subscan",
+        "url": "https://assethub-westend.subscan.io",
+        "kind": "block-extrinsic-account",
+        "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
+        "source": "curated — Subscan runs one deployment per network on a shared codebase"
+      }
+    ]
+  },
+  "KUSAMAT": {
+    "explorers": [
+      {
+        "name": "Subscan",
+        "url": "https://westend.subscan.io",
+        "kind": "block-extrinsic-account",
+        "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
+        "source": "curated — Subscan runs one deployment per network on a shared codebase"
+      }
+    ]
+  },
+  "LTC": {
+    "explorers": [
+      {
+        "name": "Litecoin Space",
+        "url": "https://litecoinspace.org",
+        "kind": "eip3091",
+        "verified": "browser 2026-08-17 — block page watched rendering the requested height",
+        "source": "curated"
+      }
+    ]
+  },
+  "LTCT": {
+    "none": "no public explorer verified for this testnet"
+  },
+  "MINA": {
+    "explorers": [
+      {
+        "name": "Minascan",
+        "url": "https://minascan.io/mainnet",
+        "kind": "home",
+        "verified": "home probed 2026-08-17",
+        "source": "curated"
+      }
+    ]
+  },
+  "MINAT": {
+    "explorers": [
+      {
+        "name": "Minascan",
+        "url": "https://minascan.io/devnet",
+        "kind": "home",
+        "verified": "home probed 2026-08-17",
+        "source": "curated"
+      }
+    ]
+  },
+  "MONERO": {
+    "explorers": [
+      {
+        "name": "xmrchain",
+        "url": "https://xmrchain.net",
+        "kind": "custom",
+        "tpl": {
+          "block": "https://xmrchain.net/block/{block}",
+          "tx": "https://xmrchain.net/tx/{tx}"
+        },
+        "verified": "browser 2026-08-17 — block page watched rendering the requested height",
+        "source": "curated — a privacy chain has no address page"
+      }
+    ]
+  },
+  "MONEROT": {
+    "none": "no public explorer verified for this testnet"
+  },
+  "MORALIS": {
+    "none": "an aggregated API surface, not a chain"
+  },
+  "MOVEMENT": {
+    "explorers": [
+      {
+        "name": "Movement Explorer",
+        "url": "https://explorer.movementnetwork.xyz",
+        "kind": "home",
+        "verified": "home probed 2026-08-17",
+        "source": "curated"
+      }
+    ]
+  },
+  "MOVEMENTT": {
+    "none": "no public explorer verified for the Bardock testnet"
+  },
+  "MULTIVERSX": {
+    "explorers": [
+      {
+        "name": "MultiversX Explorer",
+        "url": "https://explorer.multiversx.com",
+        "kind": "custom",
+        "tpl": {
+          "tx": "https://explorer.multiversx.com/transactions/{tx}",
+          "address": "https://explorer.multiversx.com/accounts/{address}"
+        },
+        "verified": "unverified — home reachable, deep-link shape not watched",
+        "source": "curated — the block page is addressed by hash"
+      }
+    ]
+  },
+  "MULTIVERSXT": {
+    "explorers": [
+      {
+        "name": "MultiversX Explorer",
+        "url": "https://testnet-explorer.multiversx.com",
+        "kind": "custom",
+        "tpl": {
+          "tx": "https://testnet-explorer.multiversx.com/transactions/{tx}",
+          "address": "https://testnet-explorer.multiversx.com/accounts/{address}"
+        },
+        "verified": "unverified — home reachable, deep-link shape not watched",
+        "source": "curated"
+      }
+    ]
+  },
+  "NAMTSE": {
+    "none": "not in cosmos/chain-registry and no public explorer verified"
+  },
+  "NEAR": {
+    "explorers": [
+      {
+        "name": "NearBlocks",
+        "url": "https://nearblocks.io",
+        "kind": "custom",
+        "tpl": {
+          "tx": "https://nearblocks.io/txns/{tx}",
+          "address": "https://nearblocks.io/address/{address}"
+        },
+        "verified": "unverified — home reachable, deep-link shape not watched",
+        "source": "curated — the block page is addressed by hash, so no height link is offered"
+      }
+    ]
+  },
+  "NEART": {
+    "explorers": [
+      {
+        "name": "NearBlocks",
+        "url": "https://testnet.nearblocks.io",
+        "kind": "custom",
+        "tpl": {
+          "tx": "https://testnet.nearblocks.io/txns/{tx}",
+          "address": "https://testnet.nearblocks.io/address/{address}"
+        },
+        "verified": "unverified — home reachable, deep-link shape not watched",
+        "source": "curated"
+      }
+    ]
+  },
+  "POLKADOT": {
+    "explorers": [
+      {
+        "name": "Subscan",
+        "url": "https://polkadot.subscan.io",
+        "kind": "block-extrinsic-account",
+        "verified": "browser 2026-08-17 — block page watched rendering the requested height",
+        "source": "curated — Subscan runs one deployment per network on a shared codebase"
+      }
+    ]
+  },
+  "POLKADOTASSETHUB": {
+    "explorers": [
+      {
+        "name": "Subscan",
+        "url": "https://assethub-polkadot.subscan.io",
+        "kind": "block-extrinsic-account",
+        "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
+        "source": "curated — Subscan runs one deployment per network on a shared codebase"
+      }
+    ]
+  },
+  "POLKADOTASSETHUBP": {
+    "explorers": [
+      {
+        "name": "Subscan",
+        "url": "https://assethub-paseo.subscan.io",
+        "kind": "block-extrinsic-account",
+        "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
+        "source": "curated — Subscan runs one deployment per network on a shared codebase"
+      }
+    ]
+  },
+  "POLKADOTASSETHUBT": {
+    "explorers": [
+      {
+        "name": "Subscan",
+        "url": "https://assethub-westend.subscan.io",
+        "kind": "block-extrinsic-account",
+        "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
+        "source": "curated — Subscan runs one deployment per network on a shared codebase"
+      }
+    ]
+  },
+  "POLKADOTT": {
+    "explorers": [
+      {
+        "name": "Subscan",
+        "url": "https://westend.subscan.io",
+        "kind": "block-extrinsic-account",
+        "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
+        "source": "curated — Subscan runs one deployment per network on a shared codebase"
+      }
+    ]
+  },
+  "POLYMESH": {
+    "explorers": [
+      {
+        "name": "Subscan",
+        "url": "https://polymesh.subscan.io",
+        "kind": "block-extrinsic-account",
+        "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
+        "source": "curated — Subscan runs one deployment per network on a shared codebase"
+      }
+    ]
+  },
+  "POLYMESHT": {
+    "explorers": [
+      {
+        "name": "Subscan",
+        "url": "https://polymesh-testnet.subscan.io",
+        "kind": "block-extrinsic-account",
+        "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
+        "source": "curated — Subscan runs one deployment per network on a shared codebase"
+      }
+    ]
+  },
+  "SIDET": {
+    "none": "not in cosmos/chain-registry and no public explorer verified"
+  },
+  "SOLANA": {
+    "explorers": [
+      {
+        "name": "Solana Explorer",
+        "url": "https://explorer.solana.com",
+        "kind": "eip3091",
+        "verified": "browser 2026-08-17 — block page watched rendering the requested height",
+        "source": "curated"
+      }
+    ]
+  },
+  "SOLANAD": {
+    "explorers": [
+      {
+        "name": "Solana Explorer",
+        "url": "https://explorer.solana.com",
+        "kind": "eip3091",
+        "suffix": "?cluster=devnet",
+        "verified": "browser 2026-08-17 — block page watched rendering the requested height (mainnet cluster; the suffix selects the cluster)",
+        "source": "curated"
+      }
+    ]
+  },
+  "SOLANAT": {
+    "explorers": [
+      {
+        "name": "Solana Explorer",
+        "url": "https://explorer.solana.com",
+        "kind": "eip3091",
+        "suffix": "?cluster=testnet",
+        "verified": "browser 2026-08-17 — block page watched rendering the requested height (mainnet cluster; the suffix selects the cluster)",
+        "source": "curated"
+      }
+    ]
+  },
+  "SONICT": {
+    "explorers": [
+      {
+        "name": "Sonicscan",
+        "url": "https://testnet.sonicscan.org",
+        "kind": "home",
+        "verified": "home probed 2026-08-17",
+        "source": "curated"
+      }
+    ]
+  },
+  "SPARK": {
+    "explorers": [
+      {
+        "name": "Blockscout",
+        "url": "https://explorer.fusespark.io",
+        "kind": "home",
+        "verified": "home probed 2026-08-17",
+        "source": "curated"
+      }
+    ]
+  },
+  "SQDSUBGRAPH": {
+    "none": "a subgraph query surface, not a chain"
+  },
+  "STACKS": {
+    "explorers": [
+      {
+        "name": "Hiro Explorer",
+        "url": "https://explorer.hiro.so",
+        "kind": "home",
+        "suffix": "?chain=mainnet",
+        "verified": "home probed 2026-08-17",
+        "source": "curated"
+      }
+    ]
+  },
+  "STACKST": {
+    "explorers": [
+      {
+        "name": "Hiro Explorer",
+        "url": "https://explorer.hiro.so",
+        "kind": "home",
+        "suffix": "?chain=testnet",
+        "verified": "home probed 2026-08-17",
+        "source": "curated"
+      }
+    ]
+  },
+  "STRK": {
+    "explorers": [
+      {
+        "name": "Starkscan",
+        "url": "https://starkscan.co",
+        "kind": "block-tx-contract",
+        "verified": "browser 2026-08-17 — block page watched rendering the requested height",
+        "source": "curated"
+      }
+    ]
+  },
+  "STRKS": {
+    "explorers": [
+      {
+        "name": "Voyager",
+        "url": "https://sepolia.voyager.online",
+        "kind": "eip3091",
+        "verified": "unverified — host unreachable from the build network",
+        "source": "curated — sepolia.starkscan.co does not resolve; Voyager is the other Starknet explorer"
+      }
+    ]
+  },
+  "SUI": {
+    "explorers": [
+      {
+        "name": "Suiscan",
+        "url": "https://suiscan.xyz/mainnet",
+        "kind": "home",
+        "verified": "home probed 2026-08-17",
+        "source": "curated — Sui has checkpoints, not blocks; no height-addressable page verified"
+      }
+    ]
+  },
+  "SUID": {
+    "explorers": [
+      {
+        "name": "Suiscan",
+        "url": "https://suiscan.xyz/devnet",
+        "kind": "home",
+        "verified": "home probed 2026-08-17",
+        "source": "curated"
+      }
+    ]
+  },
+  "SUIT": {
+    "explorers": [
+      {
+        "name": "Suiscan",
+        "url": "https://suiscan.xyz/testnet",
+        "kind": "home",
+        "verified": "home probed 2026-08-17",
+        "source": "curated"
+      }
+    ]
+  },
+  "TEZOS": {
+    "explorers": [
+      {
+        "name": "TzKT",
+        "url": "https://tzkt.io",
+        "kind": "root-path",
+        "verified": "browser 2026-08-17 — block page watched rendering the requested height",
+        "source": "curated"
+      }
+    ]
+  },
+  "TEZOST": {
+    "none": "no public explorer verified for the Shadownet testnet"
+  },
+  "THORCHAINT": {
+    "none": "not in cosmos/chain-registry and no public explorer verified"
+  },
+  "TON": {
+    "explorers": [
+      {
+        "name": "Tonviewer",
+        "url": "https://tonviewer.com",
+        "kind": "home",
+        "verified": "home probed 2026-08-17",
+        "source": "curated"
+      }
+    ]
+  },
+  "TONT": {
+    "explorers": [
+      {
+        "name": "Tonviewer",
+        "url": "https://testnet.tonviewer.com",
+        "kind": "home",
+        "verified": "home probed 2026-08-17",
+        "source": "curated"
+      }
+    ]
+  },
+  "TRX": {
+    "explorers": [
+      {
+        "name": "Tronscan",
+        "url": "https://tronscan.org",
+        "kind": "hash-routed",
+        "verified": "unverified — bot challenge (HTTP 403) from the build network",
+        "source": "curated"
+      }
+    ]
+  },
+  "TRXN": {
+    "explorers": [
+      {
+        "name": "Tronscan",
+        "url": "https://nile.tronscan.org",
+        "kind": "hash-routed",
+        "verified": "unverified — bot challenge (HTTP 403) from the build network",
+        "source": "curated"
+      }
+    ]
+  },
+  "TRXT": {
+    "explorers": [
+      {
+        "name": "Tronscan",
+        "url": "https://shasta.tronscan.org",
+        "kind": "hash-routed",
+        "verified": "unverified — bot challenge (HTTP 403) from the build network",
+        "source": "curated"
+      }
+    ]
+  },
+  "TSC": {
+    "none": "no public explorer verified"
+  },
+  "TSCT": {
+    "none": "no public explorer verified"
+  },
+  "UNIONT": {
+    "none": "not in cosmos/chain-registry and no public explorer verified"
+  },
+  "VECHAIN": {
+    "explorers": [
+      {
+        "name": "VeChain Explorer",
+        "url": "https://explore.vechain.org",
+        "kind": "home",
+        "verified": "home probed 2026-08-17",
+        "source": "curated"
+      }
+    ]
+  },
+  "VECHAINT": {
+    "explorers": [
+      {
+        "name": "VeChain Explorer",
+        "url": "https://explore-testnet.vechain.org",
+        "kind": "home",
+        "verified": "unverified — HTTP ERR from the build network",
+        "source": "curated"
+      }
+    ]
+  },
+  "XLM": {
+    "explorers": [
+      {
+        "name": "Stellar Expert",
+        "url": "https://stellar.expert/explorer/public",
+        "kind": "ledger-tx-account",
+        "verified": "browser 2026-08-17 — block page watched rendering the requested height",
+        "source": "curated"
+      }
+    ]
+  },
+  "XLMT": {
+    "explorers": [
+      {
+        "name": "Stellar Expert",
+        "url": "https://stellar.expert/explorer/testnet",
+        "kind": "ledger-tx-account",
+        "verified": "browser 2026-08-17 — same site and path shape as the verified XLM entry",
+        "source": "curated"
+      }
+    ]
+  },
+  "XRP": {
+    "explorers": [
+      {
+        "name": "XRPScan",
+        "url": "https://xrpscan.com",
+        "kind": "ledger-tx-account",
+        "verified": "browser 2026-08-17 — block page watched rendering the requested height",
+        "source": "curated"
+      }
+    ]
+  },
+  "XRPT": {
+    "explorers": [
+      {
+        "name": "XRPL Explorer",
+        "url": "https://testnet.xrpl.org",
+        "kind": "home",
+        "verified": "home probed 2026-08-17",
+        "source": "curated"
+      }
+    ]
+  },
+  "ZCASH": {
+    "explorers": [
+      {
+        "name": "Blockchair",
+        "url": "https://blockchair.com/zcash",
+        "kind": "home",
+        "verified": "unverified — HTTP ERR from the build network",
+        "source": "curated — blockchair is unreachable from the build network, so only its home page is offered"
+      }
+    ]
+  },
+  "ZCASHT": {
+    "none": "no public explorer verified for this testnet"
+  }
+}

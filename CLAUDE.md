@@ -91,6 +91,8 @@ packages/shared/          @sr/shared — domain types, metric catalog, PromQL bu
   src/
     constants/metrics.ts   GROUND-TRUTH metric names + OPTIONAL_METRICS (see "Metrics")
     constants/chains.ts     buildChainMetaByIndex(spec) — keyed by Lava spec index
+    constants/explorers.ts  explorersFor / explorerUrl — the chain's block
+                            explorer + deep links (docs/CHAINS.md)
     constants/windows.ts    WINDOWS — 13-window catalog (5m..30d) → PromQL range + step
     promql/builders.ts      typed query builders shared by api (+ docs)
     types/domain.ts         OverviewData, DashboardData, HeroSummary, ChainSeries,
