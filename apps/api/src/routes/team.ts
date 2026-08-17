@@ -143,11 +143,12 @@ export async function teamRoutes(app: FastifyInstance) {
       }
 
       const { invitation, rawToken } = result.created;
+      // No `changes`: the catalog marks this verb carriesChanges:false, and the
+      // role is already on the target. Same class as member.removed.
       await audit.write({
         action: "member.invited",
         actor: { id: me.id, kind: "user" },
         target: { type: "invite", id: invitation.id, name: invitation.email },
-        changes: [{ field: "role", from: "(new)", to: invitation.role }],
       });
 
       return reply.code(201).send({
@@ -316,10 +317,14 @@ export async function teamPasswordRoutes(app: FastifyInstance) {
         createdBy: me.id,
       });
 
+      // Access context is required here by the catalog, and rightly: an admin
+      // minting a reset link for somebody else is the first half of an account
+      // takeover, so "from where" is part of the record.
       await audit.write({
         action: "password.reset_link_generated",
         actor: { id: me.id, kind: "user" },
         target: { type: "member", id: target.id, name: target.email },
+        access: { ip: me.session.ip, client: me.session.client, sessionId: me.sessionId },
       });
 
       // An admin never sets someone else's password — they hand over a link and
