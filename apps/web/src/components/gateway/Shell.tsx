@@ -37,14 +37,17 @@ function Sidebar() {
   const pathname = usePathname();
   return (
     <aside className="gw-side">
-      <div className="gw-side__brand">
+      {/* The brand is the way home, as it is on every product: `/` redirects to
+          whatever the default surface is (Metrics), so home stays defined in one
+          place rather than being restated here. */}
+      <Link href="/" className="gw-side__brand" style={{ textDecoration: "none", color: "inherit" }}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/magma-logo.png" width={26} height={26} style={{ flexShrink: 0, display: "block", objectFit: "contain" }} alt="Magma" />
         <div>
           <div className="name">Smart Router</div>
           <div className="sub">by Magma Devs</div>
         </div>
-      </div>
+      </Link>
       <nav className="gw-side__nav">
         {NAV_SECTIONS.map((section, i) => (
           <div key={i}>

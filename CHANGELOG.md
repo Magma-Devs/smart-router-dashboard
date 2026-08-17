@@ -69,6 +69,9 @@ carried is the Upstreams page's third grouping, and its default.
   file happens to declare routers in — and neither helps someone hunting for a
   chain by name. Sorted in the component, so a third caller can't reintroduce
   an arbitrary order.
+- **The sidebar brand goes home.** Clicking "Smart Router" navigates to `/`,
+  which redirects to the default surface — so home stays defined in one place
+  instead of being restated in the header.
 - **Metrics moved under the "Smart Router" section label** in the sidebar,
   next to Upstreams, instead of floating above it unlabelled.
 
