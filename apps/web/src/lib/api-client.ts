@@ -105,3 +105,50 @@ export async function apiPost<T>(path: string, body: unknown): Promise<T> {
   }
   return (await res.json()) as T;
 }
+
+/**
+ * PATCH / DELETE, sharing the error handling above. Split from `apiPost`
+ * rather than generalising it, because the two callers that need a method
+ * shouldn't force every existing call site to pass one.
+ */
+export async function apiSend<T>(
+  method: "PATCH" | "DELETE" | "POST",
+  path: string,
+  body?: unknown,
+): Promise<T> {
+  const { base, headers } = await requestContext();
+  const res = await fetch(`${base}${path}`, {
+    method,
+    headers: body === undefined ? headers : { "content-type": "application/json", ...headers },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (!res.ok) {
+    let message = `Request failed (${res.status})`;
+    try {
+      const json = (await res.json()) as { message?: string };
+      if (json.message) message = json.message;
+    } catch {
+      /* keep default */
+    }
+    throw new ApiError(res.status, message);
+  }
+  // 204 and friends have no body; callers of those ignore the result.
+  const text = await res.text();
+  return (text ? JSON.parse(text) : undefined) as T;
+}
+
+/** Download a file the api generates (the member CSV). Goes through the same
+ *  auth context, then hands the browser a blob — an `<a href>` to the api
+ *  would carry no Authorization header. */
+export async function apiDownload(path: string, filename: string): Promise<void> {
+  const { base, headers } = await requestContext();
+  const res = await fetch(`${base}${path}`, { headers });
+  if (!res.ok) throw new ApiError(res.status, `Export failed (${res.status})`);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}

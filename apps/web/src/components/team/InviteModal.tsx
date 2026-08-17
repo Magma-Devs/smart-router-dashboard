@@ -1,70 +1,163 @@
 "use client";
 
-/* Ported verbatim from the design prototype (page-team.jsx InviteModal).
-   Self-hosted reality: there is no user store to invite into — the form
-   chrome is intact but the submit stays disabled (team accounts are a
-   Magma Cloud feature). No invitation is ever sent from here. */
-
 import { useState } from "react";
 import { Modal } from "@/components/gateway/Modal";
+import { apiPost } from "@/lib/api-client";
+import { ROLES, ROLE_DESCRIPTIONS, ROLE_LABELS, type Role } from "@sr/shared";
 import { labelStyle } from "@/lib/styles";
 
-export function InviteModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [email, setEmail] = useState("");
-  const [role, setRole] = useState<"admin" | "member">("member");
+interface InviteResponse {
+  invite: { id: string; email: string; role: Role; expiresAt: string };
+  /** On-prem only: there is no mail server, so the admin carries the link. */
+  url?: string;
+  delivery: "link" | "email";
+}
 
+export function InviteModal({
+  open,
+  onClose,
+  onInvited,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onInvited: () => void;
+}) {
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState<Role>("read_only");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<InviteResponse | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  function reset() {
+    setEmail(""); setRole("read_only"); setError(null); setResult(null); setCopied(false);
+  }
+
+  async function submit() {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await apiPost<InviteResponse>("/api/team/invites", { email, role });
+      setResult(res);
+      onInvited();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not send that invitation.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Two states in one modal: the form, then — on-prem — the link, which is
+  // shown exactly once and cannot be read back afterwards.
   return (
-    <Modal open={open} onClose={onClose} title="Invite teammate"
+    <Modal
+      open={open}
+      onClose={() => { reset(); onClose(); }}
+      title={result ? "Invitation created" : "Invite teammate"}
       footer={
-        <>
-          <button className="gw-btn" onClick={onClose}>Cancel</button>
-          <button className="gw-btn gw-btn--primary" disabled title="Team accounts are a Magma Cloud feature">
-            Send invitation
-          </button>
-        </>
+        result ? (
+          <button className="gw-btn gw-btn--primary" onClick={() => { reset(); onClose(); }}>Done</button>
+        ) : (
+          <>
+            <button className="gw-btn" onClick={() => { reset(); onClose(); }}>Cancel</button>
+            <button
+              className="gw-btn gw-btn--primary"
+              disabled={busy || !email}
+              onClick={() => void submit()}
+            >
+              {busy ? "Creating…" : "Create invitation"}
+            </button>
+          </>
+        )
       }
     >
-      <div style={{ display: "grid", gap: 14 }}>
-        <div>
-          <div style={{ ...labelStyle, marginBottom: 6 }}>Email address</div>
-          <input className="gw-input" type="email" placeholder="colleague@yourcompany.com"
-            value={email} onChange={e => setEmail(e.target.value)} />
-        </div>
-        <div>
-          <div style={{ ...labelStyle, marginBottom: 8 }}>Role</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {([
-              { id: "admin", label: "Admin", desc: "Full access — manage routes, upstreams, billing, and team." },
-              { id: "member", label: "Member", desc: "Read access to routes and metrics. Cannot manage billing or team." },
-            ] as const).map(r => (
-              <button key={r.id} onClick={() => setRole(r.id)} style={{
-                display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 12px",
-                borderRadius: 8, border: "1px solid " + (role === r.id ? "var(--brand)" : "var(--line)"),
-                background: role === r.id ? "rgba(255,57,0,0.04)" : "var(--surface)",
-                cursor: "pointer", textAlign: "left", fontFamily: "inherit", color: "var(--text)",
-              }}>
-                <div style={{
-                  width: 14, height: 14, borderRadius: "50%", flexShrink: 0, marginTop: 2,
-                  border: "2px solid " + (role === r.id ? "var(--brand)" : "var(--line-2)"),
-                  background: role === r.id ? "var(--brand)" : "transparent",
-                }} />
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)" }}>{r.label}</div>
-                  <div style={{ fontSize: 12, color: "var(--text-2)", marginTop: 1 }}>{r.desc}</div>
-                </div>
-              </button>
-            ))}
+      {result ? (
+        <div style={{ display: "grid", gap: 12 }}>
+          <div style={{ fontSize: 13 }}>
+            <strong>{result.invite.email}</strong> has been invited as{" "}
+            {ROLE_LABELS[result.invite.role]}.
           </div>
+          {result.url ? (
+            <>
+              <div style={{ fontSize: 12.5, color: "var(--text-2)", lineHeight: 1.6 }}>
+                This deployment has no mail server, so pass this link to them yourself. It works
+                once, and <strong>you will not be able to see it again</strong>.
+              </div>
+              <div
+                className="gw-mono"
+                style={{
+                  fontSize: 11.5, background: "var(--bg)", border: "1px solid var(--line)",
+                  borderRadius: 7, padding: "10px 12px", wordBreak: "break-all", userSelect: "all",
+                }}
+              >
+                {result.url}
+              </div>
+              <button
+                className="gw-btn"
+                onClick={() => {
+                  void navigator.clipboard.writeText(result.url!);
+                  setCopied(true);
+                }}
+              >
+                {copied ? "Copied" : "Copy link"}
+              </button>
+            </>
+          ) : (
+            <div style={{ fontSize: 12.5, color: "var(--text-2)" }}>
+              We&apos;ve emailed them a join link. It expires in seven days.
+            </div>
+          )}
         </div>
-        <div style={{
-          display: "flex", alignItems: "flex-start", gap: 9, padding: "10px 12px", borderRadius: 8,
-          background: "rgba(96,165,250,0.08)", border: "1px solid rgba(96,165,250,0.22)",
-          fontSize: 12, color: "var(--text-2)", lineHeight: 1.5,
-        }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--info)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-          <span><strong style={{ color: "var(--text)", fontWeight: 600 }}>Team accounts are a Magma&nbsp;Cloud feature.</strong> This self-hosted deployment uses a single shared login, so invitations can&apos;t be sent from here.</span>
+      ) : (
+        <div style={{ display: "grid", gap: 14 }}>
+          <div>
+            <div style={{ ...labelStyle, marginBottom: 6 }}>Email address</div>
+            <input
+              className="gw-input"
+              type="email"
+              placeholder="colleague@yourcompany.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+            <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 6 }}>
+              The invitation can only be accepted by this address.
+            </div>
+          </div>
+          <div>
+            <div style={{ ...labelStyle, marginBottom: 8 }}>Role</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {ROLES.map((r) => (
+                <button
+                  key={r}
+                  onClick={() => setRole(r)}
+                  style={{
+                    display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 12px",
+                    borderRadius: 8,
+                    border: "1px solid " + (role === r ? "var(--brand)" : "var(--line)"),
+                    background: role === r ? "rgba(255,57,0,0.04)" : "var(--surface)",
+                    cursor: "pointer", textAlign: "left", fontFamily: "inherit", color: "var(--text)",
+                  }}
+                >
+                  <div style={{
+                    width: 14, height: 14, borderRadius: "50%", flexShrink: 0, marginTop: 2,
+                    border: "2px solid " + (role === r ? "var(--brand)" : "var(--line-2)"),
+                    background: role === r ? "var(--brand)" : "transparent",
+                  }} />
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600 }}>{ROLE_LABELS[r]}</div>
+                    <div style={{ fontSize: 11.5, color: "var(--text-3)", marginTop: 2 }}>
+                      {ROLE_DESCRIPTIONS[r]}
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+          {error && (
+            <div role="alert" style={{ fontSize: 12, color: "var(--err)" }}>{error}</div>
+          )}
         </div>
-      </div>
+      )}
     </Modal>
   );
 }

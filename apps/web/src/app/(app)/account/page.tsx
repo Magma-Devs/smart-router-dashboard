@@ -12,6 +12,8 @@
 import type { CSSProperties } from "react";
 import { useApi } from "@/hooks/use-api";
 import { CloudNotice } from "@/components/gateway/CloudNotice";
+import { ChangePasswordCard } from "@/components/account/ChangePasswordCard";
+import { SessionsCard } from "@/components/account/SessionsCard";
 
 interface VersionInfo {
   commit: string;
@@ -80,27 +82,9 @@ export default function AccountPage() {
         </div>
       </div>
 
-      <div className="gw-card" style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Change password</div>
-        <div style={{ marginBottom: 12 }}><CloudNotice feature="Password management" detail="this deployment authenticates with a single shared login configured at deploy time." compact /></div>
-        <div style={{ display: "grid", gap: 9, maxWidth: 360 }}>
-          <input className="gw-input" type="password" placeholder="Current password" disabled />
-          <input className="gw-input" type="password" placeholder="New password" disabled />
-          <input className="gw-input" type="password" placeholder="Repeat new password" disabled />
-          <button className="gw-btn gw-btn--primary" style={{ alignSelf: "flex-start" }} disabled title={NOT_AVAILABLE}>Update password</button>
-        </div>
-      </div>
+      <ChangePasswordCard />
 
-      <div className="gw-card" style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Active sessions</div>
-        <CloudNotice feature="Session tracking" detail="this dashboard uses a single shared login, so there are no per-user sessions to list." compact />
-      </div>
-
-      <div className="gw-card" style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 12 }}>Sign out from all devices</div>
-        <div style={{ marginBottom: 12 }}><CloudNotice feature="Per-device sessions" detail="there are no per-user sessions to invalidate on this deployment." compact /></div>
-        <button className="gw-btn" disabled title={NOT_AVAILABLE}>Sign out everywhere</button>
-      </div>
+      <SessionsCard />
 
       <div className="gw-card" style={{ borderColor: "rgba(239,68,68,0.3)" }}>
         <div style={{ fontSize: 13, fontWeight: 500, color: "var(--err)", marginBottom: 12 }}>Delete account</div>
