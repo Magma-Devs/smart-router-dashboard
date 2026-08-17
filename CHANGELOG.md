@@ -5,6 +5,36 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.16.4]
+
+### Changed
+
+- **Chain resync — the explorer registries re-fetched from live.** The catalog
+  shipped in 0.16.0 was built from a registry snapshot captured mid-development;
+  this is the first full resync on top of it. Both registries were re-read
+  (chainid.network, plus all 433 `chain.json` files in cosmos/chain-registry)
+  and every generated catalog reproduced **byte-for-byte**. Nothing upstream had
+  moved: the snapshot was already current, and coverage is not limited by it.
+
+- **Three chains that had no explorer now have one**, each watched rendering in
+  a browser rather than assumed:
+  - **EOS** → EOS Authority, with a verified block link. It had been recorded as
+    having none since bloks.io started redirecting to `explorer.xprnetwork.org`,
+    a different chain.
+  - **Tezos Shadownet** → the TzKT deployment for that network, block link
+    verified.
+  - **Ice Open Network** → its ION explorer, home page only; no deep-link shape
+    was watched, so none is offered.
+
+  Coverage is 213 of 245 chains, 61 of them hand-checked.
+
+- **The remaining gaps carry evidence instead of a shrug.** Three that were
+  re-tested this resync now say what was actually observed and when:
+  Litecoin testnet (its explorer's routes exist but the deprecated testnet3
+  backend answers 502 for block data), Monero testnet (the host resolves but
+  errors on the block route), and Koii (its explorer serves a certificate for a
+  different name, so no browser reaches it).
+
 ## [0.16.3]
 
 ### Fixed

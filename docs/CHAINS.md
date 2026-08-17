@@ -33,7 +33,7 @@ most of the catalog is derived rather than hand-written:
 |---|---|---|
 | [`ethereum-lists/chains`](https://chainid.network/chains.json) | 92 | hex chain-id → decimal → the row's `explorers[]`, with `standard: EIP3091` carrying the link shape |
 | [`cosmos/chain-registry`](https://github.com/cosmos/chain-registry) | 38 | string chain-id matched against every `chain.json`; the registry supplies `block_page` / `tx_page` / `account_page` templates outright |
-| `apps/web/scripts/data/explorer-overlay.json` | 80 | curated by hand — bitcoin, solana, move, substrate, ledger-sequence and everything else neither registry covers, plus overrides |
+| `apps/web/scripts/data/explorer-overlay.json` | 83 | curated by hand — bitcoin, solana, move, substrate, ledger-sequence and everything else neither registry covers, plus overrides |
 
 > **A hex chain-id is not an EVM chain id.** Starknet's `0x534e5f4d41494e` is
 > ASCII `SN_MAIN`; the Polkadot, Kusama, substrate and VeChain values are
@@ -57,7 +57,7 @@ of three URL templates. `{base}` is the entry's own url:
 "eip3091": { "block": "{base}/block/{block}", "tx": "{base}/tx/{tx}", "address": "{base}/address/{address}" }
 ```
 
-Eleven kinds cover 210 chains, and each one is auditable in a single read.
+Eleven kinds cover 213 chains, and each one is auditable in a single read.
 Two rules keep them honest:
 
 1. **A kind's `block` template takes a block HEIGHT.** Explorers whose block
@@ -86,14 +86,14 @@ Each explorer carries a `verified` field, and nothing ships without one:
 
 `unverified` rows still ship. A link a user wants, labelled honestly, beats no
 link — but they are named on every generator run so the next person on a
-network that can reach them can settle it. As of the last refresh, 22 of 210
+network that can reach them can settle it. As of the last refresh, 22 of 213
 are unverified, most behind Cloudflare bot management (Blockchair, Cardanoscan,
 beaconcha.in, Tronscan, viewblock) which answers 403 to anything without a
 real browser's TLS fingerprint.
 
 ### Chains with no explorer
 
-35 spec indices have none, and each is a recorded decision in the overlay with
+32 spec indices have none, and each is a recorded decision in the overlay with
 a reason — a permissioned network with no public explorer (Canton), an API
 surface that is not a chain (Moralis, Subsquid Subgraph), a retired testnet, or
 simply nothing verified. They are listed in

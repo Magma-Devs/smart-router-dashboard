@@ -828,6 +828,18 @@
       "source": "curated — Subscan runs one deployment per network on a shared codebase"
     }
   ],
+  "EOS": [
+    {
+      "name": "EOS Authority",
+      "url": "https://eosauthority.com",
+      "kind": "custom",
+      "tpl": {
+        "block": "https://eosauthority.com/block/{block}"
+      },
+      "verified": "browser 2026-08-17 — block page watched rendering the requested height; the transaction and account shapes were not watched, so they are not offered",
+      "source": "curated — replaces bloks.io, which now redirects to explorer.xprnetwork.org, a different chain"
+    }
+  ],
   "ETC": [
     {
       "name": "blockscout-ethereum-classic",
@@ -1243,6 +1255,15 @@
       "kind": "eip3091",
       "verified": "registry — the chainlist row declares standard EIP3091",
       "source": "ethereum-lists/chains#763373"
+    }
+  ],
+  "ION": [
+    {
+      "name": "ION Explorer",
+      "url": "https://explorer.ice.io",
+      "kind": "home",
+      "verified": "browser 2026-08-17 — home page renders as ION Mainnet Explorer; no deep-link shape watched",
+      "source": "curated"
     }
   ],
   "IOTA": [
@@ -2282,6 +2303,15 @@
       "kind": "root-path",
       "verified": "browser 2026-08-17 — block page watched rendering the requested height",
       "source": "curated"
+    }
+  ],
+  "TEZOST": [
+    {
+      "name": "TzKT",
+      "url": "https://shadownet.tzkt.io",
+      "kind": "root-path",
+      "verified": "browser 2026-08-17 — block page watched rendering the requested level",
+      "source": "curated — TzKT runs a Shadownet deployment on the same codebase as tzkt.io"
     }
   ],
   "THORCHAIN": [

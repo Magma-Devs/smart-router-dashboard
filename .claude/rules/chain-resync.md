@@ -43,8 +43,8 @@ is committed so the gap is a reviewed decision rather than an accident.
    no explorer, then every chain whose link shape nobody has verified:
 
    ```
-   explorers       210/245 chains (92 chainlist, 38 chain-registry, 80 curated)
-   verification    130 registry-asserted, 58 checked by hand, 22 unverified
+   explorers       213/245 chains (92 chainlist, 38 chain-registry, 83 curated)
+   verification    130 registry-asserted, 61 checked by hand, 22 unverified
    declared none   AGRT, ALEOT, CANTON, …
    ```
 

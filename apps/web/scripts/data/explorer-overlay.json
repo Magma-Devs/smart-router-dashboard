@@ -310,7 +310,18 @@
     ]
   },
   "EOS": {
-    "none": "bloks.io now redirects to explorer.xprnetwork.org, a different chain; no other EOS explorer verified"
+    "explorers": [
+      {
+        "name": "EOS Authority",
+        "url": "https://eosauthority.com",
+        "kind": "custom",
+        "tpl": {
+          "block": "https://eosauthority.com/block/{block}"
+        },
+        "verified": "browser 2026-08-17 — block page watched rendering the requested height; the transaction and account shapes were not watched, so they are not offered",
+        "source": "curated — replaces bloks.io, which now redirects to explorer.xprnetwork.org, a different chain"
+      }
+    ]
   },
   "EOST": {
     "none": "no public explorer verified for this testnet"
@@ -436,10 +447,18 @@
     "none": "testnet.purrsec.com answers 404 and no other testnet explorer verified"
   },
   "ION": {
-    "none": "no public explorer verified for Ice Open Network"
+    "explorers": [
+      {
+        "name": "ION Explorer",
+        "url": "https://explorer.ice.io",
+        "kind": "home",
+        "verified": "browser 2026-08-17 — home page renders as ION Mainnet Explorer; no deep-link shape watched",
+        "source": "curated"
+      }
+    ]
   },
   "IONT": {
-    "none": "no public explorer verified for Ice Open Network"
+    "none": "no public explorer verified for the Ice Open Network testnet"
   },
   "IOTA": {
     "explorers": [
@@ -459,7 +478,7 @@
     "none": "testnet.mintscan.io does not resolve and no other testnet explorer verified"
   },
   "KOII": {
-    "none": "no public explorer verified"
+    "none": "explorer.koii.network serves a certificate for a different name, so no browser reaches it (checked 2026-08-17)"
   },
   "KOIIT": {
     "none": "no public explorer verified"
@@ -520,7 +539,7 @@
     ]
   },
   "LTCT": {
-    "none": "no public explorer verified for this testnet"
+    "none": "litecoinspace.org/testnet routes exist but its testnet3 backend answers 502 for block data (checked 2026-08-17); testnet3 is deprecated upstream"
   },
   "MINA": {
     "explorers": [
@@ -560,7 +579,7 @@
     ]
   },
   "MONEROT": {
-    "none": "no public explorer verified for this testnet"
+    "none": "testnet.xmrchain.net resolves but errors on the block route (checked 2026-08-17)"
   },
   "MORALIS": {
     "none": "an aggregated API surface, not a chain"
@@ -873,7 +892,15 @@
     ]
   },
   "TEZOST": {
-    "none": "no public explorer verified for the Shadownet testnet"
+    "explorers": [
+      {
+        "name": "TzKT",
+        "url": "https://shadownet.tzkt.io",
+        "kind": "root-path",
+        "verified": "browser 2026-08-17 — block page watched rendering the requested level",
+        "source": "curated — TzKT runs a Shadownet deployment on the same codebase as tzkt.io"
+      }
+    ]
   },
   "THORCHAINT": {
     "none": "not in cosmos/chain-registry and no public explorer verified"
