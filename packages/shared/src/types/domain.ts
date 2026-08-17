@@ -35,6 +35,30 @@ export interface ChainMetrics {
   upstreamCount: number;
 }
 
+/**
+ * One row of the Routers table — **one config router**, not one chain.
+ *
+ * A chain can be served by several routers (a prod/staging pair on one network,
+ * say), and only the mounted values file tells them apart: no series carries a
+ * router. `attribution` is how much of that this row could overcome.
+ */
+export interface RouterMetrics extends ChainMetrics {
+  /** Config router id (`eth-prod`, `ETH1`, …) — the row's identity. */
+  routerId: string;
+  /**
+   * `own`   — the collector labels this router's scrape target, so the
+   *           chain-level numbers below were scoped to it and are its alone.
+   * `shared` — they are the chain's, covering every router in `sharedWith` too.
+   *           Two rows can then carry the same figures; that is the truth, and
+   *           adding them up would double the deployment's traffic.
+   */
+  attribution: "own" | "shared";
+  /** The other routers counted into these numbers; empty when `own`. */
+  sharedWith: string[];
+  /** Declared upstreams — from the config, so always this router's own. */
+  upstreamCount: number;
+}
+
 /** Per backing-endpoint roster row. */
 export interface UpstreamMetrics {
   endpointId: string;

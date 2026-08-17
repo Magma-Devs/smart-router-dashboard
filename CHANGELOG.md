@@ -5,6 +5,35 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.16.1]
+
+### Fixed
+
+- **The Routers table is a table of routers again.** It was keyed by chain, so
+  two routers serving one chain collapsed into a single row — which then wore
+  the first router's name (`.find(r => r.spec === …)`) beside the whole chain's
+  upstream count, and the second router had no row at all. Rows are now keyed on
+  the config router id, and the upstream count comes from the values file, so it
+  is the router's own.
+
+  What a row can honestly claim differs, and the row says which. No series
+  carries a router: `smartrouter_*` is labelled with the chain. Where the
+  collector reports a per-target label for a router, its chain-level numbers are
+  re-read through that label and are genuinely its own. Where it does not and
+  the chain has siblings, the rows show the shared chain-level figures marked
+  **shared**, naming who else is counted in — two such rows carry the same
+  numbers on purpose, and adding them up would double the deployment's traffic.
+
+- **`GET /api/metrics/routers-rollup`** backs it. One chain-level read per spec
+  is shared by every router that cannot be scoped, so the extra rows cost no
+  extra queries.
+
+### Changed
+
+- **The Latest block column is the number alone.** The `39s behind · refresh
+  17s · 2 ifaces` sub-line was a per-interface diagnostic in a rollup table. The
+  per-upstream lag stays on the Metrics · Upstreams roster, and the full
+  per-interface detail stays on `GET /api/metrics/block-heights`.
 ## [0.16.0]
 
 ### Added

@@ -36,6 +36,7 @@ import {
   rangeFor,
   type BlockHeights,
   type ChainMetrics,
+  type RouterMetrics,
   type ChainTips,
   type HealthState,
   type HeroSummary,
@@ -413,12 +414,113 @@ export class MetricsService {
     }));
   }
 
+  /**
+   * The Routers table: ONE ROW PER CONFIG ROUTER, not per chain.
+   *
+   * Keying this by chain (as it was) collapses every router serving one chain
+   * into a single row, which then wears the first router's name beside all of
+   * their traffic. The config is the only place they are distinguishable — no
+   * series carries a router — so the config drives the rows and Prometheus
+   * fills them in.
+   *
+   * How far each row can be attributed differs, and the row says which:
+   *
+   * - The router maps to a scrape target the collector actually reports
+   *   (`<id>-router` or `<id>` in `GET /api/metrics/routers`) → its chain-level
+   *   numbers are re-read through that label and are genuinely its own.
+   * - It doesn't, and it is alone on its chain → the chain's numbers ARE its
+   *   numbers. Still `own`.
+   * - It doesn't, and it has siblings → every sibling reads one shared series.
+   *   The rows carry the same figures marked `shared`, naming who else is in
+   *   them. Splitting them evenly, or letting each row present the total as its
+   *   own, would invent a number and double the deployment's apparent traffic.
+   *
+   * `upstreamCount` always comes from the config, so it is per-router even when
+   * the metrics can't be.
+   *
+   * With no values file mounted there is nothing to key on, so this degrades to
+   * one row per chain — the old behaviour — with the spec as the router id.
+   */
+  async routers(window: MetricWindow, scopeLabel: string): Promise<RouterMetrics[]> {
+    const topology = this.configSvc?.getRouters() ?? [];
+    if (topology.length === 0) {
+      const chains = await this.chains(window);
+      return chains.map((c) => ({
+        ...c,
+        routerId: c.spec,
+        attribution: "own" as const,
+        sharedWith: [],
+      }));
+    }
+
+    // Which routers the collector can actually tell apart. Checked against the
+    // reported target values rather than assumed from the chart's naming, so a
+    // deployment whose Service names differ degrades to `shared` instead of
+    // scoping every query to a label nothing carries (which reads as zero).
+    const scopeValues = new Set(
+      isValidScopeLabel(scopeLabel) ? await this.listRouterScopes(scopeLabel) : [],
+    );
+    const scopeFor = (routerId: string): string | null => {
+      const candidate = `${routerId.toLowerCase()}-router`;
+      if (scopeValues.has(candidate)) return candidate;
+      if (scopeValues.has(routerId)) return routerId;
+      return null;
+    };
+
+    const siblings = new Map<string, string[]>();
+    for (const r of topology) {
+      const ids = siblings.get(r.spec);
+      if (!ids) siblings.set(r.spec, [r.id]);
+      else ids.push(r.id);
+    }
+
+    // One chain-level read per spec, shared by every router that can't be
+    // scoped — the unscoped row is identical for all of them, so re-running it
+    // per router would be the same queries for the same answer.
+    const unscopedBySpec = new Map<string, Promise<ChainMetrics>>();
+    const chainRowFor = (spec: string): Promise<ChainMetrics> => {
+      let row = unscopedBySpec.get(spec);
+      if (!row) {
+        row = this.chainRow(spec, window);
+        unscopedBySpec.set(spec, row);
+      }
+      return row;
+    };
+
+    return Promise.all(
+      topology.map(async (router): Promise<RouterMetrics> => {
+        const scopeValue = scopeFor(router.id);
+        const alone = (siblings.get(router.spec) ?? []).length <= 1;
+        const base = scopeValue
+          ? await new MetricsService(
+              this.prom.withScope({ label: scopeLabel, value: scopeValue }),
+              this.configSvc,
+            ).chainRow(router.spec, window)
+          : await chainRowFor(router.spec);
+
+        return {
+          ...base,
+          routerId: router.id,
+          attribution: scopeValue || alone ? "own" : "shared",
+          sharedWith:
+            scopeValue || alone
+              ? []
+              : (siblings.get(router.spec) ?? []).filter((id) => id !== router.id),
+          // The config's own count — the one number here that is always this
+          // router's, whatever Prometheus can or cannot split.
+          upstreamCount: router.nodes.length,
+        };
+      }),
+    );
+  }
+
   async chains(window: MetricWindow): Promise<ChainMetrics[]> {
     const specs = await this.listSpecs();
     return Promise.all(specs.map((spec) => this.chainRow(spec, window)));
   }
 
-  private async chainRow(spec: string, window: MetricWindow): Promise<ChainMetrics> {
+  /** @internal Reused by `routers()`, including on a scoped sibling instance. */
+  async chainRow(spec: string, window: MetricWindow): Promise<ChainMetrics> {
     const meta = buildChainMetaByIndex(spec);
     const [requests, availability, errorRate, p95, qos, healthGauge, latestBlock, upstreams] =
       await Promise.all([

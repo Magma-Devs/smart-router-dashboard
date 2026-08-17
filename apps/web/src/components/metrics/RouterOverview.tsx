@@ -1,6 +1,12 @@
 "use client";
 
-/* RouterOverview — one row per chain router, aggregating its upstreams.
+/* RouterOverview — ONE ROW PER CONFIG ROUTER (`/api/metrics/routers-rollup`),
+ * aggregating its upstreams. It used to key on the chain, which folded every
+ * router serving one chain into a single row wearing the first router's name
+ * beside all of their traffic; the config is the only place they are
+ * distinguishable, so it drives the rows now. A row says whether its numbers
+ * are its own (the collector splits its scrape target) or the chain's, shared
+ * with the siblings it names.
  * Ported verbatim from the design prototype (page-metrics.jsx RouterOverview);
  * rows are live /api/metrics/chains and the network / primary-upstream /
  * P·B sub-lines come from the mounted config (/api/config/routers). Where the
@@ -9,26 +15,31 @@
  * design's initial order (down chains first, then by volume). */
 
 import { Fragment } from "react";
-import { buildChainMetaByIndex, type BlockHeights, type ChainMetrics, type ChainTips, type MetricWindow, type RouterTopology } from "@sr/shared";
+import { buildChainMetaByIndex, type BlockHeights, type ChainTips, type MetricWindow, type RouterMetrics, type RouterTopology } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { Tip } from "@/components/gateway/Tip";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { ThCol, useSort } from "@/components/gateway/SortTable";
 import { TT } from "@/lib/tooltips";
-import { fmtComma, fmtLag, fmtNum } from "@/lib/format";
-import { routerTipColor, uptimeColor } from "@/lib/colors";
+import { fmtComma, fmtNum } from "@/lib/format";
+import { uptimeColor } from "@/lib/colors";
 import { healthColor, healthLabel } from "@/lib/health";
 import { ChainDetail, type ChainDetailRow } from "./ChainDetail";
 import { useState } from "react";
 import { useFilters } from "@/components/gateway/FiltersProvider";
 
-const BLOCK_TIP = "**The head this router serves** — `smartrouter_latest_block`, the tip it has accepted, per api interface (the number shown is the furthest-ahead interface).\n\nThe sub-line is how far that sits behind the best upstream on the chain, **in seconds**: blocks behind ÷ the chain's own block rate. Seconds are the only unit comparable across chains — the same block count is a moment on Aptos and a century on Bitcoin.\n\nThe router gauge only advances on accepted tip observations, so it trails by about one **refresh** interval however healthy the router is. The colour is judged against that measured cadence — grey within 2×, amber to 4×, red beyond — not against the wall clock.\n\n**Sorts by how far behind**, not by the block number: heights aren't comparable between chains.";
+const BLOCK_TIP = "**The head this router serves** — `smartrouter_latest_block`, the tip it has accepted, leading with the furthest-ahead api interface.\n\nIt is a CHAIN-level series, so two routers on one chain read the same one. Per-upstream lag lives on the Upstreams tab.";
 
 const ROUTER_SR_TIP = "**Chain-level availability** — successful requests ÷ total, **rolled up across every upstream** on the chain (what your apps actually got).\n\nSame definition as per-upstream Availability in the Upstreams tab.";
 
 type RoStatus = "up" | "down" | "unknown";
 
 interface RoRow {
+  /** The row's identity — a config router id, not a chain. */
+  routerId: string;
+  /** Whose traffic these numbers are (see `RouterMetrics.attribution`). */
+  attribution: "own" | "shared";
+  sharedWith: string[];
   spec: string;
   name: string;
   color: string;
@@ -44,17 +55,10 @@ interface RoRow {
   qosVal: number | null;
   reqCount: number;
   statusKind: RoStatus;
-  /** Furthest-ahead router tip across this chain's interfaces. */
+  /** Furthest-ahead router tip across this chain's interfaces. The rollup shows
+   *  the number alone — per-interface lag, cadence and staleness are the
+   *  Upstreams roster's job and `/api/metrics/block-heights`'s detail. */
   tipBlock: number | null;
-  /** Worst per-interface lag behind the best upstream, in seconds. */
-  tipBehindSec: number | null;
-  /** Interfaces this chain's router serves (>1 ⇒ the tips can disagree). */
-  tipIfaceCount: number;
-  /** Observed refresh cadence of the worst interface's gauge, in seconds. */
-  tipRefreshSec: number | null;
-  /** Two config routers serve this chain and the collector can't split their
-   *  series — the block is both routers', not the filtered one's. */
-  tipShared: boolean;
   detail: ChainDetailRow;
   /* flat sort accessors (design SORT_VAL semantics) */
   natural: number;
@@ -69,11 +73,6 @@ interface RoRow {
   block: number;
 }
 
-/** The config routers on a chain, named — for the shared-series tooltip. */
-function configRouterNames(spec: string, routers: RouterTopology[]): string {
-  return routers.filter((r) => r.spec === spec).map((r) => r.id).join(" and ");
-}
-
 const STATUS_RANK: Record<RoStatus, number> = { down: 0, up: 1, unknown: 2 };
 
 export function RouterOverview({ onChainClick, chainFilter, timeWindow }: {
@@ -84,7 +83,7 @@ export function RouterOverview({ onChainClick, chainFilter, timeWindow }: {
   const [net, setNet] = useState("all");
   const [open, setOpen] = useState<string | null>(null);
   const { scopeQ, withScope } = useFilters();
-  const { data } = useApi<{ chains: ChainMetrics[] }>(`/api/metrics/chains?window=${timeWindow}${scopeQ}`);
+  const { data } = useApi<{ routers: RouterMetrics[] }>(`/api/metrics/routers-rollup?window=${timeWindow}${scopeQ}`);
   const topo = useApi<{ routers: RouterTopology[] }>("/api/config/routers", 60000);
   // Instant gauges — no window in the key; polled on the default cadence.
   const tips = useApi<BlockHeights>(withScope("/api/metrics/block-heights"));
@@ -92,46 +91,34 @@ export function RouterOverview({ onChainClick, chainFilter, timeWindow }: {
     (tips.data?.chains ?? []).map((c) => [c.spec, c]),
   );
 
-  const base: RoRow[] = (data?.chains ?? []).map((c) => {
-    const t = (topo.data?.routers ?? []).find((r) => r.spec === c.spec);
+  const base: RoRow[] = (data?.routers ?? []).map((c) => {
+    // The config entry BY ID — `.find(r => r.spec === …)` was the bug: on a
+    // chain with two routers it returned the first one for both.
+    const t = (topo.data?.routers ?? []).find((r) => r.id === c.routerId);
     const nPrimary = t ? t.nodes.filter((n) => !n.isBackup).length : null;
     const nBackup = t ? t.nodes.filter((n) => n.isBackup).length : null;
     const primaryName = t ? ((t.nodes.find((n) => !n.isBackup) ?? t.nodes[0])?.name ?? null) : null;
     const statusKind: RoStatus = c.health === "unhealthy" ? "down" : c.health === "operational" ? "up" : "unknown";
-    // The router's own tips, one per interface. The number leads with the
-    // furthest-ahead interface; the lag leads with the WORST, so a single
-    // lagging interface can't hide behind a healthy sibling.
-    const tip = tipBySpec.get(c.spec);
-    const ifaceTips = tip?.routers ?? [];
-    // `smartrouter_latest_block` is labelled with the CHAIN, never with the
-    // router, so two config routers on one chain share a single series unless
-    // the collector attaches a per-target label. When it doesn't (router ===
-    // null), say so rather than letting a router filter imply the number is
-    // that router's own — the same honesty the roster's "+N shared" marker
-    // keeps for upstreams.
-    const configRouters = (topo.data?.routers ?? []).filter((rt) => rt.spec === c.spec).length;
-    const tipShared = configRouters > 1 && ifaceTips.every((t) => t.router === null);
+    // Furthest-ahead interface tip; the chain rollup falls back to the router
+    // gauge the api already read. Chain-level either way — two routers on one
+    // chain read one series, which is what `attribution` states.
+    const ifaceTips = tipBySpec.get(c.spec)?.routers ?? [];
     const tipBlock = ifaceTips.reduce<number | null>(
-      (max, t) => (t.block !== null && (max === null || t.block > max) ? t.block : max), null);
-    const worstTip = ifaceTips.reduce<(typeof ifaceTips)[number] | null>(
-      (worst, t) =>
-        t.behindSec !== null && (worst === null || t.behindSec > (worst.behindSec ?? -1)) ? t : worst,
-      null);
-    const tipBehindSec = worstTip?.behindSec ?? null;
+      (max, x) => (x.block !== null && (max === null || x.block > max) ? x.block : max), null);
     const availPct = c.availability != null ? c.availability * 100 : null;
     const errPct = c.errorRate != null ? c.errorRate * 100 : null;
     const qosVal = c.qos != null ? c.qos * 100 : null;
     return {
+      routerId: c.routerId, attribution: c.attribution, sharedWith: c.sharedWith,
       spec: c.spec, name: c.name, color: c.color,
       network: t?.network ?? null,
       provCount: c.upstreamCount, nPrimary, nBackup, primaryName,
       otherCount: Math.max(0, c.upstreamCount - 1),
       availPct, p95Ms: c.p95Ms, errPct, qosVal, reqCount: c.requests, statusKind,
-      tipBlock: tipBlock ?? c.latestBlock, tipBehindSec, tipIfaceCount: ifaceTips.length,
-      tipRefreshSec: worstTip?.refreshSec ?? null, tipShared,
+      tipBlock: tipBlock ?? c.latestBlock,
       detail: { spec: c.spec, availPct, p95Ms: c.p95Ms, errPct, qos: qosVal, requests: c.requests, hasBackup: (nBackup ?? 0) > 0 },
       natural: 0,
-      router: c.name.toLowerCase(),
+      router: c.routerId.toLowerCase(),
       upstreams: c.upstreamCount,
       requests: c.requests,
       avail: availPct ?? -1,
@@ -139,7 +126,7 @@ export function RouterOverview({ onChainClick, chainFilter, timeWindow }: {
       err: errPct ?? -1,
       qos: qosVal ?? -1,
       status: STATUS_RANK[statusKind],
-      block: tipBehindSec ?? -1,
+      block: c.latestBlock ?? tipBlock ?? -1,
     };
   })
     .sort((a, b) => (a.status - b.status) || (b.requests - a.requests))
@@ -170,7 +157,7 @@ export function RouterOverview({ onChainClick, chainFilter, timeWindow }: {
     <div className="gw-card" style={{ padding: 0, overflow: "hidden", marginBottom: 14 }}>
       <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-2)", flex: 1, display: "inline-flex", alignItems: "center" }}>
-          Routers · how each chain performs<Tip text="**One router per chain × network.** Each aggregates the upstreams serving it.\n\n**Click a row** to expand its chain-health graphs over the selected window." />
+          Routers · how each router performs<Tip text="**One row per router in the mounted values file** — not per chain. A chain can be served by several routers, and the config is the only place they are distinguishable: no metric series carries a router.\n\nA **shared** row means the collector reports no per-router target label, so the chain-level figures cover every router on that chain. Two such rows carry the same numbers; adding them up would count that traffic twice. Upstream counts are always the router's own.\n\n**Click a row** to expand its chain-health graphs over the selected window." />
         </div>
         <span style={{ fontSize: 11, color: "var(--text-3)" }}>{routers.length} router{routers.length === 1 ? "" : "s"}</span>
         <div className="gw-segctl">
@@ -196,23 +183,34 @@ export function RouterOverview({ onChainClick, chainFilter, timeWindow }: {
         <tbody>
           {sortedRouters.map((r) => {
             const sm = statusMeta[r.statusKind];
-            const rowKey = r.spec + (r.network ?? "");
+            const rowKey = r.routerId;
             const isOpen = open === rowKey;
             return (
               <Fragment key={rowKey}>
               <tr style={{ cursor: "pointer", background: isOpen ? "var(--hover)" : undefined }} onClick={() => setOpen(isOpen ? null : rowKey)}
-                title={r.name + " — click for chain health"}>
+                title={`${r.routerId} on ${r.name} — click for chain health`}>
                 <td>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <ChainBadge spec={r.spec} size={22} />
                     <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <span style={{ fontSize: 13, fontWeight: 600 }}>{r.name}</span>
+                        <span style={{ fontSize: 13, fontWeight: 600 }}>{r.routerId}</span>
+                        {r.attribution === "shared" && (
+                          <span
+                            className="gw-tag"
+                            title={`${r.sharedWith.join(", ")} also serve${r.sharedWith.length === 1 ? "s" : ""} ${r.name}, and the collector reports no per-router target label — these numbers are all of them together. Adding the rows up would count that traffic twice.`}
+                            style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", padding: "1px 6px" }}
+                          >
+                            shared
+                          </span>
+                        )}
                         {r.network && (
                           <span style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", padding: "1px 6px", borderRadius: 4, color: r.network === "mainnet" ? "var(--text-3)" : "#a78bfa", background: r.network === "mainnet" ? "var(--hover)" : "rgba(167,139,250,0.12)" }}>{r.network}</span>
                         )}
                       </div>
-                      {r.primaryName && <span style={{ fontSize: 11, color: "var(--text-3)" }}>via {r.primaryName}{r.otherCount > 0 ? " + " + r.otherCount : ""}</span>}
+                      <span style={{ fontSize: 11, color: "var(--text-3)" }}>
+                        {r.name}{r.primaryName ? ` · via ${r.primaryName}${r.otherCount > 0 ? " + " + r.otherCount : ""}` : ""}
+                      </span>
                     </div>
                   </div>
                 </td>
@@ -223,22 +221,9 @@ export function RouterOverview({ onChainClick, chainFilter, timeWindow }: {
                   </div>
                 </td>
                 <td style={{ textAlign: "right" }}>
-                  {r.tipBlock != null ? (
-                    <div
-                      style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-end" }}
-                      title={r.tipShared ? `${configRouterNames(r.spec, topo.data?.routers ?? [])} both serve this chain and the collector reports no per-router target label — this tip is their shared series` : undefined}
-                    >
-                      <span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{fmtComma(r.tipBlock)}</span>
-                      {r.tipBehindSec != null && (
-                        <span className="gw-tnum" style={{ fontSize: 10, color: routerTipColor(r.tipBehindSec, r.tipRefreshSec) }}>
-                          {r.tipBehindSec < 1 ? "in sync" : fmtLag(r.tipBehindSec) + " behind"}
-                          {r.tipRefreshSec != null ? ` · refresh ${fmtLag(r.tipRefreshSec)}` : ""}
-                          {r.tipIfaceCount > 1 ? ` · ${r.tipIfaceCount} ifaces` : ""}
-                          {r.tipShared ? " · shared" : ""}
-                        </span>
-                      )}
-                    </div>
-                  ) : <span style={{ fontSize: 12, color: "var(--text-4)" }}>—</span>}
+                  {r.tipBlock != null
+                    ? <span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{fmtComma(r.tipBlock)}</span>
+                    : <span style={{ fontSize: 12, color: "var(--text-4)" }}>—</span>}
                 </td>
                 <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{fmtNum(r.reqCount)}</span></td>
                 <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 13, fontWeight: 700, color: srColor(r.availPct) }}>{r.availPct != null ? r.availPct.toFixed(2) + "%" : "—"}</span></td>
