@@ -114,11 +114,7 @@ export const auditEvents = pgTable(
     index("audit_events_group_time_idx").on(table.actionGroup, table.occurredAt.desc()),
     index("audit_events_action_time_idx").on(table.action, table.occurredAt.desc()),
     index("audit_events_actor_time_idx").on(table.actorUserId, table.occurredAt.desc()),
-    index("audit_events_target_idx").on(
-      table.targetType,
-      table.targetId,
-      table.occurredAt.desc(),
-    ),
+    index("audit_events_target_idx").on(table.targetType, table.targetId, table.occurredAt.desc()),
     /**
      * MAG-2770's done-when: "Access events carry the IP, the client and the
      * session. Config events do not."

@@ -502,10 +502,7 @@ describe("createAuditWriter failure behaviour", () => {
   it("rolls the event back with the mutation it records", async () => {
     await expect(
       t.db.transaction(async (tx) => {
-        await writer().write(
-          { action: "member.removed", actor: { id: null, kind: "system" } },
-          tx,
-        );
+        await writer().write({ action: "member.removed", actor: { id: null, kind: "system" } }, tx);
         throw new Error("the mutation failed after the row was written");
       }),
     ).rejects.toThrow(/the mutation failed/);
