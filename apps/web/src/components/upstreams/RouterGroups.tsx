@@ -65,10 +65,11 @@ export function RouterGroups({
   /** Spec label from the page's chain picker; null = every chain. */
   chainFilter: string | null;
 }) {
-  const { scopeQ } = useFilters();
+  const { timeWindow, scopeQ } = useFilters();
   // Health per spec — threaded into the Try-now drawer's status tag (omitted
-  // when a chain has no live metrics; never a hardcoded status).
-  const chainMetrics = useApi<{ chains: ChainMetrics[] }>(`/api/metrics/chains?window=1d${scopeQ}`, 60000);
+  // when a chain has no live metrics; never a hardcoded status). Reads the
+  // page's shared window, like every other health figure.
+  const chainMetrics = useApi<{ chains: ChainMetrics[] }>(`/api/metrics/chains?window=${timeWindow}${scopeQ}`, 60000);
 
   const [detailId, setDetailId] = useState<string | null>(null);
   const [hoverId, setHoverId] = useState<string | null>(null);

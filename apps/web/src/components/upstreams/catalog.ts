@@ -7,7 +7,7 @@
  * file. Catalog entries drive presentation only (logos, "looks like X"
  * hints) — never data. */
 
-import { buildChainMetaByIndex, type UpstreamMetrics, type RouterTopology } from "@sr/shared";
+import { buildChainMetaByIndex, type HealthState, type UpstreamMetrics, type RouterTopology } from "@sr/shared";
 import type { DirectTarget } from "@/components/try-me/direct-request";
 
 /** The honest-state copy for every config-mutating commit button. */
@@ -291,8 +291,9 @@ export interface UpstreamRow {
   networks: string[];
   interfaces: string[];
   catalogId: string | null;
-  /** "—" = no metrics reported in the window (unknown, not "down"). */
-  status: "healthy" | "degraded" | "—";
+  /** `unknown` = no metrics reported in the window (not "down"). The shared
+   *  vocabulary — see `lib/health.ts`; rendered by `<HealthTag>`. */
+  health: HealthState;
   /** Worst (max) p95 across served specs. */
   latencyMs: number | null;
   /** Most conservative (min) uptime across served specs, 0..1. */
@@ -334,11 +335,13 @@ export function buildUpstreamRows(
     const ms = metricsByName.get(name) ?? [];
     const latVals = ms.map((m) => m.p95Ms).filter((v): v is number => v !== null);
     const upVals = ms.map((m) => m.uptime).filter((v): v is number => v !== null);
-    const status: UpstreamRow["status"] = ms.some((m) => m.health === "unhealthy")
-      ? "degraded"
+    /* Worst wins: one unhealthy endpoint makes the upstream unhealthy, and an
+       upstream nothing reported on is `unknown`, never "down". */
+    const health: HealthState = ms.some((m) => m.health === "unhealthy")
+      ? "unhealthy"
       : ms.some((m) => m.health === "operational")
-        ? "healthy"
-        : "—";
+        ? "operational"
+        : "unknown";
     const hosts = [...new Set(chainRows.map((c) => c.urlHost).filter(Boolean))];
     const catalog = matchCatalog(name, hosts);
     return {
@@ -352,7 +355,7 @@ export function buildUpstreamRows(
       networks: [...new Set(chainRows.map((c) => (buildChainMetaByIndex(c.spec).mainnet ? "mainnet" : "testnet")))],
       interfaces: [...new Set(chainRows.map((c) => c.iface).filter(Boolean))],
       catalogId: catalog?.id ?? null,
-      status,
+      health,
       latencyMs: latVals.length ? Math.max(...latVals) : null,
       uptime: upVals.length ? Math.min(...upVals) : null,
       requests: ms.length ? ms.reduce((s, m) => s + m.requests, 0) : null,
@@ -365,11 +368,11 @@ export function buildUpstreamRows(
    Chain-first view of the same rows. The roster is built per upstream (one
    card per config node); grouping it by the chain each endpoint serves
    answers the other question this page gets asked — "who serves Ethereum?"
-   — off exactly the same data, so the two groupings can never disagree.
+   — off exactly the same data, so the groupings can never disagree.
 ───────────────────────────────────────────── */
 
 /** One upstream endpoint carrying the upstream it belongs to: a chain card's
- *  rows can't read that off their header the way provider rows can. */
+ *  rows can't read that off their header the way upstream rows can. */
 export interface ChainUpstreamRow {
   upstream: UpstreamRow;
   row: UpstreamChainRow;
@@ -380,14 +383,14 @@ export interface ChainGroup {
   spec: string;
   rows: ChainUpstreamRow[];
   /** Distinct upstreams serving the chain. `rows` counts ENDPOINTS — one
-   *  upstream serving http + ws is two rows but one provider. */
-  providers: number;
+   *  upstream serving http + ws is two rows but one upstream. */
+  upstreams: number;
 }
 
 /**
  * Group upstream endpoints by the chain they serve, in the order the chains
  * first appear in the upstream list — the order the values file declares
- * them, which is the ordering rule the provider grouping already follows.
+ * them, which is the ordering rule the upstream grouping already follows.
  */
 export function groupByChain(upstreams: UpstreamRow[]): ChainGroup[] {
   const bySpec = new Map<string, ChainUpstreamRow[]>();
@@ -405,6 +408,6 @@ export function groupByChain(upstreams: UpstreamRow[]): ChainGroup[] {
   }
   return order.map((spec) => {
     const rows = bySpec.get(spec) ?? [];
-    return { spec, rows, providers: new Set(rows.map((r) => r.upstream.id)).size };
+    return { spec, rows, upstreams: new Set(rows.map((r) => r.upstream.id)).size };
   });
 }

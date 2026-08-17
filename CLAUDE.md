@@ -110,7 +110,8 @@ apps/web/                 @sr/web — Next.js 16 App Router (:3000)
     app/api/config/     runtime-config route (DASHBOARD_API_URL → browser)
     components/
       gateway/          Shell · Sidebar/Topbar · RouterHeader · FiltersProvider ·
-                        WindowSelector · charts · SortTable · SideSheet · icons
+                        WindowSelect · ChainSelect · HealthTag · charts ·
+                        SortTable · SideSheet · icons
       overview/         OverviewView (KPI strip + 2×2 chart grid)
       dashboard/        DashHeader · OverviewTab · MetricsTab · TroubleDetail · …
       metrics/          MetricsView (4 tabs) · HeroPanel · RouterOverview ·
@@ -258,10 +259,32 @@ value is the router's Service name (`<router-id-lowered>-router`).
   separate sidecar shared by every router, so it carries no router's label
   and scoping it would report a zeroed cache rather than an unattributable
   one.
-- Web side: the scope lives in `FiltersProvider` next to the time window
-  (persisted as `sr:router`), and every metrics URL appends `scopeQ` /
+- Web side: the scope lives in `FiltersProvider` next to the time window and
+  the chain (persisted as `sr:router` / `sr:window` / `sr:chain` — all three
+  survive a page walk, so narrowing the chain on Metrics and opening Upstreams
+  keeps it), and every metrics URL appends `scopeQ` /
   `withScope(url)`. A selection that disappears from the list resets to "All
   routers" instead of silently filtering every panel to nothing.
+
+### Shared filters and the health vocabulary
+
+Two things every chain- or health-aware surface must go through, so the same
+state can't be worded or sourced two ways:
+
+- **`useChainOptions()`** (`hooks/use-chain-options.ts`) is the chain picker's
+  only list: the UNION of the chains the mounted config declares and the chains
+  the metrics report traffic for, each row flagged `inConfig` / `hasTraffic`. A
+  page dims what it can't populate via `withMutedRows` (Metrics greys "no
+  traffic yet", Upstreams greys "not in config") rather than hiding it, which
+  would read as "not configured". The selection itself is `chain` on
+  `FiltersProvider`, never page state.
+- **`lib/health.ts`** owns the words and colours for `HealthState`
+  (`operational | unhealthy | unknown`) — **Operational / Unhealthy / —** — and
+  `<HealthTag>` / `<HealthDot>` are how they reach the screen. `unknown` means
+  "no metrics in this window", never "down", so it renders neutral. Nothing
+  invents its own health vocabulary: four surfaces used to (the roster said
+  "healthy / degraded", the deep-dive "Live · up", the drawer the raw wire
+  word), and one upstream read three different ways depending on the panel.
 
 ### Deploying to Kubernetes
 
@@ -416,4 +439,5 @@ Compose / Makefile knobs:
 | Window params | `24h` is a wire alias of `1d`; unknown values silently fall back to `1d` (never a 400). `1h` is in the catalog but not in the page-level select. |
 | Provider `role` | Only the helm values format marks backups (`is_backup`); with a raw SR_CONFIG mount, `role` is null and backup-share panels stay empty — that's honest, not a bug. |
 | Endpoint URLs | `localhost:<port>` comes from SR_CONFIG's listen ports, gateway hostnames from helm values' `publicUrls` — a mount never has both. Anything that renders or dials an endpoint address must resolve public → local → `—` (`epHttpUrl` / `epWsUrl` in `components/endpoints/bits.tsx`), never hardcode `localhost`. |
+| Health words | `HealthState` has exactly three states and exactly one wording — `lib/health.ts` / `<HealthTag>`. A panel that maps health to its own labels/colours is a bug, even when the words look nicer locally: the same upstream is read across panels. |
 | BuildKit cache | `make build*` targets use the isolated `srdash-builder` (see Docker / images / isolation). Plain `docker compose up --build` is fine for the stack itself. |

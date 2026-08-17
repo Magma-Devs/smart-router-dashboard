@@ -37,6 +37,32 @@ carried is the Upstreams page's third grouping, and its default.
 
 ### Changed
 
+- **One health vocabulary across every panel.** `HealthState` has three states
+  and, until now, four wordings: the Upstreams roster said "healthy /
+  degraded", the Routers table "Operational / Unhealthy", the upstream
+  deep-dive "Live · up / Down", and the Try-it drawer printed the raw wire
+  word — so one upstream read three different ways depending on which panel
+  you looked at. `lib/health.ts` owns the words and colours now, `<HealthTag>`
+  / `<HealthDot>` render them, and `UpstreamRow` carries a `HealthState`
+  instead of its own parallel union. The Routers table's wording won, because
+  it was the most prominent. `unknown` still means "no metrics in this window",
+  never "down".
+- **The chain filter is shared, and so is its list.** It lives on
+  `FiltersProvider` next to the time window and the router scope (persisted as
+  `sr:chain`), so narrowing to a chain on Metrics and walking to Upstreams
+  keeps it — previously each page held its own copy and the selection silently
+  reset, while the two controls beside it survived. Its options come from
+  `useChainOptions()`: the union of the chains the config declares and the
+  chains the metrics report traffic for, with each page dimming what it can't
+  populate ("no traffic yet" on Metrics, "not in config" on Upstreams) instead
+  of dropping it from the list.
+- **The Upstreams page honours the shared time window**, with the same
+  selector every metrics screen has. It pinned `1d` while already honouring the
+  shared router scope, which made it the one screen where the absent selector
+  was a silent override — its health figures come from the metrics in a window
+  like everything else's.
+- **"By provider" is "By upstream".** The product renamed providers to
+  upstreams everywhere except that segment label and `ChainGroup.providers`.
 - **The chain picker lists chains alphabetically**, on the Metrics page as well
   as the Upstreams page. Its callers' orders were accidents of their sources —
   whatever order Prometheus returns label values in, whatever order the values

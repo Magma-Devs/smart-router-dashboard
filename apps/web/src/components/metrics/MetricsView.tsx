@@ -4,14 +4,16 @@
  * prototype (page-metrics.jsx MetricsPage): RouterHeader, the four tabs
  * (Overview / Upstreams / Errors breakdown / Traffic), and the cross-tab
  * chain-filter banner. Exported standalone so both /metrics and the
- * chrome-less /standalone route can render it. timeWindow comes from the
- * shared FiltersProvider; chainFilter is page-level state that narrows every
- * tab (and is set by RouterOverview's "View upstreams →" drill-in). */
+ * chrome-less /standalone route can render it. timeWindow AND the chain come
+ * from the shared FiltersProvider — the chain narrows every tab here, and the
+ * Upstreams page reads the same selection, so filtering on one page and
+ * walking to the other keeps it. RouterOverview's "View upstreams →" drill-in
+ * sets it too. */
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { buildChainMetaByIndex } from "@sr/shared";
-import { useApi } from "@/hooks/use-api";
 import { useFilters } from "@/components/gateway/FiltersProvider";
+import { useChainOptions, withMutedRows } from "@/hooks/use-chain-options";
 import { RouterHeader } from "@/components/gateway/RouterHeader";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { HeroPanel } from "./HeroPanel";
@@ -26,20 +28,16 @@ import { UpstreamMetricsTab } from "./upstream/UpstreamMetricsTab";
 type Tab = "metrics" | "upstreams" | "errors" | "traffic";
 
 export function MetricsView() {
-  const { timeWindow, setTimeWindow, withScope } = useFilters();
-  const [chainFilter, setChainFilter] = useState("all");
+  const { timeWindow, setTimeWindow, chain, setChain } = useFilters();
   const [tab, setTab] = useState<Tab>("metrics");
-  const activeChain = chainFilter === "all" ? null : chainFilter;
+  const activeChain = chain;
+  const setChainFilter = (v: string) => setChain(v === "all" ? null : v);
 
-  const specsRes = useApi<{ specs: string[] }>(withScope("/api/metrics/specs"), 60000);
-  const routedChains = useMemo(
-    () =>
-      (specsRes.data?.specs ?? []).map((spec) => {
-        const meta = buildChainMetaByIndex(spec);
-        return { spec, name: meta.name, color: meta.color };
-      }),
-    [specsRes.data],
-  );
+  /* Config ∪ traffic (see useChainOptions). A configured chain that has served
+     nothing is offered but dimmed: every panel here would be empty for it, and
+     saying so beats leaving it out of the list. */
+  const { chains: chainRows } = useChainOptions();
+  const routedChains = withMutedRows(chainRows, (c) => (c.hasTraffic ? false : "no traffic yet"));
   const chainObj = activeChain
     ? routedChains.find((c) => c.spec === activeChain) ?? {
         spec: activeChain,
@@ -51,7 +49,7 @@ export function MetricsView() {
   return (
     <div className="gw-page gw-metrics-inter" style={{ paddingBottom: 60 }}>
       <div style={{ marginBottom: 20 }}>
-        <RouterHeader chains={routedChains} chainFilter={chainFilter} setChainFilter={setChainFilter}
+        <RouterHeader chains={routedChains} chainFilter={activeChain ?? "all"} setChainFilter={setChainFilter}
           timeWindow={timeWindow} setTimeWindow={setTimeWindow} />
       </div>
       <div style={{ display: "flex", borderBottom: "1px solid var(--line)", marginBottom: 24 }}>
@@ -71,7 +69,7 @@ export function MetricsView() {
           <ChainBadge spec={activeChain} size={16} />
           <span style={{ fontSize: 13, color: "var(--text-2)" }}>Viewing <strong style={{ color: "var(--text)" }}>{chainObj ? chainObj.name : activeChain}</strong> — clear to see all chains.</span>
           <span style={{ flex: 1 }} />
-          <button onClick={() => setChainFilter("all")} style={{ border: "none", background: "none", color: "var(--brand)", cursor: "pointer", padding: 0, fontSize: 13, fontWeight: 600, fontFamily: "inherit" }}>Clear filter</button>
+          <button onClick={() => setChain(null)} style={{ border: "none", background: "none", color: "var(--brand)", cursor: "pointer", padding: 0, fontSize: 13, fontWeight: 600, fontFamily: "inherit" }}>Clear filter</button>
         </div>
       )}
 

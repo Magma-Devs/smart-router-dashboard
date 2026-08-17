@@ -17,6 +17,7 @@ import { buildChainMetaByIndex } from "@sr/shared";
 import { labelStyle } from "@/lib/styles";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { CloudNotice } from "@/components/gateway/CloudNotice";
+import { HealthTag } from "@/components/gateway/HealthTag";
 import { JWT_CLOUD_MSG, READONLY_MSG, type UpstreamRow } from "@/components/upstreams/catalog";
 import {
   IfaceTag,
@@ -69,8 +70,6 @@ export function EndpointDetailSheet({ open, ep, router, onClose, upstreams }: {
   // `websocket` listen port to exist.
   const wsPort = router?.localPorts["websocket"] ?? null;
   const upstreamByName = (name: string): UpstreamRow | undefined => upstreams.find((p) => p.id === name);
-  const statusTagCls = (s: string | undefined) =>
-    "gw-tag" + (s === "healthy" ? " gw-tag--ok" : s === "degraded" ? " gw-tag--warn" : "");
 
   // Portal to <body>: the page uses a `transform` (fade-in) ancestor, which
   // makes position:fixed resolve against it instead of the viewport — so an
@@ -206,9 +205,7 @@ export function EndpointDetailSheet({ open, ep, router, onClose, upstreams }: {
                             {!n.isBackup && <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 4, background: "rgba(34,197,94,0.1)", color: "var(--ok)", border: "1px solid rgba(34,197,94,0.2)", flexShrink: 0 }}>Primary</span>}
                             {n.isBackup && <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 4, background: "rgba(96,165,250,0.1)", color: "#60a5fa", border: "1px solid rgba(96,165,250,0.2)", flexShrink: 0 }}>Backup</span>}
                             <IfaceTag id={ep.iface} />
-                            <span className={statusTagCls(pv?.status)} style={{ fontSize: 10, padding: "1px 6px", flexShrink: 0 }}>
-                              {pv?.status ?? "—"}
-                            </span>
+                            <HealthTag health={pv?.health ?? "unknown"} />
                           </div>
                           {n.hosts.length > 0 && (
                             <div className="gw-mono" style={{ fontSize: 10, color: "var(--text-4)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 3 }}>
