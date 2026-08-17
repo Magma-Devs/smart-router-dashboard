@@ -37,6 +37,12 @@ carried is the Upstreams page's third grouping, and its default.
 
 ### Changed
 
+- **The chain picker lists chains alphabetically**, on the Metrics page as well
+  as the Upstreams page. Its callers' orders were accidents of their sources —
+  whatever order Prometheus returns label values in, whatever order the values
+  file happens to declare routers in — and neither helps someone hunting for a
+  chain by name. Sorted in the component, so a third caller can't reintroduce
+  an arbitrary order.
 - **Metrics moved under the "Smart Router" section label** in the sidebar,
   next to Upstreams, instead of floating above it unlabelled.
 

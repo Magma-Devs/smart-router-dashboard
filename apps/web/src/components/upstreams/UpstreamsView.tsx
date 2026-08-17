@@ -164,8 +164,8 @@ export function UpstreamsView() {
   const [search, setSearch] = useState("");
   const [netFilter, setNetFilter] = useState<"all" | "mainnet" | "testnet">("all");
   /* Chain filter — the Metrics page's own picker, page-level state there and
-     here. It reads the CONFIG's chains, not the metrics' (`/api/metrics/specs`
-     lists chains that have served traffic): a configured chain nobody has
+     here. It reads the CONFIG's chains, not the metrics' spec list (which only
+     names chains that have served traffic): a configured chain nobody has
      called yet still has endpoints and upstreams to show. */
   const [chainFilter, setChainFilter] = useState("all");
   /* Router-first by default: the endpoints a router publishes are what a
@@ -180,7 +180,7 @@ export function UpstreamsView() {
     () => buildUpstreamRows(routers, live.data?.upstreams),
     [routers, live.data],
   );
-  /* Chains the mounted config declares, in the order it declares them. */
+  /* Chains the mounted config declares (ChainSelect sorts them for display). */
   const configChains = useMemo<ChainOption[]>(
     () => [...new Set(routers.map((r) => r.spec))].map((spec) => {
       const meta = buildChainMetaByIndex(spec);
