@@ -53,37 +53,48 @@ process.env.HELM_VALUES_DIR = dir;
 
 const { buildApp } = await import("../app.js");
 
+/**
+ * The canned series for one query. Every branch returns, so there is no dead
+ * initial value to fall through to — the chain below is exhaustive by
+ * construction.
+ */
+function seriesFor(query: string, scopeValues: string[]): unknown[] {
+  // Which routers the collector can tell apart.
+  if (query.startsWith("count by (service)")) {
+    return scopeValues.map((v) => ({ metric: { service: v }, value: [1, "1"] }));
+  }
+  if (query.startsWith("count by (spec)")) {
+    return [
+      { metric: { spec: "ETH1" }, value: [1, "1"] },
+      { metric: { spec: "SOLANA" }, value: [1, "1"] },
+    ];
+  }
+  // Scoped read — deliberately a different number from the chain's, so a test
+  // can tell "scoped to this router" from "the whole chain".
+  if (query.includes('service="eth-prod-router"')) {
+    return [{ metric: {}, value: [1, "700"] }];
+  }
+  if (query.includes("count by (endpoint_id)")) {
+    return [
+      { metric: { endpoint_id: "eth-publicnode" }, value: [1, "1"] },
+      { metric: { endpoint_id: "eth-mevblocker" }, value: [1, "1"] },
+      { metric: { endpoint_id: "eth-tenderly" }, value: [1, "1"] },
+    ];
+  }
+  return [{ metric: {}, value: [1, "1000"] }];
+}
+
 /** Canned Prometheus: chain-level numbers per spec, and no per-target label. */
 function mockPrometheus(scopeValues: string[] = []): void {
   vi.stubGlobal("fetch", async (input: URL | string) => {
     const url = typeof input === "string" ? input : input.toString();
     if (url.includes("/-/ready")) return new Response("ok", { status: 200 });
     const query = new URL(url).searchParams.get("query") ?? "";
-    let result: unknown[] = [];
-
-    if (query.startsWith("count by (service)")) {
-      // Which routers the collector can tell apart.
-      result = scopeValues.map((v) => ({ metric: { service: v }, value: [1, "1"] }));
-    } else if (query.startsWith("count by (spec)")) {
-      result = [
-        { metric: { spec: "ETH1" }, value: [1, "1"] },
-        { metric: { spec: "SOLANA" }, value: [1, "1"] },
-      ];
-    } else if (query.includes('service="eth-prod-router"')) {
-      // Scoped read — deliberately a different number from the chain's, so a
-      // test can tell "scoped to this router" from "the whole chain".
-      result = [{ metric: {}, value: [1, "700"] }];
-    } else if (query.includes("count by (endpoint_id)")) {
-      result = [
-        { metric: { endpoint_id: "eth-publicnode" }, value: [1, "1"] },
-        { metric: { endpoint_id: "eth-mevblocker" }, value: [1, "1"] },
-        { metric: { endpoint_id: "eth-tenderly" }, value: [1, "1"] },
-      ];
-    } else {
-      result = [{ metric: {}, value: [1, "1000"] }];
-    }
     return new Response(
-      JSON.stringify({ status: "success", data: { resultType: "vector", result } }),
+      JSON.stringify({
+        status: "success",
+        data: { resultType: "vector", result: seriesFor(query, scopeValues) },
+      }),
       { status: 200, headers: { "content-type": "application/json" } },
     );
   });
