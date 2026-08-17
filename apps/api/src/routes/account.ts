@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { Database } from "@sr/db";
 import { requireAuth } from "../plugins/auth.js";
-import { noopAuditWriter, type AuditWriter } from "../services/audit.js";
+import { lazyAuditWriter, type AuditWriter } from "../services/audit.js";
 import { validatePassword, verifyPassword } from "../services/password.js";
 import { changeOwnPassword } from "../services/password-reset.js";
 import {
@@ -24,7 +24,7 @@ interface ChangePasswordBody {
  * session at all.
  */
 export async function accountRoutes(app: FastifyInstance) {
-  const audit: AuditWriter = noopAuditWriter(app.log);
+  const audit: AuditWriter = lazyAuditWriter(app);
 
   /** Where THIS request came from, not where its session was opened — they
    *  differ exactly when a session is used from somewhere it didn't sign in. */

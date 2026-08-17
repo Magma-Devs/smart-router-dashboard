@@ -216,12 +216,14 @@ export async function removeMember(
       );
 
     const user = updated[0]!;
+    // No `changes`: MAG-2770's catalog says this verb carries no diff, and it
+    // is right — "removed" is self-describing, and `status: active -> removed`
+    // adds nothing a reader didn't get from the verb.
     await audit.write(
       {
         action: "member.removed",
         actor: { id: input.actorId, kind: "user" },
         target: { type: "member", id: user.id, name: user.email },
-        changes: [{ field: "status", from: "active", to: "removed" }],
       },
       tx,
     );

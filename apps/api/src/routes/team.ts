@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import type { Database } from "@sr/db";
 import { isRole, toCsv, type Role } from "@sr/shared";
 import { requireRole } from "../plugins/auth.js";
-import { noopAuditWriter, type AuditWriter } from "../services/audit.js";
+import { lazyAuditWriter, type AuditWriter } from "../services/audit.js";
 import {
   createInvitation,
   inviteUrl,
@@ -53,7 +53,7 @@ interface InviteBody {
  * `routes/auth.ts`, because the person redeeming has no account yet.
  */
 export async function teamRoutes(app: FastifyInstance) {
-  const audit: AuditWriter = noopAuditWriter(app.log);
+  const audit: AuditWriter = lazyAuditWriter(app);
 
   function dbOr503(reply: FastifyReply): Database | null {
     if (!app.db) {
@@ -270,7 +270,7 @@ export async function teamRoutes(app: FastifyInstance) {
 
 /** Split out so the invite routes above stay readable — same registration. */
 export async function teamPasswordRoutes(app: FastifyInstance) {
-  const audit: AuditWriter = noopAuditWriter(app.log);
+  const audit: AuditWriter = lazyAuditWriter(app);
 
   app.post(
     "/api/team/members/:id/reset-link",
@@ -346,7 +346,7 @@ interface RoleBody {
 /** The member list and the two mutations that act on somebody else. Split from
  *  the invite routes above only for length — same registration. */
 export async function teamMemberRoutes(app: FastifyInstance) {
-  const audit: AuditWriter = noopAuditWriter(app.log);
+  const audit: AuditWriter = lazyAuditWriter(app);
 
   function db(reply: FastifyReply): Database | null {
     if (!app.db) {
