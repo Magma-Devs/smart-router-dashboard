@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type { Database } from "@sr/db";
 import { requireAuth } from "../plugins/auth.js";
-import { noopAuditWriter, type AuditWriter } from "../services/audit.js";
+import { lazyAuditWriter, type AuditWriter } from "../services/audit.js";
 import { validatePassword, verifyPassword } from "../services/password.js";
 import { changeOwnPassword } from "../services/password-reset.js";
 import {
@@ -21,7 +21,7 @@ interface ChangePasswordBody {
  * session at all.
  */
 export async function accountRoutes(app: FastifyInstance) {
-  const audit: AuditWriter = noopAuditWriter(app.log);
+  const audit: AuditWriter = lazyAuditWriter(app);
 
   function dbOr503(reply: FastifyReply): Database | null {
     if (!app.db) {

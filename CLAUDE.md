@@ -88,8 +88,18 @@ packages/shared/          @sr/shared — domain types, metric catalog, PromQL bu
     constants/chains.ts     buildChainMetaByIndex(spec) — keyed by Lava spec index
     constants/windows.ts    WINDOWS — 13-window catalog (5m..30d) → PromQL range + step
     promql/builders.ts      typed query builders shared by api (+ docs)
+    constants/roles.ts      ROLES + roleAtLeast — four cumulative roles
+    constants/audit-events.ts  the audit log's verb set (see "Audit log")
+    audit/format.ts         how a value is written into an audit row —
+                            redaction, (none)/(new)/(deleted), yes/no, lists
     types/domain.ts         OverviewData, DashboardData, HeroSummary, ChainSeries,
                             ProviderDetail, ErrorsReport, RouterTopology, …
+packages/db/              @sr/db — Drizzle + Postgres (AUTH_MODE=enabled only)
+  src/
+    schema.ts           users · sessions
+    schema-audit.ts     audit_events · audit_event_changes (append-only)
+    audit.ts            createAuditWriter — the writer every task emits through
+    testing.ts          createTestDb() — pglite, a real Postgres in-process
 apps/api/                 @sr/api — Fastify 5 (:8000)
   src/
     routes/             health · version · metrics · config
@@ -252,6 +262,44 @@ A Kubernetes deployment runs the api as the `…/backend` image and the web as
 | Frontend runtime env | `DASHBOARD_API_URL` (browser-facing api origin) and `DASHBOARD_GRAFANA_URL`, both read per-request by `GET /api/config` so one image serves any host. `NEXT_PUBLIC_*` are build-time and can't vary per deployment |
 | Frontend liveness / readiness | `/api/config` (`/` also answers — it 307s to `/metrics`) |
 | Values mount | `<HELM_VALUES_DIR>/core/values.yml`, the rendered values. Drives `publicUrls` above, so the pod must roll when they change |
+
+## Audit log
+
+`AUTH_MODE=enabled` only — the default mode has no database, so the audit
+surfaces render the usual honest empty state naming the reason. MAG-2770 owns
+the log; the accounts, 2FA and config-approval tasks only emit into it.
+
+- **The verb set is a typed catalog**, not a convention:
+  `packages/shared/src/constants/audit-events.ts` holds every event with its
+  group, whether it carries a diff, and whether it may carry access context.
+  Four tickets write these strings, so a typo is a typecheck failure rather
+  than an unfilterable row — and the same constant generates the published
+  event list the ticket requires.
+- **One writer, `createAuditWriter(db)`** (`packages/db/src/audit.ts`). It
+  lives in `@sr/db`, not the api, because the recovery commands run from a
+  shell on the host with no request anywhere. It resolves the group and the
+  access-context rule from the catalog rather than trusting the caller.
+  `write(event, tx?)` — pass the caller's transaction and the row commits or
+  rolls back with the mutation it records. **Failure behaviour is asymmetric
+  on purpose**: standalone it swallows and reports (a sign-in must not 500
+  because the log is unwell); inside a transaction it propagates, because the
+  failed insert has already aborted the caller's transaction and catching it
+  would turn an atomicity guarantee into a silent maybe.
+- **Redaction happens on the way in.** `audit/format.ts` is the only way values
+  reach a row: `(none)` · `(new)` · `(deleted)` · `yes`/`no` · stable
+  comma-joined lists · `(changed, ends a91f)`. There is no un-redacted copy in
+  the table, which makes "no secret or node URL appears in the log, the export,
+  or the API" a property of the schema rather than a rule three read paths have
+  to remember. MAG-2731's approve screen *does* show full values — that reads
+  the pending-change record, a different table, and must never be pointed here.
+- **Names are snapshots, never joins.** `actor_name` / `target_name` record
+  what the thing was called at the time. A removed person keeps their name in
+  the log permanently, and a rename cannot rewrite history.
+- **Append-only in the database, not just the product.** A
+  `BEFORE UPDATE OR DELETE` trigger on **both** tables raises. The one
+  legitimate writer is retention, which opens the gate with
+  `SET LOCAL audit.purge = 'on'` inside its own transaction. This is a product
+  boundary, not tamper-evidence — hash chaining is deliberately out of scope.
 
 ## Time windows
 
