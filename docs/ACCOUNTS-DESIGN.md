@@ -9,8 +9,8 @@ Written to be built from. Every table, route and flow below is a decision, not a
 sketch. Supersedes [`docs/AUTH.md`](AUTH.md) once slice 1 lands; until then that
 document describes what actually ships.
 
-> **Status:** draft · ~11 pts / 6 PRs · 5 open decisions (§16), three of which
-> block the first PR.
+> **Status:** all six slices built and open as PRs (#111, #118–#122) · 4 open
+> decisions (§16). **§16.1 is answered and no longer blocks #111** — see below.
 
 ---
 
@@ -749,7 +749,9 @@ gets a real backup taken first.
 ### 13.3 The shared-login cutover
 
 "The shared login is disabled at the same moment" is a done-when **this repo cannot
-satisfy**. The shared credential is `dashboard.AUTH_USERNAME`
+satisfy** — and it is a live piece of work, not a hypothetical: Omer confirmed on
+17 Aug 2026 that customers run the v1 backend, so the shared credential really is what
+stands in front of the dashboard today. The shared credential is `dashboard.AUTH_USERNAME`
 (`charts/smart-router/values.yaml:390`, default `"admin"`) plus the `auth-password`
 secret key, injected by `templates/dashboard/dashboard-backend-deployment.yaml` in
 `smart-router-helm-chart` — a different repo. Per customer, the sequence is:
@@ -758,7 +760,9 @@ secret key, injected by `templates/dashboard/dashboard-backend-deployment.yaml` 
 2. Create an admin for one named person on their side; send the join link.
 3. **Confirm they have signed in.**
 4. Remove the shared credential from the chart and roll the deployment.
-5. Existing accounts on the Owner role become Admin (§16.1).
+5. **The people who shared the login are set up as admins** (Omer, 17 Aug 2026 — §16.1).
+   In practice: the named person from step 2 is an admin by construction, and invites the
+   rest at `admin` rather than at a lower role.
 
 Step 4 needs an owner outside this ticket. Without it the ticket closes with named
 accounts *and* a working shared password, which is the one outcome the epic exists to
@@ -857,15 +861,22 @@ themselves" requires. Slices 4–6 are what makes it pass the review.
 
 Five things that are not the implementer's call. The first three block slice 1.
 
-**16.1 · What do existing `member` rows become?**
-The ticket only maps Owner → Admin, and `member` has no obvious counterpart among the
-four new roles. **Check the population before escalating this:** the chart configures the
-dashboard with the v1 `AUTH_USERNAME` variables and never sets `AUTH_MODE`, so live
-deployments run the default (`disabled`) with no database at all — in which case there
-are no rows to remap and this collapses to a no-op. If a live `users` table does exist,
-**recommend `read_only`**: least privilege, and promoting is a one-click fix where
-over-granting is not. Either way it is baked into the migration, so confirm before slice
-1 ships.
+**16.1 · What do existing `member` rows become?** — **ANSWERED, 17 Aug 2026.**
+Omer on MAG-2729: *"use V1 logic"* and *"existing users would become admin in the next
+setup"*.
+
+The first half settles it: deployments run the **v1 backend**, so there is no v2 `users`
+table anywhere and the remap in `0001_accounts.sql` provably touches zero rows. It stays
+`ELSE 'read_only'` — least privilege, and with no rows to convert there is nothing to
+gain by loosening it.
+
+The second half is read as a **cutover** instruction, not a migration one — see §13.3.
+The people who share a login today are set up as admins when their deployment is
+onboarded; that is a first-run and invitation matter, not something a migration can
+express, because there are no rows for it to act on. Stated back on the ticket so it can
+be corrected in passing. It is deliberately *not* implemented as `member -> admin` in the
+migration: mapping everyone to admin hands out people-management and self-approval, which
+is the expensive direction to be wrong in, where the other costs one click per person.
 
 **16.2 · Who generates and surfaces the setup token?**
 Our installer is a helm chart. **Recommend**: the api generates one on first boot when
