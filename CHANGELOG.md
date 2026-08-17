@@ -5,6 +5,50 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.14.0]
+
+Which block is each router on, and how far behind is each upstream? Both gauges
+were already on the wire and half-read: the upstream tip rendered with no
+context, and the router tip was fetched by `/api/metrics/chains` and dropped.
+
+### Added
+
+- **A `Latest block` column on the Metrics · Routers table**, from
+  `smartrouter_latest_block` — the tip the router itself has accepted, per api
+  interface, leading with the furthest-ahead one. A Cosmos router serving
+  jsonrpc, rest and tendermintrpc has three tips that can disagree, and the row
+  says how many interfaces are behind the number.
+- **A `Behind` column on the Metrics · Upstreams roster**, and `behindSec` +
+  `stale` on `UpstreamMetrics` to back it. **The lag is stated in seconds**, not
+  blocks: a block count means nothing across chains, where the same 1,038-block
+  delta is 37 seconds on Aptos and would be four months on Bitcoin. Seen on one
+  screen: 1 block behind on Ethereum is 12s, 2 blocks on Hyperliquid is 2s.
+- **`GET /api/metrics/block-heights`** — every tip for every chain: per router
+  deployment × interface, per upstream × interface, each against the chain's
+  best upstream tip, in blocks and in seconds. Instant only; these are gauges,
+  so there is no window. Takes both router axes.
+- **A stale marker.** An upstream whose tip gauge hasn't moved in 15 minutes
+  *while the chain kept producing blocks* is stuck, not slow — and the second
+  half of that test is what keeps Bitcoin's ~9-minute blocks from reading as
+  frozen on every poll.
+
+### Changed
+
+- **The router tip is judged against its own refresh rate, not the clock.**
+  `smartrouter_latest_block` advances on accepted tip observations rather than
+  on every poll, so it trails the upstream gauge by about one refresh interval
+  however healthy the router is — on a fast chain that is thousands of blocks.
+  A wall-clock threshold painted all six routers amber on first render. The
+  cadence is now measured (`changes(smartrouter_latest_block[15m])`, surfaced as
+  `refreshSec`) and the colour grades multiples of it, so a router reads normal
+  at one refresh behind and red only when it falls further behind than its own
+  update rate explains.
+- **A tip that two routers share says so.** That gauge is labelled with the
+  chain and never with the router, so two config routers on one chain share a
+  single series unless the collector labels targets per router. The cell marks
+  it `shared` rather than letting a router filter imply the number is that
+  router's own — the same honesty as the roster's `+N shared`.
+
 ## [0.13.0]
 
 Which router served this? The roster could only be sliced by chain — and a
