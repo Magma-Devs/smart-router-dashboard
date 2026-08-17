@@ -464,8 +464,19 @@ export class MetricsService {
    * versions/sec) its raw delta reads in the thousands while representing a
    * few seconds of real drift. Reporting only blocks would make healthy
    * routers look broken.
+   *
+   * @param routerId Keep only upstream tips the named CONFIG router declares —
+   *   the same row-filter axis `upstreams()` takes, so a router filter narrows
+   *   this list the way it narrows the roster. It does NOT narrow the `routers`
+   *   rows: `smartrouter_latest_block` is labelled with the chain, so only the
+   *   collector's target label can split those, and that axis arrives as the
+   *   `?router=` scope this service was constructed with.
    */
-  async blockTips(scopeLabel: string, spec?: string): Promise<BlockHeights> {
+  async blockTips(
+    scopeLabel: string,
+    spec?: string,
+    routerId?: string,
+  ): Promise<BlockHeights> {
     const label = isValidScopeLabel(scopeLabel) ? scopeLabel : null;
 
     const [bestRows, rateRows, routerRows, routerChangeRows, upstreamRows, changeRows, healthRows] =
@@ -577,10 +588,24 @@ export class MetricsService {
       ensure(specLabel).routers.push(tip);
     }
 
+    // Node name → the config routers declaring it, the sole source of router
+    // attribution for a per-endpoint series (mirrors `upstreams()`).
+    const routersByName = new Map<string, string[]>();
+    if (this.configSvc) {
+      for (const router of this.configSvc.getRouters()) {
+        for (const node of router.nodes) {
+          const ids = routersByName.get(node.name);
+          if (!ids) routersByName.set(node.name, [router.id]);
+          else if (!ids.includes(router.id)) ids.push(router.id);
+        }
+      }
+    }
+
     for (const r of upstreamRows) {
       const specLabel = r.metric.spec;
       const endpointId = r.metric.endpoint_id;
       if (!specLabel || !endpointId) continue;
+      if (routerId && !(routersByName.get(endpointId) ?? []).includes(routerId)) continue;
       const iface = r.metric.apiInterface ?? "";
       const block = num(r.value[1]);
       const reference = best.get(specLabel);

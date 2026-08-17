@@ -52,6 +52,9 @@ interface RoRow {
   tipIfaceCount: number;
   /** Observed refresh cadence of the worst interface's gauge, in seconds. */
   tipRefreshSec: number | null;
+  /** Two config routers serve this chain and the collector can't split their
+   *  series — the block is both routers', not the filtered one's. */
+  tipShared: boolean;
   detail: ChainDetailRow;
   /* flat sort accessors (design SORT_VAL semantics) */
   natural: number;
@@ -64,6 +67,11 @@ interface RoRow {
   qos: number;
   status: number;
   block: number;
+}
+
+/** The config routers on a chain, named — for the shared-series tooltip. */
+function configRouterNames(spec: string, routers: RouterTopology[]): string {
+  return routers.filter((r) => r.spec === spec).map((r) => r.id).join(" and ");
 }
 
 const STATUS_RANK: Record<RoStatus, number> = { down: 0, up: 1, unknown: 2 };
@@ -95,6 +103,14 @@ export function RouterOverview({ onChainClick, chainFilter, timeWindow }: {
     // lagging interface can't hide behind a healthy sibling.
     const tip = tipBySpec.get(c.spec);
     const ifaceTips = tip?.routers ?? [];
+    // `smartrouter_latest_block` is labelled with the CHAIN, never with the
+    // router, so two config routers on one chain share a single series unless
+    // the collector attaches a per-target label. When it doesn't (router ===
+    // null), say so rather than letting a router filter imply the number is
+    // that router's own — the same honesty the roster's "+N shared" marker
+    // keeps for upstreams.
+    const configRouters = (topo.data?.routers ?? []).filter((rt) => rt.spec === c.spec).length;
+    const tipShared = configRouters > 1 && ifaceTips.every((t) => t.router === null);
     const tipBlock = ifaceTips.reduce<number | null>(
       (max, t) => (t.block !== null && (max === null || t.block > max) ? t.block : max), null);
     const worstTip = ifaceTips.reduce<(typeof ifaceTips)[number] | null>(
@@ -112,7 +128,7 @@ export function RouterOverview({ onChainClick, chainFilter, timeWindow }: {
       otherCount: Math.max(0, c.upstreamCount - 1),
       availPct, p95Ms: c.p95Ms, errPct, qosVal, reqCount: c.requests, statusKind,
       tipBlock: tipBlock ?? c.latestBlock, tipBehindSec, tipIfaceCount: ifaceTips.length,
-      tipRefreshSec: worstTip?.refreshSec ?? null,
+      tipRefreshSec: worstTip?.refreshSec ?? null, tipShared,
       detail: { spec: c.spec, availPct, p95Ms: c.p95Ms, errPct, qos: qosVal, requests: c.requests, hasBackup: (nBackup ?? 0) > 0 },
       natural: 0,
       router: c.name.toLowerCase(),
@@ -208,13 +224,17 @@ export function RouterOverview({ onChainClick, chainFilter, timeWindow }: {
                 </td>
                 <td style={{ textAlign: "right" }}>
                   {r.tipBlock != null ? (
-                    <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-end" }}>
+                    <div
+                      style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-end" }}
+                      title={r.tipShared ? `${configRouterNames(r.spec, topo.data?.routers ?? [])} both serve this chain and the collector reports no per-router target label — this tip is their shared series` : undefined}
+                    >
                       <span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{fmtComma(r.tipBlock)}</span>
                       {r.tipBehindSec != null && (
                         <span className="gw-tnum" style={{ fontSize: 10, color: routerTipColor(r.tipBehindSec, r.tipRefreshSec) }}>
                           {r.tipBehindSec < 1 ? "in sync" : fmtLag(r.tipBehindSec) + " behind"}
                           {r.tipRefreshSec != null ? ` · refresh ${fmtLag(r.tipRefreshSec)}` : ""}
                           {r.tipIfaceCount > 1 ? ` · ${r.tipIfaceCount} ifaces` : ""}
+                          {r.tipShared ? " · shared" : ""}
                         </span>
                       )}
                     </div>
