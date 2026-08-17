@@ -5,6 +5,40 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.12.0]
+
+One page for the mounted config. The Endpoints tab is gone — the surface it
+carried is the Upstreams page's third grouping, and its default.
+
+### Added
+
+- **A "By router" grouping on the Upstreams page, now the default.** One card
+  per router in the values file, rows for the (router × interface) endpoints it
+  publishes: the interface tag, the configured capabilities, the address to
+  dial, the upstream count behind it, and the same click-through detail sheet.
+  The page already carved this config three ways in prose — "what does this
+  router publish", "who serves this chain", "what does this upstream serve" —
+  and the first of them was the one living on its own tab.
+- **The Try-it console reads identically in the new grouping**, because it is
+  the same call: the endpoint's own address, its ws upgrade when the config
+  declares one, its upstreams' add-ons, and the chain's live health. Nothing is
+  pinned to a single upstream there — the request goes to the router, exactly as
+  it did on the Endpoints tab. The per-upstream Try-now in the chain and
+  provider groupings still pins its relay, which is what those rows are about.
+
+### Changed
+
+- **Metrics moved under the "Smart Router" section label** in the sidebar,
+  next to Upstreams, instead of floating above it unlabelled.
+
+### Removed
+
+- **The Endpoints tab** (`/endpoints`) and its view. The route is gone, not
+  redirected — the same cards are one segmented-control click away, and the
+  page's search and mainnet/testnet filters carry over to them.
+- **The endpoint create sheet**, whose only entry point was that page's hidden
+  "New endpoint" button. Endpoint creation is a Magma Cloud action; on a
+  read-only config mount it never had anything to commit.
 ## [0.11.4]
 
 ### Fixed
