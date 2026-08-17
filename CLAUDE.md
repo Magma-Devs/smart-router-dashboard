@@ -242,15 +242,17 @@ with itself.
 | Comes from | Prometheus target labels | the mounted values file |
 | Narrows | the PromQL, so **chain-level** series split per router | **rows** — which upstreams a response lists |
 | Available | only when the collector labels targets per router (often not) | always, whenever a values file is mounted |
-| Read by | every `/api/metrics/*` route | `/api/metrics/upstreams` |
+| Read by | every `/api/metrics/*` route | `/api/metrics/{upstreams,errors,block-heights}` |
 
 Anything keyed per UPSTREAM can be attributed, because the config says which
 router declares a node: the roster (`routerIds` on `UpstreamMetrics` — a LIST,
 since two routers declaring one node name share one series, which the UI marks
 rather than splitting) and the error hotspots (`?routerId=` on
 `/api/metrics/errors`, which filters the (chain × upstream) pairs and leaves the
-pivots alone). Anything that aggregates BY CHAIN can't be: no series says which
-router served a request. So a router selection also sets the chain — a config
+pivots alone) and the upstream tips on `/api/metrics/block-heights`. Anything
+that aggregates BY CHAIN can't be: no series says which router served a request
+— `smartrouter_latest_block` included, which is why that endpoint's `routers`
+rows can only ever be split by the scope axis. So a router selection also sets the chain — a config
 router serves exactly one — which narrows those panels as far as the data
 honestly allows, and the UI states that a second router on the same chain is
 counted in with it.
@@ -365,7 +367,8 @@ Every `/api/metrics/*` route also accepts **`router?`** — the router scope
 | `GET /api/metrics/overview` | `window`, `spec?` | `OverviewData` — KPI pairs (requests, RPS, errors, success rate, p50/p95/p99), `errorRate`, `health`, throughput/errors series, `latencySeries` (p50/p95/p99 toggle), **`latencyDistribution`** (histogram buckets), **`perProviderSeries`**, **`errorLayers`** (single `unclassified` layer until labelled counters exist), `perChainLatency`, `activeRoutes`, `perChainSeries`; `computeUnits`/`rpsCap` always null |
 | `GET /api/metrics/dashboard` | `window`, `spec?` | `DashboardData` — the Dashboard page (both tabs) in one round-trip: `kpis` (successRate, p95Ms, errors, rps, errorsHandled=null), `series` (throughput, errors, errorRate, successRate, latency p50/95/99, perChain, perChainSuccessRate, perChainLatency, providerMix, perProviderLatencyP95), `chains` (multiselect options — the series filter is client-side; `spec` accepted for symmetry). Unbacked families (`scu`, `regions`, `failoverRatio`, `internalAvailability`, `cacheHitRate`, `errorClasses`, `errorsHandledBreakdown`, `contribution`, `providerAvailability`, `scorecard`) are `null`, `trouble` is `[]` |
 | `GET /api/metrics/chains` | `window` | `{ chains: ChainMetrics[] }` — per-chain rollup (requests, availability, errorRate, p95, composite QoS, health, latestBlock, providerCount) for the Routers table |
-| `GET /api/metrics/upstreams` | `window`, `spec?`, **`routerId?`** | `{ upstreams: UpstreamMetrics[] }` — roster with requests, uptime, p95, **errorRate**, selection scores, health, latestBlock, **blockLag**, **role** (`primary`/`backup` from helm `is_backup`; null for SR_CONFIG), **apiInterface**, inFlight, **`routerIds`** (the config routers declaring the upstream — several when they share a node name). `routerId` keeps only one router's rows; it filters against the values file and does NOT narrow the PromQL (that's `router` — see "Two router axes") |
+| `GET /api/metrics/upstreams` | `window`, `spec?`, **`routerId?`** | `{ upstreams: UpstreamMetrics[] }` — roster with requests, uptime, p95, **errorRate**, selection scores, health, latestBlock, **blockLag**, **`behindSec`** (that lag ÷ the chain's block rate — the comparable form) + **`stale`** (tip frozen 15m while the chain produced blocks), **role** (`primary`/`backup` from helm `is_backup`; null for SR_CONFIG), **apiInterface**, inFlight, **`routerIds`** (the config routers declaring the upstream — several when they share a node name). `routerId` keeps only one router's rows; it filters against the values file and does NOT narrow the PromQL (that's `router` — see "Two router axes") |
+| `GET /api/metrics/block-heights` | `spec?`, `router?`, **`routerId?`** | `BlockHeights` — `{ routerLabel, chains: ChainTips[] }`. Per chain: `blocksPerSec` (from `deriv` on the endpoint gauge), `bestBlock` (highest upstream tip — the reference), `routers[]` (`smartrouter_latest_block` per scope value × api interface, each with `behindBlocks` / `behindSec` / **`refreshSec`**) and `upstreams[]` (`rpc_endpoint_latest_block` per endpoint × interface, with `stale`). **Instant only** — gauges, so no `window`. Lags are given in seconds as well as blocks because a block count isn't comparable across chains. ⚠ The router gauge advances on accepted tip observations, not every poll, so it trails by ~one `refreshSec` however healthy the router is; judge it against that cadence, never a wall-clock threshold |
 | `GET /api/metrics/rps` | `window`, `spec?` | `TimeSeries` — `{ label, points: {t, v}[] }` |
 | `GET /api/metrics/traffic` | `window` | Aggregate `rpsNow` + series + per-chain rows (`rpsNow`, `requests`, `share`, `trend` sparkline). **No web consumer** — the Traffic tab's RPS card was removed in MAG-2448; kept as a documented read surface |
 | `GET /api/metrics/methods` | `window`, `spec?` | `{ methods: MethodUsage[], classTotals: MethodClassTotals }` — per-method CLIENT requests/class/errorRate + **real `p95Ms`** (the histogram's method label is named `function`); classTotals: `read` real, `write`/`batch` null + `emitted` flags, `unclassified` remainder |
