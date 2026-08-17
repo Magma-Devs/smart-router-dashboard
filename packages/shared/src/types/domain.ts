@@ -49,6 +49,14 @@ export interface UpstreamMetrics {
   latestBlock: number | null;
   /** Blocks behind the spec's best endpoint; null when unknown. */
   blockLag: number | null;
+  /**
+   * `blockLag` expressed in SECONDS (blocks ÷ the chain's block rate), which is
+   * the only form comparable across chains. Null when the chain's rate is
+   * unknown or zero — never Infinity.
+   */
+  behindSec: number | null;
+  /** Tip gauge frozen while the chain kept producing blocks. */
+  stale: boolean;
   /** From config `is_backup` (helm format only); null for SR_CONFIG. */
   role: "primary" | "backup" | null;
   apiInterface: string | null;
@@ -69,6 +77,62 @@ export interface UpstreamMetrics {
 }
 
 
+
+/* ── Block tips (GET /api/metrics/block-heights) ─────────────────────────── */
+
+/** One router deployment's view of a chain's head, per api interface. */
+export interface RouterTip {
+  /**
+   * The router deployment, as the value of the scrape-target scope label.
+   * Null when Prometheus attaches no such label (a single static target), in
+   * which case the rows are the interface split of the one router.
+   */
+  router: string | null;
+  apiInterface: string;
+  block: number | null;
+  /** Blocks behind the chain's best upstream tip. */
+  behindBlocks: number | null;
+  /** The same lag in seconds — what the UI shows. Null when the rate is unknown. */
+  behindSec: number | null;
+  /**
+   * Observed seconds between refreshes of THIS gauge. A lag of roughly one
+   * refresh is the gauge working as designed; the UI only flags a router once
+   * it falls behind by a multiple of its own cadence. Null when the gauge did
+   * not move at all over the window.
+   */
+  refreshSec: number | null;
+}
+
+/** One upstream's view of a chain's head, per api interface. */
+export interface UpstreamTip {
+  endpointId: string;
+  apiInterface: string;
+  block: number | null;
+  behindBlocks: number | null;
+  behindSec: number | null;
+  stale: boolean;
+  health: HealthState;
+}
+
+/** Every tip observed for one chain, plus the rate that makes them comparable. */
+export interface ChainTips {
+  spec: string;
+  name: string;
+  color: string;
+  /** Blocks per second, from the per-endpoint gauge; null when unmeasurable. */
+  blocksPerSec: number | null;
+  /** Highest upstream tip — the reference every `behind` measures against. */
+  bestBlock: number | null;
+  routers: RouterTip[];
+  upstreams: UpstreamTip[];
+}
+
+/** `GET /api/metrics/block-heights` payload. */
+export interface BlockHeights {
+  /** The scope label the router rows are split by; null when unavailable. */
+  routerLabel: string | null;
+  chains: ChainTips[];
+}
 
 /** One row in the Traffic "by chain" table. */
 export interface ChainTraffic {

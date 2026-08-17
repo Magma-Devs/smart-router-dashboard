@@ -109,6 +109,12 @@ client requests) against the live router:
 | Provider volume (total/read) | `qProviderVolumeSeriesExpr` / `qProviderReadVolumeSeriesExpr` |
 | Provider error rate | `qProviderErrorRate` (router counters by `provider_address`) |
 | Block lag | `qBlockLagByEndpoint` / `qEndpointBlockLagSeriesExpr` = spec-max `latest_block` − endpoint's |
+| Chain block rate | `qBlockRateBySpec` = `max by (spec) (deriv(rpc_endpoint_latest_block[15m]))` — blocks/sec, the unit converter every seconds-behind figure divides by |
+| Best tip per chain | `qBestTipBySpec` = `max by (spec) (rpc_endpoint_latest_block)` — the reference every lag measures against |
+| Router tips (per deployment × interface) | `qRouterTips(scopeLabel, spec)` = `max by ($label, spec, apiInterface) (smartrouter_latest_block)`; degrades to `by (spec, apiInterface)` when the label is absent/invalid |
+| Router refresh cadence | `qRouterTipChanges` = `max by (…) (changes(smartrouter_latest_block[15m]))` ⇒ `refreshSec = 900 ÷ changes` |
+| Upstream tips (per interface) | `qUpstreamTips` = `max by (spec, endpoint_id, apiInterface) (rpc_endpoint_latest_block)` |
+| Tip staleness | `qTipChanges` = `changes(rpc_endpoint_latest_block[15m])`; stale ⇔ `changes == 0` **and** `blocksPerSec × 900 ≥ 2` (the second clause stops Bitcoin's ~9-minute blocks reading as frozen) |
 | Backup traffic share | `qBackupShareExpr(spec, backupNames, step)` — names from the helm config's `is_backup` |
 | Chains fully down | `qChainDown()` = `max by (spec) (rpc_endpoint_overall_health) == bool 0` |
 | Stale caught | `qConsistencyCaught` = `round(sum(increase(consistency_failed_total[$w])))` — failed checks; `qConsistencyChecked` = checks run. `consistency_success_total` counts checks that PASSED and must never surface as "caught" |
@@ -124,6 +130,7 @@ client requests) against the live router:
 | `/api/metrics/dashboard` | `qRpsSeriesExpr`, `qErrorCountSeriesExpr`, `qErrorRateSeriesExpr`, `qAvailabilitySeriesExpr`, `qLatencySeriesExpr(q)`; per-chain `qPerSpecRpsExpr`, per-spec success ratio, per-spec `histogram_quantile` (the `(spec, le)` grouping of `qLatencyQuantile` with `[$range]→[$step]`); `qPerProviderRpsExpr`; per-provider p95 `histogram_quantile(0.95, sum by (endpoint_id, le) (rate(rpc_endpoint_…_bucket[step])))`; chain list from `count by (spec)` + `max by (spec) (rpc_endpoint_overall_health)` |
 | `/api/metrics/chains` | per spec: `qRequestsTotal`, `qAvailability`, `qErrorRate`, `qLatencyQuantile(0.95)`, `avg(rpc_endpoint_selection_score{score_type="composite"})`, `max by (spec) (rpc_endpoint_overall_health)`, `qLatestBlock`, `count by (endpoint_id)` |
 | `/api/metrics/providers` | `sum by (endpoint_id, spec) (increase(rpc_endpoint_total_relays_serviced[$w]))`; the `selection_score` / `overall_health` / `latest_block` / `requests_in_flight` gauges; per-endpoint p95 from the endpoint histogram; uptime + errorRate = success/total by `provider_address` on the router counters; blockLag computed as spec-max − endpoint block; `role`/`apiInterface` joined from the mounted config (not Prometheus) |
+| `/api/metrics/block-heights` | `qBestTipBySpec`, `qBlockRateBySpec`, `qRouterTips`, `qRouterTipChanges`, `qUpstreamTips`, `qTipChanges`, `rpc_endpoint_overall_health` — instant only (gauges; no window param). Lags are reported in SECONDS as well as blocks. ⚠ `smartrouter_latest_block` advances on accepted tip observations, NOT every poll, so it trails the endpoint gauge by ~one refresh interval by construction — on a fast chain that is thousands of blocks and still healthy. The UI judges a router against its own measured `refreshSec`, never a fixed seconds threshold; the endpoint gauge is the one to read for a live tip. |
 | `/api/metrics/rps` | `sum(rate(smartrouter_requests_total{spec?}[step]))` via `query_range` |
 | `/api/metrics/traffic` | aggregate + per-spec `rate` series; per-chain totals + shares from `qRequestsTotal` |
 | `/api/metrics/methods` | `qRequestsBy("method")`; read-set from `sum by (method) (increase(requests_read_total[$w]))`; `qErrorsBy("method")`; class totals + `qPresence` probes for write/batch |

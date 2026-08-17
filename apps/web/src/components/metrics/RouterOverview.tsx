@@ -9,18 +9,20 @@
  * design's initial order (down chains first, then by volume). */
 
 import { Fragment } from "react";
-import { buildChainMetaByIndex, type ChainMetrics, type MetricWindow, type RouterTopology } from "@sr/shared";
+import { buildChainMetaByIndex, type BlockHeights, type ChainMetrics, type ChainTips, type MetricWindow, type RouterTopology } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { Tip } from "@/components/gateway/Tip";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { ThCol, useSort } from "@/components/gateway/SortTable";
 import { TT } from "@/lib/tooltips";
-import { fmtNum } from "@/lib/format";
-import { uptimeColor } from "@/lib/colors";
+import { fmtComma, fmtLag, fmtNum } from "@/lib/format";
+import { routerTipColor, uptimeColor } from "@/lib/colors";
 import { healthColor, healthLabel } from "@/lib/health";
 import { ChainDetail, type ChainDetailRow } from "./ChainDetail";
 import { useState } from "react";
 import { useFilters } from "@/components/gateway/FiltersProvider";
+
+const BLOCK_TIP = "**The head this router serves** — `smartrouter_latest_block`, the tip it has accepted, per api interface (the number shown is the furthest-ahead interface).\n\nThe sub-line is how far that sits behind the best upstream on the chain, **in seconds**: blocks behind ÷ the chain's own block rate. Seconds are the only unit comparable across chains — the same block count is a moment on Aptos and a century on Bitcoin.\n\nThe router gauge only advances on accepted tip observations, so it trails by about one **refresh** interval however healthy the router is. The colour is judged against that measured cadence — grey within 2×, amber to 4×, red beyond — not against the wall clock.";
 
 const ROUTER_SR_TIP = "**Chain-level availability** — successful requests ÷ total, **rolled up across every upstream** on the chain (what your apps actually got).\n\nSame definition as per-upstream Availability in the Upstreams tab.";
 
@@ -42,6 +44,14 @@ interface RoRow {
   qosVal: number | null;
   reqCount: number;
   statusKind: RoStatus;
+  /** Furthest-ahead router tip across this chain's interfaces. */
+  tipBlock: number | null;
+  /** Worst per-interface lag behind the best upstream, in seconds. */
+  tipBehindSec: number | null;
+  /** Interfaces this chain's router serves (>1 ⇒ the tips can disagree). */
+  tipIfaceCount: number;
+  /** Observed refresh cadence of the worst interface's gauge, in seconds. */
+  tipRefreshSec: number | null;
   detail: ChainDetailRow;
   /* flat sort accessors (design SORT_VAL semantics) */
   natural: number;
@@ -53,6 +63,7 @@ interface RoRow {
   err: number;
   qos: number;
   status: number;
+  block: number;
 }
 
 const STATUS_RANK: Record<RoStatus, number> = { down: 0, up: 1, unknown: 2 };
@@ -64,9 +75,14 @@ export function RouterOverview({ onChainClick, chainFilter, timeWindow }: {
 }) {
   const [net, setNet] = useState("all");
   const [open, setOpen] = useState<string | null>(null);
-  const { scopeQ } = useFilters();
+  const { scopeQ, withScope } = useFilters();
   const { data } = useApi<{ chains: ChainMetrics[] }>(`/api/metrics/chains?window=${timeWindow}${scopeQ}`);
   const topo = useApi<{ routers: RouterTopology[] }>("/api/config/routers", 60000);
+  // Instant gauges — no window in the key; polled on the default cadence.
+  const tips = useApi<BlockHeights>(withScope("/api/metrics/block-heights"));
+  const tipBySpec = new Map<string, ChainTips>(
+    (tips.data?.chains ?? []).map((c) => [c.spec, c]),
+  );
 
   const base: RoRow[] = (data?.chains ?? []).map((c) => {
     const t = (topo.data?.routers ?? []).find((r) => r.spec === c.spec);
@@ -74,6 +90,18 @@ export function RouterOverview({ onChainClick, chainFilter, timeWindow }: {
     const nBackup = t ? t.nodes.filter((n) => n.isBackup).length : null;
     const primaryName = t ? ((t.nodes.find((n) => !n.isBackup) ?? t.nodes[0])?.name ?? null) : null;
     const statusKind: RoStatus = c.health === "unhealthy" ? "down" : c.health === "operational" ? "up" : "unknown";
+    // The router's own tips, one per interface. The number leads with the
+    // furthest-ahead interface; the lag leads with the WORST, so a single
+    // lagging interface can't hide behind a healthy sibling.
+    const tip = tipBySpec.get(c.spec);
+    const ifaceTips = tip?.routers ?? [];
+    const tipBlock = ifaceTips.reduce<number | null>(
+      (max, t) => (t.block !== null && (max === null || t.block > max) ? t.block : max), null);
+    const worstTip = ifaceTips.reduce<(typeof ifaceTips)[number] | null>(
+      (worst, t) =>
+        t.behindSec !== null && (worst === null || t.behindSec > (worst.behindSec ?? -1)) ? t : worst,
+      null);
+    const tipBehindSec = worstTip?.behindSec ?? null;
     const availPct = c.availability != null ? c.availability * 100 : null;
     const errPct = c.errorRate != null ? c.errorRate * 100 : null;
     const qosVal = c.qos != null ? c.qos * 100 : null;
@@ -83,6 +111,8 @@ export function RouterOverview({ onChainClick, chainFilter, timeWindow }: {
       provCount: c.upstreamCount, nPrimary, nBackup, primaryName,
       otherCount: Math.max(0, c.upstreamCount - 1),
       availPct, p95Ms: c.p95Ms, errPct, qosVal, reqCount: c.requests, statusKind,
+      tipBlock: tipBlock ?? c.latestBlock, tipBehindSec, tipIfaceCount: ifaceTips.length,
+      tipRefreshSec: worstTip?.refreshSec ?? null,
       detail: { spec: c.spec, availPct, p95Ms: c.p95Ms, errPct, qos: qosVal, requests: c.requests, hasBackup: (nBackup ?? 0) > 0 },
       natural: 0,
       router: c.name.toLowerCase(),
@@ -93,6 +123,7 @@ export function RouterOverview({ onChainClick, chainFilter, timeWindow }: {
       err: errPct ?? -1,
       qos: qosVal ?? -1,
       status: STATUS_RANK[statusKind],
+      block: tipBehindSec ?? -1,
     };
   })
     .sort((a, b) => (a.status - b.status) || (b.requests - a.requests))
@@ -137,6 +168,7 @@ export function RouterOverview({ onChainClick, chainFilter, timeWindow }: {
           <tr>
             <ThCol sortKey="router" sort={sort} onSort={onSort}>Router</ThCol>
             <ThCol align="right" sortKey="upstreams" sort={sort} onSort={onSort}>Upstreams</ThCol>
+            <ThCol align="right" tip={BLOCK_TIP} sortKey="block" sort={sort} onSort={onSort}>Latest block</ThCol>
             <ThCol align="right" sortKey="requests" sort={sort} onSort={onSort}>Requests · {timeWindow}</ThCol>
             <ThCol align="right" tip={ROUTER_SR_TIP} sortKey="avail" sort={sort} onSort={onSort}>Availability</ThCol>
             <ThCol align="right" tip={TT.p95} sortKey="p95" sort={sort} onSort={onSort}>P95</ThCol>
@@ -174,6 +206,20 @@ export function RouterOverview({ onChainClick, chainFilter, timeWindow }: {
                     {r.nPrimary != null && <span style={{ fontSize: 10, color: "var(--text-4)" }}>{r.nPrimary}P{r.nBackup ? " · " + r.nBackup + "B" : ""}</span>}
                   </div>
                 </td>
+                <td style={{ textAlign: "right" }}>
+                  {r.tipBlock != null ? (
+                    <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-end" }}>
+                      <span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{fmtComma(r.tipBlock)}</span>
+                      {r.tipBehindSec != null && (
+                        <span className="gw-tnum" style={{ fontSize: 10, color: routerTipColor(r.tipBehindSec, r.tipRefreshSec) }}>
+                          {r.tipBehindSec < 1 ? "in sync" : fmtLag(r.tipBehindSec) + " behind"}
+                          {r.tipRefreshSec != null ? ` · refresh ${fmtLag(r.tipRefreshSec)}` : ""}
+                          {r.tipIfaceCount > 1 ? ` · ${r.tipIfaceCount} ifaces` : ""}
+                        </span>
+                      )}
+                    </div>
+                  ) : <span style={{ fontSize: 12, color: "var(--text-4)" }}>—</span>}
+                </td>
                 <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{fmtNum(r.reqCount)}</span></td>
                 <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 13, fontWeight: 700, color: srColor(r.availPct) }}>{r.availPct != null ? r.availPct.toFixed(2) + "%" : "—"}</span></td>
                 <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{r.p95Ms != null ? Math.round(r.p95Ms) + " ms" : "—"}</span></td>
@@ -192,7 +238,7 @@ export function RouterOverview({ onChainClick, chainFilter, timeWindow }: {
             );
           })}
           {data && sortedRouters.length === 0 && (
-            <tr><td colSpan={8} style={{ padding: "24px 16px", textAlign: "center", color: "var(--text-4)", fontSize: 13 }}>No routers match this filter.</td></tr>
+            <tr><td colSpan={9} style={{ padding: "24px 16px", textAlign: "center", color: "var(--text-4)", fontSize: 13 }}>No routers match this filter.</td></tr>
           )}
         </tbody>
       </table>

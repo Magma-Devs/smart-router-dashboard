@@ -24,6 +24,12 @@ import {
   qUpstreamReadVolumeSeriesExpr,
   qUpstreamErrorRate,
   qBlockLagByEndpoint,
+  qBestTipBySpec,
+  qBlockRateBySpec,
+  qRouterTipChanges,
+  qRouterTips,
+  qTipChanges,
+  qUpstreamTips,
   qEndpointBlockLagSeriesExpr,
   qChainDown,
   qScoreExpr,
@@ -396,5 +402,48 @@ describe("health / lag / score / gauge builders", () => {
     expect(qPresence("smartrouter_retries_total")).toBe(
       'count({__name__="smartrouter_retries_total"})',
     );
+  });
+});
+
+describe("block tips", () => {
+  it("block rate reads the per-endpoint gauge, not the coarse router one", () => {
+    expect(qBlockRateBySpec()).toBe(
+      "max by (spec) (deriv(rpc_endpoint_latest_block[15m]))",
+    );
+    expect(qBlockRateBySpec("ETH1")).toContain('rpc_endpoint_latest_block{spec="ETH1"}');
+  });
+
+  it("best tip is the chain's highest upstream block", () => {
+    expect(qBestTipBySpec()).toBe("max by (spec) (rpc_endpoint_latest_block)");
+  });
+
+  it("router tips split by the scope label AND the interface", () => {
+    expect(qRouterTips("service")).toBe(
+      "max by (service, spec, apiInterface) (smartrouter_latest_block)",
+    );
+  });
+
+  it("router tips degrade to the interface split when the label is unusable", () => {
+    // An injected label must never produce a query Prometheus rejects.
+    expect(qRouterTips("bad-label!")).toBe(
+      "max by (spec, apiInterface) (smartrouter_latest_block)",
+    );
+    expect(qRouterTips()).toBe("max by (spec, apiInterface) (smartrouter_latest_block)");
+  });
+
+  it("upstream tips keep the interface split a per-endpoint roll-up loses", () => {
+    expect(qUpstreamTips()).toBe(
+      "max by (spec, endpoint_id, apiInterface) (rpc_endpoint_latest_block)",
+    );
+  });
+
+  it("router refresh cadence comes from the router gauge's own changes", () => {
+    expect(qRouterTipChanges("service")).toBe(
+      "max by (service, spec, apiInterface) (changes(smartrouter_latest_block[15m]))",
+    );
+  });
+
+  it("tip changes count over the staleness window", () => {
+    expect(qTipChanges()).toBe("changes(rpc_endpoint_latest_block[15m])");
   });
 });

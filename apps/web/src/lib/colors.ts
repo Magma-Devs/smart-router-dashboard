@@ -36,3 +36,42 @@ export function uptimeColor(pct: number | null): string {
 export function uptimeColorFrac(frac: number | null): string {
   return uptimeColor(frac === null ? null : frac * 100);
 }
+
+/* ── Tip freshness thresholds ───────────────────────────────────────────────
+   How far behind the chain's best upstream a tip may fall before it reads as a
+   problem. Measured in SECONDS, deliberately: a block count means nothing
+   across chains (Aptos moves ~28 versions/sec, Ethereum ~0.08 blocks/sec), so
+   the same "500 blocks behind" is 18 seconds on one and 100 days on the other.
+     green  < 30s   — within a block or two on any chain
+     amber  < 120s
+     red    ≥ 120s                                                            */
+export const TIP_LAG_OK_SEC = 30;
+export const TIP_LAG_WARN_SEC = 120;
+
+/** CSS colour var for a tip lag in seconds (null ⇒ unknown, not healthy). */
+export function tipLagColor(sec: number | null): string {
+  if (sec === null) return "var(--text-4)";
+  if (sec < TIP_LAG_OK_SEC) return "var(--text-3)";
+  if (sec < TIP_LAG_WARN_SEC) return "var(--warn)";
+  return "var(--err)";
+}
+
+/**
+ * Colour for a ROUTER tip lag, judged against that gauge's own refresh cadence
+ * rather than the wall clock.
+ *
+ * `smartrouter_latest_block` only advances on accepted tip observations, so it
+ * trails the upstream gauge by about one refresh interval no matter how healthy
+ * the router is — a fixed threshold paints every row amber and teaches people
+ * to ignore the column. Judging it in MULTIPLES of the observed cadence asks
+ * the real question: is this router further behind than its own update rate
+ * explains? Falls back to the absolute scale when the cadence is unknown.
+ */
+export function routerTipColor(behindSec: number | null, refreshSec: number | null): string {
+  if (behindSec === null) return "var(--text-4)";
+  if (refreshSec === null || refreshSec <= 0) return tipLagColor(behindSec);
+  const multiples = behindSec / refreshSec;
+  if (multiples <= 2) return "var(--text-3)";
+  if (multiples <= 4) return "var(--warn)";
+  return "var(--err)";
+}
