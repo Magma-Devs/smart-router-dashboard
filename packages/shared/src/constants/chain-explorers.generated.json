@@ -1,0 +1,2549 @@
+{
+  "0G": [
+    {
+      "name": "0G Chainscan",
+      "url": "https://chainscan.0g.ai",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#16661"
+    }
+  ],
+  "0GT": [
+    {
+      "name": "0G Chainscan",
+      "url": "https://chainscan-galileo.0g.ai",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#16602"
+    }
+  ],
+  "AGR": [
+    {
+      "name": "explorers.guru",
+      "url": "https://agoric.explorers.guru",
+      "kind": "custom",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/agoric",
+      "tpl": {
+        "tx": "https://agoric.explorers.guru/transaction/{tx}",
+        "address": "https://agoric.explorers.guru/account/{address}"
+      }
+    },
+    {
+      "name": "staking-explorer.com",
+      "url": "https://staking-explorer.com/explorer/agoric",
+      "kind": "custom",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/agoric",
+      "tpl": {
+        "tx": "https://staking-explorer.com/transaction.php?chain=agoric&tx={tx}",
+        "address": "https://staking-explorer.com/account.php?chain=agoric&addr={address}"
+      }
+    }
+  ],
+  "AKASH": [
+    {
+      "name": "mintscan",
+      "url": "https://www.mintscan.io/akash",
+      "kind": "blocks-transactions-accounts",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/akash"
+    },
+    {
+      "name": "ezstaking",
+      "url": "https://ezstaking.app/akash",
+      "kind": "custom",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/akash",
+      "tpl": {
+        "tx": "https://ezstaking.app/akash/txs/{tx}",
+        "address": "https://ezstaking.app/akash/account/{address}"
+      }
+    }
+  ],
+  "AKASHT": [
+    {
+      "name": "ping.pub",
+      "url": "https://explorer.sandbox-2.aksh.pw/akash",
+      "kind": "eip3091",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/testnets/akashtestnet"
+    }
+  ],
+  "ALEO": [
+    {
+      "name": "Aleoscan",
+      "url": "https://aleoscan.io",
+      "kind": "home",
+      "verified": "unverified — bot challenge (HTTP 403) from the build network",
+      "source": "curated"
+    }
+  ],
+  "ALFAJORES": [
+    {
+      "name": "Alfajoresscan",
+      "url": "https://alfajores.celoscan.io",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#44787"
+    }
+  ],
+  "ALGORAND": [
+    {
+      "name": "Allo",
+      "url": "https://allo.info",
+      "kind": "block-tx-account",
+      "verified": "browser 2026-08-17 — block page watched rendering the requested height",
+      "source": "curated"
+    }
+  ],
+  "ALGORANDT": [
+    {
+      "name": "Lora",
+      "url": "https://lora.algokit.io/testnet",
+      "kind": "eip3091",
+      "verified": "browser 2026-08-17 — block page watched rendering the requested height",
+      "source": "curated — testnet.allo.info does not resolve"
+    }
+  ],
+  "APT1": [
+    {
+      "name": "Aptos Explorer",
+      "url": "https://explorer.aptoslabs.com",
+      "kind": "block-txn-account",
+      "suffix": "?network=mainnet",
+      "verified": "browser 2026-08-17 — block page watched rendering the requested height",
+      "source": "curated"
+    }
+  ],
+  "APTOST": [
+    {
+      "name": "Aptos Explorer",
+      "url": "https://explorer.aptoslabs.com",
+      "kind": "block-txn-account",
+      "suffix": "?network=testnet",
+      "verified": "browser 2026-08-17 — block page watched rendering the requested height (mainnet network; the suffix selects the network)",
+      "source": "curated"
+    }
+  ],
+  "ARBITRUM": [
+    {
+      "name": "Arbiscan",
+      "url": "https://arbiscan.io",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#42161"
+    },
+    {
+      "name": "Arbitrum Explorer",
+      "url": "https://explorer.arbitrum.io",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#42161"
+    }
+  ],
+  "ARBITRUMN": [
+    {
+      "name": "Arbitrum Nova Chain Explorer",
+      "url": "https://nova-explorer.arbitrum.io",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#42170"
+    }
+  ],
+  "ARBITRUMS": [
+    {
+      "name": "arbiscan-sepolia",
+      "url": "https://sepolia.arbiscan.io",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#421614"
+    },
+    {
+      "name": "Arbitrum Sepolia Rollup Testnet Explorer",
+      "url": "https://sepolia-explorer.arbitrum.io",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#421614"
+    }
+  ],
+  "ARWEAVE": [
+    {
+      "name": "ViewBlock",
+      "url": "https://viewblock.io/arweave",
+      "kind": "eip3091",
+      "verified": "unverified — home reachable, deep-link shape not watched",
+      "source": "curated"
+    }
+  ],
+  "ASTAR": [
+    {
+      "name": "subscan",
+      "url": "https://astar.subscan.io",
+      "kind": "home",
+      "verified": "registry — the chainlist row declares no url standard, so only the home page is offered",
+      "source": "ethereum-lists/chains#592"
+    },
+    {
+      "name": "blockscout",
+      "url": "https://blockscout.com/astar",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#592"
+    }
+  ],
+  "ASTART": [
+    {
+      "name": "Blockscout",
+      "url": "https://shibuya.blockscout.com",
+      "kind": "eip3091",
+      "verified": "browser 2026-08-17 — block page watched rendering the requested height",
+      "source": "curated — chainlist's row for this chain id is a DIFFERENT chain (Japan Open Chain also claims 81)"
+    }
+  ],
+  "AVALANCHEC": [
+    {
+      "name": "Etherscan",
+      "url": "https://snowscan.xyz",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#43114"
+    },
+    {
+      "name": "Routescan",
+      "url": "https://snowtrace.io",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#43114"
+    }
+  ],
+  "AVALANCHECT": [
+    {
+      "name": "Etherscan",
+      "url": "https://testnet.snowscan.xyz",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#43113"
+    },
+    {
+      "name": "Routescan",
+      "url": "https://testnet.snowtrace.io",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#43113"
+    }
+  ],
+  "AVALANCHEP": [
+    {
+      "name": "Avalanche Subnets",
+      "url": "https://subnets.avax.network/p-chain",
+      "kind": "home",
+      "verified": "home probed 2026-08-17",
+      "source": "curated"
+    }
+  ],
+  "AVALANCHEPT": [
+    {
+      "name": "Avalanche Subnets",
+      "url": "https://subnets-test.avax.network/p-chain",
+      "kind": "home",
+      "verified": "home probed 2026-08-17",
+      "source": "curated"
+    }
+  ],
+  "AVAX": [
+    {
+      "name": "Etherscan",
+      "url": "https://snowscan.xyz",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#43114"
+    },
+    {
+      "name": "Routescan",
+      "url": "https://snowtrace.io",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#43114"
+    }
+  ],
+  "AVAXT": [
+    {
+      "name": "Etherscan",
+      "url": "https://testnet.snowscan.xyz",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#43113"
+    },
+    {
+      "name": "Routescan",
+      "url": "https://testnet.snowtrace.io",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#43113"
+    }
+  ],
+  "AXELAR": [
+    {
+      "name": "mintscan",
+      "url": "https://www.mintscan.io/axelar",
+      "kind": "blocks-transactions-accounts",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/axelar"
+    },
+    {
+      "name": "axelarscan",
+      "url": "https://axelarscan.io",
+      "kind": "eip3091",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/axelar"
+    }
+  ],
+  "AXELART": [
+    {
+      "name": "mintscan",
+      "url": "https://mintscan.io/axelar-testnet",
+      "kind": "custom",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/testnets/axelartestnet",
+      "tpl": {
+        "tx": "https://mintscan.io/axelar-testnet/txs/{tx}",
+        "address": "https://mintscan.io/axelar-testnet/account/{address}"
+      }
+    },
+    {
+      "name": "axelarscan",
+      "url": "https://testnet.axelarscan.io",
+      "kind": "eip3091",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/testnets/axelartestnet"
+    }
+  ],
+  "BABYLON": [
+    {
+      "name": "mintscan",
+      "url": "https://www.mintscan.io/babylon",
+      "kind": "blocks-transactions-accounts",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/babylon"
+    },
+    {
+      "name": "Nodes Guru",
+      "url": "https://babylon.explorers.guru",
+      "kind": "custom",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/babylon",
+      "tpl": {
+        "tx": "https://babylon.explorers.guru/transaction/{tx}",
+        "address": "https://babylon.explorers.guru/account/{address}"
+      }
+    }
+  ],
+  "BASE": [
+    {
+      "name": "basescan",
+      "url": "https://basescan.org",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#8453"
+    },
+    {
+      "name": "basescout",
+      "url": "https://base.blockscout.com",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#8453"
+    }
+  ],
+  "BASES": [
+    {
+      "name": "basescan-sepolia",
+      "url": "https://sepolia.basescan.org",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#84532"
+    },
+    {
+      "name": "basescout",
+      "url": "https://base-sepolia.blockscout.com",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#84532"
+    }
+  ],
+  "BCH": [
+    {
+      "name": "Blockchair",
+      "url": "https://blockchair.com/bitcoin-cash",
+      "kind": "home",
+      "verified": "unverified — bot challenge (HTTP 401) from the build network",
+      "source": "curated — blockchair is unreachable from the build network, so only its home page is offered"
+    }
+  ],
+  "BERA": [
+    {
+      "name": "Berascan",
+      "url": "https://berascan.com",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#80094"
+    },
+    {
+      "name": "Beratrail",
+      "url": "https://beratrail.io",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#80094"
+    }
+  ],
+  "BERAB": [
+    {
+      "name": "Beratrail",
+      "url": "https://bepolia.beratrail.io",
+      "kind": "home",
+      "verified": "registry — the chainlist row declares no url standard, so only the home page is offered",
+      "source": "ethereum-lists/chains#80069"
+    }
+  ],
+  "BERAT": [
+    {
+      "name": "Beratrail",
+      "url": "https://bartio.beratrail.io",
+      "kind": "home",
+      "verified": "registry — the chainlist row declares no url standard, so only the home page is offered",
+      "source": "ethereum-lists/chains#80084"
+    }
+  ],
+  "BERAT2": [
+    {
+      "name": "Beratrail",
+      "url": "https://bartio.beratrail.io",
+      "kind": "home",
+      "verified": "registry — the chainlist row declares no url standard, so only the home page is offered",
+      "source": "ethereum-lists/chains#80084"
+    }
+  ],
+  "BITTENSOR": [
+    {
+      "name": "Taostats",
+      "url": "https://evm.taostats.io",
+      "kind": "home",
+      "verified": "home probed 2026-08-17",
+      "source": "curated"
+    }
+  ],
+  "BLAST": [
+    {
+      "name": "Blastscan",
+      "url": "https://blastscan.io",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#81457"
+    },
+    {
+      "name": "Blast Explorer",
+      "url": "https://blastexplorer.io",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#81457"
+    }
+  ],
+  "BLASTSP": [
+    {
+      "name": "Blast Sepolia Explorer",
+      "url": "https://testnet.blastscan.io",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#168587773"
+    }
+  ],
+  "BOB": [
+    {
+      "name": "bobscout",
+      "url": "https://explorer.gobob.xyz",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#60808"
+    }
+  ],
+  "BOBT": [
+    {
+      "name": "bobscout",
+      "url": "https://bob-sepolia.explorer.gobob.xyz",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#808813"
+    }
+  ],
+  "BSC": [
+    {
+      "name": "bscscan",
+      "url": "https://bscscan.com",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#56"
+    }
+  ],
+  "BSCT": [
+    {
+      "name": "bscscan-testnet",
+      "url": "https://testnet.bscscan.com",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#97"
+    }
+  ],
+  "BTC": [
+    {
+      "name": "mempool.space",
+      "url": "https://mempool.space",
+      "kind": "eip3091",
+      "verified": "browser 2026-08-17 — block page watched rendering the requested height",
+      "source": "curated"
+    }
+  ],
+  "BTCS": [
+    {
+      "name": "mempool.space",
+      "url": "https://mempool.space/signet",
+      "kind": "eip3091",
+      "verified": "browser 2026-08-17 — same site and path shape as the verified BTC entry",
+      "source": "curated"
+    }
+  ],
+  "BTCT": [
+    {
+      "name": "mempool.space",
+      "url": "https://mempool.space/testnet",
+      "kind": "eip3091",
+      "verified": "browser 2026-08-17 — same site and path shape as the verified BTC entry",
+      "source": "curated"
+    }
+  ],
+  "BTCT4": [
+    {
+      "name": "mempool.space",
+      "url": "https://mempool.space/testnet4",
+      "kind": "eip3091",
+      "verified": "browser 2026-08-17 — same site and path shape as the verified BTC entry",
+      "source": "curated"
+    }
+  ],
+  "CANTO": [
+    {
+      "name": "ping.pub",
+      "url": "https://cosmos-explorers.neobase.one/canto",
+      "kind": "eip3091",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/canto"
+    },
+    {
+      "name": "staking-explorer.com",
+      "url": "https://staking-explorer.com/explorer/canto",
+      "kind": "custom",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/canto",
+      "tpl": {
+        "tx": "https://staking-explorer.com/transaction.php?chain=canto&tx={tx}",
+        "address": "https://staking-explorer.com/account.php?chain=canto&addr={address}"
+      }
+    }
+  ],
+  "CARDANO": [
+    {
+      "name": "Cardanoscan",
+      "url": "https://cardanoscan.io",
+      "kind": "block-transaction-address",
+      "verified": "unverified — bot challenge (HTTP 403) from the build network",
+      "source": "curated"
+    }
+  ],
+  "CARDANOT": [
+    {
+      "name": "Cardanoscan",
+      "url": "https://preprod.cardanoscan.io",
+      "kind": "block-transaction-address",
+      "verified": "unverified — bot challenge (HTTP 403) from the build network",
+      "source": "curated"
+    }
+  ],
+  "CASPER": [
+    {
+      "name": "cspr.live",
+      "url": "https://cspr.live",
+      "kind": "home",
+      "verified": "home probed 2026-08-17",
+      "source": "curated — the block page is addressed by hash"
+    }
+  ],
+  "CASPERT": [
+    {
+      "name": "cspr.live",
+      "url": "https://testnet.cspr.live",
+      "kind": "home",
+      "verified": "home probed 2026-08-17",
+      "source": "curated"
+    }
+  ],
+  "CELESTIA": [
+    {
+      "name": "Nodes.Guru",
+      "url": "https://celestia.explorers.guru",
+      "kind": "custom",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/celestia",
+      "tpl": {
+        "tx": "https://celestia.explorers.guru/transaction/{tx}",
+        "address": "https://celestia.explorers.guru/account/{address}"
+      }
+    },
+    {
+      "name": "CelestiaHub [Noders]",
+      "url": "https://celestiahub.org/explorer/dashboard",
+      "kind": "custom",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/celestia",
+      "tpl": {
+        "tx": "https://celestiahub.org/explorer/transactions/{tx}",
+        "address": "https://celestiahub.org/explorer/accounts/{address}"
+      }
+    }
+  ],
+  "CELESTIATA": [
+    {
+      "name": "Celenium",
+      "url": "https://arabica.celenium.io",
+      "kind": "eip3091",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/testnets/celestiatestnet2"
+    }
+  ],
+  "CELESTIATM": [
+    {
+      "name": "Mintscan",
+      "url": "https://mintscan.io/celestia-testnet",
+      "kind": "custom",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/testnets/celestiatestnet3",
+      "tpl": {
+        "tx": "https://mintscan.io/celestia-testnet/txs/{tx}"
+      }
+    },
+    {
+      "name": "itrocket",
+      "url": "https://testnet.itrocket.net/celestia",
+      "kind": "block-tx-account",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/testnets/celestiatestnet3"
+    }
+  ],
+  "CELO": [
+    {
+      "name": "Celoscan",
+      "url": "https://celoscan.io",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#42220"
+    },
+    {
+      "name": "blockscout",
+      "url": "https://celo.blockscout.com",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#42220"
+    }
+  ],
+  "CODEX": [
+    {
+      "name": "Codex Explorer",
+      "url": "https://explorer.codex.xyz",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#81224"
+    }
+  ],
+  "CODEXT": [
+    {
+      "name": "Codex Testnet Explorer",
+      "url": "https://explorer.codex-stg.xyz",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#812242"
+    }
+  ],
+  "CONCORDIUM": [
+    {
+      "name": "CCDExplorer",
+      "url": "https://ccdexplorer.io",
+      "kind": "home",
+      "verified": "home probed 2026-08-17",
+      "source": "curated"
+    }
+  ],
+  "CONCORDIUMT": [
+    {
+      "name": "CCDExplorer",
+      "url": "https://testnet.ccdexplorer.io",
+      "kind": "home",
+      "verified": "unverified — HTTP ERR from the build network",
+      "source": "curated"
+    }
+  ],
+  "COSMOSHUB": [
+    {
+      "name": "mintscan",
+      "url": "https://www.mintscan.io/cosmos",
+      "kind": "blocks-transactions-accounts",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/cosmoshub"
+    },
+    {
+      "name": "ezstaking",
+      "url": "https://ezstaking.app/cosmoshub",
+      "kind": "custom",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/cosmoshub",
+      "tpl": {
+        "block": "https://ezstaking.app/cosmoshub/blocks/{block}",
+        "tx": "https://ezstaking.app/cosmoshub/txs/{tx}",
+        "address": "https://ezstaking.app/cosmoshub/account/{address}"
+      }
+    }
+  ],
+  "COSMOSHUBT": [
+    {
+      "name": "Mintscan",
+      "url": "https://mintscan.io/ics-testnet-provider",
+      "kind": "eip3091",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/testnets/cosmosicsprovidertestnet"
+    },
+    {
+      "name": "Ping.pub",
+      "url": "https://explorer.polypore.xyz/provider",
+      "kind": "eip3091",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/testnets/cosmosicsprovidertestnet"
+    }
+  ],
+  "CRONOS": [
+    {
+      "name": "Cronos Explorer",
+      "url": "https://explorer.cronos.org",
+      "kind": "home",
+      "verified": "registry — the chainlist row declares no url standard, so only the home page is offered",
+      "source": "ethereum-lists/chains#25"
+    }
+  ],
+  "CRONOST": [
+    {
+      "name": "Cronos Testnet Explorer",
+      "url": "https://explorer.cronos.org/testnet",
+      "kind": "home",
+      "verified": "registry — the chainlist row declares no url standard, so only the home page is offered",
+      "source": "ethereum-lists/chains#338"
+    }
+  ],
+  "DASH": [
+    {
+      "name": "Blockchair",
+      "url": "https://blockchair.com/dash",
+      "kind": "home",
+      "verified": "unverified — HTTP ERR from the build network",
+      "source": "curated — blockchair is unreachable from the build network, so only its home page is offered"
+    }
+  ],
+  "DOGE": [
+    {
+      "name": "Blockchair",
+      "url": "https://blockchair.com/dogecoin",
+      "kind": "home",
+      "verified": "unverified — HTTP ERR from the build network",
+      "source": "curated — blockchair is unreachable from the build network, so only its home page is offered"
+    }
+  ],
+  "DYDX": [
+    {
+      "name": "mintscan",
+      "url": "https://www.mintscan.io/dydx",
+      "kind": "custom",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/dydx",
+      "tpl": {
+        "tx": "https://www.mintscan.io/dydx/txs/{tx}",
+        "address": "https://www.mintscan.io/dydx/account/{address}"
+      }
+    },
+    {
+      "name": "staking-explorer.com",
+      "url": "https://staking-explorer.com/explorer/dydx",
+      "kind": "custom",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/dydx",
+      "tpl": {
+        "tx": "https://staking-explorer.com/transaction.php?chain=dydx&tx={tx}",
+        "address": "https://staking-explorer.com/account.php?chain=dydx&addr={address}"
+      }
+    }
+  ],
+  "DYDXT": [
+    {
+      "name": "mintscan",
+      "url": "https://www.mintscan.io/dydx-testnet",
+      "kind": "custom",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/testnets/dydxtestnet",
+      "tpl": {
+        "tx": "https://www.mintscan.io/dydx-testnet/txs/{tx}",
+        "address": "https://www.mintscan.io/dydx-testnet/account/{address}"
+      }
+    },
+    {
+      "name": "Valopers",
+      "url": "https://testnet.dydx.valopers.com",
+      "kind": "custom",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/testnets/dydxtestnet",
+      "tpl": {
+        "tx": "https://testnet.dydx.valopers.com/transactions/{tx}",
+        "address": "https://testnet.dydx.valopers.com/account/{address}"
+      }
+    }
+  ],
+  "ENJIN": [
+    {
+      "name": "Subscan",
+      "url": "https://enjin.subscan.io",
+      "kind": "block-extrinsic-account",
+      "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
+      "source": "curated — Subscan runs one deployment per network on a shared codebase"
+    }
+  ],
+  "ENJINT": [
+    {
+      "name": "Subscan",
+      "url": "https://canary-matrix.subscan.io",
+      "kind": "block-extrinsic-account",
+      "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
+      "source": "curated — Subscan runs one deployment per network on a shared codebase"
+    }
+  ],
+  "ETC": [
+    {
+      "name": "blockscout-ethereum-classic",
+      "url": "https://etc.blockscout.com",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#61"
+    },
+    {
+      "name": "etcnetworkinfo-blockscout-ethereum-classic",
+      "url": "https://explorer-blockscout.etc-network.info",
+      "kind": "home",
+      "verified": "registry — the chainlist row declares no url standard, so only the home page is offered",
+      "source": "ethereum-lists/chains#61"
+    }
+  ],
+  "ETCT": [
+    {
+      "name": "blockscout-mordor",
+      "url": "https://etc-mordor.blockscout.com",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#63"
+    },
+    {
+      "name": "etcnetworkinfo-expedition-mordor",
+      "url": "https://explorer-expedition.etc-network.info/?network=Ethereum+Classic+at+etc-network.info+GETH+Mordor",
+      "kind": "home",
+      "verified": "registry — the chainlist row declares no url standard, so only the home page is offered",
+      "source": "ethereum-lists/chains#63"
+    }
+  ],
+  "ETH1": [
+    {
+      "name": "etherscan",
+      "url": "https://etherscan.io",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#1"
+    },
+    {
+      "name": "blockscout",
+      "url": "https://eth.blockscout.com",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#1"
+    }
+  ],
+  "ETHBEACON": [
+    {
+      "name": "beaconcha.in",
+      "url": "https://beaconcha.in",
+      "kind": "custom",
+      "tpl": {
+        "block": "https://beaconcha.in/slot/{block}"
+      },
+      "verified": "unverified — bot challenge (HTTP 403) from the build network",
+      "source": "curated — the consensus layer is addressed by SLOT, which is what the router reports as this spec's latest block"
+    }
+  ],
+  "ETHBEACONHOL": [
+    {
+      "name": "beaconcha.in",
+      "url": "https://holesky.beaconcha.in",
+      "kind": "custom",
+      "tpl": {
+        "block": "https://holesky.beaconcha.in/slot/{block}"
+      },
+      "verified": "unverified — HTTP ERR from the build network",
+      "source": "curated — the consensus layer is addressed by SLOT, which is what the router reports as this spec's latest block"
+    }
+  ],
+  "ETHBEACONHOODI": [
+    {
+      "name": "beaconcha.in",
+      "url": "https://hoodi.beaconcha.in",
+      "kind": "custom",
+      "tpl": {
+        "block": "https://hoodi.beaconcha.in/slot/{block}"
+      },
+      "verified": "unverified — home reachable, deep-link shape not watched",
+      "source": "curated — the consensus layer is addressed by SLOT, which is what the router reports as this spec's latest block"
+    }
+  ],
+  "ETHBEACONSEP": [
+    {
+      "name": "beaconcha.in",
+      "url": "https://sepolia.beaconcha.in",
+      "kind": "custom",
+      "tpl": {
+        "block": "https://sepolia.beaconcha.in/slot/{block}"
+      },
+      "verified": "unverified — home reachable, deep-link shape not watched",
+      "source": "curated — the consensus layer is addressed by SLOT, which is what the router reports as this spec's latest block"
+    }
+  ],
+  "ETHEREUMPOW": [
+    {
+      "name": "OKLink",
+      "url": "https://www.oklink.com/ethw",
+      "kind": "home",
+      "verified": "home probed 2026-08-17",
+      "source": "curated — chainlist's row for this chain id is a DIFFERENT chain (Smart Bitcoin Cash Testnet also claims 10001)"
+    }
+  ],
+  "EVMOS": [
+    {
+      "name": "mintscan",
+      "url": "https://www.mintscan.io/evmos",
+      "kind": "blocks-transactions-accounts",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/evmos"
+    },
+    {
+      "name": "ezstaking",
+      "url": "https://ezstaking.app/evmos",
+      "kind": "custom",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/evmos",
+      "tpl": {
+        "tx": "https://ezstaking.app/evmos/txs/{tx}",
+        "address": "https://ezstaking.app/evmos/account/{address}"
+      }
+    }
+  ],
+  "EVMOST": [
+    {
+      "name": "Mintscan",
+      "url": "https://mintscan.io/evmos-testnet",
+      "kind": "custom",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/testnets/evmostestnet",
+      "tpl": {
+        "tx": "https://mintscan.io/evmos-testnet/txs/{tx}"
+      }
+    },
+    {
+      "name": "NodesGuru",
+      "url": "https://testnet.evmos.explorers.guru",
+      "kind": "block-transaction-address",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/testnets/evmostestnet"
+    }
+  ],
+  "FETCHAI": [
+    {
+      "name": "mintscan",
+      "url": "https://www.mintscan.io/fetchai",
+      "kind": "blocks-transactions-accounts",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/fetchhub"
+    },
+    {
+      "name": "ezstaking",
+      "url": "https://ezstaking.app/fetchhub",
+      "kind": "custom",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/fetchhub",
+      "tpl": {
+        "tx": "https://ezstaking.app/fetchhub/txs/{tx}",
+        "address": "https://ezstaking.app/fetchhub/account/{address}"
+      }
+    }
+  ],
+  "FETCHAIT": [
+    {
+      "name": "bigdipper",
+      "url": "https://explore-dorado.fetch.ai",
+      "kind": "blocks-transactions-accounts",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/testnets/fetchhubtestnet"
+    },
+    {
+      "name": "azoyalabs",
+      "url": "https://fetchstation.azoyalabs.com/testnet",
+      "kind": "custom",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/testnets/fetchhubtestnet",
+      "tpl": {
+        "tx": "https://fetchstation.azoyalabs.com/testnet/explorer/transactions/{tx}",
+        "address": "https://fetchstation.azoyalabs.com/testnet/explorer/address/{address}"
+      }
+    }
+  ],
+  "FLARE": [
+    {
+      "name": "blockscout",
+      "url": "https://flare-explorer.flare.network",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#14"
+    },
+    {
+      "name": "Routescan",
+      "url": "https://mainnet.flarescan.com",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#14"
+    }
+  ],
+  "FLARET": [
+    {
+      "name": "blockscout",
+      "url": "https://coston2-explorer.flare.network",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#114"
+    },
+    {
+      "name": "Routescan",
+      "url": "https://coston2.testnet.flarescan.com",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#114"
+    }
+  ],
+  "FLOW": [
+    {
+      "name": "FlowScan",
+      "url": "https://evm.flowscan.io",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#747"
+    }
+  ],
+  "FLOWT": [
+    {
+      "name": "FlowScan Testnet",
+      "url": "https://evm-testnet.flowscan.io",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#545"
+    }
+  ],
+  "FTM250": [
+    {
+      "name": "ftmscan",
+      "url": "https://ftmscan.com",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#250"
+    }
+  ],
+  "FTM4002": [
+    {
+      "name": "ftmscan",
+      "url": "https://testnet.ftmscan.com",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#4002"
+    }
+  ],
+  "FUELNETWORK": [
+    {
+      "name": "Fuel Explorer",
+      "url": "https://app.fuel.network",
+      "kind": "home",
+      "verified": "home probed 2026-08-17",
+      "source": "curated"
+    }
+  ],
+  "FUSE": [
+    {
+      "name": "blockscout",
+      "url": "https://explorer.fuse.io",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#122"
+    }
+  ],
+  "FVM": [
+    {
+      "name": "Filfox",
+      "url": "https://filfox.info/en",
+      "kind": "home",
+      "verified": "registry — the chainlist row declares no url standard, so only the home page is offered",
+      "source": "ethereum-lists/chains#314"
+    },
+    {
+      "name": "Beryx",
+      "url": "https://beryx.zondax.ch",
+      "kind": "home",
+      "verified": "registry — the chainlist row declares no url standard, so only the home page is offered",
+      "source": "ethereum-lists/chains#314"
+    }
+  ],
+  "FVMT": [
+    {
+      "name": "Filscan - Calibration",
+      "url": "https://calibration.filscan.io",
+      "kind": "home",
+      "verified": "registry — the chainlist row declares no url standard, so only the home page is offered",
+      "source": "ethereum-lists/chains#314159"
+    },
+    {
+      "name": "Filscout - Calibration",
+      "url": "https://calibration.filscout.com/en",
+      "kind": "home",
+      "verified": "registry — the chainlist row declares no url standard, so only the home page is offered",
+      "source": "ethereum-lists/chains#314159"
+    }
+  ],
+  "HEDERA": [
+    {
+      "name": "HashScan",
+      "url": "https://hashscan.io/mainnet",
+      "kind": "eip3091",
+      "verified": "browser 2026-08-17 — block page watched rendering the requested height",
+      "source": "curated — chainlist's 295 row omits HashScan, which its own 296 row lists as EIP3091"
+    }
+  ],
+  "HEDERAT": [
+    {
+      "name": "HashScan",
+      "url": "https://hashscan.io/testnet",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#296"
+    },
+    {
+      "name": "Arkhia Explorer",
+      "url": "https://explorer.arkhia.io",
+      "kind": "home",
+      "verified": "registry — the chainlist row declares no url standard, so only the home page is offered",
+      "source": "ethereum-lists/chains#296"
+    }
+  ],
+  "HOD1": [
+    {
+      "name": "dora",
+      "url": "https://light-hoodi.beaconcha.in",
+      "kind": "home",
+      "verified": "registry — the chainlist row declares no url standard, so only the home page is offered",
+      "source": "ethereum-lists/chains#560048"
+    }
+  ],
+  "HOL1": [
+    {
+      "name": "Holesky Explorer",
+      "url": "https://holesky.beaconcha.in",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#17000"
+    },
+    {
+      "name": "otterscan-holesky",
+      "url": "https://holesky.otterscan.io",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#17000"
+    }
+  ],
+  "HYDRATION": [
+    {
+      "name": "Subscan",
+      "url": "https://hydration.subscan.io",
+      "kind": "block-extrinsic-account",
+      "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
+      "source": "curated — Subscan runs one deployment per network on a shared codebase"
+    }
+  ],
+  "HYPERLIQUID": [
+    {
+      "name": "HyperEVMScan",
+      "url": "https://hyperevmscan.io",
+      "kind": "home",
+      "verified": "home probed 2026-08-17",
+      "source": "curated — chainlist's row for this chain id is a DIFFERENT chain (Wanchain Testnet also claims 999)"
+    }
+  ],
+  "INJECTIVE": [
+    {
+      "name": "mintscan",
+      "url": "https://www.mintscan.io/injective",
+      "kind": "blocks-transactions-accounts",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/injective"
+    },
+    {
+      "name": "ezstaking",
+      "url": "https://ezstaking.app/injective",
+      "kind": "custom",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/injective",
+      "tpl": {
+        "tx": "https://ezstaking.app/injective/txs/{tx}",
+        "address": "https://ezstaking.app/injective/account/{address}"
+      }
+    }
+  ],
+  "INJECTIVET": [
+    {
+      "name": "injectiveprotocol",
+      "url": "https://testnet.explorer.injective.network",
+      "kind": "block-transaction-address",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/testnets/injectivetestnet"
+    }
+  ],
+  "INK": [
+    {
+      "name": "Ink Explorer",
+      "url": "https://explorer.inkonchain.com",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#57073"
+    }
+  ],
+  "INKT": [
+    {
+      "name": "Ink Sepolia Explorer",
+      "url": "https://explorer-sepolia.inkonchain.com",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#763373"
+    }
+  ],
+  "IOTA": [
+    {
+      "name": "IOTA Explorer",
+      "url": "https://explorer.iota.org",
+      "kind": "home",
+      "verified": "home probed 2026-08-17",
+      "source": "curated"
+    }
+  ],
+  "JUN1": [
+    {
+      "name": "ezstaking",
+      "url": "https://ezstaking.app/juno",
+      "kind": "custom",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/juno",
+      "tpl": {
+        "tx": "https://ezstaking.app/juno/txs/{tx}",
+        "address": "https://ezstaking.app/juno/account/{address}"
+      }
+    },
+    {
+      "name": "ping.pub",
+      "url": "https://ping.pub/juno",
+      "kind": "eip3091",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/juno"
+    }
+  ],
+  "JUNT1": [
+    {
+      "name": "🔥STAVR🔥",
+      "url": "https://explorer.stavr.tech/Juno-Testnet",
+      "kind": "custom",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/testnets/junotestnet6",
+      "tpl": {
+        "tx": "https://explorer.stavr.tech/Juno-Testnet/txs/{tx}",
+        "address": "https://explorer.stavr.tech/Juno-Testnet/account/{address}"
+      }
+    }
+  ],
+  "KAKAROTT": [
+    {
+      "name": "Kakarot Scan",
+      "url": "https://sepolia.kakarotscan.org",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#1802203764"
+    },
+    {
+      "name": "Kakarot Explorer",
+      "url": "https://sepolia-explorer.kakarot.org",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#1802203764"
+    }
+  ],
+  "KAVA": [
+    {
+      "name": "mintscan",
+      "url": "https://www.mintscan.io/kava",
+      "kind": "blocks-transactions-accounts",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/kava"
+    },
+    {
+      "name": "staking-explorer.com",
+      "url": "https://staking-explorer.com/explorer/kava",
+      "kind": "custom",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/kava",
+      "tpl": {
+        "tx": "https://staking-explorer.com/transaction.php?chain=kava&tx={tx}",
+        "address": "https://staking-explorer.com/account.php?chain=kava&addr={address}"
+      }
+    }
+  ],
+  "KUSAMA": [
+    {
+      "name": "Subscan",
+      "url": "https://kusama.subscan.io",
+      "kind": "block-extrinsic-account",
+      "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
+      "source": "curated — Subscan runs one deployment per network on a shared codebase"
+    }
+  ],
+  "KUSAMAASSETHUB": [
+    {
+      "name": "Subscan",
+      "url": "https://assethub-kusama.subscan.io",
+      "kind": "block-extrinsic-account",
+      "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
+      "source": "curated — Subscan runs one deployment per network on a shared codebase"
+    }
+  ],
+  "KUSAMAASSETHUBT": [
+    {
+      "name": "Subscan",
+      "url": "https://assethub-westend.subscan.io",
+      "kind": "block-extrinsic-account",
+      "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
+      "source": "curated — Subscan runs one deployment per network on a shared codebase"
+    }
+  ],
+  "KUSAMAT": [
+    {
+      "name": "Subscan",
+      "url": "https://westend.subscan.io",
+      "kind": "block-extrinsic-account",
+      "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
+      "source": "curated — Subscan runs one deployment per network on a shared codebase"
+    }
+  ],
+  "LAV1": [
+    {
+      "name": "explorers.guru",
+      "url": "https://lava.explorers.guru",
+      "kind": "custom",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/testnets/lavatestnet",
+      "tpl": {
+        "tx": "https://lava.explorers.guru//transaction/{tx}",
+        "address": "https://lava.explorers.guru//account/{address}"
+      }
+    },
+    {
+      "name": "🔥STAVR🔥",
+      "url": "https://explorer.stavr.tech/Lava-Testnet",
+      "kind": "block-tx-account",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/testnets/lavatestnet"
+    }
+  ],
+  "LAVA": [
+    {
+      "name": "finteh",
+      "url": "https://explorer.finteh.org/lava",
+      "kind": "block-tx-account",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/lava"
+    },
+    {
+      "name": "guru",
+      "url": "https://lava.explorers.guru",
+      "kind": "custom",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/lava",
+      "tpl": {
+        "tx": "https://lava.explorers.guru/transaction/{tx}",
+        "address": "https://lava.explorers.guru/account/{address}"
+      }
+    }
+  ],
+  "LINEA": [
+    {
+      "name": "Etherscan",
+      "url": "https://lineascan.build",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#59144"
+    },
+    {
+      "name": "Blockscout",
+      "url": "https://explorer.linea.build",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#59144"
+    }
+  ],
+  "LINEAT": [
+    {
+      "name": "Etherscan",
+      "url": "https://sepolia.lineascan.build",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#59141"
+    },
+    {
+      "name": "Blockscout",
+      "url": "https://explorer.sepolia.linea.build",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#59141"
+    }
+  ],
+  "LTC": [
+    {
+      "name": "Litecoin Space",
+      "url": "https://litecoinspace.org",
+      "kind": "eip3091",
+      "verified": "browser 2026-08-17 — block page watched rendering the requested height",
+      "source": "curated"
+    }
+  ],
+  "MANTAPACIFIC": [
+    {
+      "name": "manta-pacific Explorer",
+      "url": "https://pacific-explorer.manta.network",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#169"
+    }
+  ],
+  "MANTAPACIFICT": [
+    {
+      "name": "manta-testnet Explorer",
+      "url": "https://manta-testnet.calderaexplorer.xyz",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#3441005"
+    }
+  ],
+  "MANTLE": [
+    {
+      "name": "mantlescan",
+      "url": "https://mantlescan.xyz",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#5000"
+    },
+    {
+      "name": "Mantle Explorer",
+      "url": "https://explorer.mantle.xyz",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#5000"
+    }
+  ],
+  "MANTLET": [
+    {
+      "name": "blockscout",
+      "url": "https://explorer.sepolia.mantle.xyz",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#5003"
+    }
+  ],
+  "MINA": [
+    {
+      "name": "Minascan",
+      "url": "https://minascan.io/mainnet",
+      "kind": "home",
+      "verified": "home probed 2026-08-17",
+      "source": "curated"
+    }
+  ],
+  "MINAT": [
+    {
+      "name": "Minascan",
+      "url": "https://minascan.io/devnet",
+      "kind": "home",
+      "verified": "home probed 2026-08-17",
+      "source": "curated"
+    }
+  ],
+  "MONAD": [
+    {
+      "name": "Monad Vision",
+      "url": "https://monadvision.com",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#143"
+    },
+    {
+      "name": "Monadscan",
+      "url": "https://monadscan.com",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#143"
+    }
+  ],
+  "MONADT": [
+    {
+      "name": "Monad Testnet Explorer",
+      "url": "https://testnet.monadexplorer.com",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#10143"
+    }
+  ],
+  "MONERO": [
+    {
+      "name": "xmrchain",
+      "url": "https://xmrchain.net",
+      "kind": "custom",
+      "tpl": {
+        "block": "https://xmrchain.net/block/{block}",
+        "tx": "https://xmrchain.net/tx/{tx}"
+      },
+      "verified": "browser 2026-08-17 — block page watched rendering the requested height",
+      "source": "curated — a privacy chain has no address page"
+    }
+  ],
+  "MOONBEAM": [
+    {
+      "name": "moonscan",
+      "url": "https://moonbeam.moonscan.io",
+      "kind": "home",
+      "verified": "registry — the chainlist row declares no url standard, so only the home page is offered",
+      "source": "ethereum-lists/chains#1284"
+    }
+  ],
+  "MOONBEAMT": [
+    {
+      "name": "moonscan",
+      "url": "https://moonbase.moonscan.io",
+      "kind": "home",
+      "verified": "registry — the chainlist row declares no url standard, so only the home page is offered",
+      "source": "ethereum-lists/chains#1287"
+    }
+  ],
+  "MOONRIVER": [
+    {
+      "name": "moonscan",
+      "url": "https://moonriver.moonscan.io",
+      "kind": "home",
+      "verified": "registry — the chainlist row declares no url standard, so only the home page is offered",
+      "source": "ethereum-lists/chains#1285"
+    }
+  ],
+  "MOONRIVERT": [
+    {
+      "name": "moonscan",
+      "url": "https://moonbase.moonscan.io",
+      "kind": "home",
+      "verified": "registry — the chainlist row declares no url standard, so only the home page is offered",
+      "source": "ethereum-lists/chains#1287"
+    }
+  ],
+  "MOVEMENT": [
+    {
+      "name": "Movement Explorer",
+      "url": "https://explorer.movementnetwork.xyz",
+      "kind": "home",
+      "verified": "home probed 2026-08-17",
+      "source": "curated"
+    }
+  ],
+  "MULTIVERSX": [
+    {
+      "name": "MultiversX Explorer",
+      "url": "https://explorer.multiversx.com",
+      "kind": "custom",
+      "tpl": {
+        "tx": "https://explorer.multiversx.com/transactions/{tx}",
+        "address": "https://explorer.multiversx.com/accounts/{address}"
+      },
+      "verified": "unverified — home reachable, deep-link shape not watched",
+      "source": "curated — the block page is addressed by hash"
+    }
+  ],
+  "MULTIVERSXT": [
+    {
+      "name": "MultiversX Explorer",
+      "url": "https://testnet-explorer.multiversx.com",
+      "kind": "custom",
+      "tpl": {
+        "tx": "https://testnet-explorer.multiversx.com/transactions/{tx}",
+        "address": "https://testnet-explorer.multiversx.com/accounts/{address}"
+      },
+      "verified": "unverified — home reachable, deep-link shape not watched",
+      "source": "curated"
+    }
+  ],
+  "NEAR": [
+    {
+      "name": "NearBlocks",
+      "url": "https://nearblocks.io",
+      "kind": "custom",
+      "tpl": {
+        "tx": "https://nearblocks.io/txns/{tx}",
+        "address": "https://nearblocks.io/address/{address}"
+      },
+      "verified": "unverified — home reachable, deep-link shape not watched",
+      "source": "curated — the block page is addressed by hash, so no height link is offered"
+    }
+  ],
+  "NEART": [
+    {
+      "name": "NearBlocks",
+      "url": "https://testnet.nearblocks.io",
+      "kind": "custom",
+      "tpl": {
+        "tx": "https://testnet.nearblocks.io/txns/{tx}",
+        "address": "https://testnet.nearblocks.io/address/{address}"
+      },
+      "verified": "unverified — home reachable, deep-link shape not watched",
+      "source": "curated"
+    }
+  ],
+  "NEOX": [
+    {
+      "name": "Neo X - Explorer",
+      "url": "https://xexplorer.neo.org",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#47763"
+    }
+  ],
+  "NEOXT": [
+    {
+      "name": "neox-scan",
+      "url": "https://xt4scan.ngd.network",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#12227332"
+    }
+  ],
+  "NEUTRON": [
+    {
+      "name": "Mintscan",
+      "url": "https://www.mintscan.io/neutron",
+      "kind": "blocks-transactions-accounts",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/neutron"
+    },
+    {
+      "name": "ezstaking",
+      "url": "https://ezstaking.app/neutron",
+      "kind": "custom",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/neutron",
+      "tpl": {
+        "tx": "https://ezstaking.app/neutron/txs/{tx}",
+        "address": "https://ezstaking.app/neutron/account/{address}"
+      }
+    }
+  ],
+  "NEUTRONT": [
+    {
+      "name": "Ping.pub Explorer from Hypha",
+      "url": "https://explorer.rs-testnet.polypore.xyz/pion-1",
+      "kind": "custom",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/testnets/neutrontestnet",
+      "tpl": {
+        "tx": "https://explorer.rs-testnet.polypore.xyz/pion-1/tx/{tx}",
+        "address": "https://explorer.rs-testnet.polypore.xyz/baryon-1/account/{address}"
+      }
+    },
+    {
+      "name": "Mintscan",
+      "url": "https://mintscan.io/neutron-testnet",
+      "kind": "custom",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/testnets/neutrontestnet",
+      "tpl": {
+        "tx": "https://mintscan.io/neutron-testnet/txs/{tx}",
+        "address": "https://mintscan.io/neutron-testnet/account/{address}"
+      }
+    }
+  ],
+  "OASIS": [
+    {
+      "name": "Oasis Sapphire Explorer",
+      "url": "https://explorer.oasis.io/mainnet/sapphire",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#23294"
+    }
+  ],
+  "OASIST": [
+    {
+      "name": "Oasis Sapphire Testnet Explorer",
+      "url": "https://explorer.oasis.io/testnet/sapphire",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#23295"
+    }
+  ],
+  "OKB": [
+    {
+      "name": "OKLink",
+      "url": "https://www.oklink.com/xlayer",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#196"
+    }
+  ],
+  "OKBT": [
+    {
+      "name": "OKLink",
+      "url": "https://web3.okx.com/explorer/x-layer-testnet",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#1952"
+    }
+  ],
+  "OPTM": [
+    {
+      "name": "etherscan",
+      "url": "https://optimistic.etherscan.io",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#10"
+    },
+    {
+      "name": "blockscout",
+      "url": "https://optimism.blockscout.com",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#10"
+    }
+  ],
+  "OPTMS": [
+    {
+      "name": "etherscan-sepolia-optimism",
+      "url": "https://sepolia-optimism.etherscan.io",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#11155420"
+    },
+    {
+      "name": "opscout",
+      "url": "https://optimism-sepolia.blockscout.com",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#11155420"
+    }
+  ],
+  "OSMOSIS": [
+    {
+      "name": "mintscan",
+      "url": "https://www.mintscan.io/osmosis",
+      "kind": "blocks-transactions-accounts",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/osmosis"
+    },
+    {
+      "name": "ezstaking",
+      "url": "https://ezstaking.app/osmosis",
+      "kind": "custom",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/osmosis",
+      "tpl": {
+        "tx": "https://ezstaking.app/osmosis/txs/{tx}",
+        "address": "https://ezstaking.app/osmosis/account/{address}"
+      }
+    }
+  ],
+  "OSMOSIST": [
+    {
+      "name": "mintscan",
+      "url": "https://mintscan.io/osmosis-testnet",
+      "kind": "custom",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/testnets/osmosistestnet",
+      "tpl": {
+        "tx": "https://mintscan.io/osmosis-testnet/txs/{tx}",
+        "address": "https://mintscan.io/osmosis-testnet/account/{address}"
+      }
+    },
+    {
+      "name": "ping.pub",
+      "url": "https://explorer.osmotest5.osmosis.zone",
+      "kind": "custom",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/testnets/osmosistestnet",
+      "tpl": {
+        "tx": "https://explorer.osmotest5.osmosis.zone/osmo-test-5/tx/{tx}",
+        "address": "https://explorer.osmotest5.osmosis.zone/osmo-test-5/account/{address}"
+      }
+    }
+  ],
+  "PLASMA": [
+    {
+      "name": "Routescan",
+      "url": "https://plasmascan.to",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#9745"
+    }
+  ],
+  "PLASMAT": [
+    {
+      "name": "Routescan",
+      "url": "https://testnet.plasmascan.to",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#9746"
+    }
+  ],
+  "PLUME": [
+    {
+      "name": "Blockscout",
+      "url": "https://explorer.plume.org",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#98866"
+    }
+  ],
+  "PLUMET": [
+    {
+      "name": "Blockscout",
+      "url": "https://testnet-explorer.plume.org",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#98867"
+    }
+  ],
+  "POLKADOT": [
+    {
+      "name": "Subscan",
+      "url": "https://polkadot.subscan.io",
+      "kind": "block-extrinsic-account",
+      "verified": "browser 2026-08-17 — block page watched rendering the requested height",
+      "source": "curated — Subscan runs one deployment per network on a shared codebase"
+    }
+  ],
+  "POLKADOTASSETHUB": [
+    {
+      "name": "Subscan",
+      "url": "https://assethub-polkadot.subscan.io",
+      "kind": "block-extrinsic-account",
+      "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
+      "source": "curated — Subscan runs one deployment per network on a shared codebase"
+    }
+  ],
+  "POLKADOTASSETHUBP": [
+    {
+      "name": "Subscan",
+      "url": "https://assethub-paseo.subscan.io",
+      "kind": "block-extrinsic-account",
+      "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
+      "source": "curated — Subscan runs one deployment per network on a shared codebase"
+    }
+  ],
+  "POLKADOTASSETHUBT": [
+    {
+      "name": "Subscan",
+      "url": "https://assethub-westend.subscan.io",
+      "kind": "block-extrinsic-account",
+      "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
+      "source": "curated — Subscan runs one deployment per network on a shared codebase"
+    }
+  ],
+  "POLKADOTT": [
+    {
+      "name": "Subscan",
+      "url": "https://westend.subscan.io",
+      "kind": "block-extrinsic-account",
+      "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
+      "source": "curated — Subscan runs one deployment per network on a shared codebase"
+    }
+  ],
+  "POLYGON": [
+    {
+      "name": "polygonscan",
+      "url": "https://polygonscan.com",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#137"
+    },
+    {
+      "name": "oklink",
+      "url": "https://www.oklink.com/polygon",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#137"
+    }
+  ],
+  "POLYGONA": [
+    {
+      "name": "polygonscan-amoy",
+      "url": "https://amoy.polygonscan.com",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#80002"
+    }
+  ],
+  "POLYMESH": [
+    {
+      "name": "Subscan",
+      "url": "https://polymesh.subscan.io",
+      "kind": "block-extrinsic-account",
+      "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
+      "source": "curated — Subscan runs one deployment per network on a shared codebase"
+    }
+  ],
+  "POLYMESHT": [
+    {
+      "name": "Subscan",
+      "url": "https://polymesh-testnet.subscan.io",
+      "kind": "block-extrinsic-account",
+      "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
+      "source": "curated — Subscan runs one deployment per network on a shared codebase"
+    }
+  ],
+  "RACE": [
+    {
+      "name": "blockscout",
+      "url": "https://racescan.io",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#6805"
+    }
+  ],
+  "RACET": [
+    {
+      "name": "blockscout",
+      "url": "https://testnet.racescan.io",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#6806"
+    }
+  ],
+  "SCROLL": [
+    {
+      "name": "Scrollscan",
+      "url": "https://scrollscan.com",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#534352"
+    }
+  ],
+  "SCROLLS": [
+    {
+      "name": "Scroll Sepolia Etherscan",
+      "url": "https://sepolia.scrollscan.com",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#534351"
+    }
+  ],
+  "SECRET": [
+    {
+      "name": "mintscan",
+      "url": "https://www.mintscan.io/secret",
+      "kind": "blocks-transactions-accounts",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/secretnetwork"
+    },
+    {
+      "name": "ezstaking",
+      "url": "https://ezstaking.app/secretnetwork",
+      "kind": "custom",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/secretnetwork",
+      "tpl": {
+        "tx": "https://ezstaking.app/secretnetwork/txs/{tx}",
+        "address": "https://ezstaking.app/secretnetwork/account/{address}"
+      }
+    }
+  ],
+  "SECRETP": [
+    {
+      "name": "ping.pub",
+      "url": "https://testnet.ping.pub/secret",
+      "kind": "eip3091",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/testnets/secretnetworktestnet"
+    }
+  ],
+  "SEI": [
+    {
+      "name": "mintscan",
+      "url": "https://www.mintscan.io/sei",
+      "kind": "blocks-transactions-accounts",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/sei"
+    },
+    {
+      "name": "blockscout",
+      "url": "https://seitrace.com",
+      "kind": "custom",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/sei",
+      "tpl": {
+        "tx": "https://seitrace.com/tx/{tx}?chain=pacific-1",
+        "address": "https://seitrace.com/address/{address}?chain=pacific-1"
+      }
+    }
+  ],
+  "SEIT": [
+    {
+      "name": "blockscout",
+      "url": "https://seitrace.com/?chain=atlantic-2",
+      "kind": "custom",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/testnets/seitestnet2",
+      "tpl": {
+        "tx": "https://seitrace.com/tx/{tx}?chain=atlantic-2"
+      }
+    },
+    {
+      "name": "celatone",
+      "url": "https://www.seiscan.app/atlantic-2",
+      "kind": "custom",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/testnets/seitestnet2",
+      "tpl": {
+        "tx": "https://www.seiscan.app/atlantic-2/txs/{tx}"
+      }
+    }
+  ],
+  "SEP1": [
+    {
+      "name": "etherscan-sepolia",
+      "url": "https://sepolia.etherscan.io",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#11155111"
+    },
+    {
+      "name": "otterscan-sepolia",
+      "url": "https://sepolia.otterscan.io",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#11155111"
+    }
+  ],
+  "SOLANA": [
+    {
+      "name": "Solana Explorer",
+      "url": "https://explorer.solana.com",
+      "kind": "eip3091",
+      "verified": "browser 2026-08-17 — block page watched rendering the requested height",
+      "source": "curated"
+    }
+  ],
+  "SOLANAD": [
+    {
+      "name": "Solana Explorer",
+      "url": "https://explorer.solana.com",
+      "kind": "eip3091",
+      "suffix": "?cluster=devnet",
+      "verified": "browser 2026-08-17 — block page watched rendering the requested height (mainnet cluster; the suffix selects the cluster)",
+      "source": "curated"
+    }
+  ],
+  "SOLANAT": [
+    {
+      "name": "Solana Explorer",
+      "url": "https://explorer.solana.com",
+      "kind": "eip3091",
+      "suffix": "?cluster=testnet",
+      "verified": "browser 2026-08-17 — block page watched rendering the requested height (mainnet cluster; the suffix selects the cluster)",
+      "source": "curated"
+    }
+  ],
+  "SONIC": [
+    {
+      "name": "etherscan",
+      "url": "https://sonicscan.org",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#146"
+    },
+    {
+      "name": "sonic",
+      "url": "https://explorer.soniclabs.com",
+      "kind": "home",
+      "verified": "registry — the chainlist row declares no url standard, so only the home page is offered",
+      "source": "ethereum-lists/chains#146"
+    }
+  ],
+  "SONICT": [
+    {
+      "name": "Sonicscan",
+      "url": "https://testnet.sonicscan.org",
+      "kind": "home",
+      "verified": "home probed 2026-08-17",
+      "source": "curated"
+    }
+  ],
+  "SPARK": [
+    {
+      "name": "Blockscout",
+      "url": "https://explorer.fusespark.io",
+      "kind": "home",
+      "verified": "home probed 2026-08-17",
+      "source": "curated"
+    }
+  ],
+  "STACKS": [
+    {
+      "name": "Hiro Explorer",
+      "url": "https://explorer.hiro.so",
+      "kind": "home",
+      "suffix": "?chain=mainnet",
+      "verified": "home probed 2026-08-17",
+      "source": "curated"
+    }
+  ],
+  "STACKST": [
+    {
+      "name": "Hiro Explorer",
+      "url": "https://explorer.hiro.so",
+      "kind": "home",
+      "suffix": "?chain=testnet",
+      "verified": "home probed 2026-08-17",
+      "source": "curated"
+    }
+  ],
+  "STORY": [
+    {
+      "name": "blockscout",
+      "url": "https://datanetscan.io",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#1514"
+    }
+  ],
+  "STORYT": [
+    {
+      "name": "blockscout",
+      "url": "https://aeneid.datanetscan.io",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#1315"
+    }
+  ],
+  "STRGZ": [
+    {
+      "name": "mintscan",
+      "url": "https://www.mintscan.io/stargaze",
+      "kind": "blocks-transactions-accounts",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/stargaze"
+    },
+    {
+      "name": "ezstaking",
+      "url": "https://ezstaking.app/stargaze",
+      "kind": "custom",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/stargaze",
+      "tpl": {
+        "tx": "https://ezstaking.app/stargaze/txs/{tx}",
+        "address": "https://ezstaking.app/stargaze/account/{address}"
+      }
+    }
+  ],
+  "STRGZT": [
+    {
+      "name": "ping.pub",
+      "url": "https://testnet-explorer.publicawesome.dev/stargaze",
+      "kind": "eip3091",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/testnets/stargazetestnet"
+    }
+  ],
+  "STRIDE": [
+    {
+      "name": "mintscan",
+      "url": "https://www.mintscan.io/stride",
+      "kind": "blocks-transactions-accounts",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/stride"
+    },
+    {
+      "name": "BccNodes",
+      "url": "https://explorer.bccnodes.com/stride-M",
+      "kind": "block-tx-account",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/stride"
+    }
+  ],
+  "STRIDET": [
+    {
+      "name": "PingPub",
+      "url": "https://testnet.ping.pub/stride",
+      "kind": "eip3091",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/testnets/stridetestnet"
+    }
+  ],
+  "STRK": [
+    {
+      "name": "Starkscan",
+      "url": "https://starkscan.co",
+      "kind": "block-tx-contract",
+      "verified": "browser 2026-08-17 — block page watched rendering the requested height",
+      "source": "curated"
+    }
+  ],
+  "STRKS": [
+    {
+      "name": "Voyager",
+      "url": "https://sepolia.voyager.online",
+      "kind": "eip3091",
+      "verified": "unverified — host unreachable from the build network",
+      "source": "curated — sepolia.starkscan.co does not resolve; Voyager is the other Starknet explorer"
+    }
+  ],
+  "SUI": [
+    {
+      "name": "Suiscan",
+      "url": "https://suiscan.xyz/mainnet",
+      "kind": "home",
+      "verified": "home probed 2026-08-17",
+      "source": "curated — Sui has checkpoints, not blocks; no height-addressable page verified"
+    }
+  ],
+  "SUID": [
+    {
+      "name": "Suiscan",
+      "url": "https://suiscan.xyz/devnet",
+      "kind": "home",
+      "verified": "home probed 2026-08-17",
+      "source": "curated"
+    }
+  ],
+  "SUIT": [
+    {
+      "name": "Suiscan",
+      "url": "https://suiscan.xyz/testnet",
+      "kind": "home",
+      "verified": "home probed 2026-08-17",
+      "source": "curated"
+    }
+  ],
+  "TEMPO": [
+    {
+      "name": "tempo-explorer",
+      "url": "https://explore.tempo.xyz",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#4217"
+    }
+  ],
+  "TEMPOT": [
+    {
+      "name": "tempo-explorer",
+      "url": "https://explore.testnet.tempo.xyz",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#42431"
+    }
+  ],
+  "TEZOS": [
+    {
+      "name": "TzKT",
+      "url": "https://tzkt.io",
+      "kind": "root-path",
+      "verified": "browser 2026-08-17 — block page watched rendering the requested height",
+      "source": "curated"
+    }
+  ],
+  "THORCHAIN": [
+    {
+      "name": "THORChain explorer",
+      "url": "https://thorchain.net",
+      "kind": "custom",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/thorchain",
+      "tpl": {
+        "tx": "https://thorchain.net/#/txs/{tx}"
+      }
+    },
+    {
+      "name": "Runescan",
+      "url": "https://runescan.io",
+      "kind": "custom",
+      "verified": "registry — cosmos/chain-registry supplies these page templates",
+      "source": "cosmos/chain-registry/thorchain",
+      "tpl": {
+        "tx": "https://runescan.io/txs/{tx}"
+      }
+    }
+  ],
+  "TON": [
+    {
+      "name": "Tonviewer",
+      "url": "https://tonviewer.com",
+      "kind": "home",
+      "verified": "home probed 2026-08-17",
+      "source": "curated"
+    }
+  ],
+  "TONT": [
+    {
+      "name": "Tonviewer",
+      "url": "https://testnet.tonviewer.com",
+      "kind": "home",
+      "verified": "home probed 2026-08-17",
+      "source": "curated"
+    }
+  ],
+  "TRX": [
+    {
+      "name": "Tronscan",
+      "url": "https://tronscan.org",
+      "kind": "hash-routed",
+      "verified": "unverified — bot challenge (HTTP 403) from the build network",
+      "source": "curated"
+    }
+  ],
+  "TRXN": [
+    {
+      "name": "Tronscan",
+      "url": "https://nile.tronscan.org",
+      "kind": "hash-routed",
+      "verified": "unverified — bot challenge (HTTP 403) from the build network",
+      "source": "curated"
+    }
+  ],
+  "TRXT": [
+    {
+      "name": "Tronscan",
+      "url": "https://shasta.tronscan.org",
+      "kind": "hash-routed",
+      "verified": "unverified — bot challenge (HTTP 403) from the build network",
+      "source": "curated"
+    }
+  ],
+  "UNICHAIN": [
+    {
+      "name": "Unichain Mainnet Explorer",
+      "url": "https://uniscan.xyz",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#130"
+    },
+    {
+      "name": "Unichain Mainnet Explorer",
+      "url": "https://unichain.blockscout.com",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#130"
+    }
+  ],
+  "UNICHAINT": [
+    {
+      "name": "Unichain Sepolia Testnet Explorer",
+      "url": "https://unichain-sepolia.blockscout.com",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#1301"
+    },
+    {
+      "name": "Unichain Sepolia Testnet Explorer",
+      "url": "https://sepolia.uniscan.xyz",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#1301"
+    }
+  ],
+  "VECHAIN": [
+    {
+      "name": "VeChain Explorer",
+      "url": "https://explore.vechain.org",
+      "kind": "home",
+      "verified": "home probed 2026-08-17",
+      "source": "curated"
+    }
+  ],
+  "VECHAINT": [
+    {
+      "name": "VeChain Explorer",
+      "url": "https://explore-testnet.vechain.org",
+      "kind": "home",
+      "verified": "unverified — HTTP ERR from the build network",
+      "source": "curated"
+    }
+  ],
+  "WEMIX": [
+    {
+      "name": "WEMIX Block Explorer",
+      "url": "https://explorer.wemix.com",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#1111"
+    }
+  ],
+  "WEMIXT": [
+    {
+      "name": "WEMIX Testnet Microscope",
+      "url": "https://microscope.test.wemix.com",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#1112"
+    }
+  ],
+  "WORLDCHAIN": [
+    {
+      "name": "etherscan",
+      "url": "https://worldscan.org",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#480"
+    },
+    {
+      "name": "blockscout",
+      "url": "https://worldchain-mainnet.explorer.alchemy.com",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#480"
+    }
+  ],
+  "WORLDCHAINS": [
+    {
+      "name": "etherscan",
+      "url": "https://sepolia.worldscan.org",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#4801"
+    },
+    {
+      "name": "blockscout",
+      "url": "https://worldchain-sepolia.explorer.alchemy.com",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#4801"
+    }
+  ],
+  "XDC": [
+    {
+      "name": "xdcscan",
+      "url": "https://xdcscan.com",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#50"
+    },
+    {
+      "name": "openscan",
+      "url": "https://xdcscan.io",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#50"
+    }
+  ],
+  "XDCT": [
+    {
+      "name": "xdcscan",
+      "url": "https://testnet.xdcscan.com",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#51"
+    },
+    {
+      "name": "openscan",
+      "url": "https://apothem.xdcscan.io",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#51"
+    }
+  ],
+  "XLM": [
+    {
+      "name": "Stellar Expert",
+      "url": "https://stellar.expert/explorer/public",
+      "kind": "ledger-tx-account",
+      "verified": "browser 2026-08-17 — block page watched rendering the requested height",
+      "source": "curated"
+    }
+  ],
+  "XLMT": [
+    {
+      "name": "Stellar Expert",
+      "url": "https://stellar.expert/explorer/testnet",
+      "kind": "ledger-tx-account",
+      "verified": "browser 2026-08-17 — same site and path shape as the verified XLM entry",
+      "source": "curated"
+    }
+  ],
+  "XRP": [
+    {
+      "name": "XRPScan",
+      "url": "https://xrpscan.com",
+      "kind": "ledger-tx-account",
+      "verified": "browser 2026-08-17 — block page watched rendering the requested height",
+      "source": "curated"
+    }
+  ],
+  "XRPT": [
+    {
+      "name": "XRPL Explorer",
+      "url": "https://testnet.xrpl.org",
+      "kind": "home",
+      "verified": "home probed 2026-08-17",
+      "source": "curated"
+    }
+  ],
+  "ZCASH": [
+    {
+      "name": "Blockchair",
+      "url": "https://blockchair.com/zcash",
+      "kind": "home",
+      "verified": "unverified — HTTP ERR from the build network",
+      "source": "curated — blockchair is unreachable from the build network, so only its home page is offered"
+    }
+  ],
+  "ZKSYNC": [
+    {
+      "name": "zkSync Era Block Explorer",
+      "url": "https://explorer.zksync.io",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#324"
+    }
+  ],
+  "ZKSYNCSP": [
+    {
+      "name": "zkSync Block Explorer",
+      "url": "https://sepolia.explorer.zksync.io",
+      "kind": "eip3091",
+      "verified": "registry — the chainlist row declares standard EIP3091",
+      "source": "ethereum-lists/chains#300"
+    }
+  ]
+}

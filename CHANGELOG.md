@@ -5,6 +5,61 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.16.0]
+
+### Added
+
+- **Every chain now knows where its block explorer is.** `explorersFor(spec)` /
+  `explorerUrl(spec, ref, value)` in `@sr/shared` resolve a Lava spec index to
+  the chain's official explorer and to a deep link for a block height,
+  transaction or address — the receipt for every number the dashboard prints
+  about a chain. 210 of 245 chains are covered; the other 35 are recorded as
+  deliberate gaps with a reason. No UI consumes this yet.
+
+  The join key is the spec's own `chain-id` **verification** (`ETH1` → `0x1`,
+  `COSMOSHUB` → `cosmoshub-4`), which makes 130 of the entries derivable from
+  `ethereum-lists/chains` and `cosmos/chain-registry` instead of hand-written.
+  Both registries are read from a **committed snapshot**, so the CI drift gate
+  stays a lava-specs check and a third party editing an explorer url can never
+  fail an unrelated PR.
+
+  Link shapes are an eleven-row `kind` table rather than three URL templates
+  per chain, and a kind is assigned only when the registry's own template
+  proves it or a person watched the page render. Every row carries a
+  `verified` field saying which of those happened — or, for 22 rows behind
+  Cloudflare bot management, that it could not be checked and why.
+  `explorerUrl()` returns **null** rather than a guessed URL, and a kind's
+  `block` template always takes a height, so the hash-addressed explorers
+  (NearBlocks, MultiversX, cspr.live) ship no block link at all.
+
+  Two chains were wearing the wrong explorer before this landed and would have
+  linked to the wrong chain entirely: chainlist has id collisions, and Astar
+  Shibuya resolved to Japan Open Chain (both claim 81) while Hyperliquid
+  resolved to Wanchain Testnet (both claim 999). The generator now prints every
+  spec-vs-chainlist name mismatch on each run, and the overlay carries both
+  corrections.
+
+- **`apps/web/scripts/probe-explorers.mjs`** — checks that every explorer the
+  dashboard would link is still up and has not started redirecting to another
+  site. It classifies bot-management refusals (401/403/429) as *challenged*
+  rather than failed, because a 403 is the script being turned away rather than
+  evidence about the URL. Not wired into CI: it talks to several dozen third
+  parties, whose flakiness must never fail a PR. It caught bloks.io redirecting
+  to XPR Network, a different chain — EOS is now recorded as having no verified
+  explorer instead of linking to one.
+
+- **`docs/CHAINS.md`** — one reference for what the dashboard knows about a
+  chain: the catalogs, the explorer join key and its traps, the kind table, the
+  verification statuses, and how to add or correct an entry.
+
+### Changed
+
+- **The spec-drift gate covers five artifacts, not three.** The explorer
+  catalog and its roll-call join the chain map, the method catalog and the
+  no-runnable-defaults roll-call, so a chain arriving without an explorer fails
+  the build rather than passing unnoticed. `chain-resync.md` carries the
+  procedure.
+
 ## [0.15.0]
 
 The dashboard opened on a day. The question people open it to answer is "what

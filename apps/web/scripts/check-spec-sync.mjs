@@ -6,8 +6,10 @@
  * in the tree:
  *
  *   packages/shared/src/constants/chain-map.generated.json   names, families, icons
+ *   packages/shared/src/constants/chain-explorers.generated.json  block explorers
  *   apps/web/src/components/try-me/chain-methods.generated.json   method catalog
  *   apps/web/scripts/data/no-runnable-defaults.generated.json     coverage roll-call
+ *   apps/web/scripts/data/no-explorer.generated.json              explorer roll-call
  *
  * Any difference fails the build — upstream added a chain, renamed one, changed
  * its interfaces or its methods, and the dashboard is stale. The third file is
@@ -16,7 +18,12 @@
  *
  * The fix is always regenerate + commit; `.claude/rules/chain-resync.md` has
  * the full procedure, including what to do about a chain with no runnable
- * defaults.
+ * defaults and what to do about one with no explorer.
+ *
+ * The explorer catalog reads a COMMITTED registry snapshot rather than the
+ * live ethereum-lists/cosmos registries, so this check stays a lava-specs
+ * drift check: a third party editing an explorer url can never fail an
+ * unrelated PR. Refreshing that snapshot is a deliberate act (`--refresh`).
  *
  *   node apps/web/scripts/check-spec-sync.mjs
  *
@@ -56,6 +63,27 @@ const ARTIFACTS = [
         added.length ? `  new chains (${added.length}): ${added.join(", ")}` : "",
         removed.length ? `  removed (${removed.length}): ${removed.join(", ")}` : "",
         changed.length ? `  changed (${changed.length}): ${changed.join(", ")}` : "",
+      ].filter(Boolean);
+    },
+  },
+  {
+    label: "chain-explorers.generated.json",
+    script: path.join(__dirname, "generate-chain-explorers.mjs"),
+    outEnv: "EXPLORERS_OUT",
+    committed: path.join(ROOT, "packages/shared/src/constants/chain-explorers.generated.json"),
+    fix: "node apps/web/scripts/generate-chain-explorers.mjs",
+    summarize: (before, after) => {
+      const a = JSON.parse(before);
+      const b = JSON.parse(after);
+      const added = Object.keys(b).filter((k) => !(k in a));
+      const removed = Object.keys(a).filter((k) => !(k in b));
+      const changed = Object.keys(b).filter(
+        (k) => k in a && JSON.stringify(a[k]) !== JSON.stringify(b[k]),
+      );
+      return [
+        added.length ? `  gained an explorer (${added.length}): ${added.join(", ")}` : "",
+        removed.length ? `  lost their explorer (${removed.length}): ${removed.join(", ")}` : "",
+        changed.length ? `  explorer changed (${changed.length}): ${changed.join(", ")}` : "",
       ].filter(Boolean);
     },
   },
@@ -103,6 +131,29 @@ const ARTIFACTS = [
       ].filter(Boolean);
     },
   },
+  {
+    label: "no-explorer.generated.json",
+    // Written by the same run as the explorer catalog above.
+    script: null,
+    outEnv: "NO_EXPLORER_OUT",
+    committed: path.join(WEB, "scripts/data/no-explorer.generated.json"),
+    fix: "regenerated with the explorer catalog",
+    summarize: (before, after) => {
+      const a = new Set(JSON.parse(before));
+      const b = new Set(JSON.parse(after));
+      const gained = [...b].filter((k) => !a.has(k));
+      const fixed = [...a].filter((k) => !b.has(k));
+      return [
+        gained.length
+          ? `  NO explorer (${gained.length}): ${gained.join(", ")}\n` +
+            "    → nothing on the dashboard can be checked against the public\n" +
+            "      chain for these. Curate one in explorer-overlay.json, or\n" +
+            "      record `none` with a reason to accept the gap."
+          : "",
+        fixed.length ? `  now covered (${fixed.length}): ${fixed.join(", ")}` : "",
+      ].filter(Boolean);
+    },
+  },
 ];
 
 const tmp = mkdtempSync(path.join(tmpdir(), "spec-sync-"));
@@ -123,6 +174,11 @@ try {
   const env = {
     ...process.env,
     LAVA_SPECS_DIR: specsDir,
+    // The explorer catalog is keyed off the chain map. Point it at the map
+    // this run just regenerated, so a chain added upstream is resolved in the
+    // same pass instead of showing up as explorer drift on the NEXT run.
+    // ARTIFACTS order matters here: the map is regenerated before it is read.
+    CHAIN_MAP_IN: fresh["chain-map.generated.json"],
     ...Object.fromEntries(ARTIFACTS.map((a) => [a.outEnv, fresh[a.label]])),
   };
 
@@ -158,6 +214,7 @@ try {
   console.error(
     "  Fix: clone Magma-Devs/lava-specs, then\n" +
       "       node apps/web/scripts/generate-chain-map.mjs\n" +
+      "       LAVA_SPECS_DIR=<clone> node apps/web/scripts/generate-chain-explorers.mjs\n" +
       "       LAVA_SPECS_DIR=<clone> node apps/web/scripts/generate-try-me-catalog.mjs\n" +
       "       and commit the regenerated files.\n" +
       "       Procedure and what to check afterwards: .claude/rules/chain-resync.md",
