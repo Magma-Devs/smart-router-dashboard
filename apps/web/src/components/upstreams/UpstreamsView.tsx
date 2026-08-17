@@ -8,7 +8,6 @@
  * disabled (read-only mount); the Test modal fires a real local POST. */
 
 import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import {
   buildChainMetaByIndex,
   type UpstreamMetrics,
@@ -27,6 +26,7 @@ import {
   type UpstreamRow,
 } from "@/components/upstreams/catalog";
 import { IfaceTag } from "@/components/endpoints/bits";
+import { RouterGroups } from "@/components/upstreams/RouterGroups";
 import { TryNowButton } from "@/components/try-me/try-now-button";
 import { useFilters } from "@/components/gateway/FiltersProvider";
 
@@ -35,9 +35,10 @@ import { useFilters } from "@/components/gateway/FiltersProvider";
 ───────────────────────────────────────────── */
 function StatStrip() { return null; }
 
-/** How the roster is carved up. Both groupings render the same endpoint
- *  rows off the same model — only the card each row sits in changes. */
-type GroupBy = "chain" | "provider";
+/** How the roster is carved up. All three groupings render the same mounted
+ *  config — only what a card is about changes: the router that publishes an
+ *  endpoint, the chain it serves, or the upstream behind it. */
+type GroupBy = "router" | "chain" | "provider";
 
 /** Initial-badge fallback for unmatched (BYO) nodes — chain-colored. */
 function InitialBadge({ name, spec, size = 28 }: { name: string; spec?: string; size?: number }) {
@@ -153,7 +154,6 @@ function EndpointRow({
 }
 
 export function UpstreamsView() {
-  const router = useRouter();
   const config = useApi<{ routers: RouterTopology[] }>("/api/config/routers", 60000);
   /* Upstream roster stats — fixed 1d window ("Req today"). */
   const { scopeQ } = useFilters();
@@ -162,10 +162,11 @@ export function UpstreamsView() {
   const [degradedFilter, setDegradedFilter] = useState(false);
   const [search, setSearch] = useState("");
   const [netFilter, setNetFilter] = useState<"all" | "mainnet" | "testnet">("all");
-  /* Chain-first by default: "who serves this chain" is the question the page
-     gets asked most, and it is the one the provider grouping answered worst
-     (an upstream's chains were a "+4" next to its name). */
-  const [groupBy, setGroupBy] = useState<GroupBy>("chain");
+  /* Router-first by default: the endpoints a router publishes are what a
+     self-hosted deployment reaches for — the address to dial, what it serves,
+     and how many upstreams stand behind it. The chain and provider groupings
+     answer the two follow-up questions off the same config. */
+  const [groupBy, setGroupBy] = useState<GroupBy>("router");
   const [newChainCtas, setNewChainCtas] = useState<{ chainId: string; upstreamName: string }[]>([]);
 
   const routers = useMemo(() => config.data?.routers ?? [], [config.data]);
@@ -210,6 +211,10 @@ export function UpstreamsView() {
   }, [upstreams, degradedFilter, search, netFilter]);
 
   const loading = !config.data && !config.error;
+  /* Nothing to show. The router grouping renders the routers themselves, so a
+     values file with routers but no upstream nodes still has endpoints to
+     list — only an empty topology is empty here. */
+  const nothingMounted = groupBy === "router" ? routers.length === 0 : upstreams.length === 0;
 
   const statColor = (s: string) => s === "healthy" ? "ok" : s === "degraded" ? "warn" : "err";
 
@@ -218,7 +223,12 @@ export function UpstreamsView() {
       <div className="gw-row" style={{ justifyContent: "space-between", marginBottom: 20 }}>
         <div>
           <h1>Upstreams</h1>
-          <p className="lede">The upstream RPC nodes this router routes through · config <span className="gw-mono" style={{ color: "var(--text-2)" }}>read-only mount</span>.</p>
+          <p className="lede">
+            {groupBy === "router"
+              ? "Every endpoint your routers publish, and the upstream RPC nodes behind them"
+              : "The upstream RPC nodes this router routes through"} · config{" "}
+            <span className="gw-mono" style={{ color: "var(--text-2)" }}>read-only mount</span>.
+          </p>
         </div>
       </div>
 
@@ -240,8 +250,8 @@ export function UpstreamsView() {
               <strong>{upstreamName}</strong> is your first upstream for <strong>{chain.name}</strong>.
             </span>
             <button className="gw-btn gw-btn--primary" style={{ fontSize: 12, padding: "5px 12px", flexShrink: 0 }}
-              onClick={() => { router.push("/endpoints"); setNewChainCtas((fc) => fc.filter((c) => c.chainId !== chainId)); }}>
-              Create endpoint →
+              onClick={() => { setGroupBy("router"); setNewChainCtas((fc) => fc.filter((c) => c.chainId !== chainId)); }}>
+              View endpoints →
             </button>
             <button className="gw-btn gw-btn--ghost" style={{ padding: "4px 6px", flexShrink: 0 }}
               onClick={() => setNewChainCtas((fc) => fc.filter((c) => c.chainId !== chainId))}>
@@ -258,7 +268,8 @@ export function UpstreamsView() {
             style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }}>
             <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
           </svg>
-          <input className="gw-input" type="search" placeholder="Search upstreams…" value={search}
+          <input className="gw-input" type="search"
+            placeholder={groupBy === "router" ? "Search chains, interfaces…" : "Search upstreams…"} value={search}
             onChange={(e) => setSearch(e.target.value)} style={{ paddingLeft: 32 }} />
         </div>
         <div className="gw-segctl">
@@ -267,10 +278,10 @@ export function UpstreamsView() {
           ))}
         </div>
         <span style={{ flex: 1 }} />
-        {/* One roster, two ways to carve it: by the chain an endpoint serves,
-            or by the upstream that serves it. */}
+        {/* One config, three ways to carve it: by the router that publishes an
+            endpoint, by the chain it serves, or by the upstream behind it. */}
         <div className="gw-segctl">
-          {([["chain", "By chain"], ["provider", "By provider"]] as const).map(([val, lbl]) => (
+          {([["router", "By router"], ["chain", "By chain"], ["provider", "By provider"]] as const).map(([val, lbl]) => (
             <button key={val} className={groupBy === val ? "on" : ""} onClick={() => setGroupBy(val)}>{lbl}</button>
           ))}
         </div>
@@ -284,14 +295,25 @@ export function UpstreamsView() {
         </div>
       )}
 
-      {loading ? null : upstreams.length === 0 ? (
+      {loading ? null : nothingMounted ? (
         <div className="gw-empty">
           <div className="gw-empty__icon">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
           </div>
-          <h2>No upstreams yet</h2>
-          <p>The mounted values file has no upstream nodes. Add your first upstream — Alchemy, Infura, QuickNode, or your own node — by editing the values file.</p>
+          {groupBy === "router" ? (
+            <>
+              <h2>No endpoints yet</h2>
+              <p>No router config mounted — set HELM_VALUES_DIR / mount core/values.yml and its chains and interfaces will appear here.</p>
+            </>
+          ) : (
+            <>
+              <h2>No upstreams yet</h2>
+              <p>The mounted values file has no upstream nodes. Add your first upstream — Alchemy, Infura, QuickNode, or your own node — by editing the values file.</p>
+            </>
+          )}
         </div>
+      ) : groupBy === "router" ? (
+        <RouterGroups routers={routers} upstreams={upstreams} search={search} netFilter={netFilter} />
       ) : groupBy === "chain" ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {chainGroups.map((group) => {

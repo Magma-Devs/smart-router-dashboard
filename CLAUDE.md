@@ -81,8 +81,8 @@ answer. See [`docs/UPSTREAM-DIRECT-TEST.md`](docs/UPSTREAM-DIRECT-TEST.md).
 
 **ONE values file drives both the router and the dashboard** (the v1 pattern):
 `SR_CONFIG_HOST` (default `./dev-config/values.yml`) is mounted as the router's
-config **and** as the api's helm-values, so the Endpoints/Providers pages always
-reflect the running topology with no duplicated config.
+config **and** as the api's helm-values, so the Upstreams page always
+reflects the running topology with no duplicated config.
 
 ## Monorepo layout
 
@@ -104,8 +104,8 @@ apps/api/                 @sr/api — Fastify 5 (:8000)
     config.ts           single source of truth for env defaults
 apps/web/                 @sr/web — Next.js 16 App Router (:3000)
   src/
-    app/(app)/          overview · dashboard · providers · endpoints · metrics ·
-                        live-test · team · account (Shell layout)
+    app/(app)/          overview · dashboard · upstreams · metrics ·
+                        team · account (Shell layout)
     app/standalone/     chrome-less Metrics page (sharing/embedding)
     app/api/config/     runtime-config route (DASHBOARD_API_URL → browser)
     components/
@@ -116,8 +116,10 @@ apps/web/                 @sr/web — Next.js 16 App Router (:3000)
       metrics/          MetricsView (4 tabs) · HeroPanel · RouterOverview ·
                         ChainDetail · ErrorsBreakdown ·
                         CrossValidation · WebSocketPanel · provider/ (PM* deep-dive)
-      providers/        ProvidersView · Add/Edit sheets · TestModal · catalog
-      endpoints/        EndpointsView · detail/create sheets
+      upstreams/        UpstreamsView (3 groupings) · RouterGroups ·
+                        Add/Edit sheets · TestModal · catalog
+      endpoints/        endpoint row model + IfaceTag + detail sheet — the
+                        bits the "By router" grouping renders
       team/             InviteModal · ChangeRoleModal · bits
     hooks/use-api.ts    SWR wrapper (15s poll default)
     lib/api-client.ts   base URL resolved ONCE per session from /api/config
@@ -201,7 +203,7 @@ provider URLs routinely embed API keys in the path.
 ### Endpoint addresses (`publicUrls` vs. `localPorts`)
 
 An endpoint's dialable address depends on which format is mounted, and the
-Endpoints / Upstreams / Try-me surfaces resolve it in this order — **public
+Upstreams / Try-me surfaces resolve it in this order — **public
 gateway URL → local listen port → nothing** (`"—"`, never a fabricated host):
 
 - **Helm values** describe a k8s deployment with no listen ports at all, so
@@ -224,8 +226,8 @@ serves the HTTP/1.1 upgrade on the interface's own hostname.
 
 **Several routers may serve one chain** (a staging + production pair on the
 same `network`, distinguished by `id` / `custom_url_prefix`). Topology handles
-that natively — separate cards, separate hostnames, and the Endpoints card
-header appends the router id whenever a spec is duplicated. Metrics need the
+that natively — separate cards, separate hostnames, and the router-grouped
+card header appends the router id whenever a spec is duplicated. Metrics need the
 router scope below, because the router labels its series with the chain, not
 with itself.
 
