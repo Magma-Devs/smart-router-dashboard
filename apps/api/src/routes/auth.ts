@@ -12,6 +12,7 @@ import {
 import { validatePassword, verifyPassword } from "../services/password.js";
 import { verifyOAuthToken } from "../services/oauth.js";
 import { createSession, revokeSession, type ClientContext } from "../services/sessions.js";
+import { normalizeIp, parseClient } from "../services/client-context.js";
 import {
   lookupInvitation,
   redeemInvitation,
@@ -101,31 +102,55 @@ function secretsMatch(supplied: string, expected: string): boolean {
  * secret; otherwise we fall back to what we observed ourselves — which for a
  * direct caller is their own real address.
  */
+/**
+ * What the caller looks like, in the two shapes that need it.
+ *
+ * `raw` goes to `createSession`, which parses and normalises on the way in.
+ * `access` is the audit shape and is **already** parsed and normalised — the
+ * `client` column is a 128-char device string, not a raw User-Agent, and `ip`
+ * is `inet`.
+ *
+ * Both live here rather than being derived at each emission site because
+ * getting it wrong is invisible: a standalone audit write that throws is
+ * swallowed by contract, so an over-long User-Agent doesn't fail the request,
+ * it silently deletes the row. Most real browsers exceed 128 characters, so
+ * that lands as "Mac Chrome users are logged and iPhone users aren't" — a log
+ * that looks healthy while missing most of its rows.
+ */
+interface ResolvedClient extends ClientContext {
+  access: { ip: string | null; client: string | null };
+}
+
 function resolveClientContext(
   request: FastifyRequest,
   forwarded: ForwardedClientContext | undefined,
   expected: string | undefined,
-): ClientContext {
+): ResolvedClient {
+  const withAccess = (raw: ClientContext): ResolvedClient => ({
+    ...raw,
+    access: { ip: normalizeIp(raw.ip), client: parseClient(raw.userAgent) },
+  });
+
   const observed: ClientContext = {
     ip: request.ip ?? null,
     userAgent: request.headers["user-agent"] ?? null,
   };
 
-  if (!expected || !forwarded) return observed;
+  if (!expected || !forwarded) return withAccess(observed);
 
   const supplied = request.headers["x-internal-auth"];
   if (typeof supplied !== "string" || !secretsMatch(supplied, expected)) {
     request.log.warn("clientContext supplied without a valid internal secret — ignoring");
-    return observed;
+    return withAccess(observed);
   }
 
-  return {
+  return withAccess({
     ip: typeof forwarded.ip === "string" && forwarded.ip ? forwarded.ip : observed.ip,
     userAgent:
       typeof forwarded.userAgent === "string" && forwarded.userAgent
         ? forwarded.userAgent
         : observed.userAgent,
-  };
+  });
 }
 
 /**
@@ -261,7 +286,7 @@ export async function authRoutes(app: FastifyInstance) {
         action: "setup.completed",
         actor: { id: outcome.user.id, kind: "user" },
         target: { type: "member", id: outcome.user.id, name: outcome.user.email },
-        access: { ip: client.ip, client: client.userAgent, sessionId: session.id },
+        access: { ...client.access, sessionId: session.id },
       });
 
       return reply
@@ -412,11 +437,13 @@ export async function authRoutes(app: FastifyInstance) {
         client,
       });
       await recordSignIn(db, result.user.id);
+      // No access context: the catalog files this under people, not access.
+      // Defensible — "this invitation became an account" is complete without an
+      // address, and the sign-in it implies is recorded separately.
       await audit.write({
         action: "invite.redeemed",
         actor: { id: result.user.id, kind: "user" },
         target: { type: "invite", id: result.invitation.id, name: result.invitation.email },
-        access: { ip: client.ip, client: client.userAgent, sessionId: session.id },
       });
 
       return reply
@@ -460,7 +487,7 @@ export async function authRoutes(app: FastifyInstance) {
         await audit.write({
           action: "password.reset_requested",
           actor: { id: user.id, kind: "user" },
-          access: { ip: client.ip, client: client.userAgent, sessionId: null },
+          access: { ...client.access, sessionId: null },
         });
         // TODO(slice: email adapter) — managed delivery. Until the adapter
         // lands the link is logged, which is visible to an operator and to
@@ -520,7 +547,7 @@ export async function authRoutes(app: FastifyInstance) {
       await audit.write({
         action: "password.reset_completed",
         actor: { id: outcome.user.id, kind: "user" },
-        access: { ip: client.ip, client: client.userAgent, sessionId: null },
+        access: { ...client.access, sessionId: null },
       });
 
       // No session. The person proves the new password works by using it —
@@ -567,8 +594,10 @@ export async function authRoutes(app: FastifyInstance) {
       if (lock.locked) {
         await audit.write({
           action: "signin.blocked",
-          actor: { id: null, kind: "user", },
-          access: { ip: client.ip, client: client.userAgent, sessionId: null },
+          // Named. A lockout row that doesn't say which account was locked
+          // can't be acted on, and the address is right here.
+          actor: { id: null, kind: "user", label: body.email, email: body.email },
+          access: { ...client.access, sessionId: null },
           note: "too many failed attempts",
         });
         return reply.code(423).send({
@@ -588,8 +617,11 @@ export async function authRoutes(app: FastifyInstance) {
         await recordFailure(db, body.email);
         await audit.write({
           action: "signin.failed",
-          actor: { id: user?.id ?? null, kind: "user" },
-          access: { ip: client.ip, client: client.userAgent, sessionId: null },
+          // `label` carries the typed address when no account backs it. Without
+          // it you cannot tell a typo from a run of guesses across a list of
+          // addresses — the investigation this row exists for.
+          actor: { id: user?.id ?? null, kind: "user", label: body.email, email: body.email },
+          access: { ...client.access, sessionId: null },
           note: user ? "wrong password" : "unknown address",
         });
         return reply
@@ -608,7 +640,7 @@ export async function authRoutes(app: FastifyInstance) {
       await audit.write({
         action: "signin.succeeded",
         actor: { id: user.id, kind: "user" },
-        access: { ip: client.ip, client: client.userAgent, sessionId: session.id },
+        access: { ...client.access, sessionId: session.id },
       });
 
       return { user: toPublicUser(user), sessionId: session.id };
@@ -693,7 +725,7 @@ export async function authRoutes(app: FastifyInstance) {
       await audit.write({
         action: "signin.succeeded",
         actor: { id: user.id, kind: "user" },
-        access: { ip: client.ip, client: client.userAgent, sessionId: session.id },
+        access: { ...client.access, sessionId: session.id },
       });
 
       return { user: toPublicUser(user), sessionId: session.id };
