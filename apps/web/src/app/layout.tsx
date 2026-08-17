@@ -1,19 +1,32 @@
 import type { Metadata } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
+import localFont from "next/font/local";
 import { AuthProvider } from "@/components/auth/auth-provider";
 import "@/styles/globals.css";
 
-// Self-hosted at build time by next/font — the prototype loads the same two
-// families from Google Fonts; without them every metric number renders in
-// system-ui and nothing is pixel-comparable.
-const inter = Inter({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+// The same two families the prototype uses — without them every metric number
+// renders in system-ui and nothing is pixel-comparable.
+//
+// **Vendored, not fetched.** `next/font/google` downloads these at BUILD time
+// from URLs baked into Next's own font metadata, and Google rotates the asset
+// hashes: gstatic began 404ing the Inter v20 file this version asks for, which
+// broke `next build` outright — an image build in CI, and then the dev server,
+// with `Module not found: @vercel/turbopack-next/internal/font/google/font`.
+// A build that reaches the public internet for an asset somebody else can
+// rotate is a build that fails on somebody else's schedule.
+//
+// These are the latin-subset variable files (one per family, ~47 KB and ~39 KB),
+// which cover every weight the design uses. Refresh them from
+// fonts.googleapis.com/css2 if a new weight or subset is ever needed.
+const inter = localFont({
+  src: "./fonts/Inter-latin.woff2",
+  weight: "100 900",
+  display: "swap",
   variable: "--font-inter",
 });
-const jbMono = JetBrains_Mono({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+const jbMono = localFont({
+  src: "./fonts/JetBrainsMono-latin.woff2",
+  weight: "100 800",
+  display: "swap",
   variable: "--font-jbmono",
 });
 
