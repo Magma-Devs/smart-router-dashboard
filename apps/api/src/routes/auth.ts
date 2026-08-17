@@ -23,7 +23,7 @@ import {
   resetUrl,
 } from "../services/password-reset.js";
 import { checkLock, clearFailures, recordFailure } from "../services/lockout.js";
-import { noopAuditWriter, type AuditWriter } from "../services/audit.js";
+import { lazyAuditWriter, type AuditWriter } from "../services/audit.js";
 import {
   completeSetup,
   needsSetup,
@@ -147,7 +147,7 @@ function resolveClientContext(
  * invitations land in slice 3.
  */
 export async function authRoutes(app: FastifyInstance) {
-  const audit: AuditWriter = noopAuditWriter(app.log);
+  const audit: AuditWriter = lazyAuditWriter(app);
   // Read from the live env at register time, not from the config snapshot —
   // that is taken at module load, before a test (or a late-loaded secrets file)
   // can set it. Same reason the auth plugin re-reads AUTH_SECRET.
@@ -440,7 +440,7 @@ export async function authRoutes(app: FastifyInstance) {
       },
     },
     async (request, reply) => {
-      if (config.deploymentMode !== "managed") {
+      if ((process.env.DEPLOYMENT_MODE ?? config.deploymentMode) !== "managed") {
         // On-prem has nowhere to send it. Saying so is better than accepting
         // the request and silently doing nothing.
         return reply.code(404).send({

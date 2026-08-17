@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import type { Database } from "@sr/db";
 import { isRole, roleAtLeast, toCsv, type Role } from "@sr/shared";
 import { requireRole } from "../plugins/auth.js";
-import { noopAuditWriter, type AuditWriter } from "../services/audit.js";
+import { lazyAuditWriter, type AuditWriter } from "../services/audit.js";
 import {
   createInvitation,
   inviteUrl,
@@ -36,8 +36,12 @@ interface InviteBody {
  * `routes/auth.ts`, because the person redeeming has no account yet.
  */
 export async function teamRoutes(app: FastifyInstance) {
-  const audit: AuditWriter = noopAuditWriter(app.log);
-  const mode: DeploymentMode = config.deploymentMode;
+  const audit: AuditWriter = lazyAuditWriter(app);
+  // Read from the live env at register time. `config` snapshots at module load,
+  // which is before a test — or anything that loads secrets late — can set it.
+  const mode: DeploymentMode =
+    (process.env.DEPLOYMENT_MODE as DeploymentMode | undefined) ?? config.deploymentMode;
+  const publicWebOrigin = process.env.PUBLIC_WEB_ORIGIN ?? config.publicWebOrigin;
 
   function dbOr503(reply: FastifyReply): Database | null {
     if (!app.db) {
@@ -52,7 +56,7 @@ export async function teamRoutes(app: FastifyInstance) {
   /** Where invite links point. Without it we can't build one, and returning a
    *  link to a host we guessed would be worse than saying so. */
   function webOrigin(reply: FastifyReply): string | null {
-    const origin = config.publicWebOrigin;
+    const origin = publicWebOrigin;
     if (!origin) {
       void reply.code(500).send({
         statusCode: 500,
@@ -255,7 +259,7 @@ export async function teamRoutes(app: FastifyInstance) {
 
 /** Split out so the invite routes above stay readable — same registration. */
 export async function teamPasswordRoutes(app: FastifyInstance) {
-  const audit: AuditWriter = noopAuditWriter(app.log);
+  const audit: AuditWriter = lazyAuditWriter(app);
 
   app.post(
     "/api/team/members/:id/reset-link",
@@ -281,7 +285,7 @@ export async function teamPasswordRoutes(app: FastifyInstance) {
           message: "auth database not ready",
         });
       }
-      const origin = config.publicWebOrigin;
+      const origin = process.env.PUBLIC_WEB_ORIGIN ?? config.publicWebOrigin;
       if (!origin) {
         return reply.code(500).send({
           statusCode: 500,
@@ -307,7 +311,7 @@ export async function teamPasswordRoutes(app: FastifyInstance) {
 
       const created = await createPasswordReset(db, {
         userId: target.id,
-        mode: config.deploymentMode,
+        mode: (process.env.DEPLOYMENT_MODE as "managed" | "onprem" | undefined) ?? config.deploymentMode,
         // The column an auditor reads: an admin started this, not the holder.
         createdBy: me.id,
       });
@@ -335,7 +339,7 @@ interface RoleBody {
 /** The member list and the two mutations that act on somebody else. Split from
  *  the invite routes above only for length — same registration. */
 export async function teamMemberRoutes(app: FastifyInstance) {
-  const audit: AuditWriter = noopAuditWriter(app.log);
+  const audit: AuditWriter = lazyAuditWriter(app);
 
   function db(reply: FastifyReply): Database | null {
     if (!app.db) {
@@ -502,11 +506,15 @@ export async function teamMemberRoutes(app: FastifyInstance) {
           : reply.code(404).send({ statusCode: 404, error: "Not Found", message: "No such member." });
       }
 
+      // No `changes`: MAG-2770's catalog says this verb carries no diff, and it
+      // is right — "removed" is self-describing, and `status: active -> removed`
+      // adds nothing a reader didn't get from the verb. Sending it anyway made
+      // the writer report a `changes-not-expected` violation, which is exactly
+      // the cross-side mismatch the emission test exists to catch.
       await audit.write({
         action: "member.removed",
         actor: { id: me.id, kind: "user" },
         target: { type: "member", id: result.user.id, name: result.user.email },
-        changes: [{ field: "status", from: "active", to: "removed" }],
       });
       await onMemberDeactivated(conn, result.user.id, "removed");
 
