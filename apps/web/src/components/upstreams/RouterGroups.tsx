@@ -54,6 +54,7 @@ export function RouterGroups({
   upstreams,
   search,
   netFilter,
+  chainFilter,
 }: {
   routers: RouterTopology[];
   /** Upstream roster — the detail sheet lists the nodes behind an endpoint. */
@@ -61,6 +62,8 @@ export function RouterGroups({
   /** Page-level filters, applied to the rows this grouping renders. */
   search: string;
   netFilter: "all" | "mainnet" | "testnet";
+  /** Spec label from the page's chain picker; null = every chain. */
+  chainFilter: string | null;
 }) {
   const { scopeQ } = useFilters();
   // Health per spec — threaded into the Try-now drawer's status tag (omitted
@@ -92,7 +95,8 @@ export function RouterGroups({
       const matchNet =
         netFilter === "all" ||
         (netFilter === "mainnet" ? c.mainnet : !c.mainnet);
-      return matchSearch && matchNet;
+      const matchChain = chainFilter === null || ep.spec === chainFilter;
+      return matchSearch && matchNet && matchChain;
     });
     const map = new Map<string, RouterGroup>();
     filtered.forEach((ep) => {
@@ -104,7 +108,7 @@ export function RouterGroups({
       g.rows.push(ep);
     });
     return [...map.values()];
-  }, [endpoints, search, netFilter]);
+  }, [endpoints, search, netFilter, chainFilter]);
 
   /* Specs served by more than one router — the config allows several routers
      on one chain (different ids/hostnames, same `network`), and those cards
