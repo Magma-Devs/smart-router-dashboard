@@ -14,7 +14,7 @@ import { metricRoutes } from "./routes/metrics.js";
 import { configRoutes } from "./routes/config.js";
 import { upstreamRoutes } from "./routes/upstreams.js";
 import { authRoutes } from "./routes/auth.js";
-import { teamRoutes, teamPasswordRoutes } from "./routes/team.js";
+import { teamRoutes, teamPasswordRoutes, teamMemberRoutes } from "./routes/team.js";
 import { accountRoutes } from "./routes/account.js";
 import { announceSetupToken } from "./services/setup.js";
 
@@ -69,6 +69,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     await app.register(authRoutes);
     await app.register(teamRoutes);
     await app.register(teamPasswordRoutes);
+    await app.register(teamMemberRoutes);
     await app.register(accountRoutes);
 
     // Once the database is up, mint + log the first-run token if this install
