@@ -20,7 +20,7 @@ import {
 } from "../services/invitations.js";
 import { consumePasswordReset } from "../services/password-reset.js";
 import { clearFailures, lockedReply, recordAttempt } from "../services/lockout.js";
-import { noopAuditWriter, type AuditWriter } from "../services/audit.js";
+import { lazyAuditWriter, type AuditWriter } from "../services/audit.js";
 import {
   completeSetup,
   needsSetup,
@@ -163,7 +163,7 @@ export function resolveClientContext(
  * invitations land in slice 3.
  */
 export async function authRoutes(app: FastifyInstance) {
-  const audit: AuditWriter = noopAuditWriter(app.log);
+  const audit: AuditWriter = lazyAuditWriter(app);
   // Read from the live env at register time, not from the config snapshot —
   // that is taken at module load, before a test (or a late-loaded secrets file)
   // can set it. Same reason the auth plugin re-reads AUTH_SECRET.
