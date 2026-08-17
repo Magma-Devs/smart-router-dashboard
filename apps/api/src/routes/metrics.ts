@@ -121,13 +121,18 @@ export async function metricRoutes(app: FastifyInstance) {
         properties: {
           spec: windowQuerySchema.properties.spec,
           router: windowQuerySchema.properties.router,
+          routerId: windowQuerySchema.properties.routerId,
         },
       },
     },
   }, async (request) => {
     return app
       .scoped(request.query.router)
-      .metrics.blockTips(config.prometheus.routerScopeLabel, request.query.spec);
+      .metrics.blockTips(
+        config.prometheus.routerScopeLabel,
+        request.query.spec,
+        request.query.routerId,
+      );
   });
 
   // RPS time-series for the Traffic chart.

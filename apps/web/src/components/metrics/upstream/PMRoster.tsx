@@ -18,6 +18,8 @@ import { ThCol, useSort } from "@/components/gateway/SortTable";
 import { useFilters } from "@/components/gateway/FiltersProvider";
 import { useRouterFilter } from "@/hooks/use-router-options";
 
+const STALE_HINT = "Tip gauge unchanged for 15 minutes while the chain kept producing blocks";
+
 const BEHIND_TIP = "**How far this upstream trails the chain's best upstream** — blocks behind ÷ the chain's own block rate, so the number is in seconds and comparable across chains.\n\n`—` means it IS the best tip seen. **Stale** means the tip gauge never moved over the last 15 minutes while the chain kept producing blocks: the upstream is stuck, not merely slow.";
 
 interface RosterRow {
@@ -167,7 +169,7 @@ export function PMRoster({ rows, activeName, onSelect, timeWindow }: {
                 </td>
                 <td style={{ textAlign: "right" }}>
                   {v.stale ? (
-                    <span style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", padding: "1px 6px", borderRadius: 4, color: "var(--err)", background: "rgba(239,68,68,0.12)" }}>Stale</span>
+                    <span className="gw-tag gw-tag--err" title={STALE_HINT}>Stale</span>
                   ) : v.behindSec != null && v.behindSec >= 1 ? (
                     <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-end" }}>
                       <span className="gw-mono gw-tnum" style={{ fontSize: 12, color: tipLagColor(v.behindSec) }}>{fmtLag(v.behindSec)}</span>
@@ -194,7 +196,7 @@ export function PMRoster({ rows, activeName, onSelect, timeWindow }: {
             );
           })}
           {rows.length === 0 && (
-            <tr><td colSpan={9} style={{ padding: "24px 16px", textAlign: "center", color: "var(--text-4)", fontSize: 13 }}>No upstreams configured yet.</td></tr>
+            <tr><td colSpan={10} style={{ padding: "24px 16px", textAlign: "center", color: "var(--text-4)", fontSize: 13 }}>No upstreams configured yet.</td></tr>
           )}
         </tbody>
       </table>

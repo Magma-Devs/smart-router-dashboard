@@ -388,4 +388,19 @@ describe("api routes", () => {
     expect(row).toMatchObject({ blockLag: 0, behindSec: 0, stale: false });
   });
 
+
+  it("GET /api/metrics/block-heights?routerId= filters upstream tips by the config router", async () => {
+    // No config is mounted in this harness, so no upstream is declared by any
+    // router — the filter must empty the list rather than ignore the param.
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/metrics/block-heights?routerId=eth-prod",
+    });
+    expect(res.statusCode).toBe(200);
+    const eth = res.json().chains.find((c: { spec: string }) => c.spec === "ETH1");
+    expect(eth.upstreams).toEqual([]);
+    // The router rows are a chain-level series and are NOT narrowed by this axis.
+    expect(eth.routers).toHaveLength(1);
+  });
+
 });
