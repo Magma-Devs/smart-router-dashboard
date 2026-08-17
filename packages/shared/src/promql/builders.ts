@@ -8,7 +8,7 @@ import {
   OPTIMIZER_METRICS,
   ROUTER_METRICS,
 } from "../constants/metrics.js";
-import { WINDOWS, type MetricWindow } from "../constants/windows.js";
+import { DEFAULT_WINDOW, WINDOWS, type MetricWindow } from "../constants/windows.js";
 
 /** Build a `{spec="ETH1",...}` label selector; empty string for no filters. */
 export function selector(labels: Record<string, string | undefined>): string {
@@ -39,7 +39,7 @@ function off(offset?: string): string {
  */
 export function qRequestsTotal(
   spec?: string,
-  window: MetricWindow = "1d",
+  window: MetricWindow = DEFAULT_WINDOW,
   offset?: string,
 ): string {
   // round(): increase() extrapolates to the window edges and returns a float, so
@@ -53,7 +53,7 @@ export function qRequestsTotal(
 /** Client requests served over the window (one increment per client request). */
 export function qClientRequestsTotal(
   spec?: string,
-  window: MetricWindow = "1d",
+  window: MetricWindow = DEFAULT_WINDOW,
   offset?: string,
 ): string {
   return `round(sum(increase(${ROUTER_METRICS.latencyCount}${selector({ spec })}[${rangeFor(window)}]${off(offset)})))`;
@@ -62,7 +62,7 @@ export function qClientRequestsTotal(
 /** Client requests grouped by a label (`spec` or `function` = method). */
 export function qClientRequestsBy(
   by: "spec" | "function",
-  window: MetricWindow = "1d",
+  window: MetricWindow = DEFAULT_WINDOW,
   spec?: string,
 ): string {
   return `round(sum by (${by}) (increase(${ROUTER_METRICS.latencyCount}${selector({ spec })}[${rangeFor(window)}])))`;
@@ -81,7 +81,7 @@ export function qClientRpsSeriesExpr(step: string, spec?: string): string {
 /** Per-method p95/p50/… — the histogram DOES carry the method (as `function`). */
 export function qMethodLatencyQuantile(
   quantile: number,
-  window: MetricWindow = "1d",
+  window: MetricWindow = DEFAULT_WINDOW,
   spec?: string,
 ): string {
   return `histogram_quantile(${quantile}, sum by (function, le) (rate(${ROUTER_METRICS.latencyBucket}${selector({ spec })}[${rangeFor(window)}])))`;
@@ -97,7 +97,7 @@ export function qMethodLatencyQuantile(
  * of history, but the clamp keeps the KPI honest at every age. */
 export function qAvailability(
   spec?: string,
-  window: MetricWindow = "1d",
+  window: MetricWindow = DEFAULT_WINDOW,
   offset?: string,
 ): string {
   const sel = selector({ spec });
@@ -109,7 +109,7 @@ export function qAvailability(
 /** 1 - success/total → error rate (0..1). */
 export function qErrorRate(
   spec?: string,
-  window: MetricWindow = "1d",
+  window: MetricWindow = DEFAULT_WINDOW,
   offset?: string,
 ): string {
   return `1 - (${qAvailability(spec, window, offset)})`;
@@ -119,7 +119,7 @@ export function qErrorRate(
 export function qLatencyQuantile(
   quantile: number,
   spec?: string,
-  window: MetricWindow = "1d",
+  window: MetricWindow = DEFAULT_WINDOW,
   offset?: string,
 ): string {
   const sel = selector({ spec });
@@ -148,7 +148,7 @@ export function qEndpointScore(scoreType: string, spec?: string): string {
 }
 
 /** Per-endpoint request totals over the window, grouped by endpoint_id. */
-export function qEndpointRequests(spec?: string, window: MetricWindow = "1d"): string {
+export function qEndpointRequests(spec?: string, window: MetricWindow = DEFAULT_WINDOW): string {
   return `sum by (endpoint_id) (increase(${ENDPOINT_METRICS.totalRelaysServiced}${selector({ spec })}[${rangeFor(window)}]))`;
 }
 
@@ -162,7 +162,7 @@ export function qEndpointHealth(spec?: string): string {
 /** Absolute error count over the window (total − success), whole number. */
 export function qErrorCount(
   spec?: string,
-  window: MetricWindow = "1d",
+  window: MetricWindow = DEFAULT_WINDOW,
   offset?: string,
 ): string {
   const sel = selector({ spec });
@@ -179,7 +179,7 @@ export type ErrorsGroupBy = "spec" | "provider_address" | "method";
  */
 export function qErrorsBy(
   by: ErrorsGroupBy,
-  window: MetricWindow = "1d",
+  window: MetricWindow = DEFAULT_WINDOW,
   spec?: string,
 ): string {
   const sel = selector({ spec });
@@ -192,7 +192,7 @@ export function qErrorsBy(
 /** Relays grouped by a label over the window (whole numbers). */
 export function qRequestsBy(
   by: ErrorsGroupBy,
-  window: MetricWindow = "1d",
+  window: MetricWindow = DEFAULT_WINDOW,
   spec?: string,
 ): string {
   return `round(sum by (${by}) (increase(${ROUTER_METRICS.requestsTotal}${selector({ spec })}[${rangeFor(window)}])))`;
@@ -206,7 +206,7 @@ export function qRequestsBy(
 export function qLabelledErrorsBy(
   metricName: string,
   by: "spec" | "method" | "provider_address",
-  window: MetricWindow = "1d",
+  window: MetricWindow = DEFAULT_WINDOW,
   spec?: string,
 ): string {
   return `round(sum by (${by}) (increase(${metricName}${selector({ spec })}[${rangeFor(window)}])))`;
@@ -215,7 +215,7 @@ export function qLabelledErrorsBy(
 /** Total of a labelled error counter over the window (whole number). */
 export function qLabelledErrorsTotal(
   metricName: string,
-  window: MetricWindow = "1d",
+  window: MetricWindow = DEFAULT_WINDOW,
   spec?: string,
   offset?: string,
 ): string {
@@ -293,7 +293,7 @@ export function qBackupShareExpr(
 export function qEndpointLatencyQuantile(
   quantile: number,
   endpointId: string,
-  window: MetricWindow = "1d",
+  window: MetricWindow = DEFAULT_WINDOW,
 ): string {
   return `histogram_quantile(${quantile}, sum by (le) (rate(${ENDPOINT_METRICS.latencyBucket}${selector({ endpoint_id: endpointId })}[${rangeFor(window)}])))`;
 }
@@ -326,7 +326,7 @@ export function qUpstreamReadVolumeSeriesExpr(
 /** Per-upstream error rate over the window (router scope). */
 export function qUpstreamErrorRate(
   upstreamAddress: string,
-  window: MetricWindow = "1d",
+  window: MetricWindow = DEFAULT_WINDOW,
 ): string {
   const sel = selector({ provider_address: upstreamAddress });
   const r = rangeFor(window);
@@ -460,7 +460,7 @@ export function qOptimizerScore(scoreType: string, spec?: string): string {
  * "relay requests that enforced a minimum seen block").
  */
 export function qConsistencyChecked(
-  window: MetricWindow = "1d",
+  window: MetricWindow = DEFAULT_WINDOW,
   offset?: string,
   spec?: string,
 ): string {
@@ -475,7 +475,7 @@ export function qConsistencyChecked(
  * "caught stale response" (the bug this replaced).
  */
 export function qConsistencyCaught(
-  window: MetricWindow = "1d",
+  window: MetricWindow = DEFAULT_WINDOW,
   offset?: string,
   spec?: string,
 ): string {
@@ -489,7 +489,7 @@ export function qCsm(): string {
 
 /** Latency histogram bucket distribution over the window (per le). */
 export function qLatencyDistribution(
-  window: MetricWindow = "1d",
+  window: MetricWindow = DEFAULT_WINDOW,
   spec?: string,
 ): string {
   return `sum by (le) (increase(${ROUTER_METRICS.latencyBucket}${selector({ spec })}[${rangeFor(window)}]))`;
