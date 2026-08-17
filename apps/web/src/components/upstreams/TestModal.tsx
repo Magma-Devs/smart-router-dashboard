@@ -54,7 +54,7 @@ export function TestModal({ open, onClose, upstream, routers }: {
   }, [upstream, routers]);
 
   const run = async () => {
-    if (!target) return;
+    if (!target || !upstream) return;
     setStage("running");
     setOutcome(null);
     setErrMsg("");
@@ -62,7 +62,15 @@ export function TestModal({ open, onClose, upstream, routers }: {
     try {
       const res = await fetch(target.url, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          // Pin the relay to the upstream this modal is about. Without it the
+          // router picks whichever upstream it likes and a green "Connection
+          // successful" says nothing about the one under test. The name is the
+          // node name the api reflects — already folded to what the router
+          // registers, so it matches `provider_address` exactly.
+          "lava-select-provider": upstream.name,
+        },
         body: target.body,
       });
       const ms = Math.round(performance.now() - t0);
@@ -105,6 +113,13 @@ export function TestModal({ open, onClose, upstream, routers }: {
           {!target && (
             <div style={{ padding: "12px 14px", borderRadius: 8, background: "var(--hover)", fontSize: 12, color: "var(--text-3)", lineHeight: 1.5 }}>
               {NO_PORT_MSG}.
+            </div>
+          )}
+          {target && (
+            <div style={{ fontSize: 12, color: "var(--text-3)", lineHeight: 1.5 }}>
+              Sent through the router, pinned to this upstream with the{" "}
+              <span className="gw-mono">lava-select-provider</span> header — the router&apos;s
+              cache can still answer it.
             </div>
           )}
           {stage === "running" && target && (

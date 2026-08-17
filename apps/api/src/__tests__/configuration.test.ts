@@ -281,9 +281,12 @@ routers:
       expect(svc.resolveEndpointUrl({ routerId: "iota-mainnet", node, endpointIndex: 0 })).toBe(
         "https://iota.lava.build/keyed/path",
       );
+      // And the raw name a caller may still be holding (a hand-written call,
+      // a name read off an older page) folds to the same endpoint rather than
+      // 404-ing — the same folding the pin header goes through.
       expect(
         svc.resolveEndpointUrl({ routerId: "iota-mainnet", node: "Lava", endpointIndex: 0 }),
-      ).toBeNull();
+      ).toBe("https://iota.lava.build/keyed/path");
     });
 
     it("still falls back to the network when a node is unnamed", () => {
@@ -562,6 +565,207 @@ direct-rpc:
       - url: "https://eth1.lava.build"
 `).getRouters();
     expect(routers[0]!.nodes[0]!.name).toBe("Eth Lava");
+  });
+});
+
+/* ── Endpoint lookup: ONE vocabulary for the pin header and the relay ─────
+   The pin header goes through `normalizeHelmNodeName`; so does the relay's
+   own resolution, so "via router, pinned to X" and "straight to X" can never
+   disagree about which upstream X is. */
+
+describe("ConfigurationService.resolveEndpoint · node-name folding", () => {
+  const HELM_MIXED_CASE = `
+routers:
+  - id: Iota-Mainnet
+    network: iota
+    nodes:
+      - name: My Node Co
+        endpoints: [{ url: "https://iota.mynode.example/keyed", interface: jsonrpc }]
+`;
+
+  it("folds the router id too — metrics labels arrive lowercased", () => {
+    const svc = serviceFor(HELM_MIXED_CASE);
+    expect(
+      svc.resolveEndpointUrl({ routerId: "iota-mainnet", node: "my-node-co", endpointIndex: 0 }),
+    ).toBe("https://iota.mynode.example/keyed");
+  });
+
+  it("accepts the display name the values file wrote", () => {
+    const svc = serviceFor(HELM_MIXED_CASE);
+    expect(
+      svc.resolveEndpointUrl({ routerId: "Iota-Mainnet", node: "My Node Co", endpointIndex: 0 }),
+    ).toBe("https://iota.mynode.example/keyed");
+  });
+
+  it("refuses to guess when two nodes fold to the same name", () => {
+    // The router itself couldn't tell these apart either; dialing a coin-flip
+    // upstream would make the comparison meaningless.
+    const svc = serviceFor(`
+routers:
+  - id: A
+    network: eth1
+    nodes:
+      - name: Node One
+        endpoints: [{ url: "https://one.example", interface: jsonrpc }]
+      - name: node-one
+        endpoints: [{ url: "https://two.example", interface: jsonrpc }]
+`);
+    expect(svc.resolveEndpointUrl({ routerId: "A", node: "NODE ONE", endpointIndex: 0 })).toBeNull();
+  });
+
+  it("still resolves an SR_CONFIG name verbatim — that file IS the router's config", () => {
+    const svc = serviceFor(`
+endpoints:
+  - listen-address: "0.0.0.0:3360"
+    chain-id: "ETH1"
+    api-interface: "jsonrpc"
+direct-rpc:
+  - name: "Eth Lava"
+    chain-id: "ETH1"
+    api-interface: "jsonrpc"
+    node-urls:
+      - url: "https://eth1.lava.build/keyed"
+`);
+    expect(svc.getRouters()[0]!.nodes[0]!.name).toBe("Eth Lava");
+    expect(svc.resolveEndpointUrl({ routerId: "ETH1", node: "Eth Lava", endpointIndex: 0 })).toBe(
+      "https://eth1.lava.build/keyed",
+    );
+  });
+});
+
+/* ── auth-config: the credential the router attaches, and the relay must ──── */
+
+describe("ConfigurationService.resolveEndpoint · auth-config", () => {
+  it("reads the helm dialect's auth headers and query, and keeps them out of the topology", () => {
+    const svc = serviceFor(`
+routers:
+  - id: Hyperliquid
+    network: hyperliquid
+    nodes:
+      - name: Lava
+        endpoints:
+          - url: "https://g.w.lavanet.xyz/gateway/hyperliquid/rpc-http/"
+            interface: jsonrpc
+            auth_config:
+              auth_headers:
+                Authorization: "Bearer 0f8d432c-18c2-47c0"
+              auth_query: "apikey=abcdef123456"
+`);
+    const dial = svc.resolveEndpoint({ routerId: "Hyperliquid", node: "lava", endpointIndex: 0 })!;
+    expect(dial.authHeaders).toEqual({ Authorization: "Bearer 0f8d432c-18c2-47c0" });
+    expect(dial.authQuery).toBe("apikey=abcdef123456");
+    expect(dial.unresolved).toEqual([]);
+    // The masked topology is what the browser gets — no credential in it.
+    expect(JSON.stringify(svc.getRouters())).not.toContain("0f8d432c-18c2-47c0");
+    expect(JSON.stringify(svc.getRouters())).not.toContain("abcdef123456");
+  });
+
+  it("reads the SR_CONFIG dialect (kebab-case) off a node-url", () => {
+    const svc = serviceFor(`
+endpoints:
+  - listen-address: "0.0.0.0:3360"
+    chain-id: "ETH1"
+    api-interface: "jsonrpc"
+direct-rpc:
+  - name: "eth-vendor"
+    chain-id: "ETH1"
+    api-interface: "jsonrpc"
+    node-urls:
+      - url: "https://rpc.vendor.example"
+        auth-config:
+          auth-headers:
+            x-api-key: "sk-live-abcdef123456"
+          auth-query: "token=t-abcdef123456"
+`);
+    const dial = svc.resolveEndpoint({ routerId: "ETH1", node: "eth-vendor", endpointIndex: 0 })!;
+    expect(dial.authHeaders).toEqual({ "x-api-key": "sk-live-abcdef123456" });
+    expect(dial.authQuery).toBe("token=t-abcdef123456");
+  });
+
+  it("substitutes a `${VAR}` from the values file's own routers env", () => {
+    // The chart's config-processor initContainer runs envsubst over the
+    // rendered router config; the literal lives in the same values file.
+    const svc = serviceFor(`
+miscellaneous:
+  routers:
+    env:
+      - name: HL_TOKEN
+        value: "tok-abcdef123456"
+routers:
+  - id: Hyperliquid
+    network: hyperliquid
+    nodes:
+      - name: Lava
+        endpoints:
+          - url: "https://rpc.example/\${HL_TOKEN}/evm"
+            interface: jsonrpc
+            auth_config:
+              auth_headers:
+                Authorization: "Bearer \${HL_TOKEN}"
+`);
+    const dial = svc.resolveEndpoint({ routerId: "Hyperliquid", node: "lava", endpointIndex: 0 })!;
+    expect(dial.url).toBe("https://rpc.example/tok-abcdef123456/evm");
+    expect(dial.authHeaders).toEqual({ Authorization: "Bearer tok-abcdef123456" });
+    expect(dial.unresolved).toEqual([]);
+  });
+
+  it("names what it could NOT resolve instead of dialing a literal placeholder", () => {
+    const svc = serviceFor(`
+miscellaneous:
+  routers:
+    env:
+      - name: OTHER_TOKEN
+        value: "irrelevant"
+      - name: HL_TOKEN
+        secretRef:
+          name: hl-credentials
+          key: token
+routers:
+  - id: Hyperliquid
+    network: hyperliquid
+    nodes:
+      - name: Lava
+        endpoints:
+          - url: "https://rpc.example/evm"
+            interface: jsonrpc
+            auth_config:
+              auth_headers:
+                Authorization: "Bearer \${HL_TOKEN}"
+`);
+    const dial = svc.resolveEndpoint({ routerId: "Hyperliquid", node: "lava", endpointIndex: 0 })!;
+    // A Secret the router mounts and the dashboard does not.
+    expect(dial.unresolved).toEqual(["${HL_TOKEN}"]);
+    expect(dial.authHeaders).toEqual({ Authorization: "Bearer ${HL_TOKEN}" });
+  });
+
+  it("flags a header handed over as a secretRef object", () => {
+    const svc = serviceFor(`
+routers:
+  - id: A
+    network: eth1
+    nodes:
+      - name: Vendor
+        endpoints:
+          - url: "https://rpc.example"
+            interface: jsonrpc
+            auth_config:
+              auth_headers:
+                Authorization:
+                  secretRef:
+                    name: vendor-credentials
+                    key: token
+`);
+    const dial = svc.resolveEndpoint({ routerId: "A", node: "vendor", endpointIndex: 0 })!;
+    expect(dial.authHeaders).toEqual({});
+    expect(dial.unresolved).toEqual(["Authorization (Kubernetes secret)"]);
+  });
+
+  it("leaves an endpoint with no auth-config carrying nothing", () => {
+    const svc = serviceFor(SR_CONFIG_ETH);
+    const dial = svc.resolveEndpoint({ routerId: "ETH1", node: "eth-lava", endpointIndex: 0 })!;
+    expect(dial.authHeaders).toEqual({});
+    expect(dial.authQuery).toBeNull();
+    expect(dial.unresolved).toEqual([]);
   });
 });
 

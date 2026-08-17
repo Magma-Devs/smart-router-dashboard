@@ -37,6 +37,23 @@ direct-rpc:
     api-interface: "grpc"
     node-urls:
       - url: "grpcs://grpc.vendor.example:443"
+  - name: "Eth Gated"
+    chain-id: "ETH1"
+    api-interface: "jsonrpc"
+    node-urls:
+      - url: "https://gated.vendor.example/evm"
+        auth-config:
+          auth-headers:
+            Authorization: "Bearer tok-abcdef123456"
+          auth-query: "apikey=q-abcdef123456"
+  - name: "eth-secret-env"
+    chain-id: "ETH1"
+    api-interface: "jsonrpc"
+    node-urls:
+      - url: "https://env.vendor.example/evm"
+        auth-config:
+          auth-headers:
+            Authorization: "Bearer \${VENDOR_TOKEN}"
 `;
 
 const dir = mkdtempSync(join(tmpdir(), "srdash-relay-"));
@@ -216,6 +233,67 @@ describe("POST /api/upstreams/relay", () => {
     // is still the one the values file names.
     expect(res.statusCode).toBe(200);
     expect(seen).toEqual(["https://rpc.vendor.example/v2/sk-live-abcdef123456"]);
+  });
+});
+
+describe("POST /api/upstreams/relay · auth-config", () => {
+  it("dials with the endpoint's auth header and auth-query, as the router would", async () => {
+    const calls: { url: string; init: RequestInit }[] = [];
+    vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+      calls.push({ url, init });
+      return new Response(JSON.stringify({ result: "0x1" }), { status: 200 });
+    });
+
+    const res = await relay({
+      routerId: "ETH1",
+      node: "Eth Gated",
+      endpointIndex: 0,
+      httpMethod: "POST",
+      body: { jsonrpc: "2.0", id: 1, method: "eth_blockNumber", params: [] },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(calls[0]!.url).toBe("https://gated.vendor.example/evm?apikey=q-abcdef123456");
+    expect((calls[0]!.init.headers as Record<string, string>).Authorization).toBe(
+      "Bearer tok-abcdef123456",
+    );
+    // Neither half of the credential comes back out.
+    expect(res.body).not.toContain("tok-abcdef123456");
+    expect(res.body).not.toContain("q-abcdef123456");
+  });
+
+  it("resolves a node name by the same folding the pin header uses", async () => {
+    vi.stubGlobal("fetch", async () => new Response(JSON.stringify({ result: "0x1" }), { status: 200 }));
+    // `eth gated` is what a caller holding the router's own provider name has.
+    const res = await relay({
+      routerId: "eth1",
+      node: "eth-gated",
+      endpointIndex: 0,
+      httpMethod: "POST",
+      body: { jsonrpc: "2.0", id: 1, method: "eth_blockNumber", params: [] },
+    });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it("refuses 422 when the credential is an env placeholder the values file doesn't carry", async () => {
+    const seen: string[] = [];
+    vi.stubGlobal("fetch", async (url: string) => {
+      seen.push(url);
+      return new Response("{}", { status: 200 });
+    });
+
+    const res = await relay({
+      routerId: "ETH1",
+      node: "eth-secret-env",
+      endpointIndex: 0,
+      httpMethod: "POST",
+      body: { jsonrpc: "2.0", id: 1, method: "eth_blockNumber", params: [] },
+    });
+
+    expect(res.statusCode).toBe(422);
+    expect(res.json().message).toContain("VENDOR_TOKEN");
+    // Nothing was dialed with half a credential.
+    expect(seen).toEqual([]);
   });
 });
 

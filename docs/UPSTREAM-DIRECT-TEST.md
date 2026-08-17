@@ -69,21 +69,64 @@ index a row shows and the url the relay dials can never drift apart.
   `GET /api/config/routers` didn't already say.
 - **The resolved url is never returned**, never logged, and never put in a code
   snippet. Direct-mode snippets print `$UPSTREAM_URL` instead.
-- **The upstream's own body is scrubbed** of anything derived from that url
-  (`redactSecrets`) — vendors quote the request path in error bodies more often
-  than you'd hope. Path segments and query values under 8 characters are left
-  alone: they're `/evm` and `?height=42`, never keys.
+- **The upstream's own body is scrubbed** of anything derived from that url and
+  of the endpoint's declared credential (`redactSecrets`) — vendors quote the
+  request path in error bodies more often than you'd hope, and a 401 quotes the
+  token. Path segments and query values under 8 characters are left alone:
+  they're `/evm` and `?height=42`, never keys.
 - **REST paths are appended, not substituted.** `/blocks/latest` against
   `https://host/apikey-abc` dials `https://host/apikey-abc/blocks/latest`;
   `..`, `//host`, spaces and control characters are rejected.
 - **Redirects are not followed** (`redirect: "manual"`) — a `Location` can carry
   the credentialed path onward to a host nobody vetted.
-- **The caller's headers are dropped.** The relay sends only `accept` and, on a
-  POST, `content-type`.
+- **The caller's headers are dropped.** The relay sends only `accept`, on a POST
+  `content-type`, and the endpoint's own `auth-config` credential (below).
 - **Bounded**: 10 s deadline, 256 KB response cap (`truncated: true` past it),
   20 requests/minute/IP.
 - **gRPC upstreams are refused** — the relay has no gRPC client, so `grpcs://`
   endpoints are marked `directable: false` and rejected with that reason.
+
+### The upstream's credential travels with the request
+
+A vendor key does not always live in the url. `auth-config` on a node url puts
+it in a header or a query string, and the router attaches it to every relay it
+sends there:
+
+```yaml
+# helm values (the chart folds this into the router's own auth-config)
+endpoints:
+  - url: "https://gated.vendor.example/evm"
+    interface: jsonrpc
+    auth_config:
+      auth_headers:
+        Authorization: "Bearer 0f8d432c-18c2-47c0"
+      auth_query: "apikey=abcdef123456"
+```
+
+The relay sends the same thing, so the direct leg is the router's leg minus the
+router — not the router's leg minus its credential. The query string is appended
+the way the router's own `AddAuthPath` appends it (`?` when the url carries no
+query yet, `&` when it does), and the header rides the ws handshake too.
+
+**Placeholders the values file doesn't resolve.** The chart runs `envsubst` over
+the rendered router config, so a credential is often written `${VENDOR_TOKEN}`
+and supplied to the router's container from `miscellaneous.routers.env`. The
+relay resolves a placeholder against that block's literal `value:` entries —
+and only those. A `secretRef` lives in a Kubernetes Secret the dashboard doesn't
+mount, and the api's own environment is deliberately not a source: a values file
+could otherwise name `${AUTH_SECRET}` and have the relay carry the dashboard's
+signing key to an upstream host. When a placeholder can't be resolved the route
+answers `422` naming what is missing, rather than dialing a literal `${VAR}` and
+reporting the upstream's 401 as the upstream's verdict on the request.
+
+### Naming an upstream
+
+`node` is matched exactly first, then folded the way the pin header is folded
+(lowercased, spaces to dashes — what the chart does to a values-file display
+name on its way into the router's config). Both halves of the drawer therefore
+address an upstream by one vocabulary, whichever casing the caller holds. A
+folded name that two nodes in the same router answer to resolves to nothing:
+dialing a coin-flip upstream is worse than a 404.
 
 ### REST and WebSocket
 
@@ -102,6 +145,7 @@ a single-shot socket for it.
 | `200` | The upstream answered. Its own status is in `httpStatus` — a 429 or 401 from the vendor is a successful measurement, not a dashboard error. |
 | `400` | The request couldn't be built: bad path, transport/scheme mismatch, gRPC endpoint. |
 | `404` | No such endpoint in the mounted config — or the relay is disabled. |
+| `422` | The endpoint's credential is named in the values file but not carried by it (an unresolved `${VAR}`, or a `secretRef`). Send that one through the router. |
 | `502` | Our hop failed: DNS, TLS, connection refused. |
 | `504` | The upstream didn't answer inside the deadline. |
 
@@ -136,7 +180,7 @@ Other knobs: `UPSTREAM_RELAY_TIMEOUT_MS`, `UPSTREAM_RELAY_MAX_BODY_BYTES`,
 
 | Concern | File |
 |---|---|
-| Url resolution + index assignment | `apps/api/src/services/configuration.ts` |
+| Url + `auth-config` resolution, index assignment | `apps/api/src/services/configuration.ts` |
 | Dialing, redaction, caps | `apps/api/src/services/upstream-relay.ts` |
 | Route, validation, status mapping | `apps/api/src/routes/upstreams.ts` |
 | Request → relay payload (pure) | `apps/web/src/components/try-me/direct-request.ts` |

@@ -60,17 +60,27 @@ export async function upstreamRoutes(app: FastifyInstance) {
       const httpMethod = request.body.httpMethod ?? "POST";
       const transport = request.body.transport ?? "http";
 
-      const resolved = app.routerConfig.resolveEndpointUrl({ routerId, node, endpointIndex });
-      if (resolved === null) {
+      const dial = app.routerConfig.resolveEndpoint({ routerId, node, endpointIndex });
+      if (dial === null) {
         // Deliberately identical for "no such router", "no such node" and "no
         // such endpoint" — the caller learns nothing about the config it
         // didn't already have from GET /api/config/routers.
         return reply.status(404).send({ message: "No such upstream endpoint in the mounted config." });
       }
+      if (dial.unresolved.length > 0) {
+        // The values file NAMES this endpoint's credential but doesn't carry
+        // it (an envsubst placeholder the router resolves from its own
+        // environment, or a Kubernetes Secret). Dialing anyway would send a
+        // literal `${VAR}` and report the upstream's 401 as the upstream's
+        // verdict on the request — say what is actually missing instead.
+        return reply.status(422).send({
+          message: `This upstream's credential isn't in the mounted values file (${dial.unresolved.join(", ")}) — the router reads it from its own environment. Send this one through the router instead.`,
+        });
+      }
 
       let scheme: string;
       try {
-        scheme = new URL(resolved).protocol;
+        scheme = new URL(dial.url).protocol;
       } catch {
         return reply.status(400).send({ message: "That upstream's url in the values file is malformed." });
       }
@@ -88,7 +98,7 @@ export async function upstreamRoutes(app: FastifyInstance) {
         });
       }
 
-      const target = buildTargetUrl(resolved, path);
+      const target = buildTargetUrl(dial.url, path, dial.authQuery);
       if (!target.ok) return reply.status(400).send({ message: target.error });
 
       try {
@@ -97,12 +107,14 @@ export async function upstreamRoutes(app: FastifyInstance) {
             ? await relayWs(target.url, body, {
                 timeoutMs: config.upstreamRelay.timeoutMs,
                 maxBodyBytes: config.upstreamRelay.maxBodyBytes,
+                authHeaders: dial.authHeaders,
               })
             : await relayHttp(target.url, {
                 httpMethod,
                 body,
                 timeoutMs: config.upstreamRelay.timeoutMs,
                 maxBodyBytes: config.upstreamRelay.maxBodyBytes,
+                authHeaders: dial.authHeaders,
               });
         return reply.send(result);
       } catch (e) {
