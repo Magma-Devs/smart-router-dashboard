@@ -29,8 +29,11 @@ export async function accountRoutes(app: FastifyInstance) {
   /** Where THIS request came from, not where its session was opened — they
    *  differ exactly when a session is used from somewhere it didn't sign in. */
   function accessFrom(request: FastifyRequest, sessionId: string) {
-    const client = resolveClientContext(request, undefined, undefined);
-    return { ip: client.ip, client: client.userAgent, sessionId };
+    // The audit shape — parsed device string and normalised address. The raw
+    // User-Agent overflows the 128-character column, and a standalone audit
+    // write that fails is swallowed, so the row would silently vanish.
+    const { access } = resolveClientContext(request, undefined, undefined);
+    return { ...access, sessionId };
   }
 
   function dbOr503(reply: FastifyReply): Database | null {

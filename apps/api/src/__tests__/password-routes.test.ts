@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import bcrypt from "bcryptjs";
 import type { FastifyInstance } from "fastify";
 import { SignJWT } from "jose";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { createTestDb, type TestDb } from "@sr/db/testing";
 import { passwordResets, sessions, users, type User } from "@sr/db";
 import { buildApp } from "../app.js";
@@ -52,6 +52,16 @@ async function member(
     })
     .returning();
   return row!;
+}
+
+/** The newest audit row for an action, as the real writer stored it. */
+async function auditRow(
+  action: string,
+): Promise<{ ip: string | null; target_id: string | null; note: string | null } | undefined> {
+  const res = await t.db.execute<{ ip: string | null; target_id: string | null; note: string | null }>(
+    sql`select host(ip) as ip, target_id, note from audit_events where action = ${action} order by seq desc limit 1`,
+  );
+  return res.rows[0];
 }
 
 async function bearer(user: User): Promise<string> {
@@ -191,7 +201,6 @@ describe("POST /api/account/password", () => {
     // when a session is used from somewhere else — a stolen token, say.
     const dana = await member("dana@example.com");
     const token = await bearer(dana);
-    const debug = vi.spyOn(app!.log, "debug");
 
     const res = await app!.inject({
       method: "POST",
@@ -202,11 +211,7 @@ describe("POST /api/account/password", () => {
     });
     expect(res.statusCode).toBe(200);
 
-    const event = debug.mock.calls
-      .map((c) => (c[0] as { audit?: { action: string; access?: { ip: string | null } } }).audit)
-      .find((a) => a?.action === "password.changed");
-    expect(event?.access?.ip).toBe("203.0.113.9");
-    debug.mockRestore();
+    expect((await auditRow("password.changed"))?.ip).toBe("203.0.113.9");
   });
 
   it("names the provider a password-less member actually uses", async () => {
@@ -346,14 +351,10 @@ describe("the per-account budget", () => {
     // "who, how many attempts, IP" — what MAG-2729 asks signin.blocked to carry.
     const dana = await member("dana@example.com");
     await lockOut("dana@example.com");
-    const debug = vi.spyOn(app!.log, "debug");
     await signIn("dana@example.com", OLD_PASSWORD);
-    const event = debug.mock.calls
-      .map((c) => (c[0] as { audit?: { action: string; target?: { id: string }; note?: string } }).audit)
-      .find((a) => a?.action === "signin.blocked");
-    expect(event?.target?.id).toBe(dana.id);
-    expect(event?.note).toMatch(/^6 attempts on dana@example\.com/);
-    debug.mockRestore();
+    const row = await auditRow("signin.blocked");
+    expect(row?.target_id).toBe(dana.id);
+    expect(row?.note).toMatch(/^6 attempts on dana@example\.com/);
   });
 });
 
@@ -369,13 +370,8 @@ describe("POST /auth/password/reset", () => {
       headers: { authorization: `Bearer ${await bearer(admin)}` },
     });
     const token = (link.json().url as string).split("/reset/")[1]!;
-    const debug = vi.spyOn(app!.log, "debug");
     await app!.inject({ method: "POST", url: "/auth/password/reset", payload: { token, password: NEW_PASSWORD } });
-    const event = debug.mock.calls
-      .map((c) => (c[0] as { audit?: { action: string; note?: string } }).audit)
-      .find((a) => a?.action === "password.reset_completed");
-    expect(event?.note).toContain(admin.id);
-    debug.mockRestore();
+    expect((await auditRow("password.reset_completed"))?.note).toContain(admin.id);
   });
 });
 

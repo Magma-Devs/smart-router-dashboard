@@ -1,5 +1,5 @@
 import type { FastifyBaseLogger } from "fastify";
-import { createAuditWriter, type Database } from "@sr/db";
+import { createAuditWriter, type AuditEventInput, type Database } from "@sr/db";
 import type { AuditActionOf } from "@sr/shared";
 
 /**
@@ -25,43 +25,20 @@ import type { AuditActionOf } from "@sr/shared";
  */
 export type AuditAction = AuditActionOf<"access" | "accounts" | "people" | "setup">;
 
-/** One changed field. Values are already redacted and stringified by the
- *  caller — a secret or a node URL is `(changed)`, never the value itself. */
-export interface AuditChange {
-  field: string;
-  from: string;
-  to: string;
-}
-
 /**
- * Request context, on **access events only**.
+ * The event shape is **MAG-2770's**, narrowed to the verbs this task emits.
  *
- * Config and people events don't carry it and shouldn't: *Dana changed the
- * provider set* is complete without an IP — her name is the answer. *Someone
- * failed to sign in as Dana* is close to useless without one, because you can't
- * tell a mistyped password from a run of guesses coming from somewhere else.
+ * It was a local duplicate until the writer landed, which is exactly how it
+ * drifted: their `actor` gained a `label` (for a sign-in attempt against an
+ * address with no account) and mine hadn't, so the field that names the target
+ * of a lockout wouldn't typecheck. One definition, no drift.
  */
-export interface AuditAccessContext {
-  ip: string | null;
-  /** Parsed device string, e.g. "Chrome 141 / macOS". */
-  client: string | null;
-  /** Ties a run of actions to one sign-in. */
-  sessionId: string | null;
-}
+export type AuditEvent = Omit<AuditEventInput, "action"> & { action: AuditAction };
 
-export interface AuditEvent {
-  action: AuditAction;
-  /** `system` for anything automatic; `id` is null when the actor is not a
-   *  known user (a failed sign-in against an address that doesn't exist). */
-  actor: { id: string | null; kind: "user" | "system" };
-  /** What was acted on. Carries the name *at the time*, so the row still reads
-   *  correctly after a rename or a removal. */
-  target?: { type: "member" | "invite" | "session"; id: string; name: string };
-  changes?: AuditChange[];
-  access?: AuditAccessContext;
-  /** Rejection reason, self-approve note, override reason. */
-  note?: string;
-}
+/** Derived rather than imported by name: `@sr/db`'s barrel doesn't re-export
+ *  these, and deriving avoids appending to a file the other ticket owns. */
+export type AuditActor = AuditEventInput["actor"];
+export type AuditChange = NonNullable<AuditEventInput["changes"]>[number];
 
 export interface AuditWriter {
   /**
