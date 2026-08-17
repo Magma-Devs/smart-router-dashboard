@@ -13,7 +13,8 @@
 import { useState } from "react";
 import { buildChainMetaByIndex } from "@sr/shared";
 import { useFilters } from "@/components/gateway/FiltersProvider";
-import { useChainOptions, withMutedRows } from "@/hooks/use-chain-options";
+import { useChainFilter, useChainOptions, withMutedRows } from "@/hooks/use-chain-options";
+import { useRouterFilter } from "@/hooks/use-router-options";
 import { RouterHeader } from "@/components/gateway/RouterHeader";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { HeroPanel } from "./HeroPanel";
@@ -28,14 +29,17 @@ import { UpstreamMetricsTab } from "./upstream/UpstreamMetricsTab";
 type Tab = "metrics" | "upstreams" | "errors" | "traffic";
 
 export function MetricsView() {
-  const { timeWindow, setTimeWindow, chain, setChain } = useFilters();
+  const { timeWindow, setTimeWindow } = useFilters();
+  const { chain, select: selectChain } = useChainFilter();
   const [tab, setTab] = useState<Tab>("metrics");
   const activeChain = chain;
-  const setChainFilter = (v: string) => setChain(v === "all" ? null : v);
+  const setChainFilter = (v: string) => selectChain(v === "all" ? null : v);
 
   /* Config ∪ traffic (see useChainOptions). A configured chain that has served
      nothing is offered but dimmed: every panel here would be empty for it, and
      saying so beats leaving it out of the list. */
+  const { routerId, routers, scopeUnavailable, select: selectRouter } = useRouterFilter();
+  const activeRouter = routers.find((r) => r.id === routerId) ?? null;
   const { chains: chainRows } = useChainOptions();
   const routedChains = withMutedRows(chainRows, (c) => (c.hasTraffic ? false : "no traffic yet"));
   const chainObj = activeChain
@@ -69,7 +73,26 @@ export function MetricsView() {
           <ChainBadge spec={activeChain} size={16} />
           <span style={{ fontSize: 13, color: "var(--text-2)" }}>Viewing <strong style={{ color: "var(--text)" }}>{chainObj ? chainObj.name : activeChain}</strong> — clear to see all chains.</span>
           <span style={{ flex: 1 }} />
-          <button onClick={() => setChain(null)} style={{ border: "none", background: "none", color: "var(--brand)", cursor: "pointer", padding: 0, fontSize: 13, fontWeight: 600, fontFamily: "inherit" }}>Clear filter</button>
+          <button onClick={() => selectChain(null)} style={{ border: "none", background: "none", color: "var(--brand)", cursor: "pointer", padding: 0, fontSize: 13, fontWeight: 600, fontFamily: "inherit" }}>Clear filter</button>
+        </div>
+      )}
+
+      {/* A router selection reaches the upstream roster for certain — those rows
+          are keyed per upstream. It reaches the chain-level panels only when the
+          collector attaches a per-router target label, because the router
+          labels its own series with the chain and never with itself. Saying
+          which of the two is happening beats letting the reader assume. */}
+      {activeRouter && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20, padding: "9px 14px", borderRadius: 9, background: "var(--hover)", border: "1px solid var(--line-2)" }}>
+          <ChainBadge spec={activeRouter.spec} size={16} />
+          <span style={{ fontSize: 13, color: "var(--text-2)" }}>
+            Router <strong className="gw-mono" style={{ color: "var(--text)" }}>{activeRouter.id}</strong>
+            {scopeUnavailable
+              ? " — the upstream roster is filtered to what it declares; the chain-level panels stay deployment-wide, because no metric says which router served a request."
+              : " — every panel is scoped to it."}
+          </span>
+          <span style={{ flex: 1 }} />
+          <button onClick={() => selectRouter(null)} style={{ border: "none", background: "none", color: "var(--brand)", cursor: "pointer", padding: 0, fontSize: 13, fontWeight: 600, fontFamily: "inherit" }}>Clear filter</button>
         </div>
       )}
 

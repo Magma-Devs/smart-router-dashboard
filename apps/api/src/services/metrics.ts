@@ -425,7 +425,18 @@ export class MetricsService {
     };
   }
 
-  async upstreams(spec: string | undefined, window: MetricWindow): Promise<UpstreamMetrics[]> {
+  /**
+   * @param routerId Keep only upstreams the named CONFIG router declares. A
+   *   different axis from the `?router=` scope this service is constructed
+   *   with: that one narrows the PromQL to a collector target label, this one
+   *   filters rows by what the mounted values file says. See `routerIds` on
+   *   `UpstreamMetrics`.
+   */
+  async upstreams(
+    spec: string | undefined,
+    window: MetricWindow,
+    routerId?: string,
+  ): Promise<UpstreamMetrics[]> {
     const sel = selector({ spec });
     const r = rangeFor(window);
 
@@ -446,8 +457,11 @@ export class MetricsService {
     ]);
 
     // Config-derived identity: node name → role/interface (helm marks backups;
-    // SR_CONFIG has no backup marker, so role stays null there).
+    // SR_CONFIG has no backup marker, so role stays null there) + every router
+    // that declares the name. The series only carries `endpoint_id`, so the
+    // config is the sole source of router attribution.
     const roleByName = new Map<string, { role: "primary" | "backup"; iface: string | null }>();
+    const routersByName = new Map<string, string[]>();
     if (this.configSvc) {
       for (const router of this.configSvc.getRouters()) {
         for (const node of router.nodes) {
@@ -457,6 +471,9 @@ export class MetricsService {
               iface: node.endpoints[0]?.interface ?? null,
             });
           }
+          const ids = routersByName.get(node.name);
+          if (!ids) routersByName.set(node.name, [router.id]);
+          else if (!ids.includes(router.id)) ids.push(router.id);
         }
       }
     }
@@ -484,6 +501,7 @@ export class MetricsService {
           role: cfg && isHelm ? cfg.role : null,
           apiInterface: cfg?.iface ?? null,
           inFlight: 0,
+          routerIds: routersByName.get(endpointId) ?? [],
         };
         byId.set(endpointId, row);
       }
@@ -556,7 +574,11 @@ export class MetricsService {
       }
     }
 
-    return [...byId.values()].sort((a, b) => b.requests - a.requests);
+    const rows = [...byId.values()].sort((a, b) => b.requests - a.requests);
+    // Router filter last: it drops rows, it never changes a number. A row the
+    // config doesn't place (`routerIds: []` — traffic under a name no longer in
+    // the values file) can't belong to the asked-for router, so it goes too.
+    return routerId ? rows.filter((row) => row.routerIds.includes(routerId)) : rows;
   }
 
   /**

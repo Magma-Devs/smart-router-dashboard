@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { buildChainMetaByIndex, type RouterTopology } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { useFilters } from "@/components/gateway/FiltersProvider";
+import { useRouterOptions } from "@/hooks/use-router-options";
 import type { ChainOption } from "@/components/gateway/ChainSelect";
 
 /**
@@ -62,4 +63,29 @@ export function withMutedRows(
     const reason = isMuted(row);
     return reason === false ? row : { ...row, muted: true, hint: reason };
   });
+}
+
+/**
+ * The chain control. Picking a chain narrows the router list to the routers
+ * serving it (`useRouterFilter`), so a router outside that list can't stay
+ * selected — this clears it, rather than leaving a filter that has quietly
+ * stopped applying. Both controls change the pair through a hook so the pair
+ * stays consistent without an effect watching for the mismatch.
+ */
+export function useChainFilter(): {
+  chain: string | null;
+  select: (spec: string | null) => void;
+} {
+  const { chain, setChain, routerId, setRouterId, setRouter } = useFilters();
+  const { routers } = useRouterOptions();
+  const select = (spec: string | null) => {
+    setChain(spec);
+    if (spec === null || routerId === null) return;
+    const current = routers.find((r) => r.id === routerId);
+    if (!current || current.spec !== spec) {
+      setRouterId(null);
+      setRouter(null);
+    }
+  };
+  return { chain, select };
 }
