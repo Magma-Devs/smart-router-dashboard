@@ -86,7 +86,10 @@ describe("audit event catalog", () => {
   it("carries a published description for every event", () => {
     // docs/AUDIT.md is generated from these; a blank one ships a blank doc row.
     for (const action of AUDIT_ACTIONS) {
-      expect(auditEventSpec(action).description.length, `${action} has no description`).toBeGreaterThan(20);
+      expect(
+        auditEventSpec(action).description.length,
+        `${action} has no description`,
+      ).toBeGreaterThan(20);
     }
   });
 
@@ -146,7 +149,9 @@ describe("audit value formatting", () => {
   });
 
   it("de-duplicates and drops blanks from a list", () => {
-    expect(auditList(["Alchemy", "Alchemy", "", null, "  ", "QuickNode"])).toBe("Alchemy, QuickNode");
+    expect(auditList(["Alchemy", "Alchemy", "", null, "  ", "QuickNode"])).toBe(
+      "Alchemy, QuickNode",
+    );
   });
 
   it("reads a removal as a real transition", () => {
