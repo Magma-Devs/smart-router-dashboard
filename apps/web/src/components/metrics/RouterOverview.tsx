@@ -17,6 +17,7 @@ import { ThCol, useSort } from "@/components/gateway/SortTable";
 import { TT } from "@/lib/tooltips";
 import { fmtNum } from "@/lib/format";
 import { uptimeColor } from "@/lib/colors";
+import { healthColor, healthLabel } from "@/lib/health";
 import { ChainDetail, type ChainDetailRow } from "./ChainDetail";
 import { useState } from "react";
 import { useFilters } from "@/components/gateway/FiltersProvider";
@@ -110,7 +111,13 @@ export function RouterOverview({ onChainClick, chainFilter, timeWindow }: {
   const { sorted: sortedRouters, sort, onSort } = useSort<RoRow>(routers, { key: "natural", dir: "asc" });
 
   const srColor = uptimeColor;
-  const statusMeta: Record<RoStatus, [string, string]> = { up: ["var(--ok)", "Operational"], down: ["var(--err)", "Unhealthy"], unknown: ["var(--text-4)", "—"] };
+  /* Labels + colours from the shared vocabulary (`lib/health.ts`), which took
+     its wording from this table. */
+  const statusMeta: Record<RoStatus, [string, string]> = {
+    up: [healthColor("operational"), healthLabel("operational")],
+    down: [healthColor("unhealthy"), healthLabel("unhealthy")],
+    unknown: [healthColor("unknown"), healthLabel("unknown")],
+  };
 
   return (
     <div className="gw-card" style={{ padding: 0, overflow: "hidden", marginBottom: 14 }}>

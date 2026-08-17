@@ -15,10 +15,12 @@ import {
 } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
-import { ChainSelect, type ChainOption } from "@/components/gateway/ChainSelect";
+import { ChainSelect } from "@/components/gateway/ChainSelect";
+import { WindowSelect } from "@/components/gateway/WindowSelect";
+import { useChainOptions, withMutedRows } from "@/hooks/use-chain-options";
 import { CapabilityTags, capabilitiesOf } from "@/components/gateway/CapabilityTags";
 import { UpstreamLogo } from "@/components/upstreams/UpstreamLogo";
-import { StatusDot } from "@/components/upstreams/bits";
+import { HealthTag } from "@/components/gateway/HealthTag";
 import {
   buildUpstreamRows,
   directTargetFor,
@@ -38,8 +40,9 @@ function StatStrip() { return null; }
 
 /** How the roster is carved up. All three groupings render the same mounted
  *  config — only what a card is about changes: the router that publishes an
- *  endpoint, the chain it serves, or the upstream behind it. */
-type GroupBy = "router" | "chain" | "provider";
+ *  endpoint, the chain it serves, or the upstream behind it. ("provider" was
+ *  this last one's name before the product settled on "upstream".) */
+type GroupBy = "router" | "chain" | "upstream";
 
 /** Initial-badge fallback for unmatched (BYO) nodes — chain-colored. */
 function InitialBadge({ name, spec, size = 28 }: { name: string; spec?: string; size?: number }) {
@@ -52,10 +55,10 @@ function InitialBadge({ name, spec, size = 28 }: { name: string; spec?: string; 
 }
 
 /**
- * One upstream endpoint. Shared by both groupings, so a row reads the same
- * whichever card it sits in — only the identity it has to spell out changes:
- * a provider card's header already names the upstream, a chain card's names
- * the chain.
+ * One upstream endpoint. Shared by the chain and upstream groupings, so a row
+ * reads the same whichever card it sits in — only the identity it has to spell
+ * out changes: an upstream card's header already names the upstream, a chain
+ * card's names the chain.
  */
 function EndpointRow({
   upstream,
@@ -156,21 +159,21 @@ function EndpointRow({
 
 export function UpstreamsView() {
   const config = useApi<{ routers: RouterTopology[] }>("/api/config/routers", 60000);
-  /* Upstream roster stats — fixed 1d window ("Req today"). */
-  const { scopeQ } = useFilters();
-  const live = useApi<{ upstreams: UpstreamMetrics[] }>(`/api/metrics/upstreams?window=1d${scopeQ}`);
+  /* The shared window (and router scope) the metrics screens use — this page
+     used to pin 1d while honouring the scope, which made it the one screen
+     where the window selector's absence was a silent override. */
+  const { timeWindow, setTimeWindow, chain, setChain, scopeQ } = useFilters();
+  const live = useApi<{ upstreams: UpstreamMetrics[] }>(`/api/metrics/upstreams?window=${timeWindow}${scopeQ}`);
 
-  const [degradedFilter, setDegradedFilter] = useState(false);
+  const [unhealthyOnly, setUnhealthyOnly] = useState(false);
   const [search, setSearch] = useState("");
   const [netFilter, setNetFilter] = useState<"all" | "mainnet" | "testnet">("all");
-  /* Chain filter — the Metrics page's own picker, page-level state there and
-     here. It reads the CONFIG's chains, not the metrics' spec list (which only
-     names chains that have served traffic): a configured chain nobody has
-     called yet still has endpoints and upstreams to show. */
-  const [chainFilter, setChainFilter] = useState("all");
+  /* Chain filter — the Metrics page's picker, on the same shared selection, so
+     narrowing there and walking here keeps the chain. */
+  const chainFilter = chain ?? "all";
   /* Router-first by default: the endpoints a router publishes are what a
      self-hosted deployment reaches for — the address to dial, what it serves,
-     and how many upstreams stand behind it. The chain and provider groupings
+     and how many upstreams stand behind it. The chain and upstream groupings
      answer the two follow-up questions off the same config. */
   const [groupBy, setGroupBy] = useState<GroupBy>("router");
   const [newChainCtas, setNewChainCtas] = useState<{ chainId: string; upstreamName: string }[]>([]);
@@ -180,32 +183,30 @@ export function UpstreamsView() {
     () => buildUpstreamRows(routers, live.data?.upstreams),
     [routers, live.data],
   );
-  /* Chains the mounted config declares (ChainSelect sorts them for display). */
-  const configChains = useMemo<ChainOption[]>(
-    () => [...new Set(routers.map((r) => r.spec))].map((spec) => {
-      const meta = buildChainMetaByIndex(spec);
-      return { spec, name: meta.name, color: meta.color };
-    }),
-    [routers],
-  );
-  /* The chain actually filtered on. A selection that leaves the config (values
-     reloaded without that chain) reads as "All chains" instead of narrowing
-     everything to nothing — the same rule the router scope follows, derived
-     rather than reset so the box and the cards can't disagree. */
+  /* Config ∪ traffic (see useChainOptions). Here it's the chains NOT in the
+     mounted config that get dimmed — they can carry metrics (a values file
+     edited after the fact) but this page has no endpoints or upstreams to show
+     for them. */
+  const { chains: chainRows } = useChainOptions();
+  const chainOptions = withMutedRows(chainRows, (c) => (c.inConfig ? false : "not in config"));
+  /* The chain actually filtered on. A selection that leaves the list entirely
+     reads as "All chains" instead of narrowing everything to nothing — the
+     same rule the router scope follows, derived rather than reset so the box
+     and the cards can't disagree. */
   const activeChain =
-    chainFilter !== "all" && configChains.some((c) => c.spec === chainFilter) ? chainFilter : null;
+    chainFilter !== "all" && chainOptions.some((c) => c.spec === chainFilter) ? chainFilter : null;
 
   const displayed = useMemo(() => {
     return upstreams.filter((pv) => {
-      const matchDegraded = !degradedFilter || pv.status === "degraded";
+      const matchHealth = !unhealthyOnly || pv.health === "unhealthy";
       const matchSearch = !search.trim() ||
         pv.name.toLowerCase().includes(search.toLowerCase()) ||
         pv.url.toLowerCase().includes(search.toLowerCase());
       const matchNet = netFilter === "all" || pv.networks.includes(netFilter);
       const matchChain = !activeChain || pv.chains.includes(activeChain);
-      return matchDegraded && matchSearch && matchNet && matchChain;
+      return matchHealth && matchSearch && matchNet && matchChain;
     });
-  }, [upstreams, degradedFilter, search, netFilter, activeChain]);
+  }, [upstreams, unhealthyOnly, search, netFilter, activeChain]);
 
   /* Chain grouping filters per ROW, not per upstream: a chain card survives
      when the query matches the chain itself OR any upstream serving it, so
@@ -215,7 +216,7 @@ export function UpstreamsView() {
     const groups = groupByChain(upstreams).map((group) => ({
       ...group,
       rows: group.rows.filter(({ upstream }) =>
-        (!degradedFilter || upstream.status === "degraded") &&
+        (!unhealthyOnly || upstream.health === "unhealthy") &&
         (!q ||
           buildChainMetaByIndex(group.spec).name.toLowerCase().includes(q) ||
           group.spec.toLowerCase().includes(q) ||
@@ -230,15 +231,13 @@ export function UpstreamsView() {
       const mainnet = buildChainMetaByIndex(group.spec).mainnet;
       return netFilter === "mainnet" ? mainnet : !mainnet;
     });
-  }, [upstreams, degradedFilter, search, netFilter, activeChain]);
+  }, [upstreams, unhealthyOnly, search, netFilter, activeChain]);
 
   const loading = !config.data && !config.error;
   /* Nothing to show. The router grouping renders the routers themselves, so a
      values file with routers but no upstream nodes still has endpoints to
      list — only an empty topology is empty here. */
   const nothingMounted = groupBy === "router" ? routers.length === 0 : upstreams.length === 0;
-
-  const statColor = (s: string) => s === "healthy" ? "ok" : s === "degraded" ? "warn" : "err";
 
   return (
     <div className="gw-page fade-in">
@@ -294,9 +293,13 @@ export function UpstreamsView() {
             placeholder={groupBy === "router" ? "Search chains, interfaces…" : "Search upstreams…"} value={search}
             onChange={(e) => setSearch(e.target.value)} style={{ paddingLeft: 32 }} />
         </div>
-        {/* Chain filter — the Metrics page's picker, on the config's chains. */}
-        {configChains.length > 1 && (
-          <ChainSelect value={activeChain ?? "all"} onChange={setChainFilter} chains={configChains} />
+        {/* Chain filter — the Metrics page's picker, same shared selection. */}
+        {chainOptions.length > 1 && (
+          <ChainSelect
+            value={activeChain ?? "all"}
+            onChange={(v) => setChain(v === "all" ? null : v)}
+            chains={chainOptions}
+          />
         )}
         <div className="gw-segctl">
           {([["all", "All"], ["mainnet", "Mainnet"], ["testnet", "Testnet"]] as const).map(([val, lbl]) => (
@@ -304,20 +307,24 @@ export function UpstreamsView() {
           ))}
         </div>
         <span style={{ flex: 1 }} />
+        {/* The shared time window — the roster's health is derived from the
+            metrics in it, so this page can't be the one screen that ignores
+            the selector every other screen honours. */}
+        <WindowSelect value={timeWindow} onChange={setTimeWindow} />
         {/* One config, three ways to carve it: by the router that publishes an
             endpoint, by the chain it serves, or by the upstream behind it. */}
         <div className="gw-segctl">
-          {([["router", "By router"], ["chain", "By chain"], ["provider", "By provider"]] as const).map(([val, lbl]) => (
+          {([["router", "By router"], ["chain", "By chain"], ["upstream", "By upstream"]] as const).map(([val, lbl]) => (
             <button key={val} className={groupBy === val ? "on" : ""} onClick={() => setGroupBy(val)}>{lbl}</button>
           ))}
         </div>
       </div>
 
-      {degradedFilter && (
+      {unhealthyOnly && (
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, padding: "8px 14px", borderRadius: 8, background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.18)", fontSize: 12, color: "var(--warn)" }}>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-          Showing degraded upstreams only —{" "}
-          <button onClick={() => setDegradedFilter(false)} style={{ border: "none", background: "none", color: "var(--brand)", cursor: "pointer", padding: 0, fontSize: 12, fontWeight: 600, fontFamily: "inherit" }}>clear filter</button>
+          Showing unhealthy upstreams only —{" "}
+          <button onClick={() => setUnhealthyOnly(false)} style={{ border: "none", background: "none", color: "var(--brand)", cursor: "pointer", padding: 0, fontSize: 12, fontWeight: 600, fontFamily: "inherit" }}>clear filter</button>
         </div>
       )}
 
@@ -357,7 +364,7 @@ export function UpstreamsView() {
                   )}
                   <span style={{ flex: 1 }} />
                   <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 4, background: "var(--hover-2)", color: "var(--text-3)", border: "1px solid var(--line)", flexShrink: 0 }}>
-                    {group.providers} upstream{group.providers !== 1 ? "s" : ""}
+                    {group.upstreams} upstream{group.upstreams !== 1 ? "s" : ""}
                   </span>
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -397,9 +404,7 @@ export function UpstreamsView() {
                           )}
                         </span>
                       )}
-                      {pv.status !== "—" && (
-                        <span className={"gw-tag gw-tag--" + statColor(pv.status)} style={{ fontSize: 10, padding: "1px 6px", display: "inline-flex", gap: 5, alignItems: "center" }}><StatusDot status={pv.status} />{pv.status}</span>
-                      )}
+                      {pv.health !== "unknown" && <HealthTag health={pv.health} />}
                     </div>
                   </div>
                 </div>

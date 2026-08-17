@@ -13,6 +13,7 @@ import { buildChainMetaByIndex, type HealthState, type UpstreamRelayResponse } f
 import { apiPost } from "@/lib/api-client";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { CopyButton } from "@/components/gateway/CopyButton";
+import { HealthTag } from "@/components/gateway/HealthTag";
 import {
   buildRequest,
   paramsKindFor,
@@ -196,12 +197,6 @@ const INFO_BANNER: CSSProperties = {
   color: "var(--text-2)",
   lineHeight: 1.5,
 };
-
-function healthTagClass(health: HealthState): string {
-  if (health === "operational") return "gw-tag gw-tag--ok";
-  if (health === "unhealthy") return "gw-tag gw-tag--err";
-  return "gw-tag";
-}
 
 /* ── Inline stroke icons (lucide-react is not shipped in v2) ────────────── */
 
@@ -1027,9 +1022,7 @@ export function TryMeDrawer({
             </button>
           ) : (
             health !== undefined && (
-              <span className={healthTagClass(health)} style={{ fontSize: 10 }}>
-                {health}
-              </span>
+              <HealthTag health={health} />
             )
           )}
           <button

@@ -10,6 +10,10 @@ export interface ChainOption {
   spec: string;
   name: string;
   color: string;
+  /** Offered but dimmed — the page can show little or nothing for it. */
+  muted?: boolean;
+  /** Why it's dimmed, shown after the name (e.g. "no traffic yet"). */
+  hint?: string;
 }
 
 export interface ChainSelectProps {
@@ -56,9 +60,14 @@ export function ChainSelect({ value, onChange, chains: unsorted }: ChainSelectPr
             All chains
           </button>
           {chains.map((c) => (
-            <button key={c.spec} onClick={() => { onChange(c.spec); setOpen(false); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "7px 9px", borderRadius: 6, border: "none", background: value === c.spec ? "var(--hover)" : "transparent", color: "var(--text)", fontSize: 12, fontFamily: "inherit", cursor: "pointer", textAlign: "left" }}>
+            <button key={c.spec} onClick={() => { onChange(c.spec); setOpen(false); }} title={c.hint} style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "7px 9px", borderRadius: 6, border: "none", background: value === c.spec ? "var(--hover)" : "transparent", color: c.muted ? "var(--text-3)" : "var(--text)", fontSize: 12, fontFamily: "inherit", cursor: "pointer", textAlign: "left" }}>
               <ChainBadge spec={c.spec} size={16} />
-              {c.name}
+              <span style={{ opacity: c.muted ? 0.75 : 1 }}>{c.name}</span>
+              {/* A chain this page can't populate is still selectable — dimmed
+                  and labelled beats hidden, which reads as "not configured". */}
+              {c.hint && (
+                <span style={{ marginLeft: "auto", paddingLeft: 8, fontSize: 10, color: "var(--text-4)", whiteSpace: "nowrap" }}>{c.hint}</span>
+              )}
             </button>
           ))}
         </div>

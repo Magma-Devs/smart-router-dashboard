@@ -79,7 +79,7 @@ describe("groupByChain", () => {
     const [eth] = groupByChain(upstreams);
     // publicnode serves ETH1 twice (http + ws) — that is ONE upstream.
     expect(eth!.rows).toHaveLength(3);
-    expect(eth!.providers).toBe(2);
+    expect(eth!.upstreams).toBe(2);
   });
 
   it("keeps an upstream that serves several chains in each of their cards", () => {

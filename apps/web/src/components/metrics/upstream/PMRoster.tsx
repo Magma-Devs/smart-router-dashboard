@@ -11,6 +11,7 @@ import { buildChainMetaByIndex, type MetricWindow, type UpstreamMetrics } from "
 import { useApi } from "@/hooks/use-api";
 import { uptimeColor } from "@/lib/colors";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
+import { HealthDot } from "@/components/gateway/HealthTag";
 import { Tip } from "@/components/gateway/Tip";
 import { ThCol, useSort } from "@/components/gateway/SortTable";
 import { useFilters } from "@/components/gateway/FiltersProvider";
@@ -40,7 +41,6 @@ export function PMRoster({ rows, activeName, onSelect, timeWindow }: {
   onSelect: (name: string) => void;
   timeWindow: MetricWindow;
 }) {
-  const statusDot = (h: UpstreamMetrics["health"]) => ({ operational: "var(--ok)", unhealthy: "var(--err)", unknown: "var(--text-4)" }[h] || "var(--ok)");
   const fmtReq = (n: number) => (n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? (n / 1e3).toFixed(1) + "K" : Math.round(n).toString());
   const fmtBlock = (n: number) => n.toLocaleString("en-US");
   const PAGE = 8;
@@ -104,7 +104,7 @@ export function PMRoster({ rows, activeName, onSelect, timeWindow }: {
               <tr key={r.name} onClick={() => onSelect(r.name)} style={{ cursor: "pointer", background: on ? "rgba(255,57,0,0.06)" : undefined, boxShadow: on ? "inset 2px 0 0 var(--brand)" : undefined }}>
                 <td>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ width: 7, height: 7, borderRadius: 999, background: statusDot(v.health), flexShrink: 0 }} title={v.health} />
+                    <HealthDot health={v.health} />
                     <span style={{ fontSize: 13, fontWeight: on ? 700 : 500 }}>{r.name}</span>
                     {v.role && <span style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", padding: "1px 6px", borderRadius: 4, color: v.role === "primary" ? "#60a5fa" : "#fb923c", background: v.role === "primary" ? "rgba(96,165,250,0.1)" : "rgba(251,146,60,0.1)" }}>{v.role === "primary" ? "Primary" : "Backup"}</span>}
                   </div>
