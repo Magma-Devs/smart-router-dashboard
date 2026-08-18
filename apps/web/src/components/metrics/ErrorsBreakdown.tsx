@@ -11,6 +11,7 @@ import { useState } from "react";
 import type { ErrorPivotRow, ErrorsReport, MetricWindow } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { fmtComma } from "@/lib/format";
+import { errorDocsUrl } from "@/lib/error-docs";
 import { HotspotRow } from "./HotspotRow";
 import { useFilters } from "@/components/gateway/FiltersProvider";
 import { useRouterFilter } from "@/hooks/use-router-options";
@@ -46,8 +47,20 @@ function ErrorTypesView({ rows }: { rows: ErrorPivotRow[] }) {
             <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", opacity: muted ? 0.5 : 1 }}>
               <span style={{ width: 8, height: 8, borderRadius: 2, background: "var(--text-3)", flexShrink: 0 }} />
               <div style={{ flex: 1.4, minWidth: 0 }}>
+                {/* The code is a name the reader has to look up, so it IS
+                    the link — to the layer table that defines it, not to the
+                    top of the reference. */}
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span className="gw-mono" style={{ fontSize: 12, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.label}</span>
+                  <a
+                    className="gw-mono"
+                    href={errorDocsUrl(e.label)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title={`What ${e.label} means, and whether the router retries it — opens the error-codes reference`}
+                    style={{ fontSize: 12, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textDecoration: "underline dotted", textDecorationColor: "var(--text-4)", textUnderlineOffset: 3 }}
+                  >
+                    {e.label}
+                  </a>
                 </div>
               </div>
               <div style={{ flexShrink: 0, minWidth: 150, textAlign: "right" }}>
