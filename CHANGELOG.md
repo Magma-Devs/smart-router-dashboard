@@ -5,6 +5,35 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.18.2]
+
+### Fixed
+
+- **Two upstreams on the same host rendered as the same row.** lava-specs split
+  TON's v2/v3 onto `internal_path` collections, so a provider can now pin one
+  node-url per version — TON on Tatum serves v2 at the root and v3 under
+  `/api/v3`. Both normalizers dropped the field, and `maskNodeUrl` reduces a url
+  to scheme+host because upstream paths carry api keys, so the two node-urls
+  arrived on screen identical with nothing to tell them apart.
+
+  `RouterNodeEndpoint` now carries `internalPath`, both normalizers read it
+  (`internal_path` in helm values, `internal-path` in an SR_CONFIG file), and the
+  upstream row renders it as a badge. The direct relay has the same blind spot —
+  it appends a caller-supplied path to the endpoint base, and the correct path
+  now differs per node-url — but prefilling that path changes relay behaviour
+  and is left for its own change.
+
+### Changed
+
+- **TON's try-it catalog went from 51 methods to 29.** The v2/v3 split removed
+  the `""` internal path, and `pickPath()` keeps exactly one path per
+  (interface, tier) — preferring `""`, else the path with the most methods — so
+  it now keeps `/v2` and drops the 22 `/v3` methods. Same shape AVAX has always
+  had, where `/P` and `/X` are absent for the same reason. Only 2 of the 51
+  names collide once the version prefix is stripped, so a path-aware catalog
+  could carry 49; making the generator and the try-it dialer internal-path aware
+  is its own change.
+
 ## [0.18.1]
 
 ### Changed
