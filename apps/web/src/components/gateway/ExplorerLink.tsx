@@ -83,17 +83,45 @@ export function ExplorerBlockLink({
   );
 }
 
+/** A small outbound arrow. Persistent rather than hover-only: a chain icon
+ *  gives no hint that it is clickable, and an affordance nobody sees is the
+ *  same as no link. It is muted until the link is hovered. */
+function OutboundArrow() {
+  return (
+    <svg
+      width="9"
+      height="9"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      style={{ color: "var(--text-4)", flexShrink: 0, marginLeft: 1, marginTop: -6 }}
+    >
+      <line x1="7" y1="17" x2="17" y2="7" />
+      <polyline points="7 7 17 7 17 17" />
+    </svg>
+  );
+}
+
 /**
  * A chain's identity — its badge, its name — linked to the explorer's home
- * page. This is what the 68 chains with no proven block shape can still
- * offer, and it is the right destination for an identity in any case.
+ * page. This is what the chains with no proven block shape can still offer,
+ * and it is the right destination for an identity in any case.
+ *
+ * `arrow` marks it as outbound. On by default: in a table the identity is an
+ * icon, which reads as decoration rather than as a link.
  */
 export function ExplorerHomeLink({
   spec,
   children,
+  arrow = true,
 }: {
   spec: string;
   children: ReactNode;
+  arrow?: boolean;
 }) {
   const href = explorerHome(spec);
   if (!href) return <>{children}</>;
@@ -105,10 +133,14 @@ export function ExplorerHomeLink({
       rel="noopener noreferrer"
       onClick={stop}
       title={`Open ${name}`}
-      style={{ ...linkStyle, display: "inline-flex", alignItems: "center", gap: "inherit" }}
+      // An explicit gap rather than `inherit`: the two tables space their chain
+      // cells differently, and the arrow should sit the same distance from the
+      // mark in both.
+      style={{ ...linkStyle, display: "inline-flex", alignItems: "center", gap: 3 }}
       {...hoverProps}
     >
       {children}
+      {arrow && <OutboundArrow />}
     </a>
   );
 }
