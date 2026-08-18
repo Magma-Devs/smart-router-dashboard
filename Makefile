@@ -90,7 +90,8 @@ up-auth:
 	DATABASE_URL=$${DATABASE_URL:-postgres://sr:$${POSTGRES_PASSWORD:-dev}@postgres:5432/sr_dashboard} \
 	docker compose --profile router --profile auth --profile logs up -d --build
 	@echo ""
-	@echo "  🔐 Auth enabled — sign in at http://localhost:$(WEB_PORT)/login"
+	@echo "  🔐 Auth enabled — open http://localhost:$(WEB_PORT); a fresh install goes to /setup"
+	@echo "     Setup token: docker compose logs api | grep -i 'setup token'"
 	@echo "     Grafana → http://localhost:3001  (admin / admin)"
 
 ## dev-auth: hot-reload stack WITH authentication (dev-default admin@example.com / admin1234)

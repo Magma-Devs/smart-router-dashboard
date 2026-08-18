@@ -481,7 +481,7 @@ export async function teamMemberRoutes(app: FastifyInstance) {
         return refuse(
           reply,
           result.reason,
-          "You cannot change your own role. Another admin has to change it for you.",
+          "You cannot change your own role. To step down, promote someone else and ask them to change yours.",
         );
       }
 
