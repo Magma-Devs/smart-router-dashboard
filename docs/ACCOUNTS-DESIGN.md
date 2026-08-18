@@ -911,10 +911,24 @@ It was already open item 1 on **MAG-2805** (victoria), *"Prepare the DFNS produc
 server for handover"*. See §13.3 for the three-way split and the root-access window;
 the part that is genuinely ours is shipping the chart change.
 
-**16.4 · Google only, or keep GitHub and Discord?**
-The ticket names email + password and Google. GitHub and Discord work today. **Recommend
-keeping them** under the same link-only rule — near-zero cost — but flagging it rather
-than quietly widening the scope.
+**16.4 · Social sign-in — ANSWERED (wrongly asked). Removed, 18 Aug.**
+This question rested on a misreading. It said "the ticket names email + password and
+Google"; the ticket says *"Email and password. That is the only way in"* and lists
+"Social sign-in — Google, GitHub, Discord" as out, twice — once in the out-of-scope line
+and once with its reasoning. There was never a question to answer, and the
+recommendation to keep all three followed from the error rather than from the ticket.
+
+The reasoning is worth restating because it is not about token security: a personal
+account at one of those providers is not administered by the customer's IT, so when
+somebody leaves the company their corporate identity is disabled while that personal
+account still opens the dashboard. Closing that automatically is what SSO is for.
+
+All three are removed — providers, `POST /auth/oauth/:provider`, `services/oauth.ts`,
+`upsertOAuthUser`, the invite flow's Google branch, and the login and account surfaces
+that offered them. The `google_id` / `github_id` / `discord_id` columns stay: nullable,
+unwritten, inert, and not worth a migration. §12.1's link-only rule is superseded — the
+path is deleted rather than guarded — and §6.2's email-match check goes with it, because
+a redeemer who supplies no address cannot supply a mismatched one.
 
 **16.5 · The estimate.**
 8 points does not cover this. **Recommend** splitting into the six slices above so
