@@ -384,6 +384,29 @@ migration history. CI is unaffected too — every suite builds its database
 from empty, where the high-water mark does not exist and entries apply in
 array order regardless of their timestamps.
 
+> **Do not fix this by bumping the `when`.** It is the obvious repair and it
+> trades a silent skip for a hard failure. Raising `0002_audit`'s stamp above
+> `0004`'s does let it apply on a database sitting at `0004` — but on a
+> database sitting at `0002` the same change makes it *greater than the mark
+> again*, so the migration **re-runs**: `CREATE TYPE` against a type that
+> already exists, and boot fails. Tested, not reasoned: applying `0000`–`0002`,
+> bumping the entry, and re-migrating throws.
+>
+> Both populations exist as soon as the two tickets merge in sequence, so
+> either choice strands somebody. A skip is recoverable by a developer who
+> reads this section; a failed migration blocks boot for people who never
+> touched this work. Leave the timestamps alone and wipe the database.
+
+**The general form, worth asking of anything before calling it verified:**
+*what does this look like on a machine that already has state?* Every suite
+here builds from empty, so a green run says nothing about an existing
+database — and this is the third failure in this work that was invisible
+exactly where it would be looked for. The audit log dropped rows for most
+real browsers while every test passed, because a Mac Chrome User-Agent fits
+in 128 characters and an iPhone's does not. The audit cursor's ordering
+hazard passes every single-writer test because it needs two overlapping
+transactions to appear. And this one passes every fresh-database migration.
+
 ## Sessions and revocation
 
 Every authenticated request resolves `sid` to a session joined to its
