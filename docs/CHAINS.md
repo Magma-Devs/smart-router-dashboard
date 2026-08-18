@@ -189,6 +189,15 @@ registries — and regenerate. An entry is either explorers or a refusal:
 "CANTON": { "none": "Canton's network is permissioned — no public block explorer" }
 ```
 
+**Look for the chain's own documentation first.** A registry lists whoever
+registered; the chain's docs name who it considers official, and the two
+disagree often enough to matter — `cosmos/chain-registry` lists eleven
+validator-run Lava explorers, and the working one came from
+[docs.lavanet.xyz/block-explorer](https://docs.lavanet.xyz/block-explorer/)
+rather than from any of them. Search for a `docs.<chain>` page named "block
+explorer", "explorers" or "tools". Treat it as a lead rather than as truth: that
+same page still designates a retired explorer as the official one.
+
 Open the block link before you write the kind down, and check the page shows
 the height you asked for. `probe-explorers.mjs` will tell you the host is up
 and that a route exists; it cannot tell you the page rendered anything, because
