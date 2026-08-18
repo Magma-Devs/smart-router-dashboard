@@ -55,12 +55,15 @@ export async function accountRoutes(app: FastifyInstance) {
       const body = request.body as ChangePasswordBody;
 
       if (!me.user.passwordHash) {
-        // An OAuth-only account has no password to change. Saying so beats a
-        // "current password is wrong" message about a password that never was.
+        // Defensive. Both ways an account is created — first-run setup and
+        // invite redemption — set a hash, so this is unreachable today; it was
+        // reachable while social sign-in existed. Kept because the column is
+        // nullable, and because "your current password is wrong" about a
+        // password that never existed is the worst way to find out.
         return reply.code(409).send({
           statusCode: 409,
           error: "Conflict",
-          message: "This account signs in with Google and has no password to change.",
+          message: "This account has no password set.",
         });
       }
 

@@ -6,7 +6,7 @@ The dashboard has two auth modes, selected by the `AUTH_MODE` env var
 | Mode | What it means |
 |---|---|
 | `disabled` *(default)* | Today's behaviour — no login, no database, every route open. The zero-dependency self-hosted posture. |
-| `enabled` | Auth.js v5 sign-in (email+password, plus OAuth), Postgres-backed users, HS256 JWT shared between web and api. `/api/*` requires a Bearer token. |
+| `enabled` | Auth.js v5 sign-in (email and password — the only way in), Postgres-backed users, HS256 JWT shared between web and api. `/api/*` requires a Bearer token. |
 
 The implementation is a trimmed port of `lava-connect`'s auth stack — same
 JWT codec, same plugin layout, same seed semantics.
@@ -21,7 +21,6 @@ Browser ── credentials ──▶ Next.js (Auth.js v5)
                              │  authorize(creds, request)
                              │    → POST api /auth/sign-in   (bcrypt verify)
                              │      + the browser's own IP / User-Agent
-                             │  signIn() → POST api /auth/oauth/:p
                              │                                ← { user, sessionId }
                              ▼
                        HS256 session JWT  (jose, AUTH_SECRET,
@@ -123,9 +122,11 @@ properties carry the security of the flow:
 
 - **The account is created with the invitation's address, never the submitted
   one.** That makes "redeemable only by the address it was sent to" structural
-  rather than a check someone can forget to write. The Google path compares the
-  verified claim to the invited address and refuses a mismatch by name, so an
-  honest person who used the wrong account knows which one to use.
+  rather than a check someone can forget to write — the redeemer supplies no
+  address at all, so there is nothing that could disagree with the invitation.
+  This used to need a real comparison, back when somebody could redeem holding
+  a Google identity asserting a *different* verified address; removing social
+  sign-in turned that check into a property of the INSERT.
 - **The raw token exists only inside the link.** The row stores its SHA-256, so
   a backup, a log line or a support screenshot can't be turned back into a
   working invitation.
@@ -152,12 +153,11 @@ tell a stranger which of those a guessed token hit.
 
 <img src="./assets/invite-redemption.png" alt="The invitation redemption page: a card headed &quot;Join this dashboard&quot;, with a panel restating the invitation — the address it was sent to, shown as fixed text rather than an editable field, the role Approver, and a line describing what that role can do. Below it, optional name, password and repeat-password fields, a note that any characters are accepted from 8 to 64 and checked against known breached passwords, and an Accept invitation button." width="440">
 
-> **OAuth is link-only from here on.** `upsertOAuthUser` used to fall through to
-> an insert, which was correct while accounts came only from a seed. With
-> invitations that is a hole big enough to walk through: anyone with a Google
-> account could reach `POST /auth/oauth/google` and provision themselves.
-> Account creation now lives in exactly two places — first-run setup, and invite
-> redemption.
+> **Account creation lives in exactly two places**: first-run setup and invite
+> redemption. It used to have a third — `upsertOAuthUser` fell through to an
+> insert, so anyone with a Google account could reach `POST /auth/oauth/google`
+> and provision themselves. That was made link-only, and then social sign-in was
+> removed outright (below), which deletes the path rather than guarding it.
 
 ## Password policy
 
@@ -241,19 +241,39 @@ answer the question sign-in refuses to answer.
 
 ## Sign-in methods
 
-- **Email + password** — always available in enabled mode. Verified
-  api-side (`POST /auth/sign-in`, bcrypt cost 12, enumeration-proof
-  responses), which also opens the session row and returns its id.
-  Accounts come from the admin seed or OAuth — there is no self-serve
-  sign-up (invitations land in slice 3).
-- **Google / GitHub / Discord** — each provider's button appears on the
-  login page **only when its `*_CLIENT_ID` + `*_CLIENT_SECRET` pair is
-  set**. The web forwards the provider token to the api
-  (`POST /auth/oauth/:provider`), which re-verifies it against the
-  provider's own API (Google tokeninfo with `aud` pinning; GitHub
-  `/user` + `/user/emails`; Discord `/users/@me`) and upserts the user
-  (find by provider id → link by email → create). Avatars are captured
-  backfill-only — the first provider that supplies one wins.
+**Email and password. That is the only way in** — the ticket's words, and
+now the code's. Verified api-side (`POST /auth/sign-in`, bcrypt cost 12,
+enumeration-proof responses), which also opens the session row and returns
+its id. Accounts come from first-run setup or an invitation; there is no
+self-serve sign-up.
+
+### Why social sign-in was removed
+
+Google, GitHub and Discord buttons used to appear on the login page
+whenever their `*_CLIENT_ID` + `*_CLIENT_SECRET` pair was set. They are
+gone — the providers, `POST /auth/oauth/:provider`, `services/oauth.ts`,
+`upsertOAuthUser`, and the Google branch of invite redemption.
+
+The reason is revocation, not cryptography. A personal Google account is
+not administered by the customer's IT: when somebody leaves the company
+their corporate identity is disabled, but that personal account still
+exists and still opens this dashboard, until an admin separately
+remembers to remove them from the member list. Closing that gap
+automatically is what SSO is for, and it arrives as its own task when a
+customer asks for it. Social login reopens it, which is why the ticket
+lists it out of scope twice — once as a scope boundary, once with this
+reasoning.
+
+Two things bounded the exposure while it existed, and neither was the
+point: OAuth was already link-only, so nobody self-provisioned; and no
+deployment had ever set a credential pair, so the buttons never rendered.
+Removing the code makes "email and password only" structural rather than
+a fact about configuration.
+
+**The `google_id` / `github_id` / `discord_id` columns stay.** They are
+nullable, unwritten, and inert. Nothing shipped, so there is no data to
+preserve or to leak, and dropping three dead columns is not worth a
+migration on a schema other deployments already have.
 
 ## Bootstrap admin seed
 
@@ -279,9 +299,6 @@ users table → admin created; populated table without that email → no-op
 | `PUBLIC_WEB_ORIGIN` | api | Browser-facing origin of the web app; invitation and reset links are built from it. No default — guessing a host would produce links that look right and go nowhere |
 | `AUTH_URL` | web | Auth.js base URL (default `http://localhost:3000`) |
 | `INTERNAL_API_BASE_URL` | web | server-side api URL for Auth.js callbacks (`http://api:8000` in compose) |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | web (+ id on api) | unset = no Google button. The api needs the id to pin the token audience |
-| `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | web | unset = no GitHub button |
-| `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET` | web | unset = no Discord button |
 
 ## Running it
 
@@ -378,8 +395,9 @@ link travels over a channel we don't control. Open it, set a password —
 and note that it does **not** sign you in, and that it kills every session
 that account had.
 
-Two refusals worth seeing: a Google-only account answers 409 naming why
-there is no password to reset, and a removed member answers 404.
+Two refusals worth seeing: an account with no password set answers 409
+(defensive — setup and invite redemption both set one), and a removed
+member answers 404.
 
 **7. Lockout.** Five wrong passwords for the same address and the sixth
 attempt is refused — `423`, even when that sixth one is right. The window

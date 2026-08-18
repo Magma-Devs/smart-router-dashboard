@@ -147,35 +147,25 @@ describe("invitations", () => {
       );
     });
 
-    it("refuses a Google account for a different address", async () => {
-      const result = await invite("dana@example.com");
+    it("creates the account with the INVITED address, whatever else is supplied", async () => {
+      // The property that used to need a comparison — a redeemer could arrive
+      // holding a Google identity asserting a different verified address — is
+      // now a property of the insert: `invitation.email` is the only address in
+      // scope, and the redeemer supplies none.
+      const result = await invite("Dana@Example.com");
       if (!result.ok) throw new Error("setup");
 
       const redeemed = await redeemInvitation(t.db, {
         rawToken: result.created.rawToken,
-        verifiedEmail: "someone.else@example.com",
-        provider: { column: "googleId", id: "google-123" },
-      });
-      expect(redeemed).toEqual({ ok: false, reason: "email_mismatch" });
-      expect(
-        await t.db.select().from(users).where(eq(users.email, "dana@example.com")),
-      ).toHaveLength(0);
-    });
-
-    it("links the provider id when the address matches", async () => {
-      const result = await invite("dana@example.com");
-      if (!result.ok) throw new Error("setup");
-
-      const redeemed = await redeemInvitation(t.db, {
-        rawToken: result.created.rawToken,
-        verifiedEmail: "Dana@Example.com",
-        provider: { column: "googleId", id: "google-123" },
+        password: "a-perfectly-fine-passphrase",
+        name: "Dana",
       });
       expect(redeemed.ok).toBe(true);
       if (!redeemed.ok) return;
-      expect(redeemed.user.googleId).toBe("google-123");
-      // No password for an OAuth-only account — and nothing pretending there is.
-      expect(redeemed.user.passwordHash).toBeNull();
+      expect(redeemed.user.email).toBe("dana@example.com");
+      expect(
+        await t.db.select().from(users).where(eq(users.email, "someone.else@example.com")),
+      ).toHaveLength(0);
     });
 
     it("is single-use", async () => {

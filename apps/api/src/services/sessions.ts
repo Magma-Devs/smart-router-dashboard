@@ -38,7 +38,7 @@ export interface ClientContext {
 
 export interface CreateSessionInput {
   userId: string;
-  /** `password` · `google` · `github` · `discord` · `invite`. */
+  /** `password` · `invite` — email and password is the only way in. */
   authMethod: string;
   client: ClientContext;
 }

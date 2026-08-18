@@ -5,10 +5,14 @@
  *
  * Change password and Active sessions are now real (MAG-2729 slices 4-5) and
  * act on the signed-in account. Basic details carries the REAL build provenance
- * from the api's /version endpoint. What remains disabled is disabled because
- * it genuinely doesn't exist yet — linking a second provider, and self-service
- * deletion — and says so rather than implying a shared login that no longer
- * describes this deployment. The theme toggle lives in the Topbar. */
+ * from the api's /version endpoint. Self-service deletion stays disabled and
+ * says why, rather than implying a shared login that no longer describes this
+ * deployment.
+ *
+ * The prototype's "Connected accounts" card is gone rather than disabled: it
+ * offered Google/GitHub/Discord, and social sign-in is deliberately out of
+ * scope, so a greyed-out Connect button would promise something nobody intends
+ * to build. The theme toggle lives in the Topbar. */
 
 import type { CSSProperties } from "react";
 import { useApi } from "@/hooks/use-api";
@@ -40,11 +44,6 @@ export default function AccountPage() {
   // before, via the shared api client (runtime-config base resolution).
   const { data: version } = useApi<VersionInfo>("/version", 60000);
 
-  const providers = [
-    { id: "google", label: "Google" },
-    { id: "github", label: "GitHub" },
-    { id: "discord", label: "Discord" },
-  ];
   const fl: CSSProperties = {
     fontSize: 11,
     color: "var(--text-3)",
@@ -77,42 +76,6 @@ export default function AccountPage() {
             </div>
           </div>
         ))}
-      </div>
-
-      <div className="gw-card" style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Connected accounts</div>
-        <div style={{ marginBottom: 12 }}>
-          <CloudNotice
-            feature="Linking a provider"
-            detail="you sign in with the method you joined with. Attaching another provider to an existing account isn't available yet."
-            compact
-          />
-        </div>
-        <div style={{ display: "grid", gap: 7 }}>
-          {providers.map((p) => (
-            <div
-              key={p.id}
-              className="gw-row"
-              style={{
-                padding: "9px 11px",
-                borderRadius: 7,
-                background: "var(--bg)",
-                border: "1px solid var(--line)",
-                gap: 10,
-              }}
-            >
-              <div style={{ fontSize: 13, fontWeight: 500, flex: 1 }}>{p.label}</div>
-              <button
-                className="gw-btn"
-                style={{ fontSize: 11, padding: "5px 9px" }}
-                disabled
-                title={NOT_AVAILABLE}
-              >
-                Connect
-              </button>
-            </div>
-          ))}
-        </div>
       </div>
 
       <ChangePasswordCard />

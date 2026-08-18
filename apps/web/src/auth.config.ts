@@ -1,7 +1,4 @@
 import type { NextAuthConfig } from "next-auth";
-import Google from "next-auth/providers/google";
-import GitHub from "next-auth/providers/github";
-import Discord from "next-auth/providers/discord";
 import Credentials from "next-auth/providers/credentials";
 import { jwtVerify, SignJWT } from "jose";
 import type { Role } from "@sr/shared";
@@ -55,9 +52,9 @@ interface SignInUserPayload {
   role: UserRole;
 }
 
-/** `/auth/sign-in` and `/auth/oauth/:provider` open the session row and return
- *  its id; it rides in the token's `sid` claim and the api resolves it on every
- *  request. A token without one is refused, so this is not optional. */
+/** `/auth/sign-in` opens the session row and returns its id; it rides in the
+ *  token's `sid` claim and the api resolves it on every request. A token
+ *  without one is refused, so this is not optional. */
 interface SignInResponse {
   user: SignInUserPayload;
   sessionId: string;
@@ -118,41 +115,18 @@ function secretKey(): Uint8Array {
   return new TextEncoder().encode(secret);
 }
 
-/** A provider is offered only when BOTH halves of its credential pair are
- *  set — this is what makes the login page's badges conditional. */
-export const oauthProviderFlags = {
-  google: !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET),
-  github: !!(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET),
-  discord: !!(process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET),
-} as const;
-
+/**
+ * Email and password, and nothing else.
+ *
+ * Google, GitHub and Discord sign-in used to be here, offered whenever their
+ * credential pair was configured. The ticket puts social sign-in out of scope
+ * for a reason worth keeping in view: a personal account at one of those
+ * providers is not administered by the customer's IT, so when somebody leaves
+ * the company their corporate identity is disabled and that personal account
+ * still opens the dashboard. SSO exists to close exactly that gap, and it
+ * arrives as its own task when a customer asks for it.
+ */
 const providers: NextAuthConfig["providers"] = [];
-if (oauthProviderFlags.google) {
-  providers.push(
-    Google({
-      clientId: process.env.GOOGLE_CLIENT_ID,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-    }),
-  );
-}
-if (oauthProviderFlags.github) {
-  providers.push(
-    GitHub({
-      clientId: process.env.GITHUB_CLIENT_ID,
-      clientSecret: process.env.GITHUB_CLIENT_SECRET,
-      // user:email so the api can pull the verified primary address.
-      authorization: { params: { scope: "read:user user:email" } },
-    }),
-  );
-}
-if (oauthProviderFlags.discord) {
-  providers.push(
-    Discord({
-      clientId: process.env.DISCORD_CLIENT_ID,
-      clientSecret: process.env.DISCORD_CLIENT_SECRET,
-    }),
-  );
-}
 providers.push(
   Credentials({
     name: "Credentials",
@@ -248,50 +222,6 @@ export const authConfig = {
     },
   },
   callbacks: {
-    async signIn({ user, account }) {
-      // OAuth sign-ins: forward the provider's token to the api so it can
-      // independently verify and upsert the user. Strict-fail paths that
-      // don't produce a usable token — letting them through would create
-      // a session not backed by a DB row.
-      if (!account) return true;
-      const provider = account.provider;
-      if (provider !== "google" && provider !== "github" && provider !== "discord") return true;
-
-      const token = provider === "google" ? account.id_token : account.access_token;
-      if (!token) return false;
-
-      // This callback gets no `request`, so reach for the ambient one. Imported
-      // dynamically because `proxy.ts` pulls this module into the edge bundle,
-      // where `next/headers` doesn't exist — and never runs this callback.
-      let requestHeaders: Headers | null = null;
-      try {
-        const { headers } = await import("next/headers");
-        requestHeaders = await headers();
-      } catch {
-        // No ambient request scope: fall through with no client context. The
-        // api then records what it observes rather than nothing.
-      }
-      const { clientContext, internalHeaders } = clientContextFrom(requestHeaders);
-
-      try {
-        const res = await fetch(`${apiBase}/auth/oauth/${provider}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...internalHeaders },
-          body: JSON.stringify({ token, ...(clientContext ? { clientContext } : {}) }),
-        });
-        if (!res.ok) return false;
-        const body = (await res.json()) as SignInResponse;
-        user.id = body.user.id;
-        user.email = body.user.email;
-        user.name = body.user.name ?? null;
-        user.avatarUrl = body.user.avatarUrl ?? null;
-        user.role = body.user.role;
-        user.sessionId = body.sessionId;
-        return true;
-      } catch {
-        return false;
-      }
-    },
     async jwt({ token, user }) {
       if (user) {
         token.id = user.id;
