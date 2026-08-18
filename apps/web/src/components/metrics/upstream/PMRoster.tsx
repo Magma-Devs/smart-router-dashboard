@@ -9,8 +9,7 @@
 import { useEffect, useState } from "react";
 import { buildChainMetaByIndex, type MetricWindow, type UpstreamMetrics } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
-import { tipLagColor, uptimeColor } from "@/lib/colors";
-import { fmtLag } from "@/lib/format";
+import { uptimeColor } from "@/lib/colors";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { ExplorerBlockLink, ExplorerHomeLink } from "@/components/gateway/ExplorerLink";
 import { HealthDot } from "@/components/gateway/HealthTag";
@@ -19,11 +18,7 @@ import { ThCol, useSort } from "@/components/gateway/SortTable";
 import { useFilters } from "@/components/gateway/FiltersProvider";
 import { useRouterFilter } from "@/hooks/use-router-options";
 
-const STALE_HINT = "Tip gauge unchanged for 15 minutes while the chain kept producing blocks";
-
 const BLOCK_TIP = "**The head this upstream reports** — `rpc_endpoint_latest_block`, its own tip rather than the router's.\n\n**Click a height** to open it on the chain\u2019s block explorer and check it against the public chain. Chains with no verified block page show the number plain — the chain name still opens their explorer.";
-
-const BEHIND_TIP = "**How far this upstream trails the chain's best upstream** — blocks behind ÷ the chain's own block rate, so the number is in seconds and comparable across chains.\n\n`—` means it IS the best tip seen. **Stale** means the tip gauge never moved over the last 15 minutes while the chain kept producing blocks: the upstream is stuck, not merely slow.";
 
 interface RosterRow {
   pm: UpstreamMetrics;
@@ -40,7 +35,6 @@ interface RosterRow {
   router: string;
   chain: string;
   block: number;
-  behind: number;
   requests: number;
   uptime: number;
   latency: number;
@@ -81,9 +75,6 @@ export function PMRoster({ rows, activeName, onSelect, timeWindow }: {
       router: (leadRouter(v.routerIds) ?? "").toLowerCase(),
       chain: meta.name.toLowerCase(),
       block: v.latestBlock ?? -1,
-      // Sort by TIME behind, not blocks: the roster mixes chains, and a block
-      // count ranks a 2-second Aptos lag above a 10-minute Ethereum one.
-      behind: v.behindSec ?? (v.latestBlock == null ? Infinity : -1),
       requests: v.requests || 0,
       uptime: v.uptime ?? -1,
       latency: v.p95Ms ?? Infinity,
@@ -113,7 +104,6 @@ export function PMRoster({ rows, activeName, onSelect, timeWindow }: {
             <ThCol sortKey="router" sort={sort} onSort={onSort}>Router</ThCol>
             <ThCol sortKey="chain" sort={sort} onSort={onSort}>Chain</ThCol>
             <ThCol align="right" tip={BLOCK_TIP} sortKey="block" sort={sort} onSort={onSort}>Latest block</ThCol>
-            <ThCol align="right" tip={BEHIND_TIP} sortKey="behind" sort={sort} onSort={onSort}>Behind</ThCol>
             <ThCol align="right" sortKey="requests" sort={sort} onSort={onSort}>Total requests</ThCol>
             <ThCol align="right" sortKey="uptime" sort={sort} onSort={onSort}>Uptime</ThCol>
             <ThCol align="right" sortKey="latency" sort={sort} onSort={onSort}>Latency</ThCol>
@@ -171,18 +161,6 @@ export function PMRoster({ rows, activeName, onSelect, timeWindow }: {
                     </span>
                   ) : <span style={{ fontSize: 12, color: "var(--text-4)" }}>—</span>}
                 </td>
-                <td style={{ textAlign: "right" }}>
-                  {v.stale ? (
-                    <span className="gw-tag gw-tag--err" title={STALE_HINT}>Stale</span>
-                  ) : v.behindSec != null && v.behindSec >= 1 ? (
-                    <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-end" }}>
-                      <span className="gw-mono gw-tnum" style={{ fontSize: 12, color: tipLagColor(v.behindSec) }}>{fmtLag(v.behindSec)}</span>
-                      {v.blockLag != null && v.blockLag > 0 && (
-                        <span className="gw-tnum" style={{ fontSize: 10, color: "var(--text-4)" }}>{v.blockLag.toLocaleString("en-US")} blk</span>
-                      )}
-                    </div>
-                  ) : <span style={{ fontSize: 12, color: "var(--text-4)" }}>—</span>}
-                </td>
                 {muted ? (
                   <td colSpan={5} style={{ textAlign: "right", color: "var(--warn)", fontSize: 12, fontStyle: "italic", opacity: 0.9 }}>
                     {v.role === "backup" ? "No recent traffic — standing by as backup" : "No recent traffic in this window"}
@@ -200,7 +178,7 @@ export function PMRoster({ rows, activeName, onSelect, timeWindow }: {
             );
           })}
           {rows.length === 0 && (
-            <tr><td colSpan={10} style={{ padding: "24px 16px", textAlign: "center", color: "var(--text-4)", fontSize: 13 }}>No upstreams configured yet.</td></tr>
+            <tr><td colSpan={9} style={{ padding: "24px 16px", textAlign: "center", color: "var(--text-4)", fontSize: 13 }}>No upstreams configured yet.</td></tr>
           )}
         </tbody>
       </table>
