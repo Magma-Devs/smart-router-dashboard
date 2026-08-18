@@ -17,6 +17,7 @@ import { useApi } from "@/hooks/use-api";
 import { useFilters } from "@/components/gateway/FiltersProvider";
 import { fmtNum } from "@/lib/format";
 import { uptimeColor } from "@/lib/colors";
+import { HEALTH_UNKNOWN_HINT, healthColor, healthLabel } from "@/lib/health";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { PMRoster, usePMRosterData } from "./PMRoster";
 import { PMStat, PMNoVal } from "./PMPanel";
@@ -27,13 +28,13 @@ export function UpstreamMetricsTab({ timeWindow, chainFilter }: {
   timeWindow: MetricWindow;
   chainFilter: string | null;
 }) {
-  const { scopeQ } = useFilters();
+  const { scopeQ, routerId } = useFilters();
   const rosterRes = usePMRosterData(timeWindow, chainFilter);
   const entries = rosterRes.data?.upstreams ?? [];
 
   const [provName, setProvName] = useState<string | null>(null);
-  // jump the deep-dive to the first upstream on the filtered chain
-  useEffect(() => { setProvName(null); }, [chainFilter]);
+  // jump the deep-dive to the first upstream on the filtered chain / router
+  useEffect(() => { setProvName(null); }, [chainFilter, routerId]);
 
   const visible = entries;
   const selValid = visible.some((e) => e.endpointId === provName);
@@ -73,12 +74,14 @@ export function UpstreamMetricsTab({ timeWindow, chainFilter }: {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, marginBottom: 12 }}>
             <PMStat label="Status">
               {(() => {
-                const map = { operational: { c: "var(--ok)", t: "Live · up" }, unhealthy: { c: "var(--err)", t: "Down" }, unknown: { c: "var(--text-4)", t: "—" } } as const;
-                const s = map[pm.health] || map.operational;
+                /* Same three words every other health surface uses
+                   (`lib/health.ts`) — this card used to say "Live · up". */
+                const c = healthColor(pm.health);
                 return (
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ width: 10, height: 10, borderRadius: 999, background: s.c, boxShadow: `0 0 8px ${s.c}`, flexShrink: 0 }} />
-                    <span style={{ fontSize: 20, fontWeight: 700, color: s.c }}>{s.t}</span>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}
+                    title={pm.health === "unknown" ? HEALTH_UNKNOWN_HINT : undefined}>
+                    <span style={{ width: 10, height: 10, borderRadius: 999, background: c, boxShadow: `0 0 8px ${c}`, flexShrink: 0 }} />
+                    <span style={{ fontSize: 20, fontWeight: 700, color: c }}>{healthLabel(pm.health)}</span>
                   </div>
                 );
               })()}

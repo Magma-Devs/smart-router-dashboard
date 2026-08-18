@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ChainBadge } from "./ChainBadge";
 
 /* Ported verbatim from the design prototype (page-overview.jsx ChainSelect);
@@ -10,16 +10,29 @@ export interface ChainOption {
   spec: string;
   name: string;
   color: string;
+  /** Offered but dimmed — the page can show little or nothing for it. */
+  muted?: boolean;
+  /** Why it's dimmed, shown after the name (e.g. "no traffic yet"). */
+  hint?: string;
 }
 
 export interface ChainSelectProps {
   /** "all" or a spec label. */
   value: string;
   onChange: (v: string) => void;
+  /** Any order — the list is sorted by chain name for display. */
   chains: ChainOption[];
 }
 
-export function ChainSelect({ value, onChange, chains }: ChainSelectProps) {
+export function ChainSelect({ value, onChange, chains: unsorted }: ChainSelectProps) {
+  /* Alphabetical by name, ascending. The callers' own orders are meaningless
+     to someone hunting for a chain: the metrics list arrives in whatever order
+     Prometheus returns its label values, the config list in the order the
+     values file happens to declare its routers. */
+  const chains = useMemo(
+    () => [...unsorted].sort((a, b) => a.name.localeCompare(b.name)),
+    [unsorted],
+  );
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -47,9 +60,14 @@ export function ChainSelect({ value, onChange, chains }: ChainSelectProps) {
             All chains
           </button>
           {chains.map((c) => (
-            <button key={c.spec} onClick={() => { onChange(c.spec); setOpen(false); }} style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "7px 9px", borderRadius: 6, border: "none", background: value === c.spec ? "var(--hover)" : "transparent", color: "var(--text)", fontSize: 12, fontFamily: "inherit", cursor: "pointer", textAlign: "left" }}>
+            <button key={c.spec} onClick={() => { onChange(c.spec); setOpen(false); }} title={c.hint} style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "7px 9px", borderRadius: 6, border: "none", background: value === c.spec ? "var(--hover)" : "transparent", color: c.muted ? "var(--text-3)" : "var(--text)", fontSize: 12, fontFamily: "inherit", cursor: "pointer", textAlign: "left" }}>
               <ChainBadge spec={c.spec} size={16} />
-              {c.name}
+              <span style={{ opacity: c.muted ? 0.75 : 1 }}>{c.name}</span>
+              {/* A chain this page can't populate is still selectable — dimmed
+                  and labelled beats hidden, which reads as "not configured". */}
+              {c.hint && (
+                <span style={{ marginLeft: "auto", paddingLeft: 8, fontSize: 10, color: "var(--text-4)", whiteSpace: "nowrap" }}>{c.hint}</span>
+              )}
             </button>
           ))}
         </div>

@@ -1,12 +1,15 @@
 import type { FastifyInstance } from "fastify";
-import { WINDOWS, toMetricWindow, type MetricWindow } from "@sr/shared";
+import { DEFAULT_WINDOW, WINDOWS, toMetricWindow, type MetricWindow } from "@sr/shared";
 import { sendApiError } from "../plugins/error-handler.js";
 import { config } from "../config.js";
 
 interface WindowQuery {
   window?: string;
   spec?: string;
+  /** Collector target-label scope — narrows the PromQL (see `promql/scope.ts`). */
   router?: string;
+  /** Config router id — filters rows by the mounted values file, not the query. */
+  routerId?: string;
 }
 
 function parseWindow(raw: string | undefined): MetricWindow {
@@ -21,13 +24,18 @@ const windowQuerySchema = {
     window: {
       type: "string" as const,
       enum: [...Object.keys(WINDOWS), "24h"],
-      description: "Time window (default 1d; 24h is an alias of 1d)",
+      description: `Time window (default ${DEFAULT_WINDOW}; 24h is an alias of 1d)`,
     },
     spec: { type: "string" as const, description: "Chain spec label, e.g. ETH1 (optional)" },
     router: {
       type: "string" as const,
       description:
         "Restrict to ONE router deployment — a value of the ROUTER_SCOPE_LABEL target label, as listed by GET /api/metrics/routers (optional; omit for cluster-wide)",
+    },
+    routerId: {
+      type: "string" as const,
+      description:
+        "Restrict to the upstreams ONE config router declares — an id from GET /api/config/routers. A different axis from `router`: this filters rows against the mounted values file, it does not narrow the PromQL. Read by /api/metrics/upstreams (optional)",
     },
   },
 };
@@ -88,15 +96,53 @@ export async function metricRoutes(app: FastifyInstance) {
     return app.scoped(request.query.router).metricsDashboard.dashboard(parseWindow(request.query.window), request.query.spec);
   });
 
-  // Per-chain rollup (RouterOverview table).
+  // Per-ROUTER rollup (the Routers table). One row per config router — see the
+  // service comment for what can and cannot be attributed to one.
+  app.get<{ Querystring: WindowQuery }>("/api/metrics/routers-rollup", tag("Per-router rollup (one row per config router)", false), async (request) => {
+    return {
+      routers: await app
+        .scoped(request.query.router)
+        .metrics.routers(parseWindow(request.query.window), config.prometheus.routerScopeLabel),
+    };
+  });
+
+  // Per-chain rollup.
   app.get<{ Querystring: WindowQuery }>("/api/metrics/chains", tag("Per-chain rollup", false), async (request) => {
     return { chains: await app.scoped(request.query.router).metrics.chains(parseWindow(request.query.window)) };
   });
 
-  // Upstream roster (optionally scoped to one spec).
+  // Upstream roster (optionally scoped to one spec and/or one config router).
   app.get<{ Querystring: WindowQuery }>("/api/metrics/upstreams", tag("Upstream roster + selection scores"), async (request) => {
-    const { spec } = request.query;
-    return { upstreams: await app.scoped(request.query.router).metrics.upstreams(spec, parseWindow(request.query.window)) };
+    const { spec, routerId } = request.query;
+    return {
+      upstreams: await app
+        .scoped(request.query.router)
+        .metrics.upstreams(spec, parseWindow(request.query.window), routerId),
+    };
+  });
+
+  // Latest block per router + per upstream (instant gauges — no window).
+  app.get<{ Querystring: WindowQuery }>("/api/metrics/block-heights", {
+    schema: {
+      tags: ["Metrics"],
+      summary: "Latest block per router deployment and per upstream, with lag in seconds",
+      querystring: {
+        type: "object" as const,
+        properties: {
+          spec: windowQuerySchema.properties.spec,
+          router: windowQuerySchema.properties.router,
+          routerId: windowQuerySchema.properties.routerId,
+        },
+      },
+    },
+  }, async (request) => {
+    return app
+      .scoped(request.query.router)
+      .metrics.blockTips(
+        config.prometheus.routerScopeLabel,
+        request.query.spec,
+        request.query.routerId,
+      );
   });
 
   // RPS time-series for the Traffic chart.
@@ -158,8 +204,10 @@ export async function metricRoutes(app: FastifyInstance) {
 
   // Errors-breakdown tab (derived totals/hotspots/pivots + family presence).
   app.get<{ Querystring: WindowQuery }>("/api/metrics/errors", tag("Errors breakdown (hotspots + pivots)"), async (request) => {
-    const { spec } = request.query;
-    return app.scoped(request.query.router).metricsDetail.errors(parseWindow(request.query.window), spec);
+    const { spec, routerId } = request.query;
+    return app
+      .scoped(request.query.router)
+      .metricsDetail.errors(parseWindow(request.query.window), spec, routerId);
   });
 
   // Chains whose every backing endpoint is down (CurrentlyUnavailable strip).

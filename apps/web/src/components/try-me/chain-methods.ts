@@ -41,6 +41,13 @@ export interface AddonCommand {
   params: string;
   /** One-line human description (from the curated hints). */
   desc?: string;
+  /** Runs as-is: the params it ships with are already a complete request.
+   *  These are the commands the drawer opens on. */
+  ready?: boolean;
+  /** Demonstrably needs the caller to fill something in first — a
+   *  placeholder, a documented argument, or a spec arity rule. Neither flag
+   *  means the catalog doesn't know, and nothing is claimed. */
+  needsInput?: boolean;
 }
 
 export type Tier = "regular" | "archive" | "debug" | "trace";
@@ -92,6 +99,10 @@ interface GeneratedCmd {
   p?: string;
   /** Curated one-line description. */
   d?: string;
+  /** 1 when the command runs as-is (see the generator's `runnability`). */
+  r?: 1;
+  /** 1 when it demonstrably needs caller input first. */
+  n?: 1;
 }
 
 type GeneratedTiers = Partial<Record<Tier, GeneratedCmd[]>>;
@@ -149,10 +160,20 @@ function resolveGeneratedEntry(
 
 function expandCommand(cmd: GeneratedCmd, key: CatalogStorageKey): AddonCommand {
   const method = key === "rest" ? (cmd.v ?? "GET") : cmd.m;
+  // Same defaults the generator drops: an empty object for gRPC and for
+  // CometBFT (which rejects `[]` on any method with optional arguments), an
+  // empty array elsewhere, the path itself for REST.
   const params =
-    cmd.p ?? (key === "rest" ? cmd.m : key === "grpc" ? "{}" : "[]");
+    cmd.p ??
+    (key === "rest"
+      ? cmd.m
+      : key === "grpc" || key === "tendermintrpc"
+        ? "{}"
+        : "[]");
   const out: AddonCommand = { method, label: cmd.l ?? cmd.m, params };
   if (cmd.d) out.desc = cmd.d;
+  if (cmd.r) out.ready = true;
+  if (cmd.n) out.needsInput = true;
   return out;
 }
 
@@ -396,16 +417,41 @@ const BITCOIN_JSONRPC: InterfaceConfig = {
   trace: null,
 };
 
+/**
+ * Params that still need the caller to fill something in — the same rule the
+ * generator applies (`PLACEHOLDER` in generate-try-me-catalog.mjs). The static
+ * catalogs below predate the flags and are all hand-curated, so "has a
+ * placeholder" is the whole question for them.
+ */
+const PLACEHOLDER = /\.\.\.|<[^>]{2,}>|\{[a-z_ ]+\}/i;
+
+/** Stamp ready / needsInput onto a hand-written config, so the fallback
+ *  catalog answers "does this run as-is?" the same way the generated one does. */
+function classify(cfg: InterfaceConfig): InterfaceConfig {
+  const mark = (list: AddonCommand[] | null): AddonCommand[] | null =>
+    list?.map((cmd) =>
+      PLACEHOLDER.test(cmd.params)
+        ? { ...cmd, needsInput: true }
+        : { ...cmd, ready: true },
+    ) ?? null;
+  return {
+    regular: mark(cfg.regular) ?? [],
+    archive: mark(cfg.archive),
+    debug: mark(cfg.debug),
+    trace: mark(cfg.trace),
+  };
+}
+
 export const FAMILY_METHODS: Record<
   ChainFamily,
   Partial<Record<CatalogStorageKey, InterfaceConfig>>
 > = {
-  evm: { jsonrpc: EVM_JSONRPC },
-  solana: { jsonrpc: SOLANA_JSONRPC },
-  near: { jsonrpc: NEAR_JSONRPC },
-  starknet: { jsonrpc: STARKNET_JSONRPC },
-  cosmos: { tendermintrpc: COSMOS_TENDERMINT, rest: COSMOS_REST },
-  bitcoin: { jsonrpc: BITCOIN_JSONRPC },
+  evm: { jsonrpc: classify(EVM_JSONRPC) },
+  solana: { jsonrpc: classify(SOLANA_JSONRPC) },
+  near: { jsonrpc: classify(NEAR_JSONRPC) },
+  starknet: { jsonrpc: classify(STARKNET_JSONRPC) },
+  cosmos: { tendermintrpc: classify(COSMOS_TENDERMINT), rest: classify(COSMOS_REST) },
+  bitcoin: { jsonrpc: classify(BITCOIN_JSONRPC) },
 };
 
 /**
@@ -512,16 +558,33 @@ const GRPC_NO_CATALOG: InterfaceConfig = {
   trace: null,
 };
 
-/** Identity-stable archive-stripped variants, so React memos keyed on the
- *  config object don't churn when a chain has no archive addon. */
-const STRIPPED_CACHE = new Map<InterfaceConfig, InterfaceConfig>();
+/** Identity-stable add-on-stripped variants, so React memos keyed on the
+ *  config object don't churn when a deployment declares no add-ons. Keyed by
+ *  (config, the add-ons it was filtered against). */
+const STRIPPED_CACHE = new Map<InterfaceConfig, Map<string, InterfaceConfig>>();
 
-function withoutArchive(cfg: InterfaceConfig): InterfaceConfig {
-  if (cfg.archive === null) return cfg;
-  let stripped = STRIPPED_CACHE.get(cfg);
+/** Add-on tiers are a DEPLOYMENT capability, not a chain one: the spec knows
+ *  `debug_*` exists, but a router with no debug upstream answers every one of
+ *  them with "No Providers For Addon". Offer only what the mounted config
+ *  declares. */
+function withAddons(cfg: InterfaceConfig, addons: readonly string[]): InterfaceConfig {
+  const has = (addon: string) => addons.some((a) => a.toLowerCase() === addon);
+  const wanted = { archive: has("archive"), debug: has("debug"), trace: has("trace") };
+  const drops = (["archive", "debug", "trace"] as const).filter(
+    (tier) => cfg[tier] !== null && !wanted[tier],
+  );
+  if (drops.length === 0) return cfg;
+  const cacheKey = drops.join(",");
+  let perConfig = STRIPPED_CACHE.get(cfg);
+  if (!perConfig) {
+    perConfig = new Map();
+    STRIPPED_CACHE.set(cfg, perConfig);
+  }
+  let stripped = perConfig.get(cacheKey);
   if (!stripped) {
-    stripped = { ...cfg, archive: null };
-    STRIPPED_CACHE.set(cfg, stripped);
+    stripped = { ...cfg };
+    for (const tier of drops) stripped[tier] = null;
+    perConfig.set(cacheKey, stripped);
   }
   return stripped;
 }
@@ -531,14 +594,13 @@ function withoutArchive(cfg: InterfaceConfig): InterfaceConfig {
  * index in the generated catalog wins; the family heuristic covers unknown
  * indices and interfaces the spec doesn't declare. Returns null when neither
  * source has a catalog — caller (`EndpointRow`) hides the Try-it action in
- * that case. `hasArchive` reflects whether the chain's mounted config marks
- * an `archive` addon; without it the archive tier is nulled out (never
- * offer methods the deployment can't serve).
+ * that case. `addons` are the ones the mounted config declares on this
+ * endpoint's upstreams; add-on tiers the deployment can't serve are dropped.
  */
 export function getInterfaceConfig(
   spec: string,
   iface: string,
-  hasArchive: boolean,
+  addons: readonly string[],
 ): InterfaceConfig | null {
   if (!isCatalogInterface(iface)) return null;
   const key = storageKey(iface);
@@ -561,10 +623,37 @@ export function getInterfaceConfig(
     if (!cfg && key === "grpc") return GRPC_NO_CATALOG;
   }
   if (!cfg) return null;
-  return hasArchive ? cfg : withoutArchive(cfg);
+  return withAddons(cfg, addons);
 }
 
 export const TIER_ORDER: Tier[] = ["regular", "archive", "debug", "trace"];
+
+/** How many commands the dropdown opens on before "Show all". A chain can
+ *  have hundreds of runnable paths (a Cosmos LCD has ~100); past a dozen it
+ *  stops being a short list you scan and becomes the long list again. */
+export const HEAD_LIMIT = 12;
+
+/**
+ * The commands the dropdown opens on: only ones that can be SENT AS-IS.
+ *
+ * That is the whole contract of this list — everything in it works on the
+ * chain it is shown for, with the params it arrives with. `preferred` (the
+ * curated name map's key order) decides which ready commands lead; the rest
+ * of the ready set fills up to `HEAD_LIMIT` behind them, in catalog order,
+ * which puts the curated hints first because that is how they are emitted.
+ *
+ * Empty when nothing in the tier is known-runnable — the caller then shows
+ * the full list rather than a head that promises something it can't keep.
+ */
+export function headCommands(
+  commands: AddonCommand[],
+  preferred: (cmd: AddonCommand) => boolean = () => false,
+): AddonCommand[] {
+  const ready = commands.filter((cmd) => cmd.ready);
+  const leading = ready.filter(preferred);
+  const rest = ready.filter((cmd) => !leading.includes(cmd));
+  return [...leading, ...rest].slice(0, HEAD_LIMIT);
+}
 
 /** Flatten the InterfaceConfig into `[tier, command, indexInTier]` triples in
  *  the order the drawer should render. Used to power the method dropdown. */

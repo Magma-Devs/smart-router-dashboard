@@ -121,6 +121,26 @@ export const config = {
     internalSecret: env("INTERNAL_AUTH_SECRET"),
   },
 
+  /**
+   * Direct-to-upstream relay (`POST /api/upstreams/relay`) — the api dials a
+   * configured upstream on the caller's behalf, bypassing the router, so the
+   * Try-me drawer can show what an upstream answers on its own.
+   *
+   * `enabled` is a real switch, not decoration: with the default
+   * AUTH_MODE=disabled, anyone who can reach the api can spend the operator's
+   * upstream quota (and send write methods) through this route, using
+   * credentials only the api holds. Turn it off on any deployment where that
+   * is not acceptable.
+   */
+  upstreamRelay: {
+    enabled: (env("UPSTREAM_RELAY_ENABLED") ?? "true").toLowerCase() !== "false",
+    timeoutMs: envInt("UPSTREAM_RELAY_TIMEOUT_MS", 10000),
+    /** Response bodies past this are truncated, not streamed. */
+    maxBodyBytes: envInt("UPSTREAM_RELAY_MAX_BODY_BYTES", 262144),
+    /** Per-IP per-minute, tighter than the global RATE_LIMIT_MAX. */
+    rateLimitMax: envInt("UPSTREAM_RELAY_RATE_LIMIT_MAX", 20),
+  },
+
   tenantId: env("TENANT_ID") ?? "default",
   logLevel: (env("LOG_LEVEL") ?? "info").toLowerCase(),
 

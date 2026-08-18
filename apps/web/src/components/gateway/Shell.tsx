@@ -9,7 +9,6 @@ import { NAV_SECTIONS } from "./nav";
 import { IconMoon, IconSun, type IconProps } from "./icons";
 import { useApi } from "@/hooks/use-api";
 import { useFilters } from "@/components/gateway/FiltersProvider";
-import { RouterSelect } from "@/components/gateway/RouterSelect";
 import { fmtNum } from "@/lib/format";
 import { getAuthState, getAuthVersion, subscribeAuth } from "@/lib/auth-store";
 
@@ -37,14 +36,17 @@ function Sidebar() {
   const pathname = usePathname();
   return (
     <aside className="gw-side">
-      <div className="gw-side__brand">
+      {/* The brand is the way home, as it is on every product: `/` redirects to
+          whatever the default surface is (Metrics), so home stays defined in one
+          place rather than being restated here. */}
+      <Link href="/" className="gw-side__brand" style={{ textDecoration: "none", color: "inherit" }}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/magma-logo.png" width={26} height={26} style={{ flexShrink: 0, display: "block", objectFit: "contain" }} alt="Magma" />
         <div>
           <div className="name">Smart Router</div>
           <div className="sub">by Magma Devs</div>
         </div>
-      </div>
+      </Link>
       <nav className="gw-side__nav">
         {NAV_SECTIONS.map((section, i) => (
           <div key={i}>
@@ -151,7 +153,9 @@ function Topbar({ here }: { here: string }) {
         {/* Router scope — global, so it sits next to the theme toggle rather
             than in any one page's header. Hides itself when the metrics can't
             be split per router. */}
-        <RouterSelect />
+        {/* The router filter lives in the page header next to the chain one
+            (RouterFilterSelect) — it sets the label scope this control used to
+            own, plus the config-router filter, so one control does both. */}
         <ThemeToggle />
       </div>
     </header>
