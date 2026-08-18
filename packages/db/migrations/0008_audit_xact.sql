@@ -1,0 +1,27 @@
+-- MAG-2770 — the transaction that wrote each audit row, so a resumable read can
+-- tell "committed" from "allocated but still in flight".
+--
+-- `seq` is handed out at INSERT, not at COMMIT. Two writers can take 100 and
+-- 101, and 101 can commit first — so a reader ordering by `seq` alone serves
+-- 101, the puller stores it as its position, and 100 becomes visible afterwards
+-- behind the cursor and is never returned. The event is gone from that
+-- customer's copy permanently and nothing looks wrong.
+--
+-- A wall-clock watermark does not fix it: `now()` is transaction START time, so
+-- the slow writer gets an OLD timestamp and a HIGH seq, which is exactly
+-- backwards. `clock_timestamp()` has the same shape. What does fix it is asking
+-- the database which transactions are still open —
+-- `pg_snapshot_xmin(pg_current_snapshot())` is the oldest of them, and a row
+-- below that is settled for good. Hence xid8 rather than a timestamp: it is
+-- comparable against that horizon without a lossy cast.
+--
+-- On a deployed table this backfills every existing row with this migration's
+-- own transaction id (the volatile default forces a rewrite that evaluates it
+-- per row). That is correct: by the time any reader runs, this transaction has
+-- committed and sits below every snapshot's xmin, so old rows are all
+-- "settled", ordered among themselves by `seq` as before.
+--
+-- ALTER, not an edit to 0004_audit.sql: that migration is recorded as applied
+-- in deployed databases, and drizzle skips a changed copy silently.
+ALTER TABLE "audit_events" ADD COLUMN "xact_id" xid8 DEFAULT pg_current_xact_id() NOT NULL;--> statement-breakpoint
+CREATE INDEX "audit_events_xact_seq_idx" ON "audit_events" USING btree ("xact_id","seq");
