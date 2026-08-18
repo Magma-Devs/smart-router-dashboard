@@ -5,6 +5,25 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.16.5]
+
+### Changed
+
+- **A comparison shows both answers, side by side.** "Compare both" fires the
+  router leg and the direct leg to answer one question — do these two agree? —
+  and then printed a summary of status and latency followed by a single
+  Response section carrying the router's body alone. Reading one answer against
+  the other, the whole point, was left as a memory exercise. The two bodies now
+  sit next to each other under that summary, each with its own copy button, and
+  the columns fall to one on a narrow drawer. The lone Response section stands
+  down while they are on screen.
+- **No Code section on the direct leg.** The dashboard never receives the
+  upstream's real url, so a direct-mode snippet could only print
+  `$UPSTREAM_URL` and a banner apologising for it: a copy button over a command
+  that needs an address the reader has no way to obtain, in the space where the
+  answer belongs. The router leg's snippets — which are runnable — are
+  unchanged. `withUpstreamPlaceholder` goes with the block it existed for.
+
 ## [0.16.4]
 
 ### Changed

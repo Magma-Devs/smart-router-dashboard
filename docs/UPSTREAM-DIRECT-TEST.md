@@ -8,7 +8,8 @@ The Upstreams page's **Try now** drawer can send the same request two ways:
 | **Direct to upstream** | browser → dashboard api → upstream | What the upstream does on its own. No cache, no retries, no hedging, no `Lava-*` headers — just the vendor's answer. |
 
 **Compare both** — offered in direct mode, where there is a second leg to
-compare against — fires them in sequence and puts the two answers side by side.
+compare against — fires them in sequence and prints the two response bodies
+next to each other, under a summary of each leg's status and latency.
 
 Every upstream row on the page carries its own Try-now, so the mode applies to
 exactly one node url. What the drawer shows changes with it:
@@ -18,7 +19,9 @@ exactly one node url. What the drawer shows changes with it:
 - **Direct to upstream** — the address bar shows the upstream's masked host
   followed by a dimmed `/…`, and the copy button gives way to a `url masked`
   tag: there is nothing to copy, because the dashboard never receives the
-  full address.
+  full address. For the same reason there is no Code section on this leg — a
+  copyable command would have to print a placeholder in place of an address
+  the reader has no way to obtain.
 
 A direct result reports what it can and nothing more — the latency, the
 upstream's status, and a `direct · no router` tag where the `Lava-*` chips
@@ -68,7 +71,7 @@ index a row shows and the url the relay dials can never drift apart.
   one message for all three failure kinds — the response teaches nothing that
   `GET /api/config/routers` didn't already say.
 - **The resolved url is never returned**, never logged, and never put in a code
-  snippet. Direct-mode snippets print `$UPSTREAM_URL` instead.
+  snippet — the direct leg offers no snippets at all.
 - **The upstream's own body is scrubbed** of anything derived from that url and
   of the endpoint's declared credential (`redactSecrets`) — vendors quote the
   request path in error bodies more often than you'd hope, and a 401 quotes the
@@ -158,10 +161,6 @@ folded name that two nodes in the same router answer to resolves to nothing:
 dialing a coin-flip upstream is worse than a 404.
 
 ### REST and WebSocket
-
-REST paths are appended to the upstream's own path, and the snippet shows the
-same shape with `$UPSTREAM_URL` in front
-(`curl -s "$UPSTREAM_URL/cosmos/base/tendermint/v1beta1/blocks/latest"`).
 
 Switching the drawer to **WS** switches the direct target too — a node's `wss://`
 url is a separate entry in the values file with its own index, and the api opens
