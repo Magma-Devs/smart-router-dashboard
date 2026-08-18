@@ -137,23 +137,20 @@ export function PMRoster({ rows, activeName, onSelect, timeWindow }: {
                 </td>
                 {/* Which config router declares this upstream. The series
                     itself carries no router, so this is the values file
-                    talking: one id normally, and when two routers declare one
-                    name the row says so instead of the numbers being split
-                    between them (they can't be — it is one series). */}
+                    talking. Several routers can declare one upstream name,
+                    and then there is still only one series — the cell leads
+                    with the filtered-on router and names the rest on hover
+                    rather than badging every row that shares. */}
                 <td>
                   {r.routerIds.length === 0 ? (
                     <span style={{ fontSize: 12, color: "var(--text-4)" }} title="Traffic under a name the mounted config doesn't declare">—</span>
                   ) : (
-                    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                      <span className="gw-mono" style={{ fontSize: 11, color: "var(--text-2)" }}>{leadRouter(r.routerIds)}</span>
-                      {r.routerIds.length > 1 && (
-                        <span
-                          title={`Declared by ${r.routerIds.join(", ")} — one upstream name, so one series: these numbers are the two routers' traffic together`}
-                          style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", padding: "1px 5px", borderRadius: 4, color: "var(--warn)", background: "rgba(245,158,11,0.12)" }}
-                        >
-                          +{r.routerIds.length - 1} shared
-                        </span>
-                      )}
+                    <span
+                      className="gw-mono"
+                      style={{ fontSize: 11, color: "var(--text-2)" }}
+                      title={r.routerIds.length > 1 ? `Declared by ${r.routerIds.join(", ")} — one upstream name, so one series: these numbers are those routers' traffic together` : undefined}
+                    >
+                      {leadRouter(r.routerIds)}
                     </span>
                   )}
                 </td>
