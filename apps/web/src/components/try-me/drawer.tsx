@@ -1653,6 +1653,24 @@ export function TryMeDrawer({
                     , but the two are measured from different places — the browser for the router, the api for the upstream — so read the gap as a hint, not a benchmark.
                   </div>
                 </div>
+                {/* The two bodies, side by side. "Do these agree?" is the
+                    question the whole mode exists for, and answering it from
+                    one rendered body plus a sentence asserting the other one
+                    differs asks the reader to take our word for it. Both are
+                    on screen; the note above says which way to read them. */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 }}>
+                  {rows.map((row) => (
+                    <div key={row.label} style={{ minWidth: 0 }}>
+                      <div className="gw-row" style={{ justifyContent: "space-between", marginBottom: 6, gap: 8 }}>
+                        <div style={{ ...SECTION_LABEL, marginBottom: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {row.label}
+                        </div>
+                        <CopyButton text={JSON.stringify(row.out.body, null, 2)} label="Copy" />
+                      </div>
+                      <JsonDisplay data={row.out.body} maxHeight={260} />
+                    </div>
+                  ))}
+                </div>
               </div>
             );
           })()}
@@ -1672,7 +1690,10 @@ export function TryMeDrawer({
             </div>
           )}
 
-          {response !== null && (
+          {/* Suppressed while a comparison is on screen — its router column
+              already IS this body, and printing it again below reads as a
+              third, separate answer. */}
+          {response !== null && comparison === null && (
             <div>
               <div
                 className="gw-row"
