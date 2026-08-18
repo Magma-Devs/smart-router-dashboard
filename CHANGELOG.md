@@ -14,8 +14,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   that fires it enabled, so the drawer went on offering a send whose only
   possible answer is `-32000 Selected provider not available`. It now reads as
   what it is — crossed out, dimmed, unclickable — and hovering it gives the
-  one-line reason ("Backup upstream — the router pins only within its primary
-  pool, so this can only answer -32000. Send it direct to the upstream.").
+  one-line reason ("Backup upstream — the router reaches it only after every
+  primary is exhausted, and picks the backup itself. Send it direct instead.").
   The full version stays in the banner.
 
   The hover lives on a wrapper rather than the button: a disabled control takes

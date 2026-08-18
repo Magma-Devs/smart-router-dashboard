@@ -34,7 +34,7 @@ export function pinRefusalFor(tier: UpstreamTier): string | null {
  */
 export function pinRefusalHintFor(tier: UpstreamTier): string | null {
   if (tier !== "backup") return null;
-  return "Backup upstream — the router pins only within its primary pool, so this can only answer -32000. Send it direct to the upstream.";
+  return "Backup upstream — the router reaches it only after every primary is exhausted, and picks the backup itself. Send it direct instead.";
 }
 
 /** Whether the router honours a pin naming this upstream. */
