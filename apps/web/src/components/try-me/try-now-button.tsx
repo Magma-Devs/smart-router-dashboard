@@ -9,6 +9,7 @@ import {
   subscribeCatalog,
 } from "./chain-methods";
 import type { DirectTarget } from "./direct-request";
+import type { UpstreamTier } from "./pin-support";
 import { IconZap, TryMeDrawer } from "./drawer";
 
 /** SSR/hydration snapshot: render as "catalog not loaded yet" so server and
@@ -46,6 +47,10 @@ interface TryNowButtonProps {
    *  with the router out of the path. Null on router-level rows (Endpoints),
    *  which have no single upstream to bypass to. */
   directTarget?: DirectTarget | null;
+  /** Which router pool this row's node sits in. A backup can't be pinned, so
+   *  the drawer says so and opens on the direct leg. Per ROW, not per
+   *  upstream: one node can be primary on one chain and backup on another. */
+  upstreamTier?: UpstreamTier;
 }
 
 /**
@@ -69,6 +74,7 @@ export function TryNowButton({
   visible = true,
   selectUpstream,
   directTarget = null,
+  upstreamTier = "primary",
 }: TryNowButtonProps) {
   const [drawerOpen, setDrawerOpen] = useState(false);
 
@@ -119,6 +125,7 @@ export function TryNowButton({
           health={health}
           selectUpstream={selectUpstream}
           directTarget={directTarget}
+          upstreamTier={upstreamTier}
           onClose={() => setDrawerOpen(false)}
         />
       )}

@@ -5,6 +5,30 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.16.3]
+
+### Fixed
+
+- **Try now offered a pin the router can never honour.** `lava-select-provider`
+  is matched against the router's primary pool only. A backup-tier upstream
+  lives in a separate pool the router reaches solely when every primary is
+  exhausted, and it picks among those by QoS itself — the header is never read
+  on that path, so pinning a backup answers `-32000 Selected provider not
+  available` however healthy the upstream is. The drawer pinned anyway and
+  presented the refusal as if the upstream were at fault.
+
+  A backup row now opens on **Direct to upstream** when the api can dial it —
+  the one path that reaches a backup — wears a `backup` tag, and reads the
+  reason instead of a failed request. Via router stays selectable, and the
+  Comparison row labels its leg `pin refused` rather than `pinned to X`. The
+  tier is read per endpoint row: one node can be primary on one chain and
+  backup on another.
+- **"Test connection" stopped offering a probe it knows can't land.** The modal
+  pins to the upstream it names, so on a backup row it could only ever go red.
+  It now explains the pool split and points at the drawer's direct mode. When a
+  node is primary on one chain and backup on another, the probe picks the chain
+  where the router will actually route to it.
+
 ## [0.16.2]
 
 ### Fixed

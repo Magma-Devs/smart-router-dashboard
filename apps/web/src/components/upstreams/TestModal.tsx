@@ -11,6 +11,7 @@ import type { RouterTopology } from "@sr/shared";
 import { Modal } from "@/components/gateway/Modal";
 import { HealthDot } from "@/components/gateway/HealthTag";
 import type { UpstreamRow } from "@/components/upstreams/catalog";
+import { pinRefusalFor, type UpstreamTier } from "@/components/try-me/pin-support";
 
 const NO_PORT_MSG = "No routable address for this upstream's chains in the mounted config";
 
@@ -20,7 +21,7 @@ const TEST_PRESETS: Record<string, { method: string; body: string }> = {
   tendermintrpc: { method: "status", body: '{"jsonrpc":"2.0","method":"status","params":[],"id":1}' },
 };
 
-interface TestTarget { url: string; iface: string; method: string; body: string }
+interface TestTarget { url: string; iface: string; method: string; body: string; tier: UpstreamTier }
 interface TestOutcome { ms: number; detail: string }
 
 export function TestModal({ open, onClose, upstream, routers }: {
@@ -39,7 +40,11 @@ export function TestModal({ open, onClose, upstream, routers }: {
      the published gateway URL (helm values) or a local listen port
      (SR_CONFIG). */
   const target = useMemo<TestTarget | null>(() => {
-    for (const row of upstream?.chainRows ?? []) {
+    const rows = upstream?.chainRows ?? [];
+    // Primary rows first: a node that is primary on one chain and backup on
+    // another is testable on the chain the router will actually route it.
+    const ordered = [...rows.filter((r) => r.role === "primary"), ...rows.filter((r) => r.role !== "primary")];
+    for (const row of ordered) {
       const router = routers.find((r) => r.id === row.routerId);
       if (!router) continue;
       for (const iface of [row.iface, ...router.interfaces]) {
@@ -47,14 +52,21 @@ export function TestModal({ open, onClose, upstream, routers }: {
         if (!preset) continue;
         const port = router.localPorts[iface] ?? router.localPort;
         const url = router.publicUrls[iface] ?? (port ? `http://localhost:${port}` : null);
-        if (url) return { url, iface, method: preset.method, body: preset.body };
+        if (url) return { url, iface, method: preset.method, body: preset.body, tier: row.role };
       }
     }
     return null;
   }, [upstream, routers]);
 
+  /* The probe is pinned to this upstream, and the router only honours a pin
+     within its primary pool — for a backup there is no probe to run that
+     would say anything about THIS upstream. Say that instead of shipping a
+     request whose red result means nothing. */
+  const pinRefusal = target ? pinRefusalFor(target.tier) : null;
+  const runnable = target !== null && pinRefusal === null;
+
   const run = async () => {
-    if (!target || !upstream) return;
+    if (!runnable || !target || !upstream) return;
     setStage("running");
     setOutcome(null);
     setErrMsg("");
@@ -97,8 +109,8 @@ export function TestModal({ open, onClose, upstream, routers }: {
       footer={<>
         <button className="gw-btn" onClick={onClose}>Close</button>
         {stage === "idle" && (
-          <button className="gw-btn gw-btn--primary" onClick={run} disabled={!target}
-            title={target ? undefined : NO_PORT_MSG}>Run test</button>
+          <button className="gw-btn gw-btn--primary" onClick={run} disabled={!runnable}
+            title={runnable ? undefined : (pinRefusal ?? NO_PORT_MSG)}>Run test</button>
         )}
       </>}>
       {upstream && (
@@ -115,7 +127,17 @@ export function TestModal({ open, onClose, upstream, routers }: {
               {NO_PORT_MSG}.
             </div>
           )}
-          {target && (
+          {pinRefusal && (
+            <div style={{ padding: "12px 14px", borderRadius: 8, background: "var(--hover)", fontSize: 12, color: "var(--text-3)", lineHeight: 1.5 }}>
+              <strong style={{ color: "var(--text-2)" }}>This upstream is a backup.</strong> The probe
+              goes through the router pinned to one upstream, and the router honours a pin only
+              within its primary pool — a backup is reached solely when every primary is exhausted,
+              and the router picks among the backups itself. There is no router-side probe that
+              would say anything about this upstream. Use <strong>Try now → Direct to upstream</strong>:
+              the api dials this node&apos;s url itself.
+            </div>
+          )}
+          {target && !pinRefusal && (
             <div style={{ fontSize: 12, color: "var(--text-3)", lineHeight: 1.5 }}>
               Sent through the router, pinned to this upstream with the{" "}
               <span className="gw-mono">lava-select-provider</span> header — the router&apos;s

@@ -152,6 +152,9 @@ function EndpointRow({
           // Lets the drawer offer "Direct to upstream" — the same request sent
           // by the api straight to THIS node-url, with the router left out.
           directTarget={directTargetFor(upstream, row)}
+          // Per row: a node can be primary on one chain and backup on another,
+          // and the router's pin only works for the primary pool.
+          upstreamTier={row.role}
           visible
         />
       )}

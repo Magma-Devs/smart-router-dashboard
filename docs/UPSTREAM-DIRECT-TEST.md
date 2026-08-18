@@ -119,6 +119,31 @@ signing key to an upstream host. When a placeholder can't be resolved the route
 answers `422` naming what is missing, rather than dialing a literal `${VAR}` and
 reporting the upstream's 401 as the upstream's verdict on the request.
 
+### Backup-tier upstreams can only be reached direct
+
+The router matches `lava-select-provider` against its **primary** pool and
+nothing else. A provider declared under `backup-direct-rpc` (SR_CONFIG) or with
+`is_backup: true` (helm values) lives in a separate pool it reaches only once
+every primary is exhausted, and it chooses among those by QoS itself — the
+header is never read on that path. Pinning a backup therefore answers:
+
+```
+-32000 Selected provider not available … {selectedProvider:blockdaemon,validProviders:tatum}
+```
+
+however healthy that upstream is. So the drawer opens a backup row on **Direct
+to upstream** when the api can dial it — the one path that does reach a backup —
+tags the row `backup`, and says why the router leg can't be pinned rather than
+letting the reader learn it from a failed request. Via router stays selectable:
+the pinned call is still worth firing when you want to see the refusal, and the
+banner sets the expectation first.
+
+The per-upstream **Test connection** modal is pinned the same way, so on a
+backup row it offers no run at all and points here instead.
+
+The tier is read per endpoint row, not per upstream: one node can be primary on
+one chain and backup on another.
+
 ### Naming an upstream
 
 `node` is matched exactly first, then folded the way the pin header is folded
@@ -185,6 +210,7 @@ Other knobs: `UPSTREAM_RELAY_TIMEOUT_MS`, `UPSTREAM_RELAY_MAX_BODY_BYTES`,
 | Route, validation, status mapping | `apps/api/src/routes/upstreams.ts` |
 | Request → relay payload (pure) | `apps/web/src/components/try-me/direct-request.ts` |
 | Endpoint pairing per row | `apps/web/src/components/upstreams/catalog.ts` (`directTargetFor`) |
+| Which upstreams the router can be pinned to | `apps/web/src/components/try-me/pin-support.ts` |
 | Drawer UI, compare | `apps/web/src/components/try-me/drawer.tsx` |
 
 One caveat worth knowing: an SR_CONFIG values file that gives **two providers on
