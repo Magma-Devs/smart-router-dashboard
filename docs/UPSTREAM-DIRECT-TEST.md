@@ -140,10 +140,11 @@ tags the row `backup`, and says why the router leg can't be pinned rather than
 letting the reader learn it from a failed request.
 
 **Via router is struck through and disabled** on such a row, and hovering it
-gives the one-line reason. Every control that would fire the same doomed request
-goes with it: **Compare both** (a refusal beside a real answer measures nothing)
-and, where the row has no url the api can dial on the selected transport,
-**Send** itself — with the same hint on the hover.
+gives the one-line reason. **Compare both** is not offered at all — a refusal
+beside a real answer measures nothing — and where the row has no url the api can
+dial on the selected transport, **Send** is disabled too, carrying the same hint
+on its hover. What remains on a backup row is the one thing that works: send it
+direct, and read the answer.
 
 The per-upstream **Test connection** modal is pinned the same way, so on a
 backup row it offers no run at all and points here instead.
