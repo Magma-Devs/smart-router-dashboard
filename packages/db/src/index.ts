@@ -10,6 +10,20 @@ export {
   type AuditWriter,
   type AuditWriterOptions,
 } from "./audit.js";
+export {
+  AUDIT_PAGE_DEFAULT,
+  AUDIT_PAGE_MAX,
+  auditFilterFingerprint,
+  checkAuditCursor,
+  decodeAuditCursor,
+  encodeAuditCursor,
+  listAuditEvents,
+  type AuditActorFilter,
+  type AuditCursor,
+  type AuditCursorRejection,
+  type AuditPage,
+  type AuditQuery,
+} from "./audit-read.js";
 /** Re-exported so a caller building an `AuditEventInput` gets every field's
  *  type from one import. `AuditChange` is defined in `@sr/shared` (the writer
  *  and the formatting rules that produce it live together); nobody consuming

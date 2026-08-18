@@ -47,6 +47,26 @@ CREATE TABLE "audit_events" (
 	"id" uuid DEFAULT gen_random_uuid() NOT NULL,
 	"occurred_at" timestamp with time zone DEFAULT now() NOT NULL,
 
+	----------------------------------------------------------------------
+	-- The transaction that wrote this row, so a resumable read can tell
+	-- "committed" from "allocated but still in flight".
+	--
+	-- `seq` is handed out at INSERT, not at COMMIT. Two writers can take 100
+	-- and 101, and 101 can commit first — so a reader ordering by `seq` alone
+	-- serves 101, the puller stores it as its position, and 100 becomes
+	-- visible afterwards behind the cursor and is never returned. The event is
+	-- gone from that customer's copy permanently and nothing looks wrong.
+	--
+	-- A wall-clock watermark does not fix it: `now()` is transaction START
+	-- time, so the slow writer gets an OLD timestamp and a HIGH seq, which is
+	-- exactly backwards. `clock_timestamp()` has the same shape. What does fix
+	-- it is asking the database which transactions are still open —
+	-- `pg_snapshot_xmin(pg_current_snapshot())` is the oldest of them, and a
+	-- row below that is settled for good. Hence xid8 rather than a timestamp:
+	-- it is comparable against that horizon without a lossy cast.
+	----------------------------------------------------------------------
+	"xact_id" xid8 DEFAULT pg_current_xact_id() NOT NULL,
+
 	"action" varchar(64) NOT NULL,
 	"action_group" varchar(32) NOT NULL,
 	"source" "public"."audit_source" NOT NULL,
@@ -118,6 +138,7 @@ CREATE INDEX "audit_events_group_time_idx" ON "audit_events" USING btree ("actio
 CREATE INDEX "audit_events_action_time_idx" ON "audit_events" USING btree ("action","occurred_at" DESC);--> statement-breakpoint
 CREATE INDEX "audit_events_actor_time_idx" ON "audit_events" USING btree ("actor_user_id","occurred_at" DESC);--> statement-breakpoint
 CREATE INDEX "audit_events_target_idx" ON "audit_events" USING btree ("target_type","target_id","occurred_at" DESC);--> statement-breakpoint
+CREATE INDEX "audit_events_xact_seq_idx" ON "audit_events" USING btree ("xact_id","seq");--> statement-breakpoint
 CREATE INDEX "audit_event_changes_event_idx" ON "audit_event_changes" USING btree ("event_seq","ord");--> statement-breakpoint
 
 --------------------------------------------------------------------------------
