@@ -6,9 +6,13 @@ import explorerKinds from "./explorer-kinds.json" with { type: "json" };
 /**
  * Where a human goes to check a chain, keyed by Lava spec index.
  *
- * Every number the dashboard renders for a chain — a latest block, a tip lag,
- * a hash in a Try-it response — is a claim about a public chain. This map is
- * what lets the UI hand the reader the receipt.
+ * The dashboard renders exactly one value a public chain can confirm: a block
+ * HEIGHT — the router's tip, an upstream's tip, the lag between them. It holds
+ * no transaction hash and no chain address anywhere (`provider_address` is an
+ * upstream's name, not an on-chain address), so this catalog offers a block
+ * link and a home link, and nothing else. It stored transaction and address
+ * templates once; they addressed values that did not exist, and 18 chains
+ * carried nothing but those — covered in the catalog, unlinkable in the UI.
  *
  * GENERATED from lava-specs joined to ethereum-lists/chains and
  * cosmos/chain-registry through each spec's `chain-id` verification, plus a
@@ -16,26 +20,22 @@ import explorerKinds from "./explorer-kinds.json" with { type: "json" };
  * `node apps/web/scripts/generate-chain-explorers.mjs`. Procedure and the
  * curation rules: docs/CHAINS.md.
  *
- * THE CONTRACT, and the reason this module has an api instead of being a
- * plain record: `explorerUrl()` returns **null** rather than a guessed URL.
- * A chain with no verified deep-link shape offers its home page and nothing
- * else, and a caller that cannot get a url must render plain text. A link
- * that 404s is worse than no link — it makes the dashboard look wrong about
- * the chain when it is only wrong about the explorer.
+ * THE CONTRACT: `explorerBlockUrl()` returns **null** rather than a guessed
+ * URL, and a caller that gets null must render the height as plain text —
+ * never fall back to the home page, which sends the reader somewhere that
+ * does not answer their question. A block shape is only ever shipped when a
+ * registry supplied it or a person watched it render; the alternative is a
+ * link that lands on an empty page, which makes the dashboard look wrong
+ * about the chain when it is only wrong about the explorer.
  */
 
-/** What a link points at. `block` always takes a block HEIGHT, never a hash —
- *  explorers whose block page is addressed by hash ship no block template. */
-export type ExplorerRef = "block" | "tx" | "address";
-
-/** A deep-link shape shared by many explorers. `{base}` is the entry's url. */
+/** A block-page shape shared by many explorers. `{base}` is the entry's url. */
 export interface ExplorerKind {
   label: string;
   /** Which explorers this shape was proven against. */
   proven: string;
+  /** Absent on `home`, which claims no deep link at all. */
   block?: string;
-  tx?: string;
-  address?: string;
 }
 
 export interface ChainExplorer {
@@ -43,17 +43,17 @@ export interface ChainExplorer {
   name: string;
   /** Home page, no trailing slash. */
   url: string;
-  /** A key in explorer-kinds.json, or "custom" when `tpl` carries the shapes. */
+  /** A key in explorer-kinds.json, or "custom" when `tpl` carries the shape. */
   kind: string;
-  /** Explicit per-ref templates; present when no kind matched. */
-  tpl?: Partial<Record<ExplorerRef, string>>;
+  /** Explicit block template; present when no kind matched. */
+  tpl?: { block: string };
   /** Appended to every url including the home one — "?cluster=devnet". */
   suffix?: string;
   /**
-   * How this shape is known: a registry's own assertion, a page watched
-   * rendering in a browser, or "unverified — <reason>". Never empty. A
-   * surface that offers the link may show it; a reviewer reads it to tell a
-   * checked claim from an inherited one.
+   * How this shape is known: a registry's own assertion, a shape proven on
+   * another deployment of the same explorer, a page watched rendering in a
+   * browser, or "unverified — <reason>". Never empty. A reviewer reads it to
+   * tell a checked claim from an inherited one.
    */
   verified: string;
   /** Provenance: which registry row, or which curation, this came from. */
@@ -63,7 +63,7 @@ export interface ChainExplorer {
 const MAP = explorerMap as Record<string, ChainExplorer[]>;
 const KINDS = explorerKinds as Record<string, ExplorerKind>;
 
-/** Every deep-link shape, for a reference surface that wants to show them. */
+/** Every block-page shape, for a reference surface that wants to show them. */
 export const EXPLORER_KINDS = KINDS;
 
 /** Explorers for a spec index, primary first. Empty when the chain has none —
@@ -89,35 +89,28 @@ export function explorerHome(spec: string): string | null {
   return e ? e.url + (e.suffix ?? "") : null;
 }
 
-/** The template for one ref on one explorer, or null when it serves none. */
-export function explorerTemplate(explorer: ChainExplorer, ref: ExplorerRef): string | null {
-  const explicit = explorer.tpl?.[ref];
-  if (explicit) return explicit;
-  const shape = KINDS[explorer.kind]?.[ref];
-  return shape ? shape.replace("{base}", explorer.url) : null;
+/** The block template for one explorer, or null when it serves none. */
+export function explorerBlockTemplate(explorer: ChainExplorer): string | null {
+  return explorer.tpl?.block ?? KINDS[explorer.kind]?.block?.replace("{base}", explorer.url) ?? null;
 }
 
 /**
- * A deep link to `value` on the chain's explorer, or **null** when no verified
- * shape exists for that ref. Callers must handle null by rendering the value
- * as plain text — never by falling back to the home page, which silently sends
- * the reader somewhere that does not answer their question.
- *
- * `value` is not encoded beyond `encodeURIComponent`: every ref is a height,
- * hash or address, so anything needing more escaping than that is not a value
- * this function was given honestly.
+ * A link to `block` on the chain's explorer, or **null** when no proven shape
+ * exists. Null is a supported, common outcome — 45 chains offer a home page
+ * and no block link — and callers must render the height as plain text there.
  */
-export function explorerUrl(
+export function explorerBlockUrl(
   spec: string,
-  ref: ExplorerRef,
-  value: string | number,
+  block: string | number,
   explorer?: ChainExplorer,
 ): string | null {
   const e = explorer ?? primaryExplorer(spec);
   if (!e) return null;
-  const tpl = explorerTemplate(e, ref);
+  const tpl = explorerBlockTemplate(e);
   if (tpl === null) return null;
-  const raw = typeof value === "number" ? String(value) : value.trim();
-  if (!raw) return null;
-  return tpl.replace(`{${ref}}`, encodeURIComponent(raw)) + (e.suffix ?? "");
+  const raw = typeof block === "number" ? String(block) : block.trim();
+  // A height is digits. Anything else reached this function by mistake, and
+  // composing a url from it would produce a link that cannot resolve.
+  if (!/^\d+$/.test(raw)) return null;
+  return tpl.replace("{block}", raw) + (e.suffix ?? "");
 }

@@ -43,8 +43,9 @@ is committed so the gap is a reviewed decision rather than an accident.
    no explorer, then every chain whose link shape nobody has verified:
 
    ```
-   explorers       213/245 chains (92 chainlist, 38 chain-registry, 83 curated)
-   verification    130 registry-asserted, 61 checked by hand, 22 unverified
+   explorers       213/245 chains (92 chainlist, 36 chain-registry, 85 curated)
+   block links     145/213 primaries can link a height (16 inherited)
+   verification    112 registry-asserted, 63 checked by hand, 18 unverified
    declared none   AGRT, ALEOT, CANTON, …
    ```
 
@@ -72,10 +73,12 @@ is committed so the gap is a reviewed decision rather than an accident.
    most explorers answer 200 for any path under their router.
 
 5. **A shape you cannot check is not a shape you invent.** Use `home` and the
-   entry offers only the explorer's front page — honest, and still useful. A
-   `block` template always takes a HEIGHT; an explorer whose block page needs a
-   hash ships `tx`/`address` only. `explorerUrl()` returning null is a
-   supported outcome the UI handles; a link that 404s is not.
+   entry offers only the explorer's front page — honest, and still useful. The
+   catalog links a block HEIGHT and nothing else, so an explorer whose block
+   page is addressed by hash is `home`-only. `explorerBlockUrl()` returning
+   null is a supported outcome the UI handles; a link to an empty page is not.
+   Watch the page render the height you asked for: a 200 proves nothing, since
+   these are single-page apps that answer 200 for any path under their router.
 
 6. **Accepting a gap is allowed**, and is recorded the same way as everything
    else: `"CANTON": { "none": "Canton's network is permissioned — no public
