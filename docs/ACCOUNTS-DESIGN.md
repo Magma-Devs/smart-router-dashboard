@@ -9,8 +9,8 @@ Written to be built from. Every table, route and flow below is a decision, not a
 sketch. Supersedes [`docs/AUTH.md`](AUTH.md) once slice 1 lands; until then that
 document describes what actually ships.
 
-> **Status:** all six slices built and open as PRs (#111, #118–#122) · 4 open
-> decisions (§16). **§16.1 is answered and no longer blocks #111** — see below.
+> **Status:** all six slices built and open as PRs (#111, #118–#122) · 3 open
+> decisions (§16). **§16.1 and §16.3 are answered; nothing blocks #111** — see below.
 
 ---
 
@@ -764,16 +764,39 @@ secret key, injected by `templates/dashboard/dashboard-backend-deployment.yaml` 
    In practice: the named person from step 2 is an admin by construction, and invites the
    rest at `admin` rather than at a lower role.
 
-Step 4 needs an owner outside this ticket. Without it the ticket closes with named
-accounts *and* a working shared password, which is the one outcome the epic exists to
-prevent.
+Step 4 is where this stops being ours to do, and **it splits three ways** — which the
+earlier version of this section missed by treating the cutover as one job:
 
-**Establish first which backend image live deployments actually run.** That same
-template also injects `DEBUG`, `CORS_ALLOW_CREDENTIALS` and `AUTH_GATEWAY_*` — all of
-which this repo lists as v1-only and unread. If customers are on the v2 `…/backend`
-image, those variables including `AUTH_PASSWORD` do nothing, and the question changes
-from "how do we disable the shared login" to "what, if anything, is protecting the
-dashboard today". Answer that before writing the runbook.
+| Part | Whose |
+|---|---|
+| Ship the chart change that makes the credential removable | **Ours.** `AUTH_USERNAME` was added by Sebastian Sejzer in *"add dashboard (#40)"* |
+| Apply it to a **Magma-operated** box (DFNS, today) | **Ours — while we hold root.** See the window below |
+| Apply it to a **customer-operated** box (GK8) | **The customer's.** We can ship the release; we cannot roll it |
+
+MAG-2749 is explicit about the third row: GK8 is *"another customer's live server and we
+may only read from it, never change it"*, with restarting a deployment listed under
+cannot-do. So for those deployments the honest done-when is "the release is available and
+the customer has been told what to change", not "we disabled it".
+
+**Owner: MAG-2805, item 1 (victoria).** The cutover was never unassigned work — it is
+already the first open item on *"Prepare the DFNS production server for handover"*:
+*"the dashboard password is a common eight-character word, on a public page, with the
+user name `admin`."* That is this exact credential. Raised there on 18 Aug 2026.
+
+**The window may be closing.** MAG-2805's item 6 leaves open *"who keeps root access
+after handover"*. While Magma holds root on the DFNS box this is step 4 as written; after
+handover it becomes DFNS's, and we drop to the third row above.
+
+**Order is not negotiable.** Steps 2 → 3 → 4, never 4 first. Removing the shared
+credential before confirming a named admin can sign in locks the customer out of their
+own dashboard with nothing to fall back to.
+
+> **Resolved:** which backend image customers run. Omer, 17 Aug 2026 — the **v1** image,
+> which is why the shared credential is genuinely what stands in front of the dashboard
+> and why `AUTH_MODE` is never set. The same template also injects `DEBUG`,
+> `CORS_ALLOW_CREDENTIALS` and `AUTH_GATEWAY_*`, all v1-only; they become dead
+> configuration the moment a deployment moves to the v2 image, and should be removed from
+> the chart in the same change as `AUTH_USERNAME`.
 
 ---
 
@@ -883,9 +906,10 @@ Our installer is a helm chart. **Recommend**: the api generates one on first boo
 there are zero active users, logs it once and writes it to `SETUP_TOKEN_FILE`, with
 `SETUP_TOKEN` as a chart-supplied override. Needs whoever owns the chart.
 
-**16.3 · Who disables the shared login, per customer?**
-Step 4 of §13.3. Outside this repo, needs a named owner and a runbook, and it is a
-done-when the ticket cannot close without.
+**16.3 · Who disables the shared login, per customer?** — **ANSWERED, 18 Aug 2026.**
+It was already open item 1 on **MAG-2805** (victoria), *"Prepare the DFNS production
+server for handover"*. See §13.3 for the three-way split and the root-access window;
+the part that is genuinely ours is shipping the chart change.
 
 **16.4 · Google only, or keep GitHub and Discord?**
 The ticket names email + password and Google. GitHub and Discord work today. **Recommend
