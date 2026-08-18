@@ -10,6 +10,7 @@ import {
   pgTable,
   text,
   timestamp,
+  customType,
   uuid,
   varchar,
 } from "drizzle-orm/pg-core";
@@ -27,6 +28,21 @@ import {
  * can express. This file exists so the writer and the read API get typed
  * columns, and so a drift between the two is caught by `migrations.test.ts`.
  */
+
+/**
+ * Postgres `xid8` — a 64-bit transaction id. Drizzle 0.45 has no builder for
+ * it, and it is the one type that can be compared against
+ * `pg_snapshot_xmin(pg_current_snapshot())` without a lossy cast through text.
+ *
+ * Carried as a string in JS: the values are unsigned 64-bit and would lose
+ * precision as a JS number, and nothing in this codebase does arithmetic on
+ * them — the comparisons all happen in SQL.
+ */
+const xid8 = customType<{ data: string; driverData: string }>({
+  dataType() {
+    return "xid8";
+  },
+});
 
 /** Where an event came from. */
 export const auditSourceEnum = pgEnum("audit_source", ["dashboard", "system", "host"]);
@@ -59,6 +75,20 @@ export const auditEvents = pgTable(
      */
     id: uuid("id").notNull().unique().defaultRandom(),
     occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull().defaultNow(),
+    /**
+     * The transaction that wrote this row — the read path's settled-or-not
+     * test, not a display field.
+     *
+     * `seq` is allocated at INSERT and not at COMMIT, so ordering by it alone
+     * lets a puller store a position past a row that has not landed yet and
+     * never come back for it. Comparing this against
+     * `pg_snapshot_xmin(pg_current_snapshot())` — the oldest transaction still
+     * open — answers "is everything up to here final?" exactly, with no
+     * assumption about how long a writer takes. See `audit-read.ts`.
+     */
+    xactId: xid8("xact_id")
+      .notNull()
+      .default(sql`pg_current_xact_id()`),
 
     /** An event name from `@sr/shared`'s catalog. */
     action: varchar("action", { length: 64 }).notNull(),
@@ -115,6 +145,8 @@ export const auditEvents = pgTable(
     index("audit_events_action_time_idx").on(table.action, table.occurredAt.desc()),
     index("audit_events_actor_time_idx").on(table.actorUserId, table.occurredAt.desc()),
     index("audit_events_target_idx").on(table.targetType, table.targetId, table.occurredAt.desc()),
+    /** The resumable-read path: settled rows, in sequence order. */
+    index("audit_events_xact_seq_idx").on(table.xactId, table.seq),
     /**
      * MAG-2770's done-when: "Access events carry the IP, the client and the
      * session. Config events do not."
