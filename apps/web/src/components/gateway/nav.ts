@@ -1,10 +1,5 @@
 import type { ComponentType } from "react";
-import {
-  IconChart,
-  IconServer,
-  IconSettings,
-  IconUsers,
-} from "./icons";
+import { IconChart, IconLedger, IconServer, IconSettings, IconUsers } from "./icons";
 
 export interface NavItem {
   href: string;
@@ -39,6 +34,10 @@ export const NAV_SECTIONS: NavSection[] = [
     label: "Account",
     items: [
       { href: "/team", label: "Team", icon: IconUsers, requiresAuth: true },
+      // Everyone's, not just an admin's — the audit log is readable by every
+      // role, which is why it sits beside Team rather than inside it. Gone
+      // without accounts: its routes only exist under AUTH_MODE=enabled.
+      { href: "/audit", label: "Audit log", icon: IconLedger, requiresAuth: true },
       // Account stays without accounts: most of it is the build provenance an
       // operator reads off a self-hosted deployment. The page hides its own
       // credential cards — see `(app)/account/page.tsx`.
