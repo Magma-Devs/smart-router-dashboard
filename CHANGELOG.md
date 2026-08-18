@@ -5,6 +5,43 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.17.1]
+
+### Fixed
+
+- **Fourteen chains were home-only because nobody had tested them.** Hyperliquid
+  rendered as plain text on the dashboard while `hyperevmscan.io/block/…` works
+  perfectly in a browser. An audit of why each curated entry was home-only found
+  24 of 36 labelled "home probed" — the home page answered and **the block page
+  was never opened**. The rule said a shape must be watched; nothing enforced
+  that watching was ever attempted.
+
+  The tooling compounded it: Cloudflare-fronted explorers answer 403 to `fetch`,
+  and those were recorded as unverifiable. A scripted Chromium with a real
+  user-agent gets through most of them, so several "cannot be verified from this
+  network" verdicts were an artifact of the check, not a fact about the site.
+
+  Re-tested, each watched rendering the requested height: `HYPERLIQUID`,
+  `SONICT`, `SPARK`, `ETHEREUMPOW`, `FUELNETWORK`, `MOVEMENT`, `MINA`, `MINAT`,
+  `TON`, `TONT`, `STACKS` and `STACKST` gain a block link, and `SUI`, `SUIT` and
+  `IOTA` gain one on `/checkpoint/<n>` — a new kind, since those chains count
+  checkpoints and a checkpoint number is what the router reports as their latest
+  block. `TRX` and the beacon chains upgrade from unverified to watched.
+
+  **159 of 213 primaries can link a height, up from 145**, and the unverified
+  count drops from 19 to 10.
+
+- **Starknet Sepolia was shipping a link that renders nothing.** It pointed at
+  `sepolia.voyager.online/block/<n>`, which answers 200 and shows no block —
+  exactly the failure the catalog exists to prevent, carried in on an
+  `unverified` label. It is home-only now.
+
+- **The chains that really are home-only now say why**, from a test rather than
+  an assumption: Avalanche P-Chain and Concordium render without the block,
+  Casper answers "Nothing Found" because its block page takes a hash, Bittensor
+  404s, VeChain rate-limited, XRPL testnet has the right route but pruned
+  ledgers, and Sui devnet resets.
+
 ## [0.17.0]
 
 ### Added

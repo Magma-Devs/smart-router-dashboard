@@ -93,7 +93,7 @@
         "name": "Avalanche Subnets",
         "url": "https://subnets.avax.network/p-chain",
         "kind": "home",
-        "verified": "home probed 2026-08-17",
+        "verified": "browser 2026-08-18 — home page only: /block/<n> renders the P-Chain explorer without the requested block",
         "source": "curated"
       }
     ]
@@ -132,7 +132,7 @@
         "name": "Taostats",
         "url": "https://evm.taostats.io",
         "kind": "home",
-        "verified": "home probed 2026-08-17",
+        "verified": "browser 2026-08-18 — home page only: /block/<n> is a 404 on both taostats.io and evm.taostats.io",
         "source": "curated"
       }
     ]
@@ -218,7 +218,7 @@
         "name": "cspr.live",
         "url": "https://cspr.live",
         "kind": "home",
-        "verified": "home probed 2026-08-17",
+        "verified": "browser 2026-08-18 — home page only: /block/<n> answers “Nothing Found” — its block page is addressed by hash",
         "source": "curated — the block page is addressed by hash"
       }
     ]
@@ -240,7 +240,7 @@
         "name": "CCDExplorer",
         "url": "https://ccdexplorer.io",
         "kind": "home",
-        "verified": "home probed 2026-08-17",
+        "verified": "browser 2026-08-18 — home page only: /block/<n> renders the site without the requested block",
         "source": "curated"
       }
     ]
@@ -335,7 +335,7 @@
         "tpl": {
           "block": "https://beaconcha.in/slot/{block}"
         },
-        "verified": "unverified — bot challenge (HTTP 403) from the build network",
+        "verified": "browser 2026-08-18 — block page watched rendering the requested height",
         "source": "curated — the consensus layer is addressed by SLOT, which is what the router reports as this spec's latest block"
       }
     ]
@@ -349,7 +349,7 @@
         "tpl": {
           "block": "https://holesky.beaconcha.in/slot/{block}"
         },
-        "verified": "unverified — HTTP ERR from the build network",
+        "verified": "inherited — the beaconcha.in mainnet and Sepolia deployments were watched rendering /slot/<n>; this is the same software on the network's own host",
         "source": "curated — the consensus layer is addressed by SLOT, which is what the router reports as this spec's latest block"
       }
     ]
@@ -363,7 +363,7 @@
         "tpl": {
           "block": "https://hoodi.beaconcha.in/slot/{block}"
         },
-        "verified": "unverified — home reachable, deep-link shape not watched",
+        "verified": "inherited — the beaconcha.in mainnet and Sepolia deployments were watched rendering /slot/<n>; this is the same software on the network's own host",
         "source": "curated — the consensus layer is addressed by SLOT, which is what the router reports as this spec's latest block"
       }
     ]
@@ -377,7 +377,7 @@
         "tpl": {
           "block": "https://sepolia.beaconcha.in/slot/{block}"
         },
-        "verified": "unverified — home reachable, deep-link shape not watched",
+        "verified": "browser 2026-08-18 — block page watched rendering the requested height",
         "source": "curated — the consensus layer is addressed by SLOT, which is what the router reports as this spec's latest block"
       }
     ]
@@ -387,8 +387,8 @@
       {
         "name": "OKLink",
         "url": "https://www.oklink.com/ethw",
-        "kind": "home",
-        "verified": "home probed 2026-08-17",
+        "kind": "block",
+        "verified": "browser 2026-08-18 — block page watched rendering the requested height",
         "source": "curated — chainlist's row for this chain id is a DIFFERENT chain (Smart Bitcoin Cash Testnet also claims 10001)"
       }
     ]
@@ -401,8 +401,8 @@
       {
         "name": "Fuel Explorer",
         "url": "https://app.fuel.network",
-        "kind": "home",
-        "verified": "home probed 2026-08-17",
+        "kind": "block",
+        "verified": "browser 2026-08-18 — block page watched rendering the requested height",
         "source": "curated"
       }
     ]
@@ -437,8 +437,8 @@
       {
         "name": "HyperEVMScan",
         "url": "https://hyperevmscan.io",
-        "kind": "home",
-        "verified": "home probed 2026-08-17",
+        "kind": "block",
+        "verified": "browser 2026-08-18 — block page watched rendering the requested height",
         "source": "curated — chainlist's row for this chain id is a DIFFERENT chain (Wanchain Testnet also claims 999)"
       }
     ]
@@ -465,8 +465,8 @@
       {
         "name": "IOTA Explorer",
         "url": "https://explorer.iota.org",
-        "kind": "home",
-        "verified": "home probed 2026-08-17",
+        "kind": "checkpoint",
+        "verified": "browser 2026-08-18 — block page watched rendering the requested height",
         "source": "curated"
       }
     ]
@@ -568,8 +568,8 @@
       {
         "name": "Minascan",
         "url": "https://minascan.io/mainnet",
-        "kind": "home",
-        "verified": "home probed 2026-08-17",
+        "kind": "block",
+        "verified": "browser 2026-08-18 — block page watched rendering the requested height",
         "source": "curated"
       }
     ]
@@ -579,8 +579,8 @@
       {
         "name": "Minascan",
         "url": "https://minascan.io/devnet",
-        "kind": "home",
-        "verified": "home probed 2026-08-17",
+        "kind": "block",
+        "verified": "browser 2026-08-18 — block page watched rendering the requested height",
         "source": "curated"
       }
     ]
@@ -610,8 +610,8 @@
       {
         "name": "Movement Explorer",
         "url": "https://explorer.movementnetwork.xyz",
-        "kind": "home",
-        "verified": "home probed 2026-08-17",
+        "kind": "block",
+        "verified": "browser 2026-08-18 — block page watched rendering the requested height",
         "source": "curated"
       }
     ]
@@ -786,8 +786,8 @@
       {
         "name": "Sonicscan",
         "url": "https://testnet.sonicscan.org",
-        "kind": "home",
-        "verified": "home probed 2026-08-17",
+        "kind": "block",
+        "verified": "browser 2026-08-18 — block page watched rendering the requested height",
         "source": "curated"
       }
     ]
@@ -797,8 +797,8 @@
       {
         "name": "Blockscout",
         "url": "https://explorer.fusespark.io",
-        "kind": "home",
-        "verified": "home probed 2026-08-17",
+        "kind": "block",
+        "verified": "browser 2026-08-18 — block page watched rendering the requested height",
         "source": "curated"
       }
     ]
@@ -811,9 +811,9 @@
       {
         "name": "Hiro Explorer",
         "url": "https://explorer.hiro.so",
-        "kind": "home",
+        "kind": "block",
         "suffix": "?chain=mainnet",
-        "verified": "home probed 2026-08-17",
+        "verified": "browser 2026-08-18 — block page watched rendering the requested height",
         "source": "curated"
       }
     ]
@@ -823,9 +823,9 @@
       {
         "name": "Hiro Explorer",
         "url": "https://explorer.hiro.so",
-        "kind": "home",
+        "kind": "block",
         "suffix": "?chain=testnet",
-        "verified": "home probed 2026-08-17",
+        "verified": "browser 2026-08-18 — block page watched rendering the requested height",
         "source": "curated"
       }
     ]
@@ -846,9 +846,9 @@
       {
         "name": "Voyager",
         "url": "https://sepolia.voyager.online",
-        "kind": "block",
-        "verified": "unverified — host unreachable from the build network",
-        "source": "curated — sepolia.starkscan.co does not resolve; Voyager is the other Starknet explorer"
+        "kind": "home",
+        "verified": "browser 2026-08-18 — /block/<n> answers 200 and renders no block, so no block link is offered",
+        "source": "curated — sepolia.starkscan.co does not resolve; Voyager is the other Starknet explorer, but only its home page is usable here"
       }
     ]
   },
@@ -857,8 +857,8 @@
       {
         "name": "Suiscan",
         "url": "https://suiscan.xyz/mainnet",
-        "kind": "home",
-        "verified": "home probed 2026-08-17",
+        "kind": "checkpoint",
+        "verified": "browser 2026-08-18 — block page watched rendering the requested height",
         "source": "curated — Sui has checkpoints, not blocks; no height-addressable page verified"
       }
     ]
@@ -869,7 +869,7 @@
         "name": "Suiscan",
         "url": "https://suiscan.xyz/devnet",
         "kind": "home",
-        "verified": "home probed 2026-08-17",
+        "verified": "browser 2026-08-18 — home page only: /checkpoint/<n> renders nothing on devnet, which resets",
         "source": "curated"
       }
     ]
@@ -879,8 +879,8 @@
       {
         "name": "Suiscan",
         "url": "https://suiscan.xyz/testnet",
-        "kind": "home",
-        "verified": "home probed 2026-08-17",
+        "kind": "checkpoint",
+        "verified": "browser 2026-08-18 — block page watched rendering the requested height",
         "source": "curated"
       }
     ]
@@ -915,8 +915,8 @@
       {
         "name": "Tonviewer",
         "url": "https://tonviewer.com",
-        "kind": "home",
-        "verified": "home probed 2026-08-17",
+        "kind": "block",
+        "verified": "browser 2026-08-18 — block page watched rendering the requested height",
         "source": "curated"
       }
     ]
@@ -926,8 +926,8 @@
       {
         "name": "Tonviewer",
         "url": "https://testnet.tonviewer.com",
-        "kind": "home",
-        "verified": "home probed 2026-08-17",
+        "kind": "block",
+        "verified": "browser 2026-08-18 — block page watched rendering the requested height",
         "source": "curated"
       }
     ]
@@ -938,7 +938,7 @@
         "name": "Tronscan",
         "url": "https://tronscan.org",
         "kind": "hash-routed",
-        "verified": "unverified — bot challenge (HTTP 403) from the build network",
+        "verified": "browser 2026-08-18 — block page watched rendering the requested height",
         "source": "curated"
       }
     ]
@@ -949,7 +949,7 @@
         "name": "Tronscan",
         "url": "https://nile.tronscan.org",
         "kind": "hash-routed",
-        "verified": "unverified — bot challenge (HTTP 403) from the build network",
+        "verified": "inherited — the tronscan mainnet deployment was watched rendering /#/block/<n>; this is the same software on the network's own host",
         "source": "curated"
       }
     ]
@@ -960,7 +960,7 @@
         "name": "Tronscan",
         "url": "https://shasta.tronscan.org",
         "kind": "hash-routed",
-        "verified": "unverified — bot challenge (HTTP 403) from the build network",
+        "verified": "inherited — the tronscan mainnet deployment was watched rendering /#/block/<n>; this is the same software on the network's own host",
         "source": "curated"
       }
     ]
@@ -980,7 +980,7 @@
         "name": "VeChain Explorer",
         "url": "https://explore.vechain.org",
         "kind": "home",
-        "verified": "home probed 2026-08-17",
+        "verified": "browser 2026-08-18 — home page only: /blocks/<n> is a 404 and /block/<n> was rate-limited",
         "source": "curated"
       }
     ]
@@ -1035,7 +1035,7 @@
         "name": "XRPL Explorer",
         "url": "https://testnet.xrpl.org",
         "kind": "home",
-        "verified": "home probed 2026-08-17",
+        "verified": "browser 2026-08-18 — home page only: /ledgers/<n> is the right route but answers “Ledger not Found” — this testnet's ledgers are pruned",
         "source": "curated"
       }
     ]
