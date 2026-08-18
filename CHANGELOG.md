@@ -5,6 +5,30 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.17.0]
+
+### Added
+
+- **Every block height on the Metrics pages links to that block on the chain's
+  own explorer.** The catalog landed in 0.16.5 and nothing read it: a router's
+  tip and each upstream's tip printed as bare numbers, and checking one against
+  the public chain meant hand-typing a URL. Both `Latest block` columns — the
+  Routers table and the Upstreams roster — are now links, and the chain icon or
+  name opens the explorer's home page.
+
+  The rule is **a value links to the block page, an identity links to the
+  explorer home**, and it is forced by what the catalog can honestly offer: 145
+  chains have a proven block-page shape, 68 have an explorer but no shape, and
+  32 have neither. So Ethereum's height opens `etherscan.io/block/…` while
+  Hyperliquid's stays plain text with its icon opening `hyperevmscan.io` —
+  `ExplorerBlockLink` never falls back to a home page, because a click on a
+  specific height that lands on a front page has misled the reader.
+
+  It stays a table: same tabular figures, underline and pointer on hover only,
+  opens in a new tab, and the title names the explorer before you click. Both
+  `Latest block` column tips say a height is clickable and that chains without a
+  verified block page show it plain — otherwise nobody finds it.
+
 ## [0.16.5]
 
 ### Fixed
