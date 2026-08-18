@@ -53,6 +53,14 @@ export class MetricsDetailService {
     private readonly configSvc?: ConfigurationService,
   ) {}
 
+  /** Does this config router declare an upstream by that name? The metrics
+   *  carry `provider_address` (the node name) and nothing about routers, so the
+   *  mounted values file is the only place the question can be answered. */
+  private declaredBy(routerId: string, upstream: string): boolean {
+    const router = this.configSvc?.getRouters().find((r) => r.id === routerId);
+    return router ? router.nodes.some((n) => n.name === upstream) : false;
+  }
+
   private windowBounds(window: MetricWindow): { start: number; end: number; step: string } {
     const win = WINDOWS[window];
     const end = Math.floor(Date.now() / 1000);
@@ -278,7 +286,16 @@ export class MetricsDetailService {
 
   /** Errors-breakdown tab. Derived math is real; labelled pivots wait for
    *  their counter families. */
-  async errors(window: MetricWindow, spec?: string): Promise<ErrorsReport> {
+  /**
+   * @param routerId Keep only the hotspots whose upstream the named CONFIG
+   *   router declares. Hotspots are (chain × upstream) pairs, and the config
+   *   says which router declares an upstream — so unlike the pivots below them,
+   *   they CAN be attributed. The pivots stay deployment-wide: they aggregate by
+   *   chain / method / error code, and no series says which router served a
+   *   request. Callers narrow those by chain instead (a config router serves
+   *   one chain, so selecting it implies its spec).
+   */
+  async errors(window: MetricWindow, spec?: string, routerId?: string): Promise<ErrorsReport> {
     const { start, end, step } = this.windowBounds(window);
 
     const [total, trendMatrix, byChainRows, byMethodRows, byPairRows, families] =
@@ -417,10 +434,18 @@ export class MetricsDetailService {
           errorRate: requests > 0 ? errors / requests : null,
           trend: [] as TimePoint[],
           nodeMethods: (nodeMethodsByPair.get(`${pairSpec}|${upstream}`) ?? []).slice(0, 5),
+          // Every node error on the pair, not just the top-5 methods shown.
+          nodeErrors: (nodeMethodsByPair.get(`${pairSpec}|${upstream}`) ?? []).reduce(
+            (sum, m) => sum + m.count,
+            0,
+          ),
         };
       })
       .filter((h) => h.spec && h.upstream && (h.errors > 0 || h.nodeMethods.length > 0))
-      .sort((a, b) => b.errors - a.errors);
+      .filter((h) => routerId === undefined || this.declaredBy(routerId, h.upstream))
+      // Pairs that FAILED first, worst first; then the node-error-only pairs,
+      // which are here for a different reason and shouldn't outrank a failure.
+      .sort((a, b) => b.errors - a.errors || b.nodeErrors - a.nodeErrors);
 
     await Promise.all(
       hotspotRows.slice(0, 5).map(async (h) => {

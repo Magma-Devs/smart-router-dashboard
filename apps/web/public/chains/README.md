@@ -41,13 +41,55 @@ silhouette of the Trusted Smart Chain gem traced from the mark on
 [trustedsmartchain.com](https://trustedsmartchain.com); its logo is a gold-to-blue
 gradient, so per the rule above the circle takes the blue stop.
 
-`race` (and its testnet) are the only entries still on `default.svg` — the
-project publishes a wordmark only, which is illegible at icon size.
+`race` is abstracted rather than traced. RACE publishes no icon separate from
+its wordmark, and the wordmark is unusual: the four letters are drawn as thin
+outlines of ascending height, sharing a baseline, so the lockup reads as a
+staircase. The outlines themselves cannot survive 24px, but the staircase can —
+the glyph is the four ascending columns at the mark's own proportions (measured
+off the [chain-registry](https://github.com/ethereum-lists/chains) icon: bars
+38.5 wide on a 49 pitch, heights 32% / 51% / 76% / 100%). Its wordmark carries a
+copper-to-peach gradient rather than a flat fill, so per the rule above the
+circle takes one of that gradient's own stops (`#965D3C`, sampled at its dark
+end). Adapted to a squarer footprint, since the source lockup is 184×417 and
+would otherwise leave the circle mostly empty.
+
+`ethereum-classic` is web3icons' `networks/mono` glyph on the `#01C853` its
+`background` variant uses. Its glyph is `#111`, not white: that green is light
+enough that white sits at roughly 2:1 against it, which is the case the house
+style covers (`flow`, `astar`, `blast` do the same). Before it was vendored,
+Ethereum Classic wore **Ethereum's** icon — `resolveIcon` falls back to the
+first segment of the name slug, and `ethereum` exists.
+
+Every chain in the map now resolves to a vendored SVG; `default.svg` stays as
+the fallback for whatever arrives next.
+
+`arbitrum-nova` is web3icons' `networks/mono/arbitrum-nova` on the `#EF8220`
+its `background` variant uses — Nova's own orange, not Arbitrum One's navy
+(`#213147`). It keeps a separate icon **because it is a separate chain**: Nova
+is chain 42170, a production AnyTrust network, while `arbitrum-one` is 42161
+and `arbitrum-sepolia` (which does inherit) is the testnet. lava-specs called
+it "Arbitrum Nova Testnet" until
+[lava-specs#112](https://github.com/Magma-Devs/lava-specs/pull/112), so the
+map may still classify it as a testnet until that lands and the catalog is
+regenerated.
+
+## One icon per chain, not per network
+
+A testnet index inherits its mainnet's icon (by base name, then index prefix),
+so vendoring a separate SVG for a genuine testnet is how one chain ends up
+looking like two — `ARBITRUMS` (Arbitrum Sepolia) correctly has none. The test
+is whether it's a distinct network, not whether the spec's name says
+"Testnet": that name is upstream metadata and it has been wrong.
 
 Chain logos remain the trademarks of their respective projects and are used here
 only to identify the chain.
 
 ## Adding one
+
+Usually you are here because a chain resync brought in a chain with no icon —
+`generate-chain-map.mjs` names them under `no icon` in its summary, and
+[`.claude/rules/chain-resync.md`](../../../../.claude/rules/chain-resync.md)
+covers where vendoring fits in that procedure.
 
 Drop `<slug>.svg` in this directory following the house style, then re-run
 `node apps/web/scripts/generate-chain-map.mjs` and commit the regenerated map.
