@@ -5,6 +5,425 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.16.1]
+
+### Fixed
+
+- **The Routers table is a table of routers again.** It was keyed by chain, so
+  two routers serving one chain collapsed into a single row — which then wore
+  the first router's name (`.find(r => r.spec === …)`) beside the whole chain's
+  upstream count, and the second router had no row at all. Rows are now keyed on
+  the config router id, and the upstream count comes from the values file, so it
+  is the router's own.
+
+  What a row can honestly claim differs, and the row says which. No series
+  carries a router: `smartrouter_*` is labelled with the chain. Where the
+  collector reports a per-target label for a router, its chain-level numbers are
+  re-read through that label and are genuinely its own. Where it does not and
+  the chain has siblings, the rows show the shared chain-level figures marked
+  **shared**, naming who else is counted in — two such rows carry the same
+  numbers on purpose, and adding them up would double the deployment's traffic.
+
+- **`GET /api/metrics/routers-rollup`** backs it. One chain-level read per spec
+  is shared by every router that cannot be scoped, so the extra rows cost no
+  extra queries.
+
+### Changed
+
+- **The Latest block column is the number alone.** The `39s behind · refresh
+  17s · 2 ifaces` sub-line was a per-interface diagnostic in a rollup table. The
+  per-upstream lag stays on the Metrics · Upstreams roster, and the full
+  per-interface detail stays on `GET /api/metrics/block-heights`.
+## [0.16.0]
+
+### Added
+
+- **Every chain now knows where its block explorer is.** `explorersFor(spec)` /
+  `explorerUrl(spec, ref, value)` in `@sr/shared` resolve a Lava spec index to
+  the chain's official explorer and to a deep link for a block height,
+  transaction or address — the receipt for every number the dashboard prints
+  about a chain. 210 of 245 chains are covered; the other 35 are recorded as
+  deliberate gaps with a reason. No UI consumes this yet.
+
+  The join key is the spec's own `chain-id` **verification** (`ETH1` → `0x1`,
+  `COSMOSHUB` → `cosmoshub-4`), which makes 130 of the entries derivable from
+  `ethereum-lists/chains` and `cosmos/chain-registry` instead of hand-written.
+  Both registries are read from a **committed snapshot**, so the CI drift gate
+  stays a lava-specs check and a third party editing an explorer url can never
+  fail an unrelated PR.
+
+  Link shapes are an eleven-row `kind` table rather than three URL templates
+  per chain, and a kind is assigned only when the registry's own template
+  proves it or a person watched the page render. Every row carries a
+  `verified` field saying which of those happened — or, for 22 rows behind
+  Cloudflare bot management, that it could not be checked and why.
+  `explorerUrl()` returns **null** rather than a guessed URL, and a kind's
+  `block` template always takes a height, so the hash-addressed explorers
+  (NearBlocks, MultiversX, cspr.live) ship no block link at all.
+
+  Two chains were wearing the wrong explorer before this landed and would have
+  linked to the wrong chain entirely: chainlist has id collisions, and Astar
+  Shibuya resolved to Japan Open Chain (both claim 81) while Hyperliquid
+  resolved to Wanchain Testnet (both claim 999). The generator now prints every
+  spec-vs-chainlist name mismatch on each run, and the overlay carries both
+  corrections.
+
+- **`apps/web/scripts/probe-explorers.mjs`** — checks that every explorer the
+  dashboard would link is still up and has not started redirecting to another
+  site. It classifies bot-management refusals (401/403/429) as *challenged*
+  rather than failed, because a 403 is the script being turned away rather than
+  evidence about the URL. Not wired into CI: it talks to several dozen third
+  parties, whose flakiness must never fail a PR. It caught bloks.io redirecting
+  to XPR Network, a different chain — EOS is now recorded as having no verified
+  explorer instead of linking to one.
+
+- **`docs/CHAINS.md`** — one reference for what the dashboard knows about a
+  chain: the catalogs, the explorer join key and its traps, the kind table, the
+  verification statuses, and how to add or correct an entry.
+
+### Changed
+
+- **The spec-drift gate covers five artifacts, not three.** The explorer
+  catalog and its roll-call join the chain map, the method catalog and the
+  no-runnable-defaults roll-call, so a chain arriving without an explorer fails
+  the build rather than passing unnoticed. `chain-resync.md` carries the
+  procedure.
+
+## [0.15.0]
+
+The dashboard opened on a day. The question people open it to answer is "what
+is happening now".
+
+### Changed
+
+- **The default time window is 30 minutes.** Over a day, a chain that has been
+  failing for ten minutes is 0.7% of the window judging it — the average absorbs
+  the incident that made you open the page. The cost is honest and worth naming:
+  uptime, availability and error rate ride far fewer samples over half an hour,
+  so they swing more, and on a quiet deployment a 30-minute window can sit below
+  the traffic floor and read `0` / `—` where the day view showed numbers. The
+  window picker is unchanged and one click away.
+- **One source of truth for it.** The default lived in three disconnected
+  places, only one of which the UI read: `DEFAULT_WINDOW` (the api's parse path
+  for an absent `window=`), a `useState("1d")` literal in `FiltersProvider`
+  (what every page actually opened on), and ~18 `window = "1d"` parameter
+  defaults across the PromQL builders. All three now read `DEFAULT_WINDOW`, so
+  the next change to it is one line. A test pins the value on its own, so
+  changing what the product opens on stays a deliberate edit.
+
+Fixed short windows are left alone on purpose: the topbar status strip's own
+`window=1h` call, the upstream deep-dive's 1h / 24h / 7d context boxes, and the
+custom-range parser's fallback. None of them is "the default window".
+
+## [0.14.0]
+
+Which block is each router on, and how far behind is each upstream? Both gauges
+were already on the wire and half-read: the upstream tip rendered with no
+context, and the router tip was fetched by `/api/metrics/chains` and dropped.
+
+### Added
+
+- **A `Latest block` column on the Metrics · Routers table**, from
+  `smartrouter_latest_block` — the tip the router itself has accepted, per api
+  interface, leading with the furthest-ahead one. A Cosmos router serving
+  jsonrpc, rest and tendermintrpc has three tips that can disagree, and the row
+  says how many interfaces are behind the number.
+- **A `Behind` column on the Metrics · Upstreams roster**, and `behindSec` +
+  `stale` on `UpstreamMetrics` to back it. **The lag is stated in seconds**, not
+  blocks: a block count means nothing across chains, where the same 1,038-block
+  delta is 37 seconds on Aptos and would be four months on Bitcoin. Seen on one
+  screen: 1 block behind on Ethereum is 12s, 2 blocks on Hyperliquid is 2s.
+- **`GET /api/metrics/block-heights`** — every tip for every chain: per router
+  deployment × interface, per upstream × interface, each against the chain's
+  best upstream tip, in blocks and in seconds. Instant only; these are gauges,
+  so there is no window. Takes both router axes.
+- **A stale marker.** An upstream whose tip gauge hasn't moved in 15 minutes
+  *while the chain kept producing blocks* is stuck, not slow — and the second
+  half of that test is what keeps Bitcoin's ~9-minute blocks from reading as
+  frozen on every poll.
+
+### Changed
+
+- **The router tip is judged against its own refresh rate, not the clock.**
+  `smartrouter_latest_block` advances on accepted tip observations rather than
+  on every poll, so it trails the upstream gauge by about one refresh interval
+  however healthy the router is — on a fast chain that is thousands of blocks.
+  A wall-clock threshold painted all six routers amber on first render. The
+  cadence is now measured (`changes(smartrouter_latest_block[15m])`, surfaced as
+  `refreshSec`) and the colour grades multiples of it, so a router reads normal
+  at one refresh behind and red only when it falls further behind than its own
+  update rate explains.
+- **A tip that two routers share says so.** That gauge is labelled with the
+  chain and never with the router, so two config routers on one chain share a
+  single series unless the collector labels targets per router. The cell marks
+  it `shared` rather than letting a router filter imply the number is that
+  router's own — the same honesty as the roster's `+N shared`.
+
+## [0.13.0]
+
+Which router served this? The roster could only be sliced by chain — and a
+chain can have several routers.
+
+### Added
+
+- **A router filter next to the chain one**, defaulting to all routers. Its
+  options are the mounted config's routers, because that is the only place two
+  routers on one chain are distinguishable: no series carries a router. Picking
+  a chain narrows the list to the routers serving it, and picking a chain that
+  excludes the selected router clears the selection rather than leaving a filter
+  that has quietly stopped applying.
+- **A Router column on the Metrics · Upstreams roster**, from `routerIds` on
+  every upstream row (new on `UpstreamMetrics`, joined from the values file in
+  the api). Two routers declaring one node name share a single series, so such a
+  row is marked `+1 shared` — the numbers are both routers' traffic together,
+  and splitting them would be an invention. Sortable, and it leads with the
+  router you filtered on.
+- **`GET /api/metrics/upstreams?routerId=`** — keeps one config router's rows.
+  A different axis from the existing `?router=`, which narrows the PromQL by the
+  collector's target label; the doc now has a table telling them apart.
+
+- **The router filter reaches the error hotspots too** —
+  `GET /api/metrics/errors?routerId=` filters the (chain × upstream) pairs
+  through the same config join, since a hotspot names an upstream. The pivots
+  behind "Error types" aggregate by chain / method / code and can't be
+  attributed, so they are left alone rather than filtered to look narrowed.
+- **A title on the Metrics page.** It had none, so the filters were the first
+  thing on it and nothing said where you were.
+
+### Changed
+
+- **The chain and router filters belong to the page you set them on.** They
+  narrow WHICH data a screen shows, and a narrowing that outlives its screen is
+  a trap — you arrive somewhere showing a slice of reality with no memory of
+  having asked for one. Navigating clears them (returning to a page too, not
+  just leaving it), nothing is persisted, and tab switches within a page keep
+  them because the tabs are one screen. The time window still persists: how far
+  back you like to look isn't a claim about what you're looking at.
+- **Picking a router picks its chain.** A config router serves exactly one, so
+  this narrows the panels that aggregate by chain — the only way they can be
+  narrowed at all — and the chain box says so instead of the page quietly
+  filtering more than it shows.
+- **A pair that failed nothing is no longer listed as a failing one.** The
+  errors breakdown includes (chain × upstream) pairs whose upstream answered with
+  JSON-RPC errors — served relays, not failures — and showed them as
+  `0.00% · 0 errors`, which read as padding and made a chain filter look like it
+  hadn't applied. Such a row now states the number it does have ("no failed
+  relays · 3 answered with a node error"), stays out of the severity palette,
+  sorts below the real failures, and is counted apart in the header.
+- **"Error types" says what it counts.** Those are all classified error events,
+  including the upstream replies the router recovered from, so they can exceed
+  the failed-relay total above them — which looked like a contradiction with no
+  line of text to explain it.
+- **One router control instead of two.** The topbar's scope-only dropdown is
+  gone; the header filter sets both axes — the config id always, and the label
+  scope when the collector actually reports a matching target. Where it can't
+  (no per-router target label, the common case), the page says so: the roster is
+  filtered, the chain-level panels stay deployment-wide, because no metric
+  records which router served a request.
+- **The router list names routers, not chains.** The chain is shown only when
+  the router's own name isn't already it — an SR_CONFIG mount names each router
+  after the chain it serves, and repeating that turned the list into a list of
+  chains.
+- **The Upstreams page honours the router filter too**, in all three groupings,
+  since the same selection is shared across the app.
+
+
+## [0.12.0]
+
+One page for the mounted config. The Endpoints tab is gone — the surface it
+carried is the Upstreams page's third grouping, and its default.
+
+### Added
+
+- **A "By router" grouping on the Upstreams page, now the default.** One card
+  per router in the values file, rows for the (router × interface) endpoints it
+  publishes: the interface tag, the configured capabilities, the address to
+  dial, the upstream count behind it, and the same click-through detail sheet.
+  The page already carved this config three ways in prose — "what does this
+  router publish", "who serves this chain", "what does this upstream serve" —
+  and the first of them was the one living on its own tab.
+- **The Metrics page's chain picker, on the Upstreams page too**, narrowing
+  all three groupings: the routers publishing that chain, its own chain card,
+  or just the upstreams behind it (a provider card drops the rows for chains
+  the filter excludes rather than showing them under a narrowed page). It reads
+  the chains the *config* declares, not the ones `/api/metrics/specs` reports —
+  a configured chain nobody has called yet still has endpoints to show — and it
+  hides itself on a single-chain deployment, where it could only ever restate
+  the page. A selection that leaves the config reads as "All chains" instead of
+  narrowing everything to nothing.
+- **The Try-it console reads identically in the new grouping**, because it is
+  the same call: the endpoint's own address, its ws upgrade when the config
+  declares one, its upstreams' add-ons, and the chain's live health. Nothing is
+  pinned to a single upstream there — the request goes to the router, exactly as
+  it did on the Endpoints tab. The per-upstream Try-now in the chain and
+  provider groupings still pins its relay, which is what those rows are about.
+
+### Changed
+
+- **One health vocabulary across every panel.** `HealthState` has three states
+  and, until now, four wordings: the Upstreams roster said "healthy /
+  degraded", the Routers table "Operational / Unhealthy", the upstream
+  deep-dive "Live · up / Down", and the Try-it drawer printed the raw wire
+  word — so one upstream read three different ways depending on which panel
+  you looked at. `lib/health.ts` owns the words and colours now, `<HealthTag>`
+  / `<HealthDot>` render them, and `UpstreamRow` carries a `HealthState`
+  instead of its own parallel union. The Routers table's wording won, because
+  it was the most prominent. `unknown` still means "no metrics in this window",
+  never "down".
+- **The chain filter is shared, and so is its list.** It lives on
+  `FiltersProvider` next to the time window and the router scope, so both pages
+  read one selection instead of each holding its own copy. (It is scoped to the
+  page you set it on — see 0.13.0, which settled that.) Its options come from
+  `useChainOptions()`: the union of the chains the config declares and the
+  chains the metrics report traffic for, with each page dimming what it can't
+  populate ("no traffic yet" on Metrics, "not in config" on Upstreams) instead
+  of dropping it from the list.
+- **The Upstreams page honours the shared time window**, with the same
+  selector every metrics screen has. It pinned `1d` while already honouring the
+  shared router scope, which made it the one screen where the absent selector
+  was a silent override — its health figures come from the metrics in a window
+  like everything else's.
+- **"By provider" is "By upstream".** The product renamed providers to
+  upstreams everywhere except that segment label and `ChainGroup.providers`.
+- **The chain picker lists chains alphabetically**, on the Metrics page as well
+  as the Upstreams page. Its callers' orders were accidents of their sources —
+  whatever order Prometheus returns label values in, whatever order the values
+  file happens to declare routers in — and neither helps someone hunting for a
+  chain by name. Sorted in the component, so a third caller can't reintroduce
+  an arbitrary order.
+- **The sidebar brand goes home.** Clicking "Smart Router" navigates to `/`,
+  which redirects to the default surface — so home stays defined in one place
+  instead of being restated in the header.
+- **Metrics moved under the "Smart Router" section label** in the sidebar,
+  next to Upstreams, instead of floating above it unlabelled.
+
+### Removed
+
+- **The Endpoints tab** (`/endpoints`) and its view. The route is gone, not
+  redirected — the same cards are one segmented-control click away, and the
+  page's search and mainnet/testnet filters carry over to them.
+- **The endpoint create sheet**, whose only entry point was that page's hidden
+  "New endpoint" button. Endpoint creation is a Magma Cloud action; on a
+  read-only config mount it never had anything to commit.
+## [0.11.4]
+
+### Fixed
+
+- **The upstream roster called every provider by a name the router does not
+  answer to.** The values file names upstreams for people — `Lava`,
+  `Blockdaemon`, `Tatum` — and the chart folds that to
+  `lower | replace " " "-"` on the way into the router's own config. The
+  router registers the folded string, publishes it on the `provider_address`
+  and `endpoint_id` Prometheus labels, and matches the `lava-select-provider`
+  header against it exactly. The dashboard reflected the unfolded name, so it
+  addressed `Lava` where everything downstream says `lava`, and two things
+  broke quietly on the back of one mismatch: every upstream card read "no
+  data" (the metrics join never matched, while the traffic sat right there
+  under the lowercased label), and every "send this straight to the upstream"
+  relay came back `-32000 Selected provider not available`.
+
+  Helm node names are now folded the way the chart folds them. This is a
+  stopgap — the router is being taught to match the header case-insensitively
+  ([smart-router#285](https://github.com/Magma-Devs/smart-router/pull/285)),
+  and the shim comes out once that ships. SR_CONFIG deployments are left
+  verbatim: that file *is* the router's config, so its `name:` is already the
+  registered provider name.
+
+## [0.11.3]
+
+### Fixed
+
+- **Ethereum Classic wore Ethereum's logo.** `resolveIcon` falls back to the
+  first segment of a chain's name slug, and `ethereum` exists — so ETC and
+  ETCT rendered under the wrong chain's mark, the same silent borrowing that
+  once gave CANTONT Canto's logo. Vendored `ethereum-classic.svg` from
+  web3icons (`networks/mono` glyph on the `#01C853` of its `background`
+  variant, with the `#111` glyph the house style calls for on a circle that
+  light).
+- **Arbitrum Nova's icon was the v1 one, unvouched for.** Nova keeps a
+  separate mark — it is a separate chain, 42170, a production AnyTrust network
+  next to Arbitrum One's 42161 — but the SVG carried over from v1 with no
+  provenance entry. Re-vendored from web3icons `networks/mono/arbitrum-nova`
+  on the `#EF8220` of its `background` variant: Nova's own orange, not
+  Arbitrum One's navy. Arbitrum Sepolia, the real testnet, keeps inheriting
+  `arbitrum-one` as it should.
+  The map still classifies Nova as a testnet, because lava-specs names it
+  "Arbitrum Nova Testnet" — fixed upstream in
+  [lava-specs#112](https://github.com/Magma-Devs/lava-specs/pull/112); the
+  next resync after that merges flips it to mainnet (115 mainnets / 130
+  testnets) and CI's drift gate will require it.
+
+## [0.11.2]
+
+### Added
+
+- **A RACE icon — every chain in the map now has one.** RACE and its testnet
+  were the last two on `default.svg`, written off as "wordmark only, illegible
+  at icon size". Its wordmark turns out to draw R-A-C-E as thin outlines of
+  ascending height on a shared baseline: the outlines can't survive 24px, but
+  the staircase can. The glyph is those four columns at the mark's measured
+  proportions, and the circle takes a stop from the wordmark's own
+  copper-to-peach gradient. `icons 245 matched a local SVG, 0 → default.svg`.
+
+## [0.11.1]
+
+### Changed
+
+- **`generate-chain-map.mjs` names the chains that fell back to `default.svg`**,
+  instead of only counting them. A chain with no vendored icon renders fine —
+  which is exactly why nobody notices it arrived without its brand — so the
+  resync procedure now has something to act on, and the chain-resync rule
+  carries the sourcing steps (web3icons `mono` + its `background` colour →
+  `tokens/mono` → cosmos/chain-registry → the project's own asset) alongside
+  the house style. Leaving a chain on the fallback stays a legitimate choice;
+  it just has to be a recorded one.
+
+## [0.11.0]
+
+Try-it defaults that work. Every command the drawer opens on can be sent
+as-is, on every chain — and the ones that can't say so.
+
+### Added
+
+- **A runnability state on every catalog command.** `ready` (what ships with
+  it is already a complete request), `needs params` (a placeholder, a hint
+  that documents the argument instead of curating one, or the spec's own
+  `block_parsing` naming a positional argument), or neither — unmarked,
+  because the catalog doesn't know and won't guess. 1263 JSON-RPC, 2960 REST,
+  405 Tendermint and 149 gRPC commands are runnable, covering 163 of the 170
+  (spec × interface) pairs.
+- **The dropdown opens on the runnable ones**, a dozen at most, curated names
+  leading. A curated name no longer earns its place on its own:
+  `eth_getTransactionByHash` leads on ETH1, where the hint carries a real tx
+  hash, and sits behind "Show all" on every other EVM chain, where it
+  doesn't. Everything behind "Show all" that needs input is labelled, in the
+  list and on the selected command.
+- **Runnable defaults for four surfaces that had none** — XRP Ledger (whose
+  JSON-RPC takes `[{}]`, not `[]`), Monero, Avalanche P-chain and Celestia's
+  node API. Verified against public endpoints except Celestia's, which is
+  auth-gated.
+
+### Fixed
+
+- **CometBFT calls shipped an envelope that could only fail.** `params: []`
+  is rejected by every Tendermint method with optional arguments ("expected 1
+  parameters ([height]), got 0"), so `block`, `block_results`, `blockchain`,
+  `validators`, `commit` and `header` errored on Send. An empty object is
+  CometBFT's no-arguments call; all Tendermint params and the interface
+  default are `{}` now.
+- **Add-on tiers were offered on deployments that can't serve them.** The
+  ETH1 spec declares `debug_*` and `trace_*`, so both tiers appeared against
+  a router with no such upstream, where every send returns "No Providers For
+  Addon". Tiers now follow the add-ons the mounted values file declares, the
+  way archive already did.
+- **REST commands were sent as GET whatever their verb said** — Tron's wallet
+  API and EOS's chain API are POST, and the drawer's request line had been
+  printing a verb it wasn't using. A REST POST goes out bodyless, since its
+  arguments are in the path.
+- **A subscription listed over plain HTTP selected to nothing**: the dropdown
+  was built from the unfiltered tier while the selection was looked up in the
+  transport-filtered list.
+
 ## [0.10.0]
 
 Upstreams roster, grouped the way it gets read.
