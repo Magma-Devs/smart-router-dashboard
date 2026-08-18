@@ -15,8 +15,7 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   possible answer is `-32000 Selected provider not available`. It now reads as
   what it is — crossed out, dimmed, unclickable — and hovering it gives the
   one-line reason ("Backup upstream — the router reaches it only after every
-  primary is exhausted, and picks the backup itself. Send it direct
-  instead.").
+  primary is exhausted, and picks the backup itself. Send it direct instead.").
   The full version stays in the banner.
 
   The hover lives on a wrapper rather than the button: a disabled control takes

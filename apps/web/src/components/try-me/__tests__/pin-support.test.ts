@@ -29,6 +29,9 @@ describe("pinRefusalHintFor", () => {
     expect(hint.length).toBeLessThan(160);
     expect(hint).toContain("Backup");
     expect(hint).toContain("direct");
+    // No error codes on a hover: the reader is being told what this control
+    // does, not shown a response they haven't sent yet.
+    expect(hint).not.toContain("-32000");
   });
 });
 
