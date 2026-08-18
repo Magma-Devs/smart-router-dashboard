@@ -58,6 +58,92 @@ Browser ── Authorization: Bearer <same JWT> ──▶ Fastify api (@fastify/
   the gate fails closed, because a signature check alone cannot tell
   whether a session was revoked or an account removed.
 
+## Deployment modes
+
+`DEPLOYMENT_MODE` (`managed` | `onprem`, default **`onprem`**) forks every
+credential-delivery path, because on-prem has no mail server and never
+will. Defaulting to `onprem` is the safe way to be wrong: the failure mode
+is "an admin copies a link", not "an invitation silently never arrives".
+
+| | Managed | On-prem |
+|---|---|---|
+| First admin | we create it, email a join link | first-run page + the installer's setup token |
+| Invite / reset delivery | emailed | link shown to an admin, handed over |
+| Invite TTL | 7 days | 24 hours |
+| Reset TTL | 1 hour | 24 hours |
+
+The web needs this at **runtime**, not build time — `NEXT_PUBLIC_*` is baked
+into the bundle and one published image has to serve both shapes — so it
+comes through `GET /api/config` alongside `DASHBOARD_API_URL`.
+
+## First run (on-prem)
+
+A fresh install has no accounts, so there is nobody to sign in as. The
+first-run page creates the first admin, and **nothing else opens until it
+is done**.
+
+Two properties matter more than the rest:
+
+- **The gate is "no active users", never a flag.** A one-time marker is the
+  obvious implementation and it is wrong: a deployment restored from a
+  backup taken before its first account would carry the marker and refuse
+  to open, permanently. Deriving the state from the table means the answer
+  is always about the install in front of you. (`GET /auth/bootstrap`
+  reports it; it never reveals the token.)
+- **A setup token is required.** Without one, whoever reaches the URL first
+  between `helm install` and the operator sitting down becomes the admin —
+  and that gap can be overnight. The same protection covers the restored
+  backup above, where the window reopens on a deployment that is already
+  reachable.
+
+```
+api boot, AUTH_MODE=enabled, no active users
+  ├─ SETUP_TOKEN set?  → use it            (helm: value lives in a Secret)
+  └─ else              → generate 32 bytes, log once at warn,
+                         write to SETUP_TOKEN_FILE when set
+```
+
+Generating rather than disabling setup is deliberate: an operator who
+forgot to configure a token should still be able to finish the install,
+from a value only log or filesystem access reveals.
+
+<img src="./assets/first-run-setup.png" alt="The first-run page: a single card headed &quot;Set up this dashboard — create the first administrator&quot;, explaining that nothing else opens until this is done and that the setup token is printed by the installer. Fields for the setup token, an optional name, email, password and repeat password, with a note that any characters are accepted from 8 to 64, that the password is checked against known breached passwords, and that there are no other rules and it never expires." width="450">
+
+`POST /auth/setup` re-checks the zero-user condition **inside the
+transaction**, behind an advisory lock — the check outside it is only
+advice, and two people opening the page at the same moment would otherwise
+both become admin. It then opens a session like any other sign-in, so the
+operator is not left staring at a login page holding a password they just
+set.
+
+## Password policy
+
+Aligned to NIST 800-63B, which is what auditors reference and is mostly a
+list of things *not* to do. Enforced by `services/password.ts` on **every**
+path that writes a password — first-run setup, invite redemption, reset,
+and change — because the weakest password on a deployment is usually the
+first one anyone set.
+
+- **8 to 64 characters**, counted in code points. Everything allowed,
+  including spaces.
+- **No composition rules.** No "must contain a symbol".
+- **No forced expiry.** Scheduled rotation makes people choose worse
+  passwords; rotate on evidence of compromise.
+- **A 72-byte guard.** bcrypt truncates there and says nothing about it, so
+  64 emoji would have a decorative tail. Refused rather than silently cut.
+- **Checked against known-breached passwords** via HaveIBeenPwned's range
+  API using k-anonymity: only the first five characters of the SHA-1 leave
+  the process, and `Add-Padding` keeps response size from leaking the
+  prefix's hit count.
+
+The breach check **fails open**, with a logged reason, for a
+reason a hosted product doesn't have: an on-prem deployment may have no
+egress at all, and failing closed would make the first admin account
+uncreatable — locking an operator out of their own install to enforce a
+defence-in-depth check. `PASSWORD_BREACH_CHECK=off` disables it explicitly,
+which is the honest thing for an air-gapped site to do rather than relying
+on a silent timeout every time.
+
 ## Sign-in methods
 
 - **Email + password** — always available in enabled mode. Verified
@@ -91,6 +177,10 @@ users table → admin created; populated table without that email → no-op
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | api | bootstrap admin seed |
 | `INTERNAL_AUTH_SECRET` | api + web | Proves a caller is our own web tier, so forwarded browser IP / User-Agent are honoured. Unset ⇒ ignored, and sessions record what the api observes |
 | `TRUST_PROXY` | api | How far to believe `X-Forwarded-For`. Hop count (default `1`), a comma list of proxy IPs/CIDRs, or `false` |
+| `DEPLOYMENT_MODE` | api + web | `onprem` (default) / `managed` — forks invite and reset delivery |
+| `SETUP_TOKEN` | api | First-run token. Unset ⇒ generated once at boot and logged |
+| `SETUP_TOKEN_FILE` | api | Where to write a generated token (mode 0600) so an init container can surface it |
+| `PASSWORD_BREACH_CHECK` | api | `hibp` (default) / `off` — turn the breach check off deliberately on an air-gapped site |
 | `AUTH_URL` | web | Auth.js base URL (default `http://localhost:3000`) |
 | `INTERNAL_API_BASE_URL` | web | server-side api URL for Auth.js callbacks (`http://api:8000` in compose) |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | web (+ id on api) | unset = no Google button. The api needs the id to pin the token audience |

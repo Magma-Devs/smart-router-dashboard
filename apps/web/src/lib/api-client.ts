@@ -49,6 +49,18 @@ async function requestContext(): Promise<{ base: string; headers: Record<string,
   return { base: cfg.base, headers };
 }
 
+/**
+ * The api's base URL, resolved the same way every other call resolves it.
+ *
+ * For the handful of unauthenticated flows that talk to the api directly and
+ * must not wait for the session bridge — first-run setup, and later invite
+ * redemption and password reset. There is no session to attach yet, and
+ * `requestContext()` would block on one that is never coming.
+ */
+export async function apiUrl(): Promise<string> {
+  return (await resolveConfig()).base;
+}
+
 export class ApiError extends Error {
   constructor(
     public statusCode: number,

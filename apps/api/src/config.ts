@@ -122,6 +122,21 @@ export const config = {
   },
 
   /**
+   * Which shape of deployment this is. It forks every credential-delivery path,
+   * because on-prem has no mail server and never will:
+   *
+   *  - `managed`  — we host. Invitations and password resets are emailed.
+   *  - `onprem`   — the customer hosts. Links are shown to an admin and handed
+   *                 over directly; the first admin is created through the
+   *                 first-run page using the installer's setup token.
+   *
+   * Defaults to `onprem`: assuming no mail server is the safe way to be wrong,
+   * since the failure is "an admin copies a link" rather than "an invitation
+   * silently never arrives".
+   */
+  deploymentMode: (env("DEPLOYMENT_MODE") ?? "onprem") as "managed" | "onprem",
+
+  /**
    * Direct-to-upstream relay (`POST /api/upstreams/relay`) — the api dials a
    * configured upstream on the caller's behalf, bypassing the router, so the
    * Try-me drawer can show what an upstream answers on its own.
