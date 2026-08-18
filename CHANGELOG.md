@@ -34,6 +34,11 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   rendering a requested height. Note for whoever owns those docs: the explorer
   the page calls **official** is the dead `lava.explorers.guru`.
 
+  The resync rule now says to check a chain's own documentation before taking
+  a registry's first row, since that is what a registry cannot tell you — and
+  to treat the page as a lead rather than as truth, since Lava's still names a
+  retired explorer.
+
 - **Doubled slashes are normalised.** chain-registry hands LAV1
   `https://lava.explorers.guru//transaction/…`, which shipped verbatim.
 
