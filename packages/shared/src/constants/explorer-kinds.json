@@ -9,6 +9,11 @@
     "proven": "mintscan — proven by cosmos/chain-registry's own block_page on COSMOSHUB, which is what lets its other deployments reuse it",
     "block": "{base}/blocks/{block}"
   },
+  "checkpoint": {
+    "label": "/checkpoint/<n>",
+    "proven": "Suiscan, IOTA Explorer — Sui and IOTA count checkpoints, and a checkpoint number is what the router reports as their latest block",
+    "block": "{base}/checkpoint/{block}"
+  },
   "ledger": {
     "label": "/ledger/<sequence>",
     "proven": "xrpscan, stellar.expert — a ledger sequence is this family's block height",

@@ -66,27 +66,34 @@ of a URL template. `{base}` is the entry's own url:
 "blocks": { "block": "{base}/blocks/{block}" }
 ```
 
-Seven kinds cover 213 chains, and each is auditable in a single read. Three
+Eight kinds cover 213 chains, and each is auditable in a single read. Three
 rules keep them honest:
 
 1. **A block template takes a HEIGHT.** Explorers whose block page is addressed
    by hash (NearBlocks, MultiversX, cspr.live) are `home`-only. The dashboard
    has a height, so a hash-addressed block page is not a link it can build.
-2. **A kind never contributes a shape.** It is shorthand for a shape already
+2. **A shape is watched, or it is not claimed.** "The home page answered" is
+   not evidence about the block page — 24 entries were home-only for exactly
+   that reason, and twelve of them turned out to have a working block page
+   nobody had opened. Check the block page itself, with a real browser: a
+   Cloudflare challenge answers 403 to `fetch` while a scripted Chromium with a
+   real user-agent gets through, so a 403 is often the tool's problem, not the
+   site's.
+3. **A kind never contributes a shape.** It is shorthand for a shape already
    established — the registry's own `block_page` string matching it exactly, or
    a human watching the page render. An earlier version matched a kind on the
    transaction and address templates and let it add its own block shape on top;
    that shipped 31 block links nobody had seen work, 23 of them the primary.
    On Lava's STAVR explorer the invented `/block/<height>` renders an empty
    shell.
-3. **A shape may be inherited only from the same host.** `cosmos/chain-registry`
+4. **A shape may be inherited only from the same host.** `cosmos/chain-registry`
    spells out Mintscan's `/blocks/<height>` on COSMOSHUB and leaves it null on
    the twelve other Mintscan deployments; those twelve are the same explorer on
    the same host, so the proven shape carries across and the row says
    `inherited`. Hosts that proved nothing anywhere stay `home`-only.
 
 `explorerBlockUrl()` returns **null**, never a guess, when no shape is proven —
-70 of 213 primaries are home-only, so null is a common outcome, not an edge
+54 of 213 primaries are home-only, so null is a common outcome, not an edge
 case. A caller that gets null must render the height as plain text; falling
 back to the home page would quietly send the reader somewhere that does not
 answer their question. It also refuses anything that is not digits, so a hash
@@ -106,7 +113,7 @@ Each explorer carries a `verified` field, and nothing ships without one:
 
 `unverified` rows still ship. A link a user wants, labelled honestly, beats no
 link — but they are named on every generator run so the next person on a
-network that can reach them can settle it. As of the last refresh, 19 of 213
+network that can reach them can settle it. As of the last refresh, 10 of 213
 are unverified, most behind Cloudflare bot management (Blockchair, Cardanoscan,
 beaconcha.in, Tronscan, viewblock) which answers 403 to anything without a
 real browser's TLS fingerprint.
