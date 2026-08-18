@@ -5,6 +5,29 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.16.4]
+
+### Changed
+
+- **The Via router leg is struck through and turned off on a backup upstream.**
+  Explaining why a pinned request can't reach a backup still left the control
+  that fires it enabled, so the drawer went on offering a send whose only
+  possible answer is `-32000 Selected provider not available`. It now reads as
+  what it is — crossed out, dimmed, unclickable — and hovering it gives the
+  one-line reason ("Backup upstream — the router pins only within its primary
+  pool, so this can only answer -32000. Send it direct to the upstream.").
+  The full version stays in the banner.
+
+  The hover lives on a wrapper rather than the button: a disabled control takes
+  no pointer events, so a `title` on it would never be shown — and the point of
+  turning this one off is that the reader can ask why.
+
+  Everything that would fire the same doomed request goes with it: **Compare
+  both** (a refusal beside a real answer measures nothing) and, on a row with
+  no url the api can dial for the selected transport, **Send** itself, both
+  carrying the same hint. A backup row also never renders the router leg as the
+  selected one, even when the drawer has nowhere else to sit.
+
 ## [0.16.3]
 
 ### Fixed

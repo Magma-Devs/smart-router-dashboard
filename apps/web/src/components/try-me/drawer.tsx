@@ -14,7 +14,7 @@ import { apiPost } from "@/lib/api-client";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { CopyButton } from "@/components/gateway/CopyButton";
 import { HealthTag } from "@/components/gateway/HealthTag";
-import { initialTargetFor, pinRefusalFor, type UpstreamTier } from "./pin-support";
+import { initialTargetFor, pinRefusalFor, pinRefusalHintFor, type UpstreamTier } from "./pin-support";
 import {
   buildRequest,
   paramsKindFor,
@@ -463,8 +463,11 @@ export function TryMeDrawer({
     canToggleTransport && initialTransport === "ws" ? "ws" : "http",
   );
   /** Why the router can't be pinned to this upstream, when it can't — a
-   *  backup lives outside the pool `lava-select-provider` is matched against. */
+   *  backup lives outside the pool `lava-select-provider` is matched against.
+   *  The long form goes in the banner; the hint is the hover on every control
+   *  this turns off. */
   const pinRefusal = pinRefusalFor(upstreamTier);
+  const pinHint = pinRefusalHintFor(upstreamTier);
   /** Router (the default — what the endpoint actually serves) vs. straight at
    *  the upstream. Kept as state rather than derived so switching transports
    *  doesn't silently change WHERE a send goes. Opens on the direct leg for an
@@ -1164,21 +1167,34 @@ export function TryMeDrawer({
                 {directTarget && (
                   <div style={{ display: "flex", gap: 0, marginLeft: "auto", borderRadius: 6, overflow: "hidden", border: "1px solid var(--line-2)" }}>
                     {(["router", "upstream"] as const).map((t) => {
-                      const active = (t === "upstream") === onDirect;
-                      const disabled = t === "upstream" && !directAvailable;
+                      // A leg the router will refuse never reads as the
+                      // selected one, even when the drawer has nowhere else to
+                      // sit (a ws transport this node has no url for).
+                      const active =
+                        (t === "upstream") === onDirect && !(t === "router" && pinRefusal !== null);
+                      // The router leg is not offered at all when the router
+                      // would refuse the pin: every send it could make comes
+                      // back -32000, so an enabled control here is an invitation
+                      // to run a request for its error message.
+                      const disabled =
+                        t === "upstream" ? !directAvailable : pinRefusal !== null;
+                      const hint =
+                        t === "router"
+                          ? (pinHint ?? "Send through the router, pinned to this upstream.")
+                          : disabled
+                            ? "This upstream has no url for the selected transport in the values file."
+                            : "Send straight to this upstream — the api dials it, no router in the path.";
                       return (
+                        // The tooltip hangs on the wrapper, not the button: a
+                        // disabled control takes no pointer events, so a title
+                        // on it would never be shown — and the whole point of
+                        // turning this one off is that the reader can ask why.
+                        <span key={t} title={hint} style={{ display: "inline-flex" }}>
                         <button
-                          key={t}
                           type="button"
                           disabled={disabled}
+                          aria-label={`${t === "router" ? "Via router" : "Direct to upstream"} — ${hint}`}
                           onClick={() => setTarget(t)}
-                          title={
-                            disabled
-                              ? "This upstream has no url for the selected transport in the values file."
-                              : t === "router"
-                                ? (pinRefusal ?? "Send through the router, pinned to this upstream.")
-                                : "Send straight to this upstream — the api dials it, no router in the path."
-                          }
                           style={{
                             padding: "3px 10px",
                             fontSize: 11,
@@ -1186,12 +1202,18 @@ export function TryMeDrawer({
                             border: "none",
                             cursor: disabled ? "not-allowed" : "pointer",
                             opacity: disabled ? 0.4 : 1,
+                            // Struck through rather than merely dimmed: a
+                            // greyed control reads as "not now", and this one
+                            // is "not for this upstream, ever".
+                            textDecoration:
+                              disabled && t === "router" ? "line-through" : "none",
                             color: active ? "var(--brand)" : "var(--text-3)",
                             background: active ? "rgba(255,57,0,0.12)" : "var(--bg)",
                           }}
                         >
                           {t === "router" ? "Via router" : "Direct to upstream"}
                         </button>
+                        </span>
                       );
                     })}
                   </div>
@@ -1367,11 +1389,18 @@ export function TryMeDrawer({
           {canFire ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               <div className="gw-row" style={{ gap: 10, alignItems: "center" }}>
+                <span
+                  title={pinRefusal !== null && !onDirect ? (pinHint ?? undefined) : undefined}
+                  style={{ display: "inline-flex" }}
+                >
                 <button
                   type="button"
                   className="gw-btn gw-btn--primary"
                   onClick={send}
-                  disabled={!resolved || status === "loading"}
+                  // Off with the router leg: on a backup row with nothing the
+                  // api can dial (a ws transport this node has no url for),
+                  // the drawer has no send that could land.
+                  disabled={!resolved || status === "loading" || (pinRefusal !== null && !onDirect)}
                   style={{ padding: "9px 16px", fontSize: 13, fontWeight: 500, gap: 7 }}
                 >
                   {status === "loading" ? (
@@ -1384,16 +1413,26 @@ export function TryMeDrawer({
                     </>
                   )}
                 </button>
+                </span>
                 {/* Both paths, one click — the comparison is the reason the
                     direct mode is worth having, so it lives WITH that mode.
                     In router mode there is no second leg to compare against. */}
                 {onDirect && (
+                  <span
+                    title={
+                      pinHint ??
+                      "Send the same request through the router AND straight to the upstream, then show both answers side by side."
+                    }
+                    style={{ display: "inline-flex" }}
+                  >
                   <button
                     type="button"
                     className="gw-btn gw-btn--ghost"
                     onClick={compareBoth}
-                    disabled={!resolved || status === "loading"}
-                    title="Send the same request through the router AND straight to the upstream, then show both answers side by side."
+                    // A comparison needs two answers. On a backup the router
+                    // leg can only return its refusal, and putting that beside
+                    // a real reply would measure nothing.
+                    disabled={!resolved || status === "loading" || pinRefusal !== null}
                     style={{ padding: "9px 14px", fontSize: 12, fontWeight: 500, gap: 6 }}
                   >
                     {comparing ? (
@@ -1407,6 +1446,7 @@ export function TryMeDrawer({
                       </>
                     )}
                   </button>
+                  </span>
                 )}
                 {wsPhase && (
                   <span
