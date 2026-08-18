@@ -473,7 +473,8 @@ export async function teamMemberRoutes(app: FastifyInstance) {
               statusCode: 409,
               error: "Conflict",
               message:
-                "You cannot change your own role. Promote someone else first, then step down.",
+                "You cannot change your own role. To step down, promote someone else and ask " +
+                "them to demote you — the last move is never your own.",
             })
           : reply
               .code(404)
