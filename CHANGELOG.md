@@ -5,6 +5,43 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.18.1]
+
+### Fixed
+
+- **A sweep of all 213 explorers found 23 dead, moved or wrong-network links.**
+  The catalog had never been checked as a whole. Every primary explorer was
+  loaded in a real browser: 141 worked, and the rest had rotted in the way
+  registry data does — nobody updates a row when a host dies.
+
+  **Celo Alfajores was pointing at a different chain.** `alfajores.celoscan.io`
+  now redirects to `sepolia.celoscan.io`, so anyone checking an Alfajores height
+  was reading Celo Sepolia. It moves to `celo-alfajores.blockscout.com`.
+
+  **Hosts that no longer resolve**: `ftmscan.com` (Fantom's Sonic rebrand),
+  `holesky.beaconcha.in`, `holesky.etherscan.io`, `sepolia.kakarotscan.org`,
+  `explore-testnet.vechain.org`. Fantom mainnet moves to
+  `explorer.fantom.network`, which serves `/blocks/<n>` — plural, so it takes
+  the `blocks` kind.
+
+  **Retired or moved deployments**: `agoric.explorers.guru` emptied out exactly
+  as Lava's did (→ `atomscan.com/agoric`), Canto's neobase explorer answers
+  "Deployment Paused" (→ `explorer.tcnetwork.io/canto`), Cronos `.org` → `.com`,
+  Flow `flowscan.io` → `flow.com`, Mantle Sepolia → `sepolia.mantlescan.xyz`,
+  Story → `www.datanetscan.io`, beaconcha.in Sepolia → `light-sepolia`,
+  Avalanche P-Chain → `build.avax.network`.
+
+  **Nine chains become recorded gaps** rather than dead links: Fantom testnet,
+  Holesky beacon, Kakarot Sepolia, VeChain testnet, Secret and Stride testnets,
+  Sei testnet and both Berachain bArtio entries.
+
+  Coverage is 204 chains with an explorer and 41 recorded gaps; 159 primaries
+  can still link a height.
+
+  Left alone deliberately: five Mintscan entries whose only fault is a `www.`
+  redirect, and 18 Cloudflare-challenged hosts where nothing is proven either
+  way from a build network.
+
 ## [0.17.1]
 
 ### Fixed
