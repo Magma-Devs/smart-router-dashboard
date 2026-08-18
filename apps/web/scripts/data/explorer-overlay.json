@@ -895,14 +895,25 @@
       }
     ]
   },
-  "SONICT": {
+  "SONICB": {
     "explorers": [
       {
         "name": "Sonicscan",
         "url": "https://testnet.sonicscan.org",
         "kind": "block",
         "verified": "browser 2026-08-18 — block page watched rendering the requested height",
-        "source": "curated"
+        "source": "curated — chain-id 0xdede (57054) is Sonic Blaze, which upstream split out of SONICT into its own spec; this entry moved with the id"
+      }
+    ]
+  },
+  "SONICT": {
+    "explorers": [
+      {
+        "name": "Sonic Testnet Explorer",
+        "url": "https://explorer.testnet.soniclabs.com",
+        "kind": "block",
+        "verified": "browser 2026-08-18 — block page watched rendering the requested height",
+        "source": "curated — SONICT is now chain-id 0x3909 (14601); the chainlist row declares no url standard, but /block/<n> was watched rendering"
       }
     ]
   },

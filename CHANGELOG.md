@@ -7,6 +7,23 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [0.18.1]
 
+### Changed
+
+- **Chain resync — two chains arrived upstream, and one of them took another's
+  chain id.** lava-specs added `CELOS` (Celo Sepolia) and `SONICB` (Sonic
+  Blaze), which is what the drift gate caught. Sonic renumbered its testnets in
+  the process: `0xdede` (57054) is now Blaze and has its own spec, while
+  `SONICT` became `0x3909` (14601).
+
+  That matters because the curated Sonic testnet explorer had been verified
+  against `0xdede`, so it belonged to Blaze — leaving it on `SONICT` would have
+  pointed that chain at a different network, the same failure as Celo
+  Alfajores below. The entry moved to `SONICB`, and `SONICT` gained
+  `explorer.testnet.soniclabs.com`, watched rendering a height. `CELOS`
+  resolves from chainlist to `celo-sepolia.blockscout.com`, also watched.
+
+  247 chains, 205 with an explorer, 161 primaries linking a height.
+
 ### Fixed
 
 - **A sweep of all 213 explorers found 23 dead, moved or wrong-network links.**
