@@ -344,6 +344,46 @@ reads the live row.
 without one is refused outright, since nothing about it could be checked
 or revoked.
 
+## Migrations: the two ways they silently do nothing
+
+Drizzle decides what to apply from **one number**, and it is worth knowing
+exactly which, because both failure modes report success.
+
+`packages/db` migrations run on api boot. The migrator reads the single
+highest `created_at` from `__drizzle_migrations` **once, before the loop**,
+then applies every entry whose `when` is strictly greater. It writes a
+`hash` column and never compares it.
+
+Two consequences:
+
+- **An edited migration is never re-applied.** The hash is recorded but
+  unused, so changing an already-applied file is a no-op on any database
+  that ran it. Fine while nothing is deployed; not a thing to rely on later.
+- **A migration inserted *below* the high-water mark is skipped**, on any
+  database that is already migrated. This is the one that bites, because
+  parallel branches produce it naturally: two tickets each add a migration,
+  and the one that ends up with the lower `when` is invisible to anybody
+  who already ran the other.
+
+It happened here. `0002_audit` (MAG-2770) carries `when` 1786953600000;
+`0004_password_lifecycle` (MAG-2729) carries 1787040000000. A developer
+who ran the auth profile before the audit work merged has a high-water
+mark of 1787040000000, so `0002_audit` is **skipped on their machine** —
+migrations report success and the `audit_events` tables simply are not
+there. The first symptom is `relation "audit_events" does not exist` from
+a route that is perfectly fine in CI.
+
+```bash
+# The fix, and the only one — re-migrate from empty:
+docker compose -f docker-compose.dev.yml --profile auth down -v
+```
+
+Only developer machines are affected: nothing deployed sets
+`AUTH_MODE=enabled`, so no deployment has a `users` table, let alone a
+migration history. CI is unaffected too — every suite builds its database
+from empty, where the high-water mark does not exist and entries apply in
+array order regardless of their timestamps.
+
 ## Sessions and revocation
 
 Every authenticated request resolves `sid` to a session joined to its
