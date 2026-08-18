@@ -275,12 +275,25 @@ nullable, unwritten, and inert. Nothing shipped, so there is no data to
 preserve or to leak, and dropping three dead columns is not worth a
 migration on a schema other deployments already have.
 
-## Bootstrap admin seed
+## Bootstrap admin seed — development only
 
-On api boot with `ADMIN_EMAIL` + `ADMIN_PASSWORD` set, `seedAdmin` runs
-idempotently: existing user with that email → promoted to admin; empty
-users table → admin created; populated table without that email → no-op
-(never silently inserts into a live install).
+With `ADMIN_EMAIL` + `ADMIN_PASSWORD` set **and `NODE_ENV` not
+`production`**, `seedAdmin` runs at boot, idempotently: existing user with
+that email → promoted to admin; empty users table → admin created;
+populated table without that email → no-op.
+
+**In production it is refused, and a warning names the variables.** It
+predates first-run setup and fails three lines of the ticket at once — it
+creates the first admin with no setup token, it sets a password for
+somebody, and it leaves a standing admin account in a customer's
+deployment for as long as the variables stay set. Both paths open on the
+same condition, no active users, so leaving it enabled gives the room two
+doors with a lock on one.
+
+It stays for development because `make dev-auth` would otherwise need
+somebody to walk through `/setup` after every `down -v`. `make accounts`
+is the target that deliberately doesn't seed, and is the one to use for
+exercising the real flow.
 
 ## Environment variables
 
@@ -289,7 +302,7 @@ users table → admin created; populated table without that email → no-op
 | `AUTH_MODE` | api + web | `disabled` (default) / `enabled` — must match on both |
 | `AUTH_SECRET` | api + web | HS256 signing secret, must match. `openssl rand -base64 32` |
 | `DATABASE_URL` | api | `postgres://sr:dev@postgres:5432/sr_dashboard` in compose |
-| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | api | bootstrap admin seed |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | api | **development-only** admin seed; ignored (with a warning) when `NODE_ENV=production` |
 | `INTERNAL_AUTH_SECRET` | api + web | Proves a caller is our own web tier, so forwarded browser IP / User-Agent are honoured. Unset ⇒ ignored, and sessions record what the api observes |
 | `TRUST_PROXY` | api | How far to believe `X-Forwarded-For`. Hop count (default `1`), a comma list of proxy IPs/CIDRs, or `false` |
 | `DEPLOYMENT_MODE` | api + web | `onprem` (default) / `managed` — forks invite and reset delivery |

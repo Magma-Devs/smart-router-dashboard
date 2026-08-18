@@ -480,7 +480,7 @@ Auth (only read when `AUTH_MODE=enabled`; the metrics path never touches the DB)
 | `AUTH_MODE` | `disabled` | `enabled` turns on the session gate + `/auth/*` + Postgres |
 | `AUTH_SECRET` | (unset) | HS256 signing secret shared with the web (must match) |
 | `DATABASE_URL` | (unset) | Postgres connection string for `users` + `sessions` |
-| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | (unset) | idempotent bootstrap-admin seed on first boot |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | (unset) | idempotent admin seed on first boot, **development only** — refused under `NODE_ENV=production`, where first-run setup with the installer's `SETUP_TOKEN` is the only way an account comes into existence |
 | `INTERNAL_AUTH_SECRET` | (unset) | shared with the web; gates whether forwarded browser IP / User-Agent are trusted on `/auth/sign-in`. Unset ⇒ the api records what it observes |
 | `DEPLOYMENT_MODE` | `onprem` | `managed` (we host, email works) / `onprem` (customer hosts, no mail server). Forks invite + reset delivery; read by the web at runtime via `/api/config` |
 | `SETUP_TOKEN` | (generated) | First-run token, required to create the first admin. Unset ⇒ generated once at boot and logged at `warn` |
