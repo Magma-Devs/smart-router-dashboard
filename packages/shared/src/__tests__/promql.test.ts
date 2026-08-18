@@ -24,6 +24,12 @@ import {
   qUpstreamReadVolumeSeriesExpr,
   qUpstreamErrorRate,
   qBlockLagByEndpoint,
+  qBestTipBySpec,
+  qBlockRateBySpec,
+  qRouterTipChanges,
+  qRouterTips,
+  qTipChanges,
+  qUpstreamTips,
   qEndpointBlockLagSeriesExpr,
   qChainDown,
   qScoreExpr,
@@ -42,6 +48,7 @@ import {
   WINDOW_OPTIONS,
   isMetricWindow,
   toMetricWindow,
+  DEFAULT_WINDOW,
   stepSeconds,
 } from "../constants/windows.js";
 
@@ -167,6 +174,10 @@ describe("buildChainMetaByIndex", () => {
     // Enjin's test network is branded "Canary Matrixchain" — only the
     // <mainnet-index> + "T" pairing catches it.
     expect(buildChainMetaByIndex("ENJINT").mainnet).toBe(false);
+    // Arbitrum Nova is a mainnet whose index merely ends in a letter the
+    // testnet rules like. The spec says so; nothing here may re-demote it.
+    expect(buildChainMetaByIndex("ARBITRUMN").mainnet).toBe(true);
+    expect(buildChainMetaByIndex("ARBITRUMN").name).toBe("Arbitrum Nova");
   });
   it("gives each Arbitrum network its own logo", () => {
     // The v1 overlay had Arbitrum Sepolia on arbitrum-nova.svg, so the
@@ -223,8 +234,17 @@ describe("windows catalog", () => {
   it("toMetricWindow resolves keys, aliases, and garbage", () => {
     expect(toMetricWindow("7d")).toBe("7d");
     expect(toMetricWindow("24h")).toBe("1d");
-    expect(toMetricWindow("bogus")).toBe("1d");
-    expect(toMetricWindow(undefined)).toBe("1d");
+    // Garbage and absence land on the default — asserted against the constant,
+    // so changing the default stays a one-line edit rather than a test hunt.
+    expect(toMetricWindow("bogus")).toBe(DEFAULT_WINDOW);
+    expect(toMetricWindow(undefined)).toBe(DEFAULT_WINDOW);
+  });
+
+  it("the default window is 30 minutes", () => {
+    // Pinned on its own: what the dashboard opens on is a product decision, so
+    // changing it should be a deliberate edit here, not a silent side effect.
+    expect(DEFAULT_WINDOW).toBe("30m");
+    expect(WINDOWS[DEFAULT_WINDOW].rangeSeconds).toBe(1800);
   });
 });
 
@@ -392,5 +412,48 @@ describe("health / lag / score / gauge builders", () => {
     expect(qPresence("smartrouter_retries_total")).toBe(
       'count({__name__="smartrouter_retries_total"})',
     );
+  });
+});
+
+describe("block tips", () => {
+  it("block rate reads the per-endpoint gauge, not the coarse router one", () => {
+    expect(qBlockRateBySpec()).toBe(
+      "max by (spec) (deriv(rpc_endpoint_latest_block[15m]))",
+    );
+    expect(qBlockRateBySpec("ETH1")).toContain('rpc_endpoint_latest_block{spec="ETH1"}');
+  });
+
+  it("best tip is the chain's highest upstream block", () => {
+    expect(qBestTipBySpec()).toBe("max by (spec) (rpc_endpoint_latest_block)");
+  });
+
+  it("router tips split by the scope label AND the interface", () => {
+    expect(qRouterTips("service")).toBe(
+      "max by (service, spec, apiInterface) (smartrouter_latest_block)",
+    );
+  });
+
+  it("router tips degrade to the interface split when the label is unusable", () => {
+    // An injected label must never produce a query Prometheus rejects.
+    expect(qRouterTips("bad-label!")).toBe(
+      "max by (spec, apiInterface) (smartrouter_latest_block)",
+    );
+    expect(qRouterTips()).toBe("max by (spec, apiInterface) (smartrouter_latest_block)");
+  });
+
+  it("upstream tips keep the interface split a per-endpoint roll-up loses", () => {
+    expect(qUpstreamTips()).toBe(
+      "max by (spec, endpoint_id, apiInterface) (rpc_endpoint_latest_block)",
+    );
+  });
+
+  it("router refresh cadence comes from the router gauge's own changes", () => {
+    expect(qRouterTipChanges("service")).toBe(
+      "max by (service, spec, apiInterface) (changes(smartrouter_latest_block[15m]))",
+    );
+  });
+
+  it("tip changes count over the staleness window", () => {
+    expect(qTipChanges()).toBe("changes(rpc_endpoint_latest_block[15m])");
   });
 });

@@ -71,13 +71,22 @@ paths/ports via Makefile/compose vars (`ROUTER_DIR`, `SR_CONFIG_HOST`,
        │ GET /api/config           │ reads               ┌─────┴──────┐
        │ (runtime api url)         └─ values file ──────▶│ smart-router│
        └─ browser POSTs to router :3360 (Live test)      │ (profile)  │
-                                                          └────────────┘
+                                                          └─────┬──────┘
+                        POST /api/upstreams/relay               │
+       api ─────────────────────────────────────────────▶ upstream RPC
+       (Try-me "Direct to upstream" — router left out)     (vendor endpoint)
 ```
+
+The api's one **outbound** path besides Prometheus is that relay: the Try-me
+drawer's "Direct to upstream" mode. The browser can't make that call itself —
+node urls are masked to scheme+host before they leave the api, because that is
+where API keys live — so the api dials the upstream and hands back only the
+answer. See [`docs/UPSTREAM-DIRECT-TEST.md`](docs/UPSTREAM-DIRECT-TEST.md).
 
 **ONE values file drives both the router and the dashboard** (the v1 pattern):
 `SR_CONFIG_HOST` (default `./dev-config/values.yml`) is mounted as the router's
-config **and** as the api's helm-values, so the Endpoints/Providers pages always
-reflect the running topology with no duplicated config.
+config **and** as the api's helm-values, so the Upstreams page always
+reflects the running topology with no duplicated config.
 
 ## Monorepo layout
 
@@ -86,6 +95,8 @@ packages/shared/          @sr/shared — domain types, metric catalog, PromQL bu
   src/
     constants/metrics.ts   GROUND-TRUTH metric names + OPTIONAL_METRICS (see "Metrics")
     constants/chains.ts     buildChainMetaByIndex(spec) — keyed by Lava spec index
+    constants/explorers.ts  explorersFor / explorerUrl — the chain's block
+                            explorer + deep links (docs/CHAINS.md)
     constants/windows.ts    WINDOWS — 13-window catalog (5m..30d) → PromQL range + step
     promql/builders.ts      typed query builders shared by api (+ docs)
     types/domain.ts         OverviewData, DashboardData, HeroSummary, ChainSeries,
@@ -99,20 +110,23 @@ apps/api/                 @sr/api — Fastify 5 (:8000)
     config.ts           single source of truth for env defaults
 apps/web/                 @sr/web — Next.js 16 App Router (:3000)
   src/
-    app/(app)/          overview · dashboard · providers · endpoints · metrics ·
-                        live-test · team · account (Shell layout)
+    app/(app)/          overview · dashboard · upstreams · metrics ·
+                        team · account (Shell layout)
     app/standalone/     chrome-less Metrics page (sharing/embedding)
     app/api/config/     runtime-config route (DASHBOARD_API_URL → browser)
     components/
       gateway/          Shell · Sidebar/Topbar · RouterHeader · FiltersProvider ·
-                        WindowSelector · charts · SortTable · SideSheet · icons
+                        WindowSelect · ChainSelect · RouterFilterSelect ·
+                        HealthTag · charts · SortTable · SideSheet · icons
       overview/         OverviewView (KPI strip + 2×2 chart grid)
       dashboard/        DashHeader · OverviewTab · MetricsTab · TroubleDetail · …
       metrics/          MetricsView (4 tabs) · HeroPanel · RouterOverview ·
                         ChainDetail · ErrorsBreakdown ·
                         CrossValidation · WebSocketPanel · provider/ (PM* deep-dive)
-      providers/        ProvidersView · Add/Edit sheets · TestModal · catalog
-      endpoints/        EndpointsView · detail/create sheets
+      upstreams/        UpstreamsView (3 groupings) · RouterGroups ·
+                        Add/Edit sheets · TestModal · catalog
+      endpoints/        endpoint row model + IfaceTag + detail sheet — the
+                        bits the "By router" grouping renders
       team/             InviteModal · ChangeRoleModal · bits
     hooks/use-api.ts    SWR wrapper (15s poll default)
     lib/api-client.ts   base URL resolved ONCE per session from /api/config
@@ -154,6 +168,22 @@ no redeploy.
 Chains are keyed by **Lava spec index** (the `spec` label: `ETH1`, `BASE`, …),
 not a human chain id — resolve display metadata via `buildChainMetaByIndex`.
 
+### Resyncing chains with lava-specs
+
+Three committed files are generated from the lava-specs repo — the chain map,
+the Try-it method catalog, and the roll-call of surfaces with no runnable
+default (`apps/web/scripts/data/no-runnable-defaults.generated.json`). CI's
+**Chain catalogs ↔ lava-specs drift** job regenerates all three and fails when
+any is stale, so a resync means running both generators and committing the
+result, never hand-editing.
+
+The part that needs judgement is what happens after: the Try-it drawer opens
+only on commands that can be sent AS-IS, so a chain family nobody has curated
+hints for arrives with an empty default list. **Read
+[`.claude/rules/chain-resync.md`](.claude/rules/chain-resync.md) before doing a
+resync** — it covers the procedure, when hints are needed, and the rule that a
+curated example must be fired against a real endpoint before it ships.
+
 ## Config passing (values file — BOTH formats)
 
 The router's own config yaml is bind-mounted into the api at
@@ -180,7 +210,7 @@ provider URLs routinely embed API keys in the path.
 ### Endpoint addresses (`publicUrls` vs. `localPorts`)
 
 An endpoint's dialable address depends on which format is mounted, and the
-Endpoints / Upstreams / Try-me surfaces resolve it in this order — **public
+Upstreams / Try-me surfaces resolve it in this order — **public
 gateway URL → local listen port → nothing** (`"—"`, never a fabricated host):
 
 - **Helm values** describe a k8s deployment with no listen ports at all, so
@@ -203,12 +233,45 @@ serves the HTTP/1.1 upgrade on the interface's own hostname.
 
 **Several routers may serve one chain** (a staging + production pair on the
 same `network`, distinguished by `id` / `custom_url_prefix`). Topology handles
-that natively — separate cards, separate hostnames, and the Endpoints card
-header appends the router id whenever a spec is duplicated. Metrics need the
+that natively — separate cards, separate hostnames, and the router-grouped
+card header appends the router id whenever a spec is duplicated. Metrics need the
 router scope below, because the router labels its series with the chain, not
 with itself.
 
-### Router scope (`?router=`)
+### Two router axes (`?router=` vs. `?routerId=`)
+
+"Router" means two things here, and the UI has one control for both:
+
+| | `?router=` (scope) | `?routerId=` (config) |
+|---|---|---|
+| Identity | a value of `ROUTER_SCOPE_LABEL` — the collector's per-target label | an `id` from `GET /api/config/routers` |
+| Comes from | Prometheus target labels | the mounted values file |
+| Narrows | the PromQL, so **chain-level** series split per router | **rows** — which upstreams a response lists |
+| Available | only when the collector labels targets per router (often not) | always, whenever a values file is mounted |
+| Read by | every `/api/metrics/*` route | `/api/metrics/{upstreams,errors,block-heights}` |
+
+Anything keyed per UPSTREAM can be attributed, because the config says which
+router declares a node: the roster (`routerIds` on `UpstreamMetrics` — a LIST,
+since two routers declaring one node name share one series, which the UI marks
+rather than splitting) and the error hotspots (`?routerId=` on
+`/api/metrics/errors`, which filters the (chain × upstream) pairs and leaves the
+pivots alone) and the upstream tips on `/api/metrics/block-heights`. Anything
+that aggregates BY CHAIN can't be: no series says which router served a request
+— `smartrouter_latest_block` included, which is why that endpoint's `routers`
+rows can only ever be split by the scope axis. So a router selection also sets the chain — a config
+router serves exactly one — which narrows those panels as far as the data
+honestly allows, and the UI states that a second router on the same chain is
+counted in with it.
+
+Web side, `useRouterFilter()` (`hooks/use-router-options.ts`) is the only place
+a router selection is made: it sets the config id and, when that router maps to
+a scrape target the collector actually reports, the scope too. The list is
+narrowed by the chain filter, and `useChainFilter()` clears a router the new
+chain excludes — the pair stays consistent without an effect watching for it.
+`<RouterFilterSelect>` renders it next to `<ChainSelect>`, and hides itself only
+when the deployment has fewer than two routers at all.
+
+#### The scope label
 
 `smartrouter_*` carries `spec` (the chain) and no router identity, so two
 routers on one chain sum into a single set of numbers. What *does* separate
@@ -221,8 +284,8 @@ value is the router's Service name (`<router-id-lowered>-router`).
 - **`GET /api/metrics/routers`** → `{ label, routers[] }` — the distinct
   values actually present. Empty means the collector attaches no such label
   (one static target, or a mislabelled `ROUTER_SCOPE_LABEL`): "can't split",
-  never "no routers". The web's `<RouterSelect>` hides itself below two
-  values — a filter that can't change anything is worse than none.
+  never "no routers" — the config still knows the routers, which is why the
+  filter is built on the config list and treats a scrape value as a bonus.
 - **Every `/api/metrics/*` route takes `?router=<value>`**, including the raw
   `/query` passthrough. An absent or malformed value reads cluster-wide
   rather than silently becoming a different query.
@@ -235,10 +298,36 @@ value is the router's Service name (`<router-id-lowered>-router`).
   separate sidecar shared by every router, so it carries no router's label
   and scoping it would report a zeroed cache rather than an unattributable
   one.
-- Web side: the scope lives in `FiltersProvider` next to the time window
-  (persisted as `sr:router`), and every metrics URL appends `scopeQ` /
+- Web side: the scope lives in `FiltersProvider` next to the chain and the time
+  window, in two lifetimes — **the window persists** (`sr:window`, a viewing
+  preference), **the chain and the router belong to the page** that set them
+  (in-memory, stamped with the pathname, gone when you navigate — a narrowing
+  that outlives its screen is a trap). Every metrics URL appends `scopeQ` /
   `withScope(url)`. A selection that disappears from the list resets to "All
   routers" instead of silently filtering every panel to nothing.
+
+### Shared filters and the health vocabulary
+
+Two things every chain- or health-aware surface must go through, so the same
+state can't be worded or sourced two ways:
+
+- **`useChainOptions()`** (`hooks/use-chain-options.ts`) is the chain picker's
+  only list: the UNION of the chains the mounted config declares and the chains
+  the metrics report traffic for, each row flagged `inConfig` / `hasTraffic`. A
+  page dims what it can't populate via `withMutedRows` (Metrics greys "no
+  traffic yet", Upstreams greys "not in config") rather than hiding it, which
+  would read as "not configured". The selection itself is `chain` on
+  `FiltersProvider`, never page state.
+- **`useRouterFilter()`** (`hooks/use-router-options.ts`) is the router
+  filter's only entry point — one selection, both router axes (see "Two router
+  axes"), chain-narrowed list, `routerId` on `FiltersProvider` (`sr:routerId`).
+- **`lib/health.ts`** owns the words and colours for `HealthState`
+  (`operational | unhealthy | unknown`) — **Operational / Unhealthy / —** — and
+  `<HealthTag>` / `<HealthDot>` are how they reach the screen. `unknown` means
+  "no metrics in this window", never "down", so it renders neutral. Nothing
+  invents its own health vocabulary: four surfaces used to (the roster said
+  "healthy / degraded", the deep-dive "Live · up", the drawer the raw wire
+  word), and one upstream read three different ways depending on the panel.
 
 ### Deploying to Kubernetes
 
@@ -259,7 +348,7 @@ A Kubernetes deployment runs the api as the `…/backend` image and the web as
 (`5m 15m 30m 1h 3h 6h 12h 1d 3d 7d 14d 21d 30d`), each with a PromQL range and
 a step targeting ~150–200 range points (clamped to ≥15s, the scrape interval).
 Every `window=` query param accepts those keys **plus the `24h` alias (= `1d`)**;
-anything else falls back to the default `1d`. The page-level `<select>` shows
+anything else falls back to the default `30m`. The page-level `<select>` shows
 the design's 12 options (`WINDOW_OPTIONS` — everything except `1h`, which the
 Dashboard page's chip row uses internally).
 
@@ -295,8 +384,10 @@ Every `/api/metrics/*` route also accepts **`router?`** — the router scope
 | `GET /api/metrics/dashboard-summary` | `window` | `HeroSummary` — the six hero cards as `Kpi` `{value, prior}` pairs (`requestsServed`, `successRate`, `effectiveReadP95Ms`, `staleCaught`, `retriesRecovered`, `cacheOffloadPct`) + `providerCount` / `chainCount` / `health` + **`emitted: {retries, cache}`** |
 | `GET /api/metrics/overview` | `window`, `spec?` | `OverviewData` — KPI pairs (requests, RPS, errors, success rate, p50/p95/p99), `errorRate`, `health`, throughput/errors series, `latencySeries` (p50/p95/p99 toggle), **`latencyDistribution`** (histogram buckets), **`perProviderSeries`**, **`errorLayers`** (single `unclassified` layer until labelled counters exist), `perChainLatency`, `activeRoutes`, `perChainSeries`; `computeUnits`/`rpsCap` always null |
 | `GET /api/metrics/dashboard` | `window`, `spec?` | `DashboardData` — the Dashboard page (both tabs) in one round-trip: `kpis` (successRate, p95Ms, errors, rps, errorsHandled=null), `series` (throughput, errors, errorRate, successRate, latency p50/95/99, perChain, perChainSuccessRate, perChainLatency, providerMix, perProviderLatencyP95), `chains` (multiselect options — the series filter is client-side; `spec` accepted for symmetry). Unbacked families (`scu`, `regions`, `failoverRatio`, `internalAvailability`, `cacheHitRate`, `errorClasses`, `errorsHandledBreakdown`, `contribution`, `providerAvailability`, `scorecard`) are `null`, `trouble` is `[]` |
+| `GET /api/metrics/routers-rollup` | `window` | `{ routers: RouterMetrics[] }` — **the Routers table: one row per CONFIG router**, not per chain. `ChainMetrics` plus `routerId`, `upstreamCount` (from the values file, so always the router's own) and `attribution`: `own` when the collector reports a target label for it (the chain-level numbers were re-read through that label) or when it is alone on its chain, `shared` otherwise — in which case `sharedWith` names the siblings reading the same series, and the rows deliberately carry identical figures. Falls back to one row per chain when no values file is mounted |
 | `GET /api/metrics/chains` | `window` | `{ chains: ChainMetrics[] }` — per-chain rollup (requests, availability, errorRate, p95, composite QoS, health, latestBlock, providerCount) for the Routers table |
-| `GET /api/metrics/providers` | `window`, `spec?` | `{ providers: ProviderMetrics[] }` — roster with requests, uptime, p95, **errorRate**, selection scores, health, latestBlock, **blockLag**, **role** (`primary`/`backup` from helm `is_backup`; null for SR_CONFIG), **apiInterface**, inFlight |
+| `GET /api/metrics/upstreams` | `window`, `spec?`, **`routerId?`** | `{ upstreams: UpstreamMetrics[] }` — roster with requests, uptime, p95, **errorRate**, selection scores, health, latestBlock, **blockLag**, **`behindSec`** (that lag ÷ the chain's block rate — the comparable form) + **`stale`** (tip frozen 15m while the chain produced blocks), **role** (`primary`/`backup` from helm `is_backup`; null for SR_CONFIG), **apiInterface**, inFlight, **`routerIds`** (the config routers declaring the upstream — several when they share a node name). `routerId` keeps only one router's rows; it filters against the values file and does NOT narrow the PromQL (that's `router` — see "Two router axes") |
+| `GET /api/metrics/block-heights` | `spec?`, `router?`, **`routerId?`** | `BlockHeights` — `{ routerLabel, chains: ChainTips[] }`. Per chain: `blocksPerSec` (from `deriv` on the endpoint gauge), `bestBlock` (highest upstream tip — the reference), `routers[]` (`smartrouter_latest_block` per scope value × api interface, each with `behindBlocks` / `behindSec` / **`refreshSec`**) and `upstreams[]` (`rpc_endpoint_latest_block` per endpoint × interface, with `stale`). **Instant only** — gauges, so no `window`. Lags are given in seconds as well as blocks because a block count isn't comparable across chains. ⚠ The router gauge advances on accepted tip observations, not every poll, so it trails by ~one `refreshSec` however healthy the router is; judge it against that cadence, never a wall-clock threshold |
 | `GET /api/metrics/rps` | `window`, `spec?` | `TimeSeries` — `{ label, points: {t, v}[] }` |
 | `GET /api/metrics/traffic` | `window` | Aggregate `rpsNow` + series + per-chain rows (`rpsNow`, `requests`, `share`, `trend` sparkline). **No web consumer** — the Traffic tab's RPS card was removed in MAG-2448; kept as a documented read surface |
 | `GET /api/metrics/methods` | `window`, `spec?` | `{ methods: MethodUsage[], classTotals: MethodClassTotals }` — per-method CLIENT requests/class/errorRate + **real `p95Ms`** (the histogram's method label is named `function`); classTotals: `read` real, `write`/`batch` null + `emitted` flags, `unclassified` remainder |
@@ -307,7 +398,8 @@ Every `/api/metrics/*` route also accepts **`router?`** — the router scope
 | `GET /api/metrics/cross-validation` | `window` | `CrossValidationReport` — `emitted:false` + nulls until `cross_validation_*` fires; **`consistency` (total/caught) is real either way**, but **no web consumer** since MAG-2527 removed the strip that rendered it (consistency checks are head-freshness verification, not cross-validation). `caught` still surfaces as the hero's `staleCaught` |
 | `GET /api/metrics/websocket` | `window` | `WebSocketReport` — `emitted:false` + nulls until `ws_*` fires (first subscription) |
 | `GET /api/metrics/query` | **`query`** (required) | Raw **instant** PromQL passthrough — `{ result }`. 400 without `query` |
-| `GET /api/config/routers` | — | `{ routers: RouterTopology[] }` — live topology from the mounted values file (either format), node URLs masked to scheme+host |
+| `GET /api/config/routers` | — | `{ routers: RouterTopology[] }` — live topology from the mounted values file (either format), node URLs masked to scheme+host. Each endpoint also carries `index` (the handle the relay below resolves) + `directable` |
+| `POST /api/upstreams/relay` | body: `{routerId, node, endpointIndex, transport?, httpMethod?, path?, body?}` | Fires ONE request straight at a configured upstream, router excluded — `{httpStatus, latencyMs, body, truncated, transport}`. The target is resolved from the values file, never taken from the caller; the resolved url is never returned and is scrubbed out of the upstream's own body. Upstream 4xx/5xx come back **200** with their status inside; 502/504 mean our hop failed. Off with `UPSTREAM_RELAY_ENABLED=false`. See [`docs/UPSTREAM-DIRECT-TEST.md`](docs/UPSTREAM-DIRECT-TEST.md) |
 
 ## Environment variables
 
@@ -324,6 +416,10 @@ API (`apps/api/src/config.ts` is the source of truth):
 | `RATE_LIMIT_MAX` | `300` | per IP per minute |
 | `TRUST_PROXY` | `1` | how far `X-Forwarded-For` is believed when deriving `request.ip` (hop count, proxy IP/CIDR list, or `false`). Not `true` — this api is public, and trusting every hop lets any caller choose their apparent address |
 | `HELM_VALUES_DIR` | `/app/helm-values` | reads `<dir>/core/values.yml` (either format) |
+| `UPSTREAM_RELAY_ENABLED` | `true` | `false` 404s `POST /api/upstreams/relay`. With `AUTH_MODE=disabled` anyone who can reach the api can spend the operator's upstream quota through it, using credentials only the api holds — turn it off where that isn't acceptable |
+| `UPSTREAM_RELAY_TIMEOUT_MS` | `10000` | deadline on the api→upstream call |
+| `UPSTREAM_RELAY_MAX_BODY_BYTES` | `262144` | upstream responses past this come back `truncated: true` |
+| `UPSTREAM_RELAY_RATE_LIMIT_MAX` | `20` | per IP per minute, tighter than `RATE_LIMIT_MAX` |
 | `LOG_LEVEL` | `info` | |
 | `TENANT_ID` | `default` | parsed, reserved — not read by any route yet |
 | `GIT_COMMIT` / `APP_VERSION` | `unknown` / `0.0.0` | surfaced by `/version` |
@@ -406,7 +502,8 @@ Compose / Makefile knobs:
 | ESM `.js` suffixes | `apps/api` + `packages/shared` use Node16 resolution — relative imports need `.js` suffixes even though source is `.ts`. `apps/web` uses bundler resolution (no suffixes). |
 | shared `dist` | api/web read `@sr/shared` from `dist/` — run `pnpm --filter @sr/shared build` after editing it (the docker dev `builder` service does this on a `tsc --watch`). |
 | Metric names | NOT `lava_rpcsmartrouter_*` — see Metrics above. The `../SR_Dashboard/` prototype is authoritative for **pixels**, not for metric names. |
-| Window params | `24h` is a wire alias of `1d`; unknown values silently fall back to `1d` (never a 400). `1h` is in the catalog but not in the page-level select. |
+| Window params | `24h` is a wire alias of `1d`; unknown values silently fall back to `DEFAULT_WINDOW` = `30m` (never a 400). The web opens on the same constant, and a window the user picks persists to `localStorage` under `sr:window` — so a changed default only reaches someone who has never picked one. `1h` is in the catalog but not in the page-level select. |
 | Provider `role` | Only the helm values format marks backups (`is_backup`); with a raw SR_CONFIG mount, `role` is null and backup-share panels stay empty — that's honest, not a bug. |
 | Endpoint URLs | `localhost:<port>` comes from SR_CONFIG's listen ports, gateway hostnames from helm values' `publicUrls` — a mount never has both. Anything that renders or dials an endpoint address must resolve public → local → `—` (`epHttpUrl` / `epWsUrl` in `components/endpoints/bits.tsx`), never hardcode `localhost`. |
+| Health words | `HealthState` has exactly three states and exactly one wording — `lib/health.ts` / `<HealthTag>`. A panel that maps health to its own labels/colours is a bug, even when the words look nicer locally: the same upstream is read across panels. |
 | BuildKit cache | `make build*` targets use the isolated `srdash-builder` (see Docker / images / isolation). Plain `docker compose up --build` is fine for the stack itself. |

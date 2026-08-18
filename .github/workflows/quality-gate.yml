@@ -45,7 +45,7 @@ jobs:
         run: pnpm -r test
 
   spec-drift:
-    name: Chain map ↔ lava-specs drift
+    name: Chain catalogs ↔ lava-specs drift
     runs-on: ubuntu-latest
     # Only meaningful when the base is `main`. A `pull_request` job runs against
     # head-merged-into-base, so on a stacked PR the base is a feature branch and
@@ -62,12 +62,13 @@ jobs:
         with:
           node-version: 24
 
-      # Regenerate the chain map from the live Magma-Devs/lava-specs repo and
-      # fail if it differs from the committed file — i.e. upstream added a
-      # chain / renamed one / changed its interfaces and the dashboard is
-      # stale. Network/API failures soft-skip so upstream flakiness can't block
-      # a merge. GITHUB_TOKEN raises the GitHub API rate limit.
-      - name: Check chain-map is in sync with lava-specs
+      # Regenerate the chain map, the Try-it method catalog and the
+      # runnable-defaults roll-call from the live Magma-Devs/lava-specs repo,
+      # and fail if any differs from the committed copy — i.e. upstream added a
+      # chain / renamed one / changed its interfaces or methods and the
+      # dashboard is stale. Network/API failures soft-skip so upstream
+      # flakiness can't block a merge. GITHUB_TOKEN raises the API rate limit.
+      - name: Check the committed catalogs are in sync with lava-specs
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: node apps/web/scripts/check-chain-map.mjs
+        run: node apps/web/scripts/check-spec-sync.mjs
