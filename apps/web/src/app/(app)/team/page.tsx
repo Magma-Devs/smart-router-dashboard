@@ -11,7 +11,7 @@
 
 import { useState } from "react";
 import useSWR from "swr";
-import { apiGet, apiDownload, apiSend } from "@/lib/api-client";
+import { ApiError, apiGet, apiDownload, apiSend } from "@/lib/api-client";
 import { roleAtLeast, type Role } from "@sr/shared";
 import { getAuthState } from "@/lib/auth-store";
 import { InitialsAvatar, RoleBadge, relativeTime, shortDate } from "@/components/team/bits";
@@ -62,6 +62,11 @@ export default function TeamPage() {
   const me = getAuthState().user;
   const isAdmin = roleAtLeast(me?.role, "admin");
   const invites = useSWR<InvitesResponse>(isAdmin ? "/api/team/invites" : null, apiGet);
+
+  // SWR reports the thrown ApiError; 401 is the one worth wording differently,
+  // because "sign in again" is actionable and "request failed" is not.
+  const membersError = members.error as ApiError | undefined;
+  const sessionExpired = membersError?.statusCode === 401;
 
   async function inviteAction(id: string, action: "resend" | "revoke") {
     setBusyInvite(id);
@@ -153,7 +158,33 @@ export default function TeamPage() {
         ))}
       </div>
 
-      {tab === "members" && (
+      {/* A failed read must not look like an empty team.
+       *
+       * This table used to render its headers and nothing else whenever the
+       * fetch failed, which is indistinguishable from "you are the only
+       * member" — and on the one page whose whole job is answering "who still
+       * has access", the wrong answer is the dangerous one. A 401 here means
+       * the session is no longer usable, which the shell can't show because it
+       * reads the signed-in user from a store filled at page load. */}
+      {tab === "members" && membersError && (
+        <div className="gw-card" style={{ padding: "18px 20px" }}>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
+            {sessionExpired ? "Your session is no longer valid" : "Could not load the member list"}
+          </div>
+          <div style={{ fontSize: 12.5, color: "var(--text-2)", lineHeight: 1.6 }}>
+            {sessionExpired ? (
+              <>
+                Sign out and sign in again — the api refused this session. Nothing about the team
+                has changed; this page simply cannot read it.
+              </>
+            ) : (
+              membersError.message
+            )}
+          </div>
+        </div>
+      )}
+
+      {tab === "members" && !membersError && (
         <div className="gw-card" style={{ padding: 0, overflow: "hidden" }}>
           <table className="gw-table">
             <thead>
