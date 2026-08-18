@@ -5,6 +5,26 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.18.3]
+
+### Fixed
+
+- **The Try-it catalog kept one internal path per interface and dropped the
+  rest, without saying so.** `pickPath()` preferred `""` and otherwise took the
+  path with the most methods, so every other path vanished with no roll-call
+  entry. AVAX had been missing its `/P` and `/X` methods on those grounds since
+  it was added; TON made it visible, losing all 22 `/v3` methods the moment its
+  `""` path went away.
+
+  Every internal path is emitted now. REST identifiers are recomposed as
+  internal path + api name (`/v2/getMasterchainInfo`) — the path a client sends
+  through the router, which owns internal-path routing — so the two names TON
+  repeats across v2 and v3 (`/estimateFee`, `/runGetMethod`) stop colliding.
+  JSON-RPC names are left alone: the router resolves those by method name, so
+  AVAX's `platform.*` and `avax.*` need no prefix.
+
+  TON goes back to 51 methods, AVAX from 70 to 103.
+
 ## [0.18.2]
 
 ### Fixed
