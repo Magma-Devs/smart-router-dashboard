@@ -65,14 +65,30 @@ is committed so the gap is a reviewed decision rather than an accident.
    chain another chain's explorer — Astar Shibuya wore Japan Open Chain's, and
    Hyperliquid wore Wanchain Testnet's, until the overlay corrected both.
 
-4. **Anything else is curated**, in
+4. **Start from the chain's own docs, not from the registry order.** A
+   registry lists whoever registered; a chain's documentation names who it
+   considers official. `cosmos/chain-registry` lists eleven Lava explorers, all
+   validator-run, and taking the first two gave the dashboard two dead links —
+   `explorer.finteh.org/lava` unreachable, and `lava.explorers.guru` bouncing
+   to `explorers.guru`, whose catalog does not carry Lava at all.
+   [docs.lavanet.xyz/block-explorer](https://docs.lavanet.xyz/block-explorer/)
+   was what led to the explorer that actually works. Look for a
+   `docs.<chain>` / `<chain>.org/docs` page named "block explorer",
+   "explorers" or "tools" before curating anything.
+
+   Treat that page as a lead, not as truth: the same Lava page designates as
+   **"official"** the very explorer that has since been retired. Whatever it
+   names, open it and watch it render.
+
+5. **Anything else is curated**, in
    `apps/web/scripts/data/explorer-overlay.json`. Open the deep link in a
    browser before you write a `kind` down, and record what you did in
-   `verified`. `probe-explorers.mjs` proves the host is up and the route
-   exists; it cannot prove the page rendered the block you asked for, because
-   most explorers answer 200 for any path under their router.
+   `verified` — including which source named it. `probe-explorers.mjs` proves
+   the host is up and the route exists; it cannot prove the page rendered the
+   block you asked for, because most explorers answer 200 for any path under
+   their router.
 
-5. **A shape you cannot check is not a shape you invent.** Use `home` and the
+6. **A shape you cannot check is not a shape you invent.** Use `home` and the
    entry offers only the explorer's front page — honest, and still useful. The
    catalog links a block HEIGHT and nothing else, so an explorer whose block
    page is addressed by hash is `home`-only. `explorerBlockUrl()` returning
@@ -80,7 +96,7 @@ is committed so the gap is a reviewed decision rather than an accident.
    Watch the page render the height you asked for: a 200 proves nothing, since
    these are single-page apps that answer 200 for any path under their router.
 
-6. **Accepting a gap is allowed**, and is recorded the same way as everything
+7. **Accepting a gap is allowed**, and is recorded the same way as everything
    else: `"CANTON": { "none": "Canton's network is permissioned — no public
    block explorer" }`. Commit the roll-call file with the entry in it; the diff
    records the decision.
