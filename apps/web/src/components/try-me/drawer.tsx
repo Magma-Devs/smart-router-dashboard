@@ -23,8 +23,6 @@ import {
 import {
   directAvailableFor,
   relayPayloadFor,
-  withUpstreamPlaceholder,
-  UPSTREAM_URL_PLACEHOLDER,
   type DirectTarget,
 } from "./direct-request";
 import {
@@ -754,12 +752,15 @@ export function TryMeDrawer({
 
   const snippets = useMemo<Snippets | null>(() => {
     if (!resolved) return null;
-    // Direct-mode snippets must not print a dialable url — the real one is a
-    // secret the api holds. They ask the reader to supply it instead, and
-    // drop the pin header (there is no router to instruct).
-    if (onDirect) return snippetsFor(withUpstreamPlaceholder(resolved, endpointUrl));
+    // Direct mode prints no snippets. The browser never holds the upstream's
+    // real url — the api masks it to scheme+host, because that is where API
+    // keys live — so the only command this could offer names a placeholder
+    // the reader has to resolve out of the mounted values file first, and
+    // once they have opened that file they no longer need the snippet. The
+    // Code section belongs to the router path, which IS dialable.
+    if (onDirect) return null;
     return snippetsFor(resolved, selectUpstream);
-  }, [resolved, selectUpstream, onDirect, endpointUrl]);
+  }, [resolved, selectUpstream, onDirect]);
 
   const applyOutcome = useCallback((o: Outcome, via: Via) => {
     setLatencyMs(o.latencyMs);
@@ -1666,17 +1667,6 @@ export function TryMeDrawer({
           {snippets && (
             <div>
               <div style={SECTION_LABEL}>Code</div>
-              {onDirect && (
-                <div style={{ ...INFO_BANNER, marginBottom: 10 }}>
-                  <IconInfo size={13} style={{ flexShrink: 0, marginTop: 1 }} />
-                  <span>
-                    <span className="gw-mono">{UPSTREAM_URL_PLACEHOLDER}</span> stands in for{" "}
-                    <span className="gw-mono">{directHost ?? "the upstream"}/…</span> — the full url lives in
-                    the mounted values file and may carry an API key, so the dashboard never puts it in a
-                    copyable command.
-                  </span>
-                </div>
-              )}
               <Tabs tabs={CODE_TABS} active={codeTab} setActive={setCodeTab} />
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 {blocksForTab(snippets, codeTab).map((block, i) => (

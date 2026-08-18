@@ -35,9 +35,6 @@ export type RelayPayloadResult =
   | { ok: true; payload: UpstreamRelayRequest }
   | { ok: false; error: string };
 
-/** Placeholder the direct-mode code snippets use in place of the real url. */
-export const UPSTREAM_URL_PLACEHOLDER = "$UPSTREAM_URL";
-
 export function relayPayloadFor(args: {
   resolved: ResolvedRequest;
   /** Raw params textarea — for REST it IS the path, which the relay appends
@@ -66,7 +63,7 @@ export function relayPayloadFor(args: {
   }
 
   if (resolved.transport !== "http") {
-    return { ok: false, error: "The relay can't dial gRPC upstreams — use the snippet below." };
+    return { ok: false, error: "The relay can't dial gRPC upstreams." };
   }
   if (target.httpIndex === null) {
     return { ok: false, error: "This upstream has no HTTP url in the values file." };
@@ -84,23 +81,6 @@ export function relayPayloadFor(args: {
       ...(resolved.body !== null ? { body: resolved.body } : {}),
     },
   };
-}
-
-/**
- * Rewrite a resolved request so its snippets read `$UPSTREAM_URL` instead of
- * the router address. A direct-mode snippet must NOT print a dialable url:
- * the real one is a secret the dashboard deliberately never sends to the
- * browser, so the copyable command asks the reader to supply it.
- */
-export function withUpstreamPlaceholder(
-  resolved: ResolvedRequest,
-  routerBaseUrl: string,
-): ResolvedRequest {
-  const base = routerBaseUrl.endsWith("/") ? routerBaseUrl.slice(0, -1) : routerBaseUrl;
-  const url = resolved.url.startsWith(base)
-    ? UPSTREAM_URL_PLACEHOLDER + resolved.url.slice(base.length)
-    : UPSTREAM_URL_PLACEHOLDER;
-  return { ...resolved, url };
 }
 
 /** Whether a direct call is possible for the transport currently selected. */

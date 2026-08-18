@@ -2,8 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   directAvailableFor,
   relayPayloadFor,
-  withUpstreamPlaceholder,
-  UPSTREAM_URL_PLACEHOLDER,
   type DirectTarget,
 } from "../direct-request";
 import type { ResolvedHttp, ResolvedWs, ResolvedGrpc } from "../build-request";
@@ -105,22 +103,6 @@ describe("relayPayloadFor", () => {
   it("refuses gRPC — the relay has no gRPC client", () => {
     const out = relayPayloadFor({ resolved: GRPC, paramsText: "{}", iface: "grpc", target: TARGET });
     expect(out.ok).toBe(false);
-  });
-});
-
-describe("withUpstreamPlaceholder", () => {
-  it("replaces the router address so no snippet prints a dialable upstream url", () => {
-    const out = withUpstreamPlaceholder(POST, "http://localhost:3360");
-    expect(out.url).toBe(UPSTREAM_URL_PLACEHOLDER);
-  });
-
-  it("keeps the REST path after the placeholder", () => {
-    const out = withUpstreamPlaceholder(GET, "http://localhost:3364");
-    expect(out.url).toBe(`${UPSTREAM_URL_PLACEHOLDER}/cosmos/base/tendermint/v1beta1/blocks/latest`);
-  });
-
-  it("falls back to the bare placeholder when the base doesn't match", () => {
-    expect(withUpstreamPlaceholder(POST, "http://elsewhere:9999").url).toBe(UPSTREAM_URL_PLACEHOLDER);
   });
 });
 
