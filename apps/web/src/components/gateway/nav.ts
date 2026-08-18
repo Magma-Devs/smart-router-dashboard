@@ -1,10 +1,5 @@
 import type { ComponentType } from "react";
-import {
-  IconChart,
-  IconServer,
-  IconSettings,
-  IconUsers,
-} from "./icons";
+import { IconChart, IconLedger, IconServer, IconSettings, IconUsers } from "./icons";
 
 export interface NavItem {
   href: string;
@@ -34,6 +29,9 @@ export const NAV_SECTIONS: NavSection[] = [
     label: "Account",
     items: [
       { href: "/team", label: "Team", icon: IconUsers },
+      // Everyone's, not just an admin's — the audit log is readable by every
+      // role, which is why it sits beside Team rather than inside it.
+      { href: "/audit", label: "Audit log", icon: IconLedger },
       { href: "/account", label: "Account", icon: IconSettings },
     ],
   },

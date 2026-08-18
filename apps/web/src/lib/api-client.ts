@@ -5,8 +5,7 @@
  * lets a single published web image point at any api host.
  */
 const BUILD_BASE =
-  process.env.NEXT_PUBLIC_API_URL ??
-  (typeof window !== "undefined" ? "" : "http://localhost:8000");
+  process.env.NEXT_PUBLIC_API_URL ?? (typeof window !== "undefined" ? "" : "http://localhost:8000");
 
 interface RuntimeConfig {
   base: string;
@@ -33,6 +32,20 @@ function resolveConfig(): Promise<RuntimeConfig> {
       .catch(() => ({ base: BUILD_BASE, authMode: "disabled" as const }));
   }
   return configPromise;
+}
+
+/**
+ * The deployment's auth mode.
+ *
+ * For surfaces that only exist when it is on — the audit log is Postgres-backed
+ * and its routes are not registered at all in `disabled` mode. Asking here beats
+ * inferring from a 404: a 404 could equally be a broken deploy, and telling
+ * someone to set an environment variable when the real fault is routing sends
+ * them somewhere useless. Shares the memoised config fetch, so this costs
+ * nothing after the first call.
+ */
+export async function getAuthMode(): Promise<RuntimeConfig["authMode"]> {
+  return (await resolveConfig()).authMode;
 }
 
 /** Resolve base + (in AUTH_MODE=enabled) wait for the session bridge so
