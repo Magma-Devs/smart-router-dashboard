@@ -1412,22 +1412,19 @@ export function TryMeDrawer({
                 {/* Both paths, one click — the comparison is the reason the
                     direct mode is worth having, so it lives WITH that mode.
                     In router mode there is no second leg to compare against. */}
-                {onDirect && (
+                {/* Only where there are two answers to compare. On a backup
+                    the router leg can only return its refusal, so the control
+                    is not offered at all rather than offered and refused. */}
+                {onDirect && pinRefusal === null && (
                   <span
-                    title={
-                      pinHint ??
-                      "Send the same request through the router AND straight to the upstream, then show both answers side by side."
-                    }
+                    title="Send the same request through the router AND straight to the upstream, then show both answers side by side."
                     style={{ display: "inline-flex" }}
                   >
                   <button
                     type="button"
                     className="gw-btn gw-btn--ghost"
                     onClick={compareBoth}
-                    // A comparison needs two answers. On a backup the router
-                    // leg can only return its refusal, and putting that beside
-                    // a real reply would measure nothing.
-                    disabled={!resolved || status === "loading" || pinRefusal !== null}
+                    disabled={!resolved || status === "loading"}
                     style={{ padding: "9px 14px", fontSize: 12, fontWeight: 500, gap: 6 }}
                   >
                     {comparing ? (

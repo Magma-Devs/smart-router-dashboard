@@ -17,6 +17,11 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   sit next to each other under that summary, each with its own copy button, and
   the columns fall to one on a narrow drawer. The lone Response section stands
   down while they are on screen.
+- **No "Compare both" on a backup upstream.** The router leg there can only
+  return its refusal, so the control that fires both is not offered — where
+  0.16.4 greyed it out, it is now simply absent, alongside the Code block that
+  leg never had a use for. What stays is the pair that means something: Send
+  direct, and the response it returns.
 - **No Code section on the direct leg.** The dashboard never receives the
   upstream's real url, so a direct-mode snippet could only print
   `$UPSTREAM_URL` and a banner apologising for it: a copy button over a command
