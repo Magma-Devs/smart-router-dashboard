@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { initialTargetFor, isPinnable, pinRefusalFor } from "../pin-support";
+import { initialTargetFor, isPinnable, pinRefusalFor, pinRefusalHintFor } from "../pin-support";
 
 describe("pinRefusalFor", () => {
   it("has nothing to say about a primary upstream", () => {
@@ -14,6 +14,21 @@ describe("pinRefusalFor", () => {
     // already have in front of them line up.
     expect(reason).toContain("Selected provider not available");
     expect(isPinnable("backup")).toBe(false);
+  });
+});
+
+describe("pinRefusalHintFor", () => {
+  it("says nothing where nothing is disabled", () => {
+    expect(pinRefusalHintFor("primary")).toBeNull();
+  });
+
+  it("fits a tooltip and still names the cause and the way out", () => {
+    const hint = pinRefusalHintFor("backup")!;
+    // A hover that runs past a line or two is read as decoration, not as the
+    // answer to "why is this off?".
+    expect(hint.length).toBeLessThan(160);
+    expect(hint).toContain("Backup");
+    expect(hint).toContain("direct");
   });
 });
 

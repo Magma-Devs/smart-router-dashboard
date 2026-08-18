@@ -134,9 +134,13 @@ header is never read on that path. Pinning a backup therefore answers:
 however healthy that upstream is. So the drawer opens a backup row on **Direct
 to upstream** when the api can dial it — the one path that does reach a backup —
 tags the row `backup`, and says why the router leg can't be pinned rather than
-letting the reader learn it from a failed request. Via router stays selectable:
-the pinned call is still worth firing when you want to see the refusal, and the
-banner sets the expectation first.
+letting the reader learn it from a failed request.
+
+**Via router is struck through and disabled** on such a row, and hovering it
+gives the one-line reason. Every control that would fire the same doomed request
+goes with it: **Compare both** (a refusal beside a real answer measures nothing)
+and, where the row has no url the api can dial on the selected transport,
+**Send** itself — with the same hint on the hover.
 
 The per-upstream **Test connection** modal is pinned the same way, so on a
 backup row it offers no run at all and points here instead.

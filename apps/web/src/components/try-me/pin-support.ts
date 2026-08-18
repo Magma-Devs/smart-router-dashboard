@@ -27,6 +27,16 @@ export function pinRefusalFor(tier: UpstreamTier): string | null {
   return "This upstream is configured as a backup: the router routes to backups only after every primary upstream is exhausted, and picks among them itself. A pinned request can't reach it — the router answers -32000 Selected provider not available.";
 }
 
+/**
+ * The same refusal in one line, for the hover on a control that is turned off.
+ * A disabled button has to say why it is disabled where the pointer already
+ * is; the banner's full version is a paragraph away and reads as background.
+ */
+export function pinRefusalHintFor(tier: UpstreamTier): string | null {
+  if (tier !== "backup") return null;
+  return "Backup upstream — the router pins only within its primary pool, so this can only answer -32000. Send it direct to the upstream.";
+}
+
 /** Whether the router honours a pin naming this upstream. */
 export function isPinnable(tier: UpstreamTier): boolean {
   return pinRefusalFor(tier) === null;
