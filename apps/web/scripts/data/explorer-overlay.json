@@ -21,7 +21,7 @@
       {
         "name": "Allo",
         "url": "https://allo.info",
-        "kind": "block-tx-account",
+        "kind": "block",
         "verified": "browser 2026-08-17 — block page watched rendering the requested height",
         "source": "curated"
       }
@@ -32,7 +32,7 @@
       {
         "name": "Lora",
         "url": "https://lora.algokit.io/testnet",
-        "kind": "eip3091",
+        "kind": "block",
         "verified": "browser 2026-08-17 — block page watched rendering the requested height",
         "source": "curated — testnet.allo.info does not resolve"
       }
@@ -43,7 +43,7 @@
       {
         "name": "Aptos Explorer",
         "url": "https://explorer.aptoslabs.com",
-        "kind": "block-txn-account",
+        "kind": "block",
         "suffix": "?network=mainnet",
         "verified": "browser 2026-08-17 — block page watched rendering the requested height",
         "source": "curated"
@@ -55,7 +55,7 @@
       {
         "name": "Aptos Explorer",
         "url": "https://explorer.aptoslabs.com",
-        "kind": "block-txn-account",
+        "kind": "block",
         "suffix": "?network=testnet",
         "verified": "browser 2026-08-17 — block page watched rendering the requested height (mainnet network; the suffix selects the network)",
         "source": "curated"
@@ -67,7 +67,7 @@
       {
         "name": "ViewBlock",
         "url": "https://viewblock.io/arweave",
-        "kind": "eip3091",
+        "kind": "block",
         "verified": "unverified — home reachable, deep-link shape not watched",
         "source": "curated"
       }
@@ -81,7 +81,7 @@
       {
         "name": "Blockscout",
         "url": "https://shibuya.blockscout.com",
-        "kind": "eip3091",
+        "kind": "block",
         "verified": "browser 2026-08-17 — block page watched rendering the requested height",
         "source": "curated — chainlist's row for this chain id is a DIFFERENT chain (Japan Open Chain also claims 81)"
       }
@@ -145,7 +145,7 @@
       {
         "name": "mempool.space",
         "url": "https://mempool.space",
-        "kind": "eip3091",
+        "kind": "block",
         "verified": "browser 2026-08-17 — block page watched rendering the requested height",
         "source": "curated"
       }
@@ -156,7 +156,7 @@
       {
         "name": "mempool.space",
         "url": "https://mempool.space/signet",
-        "kind": "eip3091",
+        "kind": "block",
         "verified": "browser 2026-08-17 — same site and path shape as the verified BTC entry",
         "source": "curated"
       }
@@ -167,7 +167,7 @@
       {
         "name": "mempool.space",
         "url": "https://mempool.space/testnet",
-        "kind": "eip3091",
+        "kind": "block",
         "verified": "browser 2026-08-17 — same site and path shape as the verified BTC entry",
         "source": "curated"
       }
@@ -178,7 +178,7 @@
       {
         "name": "mempool.space",
         "url": "https://mempool.space/testnet4",
-        "kind": "eip3091",
+        "kind": "block",
         "verified": "browser 2026-08-17 — same site and path shape as the verified BTC entry",
         "source": "curated"
       }
@@ -195,7 +195,7 @@
       {
         "name": "Cardanoscan",
         "url": "https://cardanoscan.io",
-        "kind": "block-transaction-address",
+        "kind": "block",
         "verified": "unverified — bot challenge (HTTP 403) from the build network",
         "source": "curated"
       }
@@ -206,7 +206,7 @@
       {
         "name": "Cardanoscan",
         "url": "https://preprod.cardanoscan.io",
-        "kind": "block-transaction-address",
+        "kind": "block",
         "verified": "unverified — bot challenge (HTTP 403) from the build network",
         "source": "curated"
       }
@@ -292,7 +292,7 @@
       {
         "name": "Subscan",
         "url": "https://enjin.subscan.io",
-        "kind": "block-extrinsic-account",
+        "kind": "block",
         "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
         "source": "curated — Subscan runs one deployment per network on a shared codebase"
       }
@@ -303,7 +303,7 @@
       {
         "name": "Subscan",
         "url": "https://canary-matrix.subscan.io",
-        "kind": "block-extrinsic-account",
+        "kind": "block",
         "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
         "source": "curated — Subscan runs one deployment per network on a shared codebase"
       }
@@ -412,7 +412,7 @@
       {
         "name": "HashScan",
         "url": "https://hashscan.io/mainnet",
-        "kind": "eip3091",
+        "kind": "block",
         "verified": "browser 2026-08-17 — block page watched rendering the requested height",
         "source": "curated — chainlist's 295 row omits HashScan, which its own 296 row lists as EIP3091"
       }
@@ -423,7 +423,7 @@
       {
         "name": "Subscan",
         "url": "https://hydration.subscan.io",
-        "kind": "block-extrinsic-account",
+        "kind": "block",
         "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
         "source": "curated — Subscan runs one deployment per network on a shared codebase"
       }
@@ -488,7 +488,7 @@
       {
         "name": "Subscan",
         "url": "https://kusama.subscan.io",
-        "kind": "block-extrinsic-account",
+        "kind": "block",
         "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
         "source": "curated — Subscan runs one deployment per network on a shared codebase"
       }
@@ -499,7 +499,7 @@
       {
         "name": "Subscan",
         "url": "https://assethub-kusama.subscan.io",
-        "kind": "block-extrinsic-account",
+        "kind": "block",
         "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
         "source": "curated — Subscan runs one deployment per network on a shared codebase"
       }
@@ -510,7 +510,7 @@
       {
         "name": "Subscan",
         "url": "https://assethub-westend.subscan.io",
-        "kind": "block-extrinsic-account",
+        "kind": "block",
         "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
         "source": "curated — Subscan runs one deployment per network on a shared codebase"
       }
@@ -521,9 +521,31 @@
       {
         "name": "Subscan",
         "url": "https://westend.subscan.io",
-        "kind": "block-extrinsic-account",
+        "kind": "block",
         "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
         "source": "curated — Subscan runs one deployment per network on a shared codebase"
+      }
+    ]
+  },
+  "LAV1": {
+    "explorers": [
+      {
+        "name": "MELLIFERA",
+        "url": "https://lavatest.mellifera.network/lava",
+        "kind": "block",
+        "verified": "browser 2026-08-18 — block page watched rendering the requested height, backed by lav1.lava.build",
+        "source": "curated from docs.lavanet.xyz/block-explorer — the page's own \"official\" explorer (lava.explorers.guru) is gone: it redirects to explorers.guru, whose catalog lists 10 mainnets and 5 testnets with Lava among none of them. Its MELLIFERA link redirects here."
+      }
+    ]
+  },
+  "LAVA": {
+    "explorers": [
+      {
+        "name": "LavaCenter",
+        "url": "https://lavacenter.xyz/lava",
+        "kind": "block",
+        "verified": "browser 2026-08-18 — block page watched rendering the requested height",
+        "source": "curated from docs.lavanet.xyz/block-explorer — the page's own \"official\" explorer (lava.explorers.guru) is gone: it redirects to explorers.guru, whose catalog lists 10 mainnets and 5 testnets with Lava among none of them. Its MELLIFERA link redirects here."
       }
     ]
   },
@@ -532,7 +554,7 @@
       {
         "name": "Litecoin Space",
         "url": "https://litecoinspace.org",
-        "kind": "eip3091",
+        "kind": "block",
         "verified": "browser 2026-08-17 — block page watched rendering the requested height",
         "source": "curated"
       }
@@ -570,8 +592,7 @@
         "url": "https://xmrchain.net",
         "kind": "custom",
         "tpl": {
-          "block": "https://xmrchain.net/block/{block}",
-          "tx": "https://xmrchain.net/tx/{tx}"
+          "block": "https://xmrchain.net/block/{block}"
         },
         "verified": "browser 2026-08-17 — block page watched rendering the requested height",
         "source": "curated — a privacy chain has no address page"
@@ -603,12 +624,8 @@
       {
         "name": "MultiversX Explorer",
         "url": "https://explorer.multiversx.com",
-        "kind": "custom",
-        "tpl": {
-          "tx": "https://explorer.multiversx.com/transactions/{tx}",
-          "address": "https://explorer.multiversx.com/accounts/{address}"
-        },
-        "verified": "unverified — home reachable, deep-link shape not watched",
+        "kind": "home",
+        "verified": "home page only — its block page is addressed by hash, and a hash is not a value the dashboard holds",
         "source": "curated — the block page is addressed by hash"
       }
     ]
@@ -618,12 +635,8 @@
       {
         "name": "MultiversX Explorer",
         "url": "https://testnet-explorer.multiversx.com",
-        "kind": "custom",
-        "tpl": {
-          "tx": "https://testnet-explorer.multiversx.com/transactions/{tx}",
-          "address": "https://testnet-explorer.multiversx.com/accounts/{address}"
-        },
-        "verified": "unverified — home reachable, deep-link shape not watched",
+        "kind": "home",
+        "verified": "home page only — its block page is addressed by hash, and a hash is not a value the dashboard holds",
         "source": "curated"
       }
     ]
@@ -636,12 +649,8 @@
       {
         "name": "NearBlocks",
         "url": "https://nearblocks.io",
-        "kind": "custom",
-        "tpl": {
-          "tx": "https://nearblocks.io/txns/{tx}",
-          "address": "https://nearblocks.io/address/{address}"
-        },
-        "verified": "unverified — home reachable, deep-link shape not watched",
+        "kind": "home",
+        "verified": "home page only — its block page is addressed by hash, and a hash is not a value the dashboard holds",
         "source": "curated — the block page is addressed by hash, so no height link is offered"
       }
     ]
@@ -651,12 +660,8 @@
       {
         "name": "NearBlocks",
         "url": "https://testnet.nearblocks.io",
-        "kind": "custom",
-        "tpl": {
-          "tx": "https://testnet.nearblocks.io/txns/{tx}",
-          "address": "https://testnet.nearblocks.io/address/{address}"
-        },
-        "verified": "unverified — home reachable, deep-link shape not watched",
+        "kind": "home",
+        "verified": "home page only — its block page is addressed by hash, and a hash is not a value the dashboard holds",
         "source": "curated"
       }
     ]
@@ -666,7 +671,7 @@
       {
         "name": "Subscan",
         "url": "https://polkadot.subscan.io",
-        "kind": "block-extrinsic-account",
+        "kind": "block",
         "verified": "browser 2026-08-17 — block page watched rendering the requested height",
         "source": "curated — Subscan runs one deployment per network on a shared codebase"
       }
@@ -677,7 +682,7 @@
       {
         "name": "Subscan",
         "url": "https://assethub-polkadot.subscan.io",
-        "kind": "block-extrinsic-account",
+        "kind": "block",
         "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
         "source": "curated — Subscan runs one deployment per network on a shared codebase"
       }
@@ -688,7 +693,7 @@
       {
         "name": "Subscan",
         "url": "https://assethub-paseo.subscan.io",
-        "kind": "block-extrinsic-account",
+        "kind": "block",
         "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
         "source": "curated — Subscan runs one deployment per network on a shared codebase"
       }
@@ -699,7 +704,7 @@
       {
         "name": "Subscan",
         "url": "https://assethub-westend.subscan.io",
-        "kind": "block-extrinsic-account",
+        "kind": "block",
         "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
         "source": "curated — Subscan runs one deployment per network on a shared codebase"
       }
@@ -710,7 +715,7 @@
       {
         "name": "Subscan",
         "url": "https://westend.subscan.io",
-        "kind": "block-extrinsic-account",
+        "kind": "block",
         "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
         "source": "curated — Subscan runs one deployment per network on a shared codebase"
       }
@@ -721,7 +726,7 @@
       {
         "name": "Subscan",
         "url": "https://polymesh.subscan.io",
-        "kind": "block-extrinsic-account",
+        "kind": "block",
         "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
         "source": "curated — Subscan runs one deployment per network on a shared codebase"
       }
@@ -732,7 +737,7 @@
       {
         "name": "Subscan",
         "url": "https://polymesh-testnet.subscan.io",
-        "kind": "block-extrinsic-account",
+        "kind": "block",
         "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
         "source": "curated — Subscan runs one deployment per network on a shared codebase"
       }
@@ -746,7 +751,7 @@
       {
         "name": "Solana Explorer",
         "url": "https://explorer.solana.com",
-        "kind": "eip3091",
+        "kind": "block",
         "verified": "browser 2026-08-17 — block page watched rendering the requested height",
         "source": "curated"
       }
@@ -757,7 +762,7 @@
       {
         "name": "Solana Explorer",
         "url": "https://explorer.solana.com",
-        "kind": "eip3091",
+        "kind": "block",
         "suffix": "?cluster=devnet",
         "verified": "browser 2026-08-17 — block page watched rendering the requested height (mainnet cluster; the suffix selects the cluster)",
         "source": "curated"
@@ -769,7 +774,7 @@
       {
         "name": "Solana Explorer",
         "url": "https://explorer.solana.com",
-        "kind": "eip3091",
+        "kind": "block",
         "suffix": "?cluster=testnet",
         "verified": "browser 2026-08-17 — block page watched rendering the requested height (mainnet cluster; the suffix selects the cluster)",
         "source": "curated"
@@ -830,7 +835,7 @@
       {
         "name": "Starkscan",
         "url": "https://starkscan.co",
-        "kind": "block-tx-contract",
+        "kind": "block",
         "verified": "browser 2026-08-17 — block page watched rendering the requested height",
         "source": "curated"
       }
@@ -841,7 +846,7 @@
       {
         "name": "Voyager",
         "url": "https://sepolia.voyager.online",
-        "kind": "eip3091",
+        "kind": "block",
         "verified": "unverified — host unreachable from the build network",
         "source": "curated — sepolia.starkscan.co does not resolve; Voyager is the other Starknet explorer"
       }
@@ -885,7 +890,7 @@
       {
         "name": "TzKT",
         "url": "https://tzkt.io",
-        "kind": "root-path",
+        "kind": "root",
         "verified": "browser 2026-08-17 — block page watched rendering the requested height",
         "source": "curated"
       }
@@ -896,7 +901,7 @@
       {
         "name": "TzKT",
         "url": "https://shadownet.tzkt.io",
-        "kind": "root-path",
+        "kind": "root",
         "verified": "browser 2026-08-17 — block page watched rendering the requested level",
         "source": "curated — TzKT runs a Shadownet deployment on the same codebase as tzkt.io"
       }
@@ -996,7 +1001,7 @@
       {
         "name": "Stellar Expert",
         "url": "https://stellar.expert/explorer/public",
-        "kind": "ledger-tx-account",
+        "kind": "ledger",
         "verified": "browser 2026-08-17 — block page watched rendering the requested height",
         "source": "curated"
       }
@@ -1007,7 +1012,7 @@
       {
         "name": "Stellar Expert",
         "url": "https://stellar.expert/explorer/testnet",
-        "kind": "ledger-tx-account",
+        "kind": "ledger",
         "verified": "browser 2026-08-17 — same site and path shape as the verified XLM entry",
         "source": "curated"
       }
@@ -1018,7 +1023,7 @@
       {
         "name": "XRPScan",
         "url": "https://xrpscan.com",
-        "kind": "ledger-tx-account",
+        "kind": "ledger",
         "verified": "browser 2026-08-17 — block page watched rendering the requested height",
         "source": "curated"
       }

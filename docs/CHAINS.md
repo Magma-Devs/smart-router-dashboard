@@ -8,7 +8,7 @@ generated catalogs keyed by that index.
 | Catalog | File | Accessor |
 |---|---|---|
 | Name, family, icon, interfaces, mainnet flag | `packages/shared/src/constants/chain-map.generated.json` | `buildChainMetaByIndex(spec)` |
-| Block explorers | `packages/shared/src/constants/chain-explorers.generated.json` | `explorersFor(spec)`, `explorerUrl(spec, ref, value)` |
+| Block explorers | `packages/shared/src/constants/chain-explorers.generated.json` | `explorersFor(spec)`, `explorerBlockUrl(spec, height)`, `explorerHome(spec)` |
 | Try-it method catalog | `apps/web/src/components/try-me/chain-methods.generated.json` | the Try-it drawer |
 
 All are generated from [Magma-Devs/lava-specs](https://github.com/Magma-Devs/lava-specs)
@@ -18,10 +18,18 @@ them. The procedure for regenerating lives in
 
 ## Explorers
 
-Every number the dashboard renders for a chain — a latest block, a tip lag, a
-hash in a Try-it response — is a claim about a public chain. The explorer map
-is what lets a reader check that claim at the source, which is the difference
-between a dashboard you believe and one you verify.
+Every number the dashboard renders for a chain — a latest block, a tip lag — is
+a claim about a public chain. The explorer map is what lets a reader check that
+claim at the source, which is the difference between a dashboard you believe
+and one you verify.
+
+**The catalog links one thing: a block HEIGHT.** That is the only value the
+dashboard holds which a public chain can confirm. There is no transaction hash
+and no chain address anywhere in its domain model — `provider_address` is an
+upstream's name, not an on-chain address — so a transaction or address template
+would address a value that does not exist. The catalog carried 321 of them
+once, and 18 chains carried nothing else: covered in the file, unlinkable in
+the UI.
 
 ### The join key
 
@@ -47,31 +55,42 @@ most of the catalog is derived rather than hand-written:
 > that list on every regeneration — it is how a chain ends up wearing another
 > chain's explorer.
 
-### Link shapes are a table, not 750 strings
+### Link shapes are a table, not 200 strings
 
 An entry stores a **kind** — a key in
 `packages/shared/src/constants/explorer-kinds.json` — rather than its own copy
-of three URL templates. `{base}` is the entry's own url:
+of a URL template. `{base}` is the entry's own url:
 
 ```json
-"eip3091": { "block": "{base}/block/{block}", "tx": "{base}/tx/{tx}", "address": "{base}/address/{address}" }
+"block":  { "block": "{base}/block/{block}" }
+"blocks": { "block": "{base}/blocks/{block}" }
 ```
 
-Eleven kinds cover 213 chains, and each one is auditable in a single read.
-Two rules keep them honest:
+Seven kinds cover 213 chains, and each is auditable in a single read. Three
+rules keep them honest:
 
-1. **A kind's `block` template takes a block HEIGHT.** Explorers whose block
-   page is addressed by hash (NearBlocks, MultiversX, cspr.live) ship no block
-   template at all — they carry an explicit `tpl` with just the refs they can
-   serve, or they are `home`-only. The dashboard has a height, so a
-   hash-addressed block page is not a link it can build.
-2. **A kind is assigned only when something proves the shape** — the
-   registry's own template string matching it exactly, or a human watching the
-   page render. Otherwise the entry is `home`.
+1. **A block template takes a HEIGHT.** Explorers whose block page is addressed
+   by hash (NearBlocks, MultiversX, cspr.live) are `home`-only. The dashboard
+   has a height, so a hash-addressed block page is not a link it can build.
+2. **A kind never contributes a shape.** It is shorthand for a shape already
+   established — the registry's own `block_page` string matching it exactly, or
+   a human watching the page render. An earlier version matched a kind on the
+   transaction and address templates and let it add its own block shape on top;
+   that shipped 31 block links nobody had seen work, 23 of them the primary.
+   On Lava's STAVR explorer the invented `/block/<height>` renders an empty
+   shell.
+3. **A shape may be inherited only from the same host.** `cosmos/chain-registry`
+   spells out Mintscan's `/blocks/<height>` on COSMOSHUB and leaves it null on
+   the twelve other Mintscan deployments; those twelve are the same explorer on
+   the same host, so the proven shape carries across and the row says
+   `inherited`. Hosts that proved nothing anywhere stay `home`-only.
 
-`explorerUrl()` returns **null**, never a guess, for a ref with no template. A
-caller that gets null must render plain text; falling back to the home page
-would quietly send the reader somewhere that does not answer their question.
+`explorerBlockUrl()` returns **null**, never a guess, when no shape is proven —
+70 of 213 primaries are home-only, so null is a common outcome, not an edge
+case. A caller that gets null must render the height as plain text; falling
+back to the home page would quietly send the reader somewhere that does not
+answer their question. It also refuses anything that is not digits, so a hash
+passed by mistake cannot become a link.
 
 ### Every row says how it is known
 
@@ -79,17 +98,43 @@ Each explorer carries a `verified` field, and nothing ships without one:
 
 | Value | Meaning |
 |---|---|
-| `registry — …` | the registry asserted the shape (chainlist's `EIP3091`, or chain-registry's own page templates) |
+| `registry — …` | the registry asserted the shape (chainlist's `EIP3091`, or chain-registry's own `block_page`) |
+| `inherited — …` | the same host's block shape, proven by the registry on another chain |
 | `browser 2026-08-17 — …` | a person opened the deep link and watched it render the value asked for |
 | `home probed …` | a `home`-only entry whose home page answered — which is the entire claim it makes |
 | `unverified — …` | curated from knowledge, with the reason it could not be checked (bot challenge, unreachable host) |
 
 `unverified` rows still ship. A link a user wants, labelled honestly, beats no
 link — but they are named on every generator run so the next person on a
-network that can reach them can settle it. As of the last refresh, 22 of 213
+network that can reach them can settle it. As of the last refresh, 19 of 213
 are unverified, most behind Cloudflare bot management (Blockchair, Cardanoscan,
 beaconcha.in, Tronscan, viewblock) which answers 403 to anything without a
 real browser's TLS fingerprint.
+
+### Lava
+
+The project's own chain does not come from either registry, and the reason is
+worth knowing before someone reports it as a bug.
+
+`cosmos/chain-registry` lists eleven Lava explorers, all validator-run, and the
+first two — all the registry order gave us — are broken: `explorer.finteh.org/lava`
+is unreachable, and `lava.explorers.guru` redirects to `explorers.guru`, whose
+catalog lists 10 mainnets and 5 testnets with Lava among none of them. Mintscan
+has no Lava deployment at all.
+
+The entries are curated from
+[docs.lavanet.xyz/block-explorer](https://docs.lavanet.xyz/block-explorer/)
+instead — with the caveat that **the explorer that page calls "official" is the
+dead `lava.explorers.guru`**, which is worth fixing in the docs. Its MELLIFERA
+links are live and redirect to a Lava-dedicated explorer:
+
+| | |
+|---|---|
+| `LAVA` | [lavacenter.xyz/lava](https://lavacenter.xyz/lava) |
+| `LAV1` | [lavatest.mellifera.network/lava](https://lavatest.mellifera.network/lava) |
+
+Both were watched rendering a requested height, so Lava links blocks like any
+other chain.
 
 ### Chains with no explorer
 
@@ -135,7 +180,7 @@ registries — and regenerate. An entry is either explorers or a refusal:
   "explorers": [{
     "name": "Solana Explorer",
     "url": "https://explorer.solana.com",     // no trailing slash, https
-    "kind": "eip3091",                        // or "custom" with an explicit tpl
+    "kind": "block",                          // or "custom" with an explicit tpl
     "suffix": "?cluster=devnet",              // optional, applied to every url
     "verified": "browser 2026-08-17 — block page watched rendering the requested height",
     "source": "curated"
@@ -144,8 +189,10 @@ registries — and regenerate. An entry is either explorers or a refusal:
 "CANTON": { "none": "Canton's network is permissioned — no public block explorer" }
 ```
 
-Open the deep link before you write the kind down. `probe-explorers.mjs` will
-tell you the host is up, and that a route exists; it cannot tell you the page
-rendered the block you asked for, because most explorers are single-page apps
-that answer 200 for any path under their router. If you cannot reach the site,
-say so in `verified` — do not imply a check that did not happen.
+Open the block link before you write the kind down, and check the page shows
+the height you asked for. `probe-explorers.mjs` will tell you the host is up
+and that a route exists; it cannot tell you the page rendered anything, because
+most explorers are single-page apps that answer 200 for any path under their
+router — Lava's STAVR and AstroStake both serve a 200 and an empty page for a
+block route that does not exist. If you cannot reach the site, say so in
+`verified` rather than implying a check that did not happen.
