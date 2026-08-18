@@ -20,13 +20,7 @@ import {
   paramsKindFor,
   type ResolvedRequest,
 } from "./build-request";
-import {
-  directAvailableFor,
-  relayPayloadFor,
-  withUpstreamPlaceholder,
-  UPSTREAM_URL_PLACEHOLDER,
-  type DirectTarget,
-} from "./direct-request";
+import { directAvailableFor, relayPayloadFor, type DirectTarget } from "./direct-request";
 import {
   headCommands,
   httpVariantOf,
@@ -754,12 +748,13 @@ export function TryMeDrawer({
 
   const snippets = useMemo<Snippets | null>(() => {
     if (!resolved) return null;
-    // Direct-mode snippets must not print a dialable url — the real one is a
-    // secret the api holds. They ask the reader to supply it instead, and
-    // drop the pin header (there is no router to instruct).
-    if (onDirect) return snippetsFor(withUpstreamPlaceholder(resolved, endpointUrl));
+    // No snippets on the direct leg. The api holds the only dialable url and
+    // will not hand it over, so a "copy this command" block there can only
+    // print a placeholder the reader has no way to fill in — it took the room
+    // the answer should have and told them nothing.
+    if (onDirect) return null;
     return snippetsFor(resolved, selectUpstream);
-  }, [resolved, selectUpstream, onDirect, endpointUrl]);
+  }, [resolved, selectUpstream, onDirect]);
 
   const applyOutcome = useCallback((o: Outcome, via: Via) => {
     setLatencyMs(o.latencyMs);
@@ -1659,6 +1654,28 @@ export function TryMeDrawer({
                     , but the two are measured from different places — the browser for the router, the api for the upstream — so read the gap as a hint, not a benchmark.
                   </div>
                 </div>
+                {/* The two answers themselves, side by side — reading one
+                    against the other is the whole reason to run both, and a
+                    single body below a summary made that a memory exercise.
+                    The columns fall to one under a narrow drawer. */}
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+                    gap: 10,
+                    marginTop: 10,
+                  }}
+                >
+                  {rows.map((row) => (
+                    <div key={row.label} style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 6 }}>
+                      <div className="gw-row" style={{ gap: 8, justifyContent: "space-between" }}>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-2)" }}>{row.label}</span>
+                        <CopyButton text={JSON.stringify(row.out.body, null, 2)} label="Copy" />
+                      </div>
+                      <JsonDisplay data={row.out.body} maxHeight={300} />
+                    </div>
+                  ))}
+                </div>
               </div>
             );
           })()}
@@ -1666,17 +1683,6 @@ export function TryMeDrawer({
           {snippets && (
             <div>
               <div style={SECTION_LABEL}>Code</div>
-              {onDirect && (
-                <div style={{ ...INFO_BANNER, marginBottom: 10 }}>
-                  <IconInfo size={13} style={{ flexShrink: 0, marginTop: 1 }} />
-                  <span>
-                    <span className="gw-mono">{UPSTREAM_URL_PLACEHOLDER}</span> stands in for{" "}
-                    <span className="gw-mono">{directHost ?? "the upstream"}/…</span> — the full url lives in
-                    the mounted values file and may carry an API key, so the dashboard never puts it in a
-                    copyable command.
-                  </span>
-                </div>
-              )}
               <Tabs tabs={CODE_TABS} active={codeTab} setActive={setCodeTab} />
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 {blocksForTab(snippets, codeTab).map((block, i) => (
@@ -1689,7 +1695,10 @@ export function TryMeDrawer({
             </div>
           )}
 
-          {response !== null && (
+          {/* One answer, one panel. With a comparison on screen both bodies are
+              already above, and repeating the router's under its own heading
+              read as a third result. */}
+          {response !== null && !comparison && (
             <div>
               <div
                 className="gw-row"
