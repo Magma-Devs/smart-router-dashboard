@@ -286,22 +286,136 @@ users table → admin created; populated table without that email → no-op
 ## Running it
 
 ```bash
-# dev stack with auth (postgres joins via the auth profile):
-AUTH_MODE=enabled docker compose -f docker-compose.dev.yml \
-  --profile router --profile auth up --build
-
-# sign in at http://localhost:3000/login with the dev-default seed:
-#   admin@example.com / admin1234        (override via ADMIN_EMAIL/ADMIN_PASSWORD)
-
-# prod-style:
-AUTH_MODE=enabled AUTH_SECRET=$(openssl rand -base64 32) \
-ADMIN_EMAIL=you@example.com ADMIN_PASSWORD=change-me \
-  docker compose --profile router --profile auth up -d --build
+make accounts          # a fresh install with NO accounts, on http://localhost:3000
+make accounts-reset    # wipe the database and start from first-run again
 ```
 
-> The dev compose ships working defaults (`admin@example.com` /
-> `admin1234`, a fixed dev `AUTH_SECRET`) so `AUTH_MODE=enabled` works
-> out of the box. **Production must override all three.**
+That is the stack for exercising the account system. It differs from
+`make dev-auth` in the one way that matters: `dev-auth` seeds
+`ADMIN_EMAIL`/`ADMIN_PASSWORD`, so the deployment already has an account
+and **the first-run page can never appear**. `make accounts` clears them,
+supplies a setup token, and points invitation and reset links at
+`localhost:3000`.
+
+Dev credentials are deliberately guessable. The setup token is
+`installer-printed-this-token`; in a real install it is printed by the
+installer or read from `SETUP_TOKEN_FILE`.
+
+## Trying the account system by hand
+
+Roughly ten minutes end to end. Each step below is a thing the ticket
+promises, in the order a real deployment meets them.
+
+**1. First run.** Open <http://localhost:3000>. It redirects to `/login`,
+which redirects to `/setup` — a deployment with no accounts has nobody to
+sign in as. Create the first admin.
+
+- Enter the wrong setup token first: refused. Without it, whoever reaches
+  the URL between install and the operator sitting down becomes the admin.
+- Try `correct horse battery staple` as the password: refused as breached
+  (52,372,427 sightings). That is a live HaveIBeenPwned lookup, and the
+  password never leaves the process — only the first five characters of
+  its SHA-1 do. The check **fails open**, so on a machine with no egress
+  it silently accepts everything; the honest setting there is
+  `PASSWORD_BREACH_CHECK=off`, not a mystery timeout.
+- Then a real one. You land signed in, on the dashboard.
+
+**2. Invite someone.** Team → Invite. Pick a role; the description under
+each says what it can do.
+
+- On-prem has no mail server, so the link is shown **once** and you copy
+  it. Open it in a private window: the invited address is fixed text, not
+  a field — the account is created with the invitation's address, so there
+  is nothing there that could disagree with it.
+- Accept it. That person is now in the members table.
+- Open the same link again: dead. Single-use.
+
+**3. Change a role.** Team → Change role. It takes effect on whatever that
+person has open *right now*, not at their next sign-in — the api reads the
+role from the row on every request.
+
+To watch that: sign in as them in a private window, leave the Team page
+open, demote them to Read-only from your window, and have them act. The
+admin-only controls stop working immediately.
+
+**4. Remove someone.** Team → Remove. The dialog says what will happen,
+because "remove" reads like a deletion and this deliberately is not one.
+Their sessions die within one request, their name stays in the audit log,
+and their address can be invited again as a new account — try it.
+
+**5. Your own account.** Account → Change password signs out your *other*
+devices and keeps the one you are using. Active sessions lists every
+device with what it is and where from; sign one out and watch it go.
+
+Sign in from a second browser to see two sessions, then use "Sign out
+everywhere" — which signs out the tab you are in too, deliberately.
+
+**6. Password reset, on-prem.** **An admin never sets someone else's
+password** — they generate a link, and only the holder chooses the value.
+The route exists and is audited; the members-table button that should
+trigger it does not (see "What has no screen yet" below), so drive it
+directly.
+
+Get a token: DevTools → Network → any `/api/team/…` request → copy its
+`Authorization` header value, minus the word `Bearer`.
+
+```bash
+TOKEN='eyJ…'
+
+curl -s localhost:8000/api/team/members -H "authorization: Bearer $TOKEN"
+#   → find the member's id in the response
+
+curl -s -X POST localhost:8000/api/team/members/<id>/reset-link \
+     -H "authorization: Bearer $TOKEN"
+#   → { "url": "http://localhost:3000/reset/…", "expiresAt": … }
+```
+
+Twenty-four hours on-prem against a managed deployment's one, because the
+link travels over a channel we don't control. Open it, set a password —
+and note that it does **not** sign you in, and that it kills every session
+that account had.
+
+Two refusals worth seeing: a Google-only account answers 409 naming why
+there is no password to reset, and a removed member answers 404.
+
+**7. Lockout.** Five wrong passwords for the same address and it locks for
+fifteen minutes, on the sixth attempt, even with the right password. It
+counts against the address whether or not an account exists, so being
+locked out reveals nothing about who is a member.
+
+**8. Export.** Team → Export CSV. This is the artifact an auditor asks for
+first, and it is the whole member list, not the page you are looking at.
+The two-factor column reads `—` in the table and is **blank** in the CSV,
+rather than "No" — two-factor is MAG-2730 and has not shipped, so "No"
+would be true today and wrong the day it does.
+
+**9. The audit log.** Every step above wrote a row. There is no viewer yet
+(MAG-2770), so read them directly:
+
+```bash
+docker exec smart-router-dashboard-dev-postgres-1 \
+  psql -U sr -d sr_dashboard -c \
+  "select occurred_at, action, actor_name, target_name, ip, client
+     from audit_events order by occurred_at desc limit 20"
+```
+
+Note what is and isn't there: sign-ins carry an address and a device,
+people-events don't, and no token, link or password appears anywhere.
+
+### What has no screen yet
+
+Two designed surfaces are reachable only over the api, so a walkthrough
+that stays in the browser will not find them. Both are missing UI, not
+missing behaviour — the routes work and are tested.
+
+| Design | Route | Missing |
+|---|---|---|
+| §6.3 — on-prem reset, "initiated by an admin, from the members table" | `POST /api/team/members/:id/reset-link` | no control on the member row |
+| §6.3 — managed reset, "initiated by the user, from `/login`" | `POST /auth/password/forgot` | no "Forgot password?" link |
+
+The second is not exercisable in this stack anyway: `DEPLOYMENT_MODE=onprem`
+makes `/auth/password/forgot` answer 404 by design, because there is
+nowhere to send an email.
 
 ## Roles
 
