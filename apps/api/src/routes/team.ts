@@ -11,6 +11,8 @@ import {
   revokeInvitation,
   type DeploymentMode,
 } from "../services/invitations.js";
+import { createPasswordReset, resetUrl } from "../services/password-reset.js";
+import { findUserById } from "../services/users.js";
 import { config } from "../config.js";
 
 interface InviteBody {
@@ -240,6 +242,81 @@ export async function teamRoutes(app: FastifyInstance) {
       });
 
       return { ok: true };
+    },
+  );
+}
+
+/** Split out so the invite routes above stay readable — same registration. */
+export async function teamPasswordRoutes(app: FastifyInstance) {
+  const audit: AuditWriter = noopAuditWriter(app.log);
+
+  app.post(
+    "/api/team/members/:id/reset-link",
+    {
+      schema: {
+        tags: ["Team"],
+        summary: "Generate a password-reset link for a member (on-prem: no mail server)",
+        params: {
+          type: "object" as const,
+          required: ["id"],
+          properties: { id: { type: "string" as const, format: "uuid" } },
+        },
+      },
+    },
+    async (request, reply) => {
+      const me = requireRole(request, reply, "admin");
+      if (!me) return reply;
+      const db = app.db;
+      if (!db) {
+        return reply.code(503).send({
+          statusCode: 503,
+          error: "Service Unavailable",
+          message: "auth database not ready",
+        });
+      }
+      const origin = config.publicWebOrigin;
+      if (!origin) {
+        return reply.code(500).send({
+          statusCode: 500,
+          error: "Internal Server Error",
+          message: "PUBLIC_WEB_ORIGIN is not configured, so reset links cannot be built",
+        });
+      }
+
+      const { id } = request.params as { id: string };
+      const target = await findUserById(db, id);
+      if (!target || target.status !== "active") {
+        return reply
+          .code(404)
+          .send({ statusCode: 404, error: "Not Found", message: "No such member." });
+      }
+      if (!target.passwordHash) {
+        return reply.code(409).send({
+          statusCode: 409,
+          error: "Conflict",
+          message: `${target.email} signs in with Google and has no password to reset.`,
+        });
+      }
+
+      const created = await createPasswordReset(db, {
+        userId: target.id,
+        mode: config.deploymentMode,
+        // The column an auditor reads: an admin started this, not the holder.
+        createdBy: me.id,
+      });
+
+      await audit.write({
+        action: "password.reset_link_generated",
+        actor: { id: me.id, kind: "user" },
+        target: { type: "member", id: target.id, name: target.email },
+      });
+
+      // An admin never sets someone else's password — they hand over a link and
+      // the holder chooses the value. Shown once.
+      return {
+        url: resetUrl(origin, created.rawToken),
+        expiresAt: created.expiresAt.toISOString(),
+      };
     },
   );
 }

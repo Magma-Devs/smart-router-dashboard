@@ -187,6 +187,58 @@ defence-in-depth check. `PASSWORD_BREACH_CHECK=off` disables it explicitly,
 which is the honest thing for an air-gapped site to do rather than relying
 on a silent timeout every time.
 
+## Password reset
+
+The shape is the same in both modes; only who starts it and how it travels
+differ. What is identical, and is the point:
+
+> **Nobody ever sets somebody else's password.** An admin on-prem generates a
+> *link*; the account holder chooses the value. lava-connect's equivalent
+> endpoint takes a password in the body, and that is precisely the design this
+> rejects — it lets an admin take an account over and sign in as them, which is
+> the takeover the audit log exists to make visible.
+
+| | Managed | On-prem |
+|---|---|---|
+| Started by | the holder, from `/login` → "Forgot password" | an admin, from the members table |
+| Endpoint | `POST /auth/password/forgot` | `POST /api/team/members/:id/reset-link` |
+| Delivery | emailed | link returned once, handed over |
+| TTL | 1 hour | 24 hours |
+| `password_resets.created_by` | null | the admin's id — the column an auditor reads |
+
+Both converge on `POST /auth/password/reset`, which claims the token with a
+conditional update, writes the hash, and **revokes every session for the
+account** — per-device rows *and* the `signed_out_all_at` cutoff. A reset is
+what someone does when they think they are compromised; leaving the attacker's
+session alive would defeat the entire exercise.
+
+It does **not** sign anyone in. A reset link that logs you in is a reset link
+worth stealing.
+
+<img src="./assets/password-reset.png" alt="The password reset page: a card headed &quot;Choose a new password&quot;, with new-password and repeat-password fields and a note that setting it signs out every device on the account, that any characters are accepted from 8 to 64, and that the password is checked against known breached passwords." width="420">
+
+`/auth/password/forgot` always answers `202`, whether or not the address exists
+and whether or not the account has a password at all — anything else turns it
+into a way to ask "is this person a member?". On-prem it answers `404` with a
+reason, because there is genuinely nowhere to send anything.
+
+**Changing your own password** (`POST /api/account/password`) requires the
+current one and signs out your *other* devices, keeping the tab you are in.
+Being logged out of the window you just changed your password in is hostile;
+logging out the other devices is the security value.
+
+## Sign-in lockout
+
+Per-IP limiting is not the control that matters — a distributed attacker
+rotating addresses walks straight past it. `login_attempts` counts failures
+against the **identity being targeted**: 5 in 15 minutes and the account is
+locked for the rest of the window, answering `423` and emitting
+`signin.blocked`.
+
+Counted on the submitted address whether or not an account exists, and
+case-insensitively. If only real addresses locked, the lockout itself would
+answer the question sign-in refuses to answer.
+
 ## Sign-in methods
 
 - **Email + password** — always available in enabled mode. Verified
@@ -362,3 +414,16 @@ This matters because the behaviour the schema leans on hardest is exactly
 what a hand-rolled fake cannot reproduce — the partial unique index on
 `lower(email)`, conditional single-use updates whose correctness depends
 on a real rowcount, and cascade-on-delete.
+
+> **Where pglite is not enough.** It is a real Postgres, but it is reached
+> through a different driver, and the drivers do not agree about parameter
+> serialisation. A bare JS `Date` interpolated into a `sql` template works
+> under pglite and throws under postgres-js
+> (`ERR_INVALID_ARG_TYPE: Received an instance of Date`) — so a green test
+> suite is not proof the production driver is happy.
+>
+> This bit once, in the lockout counter, and was caught only by running the
+> real stack. Prefer computing values **in SQL** (`now()`,
+> `make_interval(...)`) over interpolating JS values into raw templates: it
+> sidesteps the divergence, and for anything time-based it is more correct
+> anyway, since the app and the database can disagree about the clock.

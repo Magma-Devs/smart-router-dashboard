@@ -371,6 +371,11 @@ Every `/api/metrics/*` route also accepts **`router?`** — the router scope
 | `GET /api/team/invites` | — | Invitations not yet redeemed, each with `state` (`pending`/`expired`/`revoked`). Admin |
 | `POST /api/team/invites` | — | `{ email, role }` → the invitation, plus `url` on-prem (shown once). 409 if already a member or already invited. Admin |
 | `POST /api/team/invites/:id/resend` · `DELETE …/:id` | — | New link (invalidating the old) / revoke. 410 once redeemed. Admin |
+| `POST /auth/password/forgot` | — | `{ email }` → always `202` (managed). `404` on-prem — there is nowhere to send it. Public |
+| `POST /auth/password/reset` | — | `{ token, password }` → sets the password, revokes every session, does **not** sign in. Public |
+| `POST /api/team/members/:id/reset-link` | — | `{ url, expiresAt }`, shown once. An admin generates a link; only the holder chooses the value. Admin |
+| `POST /api/account/password` | — | `{ current, next }` — signs out your other devices, keeps this one |
+| `GET /api/account/sessions` · `DELETE …/:id` · `DELETE …` | — | Your live sessions · sign out one device · sign out everywhere |
 | `GET /health` | — | Liveness — `{ health: "ok" }` |
 | `GET /health/ready` | — | Readiness — pings Prometheus; 503 + `components.prometheus:"ping_failed"` on failure |
 | `GET /version` | — | Build provenance — `{ commit, version, env, startedAt, uptimeSec }` |
