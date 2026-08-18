@@ -8,6 +8,7 @@ import {
   isCatalogInterface,
   subscribeCatalog,
 } from "./chain-methods";
+import type { DirectTarget } from "./direct-request";
 import { IconZap, TryMeDrawer } from "./drawer";
 
 /** SSR/hydration snapshot: render as "catalog not loaded yet" so server and
@@ -29,8 +30,10 @@ interface TryNowButtonProps {
   wsUrl?: string | null;
   /** Open the drawer on the WebSocket transport (a ws-flagged upstream row). */
   initialTransport?: "http" | "ws";
-  /** Whether this chain's mounted config marks an `archive` addon anywhere. */
-  hasArchive: boolean;
+  /** Add-ons the mounted config declares on this endpoint's upstreams
+   *  (`archive`, `debug`, `trace`). Tiers the deployment can't serve are not
+   *  offered — the router answers "No Providers For Addon" for those. */
+  addons: readonly string[];
   /** Live health from /api/metrics/chains (omitted when unknown). */
   health?: HealthState;
   /** Optional visibility control for hover-reveal parents (Endpoints rows). */
@@ -38,6 +41,11 @@ interface TryNowButtonProps {
   /** Pin the relay to a specific provider via `lava-select-provider` (HTTP
    *  only). Set by the per-upstream Try-now so the call hits that upstream. */
   selectUpstream?: string;
+  /** Identity of the upstream endpoint(s) behind this row, enabling the
+   *  drawer's "Direct to upstream" mode — the api dials the upstream itself,
+   *  with the router out of the path. Null on router-level rows (Endpoints),
+   *  which have no single upstream to bypass to. */
+  directTarget?: DirectTarget | null;
 }
 
 /**
@@ -56,10 +64,11 @@ export function TryNowButton({
   url,
   wsUrl = null,
   initialTransport = "http",
-  hasArchive,
+  addons,
   health,
   visible = true,
   selectUpstream,
+  directTarget = null,
 }: TryNowButtonProps) {
   const [drawerOpen, setDrawerOpen] = useState(false);
 
@@ -69,7 +78,7 @@ export function TryNowButton({
   useSyncExternalStore(subscribeCatalog, getCatalogVersion, getServerCatalogVersion);
 
   const catalogIface = isCatalogInterface(iface) ? iface : null;
-  const cfg = catalogIface ? getInterfaceConfig(spec, catalogIface, hasArchive) : null;
+  const cfg = catalogIface ? getInterfaceConfig(spec, catalogIface, addons) : null;
   if (!catalogIface || !cfg) return null;
 
   return (
@@ -109,6 +118,7 @@ export function TryNowButton({
           initialTransport={initialTransport}
           health={health}
           selectUpstream={selectUpstream}
+          directTarget={directTarget}
           onClose={() => setDrawerOpen(false)}
         />
       )}

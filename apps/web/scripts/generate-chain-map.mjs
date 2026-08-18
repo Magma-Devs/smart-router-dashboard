@@ -437,6 +437,16 @@ writeFileSync(OUT_PATH, `${JSON.stringify(sorted, null, 2)}\n`);
 const total = Object.keys(sorted).length;
 console.log(`chains          ${total} (${overlaid} from v1 overlay, ${derived} derived)`);
 console.log(`icons           ${total - defaultIcon} matched a local SVG (${inherited} inherited from a mainnet sibling), ${defaultIcon} → default.svg`);
+// Name them, not just count them: a chain on the fallback is a chain the UI
+// renders without its brand, and a resync is when that happens. Testnets are
+// listed with their mainnet so it's obvious one icon usually covers both.
+const onDefault = Object.entries(sorted).filter(([, v]) => v.icon === "default");
+if (onDefault.length > 0) {
+  console.log(
+    `  no icon       ${onDefault.map(([i, v]) => (v.mainnet ? i : `${i} (testnet)`)).join(", ")}`,
+  );
+  console.log("  → vendor one per apps/web/public/chains/README.md, then re-run this script");
+}
 const mainnets = Object.values(sorted).filter((v) => v.mainnet).length;
 console.log(`networks        ${mainnets} mainnet, ${total - mainnets} testnet (${demoted} demoted by the index-pair rule)`);
 const famCounts = {};

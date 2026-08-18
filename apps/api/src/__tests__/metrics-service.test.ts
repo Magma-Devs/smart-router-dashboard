@@ -171,3 +171,105 @@ describe("MetricsDetailService · chain-series backup share (MAG-2537)", () => {
     expect(series.backupShare).toBeNull();
   });
 });
+
+describe("MetricsService · router attribution on the upstream roster", () => {
+  /** Two routers on ONE chain — the case a chain filter alone can't separate.
+   *  `shared-node` is declared by both, which is how one series ends up
+   *  belonging to two routers. */
+  const twoRoutersOneChain = {
+    getRouters: () => [
+      {
+        id: "eth-prod",
+        spec: "ETH1",
+        network: "eth1",
+        pathBased: false,
+        customUrlPrefix: null,
+        localPort: null,
+        localPorts: {},
+        publicUrls: {},
+        interfaces: ["jsonrpc"],
+        nodes: [
+          { name: "prod-vendor", isBackup: false, endpoints: [{ interface: "jsonrpc", urlHost: "https://a", addons: [] }] },
+          { name: "shared-node", isBackup: false, endpoints: [{ interface: "jsonrpc", urlHost: "https://s", addons: [] }] },
+        ],
+      },
+      {
+        id: "eth-staging",
+        spec: "ETH1",
+        network: "eth1",
+        pathBased: false,
+        customUrlPrefix: null,
+        localPort: null,
+        localPorts: {},
+        publicUrls: {},
+        interfaces: ["jsonrpc"],
+        nodes: [
+          { name: "staging-vendor", isBackup: false, endpoints: [{ interface: "jsonrpc", urlHost: "https://b", addons: [] }] },
+          { name: "shared-node", isBackup: false, endpoints: [{ interface: "jsonrpc", urlHost: "https://s", addons: [] }] },
+        ],
+      },
+    ],
+  } as unknown as ConfigurationService;
+
+  /** Prom client that reports traffic for the three distinct node names. */
+  function promWithEndpoints(): PrometheusClient {
+    const rows = (ids: string[]) =>
+      ids.map((id) => ({ metric: { endpoint_id: id, spec: "ETH1" }, value: [1, "10"] as [number, string] }));
+    return {
+      async query(expr: string) {
+        if (expr.startsWith("count by (spec)")) {
+          return [{ metric: { spec: "ETH1" }, value: [1, "1"] as [number, string] }];
+        }
+        if (expr.includes("endpoint_id")) return rows(["prod-vendor", "staging-vendor", "shared-node"]);
+        return [];
+      },
+      async queryRange() { return []; },
+      async scalar() { return null; },
+      async ping() { return true; },
+    } as unknown as PrometheusClient;
+  }
+
+  it("names every config router that declares an upstream", async () => {
+    const rows = await new MetricsService(promWithEndpoints(), twoRoutersOneChain).upstreams(
+      undefined,
+      "1d",
+    );
+    const byId = new Map(rows.map((r) => [r.endpointId, r.routerIds]));
+    expect(byId.get("prod-vendor")).toEqual(["eth-prod"]);
+    expect(byId.get("staging-vendor")).toEqual(["eth-staging"]);
+    // One name, two routers: the series can't be split, so BOTH are named
+    // rather than one of them being picked.
+    expect(byId.get("shared-node")).toEqual(["eth-prod", "eth-staging"]);
+  });
+
+  it("routerId filters the roster to what that router declares", async () => {
+    const rows = await new MetricsService(promWithEndpoints(), twoRoutersOneChain).upstreams(
+      undefined,
+      "1d",
+      "eth-staging",
+    );
+    expect(rows.map((r) => r.endpointId).sort()).toEqual(["shared-node", "staging-vendor"]);
+  });
+
+  it("an upstream the config no longer places is filtered out, not guessed at", async () => {
+    const prom = {
+      async query(expr: string) {
+        if (expr.startsWith("count by (spec)")) {
+          return [{ metric: { spec: "ETH1" }, value: [1, "1"] as [number, string] }];
+        }
+        if (expr.includes("endpoint_id")) {
+          return [{ metric: { endpoint_id: "gone-vendor", spec: "ETH1" }, value: [1, "5"] as [number, string] }];
+        }
+        return [];
+      },
+      async queryRange() { return []; },
+      async scalar() { return null; },
+      async ping() { return true; },
+    } as unknown as PrometheusClient;
+    const svc = new MetricsService(prom, twoRoutersOneChain);
+    // Unfiltered it still shows up (real traffic, honestly reported) with no
+    // router to its name; asked for one router's rows, it is not one of them.
+    expect((await svc.upstreams(undefined, "1d")).map((r) => r.routerIds)).toEqual([[]]);
+    expect(await svc.upstreams(undefined, "1d", "eth-prod")).toEqual([]);
+  });
+});

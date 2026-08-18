@@ -1,0 +1,76 @@
+{
+  "eip3091": {
+    "label": "EIP-3091",
+    "proven": "etherscan, blockscout, routescan and every fork; also mempool.space, Solana Explorer, viewblock",
+    "block": "{base}/block/{block}",
+    "tx": "{base}/tx/{tx}",
+    "address": "{base}/address/{address}"
+  },
+  "blocks-transactions-accounts": {
+    "label": "Plural paths",
+    "proven": "mintscan, proven against cosmos/chain-registry's own block_page/tx_page/account_page strings",
+    "block": "{base}/blocks/{block}",
+    "tx": "{base}/transactions/{tx}",
+    "address": "{base}/accounts/{address}"
+  },
+  "block-tx-account": {
+    "label": "EIP-3091 with /account/",
+    "proven": "ping.pub (registry-proven), allo.info",
+    "block": "{base}/block/{block}",
+    "tx": "{base}/tx/{tx}",
+    "address": "{base}/account/{address}"
+  },
+  "block-transaction-address": {
+    "label": "Long-form /transaction/",
+    "proven": "blockchair, cardanoscan",
+    "block": "{base}/block/{block}",
+    "tx": "{base}/transaction/{tx}",
+    "address": "{base}/address/{address}"
+  },
+  "block-extrinsic-account": {
+    "label": "Subscan (Substrate)",
+    "proven": "subscan — Substrate has extrinsics rather than transactions, so the tx template takes an extrinsic hash",
+    "block": "{base}/block/{block}",
+    "tx": "{base}/extrinsic/{tx}",
+    "address": "{base}/account/{address}"
+  },
+  "block-txn-account": {
+    "label": "Aptos Explorer",
+    "proven": "explorer.aptoslabs.com — the tx template takes a transaction version",
+    "block": "{base}/block/{block}",
+    "tx": "{base}/txn/{tx}",
+    "address": "{base}/account/{address}"
+  },
+  "ledger-tx-account": {
+    "label": "Ledger-based",
+    "proven": "xrpscan, stellar.expert — a ledger sequence is this family's block height",
+    "block": "{base}/ledger/{block}",
+    "tx": "{base}/tx/{tx}",
+    "address": "{base}/account/{address}"
+  },
+  "block-tx-contract": {
+    "label": "Starkscan",
+    "proven": "starkscan — accounts are contracts on Starknet",
+    "block": "{base}/block/{block}",
+    "tx": "{base}/tx/{tx}",
+    "address": "{base}/contract/{address}"
+  },
+  "hash-routed": {
+    "label": "Hash-routed SPA",
+    "proven": "tronscan — client-side routing puts every path behind a #, which is part of the URL the browser needs",
+    "block": "{base}/#/block/{block}",
+    "tx": "{base}/#/transaction/{tx}",
+    "address": "{base}/#/address/{address}"
+  },
+  "root-path": {
+    "label": "Single-namespace",
+    "proven": "tzkt — one root namespace resolves levels, operation hashes and addresses alike",
+    "block": "{base}/{block}",
+    "tx": "{base}/{tx}",
+    "address": "{base}/{address}"
+  },
+  "home": {
+    "label": "Home page only",
+    "proven": "n/a — the explorer exists but no deep-link shape has been verified for it. explorerUrl() returns null for every ref and only the home URL is offered. This is a terminal state, not a TODO: an honest home link beats a deep link that 404s."
+  }
+}

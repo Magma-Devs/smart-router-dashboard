@@ -9,7 +9,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { RouterTopology } from "@sr/shared";
 import { Modal } from "@/components/gateway/Modal";
-import { StatusDot } from "@/components/upstreams/bits";
+import { HealthDot } from "@/components/gateway/HealthTag";
 import type { UpstreamRow } from "@/components/upstreams/catalog";
 
 const NO_PORT_MSG = "No routable address for this upstream's chains in the mounted config";
@@ -96,7 +96,7 @@ export function TestModal({ open, onClose, upstream, routers }: {
       {upstream && (
         <div style={{ display: "grid", gap: 14 }}>
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-            <StatusDot status={upstream.status} />
+            <HealthDot health={upstream.health} size={8} />
             <div>
               <div style={{ fontSize: 13, fontWeight: 500 }}>{upstream.name}</div>
               <div className="gw-secret">{target ? target.url : upstream.url || "—"}</div>

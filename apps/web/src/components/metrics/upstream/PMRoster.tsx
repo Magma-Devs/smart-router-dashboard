@@ -9,11 +9,18 @@
 import { useEffect, useState } from "react";
 import { buildChainMetaByIndex, type MetricWindow, type UpstreamMetrics } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
-import { uptimeColor } from "@/lib/colors";
+import { tipLagColor, uptimeColor } from "@/lib/colors";
+import { fmtLag } from "@/lib/format";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
+import { HealthDot } from "@/components/gateway/HealthTag";
 import { Tip } from "@/components/gateway/Tip";
 import { ThCol, useSort } from "@/components/gateway/SortTable";
 import { useFilters } from "@/components/gateway/FiltersProvider";
+import { useRouterFilter } from "@/hooks/use-router-options";
+
+const STALE_HINT = "Tip gauge unchanged for 15 minutes while the chain kept producing blocks";
+
+const BEHIND_TIP = "**How far this upstream trails the chain's best upstream** — blocks behind ÷ the chain's own block rate, so the number is in seconds and comparable across chains.\n\n`—` means it IS the best tip seen. **Stale** means the tip gauge never moved over the last 15 minutes while the chain kept producing blocks: the upstream is stuck, not merely slow.";
 
 interface RosterRow {
   pm: UpstreamMetrics;
@@ -22,11 +29,15 @@ interface RosterRow {
   chainColor: string;
   hasData: boolean;
   qosVal: number | null;
+  /** Config routers declaring this upstream — several ⇒ one shared series. */
+  routerIds: string[];
   /* flat sort accessors (design SV semantics) */
   natural: number;
   upstream: string;
+  router: string;
   chain: string;
   block: number;
+  behind: number;
   requests: number;
   uptime: number;
   latency: number;
@@ -40,7 +51,12 @@ export function PMRoster({ rows, activeName, onSelect, timeWindow }: {
   onSelect: (name: string) => void;
   timeWindow: MetricWindow;
 }) {
-  const statusDot = (h: UpstreamMetrics["health"]) => ({ operational: "var(--ok)", unhealthy: "var(--err)", unknown: "var(--text-4)" }[h] || "var(--ok)");
+  /* Which router the Router column leads with: the filtered-on one when there
+     is one, else the first the config names. A shared row under an
+     `eth-staging` filter that led with `eth-prod` read as the wrong router's. */
+  const { routerId: filteredRouter } = useRouterFilter();
+  const leadRouter = (ids: string[]) =>
+    (filteredRouter && ids.includes(filteredRouter) ? filteredRouter : ids[0]) ?? null;
   const fmtReq = (n: number) => (n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? (n / 1e3).toFixed(1) + "K" : Math.round(n).toString());
   const fmtBlock = (n: number) => n.toLocaleString("en-US");
   const PAGE = 8;
@@ -56,10 +72,15 @@ export function PMRoster({ rows, activeName, onSelect, timeWindow }: {
       chainColor: meta.color,
       hasData: v.requests > 0,
       qosVal,
+      routerIds: v.routerIds,
       natural: i,
       upstream: v.endpointId.toLowerCase(),
+      router: (leadRouter(v.routerIds) ?? "").toLowerCase(),
       chain: meta.name.toLowerCase(),
       block: v.latestBlock ?? -1,
+      // Sort by TIME behind, not blocks: the roster mixes chains, and a block
+      // count ranks a 2-second Aptos lag above a 10-minute Ethereum one.
+      behind: v.behindSec ?? (v.latestBlock == null ? Infinity : -1),
       requests: v.requests || 0,
       uptime: v.uptime ?? -1,
       latency: v.p95Ms ?? Infinity,
@@ -86,8 +107,10 @@ export function PMRoster({ rows, activeName, onSelect, timeWindow }: {
         <thead>
           <tr>
             <ThCol sortKey="upstream" sort={sort} onSort={onSort}>Upstream</ThCol>
+            <ThCol sortKey="router" sort={sort} onSort={onSort}>Router</ThCol>
             <ThCol sortKey="chain" sort={sort} onSort={onSort}>Chain</ThCol>
             <ThCol align="right" sortKey="block" sort={sort} onSort={onSort}>Latest block</ThCol>
+            <ThCol align="right" tip={BEHIND_TIP} sortKey="behind" sort={sort} onSort={onSort}>Behind</ThCol>
             <ThCol align="right" sortKey="requests" sort={sort} onSort={onSort}>Total requests</ThCol>
             <ThCol align="right" sortKey="uptime" sort={sort} onSort={onSort}>Uptime</ThCol>
             <ThCol align="right" sortKey="latency" sort={sort} onSort={onSort}>Latency</ThCol>
@@ -104,10 +127,32 @@ export function PMRoster({ rows, activeName, onSelect, timeWindow }: {
               <tr key={r.name} onClick={() => onSelect(r.name)} style={{ cursor: "pointer", background: on ? "rgba(255,57,0,0.06)" : undefined, boxShadow: on ? "inset 2px 0 0 var(--brand)" : undefined }}>
                 <td>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ width: 7, height: 7, borderRadius: 999, background: statusDot(v.health), flexShrink: 0 }} title={v.health} />
+                    <HealthDot health={v.health} />
                     <span style={{ fontSize: 13, fontWeight: on ? 700 : 500 }}>{r.name}</span>
                     {v.role && <span style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", padding: "1px 6px", borderRadius: 4, color: v.role === "primary" ? "#60a5fa" : "#fb923c", background: v.role === "primary" ? "rgba(96,165,250,0.1)" : "rgba(251,146,60,0.1)" }}>{v.role === "primary" ? "Primary" : "Backup"}</span>}
                   </div>
+                </td>
+                {/* Which config router declares this upstream. The series
+                    itself carries no router, so this is the values file
+                    talking: one id normally, and when two routers declare one
+                    name the row says so instead of the numbers being split
+                    between them (they can't be — it is one series). */}
+                <td>
+                  {r.routerIds.length === 0 ? (
+                    <span style={{ fontSize: 12, color: "var(--text-4)" }} title="Traffic under a name the mounted config doesn't declare">—</span>
+                  ) : (
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                      <span className="gw-mono" style={{ fontSize: 11, color: "var(--text-2)" }}>{leadRouter(r.routerIds)}</span>
+                      {r.routerIds.length > 1 && (
+                        <span
+                          title={`Declared by ${r.routerIds.join(", ")} — one upstream name, so one series: these numbers are the two routers' traffic together`}
+                          style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", padding: "1px 5px", borderRadius: 4, color: "var(--warn)", background: "rgba(245,158,11,0.12)" }}
+                        >
+                          +{r.routerIds.length - 1} shared
+                        </span>
+                      )}
+                    </span>
+                  )}
                 </td>
                 <td>
                   <span style={{ display: "flex", alignItems: "center", gap: 7 }}>
@@ -120,6 +165,18 @@ export function PMRoster({ rows, activeName, onSelect, timeWindow }: {
                     <span style={{ display: "inline-flex", alignItems: "center", gap: 6, justifyContent: "flex-end" }}>
                       <span className="gw-mono gw-tnum" style={{ fontSize: 12, color: "var(--text)" }}>{fmtBlock(v.latestBlock)}</span>
                     </span>
+                  ) : <span style={{ fontSize: 12, color: "var(--text-4)" }}>—</span>}
+                </td>
+                <td style={{ textAlign: "right" }}>
+                  {v.stale ? (
+                    <span className="gw-tag gw-tag--err" title={STALE_HINT}>Stale</span>
+                  ) : v.behindSec != null && v.behindSec >= 1 ? (
+                    <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-end" }}>
+                      <span className="gw-mono gw-tnum" style={{ fontSize: 12, color: tipLagColor(v.behindSec) }}>{fmtLag(v.behindSec)}</span>
+                      {v.blockLag != null && v.blockLag > 0 && (
+                        <span className="gw-tnum" style={{ fontSize: 10, color: "var(--text-4)" }}>{v.blockLag.toLocaleString("en-US")} blk</span>
+                      )}
+                    </div>
                   ) : <span style={{ fontSize: 12, color: "var(--text-4)" }}>—</span>}
                 </td>
                 {muted ? (
@@ -139,7 +196,7 @@ export function PMRoster({ rows, activeName, onSelect, timeWindow }: {
             );
           })}
           {rows.length === 0 && (
-            <tr><td colSpan={8} style={{ padding: "24px 16px", textAlign: "center", color: "var(--text-4)", fontSize: 13 }}>No upstreams configured yet.</td></tr>
+            <tr><td colSpan={10} style={{ padding: "24px 16px", textAlign: "center", color: "var(--text-4)", fontSize: 13 }}>No upstreams configured yet.</td></tr>
           )}
         </tbody>
       </table>
@@ -158,6 +215,11 @@ export function PMRoster({ rows, activeName, onSelect, timeWindow }: {
 /** Keep the roster reusable without its own fetch; the tab supplies rows. */
 export function usePMRosterData(timeWindow: MetricWindow, chainFilter: string | null) {
   const specQ = chainFilter ? `&spec=${encodeURIComponent(chainFilter)}` : "";
+  // Both router axes: `scopeQ` narrows the PromQL when the collector can split
+  // targets, `routerIdQ` filters rows by what the config router declares.
   const { scopeQ } = useFilters();
-  return useApi<{ upstreams: UpstreamMetrics[] }>(`/api/metrics/upstreams?window=${timeWindow}${specQ}${scopeQ}`);
+  const { routerIdQ } = useRouterFilter();
+  return useApi<{ upstreams: UpstreamMetrics[] }>(
+    `/api/metrics/upstreams?window=${timeWindow}${specQ}${routerIdQ}${scopeQ}`,
+  );
 }

@@ -42,6 +42,20 @@ function walk(dir: string, out: string[] = []): string[] {
 }
 
 /**
+ * A match inside a COMMENT is prose, not a fetch. House style quotes these
+ * paths in backticks (`/api/metrics/specs`), which is indistinguishable from a
+ * template literal by the rule below — so the line's own prefix decides: text
+ * before the match containing `//`, or a line opening with `*` / `/*`, is a
+ * comment. A real call can still carry a trailing `//` comment, because that
+ * text comes after the match.
+ */
+function inComment(src: string, index: number): boolean {
+  const lineStart = src.lastIndexOf("\n", index) + 1;
+  const before = src.slice(lineStart, index);
+  return before.includes("//") || /^\s*(\*|\/\*)/.test(before);
+}
+
+/**
  * URL literals only — a leading backtick or quote is what separates real URL
  * construction from the many doc-comment mentions of these paths.
  *
@@ -55,6 +69,10 @@ function metricsUrlLiterals(src: string): { literal: string; scoped: boolean }[]
   const re = /(withScope\(\s*)?(["`])\/api\/metrics\//g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(src))) {
+    if (inComment(src, m.index)) {
+      re.lastIndex = m.index + m[0].length;
+      continue;
+    }
     const withScope = Boolean(m[1]);
     const quote = m[2]!;
     const start = m.index + (m[1]?.length ?? 0) + 1;
@@ -89,6 +107,19 @@ describe("router scope (?router=) coverage", () => {
     expect(files.some((f) => f.endsWith("HeroPanel.tsx"))).toBe(true);
   });
 
+  it("reads prose and calls apart", () => {
+    const src = [
+      "/** The Metrics page took `/api/metrics/specs` (chains with traffic). */",
+      "  // scoped elsewhere: `/api/metrics/chains?window=1d`",
+      " *  reads `/api/metrics/upstreams` per window",
+      'const a = useApi(`/api/metrics/chains?window=${w}${scopeQ}`);',
+      'const b = useApi(withScope("/api/metrics/specs"));',
+      'const c = useApi(`/api/metrics/errors?window=${w}`); // forgot the scope',
+    ].join("\n");
+    // The three comment mentions are prose; only the three calls are counted.
+    expect(metricsUrlLiterals(src).map((l) => l.scoped)).toEqual([true, true, false]);
+  });
+
   it("every /api/metrics/* fetch carries the router scope", () => {
     const unscoped: string[] = [];
     for (const file of files) {
@@ -104,8 +135,11 @@ describe("router scope (?router=) coverage", () => {
   });
 
   it("the router list itself stays unscoped", () => {
-    const select = readFileSync(join(SRC, "components/gateway/RouterSelect.tsx"), "utf8");
-    const [routers] = metricsUrlLiterals(select).filter((u) =>
+    // Lives in the router-options hook (it was RouterSelect's own fetch before
+    // the two router axes were folded into one control). Scoping it to the
+    // current selection would make every other router unreachable.
+    const hook = readFileSync(join(SRC, "hooks/use-router-options.ts"), "utf8");
+    const [routers] = metricsUrlLiterals(hook).filter((u) =>
       u.literal.startsWith("/api/metrics/routers"),
     );
     expect(routers).toBeDefined();
