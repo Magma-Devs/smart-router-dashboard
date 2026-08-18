@@ -126,6 +126,18 @@ function EndpointRow({
       </div>
       )}
       <span className="gw-mono" style={{ fontSize: 11, color: "var(--text-2)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{row.urlHost || "—"}</span>
+      {/* The masked host drops path + query, so a provider that pins one
+          node-url per internal path (TON's v2 at the root, v3 under /api/v3)
+          would render identical rows. The badge is what tells them apart. */}
+      {row.internalPath && (
+        <span
+          className="gw-mono"
+          title={`Pinned to internal path ${row.internalPath}`}
+          style={{ fontSize: 10, padding: "1px 5px", borderRadius: 4, whiteSpace: "nowrap", color: "var(--text-2)", border: "1px solid var(--line)" }}
+        >
+          {row.internalPath}
+        </span>
+      )}
       {/* interface tag + configured capabilities (addons + derived ws) — real
           config values, nothing invented. Same IfaceTag component the
           Endpoints page uses so the badge label + colour are consistent. */}

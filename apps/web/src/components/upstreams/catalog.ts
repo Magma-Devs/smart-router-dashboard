@@ -270,6 +270,10 @@ export interface UpstreamChainRow {
   urlHost: string;
   iface: string;
   addons: string[];
+  /** `internal-path` this node-url is pinned to, or null for the root path.
+   *  `urlHost` is masked to scheme+host, so two node-urls that differ only by
+   *  internal path are otherwise identical on screen. */
+  internalPath: string | null;
   routerId: string;
   /** Position in the owning node's endpoint list — the handle the direct
    *  relay resolves back to a full url server-side. -1 for the placeholder
@@ -315,10 +319,10 @@ export function buildUpstreamRows(
       if (!rows) { rows = []; byName.set(n.name, rows); order.push(n.name); }
       const role: "primary" | "backup" = n.isBackup ? "backup" : "primary";
       if (n.endpoints.length === 0) {
-        rows.push({ spec: r.spec, network: r.network, role, urlHost: "", iface: "", addons: [], routerId: r.id, endpointIndex: -1, directable: false });
+        rows.push({ spec: r.spec, network: r.network, role, urlHost: "", iface: "", addons: [], internalPath: null, routerId: r.id, endpointIndex: -1, directable: false });
       }
       for (const ep of n.endpoints) {
-        rows.push({ spec: r.spec, network: r.network, role, urlHost: ep.urlHost, iface: ep.interface, addons: ep.addons, routerId: r.id, endpointIndex: ep.index, directable: ep.directable });
+        rows.push({ spec: r.spec, network: r.network, role, urlHost: ep.urlHost, iface: ep.interface, addons: ep.addons, internalPath: ep.internalPath ?? null, routerId: r.id, endpointIndex: ep.index, directable: ep.directable });
       }
     }
   }

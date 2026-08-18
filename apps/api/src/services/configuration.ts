@@ -331,6 +331,7 @@ function normalizeHelm(raw: Record<string, unknown>, dials: EndpointIndex): Rout
               urlHost: maskNodeUrl(url),
               interface: asString(ep["interface"]),
               addons: Array.isArray(ep["addons"]) ? ep["addons"].map(String) : [],
+              internalPath: asString(pick(ep, "internal_path", "internal-path", "internalPath")) || null,
               index,
               directable: isDirectable(url),
             };
@@ -424,6 +425,7 @@ function normalizeSrConfig(raw: Record<string, unknown>, dials: EndpointIndex): 
             urlHost: maskNodeUrl(url),
             interface: iface,
             addons: Array.isArray(nu["addons"]) ? nu["addons"].map(String) : [],
+            internalPath: asString(pick(nu, "internal-path", "internal_path", "internalPath")) || null,
             index,
             directable: isDirectable(url),
           };
