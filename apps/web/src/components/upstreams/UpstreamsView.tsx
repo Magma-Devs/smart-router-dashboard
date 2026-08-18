@@ -15,6 +15,7 @@ import {
 } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
+import { ExplorerHomeLink } from "@/components/gateway/ExplorerLink";
 import { ChainSelect } from "@/components/gateway/ChainSelect";
 import { WindowSelect } from "@/components/gateway/WindowSelect";
 import { RouterFilterSelect } from "@/components/gateway/RouterFilterSelect";
@@ -373,8 +374,12 @@ export function UpstreamsView() {
                 {/* header — the chain this card is about; the rows below name
                     the upstream instead. */}
                 <div className="gw-row" style={{ gap: 10, marginBottom: 12 }}>
-                  <ChainBadge spec={group.spec} size={28} />
-                  <span style={{ fontSize: 13, fontWeight: 600 }}>{chain.name}</span>
+                  <ExplorerHomeLink spec={group.spec}>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+                      <ChainBadge spec={group.spec} size={28} />
+                      <span style={{ fontSize: 13, fontWeight: 600 }}>{chain.name}</span>
+                    </span>
+                  </ExplorerHomeLink>
                   <span className="gw-mono" style={{ fontSize: 11, color: "var(--text-3)" }}>{group.spec}</span>
                   {!chain.mainnet && (
                     <span className="gw-tag" style={{ fontSize: 10, padding: "1px 6px" }}>testnet</span>

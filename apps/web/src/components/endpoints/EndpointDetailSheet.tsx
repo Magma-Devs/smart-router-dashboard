@@ -16,6 +16,7 @@ import type { RouterTopology } from "@sr/shared";
 import { buildChainMetaByIndex } from "@sr/shared";
 import { labelStyle } from "@/lib/styles";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
+import { ExplorerHomeLink } from "@/components/gateway/ExplorerLink";
 import { CloudNotice } from "@/components/gateway/CloudNotice";
 import { HealthTag } from "@/components/gateway/HealthTag";
 import { JWT_CLOUD_MSG, READONLY_MSG, type UpstreamRow } from "@/components/upstreams/catalog";
@@ -81,7 +82,7 @@ export function EndpointDetailSheet({ open, ep, router, onClose, upstreams }: {
         {/* Head */}
         <div className="gw-sheet__head">
           <div style={{ display: "flex", alignItems: "flex-start", gap: 10, flex: 1, minWidth: 0 }}>
-            <ChainBadge spec={ep.spec} size={30} />
+            <ExplorerHomeLink spec={ep.spec}><ChainBadge spec={ep.spec} size={30} /></ExplorerHomeLink>
             <div style={{ minWidth: 0 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
                 <p className="gw-sheet__title" style={{ margin: 0 }}>{chain.name}</p>

@@ -19,6 +19,7 @@ import { buildChainMetaByIndex, type BlockHeights, type ChainTips, type MetricWi
 import { useApi } from "@/hooks/use-api";
 import { Tip } from "@/components/gateway/Tip";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
+import { ExplorerBlockLink, ExplorerHomeLink } from "@/components/gateway/ExplorerLink";
 import { ThCol, useSort } from "@/components/gateway/SortTable";
 import { TT } from "@/lib/tooltips";
 import { fmtComma, fmtNum } from "@/lib/format";
@@ -28,7 +29,7 @@ import { ChainDetail, type ChainDetailRow } from "./ChainDetail";
 import { useState } from "react";
 import { useFilters } from "@/components/gateway/FiltersProvider";
 
-const BLOCK_TIP = "**The head this router serves** — `smartrouter_latest_block`, the tip it has accepted, leading with the furthest-ahead api interface.\n\nIt is a CHAIN-level series, so two routers on one chain read the same one. Per-upstream lag lives on the Upstreams tab.";
+const BLOCK_TIP = "**The head this router serves** — `smartrouter_latest_block`, the tip it has accepted, leading with the furthest-ahead api interface.\n\nIt is a CHAIN-level series, so two routers on one chain read the same one. Per-upstream lag lives on the Upstreams tab.\n\n**Click a height** to open it on the chain\u2019s block explorer. Chains with no verified block page show the number plain \u2014 the chain icon still opens their explorer.";
 
 const ROUTER_SR_TIP = "**Chain-level availability** — successful requests ÷ total, **rolled up across every upstream** on the chain (what your apps actually got).\n\nSame definition as per-upstream Availability in the Upstreams tab.";
 
@@ -191,7 +192,7 @@ export function RouterOverview({ onChainClick, chainFilter, timeWindow }: {
                 title={`${r.routerId} on ${r.name} — click for chain health`}>
                 <td>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <ChainBadge spec={r.spec} size={22} />
+                    <ExplorerHomeLink spec={r.spec}><ChainBadge spec={r.spec} size={22} /></ExplorerHomeLink>
                     <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         <span style={{ fontSize: 13, fontWeight: 600 }}>{r.routerId}</span>
@@ -222,7 +223,9 @@ export function RouterOverview({ onChainClick, chainFilter, timeWindow }: {
                 </td>
                 <td style={{ textAlign: "right" }}>
                   {r.tipBlock != null
-                    ? <span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{fmtComma(r.tipBlock)}</span>
+                    ? <ExplorerBlockLink spec={r.spec} block={r.tipBlock}>
+                        <span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{fmtComma(r.tipBlock)}</span>
+                      </ExplorerBlockLink>
                     : <span style={{ fontSize: 12, color: "var(--text-4)" }}>—</span>}
                 </td>
                 <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{fmtNum(r.reqCount)}</span></td>
