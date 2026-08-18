@@ -475,6 +475,23 @@ the log; the accounts, 2FA and config-approval tasks only emit into it.
 - **Names are snapshots, never joins.** `actor_name` / `target_name` record
   what the thing was called at the time. A removed person keeps their name in
   the log permanently, and a rename cannot rewrite history.
+- **Reading it is one query, two directions** (`packages/db/src/audit-read.ts`).
+  The viewer asks for `order=desc`; a customer's tooling takes the default and
+  pulls oldest-first on a schedule. Deliberately the same code path — a screen
+  that could disagree with what a security team pulls is worse than no screen.
+- **The cursor is gap-free by construction, not by timing.** `seq` is handed
+  out at `INSERT`, not at `COMMIT`, so two writers can take 100 and 101 and
+  commit in the other order; a reader trusting `seq` alone serves 101, the
+  puller stores it, and 100 surfaces afterwards behind the cursor and is lost
+  for good. A wall-clock watermark does **not** fix this — `now()` is
+  transaction *start* time, so the slow writer gets an old timestamp and a high
+  sequence, exactly backwards. Instead every row records its `xact_id`
+  (`xid8`), and a row is served only once it sits below
+  `pg_snapshot_xmin(pg_current_snapshot())` — the oldest transaction still
+  open. The cursor carries that horizon, and the next read also picks up
+  whatever was withheld last time. A late-committing row is therefore delivered
+  **late rather than never**, and never twice. The cost, stated plainly: across
+  pages the sequence is not strictly monotonic. Within a page it always is.
 - **Append-only in the database, not just the product.** A
   `BEFORE UPDATE OR DELETE` trigger on **both** tables raises. The one
   legitimate writer is retention, which opens the gate with
@@ -547,6 +564,7 @@ Every `/api/metrics/*` route also accepts **`router?`** — the router scope
 | `POST /auth/oauth/:provider` | body: `{token}` | Google/GitHub sign-in. An account without an authenticator gets `{ user, sessionId }`; an enrolled one gets `{ twoFactorRequired, challenge, expiresAt, email }` and **no session** — the web parks the challenge in the `sr_2fa` handoff cookie for the code screen, and the session opens at `/auth/2fa/verify` as `<provider>+totp` |
 | `POST /api/account/2fa/begin` · `/confirm` | — · `{code}` | Enrolment. `begin` returns the QR (server-rendered SVG) and the secret as text, once; `confirm` proves a code and turns 2FA on. Refused 409 for an already-enrolled account — an admin reset is the only way back |
 | `POST /api/team/members/:id/2fa/reset` | — | Admin only, and not for your own account (409). Destroys the secret, retires live challenges, signs them out everywhere, in one transaction with `2fa.reset` (naming both people) and a `session.revoked` per ended session. Emails nobody (`notified: "on_next_signin"`). See [`docs/TWO-FACTOR.md`](docs/TWO-FACTOR.md) |
+| `GET /api/audit/events` | `from?`, `to?`, `actor?`, `action?` (repeatable), `group?` (repeatable), `target_type?`, `target_id?`, `order?`, `per_page?`, `after?` | `AuditEventsResponse` — `{ items, cursor, has_more }`. **`AUTH_MODE=enabled` only**; any role, no gate beyond a live session. **Oldest first by default** and resumable — feed `cursor` back as `after`. A misspelled `action`/`group`, an `actor` that is neither a UUID nor an address, an unparseable time, and a cursor from a different filter set or direction are all **400**, never an empty page. **No web consumer yet** — the viewer is the next slice |
 
 ## Environment variables
 

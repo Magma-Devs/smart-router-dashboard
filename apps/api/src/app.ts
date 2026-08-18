@@ -17,6 +17,7 @@ import { authRoutes } from "./routes/auth.js";
 import { teamRoutes, teamPasswordRoutes, teamMemberRoutes } from "./routes/team.js";
 import { accountRoutes } from "./routes/account.js";
 import { announceSetupToken } from "./services/setup.js";
+import { auditRoutes } from "./routes/audit.js";
 
 /**
  * `TRUST_PROXY` as a hop count, in the shape Fastify's types accept.
@@ -78,6 +79,10 @@ export async function buildApp(): Promise<FastifyInstance> {
     await app.register(teamPasswordRoutes);
     await app.register(teamMemberRoutes);
     await app.register(accountRoutes);
+    // Inside the gate on purpose: the audit log is Postgres-backed and every
+    // route on it needs a live session, so it must not exist at all when auth
+    // is disabled.
+    await app.register(auditRoutes);
 
     // Once the database is up, mint + log the first-run token if this install
     // still needs one. Not awaited: `dbReady` retries forever by design, and
