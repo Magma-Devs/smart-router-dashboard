@@ -14,6 +14,7 @@ import { apiPost } from "@/lib/api-client";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { CopyButton } from "@/components/gateway/CopyButton";
 import { HealthTag } from "@/components/gateway/HealthTag";
+import { initialTargetFor, pinRefusalFor, type UpstreamTier } from "./pin-support";
 import {
   buildRequest,
   paramsKindFor,
@@ -106,6 +107,10 @@ interface TryMeDrawerProps {
    *  leaving the router (and its cache, retries and hedging) out of the
    *  measurement. Null ⇒ router-only, as on the Endpoints page. */
   directTarget?: DirectTarget | null;
+  /** Which of the router's two pools this endpoint sits in. A backup cannot be
+   *  pinned at all (see `pin-support.ts`), so the drawer says why and opens on
+   *  the direct leg instead. */
+  upstreamTier?: UpstreamTier;
   onClose: () => void;
 }
 
@@ -445,6 +450,7 @@ export function TryMeDrawer({
   health,
   selectUpstream,
   directTarget = null,
+  upstreamTier = "primary",
   onClose,
 }: TryMeDrawerProps) {
   const chain = buildChainMetaByIndex(spec);
@@ -456,10 +462,23 @@ export function TryMeDrawer({
   const [transport, setTransport] = useState<Transport>(
     canToggleTransport && initialTransport === "ws" ? "ws" : "http",
   );
+  /** Why the router can't be pinned to this upstream, when it can't — a
+   *  backup lives outside the pool `lava-select-provider` is matched against. */
+  const pinRefusal = pinRefusalFor(upstreamTier);
   /** Router (the default — what the endpoint actually serves) vs. straight at
    *  the upstream. Kept as state rather than derived so switching transports
-   *  doesn't silently change WHERE a send goes. */
-  const [target, setTarget] = useState<Via>("router");
+   *  doesn't silently change WHERE a send goes. Opens on the direct leg for an
+   *  upstream the router cannot be pinned to: that is the only path which
+   *  reaches it, and the effect below bounces the choice back if the transport
+   *  the drawer opens on has nothing to dial. */
+  const [target, setTarget] = useState<Via>(() =>
+    initialTargetFor({
+      tier: upstreamTier,
+      directAvailable:
+        directTarget !== null &&
+        directAvailableFor(directTarget, canToggleTransport && initialTransport === "ws"),
+    }),
+  );
   const onWs = transport === "ws" && wsIface !== null && wsUrl !== null;
   /* The transport actually being driven. The two share a method catalog
      (`storageKey` collapses `-ws`), so switching changes only the dial
@@ -1139,6 +1158,9 @@ export function TryMeDrawer({
                 <strong style={{ color: "var(--text)", fontFamily: "var(--font-mono)", fontWeight: 600, fontSize: 12 }}>
                   {selectUpstream ?? directTarget?.node}
                 </strong>
+                {upstreamTier === "backup" && (
+                  <span className="gw-tag" style={{ fontSize: 10 }}>backup</span>
+                )}
                 {directTarget && (
                   <div style={{ display: "flex", gap: 0, marginLeft: "auto", borderRadius: 6, overflow: "hidden", border: "1px solid var(--line-2)" }}>
                     {(["router", "upstream"] as const).map((t) => {
@@ -1154,7 +1176,7 @@ export function TryMeDrawer({
                             disabled
                               ? "This upstream has no url for the selected transport in the values file."
                               : t === "router"
-                                ? "Send through the router, pinned to this upstream."
+                                ? (pinRefusal ?? "Send through the router, pinned to this upstream.")
                                 : "Send straight to this upstream — the api dials it, no router in the path."
                           }
                           style={{
@@ -1179,6 +1201,19 @@ export function TryMeDrawer({
                 {onDirect ? (
                   <>
                     The api dials this upstream itself — <strong style={{ color: "var(--text)" }}>the router is not in the path</strong>, so no cache, no retries, no hedging, and none of the <span className="gw-mono">Lava-*</span> headers. Latency is measured at the api, so it isn&apos;t comparable to the router number above it.
+                    {pinRefusal && (
+                      <>
+                        {" "}Opened here because the router can&apos;t be pinned to a backup — this is the one path that reaches it.
+                      </>
+                    )}
+                  </>
+                ) : pinRefusal ? (
+                  <>
+                    <strong style={{ color: "var(--text)" }}>The router can&apos;t be told to use this upstream.</strong>{" "}
+                    It matches <span className="gw-mono">lava-select-provider</span> against its primary pool only. A backup is reached
+                    solely when every primary is exhausted, and the router picks among the backups itself — so a pinned request comes back{" "}
+                    <span className="gw-mono">-32000 Selected provider not available</span> however healthy this upstream is. Send it{" "}
+                    {directTarget ? "direct to the upstream instead" : "through the router unpinned, or read it on the Upstreams roster"}.
                   </>
                 ) : selectUpstream ? (
                   <>
@@ -1528,7 +1563,11 @@ export function TryMeDrawer({
             const rows: { label: string; hint: string; out: Outcome }[] = [
               {
                 label: "Via router",
-                hint: selectUpstream ? `pinned to ${selectUpstream}` : "router picks the upstream",
+                hint: pinRefusal
+                  ? `pin refused — ${selectUpstream ?? "this upstream"} is a backup`
+                  : selectUpstream
+                    ? `pinned to ${selectUpstream}`
+                    : "router picks the upstream",
                 out: comparison.router,
               },
               {
