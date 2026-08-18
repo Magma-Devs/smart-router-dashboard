@@ -538,6 +538,13 @@
         "standard": "EIP3091"
       }
     ],
+    "14601": [
+      {
+        "name": "Sonic Testnet Explorer",
+        "url": "https://explorer.testnet.soniclabs.com",
+        "standard": "none"
+      }
+    ],
     "16602": [
       {
         "name": "0G Chainscan",
@@ -875,6 +882,13 @@
       {
         "name": "manta-testnet Explorer",
         "url": "https://manta-testnet.calderaexplorer.xyz",
+        "standard": "EIP3091"
+      }
+    ],
+    "11142220": [
+      {
+        "name": "Celo Sepolia Explorer",
+        "url": "https://celo-sepolia.blockscout.com",
         "standard": "EIP3091"
       }
     ],
@@ -1273,116 +1287,6 @@
           "block_page": null,
           "tx_page": "https://explorer.stavr.tech/Canto-Mainnet/tx/${txHash}",
           "account_page": "https://explorer.stavr.tech/Canto-Mainnet/account/${accountAddress}"
-        }
-      ]
-    },
-    "celestia": {
-      "dir": "celestia",
-      "explorers": [
-        {
-          "kind": "Nodes.Guru",
-          "url": "https://celestia.explorers.guru",
-          "block_page": null,
-          "tx_page": "https://celestia.explorers.guru/transaction/${txHash}",
-          "account_page": "https://celestia.explorers.guru/account/${accountAddress}"
-        },
-        {
-          "kind": "CelestiaHub [Noders]",
-          "url": "https://celestiahub.org/explorer/dashboard",
-          "block_page": null,
-          "tx_page": "https://celestiahub.org/explorer/transactions/${txHash}",
-          "account_page": "https://celestiahub.org/explorer/accounts/${accountAddress}"
-        },
-        {
-          "kind": "Mintscan",
-          "url": "https://mintscan.io/celestia",
-          "block_page": null,
-          "tx_page": "https://mintscan.io/celestia/txs/${txHash}",
-          "account_page": "https://mintscan.io/celestia/address/${accountAddress}"
-        },
-        {
-          "kind": "staking-explorer.com",
-          "url": "https://staking-explorer.com/explorer/celestia",
-          "block_page": null,
-          "tx_page": "https://staking-explorer.com/transaction.php?chain=celestia&tx=${txHash}",
-          "account_page": "https://staking-explorer.com/account.php?chain=celestia&addr=${accountAddress}"
-        },
-        {
-          "kind": "NodeStake",
-          "url": "https://explorer.nodestake.org/celestia",
-          "block_page": null,
-          "tx_page": "https://explorer.nodestake.org/celestia/txs/${txHash}",
-          "account_page": "https://explorer.nodestake.org/celestia/account/${accountAddress}"
-        },
-        {
-          "kind": "Stakeflow",
-          "url": "https://stakeflow.io/celestia",
-          "block_page": null,
-          "tx_page": "https://stakeflow.io/celestia/transactions/${txHash}",
-          "account_page": null
-        },
-        {
-          "kind": "TC Network",
-          "url": "https://explorer.tcnetwork.io/celestia",
-          "block_page": null,
-          "tx_page": "https://explorer.tcnetwork.io/celestia/transaction/${txHash}",
-          "account_page": "https://explorer.tcnetwork.io/celestia/account/${accountAddress}"
-        },
-        {
-          "kind": "🔥STAVR🔥",
-          "url": "https://explorer.stavr.tech/Celestia-Mainnet",
-          "block_page": null,
-          "tx_page": "https://explorer.stavr.tech/Celestia-Mainnet/transaction/${txHash}",
-          "account_page": "https://explorer.stavr.tech/Celestia-Mainnet/account/${accountAddress}"
-        },
-        {
-          "kind": "AM Solutions",
-          "url": "https://explorer.theamsolutions.info/celestia-main",
-          "block_page": null,
-          "tx_page": "https://explorer.theamsolutions.info/celestia-main/transaction/${txHash}",
-          "account_page": "https://explorer.theamsolutions.info/celestia-main/account/${accountAddress}"
-        },
-        {
-          "kind": "ezstaking",
-          "url": "https://ezstaking.app/celestia",
-          "block_page": null,
-          "tx_page": "https://ezstaking.app/celestia/txs/${txHash}",
-          "account_page": "https://ezstaking.app/celestia/account/${accountAddress}"
-        },
-        {
-          "kind": "itrocket",
-          "url": "https://mainnet.itrocket.net/celestia",
-          "block_page": null,
-          "tx_page": "https://mainnet.itrocket.net/celestia/transaction/${txHash}",
-          "account_page": "https://mainnet.itrocket.net/celestia/account/${accountAddress}"
-        },
-        {
-          "kind": "DTEAM | Explorer",
-          "url": "https://explorer.mainnet.dteam.tech/celestia",
-          "block_page": null,
-          "tx_page": "https://explorer.mainnet.dteam.tech/celestia/transaction/${txHash}",
-          "account_page": "https://explorer.mainnet.dteam.tech/celestia/account/${accountAddress}"
-        },
-        {
-          "kind": "Relaxed Explorer 🦥",
-          "url": "https://explorer.stakeandrelax.net/celestia",
-          "block_page": null,
-          "tx_page": "https://explorer.stakeandrelax.net/celestia/transaction/${txHash}",
-          "account_page": "https://explorer.stakeandrelax.net/celestia/account/${accountAddress}"
-        },
-        {
-          "kind": "Valopers",
-          "url": "https://celestia.valopers.com",
-          "block_page": null,
-          "tx_page": "https://celestia.valopers.com/transactions/${txHash}",
-          "account_page": "https://celestia.valopers.com/account/${accountAddress}"
-        },
-        {
-          "kind": "moon-runners",
-          "url": "https://moon-runners.net/celestia/mainnet",
-          "block_page": null,
-          "tx_page": "https://moon-runners.net/celestia/mainnet/finder?search=${txHash}",
-          "account_page": "https://moon-runners.net/celestia/mainnet/finder?search=${accountAddress}"
         }
       ]
     },

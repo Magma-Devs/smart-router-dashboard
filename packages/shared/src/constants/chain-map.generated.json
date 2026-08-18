@@ -576,6 +576,15 @@
     ],
     "mainnet": true
   },
+  "CELOS": {
+    "name": "Celo Sepolia Testnet",
+    "family": "evm",
+    "icon": "celo",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": false
+  },
   "CODEX": {
     "name": "Codex",
     "family": "evm",
@@ -1862,8 +1871,17 @@
     ],
     "mainnet": true
   },
-  "SONICT": {
+  "SONICB": {
     "name": "Sonic Blaze Testnet",
+    "family": "evm",
+    "icon": "sonic",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": false
+  },
+  "SONICT": {
+    "name": "Sonic Testnet",
     "family": "evm",
     "icon": "sonic",
     "interfaces": [

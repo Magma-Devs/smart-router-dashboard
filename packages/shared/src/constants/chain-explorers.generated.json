@@ -529,22 +529,6 @@
       "source": "curated"
     }
   ],
-  "CELESTIA": [
-    {
-      "name": "Nodes.Guru",
-      "url": "https://celestia.explorers.guru",
-      "kind": "home",
-      "verified": "registry — the registry row supplies no block page and this host proved none elsewhere, so only the home page is offered",
-      "source": "cosmos/chain-registry/celestia"
-    },
-    {
-      "name": "CelestiaHub [Noders]",
-      "url": "https://celestiahub.org/explorer/dashboard",
-      "kind": "home",
-      "verified": "registry — the registry row supplies no block page and this host proved none elsewhere, so only the home page is offered",
-      "source": "cosmos/chain-registry/celestia"
-    }
-  ],
   "CELESTIATA": [
     {
       "name": "Celenium",
@@ -584,6 +568,15 @@
       "kind": "block",
       "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
       "source": "ethereum-lists/chains#42220"
+    }
+  ],
+  "CELOS": [
+    {
+      "name": "Celo Sepolia Explorer",
+      "url": "https://celo-sepolia.blockscout.com",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#11142220"
     }
   ],
   "CODEX": [
@@ -1855,13 +1848,22 @@
       "source": "ethereum-lists/chains#146"
     }
   ],
-  "SONICT": [
+  "SONICB": [
     {
       "name": "Sonicscan",
       "url": "https://testnet.sonicscan.org",
       "kind": "block",
       "verified": "browser 2026-08-18 — block page watched rendering the requested height",
-      "source": "curated"
+      "source": "curated — chain-id 0xdede (57054) is Sonic Blaze, which upstream split out of SONICT into its own spec; this entry moved with the id"
+    }
+  ],
+  "SONICT": [
+    {
+      "name": "Sonic Testnet Explorer",
+      "url": "https://explorer.testnet.soniclabs.com",
+      "kind": "block",
+      "verified": "browser 2026-08-18 — block page watched rendering the requested height",
+      "source": "curated — SONICT is now chain-id 0x3909 (14601); the chainlist row declares no url standard, but /block/<n> was watched rendering"
     }
   ],
   "SPARK": [
