@@ -356,8 +356,11 @@ The route exists and is audited; the members-table button that should
 trigger it does not (see "What has no screen yet" below), so drive it
 directly.
 
-Get a token: DevTools → Network → any `/api/team/…` request → copy its
-`Authorization` header value, minus the word `Bearer`.
+Get the same Bearer the browser uses: DevTools → Network → any
+`/api/team/…` request → copy its `Authorization` header value, minus the
+word `Bearer`. (Signed in already? `curl -b <cookies> localhost:3000/api/auth/session`
+returns it as `accessToken` — the web re-signs it there on every session
+read, carrying the `sid` through.)
 
 ```bash
 TOKEN='eyJ…'
@@ -414,10 +417,13 @@ Two designed surfaces are reachable only over the api, so a walkthrough
 that stays in the browser will not find them. Both are missing UI, not
 missing behaviour — the routes work and are tested.
 
-| Design | Route | Missing |
+Both are named in `docs/ACCOUNTS-DESIGN.md` §6.3 — which lands with
+MAG-2729's design PR, on `docs/MAG-2729-accounts-design`.
+
+| Design says | Route | Missing |
 |---|---|---|
-| §6.3 — on-prem reset, "initiated by an admin, from the members table" | `POST /api/team/members/:id/reset-link` | no control on the member row |
-| §6.3 — managed reset, "initiated by the user, from `/login`" | `POST /auth/password/forgot` | no "Forgot password?" link |
+| on-prem reset, "initiated by an admin, from the members table" | `POST /api/team/members/:id/reset-link` | no control on the member row |
+| managed reset, "initiated by the user, from `/login`" | `POST /auth/password/forgot` | no "Forgot password?" link |
 
 The second is not exercisable in this stack anyway: `DEPLOYMENT_MODE=onprem`
 makes `/auth/password/forgot` answer 404 by design, because there is
