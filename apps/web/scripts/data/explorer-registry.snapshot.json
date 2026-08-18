@@ -1,0 +1,2718 @@
+{
+  "note": "Registry rows for the chain ids the current specs declare. Refresh with `node apps/web/scripts/generate-chain-explorers.mjs --refresh`. Committed so a CI drift run never depends on a live third-party registry.",
+  "chainlist": {
+    "1": [
+      {
+        "name": "etherscan",
+        "url": "https://etherscan.io",
+        "standard": "EIP3091"
+      },
+      {
+        "name": "blockscout",
+        "url": "https://eth.blockscout.com",
+        "standard": "EIP3091"
+      },
+      {
+        "name": "Routescan",
+        "url": "https://ethereum.routescan.io",
+        "standard": "EIP3091"
+      }
+    ],
+    "10": [
+      {
+        "name": "etherscan",
+        "url": "https://optimistic.etherscan.io",
+        "standard": "EIP3091"
+      },
+      {
+        "name": "blockscout",
+        "url": "https://optimism.blockscout.com",
+        "standard": "EIP3091"
+      },
+      {
+        "name": "Routescan",
+        "url": "https://mainnet.superscan.network",
+        "standard": "EIP3091"
+      }
+    ],
+    "14": [
+      {
+        "name": "blockscout",
+        "url": "https://flare-explorer.flare.network",
+        "standard": "EIP3091"
+      },
+      {
+        "name": "Routescan",
+        "url": "https://mainnet.flarescan.com",
+        "standard": "EIP3091"
+      }
+    ],
+    "25": [
+      {
+        "name": "Cronos Explorer",
+        "url": "https://explorer.cronos.org",
+        "standard": "none"
+      }
+    ],
+    "50": [
+      {
+        "name": "xdcscan",
+        "url": "https://xdcscan.com",
+        "standard": "EIP3091"
+      },
+      {
+        "name": "openscan",
+        "url": "https://xdcscan.io",
+        "standard": "EIP3091"
+      }
+    ],
+    "51": [
+      {
+        "name": "xdcscan",
+        "url": "https://testnet.xdcscan.com",
+        "standard": "EIP3091"
+      },
+      {
+        "name": "openscan",
+        "url": "https://apothem.xdcscan.io",
+        "standard": "EIP3091"
+      }
+    ],
+    "56": [
+      {
+        "name": "bscscan",
+        "url": "https://bscscan.com",
+        "standard": "EIP3091"
+      }
+    ],
+    "61": [
+      {
+        "name": "blockscout-ethereum-classic",
+        "url": "https://etc.blockscout.com",
+        "standard": "EIP3091"
+      },
+      {
+        "name": "etcnetworkinfo-blockscout-ethereum-classic",
+        "url": "https://explorer-blockscout.etc-network.info",
+        "standard": "none"
+      },
+      {
+        "name": "etcnetworkinfo-alethio-ethereum-classic",
+        "url": "https://explorer-alethio.etc-network.info",
+        "standard": "none"
+      },
+      {
+        "name": "etcnetworkinfo-expedition-ethereum-classic",
+        "url": "https://explorer-expedition.etc-network.info",
+        "standard": "none"
+      },
+      {
+        "name": "hebeblock-ethereum-classic",
+        "url": "https://etcerscan.com",
+        "standard": "EIP3091"
+      },
+      {
+        "name": "oklink-ethereum-classic",
+        "url": "https://www.oklink.com/etc",
+        "standard": "EIP3091"
+      },
+      {
+        "name": "tokenview-ethereum-classic",
+        "url": "https://etc.tokenview.io",
+        "standard": "EIP3091"
+      }
+    ],
+    "63": [
+      {
+        "name": "blockscout-mordor",
+        "url": "https://etc-mordor.blockscout.com",
+        "standard": "EIP3091"
+      },
+      {
+        "name": "etcnetworkinfo-expedition-mordor",
+        "url": "https://explorer-expedition.etc-network.info/?network=Ethereum+Classic+at+etc-network.info+GETH+Mordor",
+        "standard": "none"
+      }
+    ],
+    "81": [
+      {
+        "name": "Block Explorer",
+        "url": "https://explorer.japanopenchain.org",
+        "standard": "EIP3091"
+      }
+    ],
+    "97": [
+      {
+        "name": "bscscan-testnet",
+        "url": "https://testnet.bscscan.com",
+        "standard": "EIP3091"
+      }
+    ],
+    "114": [
+      {
+        "name": "blockscout",
+        "url": "https://coston2-explorer.flare.network",
+        "standard": "EIP3091"
+      },
+      {
+        "name": "Routescan",
+        "url": "https://coston2.testnet.flarescan.com",
+        "standard": "EIP3091"
+      }
+    ],
+    "122": [
+      {
+        "name": "blockscout",
+        "url": "https://explorer.fuse.io",
+        "standard": "EIP3091"
+      }
+    ],
+    "130": [
+      {
+        "name": "Unichain Mainnet Explorer",
+        "url": "https://uniscan.xyz",
+        "standard": "EIP3091"
+      },
+      {
+        "name": "Unichain Mainnet Explorer",
+        "url": "https://unichain.blockscout.com",
+        "standard": "EIP3091"
+      }
+    ],
+    "137": [
+      {
+        "name": "polygonscan",
+        "url": "https://polygonscan.com",
+        "standard": "EIP3091"
+      },
+      {
+        "name": "oklink",
+        "url": "https://www.oklink.com/polygon",
+        "standard": "EIP3091"
+      }
+    ],
+    "143": [
+      {
+        "name": "Monad Vision",
+        "url": "https://monadvision.com",
+        "standard": "EIP3091"
+      },
+      {
+        "name": "Monadscan",
+        "url": "https://monadscan.com",
+        "standard": "EIP3091"
+      }
+    ],
+    "146": [
+      {
+        "name": "etherscan",
+        "url": "https://sonicscan.org",
+        "standard": "EIP3091"
+      },
+      {
+        "name": "sonic",
+        "url": "https://explorer.soniclabs.com",
+        "standard": "none"
+      }
+    ],
+    "169": [
+      {
+        "name": "manta-pacific Explorer",
+        "url": "https://pacific-explorer.manta.network",
+        "standard": "EIP3091"
+      }
+    ],
+    "196": [
+      {
+        "name": "OKLink",
+        "url": "https://www.oklink.com/xlayer",
+        "standard": "EIP3091"
+      }
+    ],
+    "250": [
+      {
+        "name": "ftmscan",
+        "url": "https://ftmscan.com",
+        "standard": "EIP3091"
+      }
+    ],
+    "295": [
+      {
+        "name": "Arkhia Explorer",
+        "url": "https://explorer.arkhia.io",
+        "standard": "none"
+      },
+      {
+        "name": "DragonGlass",
+        "url": "https://app.dragonglass.me",
+        "standard": "none"
+      },
+      {
+        "name": "Hedera Explorer",
+        "url": "https://hederaexplorer.io",
+        "standard": "none"
+      }
+    ],
+    "296": [
+      {
+        "name": "HashScan",
+        "url": "https://hashscan.io/testnet",
+        "standard": "EIP3091"
+      },
+      {
+        "name": "Arkhia Explorer",
+        "url": "https://explorer.arkhia.io",
+        "standard": "none"
+      },
+      {
+        "name": "DragonGlass",
+        "url": "https://app.dragonglass.me",
+        "standard": "none"
+      },
+      {
+        "name": "Hedera Explorer",
+        "url": "https://hederaexplorer.io",
+        "standard": "none"
+      },
+      {
+        "name": "Ledger Works Explore",
+        "url": "https://explore.lworks.io",
+        "standard": "none"
+      }
+    ],
+    "300": [
+      {
+        "name": "zkSync Block Explorer",
+        "url": "https://sepolia.explorer.zksync.io",
+        "standard": "EIP3091"
+      }
+    ],
+    "314": [
+      {
+        "name": "Filfox",
+        "url": "https://filfox.info/en",
+        "standard": "none"
+      },
+      {
+        "name": "Beryx",
+        "url": "https://beryx.zondax.ch",
+        "standard": "none"
+      },
+      {
+        "name": "Glif Explorer",
+        "url": "https://explorer.glif.io",
+        "standard": "EIP3091"
+      },
+      {
+        "name": "Dev.storage",
+        "url": "https://dev.storage",
+        "standard": "none"
+      },
+      {
+        "name": "Filscan",
+        "url": "https://filscan.io",
+        "standard": "none"
+      },
+      {
+        "name": "Filscout",
+        "url": "https://filscout.io/en",
+        "standard": "none"
+      }
+    ],
+    "324": [
+      {
+        "name": "zkSync Era Block Explorer",
+        "url": "https://explorer.zksync.io",
+        "standard": "EIP3091"
+      }
+    ],
+    "338": [
+      {
+        "name": "Cronos Testnet Explorer",
+        "url": "https://explorer.cronos.org/testnet",
+        "standard": "none"
+      }
+    ],
+    "480": [
+      {
+        "name": "etherscan",
+        "url": "https://worldscan.org",
+        "standard": "EIP3091"
+      },
+      {
+        "name": "blockscout",
+        "url": "https://worldchain-mainnet.explorer.alchemy.com",
+        "standard": "EIP3091"
+      }
+    ],
+    "545": [
+      {
+        "name": "FlowScan Testnet",
+        "url": "https://evm-testnet.flowscan.io",
+        "standard": "EIP3091"
+      }
+    ],
+    "592": [
+      {
+        "name": "subscan",
+        "url": "https://astar.subscan.io",
+        "standard": "none"
+      },
+      {
+        "name": "blockscout",
+        "url": "https://blockscout.com/astar",
+        "standard": "EIP3091"
+      }
+    ],
+    "747": [
+      {
+        "name": "FlowScan",
+        "url": "https://evm.flowscan.io",
+        "standard": "EIP3091"
+      }
+    ],
+    "999": [
+      {
+        "name": "wanscan",
+        "url": "https://testnet.wanscan.org",
+        "standard": "EIP3091"
+      }
+    ],
+    "1111": [
+      {
+        "name": "WEMIX Block Explorer",
+        "url": "https://explorer.wemix.com",
+        "standard": "EIP3091"
+      }
+    ],
+    "1112": [
+      {
+        "name": "WEMIX Testnet Microscope",
+        "url": "https://microscope.test.wemix.com",
+        "standard": "EIP3091"
+      }
+    ],
+    "1284": [
+      {
+        "name": "moonscan",
+        "url": "https://moonbeam.moonscan.io",
+        "standard": "none"
+      }
+    ],
+    "1285": [
+      {
+        "name": "moonscan",
+        "url": "https://moonriver.moonscan.io",
+        "standard": "none"
+      }
+    ],
+    "1287": [
+      {
+        "name": "moonscan",
+        "url": "https://moonbase.moonscan.io",
+        "standard": "none"
+      }
+    ],
+    "1301": [
+      {
+        "name": "Unichain Sepolia Testnet Explorer",
+        "url": "https://unichain-sepolia.blockscout.com",
+        "standard": "EIP3091"
+      },
+      {
+        "name": "Unichain Sepolia Testnet Explorer",
+        "url": "https://sepolia.uniscan.xyz",
+        "standard": "EIP3091"
+      }
+    ],
+    "1315": [
+      {
+        "name": "blockscout",
+        "url": "https://aeneid.datanetscan.io",
+        "standard": "EIP3091"
+      }
+    ],
+    "1514": [
+      {
+        "name": "blockscout",
+        "url": "https://datanetscan.io",
+        "standard": "EIP3091"
+      }
+    ],
+    "1952": [
+      {
+        "name": "OKLink",
+        "url": "https://web3.okx.com/explorer/x-layer-testnet",
+        "standard": "EIP3091"
+      }
+    ],
+    "4002": [
+      {
+        "name": "ftmscan",
+        "url": "https://testnet.ftmscan.com",
+        "standard": "EIP3091"
+      }
+    ],
+    "4217": [
+      {
+        "name": "tempo-explorer",
+        "url": "https://explore.tempo.xyz",
+        "standard": "EIP3091"
+      }
+    ],
+    "4801": [
+      {
+        "name": "etherscan",
+        "url": "https://sepolia.worldscan.org",
+        "standard": "EIP3091"
+      },
+      {
+        "name": "blockscout",
+        "url": "https://worldchain-sepolia.explorer.alchemy.com",
+        "standard": "EIP3091"
+      }
+    ],
+    "5000": [
+      {
+        "name": "mantlescan",
+        "url": "https://mantlescan.xyz",
+        "standard": "EIP3091"
+      },
+      {
+        "name": "Mantle Explorer",
+        "url": "https://explorer.mantle.xyz",
+        "standard": "EIP3091"
+      }
+    ],
+    "5003": [
+      {
+        "name": "blockscout",
+        "url": "https://explorer.sepolia.mantle.xyz",
+        "standard": "EIP3091"
+      }
+    ],
+    "6805": [
+      {
+        "name": "blockscout",
+        "url": "https://racescan.io",
+        "standard": "EIP3091"
+      }
+    ],
+    "6806": [
+      {
+        "name": "blockscout",
+        "url": "https://testnet.racescan.io",
+        "standard": "EIP3091"
+      }
+    ],
+    "8453": [
+      {
+        "name": "basescan",
+        "url": "https://basescan.org",
+        "standard": "EIP3091"
+      },
+      {
+        "name": "basescout",
+        "url": "https://base.blockscout.com",
+        "standard": "EIP3091"
+      }
+    ],
+    "9745": [
+      {
+        "name": "Routescan",
+        "url": "https://plasmascan.to",
+        "standard": "EIP3091"
+      }
+    ],
+    "9746": [
+      {
+        "name": "Routescan",
+        "url": "https://testnet.plasmascan.to",
+        "standard": "EIP3091"
+      }
+    ],
+    "10143": [
+      {
+        "name": "Monad Testnet Explorer",
+        "url": "https://testnet.monadexplorer.com",
+        "standard": "EIP3091"
+      }
+    ],
+    "16602": [
+      {
+        "name": "0G Chainscan",
+        "url": "https://chainscan-galileo.0g.ai",
+        "standard": "EIP3091"
+      }
+    ],
+    "16661": [
+      {
+        "name": "0G Chainscan",
+        "url": "https://chainscan.0g.ai",
+        "standard": "EIP3091"
+      }
+    ],
+    "17000": [
+      {
+        "name": "Holesky Explorer",
+        "url": "https://holesky.beaconcha.in",
+        "standard": "EIP3091"
+      },
+      {
+        "name": "otterscan-holesky",
+        "url": "https://holesky.otterscan.io",
+        "standard": "EIP3091"
+      },
+      {
+        "name": "Holesky Etherscan",
+        "url": "https://holesky.etherscan.io",
+        "standard": "EIP3091"
+      }
+    ],
+    "23294": [
+      {
+        "name": "Oasis Sapphire Explorer",
+        "url": "https://explorer.oasis.io/mainnet/sapphire",
+        "standard": "EIP3091"
+      }
+    ],
+    "23295": [
+      {
+        "name": "Oasis Sapphire Testnet Explorer",
+        "url": "https://explorer.oasis.io/testnet/sapphire",
+        "standard": "EIP3091"
+      }
+    ],
+    "42161": [
+      {
+        "name": "Arbiscan",
+        "url": "https://arbiscan.io",
+        "standard": "EIP3091"
+      },
+      {
+        "name": "Arbitrum Explorer",
+        "url": "https://explorer.arbitrum.io",
+        "standard": "EIP3091"
+      }
+    ],
+    "42170": [
+      {
+        "name": "Arbitrum Nova Chain Explorer",
+        "url": "https://nova-explorer.arbitrum.io",
+        "standard": "EIP3091"
+      }
+    ],
+    "42220": [
+      {
+        "name": "Celoscan",
+        "url": "https://celoscan.io",
+        "standard": "EIP3091"
+      },
+      {
+        "name": "blockscout",
+        "url": "https://celo.blockscout.com",
+        "standard": "EIP3091"
+      }
+    ],
+    "42431": [
+      {
+        "name": "tempo-explorer",
+        "url": "https://explore.testnet.tempo.xyz",
+        "standard": "EIP3091"
+      }
+    ],
+    "43113": [
+      {
+        "name": "Etherscan",
+        "url": "https://testnet.snowscan.xyz",
+        "standard": "EIP3091"
+      },
+      {
+        "name": "Routescan",
+        "url": "https://testnet.snowtrace.io",
+        "standard": "EIP3091"
+      },
+      {
+        "name": "Avascan",
+        "url": "https://testnet.avascan.info",
+        "standard": "EIP3091"
+      }
+    ],
+    "43114": [
+      {
+        "name": "Etherscan",
+        "url": "https://snowscan.xyz",
+        "standard": "EIP3091"
+      },
+      {
+        "name": "Routescan",
+        "url": "https://snowtrace.io",
+        "standard": "EIP3091"
+      },
+      {
+        "name": "Avascan",
+        "url": "https://avascan.info",
+        "standard": "EIP3091"
+      }
+    ],
+    "44787": [
+      {
+        "name": "Alfajoresscan",
+        "url": "https://alfajores.celoscan.io",
+        "standard": "EIP3091"
+      }
+    ],
+    "47763": [
+      {
+        "name": "Neo X - Explorer",
+        "url": "https://xexplorer.neo.org",
+        "standard": "EIP3091"
+      }
+    ],
+    "57073": [
+      {
+        "name": "Ink Explorer",
+        "url": "https://explorer.inkonchain.com",
+        "standard": "EIP3091"
+      }
+    ],
+    "59141": [
+      {
+        "name": "Etherscan",
+        "url": "https://sepolia.lineascan.build",
+        "standard": "EIP3091"
+      },
+      {
+        "name": "Blockscout",
+        "url": "https://explorer.sepolia.linea.build",
+        "standard": "EIP3091"
+      }
+    ],
+    "59144": [
+      {
+        "name": "Etherscan",
+        "url": "https://lineascan.build",
+        "standard": "EIP3091"
+      },
+      {
+        "name": "Blockscout",
+        "url": "https://explorer.linea.build",
+        "standard": "EIP3091"
+      },
+      {
+        "name": "L2scan",
+        "url": "https://linea.l2scan.co",
+        "standard": "EIP3091"
+      }
+    ],
+    "60808": [
+      {
+        "name": "bobscout",
+        "url": "https://explorer.gobob.xyz",
+        "standard": "EIP3091"
+      }
+    ],
+    "80002": [
+      {
+        "name": "polygonscan-amoy",
+        "url": "https://amoy.polygonscan.com",
+        "standard": "EIP3091"
+      }
+    ],
+    "80069": [
+      {
+        "name": "Beratrail",
+        "url": "https://bepolia.beratrail.io",
+        "standard": "none"
+      }
+    ],
+    "80084": [
+      {
+        "name": "Beratrail",
+        "url": "https://bartio.beratrail.io",
+        "standard": "none"
+      }
+    ],
+    "80094": [
+      {
+        "name": "Berascan",
+        "url": "https://berascan.com",
+        "standard": "EIP3091"
+      },
+      {
+        "name": "Beratrail",
+        "url": "https://beratrail.io",
+        "standard": "EIP3091"
+      }
+    ],
+    "81224": [
+      {
+        "name": "Codex Explorer",
+        "url": "https://explorer.codex.xyz",
+        "standard": "EIP3091"
+      }
+    ],
+    "81457": [
+      {
+        "name": "Blastscan",
+        "url": "https://blastscan.io",
+        "standard": "EIP3091"
+      },
+      {
+        "name": "Blast Explorer",
+        "url": "https://blastexplorer.io",
+        "standard": "EIP3091"
+      }
+    ],
+    "84532": [
+      {
+        "name": "basescan-sepolia",
+        "url": "https://sepolia.basescan.org",
+        "standard": "EIP3091"
+      },
+      {
+        "name": "basescout",
+        "url": "https://base-sepolia.blockscout.com",
+        "standard": "EIP3091"
+      }
+    ],
+    "98866": [
+      {
+        "name": "Blockscout",
+        "url": "https://explorer.plume.org",
+        "standard": "EIP3091"
+      }
+    ],
+    "98867": [
+      {
+        "name": "Blockscout",
+        "url": "https://testnet-explorer.plume.org",
+        "standard": "EIP3091"
+      }
+    ],
+    "314159": [
+      {
+        "name": "Filscan - Calibration",
+        "url": "https://calibration.filscan.io",
+        "standard": "none"
+      },
+      {
+        "name": "Filscout - Calibration",
+        "url": "https://calibration.filscout.com/en",
+        "standard": "none"
+      },
+      {
+        "name": "Filfox - Calibration",
+        "url": "https://calibration.filfox.info",
+        "standard": "none"
+      },
+      {
+        "name": "Glif Explorer - Calibration",
+        "url": "https://explorer.glif.io/?network=calibration",
+        "standard": "none"
+      },
+      {
+        "name": "Beryx",
+        "url": "https://beryx.zondax.ch",
+        "standard": "none"
+      }
+    ],
+    "421614": [
+      {
+        "name": "arbiscan-sepolia",
+        "url": "https://sepolia.arbiscan.io",
+        "standard": "EIP3091"
+      },
+      {
+        "name": "Arbitrum Sepolia Rollup Testnet Explorer",
+        "url": "https://sepolia-explorer.arbitrum.io",
+        "standard": "EIP3091"
+      }
+    ],
+    "534351": [
+      {
+        "name": "Scroll Sepolia Etherscan",
+        "url": "https://sepolia.scrollscan.com",
+        "standard": "EIP3091"
+      }
+    ],
+    "534352": [
+      {
+        "name": "Scrollscan",
+        "url": "https://scrollscan.com",
+        "standard": "EIP3091"
+      }
+    ],
+    "560048": [
+      {
+        "name": "dora",
+        "url": "https://light-hoodi.beaconcha.in",
+        "standard": "none"
+      }
+    ],
+    "763373": [
+      {
+        "name": "Ink Sepolia Explorer",
+        "url": "https://explorer-sepolia.inkonchain.com",
+        "standard": "EIP3091"
+      }
+    ],
+    "808813": [
+      {
+        "name": "bobscout",
+        "url": "https://bob-sepolia.explorer.gobob.xyz",
+        "standard": "EIP3091"
+      }
+    ],
+    "812242": [
+      {
+        "name": "Codex Testnet Explorer",
+        "url": "https://explorer.codex-stg.xyz",
+        "standard": "EIP3091"
+      }
+    ],
+    "3441005": [
+      {
+        "name": "manta-testnet Explorer",
+        "url": "https://manta-testnet.calderaexplorer.xyz",
+        "standard": "EIP3091"
+      }
+    ],
+    "11155111": [
+      {
+        "name": "etherscan-sepolia",
+        "url": "https://sepolia.etherscan.io",
+        "standard": "EIP3091"
+      },
+      {
+        "name": "otterscan-sepolia",
+        "url": "https://sepolia.otterscan.io",
+        "standard": "EIP3091"
+      },
+      {
+        "name": "Routescan",
+        "url": "https://11155111.testnet.routescan.io",
+        "standard": "EIP3091"
+      }
+    ],
+    "11155420": [
+      {
+        "name": "etherscan-sepolia-optimism",
+        "url": "https://sepolia-optimism.etherscan.io",
+        "standard": "EIP3091"
+      },
+      {
+        "name": "opscout",
+        "url": "https://optimism-sepolia.blockscout.com",
+        "standard": "EIP3091"
+      }
+    ],
+    "12227332": [
+      {
+        "name": "neox-scan",
+        "url": "https://xt4scan.ngd.network",
+        "standard": "EIP3091"
+      }
+    ],
+    "168587773": [
+      {
+        "name": "Blast Sepolia Explorer",
+        "url": "https://testnet.blastscan.io",
+        "standard": "EIP3091"
+      }
+    ],
+    "1802203764": [
+      {
+        "name": "Kakarot Scan",
+        "url": "https://sepolia.kakarotscan.org",
+        "standard": "EIP3091"
+      },
+      {
+        "name": "Kakarot Explorer",
+        "url": "https://sepolia-explorer.kakarot.org",
+        "standard": "EIP3091"
+      }
+    ]
+  },
+  "cosmos": {
+    "agoric-3": {
+      "dir": "agoric",
+      "explorers": [
+        {
+          "kind": "explorers.guru",
+          "url": "https://agoric.explorers.guru",
+          "block_page": null,
+          "tx_page": "https://agoric.explorers.guru/transaction/${txHash}",
+          "account_page": "https://agoric.explorers.guru/account/${accountAddress}"
+        },
+        {
+          "kind": "staking-explorer.com",
+          "url": "https://staking-explorer.com/explorer/agoric",
+          "block_page": null,
+          "tx_page": "https://staking-explorer.com/transaction.php?chain=agoric&tx=${txHash}",
+          "account_page": "https://staking-explorer.com/account.php?chain=agoric&addr=${accountAddress}"
+        },
+        {
+          "kind": "atomscan",
+          "url": "https://atomscan.com/agoric",
+          "block_page": null,
+          "tx_page": "https://atomscan.com/agoric/transactions/${txHash}",
+          "account_page": "https://atomscan.com/agoric/accounts/${accountAddress}"
+        },
+        {
+          "kind": "Stakeflow",
+          "url": "https://stakeflow.io/agoric",
+          "block_page": null,
+          "tx_page": null,
+          "account_page": "https://stakeflow.io/agoric/accounts/${accountAddress}"
+        },
+        {
+          "kind": "🔥STAVR🔥",
+          "url": "https://explorer.stavr.tech/Agoric",
+          "block_page": null,
+          "tx_page": "https://explorer.stavr.tech/Agoric/tx/${txHash}",
+          "account_page": "https://explorer.stavr.tech/Agoric/account/${accountAddress}"
+        },
+        {
+          "kind": "Valopers",
+          "url": "https://agoric.valopers.com",
+          "block_page": null,
+          "tx_page": "https://agoric.valopers.com/transactions/${txHash}",
+          "account_page": "https://agoric.valopers.com/account/${accountAddress}"
+        }
+      ]
+    },
+    "akashnet-2": {
+      "dir": "akash",
+      "explorers": [
+        {
+          "kind": "ezstaking",
+          "url": "https://ezstaking.app/akash",
+          "block_page": null,
+          "tx_page": "https://ezstaking.app/akash/txs/${txHash}",
+          "account_page": "https://ezstaking.app/akash/account/${accountAddress}"
+        },
+        {
+          "kind": "ping.pub",
+          "url": "https://ping.pub/akash",
+          "block_page": null,
+          "tx_page": "https://ping.pub/akash-network/tx/${txHash}",
+          "account_page": null
+        },
+        {
+          "kind": "mintscan",
+          "url": "https://www.mintscan.io/akash",
+          "block_page": null,
+          "tx_page": "https://www.mintscan.io/akash/transactions/${txHash}",
+          "account_page": "https://www.mintscan.io/akash/accounts/${accountAddress}"
+        },
+        {
+          "kind": "staking-explorer.com",
+          "url": "https://staking-explorer.com/explorer/akash",
+          "block_page": null,
+          "tx_page": "https://staking-explorer.com/transaction.php?chain=akash&tx=${txHash}",
+          "account_page": "https://staking-explorer.com/account.php?chain=akash&addr=${accountAddress}"
+        },
+        {
+          "kind": "atomscan",
+          "url": "https://atomscan.com/akash",
+          "block_page": null,
+          "tx_page": "https://atomscan.com/akash/transactions/${txHash}",
+          "account_page": "https://atomscan.com/akash/accounts/${accountAddress}"
+        },
+        {
+          "kind": "Stakeflow",
+          "url": "https://stakeflow.io/akash",
+          "block_page": null,
+          "tx_page": null,
+          "account_page": "https://stakeflow.io/akash/accounts/${accountAddress}"
+        },
+        {
+          "kind": "Decloud Nodes Lab",
+          "url": "https://explorer.declab.pro/Akash",
+          "block_page": null,
+          "tx_page": "https://explorer.declab.pro/Akash/tx/${txHash}",
+          "account_page": null
+        },
+        {
+          "kind": "WhisperNode 🤐",
+          "url": "https://mainnet.whispernode.com/akash",
+          "block_page": null,
+          "tx_page": "https://mainnet.whispernode.com/akash/tx/${txHash}",
+          "account_page": "https://mainnet.whispernode.com/akash/account/${accountAddress}"
+        },
+        {
+          "kind": "Arcturian Tech",
+          "url": "https://explorer.arcturian.tech",
+          "block_page": null,
+          "tx_page": "https://explorer.arcturian.tech/akash/tx/${txHash}",
+          "account_page": null
+        },
+        {
+          "kind": "Valopers",
+          "url": "https://akash.valopers.com",
+          "block_page": null,
+          "tx_page": "https://akash.valopers.com/transactions/${txHash}",
+          "account_page": "https://akash.valopers.com/account/${accountAddress}"
+        },
+        {
+          "kind": "moon-runners",
+          "url": "https://moon-runners.net/akash/mainnet",
+          "block_page": null,
+          "tx_page": "https://moon-runners.net/akash/mainnet/finder?search=${txHash}",
+          "account_page": "https://moon-runners.net/akash/mainnet/finder?search=${accountAddress}"
+        }
+      ]
+    },
+    "arabica-11": {
+      "dir": "testnets/celestiatestnet2",
+      "explorers": [
+        {
+          "kind": "Celenium",
+          "url": "https://arabica.celenium.io",
+          "block_page": null,
+          "tx_page": "https://arabica.celenium.io/tx/${txHash}",
+          "account_page": null
+        }
+      ]
+    },
+    "atlantic-2": {
+      "dir": "testnets/seitestnet2",
+      "explorers": [
+        {
+          "kind": "blockscout",
+          "url": "https://seitrace.com/?chain=atlantic-2",
+          "block_page": null,
+          "tx_page": "https://seitrace.com/tx/${txHash}?chain=atlantic-2",
+          "account_page": null
+        },
+        {
+          "kind": "celatone",
+          "url": "https://www.seiscan.app/atlantic-2",
+          "block_page": null,
+          "tx_page": "https://www.seiscan.app/atlantic-2/txs/${txHash}",
+          "account_page": null
+        },
+        {
+          "kind": "explorers.guru",
+          "url": "https://testnet.sei.explorers.guru",
+          "block_page": null,
+          "tx_page": "https://testnet.sei.explorers.guru/transaction/${txHash}",
+          "account_page": null
+        }
+      ]
+    },
+    "axelar-dojo-1": {
+      "dir": "axelar",
+      "explorers": [
+        {
+          "kind": "axelarscan",
+          "url": "https://axelarscan.io",
+          "block_page": null,
+          "tx_page": "https://axelarscan.io/tx/${txHash}",
+          "account_page": null
+        },
+        {
+          "kind": "mintscan",
+          "url": "https://www.mintscan.io/axelar",
+          "block_page": null,
+          "tx_page": "https://www.mintscan.io/axelar/transactions/${txHash}",
+          "account_page": "https://www.mintscan.io/axelar/accounts/${accountAddress}"
+        },
+        {
+          "kind": "explorers.guru",
+          "url": "https://axelar.explorers.guru",
+          "block_page": null,
+          "tx_page": "https://axelar.explorers.guru/transaction/${txHash}",
+          "account_page": null
+        },
+        {
+          "kind": "staking-explorer.com",
+          "url": "https://staking-explorer.com/explorer/axelar",
+          "block_page": null,
+          "tx_page": "https://staking-explorer.com/transaction.php?chain=axelar&tx=${txHash}",
+          "account_page": "https://staking-explorer.com/account.php?chain=axelar&addr=${accountAddress}"
+        },
+        {
+          "kind": "atomscan",
+          "url": "https://atomscan.com/axelar",
+          "block_page": null,
+          "tx_page": "https://atomscan.com/axelar/transactions/${txHash}",
+          "account_page": "https://atomscan.com/axelar/accounts/${accountAddress}"
+        },
+        {
+          "kind": "Stakeflow",
+          "url": "https://stakeflow.io/axelar",
+          "block_page": null,
+          "tx_page": null,
+          "account_page": "https://stakeflow.io/axelar/accounts/${accountAddress}"
+        },
+        {
+          "kind": "ezstaking",
+          "url": "https://ezstaking.app/axelar",
+          "block_page": null,
+          "tx_page": "https://ezstaking.app/axelar/txs/${txHash}",
+          "account_page": "https://ezstaking.app/axelar/account/${accountAddress}"
+        },
+        {
+          "kind": "WhisperNode 🤐",
+          "url": "https://mainnet.whispernode.com/axelar",
+          "block_page": null,
+          "tx_page": "https://mainnet.whispernode.com/axelar/tx/${txHash}",
+          "account_page": "https://mainnet.whispernode.com/axelar/account/${accountAddress}"
+        },
+        {
+          "kind": "Valopers",
+          "url": "https://axelar.valopers.com",
+          "block_page": null,
+          "tx_page": "https://axelar.valopers.com/transactions/${txHash}",
+          "account_page": "https://axelar.valopers.com/account/${accountAddress}"
+        },
+        {
+          "kind": "moon-runners",
+          "url": "https://moon-runners.net/axelar/mainnet",
+          "block_page": null,
+          "tx_page": "https://moon-runners.net/axelar/mainnet/finder?search=${txHash}",
+          "account_page": "https://moon-runners.net/axelar/mainnet/finder?search=${accountAddress}"
+        }
+      ]
+    },
+    "axelar-testnet-lisbon-3": {
+      "dir": "testnets/axelartestnet",
+      "explorers": [
+        {
+          "kind": "axelarscan",
+          "url": "https://testnet.axelarscan.io",
+          "block_page": null,
+          "tx_page": "https://testnet.axelarscan.io/tx/${txHash}",
+          "account_page": null
+        },
+        {
+          "kind": "mintscan",
+          "url": "https://mintscan.io/axelar-testnet",
+          "block_page": null,
+          "tx_page": "https://mintscan.io/axelar-testnet/txs/${txHash}",
+          "account_page": "https://mintscan.io/axelar-testnet/account/${accountAddress}"
+        },
+        {
+          "kind": "Valopers",
+          "url": "https://testnet.axelar.valopers.com",
+          "block_page": null,
+          "tx_page": "https://testnet.axelar.valopers.com/transactions/${txHash}",
+          "account_page": "https://testnet.axelar.valopers.com/account/${accountAddress}"
+        }
+      ]
+    },
+    "bbn-1": {
+      "dir": "babylon",
+      "explorers": [
+        {
+          "kind": "mintscan",
+          "url": "https://www.mintscan.io/babylon",
+          "block_page": null,
+          "tx_page": "https://www.mintscan.io/babylon/transactions/${txHash}",
+          "account_page": "https://www.mintscan.io/babylon/accounts/${accountAddress}"
+        },
+        {
+          "kind": "Nodes Guru",
+          "url": "https://babylon.explorers.guru",
+          "block_page": null,
+          "tx_page": "https://babylon.explorers.guru/transaction/${txHash}",
+          "account_page": "https://babylon.explorers.guru/account/${accountAddress}"
+        },
+        {
+          "kind": "NodesHub",
+          "url": "https://explorer.nodeshub.online/babylon",
+          "block_page": null,
+          "tx_page": "https://explorer.nodeshub.online/babylon/tx/${txHash}",
+          "account_page": "https://explorer.nodeshub.online/babylon/accounts/${accountAddress}"
+        },
+        {
+          "kind": "Valopers",
+          "url": "https://babylon.valopers.com",
+          "block_page": null,
+          "tx_page": "https://babylon.valopers.com/transactions/${txHash}",
+          "account_page": "https://babylon.valopers.com/account/${accountAddress}"
+        }
+      ]
+    },
+    "canto_7700-1": {
+      "dir": "canto",
+      "explorers": [
+        {
+          "kind": "ping.pub",
+          "url": "https://cosmos-explorers.neobase.one/canto",
+          "block_page": null,
+          "tx_page": "https://cosmos-explorers.neobase.one/canto/tx/${txHash}",
+          "account_page": null
+        },
+        {
+          "kind": "staking-explorer.com",
+          "url": "https://staking-explorer.com/explorer/canto",
+          "block_page": null,
+          "tx_page": "https://staking-explorer.com/transaction.php?chain=canto&tx=${txHash}",
+          "account_page": "https://staking-explorer.com/account.php?chain=canto&addr=${accountAddress}"
+        },
+        {
+          "kind": "TC Network",
+          "url": "https://explorer.tcnetwork.io/canto",
+          "block_page": null,
+          "tx_page": "https://explorer.tcnetwork.io/canto/transaction/${txHash}",
+          "account_page": null
+        },
+        {
+          "kind": "ezstaking",
+          "url": "https://ezstaking.app/canto",
+          "block_page": null,
+          "tx_page": "https://ezstaking.app/canto/txs/${txHash}",
+          "account_page": "https://ezstaking.app/canto/account/${accountAddress}"
+        },
+        {
+          "kind": "🔥STAVR🔥",
+          "url": "https://explorer.stavr.tech/Canto-Mainnet",
+          "block_page": null,
+          "tx_page": "https://explorer.stavr.tech/Canto-Mainnet/tx/${txHash}",
+          "account_page": "https://explorer.stavr.tech/Canto-Mainnet/account/${accountAddress}"
+        }
+      ]
+    },
+    "celestia": {
+      "dir": "celestia",
+      "explorers": [
+        {
+          "kind": "Nodes.Guru",
+          "url": "https://celestia.explorers.guru",
+          "block_page": null,
+          "tx_page": "https://celestia.explorers.guru/transaction/${txHash}",
+          "account_page": "https://celestia.explorers.guru/account/${accountAddress}"
+        },
+        {
+          "kind": "CelestiaHub [Noders]",
+          "url": "https://celestiahub.org/explorer/dashboard",
+          "block_page": null,
+          "tx_page": "https://celestiahub.org/explorer/transactions/${txHash}",
+          "account_page": "https://celestiahub.org/explorer/accounts/${accountAddress}"
+        },
+        {
+          "kind": "Mintscan",
+          "url": "https://mintscan.io/celestia",
+          "block_page": null,
+          "tx_page": "https://mintscan.io/celestia/txs/${txHash}",
+          "account_page": "https://mintscan.io/celestia/address/${accountAddress}"
+        },
+        {
+          "kind": "staking-explorer.com",
+          "url": "https://staking-explorer.com/explorer/celestia",
+          "block_page": null,
+          "tx_page": "https://staking-explorer.com/transaction.php?chain=celestia&tx=${txHash}",
+          "account_page": "https://staking-explorer.com/account.php?chain=celestia&addr=${accountAddress}"
+        },
+        {
+          "kind": "NodeStake",
+          "url": "https://explorer.nodestake.org/celestia",
+          "block_page": null,
+          "tx_page": "https://explorer.nodestake.org/celestia/txs/${txHash}",
+          "account_page": "https://explorer.nodestake.org/celestia/account/${accountAddress}"
+        },
+        {
+          "kind": "Stakeflow",
+          "url": "https://stakeflow.io/celestia",
+          "block_page": null,
+          "tx_page": "https://stakeflow.io/celestia/transactions/${txHash}",
+          "account_page": null
+        },
+        {
+          "kind": "TC Network",
+          "url": "https://explorer.tcnetwork.io/celestia",
+          "block_page": null,
+          "tx_page": "https://explorer.tcnetwork.io/celestia/transaction/${txHash}",
+          "account_page": "https://explorer.tcnetwork.io/celestia/account/${accountAddress}"
+        },
+        {
+          "kind": "🔥STAVR🔥",
+          "url": "https://explorer.stavr.tech/Celestia-Mainnet",
+          "block_page": null,
+          "tx_page": "https://explorer.stavr.tech/Celestia-Mainnet/transaction/${txHash}",
+          "account_page": "https://explorer.stavr.tech/Celestia-Mainnet/account/${accountAddress}"
+        },
+        {
+          "kind": "AM Solutions",
+          "url": "https://explorer.theamsolutions.info/celestia-main",
+          "block_page": null,
+          "tx_page": "https://explorer.theamsolutions.info/celestia-main/transaction/${txHash}",
+          "account_page": "https://explorer.theamsolutions.info/celestia-main/account/${accountAddress}"
+        },
+        {
+          "kind": "ezstaking",
+          "url": "https://ezstaking.app/celestia",
+          "block_page": null,
+          "tx_page": "https://ezstaking.app/celestia/txs/${txHash}",
+          "account_page": "https://ezstaking.app/celestia/account/${accountAddress}"
+        },
+        {
+          "kind": "itrocket",
+          "url": "https://mainnet.itrocket.net/celestia",
+          "block_page": null,
+          "tx_page": "https://mainnet.itrocket.net/celestia/transaction/${txHash}",
+          "account_page": "https://mainnet.itrocket.net/celestia/account/${accountAddress}"
+        },
+        {
+          "kind": "DTEAM | Explorer",
+          "url": "https://explorer.mainnet.dteam.tech/celestia",
+          "block_page": null,
+          "tx_page": "https://explorer.mainnet.dteam.tech/celestia/transaction/${txHash}",
+          "account_page": "https://explorer.mainnet.dteam.tech/celestia/account/${accountAddress}"
+        },
+        {
+          "kind": "Relaxed Explorer 🦥",
+          "url": "https://explorer.stakeandrelax.net/celestia",
+          "block_page": null,
+          "tx_page": "https://explorer.stakeandrelax.net/celestia/transaction/${txHash}",
+          "account_page": "https://explorer.stakeandrelax.net/celestia/account/${accountAddress}"
+        },
+        {
+          "kind": "Valopers",
+          "url": "https://celestia.valopers.com",
+          "block_page": null,
+          "tx_page": "https://celestia.valopers.com/transactions/${txHash}",
+          "account_page": "https://celestia.valopers.com/account/${accountAddress}"
+        },
+        {
+          "kind": "moon-runners",
+          "url": "https://moon-runners.net/celestia/mainnet",
+          "block_page": null,
+          "tx_page": "https://moon-runners.net/celestia/mainnet/finder?search=${txHash}",
+          "account_page": "https://moon-runners.net/celestia/mainnet/finder?search=${accountAddress}"
+        }
+      ]
+    },
+    "cosmoshub-4": {
+      "dir": "cosmoshub",
+      "explorers": [
+        {
+          "kind": "mintscan",
+          "url": "https://www.mintscan.io/cosmos",
+          "block_page": "https://www.mintscan.io/cosmos/blocks/${blockHeight}",
+          "tx_page": "https://www.mintscan.io/cosmos/transactions/${txHash}",
+          "account_page": "https://www.mintscan.io/cosmos/accounts/${accountAddress}"
+        },
+        {
+          "kind": "ezstaking",
+          "url": "https://ezstaking.app/cosmoshub",
+          "block_page": "https://ezstaking.app/cosmoshub/blocks/${blockHeight}",
+          "tx_page": "https://ezstaking.app/cosmoshub/txs/${txHash}",
+          "account_page": "https://ezstaking.app/cosmoshub/account/${accountAddress}"
+        },
+        {
+          "kind": "ping.pub",
+          "url": "https://ping.pub/cosmos",
+          "block_page": "https://ping.pub/cosmos/block/${blockHeight}",
+          "tx_page": "https://ping.pub/cosmos/tx/${txHash}",
+          "account_page": "https://ping.pub/cosmos/account/${accountAddress}"
+        },
+        {
+          "kind": "staking-explorer.com",
+          "url": "https://staking-explorer.com/explorer/cosmoshub",
+          "block_page": null,
+          "tx_page": "https://staking-explorer.com/transaction.php?chain=cosmoshub&tx=${txHash}",
+          "account_page": "https://staking-explorer.com/account.php?chain=cosmoshub&addr=${accountAddress}"
+        },
+        {
+          "kind": "atomscan",
+          "url": "https://atomscan.com",
+          "block_page": "https://atomscan.com/blocks/${blockHeight}",
+          "tx_page": "https://atomscan.com/transactions/${txHash}",
+          "account_page": "https://atomscan.com/accounts/${accountAddress}"
+        },
+        {
+          "kind": "unichain",
+          "url": "https://unicha.in/cosmos",
+          "block_page": null,
+          "tx_page": "https://unicha.in/cosmos/transaction/${txHash}",
+          "account_page": null
+        },
+        {
+          "kind": "TC Network",
+          "url": "https://explorer.tcnetwork.io/cosmoshub",
+          "block_page": "https://explorer.tcnetwork.io/cosmoshub/block/${blockHeight}",
+          "tx_page": "https://explorer.tcnetwork.io/cosmoshub/transaction/${txHash}",
+          "account_page": "https://explorer.tcnetwork.io/cosmoshub/account/${accountAddress}"
+        },
+        {
+          "kind": "Stakeflow",
+          "url": "https://stakeflow.io/cosmos",
+          "block_page": null,
+          "tx_page": null,
+          "account_page": "https://stakeflow.io/cosmos/accounts/${accountAddress}"
+        },
+        {
+          "kind": "Nodeist Explorer",
+          "url": "https://exp.nodeist.net/cosmos",
+          "block_page": null,
+          "tx_page": null,
+          "account_page": null
+        },
+        {
+          "kind": "Inbloc",
+          "url": "https://inbloc.org",
+          "block_page": "https://inbloc.org/cosmos/blocks/${blockHeight}",
+          "tx_page": "https://inbloc.org/transactions/${txHash}",
+          "account_page": "https://inbloc.org/account/${accountAddress}"
+        },
+        {
+          "kind": "WhisperNode 🤐",
+          "url": "https://mainnet.whispernode.com/cosmos",
+          "block_page": "https://mainnet.whispernode.com/cosmos/block/${blockHeight}",
+          "tx_page": "https://mainnet.whispernode.com/cosmos/tx/${txHash}",
+          "account_page": "https://mainnet.whispernode.com/cosmos/account/${accountAddress}"
+        },
+        {
+          "kind": "ITRocket",
+          "url": "https://mainnet.itrocket.net/cosmoshub",
+          "block_page": "https://mainnet.itrocket.net/cosmoshub/block/${blockHeight}",
+          "tx_page": "https://mainnet.itrocket.net/cosmoshub/tx/${txHash}",
+          "account_page": "https://mainnet.itrocket.net/cosmoshub/account/${accountAddress}"
+        },
+        {
+          "kind": "NodeStake",
+          "url": "https://explorer.nodestake.org/cosmos",
+          "block_page": "https://explorer.nodestake.org/cosmos/block/${blockHeight}",
+          "tx_page": "https://explorer.nodestake.org/cosmos/tx/${txHash}",
+          "account_page": "https://explorer.nodestake.org/cosmos/account/${accountAddress}"
+        },
+        {
+          "kind": "Valopers",
+          "url": "https://cosmos.valopers.com",
+          "block_page": null,
+          "tx_page": "https://cosmos.valopers.com/transactions/${txHash}",
+          "account_page": "https://cosmos.valopers.com/account/${accountAddress}"
+        },
+        {
+          "kind": "Validatorinfo",
+          "url": "https://validatorinfo.com/networks/cosmoshub/overview",
+          "block_page": null,
+          "tx_page": null,
+          "account_page": null
+        },
+        {
+          "kind": "🚀 WHEN MOON 🌕 WHEN LAMBO 🔥",
+          "url": "https://explorer.whenmoonwhenlambo.money/cosmos",
+          "block_page": "https://explorer.whenmoonwhenlambo.money/cosmos/block/${blockHeight}",
+          "tx_page": "https://explorer.whenmoonwhenlambo.money/cosmos/tx/${txHash}",
+          "account_page": "https://explorer.whenmoonwhenlambo.money/cosmos/account/${accountAddress}"
+        },
+        {
+          "kind": "moon-runners",
+          "url": "https://moon-runners.net/cosmoshub/mainnet",
+          "block_page": null,
+          "tx_page": "https://moon-runners.net/cosmoshub/mainnet/finder?search=${txHash}",
+          "account_page": "https://moon-runners.net/cosmoshub/mainnet/finder?search=${accountAddress}"
+        }
+      ]
+    },
+    "dorado-1": {
+      "dir": "testnets/fetchhubtestnet",
+      "explorers": [
+        {
+          "kind": "bigdipper",
+          "url": "https://explore-dorado.fetch.ai",
+          "block_page": null,
+          "tx_page": "https://explore-dorado.fetch.ai/transactions/${txHash}",
+          "account_page": null
+        },
+        {
+          "kind": "azoyalabs",
+          "url": "https://fetchstation.azoyalabs.com/testnet",
+          "block_page": null,
+          "tx_page": "https://fetchstation.azoyalabs.com/testnet/explorer/transactions/${txHash}",
+          "account_page": "https://fetchstation.azoyalabs.com/testnet/explorer/address/${accountAddress}"
+        }
+      ]
+    },
+    "dydx-mainnet-1": {
+      "dir": "dydx",
+      "explorers": [
+        {
+          "kind": "mintscan",
+          "url": "https://www.mintscan.io/dydx",
+          "block_page": null,
+          "tx_page": "https://www.mintscan.io/dydx/txs/${txHash}",
+          "account_page": "https://www.mintscan.io/dydx/account/${accountAddress}"
+        },
+        {
+          "kind": "staking-explorer.com",
+          "url": "https://staking-explorer.com/explorer/dydx",
+          "block_page": null,
+          "tx_page": "https://staking-explorer.com/transaction.php?chain=dydx&tx=${txHash}",
+          "account_page": "https://staking-explorer.com/account.php?chain=dydx&addr=${accountAddress}"
+        },
+        {
+          "kind": "ezstaking",
+          "url": "https://ezstaking.app/dydx",
+          "block_page": null,
+          "tx_page": "https://ezstaking.app/dydx/txs/${txHash}",
+          "account_page": "https://ezstaking.app/dydx/account/${accountAddress}"
+        },
+        {
+          "kind": "NodeStake",
+          "url": "https://explorer.nodestake.org/dydx",
+          "block_page": null,
+          "tx_page": "https://explorer.nodestake.org/dydx/txs/${txHash}",
+          "account_page": "https://explorer.nodestake.org/dydx/account/${accountAddress}"
+        },
+        {
+          "kind": "TC Network",
+          "url": "https://explorer.tcnetwork.io/dydx",
+          "block_page": null,
+          "tx_page": "https://explorer.tcnetwork.io/dydx/transaction/${txHash}",
+          "account_page": "https://explorer.tcnetwork.io/dydx/account/${accountAddress}"
+        },
+        {
+          "kind": "Valopers",
+          "url": "https://dydx.valopers.com",
+          "block_page": null,
+          "tx_page": "https://dydx.valopers.com/transactions/${txHash}",
+          "account_page": "https://dydx.valopers.com/account/${accountAddress}"
+        }
+      ]
+    },
+    "dydx-testnet-4": {
+      "dir": "testnets/dydxtestnet",
+      "explorers": [
+        {
+          "kind": "mintscan",
+          "url": "https://www.mintscan.io/dydx-testnet",
+          "block_page": null,
+          "tx_page": "https://www.mintscan.io/dydx-testnet/txs/${txHash}",
+          "account_page": "https://www.mintscan.io/dydx-testnet/account/${accountAddress}"
+        },
+        {
+          "kind": "Valopers",
+          "url": "https://testnet.dydx.valopers.com",
+          "block_page": null,
+          "tx_page": "https://testnet.dydx.valopers.com/transactions/${txHash}",
+          "account_page": "https://testnet.dydx.valopers.com/account/${accountAddress}"
+        }
+      ]
+    },
+    "elgafar-1": {
+      "dir": "testnets/stargazetestnet",
+      "explorers": [
+        {
+          "kind": "ping.pub",
+          "url": "https://testnet-explorer.publicawesome.dev/stargaze",
+          "block_page": null,
+          "tx_page": "https://testnet-explorer.publicawesome.dev/stargaze/tx/${txHash}",
+          "account_page": null
+        }
+      ]
+    },
+    "evmos_9000-4": {
+      "dir": "testnets/evmostestnet",
+      "explorers": [
+        {
+          "kind": "Mintscan",
+          "url": "https://mintscan.io/evmos-testnet",
+          "block_page": null,
+          "tx_page": "https://mintscan.io/evmos-testnet/txs/${txHash}",
+          "account_page": null
+        },
+        {
+          "kind": "NodesGuru",
+          "url": "https://testnet.evmos.explorers.guru",
+          "block_page": null,
+          "tx_page": "https://testnet.evmos.explorers.guru/transaction/${txHash}",
+          "account_page": null
+        }
+      ]
+    },
+    "evmos_9001-2": {
+      "dir": "evmos",
+      "explorers": [
+        {
+          "kind": "ezstaking",
+          "url": "https://ezstaking.app/evmos",
+          "block_page": null,
+          "tx_page": "https://ezstaking.app/evmos/txs/${txHash}",
+          "account_page": "https://ezstaking.app/evmos/account/${accountAddress}"
+        },
+        {
+          "kind": "mintscan",
+          "url": "https://www.mintscan.io/evmos",
+          "block_page": null,
+          "tx_page": "https://www.mintscan.io/evmos/transactions/${txHash}",
+          "account_page": "https://www.mintscan.io/evmos/accounts/${accountAddress}"
+        },
+        {
+          "kind": "blockscout",
+          "url": "https://evm.evmos.org",
+          "block_page": null,
+          "tx_page": "https://evm.evmos.org/tx/${txHash}",
+          "account_page": null
+        },
+        {
+          "kind": "ping.pub",
+          "url": "https://ping.pub/evmos",
+          "block_page": null,
+          "tx_page": "https://ping.pub/evmos/tx/${txHash}",
+          "account_page": null
+        },
+        {
+          "kind": "explorers.guru",
+          "url": "https://evmos.explorers.guru",
+          "block_page": null,
+          "tx_page": "https://evmos.explorers.guru/transaction/${txHash}",
+          "account_page": null
+        },
+        {
+          "kind": "staking-explorer.com",
+          "url": "https://staking-explorer.com/explorer/evmos",
+          "block_page": null,
+          "tx_page": "https://staking-explorer.com/transaction.php?chain=evmos&tx=${txHash}",
+          "account_page": "https://staking-explorer.com/account.php?chain=evmos&addr=${accountAddress}"
+        },
+        {
+          "kind": "atomscan",
+          "url": "https://atomscan.com/evmos",
+          "block_page": null,
+          "tx_page": "https://atomscan.com/evmos/transactions/${txHash}",
+          "account_page": "https://atomscan.com/evmos/accounts/${accountAddress}"
+        },
+        {
+          "kind": "tcnetwork",
+          "url": "https://evmos.tcnetwork.io",
+          "block_page": null,
+          "tx_page": "https://evmos.tcnetwork.io/transaction/${txHash}",
+          "account_page": null
+        },
+        {
+          "kind": "Stakeflow",
+          "url": "https://stakeflow.io/evmos",
+          "block_page": null,
+          "tx_page": null,
+          "account_page": "https://stakeflow.io/evmos/accounts/${accountAddress}"
+        },
+        {
+          "kind": "Stake Village",
+          "url": "https://exp.stakevillage.net/evmos",
+          "block_page": null,
+          "tx_page": "https://exp.stakevillage.net/evmos/tx/${txHash}",
+          "account_page": "https://exp.stakevillage.net/evmos/accounts/${accountAddress}"
+        },
+        {
+          "kind": "🔥STAVR🔥",
+          "url": "https://explorer.stavr.tech/evmos",
+          "block_page": null,
+          "tx_page": "https://explorer.stavr.tech/evmos/tx/${txHash}",
+          "account_page": "https://explorer.stavr.tech/evmos/accounts/${accountAddress}"
+        }
+      ]
+    },
+    "fetchhub-4": {
+      "dir": "fetchhub",
+      "explorers": [
+        {
+          "kind": "mintscan",
+          "url": "https://www.mintscan.io/fetchai",
+          "block_page": null,
+          "tx_page": "https://www.mintscan.io/fetchai/transactions/${txHash}",
+          "account_page": "https://www.mintscan.io/fetchai/accounts/${accountAddress}"
+        },
+        {
+          "kind": "ezstaking",
+          "url": "https://ezstaking.app/fetchhub",
+          "block_page": null,
+          "tx_page": "https://ezstaking.app/fetchhub/txs/${txHash}",
+          "account_page": "https://ezstaking.app/fetchhub/account/${accountAddress}"
+        },
+        {
+          "kind": "bigdipper",
+          "url": "https://explore-fetchhub.fetch.ai",
+          "block_page": null,
+          "tx_page": "https://explore-fetchhub.fetch.ai/transactions/${txHash}",
+          "account_page": null
+        },
+        {
+          "kind": "ping.pub",
+          "url": "https://ping.pub/fetchhub",
+          "block_page": null,
+          "tx_page": "https://ping.pub/fetchhub/tx/${txHash}",
+          "account_page": null
+        },
+        {
+          "kind": "atomscan",
+          "url": "https://atomscan.com/fetchai",
+          "block_page": null,
+          "tx_page": "https://atomscan.com/fetchai/transactions/${txHash}",
+          "account_page": "https://atomscan.com/fetchai/accounts/${accountAddress}"
+        },
+        {
+          "kind": "staking-explorer.com",
+          "url": "https://staking-explorer.com/explorer/fetchhub",
+          "block_page": null,
+          "tx_page": "https://staking-explorer.com/transaction.php?chain=fetchhub&tx=${txHash}",
+          "account_page": "https://staking-explorer.com/account.php?chain=fetchhub&addr=${accountAddress}"
+        },
+        {
+          "kind": "bigdipper",
+          "url": "https://fetch-explorer.teasel.org",
+          "block_page": null,
+          "tx_page": "https://fetch-explorer.teasel.org/transactions/${txHash}",
+          "account_page": null
+        },
+        {
+          "kind": "azoyalabs",
+          "url": "https://fetchstation.azoyalabs.com/mainnet",
+          "block_page": null,
+          "tx_page": "https://fetchstation.azoyalabs.com/mainnet/explorer/transactions/${txHash}",
+          "account_page": "https://fetchstation.azoyalabs.com/mainnet/explorer/address/${accountAddress}"
+        },
+        {
+          "kind": "NodesHub",
+          "url": "https://explorer.nodeshub.online/fetchhub",
+          "block_page": null,
+          "tx_page": "https://explorer.nodeshub.online/fetchhub/tx/${txHash}",
+          "account_page": "https://explorer.nodeshub.online/fetchhub/accounts/${accountAddress}"
+        },
+        {
+          "kind": "Blockchain Explorer by AVIAONE 🟢",
+          "url": "https://mainnet.explorer.aviaone.com/fetchhub",
+          "block_page": null,
+          "tx_page": "https://mainnet.explorer.aviaone.com/fetchhub/tx/${txHash}",
+          "account_page": "https://mainnet.explorer.aviaone.com/fetchhub/accounts/${accountAddress}"
+        },
+        {
+          "kind": "Valopers",
+          "url": "https://asi.valopers.com",
+          "block_page": null,
+          "tx_page": "https://asi.valopers.com/transactions/${txHash}",
+          "account_page": "https://asi.valopers.com/account/${accountAddress}"
+        }
+      ]
+    },
+    "injective-1": {
+      "dir": "injective",
+      "explorers": [
+        {
+          "kind": "ezstaking",
+          "url": "https://ezstaking.app/injective",
+          "block_page": null,
+          "tx_page": "https://ezstaking.app/injective/txs/${txHash}",
+          "account_page": "https://ezstaking.app/injective/account/${accountAddress}"
+        },
+        {
+          "kind": "injectiveprotocol",
+          "url": "https://explorer.injective.network",
+          "block_page": null,
+          "tx_page": "https://explorer.injective.network/transaction/${txHash}",
+          "account_page": null
+        },
+        {
+          "kind": "ping.pub",
+          "url": "https://ping.pub/injective",
+          "block_page": null,
+          "tx_page": "https://ping.pub/injective/tx/${txHash}",
+          "account_page": null
+        },
+        {
+          "kind": "atomscan",
+          "url": "https://atomscan.com/injective",
+          "block_page": null,
+          "tx_page": "https://atomscan.com/injective/transactions/${txHash}",
+          "account_page": "https://atomscan.com/injective/accounts/${accountAddress}"
+        },
+        {
+          "kind": "mintscan",
+          "url": "https://www.mintscan.io/injective",
+          "block_page": null,
+          "tx_page": "https://www.mintscan.io/injective/transactions/${txHash}",
+          "account_page": "https://www.mintscan.io/injective/accounts/${accountAddress}"
+        },
+        {
+          "kind": "staking-explorer.com",
+          "url": "https://staking-explorer.com/explorer/injective",
+          "block_page": null,
+          "tx_page": "https://staking-explorer.com/transaction.php?chain=injective&tx=${txHash}",
+          "account_page": "https://staking-explorer.com/account.php?chain=injective&addr=${accountAddress}"
+        },
+        {
+          "kind": "Stakeflow",
+          "url": "https://stakeflow.io/injective",
+          "block_page": null,
+          "tx_page": null,
+          "account_page": "https://stakeflow.io/injective/accounts/${accountAddress}"
+        },
+        {
+          "kind": "WhisperNode 🤐",
+          "url": "https://mainnet.whispernode.com/injective",
+          "block_page": null,
+          "tx_page": "https://mainnet.whispernode.com/injective/tx/${txHash}",
+          "account_page": "https://mainnet.whispernode.com/injective/account/${accountAddress}"
+        },
+        {
+          "kind": "Valopers",
+          "url": "https://injective.valopers.com",
+          "block_page": null,
+          "tx_page": "https://injective.valopers.com/transactions/${txHash}",
+          "account_page": "https://injective.valopers.com/account/${accountAddress}"
+        },
+        {
+          "kind": "moon-runners",
+          "url": "https://moon-runners.net/injective/mainnet",
+          "block_page": null,
+          "tx_page": "https://moon-runners.net/injective/mainnet/finder?search=${txHash}",
+          "account_page": "https://moon-runners.net/injective/mainnet/finder?search=${accountAddress}"
+        }
+      ]
+    },
+    "injective-888": {
+      "dir": "testnets/injectivetestnet",
+      "explorers": [
+        {
+          "kind": "injectiveprotocol",
+          "url": "https://testnet.explorer.injective.network",
+          "block_page": null,
+          "tx_page": "https://testnet.explorer.injective.network/transaction/${txHash}",
+          "account_page": null
+        }
+      ]
+    },
+    "juno-1": {
+      "dir": "juno",
+      "explorers": [
+        {
+          "kind": "ezstaking",
+          "url": "https://ezstaking.app/juno",
+          "block_page": null,
+          "tx_page": "https://ezstaking.app/juno/txs/${txHash}",
+          "account_page": "https://ezstaking.app/juno/account/${accountAddress}"
+        },
+        {
+          "kind": "ping.pub",
+          "url": "https://ping.pub/juno",
+          "block_page": null,
+          "tx_page": "https://ping.pub/juno/tx/${txHash}",
+          "account_page": null
+        },
+        {
+          "kind": "🔥STAVR🔥",
+          "url": "https://explorer.stavr.tech/juno",
+          "block_page": null,
+          "tx_page": "https://explorer.stavr.tech/juno/transactions/${txHash}",
+          "account_page": "https://explorer.stavr.tech/juno/accounts/${accountAddress}"
+        },
+        {
+          "kind": "Stakeflow",
+          "url": "https://stakeflow.io/juno",
+          "block_page": null,
+          "tx_page": null,
+          "account_page": "https://stakeflow.io/juno/accounts/${accountAddress}"
+        },
+        {
+          "kind": "Decloud Nodes Lab",
+          "url": "https://explorer.declab.pro/Juno",
+          "block_page": null,
+          "tx_page": "https://explorer.declab.pro/Juno/tx/${txHash}",
+          "account_page": null
+        },
+        {
+          "kind": "staking-explorer.com",
+          "url": "https://staking-explorer.com/explorer/juno",
+          "block_page": null,
+          "tx_page": "https://staking-explorer.com/transaction.php?chain=juno&tx=${txHash}",
+          "account_page": "https://staking-explorer.com/account.php?chain=juno&addr=${accountAddress}"
+        },
+        {
+          "kind": "atomscan",
+          "url": "https://atomscan.com/juno",
+          "block_page": null,
+          "tx_page": "https://atomscan.com/juno/transactions/${txHash}",
+          "account_page": "https://atomscan.com/juno/accounts/${accountAddress}"
+        },
+        {
+          "kind": "TC Network",
+          "url": "https://explorer.tcnetwork.io/juno",
+          "block_page": null,
+          "tx_page": "https://explorer.tcnetwork.io/juno/transaction/${txHash}",
+          "account_page": null
+        },
+        {
+          "kind": "Stake Hub by Kleomedes",
+          "url": "https://www.stake-hub.xyz/juno",
+          "block_page": null,
+          "tx_page": null,
+          "account_page": null
+        },
+        {
+          "kind": "Valopers",
+          "url": "https://juno.valopers.com",
+          "block_page": null,
+          "tx_page": "https://juno.valopers.com/transactions/${txHash}",
+          "account_page": "https://juno.valopers.com/account/${accountAddress}"
+        }
+      ]
+    },
+    "kava_2222-10": {
+      "dir": "kava",
+      "explorers": [
+        {
+          "kind": "mintscan",
+          "url": "https://www.mintscan.io/kava",
+          "block_page": null,
+          "tx_page": "https://www.mintscan.io/kava/transactions/${txHash}",
+          "account_page": "https://www.mintscan.io/kava/accounts/${accountAddress}"
+        },
+        {
+          "kind": "staking-explorer.com",
+          "url": "https://staking-explorer.com/explorer/kava",
+          "block_page": null,
+          "tx_page": "https://staking-explorer.com/transaction.php?chain=kava&tx=${txHash}",
+          "account_page": "https://staking-explorer.com/account.php?chain=kava&addr=${accountAddress}"
+        },
+        {
+          "kind": "ezstaking",
+          "url": "https://ezstaking.app/kava",
+          "block_page": null,
+          "tx_page": "https://ezstaking.app/kava/txs/${txHash}",
+          "account_page": "https://ezstaking.app/kava/account/${accountAddress}"
+        },
+        {
+          "kind": "ping.pub",
+          "url": "https://ping.pub/kava",
+          "block_page": null,
+          "tx_page": "https://ping.pub/kava/tx/${txHash}",
+          "account_page": null
+        },
+        {
+          "kind": "atomscan",
+          "url": "https://atomscan.com/kava",
+          "block_page": null,
+          "tx_page": "https://atomscan.com/kava/transactions/${txHash}",
+          "account_page": "https://atomscan.com/kava/accounts/${accountAddress}"
+        },
+        {
+          "kind": "Stakeflow",
+          "url": "https://stakeflow.io/kava",
+          "block_page": null,
+          "tx_page": null,
+          "account_page": "https://stakeflow.io/kava/accounts/${accountAddress}"
+        },
+        {
+          "kind": "Valopers",
+          "url": "https://kava.valopers.com",
+          "block_page": null,
+          "tx_page": "https://kava.valopers.com/transactions/${txHash}",
+          "account_page": "https://kava.valopers.com/account/${accountAddress}"
+        }
+      ]
+    },
+    "lava-mainnet-1": {
+      "dir": "lava",
+      "explorers": [
+        {
+          "kind": "finteh",
+          "url": "https://explorer.finteh.org/lava",
+          "block_page": null,
+          "tx_page": "https://explorer.finteh.org/lava/tx/${txHash}",
+          "account_page": "https://explorer.finteh.org/lava/account/${accountAddress}"
+        },
+        {
+          "kind": "guru",
+          "url": "https://lava.explorers.guru",
+          "block_page": null,
+          "tx_page": "https://lava.explorers.guru/transaction/${txHash}",
+          "account_page": "https://lava.explorers.guru/account/${accountAddress}"
+        },
+        {
+          "kind": "w3coins",
+          "url": "https://lava-explorer.w3coins.io/Lava",
+          "block_page": null,
+          "tx_page": "https://lava-explorer.w3coins.io/Lava/tx/${txHash}",
+          "account_page": "https://lava-explorer.w3coins.io/Lava/account/${accountAddress}"
+        },
+        {
+          "kind": "staking-explorer.com",
+          "url": "https://staking-explorer.com/explorer/lava",
+          "block_page": null,
+          "tx_page": "https://staking-explorer.com/transaction.php?chain=lava&tx=${txHash}",
+          "account_page": "https://staking-explorer.com/account.php?chain=lava&addr=${accountAddress}"
+        },
+        {
+          "kind": "Stake Village",
+          "url": "https://exp.stakevillage.net/lava-mainnet",
+          "block_page": null,
+          "tx_page": "https://exp.stakevillage.net/lava-mainnet/tx/${txHash}",
+          "account_page": "https://exp.stakevillage.net/lava-mainnet/account/${accountAddress}"
+        },
+        {
+          "kind": "AVIAONE 🟢",
+          "url": "https://mainnet.explorer.aviaone.com/lava",
+          "block_page": null,
+          "tx_page": "https://mainnet.explorer.aviaone.com/lava/tx/${txHash}",
+          "account_page": "https://mainnet.explorer.aviaone.com/lava/account/${accountAddress}"
+        },
+        {
+          "kind": "🔥STAVR🔥",
+          "url": "https://explorer.stavr.tech/Lava-Mainnet",
+          "block_page": null,
+          "tx_page": "https://explorer.stavr.tech/Lava-Mainnet/tx/${txHash}",
+          "account_page": "https://explorer.stavr.tech/Lava-Mainnet/account/${accountAddress}"
+        },
+        {
+          "kind": "MaouamNodelab",
+          "url": "https://explorer.maouam.xyz/lava-mainnet",
+          "block_page": null,
+          "tx_page": "https://explorer.maouam.xyz/lava-mainnet/tx/${txHash}",
+          "account_page": "https://explorer.maouam.xyz/lava-mainnet/account/${accountAddress}"
+        },
+        {
+          "kind": "Winnode",
+          "url": "https://winnode.xyz/explorer/lava",
+          "block_page": null,
+          "tx_page": "https://winnode.xyz/explorer/lava/tx/${txHash}",
+          "account_page": "https://winnode.xyz/explorer/lava/account/${accountAddress}"
+        },
+        {
+          "kind": "AstroStake",
+          "url": "https://stake.astrostake.xyz/lava",
+          "block_page": null,
+          "tx_page": "https://stake.astrostake.xyz/lava/tx/${txHash}",
+          "account_page": "https://stake.astrostake.xyz/lava/address/${accountAddress}"
+        },
+        {
+          "kind": "moon-runners",
+          "url": "https://moon-runners.net/lava/mainnet",
+          "block_page": null,
+          "tx_page": "https://moon-runners.net/lava/mainnet/finder?search=${txHash}",
+          "account_page": "https://moon-runners.net/lava/mainnet/finder?search=${accountAddress}"
+        }
+      ]
+    },
+    "lava-testnet-2": {
+      "dir": "testnets/lavatestnet",
+      "explorers": [
+        {
+          "kind": "explorers.guru",
+          "url": "https://lava.explorers.guru",
+          "block_page": null,
+          "tx_page": "https://lava.explorers.guru//transaction/${txHash}",
+          "account_page": "https://lava.explorers.guru//account/${accountAddress}"
+        },
+        {
+          "kind": "🔥STAVR🔥",
+          "url": "https://explorer.stavr.tech/Lava-Testnet",
+          "block_page": null,
+          "tx_page": "https://explorer.stavr.tech/Lava-Testnet/tx/${txHash}",
+          "account_page": "https://explorer.stavr.tech/Lava-Testnet/account/${accountAddress}"
+        },
+        {
+          "kind": "NodeStake Explorer",
+          "url": "https://explorer.nodestake.org/lava-testnet",
+          "block_page": null,
+          "tx_page": "https://explorer.nodestake.org/lava-testnet/tx/${txHash}",
+          "account_page": "https://explorer.nodestake.org/lava-testnet/account/${accountAddress}"
+        },
+        {
+          "kind": "ITRocket",
+          "url": "https://testnet.itrocket.net/lava",
+          "block_page": null,
+          "tx_page": "https://testnet.itrocket.net/lava/tx/${txHash}",
+          "account_page": "https://testnet.itrocket.net/lava/account/${accountAddress}"
+        }
+      ]
+    },
+    "mocha-4": {
+      "dir": "testnets/celestiatestnet3",
+      "explorers": [
+        {
+          "kind": "Mintscan",
+          "url": "https://mintscan.io/celestia-testnet",
+          "block_page": null,
+          "tx_page": "https://mintscan.io/celestia-testnet/txs/${txHash}",
+          "account_page": null
+        },
+        {
+          "kind": "itrocket",
+          "url": "https://testnet.itrocket.net/celestia",
+          "block_page": null,
+          "tx_page": "https://testnet.itrocket.net/celestia/tx/${txHash}",
+          "account_page": "https://testnet.itrocket.net/celestia/account/${accountAddress}"
+        },
+        {
+          "kind": "CrypTech",
+          "url": "https://explorers.cryptech.com.ua/Celestia-Testnet",
+          "block_page": null,
+          "tx_page": "https://explorers.cryptech.com.ua/Celestia-Testnet/tx/${txHash}",
+          "account_page": "https://explorers.cryptech.com.ua/Celestia-Testnet/account/${accountAddress}"
+        },
+        {
+          "kind": "DTEAM | Explorer",
+          "url": "https://explorer.testnet.dteam.tech/celestia",
+          "block_page": null,
+          "tx_page": "https://explorer.testnet.dteam.tech/celestia/tx/${txHash}",
+          "account_page": "https://explorer.testnet.dteam.tech/celestia/account/${accountAddress}"
+        },
+        {
+          "kind": "Relaxed Explorer 🦥",
+          "url": "https://testnet.explorer.stakeandrelax.net/celestia",
+          "block_page": null,
+          "tx_page": "https://testnet.explorer.stakeandrelax.net/celestia/transaction/${txHash}",
+          "account_page": "https://testnet.explorer.stakeandrelax.net/celestia/account/${accountAddress}"
+        },
+        {
+          "kind": "Valopers",
+          "url": "https://testnet.celestia.valopers.com",
+          "block_page": null,
+          "tx_page": "https://testnet.celestia.valopers.com/transactions/${txHash}",
+          "account_page": "https://testnet.celestia.valopers.com/account/${accountAddress}"
+        }
+      ]
+    },
+    "neutron-1": {
+      "dir": "neutron",
+      "explorers": [
+        {
+          "kind": "Mintscan",
+          "url": "https://www.mintscan.io/neutron",
+          "block_page": null,
+          "tx_page": "https://www.mintscan.io/neutron/transactions/${txHash}",
+          "account_page": "https://www.mintscan.io/neutron/accounts/${accountAddress}"
+        },
+        {
+          "kind": "ezstaking",
+          "url": "https://ezstaking.app/neutron",
+          "block_page": null,
+          "tx_page": "https://ezstaking.app/neutron/txs/${txHash}",
+          "account_page": "https://ezstaking.app/neutron/account/${accountAddress}"
+        },
+        {
+          "kind": "WhisperNode 🤐",
+          "url": "https://mainnet.whispernode.com/neutron",
+          "block_page": null,
+          "tx_page": "https://mainnet.whispernode.com/neutron/tx/${txHash}",
+          "account_page": "https://mainnet.whispernode.com/neutron/account/${accountAddress}"
+        },
+        {
+          "kind": "Validatorinfo",
+          "url": "https://validatorinfo.com/networks/neutron/overview",
+          "block_page": null,
+          "tx_page": null,
+          "account_page": null
+        },
+        {
+          "kind": "Valopers",
+          "url": "https://neutron.valopers.com",
+          "block_page": null,
+          "tx_page": "https://neutron.valopers.com/transactions/${txHash}",
+          "account_page": "https://neutron.valopers.com/account/${accountAddress}"
+        }
+      ]
+    },
+    "osmo-test-5": {
+      "dir": "testnets/osmosistestnet",
+      "explorers": [
+        {
+          "kind": "mintscan",
+          "url": "https://mintscan.io/osmosis-testnet",
+          "block_page": null,
+          "tx_page": "https://mintscan.io/osmosis-testnet/txs/${txHash}",
+          "account_page": "https://mintscan.io/osmosis-testnet/account/${accountAddress}"
+        },
+        {
+          "kind": "ping.pub",
+          "url": "https://explorer.osmotest5.osmosis.zone",
+          "block_page": null,
+          "tx_page": "https://explorer.osmotest5.osmosis.zone/osmo-test-5/tx/${txHash}",
+          "account_page": "https://explorer.osmotest5.osmosis.zone/osmo-test-5/account/${accountAddress}"
+        },
+        {
+          "kind": "Valopers",
+          "url": "https://testnet.osmosis.valopers.com",
+          "block_page": null,
+          "tx_page": "https://testnet.osmosis.valopers.com/transactions/${txHash}",
+          "account_page": "https://testnet.osmosis.valopers.com/account/${accountAddress}"
+        }
+      ]
+    },
+    "osmosis-1": {
+      "dir": "osmosis",
+      "explorers": [
+        {
+          "kind": "ezstaking",
+          "url": "https://ezstaking.app/osmosis",
+          "block_page": null,
+          "tx_page": "https://ezstaking.app/osmosis/txs/${txHash}",
+          "account_page": "https://ezstaking.app/osmosis/account/${accountAddress}"
+        },
+        {
+          "kind": "mintscan",
+          "url": "https://www.mintscan.io/osmosis",
+          "block_page": null,
+          "tx_page": "https://www.mintscan.io/osmosis/transactions/${txHash}",
+          "account_page": "https://www.mintscan.io/osmosis/accounts/${accountAddress}"
+        },
+        {
+          "kind": "ping.pub",
+          "url": "https://ping.pub/osmosis",
+          "block_page": null,
+          "tx_page": "https://ping.pub/osmosis/tx/${txHash}",
+          "account_page": null
+        },
+        {
+          "kind": "explorers.guru",
+          "url": "https://osmosis.explorers.guru",
+          "block_page": null,
+          "tx_page": "https://osmosis.explorers.guru/transaction/${txHash}",
+          "account_page": "https://osmosis.explorers.guru/account/${accountAddress}"
+        },
+        {
+          "kind": "atomscan",
+          "url": "https://atomscan.com/osmosis",
+          "block_page": null,
+          "tx_page": "https://atomscan.com/osmosis/transactions/${txHash}",
+          "account_page": "https://atomscan.com/osmosis/accounts/${accountAddress}"
+        },
+        {
+          "kind": "TC Network",
+          "url": "https://explorer.tcnetwork.io/osmosis",
+          "block_page": null,
+          "tx_page": "https://explorer.tcnetwork.io/osmosis/transaction/${txHash}",
+          "account_page": "https://explorer.tcnetwork.io/osmosis/account/${accountAddress}"
+        },
+        {
+          "kind": "staking-explorer.com",
+          "url": "https://staking-explorer.com/explorer/osmosis",
+          "block_page": null,
+          "tx_page": "https://staking-explorer.com/transaction.php?chain=osmosis&tx=${txHash}",
+          "account_page": "https://staking-explorer.com/account.php?chain=osmosis&addr=${accountAddress}"
+        },
+        {
+          "kind": "Stakeflow",
+          "url": "https://stakeflow.io/osmosis",
+          "block_page": null,
+          "tx_page": null,
+          "account_page": "https://stakeflow.io/osmosis/accounts/${accountAddress}"
+        },
+        {
+          "kind": "Nodeist Explorer",
+          "url": "https://exp.nodeist.net/osmosis",
+          "block_page": null,
+          "tx_page": "https://exp.nodeist.net/osmosis/tx/${txHash}",
+          "account_page": null
+        },
+        {
+          "kind": "L0vd.com ❤️",
+          "url": "https://explorers.l0vd.com/osmosis-mainnet",
+          "block_page": null,
+          "tx_page": "https://explorers.l0vd.com/osmosis-mainnet/tx/${txHash}",
+          "account_page": null
+        },
+        {
+          "kind": "Chainscope",
+          "url": "https://chainsco.pe/osmosis",
+          "block_page": null,
+          "tx_page": "https://chainsco.pe/osmosis/tx/${txHash}",
+          "account_page": null
+        },
+        {
+          "kind": "WhisperNode 🤐",
+          "url": "https://mainnet.whispernode.com/osmosis",
+          "block_page": null,
+          "tx_page": "https://mainnet.whispernode.com/osmosis/tx/${txHash}",
+          "account_page": "https://mainnet.whispernode.com/osmosis/account/${accountAddress}"
+        },
+        {
+          "kind": "Valopers",
+          "url": "https://osmosis.valopers.com",
+          "block_page": null,
+          "tx_page": "https://osmosis.valopers.com/transactions/${txHash}",
+          "account_page": "https://osmosis.valopers.com/account/${accountAddress}"
+        },
+        {
+          "kind": "Validatorinfo",
+          "url": "https://validatorinfo.com/networks/osmosis/overview",
+          "block_page": null,
+          "tx_page": null,
+          "account_page": null
+        },
+        {
+          "kind": "moon-runners",
+          "url": "https://moon-runners.net/osmosis/mainnet",
+          "block_page": null,
+          "tx_page": "https://moon-runners.net/osmosis/mainnet/finder?search=${txHash}",
+          "account_page": "https://moon-runners.net/osmosis/mainnet/finder?search=${accountAddress}"
+        }
+      ]
+    },
+    "pacific-1": {
+      "dir": "sei",
+      "explorers": [
+        {
+          "kind": "blockscout",
+          "url": "https://seitrace.com",
+          "block_page": null,
+          "tx_page": "https://seitrace.com/tx/${txHash}?chain=pacific-1",
+          "account_page": "https://seitrace.com/address/${accountAddress}?chain=pacific-1"
+        },
+        {
+          "kind": "mintscan",
+          "url": "https://www.mintscan.io/sei",
+          "block_page": null,
+          "tx_page": "https://www.mintscan.io/sei/transactions/${txHash}",
+          "account_page": "https://www.mintscan.io/sei/accounts/${accountAddress}"
+        },
+        {
+          "kind": "ezstaking",
+          "url": "https://ezstaking.app/sei",
+          "block_page": null,
+          "tx_page": "https://ezstaking.app/sei/txs/${txHash}",
+          "account_page": "https://ezstaking.app/sei/account/${accountAddress}"
+        },
+        {
+          "kind": "celatone",
+          "url": "https://www.seiscan.app/pacific-1",
+          "block_page": null,
+          "tx_page": "https://www.seiscan.app/pacific-1/txs/${txHash}",
+          "account_page": "https://www.seiscan.app/pacific-1/accounts/${accountAddress}"
+        },
+        {
+          "kind": "staking-explorer.com",
+          "url": "https://staking-explorer.com/explorer/sei",
+          "block_page": null,
+          "tx_page": "https://staking-explorer.com/transaction.php?chain=sei&tx=${txHash}",
+          "account_page": "https://staking-explorer.com/account.php?chain=sei&addr=${accountAddress}"
+        },
+        {
+          "kind": "WhisperNode 🤐",
+          "url": "https://mainnet.whispernode.com/sei",
+          "block_page": null,
+          "tx_page": "https://mainnet.whispernode.com/sei/tx/${txHash}",
+          "account_page": "https://mainnet.whispernode.com/sei/account/${accountAddress}"
+        }
+      ]
+    },
+    "pion-1": {
+      "dir": "testnets/neutrontestnet",
+      "explorers": [
+        {
+          "kind": "Ping.pub Explorer from Hypha",
+          "url": "https://explorer.rs-testnet.polypore.xyz/pion-1",
+          "block_page": null,
+          "tx_page": "https://explorer.rs-testnet.polypore.xyz/pion-1/tx/${txHash}",
+          "account_page": "https://explorer.rs-testnet.polypore.xyz/baryon-1/account/${accountAddress}"
+        },
+        {
+          "kind": "Mintscan",
+          "url": "https://mintscan.io/neutron-testnet",
+          "block_page": null,
+          "tx_page": "https://mintscan.io/neutron-testnet/txs/${txHash}",
+          "account_page": "https://mintscan.io/neutron-testnet/account/${accountAddress}"
+        }
+      ]
+    },
+    "provider": {
+      "dir": "testnets/cosmosicsprovidertestnet",
+      "explorers": [
+        {
+          "kind": "Mintscan",
+          "url": "https://mintscan.io/ics-testnet-provider",
+          "block_page": null,
+          "tx_page": "https://mintscan.io/ics-testnet-provider/tx/${txHash}",
+          "account_page": null
+        },
+        {
+          "kind": "Ping.pub",
+          "url": "https://explorer.polypore.xyz/provider",
+          "block_page": null,
+          "tx_page": "https://explorer.polypore.xyz/provider/tx/${txHash}",
+          "account_page": null
+        },
+        {
+          "kind": "ITRocket",
+          "url": "https://testnet.itrocket.net/cosmos",
+          "block_page": "https://testnet.itrocket.net/cosmos/block/${blockHeight}",
+          "tx_page": "https://testnet.itrocket.net/cosmos/tx/${txHash}",
+          "account_page": "https://testnet.itrocket.net/cosmos/account/${accountAddress}"
+        }
+      ]
+    },
+    "pulsar-3": {
+      "dir": "testnets/secretnetworktestnet",
+      "explorers": [
+        {
+          "kind": "ping.pub",
+          "url": "https://testnet.ping.pub/secret",
+          "block_page": null,
+          "tx_page": "https://testnet.ping.pub/secret/tx/${txHash}",
+          "account_page": null
+        }
+      ]
+    },
+    "sandbox-2": {
+      "dir": "testnets/akashtestnet",
+      "explorers": [
+        {
+          "kind": "ping.pub",
+          "url": "https://explorer.sandbox-2.aksh.pw/akash",
+          "block_page": null,
+          "tx_page": "https://explorer.sandbox-2.aksh.pw/akash/tx/${txHash}",
+          "account_page": null
+        }
+      ]
+    },
+    "secret-4": {
+      "dir": "secretnetwork",
+      "explorers": [
+        {
+          "kind": "ezstaking",
+          "url": "https://ezstaking.app/secretnetwork",
+          "block_page": null,
+          "tx_page": "https://ezstaking.app/secretnetwork/txs/${txHash}",
+          "account_page": "https://ezstaking.app/secretnetwork/account/${accountAddress}"
+        },
+        {
+          "kind": "ping.pub",
+          "url": "https://ping.pub/secret",
+          "block_page": null,
+          "tx_page": "https://ping.pub/secret/tx/${txHash}",
+          "account_page": null
+        },
+        {
+          "kind": "mintscan",
+          "url": "https://www.mintscan.io/secret",
+          "block_page": null,
+          "tx_page": "https://www.mintscan.io/secret/transactions/${txHash}",
+          "account_page": "https://www.mintscan.io/secret/accounts/${accountAddress}"
+        },
+        {
+          "kind": "atomscan",
+          "url": "https://atomscan.com/secret-network",
+          "block_page": null,
+          "tx_page": "https://atomscan.com/secret-network/transactions/${txHash}",
+          "account_page": "https://atomscan.com/secret-network/accounts/${accountAddress}"
+        },
+        {
+          "kind": "staking-explorer.com",
+          "url": "https://staking-explorer.com/explorer/secretnetwork",
+          "block_page": null,
+          "tx_page": "https://staking-explorer.com/transaction.php?chain=secretnetwork&tx=${txHash}",
+          "account_page": "https://staking-explorer.com/account.php?chain=secretnetwork&addr=${accountAddress}"
+        },
+        {
+          "kind": "WhisperNode 🤐",
+          "url": "https://mainnet.whispernode.com/secret",
+          "block_page": null,
+          "tx_page": "https://mainnet.whispernode.com/secret/tx/${txHash}",
+          "account_page": "https://mainnet.whispernode.com/secret/account/${accountAddress}"
+        },
+        {
+          "kind": "Valopers",
+          "url": "https://secret.valopers.com",
+          "block_page": null,
+          "tx_page": "https://secret.valopers.com/transactions/${txHash}",
+          "account_page": "https://secret.valopers.com/account/${accountAddress}"
+        }
+      ]
+    },
+    "stargaze-1": {
+      "dir": "stargaze",
+      "explorers": [
+        {
+          "kind": "ezstaking",
+          "url": "https://ezstaking.app/stargaze",
+          "block_page": null,
+          "tx_page": "https://ezstaking.app/stargaze/txs/${txHash}",
+          "account_page": "https://ezstaking.app/stargaze/account/${accountAddress}"
+        },
+        {
+          "kind": "mintscan",
+          "url": "https://www.mintscan.io/stargaze",
+          "block_page": null,
+          "tx_page": "https://www.mintscan.io/stargaze/transactions/${txHash}",
+          "account_page": "https://www.mintscan.io/stargaze/accounts/${accountAddress}"
+        },
+        {
+          "kind": "ping.pub",
+          "url": "https://ping.pub/stargaze",
+          "block_page": null,
+          "tx_page": "https://ping.pub/stargaze/tx/${txHash}",
+          "account_page": null
+        },
+        {
+          "kind": "staking-explorer.com",
+          "url": "https://staking-explorer.com/explorer/stargaze",
+          "block_page": null,
+          "tx_page": "https://staking-explorer.com/transaction.php?chain=stargaze&tx=${txHash}",
+          "account_page": "https://staking-explorer.com/account.php?chain=stargaze&addr=${accountAddress}"
+        },
+        {
+          "kind": "atomscan",
+          "url": "https://atomscan.com/stargaze",
+          "block_page": null,
+          "tx_page": "https://atomscan.com/stargaze/transactions/${txHash}",
+          "account_page": "https://atomscan.com/stargaze/accounts/${accountAddress}"
+        },
+        {
+          "kind": "Starscan",
+          "url": "https://starscan.net",
+          "block_page": null,
+          "tx_page": "https://starscan.net/stargaze-1/tx/${txHash}",
+          "account_page": "https://starscan.net/stargaze-1/address/${accountAddress}"
+        },
+        {
+          "kind": "WhisperNode 🤐",
+          "url": "https://mainnet.whispernode.com/stargaze",
+          "block_page": null,
+          "tx_page": "https://mainnet.whispernode.com/stargaze/tx/${txHash}",
+          "account_page": "https://mainnet.whispernode.com/stargaze/account/${accountAddress}"
+        },
+        {
+          "kind": "Valopers",
+          "url": "https://stargaze.valopers.com",
+          "block_page": null,
+          "tx_page": "https://stargaze.valopers.com/transactions/${txHash}",
+          "account_page": "https://stargaze.valopers.com/account/${accountAddress}"
+        }
+      ]
+    },
+    "stride-1": {
+      "dir": "stride",
+      "explorers": [
+        {
+          "kind": "BccNodes",
+          "url": "https://explorer.bccnodes.com/stride-M",
+          "block_page": null,
+          "tx_page": "https://explorer.bccnodes.com/stride-M/tx/${txHash}",
+          "account_page": "https://explorer.bccnodes.com/stride-M/account/${accountAddress}"
+        },
+        {
+          "kind": "ezstaking",
+          "url": "https://ezstaking.app/stride",
+          "block_page": null,
+          "tx_page": "https://ezstaking.app/stride/txs/${txHash}",
+          "account_page": "https://ezstaking.app/stride/account/${accountAddress}"
+        },
+        {
+          "kind": "Apollo",
+          "url": "https://apollo.chandrastation.com/stride",
+          "block_page": null,
+          "tx_page": "https://apollo.chandrastation.com/stride/tx/${txHash}",
+          "account_page": "https://apollo.chandrastation.com/stride/account/${accountAddress}"
+        },
+        {
+          "kind": "Stride Ping Pub",
+          "url": "https://explorer.stride.zone/stride",
+          "block_page": null,
+          "tx_page": "https://explorer.stride.zone/stride/tx/${txHash}",
+          "account_page": "https://explorer.stride.zone/stride/account/${accountAddress}"
+        },
+        {
+          "kind": "🔥STAVR🔥 Explorer",
+          "url": "https://explorer.stavr.tech/stride",
+          "block_page": null,
+          "tx_page": "https://explorer.stavr.tech/stride/tx/${txHash}",
+          "account_page": "https://explorer.stavr.tech/stride/account/${accountAddress}"
+        },
+        {
+          "kind": "mintscan",
+          "url": "https://www.mintscan.io/stride",
+          "block_page": null,
+          "tx_page": "https://www.mintscan.io/stride/transactions/${txHash}",
+          "account_page": "https://www.mintscan.io/stride/accounts/${accountAddress}"
+        },
+        {
+          "kind": "atomscan",
+          "url": "https://atomscan.com/stride",
+          "block_page": null,
+          "tx_page": "https://atomscan.com/stride/transactions/${txHash}",
+          "account_page": "https://atomscan.com/stride/accounts/${accountAddress}"
+        },
+        {
+          "kind": "staking-explorer.com",
+          "url": "https://staking-explorer.com/explorer/stride",
+          "block_page": null,
+          "tx_page": "https://staking-explorer.com/transaction.php?chain=stride&tx=${txHash}",
+          "account_page": "https://staking-explorer.com/account.php?chain=stride&addr=${accountAddress}"
+        },
+        {
+          "kind": "Stakeflow",
+          "url": "https://stakeflow.io/stride",
+          "block_page": null,
+          "tx_page": null,
+          "account_page": "https://stakeflow.io/stride/accounts/${accountAddress}"
+        },
+        {
+          "kind": "Stake-Take",
+          "url": "https://explorer.stake-take.com/stride",
+          "block_page": null,
+          "tx_page": "https://explorer.stake-take.com/stride/tx/${txHash}",
+          "account_page": "https://explorer.stake-take.com/stride/account/${accountAddress}"
+        },
+        {
+          "kind": "WhisperNode 🤐",
+          "url": "https://mainnet.whispernode.com/stride",
+          "block_page": null,
+          "tx_page": "https://mainnet.whispernode.com/stride/tx/${txHash}",
+          "account_page": "https://mainnet.whispernode.com/stride/account/${accountAddress}"
+        },
+        {
+          "kind": "Validatorinfo",
+          "url": "https://validatorinfo.com/networks/stride/overview",
+          "block_page": null,
+          "tx_page": null,
+          "account_page": null
+        }
+      ]
+    },
+    "stride-internal-1": {
+      "dir": "testnets/stridetestnet",
+      "explorers": [
+        {
+          "kind": "PingPub",
+          "url": "https://testnet.ping.pub/stride",
+          "block_page": null,
+          "tx_page": "https://testnet.ping.pub/stride/tx/${txHash}",
+          "account_page": null
+        }
+      ]
+    },
+    "thorchain-1": {
+      "dir": "thorchain",
+      "explorers": [
+        {
+          "kind": "THORChain explorer",
+          "url": "https://thorchain.net",
+          "block_page": null,
+          "tx_page": "https://thorchain.net/#/txs/${txHash}",
+          "account_page": null
+        },
+        {
+          "kind": "Runescan",
+          "url": "https://runescan.io",
+          "block_page": null,
+          "tx_page": "https://runescan.io/txs/${txHash}",
+          "account_page": null
+        },
+        {
+          "kind": "THORChain Dashboard",
+          "url": "https://thorchain.net/dashboard",
+          "block_page": null,
+          "tx_page": null,
+          "account_page": null
+        }
+      ]
+    },
+    "uni-6": {
+      "dir": "testnets/junotestnet6",
+      "explorers": [
+        {
+          "kind": "🔥STAVR🔥",
+          "url": "https://explorer.stavr.tech/Juno-Testnet",
+          "block_page": null,
+          "tx_page": "https://explorer.stavr.tech/Juno-Testnet/txs/${txHash}",
+          "account_page": "https://explorer.stavr.tech/Juno-Testnet/account/${accountAddress}"
+        }
+      ]
+    }
+  }
+}

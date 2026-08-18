@@ -31,7 +31,7 @@ The observability dashboard for the [Smart Router](https://github.com/Magma-Devs
 ## What is Smart Router Dashboard
 
 - **Live metrics, honestly sourced** — KPIs, RPS, latency, error breakdowns, provider selection scores: all straight from the router's `smartrouter_*` / `rpc_endpoint_*` Prometheus families. Metric families the router hasn't emitted yet render the design's own empty states and light up automatically when they appear.
-- **Topology-aware** — one values file drives both the router and the dashboard, so the Endpoints/Providers pages always reflect the running configuration.
+- **Topology-aware** — one values file drives both the router and the dashboard, so the Upstreams page always reflects the running configuration.
 - **Live test console** — fire requests at any chain × interface the router serves, straight from the browser, with a full method catalog generated from the [lava-specs](https://github.com/Magma-Devs/lava-specs) repo (238 chains, jsonrpc/rest/tendermint/grpc, archive/debug/trace tiers).
 - **Self-contained** — `make up` gives you router + Prometheus + api + web from nothing. No accounts, no cloud, optional auth.
 - **Optional authentication** — `AUTH_MODE=enabled` adds Auth.js sign-in (email+password + Google/GitHub/Discord) backed by Postgres. Default is open (`disabled`) for private deployments.
@@ -99,8 +99,7 @@ router uses its in-process cache.
 
 - **Overview** — KPI strip (requests, RPS, errors, success rate, latency) + chart grid, all live
 - **Dashboard** — ops surface, 1h/3h/24h/7d/custom windows, client-side chain multiselect
-- **Providers** — provider cards from the mounted config joined with live per-endpoint stats
-- **Endpoints** — chain-grouped endpoint cards from the values file
+- **Upstreams** — the mounted config joined with live per-endpoint stats, carved three ways: **by router** (the endpoints each router publishes — the default), by chain (who serves it), or by upstream (what it serves)
 - **Metrics** — four tabs: Overview, Providers deep-dive, Errors breakdown, Traffic
 - **Live test** — POST straight to the router's listen ports from the browser; full per-chain method catalog with archive/debug/trace tiers
 - **/standalone** — the Metrics page without the shell, for sharing or embedding
@@ -164,10 +163,14 @@ pnpm format          # prettier --write (format:check to verify only)
 ```
 
 Every push and PR to `main` runs the [Quality Gate](.github/workflows/quality-gate.yml):
-lint + typecheck + the full vitest suite, plus a **chain-map drift check** that
-regenerates the chain catalog from the live [lava-specs](https://github.com/Magma-Devs/lava-specs)
-repo and fails if the committed map is stale. Renovate-style dependency bumps
-arrive via [Dependabot](.github/dependabot.yml) (npm + GitHub Actions, weekly).
+lint + typecheck + the full vitest suite, plus a **spec drift check** that
+regenerates the chain map, the Try-it method catalog and the runnable-defaults
+roll-call from the live [lava-specs](https://github.com/Magma-Devs/lava-specs)
+repo and fails if any committed copy is stale. Resyncing is a documented
+procedure — see [`.claude/rules/chain-resync.md`](.claude/rules/chain-resync.md),
+which also covers what to do about a new chain whose methods all need caller
+input. Renovate-style dependency bumps arrive via
+[Dependabot](.github/dependabot.yml) (npm + GitHub Actions, weekly).
 
 When `NODE_ENV` isn't `production`, the api also serves an interactive
 **OpenAPI 3.1 explorer at [`/docs`](http://localhost:8000/docs)** (raw spec at

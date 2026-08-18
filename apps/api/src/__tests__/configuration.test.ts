@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   ConfigurationService,
   maskNodeUrl,
+  normalizeHelmNodeName,
   portFromListenAddress,
 } from "../services/configuration.js";
 
@@ -234,6 +235,67 @@ routers:
   it("masks helm node URLs too", () => {
     const eth = serviceFor(HELM_FULL).getRouters()[0]!;
     expect(eth.nodes[0]!.endpoints[0]!.urlHost).toBe("https://eth1.lava.build");
+  });
+
+  describe("node-name normalization (mirrors the chart's `lower | replace \" \" \"-\"`)", () => {
+    it("folds the values file's display name to the router's provider name", () => {
+      const routers = serviceFor(`
+routers:
+  - id: iota-mainnet
+    network: iota
+    nodes:
+      - name: Lava
+        endpoints: [{ url: "https://iota.lava.build", interface: jsonrpc }]
+      - name: Blockdaemon
+        endpoints: [{ url: "https://iota.blockdaemon.com", interface: jsonrpc }]
+`).getRouters();
+      // Prometheus reports `provider_address="lava"`, and the router only
+      // honours `lava-select-provider: lava`. Both read this field.
+      expect(routers[0]!.nodes.map((n) => n.name)).toEqual(["lava", "blockdaemon"]);
+    });
+
+    it("turns spaces into dashes, exactly as the chart does", () => {
+      const routers = serviceFor(`
+routers:
+  - id: A
+    network: eth1
+    nodes:
+      - name: My Node Co
+        endpoints: [{ url: "https://x", interface: jsonrpc }]
+`).getRouters();
+      expect(routers[0]!.nodes[0]!.name).toBe("my-node-co");
+    });
+
+    it("keys the endpoint-url index by the normalized name, not the raw one", () => {
+      const svc = serviceFor(`
+routers:
+  - id: iota-mainnet
+    network: iota
+    nodes:
+      - name: Lava
+        endpoints: [{ url: "https://iota.lava.build/keyed/path", interface: jsonrpc }]
+`);
+      // A caller reads the node name off getRouters() and hands it back; if the
+      // key were the raw name the round-trip would 404.
+      const node = svc.getRouters()[0]!.nodes[0]!.name;
+      expect(svc.resolveEndpointUrl({ routerId: "iota-mainnet", node, endpointIndex: 0 })).toBe(
+        "https://iota.lava.build/keyed/path",
+      );
+      expect(
+        svc.resolveEndpointUrl({ routerId: "iota-mainnet", node: "Lava", endpointIndex: 0 }),
+      ).toBeNull();
+    });
+
+    it("still falls back to the network when a node is unnamed", () => {
+      const routers = serviceFor(`
+routers:
+  - id: A
+    network: eth1
+    nodes:
+      - endpoints: [{ url: "https://x", interface: jsonrpc }]
+`).getRouters();
+      expect(routers[0]!.nodes[0]!.name).toBe("eth1");
+    });
   });
 
   describe("pathBased resolution (mirrors the chart's httproute logic)", () => {
@@ -470,6 +532,39 @@ describe("ConfigurationService · unknown shapes", () => {
   });
 });
 
+describe("normalizeHelmNodeName", () => {
+  it("lowercases and de-spaces", () => {
+    expect(normalizeHelmNodeName("Lava")).toBe("lava");
+    expect(normalizeHelmNodeName("Blockdaemon")).toBe("blockdaemon");
+    expect(normalizeHelmNodeName("My Node Co")).toBe("my-node-co");
+  });
+
+  it("leaves an already-normalized name untouched", () => {
+    expect(normalizeHelmNodeName("sr-gateway")).toBe("sr-gateway");
+    expect(normalizeHelmNodeName("")).toBe("");
+  });
+});
+
+describe("SR_CONFIG node names are left verbatim", () => {
+  it("does not fold the case of a name the router already registered", () => {
+    // An SR_CONFIG file IS the router's config — its `name:` is already the
+    // registered provider name.
+    const routers = serviceFor(`
+endpoints:
+  - listen-address: "0.0.0.0:3360"
+    chain-id: "ETH1"
+    api-interface: "jsonrpc"
+direct-rpc:
+  - name: "Eth Lava"
+    chain-id: "ETH1"
+    api-interface: "jsonrpc"
+    node-urls:
+      - url: "https://eth1.lava.build"
+`).getRouters();
+    expect(routers[0]!.nodes[0]!.name).toBe("Eth Lava");
+  });
+});
+
 describe("maskNodeUrl", () => {
   it("keeps scheme + host (+port), drops path/query", () => {
     expect(maskNodeUrl("https://mainnet.gateway.tenderly.co/abc123?key=s")).toBe(
@@ -495,5 +590,66 @@ describe("portFromListenAddress", () => {
     expect(portFromListenAddress("nocolon")).toBeNull();
     expect(portFromListenAddress("host:notaport")).toBeNull();
     expect(portFromListenAddress(undefined)).toBeNull();
+  });
+});
+
+/* ── Direct-relay resolution ──────────────────────────────────────────────
+   The masked topology and the private url map are built in ONE pass, so the
+   index a row publishes and the url the relay dials can never drift apart. */
+
+describe("ConfigurationService.resolveEndpointUrl", () => {
+  it("returns the FULL url — the part getRouters() masks away (SR_CONFIG)", () => {
+    const svc = serviceFor(SR_CONFIG_ETH);
+    const masked = svc.getRouters()[0]!.nodes[0]!.endpoints[0]!;
+    expect(masked.urlHost).toBe("https://eth1.lava.build");
+    expect(svc.resolveEndpointUrl({ routerId: "ETH1", node: "eth-lava", endpointIndex: 0 })).toBe(
+      "https://eth1.lava.build/lava-referer-secret-key/",
+    );
+  });
+
+  it("indexes each node's endpoints in publication order", () => {
+    const svc = serviceFor(SR_CONFIG_ETH);
+    const endpoints = svc.getRouters()[0]!.nodes[0]!.endpoints;
+    expect(endpoints.map((e) => e.index)).toEqual([0, 1]);
+    expect(svc.resolveEndpointUrl({ routerId: "ETH1", node: "eth-lava", endpointIndex: 1 })).toBe(
+      "wss://eth1.lava.build/websocket",
+    );
+  });
+
+  it("resolves helm-format endpoints by the router id it publishes", () => {
+    const svc = serviceFor(HELM_FULL);
+    // `id: Ethereum` — NOT the uppercased network, which is what `spec` is.
+    expect(svc.resolveEndpointUrl({ routerId: "Ethereum", node: "lava", endpointIndex: 0 })).toBe(
+      "https://eth1.lava.build/some/keyed/path",
+    );
+    expect(svc.resolveEndpointUrl({ routerId: "ETH1", node: "lava", endpointIndex: 0 })).toBeNull();
+  });
+
+  it("returns null for anything the values file doesn't name", () => {
+    const svc = serviceFor(SR_CONFIG_ETH);
+    expect(svc.resolveEndpointUrl({ routerId: "ETH1", node: "eth-lava", endpointIndex: 9 })).toBeNull();
+    expect(svc.resolveEndpointUrl({ routerId: "ETH1", node: "ghost", endpointIndex: 0 })).toBeNull();
+    expect(svc.resolveEndpointUrl({ routerId: "NOPE", node: "eth-lava", endpointIndex: 0 })).toBeNull();
+  });
+
+  it("marks http/ws endpoints directable and grpc ones not", () => {
+    const svc = serviceFor(`
+endpoints:
+  - listen-address: "0.0.0.0:3366"
+    chain-id: "COSMOSHUB"
+    api-interface: "grpc"
+direct-rpc:
+  - name: "cosmos-grpc"
+    chain-id: "COSMOSHUB"
+    api-interface: "grpc"
+    node-urls:
+      - url: "grpcs://cosmos-grpc.publicnode.com:443"
+`);
+    const ep = svc.getRouters()[0]!.nodes[0]!.endpoints[0]!;
+    expect(ep.directable).toBe(false);
+    // Still resolvable — the ROUTE refuses the scheme, so the reason a caller
+    // gets is about gRPC, not a phantom "no such endpoint".
+    expect(svc.resolveEndpointUrl({ routerId: "COSMOSHUB", node: "cosmos-grpc", endpointIndex: 0 }))
+      .toBe("grpcs://cosmos-grpc.publicnode.com:443");
   });
 });

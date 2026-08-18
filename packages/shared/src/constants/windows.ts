@@ -24,7 +24,18 @@ export const WINDOWS = {
 
 export type MetricWindow = keyof typeof WINDOWS;
 
-export const DEFAULT_WINDOW: MetricWindow = "1d";
+/**
+ * What the dashboard opens on, and where an absent or unrecognised `window=`
+ * lands.
+ *
+ * Half an hour, because the question someone opens this to answer is "what is
+ * happening now". Over a day, a chain that has been failing for ten minutes is
+ * 0.7% of the window judging it — the average absorbs the incident that made
+ * you open the page. The cost is noisier rate-derived numbers (uptime,
+ * availability, error rate ride far fewer samples), which is the trade a
+ * now-shaped default is making on purpose.
+ */
+export const DEFAULT_WINDOW: MetricWindow = "30m";
 
 /** The exact option list (order included) of the design's window <select>. */
 export const WINDOW_OPTIONS: readonly MetricWindow[] = [

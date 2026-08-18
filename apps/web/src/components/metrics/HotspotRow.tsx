@@ -22,7 +22,14 @@ export function HotspotRow({ h, open, onToggle, win }: {
   win: MetricWindow;
 }) {
   const errPct = h.errorRate != null ? h.errorRate * 100 : null;
-  const sev = SEV_STYLE[sevForErrRatePct(errPct)];
+  /* A pair with no failed relays is here on its NODE errors — the upstream
+     answered, with a JSON-RPC error, and the relay counted as served. Showing
+     it as "0.00% · 0 errors" made the list look padded with empty rows (and a
+     chain filter look like it hadn't applied), so such a row states the number
+     it does have and stays out of the severity palette, which grades failure
+     rates it has none of. */
+  const nodeOnly = h.errors === 0 && h.nodeErrors > 0;
+  const sev = SEV_STYLE[nodeOnly ? "low" : sevForErrRatePct(errPct)];
   const trend = nums(h.trend);
   const chartId = "eh" + (h.spec + h.upstream).replace(/[^a-zA-Z0-9_-]/g, "");
   // X labels from the REAL trend timestamps — the chart's default labels
@@ -47,13 +54,24 @@ export function HotspotRow({ h, open, onToggle, win }: {
             <span style={{ fontSize: 14, fontWeight: 500, color: "var(--text-2)" }}>{h.upstream}</span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, fontSize: 11.5, color: "var(--text-3)" }}>
-            {h.errors.toLocaleString("en-US")} of {h.requests.toLocaleString("en-US")} requests failed
+            {nodeOnly
+              ? `no failed relays · ${h.nodeErrors.toLocaleString("en-US")} answered with a node error`
+              : `${h.errors.toLocaleString("en-US")} of ${h.requests.toLocaleString("en-US")} requests failed`}
           </div>
         </div>
         {/* rate + count */}
         <div style={{ textAlign: "right", flexShrink: 0, minWidth: 96 }}>
-          <div className="gw-mono gw-tnum" style={{ fontSize: 20, fontWeight: 700, lineHeight: 1, color: sev.c }}>{errPct != null ? errPct.toFixed(2) + "%" : "—"}</div>
-          <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 4 }}><span className="gw-mono gw-tnum">{h.errors.toLocaleString("en-US")}</span> errors</div>
+          {nodeOnly ? (
+            <>
+              <div className="gw-mono gw-tnum" style={{ fontSize: 20, fontWeight: 700, lineHeight: 1, color: "var(--text-2)" }}>{h.nodeErrors.toLocaleString("en-US")}</div>
+              <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 4 }}>node errors</div>
+            </>
+          ) : (
+            <>
+              <div className="gw-mono gw-tnum" style={{ fontSize: 20, fontWeight: 700, lineHeight: 1, color: sev.c }}>{errPct != null ? errPct.toFixed(2) + "%" : "—"}</div>
+              <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 4 }}><span className="gw-mono gw-tnum">{h.errors.toLocaleString("en-US")}</span> errors</div>
+            </>
+          )}
         </div>
         {/* latest */}
         <div style={{ flexShrink: 0, minWidth: 210, borderLeft: "1px solid var(--line)", paddingLeft: 14 }}>

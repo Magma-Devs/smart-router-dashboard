@@ -56,8 +56,24 @@ function jsonInline(body: unknown | null): string {
 
 // ──────────────── HTTP ────────────────
 
+/** A REST POST carries its arguments in the path — there is no payload to
+ *  render, and a `-d 'null'` would be rejected by the endpoint. */
+function isBodyless(req: ResolvedHttp): boolean {
+  return req.httpMethod === "POST" && req.body === null;
+}
+
 function httpCli(req: ResolvedHttp, extra: Record<string, string> = {}): SnippetBlock[] {
   const extraCurl = Object.entries(extra).map(([k, v]) => `  -H "${k}: ${v}" \\`);
+  if (isBodyless(req)) {
+    if (extraCurl.length === 0) return [{ language: "bash", code: `curl -s -X POST "${req.url}"` }];
+    return [{
+      language: "bash",
+      code: [
+        `curl -s -X POST "${req.url}" \\`,
+        ...extraCurl.map((l, i) => (i === extraCurl.length - 1 ? l.replace(/ \\$/, "") : l)),
+      ].join("\n"),
+    }];
+  }
   if (req.httpMethod === "GET") {
     if (extraCurl.length === 0) return [{ language: "bash", code: `curl -s "${req.url}"` }];
     return [{ language: "bash", code: [`curl -s "${req.url}" \\`, ...extraCurl.map((l, i) => (i === extraCurl.length - 1 ? l.replace(/ \\$/, "") : l))].join("\n") }];
@@ -88,6 +104,22 @@ function httpPython(req: ResolvedHttp, extra: Record<string, string> = {}): Snip
   const extraKw = Object.keys(extra).length
     ? `${INDENT}headers={${Object.entries(extra).map(([k, v]) => `"${k}": "${v}"`).join(", ")}},`
     : null;
+  if (isBodyless(req)) {
+    return [
+      install,
+      {
+        label: "Script",
+        language: "python",
+        code: [
+          `import requests`,
+          ``,
+          extraKw ? `r = requests.post(` : `r = requests.post("${req.url}")`,
+          ...(extraKw ? [`${INDENT}"${req.url}",`, extraKw, `)`] : []),
+          `print(r.json())`,
+        ].join("\n"),
+      },
+    ];
+  }
   if (req.httpMethod === "GET") {
     return [
       install,
@@ -127,6 +159,30 @@ function httpPython(req: ResolvedHttp, extra: Record<string, string> = {}): Snip
 function httpGo(req: ResolvedHttp, extra: Record<string, string> = {}): SnippetBlock[] {
   // Go HTTP is stdlib (net/http), no install required.
   const hasExtra = Object.keys(extra).length > 0;
+  if (isBodyless(req) && !hasExtra) {
+    return [
+      {
+        language: "go",
+        code: [
+          `package main`,
+          ``,
+          `import (`,
+          `${INDENT}"fmt"`,
+          `${INDENT}"io"`,
+          `${INDENT}"net/http"`,
+          `)`,
+          ``,
+          `func main() {`,
+          `${INDENT}resp, err := http.Post("${req.url}", "", nil)`,
+          `${INDENT}if err != nil { panic(err) }`,
+          `${INDENT}defer resp.Body.Close()`,
+          `${INDENT}out, _ := io.ReadAll(resp.Body)`,
+          `${INDENT}fmt.Println(string(out))`,
+          `}`,
+        ].join("\n"),
+      },
+    ];
+  }
   if (req.httpMethod === "POST" && hasExtra) {
     // http.Post can't set custom headers — use NewRequest + client.Do.
     const setHeaders = [
@@ -219,6 +275,21 @@ function httpJs(req: ResolvedHttp, extra: Record<string, string> = {}): SnippetB
     `"Content-Type": "${req.contentType ?? "application/json"}"`,
     ...Object.entries(extra).map(([k, v]) => `"${k}": "${v}"`),
   ].join(", ");
+  if (isBodyless(req)) {
+    const init = Object.keys(extra).length
+      ? `{ method: "POST", headers: { ${Object.entries(extra).map(([k, v]) => `"${k}": "${v}"`).join(", ")} } }`
+      : `{ method: "POST" }`;
+    return [
+      {
+        language: "javascript",
+        code: [
+          `const res = await fetch("${req.url}", ${init});`,
+          `const data = await res.json();`,
+          `console.log(data);`,
+        ].join("\n"),
+      },
+    ];
+  }
   if (req.httpMethod === "GET") {
     const getInit = Object.keys(extra).length
       ? `, { headers: { ${Object.entries(extra).map(([k, v]) => `"${k}": "${v}"`).join(", ")} } }`

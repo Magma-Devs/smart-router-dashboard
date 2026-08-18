@@ -278,6 +278,23 @@ describe("snippetsFor — gRPC", () => {
     );
   });
 
+  it("renders a bodyless REST POST without a -d payload", () => {
+    const post = {
+      transport: "http",
+      httpMethod: "POST",
+      url: "http://localhost:3368/wallet/getnowblock",
+      body: null,
+      contentType: null,
+    } as ResolvedRequest;
+    const cli = snippetsFor(post).cli[0]?.code ?? "";
+    expect(cli).toContain(`curl -s -X POST "http://localhost:3368/wallet/getnowblock"`);
+    // `-d 'null'` is what the endpoint rejects.
+    expect(cli).not.toContain("-d");
+    expect(cli).not.toContain("Content-Type");
+    expect(snippetsFor(post).javascript[0]?.code ?? "").toContain(`{ method: "POST" }`);
+    expect(snippetsFor(post).go[0]?.code ?? "").toContain(`http.Post("http://localhost:3368/wallet/getnowblock", "", nil)`);
+  });
+
   it("discovery snippet asks the endpoint what it serves", () => {
     const cli = grpcDiscoveryCli("http://localhost:3366");
     expect(cli).toContain("grpcurl -plaintext localhost:3366 list");
