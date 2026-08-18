@@ -9,15 +9,25 @@ import {
   type CSSProperties,
 } from "react";
 import { createPortal } from "react-dom";
-import { buildChainMetaByIndex, type HealthState } from "@sr/shared";
+import { buildChainMetaByIndex, type HealthState, type UpstreamRelayResponse } from "@sr/shared";
+import { apiPost } from "@/lib/api-client";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { CopyButton } from "@/components/gateway/CopyButton";
+import { HealthTag } from "@/components/gateway/HealthTag";
 import {
   buildRequest,
   paramsKindFor,
   type ResolvedRequest,
 } from "./build-request";
 import {
+  directAvailableFor,
+  relayPayloadFor,
+  withUpstreamPlaceholder,
+  UPSTREAM_URL_PLACEHOLDER,
+  type DirectTarget,
+} from "./direct-request";
+import {
+  headCommands,
   httpVariantOf,
   ifaceCanFire,
   storageKey,
@@ -91,7 +101,60 @@ interface TryMeDrawerProps {
    *  `lava-select-provider` header (HTTP only — browsers can't set custom
    *  headers on a WebSocket handshake). Used by the per-upstream Try-now. */
   selectUpstream?: string;
+  /** Identity of the upstream endpoint(s) this row stands for. Set ⇒ the
+   *  drawer offers "Direct to upstream": the api dials the upstream itself,
+   *  leaving the router (and its cache, retries and hedging) out of the
+   *  measurement. Null ⇒ router-only, as on the Endpoints page. */
+  directTarget?: DirectTarget | null;
   onClose: () => void;
+}
+
+/** Where a fired request went — the router (pinned or not) or the upstream. */
+type Via = "router" | "upstream";
+
+/** One fired request, whichever path it took. The drawer renders these the
+ *  same way; only the metadata each path can honestly report differs. */
+interface Outcome {
+  errored: boolean;
+  httpStatus: number | null;
+  latencyMs: number;
+  body: unknown;
+  /** Router-only telemetry, read off CORS-exposed response headers. A direct
+   *  call has none of it — there is no router in the path to report. */
+  servedBy: string | null;
+  retries: number | null;
+  cvStatus: string | null;
+  cvAgreeing: string | null;
+  cvDisagreeing: string | null;
+  truncated: boolean;
+}
+
+/** The router-telemetry half of an Outcome, all absent. A direct call fills
+ *  in exactly this: with no router in the path there is nothing to report. */
+const NO_ROUTER_META = {
+  servedBy: null,
+  retries: null,
+  cvStatus: null,
+  cvAgreeing: null,
+  cvDisagreeing: null,
+  truncated: false,
+} as const;
+
+function errorText(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}
+
+/** Key-order-independent equality, so two JSON bodies that differ only in
+ *  serialization order aren't reported as a disagreement. */
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  if (value !== null && typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
+      a < b ? -1 : a > b ? 1 : 0,
+    );
+    return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${stableStringify(v)}`).join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "null";
 }
 
 const SECTION_LABEL: CSSProperties = {
@@ -134,12 +197,6 @@ const INFO_BANNER: CSSProperties = {
   color: "var(--text-2)",
   lineHeight: 1.5,
 };
-
-function healthTagClass(health: HealthState): string {
-  if (health === "operational") return "gw-tag gw-tag--ok";
-  if (health === "unhealthy") return "gw-tag gw-tag--err";
-  return "gw-tag";
-}
 
 /* ── Inline stroke icons (lucide-react is not shipped in v2) ────────────── */
 
@@ -387,6 +444,7 @@ export function TryMeDrawer({
   initialTransport = "http",
   health,
   selectUpstream,
+  directTarget = null,
   onClose,
 }: TryMeDrawerProps) {
   const chain = buildChainMetaByIndex(spec);
@@ -398,6 +456,10 @@ export function TryMeDrawer({
   const [transport, setTransport] = useState<Transport>(
     canToggleTransport && initialTransport === "ws" ? "ws" : "http",
   );
+  /** Router (the default — what the endpoint actually serves) vs. straight at
+   *  the upstream. Kept as state rather than derived so switching transports
+   *  doesn't silently change WHERE a send goes. */
+  const [target, setTarget] = useState<Via>("router");
   const onWs = transport === "ws" && wsIface !== null && wsUrl !== null;
   /* The transport actually being driven. The two share a method catalog
      (`storageKey` collapses `-ws`), so switching changes only the dial
@@ -420,6 +482,14 @@ export function TryMeDrawer({
   const first = flat[0];
 
   const canFire = ifaceCanFire(iface);
+  /** Whether the api can dial this row's upstream on the transport currently
+   *  selected — an upstream with no `wss://` entry has nothing to dial when
+   *  the drawer is on WS. */
+  const directAvailable = directTarget !== null && canFire && directAvailableFor(directTarget, onWs);
+  const onDirect = target === "upstream" && directAvailable;
+  /** Masked `scheme://host` of the upstream a direct call would hit. Display
+   *  only — the path (where API keys live) never leaves the api. */
+  const directHost = (onWs ? directTarget?.wsHost : directTarget?.httpHost) ?? null;
 
   const [selectedTier, setSelectedTier] = useState<Tier>(
     first?.tier ?? availableTiers[0] ?? "regular",
@@ -446,6 +516,14 @@ export function TryMeDrawer({
   const [cvStatus, setCvStatus] = useState<string | null>(null);
   const [cvAgreeing, setCvAgreeing] = useState<string | null>(null);
   const [cvDisagreeing, setCvDisagreeing] = useState<string | null>(null);
+  /** Which path the CURRENT result took, so the meta row can't claim router
+   *  telemetry for a direct call (or the reverse). Null before the first
+   *  send. */
+  const [resultVia, setResultVia] = useState<Via | null>(null);
+  const [truncated, setTruncated] = useState(false);
+  /** Side-by-side outcome of "Compare both", or null when not run. */
+  const [comparison, setComparison] = useState<{ router: Outcome; upstream: Outcome } | null>(null);
+  const [comparing, setComparing] = useState(false);
   const [wsPhase, setWsPhase] = useState<WsPhase>(null);
   const [wsProbe, setWsProbe] = useState<WsProbe | null>(null);
   /** Bumped to re-run the probe on demand (clicking the tag). */
@@ -503,6 +581,9 @@ export function TryMeDrawer({
     setCvStatus(null);
     setCvAgreeing(null);
     setCvDisagreeing(null);
+    setTruncated(false);
+    setResultVia(null);
+    setComparison(null);
     setWsPhase(null);
   }, []);
 
@@ -592,17 +673,34 @@ export function TryMeDrawer({
   };
 
   /** Commands in the selected tier, with their catalog index kept so
-   *  keyOf(tier, i) stays valid however the list is filtered. */
+   *  keyOf(tier, i) stays valid however the list is filtered. Read off
+   *  `flat`, not `cfg`, so the dropdown can never offer a command the
+   *  transport filter has removed — a subscription listed over plain HTTP
+   *  selected to nothing, because `selected` looks it up in `flat`. */
   const tierCmds = useMemo(
-    () => (cfg[selectedTier] ?? []).map((cmd, i) => ({ cmd, i })),
-    [cfg, selectedTier],
+    () =>
+      flat
+        .filter((m) => m.tier === selectedTier)
+        .map((m) => ({ cmd: m.command, i: m.index })),
+    [flat, selectedTier],
   );
-  /** The curated subset, in COMMON_METHODS order — that map is the display
-   *  order, not the catalog's. */
+  /** What the dropdown opens on: commands that run AS-IS on this chain.
+   *  Curated names lead (COMMON_METHODS key order is the display order), the
+   *  rest of the runnable set follows in catalog order. Anything needing
+   *  params is behind "Show all", labelled. */
   const curatedCmds = useMemo(() => {
     const order = Object.keys(COMMON_METHODS[storageKey(iface)] ?? {});
-    return order
-      .map((key) => tierCmds.find(({ cmd }) => commandKey(iface, cmd) === key))
+    const rank = new Map(order.map((key, i) => [key, i]));
+    const head = headCommands(
+      tierCmds.map(({ cmd }) => cmd),
+      (cmd) => rank.has(commandKey(iface, cmd)),
+    ).sort((a, b) => {
+      const ra = rank.get(commandKey(iface, a)) ?? Number.MAX_SAFE_INTEGER;
+      const rb = rank.get(commandKey(iface, b)) ?? Number.MAX_SAFE_INTEGER;
+      return ra - rb;
+    });
+    return head
+      .map((cmd) => tierCmds.find((row) => row.cmd === cmd))
       .filter((row): row is (typeof tierCmds)[number] => !!row);
   }, [tierCmds, iface]);
   const curatedCount = curatedCmds.length;
@@ -625,91 +723,169 @@ export function TryMeDrawer({
   const resolved: ResolvedRequest | null = built && built.ok ? built.request : null;
   const buildError: string | null = built && !built.ok ? built.error : null;
 
-  const snippets = useMemo<Snippets | null>(
-    () => (resolved ? snippetsFor(resolved, selectUpstream) : null),
-    [resolved, selectUpstream],
-  );
+  // Toggling to a transport this upstream doesn't serve directly (no ws url
+  // in the values file) drops back to the router rather than leaving a Send
+  // button that can only fail.
+  useEffect(() => {
+    if (target === "upstream" && !directAvailable) setTarget("router");
+  }, [target, directAvailable]);
+
+  const snippets = useMemo<Snippets | null>(() => {
+    if (!resolved) return null;
+    // Direct-mode snippets must not print a dialable url — the real one is a
+    // secret the api holds. They ask the reader to supply it instead, and
+    // drop the pin header (there is no router to instruct).
+    if (onDirect) return snippetsFor(withUpstreamPlaceholder(resolved, endpointUrl));
+    return snippetsFor(resolved, selectUpstream);
+  }, [resolved, selectUpstream, onDirect, endpointUrl]);
+
+  const applyOutcome = useCallback((o: Outcome, via: Via) => {
+    setLatencyMs(o.latencyMs);
+    setHttpStatus(o.httpStatus);
+    setServedBy(o.servedBy);
+    setRetries(o.retries);
+    setCvStatus(o.cvStatus);
+    setCvAgreeing(o.cvAgreeing);
+    setCvDisagreeing(o.cvDisagreeing);
+    setTruncated(o.truncated);
+    setStatus(o.errored ? "error" : "ok");
+    setResponse(o.body);
+    setResultVia(via);
+  }, []);
+
+  /** Through the router — the path a real client takes. Pinned to one
+   *  upstream when the caller asked for it, but still the router's relay:
+   *  its cache can answer, and its retries/hedging can change who served. */
+  const fireViaRouter = useCallback(async (): Promise<Outcome> => {
+    const t0 = performance.now();
+    if (resolved?.transport === "ws") {
+      setWsPhase("connecting");
+      const { json, errored, latencyMs } = await sendWebSocket(resolved.url, resolved.body, {
+        onOpen: () => setWsPhase("open"),
+      });
+      setWsPhase(null);
+      return { ...NO_ROUTER_META, errored, httpStatus: null, latencyMs, body: json };
+    }
+    if (resolved?.transport !== "http") {
+      // gRPC needs a client the browser doesn't have; the UI hides Send for it.
+      throw new Error("This transport can't be fired from the browser.");
+    }
+    // Pin the relay to a specific upstream when the caller asked for it
+    // (per-upstream Try-now) — the router routes it to that upstream only.
+    const headers: Record<string, string> = {};
+    if (selectUpstream) headers["lava-select-provider"] = selectUpstream;
+    const init: RequestInit = { headers };
+    if (resolved.httpMethod === "POST") {
+      init.method = "POST";
+      // A REST POST carries its arguments in the PATH (body null) — sending
+      // "null" as a body is what a nodeos / java-tron endpoint rejects. Only
+      // the JSON-RPC envelope has a body to send.
+      if (resolved.body !== null) {
+        headers["Content-Type"] = resolved.contentType ?? "application/json";
+        init.body = JSON.stringify(resolved.body);
+      }
+    }
+    const res = await fetch(resolved.url, init);
+    const dt = Math.round(performance.now() - t0);
+    let json: unknown;
+    try {
+      json = await res.clone().json();
+    } catch {
+      const text = await res.text();
+      json = { _raw: text };
+    }
+    const retriesHdr = res.headers.get("Lava-Retries");
+    return {
+      errored: !res.ok || (typeof json === "object" && json !== null && "error" in json),
+      httpStatus: res.status,
+      latencyMs: dt,
+      body: json,
+      // Which upstream served the relay — the router's Lava-Provider-Address
+      // header (a real endpoint name, or "Cached" on a cache hit). Readable
+      // only when the router CORS-exposes it; null otherwise.
+      servedBy: res.headers.get("Lava-Provider-Address"),
+      retries: retriesHdr !== null && retriesHdr !== "" ? Number(retriesHdr) || 0 : null,
+      cvStatus: res.headers.get("Lava-Cross-Validation-Status"),
+      cvAgreeing: res.headers.get("Lava-Cross-Validation-Agreeing-Providers"),
+      cvDisagreeing: res.headers.get("Lava-Cross-Validation-Disagreeing-Providers"),
+      truncated: false,
+    };
+  }, [resolved, selectUpstream]);
+
+  /** Straight at the upstream, via the api — no router in the path at all.
+   *  The browser can't do this itself: it holds only a masked `scheme://host`,
+   *  and upstreams don't answer cross-origin browser calls anyway. */
+  const fireDirect = useCallback(async (): Promise<Outcome> => {
+    if (!resolved || directTarget === null) throw new Error("No upstream endpoint to dial.");
+    const built = relayPayloadFor({ resolved, paramsText, iface, target: directTarget });
+    if (!built.ok) throw new Error(built.error);
+    if (built.payload.transport === "ws") setWsPhase("connecting");
+    try {
+      const res = await apiPost<UpstreamRelayResponse>("/api/upstreams/relay", built.payload);
+      return {
+        ...NO_ROUTER_META,
+        errored:
+          (res.httpStatus !== null && res.httpStatus >= 400) ||
+          (typeof res.body === "object" && res.body !== null && "error" in res.body),
+        httpStatus: res.httpStatus,
+        latencyMs: res.latencyMs,
+        body: res.body,
+        truncated: res.truncated,
+      };
+    } finally {
+      setWsPhase(null);
+    }
+  }, [resolved, paramsText, iface, directTarget]);
 
   const send = useCallback(async () => {
     if (!resolved) return;
+    if (resolved.transport === "grpc" || resolved.transport === "grpc-web") {
+      // Snippets-only — the UI hides Send for these. Defensive no-op.
+      setStatus("idle");
+      return;
+    }
+    const via: Via = onDirect ? "upstream" : "router";
+    resetResult();
     setStatus("loading");
-    setResponse(null);
-    setLatencyMs(null);
-    setHttpStatus(null);
-    setServedBy(null);
-    setRetries(null);
-    setCvStatus(null);
-    setCvAgreeing(null);
-    setCvDisagreeing(null);
-    setWsPhase(null);
     const t0 = performance.now();
     try {
-      switch (resolved.transport) {
-        case "grpc":
-        case "grpc-web":
-          // Snippets-only — the UI hides Send for these. Defensive no-op.
-          setStatus("idle");
-          return;
-        case "ws": {
-          setWsPhase("connecting");
-          const { json, errored, latencyMs } = await sendWebSocket(
-            resolved.url,
-            resolved.body,
-            { onOpen: () => setWsPhase("open") },
-          );
-          setWsPhase(null);
-          setLatencyMs(latencyMs);
-          setHttpStatus(null);
-          setStatus(errored ? "error" : "ok");
-          setResponse(json);
-          return;
-        }
-        case "http": {
-          // Pin the relay to a specific upstream when the caller asked for it
-          // (per-upstream Try-now) — the router routes it to that upstream only.
-          const headers: Record<string, string> = {};
-          if (selectUpstream) headers["lava-select-provider"] = selectUpstream;
-          const init: RequestInit = { headers };
-          if (resolved.httpMethod === "POST") {
-            init.method = "POST";
-            headers["Content-Type"] = resolved.contentType ?? "application/json";
-            init.body = JSON.stringify(resolved.body);
-          }
-          const res = await fetch(resolved.url, init);
-          const dt = Math.round(performance.now() - t0);
-          let json: unknown;
-          try {
-            json = await res.clone().json();
-          } catch {
-            const text = await res.text();
-            json = { _raw: text };
-          }
-          setLatencyMs(dt);
-          setHttpStatus(res.status);
-          // Which upstream served the relay — the router's Lava-Provider-Address
-          // header (a real endpoint name, or "Cached" on a cache hit). Readable
-          // only when the router CORS-exposes it; null otherwise.
-          setServedBy(res.headers.get("Lava-Provider-Address"));
-          const retriesHdr = res.headers.get("Lava-Retries");
-          setRetries(retriesHdr !== null && retriesHdr !== "" ? Number(retriesHdr) || 0 : null);
-          setCvStatus(res.headers.get("Lava-Cross-Validation-Status"));
-          setCvAgreeing(res.headers.get("Lava-Cross-Validation-Agreeing-Providers"));
-          setCvDisagreeing(res.headers.get("Lava-Cross-Validation-Disagreeing-Providers"));
-          const errored =
-            !res.ok ||
-            (typeof json === "object" && json !== null && "error" in json);
-          setStatus(errored ? "error" : "ok");
-          setResponse(json);
-          return;
-        }
-      }
+      applyOutcome(via === "upstream" ? await fireDirect() : await fireViaRouter(), via);
     } catch (e) {
       setWsPhase(null);
       setLatencyMs(Math.round(performance.now() - t0));
       setStatus("error");
-      setResponse({ error: { message: e instanceof Error ? e.message : String(e) } });
+      setResultVia(via);
+      setResponse({ error: { message: errorText(e) } });
     }
-  }, [resolved]);
+  }, [resolved, onDirect, fireDirect, fireViaRouter, applyOutcome, resetResult]);
+
+  /** Fire BOTH paths and put the two answers side by side — the question the
+   *  direct mode exists to answer ("is the router adding latency / changing
+   *  the answer?") needs both halves in one view. Sequential, router first:
+   *  two concurrent calls would contend on the same upstream and make both
+   *  latency numbers meaningless. */
+  const compareBoth = useCallback(async () => {
+    if (!resolved || !directAvailable) return;
+    resetResult();
+    setComparing(true);
+    setStatus("loading");
+    const t0 = performance.now();
+    try {
+      const routerOut = await fireViaRouter();
+      const upstreamOut = await fireDirect();
+      setComparison({ router: routerOut, upstream: upstreamOut });
+      // The router's answer is what a real client would have received, so it
+      // is the one the Response section renders.
+      applyOutcome(routerOut, "router");
+    } catch (e) {
+      setWsPhase(null);
+      setLatencyMs(Math.round(performance.now() - t0));
+      setStatus("error");
+      setResponse({ error: { message: errorText(e) } });
+    } finally {
+      setComparing(false);
+    }
+  }, [resolved, directAvailable, fireViaRouter, fireDirect, applyOutcome, resetResult]);
 
   if (!mounted) return null;
 
@@ -846,9 +1022,7 @@ export function TryMeDrawer({
             </button>
           ) : (
             health !== undefined && (
-              <span className={healthTagClass(health)} style={{ fontSize: 10 }}>
-                {health}
-              </span>
+              <HealthTag health={health} />
             )
           )}
           <button
@@ -903,6 +1077,9 @@ export function TryMeDrawer({
                 })}
               </div>
             )}
+            {/* The address this Send will actually hit. In direct mode that
+                is the upstream — shown masked, with a dimmed `/…` standing in
+                for the path the api holds and never ships to the browser. */}
             <span
               className="gw-mono"
               style={{
@@ -913,10 +1090,32 @@ export function TryMeDrawer({
                 textOverflow: "ellipsis",
                 whiteSpace: "nowrap",
               }}
+              title={
+                onDirect
+                  ? "The upstream's full url (path, query, any API key) lives in the mounted values file and is never sent to the browser."
+                  : undefined
+              }
             >
-              {endpointUrl}
+              {onDirect ? (
+                <>
+                  {directHost ?? "upstream"}
+                  <span style={{ opacity: 0.5 }}>/…</span>
+                </>
+              ) : (
+                endpointUrl
+              )}
             </span>
-            <CopyButton text={endpointUrl} />
+            {onDirect ? (
+              <span
+                className="gw-tag"
+                style={{ fontSize: 10, color: "var(--text-3)", whiteSpace: "nowrap" }}
+                title="There is no url to copy — the dashboard never receives the upstream's full address."
+              >
+                url masked
+              </span>
+            ) : (
+              <CopyButton text={endpointUrl} />
+            )}
           </div>
         </div>
 
@@ -929,14 +1128,66 @@ export function TryMeDrawer({
             flex: 1,
           }}
         >
-          {selectUpstream && (
+          {(selectUpstream || directTarget) && (
             <div style={{
-              display: "flex", alignItems: "center", gap: 9, padding: "9px 12px", borderRadius: 8,
+              display: "flex", flexDirection: "column", gap: 8, padding: "9px 12px", borderRadius: 8,
               background: "rgba(255,57,0,0.06)", border: "1px solid rgba(255,57,0,0.22)",
               fontSize: 12, color: "var(--text-2)", lineHeight: 1.5,
             }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--brand)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>
-              <span>Pinned to <strong style={{ color: "var(--text)", fontFamily: "var(--font-mono)", fontWeight: 600 }}>{selectUpstream}</strong> — sent with the <span className="gw-mono">lava-select-provider</span> header so the router routes this request to that upstream (a cache hit may still answer as &quot;Cached&quot;).</span>
+              <div className="gw-row" style={{ gap: 9, alignItems: "center" }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--brand)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>
+                <strong style={{ color: "var(--text)", fontFamily: "var(--font-mono)", fontWeight: 600, fontSize: 12 }}>
+                  {selectUpstream ?? directTarget?.node}
+                </strong>
+                {directTarget && (
+                  <div style={{ display: "flex", gap: 0, marginLeft: "auto", borderRadius: 6, overflow: "hidden", border: "1px solid var(--line-2)" }}>
+                    {(["router", "upstream"] as const).map((t) => {
+                      const active = (t === "upstream") === onDirect;
+                      const disabled = t === "upstream" && !directAvailable;
+                      return (
+                        <button
+                          key={t}
+                          type="button"
+                          disabled={disabled}
+                          onClick={() => setTarget(t)}
+                          title={
+                            disabled
+                              ? "This upstream has no url for the selected transport in the values file."
+                              : t === "router"
+                                ? "Send through the router, pinned to this upstream."
+                                : "Send straight to this upstream — the api dials it, no router in the path."
+                          }
+                          style={{
+                            padding: "3px 10px",
+                            fontSize: 11,
+                            fontWeight: active ? 600 : 500,
+                            border: "none",
+                            cursor: disabled ? "not-allowed" : "pointer",
+                            opacity: disabled ? 0.4 : 1,
+                            color: active ? "var(--brand)" : "var(--text-3)",
+                            background: active ? "rgba(255,57,0,0.12)" : "var(--bg)",
+                          }}
+                        >
+                          {t === "router" ? "Via router" : "Direct to upstream"}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+              <span>
+                {onDirect ? (
+                  <>
+                    The api dials this upstream itself — <strong style={{ color: "var(--text)" }}>the router is not in the path</strong>, so no cache, no retries, no hedging, and none of the <span className="gw-mono">Lava-*</span> headers. Latency is measured at the api, so it isn&apos;t comparable to the router number above it.
+                  </>
+                ) : selectUpstream ? (
+                  <>
+                    Pinned to <strong style={{ color: "var(--text)", fontFamily: "var(--font-mono)", fontWeight: 600 }}>{selectUpstream}</strong> — sent with the <span className="gw-mono">lava-select-provider</span> header so the router routes this request to that upstream (a cache hit may still answer as &quot;Cached&quot;).
+                  </>
+                ) : (
+                  <>Sent through the router, which picks the upstream.</>
+                )}
+              </span>
             </div>
           )}
           {availableTiers.length > 1 && (
@@ -1002,9 +1253,12 @@ export function TryMeDrawer({
                 // reads like the curated head instead of dropping to bare ids.
                 const friendly = friendlyName(iface, cmd);
                 const id = commandKey(iface, cmd);
+                // The head runs as-is; the long tail behind it doesn't, so
+                // say which entries want something typed in first.
+                const suffix = cmd.needsInput ? " — needs params" : "";
                 return (
                   <option key={i} value={keyOf(selectedTier, i)}>
-                    {friendly ? `${friendly} · ${id}` : id}
+                    {friendly ? `${friendly} · ${id}${suffix}` : `${id}${suffix}`}
                   </option>
                 );
               })}
@@ -1014,15 +1268,26 @@ export function TryMeDrawer({
                 onClick={() => setShowAllCmds((s) => !s)}
                 style={{ marginTop: 6, border: "none", background: "none", color: "var(--brand)", cursor: "pointer", padding: 0, fontSize: 11, fontWeight: 600, fontFamily: "inherit" }}
               >
-                {showAllCmds ? "Show common methods only" : `Show all ${tierCmds.length} methods`}
+                {showAllCmds ? "Show runnable methods only" : `Show all ${tierCmds.length} methods`}
               </button>
             )}
             {selected && (
-              <div
-                className="gw-mono"
-                style={{ fontSize: 11, color: "var(--text-3)", marginTop: 6 }}
-              >
-                {commandSignature(iface, selected.command)}
+              <div className="gw-row" style={{ gap: 7, marginTop: 6, alignItems: "center" }}>
+                <span className="gw-mono" style={{ fontSize: 11, color: "var(--text-3)" }}>
+                  {commandSignature(iface, selected.command)}
+                </span>
+                {/* The head is sendable as-is; everything else is either
+                    known to need input or unproven, and says so rather than
+                    letting Send fail with an unexplained RPC error. */}
+                {selected.command.needsInput && (
+                  <span
+                    className="gw-tag"
+                    title="This method takes arguments the catalog can't supply — fill the params in below before sending."
+                    style={{ fontSize: 10, color: "var(--warn)", background: "rgba(251,191,36,0.10)", borderColor: "rgba(251,191,36,0.25)" }}
+                  >
+                    needs params
+                  </span>
+                )}
               </div>
             )}
             {selected?.command.desc && (
@@ -1080,10 +1345,34 @@ export function TryMeDrawer({
                     </>
                   ) : (
                     <>
-                      <IconZap size={13} /> Send
+                      <IconZap size={13} /> Send{onDirect ? " direct" : ""}
                     </>
                   )}
                 </button>
+                {/* Both paths, one click — the comparison is the reason the
+                    direct mode is worth having, so it lives WITH that mode.
+                    In router mode there is no second leg to compare against. */}
+                {onDirect && (
+                  <button
+                    type="button"
+                    className="gw-btn gw-btn--ghost"
+                    onClick={compareBoth}
+                    disabled={!resolved || status === "loading"}
+                    title="Send the same request through the router AND straight to the upstream, then show both answers side by side."
+                    style={{ padding: "9px 14px", fontSize: 12, fontWeight: 500, gap: 6 }}
+                  >
+                    {comparing ? (
+                      <>
+                        <Spinner /> Comparing…
+                      </>
+                    ) : (
+                      <>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3v18"/><path d="M16 3v18"/><path d="M3 8h18"/><path d="M3 16h18"/></svg>
+                        Compare both
+                      </>
+                    )}
+                  </button>
+                )}
                 {wsPhase && (
                   <span
                     className="gw-tag"
@@ -1121,9 +1410,36 @@ export function TryMeDrawer({
                       status === "ok" ? "gw-tag gw-tag--ok" : "gw-tag gw-tag--err"
                     }
                     style={{ fontSize: 11 }}
+                    title={
+                      resultVia === "upstream"
+                        ? "Measured at the dashboard api, around its call to the upstream — a different pair of hops than the router number."
+                        : "Measured in the browser, around the call to the router."
+                    }
                   >
                     {httpStatus !== null ? `${httpStatus} · ` : ""}
                     {latencyMs} ms
+                  </span>
+                )}
+                {/* A direct result carries no router telemetry — say so,
+                    rather than leaving the row looking like a relay whose
+                    headers happened to be unreadable. */}
+                {resultVia === "upstream" && (
+                  <span
+                    className="gw-tag"
+                    title="Answered by the upstream itself. The router was not in the path, so there is no cache status, no retry count and no cross-validation to report."
+                    style={{ fontSize: 11, color: "var(--brand)", background: "rgba(255,57,0,0.10)", borderColor: "rgba(255,57,0,0.25)", display: "inline-flex", alignItems: "center", gap: 4 }}
+                  >
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+                    direct · no router
+                  </span>
+                )}
+                {truncated && (
+                  <span
+                    className="gw-tag"
+                    title="The upstream's response was larger than the relay's size cap and was cut off."
+                    style={{ fontSize: 11, color: "var(--warn)", background: "rgba(251,191,36,0.10)", borderColor: "rgba(251,191,36,0.25)" }}
+                  >
+                    truncated
                   </span>
                 )}
                 {/* Which upstream served the relay (Lava-Provider-Address).
@@ -1204,9 +1520,84 @@ export function TryMeDrawer({
             </div>
           )}
 
+          {/* Side-by-side outcome of "Compare both" — the router's path next
+              to the upstream's own answer. */}
+          {comparison && (() => {
+            const same = stableStringify(comparison.router.body) === stableStringify(comparison.upstream.body);
+            const delta = comparison.router.latencyMs - comparison.upstream.latencyMs;
+            const rows: { label: string; hint: string; out: Outcome }[] = [
+              {
+                label: "Via router",
+                hint: selectUpstream ? `pinned to ${selectUpstream}` : "router picks the upstream",
+                out: comparison.router,
+              },
+              {
+                label: "Direct to upstream",
+                hint: directHost ?? "upstream",
+                out: comparison.upstream,
+              },
+            ];
+            return (
+              <div>
+                <div style={SECTION_LABEL}>Comparison</div>
+                <div style={{ border: "1px solid var(--line)", borderRadius: 8, overflow: "hidden" }}>
+                  {rows.map((row, i) => (
+                    <div
+                      key={row.label}
+                      className="gw-row"
+                      style={{
+                        gap: 10,
+                        padding: "8px 12px",
+                        borderTop: i === 0 ? undefined : "1px solid var(--line)",
+                        background: i === 0 ? "var(--hover)" : "transparent",
+                      }}
+                    >
+                      <span style={{ fontSize: 12, fontWeight: 500, minWidth: 150 }}>{row.label}</span>
+                      <span className="gw-mono" style={{ fontSize: 11, color: "var(--text-3)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {row.hint}
+                      </span>
+                      <span className={row.out.errored ? "gw-tag gw-tag--err" : "gw-tag gw-tag--ok"} style={{ fontSize: 11 }}>
+                        {row.out.httpStatus !== null ? `${row.out.httpStatus} · ` : ""}{row.out.latencyMs} ms
+                      </span>
+                      {row.out.servedBy && (
+                        <span className="gw-tag" style={{ fontSize: 11, color: "var(--text-3)", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {row.out.servedBy}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                  <div style={{ padding: "8px 12px", borderTop: "1px solid var(--line)", fontSize: 11, color: "var(--text-2)", lineHeight: 1.55 }}>
+                    <strong style={{ color: same ? "var(--ok)" : "var(--warn)" }}>
+                      {same ? "Identical response bodies." : "Response bodies differ."}
+                    </strong>{" "}
+                    {same
+                      ? "The router relayed the upstream's answer unchanged."
+                      : "Expected for anything that tracks the head (block number, latest block, gas price) — the two calls are moments apart. For a fixed-height read, a difference is worth looking at."}{" "}
+                    The router leg ran first and took{" "}
+                    <strong style={{ color: "var(--text)" }}>
+                      {delta === 0 ? "the same time" : `${Math.abs(delta)} ms ${delta > 0 ? "longer" : "less"}`}
+                    </strong>
+                    , but the two are measured from different places — the browser for the router, the api for the upstream — so read the gap as a hint, not a benchmark.
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
           {snippets && (
             <div>
               <div style={SECTION_LABEL}>Code</div>
+              {onDirect && (
+                <div style={{ ...INFO_BANNER, marginBottom: 10 }}>
+                  <IconInfo size={13} style={{ flexShrink: 0, marginTop: 1 }} />
+                  <span>
+                    <span className="gw-mono">{UPSTREAM_URL_PLACEHOLDER}</span> stands in for{" "}
+                    <span className="gw-mono">{directHost ?? "the upstream"}/…</span> — the full url lives in
+                    the mounted values file and may carry an API key, so the dashboard never puts it in a
+                    copyable command.
+                  </span>
+                </div>
+              )}
               <Tabs tabs={CODE_TABS} active={codeTab} setActive={setCodeTab} />
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 {blocksForTab(snippets, codeTab).map((block, i) => (

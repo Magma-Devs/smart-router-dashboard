@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { WINDOWS, type MetricWindow } from "@sr/shared";
 import { ChainSelect, type ChainOption } from "./ChainSelect";
+import { RouterFilterSelect } from "./RouterFilterSelect";
 import { WindowSelect } from "./WindowSelect";
 
 /* Grafana base URL for the "View full logs" button. Resolved at runtime from
@@ -67,6 +68,10 @@ export function RouterHeader({ chains, chainFilter, setChainFilter, timeWindow, 
 
       {/* Chain filter */}
       <ChainSelect value={chainFilter} onChange={setChainFilter} chains={chains} />
+
+      {/* Router filter — the second axis. A chain can be served by several
+          config routers, which a chain filter alone folds together. */}
+      <RouterFilterSelect />
 
       <div style={{ flex: 1 }} />
 

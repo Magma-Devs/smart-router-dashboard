@@ -35,6 +35,30 @@ export interface ChainMetrics {
   upstreamCount: number;
 }
 
+/**
+ * One row of the Routers table — **one config router**, not one chain.
+ *
+ * A chain can be served by several routers (a prod/staging pair on one network,
+ * say), and only the mounted values file tells them apart: no series carries a
+ * router. `attribution` is how much of that this row could overcome.
+ */
+export interface RouterMetrics extends ChainMetrics {
+  /** Config router id (`eth-prod`, `ETH1`, …) — the row's identity. */
+  routerId: string;
+  /**
+   * `own`   — the collector labels this router's scrape target, so the
+   *           chain-level numbers below were scoped to it and are its alone.
+   * `shared` — they are the chain's, covering every router in `sharedWith` too.
+   *           Two rows can then carry the same figures; that is the truth, and
+   *           adding them up would double the deployment's traffic.
+   */
+  attribution: "own" | "shared";
+  /** The other routers counted into these numbers; empty when `own`. */
+  sharedWith: string[];
+  /** Declared upstreams — from the config, so always this router's own. */
+  upstreamCount: number;
+}
+
 /** Per backing-endpoint roster row. */
 export interface UpstreamMetrics {
   endpointId: string;
@@ -49,13 +73,90 @@ export interface UpstreamMetrics {
   latestBlock: number | null;
   /** Blocks behind the spec's best endpoint; null when unknown. */
   blockLag: number | null;
+  /**
+   * `blockLag` expressed in SECONDS (blocks ÷ the chain's block rate), which is
+   * the only form comparable across chains. Null when the chain's rate is
+   * unknown or zero — never Infinity.
+   */
+  behindSec: number | null;
+  /** Tip gauge frozen while the chain kept producing blocks. */
+  stale: boolean;
   /** From config `is_backup` (helm format only); null for SR_CONFIG. */
   role: "primary" | "backup" | null;
   apiInterface: string | null;
   inFlight: number;
+  /**
+   * Config routers that declare this upstream — `[]` when no values file is
+   * mounted, one id normally, SEVERAL when routers share a node name.
+   *
+   * It comes from the config, not from the series, because no series carries a
+   * router: `rpc_endpoint_*` is labelled `endpoint_id` + `spec` (+ the
+   * collector's target labels) and nothing else. So the numbers on this row
+   * are that node's, and they are the named router's only as far as the node
+   * name is that router's alone — two routers declaring one name on one chain
+   * share a single series, which is why this is a list and why the UI marks
+   * those rows instead of splitting them.
+   */
+  routerIds: string[];
 }
 
 
+
+/* ── Block tips (GET /api/metrics/block-heights) ─────────────────────────── */
+
+/** One router deployment's view of a chain's head, per api interface. */
+export interface RouterTip {
+  /**
+   * The router deployment, as the value of the scrape-target scope label.
+   * Null when Prometheus attaches no such label (a single static target), in
+   * which case the rows are the interface split of the one router.
+   */
+  router: string | null;
+  apiInterface: string;
+  block: number | null;
+  /** Blocks behind the chain's best upstream tip. */
+  behindBlocks: number | null;
+  /** The same lag in seconds — what the UI shows. Null when the rate is unknown. */
+  behindSec: number | null;
+  /**
+   * Observed seconds between refreshes of THIS gauge. A lag of roughly one
+   * refresh is the gauge working as designed; the UI only flags a router once
+   * it falls behind by a multiple of its own cadence. Null when the gauge did
+   * not move at all over the window.
+   */
+  refreshSec: number | null;
+}
+
+/** One upstream's view of a chain's head, per api interface. */
+export interface UpstreamTip {
+  endpointId: string;
+  apiInterface: string;
+  block: number | null;
+  behindBlocks: number | null;
+  behindSec: number | null;
+  stale: boolean;
+  health: HealthState;
+}
+
+/** Every tip observed for one chain, plus the rate that makes them comparable. */
+export interface ChainTips {
+  spec: string;
+  name: string;
+  color: string;
+  /** Blocks per second, from the per-endpoint gauge; null when unmeasurable. */
+  blocksPerSec: number | null;
+  /** Highest upstream tip — the reference every `behind` measures against. */
+  bestBlock: number | null;
+  routers: RouterTip[];
+  upstreams: UpstreamTip[];
+}
+
+/** `GET /api/metrics/block-heights` payload. */
+export interface BlockHeights {
+  /** The scope label the router rows are split by; null when unavailable. */
+  routerLabel: string | null;
+  chains: ChainTips[];
+}
 
 /** One row in the Traffic "by chain" table. */
 export interface ChainTraffic {
@@ -291,6 +392,14 @@ export interface ErrorHotspot {
   /** Top node-error methods for this (chain × upstream) pair — real once
    *  node_errors_total fires; empty (never null) before that. */
   nodeMethods: { method: string; count: number }[];
+  /**
+   * ALL node errors on the pair (not just the `nodeMethods` top slice). A pair
+   * can sit at `errors: 0` and still be here on the strength of this: the
+   * upstream answered with a JSON-RPC error, which the relay counts as served.
+   * Kept separate from `errors` because they are different failures and adding
+   * them would misstate both.
+   */
+  nodeErrors: number;
 }
 
 export interface ErrorPivotRow {
@@ -373,6 +482,19 @@ export interface RouterNodeEndpoint {
   urlHost: string;
   interface: string;
   addons: string[];
+  /**
+   * Position within the owning node's `endpoints` array — the opaque handle
+   * `POST /api/upstreams/relay` resolves back to the FULL (credentialed) url
+   * server-side. The dashboard never ships that url to the browser, so this
+   * index is how the UI names an upstream endpoint it wants dialed directly.
+   */
+  index: number;
+  /**
+   * Whether the api can dial this endpoint directly on the user's behalf.
+   * True for http(s) and ws(s) urls; false for grpc(s), which needs a gRPC
+   * client the relay doesn't carry.
+   */
+  directable: boolean;
 }
 
 export interface RouterNode {
@@ -406,6 +528,44 @@ export interface RouterTopology {
   publicUrls: Record<string, string>;
   interfaces: string[];
   nodes: RouterNode[];
+}
+
+/* ── Direct-to-upstream relay (bypasses the router) ─────────────────────── */
+
+/**
+ * Which configured upstream endpoint to dial. NOT a url — the browser never
+ * holds one, because `maskNodeUrl` strips the path/query where upstream API
+ * keys live. The api resolves this triple against the same mounted values
+ * file it serves the topology from.
+ */
+export interface UpstreamEndpointRef {
+  routerId: string;
+  /** Node name (`eth-publicnode`) — unique per router in the values file. */
+  node: string;
+  endpointIndex: number;
+}
+
+export interface UpstreamRelayRequest extends UpstreamEndpointRef {
+  httpMethod: "GET" | "POST";
+  /** REST only — appended to the resolved url's path, never replacing it. */
+  path?: string;
+  body?: unknown;
+  /** `ws` opens a single-shot WebSocket, sends `body`, resolves on the reply. */
+  transport?: "http" | "ws";
+}
+
+export interface UpstreamRelayResponse {
+  /** The UPSTREAM's status code — the relay itself answers 200 even when the
+   *  upstream errors, so the drawer renders the upstream's own body. Null on
+   *  the ws transport (no HTTP status in a socket reply). */
+  httpStatus: number | null;
+  /** Measured around the api→upstream call. NOT comparable to the browser's
+   *  round-trip against the router — a different pair of hops. */
+  latencyMs: number;
+  body: unknown;
+  /** Set when the upstream body exceeded the relay's size cap. */
+  truncated: boolean;
+  transport: "http" | "ws";
 }
 
 /* ── Ops Dashboard page (2-tab surface: Overview + Metrics) ──────────────── */
