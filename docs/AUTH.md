@@ -116,6 +116,49 @@ both become admin. It then opens a session like any other sign-in, so the
 operator is not left staring at a login page holding a password they just
 set.
 
+## Invitations
+
+After first-run setup, the **only** way an account comes into existence. Two
+properties carry the security of the flow:
+
+- **The account is created with the invitation's address, never the submitted
+  one.** That makes "redeemable only by the address it was sent to" structural
+  rather than a check someone can forget to write. The Google path compares the
+  verified claim to the invited address and refuses a mismatch by name, so an
+  honest person who used the wrong account knows which one to use.
+- **The raw token exists only inside the link.** The row stores its SHA-256, so
+  a backup, a log line or a support screenshot can't be turned back into a
+  working invitation.
+
+Single-use is a conditional `UPDATE … WHERE redeemed_at IS NULL AND revoked_at
+IS NULL AND expires_at > now()`, run in the same transaction as the account
+insert. Zero rows affected means somebody else got there first and the whole
+transaction unwinds — a race can't produce two accounts from one invite, and a
+crash can't leave a redeemed invite with no account.
+
+| | Managed | On-prem |
+|---|---|---|
+| Delivery | emailed | link returned to the admin, once, and handed over |
+| TTL | 7 days | 24 hours |
+
+**Resending mints a new token and kills the old link**, so it replaces the
+attack surface rather than widening it. **Expiry needs no sweeper**: the first
+read that observes it stamps `expired_noted_at` conditionally, which is what
+lets `invite.expired` fire exactly once.
+
+Every dead-link reason — used, revoked, expired, never issued — returns the same
+message. The holder can't act on the difference, and distinguishing them would
+tell a stranger which of those a guessed token hit.
+
+<img src="./assets/invite-redemption.png" alt="The invitation redemption page: a card headed &quot;Join this dashboard&quot;, with a panel restating the invitation — the address it was sent to, shown as fixed text rather than an editable field, the role Approver, and a line describing what that role can do. Below it, optional name, password and repeat-password fields, a note that any characters are accepted from 8 to 64 and checked against known breached passwords, and an Accept invitation button." width="440">
+
+> **OAuth is link-only from here on.** `upsertOAuthUser` used to fall through to
+> an insert, which was correct while accounts came only from a seed. With
+> invitations that is a hole big enough to walk through: anyone with a Google
+> account could reach `POST /auth/oauth/google` and provision themselves.
+> Account creation now lives in exactly two places — first-run setup, and invite
+> redemption.
+
 ## Password policy
 
 Aligned to NIST 800-63B, which is what auditors reference and is mostly a
@@ -181,6 +224,7 @@ users table → admin created; populated table without that email → no-op
 | `SETUP_TOKEN` | api | First-run token. Unset ⇒ generated once at boot and logged |
 | `SETUP_TOKEN_FILE` | api | Where to write a generated token (mode 0600) so an init container can surface it |
 | `PASSWORD_BREACH_CHECK` | api | `hibp` (default) / `off` — turn the breach check off deliberately on an air-gapped site |
+| `PUBLIC_WEB_ORIGIN` | api | Browser-facing origin of the web app; invitation and reset links are built from it. No default — guessing a host would produce links that look right and go nowhere |
 | `AUTH_URL` | web | Auth.js base URL (default `http://localhost:3000`) |
 | `INTERNAL_API_BASE_URL` | web | server-side api URL for Auth.js callbacks (`http://api:8000` in compose) |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | web (+ id on api) | unset = no Google button. The api needs the id to pin the token audience |

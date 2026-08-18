@@ -14,6 +14,7 @@ import { metricRoutes } from "./routes/metrics.js";
 import { configRoutes } from "./routes/config.js";
 import { upstreamRoutes } from "./routes/upstreams.js";
 import { authRoutes } from "./routes/auth.js";
+import { teamRoutes } from "./routes/team.js";
 
 /** Build the Fastify app with all plugins + routes registered. */
 export async function buildApp(): Promise<FastifyInstance> {
@@ -49,6 +50,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     await app.register(dbPlugin);
     await app.register(authPlugin);
     await app.register(authRoutes);
+    await app.register(teamRoutes);
   }
 
   await app.register(healthRoutes);

@@ -57,10 +57,11 @@ export interface OAuthProfile {
 }
 
 /**
- * OAuth upsert (lava-connect's pattern, condensed): find by provider id →
- * fall back to email match (links the provider to the existing account) →
- * create. Avatar is backfill-only — written when null, never overwritten,
- * so the first linked provider with a picture wins.
+ * Resolve an OAuth profile to an existing account: find by provider id → fall
+ * back to email match, which links the provider to that account. **Never
+ * creates** — see the throw at the end for why. Avatar is backfill-only,
+ * written when null and never overwritten, so the first linked provider with a
+ * picture wins.
  */
 export async function upsertOAuthUser(
   db: Database,
@@ -103,23 +104,28 @@ export async function upsertOAuthUser(
     }
   }
 
-  if (!profile.email) {
-    throw new Error(`${provider} profile has no email — cannot create an account`);
-  }
-
-  const inserted = await db
-    .insert(users)
-    .values({
-      email: profile.email,
-      name: profile.name,
-      avatarUrl: profile.avatarUrl,
-      [providerKey(provider)]: profile.providerId,
-    })
-    .returning();
-  const created = inserted[0];
-  if (!created) throw new Error("insert returned no row");
-  return created;
+  // LINK ONLY — never create.
+  //
+  // This used to fall through to an insert, which was correct while accounts
+  // came only from a seed: there was nothing to bypass. The moment invitations
+  // exist it is a hole big enough to walk through — anyone with a Google
+  // account reaches POST /auth/oauth/google and provisions themselves, which
+  // defeats both "redeemable only by the address it was sent to" and the
+  // done-when "an invite redeemed from a different email address is refused".
+  //
+  // Account creation now lives in exactly two places, and both are deliberate:
+  // first-run setup, and invite redemption. Redeeming *with* Google goes
+  // through `redeemInvitation`, which links the provider id as it inserts.
+  throw new OAuthAccountNotFoundError(
+    profile.email
+      ? `No account for ${profile.email}. Ask an administrator for an invitation.`
+      : `That ${provider} account has no verified email address.`,
+  );
 }
+
+/** Raised when an OAuth sign-in matches no existing account. Distinct from a
+ *  bad token so the route can answer 403-with-a-reason rather than 401. */
+export class OAuthAccountNotFoundError extends Error {}
 
 function providerKey(provider: OAuthProvider): "googleId" | "githubId" | "discordId" {
   return provider === "google" ? "googleId" : provider === "github" ? "githubId" : "discordId";
