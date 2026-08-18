@@ -38,11 +38,14 @@
  *     is synthesised from the curated ARCHIVE_HINTS below, filtered to
  *     methods that actually exist in the regular tier.
  *
- * Collection selection: for each (interface, tier) prefer internal_path ""
- * (which inherits the real methods via imports/inheritance_apis everywhere we
- * checked); when "" is absent or empty, fall back to the internal_path with
- * the most methods. All collection `type` variants at the chosen path merge
- * (REST specs split GET/POST into sibling collections).
+ * Collection selection: for each (interface, tier) EVERY internal_path is
+ * emitted. A spec that splits an interface across paths serves all of them —
+ * TON's /v2 + /v3, AVAX's /C/rpc + /P + /X — and emitting one silently dropped
+ * the others. REST identifiers are recomposed as internal_path + api name
+ * (`/v2/getMasterchainInfo`), which is the path a client sends through the
+ * router (the router owns internal-path routing) and which also un-collides
+ * names that repeat across paths. All collection `type` variants merge (REST
+ * specs split GET/POST into sibling collections).
  *
  * Disabled specs (enabled:false — the abstract cosmossdk/ibc/tendermint base
  * specs) are indexed for import resolution but not emitted. Disabled
@@ -668,29 +671,19 @@ function makeCmd(iface, name, verb, hint, api) {
   return cmd;
 }
 
-/** Pick the internal_path for (iface, tier): prefer "" when it has methods,
- *  else the path with the most methods (ties break alphabetically). */
-function pickPath(collList) {
-  const byPath = new Map();
-  for (const c of collList) {
-    const p = c.cd.internal_path ?? "";
-    if (!byPath.has(p)) byPath.set(p, []);
-    byPath.get(p).push(c);
-  }
-  const count = (colls) =>
-    colls.reduce((n, c) => n + [...c.apis.values()].filter((a) => a.enabled).length, 0);
-  if (byPath.has("") && count(byPath.get("")) > 0) return byPath.get("");
-  let best = null;
-  let bestCount = -1;
-  for (const p of [...byPath.keys()].sort()) {
-    const n = count(byPath.get(p));
-    if (n > bestCount) {
-      best = byPath.get(p);
-      bestCount = n;
-    }
-  }
-  return bestCount > 0 ? best : null;
+/** Every collection for (iface, tier), ordered "" first then by path, so the
+ *  root path's methods keep their historical position in the emitted list. */
+function byInternalPath(collList) {
+  return [...collList].sort((a, b) => {
+    const pa = a.cd.internal_path ?? "";
+    const pb = b.cd.internal_path ?? "";
+    if (pa === pb) return 0;
+    if (pa === "") return -1;
+    if (pb === "") return 1;
+    return pa < pb ? -1 : 1;
+  });
 }
+
 
 function buildSpecEntry(index) {
   const colls = expandInheritance(resolveSpec(index));
@@ -708,11 +701,23 @@ function buildSpecEntry(index) {
       const tierColls = ifaceColls.filter(
         (c) => TIER_BY_ADDON[c.cd.add_on ?? ""] === tier,
       );
-      const chosen = pickPath(tierColls);
-      if (!chosen) continue;
+      // EVERY internal path is emitted, not one. A spec that splits an
+      // interface across paths (TON's /v2 + /v3, AVAX's /C/rpc + /P + /X)
+      // serves all of them, and keeping one silently dropped the rest — TON
+      // lost 22 methods that way the moment its "" path went.
+      //
+      // The api name is stored relative to its collection, so the identifier
+      // is recomposed as internal_path + name (`/v2/getMasterchainInfo`).
+      // That is what a client sends THROUGH THE ROUTER, which owns the
+      // internal-path routing, and it also un-collides names that repeat
+      // across paths (TON declares /estimateFee under both v2 and v3).
       const apiMap = new Map();
-      for (const c of chosen) {
-        for (const [n, a] of c.apis) if (a.enabled) apiMap.set(n, a);
+      for (const c of byInternalPath(tierColls)) {
+        const prefix = c.cd.internal_path ?? "";
+        for (const [n, a] of c.apis) {
+          if (!a.enabled) continue;
+          apiMap.set(prefix && iface === "rest" ? `${prefix}${n}` : n, a);
+        }
       }
       if (apiMap.size === 0) continue;
       const cmds = buildCmds(iface, index, apiMap);
