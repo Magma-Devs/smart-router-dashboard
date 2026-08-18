@@ -886,9 +886,13 @@ export function TryMeDrawer({
    *  direct mode exists to answer ("is the router adding latency / changing
    *  the answer?") needs both halves in one view. Sequential, router first:
    *  two concurrent calls would contend on the same upstream and make both
-   *  latency numbers meaningless. */
+   *  latency numbers meaningless.
+   *
+   *  Requires a pinnable upstream. Against a backup the router leg answers
+   *  from whichever PRIMARY the optimizer picked, so the two rows would be
+   *  two different upstreams — a comparison of nothing. */
   const compareBoth = useCallback(async () => {
-    if (!resolved || !directAvailable) return;
+    if (!resolved || !directAvailable || pinRefusal) return;
     resetResult();
     setComparing(true);
     setStatus("loading");
@@ -908,7 +912,7 @@ export function TryMeDrawer({
     } finally {
       setComparing(false);
     }
-  }, [resolved, directAvailable, fireViaRouter, fireDirect, applyOutcome, resetResult]);
+  }, [resolved, directAvailable, pinRefusal, fireViaRouter, fireDirect, applyOutcome, resetResult]);
 
   if (!mounted) return null;
 
@@ -1417,23 +1421,17 @@ export function TryMeDrawer({
                 </span>
                 {/* Both paths, one click — the comparison is the reason the
                     direct mode is worth having, so it lives WITH that mode.
-                    In router mode there is no second leg to compare against. */}
-                {onDirect && (
-                  <span
-                    title={
-                      pinHint ??
-                      "Send the same request through the router AND straight to the upstream, then show both answers side by side."
-                    }
-                    style={{ display: "inline-flex" }}
-                  >
+                    In router mode there is no second leg to compare against,
+                    and on a backup the router leg cannot be aimed at THIS
+                    upstream, so there is no pair to put side by side — the
+                    control is absent rather than present-and-refusing. */}
+                {onDirect && !pinRefusal && (
                   <button
                     type="button"
                     className="gw-btn gw-btn--ghost"
                     onClick={compareBoth}
-                    // A comparison needs two answers. On a backup the router
-                    // leg can only return its refusal, and putting that beside
-                    // a real reply would measure nothing.
-                    disabled={!resolved || status === "loading" || pinRefusal !== null}
+                    title="Send the same request through the router AND straight to the upstream, then show both answers side by side."
+                    disabled={!resolved || status === "loading"}
                     style={{ padding: "9px 14px", fontSize: 12, fontWeight: 500, gap: 6 }}
                   >
                     {comparing ? (
@@ -1447,7 +1445,6 @@ export function TryMeDrawer({
                       </>
                     )}
                   </button>
-                  </span>
                 )}
                 {wsPhase && (
                   <span
@@ -1604,11 +1601,7 @@ export function TryMeDrawer({
             const rows: { label: string; hint: string; out: Outcome }[] = [
               {
                 label: "Via router",
-                hint: pinRefusal
-                  ? `pin refused — ${selectUpstream ?? "this upstream"} is a backup`
-                  : selectUpstream
-                    ? `pinned to ${selectUpstream}`
-                    : "router picks the upstream",
+                hint: selectUpstream ? `pinned to ${selectUpstream}` : "router picks the upstream",
                 out: comparison.router,
               },
               {
