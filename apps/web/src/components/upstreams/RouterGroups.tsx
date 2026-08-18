@@ -24,6 +24,7 @@ import {
 } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
+import { ExplorerHomeLink } from "@/components/gateway/ExplorerLink";
 import { CopyButton } from "@/components/gateway/CopyButton";
 import { CapabilityTags, capabilitiesOf } from "@/components/gateway/CapabilityTags";
 import { useFilters } from "@/components/gateway/FiltersProvider";
@@ -149,8 +150,12 @@ export function RouterGroups({
                     which is the only case where the chain name alone is
                     ambiguous. */}
                 <div className="gw-row" style={{ gap: 10, alignItems: "center", marginBottom: 10 }}>
-                  <ChainBadge spec={group.spec} size={26} />
-                  <span style={{ fontSize: 13, fontWeight: 600 }}>{chain.name}</span>
+                  <ExplorerHomeLink spec={group.spec}>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+                      <ChainBadge spec={group.spec} size={26} />
+                      <span style={{ fontSize: 13, fontWeight: 600 }}>{chain.name}</span>
+                    </span>
+                  </ExplorerHomeLink>
                   {duplicatedSpecs.has(group.spec) && (
                     <span className="gw-mono" style={{ fontSize: 11, color: "var(--text-3)" }}>{group.routerId}</span>
                   )}
