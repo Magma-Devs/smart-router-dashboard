@@ -158,3 +158,7 @@ export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type Session = typeof sessions.$inferSelect;
 export type NewSession = typeof sessions.$inferInsert;
+
+/** MAG-2770 audit log — kept in its own module, re-exported so
+ *  `import * as schema` still sees every table. */
+export * from "./schema-audit.js";
