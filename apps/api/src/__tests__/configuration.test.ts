@@ -836,6 +836,56 @@ describe("ConfigurationService.resolveEndpointUrl", () => {
     expect(svc.resolveEndpointUrl({ routerId: "NOPE", node: "eth-lava", endpointIndex: 0 })).toBeNull();
   });
 
+  it("carries internal_path through the helm normalizer, null when absent", () => {
+    // TON on Tatum: v2 at the ROOT, v3 under /api/v3. maskNodeUrl strips path
+    // and query, so without internalPath these two rows are indistinguishable.
+    const svc = serviceFor(`
+routers:
+  - id: ton-mainnet
+    network: ton
+    nodes:
+      - name: chainstack
+        endpoints:
+          - url: https://ton-mainnet.core.chainstack.com/KEY/api
+            interface: rest
+      - name: tatum
+        endpoints:
+          - url: https://ton-mainnet.gateway.tatum.io
+            interface: rest
+            internal_path: "/v2"
+          - url: https://ton-mainnet.gateway.tatum.io/api/v3
+            interface: rest
+            internal_path: "/v3"
+`);
+    const nodes = svc.getRouters()[0]!.nodes;
+    expect(nodes[0]!.endpoints[0]!.internalPath).toBeNull();
+    const tatum = nodes[1]!.endpoints;
+    expect(tatum.map((e) => e.internalPath)).toEqual(["/v2", "/v3"]);
+    // Both mask to the same host — the internal path is the only thing that
+    // separates them, which is exactly why it has to survive normalization.
+    expect(tatum[0]!.urlHost).toBe(tatum[1]!.urlHost);
+  });
+
+  it("reads the kebab-case internal-path dialect in an SR_CONFIG file", () => {
+    const svc = serviceFor(`
+endpoints:
+  - listen-address: "0.0.0.0:3370"
+    chain-id: "TON"
+    api-interface: "rest"
+direct-rpc:
+  - name: "tatum"
+    chain-id: "TON"
+    api-interface: "rest"
+    node-urls:
+      - url: "https://ton-mainnet.gateway.tatum.io"
+        internal-path: "/v2"
+      - url: "https://ton-mainnet.gateway.tatum.io/api/v3"
+        internal-path: "/v3"
+`);
+    const eps = svc.getRouters()[0]!.nodes[0]!.endpoints;
+    expect(eps.map((e) => e.internalPath)).toEqual(["/v2", "/v3"]);
+  });
+
   it("marks http/ws endpoints directable and grpc ones not", () => {
     const svc = serviceFor(`
 endpoints:

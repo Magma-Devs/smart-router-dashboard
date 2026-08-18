@@ -20,14 +20,14 @@ const ROUTERS: RouterTopology[] = [
         name: "publicnode",
         isBackup: false,
         endpoints: [
-          { urlHost: "https://ethereum-rpc.publicnode.com", interface: "jsonrpc", addons: [], index: 0, directable: true },
-          { urlHost: "wss://ethereum-rpc.publicnode.com", interface: "jsonrpc", addons: [], index: 1, directable: true },
+          { urlHost: "https://ethereum-rpc.publicnode.com", interface: "jsonrpc", addons: [], index: 0, directable: true, internalPath: null },
+          { urlHost: "wss://ethereum-rpc.publicnode.com", interface: "jsonrpc", addons: [], index: 1, directable: true, internalPath: null },
         ],
       },
       {
         name: "flashbots",
         isBackup: true,
-        endpoints: [{ urlHost: "https://rpc.flashbots.net", interface: "jsonrpc", addons: [], index: 0, directable: true }],
+        endpoints: [{ urlHost: "https://rpc.flashbots.net", interface: "jsonrpc", addons: [], index: 0, directable: true, internalPath: null }],
       },
     ],
   },
@@ -45,12 +45,12 @@ const ROUTERS: RouterTopology[] = [
       {
         name: "publicnode",
         isBackup: false,
-        endpoints: [{ urlHost: "https://cosmos-rest.publicnode.com", interface: "rest", addons: [], index: 0, directable: true }],
+        endpoints: [{ urlHost: "https://cosmos-rest.publicnode.com", interface: "rest", addons: [], index: 0, directable: true, internalPath: null }],
       },
       {
         name: "polkachu",
         isBackup: false,
-        endpoints: [{ urlHost: "https://cosmos-api.polkachu.com", interface: "rest", addons: [], index: 0, directable: true }],
+        endpoints: [{ urlHost: "https://cosmos-api.polkachu.com", interface: "rest", addons: [], index: 0, directable: true, internalPath: null }],
       },
     ],
   },

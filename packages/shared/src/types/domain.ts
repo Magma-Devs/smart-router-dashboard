@@ -495,6 +495,13 @@ export interface RouterNodeEndpoint {
    * client the relay doesn't carry.
    */
   directable: boolean;
+  /**
+   * The `internal-path` this node-url is pinned to (`/v2`), or null when it
+   * serves the spec's root path. A provider whose versions live on different
+   * hosts declares one node-url per internal path, and since `urlHost` is
+   * masked to scheme+host those rows are otherwise indistinguishable.
+   */
+  internalPath: string | null;
 }
 
 export interface RouterNode {
