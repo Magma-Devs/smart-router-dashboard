@@ -12,17 +12,7 @@ import { ROLE_DESCRIPTIONS, ROLE_LABELS, type Role } from "@sr/shared";
  * account is created with the invitation's address server-side, so there is no
  * field here that could disagree with it.
  */
-export function InviteForm({
-  token,
-  email,
-  role,
-  googleEnabled,
-}: {
-  token: string;
-  email: string;
-  role: Role;
-  googleEnabled: boolean;
-}) {
+export function InviteForm({ token, email, role }: { token: string; email: string; role: Role }) {
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [repeat, setRepeat] = useState("");
@@ -134,33 +124,6 @@ export function InviteForm({
             {ROLE_DESCRIPTIONS[role]}
           </div>
         </div>
-
-        {googleEnabled && (
-          <>
-            <button
-              className="gw-btn"
-              style={{ width: "100%", justifyContent: "center", marginBottom: 14 }}
-              onClick={() => void signIn("google", { callbackUrl: "/overview" })}
-              type="button"
-            >
-              Accept with Google
-            </button>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                fontSize: 11,
-                color: "var(--text-3)",
-                marginBottom: 14,
-              }}
-            >
-              <span style={{ flex: 1, height: 1, background: "var(--line)" }} />
-              or set a password
-              <span style={{ flex: 1, height: 1, background: "var(--line)" }} />
-            </div>
-          </>
-        )}
 
         <form onSubmit={onSubmit} style={{ display: "grid", gap: 12 }}>
           <label style={labelStyle}>

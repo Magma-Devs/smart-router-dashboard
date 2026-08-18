@@ -1,5 +1,4 @@
 import { redirect } from "next/navigation";
-import { oauthProviderFlags } from "@/auth.config";
 import { InviteDead, InviteForm } from "@/components/auth/invite-form";
 import { previewInvitation } from "@/lib/bootstrap";
 
@@ -26,12 +25,5 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
   const invite = await previewInvitation(token);
   if (!invite) return <InviteDead />;
 
-  return (
-    <InviteForm
-      token={token}
-      email={invite.email}
-      role={invite.role}
-      googleEnabled={oauthProviderFlags.google}
-    />
-  );
+  return <InviteForm token={token} email={invite.email} role={invite.role} />;
 }

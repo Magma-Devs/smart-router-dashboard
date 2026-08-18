@@ -12,8 +12,8 @@ import { hashPassword } from "./password.js";
  *
  * **The account is created with the invitation's email, never the submitted
  * one.** That makes "redeemable only by the address it was sent to" structural
- * rather than a check someone can forget. The Google path compares the verified
- * claim to the invited address and refuses a mismatch outright.
+ * rather than a check someone can forget — the redeemer never supplies an
+ * address at all.
  *
  * **The raw token exists only inside the link.** The row stores its SHA-256, so
  * a database read — a backup, a log, a support screenshot — can't be turned
@@ -168,17 +168,11 @@ export async function lookupInvitation(db: Database, rawToken: string): Promise<
 }
 
 export type RedeemResult =
-  | { ok: true; user: User; invitation: Invitation }
-  | { ok: false; reason: InviteRejection | "email_mismatch" };
+  { ok: true; user: User; invitation: Invitation } | { ok: false; reason: InviteRejection };
 
 export interface RedeemInput {
   rawToken: string;
-  /** Set for the password path. */
-  password?: string;
-  /** Set for the OAuth path — the **verified** address from the provider. */
-  verifiedEmail?: string;
-  /** Provider column to link, when redeeming with OAuth. */
-  provider?: { column: "googleId" | "githubId" | "discordId"; id: string };
+  password: string;
   name?: string | null;
 }
 
@@ -189,19 +183,19 @@ export interface RedeemInput {
  * `WHERE redeemed_at IS NULL AND revoked_at IS NULL AND expires_at > now()`.
  * Zero rows affected means somebody else got there first, and the whole
  * transaction unwinds — so a race can't produce two accounts from one invite.
+ *
+ * "Redeemable only by the address it was invited" needs no check here: the
+ * insert takes `invitation.email` and there is no other address in scope. It
+ * used to need one, when a redeemer could arrive holding a Google identity
+ * asserting a *different* verified address — removing social sign-in turned a
+ * comparison that could be forgotten into a property of the statement.
  */
 export async function redeemInvitation(db: Database, input: RedeemInput): Promise<RedeemResult> {
   const lookup = await lookupInvitation(db, input.rawToken);
   if (!lookup.ok) return { ok: false, reason: lookup.reason };
   const invitation = lookup.invitation;
 
-  // The OAuth path must prove it owns the invited address. Compared here rather
-  // than trusted downstream, because the account is about to be created.
-  if (input.verifiedEmail && input.verifiedEmail.toLowerCase() !== invitation.email) {
-    return { ok: false, reason: "email_mismatch" };
-  }
-
-  const passwordHash = input.password ? await hashPassword(input.password) : null;
+  const passwordHash = await hashPassword(input.password);
 
   return db.transaction(async (tx) => {
     const claimed = await tx
@@ -231,8 +225,7 @@ export async function redeemInvitation(db: Database, input: RedeemInput): Promis
         role: invitation.role,
         status: "active",
         passwordHash,
-        passwordUpdatedAt: passwordHash ? new Date() : null,
-        ...(input.provider ? { [input.provider.column]: input.provider.id } : {}),
+        passwordUpdatedAt: new Date(),
       })
       .returning();
 

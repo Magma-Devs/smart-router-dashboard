@@ -1,16 +1,8 @@
 import { timingSafeEqual } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { Database } from "@sr/db";
-import {
-  findUserByEmail,
-  recordSignIn,
-  toPublicUser,
-  upsertOAuthUser,
-  OAuthAccountNotFoundError,
-  type OAuthProvider,
-} from "../services/users.js";
+import { findUserByEmail, recordSignIn, toPublicUser } from "../services/users.js";
 import { validatePassword, verifyPassword } from "../services/password.js";
-import { verifyOAuthToken } from "../services/oauth.js";
 import { createSession, revokeSession, type ClientContext } from "../services/sessions.js";
 import { normalizeIp, parseClient } from "../services/client-context.js";
 import { lookupInvitation, redeemInvitation, type InviteLookup } from "../services/invitations.js";
@@ -46,8 +38,7 @@ interface InvitePreviewBody {
 
 interface InviteAcceptBody {
   token: string;
-  password?: string;
-  googleIdToken?: string;
+  password: string;
   name?: string;
 }
 
@@ -65,11 +56,6 @@ interface SetupBody {
   email: string;
   password: string;
   name?: string;
-}
-
-interface OAuthBody {
-  token: string;
-  clientContext?: ForwardedClientContext;
 }
 
 /** Constant-time comparison that doesn't leak length through early return. */
@@ -149,19 +135,24 @@ function resolveClientContext(
  * Registered ONLY when AUTH_MODE=enabled:
  *
  *  - POST /auth/sign-in          : email + password → { user, sessionId }
- *  - POST /auth/oauth/:provider  : provider token (verified server-side)
- *                                  → upsert → { user, sessionId }
  *  - POST /auth/sign-out         : revoke the calling session
  *
- * The first two are consumed by the web's Auth.js callbacks — the browser never
- * calls them directly. Each opens a session row and returns its id, which the
+ * Email and password is the only way in — the ticket is explicit ("that is the
+ * only way in"), and social sign-in was removed rather than left configurable.
+ * A personal Google/GitHub/Discord account sits outside the customer's IT
+ * control, so when someone leaves their company that account keeps working; the
+ * gap SSO exists to close is the one social login reopens. SSO arrives as its
+ * own task when a customer asks for it.
+ *
+ * Sign-in is consumed by the web's Auth.js credentials callback — the browser
+ * never calls it directly. It opens a session row and returns its id, which the
  * web puts in the token's `sid` claim; the api resolves it on every subsequent
  * request. Creating the session here (rather than in a register call afterwards)
  * is what lets it commit in the same breath as the sign-in and carry the
  * browser's own address. See `docs/ACCOUNTS-DESIGN.md` §5.2.
  *
- * No self-serve sign-up: accounts come from the ADMIN_EMAIL seed or OAuth until
- * invitations land in slice 3.
+ * Accounts come into existence in exactly two places: first-run setup, and
+ * invite redemption. There is no self-serve sign-up.
  */
 export async function authRoutes(app: FastifyInstance) {
   const audit: AuditWriter = lazyAuditWriter(app);
@@ -350,11 +341,10 @@ export async function authRoutes(app: FastifyInstance) {
         summary: "Redeem an invitation: create the account and open a session",
         body: {
           type: "object" as const,
-          required: ["token"],
+          required: ["token", "password"],
           properties: {
             token: { type: "string" as const, minLength: 1 },
             password: { type: "string" as const, minLength: 1 },
-            googleIdToken: { type: "string" as const, minLength: 1 },
             name: { type: "string" as const },
           },
         },
@@ -366,58 +356,20 @@ export async function authRoutes(app: FastifyInstance) {
       const body = request.body as InviteAcceptBody;
       const client = resolveClientContext(request, undefined, internalSecret);
 
-      let verifiedEmail: string | undefined;
-      let provider: { column: "googleId"; id: string } | undefined;
-
-      if (body.googleIdToken) {
-        try {
-          const profile = await verifyOAuthToken("google", body.googleIdToken);
-          if (!profile.email) throw new Error("no verified email");
-          verifiedEmail = profile.email;
-          provider = { column: "googleId", id: profile.providerId };
-        } catch {
-          return reply.code(401).send({
-            statusCode: 401,
-            error: "Unauthorized",
-            message: "Google sign-in could not be verified.",
-          });
-        }
-      } else if (body.password) {
-        const problem = await validatePassword(body.password, request.log);
-        if (problem) {
-          return reply
-            .code(400)
-            .send({ statusCode: 400, error: "Bad Request", message: problem.message });
-        }
-      } else {
-        return reply.code(400).send({
-          statusCode: 400,
-          error: "Bad Request",
-          message: "Choose a password or sign in with Google.",
-        });
+      const problem = await validatePassword(body.password, request.log);
+      if (problem) {
+        return reply
+          .code(400)
+          .send({ statusCode: 400, error: "Bad Request", message: problem.message });
       }
 
       const result = await redeemInvitation(db, {
         rawToken: body.token,
         password: body.password,
-        verifiedEmail,
-        provider,
         name: body.name ?? null,
       });
 
       if (!result.ok) {
-        if (result.reason === "email_mismatch") {
-          // Named deliberately: an honest person who signed in with the wrong
-          // Google account needs to know which address to use. They already
-          // hold the link, so this reveals nothing they didn't have.
-          const lookup = await lookupInvitation(db, body.token);
-          const invited = lookup.ok ? lookup.invitation.email : "the invited address";
-          return reply.code(403).send({
-            statusCode: 403,
-            error: "Forbidden",
-            message: `This invitation is for ${invited}. Sign in with that account to accept it.`,
-          });
-        }
         return reply.code(result.reason === "not_found" ? 404 : 410).send({
           statusCode: result.reason === "not_found" ? 404 : 410,
           error: "Gone",
@@ -427,7 +379,7 @@ export async function authRoutes(app: FastifyInstance) {
 
       const session = await createSession(db, {
         userId: result.user.id,
-        authMethod: provider ? "google" : "invite",
+        authMethod: "invite",
         client,
       });
       await recordSignIn(db, result.user.id);
@@ -629,96 +581,6 @@ export async function authRoutes(app: FastifyInstance) {
       const session = await createSession(db, {
         userId: user.id,
         authMethod: "password",
-        client,
-      });
-      await recordSignIn(db, user.id);
-      await audit.write({
-        action: "signin.succeeded",
-        actor: { id: user.id, kind: "user" },
-        access: { ...client.access, sessionId: session.id },
-      });
-
-      return { user: toPublicUser(user), sessionId: session.id };
-    },
-  );
-
-  app.post(
-    "/auth/oauth/:provider",
-    {
-      config: { rateLimit: STRICT_AUTH_RATE_LIMIT },
-      schema: {
-        tags: ["Auth"],
-        summary:
-          "Verify a Google/GitHub/Discord token server-side, upsert the user, open a session",
-        params: {
-          type: "object" as const,
-          required: ["provider"],
-          properties: {
-            provider: { type: "string" as const, enum: ["google", "github", "discord"] },
-          },
-        },
-        body: {
-          type: "object" as const,
-          required: ["token"],
-          properties: {
-            token: { type: "string" as const, minLength: 1 },
-            clientContext: {
-              type: "object" as const,
-              properties: {
-                ip: { type: "string" as const },
-                userAgent: { type: "string" as const },
-              },
-            },
-          },
-        },
-      },
-    },
-    async (request, reply) => {
-      const db = dbOr503(reply);
-      if (!db) return reply;
-      const provider = (request.params as { provider: OAuthProvider }).provider;
-      const { token, clientContext } = request.body as OAuthBody;
-      const client = resolveClientContext(request, clientContext, internalSecret);
-
-      let profile;
-      try {
-        profile = await verifyOAuthToken(provider, token);
-      } catch (err) {
-        request.log.warn({ provider, err: (err as Error).message }, "oauth verification failed");
-        return reply.code(401).send({
-          statusCode: 401,
-          error: "Unauthorized",
-          message: `${provider} token verification failed`,
-        });
-      }
-
-      let user;
-      try {
-        user = await upsertOAuthUser(db, provider, profile);
-      } catch (err) {
-        if (err instanceof OAuthAccountNotFoundError) {
-          // Not 401: the token was fine, the account simply doesn't exist. A
-          // person who was never invited should be told that, not left
-          // retrying their password.
-          return reply
-            .code(403)
-            .send({ statusCode: 403, error: "Forbidden", message: err.message });
-        }
-        return reply
-          .code(400)
-          .send({ statusCode: 400, error: "Bad Request", message: (err as Error).message });
-      }
-      if (user.status !== "active") {
-        return reply.code(403).send({
-          statusCode: 403,
-          error: "Forbidden",
-          message: "This account is no longer active",
-        });
-      }
-
-      const session = await createSession(db, {
-        userId: user.id,
-        authMethod: provider,
         client,
       });
       await recordSignIn(db, user.id);

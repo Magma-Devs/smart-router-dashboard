@@ -308,10 +308,12 @@ export async function teamPasswordRoutes(app: FastifyInstance) {
           .send({ statusCode: 404, error: "Not Found", message: "No such member." });
       }
       if (!target.passwordHash) {
+        // Defensive, as on /api/account/password: setup and invite redemption
+        // both set a hash, so an account without one can't currently exist.
         return reply.code(409).send({
           statusCode: 409,
           error: "Conflict",
-          message: `${target.email} signs in with Google and has no password to reset.`,
+          message: `${target.email} has no password set, so there is nothing to reset.`,
         });
       }
 
