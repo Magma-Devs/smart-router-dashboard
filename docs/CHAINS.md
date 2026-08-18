@@ -39,7 +39,7 @@ most of the catalog is derived rather than hand-written:
 
 | Source | Chains | How |
 |---|---|---|
-| [`ethereum-lists/chains`](https://chainid.network/chains.json) | 92 | hex chain-id → decimal → the row's `explorers[]`, with `standard: EIP3091` carrying the link shape |
+| [`ethereum-lists/chains`](https://chainid.network/chains.json) | 79 | hex chain-id → decimal → the row's `explorers[]`, with `standard: EIP3091` carrying the link shape |
 | [`cosmos/chain-registry`](https://github.com/cosmos/chain-registry) | 38 | string chain-id matched against every `chain.json`; the registry supplies `block_page` / `tx_page` / `account_page` templates outright |
 | `apps/web/scripts/data/explorer-overlay.json` | 83 | curated by hand — bitcoin, solana, move, substrate, ledger-sequence and everything else neither registry covers, plus overrides |
 
@@ -66,7 +66,7 @@ of a URL template. `{base}` is the entry's own url:
 "blocks": { "block": "{base}/blocks/{block}" }
 ```
 
-Eight kinds cover 213 chains, and each is auditable in a single read. Three
+Eight kinds cover 204 chains, and each is auditable in a single read. Three
 rules keep them honest:
 
 1. **A block template takes a HEIGHT.** Explorers whose block page is addressed
@@ -93,7 +93,7 @@ rules keep them honest:
    `inherited`. Hosts that proved nothing anywhere stay `home`-only.
 
 `explorerBlockUrl()` returns **null**, never a guess, when no shape is proven —
-54 of 213 primaries are home-only, so null is a common outcome, not an edge
+45 of 204 primaries are home-only, so null is a common outcome, not an edge
 case. A caller that gets null must render the height as plain text; falling
 back to the home page would quietly send the reader somewhere that does not
 answer their question. It also refuses anything that is not digits, so a hash
@@ -113,10 +113,31 @@ Each explorer carries a `verified` field, and nothing ships without one:
 
 `unverified` rows still ship. A link a user wants, labelled honestly, beats no
 link — but they are named on every generator run so the next person on a
-network that can reach them can settle it. As of the last refresh, 10 of 213
+network that can reach them can settle it. As of the last refresh, 9 of 204
 are unverified, most behind Cloudflare bot management (Blockchair, Cardanoscan,
 beaconcha.in, Tronscan, viewblock) which answers 403 to anything without a
 real browser's TLS fingerprint.
+
+### Explorers rot, so sweep them
+
+A registry row is a claim someone made once. Hosts die, deployments are retired
+and domains change hands, and none of that updates the registry. A sweep of all
+213 primary explorers in August 2026 found 141 working and a long tail that had
+gone stale — `ftmscan.com` no longer resolving after Fantom's Sonic rebrand,
+`agoric.explorers.guru` emptied out the same way Lava's was, Cronos and Flow on
+new domains, and one link, Celo Alfajores, redirecting to a **different Celo
+testnet** so that anyone checking a height was reading the wrong chain.
+
+Two lessons are baked into the process now:
+
+* **Test with a plausible height, not with block 1.** The first sweep flagged 15
+  Mintscan entries as broken because neither block 1 nor block 1000 renders
+  there; Osmosis at height 30,000,000 renders fine. Mintscan does not serve low
+  heights, and the test was wrong rather than the catalog.
+* **"Moved off-host" is the signal that matters.** A dead explorer rarely 404s.
+  It redirects to its operator's front page, which answers 200 and looks
+  healthy — which is exactly how `agoric.explorers.guru` and `bloks.io` survived
+  earlier checks.
 
 ### Lava
 
@@ -145,7 +166,7 @@ other chain.
 
 ### Chains with no explorer
 
-32 spec indices have none, and each is a recorded decision in the overlay with
+41 spec indices have none, and each is a recorded decision in the overlay with
 a reason — a permissioned network with no public explorer (Canton), an API
 surface that is not a chain (Moralis, Subsquid Subgraph), a retired testnet, or
 simply nothing verified. They are listed in

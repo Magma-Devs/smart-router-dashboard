@@ -1,4 +1,15 @@
 {
+  "AGR": {
+    "explorers": [
+      {
+        "name": "Atomscan",
+        "url": "https://atomscan.com/agoric",
+        "kind": "blocks",
+        "verified": "browser 2026-08-18 — block page watched rendering the requested height",
+        "source": "sweep 2026-08-18 — agoric.explorers.guru redirects to explorers.guru, which no longer carries the chain"
+      }
+    ]
+  },
   "AGRT": {
     "none": "not in cosmos/chain-registry and no public explorer verified"
   },
@@ -15,6 +26,17 @@
   },
   "ALEOT": {
     "none": "no public explorer verified for this testnet"
+  },
+  "ALFAJORES": {
+    "explorers": [
+      {
+        "name": "Blockscout",
+        "url": "https://celo-alfajores.blockscout.com",
+        "kind": "block",
+        "verified": "browser 2026-08-18 — block page watched rendering the requested height",
+        "source": "sweep 2026-08-18 — alfajores.celoscan.io now redirects to sepolia.celoscan.io, a DIFFERENT Celo testnet"
+      }
+    ]
   },
   "ALGORAND": {
     "explorers": [
@@ -101,11 +123,11 @@
   "AVALANCHEPT": {
     "explorers": [
       {
-        "name": "Avalanche Subnets",
-        "url": "https://subnets-test.avax.network/p-chain",
+        "name": "Avalanche Builder Hub",
+        "url": "https://build.avax.network/tools/p-chain",
         "kind": "home",
-        "verified": "home probed 2026-08-17",
-        "source": "curated"
+        "verified": "browser 2026-08-18 — the P-Chain tool page loads; no height-addressed block page",
+        "source": "sweep 2026-08-18 — subnets-test.avax.network now redirects here"
       }
     ]
   },
@@ -125,6 +147,12 @@
   },
   "BCHT": {
     "none": "no public explorer verified for this testnet"
+  },
+  "BERAT": {
+    "none": "bartio.beratrail.io answers 404 — the bArtio testnet is retired (checked 2026-08-18)"
+  },
+  "BERAT2": {
+    "none": "bartio.beratrail.io answers 404 — the bArtio testnet is retired (checked 2026-08-18)"
   },
   "BITTENSOR": {
     "explorers": [
@@ -181,6 +209,17 @@
         "kind": "block",
         "verified": "browser 2026-08-17 — same site and path shape as the verified BTC entry",
         "source": "curated"
+      }
+    ]
+  },
+  "CANTO": {
+    "explorers": [
+      {
+        "name": "TC Network",
+        "url": "https://explorer.tcnetwork.io/canto",
+        "kind": "block",
+        "verified": "browser 2026-08-18 — block page watched rendering the requested height",
+        "source": "sweep 2026-08-18 — cosmos-explorers.neobase.one answers “Deployment Paused”"
       }
     ]
   },
@@ -253,6 +292,28 @@
         "kind": "home",
         "verified": "unverified — HTTP ERR from the build network",
         "source": "curated"
+      }
+    ]
+  },
+  "CRONOS": {
+    "explorers": [
+      {
+        "name": "Cronos Explorer",
+        "url": "https://explorer.cronos.com",
+        "kind": "block",
+        "verified": "browser 2026-08-18 — block page watched rendering the requested height",
+        "source": "sweep 2026-08-18 — moved from explorer.cronos.org"
+      }
+    ]
+  },
+  "CRONOST": {
+    "explorers": [
+      {
+        "name": "Cronos Explorer",
+        "url": "https://explorer.cronos.com/testnet",
+        "kind": "block",
+        "verified": "browser 2026-08-18 — block page watched rendering the requested height",
+        "source": "sweep 2026-08-18 — moved from explorer.cronos.org"
       }
     ]
   },
@@ -341,18 +402,7 @@
     ]
   },
   "ETHBEACONHOL": {
-    "explorers": [
-      {
-        "name": "beaconcha.in",
-        "url": "https://holesky.beaconcha.in",
-        "kind": "custom",
-        "tpl": {
-          "block": "https://holesky.beaconcha.in/slot/{block}"
-        },
-        "verified": "inherited — the beaconcha.in mainnet and Sepolia deployments were watched rendering /slot/<n>; this is the same software on the network's own host",
-        "source": "curated — the consensus layer is addressed by SLOT, which is what the router reports as this spec's latest block"
-      }
-    ]
+    "none": "holesky.beaconcha.in no longer resolves and light-holesky.beaconcha.in answers 502 (checked 2026-08-18)"
   },
   "ETHBEACONHOODI": {
     "explorers": [
@@ -372,13 +422,10 @@
     "explorers": [
       {
         "name": "beaconcha.in",
-        "url": "https://sepolia.beaconcha.in",
-        "kind": "custom",
-        "tpl": {
-          "block": "https://sepolia.beaconcha.in/slot/{block}"
-        },
+        "url": "https://light-sepolia.beaconcha.in",
+        "kind": "slot",
         "verified": "browser 2026-08-18 — block page watched rendering the requested height",
-        "source": "curated — the consensus layer is addressed by SLOT, which is what the router reports as this spec's latest block"
+        "source": "sweep 2026-08-18 — sepolia.beaconcha.in now redirects here"
       }
     ]
   },
@@ -395,6 +442,42 @@
   },
   "ETHEREUMPOWT": {
     "none": "no public explorer verified for the Iceberg testnet"
+  },
+  "FLOW": {
+    "explorers": [
+      {
+        "name": "Flowscan",
+        "url": "https://evm.flow.com",
+        "kind": "block",
+        "verified": "browser 2026-08-18 — block page watched rendering the requested height",
+        "source": "sweep 2026-08-18 — moved from evm.flowscan.io"
+      }
+    ]
+  },
+  "FLOWT": {
+    "explorers": [
+      {
+        "name": "Flowscan",
+        "url": "https://testnet.evm.flow.com",
+        "kind": "block",
+        "verified": "browser 2026-08-18 — block page watched rendering the requested height",
+        "source": "sweep 2026-08-18 — moved from evm-testnet.flowscan.io"
+      }
+    ]
+  },
+  "FTM250": {
+    "explorers": [
+      {
+        "name": "Fantom Explorer",
+        "url": "https://explorer.fantom.network",
+        "kind": "blocks",
+        "verified": "browser 2026-08-18 — block page watched rendering the requested height",
+        "source": "sweep 2026-08-18 — ftmscan.com no longer resolves after the Sonic rebrand; this explorer serves /blocks/<n>, plural"
+      }
+    ]
+  },
+  "FTM4002": {
+    "none": "ftmscan.com and testnet.explorer.fantom.network no longer resolve; no surviving Fantom testnet explorer (checked 2026-08-18)"
   },
   "FUELNETWORK": {
     "explorers": [
@@ -415,6 +498,17 @@
         "kind": "block",
         "verified": "browser 2026-08-17 — block page watched rendering the requested height",
         "source": "curated — chainlist's 295 row omits HashScan, which its own 296 row lists as EIP3091"
+      }
+    ]
+  },
+  "HOL1": {
+    "explorers": [
+      {
+        "name": "Blockscout",
+        "url": "https://eth-holesky.blockscout.com",
+        "kind": "home",
+        "verified": "browser 2026-08-18 — home page loads; /block/<n> answers 404, so no block link is offered",
+        "source": "sweep 2026-08-18 — holesky.beaconcha.in and holesky.etherscan.io no longer resolve"
       }
     ]
   },
@@ -473,6 +567,9 @@
   },
   "IOTAT": {
     "none": "no public explorer verified for this testnet"
+  },
+  "KAKAROTT": {
+    "none": "sepolia.kakarotscan.org no longer resolves (checked 2026-08-18)"
   },
   "KAVAT": {
     "none": "testnet.mintscan.io does not resolve and no other testnet explorer verified"
@@ -562,6 +659,17 @@
   },
   "LTCT": {
     "none": "litecoinspace.org/testnet routes exist but its testnet3 backend answers 502 for block data (checked 2026-08-17); testnet3 is deprecated upstream"
+  },
+  "MANTLET": {
+    "explorers": [
+      {
+        "name": "Mantlescan",
+        "url": "https://sepolia.mantlescan.xyz",
+        "kind": "block",
+        "verified": "browser 2026-08-18 — block page watched rendering the requested height",
+        "source": "sweep 2026-08-18 — moved from explorer.sepolia.mantle.xyz"
+      }
+    ]
   },
   "MINA": {
     "explorers": [
@@ -743,6 +851,12 @@
       }
     ]
   },
+  "SECRETP": {
+    "none": "testnet.ping.pub/secret answers 404 and the registry lists no other explorer (checked 2026-08-18)"
+  },
+  "SEIT": {
+    "none": "all three registry rows fail: seitrace.com 521, seiscan.app times out, testnet.sei.explorers.guru is on the retired explorers.guru (checked 2026-08-18)"
+  },
   "SIDET": {
     "none": "not in cosmos/chain-registry and no public explorer verified"
   },
@@ -829,6 +943,20 @@
         "source": "curated"
       }
     ]
+  },
+  "STORY": {
+    "explorers": [
+      {
+        "name": "Datanetscan",
+        "url": "https://www.datanetscan.io",
+        "kind": "block",
+        "verified": "browser 2026-08-18 — block page watched rendering the requested height",
+        "source": "sweep 2026-08-18 — canonical host is www"
+      }
+    ]
+  },
+  "STRIDET": {
+    "none": "testnet.ping.pub/stride answers 404 and the registry lists no other explorer (checked 2026-08-18)"
   },
   "STRK": {
     "explorers": [
@@ -986,15 +1114,7 @@
     ]
   },
   "VECHAINT": {
-    "explorers": [
-      {
-        "name": "VeChain Explorer",
-        "url": "https://explore-testnet.vechain.org",
-        "kind": "home",
-        "verified": "unverified — HTTP ERR from the build network",
-        "source": "curated"
-      }
-    ]
+    "none": "explore-testnet.vechain.org no longer resolves (checked 2026-08-18)"
   },
   "XLM": {
     "explorers": [
