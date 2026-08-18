@@ -5,6 +5,55 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.16.5]
+
+### Fixed
+
+- **31 explorer rows claimed a block link nobody had seen work** — 23 of them
+  the primary, the one a UI would use. The generator matched a link-shape
+  `kind` on a registry row's *transaction* and *address* templates and then let
+  that kind contribute its own `block` shape on top, which is exactly the
+  invention the catalog documents itself as refusing. On Lava's STAVR explorer
+  the invented `/block/<height>` renders an empty shell; on AstroStake it falls
+  through to the dashboard. A shape is now either supplied by the registry,
+  **inherited from a proven shape on the same host**, or absent: `cosmos/chain-registry`
+  spells out Mintscan's `/blocks/<height>` on COSMOSHUB and leaves it null on
+  the twelve other Mintscan deployments, and those twelve now say `inherited`
+  rather than passing as registry-asserted. Hosts that proved nothing anywhere
+  are home-only.
+
+- **Lava pointed at two dead explorers, and now links blocks like any other
+  chain.** `explorer.finteh.org/lava` is unreachable, and `lava.explorers.guru`
+  redirects to `explorers.guru`, whose catalog lists 10 mainnets and 5 testnets
+  with Lava among none of them. Both shipped only for being first in
+  `cosmos/chain-registry`'s list of eleven validator-run rows.
+
+  `LAVA` and `LAV1` are now curated from
+  [docs.lavanet.xyz/block-explorer](https://docs.lavanet.xyz/block-explorer/) —
+  `lavacenter.xyz/lava` and `lavatest.mellifera.network/lava`, both watched
+  rendering a requested height. Note for whoever owns those docs: the explorer
+  the page calls **official** is the dead `lava.explorers.guru`.
+
+- **Doubled slashes are normalised.** chain-registry hands LAV1
+  `https://lava.explorers.guru//transaction/…`, which shipped verbatim.
+
+### Changed
+
+- **The catalog links a block height, and nothing else.** It stored three
+  shapes per chain — block, transaction, address — while the dashboard holds
+  exactly one value a public chain can confirm: a height. It has no
+  transaction hash and no chain address anywhere (`provider_address` is an
+  upstream's name, not an on-chain address). 321 templates addressed values
+  that did not exist, and 18 chains — NEAR, MultiversX, LAV1, Celestia and
+  others — carried nothing else, reading as covered while the UI could not
+  build a single link from them. Those are honest home-only entries now.
+
+  The API is `explorerBlockUrl(spec, height)` and `explorerHome(spec)`; the
+  kind table drops from eleven three-ref shapes to seven block shapes.
+  `explorerBlockUrl` also refuses anything that is not digits, so a hash passed
+  by mistake cannot become a link. 143 of 213 primaries can link a height; the
+  other 70 offer a home page and say so.
+
 ## [0.16.4]
 
 ### Changed

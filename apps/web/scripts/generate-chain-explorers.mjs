@@ -5,20 +5,35 @@
  *
  * One entry per index, an ARRAY ordered primary-first:
  *
- *   "ETH1": [{ name, url, kind, source }]
+ *   "ETH1": [{ name, url, kind, verified, source }]
+ *
+ * The catalog links ONE thing: a block HEIGHT. That is the only value the
+ * dashboard holds which a public chain can confirm — the router's tip, an
+ * upstream's tip, the lag between them. It has no transaction hash and no
+ * chain address anywhere, so transaction and address templates addressed
+ * values that did not exist and are gone.
  *
  *   - name    what to render on the link ("Etherscan")
  *   - url     the explorer home, no trailing slash
  *   - kind    a key in packages/shared/src/constants/explorer-kinds.json —
  *             the deep-link SHAPE. Never a guess: it is either the registry's
  *             own template proven to match, or a human-probed curation.
- *   - tpl     explicit {block,tx,address} templates, when the registry's
- *             shape matches no kind. Same-host + https enforced here and
- *             re-asserted by the shared unit test.
+ *   - tpl     an explicit block template, when the registry's shape matches
+ *             no kind. Same-host + https enforced here and re-asserted by
+ *             the shared unit test.
  *   - suffix  appended to every URL including the home ("?cluster=devnet")
- *   - verified HOW THE SHAPE IS KNOWN — a registry's own assertion, a page
+ *   - verified HOW THE SHAPE IS KNOWN — a registry's own assertion, a shape
+ *             proven on another deployment of the SAME explorer, a page
  *             watched rendering in a browser, or an honest "unverified" with
  *             the reason. Every row carries one; see docs/CHAINS.md
+ *
+ * ⚠ A kind is never allowed to CONTRIBUTE a shape the registry did not
+ * supply. An earlier version matched a kind on the transaction and address
+ * templates and let it add its own block template on top; that shipped 31
+ * block links nobody had ever seen work, 23 of them the primary. On Lava's
+ * STAVR explorer the invented `/block/<height>` renders an empty shell. A
+ * shape is now either supplied by the registry, proven on another deployment
+ * of the same host, or absent.
  *   - source  provenance — which registry row or which curation this came from
  *
  * THE JOIN KEY is the spec's `chain-id` VERIFICATION, not the index:
@@ -237,29 +252,53 @@ async function refreshSnapshot(needEvm, needCosmos) {
 
 /* ── resolution ──────────────────────────────────────────────────────────── */
 
+/**
+ * Block shapes the registry PROVED, keyed by explorer host.
+ *
+ * cosmos/chain-registry supplies `block_page` for some rows and not others —
+ * Mintscan's `/blocks/${blockHeight}` is spelled out on COSMOSHUB but left
+ * null on the twelve other Mintscan deployments we serve. Those twelve are
+ * the same explorer on the same host, so the proven shape carries across;
+ * that is an inheritance with evidence behind it, not a guess.
+ *
+ * Keyed on HOST rather than on the registry's `kind` string, which is free
+ * text ("guru", "🔥STAVR🔥", "Stake Village") and is not a software identity.
+ */
+function provenBlockShapes(snapshot) {
+  const byHost = new Map();
+  for (const entry of Object.values(snapshot.cosmos ?? {})) {
+    for (const e of entry.explorers) {
+      const base = trimBase(e.url);
+      const tpl = convertRegistryTemplate(e.block_page);
+      if (!tpl || !sameHostHttps(tpl, base) || !tpl.startsWith(base)) continue;
+      const host = hostOf(base);
+      // {base} is this deployment's own prefix; what generalises is the tail.
+      if (host && !byHost.has(host)) byHost.set(host, tpl.slice(base.length));
+    }
+  }
+  return byHost;
+}
+
 /** chain-registry placeholders → ours. Any OTHER ${…} means a template we
  *  cannot fill, so the template is dropped rather than emitted half-rendered. */
 function convertRegistryTemplate(t) {
   if (typeof t !== "string" || !t) return null;
   const converted = t
     .replace(/\$\{blockHeight\}/g, "{block}")
-    .replace(/\$\{txHash\}/g, "{tx}")
-    .replace(/\$\{accountAddress\}/g, "{address}");
+    // The registry hands LAV1 "https://lava.explorers.guru//transaction/…".
+    // A doubled slash is not a path segment; normalise rather than ship it.
+    .replace(/([^:])\/{2,}/g, "$1/");
   return /\$\{/.test(converted) ? null : converted;
 }
 
-/** The kind whose rendered templates EXACTLY equal the registry's own, or
- *  null. This is what makes a kind assignment a proof rather than a guess. */
-function kindMatching(base, tpl) {
-  const refs = ["block", "tx", "address"].filter((r) => tpl[r]);
-  if (!refs.length) return null;
+/** The kind whose rendered block template EXACTLY equals the one we hold, or
+ *  null. Exact equality is what makes a kind assignment a proof: the kind is
+ *  a shorthand for a shape already established, never a source of one. */
+function kindMatching(base, blockTpl) {
+  if (!blockTpl) return null;
   for (const [kind, def] of Object.entries(KINDS)) {
-    if (kind === "home") continue;
-    if (!refs.every((r) => def[r] && render(def[r], base) === tpl[r])) continue;
-    // Every template the kind claims must be one the registry agreed with, or
-    // be absent from the registry entirely (the kind is then adding a shape we
-    // have not seen contradicted — allowed only when it agreed on the others).
-    return kind;
+    if (kind === "home" || !def.block) continue;
+    if (render(def.block, base) === blockTpl) return kind;
   }
   return null;
 }
@@ -271,13 +310,15 @@ function fromChainlist(rows) {
     if (!base.startsWith("https://")) continue;
     // EIP3091 is the registry's own assertion about the shape; anything else
     // gets the home page only.
+    // EIP-3091 defines /block/<height>, and the row asserting that standard
+    // is the registry's own claim about this explorer's shape.
     const eip3091 = String(e.standard).toUpperCase() === "EIP3091";
     out.push({
       name: e.name,
       url: base,
-      kind: eip3091 ? "eip3091" : "home",
+      kind: eip3091 ? "block" : "home",
       verified: eip3091
-        ? "registry — the chainlist row declares standard EIP3091"
+        ? "registry — the chainlist row declares standard EIP3091, which defines /block/<height>"
         : "registry — the chainlist row declares no url standard, so only the home page is offered",
       source: "ethereum-lists/chains",
     });
@@ -285,28 +326,40 @@ function fromChainlist(rows) {
   return out;
 }
 
-function fromCosmosRegistry(entry) {
+function fromCosmosRegistry(entry, proven) {
   const out = [];
   for (const e of entry.explorers) {
     const base = trimBase(e.url);
     if (!base.startsWith("https://")) continue;
-    const tpl = {};
-    for (const [ref, raw] of [["block", e.block_page], ["tx", e.tx_page], ["address", e.account_page]]) {
-      const t = convertRegistryTemplate(raw);
-      if (t && sameHostHttps(t, base)) tpl[ref] = t;
+
+    // The registry's own block_page, when it has one.
+    let block = convertRegistryTemplate(e.block_page);
+    if (block && !sameHostHttps(block, base)) block = null;
+    let verified = block
+      ? "registry — cosmos/chain-registry supplies this block page"
+      : null;
+
+    // Otherwise the shape this same host proved on another chain, if any.
+    if (!block) {
+      const tail = proven.get(hostOf(base));
+      if (tail) {
+        block = base + tail;
+        verified = `inherited — cosmos/chain-registry proves ${hostOf(base)} serves ${tail} on another chain; this is the same host`;
+      }
     }
-    const kind = kindMatching(base, tpl);
-    const has = Object.keys(tpl).length > 0;
+    if (!block) {
+      verified = "registry — the registry row supplies no block page and this host proved none elsewhere, so only the home page is offered";
+    }
+
+    const kind = kindMatching(base, block);
     const row = {
       name: e.kind ?? hostOf(base),
       url: base,
-      kind: kind ?? (has ? "custom" : "home"),
-      verified: has
-        ? "registry — cosmos/chain-registry supplies these page templates"
-        : "registry — the registry row supplies no page templates, so only the home page is offered",
+      kind: block ? (kind ?? "custom") : "home",
+      verified,
       source: `cosmos/chain-registry/${entry.dir}`,
     };
-    if (!kind && Object.keys(tpl).length) row.tpl = tpl;
+    if (block && !kind) row.tpl = { block };
     out.push(row);
   }
   // Mintscan is the de-facto canonical cosmos explorer; when the registry
@@ -340,6 +393,9 @@ const snapshot = REFRESH
   ? await refreshSnapshot(needEvm, needCosmos)
   : JSON.parse(readFileSync(SNAPSHOT_PATH, "utf8"));
 
+/** Block shapes the registry proved, host-keyed — see provenBlockShapes. */
+const PROVEN = provenBlockShapes(snapshot);
+
 const out = {};
 const counts = { overlay: 0, chainlist: 0, cosmos: 0, none: 0 };
 const declaredNone = [];
@@ -368,7 +424,7 @@ for (const index of Object.keys(CHAIN_MAP).sort()) {
     rows = fromChainlist(snapshot.chainlist[dec] ?? []).map((r) => ({ ...r, source: `${r.source}#${dec}` }));
     if (rows.length) counts.chainlist += 1;
   } else if (id && family === "cosmos" && snapshot.cosmos[id]) {
-    rows = fromCosmosRegistry(snapshot.cosmos[id]);
+    rows = fromCosmosRegistry(snapshot.cosmos[id], PROVEN);
     if (rows.length) counts.cosmos += 1;
   }
 
@@ -389,8 +445,10 @@ for (const [index, rows] of Object.entries(out)) {
     if (!r.verified) errors.push(`${index}: no verification status`);
     if (!r.url.startsWith("https://")) errors.push(`${index}: non-https url ${r.url}`);
     for (const [ref, t] of Object.entries(r.tpl ?? {})) {
-      if (!sameHostHttps(t, r.url)) errors.push(`${index}: ${ref} template leaves ${r.url} → ${t}`);
-      if (!t.includes(`{${ref}}`)) errors.push(`${index}: ${ref} template has no {${ref}} placeholder`);
+      if (ref !== "block") errors.push(`${index}: tpl carries "${ref}" — the catalog links blocks only`);
+      if (!sameHostHttps(t, r.url)) errors.push(`${index}: block template leaves ${r.url} → ${t}`);
+      if (!t.includes("{block}")) errors.push(`${index}: block template has no {block} placeholder`);
+      if (/([^:])\/{2,}/.test(t)) errors.push(`${index}: block template has a doubled slash → ${t}`);
     }
   }
 }
@@ -414,6 +472,11 @@ const kindCounts = {};
 for (const rows of Object.values(out)) kindCounts[rows[0].kind] = (kindCounts[rows[0].kind] ?? 0) + 1;
 console.log(
   `link shapes     ${Object.entries(kindCounts).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k}:${n}`).join(" ")}`,
+);
+const withBlock = Object.values(out).filter((r) => r[0].tpl?.block || KINDS[r[0].kind]?.block).length;
+const inherited = Object.values(out).filter((r) => r[0].verified.startsWith("inherited")).length;
+console.log(
+  `block links     ${withBlock}/${Object.keys(out).length} primaries can link a height (${inherited} inherited from the same host on another chain); the rest offer a home page`,
 );
 const unverified = Object.entries(out).filter(([, rows]) => rows[0].verified.startsWith("unverified"));
 console.log(
