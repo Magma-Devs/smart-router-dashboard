@@ -378,10 +378,16 @@ that account had.
 Two refusals worth seeing: a Google-only account answers 409 naming why
 there is no password to reset, and a removed member answers 404.
 
-**7. Lockout.** Five wrong passwords for the same address and it locks for
-fifteen minutes, on the sixth attempt, even with the right password. It
-counts against the address whether or not an account exists, so being
-locked out reveals nothing about who is a member.
+**7. Lockout.** Five wrong passwords for the same address and the sixth
+attempt is refused — `423`, even when that sixth one is right. The window
+closes fifteen minutes after the **first** wrong password, not the fifth,
+so hammering it doesn't extend the ban. A successful sign-in clears the
+slate, or somebody who mistyped four times would spend the rest of the
+window one slip from a lockout.
+
+The count is keyed on the address whether or not an account exists, so a
+lockout reveals nothing about who is a member — and a sign-in attempt
+against an unknown address answers the same `401` a wrong password does.
 
 **8. Export.** Team → Export CSV. This is the artifact an auditor asks for
 first, and it is the whole member list, not the page you are looking at.
