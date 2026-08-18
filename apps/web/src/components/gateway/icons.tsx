@@ -81,6 +81,17 @@ export const IconUsers = svg(
     <path d="M16 3.13a4 4 0 0 1 0 7.75" />
   </>,
 );
+/** A page with ruled lines — the audit log's ledger, not a shield: this
+ *  surface is a record to read, not a security control that acts. */
+export const IconLedger = svg(
+  <>
+    <path d="M4 4a2 2 0 0 1 2-2h8l4 4v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" />
+    <polyline points="14 2 14 6 18 6" />
+    <line x1="8" y1="12" x2="15" y2="12" />
+    <line x1="8" y1="16" x2="13" y2="16" />
+  </>,
+);
+
 export const IconSettings = svg(
   <>
     <circle cx="12" cy="12" r="3" />

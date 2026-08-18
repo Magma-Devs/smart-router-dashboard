@@ -106,6 +106,19 @@ async function seedEvents(): Promise<void> {
 }
 
 describe("GET /api/audit/events", () => {
+  /**
+   * The premise of the viewer's "no audit log on this deployment" state. If the
+   * route ever leaked outside the AUTH_MODE gate it would answer 401 rather than
+   * 404, and the web would tell people to set an environment variable that is
+   * already set.
+   */
+  it("does not exist at all when auth is disabled", async () => {
+    setEnv({ AUTH_MODE: undefined, AUTH_SECRET: undefined, DATABASE_URL: undefined });
+    app = await buildApp();
+    const res = await app.inject({ method: "GET", url: "/api/audit/events" });
+    expect(res.statusCode).toBe(404);
+  });
+
   it("needs a session", async () => {
     app = await buildAuthedApp();
     const res = await app.inject({ method: "GET", url: "/api/audit/events" });
