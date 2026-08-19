@@ -12,14 +12,17 @@ taken on trust.
 
 ## Verdict
 
-Everything the ticket asks for is implemented, except three things that belong to other tickets and
-one open scope question.
+Everything the ticket asks for is implemented. Nothing is open for decision; what remains belongs to
+four sibling tickets.
 
-The open question is **managed-mode delivery**: there is no mail transport anywhere in the repo, so
-every managed path that ends in "send them a link" stops short. On-prem is complete. That is
-asked on the ticket and is Omer's call, not a defect.
+**Managed-mode delivery is [MAG-2870](https://magmadevs.atlassian.net/browse/MAG-2870)** — "Account
+emails and the reset password page", carved out of this ticket deliberately, _"so the copy and the
+screen have one owner rather than being buried in the accounts ticket"_. It scopes exactly two
+emails, invitation and password reset, and restates the rule this ticket already implements: on-prem
+sends none. So the managed paths below stop one step short **by design, not omission** — there is no
+mail transport in the repo because sending was never this ticket's job.
 
-The three handoffs are the shared-login cutover (MAG-2805), cancelling a removed person's pending
+The other three are the shared-login cutover (MAG-2805), cancelling a removed person's pending
 config changes (MAG-2731 owns that table), and the audit log's own viewer, filtering and export
 (MAG-2770). This ticket emits into MAG-2770's writer; it does not own the reading side.
 
@@ -156,10 +159,10 @@ rename cannot rewrite history.
 
 | | State | Owner |
 |---|---|---|
-| **Managed-mode delivery** | No mail transport exists. Invitations withhold the link with nothing to send it; forgot-password logs it; the managed first-admin flow has no route | **Open question on the ticket** — scope call for Omer |
+| **Managed-mode delivery** | No mail transport exists. Invitations withhold the link with nothing to send it; forgot-password logs it; the managed first-admin flow has no route | [MAG-2870](https://magmadevs.atlassian.net/browse/MAG-2870) — assigned, To Do |
 | Pending config changes cancelled on removal | `onMemberDeactivated` is a documented empty seam | MAG-2731 |
 | Shared login disabled at cutover | Not this repo | MAG-2805 · victoria |
-| Managed "Forgot password?" on `/login` | Moot until managed delivery is decided | unassigned |
+| Managed "Forgot password?" on `/login` | The screen MAG-2870 specifies, on the flow it delivers | [MAG-2870](https://magmadevs.atlassian.net/browse/MAG-2870) |
 | Audit viewer, filtering, export | Out of scope by ticket text | MAG-2770 |
 | 2FA column populated | Out of scope by ticket text | MAG-2730 |
 
@@ -167,8 +170,9 @@ rename cannot rewrite history.
 
 ## 5. The gaps, and why each one is open
 
-Seven rows above are not ✅. They collapse into three causes, and only one of them was ever work
-sitting on this ticket — that one is now built, which is why it no longer appears.
+Six rows above are not ✅. They collapse into three causes, and only one was ever work sitting on
+this ticket — that one is now built, which is why it no longer appears. Nothing here is undecided;
+each has a ticket.
 
 ### Cause 1 — there is no mail transport. Three of them.
 
@@ -182,10 +186,18 @@ bugs.
 | **Managed forgot-password** | Creates the reset with the correct 1-hour TTL, writes `password.reset_requested`, logs the link at `warn`, returns 202. An operator with log access can retrieve it; the user gets nothing. A `TODO(slice: email adapter)` sits on it, so it was known rather than missed |
 | **Managed first admin** | No route for the flow the ticket describes. It does not *block* a managed deployment: `/setup` is not gated on `DEPLOYMENT_MODE`, so a first admin is still creatable with the setup token |
 
-**What it would take:** one adapter behind the existing link generation — both call sites already
-produce the URL and know the mode. **Whose call:** asked on the ticket. If the deployment driving
-this is on-prem, none of it needs building and managed should be recorded as deferred rather than
-left looking half-finished.
+**Who owns it:** [MAG-2870](https://magmadevs.atlassian.net/browse/MAG-2870), which scopes exactly
+two emails — invitation and password reset — with the copy written out, and confirms on-prem sends
+none. So this is a boundary, not a hole: the link generation, the TTLs, the single-use semantics and
+the audit rows all live here; what MAG-2870 adds is the transport and the wording.
+
+**What it takes:** one adapter behind the existing link generation — both call sites already produce
+the URL and know the mode. `lava-connect` is a working reference (`services/email.ts` +
+`email-layout.ts` over SES v2), and the shape worth copying is its single `deliver()` choke point:
+send, then write a row recording `type` and `template_version` but **never the body**, so a
+token-bearing link is never persisted. Note it has no invitation email to port — it is self-serve
+signup with no team concept — so that template gets written from MAG-2870's copy rather than
+inherited.
 
 ### Cause 2 — a missing control. Now built.
 
