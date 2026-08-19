@@ -337,6 +337,10 @@ export default function TeamPage() {
         onInvited={() => {
           setInviteError(null);
           void invites.mutate();
+          // Show the tab the new invitation is on. Without this the admin is
+          // left looking at Members, where the person they just invited
+          // correctly isn't, and nothing indicates where they went.
+          setTab("invites");
         }}
       />
       <ChangeRoleModal
