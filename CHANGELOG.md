@@ -5,6 +5,50 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.18.4]
+
+### Fixed
+
+- **Prefixed REST identifiers did not route.** 0.18.3 recomposed REST commands
+  as internal path + api name (`/v2/getMasterchainInfo`) on the reasoning that
+  the router owns internal-path routing. It does — but not by reading the path
+  off the request. The router matches REST by api name alone
+  (`matchSpecApiByName`) and then dials the node-url pinned to that name's
+  collection, so a prefixed path matches nothing. Against a TON router:
+
+  ```console
+  $ curl -s localhost:3460/getMasterchainInfo     | head -c 48
+  {"ok":true,"result":{"@type":"blocks.masterchainInfo"…
+  $ curl -s localhost:3460/v2/getMasterchainInfo
+  {"code":12,"message":"Not Implemented","details":[]}
+  ```
+
+  The path is metadata now (`ip`), never part of `m`. TON keeps all 51 methods
+  and every one of them is sendable again. It also un-breaks the curated hints,
+  which are keyed by spec api name and had stopped matching TON entirely.
+
+### Added
+
+- **The direct-to-upstream leg composes internal paths.** It addresses one
+  upstream url by hand, so it reproduces what the router builds: prefix the
+  path when the upstream serves the shared root (the router's
+  `autoGenerateMissingInternalPaths` appends the same segment), leave it off
+  when the url is already that version's root. Tatum's TON entries — v2 at the
+  host root, v3 under `/api/v3`, each pinned with `internal_path` — were being
+  sent `…/v2/v2/getMasterchainInfo` and `…/api/v3/v3/accountStates`.
+
+  Picking a method from another internal path than the upstream is aimed at is
+  refused before Send, the way a backup-tier pin is: no prefix reaches it, and
+  relaying the vendor's 404 would read as a verdict on the request.
+
+- **The command dropdown groups by internal path.** A chain that splits an
+  interface across versions reads as versions instead of one alphabetical run,
+  and the selected command carries its path as a tag — TON declares
+  `/estimateFee` and `/runGetMethod` under **both** v2 and v3, and they are
+  different calls. Those two are marked ambiguous in the catalog: the router's
+  REST lookup is keyed by (name, verb) with no path, so one collection wins and
+  the other is only reachable direct.
+
 ## [0.18.3]
 
 ### Fixed
