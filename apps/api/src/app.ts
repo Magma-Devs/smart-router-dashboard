@@ -15,6 +15,7 @@ import { configRoutes } from "./routes/config.js";
 import { upstreamRoutes } from "./routes/upstreams.js";
 import { authRoutes } from "./routes/auth.js";
 import { auditRoutes } from "./routes/audit.js";
+import { auditTokenRoutes } from "./routes/audit-tokens.js";
 
 /** Build the Fastify app with all plugins + routes registered. */
 export async function buildApp(): Promise<FastifyInstance> {
@@ -54,6 +55,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     // route on it needs a live session, so it must not exist at all when auth
     // is disabled.
     await app.register(auditRoutes);
+    await app.register(auditTokenRoutes);
   }
 
   await app.register(healthRoutes);

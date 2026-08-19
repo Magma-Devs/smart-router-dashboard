@@ -390,6 +390,23 @@ the log; the accounts, 2FA and config-approval tasks only emit into it.
   field — because the person opening it wants to sort and filter, not parse.
   The formula guard lives in `@sr/shared`'s `escapeCsvField`, shared with the
   member-list export, and covers tab and CR as well as `= + - @`.
+- **The pull API has its own principal** — a read-only token
+  (`srdash_audit_…`, `packages/db/src/audit-tokens.ts`). DFNS's requirement is
+  tooling that pulls on a schedule with nobody clicking, and their fourth
+  vendor rule is "API key best practices": a token that could also edit routing
+  fails that review. So it is not a user, not a role and not a session, and
+  what it may reach is a **method plus a path prefix** decided in one function
+  (`auditTokenMayReach`) rather than by each handler remembering — `GET`/`HEAD`
+  under `/api/audit/`, with `/api/audit/tokens` excluded so a token can never
+  mint another. Anything else is 403, not 401: the credential is fine and
+  retrying will not help.
+  Rate limited per token rather than per IP (a customer behind one NAT would
+  otherwise share a bucket with everyone there), with the limit and reset in
+  the usual `x-ratelimit-*` headers.
+  **Its use is a column, not an event** — `last_used_at` on the row. A row per
+  pull would make the log mostly a record of itself: a five-minute schedule
+  adds ~300 rows a day saying only that it still runs. The token's lifecycle
+  *is* audited, as `apikey.created` / `apikey.deleted`.
 - **Reading it is one query, two directions** (`packages/db/src/audit-read.ts`).
   The viewer asks for `order=desc`; a customer's tooling takes the default and
   pulls oldest-first on a schedule. Deliberately the same code path — a screen
@@ -461,6 +478,9 @@ Every `/api/metrics/*` route also accepts **`router?`** — the router scope
 | `POST /api/upstreams/relay` | body: `{routerId, node, endpointIndex, transport?, httpMethod?, path?, body?}` | Fires ONE request straight at a configured upstream, router excluded — `{httpStatus, latencyMs, body, truncated, transport}`. The target is resolved from the values file, never taken from the caller; the resolved url is never returned and is scrubbed out of the upstream's own body. Upstream 4xx/5xx come back **200** with their status inside; 502/504 mean our hop failed. Off with `UPSTREAM_RELAY_ENABLED=false`. See [`docs/UPSTREAM-DIRECT-TEST.md`](docs/UPSTREAM-DIRECT-TEST.md) |
 | `GET /api/audit/events` | `from?`, `to?`, `actor?`, `action?` (repeatable), `group?` (repeatable), `target_type?`, `target_id?`, `order?`, `per_page?`, `after?` | `AuditEventsResponse` — `{ items, cursor, has_more }`. **`AUTH_MODE=enabled` only**; any role, no gate beyond a live session. **Oldest first by default** and resumable — feed `cursor` back as `after`. A misspelled `action`/`group`, an `actor` that is neither a UUID nor an address, an unparseable time, and a cursor from a different filter set or direction are all **400**, never an empty page. **No web consumer yet** — the viewer is the next slice |
 | `GET /api/audit/export.csv` | same filters as `/api/audit/events` (no `after`/`per_page`) | The same events as a **streamed** CSV — one row per changed field sharing an `event_id`, events with nothing to diff getting one row with the field columns empty. UTF-8 BOM (Excel ignores the charset header on a downloaded file), CRLF per RFC 4180, and every field run through `escapeCsvField` so a name someone typed as `=HYPERLINK(…)` opens as text. Paged internally, so the whole matching history is served without holding it in memory |
+| `GET /api/audit/tokens` | — | `{ tokens }` — **admin only**. Never returns a hash; a token is identified by name + last four characters, with `lastUsedAt` / `lastUsedIp` |
+| `POST /api/audit/tokens` | body `{ name }` | **admin only**. Mints a read-only pull token and returns `{ token, secret }` — the **only** time the value exists. Stored as SHA-256; lost means revoke and re-issue |
+| `DELETE /api/audit/tokens/:id` | — | **admin only**. Revokes; the token stops working on the next request. 404 when already revoked or unknown — the two are one answer so an id can't be confirmed by guessing |
 
 ## Environment variables
 
