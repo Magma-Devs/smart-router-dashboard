@@ -6,7 +6,7 @@ taken on trust.
 
 | | |
 |---|---|
-| As of | 19 Aug 2026, `b1154ac` on `feat/MAG-2729-slice6-audit-emission` |
+| As of | 19 Aug 2026, `cedb1af` on `feat/MAG-2729-slice6-audit-emission` |
 | Parent epic | [MAG-2686](https://magmadevs.atlassian.net/browse/MAG-2686) — Dashboard v2, config change + SOC 2 |
 | Design | [`ACCOUNTS-DESIGN.md`](./ACCOUNTS-DESIGN.md) (#109) · operator guide [`AUTH.md`](./AUTH.md) |
 
@@ -280,10 +280,34 @@ covering first run, invitation, live role change, sessions, reset, lockout, expo
 - **"Deleting your own account is a Magma Cloud feature"** — false; it is a product rule in both
   shapes, and a disabled control implied paying would unlock it.
 
-The lesson generalises: a suite that never crosses an origin cannot see an origin bug, and a
-walkthrough driven by curl proves the api, not the product.
+**Then somebody used it for its actual purpose**, which found two more — and this is the class of
+defect that neither reading code nor driving it deliberately will produce, because both start from
+knowing what is supposed to happen:
+
+- **An invitation vanished from the screen that created it.** Invite somebody, then look for them
+  in Members, where they correctly are not — an invitation is not an account until it is redeemed.
+  Nothing said so, and the tab holding the answer gave no reason to click it. Reported as "I don't
+  see the account I just created".
+- **An invitation link opened while signed in explained nothing.** The edge gate redirected
+  `/invite/*` to the dashboard for anyone with a session. The rule is right; the silence made it
+  indistinguishable from a broken link. It strands more than a tester: somebody who already has an
+  account, clicking an invitation for a second address, lands on the dashboard and the invitation
+  stays pending with nobody able to say why.
+
+### One pattern, five times
+
+Every browser-found defect above is the same shape — **the system does the correct thing and tells
+nobody**. A 401 renders as an empty roster. An invitation moves to a tab you weren't looking at. A
+redirect fires with no sentence attached. A product rule wears the costume of a paid feature. In
+each case the behaviour was right and the reporting was absent, so it read as broken.
+
+That is worth carrying into MAG-2730 and MAG-2731 rather than treating as five coincidences. It is
+also why none of them had a failing test: there is nothing to assert when the code does exactly what
+it meant to.
 
 **Guards were verified by breaking them**, not by watching them pass — `cors.test.ts` gives five
-failures without its fix; the seed guard gives `expected 1 to be 0`.
+failures without its fix; the seed guard gives `expected 1 to be 0`. Both invitation states above
+were checked by rendering them against a running stack, signed out and signed in, rather than by
+typechecking them.
 
-At `b1154ac`: `pnpm -r typecheck` clean, **1281 tests** pass (774 shared · 317 api · 145 web · 45 db).
+At `cedb1af`: `pnpm -r typecheck` clean, **1281 tests** pass (774 shared · 317 api · 145 web · 45 db).
