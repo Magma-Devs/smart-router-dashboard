@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { eventDateParts, eventTime, targetLabel } from "@/components/audit/bits";
-import { EMPTY_FILTERS, hasAnyFilter } from "@/components/audit/useAuditFeed";
+import { auditExportPath, EMPTY_FILTERS, hasAnyFilter } from "@/components/audit/useAuditFeed";
 import type { AuditEventRecord } from "@sr/shared";
 
 /**
@@ -78,5 +78,39 @@ describe("hasAnyFilter", () => {
   it("is true for any real value", () => {
     expect(hasAnyFilter({ ...EMPTY_FILTERS, group: "config" })).toBe(true);
     expect(hasAnyFilter({ ...EMPTY_FILTERS, from: "2026-08-01" })).toBe(true);
+  });
+});
+
+describe("auditExportPath", () => {
+  it("exports the whole log when nothing is filtered", () => {
+    expect(auditExportPath(EMPTY_FILTERS)).toBe("/api/audit/export.csv");
+  });
+
+  /** The file has to answer the same question the screen is showing; a filter
+   *  the download quietly ignored would produce a wider record than the person
+   *  thought they asked for. */
+  it("carries every filter the screen has applied", () => {
+    const path = auditExportPath({
+      group: "config",
+      actor: "dana@customer.com",
+      targetId: "ep_8143",
+      from: "2026-08-01",
+      to: "2026-08-09",
+    });
+    expect(path).toContain("group=config");
+    expect(path).toContain("actor=dana%40customer.com");
+    expect(path).toContain("target_id=ep_8143");
+    expect(path).toContain("from=2026-08-01T00%3A00%3A00.000Z");
+    // Inclusive of the whole closing day, not midnight at the start of it.
+    expect(path).toContain("to=2026-08-09T23%3A59%3A59.999Z");
+  });
+
+  it("does not pin an order or a page size", () => {
+    // Both belong to the on-screen feed. An export is the whole match, and the
+    // spreadsheet re-sorts in one click.
+    const path = auditExportPath({ ...EMPTY_FILTERS, group: "access" });
+    expect(path).not.toContain("order=");
+    expect(path).not.toContain("per_page=");
+    expect(path).not.toContain("after=");
   });
 });

@@ -87,6 +87,48 @@ export async function apiGet<T>(path: string): Promise<T> {
   return (await res.json()) as T;
 }
 
+/**
+ * Fetch a file and hand it to the browser as a download.
+ *
+ * Not an `<a href>`: the API is a separate origin behind a Bearer token, and a
+ * plain link sends no Authorization header — it would 401, or worse, quietly
+ * download the error page as a .csv. So the token goes on a fetch and the body
+ * becomes an object URL.
+ *
+ * The server names the file (`Content-Disposition`); `fallbackName` is only
+ * used when it doesn't.
+ */
+export async function apiDownload(path: string, fallbackName: string): Promise<void> {
+  const { base, headers } = await requestContext();
+  const res = await fetch(`${base}${path}`, { headers });
+  if (!res.ok) {
+    let message = `Request failed (${res.status})`;
+    try {
+      const body = (await res.json()) as { message?: string };
+      if (body?.message) message = body.message;
+    } catch {
+      /* keep the status-code message */
+    }
+    throw new ApiError(res.status, message);
+  }
+
+  const disposition = res.headers.get("content-disposition") ?? "";
+  const named = /filename="?([^";]+)"?/i.exec(disposition)?.[1];
+  const url = URL.createObjectURL(await res.blob());
+  try {
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = named ?? fallbackName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  } finally {
+    // Revoking immediately can race the click in some browsers; a tick is
+    // enough and leaking the blob for the life of the tab is not acceptable.
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+}
+
 export async function apiPost<T>(path: string, body: unknown): Promise<T> {
   const { base, headers } = await requestContext();
   const res = await fetch(`${base}${path}`, {

@@ -298,3 +298,199 @@ describe("GET /api/audit/events", () => {
     expect([200, 400]).toContain(res.statusCode);
   });
 });
+
+/**
+ * The CSV export.
+ *
+ * The shape rules are the ticket's ("one line per changed field… events with
+ * nothing to diff get one line with the field columns empty") and the escaping
+ * is `@sr/shared`'s, tested there. What is worth asserting here is that the two
+ * meet correctly — that the guard survives the round trip into a real response,
+ * and that the file cannot answer a question the screen would refuse.
+ */
+describe("GET /api/audit/export.csv", () => {
+  const csvOf = async (token: string, qs = "") => {
+    const res = await app!.inject({
+      method: "GET",
+      url: `/api/audit/export.csv${qs}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    return { res, text: res.body };
+  };
+
+  it("needs a session, like everything else on /api", async () => {
+    app = await buildAuthedApp();
+    const res = await app.inject({ method: "GET", url: "/api/audit/export.csv" });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("serves a download with the audit columns", async () => {
+    app = await buildAuthedApp();
+    await seedEvents();
+    const { token } = await signedIn();
+    const { res, text } = await csvOf(token);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["content-type"]).toContain("text/csv");
+    expect(res.headers["content-disposition"]).toContain("attachment");
+    expect(res.headers["content-disposition"]).toMatch(/audit-log-\d{4}-\d{2}-\d{2}\.csv/);
+
+    const [header] = text.split("\r\n");
+    // The BOM leads the file; strip it before comparing the first column.
+    expect(header?.replace(/^\uFEFF/, "").split(",")).toEqual([
+      "event_id",
+      "time",
+      "actor_name",
+      "actor_email",
+      "source",
+      "action",
+      "group",
+      "target_type",
+      "target_id",
+      "target_name",
+      "request",
+      "note",
+      "field",
+      "from",
+      "to",
+    ]);
+  });
+
+  it("leads with a UTF-8 BOM so a spreadsheet does not mangle a name", async () => {
+    app = await buildAuthedApp();
+    await seedEvents();
+    const { token } = await signedIn();
+    const { text } = await csvOf(token);
+    expect(text.startsWith("\uFEFF")).toBe(true);
+  });
+
+  it("uses CRLF, or Excel folds every row into one cell", async () => {
+    app = await buildAuthedApp();
+    await seedEvents();
+    const { token } = await signedIn();
+    const { text } = await csvOf(token);
+    expect(text).toContain("\r\n");
+  });
+
+  it("writes one row per changed field, sharing the event id", async () => {
+    app = await buildAuthedApp();
+    const w = createAuditWriter(t.db);
+    await w.write({
+      action: "provider.edited",
+      actor: { id: null, kind: "system" },
+      target: { type: "provider", id: "pr_331", name: "QuickNode" },
+      changes: [
+        { field: "node URL", from: "(changed, ends 4c02)", to: "(changed, ends 91be)" },
+        { field: "capabilities", from: "archive, debug", to: "archive, debug, trace" },
+      ],
+    });
+    const { token } = await signedIn();
+    const { text } = await csvOf(token);
+
+    const rows = text
+      .split("\r\n")
+      .filter((l) => l.length > 0)
+      .slice(1);
+    expect(rows).toHaveLength(2);
+    const ids = rows.map((r) => r.split(",")[0]);
+    expect(ids[0]).toBe(ids[1]);
+    expect(rows[0]).toContain("node URL");
+    expect(rows[1]).toContain("capabilities");
+  });
+
+  it("gives an event with nothing to diff one row with the field columns empty", async () => {
+    app = await buildAuthedApp();
+    await createAuditWriter(t.db).write({
+      action: "signout",
+      actor: { id: null, kind: "system" },
+    });
+    const { token } = await signedIn();
+    const { text } = await csvOf(token);
+
+    const rows = text
+      .split("\r\n")
+      .filter((l) => l.length > 0)
+      .slice(1);
+    expect(rows).toHaveLength(1);
+    // Trailing field,from,to are empty rather than absent — a short row would
+    // shift every column after it in a spreadsheet.
+    expect(rows[0]?.endsWith(",,,")).toBe(true);
+    expect(rows[0]?.split(",")).toHaveLength(15);
+  });
+
+  /**
+   * The one that matters. Provider names and rejection reasons are free text a
+   * user typed, and this file's whole purpose is to be opened in Excel.
+   */
+  it("neutralises a formula a user typed into a name", async () => {
+    app = await buildAuthedApp();
+    await createAuditWriter(t.db).write({
+      action: "provider.renamed",
+      actor: { id: null, kind: "system" },
+      target: { type: "provider", id: "pr_9", name: '=HYPERLINK("http://evil","click")' },
+      changes: [{ field: "name", from: "QuickNode", to: '=HYPERLINK("http://evil","click")' }],
+    });
+    const { token } = await signedIn();
+    const { text } = await csvOf(token);
+
+    // Quoted (it holds a comma and quotes) AND apostrophe-led, so the cell is
+    // text rather than a live formula.
+    expect(text).toContain(`"'=HYPERLINK(""http://evil"",""click"")"`);
+    // No bare formula lead anywhere: every = must be behind the guard.
+    for (const cell of text.split(/\r\n|,/)) {
+      expect(cell.startsWith("=")).toBe(false);
+    }
+  });
+
+  it("never writes a secret, only that it changed", async () => {
+    app = await buildAuthedApp();
+    await createAuditWriter(t.db).write({
+      action: "provider.edited",
+      actor: { id: null, kind: "system" },
+      target: { type: "provider", id: "pr_1", name: "QuickNode" },
+      changes: [{ field: "node URL", from: "(changed, ends 4c02)", to: "(changed, ends 91be)" }],
+    });
+    const { token } = await signedIn();
+    const { text } = await csvOf(token);
+    expect(text).toContain("(changed, ends 91be)");
+    expect(text).not.toContain("https://");
+  });
+
+  it("honours the same filters as the feed", async () => {
+    app = await buildAuthedApp();
+    await seedEvents();
+    const { token } = await signedIn();
+
+    const { text } = await csvOf(token, "?group=config");
+    expect(text).toContain("endpoint.providers.changed");
+    expect(text).not.toContain("signin.failed");
+  });
+
+  /** A file outlives the query that made it, so a nonsense filter answered with
+   *  an empty download is worse here than on screen. */
+  it("refuses a filter it cannot honour rather than exporting nothing", async () => {
+    app = await buildAuthedApp();
+    const { token } = await signedIn();
+    expect((await csvOf(token, "?action=signin.failure")).res.statusCode).toBe(400);
+    expect((await csvOf(token, "?actor=dana")).res.statusCode).toBe(400);
+    expect((await csvOf(token, "?from=last-tuesday")).res.statusCode).toBe(400);
+  });
+
+  it("spans more than one internal page without repeating or dropping a row", async () => {
+    app = await buildAuthedApp();
+    const w = createAuditWriter(t.db);
+    for (let i = 0; i < 12; i++) {
+      await w.write({ action: "signout", actor: { id: null, kind: "system" }, note: `n${i}` });
+    }
+    const { token } = await signedIn();
+    const { text } = await csvOf(token);
+
+    const rows = text
+      .split("\r\n")
+      .filter((l) => l.length > 0)
+      .slice(1);
+    expect(rows).toHaveLength(12);
+    const ids = rows.map((r) => r.split(",")[0]);
+    expect(new Set(ids).size).toBe(12);
+  });
+});

@@ -384,6 +384,12 @@ the log; the accounts, 2FA and config-approval tasks only emit into it.
 - **Names are snapshots, never joins.** `actor_name` / `target_name` record
   what the thing was called at the time. A removed person keeps their name in
   the log permanently, and a rename cannot rewrite history.
+- **The export is the same query as a file** (`GET /api/audit/export.csv`),
+  parsed by the same function as the feed so a download can never answer a
+  question the screen would have refused. Flat by design — one row per changed
+  field — because the person opening it wants to sort and filter, not parse.
+  The formula guard lives in `@sr/shared`'s `escapeCsvField`, shared with the
+  member-list export, and covers tab and CR as well as `= + - @`.
 - **Reading it is one query, two directions** (`packages/db/src/audit-read.ts`).
   The viewer asks for `order=desc`; a customer's tooling takes the default and
   pulls oldest-first on a schedule. Deliberately the same code path — a screen
@@ -454,6 +460,7 @@ Every `/api/metrics/*` route also accepts **`router?`** — the router scope
 | `GET /api/config/routers` | — | `{ routers: RouterTopology[] }` — live topology from the mounted values file (either format), node URLs masked to scheme+host. Each endpoint also carries `index` (the handle the relay below resolves) + `directable` |
 | `POST /api/upstreams/relay` | body: `{routerId, node, endpointIndex, transport?, httpMethod?, path?, body?}` | Fires ONE request straight at a configured upstream, router excluded — `{httpStatus, latencyMs, body, truncated, transport}`. The target is resolved from the values file, never taken from the caller; the resolved url is never returned and is scrubbed out of the upstream's own body. Upstream 4xx/5xx come back **200** with their status inside; 502/504 mean our hop failed. Off with `UPSTREAM_RELAY_ENABLED=false`. See [`docs/UPSTREAM-DIRECT-TEST.md`](docs/UPSTREAM-DIRECT-TEST.md) |
 | `GET /api/audit/events` | `from?`, `to?`, `actor?`, `action?` (repeatable), `group?` (repeatable), `target_type?`, `target_id?`, `order?`, `per_page?`, `after?` | `AuditEventsResponse` — `{ items, cursor, has_more }`. **`AUTH_MODE=enabled` only**; any role, no gate beyond a live session. **Oldest first by default** and resumable — feed `cursor` back as `after`. A misspelled `action`/`group`, an `actor` that is neither a UUID nor an address, an unparseable time, and a cursor from a different filter set or direction are all **400**, never an empty page. **No web consumer yet** — the viewer is the next slice |
+| `GET /api/audit/export.csv` | same filters as `/api/audit/events` (no `after`/`per_page`) | The same events as a **streamed** CSV — one row per changed field sharing an `event_id`, events with nothing to diff getting one row with the field columns empty. UTF-8 BOM (Excel ignores the charset header on a downloaded file), CRLF per RFC 4180, and every field run through `escapeCsvField` so a name someone typed as `=HYPERLINK(…)` opens as text. Paged internally, so the whole matching history is served without holding it in memory |
 
 ## Environment variables
 
