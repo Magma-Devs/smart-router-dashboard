@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { signIn } from "next-auth/react";
+import { signIn, signOut } from "next-auth/react";
 import { apiUrl } from "@/lib/api-client";
 import { ROLE_DESCRIPTIONS, ROLE_LABELS, type Role } from "@sr/shared";
 
@@ -233,5 +233,81 @@ export function InviteDead() {
         </a>
       </div>
     </main>
+  );
+}
+
+/**
+ * Someone already signed in, following an invitation link.
+ *
+ * The edge gate used to redirect this case to the dashboard. The rule behind it
+ * is right — an invitation exists to create an account for somebody who hasn't
+ * got one, and offering the form to a signed-in visitor offers them a second —
+ * but a silent bounce reads as a broken link.
+ *
+ * The case that matters is not an admin testing their own link. It is somebody
+ * who already has an account clicking an invitation meant for a second address:
+ * they land on the dashboard, conclude nothing happened, and the invitation sits
+ * pending with nobody able to explain why. Signing out returns here rather than
+ * to the login page, so accepting is one click from this screen.
+ */
+export function InviteSignedIn({
+  token,
+  invitedEmail,
+  signedInAs,
+}: {
+  token: string;
+  invitedEmail: string;
+  signedInAs: string;
+}) {
+  const sameAddress = signedInAs.toLowerCase() === invitedEmail.toLowerCase();
+  return (
+    <main
+      style={{
+        minHeight: "100vh",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "var(--bg)",
+        padding: 24,
+      }}
+    >
+      <div className="gw-card" style={{ width: "100%", maxWidth: 430, padding: 32 }}>
+        <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 10 }}>
+          You are already signed in
+        </div>
+        <p style={{ fontSize: 13, color: "var(--text-2)", lineHeight: 1.65, margin: "0 0 8px" }}>
+          This browser is signed in as{" "}
+          <strong style={{ color: "var(--text)" }}>{signedInAs}</strong>, and this invitation is for{" "}
+          <strong style={{ color: "var(--text)" }}>{invitedEmail}</strong>.
+        </p>
+        <p style={{ fontSize: 12.5, color: "var(--text-3)", lineHeight: 1.65, margin: "0 0 20px" }}>
+          {sameAddress
+            ? "That address already has an account, so there is nothing to accept — just sign in."
+            : "Accepting it creates a separate account, so you need to sign out of this one first. You will come straight back here."}
+        </p>
+        <div style={{ display: "grid", gap: 8 }}>
+          <SignOutAndReturn token={token} sameAddress={sameAddress} />
+          <a
+            className="gw-btn"
+            href="/overview"
+            style={{ justifyContent: "center", fontSize: 12.5 }}
+          >
+            Stay signed in as {signedInAs}
+          </a>
+        </div>
+      </div>
+    </main>
+  );
+}
+
+function SignOutAndReturn({ token, sameAddress }: { token: string; sameAddress: boolean }) {
+  return (
+    <button
+      className="gw-btn gw-btn--primary"
+      style={{ justifyContent: "center" }}
+      onClick={() => void signOut({ redirectTo: sameAddress ? "/login" : `/invite/${token}` })}
+    >
+      {sameAddress ? "Sign out and sign in as them" : "Sign out and accept"}
+    </button>
   );
 }
