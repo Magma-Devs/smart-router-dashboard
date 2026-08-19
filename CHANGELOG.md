@@ -5,6 +5,15 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.18.5]
+
+### Fixed
+
+- **The REST names declared under two internal paths now say so.** TON declares
+  `/estimateFee` and `/runGetMethod` under both v2 and v3. The catalog already
+  marked them; the drawer shows it on the router leg, where the name resolves to
+  one collection and the other is reachable only direct.
+
 ## [0.18.4]
 
 ### Fixed
