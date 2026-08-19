@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { getTableColumns, getTableName, sql } from "drizzle-orm";
 import { createTestDb, type TestDb } from "../testing.js";
 import { createAuditWriter, type AuditViolation } from "../audit.js";
-import { auditEventChanges, auditEvents } from "../schema-audit.js";
+import { auditEventChanges, auditEvents, auditTokens } from "../schema-audit.js";
 import { users } from "../schema.js";
 
 /**
@@ -145,6 +145,7 @@ describe("audit schema", () => {
     for (const [table, columns] of [
       [getTableName(auditEvents), getTableColumns(auditEvents)],
       [getTableName(auditEventChanges), getTableColumns(auditEventChanges)],
+      [getTableName(auditTokens), getTableColumns(auditTokens)],
     ] as const) {
       const live = await t.db.execute<{ column_name: string }>(
         sql`select column_name from information_schema.columns
@@ -160,6 +161,46 @@ describe("audit schema", () => {
         Object.keys(columns).length,
       );
     }
+  });
+});
+
+describe("audit_tokens", () => {
+  /**
+   * The tokens table sits beside the log and must NOT inherit its trigger.
+   * `last_used_at` moves on every pull and `revoked_at` is the entire point, so
+   * an append-only guard here would lock the table on its first use — and the
+   * failure would look like the audit log refusing writes, which is exactly the
+   * behaviour that is correct one table over.
+   */
+  it("is mutable, unlike the log beside it", async () => {
+    const [row] = await t.db
+      .insert(auditTokens)
+      .values({
+        name: "SIEM",
+        tokenHash: "a".repeat(64),
+        suffix: "ab12",
+        createdByName: "Dana Levi",
+      })
+      .returning();
+
+    await expect(
+      t.db.execute(sql`update audit_tokens set last_used_at = now() where id = ${row!.id}`),
+    ).resolves.toBeDefined();
+
+    const [after] = await t.db.select().from(auditTokens);
+    expect(after?.lastUsedAt).not.toBeNull();
+  });
+
+  it("refuses two tokens with the same hash", async () => {
+    const values = {
+      name: "x",
+      tokenHash: "b".repeat(64),
+      suffix: "cd34",
+      createdByName: "Dana",
+    };
+    await t.db.insert(auditTokens).values(values);
+    const err = await pgErrorOf(t.db.insert(auditTokens).values(values));
+    expect(err.code).toBe("23505"); // unique_violation
   });
 });
 

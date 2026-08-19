@@ -64,6 +64,13 @@
       "when": 1790553600000,
       "tag": "0008_audit_xact",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1790553700000,
+      "tag": "0009_audit_tokens",
+      "breakpoints": true
     }
   ]
 }
