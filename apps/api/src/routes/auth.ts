@@ -6,9 +6,17 @@ import { validatePassword, verifyPassword } from "../services/password.js";
 import { createSession, revokeSession, type ClientContext } from "../services/sessions.js";
 import { normalizeIp, parseClient } from "../services/client-context.js";
 import { lookupInvitation, redeemInvitation, type InviteLookup } from "../services/invitations.js";
-import { consumePasswordReset, createPasswordReset, resetUrl } from "../services/password-reset.js";
+import {
+  consumePasswordReset,
+  createPasswordReset,
+  lookupPasswordReset,
+  resetUrl,
+  RESET_TTL_MS,
+} from "../services/password-reset.js";
 import { checkLock, clearFailures, recordFailure } from "../services/lockout.js";
 import { lazyAuditWriter, type AuditWriter } from "../services/audit.js";
+import { sendPasswordResetEmail } from "../services/email-templates.js";
+import { EMAIL_DELIVERY_NOTES } from "@sr/shared";
 import {
   completeSetup,
   needsSetup,
@@ -20,6 +28,11 @@ import { config } from "../config.js";
 
 /** Tighter per-IP limit on the credential surface than the global default. */
 const STRICT_AUTH_RATE_LIMIT = { max: 10, timeWindow: "1 minute" } as const;
+
+/** One message for every dead reset link. MAG-2870: "The same message for both
+ *  cases. Telling someone a link was already used also tells an attacker it was
+ *  already used." */
+const RESET_GONE = "This link has expired.";
 
 interface ForwardedClientContext {
   ip?: unknown;
@@ -439,30 +452,83 @@ export async function authRoutes(app: FastifyInstance) {
       }
       const db = dbOr503(reply);
       if (!db) return reply;
+      const origin = process.env.PUBLIC_WEB_ORIGIN ?? config.publicWebOrigin;
+      if (!origin) {
+        // Loud rather than a link to nowhere. Managed mode cannot function
+        // without this, and a reset email carrying a broken host is worse than
+        // no email: the person stops trying.
+        request.log.error("PUBLIC_WEB_ORIGIN is not set — cannot build a password-reset link");
+        return reply.code(500).send({
+          statusCode: 500,
+          error: "Internal Server Error",
+          message: "PUBLIC_WEB_ORIGIN is not configured, so reset links cannot be built",
+        });
+      }
       const { email } = request.body as ForgotBody;
       const client = resolveClientContext(request, undefined, internalSecret);
 
       const user = await findUserByEmail(db, email);
       if (user?.passwordHash) {
         const created = await createPasswordReset(db, { userId: user.id, mode: "managed" });
+        const hours = Math.max(1, Math.round(RESET_TTL_MS.managed / 3_600_000));
+        const { delivery } = await sendPasswordResetEmail(
+          {
+            to: user.email,
+            resetUrl: resetUrl(origin, created.rawToken),
+            expiresInHours: hours,
+          },
+          (msg, ctx) => request.log.warn(ctx ?? {}, msg),
+        );
+        // Unlike an invitation, a failed reset has nowhere to fall back to:
+        // there is no admin in this flow to hand the link to, and returning it
+        // in the response would let anybody mint a reset for any address. The
+        // note is the only record, which is exactly why it is a note.
         await audit.write({
           action: "password.reset_requested",
           actor: { id: user.id, kind: "user" },
           access: { ...client.access, sessionId: null },
+          note: EMAIL_DELIVERY_NOTES[delivery],
         });
-        // TODO(slice: email adapter) — managed delivery. Until the adapter
-        // lands the link is logged, which is visible to an operator and to
-        // nobody else. It is never returned in the response.
-        request.log.warn(
-          { resetFor: user.email, expiresAt: created.expiresAt },
-          "password reset link generated (no mail transport configured)",
-        );
       }
 
       // Always 202, whether or not the address exists, and whether or not the
       // account has a password at all. Anything else turns this into a way to
       // ask "is this person a member?".
       return reply.code(202).send({ ok: true });
+    },
+  );
+
+  app.post(
+    "/auth/password/reset/preview",
+    {
+      config: { rateLimit: STRICT_AUTH_RATE_LIMIT },
+      schema: {
+        tags: ["Auth"],
+        summary: "What a reset link is for — the address it changes. Does not spend it",
+        body: {
+          type: "object" as const,
+          required: ["token"],
+          properties: { token: { type: "string" as const, minLength: 1 } },
+        },
+      },
+    },
+    async (request, reply) => {
+      const db = dbOr503(reply);
+      if (!db) return reply;
+      const { token } = request.body as { token: string };
+
+      const lookup = await lookupPasswordReset(db, token);
+      if (!lookup.ok) {
+        // One answer for used, expired, never-issued and belonging to a removed
+        // account. MAG-2870 asks for the same message on both of the two the
+        // holder can distinguish, and the reason generalises: telling them
+        // apart tells a stranger which of them a guessed token hit.
+        return reply.code(410).send({ statusCode: 410, error: "Gone", message: RESET_GONE });
+      }
+
+      // The address only. Not the name, not the role — the page needs to say
+      // which account is being changed, and nothing else.
+      return { email: lookup.user.email };
     },
   );
 
