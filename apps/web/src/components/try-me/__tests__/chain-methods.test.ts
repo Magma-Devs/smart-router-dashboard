@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import {
   catalogReady,
+  groupByInternalPath,
   headCommands,
   httpVariantOf,
   HEAD_LIMIT,
@@ -549,5 +550,43 @@ describe("generated lava-specs catalog", () => {
     const hub = getInterfaceConfig("COSMOSHUB", "rest", ["archive"]);
     const hubT = getInterfaceConfig("COSMOSHUBT", "rest", ["archive"]);
     expect(hubT).toBe(hub);
+  });
+});
+
+describe("groupByInternalPath", () => {
+  const cmd = (label: string, internalPath?: string) => ({
+    cmd: { method: "GET", label, params: label, ...(internalPath ? { internalPath } : {}) },
+  });
+
+  it("returns one flat, unlabelled group when nothing declares a path", () => {
+    const rows = [cmd("/status"), cmd("/blocks")];
+    expect(groupByInternalPath(rows)).toEqual([[null, rows]]);
+  });
+
+  it("stays flat when every command shares one path", () => {
+    // A chain whose whole interface lives under one internal path has nothing
+    // to disambiguate — a single `/v2` heading is noise.
+    const rows = [cmd("/a", "/v2"), cmd("/b", "/v2")];
+    expect(groupByInternalPath(rows)).toEqual([[null, rows]]);
+  });
+
+  it("groups by path in first-appearance order", () => {
+    const v2a = cmd("/getMasterchainInfo", "/v2");
+    const v3a = cmd("/accountStates", "/v3");
+    const v2b = cmd("/getAddressBalance", "/v2");
+    const groups = groupByInternalPath([v2a, v3a, v2b]);
+    expect(groups).toEqual([
+      ["/v2", [v2a, v2b]],
+      ["/v3", [v3a]],
+    ]);
+  });
+
+  it("labels the pathless remainder rather than leaving it bare", () => {
+    const root = cmd("/health");
+    const p = cmd("/getHeight", "/P");
+    expect(groupByInternalPath([root, p])).toEqual([
+      ["root", [root]],
+      ["/P", [p]],
+    ]);
   });
 });

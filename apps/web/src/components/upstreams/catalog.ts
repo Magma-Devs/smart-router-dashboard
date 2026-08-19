@@ -239,6 +239,11 @@ export function directTargetFor(
     wsIndex: ws?.endpointIndex ?? null,
     httpHost: http?.urlHost ?? null,
     wsHost: ws?.urlHost ?? null,
+    // A node serving one chain over several versioned urls (TON's /v2 + /v3)
+    // has one row per url; the drawer needs to know which one it is aimed at
+    // before it composes a path. See `resolveDirectPath`.
+    httpInternalPath: http?.internalPath ?? null,
+    wsInternalPath: ws?.internalPath ?? null,
   };
 }
 

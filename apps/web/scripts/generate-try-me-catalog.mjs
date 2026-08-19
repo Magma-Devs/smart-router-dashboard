@@ -15,7 +15,8 @@
  *     | { [iface in jsonrpc|rest|tendermintrpc|grpc]?: {
  *          regular?: Cmd[]; archive?: Cmd[]; debug?: Cmd[]; trace?: Cmd[] } } }
  *
- *   Cmd = { m: string; v?: string; l?: string; p?: string; d?: string }
+ *   Cmd = { m: string; v?: string; l?: string; p?: string; d?: string;
+ *           ip?: string; a?: 1 }
  *     m  method name (JSON-RPC method / REST path template / grpc Svc/Method)
  *     v  HTTP verb for REST when not GET
  *     l  label when different from m (curated)
@@ -23,6 +24,11 @@
  *        omitted when it equals the interface default ("[]" / the path
  *        template itself / "{}")
  *     d  one-line description (curated)
+ *     ip internal path of the collection that serves it (`/v2`, `/P`), when
+ *        the method is served under one. NOT part of the identifier — see
+ *        "Internal paths" below
+ *     a  1 when this REST name is declared under MORE than one internal path,
+ *        so the router's name-keyed lookup can only resolve it to one of them
  *
  * Tier derivation (verified against the spec data):
  *   - collection_data.add_on ""        → regular
@@ -41,11 +47,30 @@
  * Collection selection: for each (interface, tier) EVERY internal_path is
  * emitted. A spec that splits an interface across paths serves all of them —
  * TON's /v2 + /v3, AVAX's /C/rpc + /P + /X — and emitting one silently dropped
- * the others. REST identifiers are recomposed as internal_path + api name
- * (`/v2/getMasterchainInfo`), which is the path a client sends through the
- * router (the router owns internal-path routing) and which also un-collides
- * names that repeat across paths. All collection `type` variants merge (REST
- * specs split GET/POST into sibling collections).
+ * the others. All collection `type` variants merge (REST specs split GET/POST
+ * into sibling collections).
+ *
+ * Internal paths ride as `ip` METADATA, never inside `m`. What a client sends
+ * through the router is the api name exactly as the spec declares it — the
+ * router matches REST by api name alone (`matchSpecApiByName`, smart-router
+ * `protocol/chainlib/base_chain_parser.go`) and then dials the node-url
+ * pinned to that api's collection. A prefixed identifier does not route:
+ *
+ *   GET /getMasterchainInfo     → 200, toncenter v2 answers
+ *   GET /v2/getMasterchainInfo  → {"code":12,"message":"Not Implemented"}
+ *
+ * `ip` is what the DIRECT-to-upstream leg needs instead: an upstream pinned
+ * to `/v2` is already the v2 root, while an unpinned one is the shared root
+ * the router would have appended `/v2` to (`chain_router.go`
+ * `autoGenerateMissingInternalPaths`: `nodeUrl.Url = baseUrl + internalPath`).
+ * See `src/components/try-me/direct-request.ts`.
+ *
+ * REST emits one command per (name, internal path) — TON's `/estimateFee`
+ * exists under both /v2 and /v3 and they are different calls. Both carry
+ * `a: 1`, because the router's name-keyed REST lookup can reach only one of
+ * them. Other interfaces emit one command per NAME (a jsonrpc method resolves
+ * from the root url whatever its collection), carrying `ip` only when the
+ * name is unique to one path.
  *
  * Disabled specs (enabled:false — the abstract cosmossdk/ibc/tendermint base
  * specs) are indexed for import resolution but not emitted. Disabled
@@ -277,18 +302,22 @@ const REST_HINTS = [
   { m: "/node/network/peers", d: "Returns the node's connected peers." },
   { m: "/fees/priority", d: "Returns the suggested priority fee." },
   { m: "/fees/history", d: "Returns recent fee history." },
-  // TON HTTP API — toncenter v2 (/v2/get*) plus tonindex v3 (/v3/*). Ice Open
-  // Network is a TON fork and serves the same paths, so the address examples
-  // are scoped to TON (a TON address does not exist on ION) and every chain
-  // gets the paramless variant below.
-  { m: "/v2/getMasterchainInfo", d: "Returns the masterchain state — the latest known block." },
-  { m: "/v3/masterchainInfo", d: "Returns the masterchain state — the latest known block." },
-  { m: "/v2/getAddressInformation", p: "/v2/getAddressInformation?address=EQAAFhjXzKuQ5N0c96nsdZQWATcJm909LYSaCAvWFxVJP80D", d: "Returns balance, state and code for an address.", only: ["TON"] },
-  { m: "/v2/getAddressInformation", d: "Returns balance, state and code for an address — append ?address=<address>." },
-  { m: "/v3/addressInformation", p: "/v3/addressInformation?address=EQAAFhjXzKuQ5N0c96nsdZQWATcJm909LYSaCAvWFxVJP80D", d: "Returns balance, state and code for an address.", only: ["TON"] },
-  { m: "/v3/addressInformation", d: "Returns balance, state and code for an address — append ?address=<address>." },
-  { m: "/v3/blocks", d: "Lists recent blocks, newest first." },
-  { m: "/v3/transactions", d: "Lists recent transactions, newest first." },
+  // TON HTTP API — toncenter v2 (the /get* names) plus tonindex v3 (the rest).
+  // Names are the SPEC's, with no version prefix: that is what the router
+  // matches on, and it dials the node-url pinned to that name's collection.
+  // Ice Open Network is a TON fork serving the same names, so the address
+  // examples are scoped to TON (a TON address does not exist on ION) and every
+  // chain gets the paramless variant below.
+  { m: "/getMasterchainInfo", d: "Returns the masterchain state — the latest known block." },
+  { m: "/masterchainInfo", d: "Returns the masterchain state — the latest known block.", only: ["TON", "ION"] },
+  { m: "/getAddressInformation", p: "/getAddressInformation?address=EQAAFhjXzKuQ5N0c96nsdZQWATcJm909LYSaCAvWFxVJP80D", d: "Returns balance, state and code for an address.", only: ["TON"] },
+  { m: "/getAddressInformation", d: "Returns balance, state and code for an address — append ?address=<address>." },
+  { m: "/addressInformation", p: "/addressInformation?address=EQAAFhjXzKuQ5N0c96nsdZQWATcJm909LYSaCAvWFxVJP80D", d: "Returns balance, state and code for an address.", only: ["TON"] },
+  { m: "/addressInformation", d: "Returns balance, state and code for an address — append ?address=<address>." },
+  // Scoped: bare `/blocks` and `/transactions` are common REST names and these
+  // descriptions are the TON index's.
+  { m: "/blocks", d: "Lists recent blocks, newest first.", only: ["TON", "ION"] },
+  { m: "/transactions", d: "Lists recent transactions, newest first.", only: ["TON", "ION"] },
   // Concordium (node REST proxy — {…} segments are placeholders to replace)
   { m: "/v0/consensusInfo", d: "Returns consensus state: best block, epoch and finalization info." },
   { m: "/v0/chainParameters", d: "Returns the current chain parameters." },
@@ -587,22 +616,35 @@ function hintApplies(hint, specIndex) {
 }
 
 /** Build one tier's Cmd list: hinted first (hint order), rest alphabetical. */
-function buildCmds(iface, specIndex, apiMap) {
-  const names = [...apiMap.keys()].filter((n) => apiMap.get(n).enabled);
-  const nameSet = new Set(names);
+/** Entries sorted by name, then by internal path — a name declared under two
+ *  paths keeps its alphabetical slot and its variants sit together. */
+function byNameThenPath(a, b) {
+  if (a.name !== b.name) return a.name < b.name ? -1 : 1;
+  return (a.ip ?? "") < (b.ip ?? "") ? -1 : 1;
+}
+
+function buildCmds(iface, specIndex, entries) {
+  const byName = new Map();
+  for (const e of entries) {
+    const list = byName.get(e.name);
+    if (list) list.push(e);
+    else byName.set(e.name, [e]);
+  }
   const hints = HINTS[iface] ?? [];
   const cmds = [];
   const used = new Set();
   for (const hint of hints) {
     // First applicable hint per method wins — scoped hints (`only`) precede
-    // their generic fallback in HINTS, so a spec never gets both.
-    if (used.has(hint.m) || !nameSet.has(hint.m) || !hintApplies(hint, specIndex)) continue;
-    cmds.push(makeCmd(iface, hint.m, apiMap.get(hint.m).verb, hint, apiMap.get(hint.m)));
+    // their generic fallback in HINTS, so a spec never gets both. A REST name
+    // declared under two internal paths takes the hint on BOTH: it describes
+    // the call, and the two are the same call served by two versions.
+    if (used.has(hint.m) || !byName.has(hint.m) || !hintApplies(hint, specIndex)) continue;
+    for (const e of byName.get(hint.m).sort(byNameThenPath)) cmds.push(makeCmd(iface, e, hint));
     used.add(hint.m);
   }
-  for (const name of names.sort()) {
-    if (used.has(name)) continue;
-    cmds.push(makeCmd(iface, name, apiMap.get(name).verb, null, apiMap.get(name)));
+  for (const e of [...entries].sort(byNameThenPath)) {
+    if (used.has(e.name)) continue;
+    cmds.push(makeCmd(iface, e, null));
   }
   return cmds;
 }
@@ -660,14 +702,25 @@ function runnability(iface, cmd, hint, api) {
   return specTakesArgs(api?.block) ? { n: 1 } : {};
 }
 
-function makeCmd(iface, name, verb, hint, api) {
+/**
+ * One catalog command from one resolved api.
+ *
+ * `entry` is `{ api, name, ip, ambiguous }` — the api as its collection
+ * declares it, plus that collection's internal path. The path never enters
+ * `m`: `m` is what the caller sends THROUGH THE ROUTER, and the router
+ * matches REST by api name alone.
+ */
+function makeCmd(iface, entry, hint) {
+  const { name, api, ip } = entry;
   const cmd = { m: iface === "rest" && !name.startsWith("/") ? `/${name}` : name };
-  const effVerb = hint?.v ?? verb;
+  const effVerb = hint?.v ?? api?.verb;
   if (iface === "rest" && effVerb && effVerb !== "GET") cmd.v = effVerb;
   if (hint?.l && hint.l !== cmd.m) cmd.l = hint.l;
   if (hint?.p !== undefined && hint.p !== defaultParamsFor(iface, cmd.m)) cmd.p = hint.p;
   if (hint?.d) cmd.d = hint.d;
   Object.assign(cmd, runnability(iface, cmd, hint, api));
+  if (ip) cmd.ip = ip;
+  if (entry.ambiguous) cmd.a = 1;
   return cmd;
 }
 
@@ -685,6 +738,47 @@ function byInternalPath(collList) {
 }
 
 
+/**
+ * Flatten the collections of one (interface, tier) into catalog entries.
+ *
+ * REST keys on (internal path, name): TON declares `/estimateFee` under both
+ * /v2 and /v3 and they are different calls with different bodies. Every other
+ * interface keys on the name alone — a jsonrpc method resolves from the root
+ * url whichever collection declares it, because the spec loader registers each
+ * internal-path api under the empty path too (smart-router
+ * `protocol/chainlib/base_chain_parser.go`, `getServiceApis`).
+ *
+ * `ip` is set when the name is served under exactly ONE internal path, which
+ * is the only case where it identifies an upstream. A jsonrpc name repeated
+ * across versioned paths (STRK's /rpc/v0_8 … /rpc/v0_10) gets none — no single
+ * upstream owns it.
+ *
+ * `ambiguous` marks REST names the router cannot disambiguate: its REST lookup
+ * is keyed by (name, connection type) with no internal path, so one of the two
+ * collections wins and the other is unreachable through the router.
+ */
+function collectEntries(iface, tierColls) {
+  const pathsByKey = new Map(); // name\0verb → Set(internal path)
+  const entries = new Map();
+  for (const c of byInternalPath(tierColls)) {
+    const ip = c.cd.internal_path ?? "";
+    for (const [n, a] of c.apis) {
+      if (!a.enabled) continue;
+      const verbKey = `${n}\u0000${a.verb ?? ""}`;
+      if (!pathsByKey.has(verbKey)) pathsByKey.set(verbKey, new Set());
+      pathsByKey.get(verbKey).add(ip);
+      entries.set(iface === "rest" ? `${ip}\u0000${n}` : n, { name: n, api: a, ip });
+    }
+  }
+  return [...entries.values()].map((e) => {
+    const paths = pathsByKey.get(`${e.name}\u0000${e.api.verb ?? ""}`) ?? new Set();
+    const ambiguous = iface === "rest" && paths.size > 1;
+    // A name served from several paths names no single upstream.
+    const ip = iface === "rest" || paths.size === 1 ? e.ip : "";
+    return ambiguous ? { ...e, ip, ambiguous: true } : { ...e, ip };
+  });
+}
+
 function buildSpecEntry(index) {
   const colls = expandInheritance(resolveSpec(index));
   const entry = {};
@@ -697,6 +791,7 @@ function buildSpecEntry(index) {
     if (ifaceColls.length === 0) continue;
     const ifaceEntry = {};
     let regularNames = new Set();
+    let regularByName = new Map();
     for (const tier of ["regular", "debug", "trace"]) {
       const tierColls = ifaceColls.filter(
         (c) => TIER_BY_ADDON[c.cd.add_on ?? ""] === tier,
@@ -706,22 +801,15 @@ function buildSpecEntry(index) {
       // serves all of them, and keeping one silently dropped the rest — TON
       // lost 22 methods that way the moment its "" path went.
       //
-      // The api name is stored relative to its collection, so the identifier
-      // is recomposed as internal_path + name (`/v2/getMasterchainInfo`).
-      // That is what a client sends THROUGH THE ROUTER, which owns the
-      // internal-path routing, and it also un-collides names that repeat
-      // across paths (TON declares /estimateFee under both v2 and v3).
-      const apiMap = new Map();
-      for (const c of byInternalPath(tierColls)) {
-        const prefix = c.cd.internal_path ?? "";
-        for (const [n, a] of c.apis) {
-          if (!a.enabled) continue;
-          apiMap.set(prefix && iface === "rest" ? `${prefix}${n}` : n, a);
-        }
+      // The path rides as `ip` metadata; see the "Internal paths" note in the
+      // header for why it must not be spliced into the identifier.
+      const entries = collectEntries(iface, tierColls);
+      if (entries.length === 0) continue;
+      const cmds = buildCmds(iface, index, entries);
+      if (tier === "regular") {
+        regularNames = new Set(entries.map((e) => e.name));
+        regularByName = new Map(entries.map((e) => [e.name, e]));
       }
-      if (apiMap.size === 0) continue;
-      const cmds = buildCmds(iface, index, apiMap);
-      if (tier === "regular") regularNames = new Set(apiMap.keys());
       ifaceEntry[tier] = cmds;
     }
     // Archive: capability flag lives on collection extensions (own or
@@ -733,7 +821,10 @@ function buildSpecEntry(index) {
         const m = iface === "rest" && !hint.m.startsWith("/") ? `/${hint.m}` : hint.m;
         if (!regularNames.has(hint.m) && !regularNames.has(m)) continue;
         if (!hintApplies(hint, index)) continue;
-        cmds.push(makeCmd(iface, hint.m, "GET", hint, null));
+        // Same api as the regular tier, so it inherits that entry's internal
+        // path — an archive read of a /v2 method is still a /v2 call.
+        const regular = regularByName.get(hint.m) ?? regularByName.get(m);
+        cmds.push(makeCmd(iface, { name: hint.m, api: null, ip: regular?.ip ?? "" }, hint));
       }
       if (cmds.length > 0) ifaceEntry.archive = cmds;
     }

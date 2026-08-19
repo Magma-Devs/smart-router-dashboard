@@ -124,6 +124,8 @@ describe("directTargetFor", () => {
       wsIndex: 1,
       httpHost: "https://ethereum-rpc.publicnode.com",
       wsHost: "wss://ethereum-rpc.publicnode.com",
+      httpInternalPath: null,
+      wsInternalPath: null,
     });
   });
 
@@ -145,6 +147,52 @@ describe("directTargetFor", () => {
       routerId: "cosmos-router",
       httpHost: "https://cosmos-rest.publicnode.com",
       wsIndex: null,
+    });
+  });
+});
+
+describe("directTargetFor — internal paths", () => {
+  // A node serving one chain over two versioned urls (TON: tatum pins /v2 to
+  // the host root and /v3 to /api/v3). Each url is its own row, and the drawer
+  // has to know which version the row it opened on is pinned to before it
+  // composes a direct path.
+  const TON_ROUTERS: RouterTopology[] = [
+    {
+      id: "ton-router",
+      spec: "TON",
+      network: "ton",
+      pathBased: false,
+      customUrlPrefix: null,
+      localPort: 3460,
+      localPorts: { rest: 3460 },
+      publicUrls: {},
+      interfaces: ["rest"],
+      nodes: [
+        {
+          name: "tatum",
+          isBackup: false,
+          endpoints: [
+            { urlHost: "https://ton-mainnet.gateway.tatum.io", interface: "rest", addons: [], index: 0, directable: true, internalPath: "/v2" },
+            { urlHost: "https://ton-mainnet.gateway.tatum.io", interface: "rest", addons: [], index: 1, directable: true, internalPath: "/v3" },
+          ],
+        },
+      ],
+    },
+  ];
+
+  it("carries each row's own internal path, and pairs no ws sibling", () => {
+    const tatum = buildUpstreamRows(TON_ROUTERS, undefined).find((u) => u.name === "tatum")!;
+    const v2 = tatum.chainRows.find((r) => r.internalPath === "/v2")!;
+    const v3 = tatum.chainRows.find((r) => r.internalPath === "/v3")!;
+    expect(directTargetFor(tatum, v2)).toMatchObject({
+      httpIndex: 0,
+      httpInternalPath: "/v2",
+      wsIndex: null,
+      wsInternalPath: null,
+    });
+    expect(directTargetFor(tatum, v3)).toMatchObject({
+      httpIndex: 1,
+      httpInternalPath: "/v3",
     });
   });
 });

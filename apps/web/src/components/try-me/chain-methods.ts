@@ -48,6 +48,16 @@ export interface AddonCommand {
    *  placeholder, a documented argument, or a spec arity rule. Neither flag
    *  means the catalog doesn't know, and nothing is claimed. */
   needsInput?: boolean;
+  /** Internal path of the spec collection that serves this command (`/v2`,
+   *  `/P`), when it is served under one. NOT part of what the caller sends
+   *  through the router — the router matches on the method/api name and dials
+   *  the upstream pinned to that name's collection. It is what the DIRECT
+   *  leg needs, where the caller addresses one upstream url by hand. */
+  internalPath?: string;
+  /** REST only: this name is declared under more than one internal path, and
+   *  the router's REST lookup is keyed by (name, verb) with no path — so one
+   *  collection wins and the other is only reachable direct. */
+  ambiguous?: boolean;
 }
 
 export type Tier = "regular" | "archive" | "debug" | "trace";
@@ -57,6 +67,33 @@ export interface InterfaceConfig {
   archive: AddonCommand[] | null;
   debug: AddonCommand[] | null;
   trace: AddonCommand[] | null;
+}
+
+/**
+ * Split a command list into its internal-path groups, in first-appearance
+ * order — the dropdown renders each as an `<optgroup>`.
+ *
+ * A single group means the interface is served from one place, which is every
+ * chain but the handful that split one across paths (TON's REST /v2 + /v3,
+ * AVAX's jsonrpc /C/rpc + /P + /X). Those get `[null, rows]`: a heading that
+ * says nothing is worse than no heading. Commands with no path of their own
+ * sit under "root" once anything else is grouped, because unlabelled rows
+ * next to labelled ones read as belonging to the group above them.
+ */
+export function groupByInternalPath<T extends { cmd: AddonCommand }>(
+  rows: T[],
+): (readonly [string | null, T[]])[] {
+  const groups = new Map<string, T[]>();
+  for (const row of rows) {
+    const path = row.cmd.internalPath ?? "";
+    const list = groups.get(path);
+    if (list) list.push(row);
+    else groups.set(path, [row]);
+  }
+  if (groups.size <= 1) return [[null, rows] as const];
+  return [...groups.entries()].map(
+    ([path, group]) => [path === "" ? "root" : path, group] as const,
+  );
 }
 
 /** Chain families the static fallback catalog covers. */
@@ -103,6 +140,11 @@ interface GeneratedCmd {
   r?: 1;
   /** 1 when it demonstrably needs caller input first. */
   n?: 1;
+  /** Internal path of the collection serving it (`/v2`, `/P`), when there is
+   *  exactly one. */
+  ip?: string;
+  /** 1 when this REST name is served under more than one internal path. */
+  a?: 1;
 }
 
 type GeneratedTiers = Partial<Record<Tier, GeneratedCmd[]>>;
@@ -174,6 +216,8 @@ function expandCommand(cmd: GeneratedCmd, key: CatalogStorageKey): AddonCommand 
   if (cmd.d) out.desc = cmd.d;
   if (cmd.r) out.ready = true;
   if (cmd.n) out.needsInput = true;
+  if (cmd.ip) out.internalPath = cmd.ip;
+  if (cmd.a) out.ambiguous = true;
   return out;
 }
 

@@ -22,10 +22,12 @@ import {
 } from "./build-request";
 import {
   directAvailableFor,
+  resolveDirectPath,
   relayPayloadFor,
   type DirectTarget,
 } from "./direct-request";
 import {
+  groupByInternalPath,
   headCommands,
   httpVariantOf,
   ifaceCanFire,
@@ -589,6 +591,20 @@ export function TryMeDrawer({
     return flat.find((m) => m.tier === parsed.tier && m.index === parsed.index) ?? null;
   }, [flat, selKey]);
 
+  /** A method the selected upstream's url cannot serve — a /v3 call aimed at
+   *  an endpoint pinned to /v2. No path we compose reaches it, so the drawer
+   *  refuses before Send rather than relaying the upstream's 404 as a verdict
+   *  on the request. Router mode is unaffected: there the router picks the
+   *  upstream from the method's own collection. */
+  const directPathRefusal = useMemo(() => {
+    if (!onDirect || !selected) return null;
+    const resolvedPath = resolveDirectPath({
+      methodPath: selected.command.internalPath,
+      endpointPath: onWs ? directTarget?.wsInternalPath : directTarget?.httpInternalPath,
+    });
+    return resolvedPath.ok ? null : resolvedPath.error;
+  }, [onDirect, selected, onWs, directTarget]);
+
   /** Drop everything the LAST send produced — a result belongs to the exact
    *  (command, transport) that produced it. */
   const resetResult = useCallback(() => {
@@ -734,6 +750,11 @@ export function TryMeDrawer({
       ...curatedCmds,
     ];
   }, [showAllCmds, curatedCount, curatedCmds, tierCmds, selectedTier, selKey]);
+  /** The dropdown's rows grouped by internal path, so a spec that splits an
+   *  interface across versions reads as versions (`/v2` … `/v3`) instead of
+   *  one alphabetical run where `/estimateFee` appears twice with nothing to
+   *  tell the two apart. */
+  const shownGroups = useMemo(() => groupByInternalPath(shownCmds), [shownCmds]);
 
   const built = useMemo(() => {
     if (!selected) return null;
@@ -840,7 +861,13 @@ export function TryMeDrawer({
    *  and upstreams don't answer cross-origin browser calls anyway. */
   const fireDirect = useCallback(async (): Promise<Outcome> => {
     if (!resolved || directTarget === null) throw new Error("No upstream endpoint to dial.");
-    const built = relayPayloadFor({ resolved, paramsText, iface, target: directTarget });
+    const built = relayPayloadFor({
+      resolved,
+      paramsText,
+      iface,
+      target: directTarget,
+      methodInternalPath: selected?.command.internalPath ?? null,
+    });
     if (!built.ok) throw new Error(built.error);
     if (built.payload.transport === "ws") setWsPhase("connecting");
     try {
@@ -858,7 +885,7 @@ export function TryMeDrawer({
     } finally {
       setWsPhase(null);
     }
-  }, [resolved, paramsText, iface, directTarget]);
+  }, [resolved, paramsText, iface, directTarget, selected]);
 
   const send = useCallback(async () => {
     if (!resolved) return;
@@ -892,7 +919,7 @@ export function TryMeDrawer({
    *  from whichever PRIMARY the optimizer picked, so the two rows would be
    *  two different upstreams — a comparison of nothing. */
   const compareBoth = useCallback(async () => {
-    if (!resolved || !directAvailable || pinRefusal) return;
+    if (!resolved || !directAvailable || pinRefusal || directPathRefusal) return;
     resetResult();
     setComparing(true);
     setStatus("loading");
@@ -912,7 +939,7 @@ export function TryMeDrawer({
     } finally {
       setComparing(false);
     }
-  }, [resolved, directAvailable, pinRefusal, fireViaRouter, fireDirect, applyOutcome, resetResult]);
+  }, [resolved, directAvailable, pinRefusal, directPathRefusal, fireViaRouter, fireDirect, applyOutcome, resetResult]);
 
   if (!mounted) return null;
 
@@ -1233,6 +1260,12 @@ export function TryMeDrawer({
                         {" "}Opened here because the router can&apos;t be pinned to a backup — this is the one path that reaches it.
                       </>
                     )}
+                    {directPathRefusal && (
+                      <>
+                        {" "}
+                        <strong style={{ color: "var(--warn)" }}>{directPathRefusal}</strong>
+                      </>
+                    )}
                   </>
                 ) : pinRefusal ? (
                   <>
@@ -1309,19 +1342,32 @@ export function TryMeDrawer({
               onChange={(e) => handleSelect(e.target.value)}
               style={{ ...FIELD_INPUT, fontSize: 12 }}
             >
-              {shownCmds.map(({ cmd, i }) => {
-                // Curated name → the catalog's own label → one derived from
-                // the method id or REST path, so the "Show all" long tail
-                // reads like the curated head instead of dropping to bare ids.
-                const friendly = friendlyName(iface, cmd);
-                const id = commandKey(iface, cmd);
-                // The head runs as-is; the long tail behind it doesn't, so
-                // say which entries want something typed in first.
-                const suffix = cmd.needsInput ? " — needs params" : "";
-                return (
-                  <option key={i} value={keyOf(selectedTier, i)}>
-                    {friendly ? `${friendly} · ${id}${suffix}` : `${id}${suffix}`}
-                  </option>
+              {shownGroups.map(([path, rows]) => {
+                const options = rows.map(({ cmd, i }) => {
+                  // Curated name → the catalog's own label → one derived from
+                  // the method id or REST path, so the "Show all" long tail
+                  // reads like the curated head instead of dropping to bare
+                  // ids.
+                  const friendly = friendlyName(iface, cmd);
+                  const id = commandKey(iface, cmd);
+                  // The head runs as-is; the long tail behind it doesn't, so
+                  // say which entries want something typed in first.
+                  const suffix = cmd.needsInput ? " — needs params" : "";
+                  return (
+                    <option key={i} value={keyOf(selectedTier, i)}>
+                      {friendly ? `${friendly} · ${id}${suffix}` : `${id}${suffix}`}
+                    </option>
+                  );
+                });
+                // Ungrouped when the interface serves everything from one
+                // place — which is every chain but the handful that split an
+                // interface across internal paths.
+                return path === null ? (
+                  options
+                ) : (
+                  <optgroup key={path} label={path}>
+                    {options}
+                  </optgroup>
                 );
               })}
             </select>
@@ -1348,6 +1394,19 @@ export function TryMeDrawer({
                     style={{ fontSize: 10, color: "var(--warn)", background: "rgba(251,191,36,0.10)", borderColor: "rgba(251,191,36,0.25)" }}
                   >
                     needs params
+                  </span>
+                )}
+                {/* Which version of the API this one belongs to. The spec
+                    splits some interfaces across internal paths and the name
+                    alone doesn't say which — `/estimateFee` is a TON v2 call
+                    and a v3 call, with different bodies. */}
+                {selected.command.internalPath && (
+                  <span
+                    className="gw-tag"
+                    title={`Served by this chain's ${selected.command.internalPath} collection. You still send the name as it stands — the router dials the upstream pinned to that path.`}
+                    style={{ fontSize: 10 }}
+                  >
+                    {selected.command.internalPath}
                   </span>
                 )}
               </div>
@@ -1395,7 +1454,10 @@ export function TryMeDrawer({
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               <div className="gw-row" style={{ gap: 10, alignItems: "center" }}>
                 <span
-                  title={pinRefusal !== null && !onDirect ? (pinHint ?? undefined) : undefined}
+                  title={
+                    directPathRefusal ??
+                    (pinRefusal !== null && !onDirect ? (pinHint ?? undefined) : undefined)
+                  }
                   style={{ display: "inline-flex" }}
                 >
                 <button
@@ -1405,7 +1467,12 @@ export function TryMeDrawer({
                   // Off with the router leg: on a backup row with nothing the
                   // api can dial (a ws transport this node has no url for),
                   // the drawer has no send that could land.
-                  disabled={!resolved || status === "loading" || (pinRefusal !== null && !onDirect)}
+                  disabled={
+                    !resolved ||
+                    status === "loading" ||
+                    (pinRefusal !== null && !onDirect) ||
+                    directPathRefusal !== null
+                  }
                   style={{ padding: "9px 16px", fontSize: 13, fontWeight: 500, gap: 7 }}
                 >
                   {status === "loading" ? (
@@ -1425,7 +1492,7 @@ export function TryMeDrawer({
                     and on a backup the router leg cannot be aimed at THIS
                     upstream, so there is no pair to put side by side — the
                     control is absent rather than present-and-refusing. */}
-                {onDirect && !pinRefusal && (
+                {onDirect && !pinRefusal && !directPathRefusal && (
                   <button
                     type="button"
                     className="gw-btn gw-btn--ghost"
