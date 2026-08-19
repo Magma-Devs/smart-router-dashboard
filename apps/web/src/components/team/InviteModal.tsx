@@ -8,9 +8,14 @@ import { labelStyle } from "@/lib/styles";
 
 interface InviteResponse {
   invite: { id: string; email: string; role: Role; expiresAt: string };
-  /** On-prem only: there is no mail server, so the admin carries the link. */
+  /** Present whenever the admin has to carry it: always on-prem, and on managed
+   *  only when the send did not happen. */
   url?: string;
   delivery: "link" | "email";
+  /** Managed, but nothing was sent — SES refused it, or no transport is
+   *  configured. Worth wording differently from on-prem: one is the design,
+   *  the other is something an operator should go and fix. */
+  deliveryFallback?: boolean;
 }
 
 export function InviteModal({
@@ -110,8 +115,15 @@ export function InviteModal({
           {result.url ? (
             <>
               <div style={{ fontSize: 12.5, color: "var(--text-2)", lineHeight: 1.6 }}>
-                This deployment has no mail server, so pass this link to them yourself. It works
-                once, and <strong>you will not be able to see it again</strong>.
+                {result.deliveryFallback ? (
+                  <>
+                    <strong>The email could not be sent</strong>, so pass this link to them yourself
+                    and tell an operator that mail is not working. The invitation itself is fine.
+                  </>
+                ) : (
+                  <>This deployment has no mail server, so pass this link to them yourself.</>
+                )}{" "}
+                It works once, and <strong>you will not be able to see it again</strong>.
               </div>
               <div
                 className="gw-mono"

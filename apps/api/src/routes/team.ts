@@ -21,6 +21,8 @@ import {
 } from "../services/members.js";
 import { findUserById } from "../services/users.js";
 import { config } from "../config.js";
+import { EMAIL_DELIVERY_NOTES } from "@sr/shared";
+import { sendInvitationEmail } from "../services/email-templates.js";
 
 interface InviteBody {
   email: string;
@@ -148,12 +150,22 @@ export async function teamRoutes(app: FastifyInstance) {
       }
 
       const { invitation, rawToken } = result.created;
+      const sent = await deliverInviteLink(app, {
+        to: invitation.email,
+        url: inviteUrl(origin, rawToken),
+        expiresAt: invitation.expiresAt,
+        mode,
+      });
+
       // No `changes`: the catalog marks this verb carriesChanges:false, and the
-      // role is already on the target. Same class as member.removed.
+      // role is already on the target. Same class as member.removed. The note
+      // carries what became of the link — the one fact about delivery an
+      // auditor needs, and the reason there is no separate email-log table.
       await audit.write({
         action: "member.invited",
         actor: { id: me.id, kind: "user" },
         target: { type: "invite", id: invitation.id, name: invitation.email },
+        note: sent.note,
       });
 
       return reply.code(201).send({
@@ -164,10 +176,15 @@ export async function teamRoutes(app: FastifyInstance) {
           expiresAt: invitation.expiresAt.toISOString(),
           state: "pending",
         },
-        // On-prem has no mail server, so the admin copies this and hands it
-        // over. Shown once; it is not stored anywhere it can be read back.
-        url: mode === "onprem" ? inviteUrl(origin, rawToken) : undefined,
-        delivery: mode === "onprem" ? "link" : "email",
+        // Present whenever the admin has to carry it: always on-prem, and on
+        // managed only when the send did not happen. Shown once; it is not
+        // stored anywhere it can be read back.
+        url: sent.url,
+        delivery: sent.delivery,
+        /** Managed, but the admin is holding the link — the send failed or no
+         *  transport is configured. The screen says so rather than reusing the
+         *  on-prem wording, which would blame a deployment shape. */
+        deliveryFallback: sent.fallback,
       });
     },
   );
@@ -203,10 +220,18 @@ export async function teamRoutes(app: FastifyInstance) {
         });
       }
 
+      const sent = await deliverInviteLink(app, {
+        to: result.invitation.email,
+        url: inviteUrl(origin, result.rawToken),
+        expiresAt: result.invitation.expiresAt,
+        mode,
+      });
+
       await audit.write({
         action: "invite.resent",
         actor: { id: me.id, kind: "user" },
         target: { type: "invite", id: result.invitation.id, name: result.invitation.email },
+        note: sent.note,
       });
 
       return {
@@ -217,8 +242,9 @@ export async function teamRoutes(app: FastifyInstance) {
           expiresAt: result.invitation.expiresAt.toISOString(),
           state: "pending",
         },
-        url: mode === "onprem" ? inviteUrl(origin, result.rawToken) : undefined,
-        delivery: mode === "onprem" ? "link" : "email",
+        url: sent.url,
+        delivery: sent.delivery,
+        deliveryFallback: sent.fallback,
       };
     },
   );
@@ -261,6 +287,51 @@ export async function teamRoutes(app: FastifyInstance) {
       return { ok: true };
     },
   );
+}
+
+/**
+ * Deliver an invitation link, and say what happened to it.
+ *
+ * The whole managed/on-prem fork lives here so both the create and the resend
+ * route answer identically. Three outcomes, two shapes:
+ *
+ *  - **on-prem** — nothing is sent, ever. The link comes back for the admin to
+ *    carry, which is the design, not a degraded mode.
+ *  - **managed, sent** — the link does NOT come back. It is in the recipient's
+ *    inbox and nowhere else, which is the point of having a transport.
+ *  - **managed, not sent** — SES refused it, or no transport is configured. The
+ *    link comes back anyway.
+ *
+ * That last case is the one worth being deliberate about. Returning 201 with no
+ * link and no explanation would leave an admin believing an invitation is on its
+ * way to somebody who will never receive it, and nothing on the screen or in the
+ * log would say otherwise. The invitation row is already committed by this
+ * point, so failing the request would be worse: it would report failure for
+ * something that half happened.
+ */
+async function deliverInviteLink(
+  app: FastifyInstance,
+  opts: { to: string; url: string; expiresAt: Date; mode: "managed" | "onprem" },
+): Promise<{ url?: string; delivery: "email" | "link"; fallback: boolean; note: string }> {
+  if (opts.mode === "onprem") {
+    return { url: opts.url, delivery: "link", fallback: false, note: EMAIL_DELIVERY_NOTES.link };
+  }
+
+  const days = Math.max(1, Math.round((opts.expiresAt.getTime() - Date.now()) / 86_400_000));
+  const { delivery } = await sendInvitationEmail(
+    { to: opts.to, inviteUrl: opts.url, expiresInDays: days },
+    (msg, ctx) => app.log.warn(ctx ?? {}, msg),
+  );
+
+  if (delivery === "sent") {
+    return { delivery: "email", fallback: false, note: EMAIL_DELIVERY_NOTES.sent };
+  }
+  return {
+    url: opts.url,
+    delivery: "link",
+    fallback: true,
+    note: EMAIL_DELIVERY_NOTES[delivery],
+  };
 }
 
 /** Split out so the invite routes above stay readable — same registration. */

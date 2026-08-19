@@ -137,6 +137,18 @@ export const config = {
    */
   deploymentMode: (env("DEPLOYMENT_MODE") ?? "onprem") as "managed" | "onprem",
 
+  /**
+   * Who this deployment belongs to, as it appears in the invitation subject
+   * ("You've been added to {customer} on Smart Router").
+   *
+   * An invitation arrives at an address that has never heard of us, so the
+   * customer's own name is what stops it reading as spam. Defaults to the
+   * product name rather than a placeholder: "You've been added to Smart Router
+   * on Smart Router" is clumsy, but "You've been added to {customer}" reaching
+   * somebody's inbox is worse.
+   */
+  customerName: env("CUSTOMER_NAME")?.trim() || "Smart Router",
+
   /** Browser-facing origin of the web app, used to build invitation and
    *  password-reset links. There is no sane default: guessing a host would
    *  produce a link that looks right and goes nowhere, so the routes that need
