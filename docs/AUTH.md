@@ -13,16 +13,26 @@ JWT codec, same plugin layout, same seed semantics.
 
 ## How it works (enabled)
 
+<img src="./assets/auth-session-flow.svg" alt="Two bands. Signing in: the browser posts to the web tier, whose authorize() callback is the only place that sees the browser and forwards the caller's IP and User-Agent to the api with an internal secret; the api verifies the password, inserts a sessions row, and returns its id, which the web signs into the token as the sid claim. Every later request: the api verifies the signature, requires a sid, requires the database, then makes one indexed read joining sessions to users, each check with its own refusal code — and two separate levers, sessions.revoked_at for one device and users.signed_out_all_at for every outstanding token, are what make that read refuse." width="100%">
+
+
 ```
 Browser ── credentials ──▶ Next.js (Auth.js v5)
-                             │  authorize() → POST api /auth/sign-in     (bcrypt verify)
-                             │  signIn()    → POST api /auth/oauth/:p    (server-side token verify)
+                             │  authorize(creds, request)
+                             │    → POST api /auth/sign-in   (bcrypt verify)
+                             │      + the browser's own IP / User-Agent
+                             │  signIn() → POST api /auth/oauth/:p
+                             │                                ← { user, sessionId }
                              ▼
                        HS256 session JWT  (jose, AUTH_SECRET,
+                        sid = sessionId,
                         iss=smart-router-dashboard-web,
                         aud=smart-router-dashboard-api)
                              │
 Browser ── Authorization: Bearer <same JWT> ──▶ Fastify api (@fastify/jwt)
+                                                  ├─ verify signature + iss/aud
+                                                  ├─ resolve sid → sessions ⨝ users
+                                                  │    revoked? expired? status? cutoff?
                                                   └─ global gate: /api/* → 401 without it
 ```
 
@@ -36,19 +46,25 @@ Browser ── Authorization: Bearer <same JWT> ──▶ Fastify api (@fastify/
   page loads to `/login`; signed-in users hitting `/login` bounce to
   `/overview`. A no-op in disabled mode.
 - **Api** (`apps/api/src/plugins/auth.ts`) — validates HS256 + iss/aud,
-  decorates `request.authUser`, and 401s any non-public route without a
-  valid token. Public: `/health*`, `/version`, `/auth/*`, `/docs*`.
-- **Database** (`packages/db`) — Drizzle + Postgres, a single `users`
-  table. The api's db plugin connects **lazily with retries** (no
-  compose `depends_on`), runs migrations, then seeds the admin. `/auth/*`
-  returns 503 until the DB is reachable; everything else never blocks.
+  then resolves the token's `sid` to a live session **and the live user
+  row**, and puts both on `request.authUser`. 401s any non-public route
+  without one. Public: `/health*`, `/version`, `/auth/*`, `/docs*`.
+  `requireRole(request, reply, minimum)` gates by role, comparing the
+  **row's** role rather than the token's.
+- **Database** (`packages/db`) — Drizzle + Postgres: `users` and
+  `sessions`. The api's db plugin connects **lazily with retries** (no
+  compose `depends_on`), runs migrations, then seeds the admin. While it
+  is settling, `/auth/*` **and** every authenticated route answer 503 —
+  the gate fails closed, because a signature check alone cannot tell
+  whether a session was revoked or an account removed.
 
 ## Sign-in methods
 
 - **Email + password** — always available in enabled mode. Verified
   api-side (`POST /auth/sign-in`, bcrypt cost 12, enumeration-proof
-  responses). Accounts come from the admin seed or OAuth — there is no
-  self-serve sign-up.
+  responses), which also opens the session row and returns its id.
+  Accounts come from the admin seed or OAuth — there is no self-serve
+  sign-up (invitations land in slice 3).
 - **Google / GitHub / Discord** — each provider's button appears on the
   login page **only when its `*_CLIENT_ID` + `*_CLIENT_SECRET` pair is
   set**. The web forwards the provider token to the api
@@ -73,6 +89,8 @@ users table → admin created; populated table without that email → no-op
 | `AUTH_SECRET` | api + web | HS256 signing secret, must match. `openssl rand -base64 32` |
 | `DATABASE_URL` | api | `postgres://sr:dev@postgres:5432/sr_dashboard` in compose |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | api | bootstrap admin seed |
+| `INTERNAL_AUTH_SECRET` | api + web | Proves a caller is our own web tier, so forwarded browser IP / User-Agent are honoured. Unset ⇒ ignored, and sessions record what the api observes |
+| `TRUST_PROXY` | api | How far to believe `X-Forwarded-For`. Hop count (default `1`), a comma list of proxy IPs/CIDRs, or `false` |
 | `AUTH_URL` | web | Auth.js base URL (default `http://localhost:3000`) |
 | `INTERNAL_API_BASE_URL` | web | server-side api URL for Auth.js callbacks (`http://api:8000` in compose) |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | web (+ id on api) | unset = no Google button. The api needs the id to pin the token audience |
@@ -99,30 +117,114 @@ ADMIN_EMAIL=you@example.com ADMIN_PASSWORD=change-me \
 > `admin1234`, a fixed dev `AUTH_SECRET`) so `AUTH_MODE=enabled` works
 > out of the box. **Production must override all three.**
 
+## Roles
+
+Four cumulative roles, defined once in
+`packages/shared/src/constants/roles.ts` and shared by the web and the api
+so they can't drift into disagreeing about who may do what:
+
+| Role | See dashboard and audit | Propose changes | Approve others' | Manage people |
+|---|---|---|---|---|
+| `read_only` | yes | no | no | no |
+| `requester` | yes | yes | no | no |
+| `approver` | yes | yes | yes | no |
+| `admin` | yes | yes | yes | yes |
+
+`roleAtLeast(role, minimum)` is the only comparison; an **unrecognised
+role is unprivileged**, so a row written by a newer build during a rolling
+deploy fails safe rather than open. The proposing/approving columns are
+enforced by the config-change flow (MAG-2731) — this layer defines the
+vocabulary and gates people-management.
+
+The web uses the same helper to decide which controls to render. That is
+**cosmetic only**: hiding a button is not a permission check, and the api
+re-reads the live row on every request regardless.
+
 ## JWT shape
 
 ```ts
-{ sub: userId, email, role: "admin" | "member", iat, exp }
+{ sub: userId, email, role, sid, iat, exp }
 ```
 
 HS256, 30-day TTL, `iss: smart-router-dashboard-web`,
 `aud: smart-router-dashboard-api` (enforced on both sides so no other
 HS256 token signed with the same secret can pose as a session).
 
-## Session lifetime & revocation — honest limits
+`role` is **advisory** — it is what the role was at issue time, kept so
+the web can render affordances without a round-trip. Authorisation always
+reads the live row.
 
-Tokens are validated **statelessly**: the api checks the signature,
-issuer/audience, and expiry — it does not re-read the user row per
-request. Consequences to know:
+`sid` is the load-bearing claim: it names a row in `sessions`, and a token
+without one is refused outright, since nothing about it could be checked
+or revoked.
 
-- **Suspending a user** (`users.is_suspended`) blocks their *next
-  sign-in*; an already-issued JWT keeps working until it expires (30d).
-- **Deleting a user** likewise does not invalidate their outstanding JWT.
-- The `users.signed_out_all_at` column is **reserved** — nothing reads it
-  yet. Porting lava-connect's `requireAuthFresh` (per-mutation DB
-  freshness check) is the follow-up if instant revocation is needed.
-- Until then, the operational kill switch is **rotating `AUTH_SECRET`**
-  (both containers) — every outstanding session becomes invalid at once.
+## Sessions and revocation
 
-For an observability dashboard this trade (stateless hot path, coarse
-revocation) is deliberate; the metrics surface never touches the DB.
+Every authenticated request resolves `sid` to a session joined to its
+account, and refuses the request if any of these hold:
+
+| Condition | Response |
+|---|---|
+| No session row, or `revoked_at` set, or past `expires_at` | `401` · `SESSION_INVALID` |
+| Account `status` is `suspended` or `removed` | `403` · `ACCOUNT_INACTIVE` |
+| Token `iat` at or before `users.signed_out_all_at` | `401` · `SESSION_INVALID` |
+| Database not reachable yet | `503` · `AUTH_UNAVAILABLE` |
+
+The codes are machine-readable so the web can tell "sign in again" from
+"you are not allowed" and stop rather than looping through the edge gate.
+
+**Two revocation mechanisms, both needed.** They do different jobs:
+
+- `users.signed_out_all_at` — a cutoff compared to the token's `iat`.
+  Kills every outstanding token in one write without enumerating
+  anything. Stamped on password change, sign-out-everywhere, and removal.
+  The comparison is `<=`, not `<`: both sides have one-second resolution,
+  so a token minted in the same second as the revocation must lose, or an
+  attacker racing the sign-out keeps a live session.
+- `sessions.revoked_at` — kills one device. What makes the sessions list
+  and "sign out this device" possible.
+
+Session rows are **never deleted on revoke** — a revoked session is
+evidence, and the audit log's access events reference it. Expired rows
+are pruned on a schedule.
+
+There is deliberately **no cache** on the lookup. A cache is precisely
+what would turn "revoked" into "revoked eventually", and the same request
+already makes multi-second Prometheus round-trips, so one indexed join is
+not the expensive part of anything.
+
+## Client context (IP and device)
+
+Session rows carry the IP, the raw User-Agent, and a parsed `client`
+string ("Chrome 141 / macOS"). Getting these right needs care, because
+**the api never sees the browser on the sign-in path**: Auth.js calls
+`/auth/sign-in` from the web container, so `request.ip` there is the web
+pod and the User-Agent is undici's.
+
+So `authorize(credentials, request)` reads the browser's own address and
+User-Agent from *its* request and forwards them — and the api believes
+them **only** when the caller also presents `INTERNAL_AUTH_SECRET`. The
+route is public, so without that check anyone could pin any address to
+their own sign-in attempts and write a false trail. Unset ⇒ forwarded
+context is always ignored and the api records what it observes.
+
+Routes the browser calls **directly** never accept forwarded context;
+they read `request.ip` themselves. The rule is that whichever party
+terminated the browser's connection is the one that reports it.
+
+Related: `TRUST_PROXY` decides how far `X-Forwarded-For` is believed when
+deriving `request.ip`. It defaults to `1` (the immediate peer). It used to
+be unconditionally "trust every hop", which on a publicly reachable api
+lets any caller claim any address — and so walk straight past the per-IP
+rate limit.
+
+## Testing
+
+`@sr/db/testing` exposes `createTestDb()`: a real Postgres (pglite, WASM,
+in-process) with every migration applied, no Docker and no service
+container. Used by the DB-backed api tests.
+
+This matters because the behaviour the schema leans on hardest is exactly
+what a hand-rolled fake cannot reproduce — the partial unique index on
+`lower(email)`, conditional single-use updates whose correctness depends
+on a real rowcount, and cascade-on-delete.

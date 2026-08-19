@@ -18,7 +18,11 @@ import { authRoutes } from "./routes/auth.js";
 /** Build the Fastify app with all plugins + routes registered. */
 export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({
-    trustProxy: true,
+    // Not `true`: this api is publicly reachable, and trusting every hop lets
+    // any caller set X-Forwarded-For to whatever it likes — which both defeats
+    // the per-IP rate limit and lets an attacker choose the address recorded
+    // against their sign-in attempts. See config.server.trustProxy.
+    trustProxy: config.server.trustProxy,
     logger: {
       level: config.logLevel,
       transport: config.isDev ? { target: "pino-pretty" } : undefined,
