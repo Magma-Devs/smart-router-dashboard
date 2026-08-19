@@ -318,6 +318,8 @@ where somebody investigating already looks.
 **The body is never persisted**, in either design. A rendered invitation
 contains a live token.
 
+<img src="./assets/account-emails.png" alt="The two account emails side by side, rendered by the shipping templates. Left: the invitation, subject &quot;You've been added to DFNS on Smart Router&quot;, headed &quot;Set up your account&quot;, with a Set up your account button, the same link repeated as selectable text beneath it, and a line reading &quot;The link works once and expires in 7 days. It only works for dana.okonkwo@dfns.co.&quot; Right: the password reset, subject &quot;Reset your Smart Router password&quot;, with a Reset password button, the link again as text, and &quot;This link expires in 1 hour. If you didn't request this, you can ignore this email — your password won't change.&quot; Neither has a footer, an unsubscribe link, or any image." width="820">
+
 ### The rules the copy follows
 
 From the ticket, and each has a test:
@@ -335,6 +337,10 @@ From the ticket, and each has a test:
   stranger's inbox.
 - **The reset says what to do if it wasn't you**, as the last line.
 
+
+### The reset password page
+
+<img src="./assets/reset-password-states.png" alt="The three states of the reset password page, captured against a running stack. Setting a password: heading &quot;Choose a new password&quot; with the address dana.okonkwo@dfns.co underneath, New password and Repeat password fields, the rule &quot;At least 8 characters. Any characters, including spaces.&quot; shown beneath the first field before typing, and a Save password button. Done: &quot;Your password has been changed. You have been signed out everywhere else.&quot; and a Sign in button. Dead link: &quot;This link has expired&quot;, with on-prem wording asking an administrator to generate a new one, and a Go to sign in button." width="900">
 
 ## Sign-in lockout
 
