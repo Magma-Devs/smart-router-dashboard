@@ -24,7 +24,9 @@ config changes (MAG-2731 owns that table), and the audit log's own viewer, filte
 (MAG-2770). This ticket emits into MAG-2770's writer; it does not own the reading side.
 
 Two places where the code disagreed with the ticket were found during this audit and fixed on the
-branch — see [§5](#5-mismatches-found-and-fixed).
+branch — see [§6](#6-mismatches-found-and-fixed). **Every row below that is not ✅ is explained in
+[§5](#5-the-gaps-and-why-each-one-is-open)**, grouped by cause rather than listed one by one, since
+three of them are the same missing piece.
 
 ---
 
@@ -63,7 +65,7 @@ Seven pull requests, stacked. `#115` is MAG-2770's writer, merged in because sli
 | On-prem first admin: email, password, repeat; nothing else opens | ✅ | `/` → `/login` → `/setup` |
 | First-run requires the installer's setup token | ✅ | Constant-time compare. The gate is `count(active users) == 0`, never a flag, so a backup restored with no users is covered — which the ticket calls out |
 | Managed first admin: we create it and send a join link | ⚠️ | No route for that flow. `/setup` is not mode-gated, so a first admin is still creatable in managed |
-| Never a shared account; we never set a password for anyone | ✅ | True only after the `ADMIN_EMAIL` fix — see [§5](#5-mismatches-found-and-fixed) |
+| Never a shared account; we never set a password for anyone | ✅ | True only after the `ADMIN_EMAIL` fix — see [§6](#6-mismatches-found-and-fixed) |
 | No standing admin account inside a customer's deployment | ✅ | Same fix |
 
 **Passwords** (NIST 800-63B)
@@ -81,7 +83,7 @@ Seven pull requests, stacked. `#115` is MAG-2770's writer, merged in because sli
 | Requirement | | Notes |
 |---|---|---|
 | Managed: user-initiated, emailed link, 1 hour | ⚠️ | TTL correct; no transport. Creates the reset, logs the link, returns 202 |
-| On-prem: admin generates a single-use link, 24 hours | ✅ | Route complete and audited. ⚠️ no control on the member row — API-only today |
+| On-prem: admin generates a single-use link, 24 hours | ✅ | **Reset link** on the member row → shown once, copied by hand. The admin never sees or chooses the value |
 | A reset link sets a password; it does not sign anyone in | ✅ | |
 | Resetting kills every session for that user | ✅ | |
 
@@ -157,14 +159,72 @@ rename cannot rewrite history.
 | **Managed-mode delivery** | No mail transport exists. Invitations withhold the link with nothing to send it; forgot-password logs it; the managed first-admin flow has no route | **Open question on the ticket** — scope call for Omer |
 | Pending config changes cancelled on removal | `onMemberDeactivated` is a documented empty seam | MAG-2731 |
 | Shared login disabled at cutover | Not this repo | MAG-2805 · victoria |
-| On-prem reset-link control on the member row | Route exists, tested and audited; no UI | unassigned |
 | Managed "Forgot password?" on `/login` | Moot until managed delivery is decided | unassigned |
 | Audit viewer, filtering, export | Out of scope by ticket text | MAG-2770 |
 | 2FA column populated | Out of scope by ticket text | MAG-2730 |
 
 ---
 
-## 5. Mismatches found and fixed
+## 5. The gaps, and why each one is open
+
+Seven rows above are not ✅. They collapse into three causes, and only one of them was ever work
+sitting on this ticket — that one is now built, which is why it no longer appears.
+
+### Cause 1 — there is no mail transport. Three of them.
+
+Nothing in the repo sends email: no nodemailer, no SES, no SMTP. Every managed path that ends in
+"…and send them a link" therefore stops one step short. These are one missing piece, not three
+bugs.
+
+| | What happens today |
+|---|---|
+| **Managed invitation** | The row is created correctly with the right 7-day TTL, and the response deliberately *withholds* the link because managed is meant to email it. Nothing emails it. The invitation exists and is unreachable by anyone — the worst of the three, because it looks like it worked |
+| **Managed forgot-password** | Creates the reset with the correct 1-hour TTL, writes `password.reset_requested`, logs the link at `warn`, returns 202. An operator with log access can retrieve it; the user gets nothing. A `TODO(slice: email adapter)` sits on it, so it was known rather than missed |
+| **Managed first admin** | No route for the flow the ticket describes. It does not *block* a managed deployment: `/setup` is not gated on `DEPLOYMENT_MODE`, so a first admin is still creatable with the setup token |
+
+**What it would take:** one adapter behind the existing link generation — both call sites already
+produce the URL and know the mode. **Whose call:** asked on the ticket. If the deployment driving
+this is on-prem, none of it needs building and managed should be recorded as deferred rather than
+left looking half-finished.
+
+### Cause 2 — a missing control. Now built.
+
+The on-prem reset-link route was complete, tested and audited, but nothing in the web called it, so
+the design's *"initiated by an admin, from the members table"* was API-only. **Reset link** now sits
+on the member row beside Change role and Remove: a confirmation naming the person, then the link
+shown once with a copy button.
+
+It sits behind a confirmation rather than firing on click because generating one is the first half
+of an account takeover if the wrong person asked — which is also why the api records it with the
+admin's address and device attached. There is no password field, and no endpoint that would accept
+one.
+
+### Cause 3 — sequencing. Four items another ticket must own.
+
+Not oversights; the ticket hands most of them away in its own text.
+
+| | Why it cannot be done here |
+|---|---|
+| **Pending config changes cancelled on removal** | The ticket does ask for this, but MAG-2731 creates the change-request table — there is literally nothing to cancel yet. `onMemberDeactivated` is an empty function with a docblock saying so, so it lands in MAG-2731's path rather than being quietly dropped. **This is the handoff worth chasing**, because it is a requirement of *this* ticket that somebody else has to satisfy |
+| **Shared login disabled at cutover** | Not this repo. The chart change is ours, the customer-operated box is theirs |
+| **Audit viewer, filtering, export** | "The audit log moved out of this task into MAG-2770." We emit; they read |
+| **2FA column populated** | "Populated by task 3" (MAG-2730). The column renders `—` rather than "No", so it does not assert something that becomes false the day 2FA ships |
+
+### The two "partial" marks, so they are not misread
+
+**Done-when 3** — *"an admin invites someone as a requester, and that person cannot approve
+anything"*. Role gating is real and verified: a requester gets 403 on admin routes, and a promotion
+and demotion were both watched landing on an already-open session. What cannot be demonstrated is
+"cannot approve" *specifically*, because there is no approval surface to be refused from. This is
+as met as it can be until MAG-2731.
+
+**Done-when 7** — four clauses. Three are met and were exercised by hand: sessions died
+(`member_removed × 2` in the session table), history stayed, the address was re-invitable. The
+fourth is the pending-changes cancellation above.
+
+---
+
+## 6. Mismatches found and fixed
 
 Both found by reading the ticket line by line against the code, and fixed on this branch.
 
@@ -196,7 +256,7 @@ and now says the last move is never your own.
 
 ---
 
-## 6. How this was verified
+## 7. How this was verified
 
 Worth stating, because the failure mode that produced the worst bug in this ticket was a test suite
 that could not see it.
