@@ -282,12 +282,14 @@ export const authConfig = {
       if (path === "/setup") {
         return signedIn ? Response.redirect(new URL("/overview", url)) : true;
       }
-      // Invitation redemption: the whole point is that the person has no
-      // account yet. Already-signed-in visitors go to the dashboard rather than
-      // being offered a second account.
-      if (path.startsWith("/invite/")) {
-        return signedIn ? Response.redirect(new URL("/overview", url)) : true;
-      }
+      // Invitation redemption is public, signed in or not. It used to bounce a
+      // signed-in visitor to the dashboard — the rule was right (an invitation
+      // creates an account for somebody who has none) but a silent redirect
+      // reads as a broken link, and the person it strands is somebody with an
+      // account clicking an invitation for a second address. The page explains
+      // it and offers a sign-out that comes back here; the gate can't, because
+      // it cannot see who the invitation is for.
+      if (path.startsWith("/invite/")) return true;
       // Reset links are usable while signed in — the usual reason someone
       // follows one is that they think somebody else is signed in as them.
       if (path.startsWith("/reset/") || path === "/forgot-password") return true;

@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
-import { InviteDead, InviteForm } from "@/components/auth/invite-form";
+import { auth } from "@/auth";
+import { InviteDead, InviteForm, InviteSignedIn } from "@/components/auth/invite-form";
 import { previewInvitation } from "@/lib/bootstrap";
 
 export const metadata = {
@@ -24,6 +25,15 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
   const { token } = await params;
   const invite = await previewInvitation(token);
   if (!invite) return <InviteDead />;
+
+  // Signed in already? Say so rather than redirecting. Resolved here rather
+  // than in the edge gate because the useful sentence names the invited
+  // address, which the gate cannot see without reading the database.
+  const session = await auth();
+  const signedInAs = session?.user?.email;
+  if (signedInAs) {
+    return <InviteSignedIn token={token} invitedEmail={invite.email} signedInAs={signedInAs} />;
+  }
 
   return <InviteForm token={token} email={invite.email} role={invite.role} />;
 }
