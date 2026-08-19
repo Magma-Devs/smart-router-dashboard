@@ -60,8 +60,10 @@ export function MetricsTabSectionA({
     [data, chains],
   );
 
-  /* Latency per chain for the selected percentile, coloured by the design's
-     ratio thresholds against the overall p95 mean of the same window. */
+  /* Latency per chain for the selected percentile. The line keeps the chain's
+     entity color — color follows the entity, never its value — and the
+     ratio-vs-baseline state moves to an icon + label in the legend (status is
+     never carried by color alone, and never repaints identity). */
   const latChains = useMemo(() => {
     const src = data?.series.perChainLatency;
     const list = !src ? [] : latPm === "p50" ? src.p50 : latPm === "p99" ? src.p99 : src.p95;
@@ -74,8 +76,8 @@ export function MetricsTabSectionA({
         const present = d.filter((v): v is number => v != null);
         const mean = meanOf(present) ?? 0;
         const ratio = refMean && refMean > 0 ? mean / refMean : null;
-        const color = ratio == null ? c.color : ratio < 1 ? "var(--ok)" : ratio < 1.5 ? "var(--warn)" : "var(--err)";
-        return { id: c.spec, name: c.name, data: d, color, label: c.name + " · " + Math.round(mean) + "ms", ratio };
+        const slow: "warn" | "err" | null = ratio == null || ratio < 1 ? null : ratio < 1.5 ? "warn" : "err";
+        return { id: c.spec, name: c.name, data: d, color: c.color, label: c.name + " · " + Math.round(mean) + "ms", ratio, slow };
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, chains, latPm]);
@@ -87,7 +89,7 @@ export function MetricsTabSectionA({
       return data.errorClasses.map((c) => ({ label: c.label, color: c.color, data: toNums(c.points, 100) }));
     }
     const d = toNums(data?.series.errorRate, 100);
-    return d.length ? [{ label: "unclassified", color: "#94a3b8", data: d }] : [];
+    return d.length ? [{ label: "unclassified", color: "var(--series-other)", data: d }] : [];
   }, [data]);
 
   const sortedProvAvail = useMemo(() => {
@@ -125,7 +127,7 @@ export function MetricsTabSectionA({
               width={w_sa1} height={300} win={win}
               yFmt={(v) => v.toFixed(2) + "%"}
               yDomain={[99.0, 100]}
-              thresholds={[{ value: 99.9, label: "99.9%", color: "rgba(255,255,255,0.22)" }]}
+              thresholds={[{ value: 99.9, label: "99.9%", color: "var(--line-2)" }]}
             />
           ) : (
             <DSHNoData height={300} />
@@ -179,7 +181,10 @@ export function MetricsTabSectionA({
               }}>
                 <span style={{ width: 10, height: 3, background: c.color, borderRadius: 2, display: "inline-block" }} />
                 <span style={{ fontSize: 10, color: "var(--text-3)", fontFamily: "var(--font-ui)" }}>{c.name}</span>
-                <span style={{ fontSize: 9, color: c.color, fontFamily: "var(--font-mono)" }}>{ratioStr}</span>
+                <span title={c.slow ? "vs the overall p95 baseline of this window" : undefined}
+                  style={{ fontSize: 9, color: c.slow === "err" ? "var(--err)" : c.slow === "warn" ? "var(--warn)" : "var(--text-4)", fontFamily: "var(--font-mono)" }}>
+                  {c.slow ? "▲ " : ""}{ratioStr}
+                </span>
               </button>
             );
           })}
@@ -193,6 +198,7 @@ export function MetricsTabSectionA({
             <DSHStack
               stacks={errStk}
               width={w_sa2} height={260}
+              yMax={100}
               yFmt={(v) => v.toFixed(1) + "%"}
             />
           ) : (
@@ -259,7 +265,7 @@ export function MetricsTabSectionA({
                     <td>
                       {p.internal == null
                         ? <span style={{ fontSize: 10, color: "var(--text-4)" }}>—</span>
-                        : <span style={{ fontSize: 9, padding: "2px 6px", borderRadius: 3, fontWeight: 600, background: p.internal ? "rgba(96,165,250,0.12)" : "rgba(251,146,60,0.12)", color: p.internal ? "#60a5fa" : "#fb923c" }}>{p.internal ? "Internal" : "Fallback"}</span>}
+                        : <span style={{ fontSize: 9, padding: "2px 6px", borderRadius: 3, fontWeight: 600, background: p.internal ? "rgba(96,165,250,0.12)" : "rgba(251,146,60,0.12)", color: p.internal ? "var(--info)" : "var(--warn)" }}>{p.internal ? "Internal" : "Fallback"}</span>}
                     </td>
                   </tr>
                 );
