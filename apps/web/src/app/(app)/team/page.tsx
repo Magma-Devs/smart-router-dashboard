@@ -18,6 +18,7 @@ import { InitialsAvatar, RoleBadge, relativeTime, shortDate } from "@/components
 import { InviteModal } from "@/components/team/InviteModal";
 import { ChangeRoleModal, type MemberSummary } from "@/components/team/ChangeRoleModal";
 import { RemoveMemberModal } from "@/components/team/RemoveMemberModal";
+import { ResetLinkModal } from "@/components/team/ResetLinkModal";
 
 const TABS = ["members", "invites"] as const;
 type Tab = (typeof TABS)[number];
@@ -57,10 +58,7 @@ export default function TeamPage() {
   const [freshLink, setFreshLink] = useState<{ id: string; email: string; url: string } | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
-  const [busyReset, setBusyReset] = useState<string | null>(null);
-  const [resetLink, setResetLink] = useState<
-    { email: string; url: string; expiresAt: string } | { email: string; error: string } | null
-  >(null);
+  const [resetting, setResetting] = useState<MemberSummary | null>(null);
 
   const members = useSWR<MembersResponse>("/api/team/members", apiGet, { refreshInterval: 30000 });
   const me = getAuthState().user;
@@ -103,27 +101,6 @@ export default function TeamPage() {
       await apiDownload("/api/team/members.csv", "members.csv");
     } catch (e) {
       setExportError(e instanceof Error ? e.message : "The export failed.");
-    }
-  }
-
-  // On-prem there is no mail server, so this link is how a member who forgot
-  // their password gets back in. The admin hands it over; the holder chooses
-  // the password.
-  async function resetPassword(m: MemberSummary) {
-    setBusyReset(m.id);
-    try {
-      const res = await apiSend<{ url: string; expiresAt: string }>(
-        "POST",
-        `/api/team/members/${m.id}/reset-link`,
-      );
-      setResetLink({ email: m.email, url: res.url, expiresAt: res.expiresAt });
-    } catch (e) {
-      setResetLink({
-        email: m.email,
-        error: e instanceof Error ? e.message : "Could not create a reset link.",
-      });
-    } finally {
-      setBusyReset(null);
     }
   }
 
@@ -250,10 +227,10 @@ export default function TeamPage() {
                           <button
                             className="gw-btn"
                             style={{ fontSize: 11, padding: "4px 8px", marginRight: 6 }}
-                            disabled={busyReset === m.id}
-                            onClick={() => void resetPassword(m)}
+                            onClick={() => setResetting(m)}
+                            title="Generate a single-use password-reset link to hand over"
                           >
-                            Reset password
+                            Reset link
                           </button>
                           <button
                             className="gw-btn gw-btn--danger"
@@ -270,24 +247,6 @@ export default function TeamPage() {
               })}
             </tbody>
           </table>
-          {resetLink && (
-            <div style={{ padding: "12px 14px", borderTop: "1px solid var(--line)", fontSize: 12 }}>
-              {"url" in resetLink ? (
-                <>
-                  <div style={{ marginBottom: 6, color: "var(--text-2)" }}>
-                    Password reset link for <strong>{resetLink.email}</strong>. Hand it to them
-                    yourself — it works once, until {new Date(resetLink.expiresAt).toLocaleString()},
-                    and is not shown again. Any earlier link for them no longer works.
-                  </div>
-                  <div className="gw-mono" style={{ fontSize: 11, wordBreak: "break-all", userSelect: "all" }}>
-                    {resetLink.url}
-                  </div>
-                </>
-              ) : (
-                <div role="alert" style={{ color: "var(--err)" }}>{resetLink.error}</div>
-              )}
-            </div>
-          )}
         </div>
       )}
 
@@ -387,16 +346,18 @@ export default function TeamPage() {
         onClose={() => setChanging(null)}
         onChanged={() => void members.mutate()}
       />
+      <ResetLinkModal
+        key={`reset-${resetting?.id ?? "none"}`}
+        open={!!resetting}
+        onClose={() => setResetting(null)}
+        member={resetting}
+      />
       <RemoveMemberModal
         key={`remove-${removing?.id ?? "none"}`}
         open={!!removing}
         member={removing}
         onClose={() => setRemoving(null)}
-        onRemoved={() => {
-          // A reset link for someone who no longer has an account is dead.
-          if (resetLink?.email === removing?.email) setResetLink(null);
-          void members.mutate();
-        }}
+        onRemoved={() => void members.mutate()}
       />
     </div>
   );
