@@ -100,6 +100,13 @@ export function InviteModal({
             <strong>{result.invite.email}</strong> has been invited as{" "}
             {ROLE_LABELS[result.invite.role]}.
           </div>
+          {/* An invitation is not an account yet, and nothing on screen said so:
+              the first thing an admin does after inviting is look for the person
+              in Members, where they will not be until they redeem. */}
+          <div style={{ fontSize: 12.5, color: "var(--text-3)", lineHeight: 1.6 }}>
+            They are in <strong>Invites</strong> until they open the link and choose a password. The
+            account — and their row in Members — is created at that moment, with this address.
+          </div>
           {result.url ? (
             <>
               <div style={{ fontSize: 12.5, color: "var(--text-2)", lineHeight: 1.6 }}>
