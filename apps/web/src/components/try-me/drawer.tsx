@@ -1409,6 +1409,19 @@ export function TryMeDrawer({
                     {selected.command.internalPath}
                   </span>
                 )}
+                {/* The same name under two internal paths. The router's REST
+                    lookup is keyed by (name, verb) with no path, so it can
+                    only ever resolve to one of them — which one is the spec's
+                    collection order, not something the caller chooses. */}
+                {selected.command.ambiguous && !onDirect && (
+                  <span
+                    className="gw-tag"
+                    title={`This chain declares ${commandKey(iface, selected.command)} under more than one internal path. The router matches the name alone, so it reaches only one of them — send it direct to pick the other.`}
+                    style={{ fontSize: 10, color: "var(--warn)", background: "rgba(251,191,36,0.10)", borderColor: "rgba(251,191,36,0.25)" }}
+                  >
+                    one of two
+                  </span>
+                )}
               </div>
             )}
             {selected?.command.desc && (
