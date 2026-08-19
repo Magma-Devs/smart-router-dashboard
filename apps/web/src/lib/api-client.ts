@@ -199,18 +199,21 @@ export async function apiSend<T>(
   return (text ? JSON.parse(text) : undefined) as T;
 }
 
-/** Download a file the api generates (the member CSV). Goes through the same
- *  auth context, then hands the browser a blob — an `<a href>` to the api
- *  would carry no Authorization header. */
+/** Download a file the api generates (the member CSV, the audit export). Goes
+ *  through the same auth context, then hands the browser a blob — an `<a href>`
+ *  to the api would carry no Authorization header. The server's own
+ *  `Content-Disposition` name wins where it sends one (the audit export stamps
+ *  the date into it); `filename` is the fallback. */
 export async function apiDownload(path: string, filename: string): Promise<void> {
   const { base, headers, authenticated } = await requestContext();
   const res = await fetch(`${base}${path}`, { headers });
   if (!res.ok) throw await failure(res, authenticated, `Export failed (${res.status})`);
+  const named = /filename="?([^";]+)"?/i.exec(res.headers.get("content-disposition") ?? "")?.[1];
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = filename;
+  a.download = named ?? filename;
   // Attached for the click, and the URL revoked well after it: some browsers
   // ignore a click on a detached anchor, and some cancel a download whose URL
   // is revoked before they have read it.

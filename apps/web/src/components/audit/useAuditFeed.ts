@@ -49,15 +49,36 @@ const PAGE_SIZE = 50;
 
 /** `to` is inclusive: a reader who types the 9th means the whole of the 9th,
  *  not midnight at the start of it. */
-function toQuery(filters: AuditFilters, after: string | null): string {
-  const params = new URLSearchParams({ order: "desc", per_page: String(PAGE_SIZE) });
+function filterParams(filters: AuditFilters): URLSearchParams {
+  const params = new URLSearchParams();
   if (filters.group) params.set("group", filters.group);
   if (filters.actor.trim()) params.set("actor", filters.actor.trim());
   if (filters.targetId.trim()) params.set("target_id", filters.targetId.trim());
   if (filters.from) params.set("from", new Date(`${filters.from}T00:00:00.000Z`).toISOString());
   if (filters.to) params.set("to", new Date(`${filters.to}T23:59:59.999Z`).toISOString());
+  return params;
+}
+
+function toQuery(filters: AuditFilters, after: string | null): string {
+  const params = filterParams(filters);
+  params.set("order", "desc");
+  params.set("per_page", String(PAGE_SIZE));
   if (after) params.set("after", after);
   return `/api/audit/events?${params.toString()}`;
+}
+
+/**
+ * The export path for what is currently on screen.
+ *
+ * Built from the same `filterParams` as the feed, so the file someone downloads
+ * always answers the same question the screen is showing. Chronological rather
+ * than newest-first: the download is an archive to sort and filter, and reverse
+ * order is a reading convenience that a spreadsheet undoes in one click.
+ */
+export function auditExportPath(filters: AuditFilters): string {
+  const params = filterParams(filters);
+  const qs = params.toString();
+  return `/api/audit/export.csv${qs ? `?${qs}` : ""}`;
 }
 
 export interface AuditFeed {
