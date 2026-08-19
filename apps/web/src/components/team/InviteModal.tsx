@@ -8,10 +8,14 @@ import { labelStyle } from "@/lib/styles";
 
 interface InviteResponse {
   invite: { id: string; email: string; role: Role; expiresAt: string };
-  /** The admin carries the link on every deployment until email exists
-   *  (MAG-2870). */
-  url: string;
-  delivery: "link";
+  /** Present whenever the admin has to carry it: always on-prem, and on managed
+   *  only when the send did not happen. */
+  url?: string;
+  delivery: "link" | "email";
+  /** Managed, but nothing was sent — SES refused it, or no transport is
+   *  configured. Worth wording differently from on-prem: one is the design,
+   *  the other is something an operator should go and fix. */
+  deliveryFallback?: boolean;
 }
 
 export function InviteModal({
@@ -107,25 +111,40 @@ export function InviteModal({
             They are in <strong>Invites</strong> until they open the link and accept it. The
             account — and their row in Members — is created at that moment, with this address.
           </div>
-          <div style={{ fontSize: 12.5, color: "var(--text-2)", lineHeight: 1.6 }}>
-            Pass this link to them yourself — nothing is emailed. It works once, and{" "}
-            <strong>you will not be able to see it again</strong>.
-          </div>
-          <div
-            className="gw-mono"
-            style={{
-              fontSize: 11.5, background: "var(--bg)", border: "1px solid var(--line)",
-              borderRadius: 7, padding: "10px 12px", wordBreak: "break-all", userSelect: "all",
-            }}
-          >
-            {result.url}
-          </div>
-          <button className="gw-btn" onClick={() => void copyLink(result.url)}>
-            {copied === "copied" ? "Copied" : "Copy link"}
-          </button>
-          {copied === "failed" && (
-            <div role="alert" style={{ fontSize: 12, color: "var(--err)" }}>
-              Couldn&apos;t copy it here — select the link above and copy it by hand.
+          {result.url ? (
+            <>
+              <div style={{ fontSize: 12.5, color: "var(--text-2)", lineHeight: 1.6 }}>
+                {result.deliveryFallback ? (
+                  <>
+                    <strong>The email could not be sent</strong>, so pass this link to them yourself
+                    and tell an operator that mail is not working. The invitation itself is fine.
+                  </>
+                ) : (
+                  <>This deployment has no mail server, so pass this link to them yourself.</>
+                )}{" "}
+                It works once, and <strong>you will not be able to see it again</strong>.
+              </div>
+              <div
+                className="gw-mono"
+                style={{
+                  fontSize: 11.5, background: "var(--bg)", border: "1px solid var(--line)",
+                  borderRadius: 7, padding: "10px 12px", wordBreak: "break-all", userSelect: "all",
+                }}
+              >
+                {result.url}
+              </div>
+              <button className="gw-btn" onClick={() => void copyLink(result.url!)}>
+                {copied === "copied" ? "Copied" : "Copy link"}
+              </button>
+              {copied === "failed" && (
+                <div role="alert" style={{ fontSize: 12, color: "var(--err)" }}>
+                  Couldn&apos;t copy it here — select the link above and copy it by hand.
+                </div>
+              )}
+            </>
+          ) : (
+            <div style={{ fontSize: 12.5, color: "var(--text-2)" }}>
+              We&apos;ve emailed them a join link. It expires in seven days.
             </div>
           )}
         </div>

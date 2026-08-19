@@ -578,11 +578,18 @@ Auth (only read when `AUTH_MODE=enabled`; the metrics path never touches the DB)
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | (unset) | idempotent admin seed on first boot, **development only** — refused under `NODE_ENV=production`, where first-run setup with the installer's `SETUP_TOKEN` is the only way an account comes into existence |
 | `GOOGLE_CLIENT_ID` | (unset) | validates the `aud` claim of Google ID tokens server-side |
 | `INTERNAL_AUTH_SECRET` | (unset) | shared with the web; gates whether forwarded browser IP / User-Agent are trusted on the routes that open a session (`/auth/sign-in`, `/auth/oauth/:provider`, `/auth/invite/accept`). Unset ⇒ the api records what it observes |
-| `DEPLOYMENT_MODE` | `onprem` | `managed` (we host) / `onprem` (customer hosts, no mail server). Sets invitation and reset link lifetimes and marks the first account as Magma's on managed; nothing is emailed on either until MAG-2870. Read by the web at runtime via `/api/config` |
+| `DEPLOYMENT_MODE` | `onprem` | `managed` (we host) / `onprem` (customer hosts, no mail server). Forks invite + reset delivery (managed emails them, on-prem hands the admin a link), sets their lifetimes, and marks the first account as Magma's on managed. Read by the web at runtime via `/api/config` |
 | `SETUP_TOKEN` | (generated) | First-run token, required to create the first admin. Must be ≥ 16 characters; unset (or shorter) ⇒ generated once at boot, on an install that still needs setting up, and logged at `warn` |
 | `SETUP_TOKEN_FILE` | (unset) | Path to write a generated token to (mode 0600), so an init container or mounted volume can surface it |
 | `PASSWORD_BREACH_CHECK` | `hibp` | `off` disables the HaveIBeenPwned check — the honest setting for an air-gapped install, rather than relying on a silent timeout |
 | `PUBLIC_WEB_ORIGIN` | (unset) | browser-facing origin of the web app, used to build invitation and password-reset links. Routes that need it fail loudly when it is unset rather than guessing a host — `POST /api/team/invites` 500s. Both compose files default it to the web's `AUTH_URL` |
+| `CUSTOMER_NAME` | `Smart Router` | Who the deployment belongs to, as it appears in the invitation subject ("You've been added to **{customer}** on Smart Router") |
+| `AWS_REGION` | (unset) | **Enables email.** Unset ⇒ nothing is sent and the body is logged at `warn`; on-prem that is correct, on managed it means the admin carries the link (MAG-2870) |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | (unset) | Optional. Absent ⇒ the SDK resolves credentials from the environment (IRSA / instance role), so production stores no static keys |
+| `EMAIL_FROM` | `Smart Router <noreply@smart-router.local>` | Sender. An unmonitored no-reply |
+| `EMAIL_REPLY_TO` | (unset) | Monitored inbox, so a reply to a reset email reaches somebody |
+| `EMAIL_CONFIGURATION_SET` | (unset) | SES configuration set. Keeps each environment's bounce/complaint reputation separate on a shared identity |
+| `SES_ENDPOINT` | (unset) | Points SES at a local mock for development |
 
 Web — build-time vs. **runtime**:
 
