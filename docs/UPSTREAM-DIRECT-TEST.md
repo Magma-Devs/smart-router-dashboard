@@ -205,13 +205,14 @@ The command dropdown groups by internal path whenever a chain has more than
 one, and the selected command carries its path as a tag — TON declares
 `/estimateFee` under **both** v2 and v3, and they are different calls.
 
-> **Known gap (smart-router, not the dashboard).** In direct-RPC mode the
-> router picks the upstream connection from the session, and that selection
-> does not carry the internal path — so a `/v3` REST method can be dialed
-> against the `/v2` upstream. Observed against `toncenter.com/api` with both
-> paths configured: `/addressBook` (a v3-only name) came back in the v2 error
-> shape. The catalog and the direct leg are correct; the router leg for TON v3
-> is not, until that is fixed upstream.
+> **The router leg needs a router carrying the matching fix.** Selection of the
+> direct-RPC upstream connection did not carry the internal path, so a `/v3`
+> REST method could be dialed against the `/v2` upstream — observed against
+> `toncenter.com/api` with both paths configured, where `/addressBook` (a
+> v3-only name) came back in the v2 error shape. Fixed in smart-router
+> (MAG-2881); a router built before that answers TON v3 out of whichever
+> upstream selection happened to pick. The catalog and the direct leg here are
+> correct either way.
 
 ## Status codes
 
