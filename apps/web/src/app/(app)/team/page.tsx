@@ -18,6 +18,7 @@ import { InitialsAvatar, RoleBadge, relativeTime, shortDate } from "@/components
 import { InviteModal } from "@/components/team/InviteModal";
 import { ChangeRoleModal, type MemberSummary } from "@/components/team/ChangeRoleModal";
 import { RemoveMemberModal } from "@/components/team/RemoveMemberModal";
+import { ResetLinkModal } from "@/components/team/ResetLinkModal";
 
 const TABS = ["members", "invites"] as const;
 type Tab = (typeof TABS)[number];
@@ -54,6 +55,7 @@ export default function TeamPage() {
   const [changing, setChanging] = useState<MemberSummary | null>(null);
   const [removing, setRemoving] = useState<MemberSummary | null>(null);
   const [busyInvite, setBusyInvite] = useState<string | null>(null);
+  const [resetting, setResetting] = useState<MemberSummary | null>(null);
   const [freshLink, setFreshLink] = useState<{ id: string; url: string } | null>(null);
 
   const members = useSWR<MembersResponse>("/api/team/members", apiGet, { refreshInterval: 30000 });
@@ -249,6 +251,14 @@ export default function TeamPage() {
                             Change role
                           </button>
                           <button
+                            className="gw-btn"
+                            style={{ fontSize: 11, padding: "4px 8px", marginRight: 6 }}
+                            onClick={() => setResetting(m)}
+                            title="Generate a single-use password-reset link to hand over"
+                          >
+                            Reset link
+                          </button>
+                          <button
                             className="gw-btn gw-btn--danger"
                             style={{ fontSize: 11, padding: "4px 8px" }}
                             onClick={() => setRemoving(m)}
@@ -362,6 +372,8 @@ export default function TeamPage() {
         onClose={() => setChanging(null)}
         onChanged={() => void members.mutate()}
       />
+      <ResetLinkModal open={!!resetting} onClose={() => setResetting(null)} member={resetting} />
+
       <RemoveMemberModal
         open={!!removing}
         member={removing}
