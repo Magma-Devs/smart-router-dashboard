@@ -11,11 +11,13 @@ import {
   targetLabel,
 } from "@/components/audit/bits";
 import {
+  auditExportPath,
   EMPTY_FILTERS,
   hasAnyFilter,
   useAuditFeed,
   type AuditFilters,
 } from "@/components/audit/useAuditFeed";
+import { apiDownload } from "@/lib/api-client";
 
 /**
  * The audit log — MAG-2770.
@@ -64,6 +66,8 @@ function EmptyState({
 export function AuditView() {
   const [filters, setFilters] = useState<AuditFilters>(EMPTY_FILTERS);
   const [selected, setSelected] = useState<AuditEventRecord | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
   const feed = useAuditFeed(filters);
 
   const filtered = useMemo(() => hasAnyFilter(filters), [filters]);
@@ -77,15 +81,45 @@ export function AuditView() {
           <h1>Audit log</h1>
           <p className="lede">{LEDE}</p>
         </div>
-        <button
-          className="gw-btn"
-          onClick={feed.refresh}
-          disabled={feed.loading}
-          title="Re-read the log from the top"
-        >
-          Refresh
-        </button>
+        <div className="gw-row" style={{ gap: 8 }}>
+          {/* Exports what the filters currently say, not just the rows already
+              loaded — "Load more" is a reading convenience, and a file that
+              stopped where someone happened to stop scrolling would be a
+              quietly incomplete record. */}
+          <button
+            className="gw-btn"
+            onClick={async () => {
+              setExporting(true);
+              setExportError(null);
+              try {
+                await apiDownload(auditExportPath(filters), "audit-log.csv");
+              } catch (err) {
+                setExportError(err instanceof Error ? err.message : "Export failed");
+              } finally {
+                setExporting(false);
+              }
+            }}
+            disabled={exporting || feed.unavailable}
+            title="Download every event matching these filters"
+          >
+            {exporting ? "Exporting…" : "Export CSV"}
+          </button>
+          <button
+            className="gw-btn"
+            onClick={feed.refresh}
+            disabled={feed.loading}
+            title="Re-read the log from the top"
+          >
+            Refresh
+          </button>
+        </div>
       </div>
+
+      {exportError ? (
+        <div className="gw-card" style={{ marginBottom: 16, borderColor: "var(--err)" }}>
+          <span style={{ fontSize: 13, color: "var(--err)" }}>Export failed: {exportError}</span>
+        </div>
+      ) : null}
 
       {/* Filters stay mounted even when the feed is empty — hiding them is how
           someone ends up staring at "no events" with a filter they can't see. */}
