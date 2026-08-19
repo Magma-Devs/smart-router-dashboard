@@ -59,6 +59,19 @@ async function deliver(
 export type DeliveryOutcome = Awaited<ReturnType<typeof deliver>>;
 
 /**
+ * A composed message, before anything tries to send it.
+ *
+ * Rendering is split from sending so the copy can be asserted — and looked at —
+ * without a transport in the way. It is also what lets the screenshots in
+ * `docs/assets/` be the real templates rather than a mock-up of them.
+ */
+export interface RenderedEmail {
+  subject: string;
+  text: string;
+  html: string;
+}
+
+/**
  * Invitation.
  *
  * **The inviter is deliberately not named.** MAG-2870 is explicit, and the
@@ -66,10 +79,11 @@ export type DeliveryOutcome = Awaited<ReturnType<typeof deliver>>;
  * nobody has verified yet, so a mistyped one puts a colleague's name and email
  * in a stranger's inbox. The recipient does not need it to act.
  */
-export async function sendInvitationEmail(
-  opts: { to: string; inviteUrl: string; expiresInDays: number },
-  log?: EmailLogFn,
-): Promise<DeliveryOutcome> {
+export function renderInvitationEmail(opts: {
+  to: string;
+  inviteUrl: string;
+  expiresInDays: number;
+}): RenderedEmail {
   const customer = customerName();
   const subject = EMAIL_SUBJECTS.invitation(customer);
   const days = opts.expiresInDays === 1 ? "1 day" : `${opts.expiresInDays} days`;
@@ -94,7 +108,14 @@ export async function sendInvitationEmail(
       ),
   });
 
-  return deliver({ to: opts.to, subject, text, html }, log);
+  return { subject, text, html };
+}
+
+export async function sendInvitationEmail(
+  opts: { to: string; inviteUrl: string; expiresInDays: number },
+  log?: EmailLogFn,
+): Promise<DeliveryOutcome> {
+  return deliver({ to: opts.to, ...renderInvitationEmail(opts) }, log);
 }
 
 /**
@@ -105,10 +126,11 @@ export async function sendInvitationEmail(
  * reset is an hour. A number in prose that nothing derives from the code is a
  * number that goes stale silently.
  */
-export async function sendPasswordResetEmail(
-  opts: { to: string; resetUrl: string; expiresInHours: number },
-  log?: EmailLogFn,
-): Promise<DeliveryOutcome> {
+export function renderPasswordResetEmail(opts: {
+  to: string;
+  resetUrl: string;
+  expiresInHours: number;
+}): RenderedEmail {
   const subject = EMAIL_SUBJECTS.password_reset(customerName());
   const hours = opts.expiresInHours === 1 ? "1 hour" : `${opts.expiresInHours} hours`;
 
@@ -133,7 +155,14 @@ export async function sendPasswordResetEmail(
       ),
   });
 
-  return deliver({ to: opts.to, subject, text, html }, log);
+  return { subject, text, html };
+}
+
+export async function sendPasswordResetEmail(
+  opts: { to: string; resetUrl: string; expiresInHours: number },
+  log?: EmailLogFn,
+): Promise<DeliveryOutcome> {
+  return deliver({ to: opts.to, ...renderPasswordResetEmail(opts) }, log);
 }
 
 /** Re-exported so call sites can type their audit note without reaching past
