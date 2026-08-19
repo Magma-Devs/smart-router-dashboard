@@ -159,13 +159,59 @@ dialing a coin-flip upstream is worse than a 404.
 
 ### REST and WebSocket
 
-REST paths are appended to the upstream's own path, and the snippet shows the
-same shape with `$UPSTREAM_URL` in front
-(`curl -s "$UPSTREAM_URL/cosmos/base/tendermint/v1beta1/blocks/latest"`).
+REST paths are appended to the upstream's own path rather than replacing it —
+plenty of upstreams carry their key as a path segment (`https://host/v2/<key>`),
+and replacing would turn a 200 into a confusing 404. Direct mode prints no code
+snippets: the browser holds only `scheme://host`, so any command it could offer
+would name a placeholder the reader has to resolve out of the values file first.
 
 Switching the drawer to **WS** switches the direct target too — a node's `wss://`
 url is a separate entry in the values file with its own index, and the api opens
 a single-shot socket for it.
+
+### Internal paths — where the two legs stop agreeing
+
+A few specs split one interface across **internal paths**: TON serves the
+toncenter v2 API and the tonindex v3 API as two REST collections, `/v2` and
+`/v3`; AVAX splits jsonrpc into `/C/rpc`, `/P` and `/X`. The two legs address
+those differently, and the drawer composes each one for you.
+
+**Via router — send the api name, with no version prefix.** The router matches
+REST by api name alone and then dials the upstream pinned to that name's
+collection. A prefixed path matches nothing:
+
+```console
+$ curl -s localhost:3460/getMasterchainInfo     | head -c 60
+{"ok":true,"result":{"@type":"blocks.masterchainInfo","last":…
+$ curl -s localhost:3460/v2/getMasterchainInfo
+{"code":12,"message":"Not Implemented","details":[]}
+```
+
+**Direct — the prefix depends on the upstream url.** The router keeps one proxy
+per internal path and builds its url two ways, so the direct leg reproduces the
+same arithmetic (`resolveDirectPath`, `src/components/try-me/direct-request.ts`):
+
+| Values-file entry | Router's url for `/v2` | Direct leg sends |
+|---|---|---|
+| `url: …/api` (no `internal_path`) | `…/api` + `/v2` — auto-generated | `/v2/getMasterchainInfo` |
+| `url: …tatum.io`, `internal_path: /v2` | the url as it stands | `/getMasterchainInfo` |
+| `url: …/api/v3`, `internal_path: /v3` | the url as it stands | `/accountStates` |
+
+Picking a `/v3` method while the drawer is aimed at a `/v2`-pinned upstream is
+refused before Send: no prefix reaches it, and relaying the upstream's 404 would
+read as a verdict on the request.
+
+The command dropdown groups by internal path whenever a chain has more than
+one, and the selected command carries its path as a tag — TON declares
+`/estimateFee` under **both** v2 and v3, and they are different calls.
+
+> **Known gap (smart-router, not the dashboard).** In direct-RPC mode the
+> router picks the upstream connection from the session, and that selection
+> does not carry the internal path — so a `/v3` REST method can be dialed
+> against the `/v2` upstream. Observed against `toncenter.com/api` with both
+> paths configured: `/addressBook` (a v3-only name) came back in the v2 error
+> shape. The catalog and the direct leg are correct; the router leg for TON v3
+> is not, until that is fixed upstream.
 
 ## Status codes
 

@@ -32,6 +32,31 @@ a name and icon while its Try-it drawer fell back to a family guess, and Ronin
 kept serving 57 methods for months after its spec was deleted upstream — it had
 already left the *gated* map.
 
+## Internal paths are metadata, never part of the identifier
+
+A few specs split one interface across `internal_path` collections — TON's REST
+`/v2` + `/v3`, AVAX's jsonrpc `/C/rpc` + `/P` + `/X`. The catalog emits every
+one of them, and each command carries its path as `ip`. **Do not splice it into
+`m`.** `m` is what a client sends through the router, and the router matches
+REST by api name alone (smart-router `matchSpecApiByName`), then dials the
+node-url pinned to that name's collection. A prefixed path matches nothing:
+
+```console
+$ curl -s localhost:3460/getMasterchainInfo | head -c 48
+{"ok":true,"result":{"@type":"blocks.masterchainInfo"…
+$ curl -s localhost:3460/v2/getMasterchainInfo
+{"code":12,"message":"Not Implemented","details":[]}
+```
+
+This was shipped and reverted once (0.18.3 → 0.18.4). The reasoning that led
+there — "the router owns internal-path routing, so send it the path" — is true
+of the *routing* and false of the *request*. `ip` is what the direct-to-upstream
+leg needs instead; see `docs/UPSTREAM-DIRECT-TEST.md` → "Internal paths".
+
+Curated hints are keyed by the spec's own api name for the same reason: a
+prefixed hint table silently stops matching, which is how TON lost every
+description and example it had.
+
 ## Explorers — a new chain arrives without one
 
 Same failure shape as the icons, one step further out: a chain with no explorer
