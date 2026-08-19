@@ -11,6 +11,10 @@ The dashboard has two auth modes, selected by the `AUTH_MODE` env var
 The implementation is a trimmed port of `lava-connect`'s auth stack — same
 JWT codec, same plugin layout, same seed semantics.
 
+> **Ticket coverage:** [`MAG-2729-REQUIREMENTS.md`](./MAG-2729-REQUIREMENTS.md)
+> maps every line of MAG-2729 to what implements it, with what is outstanding and
+> who owns it.
+
 ## How it works (enabled)
 
 <img src="./assets/auth-session-flow.svg" alt="Two bands. Signing in: the browser posts to the web tier, whose authorize() callback is the only place that sees the browser and forwards the caller's IP and User-Agent to the api with an internal secret; the api verifies the password, inserts a sessions row, and returns its id, which the web signs into the token as the sid claim. Every later request: the api verifies the signature, requires a sid, requires the database, then makes one indexed read joining sessions to users, each check with its own refusal code — and two separate levers, sessions.revoked_at for one device and users.signed_out_all_at for every outstanding token, are what make that read refuse." width="100%">
