@@ -10,7 +10,7 @@ import { apiUrl } from "@/lib/api-client";
  * A reset link that signs you in is a reset link worth stealing — and proving
  * the new password works by using it is the point of the exercise.
  */
-export function ResetForm({ token }: { token: string }) {
+export function ResetForm({ token, email }: { token: string; email: string }) {
   const [password, setPassword] = useState("");
   const [repeat, setRepeat] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -72,14 +72,17 @@ export function ResetForm({ token }: { token: string }) {
           />
           <div>
             <div style={{ fontWeight: 700, fontSize: 16 }}>Choose a new password</div>
-            <div style={{ fontSize: 12, color: "var(--text-3)" }}>Smart Router Dashboard</div>
+            {/* Which account this changes. Somebody with two of them cannot
+                tell from the link alone, and finding out by resetting the
+                wrong one is an expensive way to learn. */}
+            <div style={{ fontSize: 12, color: "var(--text-3)" }}>{email}</div>
           </div>
         </div>
 
         {done ? (
           <>
             <p style={{ fontSize: 13, color: "var(--text-2)", lineHeight: 1.6, margin: "0 0 8px" }}>
-              Your password has been changed.
+              Your password has been changed. You have been signed out everywhere else.
             </p>
             <p
               style={{
@@ -89,8 +92,8 @@ export function ResetForm({ token }: { token: string }) {
                 margin: "0 0 20px",
               }}
             >
-              Every device that was signed in to this account has been signed out, including any you
-              don&apos;t recognise.
+              That includes any device you don&apos;t recognise — which is the point, if this reset
+              was because you thought somebody else had your account.
             </p>
             <a
               className="gw-btn gw-btn--primary"
@@ -112,9 +115,20 @@ export function ResetForm({ token }: { token: string }) {
                 minLength={8}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="At least 8 characters"
               />
             </label>
+            {/* Before they type, not after they fail — MAG-2870 §3. A rule in a
+                placeholder disappears at the moment it becomes relevant. */}
+            <p
+              style={{
+                fontSize: 11.5,
+                color: "var(--text-3)",
+                margin: "-4px 0 0",
+                lineHeight: 1.5,
+              }}
+            >
+              At least 8 characters. Any characters, including spaces.
+            </p>
             <label style={labelStyle}>
               Repeat password
               <input
@@ -132,8 +146,8 @@ export function ResetForm({ token }: { token: string }) {
             <p
               style={{ fontSize: 11.5, color: "var(--text-3)", margin: "2px 0 0", lineHeight: 1.5 }}
             >
-              Setting this signs out every device on the account. Any characters, 8 to 64, checked
-              against known breached passwords.
+              Setting this signs out every device on the account. Checked against known breached
+              passwords.
             </p>
 
             {(error ?? (mismatch ? "Those passwords don't match." : null)) && (
@@ -158,10 +172,54 @@ export function ResetForm({ token }: { token: string }) {
               disabled={busy || mismatch}
               style={{ justifyContent: "center", marginTop: 4 }}
             >
-              {busy ? "Saving…" : "Set new password"}
+              {busy ? "Saving…" : "Save password"}
             </button>
           </form>
         )}
+      </div>
+    </main>
+  );
+}
+
+/**
+ * A reset link that is used, expired, or was never issued.
+ *
+ * **One message for all three.** MAG-2870 is explicit — "the same message for
+ * both cases. Telling someone a link was already used also tells an attacker it
+ * was already used" — and the holder cannot act on the difference anyway.
+ *
+ * What differs is the way out, because the two deployment shapes have different
+ * ones: managed has a self-service request, on-prem has an administrator.
+ */
+export function ResetDead({ managed }: { managed: boolean }) {
+  return (
+    <main
+      style={{
+        minHeight: "100vh",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "var(--bg)",
+        padding: 24,
+      }}
+    >
+      <div
+        className="gw-card"
+        style={{ width: "100%", maxWidth: 400, padding: 32, textAlign: "center" }}
+      >
+        <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 8 }}>This link has expired</div>
+        <p style={{ fontSize: 13, color: "var(--text-2)", lineHeight: 1.6, margin: "0 0 20px" }}>
+          {managed
+            ? "Request a new one and we'll email it to you."
+            : "Ask an administrator to generate a new one — this deployment has no mail server, so they hand it over directly."}
+        </p>
+        <a
+          className="gw-btn gw-btn--primary"
+          href="/login"
+          style={{ justifyContent: "center", width: "100%" }}
+        >
+          {managed ? "Request a new link" : "Go to sign in"}
+        </a>
       </div>
     </main>
   );

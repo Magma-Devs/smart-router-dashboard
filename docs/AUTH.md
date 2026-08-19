@@ -259,6 +259,83 @@ current one and signs out your *other* devices, keeping the tab you are in.
 Being logged out of the window you just changed your password in is hostile;
 logging out the other devices is the security value.
 
+## Email (MAG-2870)
+
+Exactly two transactional emails, and the ticket is explicit that nothing else
+is in scope: the invitation, and the password reset. Both are ports of
+lava-connect's approach — SES v2 behind a single send function, table-based HTML
+with inline styles because that is what renders the same in Gmail, Outlook and
+Apple Mail.
+
+**On-prem sends nothing, ever.** That is the design, not a limitation: both
+flows produce a link the admin hands over, and no customer deployment needs a
+mail server. The copy still matters there, because the same link lands in a chat
+message instead.
+
+| Setting | Effect |
+|---|---|
+| `AWS_REGION` | **The switch.** Unset ⇒ nothing is sent, the body is logged at `warn`, and the caller is told |
+| `AWS_ACCESS_KEY_ID` / `SECRET` | Optional. Absent ⇒ resolved from the environment (IRSA, instance role), so production stores no static keys |
+| `EMAIL_FROM` | Sender; an unmonitored no-reply |
+| `EMAIL_REPLY_TO` | A monitored inbox, so a reply to a reset reaches somebody |
+| `EMAIL_CONFIGURATION_SET` | Keeps each environment's bounce reputation separate on a shared SES identity |
+| `SES_ENDPOINT` | Points at a local SES mock for development |
+| `CUSTOMER_NAME` | Appears in the invitation subject — an invite lands somewhere that has never heard of us, and the customer's own name is what stops it reading as spam |
+
+### A send that does not happen
+
+`sendEmail` **never throws**. An invitation row is committed before the send is
+attempted, so failing the request would report failure for something that half
+happened — and returning `201` with no link would leave an admin believing an
+invitation is on its way to somebody who will never receive it.
+
+So the three outcomes collapse into two shapes, and the response says which:
+
+- **sent** — the link is in the recipient's inbox and nowhere else. The response
+  carries no url.
+- **not sent** (no transport, or SES refused) — the response carries the url and
+  `deliveryFallback: true`, and the invite dialog says the email could not be
+  sent rather than reusing the on-prem wording, which would blame a deployment
+  shape for an operational fault.
+
+Password reset has no such fallback: there is no admin in that flow to hand a
+link to, and returning one would let anybody mint a reset for any address. The
+audit note is the only record it went nowhere.
+
+### Why there is no email-log table
+
+lava-connect has `user_emails` because it has sixteen types, an admin console
+answering "did this person already get X", CSV export, and SES bounce
+correlation to build on. None of that is in scope here, and a table nothing
+reads is schema to migrate around later.
+
+The one fact worth keeping — did it go, or is the admin holding the link — goes
+on the audit row that already describes the event: `member.invited`,
+`invite.resent`, `password.reset_requested` each carry a `note` of `emailed`,
+`link shown to the admin`, or `email failed, link shown to the admin`. That is
+where somebody investigating already looks.
+
+**The body is never persisted**, in either design. A rendered invitation
+contains a live token.
+
+### The rules the copy follows
+
+From the ticket, and each has a test:
+
+- **The link appears as text as well as a button.** Mail clients strip buttons
+  and people forward these.
+- **The expiry is in the message**, and is passed in rather than written into
+  the copy — lava-connect's template hardcodes 30 minutes and ours is an hour.
+- **No marketing footer, no tracking, no unsubscribe.** The shell has no footer
+  and **no `<img>` at all**: a remote image in a security email reports when it
+  was opened and from where, whether or not anybody meant it as a tracking
+  pixel. The wordmark is set in text.
+- **The invitation does not name the inviter.** It goes to an address nobody has
+  verified, so a mistyped one puts a colleague's name and address in a
+  stranger's inbox.
+- **The reset says what to do if it wasn't you**, as the last line.
+
+
 ## Sign-in lockout
 
 Per-IP limiting is not the control that matters — a distributed attacker

@@ -79,6 +79,34 @@ export type ResetRejection = "not_found" | "used" | "expired" | "user_inactive";
 export type ResetOutcome = { ok: true; user: User } | { ok: false; reason: ResetRejection };
 
 /**
+ * What a reset link is for, without spending it.
+ *
+ * MAG-2870 requires the page to show the address being changed, so somebody
+ * who holds two accounts knows which one this is. That needs a read that does
+ * not claim the token — hence a lookup separate from {@link consumePasswordReset}.
+ *
+ * Every rejection collapses to one reason on the way out (see the route): used,
+ * expired and never-issued are indistinguishable to the holder, and telling
+ * them apart tells a stranger which of them a guessed token hit.
+ */
+export async function lookupPasswordReset(db: Database, rawToken: string): Promise<ResetOutcome> {
+  const tokenHash = hashToken(rawToken);
+  const rows = await db
+    .select({ reset: passwordResets, user: users })
+    .from(passwordResets)
+    .innerJoin(users, eq(users.id, passwordResets.userId))
+    .where(eq(passwordResets.tokenHash, tokenHash))
+    .limit(1);
+
+  const row = rows[0];
+  if (!row) return { ok: false, reason: "not_found" };
+  if (row.reset.usedAt) return { ok: false, reason: "used" };
+  if (row.reset.expiresAt.getTime() <= Date.now()) return { ok: false, reason: "expired" };
+  if (row.user.status !== "active") return { ok: false, reason: "user_inactive" };
+  return { ok: true, user: row.user };
+}
+
+/**
  * Consume a reset link and set the new password.
  *
  * Three things happen together, and all three matter:
