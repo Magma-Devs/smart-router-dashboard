@@ -79,10 +79,13 @@ function sendAuthError(
   message: string,
 ): FastifyReply {
   const error =
-    statusCode === 401 ? "Unauthorized" :
-    statusCode === 403 ? "Forbidden" :
-    statusCode === 503 ? "Service Unavailable" :
-    "Error";
+    statusCode === 401
+      ? "Unauthorized"
+      : statusCode === 403
+        ? "Forbidden"
+        : statusCode === 503
+          ? "Service Unavailable"
+          : "Error";
   if (!reply.sent) void reply.status(statusCode).send({ error, message, statusCode, code });
   return reply;
 }
@@ -199,12 +202,7 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
 
     if (!claims) {
       if (isPublic) return;
-      return sendAuthError(
-        reply,
-        401,
-        AUTH_ERROR_CODES.required,
-        "Authentication required",
-      );
+      return sendAuthError(reply, 401, AUTH_ERROR_CODES.required, "Authentication required");
     }
 
     // A token with no `sid` addresses no session, so nothing can be revoked and
@@ -223,12 +221,7 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
     const db = app.db;
     if (!db) {
       if (isPublic) return;
-      return sendAuthError(
-        reply,
-        503,
-        AUTH_ERROR_CODES.unavailable,
-        "auth database not ready",
-      );
+      return sendAuthError(reply, 503, AUTH_ERROR_CODES.unavailable, "auth database not ready");
     }
 
     const check = await checkSession(db, claims.sid, claims.iat);
@@ -258,10 +251,7 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
 
 /** Reject with 401 unless the request carries a live session. The global gate
  *  already covers `/api/*`; this is for handlers that want the value. */
-export function requireAuth(
-  request: FastifyRequest,
-  reply: FastifyReply,
-): AuthUser | null {
+export function requireAuth(request: FastifyRequest, reply: FastifyReply): AuthUser | null {
   if (!request.authUser) {
     sendAuthError(reply, 401, AUTH_ERROR_CODES.required, "Authentication required");
     return null;

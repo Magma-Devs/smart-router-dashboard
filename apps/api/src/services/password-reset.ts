@@ -76,9 +76,7 @@ export async function createPasswordReset(
 
 export type ResetRejection = "not_found" | "used" | "expired" | "user_inactive";
 
-export type ResetOutcome =
-  | { ok: true; user: User }
-  | { ok: false; reason: ResetRejection };
+export type ResetOutcome = { ok: true; user: User } | { ok: false; reason: ResetRejection };
 
 /**
  * Consume a reset link and set the new password.

@@ -11,13 +11,14 @@
 
 import { useState } from "react";
 import useSWR from "swr";
-import { apiGet, apiDownload, apiSend } from "@/lib/api-client";
+import { ApiError, apiGet, apiDownload, apiSend } from "@/lib/api-client";
 import { roleAtLeast, type Role } from "@sr/shared";
 import { getAuthState } from "@/lib/auth-store";
 import { InitialsAvatar, RoleBadge, relativeTime, shortDate } from "@/components/team/bits";
 import { InviteModal } from "@/components/team/InviteModal";
 import { ChangeRoleModal, type MemberSummary } from "@/components/team/ChangeRoleModal";
 import { RemoveMemberModal } from "@/components/team/RemoveMemberModal";
+import { ResetLinkModal } from "@/components/team/ResetLinkModal";
 
 const TABS = ["members", "invites"] as const;
 type Tab = (typeof TABS)[number];
@@ -54,6 +55,7 @@ export default function TeamPage() {
   const [changing, setChanging] = useState<MemberSummary | null>(null);
   const [removing, setRemoving] = useState<MemberSummary | null>(null);
   const [busyInvite, setBusyInvite] = useState<string | null>(null);
+  const [resetting, setResetting] = useState<MemberSummary | null>(null);
   const [freshLink, setFreshLink] = useState<{ id: string; url: string } | null>(null);
 
   const members = useSWR<MembersResponse>("/api/team/members", apiGet, { refreshInterval: 30000 });
@@ -62,6 +64,11 @@ export default function TeamPage() {
   const me = getAuthState().user;
   const isAdmin = roleAtLeast(me?.role, "admin");
   const invites = useSWR<InvitesResponse>(isAdmin ? "/api/team/invites" : null, apiGet);
+
+  // SWR reports the thrown ApiError; 401 is the one worth wording differently,
+  // because "sign in again" is actionable and "request failed" is not.
+  const membersError = members.error as ApiError | undefined;
+  const sessionExpired = membersError?.statusCode === 401;
 
   async function inviteAction(id: string, action: "resend" | "revoke") {
     setBusyInvite(id);
@@ -105,9 +112,15 @@ export default function TeamPage() {
       {members.data?.soleAdmin && isAdmin && (
         <div
           style={{
-            display: "flex", gap: 10, alignItems: "flex-start",
-            background: "rgba(255,57,0,0.05)", border: "1px solid rgba(255,57,0,0.25)",
-            borderRadius: 8, padding: "10px 12px", marginBottom: 16, fontSize: 12.5,
+            display: "flex",
+            gap: 10,
+            alignItems: "flex-start",
+            background: "rgba(255,57,0,0.05)",
+            border: "1px solid rgba(255,57,0,0.25)",
+            borderRadius: 8,
+            padding: "10px 12px",
+            marginBottom: 16,
+            fontSize: 12.5,
           }}
         >
           <span>
@@ -117,22 +130,63 @@ export default function TeamPage() {
         </div>
       )}
 
-      <div className="gw-row" style={{ gap: 0, borderBottom: "1px solid var(--line)", marginBottom: 20 }}>
+      <div
+        className="gw-row"
+        style={{ gap: 0, borderBottom: "1px solid var(--line)", marginBottom: 20 }}
+      >
         {TABS.filter((t) => t === "members" || isAdmin).map((t) => (
-          <button key={t} onClick={() => setTab(t)} style={{
-            padding: "8px 16px", fontSize: 13, fontWeight: tab === t ? 600 : 400,
-            border: "none", background: "transparent", cursor: "pointer",
-            color: tab === t ? "var(--text)" : "var(--text-3)",
-            borderBottom: `2px solid ${tab === t ? "var(--brand)" : "transparent"}`,
-            marginBottom: -1, fontFamily: "var(--font-ui)", textTransform: "capitalize",
-          }}>
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            style={{
+              padding: "8px 16px",
+              fontSize: 13,
+              fontWeight: tab === t ? 600 : 400,
+              border: "none",
+              background: "transparent",
+              cursor: "pointer",
+              color: tab === t ? "var(--text)" : "var(--text-3)",
+              borderBottom: `2px solid ${tab === t ? "var(--brand)" : "transparent"}`,
+              marginBottom: -1,
+              fontFamily: "var(--font-ui)",
+              textTransform: "capitalize",
+            }}
+          >
             {t}
-            {t === "invites" && invites.data?.invites.length ? ` (${invites.data.invites.length})` : ""}
+            {t === "invites" && invites.data?.invites.length
+              ? ` (${invites.data.invites.length})`
+              : ""}
           </button>
         ))}
       </div>
 
-      {tab === "members" && (
+      {/* A failed read must not look like an empty team.
+       *
+       * This table used to render its headers and nothing else whenever the
+       * fetch failed, which is indistinguishable from "you are the only
+       * member" — and on the one page whose whole job is answering "who still
+       * has access", the wrong answer is the dangerous one. A 401 here means
+       * the session is no longer usable, which the shell can't show because it
+       * reads the signed-in user from a store filled at page load. */}
+      {tab === "members" && membersError && (
+        <div className="gw-card" style={{ padding: "18px 20px" }}>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
+            {sessionExpired ? "Your session is no longer valid" : "Could not load the member list"}
+          </div>
+          <div style={{ fontSize: 12.5, color: "var(--text-2)", lineHeight: 1.6 }}>
+            {sessionExpired ? (
+              <>
+                Sign out and sign in again — the api refused this session. Nothing about the team
+                has changed; this page simply cannot read it.
+              </>
+            ) : (
+              membersError.message
+            )}
+          </div>
+        </div>
+      )}
+
+      {tab === "members" && !membersError && (
         <div className="gw-card" style={{ padding: 0, overflow: "hidden" }}>
           <table className="gw-table">
             <thead>
@@ -157,13 +211,22 @@ export default function TeamPage() {
                         <div>
                           <div style={{ fontSize: 13, fontWeight: 600 }}>
                             {m.name || m.email}
-                            {self && <span style={{ color: "var(--text-3)", fontWeight: 400 }}> · you</span>}
+                            {self && (
+                              <span style={{ color: "var(--text-3)", fontWeight: 400 }}>
+                                {" "}
+                                · you
+                              </span>
+                            )}
                           </div>
-                          <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 1 }}>{m.email}</div>
+                          <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 1 }}>
+                            {m.email}
+                          </div>
                         </div>
                       </div>
                     </td>
-                    <td><RoleBadge role={m.role} /></td>
+                    <td>
+                      <RoleBadge role={m.role} />
+                    </td>
                     <td>
                       {/* Not "No" — two-factor doesn't exist yet, and "No" would
                           be true today and wrong the day it ships. */}
@@ -188,6 +251,14 @@ export default function TeamPage() {
                             Change role
                           </button>
                           <button
+                            className="gw-btn"
+                            style={{ fontSize: 11, padding: "4px 8px", marginRight: 6 }}
+                            onClick={() => setResetting(m)}
+                            title="Generate a single-use password-reset link to hand over"
+                          >
+                            Reset link
+                          </button>
+                          <button
                             className="gw-btn gw-btn--danger"
                             style={{ fontSize: 11, padding: "4px 8px" }}
                             onClick={() => setRemoving(m)}
@@ -205,13 +276,16 @@ export default function TeamPage() {
         </div>
       )}
 
-      {tab === "invites" && isAdmin && (
-        invites.data?.invites.length ? (
+      {tab === "invites" &&
+        isAdmin &&
+        (invites.data?.invites.length ? (
           <div className="gw-card" style={{ padding: 0, overflow: "hidden" }}>
             <table className="gw-table">
               <thead>
                 <tr>
-                  <th>Email</th><th>Role</th><th>State</th>
+                  <th>Email</th>
+                  <th>Role</th>
+                  <th>State</th>
                   <th style={{ textAlign: "right" }}>Sent</th>
                   <th style={{ textAlign: "right" }}>Expires</th>
                   <th></th>
@@ -221,14 +295,20 @@ export default function TeamPage() {
                 {invites.data.invites.map((i) => (
                   <tr key={i.id}>
                     <td style={{ fontSize: 13 }}>{i.email}</td>
-                    <td><RoleBadge role={i.role} /></td>
+                    <td>
+                      <RoleBadge role={i.role} />
+                    </td>
                     <td>
                       <span className={"gw-tag" + (i.state === "pending" ? " gw-tag--info" : "")}>
                         {i.state}
                       </span>
                     </td>
-                    <td style={{ textAlign: "right", fontSize: 12, color: "var(--text-3)" }}>{shortDate(i.createdAt)}</td>
-                    <td style={{ textAlign: "right", fontSize: 12, color: "var(--text-3)" }}>{shortDate(i.expiresAt)}</td>
+                    <td style={{ textAlign: "right", fontSize: 12, color: "var(--text-3)" }}>
+                      {shortDate(i.createdAt)}
+                    </td>
+                    <td style={{ textAlign: "right", fontSize: 12, color: "var(--text-3)" }}>
+                      {shortDate(i.expiresAt)}
+                    </td>
                     <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                       {i.state !== "revoked" && (
                         <>
@@ -256,11 +336,16 @@ export default function TeamPage() {
               </tbody>
             </table>
             {freshLink && (
-              <div style={{ padding: "12px 14px", borderTop: "1px solid var(--line)", fontSize: 12 }}>
+              <div
+                style={{ padding: "12px 14px", borderTop: "1px solid var(--line)", fontSize: 12 }}
+              >
                 <div style={{ marginBottom: 6, color: "var(--text-2)" }}>
                   New link — the previous one no longer works. Shown once.
                 </div>
-                <div className="gw-mono" style={{ fontSize: 11, wordBreak: "break-all", userSelect: "all" }}>
+                <div
+                  className="gw-mono"
+                  style={{ fontSize: 11, wordBreak: "break-all", userSelect: "all" }}
+                >
                   {freshLink.url}
                 </div>
               </div>
@@ -274,13 +359,18 @@ export default function TeamPage() {
               Invite teammate
             </button>
           </div>
-        )
-      )}
+        ))}
 
       <InviteModal
         open={showInvite}
         onClose={() => setShowInvite(false)}
-        onInvited={() => void invites.mutate()}
+        onInvited={() => {
+          void invites.mutate();
+          // Show the tab the new invitation is on. Without this the admin is
+          // left looking at Members, where the person they just invited
+          // correctly isn't, and nothing indicates where they went.
+          setTab("invites");
+        }}
       />
       <ChangeRoleModal
         open={!!changing}
@@ -288,6 +378,8 @@ export default function TeamPage() {
         onClose={() => setChanging(null)}
         onChanged={() => void members.mutate()}
       />
+      <ResetLinkModal open={!!resetting} onClose={() => setResetting(null)} member={resetting} />
+
       <RemoveMemberModal
         open={!!removing}
         member={removing}

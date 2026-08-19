@@ -99,8 +99,18 @@ packages/shared/          @sr/shared — domain types, metric catalog, PromQL bu
                             explorer + deep links (docs/CHAINS.md)
     constants/windows.ts    WINDOWS — 13-window catalog (5m..30d) → PromQL range + step
     promql/builders.ts      typed query builders shared by api (+ docs)
+    constants/roles.ts      ROLES + roleAtLeast — four cumulative roles
+    constants/audit-events.ts  the audit log's verb set (see "Audit log")
+    audit/format.ts         how a value is written into an audit row —
+                            redaction, (none)/(new)/(deleted), yes/no, lists
     types/domain.ts         OverviewData, DashboardData, HeroSummary, ChainSeries,
                             ProviderDetail, ErrorsReport, RouterTopology, …
+packages/db/              @sr/db — Drizzle + Postgres (AUTH_MODE=enabled only)
+  src/
+    schema.ts           users · sessions
+    schema-audit.ts     audit_events · audit_event_changes (append-only)
+    audit.ts            createAuditWriter — the writer every task emits through
+    testing.ts          createTestDb() — pglite, a real Postgres in-process
 apps/api/                 @sr/api — Fastify 5 (:8000)
   src/
     routes/             health · version · metrics · config
@@ -342,6 +352,44 @@ A Kubernetes deployment runs the api as the `…/backend` image and the web as
 | Frontend liveness / readiness | `/api/config` (`/` also answers — it 307s to `/metrics`) |
 | Values mount | `<HELM_VALUES_DIR>/core/values.yml`, the rendered values. Drives `publicUrls` above, so the pod must roll when they change |
 
+## Audit log
+
+`AUTH_MODE=enabled` only — the default mode has no database, so the audit
+surfaces render the usual honest empty state naming the reason. MAG-2770 owns
+the log; the accounts, 2FA and config-approval tasks only emit into it.
+
+- **The verb set is a typed catalog**, not a convention:
+  `packages/shared/src/constants/audit-events.ts` holds every event with its
+  group, whether it carries a diff, and whether it may carry access context.
+  Four tickets write these strings, so a typo is a typecheck failure rather
+  than an unfilterable row — and the same constant generates the published
+  event list the ticket requires.
+- **One writer, `createAuditWriter(db)`** (`packages/db/src/audit.ts`). It
+  lives in `@sr/db`, not the api, because the recovery commands run from a
+  shell on the host with no request anywhere. It resolves the group and the
+  access-context rule from the catalog rather than trusting the caller.
+  `write(event, tx?)` — pass the caller's transaction and the row commits or
+  rolls back with the mutation it records. **Failure behaviour is asymmetric
+  on purpose**: standalone it swallows and reports (a sign-in must not 500
+  because the log is unwell); inside a transaction it propagates, because the
+  failed insert has already aborted the caller's transaction and catching it
+  would turn an atomicity guarantee into a silent maybe.
+- **Redaction happens on the way in.** `audit/format.ts` is the only way values
+  reach a row: `(none)` · `(new)` · `(deleted)` · `yes`/`no` · stable
+  comma-joined lists · `(changed, ends a91f)`. There is no un-redacted copy in
+  the table, which makes "no secret or node URL appears in the log, the export,
+  or the API" a property of the schema rather than a rule three read paths have
+  to remember. MAG-2731's approve screen *does* show full values — that reads
+  the pending-change record, a different table, and must never be pointed here.
+- **Names are snapshots, never joins.** `actor_name` / `target_name` record
+  what the thing was called at the time. A removed person keeps their name in
+  the log permanently, and a rename cannot rewrite history.
+- **Append-only in the database, not just the product.** A
+  `BEFORE UPDATE OR DELETE` trigger on **both** tables raises. The one
+  legitimate writer is retention, which opens the gate with
+  `SET LOCAL audit.purge = 'on'` inside its own transaction. This is a product
+  boundary, not tamper-evidence — hash chaining is deliberately out of scope.
+
 ## Time windows
 
 `packages/shared/src/constants/windows.ts` defines the **13-window catalog**
@@ -367,7 +415,7 @@ Every `/api/metrics/*` route also accepts **`router?`** — the router scope
 | `GET /auth/bootstrap` | — | `{ needsSetup, mode }` — whether this deployment still needs its first admin (derived from "no active users", never a flag), and which shape it is. Never reveals the setup token. Public |
 | `POST /auth/setup` | — | Creates the first admin on a fresh install: `{ token, email, password, name? }` → `{ user, sessionId }`. 403 on a wrong token, 409 once claimed. Public |
 | `POST /auth/invite/preview` | — | `{ token }` → `{ email, role, expiresAt }` — what an invitation link is for. Public; the token travels in the body, never a URL |
-| `POST /auth/invite/accept` | — | Redeem: `{ token, password }` or `{ token, googleIdToken }` → `{ user, sessionId }`. The account is created with the **invited** address |
+| `POST /auth/invite/accept` | — | Redeem: `{ token, password }` → `{ user, sessionId }`. The account is created with the **invited** address, which the redeemer never supplies |
 | `GET /api/team/invites` | — | Invitations not yet redeemed, each with `state` (`pending`/`expired`/`revoked`). Admin |
 | `POST /api/team/invites` | — | `{ email, role }` → the invitation, plus `url` on-prem (shown once). 409 if already a member or already invited. Admin |
 | `POST /api/team/invites/:id/resend` · `DELETE …/:id` | — | New link (invalidating the old) / revoke. 410 once redeemed. Admin |
@@ -432,8 +480,7 @@ Auth (only read when `AUTH_MODE=enabled`; the metrics path never touches the DB)
 | `AUTH_MODE` | `disabled` | `enabled` turns on the session gate + `/auth/*` + Postgres |
 | `AUTH_SECRET` | (unset) | HS256 signing secret shared with the web (must match) |
 | `DATABASE_URL` | (unset) | Postgres connection string for `users` + `sessions` |
-| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | (unset) | idempotent bootstrap-admin seed on first boot |
-| `GOOGLE_CLIENT_ID` | (unset) | validates the `aud` claim of Google ID tokens server-side |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | (unset) | idempotent admin seed on first boot, **development only** — refused under `NODE_ENV=production`, where first-run setup with the installer's `SETUP_TOKEN` is the only way an account comes into existence |
 | `INTERNAL_AUTH_SECRET` | (unset) | shared with the web; gates whether forwarded browser IP / User-Agent are trusted on `/auth/sign-in`. Unset ⇒ the api records what it observes |
 | `DEPLOYMENT_MODE` | `onprem` | `managed` (we host, email works) / `onprem` (customer hosts, no mail server). Forks invite + reset delivery; read by the web at runtime via `/api/config` |
 | `SETUP_TOKEN` | (generated) | First-run token, required to create the first admin. Unset ⇒ generated once at boot and logged at `warn` |
@@ -454,7 +501,6 @@ Web — build-time vs. **runtime**:
 | `DEPLOYMENT_MODE` | `onprem` | must match the api. Surfaced to the browser by `GET /api/config`, so one image serves both shapes |
 | `INTERNAL_AUTH_SECRET` | (unset) | must match the api; lets the web forward the browser's real IP / User-Agent on sign-in |
 | `INTERNAL_API_BASE_URL` | (falls back to api url) | server-side api URL for Auth.js callbacks (compose sets `http://api:8000`) |
-| `{GOOGLE,GITHUB,DISCORD}_CLIENT_{ID,SECRET}` | (unset) | each provider's button appears only when its id+secret pair is set |
 
 The browser resolves its api base **once per session** from `/api/config`
 (`DASHBOARD_API_URL` → `NEXT_PUBLIC_API_URL` → `http://localhost:8000`),

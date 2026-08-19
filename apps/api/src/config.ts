@@ -41,7 +41,10 @@ function envList(name: string): string[] | true {
       /* fall through to comma split */
     }
   }
-  return trimmed.split(",").map((o) => o.trim()).filter(Boolean);
+  return trimmed
+    .split(",")
+    .map((o) => o.trim())
+    .filter(Boolean);
 }
 
 export const config = {
@@ -105,8 +108,6 @@ export const config = {
     databaseUrl: env("DATABASE_URL"),
     adminEmail: env("ADMIN_EMAIL"),
     adminPassword: env("ADMIN_PASSWORD"),
-    /** Needed to validate the `aud` claim of Google ID tokens server-side. */
-    googleClientId: env("GOOGLE_CLIENT_ID"),
     /**
      * Shared secret proving a request came from our own web tier.
      *

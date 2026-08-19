@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import type { Database } from "@sr/db";
 import { isRole, roleAtLeast, toCsv, type Role } from "@sr/shared";
 import { requireRole } from "../plugins/auth.js";
-import { noopAuditWriter, type AuditWriter } from "../services/audit.js";
+import { lazyAuditWriter, type AuditWriter } from "../services/audit.js";
 import {
   createInvitation,
   inviteUrl,
@@ -36,14 +36,20 @@ interface InviteBody {
  * `routes/auth.ts`, because the person redeeming has no account yet.
  */
 export async function teamRoutes(app: FastifyInstance) {
-  const audit: AuditWriter = noopAuditWriter(app.log);
-  const mode: DeploymentMode = config.deploymentMode;
+  const audit: AuditWriter = lazyAuditWriter(app);
+  // Read from the live env at register time. `config` snapshots at module load,
+  // which is before a test — or anything that loads secrets late — can set it.
+  const mode: DeploymentMode =
+    (process.env.DEPLOYMENT_MODE as DeploymentMode | undefined) ?? config.deploymentMode;
+  const publicWebOrigin = process.env.PUBLIC_WEB_ORIGIN ?? config.publicWebOrigin;
 
   function dbOr503(reply: FastifyReply): Database | null {
     if (!app.db) {
-      void reply
-        .code(503)
-        .send({ statusCode: 503, error: "Service Unavailable", message: "auth database not ready" });
+      void reply.code(503).send({
+        statusCode: 503,
+        error: "Service Unavailable",
+        message: "auth database not ready",
+      });
       return null;
     }
     return app.db;
@@ -52,7 +58,7 @@ export async function teamRoutes(app: FastifyInstance) {
   /** Where invite links point. Without it we can't build one, and returning a
    *  link to a host we guessed would be worse than saying so. */
   function webOrigin(reply: FastifyReply): string | null {
-    const origin = config.publicWebOrigin;
+    const origin = publicWebOrigin;
     if (!origin) {
       void reply.code(500).send({
         statusCode: 500,
@@ -101,7 +107,10 @@ export async function teamRoutes(app: FastifyInstance) {
           required: ["email", "role"],
           properties: {
             email: { type: "string" as const, format: "email" },
-            role: { type: "string" as const, enum: ["read_only", "requester", "approver", "admin"] },
+            role: {
+              type: "string" as const,
+              enum: ["read_only", "requester", "approver", "admin"],
+            },
           },
         },
       },
@@ -139,11 +148,12 @@ export async function teamRoutes(app: FastifyInstance) {
       }
 
       const { invitation, rawToken } = result.created;
+      // No `changes`: the catalog marks this verb carriesChanges:false, and the
+      // role is already on the target. Same class as member.removed.
       await audit.write({
         action: "member.invited",
         actor: { id: me.id, kind: "user" },
         target: { type: "invite", id: invitation.id, name: invitation.email },
-        changes: [{ field: "role", from: "(new)", to: invitation.role }],
       });
 
       return reply.code(201).send({
@@ -255,7 +265,7 @@ export async function teamRoutes(app: FastifyInstance) {
 
 /** Split out so the invite routes above stay readable — same registration. */
 export async function teamPasswordRoutes(app: FastifyInstance) {
-  const audit: AuditWriter = noopAuditWriter(app.log);
+  const audit: AuditWriter = lazyAuditWriter(app);
 
   app.post(
     "/api/team/members/:id/reset-link",
@@ -281,7 +291,7 @@ export async function teamPasswordRoutes(app: FastifyInstance) {
           message: "auth database not ready",
         });
       }
-      const origin = config.publicWebOrigin;
+      const origin = process.env.PUBLIC_WEB_ORIGIN ?? config.publicWebOrigin;
       if (!origin) {
         return reply.code(500).send({
           statusCode: 500,
@@ -298,24 +308,32 @@ export async function teamPasswordRoutes(app: FastifyInstance) {
           .send({ statusCode: 404, error: "Not Found", message: "No such member." });
       }
       if (!target.passwordHash) {
+        // Defensive, as on /api/account/password: setup and invite redemption
+        // both set a hash, so an account without one can't currently exist.
         return reply.code(409).send({
           statusCode: 409,
           error: "Conflict",
-          message: `${target.email} signs in with Google and has no password to reset.`,
+          message: `${target.email} has no password set, so there is nothing to reset.`,
         });
       }
 
       const created = await createPasswordReset(db, {
         userId: target.id,
-        mode: config.deploymentMode,
+        mode:
+          (process.env.DEPLOYMENT_MODE as "managed" | "onprem" | undefined) ??
+          config.deploymentMode,
         // The column an auditor reads: an admin started this, not the holder.
         createdBy: me.id,
       });
 
+      // Access context is required here by the catalog, and rightly: an admin
+      // minting a reset link for somebody else is the first half of an account
+      // takeover, so "from where" is part of the record.
       await audit.write({
         action: "password.reset_link_generated",
         actor: { id: me.id, kind: "user" },
         target: { type: "member", id: target.id, name: target.email },
+        access: { ip: me.session.ip, client: me.session.client, sessionId: me.sessionId },
       });
 
       // An admin never sets someone else's password — they hand over a link and
@@ -335,7 +353,7 @@ interface RoleBody {
 /** The member list and the two mutations that act on somebody else. Split from
  *  the invite routes above only for length — same registration. */
 export async function teamMemberRoutes(app: FastifyInstance) {
-  const audit: AuditWriter = noopAuditWriter(app.log);
+  const audit: AuditWriter = lazyAuditWriter(app);
 
   function db(reply: FastifyReply): Database | null {
     if (!app.db) {
@@ -381,7 +399,9 @@ export async function teamMemberRoutes(app: FastifyInstance) {
 
   app.get(
     "/api/team/members.csv",
-    { schema: { tags: ["Team"], summary: "The member list as CSV — the artifact auditors ask for" } },
+    {
+      schema: { tags: ["Team"], summary: "The member list as CSV — the artifact auditors ask for" },
+    },
     async (request, reply) => {
       if (!requireRole(request, reply, "read_only")) return reply;
       const conn = db(reply);
@@ -424,7 +444,10 @@ export async function teamMemberRoutes(app: FastifyInstance) {
           type: "object" as const,
           required: ["role"],
           properties: {
-            role: { type: "string" as const, enum: ["read_only", "requester", "approver", "admin"] },
+            role: {
+              type: "string" as const,
+              enum: ["read_only", "requester", "approver", "admin"],
+            },
           },
         },
       },
@@ -449,9 +472,13 @@ export async function teamMemberRoutes(app: FastifyInstance) {
           ? reply.code(409).send({
               statusCode: 409,
               error: "Conflict",
-              message: "You cannot change your own role. Promote someone else first, then step down.",
+              message:
+                "You cannot change your own role. To step down, promote someone else and ask " +
+                "them to demote you — the last move is never your own.",
             })
-          : reply.code(404).send({ statusCode: 404, error: "Not Found", message: "No such member." });
+          : reply
+              .code(404)
+              .send({ statusCode: 404, error: "Not Found", message: "No such member." });
       }
 
       await audit.write({
@@ -463,7 +490,10 @@ export async function teamMemberRoutes(app: FastifyInstance) {
 
       // Losing the ability to approve has the same consequence as leaving, for
       // anything currently waiting on them.
-      if (!roleAtLeast(result.user.role, "approver") && roleAtLeast(result.previousRole, "approver")) {
+      if (
+        !roleAtLeast(result.user.role, "approver") &&
+        roleAtLeast(result.previousRole, "approver")
+      ) {
         await onMemberDeactivated(conn, result.user.id, "demoted");
       }
 
@@ -499,14 +529,20 @@ export async function teamMemberRoutes(app: FastifyInstance) {
               error: "Conflict",
               message: "You cannot remove yourself.",
             })
-          : reply.code(404).send({ statusCode: 404, error: "Not Found", message: "No such member." });
+          : reply
+              .code(404)
+              .send({ statusCode: 404, error: "Not Found", message: "No such member." });
       }
 
+      // No `changes`: MAG-2770's catalog says this verb carries no diff, and it
+      // is right — "removed" is self-describing, and `status: active -> removed`
+      // adds nothing a reader didn't get from the verb. Sending it anyway made
+      // the writer report a `changes-not-expected` violation, which is exactly
+      // the cross-side mismatch the emission test exists to catch.
       await audit.write({
         action: "member.removed",
         actor: { id: me.id, kind: "user" },
         target: { type: "member", id: result.user.id, name: result.user.email },
-        changes: [{ field: "status", from: "active", to: "removed" }],
       });
       await onMemberDeactivated(conn, result.user.id, "removed");
 

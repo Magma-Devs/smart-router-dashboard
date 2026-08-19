@@ -17,10 +17,15 @@ export function ChangePasswordCard() {
   const mismatch = repeat.length > 0 && next !== repeat;
 
   async function submit() {
-    setBusy(true); setError(null); setDone(false);
+    setBusy(true);
+    setError(null);
+    setDone(false);
     try {
       await apiPost("/api/account/password", { current, next });
-      setCurrent(""); setNext(""); setRepeat(""); setDone(true);
+      setCurrent("");
+      setNext("");
+      setRepeat("");
+      setDone(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not change your password.");
     } finally {
@@ -32,13 +37,31 @@ export function ChangePasswordCard() {
     <div className="gw-card" style={{ marginBottom: 14 }}>
       <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Change password</div>
       <div style={{ display: "grid", gap: 9, maxWidth: 360 }}>
-        <input className="gw-input" type="password" placeholder="Current password"
-          autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} />
-        <input className="gw-input" type="password" placeholder="New password"
-          autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} />
-        <input className="gw-input" type="password" placeholder="Repeat new password"
-          autoComplete="new-password" value={repeat} onChange={(e) => setRepeat(e.target.value)}
-          aria-invalid={mismatch} />
+        <input
+          className="gw-input"
+          type="password"
+          placeholder="Current password"
+          autoComplete="current-password"
+          value={current}
+          onChange={(e) => setCurrent(e.target.value)}
+        />
+        <input
+          className="gw-input"
+          type="password"
+          placeholder="New password"
+          autoComplete="new-password"
+          value={next}
+          onChange={(e) => setNext(e.target.value)}
+        />
+        <input
+          className="gw-input"
+          type="password"
+          placeholder="Repeat new password"
+          autoComplete="new-password"
+          value={repeat}
+          onChange={(e) => setRepeat(e.target.value)}
+          aria-invalid={mismatch}
+        />
         <div style={{ fontSize: 11.5, color: "var(--text-3)", lineHeight: 1.5 }}>
           8 to 64 characters, checked against known breached passwords. Your other devices will be
           signed out; this one stays.
@@ -48,10 +71,15 @@ export function ChangePasswordCard() {
             {error ?? "Those passwords don't match."}
           </div>
         )}
-        {done && <div style={{ fontSize: 12, color: "var(--ok, var(--text-2))" }}>Password changed.</div>}
-        <button className="gw-btn gw-btn--primary" style={{ alignSelf: "flex-start" }}
+        {done && (
+          <div style={{ fontSize: 12, color: "var(--ok, var(--text-2))" }}>Password changed.</div>
+        )}
+        <button
+          className="gw-btn gw-btn--primary"
+          style={{ alignSelf: "flex-start" }}
           disabled={busy || mismatch || !current || !next}
-          onClick={() => void submit()}>
+          onClick={() => void submit()}
+        >
           {busy ? "Saving…" : "Update password"}
         </button>
       </div>

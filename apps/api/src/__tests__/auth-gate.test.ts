@@ -87,8 +87,18 @@ async function seedUser(overrides: Partial<typeof users.$inferInsert> = {}): Pro
   return created!;
 }
 
-async function mint(opts: { sub: string; sid: string; role?: Role; iat?: number }): Promise<string> {
-  const jwt = new SignJWT({ sub: opts.sub, email: "dana@example.com", role: opts.role ?? "read_only", sid: opts.sid })
+async function mint(opts: {
+  sub: string;
+  sid: string;
+  role?: Role;
+  iat?: number;
+}): Promise<string> {
+  const jwt = new SignJWT({
+    sub: opts.sub,
+    email: "dana@example.com",
+    role: opts.role ?? "read_only",
+    sid: opts.sid,
+  })
     .setProtectedHeader({ alg: "HS256", typ: "JWT" })
     .setIssuer(SESSION_JWT_ISSUER)
     .setAudience(SESSION_JWT_AUDIENCE)
@@ -211,7 +221,10 @@ describe("POST /auth/sign-in", () => {
   });
 
   it("opens a session and returns its id", async () => {
-    const res = await signIn({ email: "dana@example.com", password: "correct horse battery staple" });
+    const res = await signIn({
+      email: "dana@example.com",
+      password: "correct horse battery staple",
+    });
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.sessionId).toEqual(expect.any(String));
@@ -232,7 +245,10 @@ describe("POST /auth/sign-in", () => {
 
   it("refuses a removed account without resurrecting it", async () => {
     await t.db.update(users).set({ status: "removed" }).where(eq(users.email, "dana@example.com"));
-    const res = await signIn({ email: "dana@example.com", password: "correct horse battery staple" });
+    const res = await signIn({
+      email: "dana@example.com",
+      password: "correct horse battery staple",
+    });
     expect(res.statusCode).toBe(401);
   });
 
@@ -240,7 +256,10 @@ describe("POST /auth/sign-in", () => {
     const credentials = {
       email: "dana@example.com",
       password: "correct horse battery staple",
-      clientContext: { ip: "203.0.113.7", userAgent: "Mozilla/5.0 (Windows NT 10.0) Firefox/131.0" },
+      clientContext: {
+        ip: "203.0.113.7",
+        userAgent: "Mozilla/5.0 (Windows NT 10.0) Firefox/131.0",
+      },
     };
 
     it("is recorded when the caller proves it is our web tier", async () => {

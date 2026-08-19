@@ -22,12 +22,7 @@ import {
  * `requester` / `approver` are enforced by the config-approval flow (MAG-2731);
  * this package only defines the vocabulary and the ordering.
  */
-export const userRoleEnum = pgEnum("user_role", [
-  "read_only",
-  "requester",
-  "approver",
-  "admin",
-]);
+export const userRoleEnum = pgEnum("user_role", ["read_only", "requester", "approver", "admin"]);
 
 /**
  * Account state. Replaces the old `is_suspended` boolean — two overlapping
@@ -264,3 +259,7 @@ export const loginAttempts = pgTable("login_attempts", {
 });
 
 export type LoginAttempt = typeof loginAttempts.$inferSelect;
+
+/** MAG-2770 audit log — kept in its own module, re-exported so
+ *  `import * as schema` still sees every table. */
+export * from "./schema-audit.js";
