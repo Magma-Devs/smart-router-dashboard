@@ -11,6 +11,19 @@ export {
   type AuditWriterOptions,
 } from "./audit.js";
 export {
+  AUDIT_TOKEN_PREFIX,
+  hashAuditToken,
+  listAuditTokens,
+  looksLikeAuditToken,
+  mintAuditToken,
+  resolveAuditToken,
+  revokeAuditToken,
+  touchAuditToken,
+  type MintAuditTokenInput,
+  type MintedAuditToken,
+  type RevokeAuditTokenInput,
+} from "./audit-tokens.js";
+export {
   AUDIT_PAGE_DEFAULT,
   AUDIT_PAGE_MAX,
   auditFilterFingerprint,

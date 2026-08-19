@@ -1,5 +1,5 @@
 import { Readable } from "node:stream";
-import type { FastifyInstance, FastifyReply } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
   AUDIT_GROUPS,
   escapeCsvField,
@@ -50,6 +50,24 @@ interface AuditEventsQuery {
   per_page?: number;
   after?: string;
 }
+
+/**
+ * Per-caller limit on the read surfaces.
+ *
+ * The ticket asks for the limit and its reset to be "visible to the caller",
+ * which `@fastify/rate-limit` already does — it sets `x-ratelimit-limit`,
+ * `-remaining` and `-reset` by default. What it does not do by default is count
+ * a token separately from an address: a customer's puller behind one NAT would
+ * otherwise share a bucket with everyone else there, and two pullers on one
+ * host would halve each other. Keying on the token identity fixes both, and
+ * falls back to the address for a person clicking around.
+ */
+const AUDIT_READ_RATE_LIMIT = {
+  max: 120,
+  timeWindow: "1 minute",
+  keyGenerator: (request: FastifyRequest): string =>
+    request.auditToken ? `audit-token:${request.auditToken.id}` : `ip:${request.ip}`,
+};
 
 /** The filters both read surfaces accept. Named so the export cannot drift
  *  from the feed in what it will answer. */
@@ -261,6 +279,7 @@ export async function auditRoutes(app: FastifyInstance) {
   app.get<{ Querystring: AuditEventsQuery }>(
     "/api/audit/events",
     {
+      config: { rateLimit: AUDIT_READ_RATE_LIMIT },
       schema: {
         tags: ["Audit"],
         summary: "Read the audit log, oldest first, resumable",
@@ -348,6 +367,7 @@ export async function auditRoutes(app: FastifyInstance) {
   app.get<{ Querystring: AuditEventsQuery }>(
     "/api/audit/export.csv",
     {
+      config: { rateLimit: AUDIT_READ_RATE_LIMIT },
       schema: {
         tags: ["Audit"],
         summary: "Download the audit log as CSV",

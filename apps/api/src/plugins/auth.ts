@@ -2,6 +2,12 @@ import fp from "fastify-plugin";
 import jwt from "@fastify/jwt";
 import rateLimit from "@fastify/rate-limit";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import {
+  looksLikeAuditToken,
+  resolveAuditToken,
+  touchAuditToken,
+  type AuditTokenRow,
+} from "@sr/db";
 import { roleAtLeast, type Role } from "@sr/shared";
 import type { Session, User } from "@sr/db";
 import { checkSession, touchSession, type SessionRejection } from "../services/sessions.js";
@@ -53,10 +59,33 @@ declare module "@fastify/jwt" {
   }
 }
 
+/**
+ * What an audit token is allowed to reach.
+ *
+ * Read-only by construction rather than by convention: the rule is a method and
+ * a path prefix, checked in the gate, so a route added under `/api/audit/`
+ * later cannot accidentally become writable to a token — and no route outside
+ * it can be reached at all. The ticket's requirement is that this credential
+ * "reads this endpoint and nothing else", and a security team's review of that
+ * claim should not have to read every handler.
+ *
+ * The token-management routes are deliberately excluded: a token that could
+ * mint another token would be an escalation dressed as a read.
+ */
+export function auditTokenMayReach(method: string, url: string): boolean {
+  if (method !== "GET" && method !== "HEAD") return false;
+  const path = url.split("?")[0] ?? url;
+  if (path.startsWith("/api/audit/tokens")) return false;
+  return path === "/api/audit" || path.startsWith("/api/audit/");
+}
+
 declare module "fastify" {
   interface FastifyRequest {
     /** Set by the auth plugin's onRequest hook; null when no/invalid Bearer. */
     authUser: AuthUser | null;
+    /** Set instead of `authUser` when the caller presented an audit token.
+     *  The two are mutually exclusive: a request is a person or a puller. */
+    auditToken: AuditTokenRow | null;
   }
 }
 
@@ -79,10 +108,13 @@ function sendAuthError(
   message: string,
 ): FastifyReply {
   const error =
-    statusCode === 401 ? "Unauthorized" :
-    statusCode === 403 ? "Forbidden" :
-    statusCode === 503 ? "Service Unavailable" :
-    "Error";
+    statusCode === 401
+      ? "Unauthorized"
+      : statusCode === 403
+        ? "Forbidden"
+        : statusCode === 503
+          ? "Service Unavailable"
+          : "Error";
   if (!reply.sent) void reply.status(statusCode).send({ error, message, statusCode, code });
   return reply;
 }
@@ -150,6 +182,15 @@ function rejectionResponse(reason: SessionRejection): {
  * 503 rather than trusting the token on its own — an auth check that quietly
  * stops checking is worse than one that is briefly unavailable.
  */
+/** The raw Bearer value, or null. `@fastify/jwt` reads the same header but
+ *  only ever as a JWT, and an audit token is not one. */
+function bearerOf(request: FastifyRequest): string | null {
+  const header = request.headers.authorization;
+  if (!header?.startsWith("Bearer ")) return null;
+  const value = header.slice("Bearer ".length).trim();
+  return value.length > 0 ? value : null;
+}
+
 export const authPlugin = fp(async (app: FastifyInstance) => {
   // Read at register time, not module-load time — test setups inject
   // AUTH_SECRET dynamically and the config snapshot would miss it.
@@ -180,12 +221,46 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
   });
 
   app.decorateRequest("authUser", null);
+  app.decorateRequest("auditToken", null);
 
   app.addHook("onRequest", async (request, reply) => {
     // CORS preflights carry no headers and are answered by @fastify/cors.
     if (request.method === "OPTIONS") return;
 
     const isPublic = isPublicPath(request.url);
+
+    // An audit token is a different kind of principal, so it is resolved before
+    // the session path rather than inside it — trying to parse one as a JWT
+    // would fail in a way that reports "please sign in" to a machine.
+    const presented = bearerOf(request);
+    if (presented && looksLikeAuditToken(presented)) {
+      if (!auditTokenMayReach(request.method, request.url)) {
+        // 403, not 401: the credential is fine and re-presenting it will not
+        // help. Saying so beats a puller retrying forever against a route it
+        // will never be allowed to have.
+        return sendAuthError(
+          reply,
+          403,
+          AUTH_ERROR_CODES.forbidden,
+          "An audit token may only read the audit log",
+        );
+      }
+      const db = app.db;
+      if (!db) {
+        return sendAuthError(reply, 503, AUTH_ERROR_CODES.unavailable, "auth database not ready");
+      }
+      const token = await resolveAuditToken(db, presented);
+      if (!token) {
+        // Unknown, malformed and revoked are one answer on purpose.
+        return sendAuthError(reply, 401, AUTH_ERROR_CODES.required, "Authentication required");
+      }
+      request.auditToken = token;
+      // Never a reason to fail the read it rode in on.
+      void touchAuditToken(db, token, request.ip ?? null).catch((err: unknown) => {
+        request.log.warn({ err }, "audit token heartbeat failed");
+      });
+      return;
+    }
 
     let claims: AuthClaims | null;
     try {
@@ -199,12 +274,7 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
 
     if (!claims) {
       if (isPublic) return;
-      return sendAuthError(
-        reply,
-        401,
-        AUTH_ERROR_CODES.required,
-        "Authentication required",
-      );
+      return sendAuthError(reply, 401, AUTH_ERROR_CODES.required, "Authentication required");
     }
 
     // A token with no `sid` addresses no session, so nothing can be revoked and
@@ -223,12 +293,7 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
     const db = app.db;
     if (!db) {
       if (isPublic) return;
-      return sendAuthError(
-        reply,
-        503,
-        AUTH_ERROR_CODES.unavailable,
-        "auth database not ready",
-      );
+      return sendAuthError(reply, 503, AUTH_ERROR_CODES.unavailable, "auth database not ready");
     }
 
     const check = await checkSession(db, claims.sid, claims.iat);
@@ -258,10 +323,7 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
 
 /** Reject with 401 unless the request carries a live session. The global gate
  *  already covers `/api/*`; this is for handlers that want the value. */
-export function requireAuth(
-  request: FastifyRequest,
-  reply: FastifyReply,
-): AuthUser | null {
+export function requireAuth(request: FastifyRequest, reply: FastifyReply): AuthUser | null {
   if (!request.authUser) {
     sendAuthError(reply, 401, AUTH_ERROR_CODES.required, "Authentication required");
     return null;

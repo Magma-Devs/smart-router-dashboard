@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   bigint,
   bigserial,
+  char,
   check,
   index,
   inet,
@@ -194,6 +195,54 @@ export const auditEventChanges = pgTable(
   },
   (table) => [index("audit_event_changes_event_idx").on(table.eventSeq, table.ord)],
 );
+
+/**
+ * Read-only tokens for the pull API — MAG-2770.
+ *
+ * A principal in its own right, not a user and not a session: the ticket
+ * requires a credential that "reads this endpoint and nothing else", because a
+ * security team handed a token that can also edit routing fails their own
+ * review.
+ *
+ * **Not append-only.** Unlike the log beside it this is mutable state —
+ * `last_used_at` moves on every pull, `revoked_at` is the point — so the
+ * `audit_append_only` trigger is deliberately not attached to it.
+ */
+export const auditTokens = pgTable(
+  "audit_tokens",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** What it is for, in the admin's words: "DFNS SIEM", "quarterly export". */
+    name: varchar("name", { length: 120 }).notNull(),
+    /**
+     * SHA-256 of the secret, hex. Not bcrypt: 32 bytes of CSPRNG output has no
+     * dictionary to slow down, and this is hashed on every request to the pull
+     * API where a deliberate 100 ms would be a self-inflicted rate limit.
+     */
+    tokenHash: char("token_hash", { length: 64 }).notNull().unique(),
+    /** Last four characters, so a listing can say which token without being
+     *  able to reconstruct one. */
+    suffix: varchar("suffix", { length: 8 }).notNull(),
+
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    /** Not a foreign key — a token has to outlive its creator's removal, or the
+     *  only record of who minted it goes with them. */
+    createdBy: uuid("created_by"),
+    createdByName: text("created_by_name").notNull(),
+
+    /** "Listed with last-used", from the ticket. */
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    lastUsedIp: inet("last_used_ip"),
+
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    revokedBy: uuid("revoked_by"),
+    revokedByName: text("revoked_by_name"),
+  },
+  (table) => [index("audit_tokens_created_at_idx").on(table.createdAt.desc())],
+);
+
+export type AuditTokenRow = typeof auditTokens.$inferSelect;
+export type NewAuditTokenRow = typeof auditTokens.$inferInsert;
 
 export type AuditEventRow = typeof auditEvents.$inferSelect;
 export type NewAuditEventRow = typeof auditEvents.$inferInsert;
