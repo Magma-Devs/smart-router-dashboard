@@ -17,6 +17,7 @@ import { useApi } from "@/hooks/use-api";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { ExplorerHomeLink } from "@/components/gateway/ExplorerLink";
 import { ChainSelect } from "@/components/gateway/ChainSelect";
+import { RefreshButton } from "@/components/gateway/RefreshButton";
 import { WindowSelect } from "@/components/gateway/WindowSelect";
 import { RouterFilterSelect } from "@/components/gateway/RouterFilterSelect";
 import { useChainFilter, useChainOptions, withMutedRows } from "@/hooks/use-chain-options";
@@ -337,6 +338,8 @@ export function UpstreamsView() {
           ))}
         </div>
         <span style={{ flex: 1 }} />
+        {/* Re-fetch every panel now, ahead of the poll interval */}
+        <RefreshButton />
         {/* The shared time window — the roster's health is derived from the
             metrics in it, so this page can't be the one screen that ignores
             the selector every other screen honours. */}

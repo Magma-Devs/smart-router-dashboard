@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { WINDOWS, type MetricWindow } from "@sr/shared";
 import { ChainSelect, type ChainOption } from "./ChainSelect";
+import { RefreshButton } from "./RefreshButton";
 import { RouterFilterSelect } from "./RouterFilterSelect";
 import { WindowSelect } from "./WindowSelect";
 
@@ -74,6 +75,9 @@ export function RouterHeader({ chains, chainFilter, setChainFilter, timeWindow, 
       <RouterFilterSelect />
 
       <div style={{ flex: 1 }} />
+
+      {/* Re-fetch every panel now, ahead of the poll interval */}
+      <RefreshButton />
 
       {/* Time window */}
       <WindowSelect value={timeWindow} onChange={setTimeWindow} />
