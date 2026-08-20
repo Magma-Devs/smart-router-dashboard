@@ -53,6 +53,8 @@ interface RoRow {
   availPct: number | null;
   p95Ms: number | null;
   errPct: number | null;
+  /** Composite QoS — feeds the expanded ChainDetail only; the table itself
+   *  carries no QoS column (MAG-2901). */
   qosVal: number | null;
   reqCount: number;
   statusKind: RoStatus;
@@ -69,7 +71,6 @@ interface RoRow {
   avail: number;
   p95: number;
   err: number;
-  qos: number;
   status: number;
   block: number;
 }
@@ -125,7 +126,6 @@ export function RouterOverview({ onChainClick, chainFilter, timeWindow }: {
       avail: availPct ?? -1,
       p95: c.p95Ms ?? Infinity,
       err: errPct ?? -1,
-      qos: qosVal ?? -1,
       status: STATUS_RANK[statusKind],
       block: c.latestBlock ?? tipBlock ?? -1,
     };
@@ -177,7 +177,6 @@ export function RouterOverview({ onChainClick, chainFilter, timeWindow }: {
             <ThCol align="right" tip={ROUTER_SR_TIP} sortKey="avail" sort={sort} onSort={onSort}>Availability</ThCol>
             <ThCol align="right" tip={TT.p95} sortKey="p95" sort={sort} onSort={onSort}>P95</ThCol>
             <ThCol align="right" sortKey="err" sort={sort} onSort={onSort}>Error rate</ThCol>
-            <ThCol align="right" tip={TT.qosScore} sortKey="qos" sort={sort} onSort={onSort}>QoS</ThCol>
             <ThCol sortKey="status" sort={sort} onSort={onSort}>Status</ThCol>
           </tr>
         </thead>
@@ -232,7 +231,6 @@ export function RouterOverview({ onChainClick, chainFilter, timeWindow }: {
                 <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 13, fontWeight: 700, color: srColor(r.availPct) }}>{r.availPct != null ? r.availPct.toFixed(2) + "%" : "—"}</span></td>
                 <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{r.p95Ms != null ? Math.round(r.p95Ms) + " ms" : "—"}</span></td>
                 <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12, color: r.errPct == null ? "var(--text-4)" : r.errPct < 0.5 ? "var(--text-2)" : r.errPct < 1.5 ? "var(--warn)" : "var(--err)" }}>{r.errPct != null ? r.errPct.toFixed(2) + "%" : "—"}</span></td>
-                <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 13, fontWeight: 700, color: r.qosVal == null ? "var(--text-4)" : r.qosVal > 97 ? "var(--ok)" : r.qosVal > 90 ? "var(--warn)" : "var(--err)" }}>{r.qosVal == null ? "—" : Math.round(r.qosVal)}</span></td>
                 <td>
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
                     <span style={{ width: 8, height: 8, borderRadius: 999, background: sm[0], boxShadow: "0 0 6px " + sm[0], flexShrink: 0 }} />
@@ -246,7 +244,7 @@ export function RouterOverview({ onChainClick, chainFilter, timeWindow }: {
             );
           })}
           {data && sortedRouters.length === 0 && (
-            <tr><td colSpan={9} style={{ padding: "24px 16px", textAlign: "center", color: "var(--text-4)", fontSize: 13 }}>No routers match this filter.</td></tr>
+            <tr><td colSpan={8} style={{ padding: "24px 16px", textAlign: "center", color: "var(--text-4)", fontSize: 13 }}>No routers match this filter.</td></tr>
           )}
         </tbody>
       </table>

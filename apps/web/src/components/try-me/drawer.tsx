@@ -543,6 +543,11 @@ export function TryMeDrawer({
    *  send. */
   const [resultVia, setResultVia] = useState<Via | null>(null);
   const [truncated, setTruncated] = useState(false);
+  /** Send with `lava-force-cache-refresh`, so the router bypasses its relay
+   *  cache and asks an upstream even when a cached answer exists. Router HTTP
+   *  only — the directive rides a header, which a browser WebSocket handshake
+   *  can't carry, and the direct leg has no router cache to skip. */
+  const [skipCache, setSkipCache] = useState(false);
   /** Side-by-side outcome of "Compare both", or null when not run. */
   const [comparison, setComparison] = useState<{ router: Outcome; upstream: Outcome } | null>(null);
   const [comparing, setComparing] = useState(false);
@@ -818,6 +823,9 @@ export function TryMeDrawer({
     // (per-upstream Try-now) — the router routes it to that upstream only.
     const headers: Record<string, string> = {};
     if (selectUpstream) headers["lava-select-provider"] = selectUpstream;
+    // The router's cache-skip directive: presence of the header makes the
+    // relay bypass the cache read (a hit would answer as "Cached" otherwise).
+    if (skipCache) headers["lava-force-cache-refresh"] = "true";
     const init: RequestInit = { headers };
     if (resolved.httpMethod === "POST") {
       init.method = "POST";
@@ -854,7 +862,7 @@ export function TryMeDrawer({
       cvDisagreeing: res.headers.get("Lava-Cross-Validation-Disagreeing-Providers"),
       truncated: false,
     };
-  }, [resolved, selectUpstream]);
+  }, [resolved, selectUpstream, skipCache]);
 
   /** Straight at the upstream, via the api — no router in the path at all.
    *  The browser can't do this itself: it holds only a masked `scheme://host`,
@@ -1525,6 +1533,26 @@ export function TryMeDrawer({
                       </>
                     )}
                   </button>
+                )}
+                {/* Router HTTP sends only — the directive is a request header,
+                    which a browser WebSocket handshake can't carry, and the
+                    direct leg has no router cache to skip. Kept visible in
+                    direct mode because "Compare both" still fires a router
+                    leg, which honours it; gone when there is no router leg at
+                    all (a backup the router refuses to pin). */}
+                {!onWs && pinRefusal === null && (
+                  <label
+                    title="Send with the lava-force-cache-refresh header — the router bypasses its relay cache and asks an upstream even when a cached answer exists (no more 'Cached' in Served by). Applies to sends through the router."
+                    style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text-2)", cursor: "pointer", userSelect: "none" }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={skipCache}
+                      onChange={(e) => setSkipCache(e.target.checked)}
+                      style={{ accentColor: "var(--brand)" }}
+                    />
+                    Skip cache
+                  </label>
                 )}
                 {wsPhase && (
                   <span
