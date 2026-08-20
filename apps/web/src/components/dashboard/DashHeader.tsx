@@ -9,6 +9,7 @@
    in the design (their state is never consumed by the charts). */
 
 import { useState } from "react";
+import { RefreshButton } from "@/components/gateway/RefreshButton";
 import { DshMultiSelect, type DshOption } from "./DshMultiSelect";
 import { DshStatus } from "./DshStatus";
 import { PocExportModal } from "./PocExportModal";
@@ -87,6 +88,8 @@ export function DashHeader({
             );
           })}
         </div>
+        {/* Re-fetch every panel now, ahead of the poll interval */}
+        <RefreshButton />
         {/* Chain multi-select */}
         <DshMultiSelect label="Chains" options={chainOptions} value={chains} onChange={setChains} />
         {/* + filter */}
