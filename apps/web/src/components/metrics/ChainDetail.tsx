@@ -77,7 +77,7 @@ export function ChainDetail({ r, onChainClick, win }: { r: ChainDetailRow; onCha
   // it, so the whole table jumped when the series landed.
   if (!data) {
     return (
-      <td colSpan={9} style={{ padding: 0, background: "var(--bg-2)", borderBottom: "1px solid var(--line)" }}>
+      <td colSpan={8} style={{ padding: 0, background: "var(--bg-2)", borderBottom: "1px solid var(--line)" }}>
         <div style={{ padding: "16px", display: "grid", gap: 12 }}>
           <div style={{ display: "flex", gap: 8 }}>
             {[0, 1, 2, 3].map((i) => <Skel key={i} w={78} h={22} r={999} />)}
@@ -134,7 +134,7 @@ export function ChainDetail({ r, onChainClick, win }: { r: ChainDetailRow; onCha
   const from = m.times.length ? roFmtTime(m.times[0]!, win) : roFmtTime(roTimes(win, 2)[0]!, win);
 
   return (
-    <td colSpan={9} style={{ padding: 0, background: "var(--bg-2)", borderBottom: "1px solid var(--line)" }}>
+    <td colSpan={8} style={{ padding: 0, background: "var(--bg-2)", borderBottom: "1px solid var(--line)" }}>
       <div style={{ padding: "14px 16px" }}>
         {/* metric switcher */}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
