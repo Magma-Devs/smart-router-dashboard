@@ -125,7 +125,9 @@ export function PMRoster({ rows, activeName, onSelect, timeWindow, loading = fal
             const v = r.pm;
             const on = r.name === activeName;
             return (
-              <tr key={r.name} onClick={() => onSelect(r.name)} style={{ cursor: "pointer", background: on ? "rgba(255,57,0,0.06)" : undefined, boxShadow: on ? "inset 2px 0 0 var(--brand)" : undefined }}>
+              // One row per (endpoint × chain) — a vendor name reused
+              // across chains is several rows, so the name alone can't key them.
+              <tr key={`${r.name}\u0000${r.pm.spec}`} onClick={() => onSelect(r.name)} style={{ cursor: "pointer", background: on ? "rgba(255,57,0,0.06)" : undefined, boxShadow: on ? "inset 2px 0 0 var(--brand)" : undefined }}>
                 <td>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <HealthDot health={v.health} />
