@@ -54,7 +54,7 @@ function bannerMessage(vendor: VendorStatus): string {
     official === "degraded" || official === "outage"
       ? `${vendor.name} is reporting ${officialStatusLabel(vendor.official.status).toLowerCase()} on their own status page`
       : `The status index measures ${vendor.name} as ${measuredStatusLabel(vendor.measuredStatus).toLowerCase()}`;
-  return `${lead} — upstream trouble on this chain is likely their side, not this deployment.`;
+  return `${lead} — an upstream problem here is likely their side, not this deployment.`;
 }
 
 export function VendorStatusBanner() {
