@@ -99,7 +99,7 @@ packages/shared/          @sr/shared — domain types, metric catalog, PromQL bu
                             ProviderDetail, ErrorsReport, RouterTopology, …
 apps/api/                 @sr/api — Fastify 5 (:8000)
   src/
-    routes/             health · version · metrics · config
+    routes/             health · version · metrics · config · vendors
     plugins/            error-handler · swagger · prometheus (decorates services)
     services/           prometheus-client · metrics · metrics-detail ·
                         metrics-dashboard · configuration (values-file loader)
@@ -383,6 +383,7 @@ Every `/api/metrics/*` route also accepts **`router?`** — the router scope
 | `GET /api/metrics/websocket` | `window` | `WebSocketReport` — `emitted:false` + nulls until `ws_*` fires (first subscription) |
 | `GET /api/metrics/query` | **`query`** (required) | Raw **instant** PromQL passthrough — `{ result }`. 400 without `query` |
 | `GET /api/config/routers` | — | `{ routers: RouterTopology[] }` — live topology from the mounted values file (either format), node URLs masked to scheme+host. Each endpoint also carries `index` (the handle the relay below resolves) + `directable` |
+| `GET /api/vendors/status` | — | `VendorStatusReport` — `{ vendors, fetchedAt }`: what each upstream VENDOR publishes on its own status page, read from the Status Page Index (`STATUS_PAGE_INDEX_URL`) and cached 60s in-process, because the index is keyless but rate-limited per IP. Per vendor: `slug` (**equals the web's upstream catalog id**), `name`, `statusPage`, `official {status, description, fetchedAt}`, `measuredStatus`, change stamps. The index's `components[]` is never forwarded. **`vendors: null`** when the index can't be read — the route answers 200 either way: someone else's outage is not a dashboard error |
 | `POST /api/upstreams/relay` | body: `{routerId, node, endpointIndex, transport?, httpMethod?, path?, body?}` | Fires ONE request straight at a configured upstream, router excluded — `{httpStatus, latencyMs, body, truncated, transport}`. The target is resolved from the values file, never taken from the caller; the resolved url is never returned and is scrubbed out of the upstream's own body. Upstream 4xx/5xx come back **200** with their status inside; 502/504 mean our hop failed. Off with `UPSTREAM_RELAY_ENABLED=false`. See [`docs/UPSTREAM-DIRECT-TEST.md`](docs/UPSTREAM-DIRECT-TEST.md) |
 
 ## Environment variables
@@ -403,6 +404,7 @@ API (`apps/api/src/config.ts` is the source of truth):
 | `UPSTREAM_RELAY_TIMEOUT_MS` | `10000` | deadline on the api→upstream call |
 | `UPSTREAM_RELAY_MAX_BODY_BYTES` | `262144` | upstream responses past this come back `truncated: true` |
 | `UPSTREAM_RELAY_RATE_LIMIT_MAX` | `20` | per IP per minute, tighter than `RATE_LIMIT_MAX` |
+| `STATUS_PAGE_INDEX_URL` | `https://providers-status.magmadevs.com` | Status Page Index behind `GET /api/vendors/status`. 5s timeout, 60s cache, failures cached too. A local index runs at `http://host.docker.internal:8080` from a container (the dev compose's default) |
 | `LOG_LEVEL` | `info` | |
 | `TENANT_ID` | `default` | parsed, reserved — not read by any route yet |
 | `GIT_COMMIT` / `APP_VERSION` | `unknown` / `0.0.0` | surfaced by `/version` |

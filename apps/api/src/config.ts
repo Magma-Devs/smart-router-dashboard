@@ -99,6 +99,18 @@ export const config = {
     rateLimitMax: envInt("UPSTREAM_RELAY_RATE_LIMIT_MAX", 20),
   },
 
+  /**
+   * Upstream vendor status (`GET /api/vendors/status`) — the Status Page Index
+   * the api reads to tell "the vendor has declared an incident" from "this
+   * deployment is broken". Keyless but rate-limited per IP (30/min), which is
+   * why the read is server-side and cached rather than made by every browser.
+   */
+  vendorStatus: {
+    url: env("STATUS_PAGE_INDEX_URL") ?? "https://providers-status.magmadevs.com",
+    /** Short on purpose: a slow status page must never hold up a dashboard. */
+    timeoutMs: 5000,
+  },
+
   tenantId: env("TENANT_ID") ?? "default",
   logLevel: (env("LOG_LEVEL") ?? "info").toLowerCase(),
 

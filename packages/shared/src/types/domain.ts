@@ -575,6 +575,58 @@ export interface UpstreamRelayResponse {
   transport: "http" | "ws";
 }
 
+/* ── Upstream vendor status (Status Page Index) ──────────────────────────── */
+
+/**
+ * What a vendor's OWN status page says, as the Status Page Index (SPI) last
+ * read it. Nothing here is measured by this deployment — it is the vendor's
+ * own claim, which is exactly why it answers "is it them or is it us?".
+ */
+export interface VendorOfficialStatus {
+  /**
+   * SPI's normalized word for the page's headline state. Seen in the wild:
+   * `operational`, `minor`, `major`, `unavailable`, `unknown`. Deliberately a
+   * string, not a union: SPI owns the vocabulary and may grow it, and a word
+   * this side has never heard of must read as "unknown", never be dropped.
+   */
+  status: string;
+  /** The page's own summary line ("All Systems Operational · 90/90 …"). */
+  description: string | null;
+  /** When SPI last read the page (ISO-8601), null when it never has. */
+  fetchedAt: string | null;
+}
+
+/** One vendor row of `GET /api/vendors/status`. */
+export interface VendorStatus {
+  /** SPI slug — equals the dashboard's upstream catalog id (`drpc`, …). */
+  slug: string;
+  name: string;
+  /** The vendor's public status page, for the "View status" link. */
+  statusPage: string | null;
+  website: string | null;
+  /** SPI has stopped polling this vendor — no bearing on the deployment. */
+  paused: boolean;
+  official: VendorOfficialStatus;
+  /**
+   * SPI's OWN probe verdict, independent of the vendor's page. `unconfigured`
+   * means SPI probes nothing for this vendor — not "down".
+   */
+  measuredStatus: string | null;
+  officialLastChangeAt: string | null;
+  measuredLastChangeAt: string | null;
+}
+
+/**
+ * `GET /api/vendors/status`. `vendors` is **null** when SPI could not be read
+ * (down, timing out, or answering something that isn't the expected list) —
+ * the honesty contract: no chip, no banner, nothing invented.
+ */
+export interface VendorStatusReport {
+  vendors: VendorStatus[] | null;
+  /** When the api last called SPI (ISO-8601) — a failed call stamps it too. */
+  fetchedAt: string;
+}
+
 /* ── Ops Dashboard page (2-tab surface: Overview + Metrics) ──────────────── */
 
 /** One per-chain series (requests / success-rate / latency per chain). */
