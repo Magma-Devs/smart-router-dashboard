@@ -9,6 +9,7 @@ import { NAV_SECTIONS } from "./nav";
 import { IconMoon, IconSun, type IconProps } from "./icons";
 import { useApi } from "@/hooks/use-api";
 import { useFilters } from "@/components/gateway/FiltersProvider";
+import { VendorStatusBanner } from "@/components/gateway/VendorStatusBanner";
 import { fmtNum } from "@/lib/format";
 import { getAuthState, getAuthVersion, subscribeAuth } from "@/lib/auth-store";
 
@@ -175,6 +176,10 @@ export function Shell({ children }: { children: React.ReactNode }) {
       <Sidebar />
       <div className="gw-main">
         <Topbar here={here} />
+        {/* An upstream vendor's own incident explains what every page below is
+            about to show, so it is announced once, above all of them. Renders
+            nothing unless a vendor in THIS topology is reporting trouble. */}
+        <VendorStatusBanner />
         <div className="fade-in" key={pathname}>
           {children}
         </div>

@@ -30,6 +30,7 @@ export const UPSTREAM_DOMAINS: Record<string, string> = {
   nodereal:    "nodereal.io",
   tatum:       "tatum.io",
   blockdaemon: "blockdaemon.com",
+  tenderly:    "tenderly.co",
 };
 
 /* Fallback brand colors when Clearbit fails */
@@ -37,7 +38,7 @@ export const UPSTREAM_COLORS: Record<string, string> = {
   alchemy: "#0C4EFF", infura: "#FF6B2B", quicknode: "#0070F3",
   ankr: "#2563EB", chainstack: "#16A34A", drpc: "#7C3AED",
   getblock: "#D97706", blockpi: "#DB2777", nodereal: "#0EA5E9",
-  tatum: "#EF4444", blockdaemon: "#1A56DB",
+  tatum: "#EF4444", blockdaemon: "#1A56DB", tenderly: "#4C2AE0",
 };
 
 /* ─────────────────────────────────────────────
@@ -64,6 +65,10 @@ export const UPSTREAM_CATALOG: UpstreamCatalogEntry[] = [
   { id: "nodereal",    name: "NodeReal",    flow: "A", color: "#0EA5E9", supportsJWT: false },
   { id: "tatum",       name: "Tatum",       flow: "B", color: "#EF4444", supportsJWT: false, domainPattern: /gateway\.tatum\.io/ },
   { id: "blockdaemon", name: "Blockdaemon", flow: "B", color: "#1A56DB", supportsJWT: false, domainPattern: /blockdaemon\.com/ },
+  /* Not in the design prototype's catalogue — added because deployments route
+     through their gateway (`*.gateway.tenderly.co`) and the status index
+     tracks them under the same id, so the card can carry a vendor chip. */
+  { id: "tenderly",    name: "Tenderly",    flow: "B", color: "#4C2AE0", supportsJWT: false, domainPattern: /tenderly\.co/ },
 ];
 
 export const CHAIN_URL_HINTS: { chain: string; patterns: RegExp[] }[] = [

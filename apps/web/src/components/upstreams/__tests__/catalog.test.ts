@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { RouterTopology } from "@sr/shared";
-import { buildUpstreamRows, directTargetFor, groupByChain } from "../catalog";
+import { buildUpstreamRows, directTargetFor, groupByChain, matchCatalog } from "../catalog";
 
 /** Two chains, three upstreams, one of them serving both chains over two
  *  transports — the shape the grouping has to survive. */
@@ -194,5 +194,24 @@ describe("directTargetFor — internal paths", () => {
       httpIndex: 1,
       httpInternalPath: "/v3",
     });
+  });
+});
+
+/* ── Catalog identity ─────────────────────────────────────────────────────
+   The catalog id is what a card joins the vendor-status index on (SPI's slugs
+   ARE these ids), so a miss here is a missing vendor chip, not just a missing
+   logo. */
+
+describe("matchCatalog", () => {
+  it("identifies a Tenderly gateway node by its domain", () => {
+    expect(matchCatalog("eth-tenderly", ["https://mainnet.gateway.tenderly.co"])?.id).toBe("tenderly");
+  });
+
+  it("identifies a vendor by domain even when the node name says nothing", () => {
+    expect(matchCatalog("eth-primary", ["https://eth.drpc.org"])?.id).toBe("drpc");
+  });
+
+  it("leaves a bring-your-own node unmatched rather than guessing a vendor", () => {
+    expect(matchCatalog("eth-publicnode", ["https://ethereum-rpc.publicnode.com"])).toBeNull();
   });
 });

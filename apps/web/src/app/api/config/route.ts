@@ -26,5 +26,14 @@ export function GET() {
       process.env.DASHBOARD_GRAFANA_URL ??
       process.env.NEXT_PUBLIC_GRAFANA_URL ??
       "http://localhost:3001",
+    // Base URL of the Status Page Index behind the vendor-status chips — the
+    // "Status index ↗" links point at a vendor's page there. Only the LINKS
+    // use this; the data itself is read server-side by the api
+    // (STATUS_PAGE_INDEX_URL), which is what keeps SPI's per-IP rate limit
+    // out of the browser's hands.
+    spiUrl:
+      process.env.DASHBOARD_SPI_URL ??
+      process.env.NEXT_PUBLIC_SPI_URL ??
+      "https://providers-status.magmadevs.com",
   });
 }

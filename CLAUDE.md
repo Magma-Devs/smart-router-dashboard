@@ -111,7 +111,8 @@ apps/web/                 @sr/web — Next.js 16 App Router (:3000)
     app/standalone/     chrome-less Metrics page (sharing/embedding)
     app/api/config/     runtime-config route (DASHBOARD_API_URL → browser)
     components/
-      gateway/          Shell · Sidebar/Topbar · RouterHeader · FiltersProvider ·
+      gateway/          Shell · Sidebar/Topbar · RouterHeader · VendorStatusBanner ·
+                        FiltersProvider ·
                         WindowSelect · ChainSelect · RouterFilterSelect ·
                         HealthTag · charts · SortTable · SideSheet · icons
       overview/         OverviewView (KPI strip + 2×2 chart grid)
@@ -120,7 +121,7 @@ apps/web/                 @sr/web — Next.js 16 App Router (:3000)
                         ChainDetail · ErrorsBreakdown ·
                         CrossValidation · WebSocketPanel · provider/ (PM* deep-dive)
       upstreams/        UpstreamsView (3 groupings) · RouterGroups ·
-                        Add/Edit sheets · TestModal · catalog
+                        Add/Edit sheets · TestModal · catalog · VendorStatusChip
       endpoints/        endpoint row model + IfaceTag + detail sheet — the
                         bits the "By router" grouping renders
       team/             InviteModal · ChangeRoleModal · bits
@@ -324,6 +325,15 @@ state can't be worded or sourced two ways:
   invents its own health vocabulary: four surfaces used to (the roster said
   "healthy / degraded", the deep-dive "Live · up", the drawer the raw wire
   word), and one upstream read three different ways depending on the panel.
+- **`lib/vendor-status.ts`** owns the OTHER vocabulary — what the upstream
+  VENDOR says about itself (`GET /api/vendors/status`), rendered by
+  `<VendorStatusChip>` on the Upstreams cards and `<VendorStatusBanner>` above
+  every page. Kept apart from health on purpose: health is what we measured,
+  vendor status is what they published, and the pair is what answers "is it
+  them or is it us?". The index's two no-data words — `unavailable` (they
+  publish no machine-readable feed) and `unconfigured` (the index probes
+  nothing for them) — map to **unknown**, never to red, and never raise the
+  banner: half the catalog sits in one of them permanently.
 
 ### Deploying to Kubernetes
 
@@ -429,6 +439,7 @@ Web — build-time vs. **runtime**:
 | `DASHBOARD_API_URL` | (unset) | **runtime** override — read from the container env per-request by `GET /api/config`, so one published image serves any host |
 | `DASHBOARD_LOCAL_MODE` | (unset) | runtime override of `localMode`, same mechanism |
 | `DASHBOARD_GRAFANA_URL` | `http://localhost:3001` | Grafana base URL the "View full logs" button links to — runtime override via `/api/config`, same mechanism (falls back to `NEXT_PUBLIC_GRAFANA_URL`) |
+| `DASHBOARD_SPI_URL` | `https://providers-status.magmadevs.com` | Status Page Index the vendor-status chips **link** to (`/providers/<slug>`), same `/api/config` mechanism (falls back to `NEXT_PUBLIC_SPI_URL`). Links only — the status data is read api-side via `STATUS_PAGE_INDEX_URL`, which keeps the index's per-IP rate limit away from the browsers |
 | `AUTH_MODE` / `AUTH_SECRET` | `disabled` / (unset) | must match the api; `enabled` renders the login page + edge gate |
 | `INTERNAL_API_BASE_URL` | (falls back to api url) | server-side api URL for Auth.js callbacks (compose sets `http://api:8000`) |
 | `{GOOGLE,GITHUB,DISCORD}_CLIENT_{ID,SECRET}` | (unset) | each provider's button appears only when its id+secret pair is set |

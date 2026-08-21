@@ -23,7 +23,9 @@ import { useChainFilter, useChainOptions, withMutedRows } from "@/hooks/use-chai
 import { useRouterFilter } from "@/hooks/use-router-options";
 import { CapabilityTags, capabilitiesOf } from "@/components/gateway/CapabilityTags";
 import { UpstreamLogo } from "@/components/upstreams/UpstreamLogo";
+import { VendorStatusChip } from "@/components/upstreams/VendorStatusChip";
 import { HealthTag } from "@/components/gateway/HealthTag";
+import { useVendorStatus } from "@/hooks/use-vendor-status";
 import {
   buildUpstreamRows,
   directTargetFor,
@@ -186,6 +188,10 @@ export function UpstreamsView() {
      so the cards can't be narrowed by a router the picker no longer shows. */
   const { routerId } = useRouterFilter();
   const live = useApi<{ upstreams: UpstreamMetrics[] }>(`/api/metrics/upstreams?window=${timeWindow}${scopeQ}`);
+  /* What the vendors behind these nodes say about themselves (Status Page
+     Index). Empty map when the index can't be read — then no card carries a
+     vendor chip at all, rather than one that says something reassuring. */
+  const { bySlug: vendorBySlug } = useVendorStatus();
 
   const [unhealthyOnly, setUnhealthyOnly] = useState(false);
   const [search, setSearch] = useState("");
@@ -416,6 +422,9 @@ export function UpstreamsView() {
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {displayed.map((pv) => {
+            /* The vendor behind this node, when the catalog matched one and
+               the index tracks it (SPI slugs ARE the catalog ids). */
+            const vendor = pv.catalogId !== null ? vendorBySlug.get(pv.catalogId) : undefined;
             return (
               <div key={pv.id} className="gw-card" style={{ padding: "14px 16px", transition: "background 0.4s" }}>
                 {/* header */}
@@ -439,6 +448,10 @@ export function UpstreamsView() {
                         </span>
                       )}
                       {pv.health !== "unknown" && <HealthTag health={pv.health} />}
+                      {/* Their claim next to our measurement — the pair is the
+                          point: same-coloured means agreement, disagreement is
+                          the interesting case. */}
+                      {vendor && <VendorStatusChip vendor={vendor} />}
                     </div>
                   </div>
                 </div>
