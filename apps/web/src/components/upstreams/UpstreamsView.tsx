@@ -188,10 +188,11 @@ export function UpstreamsView() {
      so the cards can't be narrowed by a router the picker no longer shows. */
   const { routerId } = useRouterFilter();
   const live = useApi<{ upstreams: UpstreamMetrics[] }>(`/api/metrics/upstreams?window=${timeWindow}${scopeQ}`);
-  /* What the vendors behind these nodes say about themselves (Status Page
-     Index). Empty map when the index can't be read — then no card carries a
-     vendor chip at all, rather than one that says something reassuring. */
-  const { bySlug: vendorBySlug } = useVendorStatus();
+  /* What the vendors behind these nodes say about the chains WE route through
+     them (Status Page Index). Empty map when the index can't be read — then no
+     card carries a vendor chip at all, rather than one saying something
+     reassuring. */
+  const { bySlug: vendorBySlug, stale: vendorStale } = useVendorStatus();
 
   const [unhealthyOnly, setUnhealthyOnly] = useState(false);
   const [search, setSearch] = useState("");
@@ -423,7 +424,8 @@ export function UpstreamsView() {
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {displayed.map((pv) => {
             /* The vendor behind this node, when the catalog matched one and
-               the index tracks it (SPI slugs ARE the catalog ids). */
+               the index tracks it (index slugs ARE the catalog ids). The chip
+               speaks only for the chains this card serves. */
             const vendor = pv.catalogId !== null ? vendorBySlug.get(pv.catalogId) : undefined;
             return (
               <div key={pv.id} className="gw-card" style={{ padding: "14px 16px", transition: "background 0.4s" }}>
@@ -450,8 +452,15 @@ export function UpstreamsView() {
                       {pv.health !== "unknown" && <HealthTag health={pv.health} />}
                       {/* Their claim next to our measurement — the pair is the
                           point: same-coloured means agreement, disagreement is
-                          the interesting case. */}
-                      {vendor && <VendorStatusChip vendor={vendor} />}
+                          the interesting case. Scoped to this card's chains
+                          (narrowed by the chain filter, like the rows below). */}
+                      {vendor && (
+                        <VendorStatusChip
+                          vendor={vendor}
+                          specs={activeChain ? pv.chains.filter((c) => c === activeChain) : pv.chains}
+                          stale={vendorStale}
+                        />
+                      )}
                     </div>
                   </div>
                 </div>

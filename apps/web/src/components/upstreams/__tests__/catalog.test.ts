@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { RouterTopology } from "@sr/shared";
-import { buildUpstreamRows, directTargetFor, groupByChain, matchCatalog } from "../catalog";
+import { VENDOR_IDENTITIES } from "@sr/shared";
+import {
+  buildUpstreamRows,
+  directTargetFor,
+  groupByChain,
+  matchCatalog,
+  UPSTREAM_CATALOG,
+  UPSTREAM_DOMAINS,
+} from "../catalog";
 
 /** Two chains, three upstreams, one of them serving both chains over two
  *  transports — the shape the grouping has to survive. */
@@ -205,6 +213,17 @@ describe("directTargetFor — internal paths", () => {
 describe("matchCatalog", () => {
   it("identifies a Tenderly gateway node by its domain", () => {
     expect(matchCatalog("eth-tenderly", ["https://mainnet.gateway.tenderly.co"])?.id).toBe("tenderly");
+  });
+
+  it("carries presentation for every vendor the shared identity map names", () => {
+    // The catalog is built from @sr/shared so the api and the web agree on who
+    // a node belongs to; a vendor with no presentation entry would still work
+    // but would render in the placeholder grey, which is worth noticing.
+    expect(UPSTREAM_CATALOG.map((c) => c.id)).toEqual(VENDOR_IDENTITIES.map((v) => v.id));
+    for (const entry of UPSTREAM_CATALOG) {
+      expect(entry.color).toMatch(/^#[0-9A-Fa-f]{6}$/);
+      expect(UPSTREAM_DOMAINS[entry.id]).toBeTruthy();
+    }
   });
 
   it("identifies a vendor by domain even when the node name says nothing", () => {

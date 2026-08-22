@@ -1,88 +1,71 @@
-import type { VendorStatus } from "@sr/shared";
+import type { VendorChainStatus, VendorStatus } from "@sr/shared";
 
 /**
- * ONE vocabulary for what an upstream VENDOR says about itself, the way
- * `lib/health.ts` owns the vocabulary for what this deployment measures. The
- * two must not be confused on screen: health is ours (Prometheus), vendor
- * status is theirs (their own status page, read by the Status Page Index).
+ * ONE vocabulary for what an upstream VENDOR says about a chain we route
+ * through them, the way `lib/health.ts` owns the vocabulary for what this
+ * deployment measures. The two must not be confused on screen: health is ours
+ * (Prometheus), vendor status is theirs (their status page, read by the
+ * Status Page Index).
  *
- * SPI's words, straight from its parsers:
+ * Everything here reads a CHAIN verdict (`vendor.chains[spec]`), never the
+ * vendor's global headline. QuickNode goes "minor" whenever any of ~500
+ * components dips — usually a chain nobody here touches — so the headline is
+ * noise on a card about one Ethereum endpoint. It survives as tooltip context
+ * and nothing else.
  *
- *  - `official`: `operational` · `maintenance` · `minor` · `major` ·
- *    `critical` · `unknown` (feed exists, not readable right now) ·
+ * The index's words, straight from its parsers:
+ *
+ *  - components / chains: `operational` · `maintenance` · `minor` · `major` ·
+ *    `critical` · `unknown` (nothing on their page maps to this chain) ·
  *    `unavailable` (**the vendor publishes no machine-readable feed at all**).
- *  - `measured`: `up` · `degraded` · `down` · `unconfigured` (SPI probes
- *    nothing for them) · `paused` · `unknown`.
+ *  - their measured probes: `up` · `degraded` · `down` · `unconfigured` (the
+ *    index probes nothing for them) · `paused`.
  *
  * The two "no data" words are the trap. `unavailable` and `unconfigured` read
  * like outages and are the opposite: they mean nobody is reporting. They map
  * to `unknown` — grey, never red — for the same reason `HealthState.unknown`
  * does: "no reading" is not "down".
  */
-export type VendorSeverity = "operational" | "degraded" | "outage" | "unknown";
+export type VendorSeverity = "operational" | "degraded" | "outage" | "maintenance" | "unknown";
 
-const OFFICIAL_SEVERITY: Record<string, VendorSeverity> = {
+const STATUS_SEVERITY: Record<string, VendorSeverity> = {
   operational: "operational",
-  maintenance: "degraded",
+  up: "operational",
+  // Planned work is its own state: worth showing, never an incident.
+  maintenance: "maintenance",
   minor: "degraded",
+  degraded: "degraded",
   major: "outage",
   critical: "outage",
+  down: "outage",
   unknown: "unknown",
   unavailable: "unknown",
-};
-
-const MEASURED_SEVERITY: Record<string, VendorSeverity> = {
-  up: "operational",
-  operational: "operational",
-  degraded: "degraded",
-  down: "outage",
   unconfigured: "unknown",
   paused: "unknown",
-  unknown: "unknown",
 };
 
-/** A word SPI grows later is `unknown` here — never guessed into a colour. */
-export function officialSeverity(status: string | null | undefined): VendorSeverity {
+/** A word the index grows later reads as `unknown` — never guessed into a
+ *  colour. `hasOwn`, so a status literally called "constructor" resolves to
+ *  unknown instead of pulling a function out of the prototype chain and
+ *  taking the page down with it. */
+export function vendorSeverity(status: string | null | undefined): VendorSeverity {
   if (!status) return "unknown";
-  return OFFICIAL_SEVERITY[status] ?? "unknown";
-}
-
-export function measuredSeverity(status: string | null | undefined): VendorSeverity {
-  if (!status) return "unknown";
-  return MEASURED_SEVERITY[status] ?? "unknown";
+  return Object.hasOwn(STATUS_SEVERITY, status) ? (STATUS_SEVERITY[status] ?? "unknown") : "unknown";
 }
 
 const SEVERITY_RANK: Record<VendorSeverity, number> = {
   outage: 0,
   degraded: 1,
-  operational: 2,
-  unknown: 3,
+  maintenance: 2,
+  operational: 3,
+  unknown: 4,
 };
-
-/** The worse of what they publish and what SPI measures — one chip, one colour. */
-export function vendorSeverity(vendor: VendorStatus): VendorSeverity {
-  const official = officialSeverity(vendor.official.status);
-  const measured = measuredSeverity(vendor.measuredStatus);
-  return SEVERITY_RANK[official] <= SEVERITY_RANK[measured] ? official : measured;
-}
-
-/**
- * Whether this vendor is reporting a problem RIGHT NOW — the banner's trigger.
- *
- * Only `degraded` / `outage` count. "Their page can't be read" and "SPI probes
- * nothing here" are the normal state of half the catalog; bannering on them
- * would put a permanent warning on the dashboard that says nothing, which is
- * the fastest way to teach an operator to ignore the banner that matters.
- */
-export function vendorHasIncident(vendor: VendorStatus): boolean {
-  const severity = vendorSeverity(vendor);
-  return severity === "degraded" || severity === "outage";
-}
 
 export const VENDOR_SEVERITY_COLOR: Record<VendorSeverity, string> = {
   operational: "var(--ok)",
   degraded: "var(--warn)",
   outage: "var(--err)",
+  maintenance: "var(--info)",
   unknown: "var(--text-4)",
 };
 
@@ -91,68 +74,127 @@ export function vendorTagClass(severity: VendorSeverity): string {
   if (severity === "operational") return "gw-tag gw-tag--ok";
   if (severity === "degraded") return "gw-tag gw-tag--warn";
   if (severity === "outage") return "gw-tag gw-tag--err";
+  if (severity === "maintenance") return "gw-tag gw-tag--info";
   return "gw-tag";
 }
 
-const OFFICIAL_LABEL: Record<string, string> = {
+const STATUS_LABEL: Record<string, string> = {
   operational: "Operational",
+  up: "Operational",
   maintenance: "Maintenance",
   minor: "Minor issues",
+  degraded: "Degraded",
   major: "Major issues",
   critical: "Critical outage",
+  down: "Down",
   unknown: "Status unknown",
   unavailable: "No status feed",
-};
-
-const MEASURED_LABEL: Record<string, string> = {
-  up: "Up",
-  operational: "Up",
-  degraded: "Degraded",
-  down: "Down",
   unconfigured: "Not probed",
   paused: "Probes paused",
-  unknown: "Unknown",
 };
 
-/** Their word, in ours. An unmapped word is shown as SPI sent it — capitalised
- *  but never renamed, because inventing a synonym for a state we don't know is
- *  how a dashboard starts lying. */
-function label(map: Record<string, string>, status: string | null | undefined): string {
-  if (!status) return "Unknown";
-  return map[status] ?? status.charAt(0).toUpperCase() + status.slice(1);
+/**
+ * Their word, in ours — and the ONLY source of a chip's text, so the words and
+ * the colour can never disagree (they did once: a red chip reading
+ * "Operational", because the colour came from the worst of two observers and
+ * the text from one of them).
+ */
+export function vendorStatusLabel(status: string | null | undefined): string {
+  if (!status) return "Status unknown";
+  if (Object.hasOwn(STATUS_LABEL, status)) return STATUS_LABEL[status] ?? status;
+  return status.charAt(0).toUpperCase() + status.slice(1);
 }
 
-export function officialStatusLabel(status: string | null | undefined): string {
-  return label(OFFICIAL_LABEL, status);
+/* ── Chain verdicts — what a card and the banner actually read ──────────── */
+
+/** One chain's verdict, carrying the vendor it belongs to. */
+export interface VendorChainVerdict {
+  vendor: VendorStatus;
+  spec: string;
+  verdict: VendorChainStatus;
+  severity: VendorSeverity;
 }
 
-export function measuredStatusLabel(status: string | null | undefined): string {
-  return label(MEASURED_LABEL, status);
+/** The verdict for one chain, or null when the api reported none — a vendor
+ *  this deployment doesn't route on that chain. */
+export function chainVerdictFor(vendor: VendorStatus, spec: string): VendorChainStatus | null {
+  return Object.hasOwn(vendor.chains, spec) ? (vendor.chains[spec] ?? null) : null;
 }
 
-/** Why a vendor chip reads grey — the tooltip's one-liner. */
-export function vendorUnknownHint(status: string | null | undefined): string | null {
-  if (status === "unavailable") return "This vendor publishes no machine-readable status feed.";
-  if (status === "unknown") return "The status index could not read their status page.";
-  return null;
+function verdictOf(vendor: VendorStatus, spec: string, verdict: VendorChainStatus): VendorChainVerdict {
+  return { vendor, spec, verdict, severity: vendorSeverity(verdict.status) };
+}
+
+/** Every chain verdict this vendor carries, worst first. */
+export function vendorChainVerdicts(vendor: VendorStatus): VendorChainVerdict[] {
+  return Object.entries(vendor.chains)
+    .map(([spec, verdict]) => verdictOf(vendor, spec, verdict))
+    .sort((a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity]);
 }
 
 /**
- * The vendors present in THIS topology that are reporting a problem, worst
- * first. `presentSlugs` are the catalog ids the mounted config actually
- * matched — a vendor nobody here routes through is somebody else's outage.
+ * The verdict a card shows: the worst among the chains that card serves.
+ * Null when the api has no verdict for any of them — the card then shows no
+ * chip at all rather than a reassuring grey one.
  */
-export function affectedVendors(
-  vendors: VendorStatus[] | null,
-  presentSlugs: Set<string>,
-): VendorStatus[] {
-  if (vendors === null) return [];
-  return vendors
-    .filter((v) => presentSlugs.has(v.slug) && vendorHasIncident(v))
-    .sort((a, b) => SEVERITY_RANK[vendorSeverity(a)] - SEVERITY_RANK[vendorSeverity(b)]);
+export function worstChainVerdict(vendor: VendorStatus, specs: string[]): VendorChainVerdict | null {
+  const verdicts = specs
+    .map((spec) => {
+      const verdict = chainVerdictFor(vendor, spec);
+      return verdict === null ? null : verdictOf(vendor, spec, verdict);
+    })
+    .filter((v): v is VendorChainVerdict => v !== null);
+  if (verdicts.length === 0) return null;
+  return verdicts.reduce((a, b) => (SEVERITY_RANK[a.severity] <= SEVERITY_RANK[b.severity] ? a : b));
 }
 
-/** Dismissal identity: the same vendor in a WORSE state is a new banner. */
-export function vendorBannerKey(vendor: VendorStatus): string {
-  return `${vendor.slug}:${vendor.official.status}:${vendor.measuredStatus ?? "none"}`;
+/**
+ * Whether a chain verdict is a problem worth announcing.
+ *
+ * Only `degraded` / `outage` count. "Nothing on their page maps to this
+ * chain", "they publish no feed" and planned maintenance are the normal state
+ * of much of the roster; bannering on them would put a permanent warning on
+ * the dashboard that says nothing, which is the fastest way to teach an
+ * operator to ignore the banner that matters.
+ */
+export function isChainIncident(severity: VendorSeverity): boolean {
+  return severity === "degraded" || severity === "outage";
+}
+
+/**
+ * Every (vendor, chain) this deployment routes that is reporting a problem,
+ * worst first. The api already scoped `chains` to the mounted topology, so
+ * there is nothing to filter here — a chain in this list is a chain we route.
+ */
+export function affectedVendorChains(vendors: VendorStatus[] | null): VendorChainVerdict[] {
+  if (vendors === null) return [];
+  return vendors
+    .flatMap(vendorChainVerdicts)
+    .filter((v) => isChainIncident(v.severity))
+    .sort((a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity]);
+}
+
+/** Dismissal identity: the same vendor and chain in a WORSE state is a new
+ *  banner, so waving one away can't hide the situation deteriorating. */
+export function vendorChainKey(slug: string, spec: string, status: string): string {
+  return `${slug}:${spec}:${status}`;
+}
+
+/**
+ * Drop dismissals for a (vendor, chain) that is no longer reporting anything.
+ *
+ * Without this, a chain that recovers and then breaks the same way stays
+ * hidden for the rest of the session — and the second incident is exactly as
+ * newsworthy as the first.
+ */
+export function pruneDismissals(dismissed: string[], vendors: VendorStatus[] | null): string[] {
+  if (vendors === null || dismissed.length === 0) return dismissed;
+  const stillReporting = new Set(
+    affectedVendorChains(vendors).map((v) => `${v.vendor.slug}:${v.spec}`),
+  );
+  const kept = dismissed.filter((key) => {
+    const [slug, spec] = key.split(":");
+    return stillReporting.has(`${slug}:${spec}`);
+  });
+  return kept.length === dismissed.length ? dismissed : kept;
 }

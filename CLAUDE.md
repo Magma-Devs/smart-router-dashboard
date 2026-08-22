@@ -326,14 +326,28 @@ state can't be worded or sourced two ways:
   "healthy / degraded", the deep-dive "Live · up", the drawer the raw wire
   word), and one upstream read three different ways depending on the panel.
 - **`lib/vendor-status.ts`** owns the OTHER vocabulary — what the upstream
-  VENDOR says about itself (`GET /api/vendors/status`), rendered by
+  VENDOR says about **the chain we route through them**
+  (`GET /api/vendors/status` → `vendors[].chains[spec]`), rendered by
   `<VendorStatusChip>` on the Upstreams cards and `<VendorStatusBanner>` above
   every page. Kept apart from health on purpose: health is what we measured,
   vendor status is what they published, and the pair is what answers "is it
-  them or is it us?". The index's two no-data words — `unavailable` (they
-  publish no machine-readable feed) and `unconfigured` (the index probes
-  nothing for them) — map to **unknown**, never to red, and never raise the
-  banner: half the catalog sits in one of them permanently.
+  them or is it us?". Three rules it enforces:
+  - **per chain, never the headline.** A vendor goes "minor" when any one of
+    ~500 status-page components dips — QuickNode was "minor" for BSC while its
+    Ethereum JSON-RPC was green — so a chip and a banner read only the
+    components matching the chain (and the surfaces) in the mounted config.
+    The headline survives as tooltip context.
+  - **one verdict drives text, colour and dot.** They diverged once and
+    produced a red chip reading "Operational".
+  - **no-data words are grey, never red, and never banner**: `unavailable`
+    (the vendor publishes no machine-readable feed), `unknown` (nothing on
+    their page maps to this chain), `unconfigured` (the index probes nothing
+    for them), plus `maintenance`, which is planned work rather than an
+    incident. Much of the roster sits in one of these permanently.
+  Vendor IDENTITY (who a node belongs to) lives in
+  `packages/shared/src/constants/vendors.ts`, not in the web catalog: the api
+  derives which vendors to read status for from the same map, and the ids are
+  the index's own slugs (pinned against its roster by test).
 
 ### Deploying to Kubernetes
 

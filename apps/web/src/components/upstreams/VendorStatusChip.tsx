@@ -1,20 +1,26 @@
 "use client";
 
-/* What the VENDOR behind an upstream says about itself, from the Status Page
- * Index (GET /api/vendors/status). Deliberately worded and coloured apart from
- * <HealthTag>: that one is what THIS deployment measured, this one is what the
- * vendor published. When an upstream goes bad, the two together answer the
- * first question asked — "is it them or is it us?". */
+/* What the VENDOR behind an upstream says about THE CHAINS THIS CARD SERVES,
+ * from the Status Page Index (GET /api/vendors/status).
+ *
+ * Deliberately worded and coloured apart from <HealthTag>: that one is what
+ * this deployment measured, this one is what the vendor published. Together
+ * they answer the first question an upstream problem raises — "is it them or
+ * is it us?".
+ *
+ * The chip's text, colour and dot all come from the SAME per-chain verdict.
+ * They diverged once — colour from the worst of two observers, text from one
+ * of them — and produced a red chip reading "Operational". Whatever a second
+ * observer has to say belongs in the tooltip. */
 
 import { useState } from "react";
-import type { VendorStatus } from "@sr/shared";
+import { buildChainMetaByIndex, type VendorStatus } from "@sr/shared";
 import { fmtAgo } from "@/lib/format";
 import {
-  measuredStatusLabel,
-  officialStatusLabel,
-  vendorSeverity,
+  vendorChainVerdicts,
+  vendorStatusLabel,
   vendorTagClass,
-  vendorUnknownHint,
+  worstChainVerdict,
   VENDOR_SEVERITY_COLOR,
 } from "@/lib/vendor-status";
 import { spiProviderUrl, useSpiUrl } from "@/hooks/use-vendor-status";
@@ -27,11 +33,27 @@ const LINK_STYLE: React.CSSProperties = {
   whiteSpace: "nowrap",
 };
 
-export function VendorStatusChip({ vendor }: { vendor: VendorStatus }) {
+export function VendorStatusChip({
+  vendor,
+  specs,
+  stale = false,
+}: {
+  vendor: VendorStatus;
+  /** The chains this card serves — the only ones the chip speaks for. */
+  specs: string[];
+  /** The api is serving its last good read (the index is unreachable now). */
+  stale?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const spiBase = useSpiUrl();
-  const severity = vendorSeverity(vendor);
-  const hint = vendorUnknownHint(vendor.official.status);
+
+  const worst = worstChainVerdict(vendor, specs);
+  // No verdict for any chain on this card ⇒ no chip. A grey "unknown" chip on
+  // a card the api never judged would be furniture, not information.
+  if (worst === null) return null;
+
+  const shown = vendorChainVerdicts(vendor).filter((v) => specs.includes(v.spec));
+  const severity = worst.severity;
 
   return (
     <span
@@ -52,14 +74,14 @@ export function VendorStatusChip({ vendor }: { vendor: VendorStatus }) {
             background: VENDOR_SEVERITY_COLOR[severity],
           }}
         />
-        Vendor: {officialStatusLabel(vendor.official.status)}
+        Vendor: {vendorStatusLabel(worst.verdict.status)}
       </span>
 
       {open && (
         <span
           style={{
             position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 60,
-            width: "max-content", maxWidth: 290, padding: "10px 12px", borderRadius: 8,
+            width: "max-content", maxWidth: 320, padding: "10px 12px", borderRadius: 8,
             background: "var(--surface-2)", border: "1px solid var(--line-2)",
             boxShadow: "0 8px 24px rgba(0,0,0,0.45)", display: "flex",
             flexDirection: "column", gap: 6, fontSize: 11, lineHeight: 1.5,
@@ -67,24 +89,57 @@ export function VendorStatusChip({ vendor }: { vendor: VendorStatus }) {
           }}
         >
           <span style={{ color: "var(--text)", fontWeight: 600 }}>
-            {vendor.name} — {officialStatusLabel(vendor.official.status)}
+            {vendor.name} — what their status page says
           </span>
-          {/* The vendor's own summary line, verbatim. Nothing here is derived
-              from this deployment's metrics. */}
-          {vendor.official.description && <span>{vendor.official.description}</span>}
-          {hint && <span style={{ color: "var(--text-3)" }}>{hint}</span>}
+
+          {/* One line per chain this card serves, with the components the
+              verdict was taken from. That is the whole point: a vendor's other
+              chains are not this card's business. */}
+          {shown.map(({ spec, verdict, severity: chainSeverity }) => (
+            <span key={spec} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              <span>
+                <span style={{ color: "var(--text)", fontWeight: 600 }}>
+                  {buildChainMetaByIndex(spec).name}
+                </span>
+                {": "}
+                <span style={{ color: VENDOR_SEVERITY_COLOR[chainSeverity] }}>
+                  {vendorStatusLabel(verdict.status)}
+                </span>
+              </span>
+              {verdict.components.map((component) => (
+                <span key={component.name} style={{ color: "var(--text-3)", paddingLeft: 8 }}>
+                  {component.name} — {vendorStatusLabel(component.status)}
+                </span>
+              ))}
+              {verdict.reason !== null && (
+                <span style={{ color: "var(--text-3)", paddingLeft: 8 }}>{verdict.reason}</span>
+              )}
+            </span>
+          ))}
+
+          {/* Context, never the verdict: a vendor's headline covers every chain
+              they sell, most of which this deployment never touches. */}
+          <span style={{ color: "var(--text-3)", borderTop: "1px solid var(--line)", paddingTop: 6 }}>
+            Their page overall: {vendorStatusLabel(vendor.official.status)}
+            {vendor.official.description === null ? "" : ` — ${vendor.official.description}`}
+          </span>
           <span style={{ color: "var(--text-3)" }}>
-            Index probes: {measuredStatusLabel(vendor.measuredStatus)}
-            {" · checked "}
+            Index probes: {vendorStatusLabel(vendor.measuredStatus)} · read{" "}
             {fmtAgo(vendor.official.fetchedAt)}
           </span>
+          {stale && (
+            <span style={{ color: "var(--text-3)" }}>
+              The index is unreachable right now — this is the last good read.
+            </span>
+          )}
           {vendor.paused && (
             <span style={{ color: "var(--text-3)" }}>
               The index has paused its own probes for this vendor.
             </span>
           )}
+
           <span style={{ display: "flex", gap: 12, flexWrap: "wrap", paddingTop: 2 }}>
-            {vendor.statusPage && (
+            {vendor.statusPage !== null && (
               <a href={vendor.statusPage} target="_blank" rel="noopener noreferrer" style={LINK_STYLE}>
                 Their status page ↗
               </a>

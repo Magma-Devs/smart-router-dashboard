@@ -1,35 +1,37 @@
 "use client";
 
 /* Global vendor-incident banner. Sits above every page's content because an
- * upstream vendor's outage explains what you are about to look at, whichever
+ * upstream vendor's incident explains what you are about to look at, whichever
  * screen you happen to be on.
  *
- * Three rules keep it from becoming wallpaper:
- *  - it names only vendors PRESENT in this deployment's topology (a catalog id
- *    the mounted values file actually matched) — someone else's outage is not
- *    news here;
- *  - it fires only on a reported problem (degraded / outage). "Their page
- *    can't be read" and "the index probes nothing here" are the normal state
- *    of half the catalog and say nothing;
- *  - it is dismissable per vendor AND per state, so waving one away doesn't
- *    hide the same vendor getting worse. Dismissals live in sessionStorage:
- *    a new tab, a new day, a fresh warning. */
+ * Four rules keep it from becoming wallpaper:
+ *  - it speaks per (vendor, CHAIN). The api only reports chains this
+ *    deployment routes through that vendor, and only from the status-page
+ *    components covering them — QuickNode's BSC trouble is not an Ethereum
+ *    deployment's news, and used to be announced as if it were;
+ *  - it fires only on a reported problem (degraded / outage). "Nothing on
+ *    their page maps to this chain", "they publish no feed" and planned
+ *    maintenance are the normal state of much of the roster and say nothing;
+ *  - it is dismissable per vendor, chain AND state, so waving one away can't
+ *    hide the same chain getting worse — and a dismissal is dropped once that
+ *    chain stops reporting, so the next incident is announced again;
+ *  - at most two at a time, with a count for the rest: a stack of banners
+ *    pushes the page it is explaining off the screen. */
 
 import { useCallback, useMemo, useState } from "react";
-import type { RouterTopology, VendorStatus } from "@sr/shared";
-import { useApi } from "@/hooks/use-api";
-import { buildUpstreamRows } from "@/components/upstreams/catalog";
+import { buildChainMetaByIndex } from "@sr/shared";
 import { useVendorStatus } from "@/hooks/use-vendor-status";
 import {
-  affectedVendors,
-  measuredStatusLabel,
-  officialStatusLabel,
-  officialSeverity,
-  vendorBannerKey,
-  vendorSeverity,
+  affectedVendorChains,
+  pruneDismissals,
+  vendorChainKey,
+  vendorStatusLabel,
+  type VendorChainVerdict,
 } from "@/lib/vendor-status";
 
 const DISMISSED_KEY = "sr:vendor-status-dismissed";
+/** More than this and the banners are the page. The rest are counted. */
+const MAX_BANNERS = 2;
 
 function readDismissed(): string[] {
   // Server render and the first client render agree on "nothing dismissed",
@@ -45,62 +47,67 @@ function readDismissed(): string[] {
   }
 }
 
-/** What the vendor is actually reporting — their page's word when that is the
- *  problem, the index's own probes when it isn't. Never both mashed into one
- *  claim: they are different observers. */
-function bannerMessage(vendor: VendorStatus): string {
-  const official = officialSeverity(vendor.official.status);
-  const lead =
-    official === "degraded" || official === "outage"
-      ? `${vendor.name} is reporting ${officialStatusLabel(vendor.official.status).toLowerCase()} on their own status page`
-      : `The status index measures ${vendor.name} as ${measuredStatusLabel(vendor.measuredStatus).toLowerCase()}`;
-  return `${lead} — an upstream problem here is likely their side, not this deployment.`;
+function writeDismissed(keys: string[]): void {
+  try {
+    sessionStorage.setItem(DISMISSED_KEY, JSON.stringify(keys));
+  } catch {
+    /* private mode / storage full — the banner just returns next reload */
+  }
+}
+
+/** What the vendor is reporting, for the chain we route through them. */
+function bannerMessage({ vendor, spec, verdict }: VendorChainVerdict): string {
+  const chain = buildChainMetaByIndex(spec).name;
+  return (
+    `${vendor.name} is reporting ${vendorStatusLabel(verdict.status).toLowerCase()} for ${chain} ` +
+    `on their own status page — an upstream problem there is likely their side, not this deployment.`
+  );
 }
 
 export function VendorStatusBanner() {
   const { vendors } = useVendorStatus();
-  // Same SWR key as the Upstreams page, so this costs no extra request.
-  const config = useApi<{ routers: RouterTopology[] }>("/api/config/routers", 60000);
   const [dismissed, setDismissed] = useState<string[]>(readDismissed);
 
-  const presentSlugs = useMemo(() => {
-    const slugs = new Set<string>();
-    for (const upstream of buildUpstreamRows(config.data?.routers ?? [], undefined)) {
-      if (upstream.catalogId !== null) slugs.add(upstream.catalogId);
-    }
-    return slugs;
-  }, [config.data]);
+  const affected = useMemo(() => affectedVendorChains(vendors), [vendors]);
 
-  const showing = useMemo(
-    () => affectedVendors(vendors, presentSlugs).filter((v) => !dismissed.includes(vendorBannerKey(v))),
-    [vendors, presentSlugs, dismissed],
+  /* A dismissal outlives its incident only until that chain reads clean again:
+     the same vendor breaking the same way twice is two pieces of news. The
+     pruning is applied to what we RENDER (pure), and written back the next
+     time someone dismisses something — storage never decides what is shown. */
+  const live = useMemo(() => pruneDismissals(dismissed, vendors), [dismissed, vendors]);
+
+  const showing = affected.filter(
+    (v) => !live.includes(vendorChainKey(v.vendor.slug, v.spec, v.verdict.status)),
   );
 
-  const dismiss = useCallback((vendor: VendorStatus) => {
-    const key = vendorBannerKey(vendor);
-    setDismissed((prev) => {
-      const next = prev.includes(key) ? prev : [...prev, key];
-      try {
-        sessionStorage.setItem(DISMISSED_KEY, JSON.stringify(next));
-      } catch {
-        /* private mode / storage full — the banner just returns next reload */
-      }
-      return next;
-    });
-  }, []);
+  const dismiss = useCallback(
+    (key: string) => {
+      setDismissed((prev) => {
+        const pruned = pruneDismissals(prev, vendors);
+        if (pruned.includes(key)) return prev;
+        const next = [...pruned, key];
+        writeDismissed(next);
+        return next;
+      });
+    },
+    [vendors],
+  );
 
   if (showing.length === 0) return null;
+  const visible = showing.slice(0, MAX_BANNERS);
+  const hidden = showing.length - visible.length;
 
   return (
     <div style={{ padding: "14px 40px 0", maxWidth: 1320, margin: "0 auto", width: "100%", display: "flex", flexDirection: "column", gap: 8 }}>
-      {showing.map((vendor) => {
-        const outage = vendorSeverity(vendor) === "outage";
+      {visible.map((entry) => {
+        const { vendor, spec, verdict, severity } = entry;
+        const outage = severity === "outage";
         const accent = outage ? "var(--err)" : "var(--warn)";
         const background = outage ? "rgba(239,68,68,0.06)" : "rgba(245,158,11,0.06)";
         const border = outage ? "rgba(239,68,68,0.22)" : "rgba(245,158,11,0.22)";
         return (
           <div
-            key={vendor.slug}
+            key={`${vendor.slug}:${spec}`}
             style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", borderRadius: 8, background, border: `1px solid ${border}`, fontSize: 12.5 }}
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
@@ -108,8 +115,8 @@ export function VendorStatusBanner() {
               <line x1="12" y1="9" x2="12" y2="13" />
               <line x1="12" y1="17" x2="12.01" y2="17" />
             </svg>
-            <span style={{ flex: 1, minWidth: 0 }}>{bannerMessage(vendor)}</span>
-            {vendor.statusPage && (
+            <span style={{ flex: 1, minWidth: 0 }}>{bannerMessage(entry)}</span>
+            {vendor.statusPage !== null && (
               <a
                 href={vendor.statusPage}
                 target="_blank"
@@ -122,8 +129,8 @@ export function VendorStatusBanner() {
             <button
               className="gw-btn gw-btn--ghost"
               style={{ padding: "4px 6px", flexShrink: 0 }}
-              aria-label={`Dismiss the ${vendor.name} status notice`}
-              onClick={() => dismiss(vendor)}
+              aria-label={`Dismiss the ${vendor.name} notice for ${buildChainMetaByIndex(spec).name}`}
+              onClick={() => dismiss(vendorChainKey(vendor.slug, spec, verdict.status))}
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <line x1="18" y1="6" x2="6" y2="18" />
@@ -133,6 +140,12 @@ export function VendorStatusBanner() {
           </div>
         );
       })}
+      {hidden > 0 && (
+        <span style={{ fontSize: 11.5, color: "var(--text-3)", paddingLeft: 2 }}>
+          +{hidden} more vendor {hidden === 1 ? "chain" : "chains"} reporting issues — see the Upstreams
+          page.
+        </span>
+      )}
     </div>
   );
 }
