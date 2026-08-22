@@ -53,12 +53,20 @@ export function vendorSeverity(status: string | null | undefined): VendorSeverit
   return Object.hasOwn(STATUS_SEVERITY, status) ? (STATUS_SEVERITY[status] ?? "unknown") : "unknown";
 }
 
+/**
+ * Worst-first — and `unknown` deliberately outranks `operational`.
+ *
+ * A card serving two chains through one vendor, one judged green and one with
+ * no verdict at all, must not read solid green: that is the card claiming
+ * knowledge it doesn't have. Ranking the unjudged chain higher turns the chip
+ * grey and sends the reader to the tooltip, which lists both with reasons.
+ */
 const SEVERITY_RANK: Record<VendorSeverity, number> = {
   outage: 0,
   degraded: 1,
   maintenance: 2,
-  operational: 3,
-  unknown: 4,
+  unknown: 3,
+  operational: 4,
 };
 
 export const VENDOR_SEVERITY_COLOR: Record<VendorSeverity, string> = {

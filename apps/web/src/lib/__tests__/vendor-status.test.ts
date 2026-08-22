@@ -113,6 +113,19 @@ describe("worstChainVerdict", () => {
     expect(worstChainVerdict(v, ["BTC", "SOLANA"])?.spec).toBe("SOLANA");
   });
 
+  it("does not read green while one of the card's chains is unjudged", () => {
+    // A card serving two chains through one vendor, one green and one with no
+    // verdict, must not claim knowledge it doesn't have.
+    const mixed = vendor("quicknode", { ETH1: verdict("operational"), SOLANA: verdict("unknown") });
+    const worst = worstChainVerdict(mixed, ["ETH1", "SOLANA"]);
+    expect(worst?.spec).toBe("SOLANA");
+    expect(worst?.severity).toBe("unknown");
+    expect(vendorTagClass(worst?.severity ?? "operational")).toBe("gw-tag");
+    // A real fault still outranks the unjudged one.
+    const worse = vendor("quicknode", { ETH1: verdict("minor"), SOLANA: verdict("unknown") });
+    expect(worstChainVerdict(worse, ["ETH1", "SOLANA"])?.spec).toBe("ETH1");
+  });
+
   it("is null when the api judged none of this card's chains — no chip at all", () => {
     expect(worstChainVerdict(v, ["COSMOSHUB"])).toBeNull();
     expect(worstChainVerdict(vendor("x", {}), ["ETH1"])).toBeNull();
