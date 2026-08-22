@@ -39,6 +39,24 @@ import { chainVerdict, type VendorChainUse } from "./vendor-components.js";
 /** The keyless list route; `${…}/{slug}` is the detail one. */
 const PROVIDER_STATUS_PATH = "/v1/public/provider-status";
 
+/* ── The outbound budget. The index allows 30 requests a minute per IP, and
+   the detail layer is the only part that fans out (one read per vendor this
+   deployment routes), so it is the only part that can blow it. ───────────── */
+
+/** At most this many detail reads dial out at once. */
+const DETAIL_CONCURRENCY = 4;
+/** Each dialling read waits up to this long first, so a refresh is a trickle. */
+const DETAIL_STAGGER_MS = 120;
+/** Consecutive detail failures that read as "the index is down, not this one
+ *  vendor" and trip the breaker. */
+const DETAIL_CIRCUIT_FAILURES = 3;
+/** How long the whole detail layer stays parked once the breaker trips. */
+const DETAIL_CIRCUIT_MS = 60_000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export interface VendorStatusOptions {
   /** SPI base url — `STATUS_PAGE_INDEX_URL`. Empty string = feature off. */
   baseUrl: string;
@@ -158,11 +176,24 @@ export interface VendorDetail {
   components: VendorChainComponent[];
 }
 
+/**
+ * One detail payload → the components, or **null when the body is not a
+ * provider at all**.
+ *
+ * The null matters: a 200 carrying `{}` or `{"detail":"Not Found"}` used to
+ * parse into "status unknown, no components", which the verdict then reported
+ * as "no component maps to this chain" — a confident answer derived from
+ * nothing, cached for a minute. A body with neither a status word nor a
+ * components array is a failed read and says so.
+ */
 export function normalizeVendorDetail(payload: unknown): VendorDetail | null {
   const rec = record(payload);
   if (rec === null) return null;
   const official = record(rec.official);
-  const raw = official?.components;
+  const raw = official?.components ?? rec.components;
+  const status = statusWord(str(rec.official_status) ?? str(official?.status));
+  if (status === null && !Array.isArray(raw)) return null;
+
   const components: VendorChainComponent[] = [];
   for (const entry of Array.isArray(raw) ? raw : []) {
     const comp = record(entry);
@@ -170,10 +201,7 @@ export function normalizeVendorDetail(payload: unknown): VendorDetail | null {
     if (name === null) continue;
     components.push({ name, status: statusWord(str(comp?.status)) ?? "unknown" });
   }
-  return {
-    officialStatus: statusWord(str(rec.official_status) ?? str(official?.status)) ?? "unknown",
-    components,
-  };
+  return { officialStatus: status ?? "unknown", components };
 }
 
 /** A cause phrase safe to log — never a stack. */
@@ -185,10 +213,15 @@ function describeCause(e: unknown): string {
 }
 
 /** What a cached slot hands back: the value, when it was read, and whether
- *  the latest attempt to refresh it failed. */
+ *  the latest attempt to refresh it FAILED. */
 interface CachedValue<T> {
   value: T | null;
   fetchedAt: string | null;
+  /** The data is the last good one because a refresh failed — NOT merely
+   *  because the TTL turned over. Routine expiry is invisible to a reader:
+   *  with a 60s TTL and a 60s poll it happens on every single request, and a
+   *  "the index is unreachable" note that shows up every minute is a lie the
+   *  reader learns to ignore. */
   stale: boolean;
 }
 
@@ -207,25 +240,34 @@ class Cached<T> {
   private lastAttemptFailed = false;
   private inFlight: Promise<void> | null = null;
 
+  /** Whether a refresh would run right now — the fan-out budget asks first. */
+  wouldRefresh(opts: { ttlMs: number; failureTtlMs: number }): boolean {
+    const now = Date.now();
+    const fresh = this.value !== null && now - this.fetchedAtMs < opts.ttlMs;
+    const backingOff = this.lastAttemptFailed && now - this.lastAttemptMs < opts.failureTtlMs;
+    return !fresh && !backingOff;
+  }
+
+  /** True while there is nothing good to serve — such a reader has to wait. */
+  get empty(): boolean {
+    return this.value === null;
+  }
+
   async read(
-    opts: { ttlMs: number; failureTtlMs: number },
+    opts: { ttlMs: number; failureTtlMs: number; skipRefresh?: boolean },
     load: () => Promise<T | null>,
   ): Promise<CachedValue<T>> {
-    const now = Date.now();
     const hasValue = this.value !== null;
-    const fresh = hasValue && now - this.fetchedAtMs < opts.ttlMs;
-    const backingOff = this.lastAttemptFailed && now - this.lastAttemptMs < opts.failureTtlMs;
-
-    if (!fresh && !backingOff) {
+    if (this.wouldRefresh(opts) && opts.skipRefresh !== true) {
       const refresh = this.refresh(load);
-      // Nothing good to serve yet ⇒ the caller waits. Otherwise the stale
+      // Nothing good to serve yet ⇒ the caller waits. Otherwise the last good
       // value goes out now and the refresh lands for the next reader.
       if (!hasValue) await refresh;
     }
     return {
       value: this.value,
       fetchedAt: this.fetchedAtIso,
-      stale: this.value !== null && (this.lastAttemptFailed || Date.now() - this.fetchedAtMs >= opts.ttlMs),
+      stale: this.value !== null && this.lastAttemptFailed,
     };
   }
 
@@ -261,6 +303,11 @@ export class VendorStatusService {
   private readonly list = new Cached<VendorStatus[]>();
   /** Per vendor slug: the detail read that carries their components. */
   private readonly details = new Map<string, Cached<VendorDetail>>();
+  /** Consecutive detail failures across vendors, and the breaker they trip. */
+  private detailFailures = 0;
+  private circuitOpenUntilMs = 0;
+  /** Per-key stamp of the last warn, so a failing index logs once a window. */
+  private readonly warnedAtMs = new Map<string, number>();
 
   constructor(private readonly opts: VendorStatusOptions) {}
 
@@ -298,13 +345,9 @@ export class VendorStatusService {
 
     const known = new Set(vendors.map((v) => v.slug));
     const usedSlugs = [...new Set(use.map((u) => u.slug))].filter((slug) => known.has(slug));
-    // Only the vendors this deployment routes through are worth a detail read.
-    const reads = await Promise.all(
-      usedSlugs.map(async (slug) => {
-        const cached = await this.detailCache(slug).read(this.opts, () => this.fetchDetail(slug));
-        return [slug, cached] as const;
-      }),
-    );
+    // Only the vendors this deployment routes through are worth a detail read,
+    // and even those go out under a budget — see `readDetails`.
+    const reads = await this.readDetails(usedSlugs);
     const detailBySlug = new Map(reads);
 
     const withChains = vendors.map((vendor) => {
@@ -328,6 +371,58 @@ export class VendorStatusService {
     };
   }
 
+  /**
+   * The detail reads for this deployment's vendors, under a budget.
+   *
+   * The naive version — `Promise.all` over every used slug, each with its own
+   * 10s failure backoff — is a retry storm against a service that allows 30
+   * requests a minute per IP: twenty vendors failing meant ~120 requests and
+   * ~120 warn lines a minute, which guarantees the 429s that keep them
+   * failing. Three things bound it:
+   *
+   *  - **concurrency + jitter**: at most `DETAIL_CONCURRENCY` in flight, each
+   *    offset slightly, so a healthy refresh is a trickle rather than twenty
+   *    simultaneous connections;
+   *  - **a shared circuit breaker**: consecutive detail failures across
+   *    vendors (the signature of "the index is down", not "one vendor 404s")
+   *    park the whole detail layer for `DETAIL_CIRCUIT_MS`. Cached details
+   *    keep being served; vendors with none report the honest reason;
+   *  - **log throttling**: one warn per vendor per backoff window, so an
+   *    outage costs a line a minute rather than a wall of them.
+   */
+  private async readDetails(slugs: string[]): Promise<(readonly [string, CachedValue<VendorDetail>])[]> {
+    const results: (readonly [string, CachedValue<VendorDetail>])[] = new Array(slugs.length);
+    let next = 0;
+
+    const worker = async (): Promise<void> => {
+      for (;;) {
+        const index = next++;
+        const slug = slugs[index];
+        if (slug === undefined) return;
+        const cache = this.detailCache(slug);
+        // Re-read the breaker per slug, not once per pass: the failures that
+        // trip it happen DURING this fan-out, and a pass that checked only at
+        // the start would send all twenty before noticing the first three.
+        if (!this.circuitOpen() && slugs.length > 1 && cache.wouldRefresh(this.opts)) {
+          // Spread the requests that will actually leave the process; a cached
+          // read costs nothing and is never delayed.
+          await sleep(Math.random() * DETAIL_STAGGER_MS);
+        }
+        results[index] = [
+          slug,
+          await cache.read({ ...this.opts, skipRefresh: this.circuitOpen() }, () => this.fetchDetail(slug)),
+        ] as const;
+      }
+    };
+
+    // A reader with nothing cached still has to wait for its own read, so the
+    // workers are awaited; the cap is on how many dial out at once.
+    await Promise.all(
+      Array.from({ length: Math.min(DETAIL_CONCURRENCY, slugs.length) }, () => worker()),
+    );
+    return results;
+  }
+
   private detailCache(slug: string): Cached<VendorDetail> {
     let cache = this.details.get(slug);
     if (cache === undefined) {
@@ -337,43 +432,71 @@ export class VendorStatusService {
     return cache;
   }
 
+  /** The detail layer is parked: serve what is cached, dial nothing. */
+  private circuitOpen(): boolean {
+    return Date.now() < this.circuitOpenUntilMs;
+  }
+
+  /** Count a detail read's outcome towards the circuit breaker. */
+  private noteDetailOutcome(ok: boolean): void {
+    if (ok) {
+      this.detailFailures = 0;
+      this.circuitOpenUntilMs = 0;
+      return;
+    }
+    this.detailFailures += 1;
+    if (this.detailFailures >= DETAIL_CIRCUIT_FAILURES) {
+      this.circuitOpenUntilMs = Date.now() + DETAIL_CIRCUIT_MS;
+    }
+  }
+
+  /** One warn per key per backoff window — an outage should cost a line a
+   *  minute, not a line per request. */
+  private warnThrottled(key: string, reason: string): void {
+    const now = Date.now();
+    const last = this.warnedAtMs.get(key) ?? 0;
+    if (now - last < this.opts.failureTtlMs) return;
+    this.warnedAtMs.set(key, now);
+    this.opts.onError?.(reason);
+  }
+
   private async fetchList(): Promise<VendorStatus[] | null> {
-    const payload = await this.fetchJson(providerStatusUrl(this.opts.baseUrl), "the provider list");
+    const payload = await this.fetchJson("list", providerStatusUrl(this.opts.baseUrl), "the provider list");
     if (payload === undefined) return null;
     const vendors = normalizeVendors(payload);
     if (vendors === null) {
-      this.opts.onError?.("status page index answered something that is not a provider list");
+      this.warnThrottled("list", "status page index answered something that is not a provider list");
     }
     return vendors;
   }
 
   private async fetchDetail(slug: string): Promise<VendorDetail | null> {
-    const payload = await this.fetchJson(providerDetailUrl(this.opts.baseUrl, slug), `vendor ${slug}`);
-    if (payload === undefined) return null;
-    const detail = normalizeVendorDetail(payload);
-    if (detail === null) {
-      this.opts.onError?.(`status page index answered no provider object for ${slug}`);
+    const payload = await this.fetchJson(slug, providerDetailUrl(this.opts.baseUrl, slug), `vendor ${slug}`);
+    const detail = payload === undefined ? null : normalizeVendorDetail(payload);
+    if (payload !== undefined && detail === null) {
+      this.warnThrottled(slug, `status page index answered no provider object for ${slug}`);
     }
+    this.noteDetailOutcome(detail !== null);
     return detail;
   }
 
   /** `undefined` when the call itself failed — distinct from a body that
    *  parsed but wasn't the shape we expected. */
-  private async fetchJson(url: string, what: string): Promise<unknown | undefined> {
+  private async fetchJson(key: string, url: string, what: string): Promise<unknown | undefined> {
     try {
       const res = await fetch(url, {
         headers: { accept: "application/json" },
         signal: AbortSignal.timeout(this.opts.timeoutMs),
       });
       if (!res.ok) {
-        this.opts.onError?.(`status page index answered ${res.status} for ${what}`);
+        this.warnThrottled(key, `status page index answered ${res.status} for ${what}`);
         return undefined;
       }
       // Throws on a body that isn't JSON — an html error page from a proxy in
       // front of SPI is the common case, and it must read as "no data".
       return await res.json();
     } catch (e) {
-      this.opts.onError?.(`${describeCause(e)} reading ${what}`);
+      this.warnThrottled(key, `${describeCause(e)} reading ${what}`);
       return undefined;
     }
   }

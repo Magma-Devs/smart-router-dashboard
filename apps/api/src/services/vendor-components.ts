@@ -50,13 +50,18 @@ export const REASON_UNMAPPED = "No component on their status page maps to this c
  * Ethereum / Solana / Bitcoin / Aptos / Hyperliquid already). A spec with no
  * alias a page happens to use simply reports "component not mapped" — an
  * honest miss, not a wrong verdict.
+ *
+ * Every key must be a REAL spec index (a test pins them against the generated
+ * chain map). A typo here is invisible: the entry simply never fires, and the
+ * chain it was written for silently keeps reporting "not mapped" — which is
+ * how `ARB1` sat here doing nothing while the index is `ARBITRUM`.
  */
-const EXTRA_CHAIN_ALIASES: Record<string, string[]> = {
+export const EXTRA_CHAIN_ALIASES: Record<string, string[]> = {
   COSMOSHUB: ["Cosmos"],
   // Alchemy lists the Hyperliquid EVM chain under its product name.
   HYPERLIQUID: ["HyperEVM"],
   BSC: ["BNB Smart Chain", "BNB Smart Chain (BSC)", "BNB Chain"],
-  ARB1: ["Arbitrum", "Arbitrum One"],
+  ARBITRUM: ["Arbitrum", "Arbitrum One"],
   POLYGON: ["Polygon", "Polygon PoS"],
   AVAX: ["Avalanche", "Avalanche C Chain"],
 };
@@ -70,7 +75,7 @@ const EXTRA_CHAIN_ALIASES: Record<string, string[]> = {
  * reckless: on another page "Mainnet" could be any chain. Scoped to the vendor
  * whose naming was verified, it is simply their spelling.
  */
-const VENDOR_CHAIN_ALIASES: Record<string, Record<string, string[]>> = {
+export const VENDOR_CHAIN_ALIASES: Record<string, Record<string, string[]>> = {
   tenderly: { ETH1: ["Mainnet"] },
 };
 

@@ -230,7 +230,7 @@ services:
       # vendors say about themselves. The api reads it server-side and caches
       # for 60s, because the index is keyless but rate-limited per IP. Point
       # it at a local index with http://host.docker.internal:8080.
-      - STATUS_PAGE_INDEX_URL=${STATUS_PAGE_INDEX_URL:-https://providers-status.magmadevs.com}
+      - STATUS_PAGE_INDEX_URL=${STATUS_PAGE_INDEX_URL-https://providers-status.magmadevs.com}
       # Auth (see docs/AUTH.md): disabled (default) needs none of the rest.
       - AUTH_MODE=${AUTH_MODE:-disabled}
       - AUTH_SECRET=${AUTH_SECRET:-}

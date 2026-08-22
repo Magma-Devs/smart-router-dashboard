@@ -400,7 +400,23 @@ describe("VendorStatusService", () => {
     vi.advanceTimersByTime(61_000);
     const served = await svc.read(USE);
     expect(served.vendors).not.toBeNull();
-    expect(served.stale).toBe(true);
+    // Not stale: nothing has FAILED, the refresh is simply still running.
+    expect(served.stale).toBe(false);
+  });
+
+  it("never reports stale while the index is answering", async () => {
+    // `stale` used to mean "the TTL turned over", which with a 60s TTL and a
+    // 60s poll was every single request — a permanent "index unreachable"
+    // note on a perfectly healthy deployment.
+    vi.useFakeTimers();
+    stubIndex();
+    const svc = service();
+    for (let minute = 0; minute < 4; minute += 1) {
+      const report = await svc.read(USE);
+      expect(report.stale).toBe(false);
+      vi.advanceTimersByTime(61_000);
+      await vi.advanceTimersByTimeAsync(0);
+    }
   });
 
   it("backs off briefly after a failure instead of retrying every request", async () => {
@@ -432,6 +448,113 @@ describe("VendorStatusService", () => {
       components: [],
       reason: "The status index could not read this vendor's components.",
     });
+  });
+
+  /* ── The outbound budget. The index allows 30 requests a minute per IP;
+     the detail layer is the only part that fans out, so it is the only part
+     that can blow it. ─────────────────────────────────────────────────── */
+
+  const MANY = Array.from({ length: 20 }, (_, i) => ({
+    slug: `v${i}`,
+    spec: "ETH1",
+    surfaces: ["rpc" as const],
+  }));
+  const MANY_LIST = MANY.map((u) => ({ slug: u.slug, name: u.slug, official_status: "operational" }));
+
+  it("never has more than four detail reads in flight at once", async () => {
+    let inFlight = 0;
+    let peak = 0;
+    vi.stubGlobal("fetch", async (input: URL | string) => {
+      const url = String(input);
+      if (url.endsWith("provider-status")) return new Response(JSON.stringify(MANY_LIST), { status: 200 });
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await new Promise((r) => setTimeout(r, 20));
+      inFlight -= 1;
+      return new Response(JSON.stringify({ slug: "v", official: { status: "operational", components: [] } }), {
+        status: 200,
+      });
+    });
+    await service().read(MANY);
+    expect(peak).toBeLessThanOrEqual(4);
+  });
+
+  it("parks the whole detail layer after a run of failures, instead of storming", async () => {
+    // Twenty vendors × a 10s backoff used to mean ~120 requests a minute at a
+    // service that allows 30 — a retry storm that guarantees the 429s keeping
+    // it broken.
+    const calls: string[] = [];
+    const reasons: string[] = [];
+    vi.stubGlobal("fetch", async (input: URL | string) => {
+      const url = String(input);
+      calls.push(url);
+      if (url.endsWith("provider-status")) return new Response(JSON.stringify(MANY_LIST), { status: 200 });
+      return new Response("nope", { status: 503 });
+    });
+    const svc = service({ onError: (r) => reasons.push(r) });
+    await svc.read(MANY);
+    const afterFirst = calls.filter((u) => !u.endsWith("provider-status")).length;
+    // The breaker trips on the third consecutive failure; the reads already in
+    // flight behind it still land (hence the concurrency allowance), but the
+    // other thirteen never leave.
+    expect(afterFirst).toBeLessThanOrEqual(3 + 4);
+
+    // Everything after that, for the next minute, is served from the breaker.
+    calls.length = 0;
+    for (let i = 0; i < 10; i += 1) await svc.read(MANY);
+    expect(calls.filter((u) => !u.endsWith("provider-status"))).toEqual([]);
+    // …and the failures cost a handful of log lines, not one per request.
+    expect(reasons.length).toBeLessThanOrEqual(6);
+  });
+
+  it("keeps a whole storming minute inside the index's rate limit", async () => {
+    const calls: string[] = [];
+    vi.stubGlobal("fetch", async (input: URL | string) => {
+      const url = String(input);
+      calls.push(url);
+      if (url.endsWith("provider-status")) return new Response(JSON.stringify(MANY_LIST), { status: 200 });
+      return new Response("nope", { status: 503 });
+    });
+    // Sixty reads inside one failure window — a dashboard polling every second
+    // while every detail read fails. The index allows 30 requests a minute.
+    const svc = service();
+    for (let read = 0; read < 60; read += 1) await svc.read(MANY);
+    expect(calls.length).toBeLessThan(30);
+  });
+
+  it("resumes detail reads once the index recovers", async () => {
+    let failing = true;
+    const detailCalls: string[] = [];
+    vi.stubGlobal("fetch", async (input: URL | string) => {
+      const url = String(input);
+      if (url.endsWith("provider-status")) return new Response(JSON.stringify(MANY_LIST), { status: 200 });
+      detailCalls.push(url);
+      if (failing) return new Response("nope", { status: 503 });
+      return new Response(JSON.stringify({ slug: "v", official: { status: "operational", components: [] } }), {
+        status: 200,
+      });
+    });
+    // The jittered fan-out sleeps on real timers, so the clock is moved by
+    // advancing WHILE a read is in flight rather than between reads.
+    const svc = service();
+    await svc.read(MANY);
+    failing = false;
+    detailCalls.length = 0;
+
+    vi.useFakeTimers();
+    vi.advanceTimersByTime(30_000);
+    const parked = svc.read(MANY);
+    await vi.advanceTimersByTimeAsync(500);
+    await parked;
+    // Inside the breaker window nothing dials out, healthy index or not…
+    expect(detailCalls).toEqual([]);
+
+    vi.advanceTimersByTime(31_000);
+    const resumed = svc.read(MANY);
+    await vi.advanceTimersByTimeAsync(1_000);
+    await resumed;
+    // …and once it lapses the reads come back.
+    expect(detailCalls.length).toBeGreaterThan(0);
   });
 
   it("gives up on a status page that never answers", async () => {
@@ -550,5 +673,21 @@ describe("normalizeVendorDetail", () => {
   it("is null for a body that isn't a provider object", () => {
     expect(normalizeVendorDetail([1, 2, 3])).toBeNull();
     expect(normalizeVendorDetail("nope")).toBeNull();
+  });
+
+  it("is null for a 200 that carries no status and no components", () => {
+    // These used to parse into "status unknown, no components", which the
+    // verdict then reported as "no component maps to this chain" — a
+    // confident answer derived from an error page, cached for a minute.
+    expect(normalizeVendorDetail({})).toBeNull();
+    expect(normalizeVendorDetail({ detail: "Not Found" })).toBeNull();
+    expect(normalizeVendorDetail({ slug: "ghost" })).toBeNull();
+  });
+
+  it("accepts a provider that has components but no headline word", () => {
+    expect(normalizeVendorDetail({ slug: "x", official: { components: [] } })).toEqual({
+      officialStatus: "unknown",
+      components: [],
+    });
   });
 });

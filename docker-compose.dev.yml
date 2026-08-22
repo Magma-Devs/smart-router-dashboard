@@ -219,7 +219,7 @@ services:
       # Status Page Index behind GET /api/vendors/status. Dev defaults to an
       # index running on the HOST (:8080); set it to the hosted one
       # (https://providers-status.magmadevs.com) when there is none.
-      - STATUS_PAGE_INDEX_URL=${STATUS_PAGE_INDEX_URL:-http://host.docker.internal:8080}
+      - STATUS_PAGE_INDEX_URL=${STATUS_PAGE_INDEX_URL-http://host.docker.internal:8080}
       # Auth (see docs/AUTH.md): disabled (default) needs none of the rest.
       - AUTH_MODE=${AUTH_MODE:-disabled}
       - AUTH_SECRET=${AUTH_SECRET:-dev-secret-change-me-please-32chars!}

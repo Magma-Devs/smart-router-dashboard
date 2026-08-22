@@ -1,9 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { VENDOR_IDENTITIES, matchVendor, type RouterTopology, type VendorChainComponent } from "@sr/shared";
 import {
+  isKnownSpecIndex,
+  VENDOR_IDENTITIES,
+  matchVendor,
+  type RouterTopology,
+  type VendorChainComponent,
+} from "@sr/shared";
+import {
+  EXTRA_CHAIN_ALIASES,
   REASON_DETAIL_UNREADABLE,
   REASON_NO_FEED,
   REASON_UNMAPPED,
+  VENDOR_CHAIN_ALIASES,
   chainAliases,
   chainVerdict,
   collectVendorChainUse,
@@ -374,5 +382,34 @@ describe("vendor identities ↔ the index's slugs", () => {
   it("leaves a node no vendor sells unmatched", () => {
     expect(matchVendor("eth-publicnode", ["https://ethereum-rpc.publicnode.com"])).toBeNull();
     expect(matchVendor("eth-mevblocker", ["https://rpc.mevblocker.io"])).toBeNull();
+  });
+});
+
+
+/**
+ * An alias table keyed by a spec that does not exist is invisible: the entry
+ * never fires and the chain it was written for quietly keeps reporting "not
+ * mapped". `ARB1` sat in this table doing nothing — the index is `ARBITRUM`.
+ */
+describe("alias tables are keyed by real spec indexes", () => {
+  it("every EXTRA_CHAIN_ALIASES key is in the generated chain map", () => {
+    const unknown = Object.keys(EXTRA_CHAIN_ALIASES).filter((spec) => !isKnownSpecIndex(spec));
+    expect(unknown).toEqual([]);
+  });
+
+  it("every VENDOR_CHAIN_ALIASES key is a known vendor with known specs", () => {
+    const vendorIds = new Set(VENDOR_IDENTITIES.map((v) => v.id));
+    for (const [slug, perSpec] of Object.entries(VENDOR_CHAIN_ALIASES)) {
+      expect({ slug, known: vendorIds.has(slug) }).toEqual({ slug, known: true });
+      const unknown = Object.keys(perSpec).filter((spec) => !isKnownSpecIndex(spec));
+      expect({ slug, unknown }).toEqual({ slug, unknown: [] });
+    }
+  });
+
+  it("the aliases actually reach the matcher for their spec", () => {
+    // The table being keyed right is only half of it — this is the other half.
+    expect(chainAliases("ARBITRUM")).toContain("arbitrum one");
+    expect(chainAliases("BSC")).toContain("bnb smart chain (bsc)");
+    expect(chainAliases("ETH1", "tenderly")).toContain("mainnet");
   });
 });
