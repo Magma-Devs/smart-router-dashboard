@@ -6,29 +6,35 @@ taken on trust.
 
 | | |
 |---|---|
-| As of | 24 Sep 2026, `feat/MAG-2729-slice6-audit-emission` (#122), re-cut onto slice 5 (#121) |
+| As of | 27 Sep 2026, `feat/MAG-2870-account-emails` (#147), rebased onto `main` after #121 and #122 merged |
 | Parent epic | [MAG-2686](https://magmadevs.atlassian.net/browse/MAG-2686) — Dashboard v2, config change + SOC 2 |
 | Design | [`ACCOUNTS-DESIGN.md`](./ACCOUNTS-DESIGN.md) (#109) · operator guide [`AUTH.md`](./AUTH.md) |
+| Acceptance | **11/11** of the checks on the ticket pass — [§4](#4-the-acceptance-checks) |
 
 ## Verdict
 
 Everything the ticket asks for is implemented. Nothing is open for decision; what remains belongs to
 four sibling tickets.
 
-**Managed-mode delivery is [MAG-2870](https://magmadevs.atlassian.net/browse/MAG-2870)** — "Account
-emails and the reset password page", carved out of this ticket deliberately, _"so the copy and the
-screen have one owner rather than being buried in the accounts ticket"_. It scopes exactly two
-emails, invitation and password reset, and restates the rule this ticket already implements: on-prem
-sends none. So the managed paths below stop one step short **by design, not omission** — there is no
-mail transport in the repo because sending was never this ticket's job.
+**The eleven acceptance checks on the ticket all pass**, run against a live deployment in both
+deployment shapes — 11/11 managed, 10/10 on-prem, where the eleventh is managed-only. [§4](#4-the-acceptance-checks)
+has the list and how each is exercised.
 
-The other three are the shared-login cutover (MAG-2805), cancelling a removed person's pending
-config changes (MAG-2731 owns that table), and the audit log's own viewer, filtering and export
-(MAG-2770). This ticket emits into MAG-2770's writer; it does not own the reading side.
+**Managed-mode delivery has landed too.** It belongs to
+[MAG-2870](https://magmadevs.atlassian.net/browse/MAG-2870) — "Account emails and the reset password
+page", carved out of this ticket deliberately, _"so the copy and the screen have one owner rather
+than being buried in the accounts ticket"_ — and that ticket is implemented in
+[#147](https://github.com/Magma-Devs/smart-router-dashboard/pull/147), on this branch. So the
+managed rows below are now green rather than deferred: invitations and resets are emailed, over SES.
+
+What remains belongs to three sibling tickets: the shared-login cutover (MAG-2805), cancelling a
+removed person's pending config changes (MAG-2731 owns that table), and the audit log's own viewer,
+filtering and export (MAG-2770). This ticket emits into MAG-2770's writer; it does not own the
+reading side.
 
 Two places where the code disagreed with the ticket were found during this audit and fixed on the
-branch — see [§6](#6-mismatches-found-and-fixed). **Every row below that is not ✅ is explained in
-[§5](#5-the-gaps-and-why-each-one-is-open)**, grouped by cause rather than listed one by one, since
+branch — see [§7](#7-mismatches-found-and-fixed). **Every row below that is not ✅ is explained in
+[§6](#6-the-gaps-and-why-each-one-is-open)**, grouped by cause rather than listed one by one, since
 three of them are the same missing piece.
 
 ---
@@ -67,9 +73,9 @@ Seven pull requests, stacked. `#115` is MAG-2770's writer, merged in because sli
 | Email and password — "the only way in" | ⚠️ | Decided otherwise on 2026-09-24: Google and GitHub stay as ways in, Discord is removed. Removing a person still ends every session they hold, whatever they signed in with |
 | On-prem first admin: email, password, repeat; nothing else opens | ✅ | `/` → `/login` → `/setup` |
 | First-run requires the installer's setup token | ✅ | Constant-time compare. The gate is `count(active users) == 0`, never a flag, so a backup restored with no users is covered — which the ticket calls out |
-| Managed first admin: we create it and send a join link | ◐ | `/setup` on a managed deployment creates the Magma operator's account — marked, and shown as ours in the member list — who invites the customer's named admin. The join link is handed over until email exists (MAG-2870) |
-| Never a shared account; we never set a password for anyone | ✅ | True only after the `ADMIN_EMAIL` fix — see [§6](#6-mismatches-found-and-fixed) |
-| No hidden Magma account — the ticket's "no standing admin account", revised 26 Aug 2026 | ✅ | On managed, the account `/setup` creates is Magma's and stays after handover, marked and shown as ours in the member list. Nothing else creates one: the `ADMIN_EMAIL` seed is refused in production (§6) |
+| Managed first admin: we create it and send a join link | ✅ | `/setup` on a managed deployment creates the Magma operator's account — marked, and shown as ours in the member list — who invites the customer's named admin. The invitation is emailed |
+| Never a shared account; we never set a password for anyone | ✅ | True only after the `ADMIN_EMAIL` fix — see [§7](#7-mismatches-found-and-fixed) |
+| No hidden Magma account — the ticket's "no standing admin account", revised 26 Aug 2026 | ✅ | On managed, the account `/setup` creates is Magma's and stays after handover, marked and shown as ours in the member list. Nothing else creates one: the `ADMIN_EMAIL` seed is refused in production (§7) |
 
 **Passwords** (NIST 800-63B)
 
@@ -85,7 +91,7 @@ Seven pull requests, stacked. `#115` is MAG-2770's writer, merged in because sli
 
 | Requirement | | Notes |
 |---|---|---|
-| Managed: user-initiated, emailed link, 1 hour | ⚠️ | No transport (MAG-2870), so it fails closed: `POST /auth/password/forgot` answers 404 on every deployment and writes nothing |
+| Managed: user-initiated, emailed link, 1 hour | ✅ | Emailed over SES. Always 202, whether or not the address exists — anything else asks who is a member |
 | On-prem: admin generates a single-use link, 24 hours | ✅ | **Reset link** on the member row → shown once, copied by hand. The admin never sees or chooses the value |
 | A reset link sets a password; it does not sign anyone in | ✅ | |
 | Resetting kills every session for that user | ✅ | |
@@ -108,7 +114,7 @@ Seven pull requests, stacked. `#115` is MAG-2770's writer, merged in because sli
 | Admin is transferable | ✅ | Promote a replacement, then they demote you — the last move is never your own |
 | Nobody can demote or remove themselves | ✅ | Enforced in `services/members.ts`, not merely hidden in the UI |
 | Invite by email address and role | ✅ | |
-| Managed: invitation email with a join link | ⚠️ | No transport (MAG-2870). Every deployment returns the link to the admin, who hands it over |
+| Managed: invitation email with a join link | ✅ | Emailed, and the link is **not** returned to the admin. If the send fails it comes back with `deliveryFallback: true` and the dialog says so, rather than reporting success into a void |
 | On-prem: link shown to the admin. No mail server ever required | ✅ | Shown once, not readable back |
 | An invite can only create the account it was issued for (replaced "redeemable only by the address it was sent to", 26 Aug 2026) | ✅ | **Structural**: the account is created with the invitation's address. A password redemption supplies no address. A Google or GitHub redemption supplies the provider's verified one, because those stay as ways in (§1); it must equal the invited address, or the route answers 403 and names the address to use |
 | Single-use; 7 days managed, 24 hours on-prem | ✅ | Exactly as specified |
@@ -122,11 +128,10 @@ Seven pull requests, stacked. `#115` is MAG-2770's writer, merged in because sli
 
 ### 3 · Audit log
 
-The log itself is MAG-2770. This ticket emits into it. All sixteen events are in the typed catalog,
-and fifteen fire from a call site — checked separately, because being catalogued does not mean being
-emitted. The sixteenth, `password.reset_requested`, has nothing to record yet: `POST
-/auth/password/forgot` answers 404 on every deployment until email exists, so nobody can request a
-reset. It arrives with that route, in [MAG-2870](https://magmadevs.atlassian.net/browse/MAG-2870).
+The log itself is MAG-2770. This ticket emits into it. All sixteen events are in the typed catalog
+**and** fire from a call site — checked separately, because being catalogued does not mean being
+emitted. The last to arrive was `password.reset_requested`, which fires from the managed `POST
+/auth/password/forgot` that [MAG-2870](https://magmadevs.atlassian.net/browse/MAG-2870) turned on.
 
 | Group | Events |
 |---|---|
@@ -157,50 +162,101 @@ rename cannot rewrite history.
 
 ---
 
-## 4. Outstanding, with owners
+## 4. The acceptance checks
+
+Eleven checks were set on the ticket as the bar for "working". They are **not** the same list as the
+ticket's ten "Done when" items in [§3](#3-the-done-when-list) — that list includes the shared-login
+cutover and the approval flow, which other tickets own, so it scores 7 met / 2 partial / 1 elsewhere.
+These eleven are all things this ticket can actually be held to, and they all pass.
+
+They are run by `scripts/sanity-accounts.mjs` against a **live deployment** — HTTP to the api and the web, the audit
+log read straight out of Postgres — rather than asserted in unit tests, because several of them are
+only meaningful at runtime.
+
+```bash
+make accounts-reset && make accounts     # or accounts-managed
+node scripts/sanity-accounts.mjs         # ~15 seconds
+```
+
+**11/11 managed · 10/10 on-prem** (check 2 is managed-only and skips there). The runner refuses to
+start against an install that already has accounts, because the first check is about a fresh one —
+the refusal is the check.
+
+| # | Check | How it is exercised |
+|---|---|---|
+| 1 | Create an account through the install | A fresh install reports `needsSetup`, every `/api/*` route 401s an anonymous caller, `/` → `/login` → `/setup`, a wrong setup token is refused, the account created is an **admin**, and setup cannot be claimed twice |
+| 2 | Create an account on managed; the person sets their own password | The invitation is **emailed** and the link is *not* returned to the admin. Asserted against the recipient's mailbox: right destination, customer named in the subject, text alongside HTML, a reply-to somebody reads |
+| 3 | An admin invites and they join with exactly the role picked | Invite as `approver`, redeem, assert the created account's role. On-prem the same flow runs with no email at all |
+| 4 | An invite already used is refused | Second redemption refused, and the link stops previewing |
+| 5 | A lower role is refused **when attempted directly** | A valid *approver* token fires all four admin-only mutations — invite, change role, remove, mint a reset link. Four 403s, no UI involved |
+| 6 | Demote someone signed in; their next action is refused | Promote, use their **existing** token successfully, demote, reuse **the same token** → 403. No sign-out, no new token |
+| 7 | Nobody can demote or remove themselves | Both refused 409, with messages that say what to do instead |
+| 8 | Forgot password: sets a new password, does not sign in, ends other sessions | Two live sessions before, both dead after; the response carries no session; the old password stops working and the new one starts |
+| 9 | An expired reset link and an already-used one give the same message | Same status **and** same string, compared directly, on both preview and submit |
+| 10 | Remove a person | Their next request 401s, they leave the member list, their name survives in the audit log, and their address can be invited again |
+| 11 | A row for each of the above including a failed sign-in, and no secret as a value | Ten distinct actions asserted present. Then every secret the run created — three passwords, the setup token, every minted JWT — is grepped across **both** audit tables, every column, plus a sweep for anything link-shaped |
+
+Two are worth reading closely, because they are the ones a code review cannot settle.
+
+**Check 5** is the difference between a hidden button and an enforced rule. The runner holds a
+legitimate approver session and calls the admin routes directly. Nothing about the UI is involved.
+
+**Check 11** turns "no password or token appears anywhere as a value" from a policy into an
+assertion. It does not check that redaction was called; it checks the resulting rows for the actual
+strings.
+
+### One failure along the way, which was the runner's
+
+The runner reset a password and signed back in inside the same second, and got a token
+`checkSession` correctly refused. `signed_out_all_at` and a JWT's `iat` both have one-second
+resolution and the comparison is `<=` on purpose, so somebody racing a sign-out cannot keep their
+session. A human cannot reach that window — the reset page does not sign you in, so they have to get
+to `/login` and type — but a script can. It waits past the boundary now, and says why.
+
+---
+
+## 5. Outstanding, with owners
 
 | | State | Owner |
 |---|---|---|
-| **Managed-mode delivery** | No mail transport exists. Invitations and admin reset links are handed over by the admin, as on-prem; self-serve forgot-password answers 404 and issues nothing | [MAG-2870](https://magmadevs.atlassian.net/browse/MAG-2870) — assigned, To Do |
 | Pending config changes cancelled on removal | `onMemberDeactivated` is a documented empty seam | MAG-2731 |
 | Shared login disabled at cutover | Not this repo | MAG-2805 · victoria |
-| Managed "Forgot password?" on `/login` | The screen MAG-2870 specifies, on the flow it delivers | [MAG-2870](https://magmadevs.atlassian.net/browse/MAG-2870) |
+| Managed "Forgot password?" link on `/login` | The route and the email exist and are exercised; no control on the sign-in screen calls them | unassigned |
 | Audit viewer, filtering, export | Out of scope by ticket text | MAG-2770 |
 | 2FA column populated | Out of scope by ticket text | MAG-2730 |
 
 ---
 
-## 5. The gaps, and why each one is open
+## 6. The gaps, and why each one is open
 
-Six rows above are not ✅. One is a decision rather than a gap: Google and GitHub stay as ways in
-(§2, Sign-in). The other five collapse into three causes, and only one was ever work sitting on this
-ticket — that one is now built, which is why it no longer appears. Nothing here is undecided; each
-has a ticket.
+Two rows above are not ✅. One is a decision rather than a gap: Google and GitHub stay as ways in
+(§2, Sign-in). The other is sequencing behind a sibling ticket (Cause 3). Causes 1 and 2 are kept
+because they explain the shape of the work rather than an outstanding gap — both are built now, and
+a reader comparing this doc to an older version should be able to see what moved.
 
-### Cause 1 — there is no mail transport. Three of them.
+### Cause 1 — the mail transport. Now landed, in MAG-2870.
 
-Nothing in the repo sends email: no nodemailer, no SES, no SMTP. Every managed path that ends in
-"…and send them a link" therefore stops one step short. These are one missing piece, not three
-bugs.
+Three managed paths used to stop one step short, because nothing in the repo sent email. All three
+were the same missing piece rather than three bugs, and that piece was never this ticket's: MAG-2870
+owns the transport and the copy, and it is implemented in
+[#147](https://github.com/Magma-Devs/smart-router-dashboard/pull/147) on this branch.
 
-| | What happens today |
-|---|---|
-| **Managed invitation** | The row is created with the right 7-day TTL, and — like on-prem — the response hands the admin the link to pass on, because nothing can email it yet |
-| **Managed forgot-password** | Fails closed: `POST /auth/password/forgot` answers 404 on every deployment and writes nothing, so it never issues a link nobody receives or kills one a member already holds |
-| **Managed first admin** | Works, minus the email: a Magma operator runs `/setup` with the setup token, which creates the marked Magma account, and that account invites the customer's named admin. The join link is handed over by hand |
+| | Then | Now |
+|---|---|---|
+| **Managed invitation** | The row was created with the right 7-day TTL, and — like on-prem — the response handed the admin the link to pass on, because nothing could email it | Emailed over SES. The link is not returned to the admin, because it is in the recipient's inbox |
+| **Managed forgot-password** | Failed closed: `POST /auth/password/forgot` answered 404 on every deployment and wrote nothing | Emailed. Always 202, whether or not the address exists |
+| **Managed first admin** | Worked, minus the email: the Magma account `/setup` creates invited the customer's named admin, and the join link was handed over by hand | The same flow, and the invitation is emailed |
 
-**Who owns it:** [MAG-2870](https://magmadevs.atlassian.net/browse/MAG-2870), which scopes exactly
-two emails — invitation and password reset — with the copy written out, and confirms on-prem sends
-none. So this is a boundary, not a hole: the link generation, the TTLs, the single-use semantics and
-the audit rows all live here; what MAG-2870 adds is the transport and the wording.
+Ported from lava-connect's `services/email.ts` and `email-layout.ts`: SES v2 behind one send
+function, table-based HTML with no webfonts, and its single `deliver()` choke point. Three
+deliberate departures, all recorded in [`AUTH.md`](./AUTH.md) — no email-log table, no footer and no
+`<img>` anywhere, and an expiry passed in rather than baked into the copy.
 
-**What it takes:** one adapter behind the existing link generation — both call sites already produce
-the URL and know the mode. `lava-connect` is a working reference (`services/email.ts` +
-`email-layout.ts` over SES v2), and the shape worth copying is its single `deliver()` choke point:
-send, then write a row recording `type` and `template_version` but **never the body**, so a
-token-bearing link is never persisted. Note it has no invitation email to port — it is self-serve
-signup with no team concept — so that template gets written from MAG-2870's copy rather than
-inherited.
+**The one decision worth knowing.** An invitation row is committed before the send is attempted, so
+a failed send cannot fail the request without reporting failure for something that half happened —
+and `201` with no link would leave an admin believing an invitation is on its way to somebody who
+will never get it. So managed falls back to handing over the link with `deliveryFallback: true`, and
+the dialog says the email could not be sent rather than reusing the on-prem wording.
 
 ### Cause 2 — a missing control. Now built.
 
@@ -239,7 +295,7 @@ fourth is the pending-changes cancellation above.
 
 ---
 
-## 6. Mismatches found and fixed
+## 7. Mismatches found and fixed
 
 Both found by reading the ticket line by line against the code, and fixed on this branch.
 
@@ -271,7 +327,7 @@ and now says the last move is never your own.
 
 ---
 
-## 7. How this was verified
+## 8. How this was verified
 
 Worth stating, because the failure mode that produced the worst bug in this ticket was a test suite
 that could not see it.
@@ -283,6 +339,12 @@ design doc.
 which `up-auth` and `dev-auth` cannot, so `/setup` never appeared before and none of these flows had
 been clicked through. The walkthrough in [`AUTH.md`](./AUTH.md) was run end to end: 42 assertions
 covering first run, invitation, live role change, sessions, reset, lockout, export and removal.
+
+**Then as the ticket's own acceptance checks** — `scripts/sanity-accounts.mjs`, [§4](#4-the-acceptance-checks).
+Same idea, narrowed to exactly the eleven that were asked for, and re-runnable. Managed mail is
+verified against a **local SES mock** (`make accounts-managed`), so check 2 reads the recipient's
+mailbox rather than a log line: it proves the message was delivered to a transport, not merely that
+a link was generated.
 
 **Then in a browser** — which found three things neither of the above could:
 
@@ -326,3 +388,5 @@ were checked by rendering them against a running stack, signed out and signed in
 typechecking them.
 
 On 24 Sep 2026: `pnpm lint` 0 errors, `pnpm -r typecheck` clean, **1867 tests** pass (1039 shared · 499 api · 275 web · 54 db).
+The eleven acceptance checks (§4) passed in both deployment shapes at `8594841`, before this branch was
+rebased onto that head.
