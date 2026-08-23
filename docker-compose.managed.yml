@@ -4,27 +4,51 @@
 # The difference from on-prem is delivery, and only delivery: invitations and
 # password resets are emailed rather than handed to an admin. Everything else —
 # link generation, TTLs, single-use, the audit rows — is identical, which is why
-# the same runner covers both.
+# one acceptance runner covers both shapes.
 #
-# `AWS_REGION` is deliberately NOT set. With no region the transport logs the
-# rendered message instead of sending it, so the whole managed flow is
-# exercisable with no AWS account, no verified domain and nothing to clean up:
+#     make accounts-managed        →  inbox at http://localhost:8005
 #
-#     docker logs smart-router-dashboard-dev-api-1 | grep -o 'http.*/invite/[^ "]*'
-#
-# That is also the state a real managed deployment is in before somebody wires
-# up SES, which is exactly why the fallback has to be visible rather than silent
-# — the invite dialog says the email could not be sent and hands over the link.
-#
-# To send for real, add AWS_REGION and credentials. To send at a local SES mock
-# instead, add the `ses` service from lava-connect's dev compose and point
-# SES_ENDPOINT at it.
+# Mail goes to a local SES mock, so nothing leaves the machine and no AWS
+# account is involved. See the `ses` service below.
 services:
+  # A SES-compatible mock with an inbox UI (the same image lava-connect uses in
+  # its dev stack). It implements the SES v2 API, so the AWS SDK cannot tell it
+  # apart from the real thing — `SES_ENDPOINT` is the only difference, and that
+  # hook exists in the transport precisely so this is possible.
+  #
+  # It accepts every address without verification, which real SES does not: a
+  # new SES account is sandboxed and silently drops mail to unverified
+  # recipients. That difference is the main reason to develop against this
+  # rather than against a real sandbox.
+  #
+  # amd64-only, so it runs under emulation on Apple silicon. It is a dev-only
+  # service and the slowdown does not matter.
+  ses:
+    image: dasprid/aws-ses-v2-local
+    platform: linux/amd64
+    ports:
+      - "${SES_UI_PORT:-8005}:8005"
+
   api:
     environment:
       - DEPLOYMENT_MODE=managed
       - CUSTOMER_NAME=DFNS
       - EMAIL_FROM=Smart Router <noreply@magmadevs.com>
+      - EMAIL_REPLY_TO=support@magmadevs.com
+      # A region is what switches the transport on; the endpoint is what keeps
+      # the mail local. Without SES_ENDPOINT these same two lines would send for
+      # real, which is the whole point — the demo path and the production path
+      # differ by one variable.
+      - AWS_REGION=us-east-1
+      - SES_ENDPOINT=http://ses:8005
+      # The mock ignores these, but the SDK insists on finding credentials
+      # somewhere. Explicit dummies stop it reaching for an instance role that
+      # is not there and stalling the first send.
+      - AWS_ACCESS_KEY_ID=local
+      - AWS_SECRET_ACCESS_KEY=local
+    depends_on:
+      - ses
+
   web:
     environment:
       - DEPLOYMENT_MODE=managed

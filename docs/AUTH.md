@@ -282,6 +282,28 @@ message instead.
 | `SES_ENDPOINT` | Points at a local SES mock for development |
 | `CUSTOMER_NAME` | Appears in the invitation subject — an invite lands somewhere that has never heard of us, and the customer's own name is what stops it reading as spam |
 
+### Seeing the mail in development
+
+```bash
+make accounts-managed          # inbox at http://localhost:8005
+```
+
+Mail goes to a **local SES mock** (`dasprid/aws-ses-v2-local`, the image
+lava-connect uses) rather than to Amazon. It implements the SES v2 API, so
+`SES_ENDPOINT` is the only thing that differs from a real send — the SDK cannot
+tell, and neither can our transport. Nothing leaves the machine and no AWS
+account is involved.
+
+Two reasons this beats pointing at real SES in development. A new SES account is
+**sandboxed**, and silently drops mail to any address you have not verified with
+Amazon, so a test invitation to a made-up address looks accepted and never
+arrives. And the mock keeps every message in a browsable inbox, so the
+invitation and the redemption that follows it are one continuous flow: open the
+inbox, click **Set up your account**, land on `/invite/<token>`.
+
+To send for real, drop `SES_ENDPOINT` and supply real credentials. The demo path
+and the production path differ by that one variable.
+
 ### A send that does not happen
 
 `sendEmail` **never throws**. An invitation row is committed before the send is
@@ -341,6 +363,22 @@ From the ticket, and each has a test:
 ### The reset password page
 
 <img src="./assets/reset-password-states.png" alt="The three states of the reset password page, captured against a running stack. Setting a password: heading &quot;Choose a new password&quot; with the address dana.okonkwo@dfns.co underneath, New password and Repeat password fields, the rule &quot;At least 8 characters. Any characters, including spaces.&quot; shown beneath the first field before typing, and a Save password button. Done: &quot;Your password has been changed. You have been signed out everywhere else.&quot; and a Sign in button. Dead link: &quot;This link has expired&quot;, with on-prem wording asking an administrator to generate a new one, and a Go to sign in button." width="900">
+
+### Checking the whole thing
+
+```bash
+make accounts-reset && make accounts     # or accounts-managed
+node scripts/sanity-accounts.mjs
+```
+
+The eleven acceptance checks Omer listed on MAG-2729, run against a live
+deployment over HTTP with the audit log read straight out of Postgres. Several
+of them only mean something at runtime — "a lower role is refused the action
+when it's attempted directly, not just when the button is hidden" is a claim
+about the api holding a real token, and the runner makes exactly that call.
+
+It refuses to start against an install that already has accounts, because the
+first check is about a fresh one.
 
 ## Sign-in lockout
 
