@@ -371,8 +371,10 @@ make accounts-reset && make accounts     # or accounts-managed
 node scripts/sanity-accounts.mjs
 ```
 
-The eleven acceptance checks Omer listed on MAG-2729, run against a live
-deployment over HTTP with the audit log read straight out of Postgres. Several
+The eleven acceptance checks on MAG-2729, run against a live deployment over
+HTTP with the audit log read straight out of Postgres. To do the same by hand,
+through the screen, follow
+[`MAG-2729-MANUAL-CHECKS.md`](./MAG-2729-MANUAL-CHECKS.md). Several
 of them only mean something at runtime — "a lower role is refused the action
 when it's attempted directly, not just when the button is hidden" is a claim
 about the api holding a real token, and the runner makes exactly that call.

@@ -177,6 +177,10 @@ make accounts-reset && make accounts     # or accounts-managed
 node scripts/sanity-accounts.mjs         # ~15 seconds
 ```
 
+To do the same by hand through the screen — for a demo, or to watch a thing
+happen rather than read that it passed — follow
+[`MAG-2729-MANUAL-CHECKS.md`](./MAG-2729-MANUAL-CHECKS.md).
+
 **11/11 managed · 10/10 on-prem** (check 2 is managed-only and skips there). The runner refuses to
 start against an install that already has accounts, because the first check is about a fresh one —
 the refusal is the check.
