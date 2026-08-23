@@ -27,7 +27,7 @@ than being buried in the accounts ticket"_ — and that ticket is implemented in
 [#147](https://github.com/Magma-Devs/smart-router-dashboard/pull/147), on this branch. So the
 managed rows below are now green rather than deferred: invitations and resets are emailed, over SES.
 
-What remains belongs to three sibling tickets: the shared-login cutover (MAG-2805), cancelling a
+What remains belongs to three sibling tickets: the shared-login cutover ([MAG-3002](https://magmadevs.atlassian.net/browse/MAG-3002)), cancelling a
 removed person's pending config changes (MAG-2731 owns that table), and the audit log's own viewer,
 filtering and export (MAG-2770). This ticket emits into MAG-2770's writer; it does not own the
 reading side.
@@ -148,7 +148,7 @@ rename cannot rewrite history.
 
 | # | Criterion | |
 |---|---|---|
-| 1 | Signs in as themselves; the shared login no longer works | ⛔ cutover — MAG-2805 |
+| 1 | Signs in as themselves; the shared login no longer works | ⛔ cutover — [MAG-3002](https://magmadevs.atlassian.net/browse/MAG-3002) |
 | 2 | Fresh on-prem install asks for email and password before anything opens, and refuses without the setup token | ✅ |
 | 3 | A requester cannot approve anything | ◐ roles gate correctly; there is no approval surface to be refused from until MAG-2731 |
 | 4 | An invite redeemed from a different address is refused | ✅ |
@@ -219,10 +219,11 @@ to `/login` and type — but a script can. It waits past the boundary now, and s
 | | State | Owner |
 |---|---|---|
 | Pending config changes cancelled on removal | `onMemberDeactivated` is a documented empty seam | MAG-2731 |
-| Shared login disabled at cutover | Not this repo | MAG-2805 · victoria |
+| Shared login disabled at cutover | Not this repo. Per deployment, and blocked on this ticket merging — named accounts have to exist before the shared one can go | [MAG-3002](https://magmadevs.atlassian.net/browse/MAG-3002) |
 | Managed "Forgot password?" link on `/login` | The route and the email exist and are exercised; no control on the sign-in screen calls them | unassigned |
 | Audit viewer, filtering, export | Out of scope by ticket text | MAG-2770 |
 | 2FA column populated | Out of scope by ticket text | MAG-2730 |
+| AWS/SES setup so managed can actually send | The code ships in MAG-2870; the verified domain, sandbox exit, DNS records and chart env do not. On-prem is unaffected — it sends nothing by design | [MAG-3003](https://magmadevs.atlassian.net/browse/MAG-3003) |
 
 ---
 
