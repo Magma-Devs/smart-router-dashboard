@@ -5,6 +5,22 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.19.0]
+
+### Added
+
+- **The api authenticates its Prometheus calls.** `PROMETHEUS_USERNAME` +
+  `PROMETHEUS_PASSWORD` go out as `Authorization: Basic` on every query, and
+  `PROMETHEUS_ORG_ID` as `X-Scope-OrgID` — what a per-tenant read path in front
+  of a multi-tenant Mimir asks for. Both halves of the pair or no header: half a
+  credential would turn every query into a 401 that reads, from the dashboard,
+  exactly like "no data". Unset env is byte-identical to before.
+- **Readiness is an instant query, not `-/ready`.** That route is
+  bare-Prometheus only — Mimir's `/prometheus` API and a query-only proxy don't
+  serve it, so against the real read path the pod would never have gone Ready.
+  `vector(1)` also carries the credential, so a rejected one fails readiness
+  instead of rendering as empty panels.
+
 ### Changed
 
 - **Chain resync — lava-specs dropped 47 REST names shadowed by a
