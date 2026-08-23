@@ -1,0 +1,30 @@
+# MAG-2870 — the managed shape, for demos and for the managed-mode acceptance
+# check. Layer it on top of docker-compose.accounts.yml.
+#
+# The difference from on-prem is delivery, and only delivery: invitations and
+# password resets are emailed rather than handed to an admin. Everything else —
+# link generation, TTLs, single-use, the audit rows — is identical, which is why
+# the same runner covers both.
+#
+# `AWS_REGION` is deliberately NOT set. With no region the transport logs the
+# rendered message instead of sending it, so the whole managed flow is
+# exercisable with no AWS account, no verified domain and nothing to clean up:
+#
+#     docker logs smart-router-dashboard-dev-api-1 | grep -o 'http.*/invite/[^ "]*'
+#
+# That is also the state a real managed deployment is in before somebody wires
+# up SES, which is exactly why the fallback has to be visible rather than silent
+# — the invite dialog says the email could not be sent and hands over the link.
+#
+# To send for real, add AWS_REGION and credentials. To send at a local SES mock
+# instead, add the `ses` service from lava-connect's dev compose and point
+# SES_ENDPOINT at it.
+services:
+  api:
+    environment:
+      - DEPLOYMENT_MODE=managed
+      - CUSTOMER_NAME=DFNS
+      - EMAIL_FROM=Smart Router <noreply@magmadevs.com>
+  web:
+    environment:
+      - DEPLOYMENT_MODE=managed
