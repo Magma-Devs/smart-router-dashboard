@@ -11,11 +11,15 @@
  * never awaits `authReady()` because /api/config reports the mode).
  */
 
+import type { Role } from "@sr/shared";
+
 export interface AuthUserInfo {
   email: string;
   name: string | null;
   avatarUrl?: string | null;
-  role: "admin" | "member";
+  /** Role at sign-in. Fine for deciding which controls to render; never a
+   *  permission check — the api re-reads the live row on every mutation. */
+  role: Role;
 }
 
 interface AuthState {
