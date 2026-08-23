@@ -361,7 +361,7 @@ Every `/api/metrics/*` route also accepts **`router?`** — the router scope
 |---|---|---|
 | `GET /docs` · `GET /docs/json` | — | Swagger UI explorer + OpenAPI 3.1 spec. Registered outside production only. |
 | `GET /health` | — | Liveness — `{ health: "ok" }` |
-| `GET /health/ready` | — | Readiness — pings Prometheus; 503 + `components.prometheus:"ping_failed"` on failure |
+| `GET /health/ready` | — | Readiness — runs `vector(1)` against the store (not `-/ready`, which Mimir and a query-only proxy don't serve) with the configured credential; 503 + `components.prometheus:"ping_failed"` on failure, including a 401 |
 | `GET /version` | — | Build provenance — `{ commit, version, env, startedAt, uptimeSec }` |
 | `GET /api/metrics/routers` | — | `{ label, routers: string[] }` — router deployments the metrics can be scoped to (distinct values of `ROUTER_SCOPE_LABEL`). `[]` when the collector can't tell routers apart. See "Router scope" |
 | `GET /api/metrics/specs` | `router?` | `{ specs: string[] }` — distinct chains present on the requests counter |
@@ -395,6 +395,8 @@ API (`apps/api/src/config.ts` is the source of truth):
 | `API_HOST` | `0.0.0.0` | |
 | `PROMETHEUS_URL` | `http://localhost:9090` | compose sets `http://prometheus:9090` |
 | `PROMETHEUS_TIMEOUT_MS` | `10000` | per-query abort |
+| `PROMETHEUS_USERNAME` / `PROMETHEUS_PASSWORD` | unset | Basic auth on every Prometheus call — for a per-tenant read proxy or Mimir behind an auth gateway. Both or neither: one half alone sends no header |
+| `PROMETHEUS_ORG_ID` | unset | Sent as `X-Scope-OrgID`, for a multi-tenant store that takes the org from the client. The fleet's read proxy pins the org from the credential and ignores this |
 | `ROUTER_SCOPE_LABEL` | `service` | Target label carrying the router identity for `?router=` (Prometheus Operator's `service`; `job` for a per-router scrape config). Parsed at import — a change needs a restart |
 | `CORS_ORIGINS` | all | comma list or JSON array |
 | `RATE_LIMIT_MAX` | `300` | per IP per minute |

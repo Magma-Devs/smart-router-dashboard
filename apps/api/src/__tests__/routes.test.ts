@@ -13,10 +13,6 @@ function mockPrometheus(): void {
   vi.stubGlobal("fetch", async (input: URL | string) => {
     const url = typeof input === "string" ? input : input.toString();
 
-    if (url.includes("/-/ready")) {
-      return new Response("ok", { status: 200 });
-    }
-
     const query = new URL(url).searchParams.get("query") ?? "";
     let result: unknown[] = [];
 
