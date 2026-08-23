@@ -5,6 +5,17 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Changed
+
+- **Chain resync — lava-specs dropped 47 REST names shadowed by a
+  placeholder-shape twin.** Across 26 Cosmos-family chains the Try-it
+  catalog loses `/cosmos/auth/v1beta1/bech32/{address_bytes}` (×26),
+  `/ibc/apps/transfer/v1/denom_hashes/{trace}` (×15) and one chain-specific
+  path each on Canto, Stride, Elys (×3) and Lava. Every one of them was a
+  "needs params" row whose concrete twin already sat in the list, so nothing
+  runnable goes away. No chains arrived or left; map, explorers and roll-call
+  files are unchanged.
+
 ## [0.18.5]
 
 ### Fixed
