@@ -73,6 +73,27 @@ open http://localhost:3000
 managed-only. Mail goes to a local mock, so nothing leaves your machine. See
 [what differs on-prem](#what-differs-on-prem) at the end.
 
+### Sign out before you start
+
+`make accounts-reset` wipes the database, but it cannot reach into your browser.
+If you were signed in on a previous run you are still holding that cookie, and
+its signature is still valid because `AUTH_SECRET` did not change — so the app
+believes you are signed in to an account that no longer exists.
+
+What that looks like: pages load but every panel reports **"Your session is no
+longer valid"**, the **Invite** button is missing because the page cannot read
+your role, and — the part that actually blocks you — **`/setup` bounces you to
+`/overview`**, because the edge gate only sees the cookie and has no way to ask
+the database whether the deployment needs setting up.
+
+So before check 1: **sign out** (the icon by your name, bottom-left), or start in
+a fresh incognito window. Either clears it.
+
+> Worth knowing beyond the runbook: this is the restored-backup case the ticket
+> calls out. Restore a backup that predates the first account and an admin still
+> holding an unexpired cookie cannot reach first-run setup until they clear it.
+> Nobody gains access they should not — it is a way of being stuck, not a hole.
+
 ### Names used below
 
 Use whatever you like, but the document refers to:
@@ -88,6 +109,18 @@ Use whatever you like, but the document refers to:
 
 > *"On-prem, a fresh deployment lets someone create an account, that account is
 > an admin, and nothing else in the dashboard is reachable until it exists."*
+
+**This check is identical in both modes**, even though it is written as an
+on-prem one. `/setup` is gated on *"this deployment has zero active users"* and
+not on `DEPLOYMENT_MODE` — something has to create the very first account, and a
+deployment with nobody in it has nobody to sign in as regardless of who hosts it.
+
+So on managed you also start here, which is a small divergence from the ticket's
+managed wording (*"we create the account and send a join link"*). In practice a
+Magma operator runs this page, then invites the customer's named person by email
+— check 2 — so nobody at Magma ever knows the customer's password. It does leave
+an operator account behind that has to be removed afterwards. Raised with Omer;
+no answer yet.
 
 **In the admin window**, go to http://localhost:3000.
 
@@ -448,9 +481,15 @@ delivery**, which is the only difference between the two shapes:
 | Reset | Dana asks via forgot-password | An admin uses **Reset link** on her row; there is no forgot-password (it 404s — there is nowhere to send it) |
 | Inbox | http://localhost:8005 | Nothing to look at |
 | Dead reset link | *"Request a new one and we'll email it to you"* | *"Ask an administrator to generate a new one"* |
+| Check 1 | Identical | Identical — `/setup` is gated on zero users, not on the mode |
 
 On-prem is the shape that ships without a mail server, so a customer never needs
 one. Ten of the eleven checks apply.
+
+**On-prem is also the faster pass**, if you only want to see the account system
+work rather than the email with it: no inbox to switch to, and the invitation
+and reset links appear directly in the dialogs. Run managed when the emails
+themselves are the thing you want to show.
 
 ---
 
