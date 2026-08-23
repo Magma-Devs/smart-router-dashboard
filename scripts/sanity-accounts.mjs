@@ -28,6 +28,7 @@ const API = process.env.API ?? "http://localhost:8000";
 const WEB = process.env.WEB ?? "http://localhost:3000";
 const SECRET = process.env.AUTH_SECRET ?? "dev-secret-change-me-please-32chars!";
 const SETUP_TOKEN = process.env.SETUP_TOKEN ?? "installer-printed-this-token";
+const SES_UI = process.env.SES_UI ?? "http://localhost:8005";
 
 const ADMIN = { email: "ops.admin@magmadevs.com", password: "an-admin-passphrase-4417" };
 const MEMBER = { email: "dana.okonkwo@dfns.co", password: "dana-chose-this-one-8890" };
@@ -235,10 +236,34 @@ check("Create an account on managed — the person sets their own password");
       "the response carries no password anywhere",
       !JSON.stringify(inv.body ?? {}).includes("password"),
     );
-    note("delivery=" + inv.body?.delivery + (inv.body?.deliveryFallback ? " (fallback)" : ""));
+
+    const inbox = await mailbox();
+    if (inbox.length) {
+      // A transport is running, so managed behaves the way it will in
+      // production: the link goes to the recipient and to nobody else.
+      const mail = inbox[inbox.length - 1];
+      ok("the invitation was emailed", inv.body?.delivery === "email");
+      ok("and the link is NOT returned to the admin", !inv.body?.url);
+      ok(
+        "it reached the invited address",
+        mail.destination?.to?.[0] === MEMBER.email,
+        JSON.stringify(mail.destination),
+      );
+      ok(
+        "with the customer named in the subject",
+        /You've been added to .+ on Smart Router/.test(mail.subject ?? ""),
+        mail.subject,
+      );
+      ok("as text as well as HTML", !!mail.body?.text && !!mail.body?.html);
+      ok("with a reply-to that somebody reads", (mail.replyTo ?? []).length > 0);
+    } else {
+      note("no transport configured — the link falls back to the admin");
+      ok("the fallback is declared rather than silent", inv.body?.deliveryFallback === true);
+      ok("and the link is handed over", !!inv.body?.url);
+    }
 
     // Whether emailed or fallen back, the holder chooses the value.
-    const url = inv.body?.url ?? (await linkFromApiLog("invite"));
+    const url = inv.body?.url ?? (await linkFor("invite"));
     const redeemed = await call("POST", "/auth/invite/accept", {
       body: { token: url.split("/").pop(), password: MEMBER.password, name: "Dana Okonkwo" },
     });
@@ -247,18 +272,44 @@ check("Create an account on managed — the person sets their own password");
   }
 }
 
-/** Pull the most recent link the api logged, for a managed deployment with no
- *  transport configured — the body is logged rather than sent. */
-async function linkFromApiLog(kind) {
+/**
+ * The most recent link that reached the recipient, by whichever route managed
+ * mode is using.
+ *
+ * Preference matters. If a SES mock is running the message genuinely went
+ * through the transport, so reading it from the inbox proves delivery rather
+ * than proving a link was generated. The api log is the fallback for a managed
+ * deployment with no transport wired up, where the body is logged instead.
+ */
+async function linkFor(kind) {
+  const inbox = await mailbox();
+  if (inbox.length) {
+    const latest = inbox[inbox.length - 1];
+    const found = String(latest.body?.text ?? "").match(
+      new RegExp(`https?://\\S*?/${kind}/[A-Za-z0-9_-]+`),
+    );
+    if (found) return found[0];
+  }
   const { stdout } = await exec("docker", [
     "logs",
     "--since",
     "2m",
     process.env.API_CONTAINER ?? "smart-router-dashboard-dev-api-1",
   ]);
-  const re = new RegExp(`https?://[^\\s"']*/${kind}/[A-Za-z0-9_-]+`, "g");
-  const all = stdout.match(re) ?? [];
+  const all = stdout.match(new RegExp(`https?://[^\\s"']*/${kind}/[A-Za-z0-9_-]+`, "g")) ?? [];
   return all[all.length - 1] ?? "";
+}
+
+/** Everything the SES mock has been handed, oldest first. Empty when no mock
+ *  is running, which is how `linkFor` decides which route to read. */
+async function mailbox() {
+  try {
+    const res = await fetch(`${SES_UI}/store`, { signal: AbortSignal.timeout(2000) });
+    if (!res.ok) return [];
+    return (await res.json()).emails ?? [];
+  } catch {
+    return [];
+  }
 }
 
 // 3 ──────────────────────────────────────────────────────────────────────────
@@ -274,7 +325,7 @@ check("An admin invites someone and they join with exactly the role picked");
     ok("on-prem it returns a link and sends no email", inv.body?.delivery === "link");
     ok("the link is shown once, not stored for re-reading", !!inv.body?.url);
   }
-  const url = inv.body?.url ?? (await linkFromApiLog("invite"));
+  const url = inv.body?.url ?? (await linkFor("invite"));
   const token = url.split("/").pop();
 
   const preview = await call("POST", "/auth/invite/preview", { body: { token } });
@@ -314,7 +365,7 @@ check("An invite already used is refused — and one cannot be redirected to ano
     token: adminToken,
     body: { email: "Mixed.Case@dfns.co", role: "read_only" },
   });
-  const t = (fresh.body?.url ?? (await linkFromApiLog("invite"))).split("/").pop();
+  const t = (fresh.body?.url ?? (await linkFor("invite"))).split("/").pop();
   const claimed = await call("POST", "/auth/invite/accept", {
     body: { token: t, password: "mixed-case-passphrase-31", email: "attacker@evil.co" },
   });
@@ -464,7 +515,7 @@ check("Forgot password — sets a new password, does not sign in, ends other ses
       body: { email: "nobody@nowhere.co" },
     });
     ok("and answers identically for an address with no account", unknown.status === 202);
-    resetUrl = await linkFromApiLog("reset");
+    resetUrl = await linkFor("reset");
   } else {
     const link = await call("POST", `/api/team/members/${globalThis.__memberId}/reset-link`, {
       token: adminToken,

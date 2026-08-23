@@ -493,7 +493,7 @@ Auth (only read when `AUTH_MODE=enabled`; the metrics path never touches the DB)
 | `EMAIL_FROM` | `Smart Router <noreply@smart-router.local>` | Sender. An unmonitored no-reply |
 | `EMAIL_REPLY_TO` | (unset) | Monitored inbox, so a reply to a reset email reaches somebody |
 | `EMAIL_CONFIGURATION_SET` | (unset) | SES configuration set. Keeps each environment's bounce/complaint reputation separate on a shared identity |
-| `SES_ENDPOINT` | (unset) | Points SES at a local mock for development |
+| `SES_ENDPOINT` | (unset) | Points SES at a local mock for development — `make accounts-managed` runs one and serves its inbox on :8005 |
 
 Web — build-time vs. **runtime**:
 

@@ -38,6 +38,7 @@ API_IMAGE  ?= ghcr.io/magma-devs/smart-router-dashboard/backend:local
 WEB_IMAGE  ?= ghcr.io/magma-devs/smart-router-dashboard/frontend:local
 API_PORT   ?= 8000
 WEB_PORT   ?= 3000
+SES_UI_PORT ?= 8005
 API_URL    ?= http://localhost:$(API_PORT)
 
 .PHONY: up down dev dev-down up-auth dev-auth accounts accounts-managed accounts-reset router ps clean builder build build-api build-web typecheck test
@@ -106,11 +107,13 @@ accounts:
 ## accounts-managed: the same stack in MANAGED mode — invitations and resets are emailed
 accounts-managed:
 	AUTH_MODE=enabled docker compose -f docker-compose.dev.yml -f docker-compose.accounts.yml \
-		-f docker-compose.managed.yml --profile auth up -d --build postgres builder api web
+		-f docker-compose.managed.yml --profile auth up -d --build postgres builder ses api web
 	@echo ""
-	@echo "  ✉️  Managed mode — links are emailed rather than handed over."
-	@echo "     No AWS_REGION is set, so the rendered message goes to the api log:"
-	@echo "       docker logs smart-router-dashboard-dev-api-1 | grep -o 'http.*/invite/[^ \"]*'"
+	@echo "  ✉️  Managed mode — invitations and resets are emailed."
+	@echo "     Mail goes to a local SES mock, so nothing leaves this machine."
+	@echo ""
+	@echo "     Inbox:  http://localhost:$(SES_UI_PORT)"
+	@echo "     App:    http://localhost:$(WEB_PORT)  →  /setup"
 	@echo ""
 	@echo "     Reset to a fresh install:  make accounts-reset"
 
