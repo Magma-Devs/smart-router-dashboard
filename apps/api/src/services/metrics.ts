@@ -17,6 +17,9 @@ import {
   qConsistencyCaught,
   qErrorCount,
   qErrorRate,
+  qEndpointHealth,
+  qEndpointLatestBlock,
+  qEndpointScores,
   qErrorsBy,
   qLatencyDistribution,
   qLatencyQuantile,
@@ -24,6 +27,7 @@ import {
   qBlockRateBySpec,
   qLatestBlock,
   qMethodLatencyQuantile,
+  qOverallHealth,
   qPresence,
   qRequestsBy,
   qRequestsTotal,
@@ -206,7 +210,7 @@ export class MetricsService {
         // chain filter it reports the whole deployment. chainHealth() reads the
         // spec-labelled endpoint gauge — see chains()/chainRow(), which has
         // always done this correctly.
-        spec ? this.chainHealth(spec) : this.prom.scalar(ROUTER_METRICS.overallHealth),
+        spec ? this.chainHealth(spec) : this.prom.scalar(qOverallHealth()),
       ]);
     const stale = staleKpi;
 
@@ -283,7 +287,7 @@ export class MetricsService {
       kpi(qLatencyQuantile(0.95, spec, window), qLatencyQuantile(0.95, spec, window, r)),
       kpi(qLatencyQuantile(0.99, spec, window), qLatencyQuantile(0.99, spec, window, r)),
       this.prom.scalar(qAvailability(spec, window)),
-      this.prom.scalar(ROUTER_METRICS.overallHealth),
+      this.prom.scalar(qOverallHealth()),
       this.prom.queryRange(qClientRpsSeriesExpr(win.step, spec), start, end, win.step),
       this.prom.queryRange(`round(clamp_min(sum(increase(${ROUTER_METRICS.requestsTotal}${sel}[${win.step}])) - sum(increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${win.step}])), 0))`, start, end, win.step),
       this.prom.queryRange(qLatencyQuantile(0.95, spec, window).replace(`[${r}]`, `[${win.step}]`), start, end, win.step),
@@ -589,7 +593,7 @@ export class MetricsService {
         this.prom.query(qRouterTipChanges(label ?? undefined, spec)),
         this.prom.query(qUpstreamTips(spec)),
         this.prom.query(qTipChanges(spec)),
-        this.prom.query(`${ENDPOINT_METRICS.overallHealth}${selector({ spec })}`),
+        this.prom.query(qEndpointHealth(spec)),
       ]);
 
     const num = (v: string): number | null => {
@@ -764,9 +768,11 @@ export class MetricsService {
       this.prom.query(
         `sum by (endpoint_id, spec) (increase(${ENDPOINT_METRICS.totalRelaysServiced}${sel}[${r}]))`,
       ),
-      this.prom.query(`${ENDPOINT_METRICS.selectionScore}${sel}`),
-      this.prom.query(`${ENDPOINT_METRICS.overallHealth}${sel}`),
-      this.prom.query(`${ENDPOINT_METRICS.latestBlock}${sel}`),
+      // Gauges fold replicas (avg / max by endpoint) — raw selectors return one
+      // series per pod and the Map below would keep whichever came last.
+      this.prom.query(qEndpointScores(spec)),
+      this.prom.query(qEndpointHealth(spec)),
+      this.prom.query(qEndpointLatestBlock(spec)),
       this.prom.query(
         `sum by (endpoint_id) (${ENDPOINT_METRICS.requestsInFlight}${sel})`,
       ),

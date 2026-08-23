@@ -137,14 +137,22 @@ export function qLatestBlock(spec?: string): string {
   return `max by (spec) (${ROUTER_METRICS.latestBlock}${selector({ spec })})`;
 }
 
-/** Per-chain health gauge (1/0). */
+/**
+ * Deployment-wide health gauge (1/0). The router gauge is label-less, so a
+ * multi-replica router yields one series per pod — `max` reads "healthy if
+ * any replica can serve" instead of whichever pod Prometheus lists first.
+ */
 export function qOverallHealth(): string {
-  return ROUTER_METRICS.overallHealth;
+  return `max(${ROUTER_METRICS.overallHealth})`;
 }
 
-/** Per-endpoint composite QoS (selection_score), instant. */
-export function qEndpointScore(scoreType: string, spec?: string): string {
-  return `${ENDPOINT_METRICS.selectionScore}${selector({ spec, score_type: scoreType })}`;
+/**
+ * Per-endpoint selection scores, one series per (spec, endpoint_id,
+ * score_type). Each replica runs its own optimizer, so the scores are averaged
+ * across pods (and interfaces) rather than letting the last-scraped pod win.
+ */
+export function qEndpointScores(spec?: string, endpointId?: string): string {
+  return `avg by (spec, endpoint_id, score_type) (${ENDPOINT_METRICS.selectionScore}${selector({ spec, endpoint_id: endpointId })})`;
 }
 
 /** Per-endpoint request totals over the window, grouped by endpoint_id. */
@@ -152,9 +160,18 @@ export function qEndpointRequests(spec?: string, window: MetricWindow = DEFAULT_
   return `sum by (endpoint_id) (increase(${ENDPOINT_METRICS.totalRelaysServiced}${selector({ spec })}[${rangeFor(window)}]))`;
 }
 
-/** Per-endpoint health gauge by endpoint_id. */
-export function qEndpointHealth(spec?: string): string {
-  return `${ENDPOINT_METRICS.overallHealth}${selector({ spec })}`;
+/**
+ * Per-endpoint health gauge keyed by (spec, endpoint_id, apiInterface) — the
+ * identity the tip rows carry. `max` folds replicas: an upstream is healthy
+ * when any pod can reach it.
+ */
+export function qEndpointHealth(spec?: string, endpointId?: string): string {
+  return `max by (spec, endpoint_id, apiInterface) (${ENDPOINT_METRICS.overallHealth}${selector({ spec, endpoint_id: endpointId })})`;
+}
+
+/** Per-endpoint latest block keyed by (spec, endpoint_id); `max` folds replicas. */
+export function qEndpointLatestBlock(spec?: string): string {
+  return `max by (spec, endpoint_id) (${ENDPOINT_METRICS.latestBlock}${selector({ spec })})`;
 }
 
 /* ── Derived error math (real: total − success, clamped ≥ 0) ─────────────── */
@@ -423,7 +440,7 @@ export function qRouterTipChanges(scopeLabel?: string, spec?: string): string {
  * `qBlockRateBySpec`), otherwise every Bitcoin poll would flag stale.
  */
 export function qTipChanges(spec?: string): string {
-  return `changes(${ENDPOINT_METRICS.latestBlock}${selector({ spec })}[${TIP_WINDOW}])`;
+  return `max by (spec, endpoint_id, apiInterface) (changes(${ENDPOINT_METRICS.latestBlock}${selector({ spec })}[${TIP_WINDOW}]))`;
 }
 
 /** A label name Prometheus accepts in a `by (…)` clause. Mirrors `scope.ts`. */

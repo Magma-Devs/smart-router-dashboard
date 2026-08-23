@@ -65,3 +65,18 @@ describe("MetricsDetailService query construction (bug regressions)", () => {
     expect(unscoped).toEqual([]);
   });
 });
+
+describe("MetricsDetailService · upstream detail gauges fold replicas (MAG-2982)", () => {
+  it("reads endpoint health and scores through max/avg by, not raw selectors", async () => {
+    const { prom, queries } = capturingProm();
+    await new MetricsDetailService(prom).upstreamDetail("vendor-a", "1d");
+    expect(queries).toContain(
+      'max by (spec, endpoint_id, apiInterface) (rpc_endpoint_overall_health{endpoint_id="vendor-a"})',
+    );
+    expect(queries).toContain(
+      'avg by (spec, endpoint_id, score_type) (rpc_endpoint_selection_score{endpoint_id="vendor-a"})',
+    );
+    expect(queries).not.toContain('rpc_endpoint_overall_health{endpoint_id="vendor-a"}');
+    expect(queries).not.toContain('rpc_endpoint_selection_score{endpoint_id="vendor-a"}');
+  });
+});

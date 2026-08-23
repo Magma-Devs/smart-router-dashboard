@@ -16,6 +16,17 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   runnable goes away. No chains arrived or left; map, explorers and roll-call
   files are unchanged.
 
+### Fixed
+
+- **A router at 2+ replicas reported whichever pod Prometheus listed first.**
+  Every replica is its own scrape target, so each gauge comes back once per
+  pod. Deployment health went through `scalar()` and kept the first row; the
+  per-upstream health, selection score, latest block and tip-change rows were
+  folded into Maps keyed by endpoint, so the last pod won. The builders now
+  aggregate before the API keys anything — health is `max` (healthy if any
+  replica can serve), scores `avg`, tips `max` — on the labels the callers
+  already group by. Single-replica deployments are unchanged.
+
 ## [0.18.5]
 
 ### Fixed
