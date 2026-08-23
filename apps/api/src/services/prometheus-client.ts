@@ -28,7 +28,31 @@ export interface PromResponse<T> {
   error?: string;
 }
 
+/** What the client sends to authenticate and (optionally) name its org. */
+export interface PromAuth {
+  username?: string;
+  password?: string;
+  /** Sent as `X-Scope-OrgID` — for a multi-tenant store that takes the org from the client. */
+  orgId?: string;
+}
+
+/**
+ * The fixed headers for one auth config. Basic auth only when BOTH halves
+ * are present — half a credential would turn every query into a 401 that
+ * reads, from the dashboard, exactly like "no data".
+ */
+export function buildAuthHeaders(auth: PromAuth): Record<string, string> {
+  const headers: Record<string, string> = {};
+  if (auth.username && auth.password) {
+    headers.Authorization = `Basic ${Buffer.from(`${auth.username}:${auth.password}`).toString("base64")}`;
+  }
+  if (auth.orgId) headers["X-Scope-OrgID"] = auth.orgId;
+  return headers;
+}
+
 export class PrometheusClient {
+  private readonly headers: Record<string, string>;
+
   constructor(
     private readonly baseUrl: string = config.prometheus.url,
     private readonly timeoutMs: number = config.prometheus.timeoutMs,
@@ -37,7 +61,10 @@ export class PrometheusClient {
      * rather than threaded through ~40 builders — see `promql/scope.ts`.
      */
     private readonly scope: MetricScope | null = null,
-  ) {}
+    private readonly auth: PromAuth = config.prometheus,
+  ) {
+    this.headers = buildAuthHeaders(auth);
+  }
 
   /**
    * A client restricted to one router. Returns `this` when the scope is
@@ -46,7 +73,7 @@ export class PrometheusClient {
    */
   withScope(scope: MetricScope | null | undefined): PrometheusClient {
     if (!isValidScope(scope)) return this;
-    return new PrometheusClient(this.baseUrl, this.timeoutMs, scope);
+    return new PrometheusClient(this.baseUrl, this.timeoutMs, scope, this.auth);
   }
 
   private async get<T>(path: string, params: Record<string, string>): Promise<PromResponse<T>> {
@@ -56,7 +83,7 @@ export class PrometheusClient {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
-      const res = await fetch(url, { signal: controller.signal });
+      const res = await fetch(url, { signal: controller.signal, headers: this.headers });
       if (!res.ok) {
         return { status: "error", error: `prometheus ${res.status}` };
       }
@@ -101,14 +128,15 @@ export class PrometheusClient {
     return Number.isFinite(n) ? n : null;
   }
 
-  /** Liveness probe against Prometheus itself. */
+  /**
+   * Readiness probe against the store. A trivial instant query rather than
+   * `-/ready`: that route exists on a bare Prometheus but not under Mimir's
+   * `/prometheus` API or behind a query-only proxy, and a probe that the
+   * real read path cannot answer would hold the pod NotReady forever. The
+   * query also exercises the credential, so a 401 shows up here first.
+   */
   async ping(): Promise<boolean> {
-    try {
-      const url = new URL("-/ready", this.baseUrl.endsWith("/") ? this.baseUrl : `${this.baseUrl}/`);
-      const res = await fetch(url, { signal: AbortSignal.timeout(this.timeoutMs) });
-      return res.ok;
-    } catch {
-      return false;
-    }
+    const r = await this.get<PromVectorSample[]>("api/v1/query", { query: "vector(1)" });
+    return r.status === "success";
   }
 }

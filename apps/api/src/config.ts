@@ -53,6 +53,17 @@ export const config = {
      * point it at `job` for a scrape config that names jobs per router.
      */
     routerScopeLabel: env("ROUTER_SCOPE_LABEL") ?? "service",
+    /**
+     * Credentials for a store that is not a bare Prometheus — a per-tenant
+     * read proxy, or Mimir behind a basic-auth gateway. Both halves of the
+     * pair are needed for the `Authorization` header to be sent at all.
+     * `orgId` becomes `X-Scope-OrgID` for a multi-tenant store that takes the
+     * org from the client; unset sends no header. All three unset = today's
+     * unauthenticated fetch, unchanged.
+     */
+    username: env("PROMETHEUS_USERNAME"),
+    password: env("PROMETHEUS_PASSWORD"),
+    orgId: env("PROMETHEUS_ORG_ID"),
   },
 
   /** Helm-values / router config the dashboard reflects (read-only). */

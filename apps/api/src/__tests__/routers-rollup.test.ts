@@ -88,7 +88,6 @@ function seriesFor(query: string, scopeValues: string[]): unknown[] {
 function mockPrometheus(scopeValues: string[] = []): void {
   vi.stubGlobal("fetch", async (input: URL | string) => {
     const url = typeof input === "string" ? input : input.toString();
-    if (url.includes("/-/ready")) return new Response("ok", { status: 200 });
     const query = new URL(url).searchParams.get("query") ?? "";
     return new Response(
       JSON.stringify({
