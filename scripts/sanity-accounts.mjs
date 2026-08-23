@@ -454,7 +454,7 @@ check("Forgot password — sets a new password, does not sign in, ends other ses
     (await call("GET", "/api/account/sessions", { token: t1 })).status === 200,
   );
 
-  let resetUrl = "";
+  let resetUrl;
   if (mode === "managed") {
     const forgot = await call("POST", "/auth/password/forgot", {
       body: { email: globalThis.__memberEmail },
