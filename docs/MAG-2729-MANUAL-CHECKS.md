@@ -7,6 +7,12 @@ to see a thing happen rather than read that it passed.
 
 Allow about **forty minutes** for a full pass.
 
+**Do them in order.** Each check builds on the state the previous one left: check
+1 creates the administrator every later check signs in as, check 3 creates the
+person checks 5 to 10 act on, and check 9 reuses the link check 8 spent. Jumping
+to check 2 on a fresh install just returns you to `/setup`, because there is no
+admin yet to invite anybody.
+
 > The script does all of this in fifteen seconds:
 >
 > ```bash
