@@ -30,7 +30,6 @@ import {
   qOverallHealth,
   qPresence,
   qRequestsBy,
-  qRequestsTotal,
   qRouterTipChanges,
   qRouterTips,
   qTipChanges,
