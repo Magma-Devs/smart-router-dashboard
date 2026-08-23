@@ -112,7 +112,7 @@ describe("MetricsService query construction (bug regressions)", () => {
     ).toBe(true);
     // The label-less router gauge answers "is the deployment healthy", which is
     // the wrong question once a chain is selected.
-    expect(queries.every((q) => q !== "smartrouter_overall_health")).toBe(true);
+    expect(queries.every((q) => !q.includes("smartrouter_overall_health"))).toBe(true);
   });
 
   it("with no chain selected both stay account-wide", async () => {
@@ -122,7 +122,49 @@ describe("MetricsService query construction (bug regressions)", () => {
     expect(
       queries.some((q) => q === "count by (endpoint_id) (rpc_endpoint_overall_health)"),
     ).toBe(true);
-    expect(queries.some((q) => q === "smartrouter_overall_health")).toBe(true);
+    expect(queries.some((q) => q === "max(smartrouter_overall_health)")).toBe(true);
+  });
+});
+
+describe("MetricsService · gauges fold replicas (MAG-2982)", () => {
+  // With `autoscaling.maxReplicas > 1` every router pod is its own scrape
+  // target. A raw gauge selector therefore returns one row per pod; `scalar()`
+  // keeps result[0] and the roster Maps keep the last row, so which replica
+  // answered was down to Prometheus' series order.
+  it("deployment health reads max() over the label-less router gauge", async () => {
+    const { prom, queries } = capturingProm();
+    await new MetricsService(prom).dashboardSummary("1d");
+    await new MetricsService(prom).overview("1d");
+    expect(queries.filter((q) => q === "max(smartrouter_overall_health)")).toHaveLength(2);
+    expect(queries.some((q) => q === "smartrouter_overall_health")).toBe(false);
+  });
+
+  it("upstream roster gauges are aggregated by endpoint, never raw selectors", async () => {
+    const { prom, queries } = capturingProm();
+    await new MetricsService(prom).upstreams("ETH1", "1d");
+    expect(queries).toContain(
+      'avg by (spec, endpoint_id, score_type) (rpc_endpoint_selection_score{spec="ETH1"})',
+    );
+    expect(queries).toContain(
+      'max by (spec, endpoint_id, apiInterface) (rpc_endpoint_overall_health{spec="ETH1"})',
+    );
+    expect(queries).toContain('max by (spec, endpoint_id) (rpc_endpoint_latest_block{spec="ETH1"})');
+    // The raw forms are exactly what produced last-pod-wins rows.
+    expect(queries).not.toContain('rpc_endpoint_selection_score{spec="ETH1"}');
+    expect(queries).not.toContain('rpc_endpoint_overall_health{spec="ETH1"}');
+    expect(queries).not.toContain('rpc_endpoint_latest_block{spec="ETH1"}');
+  });
+
+  it("block tips fold per-pod health and tip-change rows before keying by endpoint", async () => {
+    const { prom, queries } = capturingProm();
+    await new MetricsService(prom).blockTips("service", "ETH1");
+    expect(queries).toContain(
+      'max by (spec, endpoint_id, apiInterface) (rpc_endpoint_overall_health{spec="ETH1"})',
+    );
+    expect(queries).toContain(
+      'max by (spec, endpoint_id, apiInterface) (changes(rpc_endpoint_latest_block{spec="ETH1"}[15m]))',
+    );
+    expect(queries).not.toContain('rpc_endpoint_overall_health{spec="ETH1"}');
   });
 });
 

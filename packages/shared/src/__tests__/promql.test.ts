@@ -30,6 +30,10 @@ import {
   qRouterTips,
   qTipChanges,
   qUpstreamTips,
+  qOverallHealth,
+  qEndpointHealth,
+  qEndpointScores,
+  qEndpointLatestBlock,
   qEndpointBlockLagSeriesExpr,
   qChainDown,
   qScoreExpr,
@@ -453,7 +457,45 @@ describe("block tips", () => {
     );
   });
 
-  it("tip changes count over the staleness window", () => {
-    expect(qTipChanges()).toBe("changes(rpc_endpoint_latest_block[15m])");
+  it("tip changes count over the staleness window, folded across replicas", () => {
+    expect(qTipChanges()).toBe(
+      "max by (spec, endpoint_id, apiInterface) (changes(rpc_endpoint_latest_block[15m]))",
+    );
+  });
+});
+
+describe("gauge builders fold replicas (MAG-2982)", () => {
+  // A router at 2+ replicas is 2+ scrape targets, so every gauge comes back
+  // once per pod. Raw selectors leave the caller with N rows per entity and a
+  // Map that keeps whichever pod Prometheus listed last.
+  it("router health is max across pods — healthy if any replica can serve", () => {
+    expect(qOverallHealth()).toBe("max(smartrouter_overall_health)");
+  });
+
+  it("endpoint health keys on (spec, endpoint_id, apiInterface) under max", () => {
+    expect(qEndpointHealth()).toBe(
+      "max by (spec, endpoint_id, apiInterface) (rpc_endpoint_overall_health)",
+    );
+    expect(qEndpointHealth("ETH1")).toBe(
+      'max by (spec, endpoint_id, apiInterface) (rpc_endpoint_overall_health{spec="ETH1"})',
+    );
+    expect(qEndpointHealth(undefined, "vendor-a")).toBe(
+      'max by (spec, endpoint_id, apiInterface) (rpc_endpoint_overall_health{endpoint_id="vendor-a"})',
+    );
+  });
+
+  it("endpoint scores are averaged per (spec, endpoint_id, score_type)", () => {
+    expect(qEndpointScores("ETH1")).toBe(
+      'avg by (spec, endpoint_id, score_type) (rpc_endpoint_selection_score{spec="ETH1"})',
+    );
+    expect(qEndpointScores(undefined, "vendor-a")).toBe(
+      'avg by (spec, endpoint_id, score_type) (rpc_endpoint_selection_score{endpoint_id="vendor-a"})',
+    );
+  });
+
+  it("endpoint latest block is max per (spec, endpoint_id)", () => {
+    expect(qEndpointLatestBlock("ETH1")).toBe(
+      'max by (spec, endpoint_id) (rpc_endpoint_latest_block{spec="ETH1"})',
+    );
   });
 });

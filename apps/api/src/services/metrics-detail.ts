@@ -15,8 +15,10 @@ import {
   qBackupShareExpr,
   qChainDown,
   qEndpointBlockLagSeriesExpr,
+  qEndpointHealth,
   qEndpointLatencyQuantile,
   qEndpointLatencySeriesExpr,
+  qEndpointScores,
   qErrorCount,
   qErrorCountSeriesExpr,
   qErrorRateSeriesExpr,
@@ -127,7 +129,7 @@ export class MetricsDetailService {
     const provSel = selector({ provider_address: endpointId });
 
     // Resolve the endpoint's spec (needed for block-lag math and links).
-    const healthRows = await this.prom.query(`${ENDPOINT_METRICS.overallHealth}${epSel}`);
+    const healthRows = await this.prom.query(qEndpointHealth(undefined, endpointId));
     const spec = healthRows[0]?.metric.spec ?? "";
     const healthVal = healthRows.length ? Number(healthRows[0]!.value[1]) : null;
 
@@ -153,7 +155,7 @@ export class MetricsDetailService {
       this.prom.scalar(qEndpointLatencyQuantile(0.95, endpointId, window)),
       this.prom.scalar(qEndpointLatencyQuantile(0.99, endpointId, window)),
       this.prom.scalar(`sum(${ENDPOINT_METRICS.requestsInFlight}${epSel})`),
-      this.prom.query(`${ENDPOINT_METRICS.selectionScore}${epSel}`),
+      this.prom.query(qEndpointScores(undefined, endpointId)),
       spec
         ? this.prom.scalar(qEndpointBlockLagSeriesExpr(spec, endpointId))
         : Promise.resolve(null),
