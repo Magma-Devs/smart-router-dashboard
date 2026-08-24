@@ -13,6 +13,7 @@ import { versionRoutes } from "./routes/version.js";
 import { metricRoutes } from "./routes/metrics.js";
 import { configRoutes } from "./routes/config.js";
 import { upstreamRoutes } from "./routes/upstreams.js";
+import { vendorRoutes } from "./routes/vendors.js";
 import { authRoutes } from "./routes/auth.js";
 
 /** Build the Fastify app with all plugins + routes registered. */
@@ -52,6 +53,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(metricRoutes);
   await app.register(configRoutes);
   await app.register(upstreamRoutes);
+  await app.register(vendorRoutes);
 
   return app;
 }

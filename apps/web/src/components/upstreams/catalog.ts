@@ -7,7 +7,14 @@
  * file. Catalog entries drive presentation only (logos, "looks like X"
  * hints) — never data. */
 
-import { buildChainMetaByIndex, type HealthState, type UpstreamMetrics, type RouterTopology } from "@sr/shared";
+import {
+  buildChainMetaByIndex,
+  matchVendor,
+  VENDOR_IDENTITIES,
+  type HealthState,
+  type UpstreamMetrics,
+  type RouterTopology,
+} from "@sr/shared";
 import type { DirectTarget } from "@/components/try-me/direct-request";
 
 /** The honest-state copy for every config-mutating commit button. */
@@ -16,33 +23,57 @@ export const READONLY_MSG = "Config is a read-only mount on self-hosted — edit
 export const JWT_CLOUD_MSG = "JWT management is a Magma Cloud feature — no tokens exist on this self-hosted deployment";
 
 /* ─────────────────────────────────────────────
-   Upstream logos — Clearbit with SVG fallback
+   Upstream catalogue — identity from @sr/shared, presentation here.
+
+   WHO a node belongs to (name, domain, url shapes) lives in the shared
+   `VENDOR_IDENTITIES`, because the api needs the same answer: it derives which
+   vendors this deployment routes through to know whose status page to read
+   and for which chains. A second copy here would eventually put a chip on a
+   card the api never fetched a status for. What stays local is what only a
+   screen cares about — brand colour, the design's onboarding flow, and
+   whether the vendor issues JWTs.
+
+   The list is the index's whole roster, not just the vendors the design
+   prototype drew: a vendor missing from it can never light a chip however
+   loudly their status page is burning.
 ───────────────────────────────────────────── */
-export const UPSTREAM_DOMAINS: Record<string, string> = {
-  alchemy:     "alchemy.com",
-  infura:      "infura.io",
-  quicknode:   "quicknode.com",
-  ankr:        "ankr.com",
-  chainstack:  "chainstack.com",
-  drpc:        "drpc.org",
-  getblock:    "getblock.io",
-  blockpi:     "blockpi.io",
-  nodereal:    "nodereal.io",
-  tatum:       "tatum.io",
-  blockdaemon: "blockdaemon.com",
+interface UpstreamPresentation {
+  flow: "A" | "B";
+  color: string;
+  supportsJWT: boolean;
+}
+
+const DEFAULT_PRESENTATION: UpstreamPresentation = { flow: "A", color: "#64748B", supportsJWT: false };
+
+const UPSTREAM_PRESENTATION: Record<string, UpstreamPresentation> = {
+  alchemy:     { flow: "A", color: "#0C4EFF", supportsJWT: true  },
+  infura:      { flow: "A", color: "#FF6B2B", supportsJWT: true  },
+  quicknode:   { flow: "B", color: "#0070F3", supportsJWT: true  },
+  ankr:        { flow: "A", color: "#2563EB", supportsJWT: true  },
+  chainstack:  { flow: "B", color: "#16A34A", supportsJWT: false },
+  drpc:        { flow: "A", color: "#7C3AED", supportsJWT: false },
+  getblock:    { flow: "B", color: "#D97706", supportsJWT: false },
+  blockpi:     { flow: "B", color: "#DB2777", supportsJWT: false },
+  nodereal:    { flow: "A", color: "#0EA5E9", supportsJWT: false },
+  tatum:       { flow: "B", color: "#EF4444", supportsJWT: false },
+  blockdaemon: { flow: "B", color: "#1A56DB", supportsJWT: false },
+  tenderly:    { flow: "B", color: "#4C2AE0", supportsJWT: false },
+  "coinbase-developer-platform": { flow: "A", color: "#0052FF", supportsJWT: false },
+  dwellir:     { flow: "A", color: "#0EA5A4", supportsJWT: false },
+  grove:       { flow: "A", color: "#0E9F6E", supportsJWT: false },
+  helius:      { flow: "A", color: "#E85D9F", supportsJWT: false },
+  moralis:     { flow: "A", color: "#0B1F4E", supportsJWT: false },
+  nownodes:    { flow: "A", color: "#00B3A4", supportsJWT: false },
+  onfinality:  { flow: "A", color: "#3B82F6", supportsJWT: false },
+  "triton-one": { flow: "A", color: "#1E293B", supportsJWT: false },
 };
 
-/* Fallback brand colors when Clearbit fails */
-export const UPSTREAM_COLORS: Record<string, string> = {
-  alchemy: "#0C4EFF", infura: "#FF6B2B", quicknode: "#0070F3",
-  ankr: "#2563EB", chainstack: "#16A34A", drpc: "#7C3AED",
-  getblock: "#D97706", blockpi: "#DB2777", nodereal: "#0EA5E9",
-  tatum: "#EF4444", blockdaemon: "#1A56DB",
-};
+function presentationFor(id: string): UpstreamPresentation {
+  return Object.hasOwn(UPSTREAM_PRESENTATION, id)
+    ? (UPSTREAM_PRESENTATION[id] ?? DEFAULT_PRESENTATION)
+    : DEFAULT_PRESENTATION;
+}
 
-/* ─────────────────────────────────────────────
-   Upstream catalogue — no chain assumptions
-───────────────────────────────────────────── */
 export interface UpstreamCatalogEntry {
   id: string;
   name: string;
@@ -52,19 +83,22 @@ export interface UpstreamCatalogEntry {
   domainPattern?: RegExp;
 }
 
-export const UPSTREAM_CATALOG: UpstreamCatalogEntry[] = [
-  { id: "alchemy",     name: "Alchemy",     flow: "A", color: "#0C4EFF", supportsJWT: true  },
-  { id: "infura",      name: "Infura",      flow: "A", color: "#FF6B2B", supportsJWT: true  },
-  { id: "quicknode",   name: "QuickNode",   flow: "B", color: "#0070F3", supportsJWT: true,  domainPattern: /\.quiknode\.pro/ },
-  { id: "ankr",        name: "Ankr",        flow: "A", color: "#2563EB", supportsJWT: true  },
-  { id: "chainstack",  name: "Chainstack",  flow: "B", color: "#16A34A", supportsJWT: false, domainPattern: /\.p2pify\.com|chainstack/ },
-  { id: "drpc",        name: "dRPC",        flow: "A", color: "#7C3AED", supportsJWT: false },
-  { id: "getblock",    name: "GetBlock",    flow: "B", color: "#D97706", supportsJWT: false, domainPattern: /getblock\.io/ },
-  { id: "blockpi",     name: "BlockPI",     flow: "B", color: "#DB2777", supportsJWT: false, domainPattern: /blockpi\.network/ },
-  { id: "nodereal",    name: "NodeReal",    flow: "A", color: "#0EA5E9", supportsJWT: false },
-  { id: "tatum",       name: "Tatum",       flow: "B", color: "#EF4444", supportsJWT: false, domainPattern: /gateway\.tatum\.io/ },
-  { id: "blockdaemon", name: "Blockdaemon", flow: "B", color: "#1A56DB", supportsJWT: false, domainPattern: /blockdaemon\.com/ },
-];
+export const UPSTREAM_CATALOG: UpstreamCatalogEntry[] = VENDOR_IDENTITIES.map((vendor) => ({
+  id: vendor.id,
+  name: vendor.name,
+  ...presentationFor(vendor.id),
+  ...(vendor.domainPattern === undefined ? {} : { domainPattern: vendor.domainPattern }),
+}));
+
+/* Logo lookup (Clearbit, SVG fallback) and the colour behind it when Clearbit
+   has nothing — both keyed by the same vendor id. */
+export const UPSTREAM_DOMAINS: Record<string, string> = Object.fromEntries(
+  VENDOR_IDENTITIES.map((vendor) => [vendor.id, vendor.domain]),
+);
+
+export const UPSTREAM_COLORS: Record<string, string> = Object.fromEntries(
+  VENDOR_IDENTITIES.map((vendor) => [vendor.id, presentationFor(vendor.id).color]),
+);
 
 export const CHAIN_URL_HINTS: { chain: string; patterns: RegExp[] }[] = [
   { chain: "btc",  patterns: [/bitcoin[^-]|btc/i] },
@@ -252,15 +286,10 @@ export function directTargetFor(
    falling back to the node name (the design matched by name).
 ───────────────────────────────────────────── */
 export function matchCatalog(name: string, urlHosts: string[]): UpstreamCatalogEntry | null {
-  for (const cat of UPSTREAM_CATALOG) {
-    const domain = UPSTREAM_DOMAINS[cat.id];
-    for (const host of urlHosts) {
-      if (domain && host.includes(domain)) return cat;
-      if (cat.domainPattern && cat.domainPattern.test(host)) return cat;
-    }
-  }
-  const lower = name.toLowerCase();
-  return UPSTREAM_CATALOG.find((c) => lower.includes(c.name.toLowerCase()) || lower.includes(c.id)) ?? null;
+  // Delegated: the api answers the same question from the same map, and a
+  // card that disagreed with it would show a chip for a status nobody fetched.
+  const vendor = matchVendor(name, urlHosts);
+  return vendor === null ? null : (UPSTREAM_CATALOG.find((c) => c.id === vendor.id) ?? null);
 }
 
 /* ─────────────────────────────────────────────

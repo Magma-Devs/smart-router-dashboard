@@ -575,6 +575,103 @@ export interface UpstreamRelayResponse {
   transport: "http" | "ws";
 }
 
+/* ── Upstream vendor status (Status Page Index) ──────────────────────────── */
+
+/**
+ * What a vendor's OWN status page says, as the Status Page Index (SPI) last
+ * read it. Nothing here is measured by this deployment — it is the vendor's
+ * own claim, which is exactly why it answers "is it them or is it us?".
+ */
+export interface VendorOfficialStatus {
+  /**
+   * SPI's normalized word for the page's headline state. Seen in the wild:
+   * `operational`, `minor`, `major`, `unavailable`, `unknown`. Deliberately a
+   * string, not a union: SPI owns the vocabulary and may grow it, and a word
+   * this side has never heard of must read as "unknown", never be dropped.
+   */
+  status: string;
+  /** The page's own summary line ("All Systems Operational · 90/90 …"). */
+  description: string | null;
+  /** When SPI last read the page (ISO-8601), null when it never has. */
+  fetchedAt: string | null;
+}
+
+/** One component of a vendor's status page that covers a chain this
+ *  deployment routes through them — the evidence behind a chain verdict. */
+export interface VendorChainComponent {
+  /** The component's name on their page, verbatim. */
+  name: string;
+  status: string;
+}
+
+/**
+ * What the vendor says about ONE chain this deployment routes through them.
+ *
+ * This — not the vendor's global headline — is what a card and the banner
+ * read. A vendor goes "minor" the moment any one of five hundred components
+ * dips, and that component is usually a chain nobody here touches: QuickNode
+ * reporting BSC trouble says nothing about the Ethereum endpoint in this
+ * values file.
+ */
+export interface VendorChainStatus {
+  /** Worst status among the matched components. `unknown` when none matched,
+   *  `unavailable` when the vendor publishes no machine-readable feed. */
+  status: string;
+  /** The components the verdict was taken from — empty when there is none. */
+  components: VendorChainComponent[];
+  /** Why there is no verdict; null whenever `components` is non-empty. */
+  reason: string | null;
+}
+
+/** One vendor row of `GET /api/vendors/status`. */
+export interface VendorStatus {
+  /** SPI slug — equals the dashboard's upstream catalog id (`drpc`, …). */
+  slug: string;
+  name: string;
+  /** The vendor's public status page, for the "View status" link. */
+  statusPage: string | null;
+  website: string | null;
+  /** SPI has stopped polling this vendor — no bearing on the deployment. */
+  paused: boolean;
+  /**
+   * Spec label → the verdict for a chain this deployment actually routes
+   * through this vendor, and ONLY those chains. Empty for a vendor no
+   * mounted node points at, so a surface that reads this can't accidentally
+   * report on somebody else's chain.
+   */
+  chains: Record<string, VendorChainStatus>;
+  official: VendorOfficialStatus;
+  /**
+   * SPI's OWN probe verdict, independent of the vendor's page. `unconfigured`
+   * means SPI probes nothing for this vendor — not "down".
+   */
+  measuredStatus: string | null;
+  officialLastChangeAt: string | null;
+  measuredLastChangeAt: string | null;
+}
+
+/**
+ * `GET /api/vendors/status`. `vendors` is **null** only when the api has
+ * nothing good to serve — the index has never answered, or is switched off.
+ * A read that fails after a good one keeps serving the good one, flagged
+ * `stale`: the minutes an index is unreachable are exactly the minutes an
+ * operator is trying to find out whose outage this is.
+ */
+export interface VendorStatusReport {
+  vendors: VendorStatus[] | null;
+  /** When the data being served was read (ISO-8601). On a report with no data
+   *  at all, when the api last tried. */
+  fetchedAt: string;
+  /** The last read failed or is still running, so this is the previous good
+   *  answer rather than a fresh one. */
+  stale: boolean;
+  /** When the index last answered properly; null when it never has. */
+  lastGoodAt: string | null;
+  /** `STATUS_PAGE_INDEX_URL` is empty — vendor status is switched off for this
+   *  deployment and the api makes no outbound call at all. */
+  disabled: boolean;
+}
+
 /* ── Ops Dashboard page (2-tab surface: Overview + Metrics) ──────────────── */
 
 /** One per-chain series (requests / success-rate / latency per chain). */

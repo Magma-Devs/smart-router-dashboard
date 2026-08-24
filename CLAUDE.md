@@ -99,7 +99,7 @@ packages/shared/          @sr/shared — domain types, metric catalog, PromQL bu
                             ProviderDetail, ErrorsReport, RouterTopology, …
 apps/api/                 @sr/api — Fastify 5 (:8000)
   src/
-    routes/             health · version · metrics · config
+    routes/             health · version · metrics · config · vendors
     plugins/            error-handler · swagger · prometheus (decorates services)
     services/           prometheus-client · metrics · metrics-detail ·
                         metrics-dashboard · configuration (values-file loader)
@@ -111,7 +111,8 @@ apps/web/                 @sr/web — Next.js 16 App Router (:3000)
     app/standalone/     chrome-less Metrics page (sharing/embedding)
     app/api/config/     runtime-config route (DASHBOARD_API_URL → browser)
     components/
-      gateway/          Shell · Sidebar/Topbar · RouterHeader · FiltersProvider ·
+      gateway/          Shell · Sidebar/Topbar · RouterHeader · VendorStatusBanner ·
+                        FiltersProvider ·
                         WindowSelect · ChainSelect · RouterFilterSelect ·
                         HealthTag · charts · SortTable · SideSheet · icons
       overview/         OverviewView (KPI strip + 2×2 chart grid)
@@ -120,7 +121,7 @@ apps/web/                 @sr/web — Next.js 16 App Router (:3000)
                         ChainDetail · ErrorsBreakdown ·
                         CrossValidation · WebSocketPanel · provider/ (PM* deep-dive)
       upstreams/        UpstreamsView (3 groupings) · RouterGroups ·
-                        Add/Edit sheets · TestModal · catalog
+                        Add/Edit sheets · TestModal · catalog · VendorStatusChip
       endpoints/        endpoint row model + IfaceTag + detail sheet — the
                         bits the "By router" grouping renders
       team/             InviteModal · ChangeRoleModal · bits
@@ -324,6 +325,33 @@ state can't be worded or sourced two ways:
   invents its own health vocabulary: four surfaces used to (the roster said
   "healthy / degraded", the deep-dive "Live · up", the drawer the raw wire
   word), and one upstream read three different ways depending on the panel.
+- **`lib/vendor-status.ts`** owns the OTHER vocabulary — what the upstream
+  VENDOR says about **the chain we route through them**
+  (`GET /api/vendors/status` → `vendors[].chains[spec]`), rendered by
+  `<VendorStatusChip>` on the Upstreams cards and `<VendorStatusBanner>` above
+  every page. Kept apart from health on purpose: health is what we measured,
+  vendor status is what they published, and the pair is what answers "is it
+  them or is it us?". Three rules it enforces:
+  - **per chain, never the headline.** A vendor goes "minor" when any one of
+    ~500 status-page components dips — QuickNode was "minor" for BSC while its
+    Ethereum JSON-RPC was green — so a chip and a banner read only the
+    components matching the chain (and the surfaces) in the mounted config.
+    The headline survives as tooltip context.
+  - **one verdict drives text, colour and dot.** They diverged once and
+    produced a red chip reading "Operational".
+  - **no-data words are grey, never red, and never banner**: `unavailable`
+    (the vendor publishes no machine-readable feed), `unknown` (nothing on
+    their page maps to this chain), `unconfigured` (the index probes nothing
+    for them), plus `maintenance`, which is planned work rather than an
+    incident. Much of the roster sits in one of these permanently.
+  **Vocabulary split**: the UI says "provider" (the user's word, and the status
+  index's own), the code says `vendor*` — route, types, files and identifiers
+  all keep the `vendor` naming. Renaming the code was deliberate churn nobody
+  wanted; when you touch a user-visible string here, write "provider".
+  Vendor IDENTITY (who a node belongs to) lives in
+  `packages/shared/src/constants/vendors.ts`, not in the web catalog: the api
+  derives which vendors to read status for from the same map, and the ids are
+  the index's own slugs (pinned against its roster by test).
 
 ### Deploying to Kubernetes
 
@@ -383,6 +411,7 @@ Every `/api/metrics/*` route also accepts **`router?`** — the router scope
 | `GET /api/metrics/websocket` | `window` | `WebSocketReport` — `emitted:false` + nulls until `ws_*` fires (first subscription) |
 | `GET /api/metrics/query` | **`query`** (required) | Raw **instant** PromQL passthrough — `{ result }`. 400 without `query` |
 | `GET /api/config/routers` | — | `{ routers: RouterTopology[] }` — live topology from the mounted values file (either format), node URLs masked to scheme+host. Each endpoint also carries `index` (the handle the relay below resolves) + `directable` |
+| `GET /api/vendors/status` | — | `VendorStatusReport` — `{ vendors, fetchedAt, stale, lastGoodAt, disabled }`: what each upstream VENDOR publishes about **the chains this deployment routes through them**. The list route (`STATUS_PAGE_INDEX_URL`) carries no components, so every vendor named in the mounted values file also gets a per-slug detail read; `chains[spec]` is `{status, components[], reason}` — the worst status-page component matching that chain and the surfaces we dial, or `unknown` + a stated `reason` when none matches. The vendor's global `official` block stays as context only. Both reads cached 60s per resource, 10s backoff on failure, detail fan-out capped and circuit-broken (see the env table), and a failed refresh keeps serving the last good answer with **`stale: true`**. **`vendors: null`** when the index has never answered or is off (`disabled`) — the route answers 200 either way: someone else's outage is not a dashboard error |
 | `POST /api/upstreams/relay` | body: `{routerId, node, endpointIndex, transport?, httpMethod?, path?, body?}` | Fires ONE request straight at a configured upstream, router excluded — `{httpStatus, latencyMs, body, truncated, transport}`. The target is resolved from the values file, never taken from the caller; the resolved url is never returned and is scrubbed out of the upstream's own body. Upstream 4xx/5xx come back **200** with their status inside; 502/504 mean our hop failed. Off with `UPSTREAM_RELAY_ENABLED=false`. See [`docs/UPSTREAM-DIRECT-TEST.md`](docs/UPSTREAM-DIRECT-TEST.md) |
 
 ## Environment variables
@@ -405,6 +434,7 @@ API (`apps/api/src/config.ts` is the source of truth):
 | `UPSTREAM_RELAY_TIMEOUT_MS` | `10000` | deadline on the api→upstream call |
 | `UPSTREAM_RELAY_MAX_BODY_BYTES` | `262144` | upstream responses past this come back `truncated: true` |
 | `UPSTREAM_RELAY_RATE_LIMIT_MAX` | `20` | per IP per minute, tighter than `RATE_LIMIT_MAX` |
+| `STATUS_PAGE_INDEX_URL` | `https://providers-status.magmadevs.com` | Status Page Index behind `GET /api/vendors/status`. 5s timeout, 60s cache per resource, 10s backoff after a failed read (the last good answer keeps being served, flagged `stale` — which means *a refresh failed*, never "the TTL turned over"). The per-vendor detail fan-out is budgeted against the index's 30 req/min per IP: ≤4 in flight, jittered, and a breaker parks the whole detail layer for 60s after 3 consecutive failures, with warns throttled to one per vendor per backoff window. **`""` switches the feature off** — no outbound call at all, which is what an air-gapped install wants (compose passes it as `${VAR-default}`, so an empty value survives instead of falling back). A local index runs at `http://host.docker.internal:8080` from a container (the dev compose's default) |
 | `LOG_LEVEL` | `info` | |
 | `TENANT_ID` | `default` | parsed, reserved — not read by any route yet |
 | `GIT_COMMIT` / `APP_VERSION` | `unknown` / `0.0.0` | surfaced by `/version` |
@@ -429,6 +459,7 @@ Web — build-time vs. **runtime**:
 | `DASHBOARD_API_URL` | (unset) | **runtime** override — read from the container env per-request by `GET /api/config`, so one published image serves any host |
 | `DASHBOARD_LOCAL_MODE` | (unset) | runtime override of `localMode`, same mechanism |
 | `DASHBOARD_GRAFANA_URL` | `http://localhost:3001` | Grafana base URL the "View full logs" button links to — runtime override via `/api/config`, same mechanism (falls back to `NEXT_PUBLIC_GRAFANA_URL`) |
+| `DASHBOARD_SPI_URL` | `https://providers-status.magmadevs.com` | Status Page Index the vendor-status chips **link** to (`/providers/<slug>`), same `/api/config` mechanism (falls back to `NEXT_PUBLIC_SPI_URL`). Links only — the status data is read api-side via `STATUS_PAGE_INDEX_URL`, which keeps the index's per-IP rate limit away from the browsers |
 | `AUTH_MODE` / `AUTH_SECRET` | `disabled` / (unset) | must match the api; `enabled` renders the login page + edge gate |
 | `INTERNAL_API_BASE_URL` | (falls back to api url) | server-side api URL for Auth.js callbacks (compose sets `http://api:8000`) |
 | `{GOOGLE,GITHUB,DISCORD}_CLIENT_{ID,SECRET}` | (unset) | each provider's button appears only when its id+secret pair is set |

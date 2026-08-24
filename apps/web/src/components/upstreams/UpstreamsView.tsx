@@ -23,7 +23,9 @@ import { useChainFilter, useChainOptions, withMutedRows } from "@/hooks/use-chai
 import { useRouterFilter } from "@/hooks/use-router-options";
 import { CapabilityTags, capabilitiesOf } from "@/components/gateway/CapabilityTags";
 import { UpstreamLogo } from "@/components/upstreams/UpstreamLogo";
+import { VendorStatusChip } from "@/components/upstreams/VendorStatusChip";
 import { HealthTag } from "@/components/gateway/HealthTag";
+import { useVendorStatus } from "@/hooks/use-vendor-status";
 import {
   buildUpstreamRows,
   directTargetFor,
@@ -186,6 +188,11 @@ export function UpstreamsView() {
      so the cards can't be narrowed by a router the picker no longer shows. */
   const { routerId } = useRouterFilter();
   const live = useApi<{ upstreams: UpstreamMetrics[] }>(`/api/metrics/upstreams?window=${timeWindow}${scopeQ}`);
+  /* What the vendors behind these nodes say about the chains WE route through
+     them (Status Page Index). Empty map when the index can't be read — then no
+     card carries a vendor chip at all, rather than one saying something
+     reassuring. */
+  const { bySlug: vendorBySlug, stale: vendorStale, disabled: vendorDisabled } = useVendorStatus();
 
   const [unhealthyOnly, setUnhealthyOnly] = useState(false);
   const [search, setSearch] = useState("");
@@ -350,6 +357,18 @@ export function UpstreamsView() {
         </div>
       </div>
 
+      {/* Provider status off ≠ provider status broken. Without this line an
+          operator who set STATUS_PAGE_INDEX_URL="" sees cards with no chips
+          and has no way to tell that from an index that cannot be reached. */}
+      {vendorDisabled && (
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 12, fontSize: 12, color: "var(--text-3)" }}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginRight: 2 }}><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          Provider status is switched off on this deployment ·
+          <span className="gw-mono" style={{ color: "var(--text-4)" }}>STATUS_PAGE_INDEX_URL</span>
+          is empty, so no status page is read.
+        </div>
+      )}
+
       {unhealthyOnly && (
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, padding: "8px 14px", borderRadius: 8, background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.18)", fontSize: 12, color: "var(--warn)" }}>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
@@ -416,6 +435,10 @@ export function UpstreamsView() {
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {displayed.map((pv) => {
+            /* The vendor behind this node, when the catalog matched one and
+               the index tracks it (index slugs ARE the catalog ids). The chip
+               speaks only for the chains this card serves. */
+            const vendor = pv.catalogId !== null ? vendorBySlug.get(pv.catalogId) : undefined;
             return (
               <div key={pv.id} className="gw-card" style={{ padding: "14px 16px", transition: "background 0.4s" }}>
                 {/* header */}
@@ -439,6 +462,17 @@ export function UpstreamsView() {
                         </span>
                       )}
                       {pv.health !== "unknown" && <HealthTag health={pv.health} />}
+                      {/* Their claim next to our measurement — the pair is the
+                          point: same-coloured means agreement, disagreement is
+                          the interesting case. Scoped to this card's chains
+                          (narrowed by the chain filter, like the rows below). */}
+                      {vendor && (
+                        <VendorStatusChip
+                          vendor={vendor}
+                          specs={activeChain ? pv.chains.filter((c) => c === activeChain) : pv.chains}
+                          stale={vendorStale}
+                        />
+                      )}
                     </div>
                   </div>
                 </div>

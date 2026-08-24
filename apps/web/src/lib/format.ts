@@ -31,6 +31,22 @@ export function fmtBlock(n: number | null | undefined): string {
 }
 
 /**
+ * How long ago a timestamp was, coarsely. For "when was this last read" lines,
+ * where the exact second is noise and staleness is the whole point. `now` is
+ * injectable so a test isn't racing the clock.
+ */
+export function fmtAgo(iso: string | null | undefined, now: number = Date.now()): string {
+  if (iso === null || iso === undefined) return "—";
+  const then = Date.parse(iso);
+  if (Number.isNaN(then)) return "—";
+  const sec = Math.max(0, (now - then) / 1000);
+  if (sec < 60) return "just now";
+  if (sec < 3600) return `${Math.round(sec / 60)}m ago`;
+  if (sec < 86400) return `${Math.round(sec / 3600)}h ago`;
+  return `${Math.round(sec / 86400)}d ago`;
+}
+
+/**
  * A tip lag in seconds, short-form. Seconds below a minute, then m/h — a lag
  * that reaches hours is a dead upstream, not a number anyone reads precisely.
  */

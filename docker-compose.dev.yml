@@ -216,6 +216,10 @@ services:
       - PROMETHEUS_URL=http://prometheus:9090
       - HELM_VALUES_DIR=/app/helm-values
       - CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+      # Status Page Index behind GET /api/vendors/status. Dev defaults to an
+      # index running on the HOST (:8080); set it to the hosted one
+      # (https://providers-status.magmadevs.com) when there is none.
+      - STATUS_PAGE_INDEX_URL=${STATUS_PAGE_INDEX_URL-http://host.docker.internal:8080}
       # Auth (see docs/AUTH.md): disabled (default) needs none of the rest.
       - AUTH_MODE=${AUTH_MODE:-disabled}
       - AUTH_SECRET=${AUTH_SECRET:-dev-secret-change-me-please-32chars!}
@@ -235,6 +239,10 @@ services:
       - ${SR_CONFIG_HOST:-./dev-config/values.yml}:/app/helm-values/core/values.yml:ro
     ports:
       - "8000:8000"
+    # The dev STATUS_PAGE_INDEX_URL above dials the host — Docker Desktop
+    # provides this name on its own, Linux needs it spelled out.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       - builder
       - prometheus
@@ -254,6 +262,10 @@ services:
       # button links here (read at runtime via /api/config). Defaults to the
       # bundled `logs` profile's Grafana on :3001; override to point elsewhere.
       - DASHBOARD_GRAFANA_URL=${DASHBOARD_GRAFANA_URL:-http://localhost:3001}
+      # Status Page Index the vendor-status chips LINK to (read at runtime via
+      # /api/config). The hosted one by default — a local index is fine for the
+      # api's reads but has no browsable /providers pages.
+      - DASHBOARD_SPI_URL=${DASHBOARD_SPI_URL:-https://providers-status.magmadevs.com}
       # Auth (see docs/AUTH.md) — same AUTH_MODE + AUTH_SECRET as the api.
       - AUTH_MODE=${AUTH_MODE:-disabled}
       - AUTH_SECRET=${AUTH_SECRET:-dev-secret-change-me-please-32chars!}

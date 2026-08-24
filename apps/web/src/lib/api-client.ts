@@ -8,29 +8,38 @@ const BUILD_BASE =
   process.env.NEXT_PUBLIC_API_URL ??
   (typeof window !== "undefined" ? "" : "http://localhost:8000");
 
-interface RuntimeConfig {
+const BUILD_SPI_URL = process.env.NEXT_PUBLIC_SPI_URL ?? "https://providers-status.magmadevs.com";
+
+export interface RuntimeConfig {
   base: string;
   authMode: "disabled" | "enabled";
+  /** Status Page Index the vendor chips link out to (DASHBOARD_SPI_URL). */
+  spiUrl: string;
 }
 
 let configPromise: Promise<RuntimeConfig> | null = null;
 
-function resolveConfig(): Promise<RuntimeConfig> {
+/**
+ * The runtime config, fetched ONCE per session and shared by every caller —
+ * the promise is the memo. Anything that needs a runtime value takes it from
+ * here rather than fetching `/api/config` itself: a per-component fetch turns
+ * one request into one per rendered component (a dozen upstream cards each
+ * asking for the same three strings).
+ */
+export function resolveConfig(): Promise<RuntimeConfig> {
   if (typeof window === "undefined") {
-    return Promise.resolve({ base: BUILD_BASE, authMode: "disabled" });
+    return Promise.resolve({ base: BUILD_BASE, authMode: "disabled", spiUrl: BUILD_SPI_URL });
   }
   if (!configPromise) {
+    type ConfigBody = { apiUrl?: string; authMode?: string; spiUrl?: string };
     configPromise = fetch("/api/config")
-      .then((r) =>
-        r.ok
-          ? (r.json() as Promise<{ apiUrl?: string; authMode?: string }>)
-          : ({} as { apiUrl?: string; authMode?: string }),
-      )
+      .then((r) => (r.ok ? (r.json() as Promise<ConfigBody>) : ({} as ConfigBody)))
       .then((c) => ({
         base: c.apiUrl ?? BUILD_BASE,
         authMode: (c.authMode === "enabled" ? "enabled" : "disabled") as RuntimeConfig["authMode"],
+        spiUrl: c.spiUrl ?? BUILD_SPI_URL,
       }))
-      .catch(() => ({ base: BUILD_BASE, authMode: "disabled" as const }));
+      .catch(() => ({ base: BUILD_BASE, authMode: "disabled" as const, spiUrl: BUILD_SPI_URL }));
   }
   return configPromise;
 }

@@ -114,7 +114,7 @@ const FALLBACK_COLOR = "#6B7280";
  * or name, use the index from the mounted values file + a default image").
  */
 export function buildChainMetaByIndex(spec: string): ChainMeta {
-  const e = MAP[spec];
+  const e = specEntry(spec);
   const icon = e?.icon ?? "default";
   return {
     spec,
@@ -124,19 +124,30 @@ export function buildChainMetaByIndex(spec: string): ChainMeta {
     iconUrl: `/chains/${icon}.svg`,
     interfaces: e?.interfaces ?? [],
     mainnet: e?.mainnet ?? true,
-    color: COLORS[spec] ?? FALLBACK_COLOR,
+    color: (Object.hasOwn(COLORS, spec) ? COLORS[spec] : undefined) ?? FALLBACK_COLOR,
   };
+}
+
+/**
+ * The generated map's OWN entry for a spec — `hasOwn`, never a bare index.
+ * Spec labels arrive from a mounted values file and from Prometheus labels, so
+ * `MAP["constructor"]` is reachable input, and a bare lookup resolves it
+ * through the prototype to `Object`'s constructor — a chain that renders as
+ * "Object" with an "object" family.
+ */
+function specEntry(spec: string): (typeof MAP)[string] | undefined {
+  return Object.hasOwn(MAP, spec) ? MAP[spec] : undefined;
 }
 
 /** Family for a spec index — the try-me catalog resolves its method set from
  *  this (falls back to "evm" for an unknown index). */
 export function familyForSpecIndex(spec: string): ChainFamily {
-  return (MAP[spec]?.family as ChainFamily) ?? "evm";
+  return (specEntry(spec)?.family as ChainFamily) ?? "evm";
 }
 
 /** True when the spec index is in the generated chain map. */
 export function isKnownSpecIndex(spec: string): boolean {
-  return spec in MAP;
+  return Object.hasOwn(MAP, spec);
 }
 
 /** Every chain the map defines, as ChainMeta — for lists/pickers. */
