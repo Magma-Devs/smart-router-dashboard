@@ -768,11 +768,14 @@ export class MetricsService {
       this.prom.query(`${ENDPOINT_METRICS.overallHealth}${sel}`),
       this.prom.query(`${ENDPOINT_METRICS.latestBlock}${sel}`),
       this.prom.query(
-        `sum by (endpoint_id) (${ENDPOINT_METRICS.requestsInFlight}${sel})`,
+        `sum by (endpoint_id, spec) (${ENDPOINT_METRICS.requestsInFlight}${sel})`,
       ),
       // Per-endpoint p95 latency — the endpoint histogram carries endpoint_id.
+      // `spec` stays in the by-clause: one node name serving several chains is
+      // several endpoints, and folding their histograms quotes one chain's
+      // latency for another.
       this.prom.query(
-        `histogram_quantile(0.95, sum by (endpoint_id, le) (rate(${ENDPOINT_METRICS.latencyBucket}${sel}[${r}])))`,
+        `histogram_quantile(0.95, sum by (endpoint_id, spec, le) (rate(${ENDPOINT_METRICS.latencyBucket}${sel}[${r}])))`,
       ),
       // Block rate + tip-change count turn the raw block lag below into the
       // seconds-behind figure the roster leads with, and into a stale flag.
@@ -780,23 +783,28 @@ export class MetricsService {
       this.prom.query(qTipChanges(spec)),
     ]);
 
-    // Config-derived identity: node name → role/interface (helm marks backups;
-    // SR_CONFIG has no backup marker, so role stays null there) + every router
-    // that declares the name. The series only carries `endpoint_id`, so the
-    // config is the sole source of router attribution.
-    const roleByName = new Map<string, { role: "primary" | "backup"; iface: string | null }>();
-    const routersByName = new Map<string, string[]>();
+    // Config-derived identity, keyed by (node name × chain): role/interface
+    // (helm marks backups; SR_CONFIG has no backup marker, so role stays null
+    // there) + every router that declares the name ON THAT CHAIN. The series
+    // carries `endpoint_id` + `spec`, so the config is the sole source of
+    // router attribution — and a name-only key was the bug: vendors reused
+    // across chains ("lava", "publicnode") attributed every chain's row to
+    // whichever router declared the name first in the values file.
+    const nodeKey = (name: string, spec: string) => `${name}\u0000${spec}`;
+    const roleByNode = new Map<string, { role: "primary" | "backup"; iface: string | null }>();
+    const routersByNode = new Map<string, string[]>();
     if (this.configSvc) {
       for (const router of this.configSvc.getRouters()) {
         for (const node of router.nodes) {
-          if (!roleByName.has(node.name)) {
-            roleByName.set(node.name, {
+          const key = nodeKey(node.name, router.spec);
+          if (!roleByNode.has(key)) {
+            roleByNode.set(key, {
               role: node.isBackup ? "backup" : "primary",
               iface: node.endpoints[0]?.interface ?? null,
             });
           }
-          const ids = routersByName.get(node.name);
-          if (!ids) routersByName.set(node.name, [router.id]);
+          const ids = routersByNode.get(key);
+          if (!ids) routersByNode.set(key, [router.id]);
           else if (!ids.includes(router.id)) ids.push(router.id);
         }
       }
@@ -805,11 +813,15 @@ export class MetricsService {
       ? this.configSvc.getRouters().some((rt) => rt.localPort === null && rt.nodes.length > 0)
       : false;
 
+    // One row per (endpoint × chain). Keyed by endpoint_id alone, a node name
+    // serving several chains collapsed into a single row wearing whichever
+    // spec Prometheus happened to return first.
     const byId = new Map<string, UpstreamMetrics>();
     const ensure = (endpointId: string, specLabel: string): UpstreamMetrics => {
-      let row = byId.get(endpointId);
+      const key = nodeKey(endpointId, specLabel);
+      let row = byId.get(key);
       if (!row) {
-        const cfg = roleByName.get(endpointId);
+        const cfg = roleByNode.get(key);
         row = {
           endpointId,
           spec: specLabel,
@@ -827,9 +839,9 @@ export class MetricsService {
           role: cfg && isHelm ? cfg.role : null,
           apiInterface: cfg?.iface ?? null,
           inFlight: 0,
-          routerIds: routersByName.get(endpointId) ?? [],
+          routerIds: routersByNode.get(key) ?? [],
         };
-        byId.set(endpointId, row);
+        byId.set(key, row);
       }
       return row;
     };
@@ -890,7 +902,7 @@ export class MetricsService {
       const v = Number(s2.value[1]);
       if (s2.metric.spec && Number.isFinite(v) && v > 0) rateBySpec.set(s2.metric.spec, v);
     }
-    // The roster keys rows by endpoint_id alone, so an endpoint on two
+    // The roster keys rows by (endpoint × chain), so an endpoint on two
     // interfaces gets the WORST (lowest) change count of the two — a freeze on
     // either interface is worth surfacing on the row.
     const changesById = new Map<string, number>();
@@ -898,29 +910,34 @@ export class MetricsService {
       const id = s2.metric.endpoint_id;
       const v = Number(s2.value[1]);
       if (!id || !Number.isFinite(v)) continue;
-      const cur = changesById.get(id);
-      if (cur === undefined || v < cur) changesById.set(id, v);
+      const key = nodeKey(id, s2.metric.spec ?? "");
+      const cur = changesById.get(key);
+      if (cur === undefined || v < cur) changesById.set(key, v);
     }
     for (const row of byId.values()) {
       const bps = rateBySpec.get(row.spec);
       row.behindSec = row.blockLag !== null && bps !== undefined ? row.blockLag / bps : null;
-      row.stale = isStale(changesById.get(row.endpointId), bps);
+      row.stale = isStale(changesById.get(nodeKey(row.endpointId, row.spec)), bps);
     }
 
-    // Uptime + error rate per endpoint = success/total over the window, keyed
-    // by provider_address (= the endpoint name) on the router request counters.
+    // Uptime + error rate per (endpoint × chain) = success/total over the
+    // window, keyed by provider_address (= the endpoint name) + spec on the
+    // router request counters.
     const [okByProv, totByProv] = await Promise.all([
-      this.prom.query(`sum by (provider_address) (increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${r}]))`),
-      this.prom.query(`sum by (provider_address) (increase(${ROUTER_METRICS.requestsTotal}${sel}[${r}]))`),
+      this.prom.query(`sum by (provider_address, spec) (increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${r}]))`),
+      this.prom.query(`sum by (provider_address, spec) (increase(${ROUTER_METRICS.requestsTotal}${sel}[${r}]))`),
     ]);
-    const okMap = new Map(okByProv.map((s) => [s.metric.provider_address ?? "", Number(s.value[1]) || 0]));
+    const okMap = new Map(
+      okByProv.map((s) => [nodeKey(s.metric.provider_address ?? "", s.metric.spec ?? ""), Number(s.value[1]) || 0]),
+    );
     for (const s of totByProv) {
       const id = s.metric.provider_address;
       if (!id) continue;
+      const key = nodeKey(id, s.metric.spec ?? "");
       const tot = Number(s.value[1]) || 0;
-      const row = byId.get(id);
+      const row = byId.get(key);
       if (row && tot > 0) {
-        row.uptime = (okMap.get(id) ?? 0) / tot;
+        row.uptime = (okMap.get(key) ?? 0) / tot;
         row.errorRate = Math.max(0, 1 - row.uptime);
       }
     }

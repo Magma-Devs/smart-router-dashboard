@@ -273,3 +273,91 @@ describe("MetricsService · router attribution on the upstream roster", () => {
     expect(await svc.upstreams(undefined, "1d", "eth-prod")).toEqual([]);
   });
 });
+
+describe("MetricsService · cross-chain shared node names (MAG-2875)", () => {
+  /** Two routers on DIFFERENT chains reusing one vendor node name — the gk8
+   *  shape: every chain's router declares "lava"/"publicnode"-style nodes. */
+  const twoChainsSharedName = {
+    getRouters: () => [
+      {
+        id: "Ethereum",
+        spec: "ETH1",
+        network: "eth1",
+        pathBased: false,
+        customUrlPrefix: null,
+        localPort: null,
+        localPorts: {},
+        publicUrls: {},
+        interfaces: ["jsonrpc"],
+        nodes: [
+          { name: "lava", isBackup: false, endpoints: [{ interface: "jsonrpc", urlHost: "https://a", addons: [] }] },
+        ],
+      },
+      {
+        id: "Solana",
+        spec: "SOLANA",
+        network: "solana",
+        pathBased: false,
+        customUrlPrefix: null,
+        localPort: null,
+        localPorts: {},
+        publicUrls: {},
+        interfaces: ["jsonrpc"],
+        nodes: [
+          { name: "lava", isBackup: true, endpoints: [{ interface: "jsonrpc", urlHost: "https://b", addons: [] }] },
+        ],
+      },
+    ],
+  } as unknown as ConfigurationService;
+
+  /** Traffic for the SAME endpoint_id on both chains. */
+  function promTwoSpecs(): PrometheusClient {
+    return {
+      async query(expr: string) {
+        if (expr.startsWith("count by (spec)")) {
+          return [
+            { metric: { spec: "ETH1" }, value: [1, "1"] as [number, string] },
+            { metric: { spec: "SOLANA" }, value: [1, "1"] as [number, string] },
+          ];
+        }
+        if (expr.includes("endpoint_id")) {
+          return [
+            { metric: { endpoint_id: "lava", spec: "ETH1" }, value: [1, "10"] as [number, string] },
+            { metric: { endpoint_id: "lava", spec: "SOLANA" }, value: [1, "5"] as [number, string] },
+          ];
+        }
+        return [];
+      },
+      async queryRange() { return []; },
+      async scalar() { return null; },
+      async ping() { return true; },
+    } as unknown as PrometheusClient;
+  }
+
+  it("keeps one row per (endpoint × chain) and attributes each to its own chain's router", async () => {
+    const rows = await new MetricsService(promTwoSpecs(), twoChainsSharedName).upstreams(
+      undefined,
+      "1d",
+    );
+    // Keyed by endpoint_id alone this collapsed to ONE row wearing the first
+    // spec Prometheus returned, and every chain's row named the first router
+    // in the values file — the "router says ETH for all chains" bug.
+    expect(rows.map((r) => [r.endpointId, r.spec, r.routerIds])).toEqual([
+      ["lava", "ETH1", ["Ethereum"]],
+      ["lava", "SOLANA", ["Solana"]],
+    ]);
+  });
+
+  it("resolves role and the routerId filter per chain, not per name", async () => {
+    const svc = new MetricsService(promTwoSpecs(), twoChainsSharedName);
+    const rows = await svc.upstreams(undefined, "1d");
+    // ETH1 declares the node primary, SOLANA declares it backup — first-wins
+    // name-only lookup gave SOLANA's row ETH1's role.
+    expect(rows.map((r) => [r.spec, r.role])).toEqual([
+      ["ETH1", "primary"],
+      ["SOLANA", "backup"],
+    ]);
+    const solOnly = await svc.upstreams(undefined, "1d", "Solana");
+    expect(solOnly.map((r) => [r.endpointId, r.spec])).toEqual([["lava", "SOLANA"]]);
+  });
+});

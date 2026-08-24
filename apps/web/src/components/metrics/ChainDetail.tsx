@@ -73,7 +73,7 @@ export function ChainDetail({ r, onChainClick, win }: { r: ChainDetailRow; onCha
 
   if (!data) {
     return (
-      <td colSpan={9} style={{ padding: 0, background: "var(--bg-2)", borderBottom: "1px solid var(--line)" }}>
+      <td colSpan={8} style={{ padding: 0, background: "var(--bg-2)", borderBottom: "1px solid var(--line)" }}>
         <div style={{ padding: "14px 16px", fontSize: 12, color: "var(--text-3)" }}>Loading chain health…</div>
       </td>
     );
@@ -125,7 +125,7 @@ export function ChainDetail({ r, onChainClick, win }: { r: ChainDetailRow; onCha
   const from = m.times.length ? roFmtTime(m.times[0]!, win) : roFmtTime(roTimes(win, 2)[0]!, win);
 
   return (
-    <td colSpan={9} style={{ padding: 0, background: "var(--bg-2)", borderBottom: "1px solid var(--line)" }}>
+    <td colSpan={8} style={{ padding: 0, background: "var(--bg-2)", borderBottom: "1px solid var(--line)" }}>
       <div style={{ padding: "14px 16px" }}>
         {/* metric switcher */}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
