@@ -357,13 +357,13 @@ export function UpstreamsView() {
         </div>
       </div>
 
-      {/* Vendor status off ≠ vendor status broken. Without this line an
+      {/* Provider status off ≠ provider status broken. Without this line an
           operator who set STATUS_PAGE_INDEX_URL="" sees cards with no chips
           and has no way to tell that from an index that cannot be reached. */}
       {vendorDisabled && (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, fontSize: 12, color: "var(--text-3)" }}>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-          Vendor status is switched off on this deployment
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 12, fontSize: 12, color: "var(--text-3)" }}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginRight: 2 }}><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          Provider status is switched off on this deployment ·
           <span className="gw-mono" style={{ color: "var(--text-4)" }}>STATUS_PAGE_INDEX_URL</span>
           is empty, so no status page is read.
         </div>

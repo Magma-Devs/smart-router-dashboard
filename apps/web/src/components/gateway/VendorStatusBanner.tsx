@@ -25,8 +25,7 @@ import {
   affectedVendorChains,
   pruneDismissals,
   vendorChainKey,
-  vendorStatusLabel,
-  type VendorChainVerdict,
+  vendorIncidentMessage,
 } from "@/lib/vendor-status";
 
 const DISMISSED_KEY = "sr:vendor-status-dismissed";
@@ -53,15 +52,6 @@ function writeDismissed(keys: string[]): void {
   } catch {
     /* private mode / storage full — the banner just returns next reload */
   }
-}
-
-/** What the vendor is reporting, for the chain we route through them. */
-function bannerMessage({ vendor, spec, verdict }: VendorChainVerdict): string {
-  const chain = buildChainMetaByIndex(spec).name;
-  return (
-    `${vendor.name} is reporting ${vendorStatusLabel(verdict.status).toLowerCase()} for ${chain} ` +
-    `on their own status page — an upstream problem there is likely their side, not this deployment.`
-  );
 }
 
 export function VendorStatusBanner() {
@@ -115,7 +105,7 @@ export function VendorStatusBanner() {
               <line x1="12" y1="9" x2="12" y2="13" />
               <line x1="12" y1="17" x2="12.01" y2="17" />
             </svg>
-            <span style={{ flex: 1, minWidth: 0 }}>{bannerMessage(entry)}</span>
+            <span style={{ flex: 1, minWidth: 0 }}>{vendorIncidentMessage(entry)}</span>
             {vendor.statusPage !== null && (
               <a
                 href={vendor.statusPage}
@@ -142,8 +132,7 @@ export function VendorStatusBanner() {
       })}
       {hidden > 0 && (
         <span style={{ fontSize: 11.5, color: "var(--text-3)", paddingLeft: 2 }}>
-          +{hidden} more vendor {hidden === 1 ? "chain" : "chains"} reporting issues — see the Upstreams
-          page.
+          +{hidden} more provider {hidden === 1 ? "incident" : "incidents"} — open Upstreams for details.
         </span>
       )}
     </div>

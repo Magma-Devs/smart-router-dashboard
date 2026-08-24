@@ -1,4 +1,4 @@
-import type { VendorChainStatus, VendorStatus } from "@sr/shared";
+import { buildChainMetaByIndex, type VendorChainStatus, type VendorStatus } from "@sr/shared";
 
 /**
  * ONE vocabulary for what an upstream VENDOR says about a chain we route
@@ -180,6 +180,20 @@ export function affectedVendorChains(vendors: VendorStatus[] | null): VendorChai
     .flatMap(vendorChainVerdicts)
     .filter((v) => isChainIncident(v.severity))
     .sort((a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity]);
+}
+
+/**
+ * The banner's sentence. It lives here with the rest of the wording so the
+ * copy has one home and a test can hold it still — two sentences, one per
+ * severity, and `degraded` / `outage` are exactly the states that reach a
+ * banner. The reader is told whose problem it is and what it means for this
+ * route; "provider" is the word, never "vendor".
+ */
+export function vendorIncidentMessage({ vendor, spec, severity }: VendorChainVerdict): string {
+  const chain = buildChainMetaByIndex(spec).name;
+  return severity === "outage"
+    ? `${vendor.name} reports an outage for ${chain} on their status page — failures on this route are likely on their side, not in this deployment.`
+    : `${vendor.name} reports degraded performance for ${chain} on their status page — issues on this route are likely on their side, not in this deployment.`;
 }
 
 /** Dismissal identity: the same vendor and chain in a WORSE state is a new

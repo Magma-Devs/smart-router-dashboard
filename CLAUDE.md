@@ -344,6 +344,10 @@ state can't be worded or sourced two ways:
     their page maps to this chain), `unconfigured` (the index probes nothing
     for them), plus `maintenance`, which is planned work rather than an
     incident. Much of the roster sits in one of these permanently.
+  **Vocabulary split**: the UI says "provider" (the user's word, and the status
+  index's own), the code says `vendor*` — route, types, files and identifiers
+  all keep the `vendor` naming. Renaming the code was deliberate churn nobody
+  wanted; when you touch a user-visible string here, write "provider".
   Vendor IDENTITY (who a node belongs to) lives in
   `packages/shared/src/constants/vendors.ts`, not in the web catalog: the api
   derives which vendors to read status for from the same map, and the ids are

@@ -6,6 +6,7 @@ import {
   isChainIncident,
   pruneDismissals,
   vendorChainKey,
+  vendorIncidentMessage,
   vendorSeverity,
   vendorStatusLabel,
   vendorTagClass,
@@ -169,6 +170,31 @@ describe("affectedVendorChains", () => {
     expect(isChainIncident("maintenance")).toBe(false);
     expect(isChainIncident("unknown")).toBe(false);
     expect(isChainIncident("operational")).toBe(false);
+  });
+});
+
+describe("the banner sentence", () => {
+  const verdictFor = (status: string, spec: string) => {
+    const v = vendor("Alchemy", { [spec]: verdict(status) });
+    return { vendor: v, spec, verdict: v.chains[spec]!, severity: vendorSeverity(status) };
+  };
+
+  it("says degraded performance the way a person would", () => {
+    expect(vendorIncidentMessage(verdictFor("minor", "BSC"))).toBe(
+      "Alchemy reports degraded performance for BSC on their status page — issues on this route are likely on their side, not in this deployment.",
+    );
+  });
+
+  it("says outage for the states that are one", () => {
+    expect(vendorIncidentMessage(verdictFor("major", "ETH1"))).toBe(
+      "Alchemy reports an outage for Ethereum on their status page — failures on this route are likely on their side, not in this deployment.",
+    );
+    expect(vendorIncidentMessage(verdictFor("critical", "ETH1"))).toContain("reports an outage for Ethereum");
+  });
+
+  it("names the chain the way the rest of the UI does", () => {
+    // The chain map's display name, not the raw spec index.
+    expect(vendorIncidentMessage(verdictFor("minor", "COSMOSHUB"))).toContain("for Cosmos Hub on their");
   });
 });
 
