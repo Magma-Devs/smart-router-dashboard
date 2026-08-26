@@ -215,10 +215,32 @@ address it was sent to"* used to be a comparison. It is now structural: the
 redeemer supplies no address at all, so there is nothing to compare. Prove it by
 trying to supply one anyway.
 
+First, **invite `mallory@example.com`** from the admin window — Team → Invite.
+Do not reuse Dana's link here; hers has been redeemed already, which is the
+other half of this check.
+
+The token is everything after `/invite/` in the link:
+
+```
+http://localhost:3000/invite/XgyWcnWySTQNTBOC_3OUOLeMEZ1vSVcM5chJWemUcDs
+                             └──────────────── the token ───────────────┘
+```
+
+Copy it out of the inbox by hand, or let the shell take the newest one:
+
 ```bash
-# a fresh invitation, from the admin window: Team → Invite → mallory@example.com
-# take its link from http://localhost:8005 and keep just the token:
-TOKEN='paste-the-last-path-segment-here'
+TOKEN=$(curl -s localhost:8005/store | python3 -c "
+import json,sys,re
+print(re.search(r'/invite/([A-Za-z0-9_-]+)', json.load(sys.stdin)['emails'][-1]['body']['text']).group(1))")
+echo "$TOKEN"          # sanity-check it is not empty
+```
+
+On-prem there is no inbox — the link is in the dialog when you create the
+invitation, so copy the token straight from there.
+
+Then:
+
+```bash
 
 curl -s -X POST localhost:8000/auth/invite/accept \
   -H 'content-type: application/json' \
