@@ -21,6 +21,7 @@ import { Tip } from "@/components/gateway/Tip";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { ExplorerBlockLink, ExplorerHomeLink } from "@/components/gateway/ExplorerLink";
 import { ThCol, useSort } from "@/components/gateway/SortTable";
+import { Refreshing, Skel, SkelRows } from "@/components/gateway/Skel";
 import { TT } from "@/lib/tooltips";
 import { fmtComma, fmtNum } from "@/lib/format";
 import { uptimeColor } from "@/lib/colors";
@@ -84,7 +85,7 @@ export function RouterOverview({ onChainClick, chainFilter, timeWindow }: {
   const [net, setNet] = useState("all");
   const [open, setOpen] = useState<string | null>(null);
   const { scopeQ, withScope } = useFilters();
-  const { data } = useApi<{ routers: RouterMetrics[] }>(`/api/metrics/routers-rollup?window=${timeWindow}${scopeQ}`);
+  const { data, isLoading, isValidating } = useApi<{ routers: RouterMetrics[] }>(`/api/metrics/routers-rollup?window=${timeWindow}${scopeQ}`);
   const topo = useApi<{ routers: RouterTopology[] }>("/api/config/routers", 60000);
   // Instant gauges — no window in the key; polled on the default cadence.
   const tips = useApi<BlockHeights>(withScope("/api/metrics/block-heights"));
@@ -160,7 +161,12 @@ export function RouterOverview({ onChainClick, chainFilter, timeWindow }: {
         <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-2)", flex: 1, display: "inline-flex", alignItems: "center" }}>
           Routers · how each router performs<Tip text="**One row per router in the mounted values file** — not per chain. A chain can be served by several routers, and the config is the only place they are distinguishable: no metric series carries a router.\n\nA **shared** row means the collector reports no per-router target label, so the chain-level figures cover every router on that chain. Two such rows carry the same numbers; adding them up would count that traffic twice. Upstream counts are always the router's own.\n\n**Click a row** to expand its chain-health graphs over the selected window." />
         </div>
-        <span style={{ fontSize: 11, color: "var(--text-3)" }}>{routers.length} router{routers.length === 1 ? "" : "s"}</span>
+        {/* `keepPreviousData` means a window change re-fetches with the OLD
+            rows still on screen. The dot is the only thing that says so. */}
+        <span style={{ fontSize: 11, color: "var(--text-3)", display: "inline-flex", alignItems: "center", gap: 7 }}>
+          {isLoading ? <Skel w={62} h={9} /> : <>{routers.length} router{routers.length === 1 ? "" : "s"}</>}
+          <Refreshing show={!isLoading && isValidating} label="Refreshing routers" />
+        </span>
         <div className="gw-segctl">
           {([["all", "All"], ["mainnet", "Mainnet"], ["testnet", "Testnet"]] as const).map(([f, lbl]) => (
             <button key={f} className={net === f ? "on" : ""} onClick={() => setNet(f)} style={{ padding: "4px 10px" }}>{lbl}</button>
@@ -182,6 +188,14 @@ export function RouterOverview({ onChainClick, chainFilter, timeWindow }: {
           </tr>
         </thead>
         <tbody>
+          {/* The rollup is the slowest read on the page — ~8 Prometheus queries per
+              router — so this table is the one that most needs to hold its shape
+              while it lands. */}
+          {isLoading && <SkelRows rows={4} cols={[
+            { w: 150 }, { w: 56, align: "right" }, { w: 84, align: "right" }, { w: 64, align: "right" },
+            { w: 62, align: "right" }, { w: 56, align: "right" }, { w: 58, align: "right" }, { w: 36, align: "right" },
+            { w: 88 },
+          ]} />}
           {sortedRouters.map((r) => {
             const sm = statusMeta[r.statusKind];
             const rowKey = r.routerId;

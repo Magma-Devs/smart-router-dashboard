@@ -15,9 +15,23 @@ import { errorDocsUrl } from "@/lib/error-docs";
 import { HotspotRow } from "./HotspotRow";
 import { useFilters } from "@/components/gateway/FiltersProvider";
 import { useRouterFilter } from "@/hooks/use-router-options";
+import { Skel, SkelLine } from "@/components/gateway/Skel";
 
 /* "Error types" reference view — live counts per error code (code pivot). */
-function ErrorTypesView({ rows }: { rows: ErrorPivotRow[] }) {
+function ErrorTypesView({ rows, loading }: { rows: ErrorPivotRow[]; loading: boolean }) {
+  if (loading) {
+    return (
+      <div className="gw-card" style={{ display: "grid", gap: 14 }}>
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <Skel w={132} h={11} />
+            <Skel w="100%" h={8} style={{ flex: 1 }} />
+            <Skel w={54} h={11} />
+          </div>
+        ))}
+      </div>
+    );
+  }
   if (!rows.length) {
     return (
       <div className="gw-card" style={{ padding: "40px 24px", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
@@ -92,7 +106,7 @@ export function ErrorsBreakdown({ chainFilter, win }: { chainFilter: string | nu
   // narrow them — the api resolves the upstream against the values file. The
   // pivots in the "Error types" view can't be attributed and stay as they are.
   const { routerIdQ } = useRouterFilter();
-  const { data } = useApi<ErrorsReport>(`/api/metrics/errors?window=${win}${specQ}${routerIdQ}${scopeQ}`);
+  const { data, isLoading } = useApi<ErrorsReport>(`/api/metrics/errors?window=${win}${specQ}${routerIdQ}${scopeQ}`);
 
   /* Failing pairs first by rate, then the node-error-only ones (see
      HotspotRow) — the api already orders them that way; this keeps it after
@@ -116,12 +130,19 @@ export function ErrorsBreakdown({ chainFilter, win }: { chainFilter: string | nu
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 12 }}>
         <div>
           <div style={{ fontSize: 15, fontWeight: 600, letterSpacing: "-0.01em" }}>Errors</div>
-          <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 3 }}>
-            <span className="gw-mono gw-tnum" style={{ fontWeight: 700, color: "var(--text)" }}>{fmtComma(total)}</span>{" "}errors this window, across <span className="gw-mono gw-tnum">{failing.length}</span> chain · upstream pair{failing.length === 1 ? "" : "s"}
-            {/* Node-error pairs are counted apart: they failed nothing, so
-                folding them into the pair count overstated the damage. */}
-            {nodeOnly.length > 0 && (
-              <> · <span className="gw-mono gw-tnum">{nodeOnly.length}</span> more answered with node errors only</>
+          {/* `total` and the pair counts default to 0, so before the response
+              lands this line reads "0 errors this window, across 0 pairs" — a
+              clean bill of health we have no basis for. Ghost it. */}
+          <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 3, minHeight: 18, display: "flex", alignItems: "center" }}>
+            {isLoading ? <SkelLine w={286} h={10} /> : (
+              <span>
+                <span className="gw-mono gw-tnum" style={{ fontWeight: 700, color: "var(--text)" }}>{fmtComma(total)}</span>{" "}errors this window, across <span className="gw-mono gw-tnum">{failing.length}</span> chain · upstream pair{failing.length === 1 ? "" : "s"}
+                {/* Node-error pairs are counted apart: they failed nothing, so
+                    folding them into the pair count overstated the damage. */}
+                {nodeOnly.length > 0 && (
+                  <> · <span className="gw-mono gw-tnum">{nodeOnly.length}</span> more answered with node errors only</>
+                )}
+              </span>
             )}
           </div>
         </div>
@@ -135,7 +156,21 @@ export function ErrorsBreakdown({ chainFilter, win }: { chainFilter: string | nu
 
       {view === "hotspots" && (
         <>
-          {hotspots.length === 0 ? (
+          {/* The green tick is an ALL-CLEAR. Showing it on an empty `hotspots`
+              before the response arrives tells the operator the deployment is
+              fine at exactly the moment we don't know. Ghost cards first. */}
+          {isLoading ? (
+            [0, 1, 2].map((i) => (
+              <div key={i} className="gw-card" style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8, padding: "16px 18px" }}>
+                <Skel w={16} h={16} r={4} />
+                <Skel w={150} h={11} />
+                <Skel w={92} h={11} />
+                <span style={{ flex: 1 }} />
+                <Skel w={64} h={11} />
+                <Skel w={48} h={11} />
+              </div>
+            ))
+          ) : hotspots.length === 0 ? (
             <div className="gw-card" style={{ padding: "40px 24px", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
               <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
               <span style={{ fontSize: 13, color: "var(--text-3)" }}>No errors on this chain in the selected window.</span>
@@ -151,6 +186,7 @@ export function ErrorsBreakdown({ chainFilter, win }: { chainFilter: string | nu
       {view === "types" && (
         <ErrorTypesView
           rows={(data?.pivots.code?.length ? data.pivots.code : data?.pivots.category) ?? []}
+          loading={isLoading}
         />
       )}
     </div>

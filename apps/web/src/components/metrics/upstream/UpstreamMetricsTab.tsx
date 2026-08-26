@@ -59,7 +59,7 @@ export function UpstreamMetricsTab({ timeWindow, chainFilter }: {
   return (
     <div>
       {/* ── roster of every upstream — click a row to drill in below ── */}
-      <PMRoster rows={visible} activeName={activeName} onSelect={setProvName} timeWindow={timeWindow} />
+      <PMRoster rows={visible} activeName={activeName} onSelect={setProvName} timeWindow={timeWindow} loading={rosterRes.isLoading} refreshing={rosterRes.isValidating} />
 
       {pm && activeName && (
         <>
