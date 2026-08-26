@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.20.2]
+
 ### Fixed
 
 - **An upstream with no traffic is no longer an upstream we know nothing
