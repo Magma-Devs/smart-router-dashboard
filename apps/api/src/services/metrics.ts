@@ -22,6 +22,8 @@ import {
   qLatencyQuantile,
   qBestTipBySpec,
   qBlockRateBySpec,
+  qEndpointPolls,
+  qOptimizerScoresByEndpoint,
   qLatestBlock,
   qMethodLatencyQuantile,
   qPresence,
@@ -52,7 +54,7 @@ import {
   type TimeSeries,
 } from "@sr/shared";
 import { WINDOWS } from "@sr/shared/constants";
-import type { PrometheusClient } from "./prometheus-client.js";
+import type { PrometheusClient, PromVectorSample } from "./prometheus-client.js";
 import type { ConfigurationService } from "./configuration.js";
 
 export function health(value: number | null): HealthState {
@@ -759,11 +761,28 @@ export class MetricsService {
     const sel = selector({ spec });
     const r = rangeFor(window);
 
-    const [requests, scores, healthRows, blocks, inFlight, latency, rateRows, changeRows] =
-      await Promise.all([
+    const [
+      requests,
+      optimizerScores,
+      scores,
+      healthRows,
+      blocks,
+      inFlight,
+      latency,
+      rateRows,
+      changeRows,
+      pollsOk,
+      pollsFailed,
+    ] = await Promise.all([
       this.prom.query(
         `sum by (endpoint_id, spec) (increase(${ENDPOINT_METRICS.totalRelaysServiced}${sel}[${r}]))`,
       ),
+      // QoS, preferred source. The router samples this for EVERY upstream on a
+      // timer, so an idle row — a backup nobody has failed over to — still has
+      // a current score. See `qOptimizerScoresByEndpoint`.
+      this.prom.query(qOptimizerScoresByEndpoint(spec)),
+      // Fallback for a router too old to publish the sampler's gauge. Same
+      // numbers, but written only when a relay was routed here.
       this.prom.query(`${ENDPOINT_METRICS.selectionScore}${sel}`),
       this.prom.query(`${ENDPOINT_METRICS.overallHealth}${sel}`),
       this.prom.query(`${ENDPOINT_METRICS.latestBlock}${sel}`),
@@ -778,6 +797,9 @@ export class MetricsService {
       // seconds-behind figure the roster leads with, and into a stale flag.
       this.prom.query(qBlockRateBySpec(spec)),
       this.prom.query(qTipChanges(spec)),
+      // Poll outcomes — the liveness an upstream with no relays still has.
+      this.prom.query(qEndpointPolls("ok", spec, window)),
+      this.prom.query(qEndpointPolls("failed", spec, window)),
     ]);
 
     // Config-derived identity: node name → role/interface (helm marks backups;
@@ -818,6 +840,8 @@ export class MetricsService {
           p95Ms: null,
           errorRate: null,
           scores: {},
+          scoreSource: null,
+          polls: null,
           health: "unknown",
           latestBlock: null,
           blockLag: null,
@@ -840,12 +864,35 @@ export class MetricsService {
       // Relay counts are whole events — round off increase() extrapolation.
       ensure(id, s.metric.spec ?? "").requests = Math.round(Number(s.value[1]) || 0);
     }
-    for (const s of scores) {
-      const id = s.metric.endpoint_id;
-      const type = s.metric.score_type as ScoreType | undefined;
-      if (!id || !type) continue;
-      ensure(id, s.metric.spec ?? "").scores[type] = Number(s.value[1]);
-    }
+    // QoS, optimizer-first. Both gauges carry the same five numbers — one
+    // optimizer computation fills both — so this is not a choice between two
+    // measurements, it is a choice between two publication schedules. The
+    // sampler's covers every upstream on a timer; the routing path's only
+    // exists where a relay went. Preferring the sampler is what lets an idle
+    // upstream keep a live score instead of an empty column.
+    //
+    // Per ROW, not per response: a deployment can have the sampler's gauge for
+    // most upstreams and fall back for one that predates it, and mixing within
+    // one row would silently blend two write cadences under one number.
+    const scoreRows = (
+      rows: PromVectorSample[],
+      source: "optimizer" | "endpoint",
+    ): void => {
+      for (const s of rows) {
+        const id = s.metric.endpoint_id;
+        const type = s.metric.score_type as ScoreType | undefined;
+        if (!id || !type) continue;
+        const row = ensure(id, s.metric.spec ?? "");
+        // First source to claim a row owns it — optimizer runs first below.
+        if (row.scoreSource !== null && row.scoreSource !== source) continue;
+        const v = Number(s.value[1]);
+        if (!Number.isFinite(v)) continue;
+        row.scores[type] = v;
+        row.scoreSource = source;
+      }
+    };
+    scoreRows(optimizerScores, "optimizer");
+    scoreRows(scores, "endpoint");
     for (const s of healthRows) {
       const id = s.metric.endpoint_id;
       if (!id) continue;
@@ -866,6 +913,27 @@ export class MetricsService {
       if (!id) continue;
       const v = Number(s.value[1]);
       ensure(id, s.metric.spec ?? "").p95Ms = Number.isFinite(v) ? v : null;
+    }
+
+    // Poll outcomes. Written for every endpoint the tracker polls, which is
+    // every configured endpoint — so this is the only per-upstream signal a row
+    // with no relays still carries. A row stays `null` until one of the two
+    // counters names it, keeping "family absent" (old router) distinct from
+    // "polled zero times in this window" (the gate suppressed them).
+    const poll = (id: string, specLabel: string): { ok: number; failed: number } => {
+      const row = ensure(id, specLabel);
+      if (row.polls === null) row.polls = { ok: 0, failed: 0 };
+      return row.polls;
+    };
+    for (const s of pollsOk) {
+      const id = s.metric.endpoint_id;
+      if (!id) continue;
+      poll(id, s.metric.spec ?? "").ok = Math.round(Number(s.value[1]) || 0);
+    }
+    for (const s of pollsFailed) {
+      const id = s.metric.endpoint_id;
+      if (!id) continue;
+      poll(id, s.metric.spec ?? "").failed = Math.round(Number(s.value[1]) || 0);
     }
 
     // Block lag = spec-max latest block − this endpoint's latest block.

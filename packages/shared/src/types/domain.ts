@@ -69,6 +69,27 @@ export interface UpstreamMetrics {
   errorRate: number | null;
   /** score_type → score (0..1); empty when none emitted. */
   scores: Partial<Record<ScoreType, number>>;
+  /**
+   * Which gauge the `scores` above came from, so a reader knows how current
+   * they are. `optimizer` is the sampler's — refreshed on a timer for every
+   * upstream, traffic or none. `endpoint` is the routing path's fallback,
+   * written only when a relay was last routed to this upstream, so on an idle
+   * row it can be arbitrarily old and the UI must say so. `null` ⇒ `scores` is
+   * empty. The two gauges carry the SAME numbers (one optimizer computation
+   * fills both); they differ in when they are written and who they cover.
+   */
+  scoreSource: "optimizer" | "endpoint" | null;
+  /**
+   * Latest-block polls the router's chain tracker made against this upstream
+   * over the window. Traffic-independent — the tracker polls every configured
+   * upstream, backups included — so it is the one liveness signal an idle row
+   * still has.
+   *
+   * `null` when the family is absent (older router). `{ ok: 0, failed: 0 }` is
+   * NOT health: a poll gate suppresses polls that served traffic or a peer
+   * already made redundant, so both-zero means "not polled in this window".
+   */
+  polls: { ok: number; failed: number } | null;
   health: HealthState;
   latestBlock: number | null;
   /** Blocks behind the spec's best endpoint; null when unknown. */

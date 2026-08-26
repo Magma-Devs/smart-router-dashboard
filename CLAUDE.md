@@ -156,10 +156,51 @@ no redeploy.
 |---|---|
 | Requests / success / read totals, latency histogram, latest block, overall health, consistency, csm, total relays | **Real** (`smartrouter_*`) |
 | Per-endpoint health/block/latency/in-flight/relays, per-provider p95 | **Real** (`rpc_endpoint_*`) |
-| QoS / selection score (availability/latency/sync/stake/composite) | **Real** (`rpc_endpoint_selection_score`) — the design doc wrongly called this "no metric" |
+| QoS / selection score (availability/latency/sync/stake/composite) | **Real, and available WITHOUT traffic** — read `rpc_optimizer_selection_score` first, `rpc_endpoint_selection_score` as fallback. See "Two QoS gauges" below. The design doc wrongly called this "no metric" |
+| Per-endpoint latest-block polls (`rpc_endpoint_fetch_latest_{success,fails}`) | **Real, and traffic-independent** — the chain tracker polls every configured upstream, backups included |
 | Errors (total, trend, per-chain/method/provider) | **Real, derived** — `round(clamp_min(total − success, 0))` = transport/routing failures (an upstream's JSON-RPC error reply counts as transport SUCCESS); node/protocol classes from `smartrouter_{node,protocol}_errors_total` once they fire |
 | Cache, retries, hedge, cross-validation, node/protocol error counters, write/batch, websocket | **Absent until the feature fires** → nulls + `emitted:false`, then real. Cross-validation reads `…cross_validation_{requests,success,failed,failures}_total` (no bare `…_total` exists); ws totals are lifetime (counter-birth). See `docs/METRICS-MAPPING.md` → "Counter semantics" for relay-vs-client scoping (requests are CLIENT-scoped via the latency-histogram `_count`). |
 | Compute-unit quota, RPS cap, regions, team members | **Magma Cloud concepts** — not metered here; pinned `null` (UI shows "not tracked") |
+
+### Two QoS gauges — and why we read the second one
+
+The router publishes **one** set of selection scores through **two** gauges.
+They are not two measurements: a single iteration of the optimizer's
+`CalculateProviderScores` fills both, from the same locals, so
+`score_type="availability"` is the identical number on either. What differs is
+only *when* each is written and *who* it covers:
+
+| | `rpc_endpoint_selection_score` | `rpc_optimizer_selection_score` |
+|---|---|---|
+| Written | at provider selection — only when a relay is routed | every `--optimizer-qos-sampling-interval` tick (default 1s) |
+| Covers | the candidates of that one selection; backups live in a separate pool consulted only on fallback, so they are usually absent | **every registered upstream, backups included** |
+| Labels | `spec, apiInterface, endpoint_id, score_type` | `spec, endpoint_id, score_type` — one optimizer per chain, so no interface |
+
+The scores stay current with no traffic because the router's **probe loop**
+(`--probe-loop-interval`, default 5s) feeds the same optimizer that relays feed.
+Probe samples carry a lighter weight than relay samples, so a busy hour moves
+the score quickly while a quiet upstream stays scored rather than going blank.
+
+**So `/api/metrics/upstreams` reads the optimizer gauge first and falls back to
+the endpoint gauge**, per row (`scoreSource` names which). Two consequences
+worth keeping straight:
+
+- A fallback score on a row with **zero requests** can be arbitrarily old — it
+  is whatever the last routed selection wrote. The UI marks it rather than
+  hiding it: "we measured this a while ago" is information, `—` is not.
+- Dropping to chain scope is *more* correct for the roster, not less. Rows are
+  keyed by `endpoint_id` alone, so with the per-interface gauge an upstream
+  serving two interfaces had one interface's score silently overwrite the
+  other's.
+
+The matching liveness signal is `rpc_endpoint_fetch_latest_{success,fails}`:
+the per-endpoint chain tracker polls **every** configured upstream on the
+chain's own cadence, whatever the traffic. ⚠ A poll gate suppresses polls that
+served traffic — or a peer pod's poll — already made redundant, so **both
+counters at zero means "not polled in this window", never "healthy"**.
+`rpc_endpoint_overall_health` cannot fill this gap: it is seeded optimistically
+at registration and moved only by relay outcomes, so an untouched backup reads
+"Operational" because nothing has disproved it.
 
 Chains are keyed by **Lava spec index** (the `spec` label: `ETH1`, `BASE`, …),
 not a human chain id — resolve display metadata via `buildChainMetaByIndex`.
@@ -370,7 +411,7 @@ Every `/api/metrics/*` route also accepts **`router?`** — the router scope
 | `GET /api/metrics/dashboard` | `window`, `spec?` | `DashboardData` — the Dashboard page (both tabs) in one round-trip: `kpis` (successRate, p95Ms, errors, rps, errorsHandled=null), `series` (throughput, errors, errorRate, successRate, latency p50/95/99, perChain, perChainSuccessRate, perChainLatency, providerMix, perProviderLatencyP95), `chains` (multiselect options — the series filter is client-side; `spec` accepted for symmetry). Unbacked families (`scu`, `regions`, `failoverRatio`, `internalAvailability`, `cacheHitRate`, `errorClasses`, `errorsHandledBreakdown`, `contribution`, `providerAvailability`, `scorecard`) are `null`, `trouble` is `[]` |
 | `GET /api/metrics/routers-rollup` | `window` | `{ routers: RouterMetrics[] }` — **the Routers table: one row per CONFIG router**, not per chain. `ChainMetrics` plus `routerId`, `upstreamCount` (from the values file, so always the router's own) and `attribution`: `own` when the collector reports a target label for it (the chain-level numbers were re-read through that label) or when it is alone on its chain, `shared` otherwise — in which case `sharedWith` names the siblings reading the same series, and the rows deliberately carry identical figures. Falls back to one row per chain when no values file is mounted |
 | `GET /api/metrics/chains` | `window` | `{ chains: ChainMetrics[] }` — per-chain rollup (requests, availability, errorRate, p95, composite QoS, health, latestBlock, providerCount) for the Routers table |
-| `GET /api/metrics/upstreams` | `window`, `spec?`, **`routerId?`** | `{ upstreams: UpstreamMetrics[] }` — roster with requests, uptime, p95, **errorRate**, selection scores, health, latestBlock, **blockLag**, **`behindSec`** (that lag ÷ the chain's block rate — the comparable form) + **`stale`** (tip frozen 15m while the chain produced blocks), **role** (`primary`/`backup` from helm `is_backup`; null for SR_CONFIG), **apiInterface**, inFlight, **`routerIds`** (the config routers declaring the upstream — several when they share a node name). `routerId` keeps only one router's rows; it filters against the values file and does NOT narrow the PromQL (that's `router` — see "Two router axes") |
+| `GET /api/metrics/upstreams` | `window`, `spec?`, **`routerId?`** | `{ upstreams: UpstreamMetrics[] }` — roster with requests, uptime, p95, **errorRate**, selection scores, health, latestBlock, **blockLag**, **`behindSec`** (that lag ÷ the chain's block rate — the comparable form) + **`stale`** (tip frozen 15m while the chain produced blocks), **role** (`primary`/`backup` from helm `is_backup`; null for SR_CONFIG), **apiInterface**, inFlight, **`routerIds`** (the config routers declaring the upstream — several when they share a node name), plus the two signals that need NO traffic: **`scoreSource`** (`optimizer` = the sampler's live score, refreshed for every upstream on a timer; `endpoint` = the routing path's, frozen at the last selection, so possibly old on an idle row; `null` = no score) and **`polls`** (`{ok, failed}` latest-block polls the chain tracker made — `null` when the family is absent, `{0,0}` when the poll gate suppressed them, which is "we did not ask", never "it answered fine"). `routerId` keeps only one router's rows; it filters against the values file and does NOT narrow the PromQL (that's `router` — see "Two router axes") |
 | `GET /api/metrics/block-heights` | `spec?`, `router?`, **`routerId?`** | `BlockHeights` — `{ routerLabel, chains: ChainTips[] }`. Per chain: `blocksPerSec` (from `deriv` on the endpoint gauge), `bestBlock` (highest upstream tip — the reference), `routers[]` (`smartrouter_latest_block` per scope value × api interface, each with `behindBlocks` / `behindSec` / **`refreshSec`**) and `upstreams[]` (`rpc_endpoint_latest_block` per endpoint × interface, with `stale`). **Instant only** — gauges, so no `window`. Lags are given in seconds as well as blocks because a block count isn't comparable across chains. ⚠ The router gauge advances on accepted tip observations, not every poll, so it trails by ~one `refreshSec` however healthy the router is; judge it against that cadence, never a wall-clock threshold |
 | `GET /api/metrics/rps` | `window`, `spec?` | `TimeSeries` — `{ label, points: {t, v}[] }` |
 | `GET /api/metrics/traffic` | `window` | Aggregate `rpsNow` + series + per-chain rows (`rpsNow`, `requests`, `share`, `trend` sparkline). **No web consumer** — the Traffic tab's RPS card was removed in MAG-2448; kept as a documented read surface |

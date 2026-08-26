@@ -5,6 +5,55 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Fixed
+
+- **An upstream with no traffic is no longer an upstream we know nothing
+  about.** The Upstreams roster read the QoS gauge the router's *routing* path
+  writes (`rpc_endpoint_selection_score`), which only exists once a relay has
+  been routed — and a backup sits in a pool the router consults only on
+  failover, so it never appeared there. The roster then folded the QoS column
+  into the "No recent traffic" cell anyway, discarding the score even where one
+  existed. So a configured backup showed as a blank row, while the router was
+  in fact scoring it every few seconds.
+
+  `/api/metrics/upstreams` now reads `rpc_optimizer_selection_score` first, per
+  row, falling back to the old gauge. Both gauges are filled by ONE optimizer
+  computation, so this is the same number on a schedule that does not wait for
+  traffic: the router's probe loop scores every configured upstream, backups
+  included. New `scoreSource` field names which gauge a row used, and a
+  fallback score that may be out of date is dimmed, with the reason on hover.
+
+  A row with no traffic also stops being a special case in the roster: `0`
+  requests and three em dashes say it in the table's own language, where the
+  sentence that used to span those four cells broke the column alignment and
+  repeated the BACKUP badge two columns to its left.
+
+### Added
+
+- **Block polls are reported per upstream** — `polls: {ok, failed}` on
+  `/api/metrics/upstreams`, from `rpc_endpoint_fetch_latest_{success,fails}`,
+  surfaced on the upstream deep-dive (not in the roster, where it was a
+  sentence in a numeric table).
+  The router's chain tracker polls every configured upstream on the chain's own
+  cadence whatever the traffic, so this is a liveness signal an idle row still
+  has. Both counters at zero is reported as "not polled in this window", never
+  as healthy: a poll gate suppresses polls that served traffic or a peer pod's
+  poll already made redundant.
+
+### Changed
+
+- **The upstream empty state reports what the router did, instead of asserting
+  what it did not.** It claimed "probes are passing" and "Probes healthy ·
+  standing by as backup" as static text on every upstream, whatever its real
+  health and whatever its role — a probe result nothing had read, on the one
+  panel that exists because we have no measured numbers to show. It now shows
+  the upstream's health, its live QoS, its block polls and its latest block,
+  each omitted when the router does not report it.
+- The Availability tooltip on the upstream deep-dive said "successful synthetic
+  probes"; the figure is the success rate of real requests routed to that
+  upstream. Reworded, and it now points at the poll counts for the probe-side
+  answer.
+
 ## [0.20.1]
 
 ### Fixed
