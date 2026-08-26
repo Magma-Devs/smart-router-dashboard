@@ -56,7 +56,8 @@ export function qosValue(pm: UpstreamMetrics): number | null {
 }
 
 /**
- * How the router's own polls went, in one phrase.
+ * How the router's own polls went, for a field already labelled "Block polls" —
+ * so it counts and does not name them again.
  *
  * The both-zero case is the one that has to stay honest. A poll gate suppresses
  * polls that served traffic — or another pod's poll — already made redundant,
@@ -66,11 +67,9 @@ export function qosValue(pm: UpstreamMetrics): number | null {
  */
 export function pollSummary(polls: UpstreamMetrics["polls"]): string | null {
   if (polls === null) return null;
-  const total = polls.ok + polls.failed;
-  if (total === 0) return "not polled in this window";
-  if (polls.failed === 0) return `${fmt(polls.ok)} block polls answered, none failed`;
-  if (polls.ok === 0) return `${fmt(polls.failed)} block polls, all failed`;
-  return `${fmt(polls.ok)} block polls answered, ${fmt(polls.failed)} failed`;
+  if (polls.ok + polls.failed === 0) return "none in this window";
+  const answered = `${fmt(polls.ok)} answered`;
+  return polls.failed === 0 ? answered : `${answered} · ${fmt(polls.failed)} failed`;
 }
 
 /** Colour for a poll summary — silent about the case it cannot judge. */

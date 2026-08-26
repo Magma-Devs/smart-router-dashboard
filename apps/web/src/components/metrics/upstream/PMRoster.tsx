@@ -17,7 +17,7 @@ import { Tip } from "@/components/gateway/Tip";
 import { ThCol, useSort } from "@/components/gateway/SortTable";
 import { Refreshing, Skel, SkelRows } from "@/components/gateway/Skel";
 import { useFilters } from "@/components/gateway/FiltersProvider";
-import { pollColor, pollSummary, qosHint, qosIsStale, qosValue } from "@/lib/upstream-signals";
+import { qosHint, qosIsStale, qosValue } from "@/lib/upstream-signals";
 import { useRouterFilter } from "@/hooks/use-router-options";
 
 const BLOCK_TIP = "**The head this upstream reports** — `rpc_endpoint_latest_block`, its own tip rather than the router's.\n\n**Click a height** to open it on the chain\u2019s block explorer and check it against the public chain. Chains with no verified block page show the number plain — the chain name still opens their explorer.";
@@ -27,7 +27,6 @@ interface RosterRow {
   name: string;
   chainName: string;
   chainColor: string;
-  hasData: boolean;
   qosVal: number | null;
   /** Config routers declaring this upstream — several ⇒ one shared series. */
   routerIds: string[];
@@ -75,7 +74,6 @@ export function PMRoster({ rows, activeName, onSelect, timeWindow, loading = fal
       name: v.endpointId,
       chainName: meta.name,
       chainColor: meta.color,
-      hasData: v.requests > 0,
       qosVal,
       routerIds: v.routerIds,
       natural: i,
@@ -126,7 +124,6 @@ export function PMRoster({ rows, activeName, onSelect, timeWindow, loading = fal
           {pageRows.map((r) => {
             const v = r.pm;
             const on = r.name === activeName;
-            const muted = !r.hasData;
             return (
               <tr key={r.name} onClick={() => onSelect(r.name)} style={{ cursor: "pointer", background: on ? "rgba(255,57,0,0.06)" : undefined, boxShadow: on ? "inset 2px 0 0 var(--brand)" : undefined }}>
                 <td>
@@ -172,46 +169,26 @@ export function PMRoster({ rows, activeName, onSelect, timeWindow, loading = fal
                     </span>
                   ) : <span style={{ fontSize: 12, color: "var(--text-4)" }}>—</span>}
                 </td>
-                {/* The four TRAFFIC-derived columns. With no relays there is
-                    honestly nothing to put in them, so they collapse into one
-                    sentence — and that sentence now names what the router DID
-                    do instead, from its own polls. QoS is deliberately NOT in
-                    here: the router scores every upstream whether or not it
-                    routes to it, so folding the score into "no traffic" threw
-                    away a live number. */}
-                {muted ? (
-                  <td colSpan={4} style={{ textAlign: "right", fontSize: 12, fontStyle: "italic", opacity: 0.9 }}>
-                    <span style={{ color: "var(--warn)" }}>
-                      {v.role === "backup" ? "No requests routed here — standing by as backup" : "No requests routed here in this window"}
-                    </span>
-                    {(() => {
-                      const polls = pollSummary(v.polls);
-                      if (polls === null) return null;
-                      return (
-                        <span style={{ color: pollColor(v.polls), fontStyle: "normal" }}
-                          title="The router polls every configured upstream for its latest block, whether or not it routes requests to it. Zero polls means the poll gate suppressed them — served traffic or a peer's poll already refreshed the tip — not that the upstream failed.">
-                          {" · "}{polls}
-                        </span>
-                      );
-                    })()}
-                  </td>
-                ) : (
-                  <>
-                    <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12, color: "var(--text)" }}>{fmtReq(v.requests)}</span></td>
-                    <td style={{ textAlign: "right" }}>{(() => { const a = v.uptime != null ? v.uptime * 100 : null; return a != null ? <span className="gw-mono gw-tnum" style={{ fontSize: 12, color: uptimeColor(a) }}>{a.toFixed(2)}%</span> : <span style={{ fontSize: 12, color: "var(--text-4)" }}>—</span>; })()}</td>
-                    <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{v.p95Ms != null ? Math.round(v.p95Ms) + " ms" : "—"}</span></td>
-                    <td style={{ textAlign: "right" }}>{(() => { const e = v.errorRate != null ? v.errorRate * 100 : null; return e != null ? <span className="gw-mono gw-tnum" style={{ fontSize: 12, color: e < 0.5 ? "var(--text-3)" : e < 1.5 ? "var(--warn)" : "var(--err)" }}>{e.toFixed(2)}%</span> : <span style={{ fontSize: 12, color: "var(--text-4)" }}>—</span>; })()}</td>
-                  </>
-                )}
-                {/* QoS — outside the collapse above, on every row. A stale
-                    score (the routing gauge on an idle row) is MARKED, not
-                    hidden: "we last measured this a while ago" is information,
-                    "—" is not. */}
+                {/* No special case for a row with no traffic: `0` requests and
+                    three em dashes say it in the table's own language, and keep
+                    the columns aligned so the roster stays scannable. The
+                    sentence that used to span these four cells repeated the
+                    BACKUP badge two columns to the left. */}
+                <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12, color: v.requests > 0 ? "var(--text)" : "var(--text-4)" }}>{fmtReq(v.requests)}</span></td>
+                <td style={{ textAlign: "right" }}>{(() => { const a = v.uptime != null ? v.uptime * 100 : null; return a != null ? <span className="gw-mono gw-tnum" style={{ fontSize: 12, color: uptimeColor(a) }}>{a.toFixed(2)}%</span> : <span style={{ fontSize: 12, color: "var(--text-4)" }}>—</span>; })()}</td>
+                <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{v.p95Ms != null ? Math.round(v.p95Ms) + " ms" : "—"}</span></td>
+                <td style={{ textAlign: "right" }}>{(() => { const e = v.errorRate != null ? v.errorRate * 100 : null; return e != null ? <span className="gw-mono gw-tnum" style={{ fontSize: 12, color: e < 0.5 ? "var(--text-3)" : e < 1.5 ? "var(--warn)" : "var(--err)" }}>{e.toFixed(2)}%</span> : <span style={{ fontSize: 12, color: "var(--text-4)" }}>—</span>; })()}</td>
+                {/* QoS on every row, including the ones with no traffic — the
+                    router scores an upstream from its probe loop whether or not
+                    it routes anything there. A score that can be out of date
+                    (the routing gauge on an idle row) is dimmed rather than
+                    labelled: the label was one cryptic word in a numeric column,
+                    and the case only arises on a router too old to publish the
+                    probe-fed gauge. The tooltip carries the why. */}
                 <td style={{ textAlign: "right" }} title={qosHint(v)}>
                   {r.qosVal != null ? (
-                    <span className="gw-mono gw-tnum" style={{ fontSize: 13, fontWeight: 700, color: r.qosVal > 97 ? "var(--ok)" : r.qosVal > 90 ? "var(--warn)" : "var(--err)", opacity: qosIsStale(v) ? 0.55 : 1 }}>
+                    <span className="gw-mono gw-tnum" style={{ fontSize: 13, fontWeight: 700, color: r.qosVal > 97 ? "var(--ok)" : r.qosVal > 90 ? "var(--warn)" : "var(--err)", opacity: qosIsStale(v) ? 0.5 : 1 }}>
                       {Math.round(r.qosVal)}
-                      {qosIsStale(v) && <span style={{ fontSize: 10, fontWeight: 600, color: "var(--text-4)" }}>{" "}old</span>}
                     </span>
                   ) : <span style={{ fontSize: 12, color: "var(--text-4)" }}>—</span>}
                 </td>
