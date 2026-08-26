@@ -110,7 +110,6 @@ export const config = {
     rateLimitMax: envInt("UPSTREAM_RELAY_RATE_LIMIT_MAX", 20),
   },
 
-  tenantId: env("TENANT_ID") ?? "default",
   logLevel: (env("LOG_LEVEL") ?? "info").toLowerCase(),
 
   build: {

@@ -333,7 +333,7 @@ A Kubernetes deployment runs the api as the `…/backend` image and the web as
 | | Value |
 |---|---|
 | Backend liveness / readiness | `/health` · `/health/ready` (**not** `/api/health` — that's the retired v1 path). Readiness pings Prometheus, so give it a timeout ≥3s and a failureThreshold >1, or a Prometheus blip evicts the only replica |
-| Backend env | `PROMETHEUS_URL`, `CORS_ORIGINS` (comma list **or** JSON array), `HELM_VALUES_DIR` (default `/app/helm-values`, matching the values mount), `LOG_LEVEL`, `TENANT_ID`, `RATE_LIMIT_MAX`. No basic auth: `AUTH_USERNAME` / `AUTH_PASSWORD` / `DEBUG` / `CORS_ALLOW_CREDENTIALS` / `AUTH_GATEWAY_*` are v1-only and unread here |
+| Backend env | `PROMETHEUS_URL`, `CORS_ORIGINS` (comma list **or** JSON array), `HELM_VALUES_DIR` (default `/app/helm-values`, matching the values mount), `LOG_LEVEL`, `RATE_LIMIT_MAX`. No basic auth: `AUTH_USERNAME` / `AUTH_PASSWORD` / `DEBUG` / `CORS_ALLOW_CREDENTIALS` / `AUTH_GATEWAY_*` are v1-only and unread here |
 | Frontend runtime env | `DASHBOARD_API_URL` (browser-facing api origin) and `DASHBOARD_GRAFANA_URL`, both read per-request by `GET /api/config` so one image serves any host. `NEXT_PUBLIC_*` are build-time and can't vary per deployment |
 | Frontend liveness / readiness | `/api/config` (`/` also answers — it 307s to `/metrics`) |
 | Values mount | `<HELM_VALUES_DIR>/core/values.yml`, the rendered values. Drives `publicUrls` above, so the pod must roll when they change |
@@ -406,7 +406,7 @@ API (`apps/api/src/config.ts` is the source of truth):
 | `UPSTREAM_RELAY_MAX_BODY_BYTES` | `262144` | upstream responses past this come back `truncated: true` |
 | `UPSTREAM_RELAY_RATE_LIMIT_MAX` | `20` | per IP per minute, tighter than `RATE_LIMIT_MAX` |
 | `LOG_LEVEL` | `info` | |
-| `TENANT_ID` | `default` | parsed, reserved — not read by any route yet |
+| `TENANT_ID` | — | set by the chart, **not read**. The multi-tenant store pins `X-Scope-OrgID` from the credential that authenticated, so the api never names its own org — a config field that did would move the tenancy boundary into a values file |
 | `GIT_COMMIT` / `APP_VERSION` | `unknown` / `0.0.0` | surfaced by `/version` |
 | `NODE_ENV` | `production` | non-prod enables `/docs` + pretty logs |
 
