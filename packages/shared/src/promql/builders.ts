@@ -456,6 +456,54 @@ export function qOptimizerScore(scoreType: string, spec?: string): string {
 }
 
 /**
+ * Optimizer-scope selection scores keyed PER ENDPOINT — the roster's QoS.
+ *
+ * The router computes one set of scores per upstream and publishes it through
+ * two gauges. `rpc_endpoint_selection_score` is written by the routing path, so
+ * it only appears once a relay has been routed and only covers the candidates
+ * of that selection (backups sit in a separate pool consulted on fallback, so
+ * they are usually absent from it entirely). `rpc_optimizer_selection_score` is
+ * written by a sampler that walks EVERY registered upstream on a timer, fed by
+ * the router's proactive probe loop — so it is there with no traffic at all.
+ *
+ * The numbers are the same numbers: both gauges are filled from one iteration
+ * of the optimizer's `CalculateProviderScores`, from the same locals. This is
+ * the same family `qOptimizerScore` reads for the chain-level series; the only
+ * difference here is that the rows are kept per `endpoint_id` instead of
+ * averaged, and every `score_type` comes back in one query.
+ *
+ * It carries no `apiInterface` label (one optimizer per chain), which suits the
+ * roster: rows are keyed by `endpoint_id` alone, so the per-interface gauge
+ * would silently let one interface's score overwrite another's.
+ */
+export function qOptimizerScoresByEndpoint(spec?: string): string {
+  return `${OPTIMIZER_METRICS.selectionScore}${selector({ spec })}`;
+}
+
+/**
+ * Latest-block poll outcomes per endpoint over the window — the liveness a
+ * zero-traffic upstream can still be judged by.
+ *
+ * `kind` picks the counter: successes or failures. Both are incremented by the
+ * per-endpoint chain tracker, which polls every configured upstream (backups
+ * included) whether or not anything routes to it.
+ *
+ * ⚠ Zero on BOTH counters means "not polled in this window", NOT "healthy" and
+ * not "down": the tracker has a gate that suppresses a poll when served traffic
+ * or a peer's poll already refreshed the tip. A caller must treat the
+ * both-zero case as unknown rather than reading 0 failures as good news.
+ */
+export function qEndpointPolls(
+  kind: "ok" | "failed",
+  spec?: string,
+  window: MetricWindow = DEFAULT_WINDOW,
+): string {
+  const metric =
+    kind === "ok" ? ENDPOINT_METRICS.fetchLatestSuccess : ENDPOINT_METRICS.fetchLatestFails;
+  return `sum by (endpoint_id) (increase(${metric}${selector({ spec })}[${rangeFor(window)}]))`;
+}
+
+/**
  * Consistency checks RUN over the window (smartrouter_consistency_total =
  * "relay requests that enforced a minimum seen block").
  */

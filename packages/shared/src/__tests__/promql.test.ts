@@ -34,6 +34,8 @@ import {
   qChainDown,
   qScoreExpr,
   qOptimizerScore,
+  qOptimizerScoresByEndpoint,
+  qEndpointPolls,
   qClientRequestsBy,
   qClientRequestsTotal,
   qConsistencyCaught,
@@ -372,6 +374,29 @@ describe("health / lag / score / gauge builders", () => {
     );
     expect(qOptimizerScore("composite", "ETH1")).toBe(
       'avg(rpc_optimizer_selection_score{spec="ETH1",score_type="composite"})',
+    );
+  });
+  it("keeps optimizer scores per endpoint, unaggregated and un-typed", () => {
+    // The roster needs one row per (endpoint_id, score_type), so unlike
+    // qOptimizerScore this must NOT average and must NOT pin a score_type.
+    expect(qOptimizerScoresByEndpoint("ETH1")).toBe(
+      'rpc_optimizer_selection_score{spec="ETH1"}',
+    );
+    expect(qOptimizerScoresByEndpoint()).toBe("rpc_optimizer_selection_score");
+  });
+  it("reads poll outcomes per endpoint from the tracker's own counters", () => {
+    // These are what an upstream with zero relays still reports — the router
+    // polls every configured endpoint whether or not it routes to it.
+    expect(qEndpointPolls("ok", "ETH1", "1d")).toBe(
+      'sum by (endpoint_id) (increase(rpc_endpoint_fetch_latest_success{spec="ETH1"}[86400s]))',
+    );
+    expect(qEndpointPolls("failed", "ETH1", "1d")).toBe(
+      'sum by (endpoint_id) (increase(rpc_endpoint_fetch_latest_fails{spec="ETH1"}[86400s]))',
+    );
+    // Success and failure must read DIFFERENT families — one typo here and a
+    // failing upstream reports as a passing one.
+    expect(qEndpointPolls("ok", undefined, "1d")).not.toBe(
+      qEndpointPolls("failed", undefined, "1d"),
     );
   });
   it("consistency caught reads the FAILED counter — success = checks that passed", () => {
