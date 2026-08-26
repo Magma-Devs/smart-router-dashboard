@@ -11,12 +11,13 @@ import type { HeroSummary, MetricWindow } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { useFilters } from "@/components/gateway/FiltersProvider";
 import { Tip } from "@/components/gateway/Tip";
+import { SkelValue, SkelLine } from "@/components/gateway/Skel";
 import { TT } from "@/lib/tooltips";
 import { fmtNum } from "@/lib/format";
 
 export function HeroPanel({ tw, spec }: { tw: MetricWindow; spec?: string | null }) {
   const { scopeQ } = useFilters();
-  const { data } = useApi<HeroSummary>(
+  const { data, isLoading } = useApi<HeroSummary>(
     `/api/metrics/dashboard-summary?window=${tw}${spec ? `&spec=${encodeURIComponent(spec)}` : ""}${scopeQ}`,
   );
 
@@ -71,9 +72,14 @@ export function HeroPanel({ tw, spec }: { tw: MetricWindow; spec?: string | null
               {h.label}<Tip text={TT[h.tipKey]!} />
             </div>
             <div className="gw-tnum" style={{ fontSize: 24, fontWeight: 700, letterSpacing: "-0.02em", lineHeight: 1.05, color: h.color, marginTop: 7 }}>
-              {h.value}
+              {isLoading ? <SkelValue h={25} w={104} /> : h.value}
             </div>
-            <div style={{ fontSize: 11, color: "var(--text-4)", marginTop: 6 }}>{h.sub}</div>
+            {/* The sub-line is a CLAIM about the deployment ("cache not enabled
+                on this build"). It must not be made before the answer is in —
+                until then it's a ghost, not a sentence. */}
+            <div style={{ fontSize: 11, color: "var(--text-4)", marginTop: 6, minHeight: "1.5em" }}>
+              {isLoading ? <SkelLine w={168} /> : h.sub}
+            </div>
           </div>
         ))}
       </div>
@@ -87,9 +93,11 @@ export function HeroPanel({ tw, spec }: { tw: MetricWindow; spec?: string | null
               {s.label}<Tip text={TT[s.tipKey]!} />
             </div>
             <div className="gw-tnum" style={{ fontSize: 24, fontWeight: 700, letterSpacing: "-0.02em", lineHeight: 1.05, marginTop: 7 }}>
-              {s.display}
+              {isLoading ? <SkelValue h={25} w={104} /> : s.display}
             </div>
-            <div style={{ fontSize: 11, color: "var(--text-4)", marginTop: 6 }}>{s.note}</div>
+            <div style={{ fontSize: 11, color: "var(--text-4)", marginTop: 6, minHeight: "1.5em" }}>
+              {isLoading ? <SkelLine w={186} /> : s.note}
+            </div>
           </div>
         ))}
       </div>

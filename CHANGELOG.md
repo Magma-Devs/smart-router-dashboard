@@ -5,6 +5,32 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+
+### Fixed
+
+- **The Metrics page no longer answers before it has heard back.** Its seven
+  reads take a few seconds, and every panel treated "no data yet" and "this
+  build does not emit that" as the same state — so a loading page asserted
+  `cache not enabled on this build`, `retry counters not emitted by this build
+  yet`, `across 0 upstreams`, `No upstreams configured yet.`, `consistency
+  check failed — response behind seen head`, and, worst, a green tick reading
+  **No errors on this chain in the selected window**. Those are claims about
+  the deployment, made while the question was still in flight; an operator
+  opening the page mid-incident was told everything was fine. Panels now show
+  a ghost of their own content until the answer arrives, and the honest-empty
+  wording appears only once there is an answer to be honest about.
+
+### Added
+
+- **One loading vocabulary, in `components/gateway/Skel.tsx`.** Content-shaped
+  ghosts sized to the value they replace, sharing a single keyframe and
+  duration: mounted in the same frame they sweep in phase, so the page reads as
+  one surface settling rather than seven spinners. Nothing moves when the data
+  lands — the hero cards measure the same in both states. Ghosts render on the
+  first load only, never on the 15s poll; a refetch that already has numbers
+  keeps them and shows a breathing dot instead, which is also the first cue
+  that a window change is re-reading under the old figures.
+
 ## [0.20.0]
 
 ### Added

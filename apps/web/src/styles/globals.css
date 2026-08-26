@@ -29,6 +29,11 @@
   --hover: rgba(255, 255, 255, 0.04);
   --hover-2: rgba(255, 255, 255, 0.08);
   --shadow-1: 0 1px 0 rgba(255, 255, 255, 0.04) inset;
+  /* Skeleton base + sweep highlight. Opaque, not a translucent overlay: the
+     ghost sits on cards and on the page ground, and a translucent bar reads
+     as two different greys depending on which. */
+  --skel: #1f1f25;
+  --skel-hi: #2c2c34;
 }
 [data-theme="light"] {
   --bg: #fafaf9;
@@ -48,6 +53,10 @@
   --hover: rgba(0, 0, 0, 0.03);
   --hover-2: rgba(0, 0, 0, 0.06);
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.04);
+  /* Light mode sweeps the other way — the highlight is BRIGHTER than the base,
+     so the motion reads as light travelling across, same as dark. */
+  --skel: #e7e7e4;
+  --skel-hi: #f6f6f4;
 }
 [data-density="compact"]     { --row-y: 8px;  --pad-card: 14px; --gap-card: 10px; }
 [data-density="comfortable"] { --row-y: 14px; --pad-card: 22px; --gap-card: 18px; }
@@ -214,6 +223,36 @@ table.gw-table tbody tr:hover td { background: var(--hover); }
 /* ── Animations ── */
 .fade-in { animation: fadeIn 220ms ease both; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+
+/* ── Loading skeletons ──
+   ONE loader for the whole page rather than one spinner per panel. The Metrics
+   page fires seven requests that land at different times; seven spinners would
+   read as seven separate things going wrong. Every ghost here shares this
+   keyframe and this duration and they all mount in the same frame, so the
+   sweep runs IN PHASE across every card — the page reads as a single surface
+   settling. Shapes are content-sized (see `Skel.tsx`), so nothing moves when
+   the real value lands.
+   Ghosts are for the FIRST load only. A skeleton on the 15s revalidate would
+   strobe the page every poll; a refetch keeps its numbers and says so in the
+   header instead. */
+.gw-skel {
+  display: block;
+  border-radius: 5px;
+  background-color: var(--skel);
+  background-image: linear-gradient(90deg, var(--skel) 0%, var(--skel-hi) 50%, var(--skel) 100%);
+  background-size: 300% 100%;
+  animation: gwSkel 1.5s ease-in-out infinite;
+}
+@keyframes gwSkel { from { background-position: 150% 50%; } to { background-position: -50% 50%; } }
+
+/* The "refreshing" cue on a panel that already has numbers — a breathing dot,
+   deliberately not a spinner: the data on screen is still valid. */
+.gw-refreshing { animation: gwBreathe 1.5s ease-in-out infinite; }
+@keyframes gwBreathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .gw-skel, .gw-refreshing { animation: none; }
+}
 
 /* ── Side-sheet ── */
 .gw-sheet-bg { position: fixed; inset: 0; z-index: 40; background: rgba(0,0,0,0.6); }

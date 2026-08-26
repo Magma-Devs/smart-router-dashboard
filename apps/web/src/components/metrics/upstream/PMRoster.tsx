@@ -15,6 +15,7 @@ import { ExplorerBlockLink, ExplorerHomeLink } from "@/components/gateway/Explor
 import { HealthDot } from "@/components/gateway/HealthTag";
 import { Tip } from "@/components/gateway/Tip";
 import { ThCol, useSort } from "@/components/gateway/SortTable";
+import { Refreshing, Skel, SkelRows } from "@/components/gateway/Skel";
 import { useFilters } from "@/components/gateway/FiltersProvider";
 import { useRouterFilter } from "@/hooks/use-router-options";
 
@@ -42,11 +43,17 @@ interface RosterRow {
   qos: number;
 }
 
-export function PMRoster({ rows, activeName, onSelect, timeWindow }: {
+export function PMRoster({ rows, activeName, onSelect, timeWindow, loading = false, refreshing = false }: {
   rows: UpstreamMetrics[];
   activeName: string | null;
   onSelect: (name: string) => void;
   timeWindow: MetricWindow;
+  /** Revalidating with rows already on screen — a cue, never a ghost. */
+  refreshing?: boolean;
+  /** First load only — see `Skel.tsx`. Without it an in-flight roster reads
+   *  as "No upstreams configured yet.", which is a claim about the mounted
+   *  values file rather than about the fetch. */
+  loading?: boolean;
 }) {
   /* Which router the Router column leads with: the filtered-on one when there
      is one, else the first the config names. A shared row under an
@@ -95,7 +102,10 @@ export function PMRoster({ rows, activeName, onSelect, timeWindow }: {
         <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-2)" }}>All upstreams</span>
         <Tip text="Every upstream × chain you've configured. Uptime reflects the time window selected above. Click a row to drill into its full metrics below." />
         <div style={{ flex: 1 }} />
-        <span style={{ fontSize: 11, color: "var(--text-3)" }}>{rows.length} upstream{rows.length === 1 ? "" : "s"} · uptime over {timeWindow}</span>
+        <span style={{ fontSize: 11, color: "var(--text-3)", display: "inline-flex", alignItems: "center", gap: 7 }}>
+          {loading ? <Skel w={168} h={9} /> : <>{rows.length} upstream{rows.length === 1 ? "" : "s"} · uptime over {timeWindow}</>}
+          <Refreshing show={!loading && refreshing} label="Refreshing upstreams" />
+        </span>
       </div>
       <table className="gw-table">
         <thead>
@@ -177,7 +187,11 @@ export function PMRoster({ rows, activeName, onSelect, timeWindow }: {
               </tr>
             );
           })}
-          {rows.length === 0 && (
+          {loading && <SkelRows rows={6} cols={[
+            { w: 156 }, { w: 96 }, { w: 110 }, { w: 84, align: "right" }, { w: 62, align: "right" },
+            { w: 64, align: "right" }, { w: 56, align: "right" }, { w: 58, align: "right" }, { w: 36, align: "right" },
+          ]} />}
+          {!loading && rows.length === 0 && (
             <tr><td colSpan={9} style={{ padding: "24px 16px", textAlign: "center", color: "var(--text-4)", fontSize: 13 }}>No upstreams configured yet.</td></tr>
           )}
         </tbody>
