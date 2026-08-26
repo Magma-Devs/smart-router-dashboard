@@ -5,6 +5,14 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Removed
+
+- **`TENANT_ID` is no longer read into config.** The api never named its own
+  org: the multi-tenant store pins `X-Scope-OrgID` from the credential that
+  authenticated, so a config field holding a tenant name was an invitation to
+  move the tenancy boundary into a values file. The chart still sets the env;
+  nothing reads it.
+
 ## [0.19.0]
 
 ### Added
