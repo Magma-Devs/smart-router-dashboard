@@ -5,6 +5,7 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.20.1]
 
 ### Fixed
 
@@ -702,7 +703,6 @@ chain can have several routers.
   chains.
 - **The Upstreams page honours the router filter too**, in all three groupings,
   since the same selection is shared across the app.
-
 
 ## [0.12.0]
 
