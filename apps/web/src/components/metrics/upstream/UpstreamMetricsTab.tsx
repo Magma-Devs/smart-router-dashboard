@@ -99,7 +99,6 @@ export function UpstreamMetricsTab({ timeWindow, chainFilter }: {
                     <span className="gw-mono gw-tnum" style={{ fontWeight: 700, color: q > 97 ? "var(--ok)" : q > 90 ? "var(--warn)" : "var(--err)", opacity: qosIsStale(pm) ? 0.55 : 1 }}>
                       {Math.round(q)}
                     </span>
-                    {qosIsStale(pm) && <span style={{ color: "var(--text-4)" }}> · last routed selection</span>}
                   </div>
                 );
               })()}

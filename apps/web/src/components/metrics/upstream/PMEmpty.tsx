@@ -38,9 +38,9 @@ export function PMEmpty({
   const watched = qos !== null || polled || pm.latestBlock !== null;
   const roleLine =
     pm.role === "backup"
-      ? "It is configured as a backup, so the router only reaches for it when the primaries cannot serve."
+      ? "A backup only serves when the primaries cannot."
       : pm.role === "primary"
-        ? "It is configured as a primary, so no traffic here over a busy window is worth a look."
+        ? "On a primary over a busy window, that is worth a look."
         : null;
 
   return (
@@ -52,12 +52,11 @@ export function PMEmpty({
         <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text-2)" }}>
           No requests routed to {name} in this window
         </div>
-        <div style={{ fontSize: 13, color: "var(--text-3)", marginTop: 6, maxWidth: 460, lineHeight: 1.6 }}>
-          Traffic, latency and error-rate panels are measured from real requests, so they stay
-          empty until the router sends some. {roleLine}{roleLine ? " " : ""}
+        <div style={{ fontSize: 13, color: "var(--text-3)", marginTop: 6, maxWidth: 420, lineHeight: 1.6 }}>
+          Traffic, latency and error rate need real requests. {roleLine}{roleLine ? " " : ""}
           {watched
-            ? "The router still watches this upstream — what it knows is below."
-            : "It is not reporting anything else about this upstream either — no score, no answered block poll, no tip."}
+            ? "The router still watches it:"
+            : "Nothing else is being reported for it either."}
         </div>
       </div>
 
