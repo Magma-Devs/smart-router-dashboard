@@ -27,7 +27,6 @@ import {
   type DirectTarget,
 } from "./direct-request";
 import {
-  groupByInternalPath,
   headCommands,
   httpVariantOf,
   ifaceCanFire,
@@ -45,8 +44,9 @@ import {
   COMMON_METHODS,
   commandKey,
   commandSignature,
-  friendlyName,
 } from "./method-label";
+import { MethodPicker, type PickerRow } from "./method-picker";
+import { RUNNABILITY_HINT } from "./method-search";
 import { JsonDisplay } from "./json-display";
 import {
   grpcDiscoveryCli,
@@ -700,7 +700,6 @@ export function TryMeDrawer({
 
   const handleTierChange = (tier: Tier) => {
     setSelectedTier(tier);
-    setShowAllCmds(false);
     // Snap selection to the first method in the newly-selected tier so
     // the command dropdown lands on a real value rather than ""/empty.
     if ((cfg[tier]?.length ?? 0) > 0) {
@@ -708,27 +707,28 @@ export function TryMeDrawer({
     }
   };
 
-  /** Commands in the selected tier, with their catalog index kept so
-   *  keyOf(tier, i) stays valid however the list is filtered. Read off
-   *  `flat`, not `cfg`, so the dropdown can never offer a command the
+  /** Every command the transport can offer, in the picker's row shape. Read
+   *  off `flat`, not `cfg`, so the picker can never offer a command the
    *  transport filter has removed — a subscription listed over plain HTTP
-   *  selected to nothing, because `selected` looks it up in `flat`. */
-  const tierCmds = useMemo(
-    () =>
-      flat
-        .filter((m) => m.tier === selectedTier)
-        .map((m) => ({ cmd: m.command, i: m.index })),
-    [flat, selectedTier],
+   *  selected to nothing, because `selected` looks it up in `flat`.
+   *
+   *  All tiers, not just the selected one: the picker's search reaches across
+   *  them, so someone typing `debug_trace…` from the Regular tab finds it. */
+  const pickerRows = useMemo<PickerRow[]>(
+    () => flat.map((m) => ({ tier: m.tier, index: m.index, cmd: m.command })),
+    [flat],
   );
-  /** What the dropdown opens on: commands that run AS-IS on this chain.
-   *  Curated names lead (COMMON_METHODS key order is the display order), the
-   *  rest of the runnable set follows in catalog order. Anything needing
-   *  params is behind "Show all", labelled. */
-  const curatedCmds = useMemo(() => {
+  /** The short list the picker opens on: commands that run AS-IS on this
+   *  chain. Curated names lead (COMMON_METHODS key order is the display
+   *  order), the rest of the runnable set follows in catalog order. Everything
+   *  else is one keystroke of search — or one click on the row at the end of
+   *  the list — away, under a heading that says what it is. */
+  const headRows = useMemo<PickerRow[]>(() => {
+    const tierRows = pickerRows.filter((row) => row.tier === selectedTier);
     const order = Object.keys(COMMON_METHODS[storageKey(iface)] ?? {});
     const rank = new Map(order.map((key, i) => [key, i]));
     const head = headCommands(
-      tierCmds.map(({ cmd }) => cmd),
+      tierRows.map((row) => row.cmd),
       (cmd) => rank.has(commandKey(iface, cmd)),
     ).sort((a, b) => {
       const ra = rank.get(commandKey(iface, a)) ?? Number.MAX_SAFE_INTEGER;
@@ -736,25 +736,22 @@ export function TryMeDrawer({
       return ra - rb;
     });
     return head
-      .map((cmd) => tierCmds.find((row) => row.cmd === cmd))
-      .filter((row): row is (typeof tierCmds)[number] => !!row);
-  }, [tierCmds, iface]);
-  const curatedCount = curatedCmds.length;
-  /** What the dropdown lists: the curated subset until the user expands, with
-   *  the current selection kept in view when it isn't part of it. */
-  const shownCmds = useMemo(() => {
-    if (showAllCmds || curatedCount === 0) return tierCmds;
-    if (curatedCmds.some(({ i }) => keyOf(selectedTier, i) === selKey)) return curatedCmds;
-    return [
-      ...tierCmds.filter(({ i }) => keyOf(selectedTier, i) === selKey),
-      ...curatedCmds,
-    ];
-  }, [showAllCmds, curatedCount, curatedCmds, tierCmds, selectedTier, selKey]);
-  /** The dropdown's rows grouped by internal path, so a spec that splits an
-   *  interface across versions reads as versions (`/v2` … `/v3`) instead of
-   *  one alphabetical run where `/estimateFee` appears twice with nothing to
-   *  tell the two apart. */
-  const shownGroups = useMemo(() => groupByInternalPath(shownCmds), [shownCmds]);
+      .map((cmd) => tierRows.find((row) => row.cmd === cmd))
+      .filter((row): row is PickerRow => !!row);
+  }, [pickerRows, selectedTier, iface]);
+  const selectedRow = useMemo<PickerRow | null>(
+    () =>
+      selected
+        ? { tier: selected.tier, index: selected.index, cmd: selected.command }
+        : null,
+    [selected],
+  );
+  /** Picking a search result from another tier moves the drawer to that tier,
+   *  so the Request Type chips keep agreeing with what is selected. */
+  const handlePick = (row: PickerRow) => {
+    setSelectedTier(row.tier);
+    handleSelect(keyOf(row.tier, row.index));
+  };
 
   const built = useMemo(() => {
     if (!selected) return null;
@@ -1337,48 +1334,16 @@ export function TryMeDrawer({
           <>
           <div>
             <div style={SECTION_LABEL}>Command</div>
-            <select
-              value={selKey}
-              onChange={(e) => handleSelect(e.target.value)}
-              style={{ ...FIELD_INPUT, fontSize: 12 }}
-            >
-              {shownGroups.map(([path, rows]) => {
-                const options = rows.map(({ cmd, i }) => {
-                  // Curated name → the catalog's own label → one derived from
-                  // the method id or REST path, so the "Show all" long tail
-                  // reads like the curated head instead of dropping to bare
-                  // ids.
-                  const friendly = friendlyName(iface, cmd);
-                  const id = commandKey(iface, cmd);
-                  // The head runs as-is; the long tail behind it doesn't, so
-                  // say which entries want something typed in first.
-                  const suffix = cmd.needsInput ? " — needs params" : "";
-                  return (
-                    <option key={i} value={keyOf(selectedTier, i)}>
-                      {friendly ? `${friendly} · ${id}${suffix}` : `${id}${suffix}`}
-                    </option>
-                  );
-                });
-                // Ungrouped when the interface serves everything from one
-                // place — which is every chain but the handful that split an
-                // interface across internal paths.
-                return path === null ? (
-                  options
-                ) : (
-                  <optgroup key={path} label={path}>
-                    {options}
-                  </optgroup>
-                );
-              })}
-            </select>
-            {curatedCount > 0 && tierCmds.length > curatedCount && (
-              <button
-                onClick={() => setShowAllCmds((s) => !s)}
-                style={{ marginTop: 6, border: "none", background: "none", color: "var(--brand)", cursor: "pointer", padding: 0, fontSize: 11, fontWeight: 600, fontFamily: "inherit" }}
-              >
-                {showAllCmds ? "Show runnable methods only" : `Show all ${tierCmds.length} methods`}
-              </button>
-            )}
+            <MethodPicker
+              rows={pickerRows}
+              tier={selectedTier}
+              head={headRows}
+              selected={selectedRow}
+              iface={iface}
+              expanded={showAllCmds}
+              onExpandedChange={setShowAllCmds}
+              onSelect={handlePick}
+            />
             {selected && (
               <div className="gw-row" style={{ gap: 7, marginTop: 6, alignItems: "center" }}>
                 <span className="gw-mono" style={{ fontSize: 11, color: "var(--text-3)" }}>
@@ -1394,6 +1359,15 @@ export function TryMeDrawer({
                     style={{ fontSize: 10, color: "var(--warn)", background: "rgba(251,191,36,0.10)", borderColor: "rgba(251,191,36,0.25)" }}
                   >
                     needs params
+                  </span>
+                )}
+                {!selected.command.needsInput && !selected.command.ready && (
+                  <span
+                    className="gw-tag"
+                    title={RUNNABILITY_HINT.unverified}
+                    style={{ fontSize: 10, color: "var(--text-3)" }}
+                  >
+                    not verified
                   </span>
                 )}
                 {/* Which version of the API this one belongs to. The spec

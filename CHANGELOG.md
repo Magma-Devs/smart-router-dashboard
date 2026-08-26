@@ -5,6 +5,35 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Added
+
+- **The Try-it method picker searches.** A customer opened a ticket for
+  `eth_getBlockByHash`, which the catalog has carried for ETH1 and 42 other EVM
+  chains all along — behind "Show all", under a native `<select>` whose popup
+  covers the very button that would have said so. Typing a method name now
+  finds it whatever list it is in, across every tier: `getblockbyhash`,
+  `get block by hash` and `eth_getblockby` all reach the same command, and
+  `bank balances` reaches `/cosmos/bank/v1beta1/balances` past the version
+  segment that stops a contiguous match. A query that matches nothing says so
+  instead of showing a blank list.
+
+### Changed
+
+- **The picker says how much of the list it is showing, and what the rest is.**
+  Twelve entries read as a complete list. The short list is now headed
+  `Ready to send · showing 12 of 52`, "Show all N methods" is the last row
+  INSIDE the list rather than a button underneath it, and expanding splits the
+  tier into `Ready to send` / `Needs params` / `Not verified` with counts. The
+  short list itself is unchanged — it is a promise that everything in it runs
+  as-is, and a Cosmos LCD's hundred paths are why it exists.
+- **A command the catalog cannot classify now says so.** `ready` and
+  `needsInput` are claims the generator can prove; a command with neither is
+  one nobody has checked. That third state rendered as silence, which reads as
+  "safe to send" — it is how `eth_getBlockByHash` came to fire `[]` at a node
+  and fail with an unexplained RPC error. It carries a neutral `not verified`
+  tag, deliberately distinct from the amber `needs params`: we know one takes
+  input, and we do not know about the other.
+
 ### Removed
 
 - **`TENANT_ID` is no longer read into config.** The api never named its own
