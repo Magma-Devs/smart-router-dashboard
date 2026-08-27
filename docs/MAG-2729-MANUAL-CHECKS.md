@@ -39,10 +39,12 @@ admin yet to invite anybody.
 profile across every window, so signing in twice there gives you one session,
 not two. That is why check 8 needs a genuinely different browser.
 
-### The four checks that need a terminal
+### The three checks that need a terminal
 
-Not a shortcoming of the runbook — three of them are asking about things the UI
-deliberately does not offer.
+Not a shortcoming of the runbook — all three are asking about things the UI
+deliberately does not offer. **Check 8 used to be here and no longer is**: the
+sign-in page now has a *Forgot your password?* link, so the whole reset flow is
+clickable.
 
 | Check | Why |
 |---|---|
@@ -391,32 +393,38 @@ remove yourself."*
 2. **Admin window** → Account → **Active sessions** shows only *your* sessions,
    so to see hers, leave both her windows open and trust the effect below.
 
-**Now the reset.** On managed, Dana asks for it herself:
+**Now the reset — entirely in the browser.** On managed, Dana asks for it
+herself.
 
-```bash
-curl -s -X POST localhost:8000/auth/password/forgot \
-  -H 'content-type: application/json' \
-  -d '{"email":"dana.okonkwo@dfns.co"}' -w '\nstatus: %{http_code}\n'
-```
-
-3. `202`. Run it again with an address that does not exist — **also `202`**.
-   Anything else would turn this into a way to ask who is a member.
-4. Open http://localhost:8005. The reset email is there: subject *"Reset your
+3. **Incognito window** — sign Dana out, so you are on `/login` as a stranger
+   would be. Click **Forgot your password?** under the Sign in button.
+4. Enter `dana.okonkwo@dfns.co` → **Send reset link**. It says **"Check your
+   inbox"**.
+5. **Do the enumeration check while you are here.** Go back and submit
+   `nobody@nowhere.co`, an address with no account. **Word for word the same
+   screen.** Anything else would turn this form into a way to ask who is a
+   member — and the inbox stays empty, so nothing was sent either.
+6. Open http://localhost:8005. Dana's reset email is there: subject *"Reset your
    Smart Router password"*, the link as text as well as a button, *"This link
    expires in 1 hour"*, and a last line saying what to do if it wasn't her.
-5. Open the link in the **incognito window**. The page shows **her address**
-   under the heading, so somebody with two accounts knows which one they are
-   changing, and the rule *"At least 8 characters. Any characters, including
-   spaces."* **before** the field rather than after a failure.
-6. Set a new password → **Save password**.
-7. It says *"Your password has been changed. You have been signed out everywhere
+7. Click the link. The page shows **her address** under the heading, so somebody
+   with two accounts knows which one they are changing, and the rule *"At least
+   8 characters. Any characters, including spaces."* is shown **before** the
+   field rather than after a failure.
+8. Set a new password → **Save password**.
+9. It says *"Your password has been changed. You have been signed out everywhere
    else."* and offers **Sign in** — it does **not** drop her into the dashboard.
    A reset link that signs you in is a reset link worth stealing.
-8. Switch to **Safari**. Click anything. She is signed out.
-9. Sign in with the **new** password — works. Try the old one — refused.
+10. Switch to **Safari**. Click anything. She is signed out.
+11. Sign in with the **new** password — works. Try the old one — refused.
 
-✅ **Passes if:** 202 either way, no automatic sign-in, both prior sessions dead,
-new password works and the old one does not.
+> **On-prem** there is no mail server, so the same button says so and points at
+> an administrator. Use **Reset link** on her row in the Team page instead; the
+> rest of the steps are identical.
+
+✅ **Passes if:** both addresses give the same screen and only the real one
+receives mail, there is no automatic sign-in, both prior sessions are dead, and
+the new password works where the old one does not.
 
 ---
 
@@ -521,7 +529,7 @@ delivery**, which is the only difference between the two shapes:
 |---|---|---|
 | Check 2 | The whole check | **Does not apply** — there is no email, by design |
 | Invitation | Emailed; the admin never sees the link | The dialog shows the link **once**; the admin passes it on |
-| Reset | Dana asks via forgot-password | An admin uses **Reset link** on her row; there is no forgot-password (it 404s — there is nowhere to send it) |
+| Reset | Dana clicks **Forgot your password?** and gets an email | The same button says there is no mail server and points at an administrator; use **Reset link** on her row instead |
 | Inbox | http://localhost:8005 | Nothing to look at |
 | Dead reset link | *"Request a new one and we'll email it to you"* | *"Ask an administrator to generate a new one"* |
 | Check 1 | Identical | Identical — `/setup` is gated on zero users, not on the mode |
