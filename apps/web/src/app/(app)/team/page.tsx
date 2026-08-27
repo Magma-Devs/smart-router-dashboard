@@ -12,13 +12,13 @@
 import { useState } from "react";
 import useSWR from "swr";
 import { ApiError, apiGet, apiDownload, apiSend } from "@/lib/api-client";
-import { roleAtLeast, type Role } from "@sr/shared";
-import { getAuthState } from "@/lib/auth-store";
+import { type Role } from "@sr/shared";
 import { InitialsAvatar, RoleBadge, relativeTime, shortDate } from "@/components/team/bits";
 import { InviteModal } from "@/components/team/InviteModal";
 import { ChangeRoleModal, type MemberSummary } from "@/components/team/ChangeRoleModal";
 import { RemoveMemberModal } from "@/components/team/RemoveMemberModal";
 import { ResetLinkModal } from "@/components/team/ResetLinkModal";
+import { useMe } from "@/hooks/use-me";
 
 const TABS = ["members", "invites"] as const;
 type Tab = (typeof TABS)[number];
@@ -61,8 +61,8 @@ export default function TeamPage() {
   const members = useSWR<MembersResponse>("/api/team/members", apiGet, { refreshInterval: 30000 });
   // Only admins may read invitations, so don't even ask otherwise — a 403 in
   // the console is noise, not information.
-  const me = getAuthState().user;
-  const isAdmin = roleAtLeast(me?.role, "admin");
+  // Both from the live row, not the session — see `useMe`.
+  const { me, isAdmin } = useMe();
   const invites = useSWR<InvitesResponse>(isAdmin ? "/api/team/invites" : null, apiGet);
 
   // SWR reports the thrown ApiError; 401 is the one worth wording differently,

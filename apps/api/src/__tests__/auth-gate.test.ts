@@ -308,3 +308,40 @@ describe("POST /auth/sign-out", () => {
     expect((await get(other.token)).statusCode).not.toBe(401);
   });
 });
+
+describe("GET /api/account/me", () => {
+  /** The endpoint the UI reads its own role from. It exists because the
+   *  session's copy is stamped at sign-in and never refreshed, so the screen
+   *  disagreed with the api for up to the 30-day session lifetime. */
+  it("reports the role from the row, not the one in the token", async () => {
+    app = await buildGatedApp();
+    // The row says read_only; the token deliberately claims admin.
+    const { user, session } = await signedInUser("read_only");
+    const token = await mint({ sub: user.id, sid: session.id, role: "admin" });
+
+    const asRead = await app!.inject({
+      method: "GET",
+      url: "/api/account/me",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(asRead.statusCode).toBe(200);
+    // The token says admin. The row says read_only. The row wins.
+    expect(asRead.json().role).toBe("read_only");
+
+    await t.db.update(users).set({ role: "admin" }).where(eq(users.id, user.id));
+
+    const asAdmin = await app!.inject({
+      method: "GET",
+      url: "/api/account/me",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    // Same token, no new sign-in.
+    expect(asAdmin.json().role).toBe("admin");
+  });
+
+  it("refuses an anonymous caller", async () => {
+    app = await buildGatedApp();
+    const res = await app.inject({ method: "GET", url: "/api/account/me" });
+    expect(res.statusCode).toBe(401);
+  });
+});
