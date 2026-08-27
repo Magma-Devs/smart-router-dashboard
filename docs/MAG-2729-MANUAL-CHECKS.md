@@ -312,9 +312,19 @@ This is the one worth watching, because it is the difference between a role
 that is checked per request and one baked into a token at sign-in.
 
 1. **Admin window** → Team → Dana's row → **Change role** → **Admin**.
-2. **Incognito window** — do not sign out, do not reload yet. Reload Team. The
-   **Invite** button is now there, and her rows have **Change role** and
-   **Remove**. Same session throughout.
+2. **Incognito window** — reload Team. Her badge now reads **Admin**, because
+   the member list comes from the api, which reads the row.
+
+   **The buttons do not appear**, and that is a known defect rather than
+   something you have done wrong. The web stamps the role into the session once
+   at sign-in and never refreshes it (`jwt()` in `auth.config.ts` only sets
+   `token.role` when `user` is present, which is the sign-in call), so the page
+   still believes she is an Approver. It cuts both ways: a *demoted* person
+   keeps seeing admin buttons until they sign out, and every click 403s.
+
+   Nothing unsafe follows from it — the api authorises from the row on every
+   request, which is what this check is actually about — but the screen and the
+   server disagree until the next sign-in. The steps below are the real check.
 3. Prove the api agrees, using the **same token from check 5**:
 
    ```bash
