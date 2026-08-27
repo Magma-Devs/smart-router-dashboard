@@ -12,8 +12,8 @@
 import { useState } from "react";
 import useSWR from "swr";
 import { apiGet, apiDownload, apiSend } from "@/lib/api-client";
-import { roleAtLeast, type Role } from "@sr/shared";
-import { getAuthState } from "@/lib/auth-store";
+import { type Role } from "@sr/shared";
+import { useMe } from "@/hooks/use-me";
 import { InitialsAvatar, RoleBadge, relativeTime, shortDate } from "@/components/team/bits";
 import { InviteModal } from "@/components/team/InviteModal";
 import { ChangeRoleModal, type MemberSummary } from "@/components/team/ChangeRoleModal";
@@ -61,13 +61,8 @@ export default function TeamPage() {
   const [resetting, setResetting] = useState<MemberSummary | null>(null);
 
   const members = useSWR<MembersResponse>("/api/team/members", apiGet, { refreshInterval: 30000 });
-  const me = getAuthState().user;
-  // My role as the api enforces it: the row, which this list is and which
-  // refreshes every 30s. The token's role is the one I signed in with and can be
-  // a month stale, so after a role change it would draw controls that 403 and
-  // hide ones that work. Until the list arrives, no admin controls.
-  const myRole = members.data?.members.find((m) => m.email === me?.email)?.role;
-  const isAdmin = roleAtLeast(myRole, "admin");
+  // Both from the live row, not the session — see `useMe`.
+  const { me, isAdmin } = useMe();
   // Only admins may read invitations, so don't even ask otherwise — a 403 in
   // the console is noise, not information.
   const invites = useSWR<InvitesResponse>(isAdmin ? "/api/team/invites" : null, apiGet);
