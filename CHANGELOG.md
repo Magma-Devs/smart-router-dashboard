@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.20.3]
+
 ### Fixed
 
 - **Upstreams → By upstream: the rows did not say which chain they were.** The
