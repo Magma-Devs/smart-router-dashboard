@@ -1,0 +1,41 @@
+{
+  "block": {
+    "label": "/block/<height>",
+    "proven": "etherscan and every fork, blockscout, mempool.space and litecoinspace, Solana Explorer, Subscan, Starkscan, allo.info, Lora, HashScan, Aptos Explorer, EOS Authority, xmrchain — the common shape, and by far the most watched",
+    "block": "{base}/block/{block}"
+  },
+  "blocks": {
+    "label": "/blocks/<height>",
+    "proven": "mintscan — proven by cosmos/chain-registry's own block_page on COSMOSHUB, which is what lets its other deployments reuse it",
+    "block": "{base}/blocks/{block}"
+  },
+  "checkpoint": {
+    "label": "/checkpoint/<n>",
+    "proven": "Suiscan, IOTA Explorer — Sui and IOTA count checkpoints, and a checkpoint number is what the router reports as their latest block",
+    "block": "{base}/checkpoint/{block}"
+  },
+  "ledger": {
+    "label": "/ledger/<sequence>",
+    "proven": "xrpscan, stellar.expert — a ledger sequence is this family's block height",
+    "block": "{base}/ledger/{block}"
+  },
+  "slot": {
+    "label": "/slot/<slot>",
+    "proven": "beaconcha.in — the consensus layer counts slots, which is what the router reports as a beacon spec's latest block",
+    "block": "{base}/slot/{block}"
+  },
+  "root": {
+    "label": "/<height>",
+    "proven": "tzkt — one root namespace resolves levels, operation hashes and addresses alike",
+    "block": "{base}/{block}"
+  },
+  "hash-routed": {
+    "label": "/#/block/<height>",
+    "proven": "tronscan — client-side routing puts every path behind a #, which is part of the URL the browser needs",
+    "block": "{base}/#/block/{block}"
+  },
+  "home": {
+    "label": "Home page only",
+    "proven": "n/a — the explorer exists but no height-addressed block page has been proven for it. explorerBlockUrl() returns null and only the home URL is offered. A terminal state, not a TODO: an honest home link beats a block link that lands on an empty page."
+  }
+}

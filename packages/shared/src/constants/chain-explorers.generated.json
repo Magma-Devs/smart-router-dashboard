@@ -1,0 +1,2285 @@
+{
+  "0G": [
+    {
+      "name": "0G Chainscan",
+      "url": "https://chainscan.0g.ai",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#16661"
+    }
+  ],
+  "0GT": [
+    {
+      "name": "0G Chainscan",
+      "url": "https://chainscan-galileo.0g.ai",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#16602"
+    }
+  ],
+  "AGR": [
+    {
+      "name": "Atomscan",
+      "url": "https://atomscan.com/agoric",
+      "kind": "blocks",
+      "verified": "browser 2026-08-18 — block page watched rendering the requested height",
+      "source": "sweep 2026-08-18 — agoric.explorers.guru redirects to explorers.guru, which no longer carries the chain"
+    }
+  ],
+  "AKASH": [
+    {
+      "name": "mintscan",
+      "url": "https://www.mintscan.io/akash",
+      "kind": "blocks",
+      "verified": "inherited — cosmos/chain-registry proves www.mintscan.io serves /blocks/{block} on another chain; this is the same host",
+      "source": "cosmos/chain-registry/akash"
+    },
+    {
+      "name": "ezstaking",
+      "url": "https://ezstaking.app/akash",
+      "kind": "blocks",
+      "verified": "inherited — cosmos/chain-registry proves ezstaking.app serves /blocks/{block} on another chain; this is the same host",
+      "source": "cosmos/chain-registry/akash"
+    }
+  ],
+  "AKASHT": [
+    {
+      "name": "ping.pub",
+      "url": "https://explorer.sandbox-2.aksh.pw/akash",
+      "kind": "home",
+      "verified": "registry — the registry row supplies no block page and this host proved none elsewhere, so only the home page is offered",
+      "source": "cosmos/chain-registry/testnets/akashtestnet"
+    }
+  ],
+  "ALEO": [
+    {
+      "name": "Aleoscan",
+      "url": "https://aleoscan.io",
+      "kind": "home",
+      "verified": "unverified — bot challenge (HTTP 403) from the build network",
+      "source": "curated"
+    }
+  ],
+  "ALFAJORES": [
+    {
+      "name": "Blockscout",
+      "url": "https://celo-alfajores.blockscout.com",
+      "kind": "block",
+      "verified": "browser 2026-08-18 — block page watched rendering the requested height",
+      "source": "sweep 2026-08-18 — alfajores.celoscan.io now redirects to sepolia.celoscan.io, a DIFFERENT Celo testnet"
+    }
+  ],
+  "ALGORAND": [
+    {
+      "name": "Allo",
+      "url": "https://allo.info",
+      "kind": "block",
+      "verified": "browser 2026-08-17 — block page watched rendering the requested height",
+      "source": "curated"
+    }
+  ],
+  "ALGORANDT": [
+    {
+      "name": "Lora",
+      "url": "https://lora.algokit.io/testnet",
+      "kind": "block",
+      "verified": "browser 2026-08-17 — block page watched rendering the requested height",
+      "source": "curated — testnet.allo.info does not resolve"
+    }
+  ],
+  "APT1": [
+    {
+      "name": "Aptos Explorer",
+      "url": "https://explorer.aptoslabs.com",
+      "kind": "block",
+      "suffix": "?network=mainnet",
+      "verified": "browser 2026-08-17 — block page watched rendering the requested height",
+      "source": "curated"
+    }
+  ],
+  "APTOST": [
+    {
+      "name": "Aptos Explorer",
+      "url": "https://explorer.aptoslabs.com",
+      "kind": "block",
+      "suffix": "?network=testnet",
+      "verified": "browser 2026-08-17 — block page watched rendering the requested height (mainnet network; the suffix selects the network)",
+      "source": "curated"
+    }
+  ],
+  "ARBITRUM": [
+    {
+      "name": "Arbiscan",
+      "url": "https://arbiscan.io",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#42161"
+    },
+    {
+      "name": "Arbitrum Explorer",
+      "url": "https://explorer.arbitrum.io",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#42161"
+    }
+  ],
+  "ARBITRUMN": [
+    {
+      "name": "Arbitrum Nova Chain Explorer",
+      "url": "https://nova-explorer.arbitrum.io",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#42170"
+    }
+  ],
+  "ARBITRUMS": [
+    {
+      "name": "arbiscan-sepolia",
+      "url": "https://sepolia.arbiscan.io",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#421614"
+    },
+    {
+      "name": "Arbitrum Sepolia Rollup Testnet Explorer",
+      "url": "https://sepolia-explorer.arbitrum.io",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#421614"
+    }
+  ],
+  "ARWEAVE": [
+    {
+      "name": "ViewBlock",
+      "url": "https://viewblock.io/arweave",
+      "kind": "block",
+      "verified": "unverified — home reachable, deep-link shape not watched",
+      "source": "curated"
+    }
+  ],
+  "ASTAR": [
+    {
+      "name": "subscan",
+      "url": "https://astar.subscan.io",
+      "kind": "home",
+      "verified": "registry — the chainlist row declares no url standard, so only the home page is offered",
+      "source": "ethereum-lists/chains#592"
+    },
+    {
+      "name": "blockscout",
+      "url": "https://blockscout.com/astar",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#592"
+    }
+  ],
+  "ASTART": [
+    {
+      "name": "Blockscout",
+      "url": "https://shibuya.blockscout.com",
+      "kind": "block",
+      "verified": "browser 2026-08-17 — block page watched rendering the requested height",
+      "source": "curated — chainlist's row for this chain id is a DIFFERENT chain (Japan Open Chain also claims 81)"
+    }
+  ],
+  "AVALANCHEC": [
+    {
+      "name": "Etherscan",
+      "url": "https://snowscan.xyz",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#43114"
+    },
+    {
+      "name": "Routescan",
+      "url": "https://snowtrace.io",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#43114"
+    }
+  ],
+  "AVALANCHECT": [
+    {
+      "name": "Etherscan",
+      "url": "https://testnet.snowscan.xyz",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#43113"
+    },
+    {
+      "name": "Routescan",
+      "url": "https://testnet.snowtrace.io",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#43113"
+    }
+  ],
+  "AVALANCHEP": [
+    {
+      "name": "Avalanche Subnets",
+      "url": "https://subnets.avax.network/p-chain",
+      "kind": "home",
+      "verified": "browser 2026-08-18 — home page only: /block/<n> renders the P-Chain explorer without the requested block",
+      "source": "curated"
+    }
+  ],
+  "AVALANCHEPT": [
+    {
+      "name": "Avalanche Builder Hub",
+      "url": "https://build.avax.network/tools/p-chain",
+      "kind": "home",
+      "verified": "browser 2026-08-18 — the P-Chain tool page loads; no height-addressed block page",
+      "source": "sweep 2026-08-18 — subnets-test.avax.network now redirects here"
+    }
+  ],
+  "AVAX": [
+    {
+      "name": "Etherscan",
+      "url": "https://snowscan.xyz",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#43114"
+    },
+    {
+      "name": "Routescan",
+      "url": "https://snowtrace.io",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#43114"
+    }
+  ],
+  "AVAXT": [
+    {
+      "name": "Etherscan",
+      "url": "https://testnet.snowscan.xyz",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#43113"
+    },
+    {
+      "name": "Routescan",
+      "url": "https://testnet.snowtrace.io",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#43113"
+    }
+  ],
+  "AXELAR": [
+    {
+      "name": "mintscan",
+      "url": "https://www.mintscan.io/axelar",
+      "kind": "blocks",
+      "verified": "inherited — cosmos/chain-registry proves www.mintscan.io serves /blocks/{block} on another chain; this is the same host",
+      "source": "cosmos/chain-registry/axelar"
+    },
+    {
+      "name": "axelarscan",
+      "url": "https://axelarscan.io",
+      "kind": "home",
+      "verified": "registry — the registry row supplies no block page and this host proved none elsewhere, so only the home page is offered",
+      "source": "cosmos/chain-registry/axelar"
+    }
+  ],
+  "AXELART": [
+    {
+      "name": "mintscan",
+      "url": "https://mintscan.io/axelar-testnet",
+      "kind": "home",
+      "verified": "registry — the registry row supplies no block page and this host proved none elsewhere, so only the home page is offered",
+      "source": "cosmos/chain-registry/testnets/axelartestnet"
+    },
+    {
+      "name": "axelarscan",
+      "url": "https://testnet.axelarscan.io",
+      "kind": "home",
+      "verified": "registry — the registry row supplies no block page and this host proved none elsewhere, so only the home page is offered",
+      "source": "cosmos/chain-registry/testnets/axelartestnet"
+    }
+  ],
+  "BABYLON": [
+    {
+      "name": "mintscan",
+      "url": "https://www.mintscan.io/babylon",
+      "kind": "blocks",
+      "verified": "inherited — cosmos/chain-registry proves www.mintscan.io serves /blocks/{block} on another chain; this is the same host",
+      "source": "cosmos/chain-registry/babylon"
+    },
+    {
+      "name": "Nodes Guru",
+      "url": "https://babylon.explorers.guru",
+      "kind": "home",
+      "verified": "registry — the registry row supplies no block page and this host proved none elsewhere, so only the home page is offered",
+      "source": "cosmos/chain-registry/babylon"
+    }
+  ],
+  "BASE": [
+    {
+      "name": "basescan",
+      "url": "https://basescan.org",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#8453"
+    },
+    {
+      "name": "basescout",
+      "url": "https://base.blockscout.com",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#8453"
+    }
+  ],
+  "BASES": [
+    {
+      "name": "basescan-sepolia",
+      "url": "https://sepolia.basescan.org",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#84532"
+    },
+    {
+      "name": "basescout",
+      "url": "https://base-sepolia.blockscout.com",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#84532"
+    }
+  ],
+  "BCH": [
+    {
+      "name": "Blockchair",
+      "url": "https://blockchair.com/bitcoin-cash",
+      "kind": "home",
+      "verified": "unverified — bot challenge (HTTP 401) from the build network",
+      "source": "curated — blockchair is unreachable from the build network, so only its home page is offered"
+    }
+  ],
+  "BERA": [
+    {
+      "name": "Berascan",
+      "url": "https://berascan.com",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#80094"
+    },
+    {
+      "name": "Beratrail",
+      "url": "https://beratrail.io",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#80094"
+    }
+  ],
+  "BERAB": [
+    {
+      "name": "Beratrail",
+      "url": "https://bepolia.beratrail.io",
+      "kind": "home",
+      "verified": "registry — the chainlist row declares no url standard, so only the home page is offered",
+      "source": "ethereum-lists/chains#80069"
+    }
+  ],
+  "BITTENSOR": [
+    {
+      "name": "Taostats",
+      "url": "https://evm.taostats.io",
+      "kind": "home",
+      "verified": "browser 2026-08-18 — home page only: /block/<n> is a 404 on both taostats.io and evm.taostats.io",
+      "source": "curated"
+    }
+  ],
+  "BLAST": [
+    {
+      "name": "Blastscan",
+      "url": "https://blastscan.io",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#81457"
+    },
+    {
+      "name": "Blast Explorer",
+      "url": "https://blastexplorer.io",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#81457"
+    }
+  ],
+  "BLASTSP": [
+    {
+      "name": "Blast Sepolia Explorer",
+      "url": "https://testnet.blastscan.io",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#168587773"
+    }
+  ],
+  "BOB": [
+    {
+      "name": "bobscout",
+      "url": "https://explorer.gobob.xyz",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#60808"
+    }
+  ],
+  "BOBT": [
+    {
+      "name": "bobscout",
+      "url": "https://bob-sepolia.explorer.gobob.xyz",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#808813"
+    }
+  ],
+  "BSC": [
+    {
+      "name": "bscscan",
+      "url": "https://bscscan.com",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#56"
+    }
+  ],
+  "BSCT": [
+    {
+      "name": "bscscan-testnet",
+      "url": "https://testnet.bscscan.com",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#97"
+    }
+  ],
+  "BTC": [
+    {
+      "name": "mempool.space",
+      "url": "https://mempool.space",
+      "kind": "block",
+      "verified": "browser 2026-08-17 — block page watched rendering the requested height",
+      "source": "curated"
+    }
+  ],
+  "BTCS": [
+    {
+      "name": "mempool.space",
+      "url": "https://mempool.space/signet",
+      "kind": "block",
+      "verified": "browser 2026-08-17 — same site and path shape as the verified BTC entry",
+      "source": "curated"
+    }
+  ],
+  "BTCT": [
+    {
+      "name": "mempool.space",
+      "url": "https://mempool.space/testnet",
+      "kind": "block",
+      "verified": "browser 2026-08-17 — same site and path shape as the verified BTC entry",
+      "source": "curated"
+    }
+  ],
+  "BTCT4": [
+    {
+      "name": "mempool.space",
+      "url": "https://mempool.space/testnet4",
+      "kind": "block",
+      "verified": "browser 2026-08-17 — same site and path shape as the verified BTC entry",
+      "source": "curated"
+    }
+  ],
+  "CANTO": [
+    {
+      "name": "TC Network",
+      "url": "https://explorer.tcnetwork.io/canto",
+      "kind": "block",
+      "verified": "browser 2026-08-18 — block page watched rendering the requested height",
+      "source": "sweep 2026-08-18 — cosmos-explorers.neobase.one answers “Deployment Paused”"
+    }
+  ],
+  "CARDANO": [
+    {
+      "name": "Cardanoscan",
+      "url": "https://cardanoscan.io",
+      "kind": "block",
+      "verified": "unverified — bot challenge (HTTP 403) from the build network",
+      "source": "curated"
+    }
+  ],
+  "CARDANOT": [
+    {
+      "name": "Cardanoscan",
+      "url": "https://preprod.cardanoscan.io",
+      "kind": "block",
+      "verified": "unverified — bot challenge (HTTP 403) from the build network",
+      "source": "curated"
+    }
+  ],
+  "CASPER": [
+    {
+      "name": "cspr.live",
+      "url": "https://cspr.live",
+      "kind": "home",
+      "verified": "browser 2026-08-18 — home page only: /block/<n> answers “Nothing Found” — its block page is addressed by hash",
+      "source": "curated — the block page is addressed by hash"
+    }
+  ],
+  "CASPERT": [
+    {
+      "name": "cspr.live",
+      "url": "https://testnet.cspr.live",
+      "kind": "home",
+      "verified": "home probed 2026-08-17",
+      "source": "curated"
+    }
+  ],
+  "CELESTIATA": [
+    {
+      "name": "Celenium",
+      "url": "https://arabica.celenium.io",
+      "kind": "home",
+      "verified": "registry — the registry row supplies no block page and this host proved none elsewhere, so only the home page is offered",
+      "source": "cosmos/chain-registry/testnets/celestiatestnet2"
+    }
+  ],
+  "CELESTIATM": [
+    {
+      "name": "Mintscan",
+      "url": "https://mintscan.io/celestia-testnet",
+      "kind": "home",
+      "verified": "registry — the registry row supplies no block page and this host proved none elsewhere, so only the home page is offered",
+      "source": "cosmos/chain-registry/testnets/celestiatestnet3"
+    },
+    {
+      "name": "itrocket",
+      "url": "https://testnet.itrocket.net/celestia",
+      "kind": "block",
+      "verified": "inherited — cosmos/chain-registry proves testnet.itrocket.net serves /block/{block} on another chain; this is the same host",
+      "source": "cosmos/chain-registry/testnets/celestiatestnet3"
+    }
+  ],
+  "CELO": [
+    {
+      "name": "Celoscan",
+      "url": "https://celoscan.io",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#42220"
+    },
+    {
+      "name": "blockscout",
+      "url": "https://celo.blockscout.com",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#42220"
+    }
+  ],
+  "CELOS": [
+    {
+      "name": "Celo Sepolia Explorer",
+      "url": "https://celo-sepolia.blockscout.com",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#11142220"
+    }
+  ],
+  "CODEX": [
+    {
+      "name": "Codex Explorer",
+      "url": "https://explorer.codex.xyz",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#81224"
+    }
+  ],
+  "CODEXT": [
+    {
+      "name": "Codex Testnet Explorer",
+      "url": "https://explorer.codex-stg.xyz",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#812242"
+    }
+  ],
+  "CONCORDIUM": [
+    {
+      "name": "CCDExplorer",
+      "url": "https://ccdexplorer.io",
+      "kind": "home",
+      "verified": "browser 2026-08-18 — home page only: /block/<n> renders the site without the requested block",
+      "source": "curated"
+    }
+  ],
+  "CONCORDIUMT": [
+    {
+      "name": "CCDExplorer",
+      "url": "https://testnet.ccdexplorer.io",
+      "kind": "home",
+      "verified": "unverified — HTTP ERR from the build network",
+      "source": "curated"
+    }
+  ],
+  "COSMOSHUB": [
+    {
+      "name": "mintscan",
+      "url": "https://www.mintscan.io/cosmos",
+      "kind": "blocks",
+      "verified": "registry — cosmos/chain-registry supplies this block page",
+      "source": "cosmos/chain-registry/cosmoshub"
+    },
+    {
+      "name": "ezstaking",
+      "url": "https://ezstaking.app/cosmoshub",
+      "kind": "blocks",
+      "verified": "registry — cosmos/chain-registry supplies this block page",
+      "source": "cosmos/chain-registry/cosmoshub"
+    }
+  ],
+  "COSMOSHUBT": [
+    {
+      "name": "Mintscan",
+      "url": "https://mintscan.io/ics-testnet-provider",
+      "kind": "home",
+      "verified": "registry — the registry row supplies no block page and this host proved none elsewhere, so only the home page is offered",
+      "source": "cosmos/chain-registry/testnets/cosmosicsprovidertestnet"
+    },
+    {
+      "name": "Ping.pub",
+      "url": "https://explorer.polypore.xyz/provider",
+      "kind": "home",
+      "verified": "registry — the registry row supplies no block page and this host proved none elsewhere, so only the home page is offered",
+      "source": "cosmos/chain-registry/testnets/cosmosicsprovidertestnet"
+    }
+  ],
+  "CRONOS": [
+    {
+      "name": "Cronos Explorer",
+      "url": "https://explorer.cronos.com",
+      "kind": "block",
+      "verified": "browser 2026-08-18 — block page watched rendering the requested height",
+      "source": "sweep 2026-08-18 — moved from explorer.cronos.org"
+    }
+  ],
+  "CRONOST": [
+    {
+      "name": "Cronos Explorer",
+      "url": "https://explorer.cronos.com/testnet",
+      "kind": "block",
+      "verified": "browser 2026-08-18 — block page watched rendering the requested height",
+      "source": "sweep 2026-08-18 — moved from explorer.cronos.org"
+    }
+  ],
+  "DASH": [
+    {
+      "name": "Blockchair",
+      "url": "https://blockchair.com/dash",
+      "kind": "home",
+      "verified": "unverified — HTTP ERR from the build network",
+      "source": "curated — blockchair is unreachable from the build network, so only its home page is offered"
+    }
+  ],
+  "DOGE": [
+    {
+      "name": "Blockchair",
+      "url": "https://blockchair.com/dogecoin",
+      "kind": "home",
+      "verified": "unverified — HTTP ERR from the build network",
+      "source": "curated — blockchair is unreachable from the build network, so only its home page is offered"
+    }
+  ],
+  "DYDX": [
+    {
+      "name": "mintscan",
+      "url": "https://www.mintscan.io/dydx",
+      "kind": "blocks",
+      "verified": "inherited — cosmos/chain-registry proves www.mintscan.io serves /blocks/{block} on another chain; this is the same host",
+      "source": "cosmos/chain-registry/dydx"
+    },
+    {
+      "name": "staking-explorer.com",
+      "url": "https://staking-explorer.com/explorer/dydx",
+      "kind": "home",
+      "verified": "registry — the registry row supplies no block page and this host proved none elsewhere, so only the home page is offered",
+      "source": "cosmos/chain-registry/dydx"
+    }
+  ],
+  "DYDXT": [
+    {
+      "name": "mintscan",
+      "url": "https://www.mintscan.io/dydx-testnet",
+      "kind": "blocks",
+      "verified": "inherited — cosmos/chain-registry proves www.mintscan.io serves /blocks/{block} on another chain; this is the same host",
+      "source": "cosmos/chain-registry/testnets/dydxtestnet"
+    },
+    {
+      "name": "Valopers",
+      "url": "https://testnet.dydx.valopers.com",
+      "kind": "home",
+      "verified": "registry — the registry row supplies no block page and this host proved none elsewhere, so only the home page is offered",
+      "source": "cosmos/chain-registry/testnets/dydxtestnet"
+    }
+  ],
+  "ENJIN": [
+    {
+      "name": "Subscan",
+      "url": "https://enjin.subscan.io",
+      "kind": "block",
+      "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
+      "source": "curated — Subscan runs one deployment per network on a shared codebase"
+    }
+  ],
+  "ENJINT": [
+    {
+      "name": "Subscan",
+      "url": "https://canary-matrix.subscan.io",
+      "kind": "block",
+      "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
+      "source": "curated — Subscan runs one deployment per network on a shared codebase"
+    }
+  ],
+  "EOS": [
+    {
+      "name": "EOS Authority",
+      "url": "https://eosauthority.com",
+      "kind": "custom",
+      "tpl": {
+        "block": "https://eosauthority.com/block/{block}"
+      },
+      "verified": "browser 2026-08-17 — block page watched rendering the requested height; the transaction and account shapes were not watched, so they are not offered",
+      "source": "curated — replaces bloks.io, which now redirects to explorer.xprnetwork.org, a different chain"
+    }
+  ],
+  "ETC": [
+    {
+      "name": "blockscout-ethereum-classic",
+      "url": "https://etc.blockscout.com",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#61"
+    },
+    {
+      "name": "etcnetworkinfo-blockscout-ethereum-classic",
+      "url": "https://explorer-blockscout.etc-network.info",
+      "kind": "home",
+      "verified": "registry — the chainlist row declares no url standard, so only the home page is offered",
+      "source": "ethereum-lists/chains#61"
+    }
+  ],
+  "ETCT": [
+    {
+      "name": "blockscout-mordor",
+      "url": "https://etc-mordor.blockscout.com",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#63"
+    },
+    {
+      "name": "etcnetworkinfo-expedition-mordor",
+      "url": "https://explorer-expedition.etc-network.info/?network=Ethereum+Classic+at+etc-network.info+GETH+Mordor",
+      "kind": "home",
+      "verified": "registry — the chainlist row declares no url standard, so only the home page is offered",
+      "source": "ethereum-lists/chains#63"
+    }
+  ],
+  "ETH1": [
+    {
+      "name": "etherscan",
+      "url": "https://etherscan.io",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#1"
+    },
+    {
+      "name": "blockscout",
+      "url": "https://eth.blockscout.com",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#1"
+    }
+  ],
+  "ETHBEACON": [
+    {
+      "name": "beaconcha.in",
+      "url": "https://beaconcha.in",
+      "kind": "custom",
+      "tpl": {
+        "block": "https://beaconcha.in/slot/{block}"
+      },
+      "verified": "browser 2026-08-18 — block page watched rendering the requested height",
+      "source": "curated — the consensus layer is addressed by SLOT, which is what the router reports as this spec's latest block"
+    }
+  ],
+  "ETHBEACONHOODI": [
+    {
+      "name": "beaconcha.in",
+      "url": "https://hoodi.beaconcha.in",
+      "kind": "custom",
+      "tpl": {
+        "block": "https://hoodi.beaconcha.in/slot/{block}"
+      },
+      "verified": "inherited — the beaconcha.in mainnet and Sepolia deployments were watched rendering /slot/<n>; this is the same software on the network's own host",
+      "source": "curated — the consensus layer is addressed by SLOT, which is what the router reports as this spec's latest block"
+    }
+  ],
+  "ETHBEACONSEP": [
+    {
+      "name": "beaconcha.in",
+      "url": "https://light-sepolia.beaconcha.in",
+      "kind": "slot",
+      "verified": "browser 2026-08-18 — block page watched rendering the requested height",
+      "source": "sweep 2026-08-18 — sepolia.beaconcha.in now redirects here"
+    }
+  ],
+  "ETHEREUMPOW": [
+    {
+      "name": "OKLink",
+      "url": "https://www.oklink.com/ethw",
+      "kind": "block",
+      "verified": "browser 2026-08-18 — block page watched rendering the requested height",
+      "source": "curated — chainlist's row for this chain id is a DIFFERENT chain (Smart Bitcoin Cash Testnet also claims 10001)"
+    }
+  ],
+  "EVMOS": [
+    {
+      "name": "mintscan",
+      "url": "https://www.mintscan.io/evmos",
+      "kind": "blocks",
+      "verified": "inherited — cosmos/chain-registry proves www.mintscan.io serves /blocks/{block} on another chain; this is the same host",
+      "source": "cosmos/chain-registry/evmos"
+    },
+    {
+      "name": "ezstaking",
+      "url": "https://ezstaking.app/evmos",
+      "kind": "blocks",
+      "verified": "inherited — cosmos/chain-registry proves ezstaking.app serves /blocks/{block} on another chain; this is the same host",
+      "source": "cosmos/chain-registry/evmos"
+    }
+  ],
+  "EVMOST": [
+    {
+      "name": "Mintscan",
+      "url": "https://mintscan.io/evmos-testnet",
+      "kind": "home",
+      "verified": "registry — the registry row supplies no block page and this host proved none elsewhere, so only the home page is offered",
+      "source": "cosmos/chain-registry/testnets/evmostestnet"
+    },
+    {
+      "name": "NodesGuru",
+      "url": "https://testnet.evmos.explorers.guru",
+      "kind": "home",
+      "verified": "registry — the registry row supplies no block page and this host proved none elsewhere, so only the home page is offered",
+      "source": "cosmos/chain-registry/testnets/evmostestnet"
+    }
+  ],
+  "FETCHAI": [
+    {
+      "name": "mintscan",
+      "url": "https://www.mintscan.io/fetchai",
+      "kind": "blocks",
+      "verified": "inherited — cosmos/chain-registry proves www.mintscan.io serves /blocks/{block} on another chain; this is the same host",
+      "source": "cosmos/chain-registry/fetchhub"
+    },
+    {
+      "name": "ezstaking",
+      "url": "https://ezstaking.app/fetchhub",
+      "kind": "blocks",
+      "verified": "inherited — cosmos/chain-registry proves ezstaking.app serves /blocks/{block} on another chain; this is the same host",
+      "source": "cosmos/chain-registry/fetchhub"
+    }
+  ],
+  "FETCHAIT": [
+    {
+      "name": "bigdipper",
+      "url": "https://explore-dorado.fetch.ai",
+      "kind": "home",
+      "verified": "registry — the registry row supplies no block page and this host proved none elsewhere, so only the home page is offered",
+      "source": "cosmos/chain-registry/testnets/fetchhubtestnet"
+    },
+    {
+      "name": "azoyalabs",
+      "url": "https://fetchstation.azoyalabs.com/testnet",
+      "kind": "home",
+      "verified": "registry — the registry row supplies no block page and this host proved none elsewhere, so only the home page is offered",
+      "source": "cosmos/chain-registry/testnets/fetchhubtestnet"
+    }
+  ],
+  "FLARE": [
+    {
+      "name": "blockscout",
+      "url": "https://flare-explorer.flare.network",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#14"
+    },
+    {
+      "name": "Routescan",
+      "url": "https://mainnet.flarescan.com",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#14"
+    }
+  ],
+  "FLARET": [
+    {
+      "name": "blockscout",
+      "url": "https://coston2-explorer.flare.network",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#114"
+    },
+    {
+      "name": "Routescan",
+      "url": "https://coston2.testnet.flarescan.com",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#114"
+    }
+  ],
+  "FLOW": [
+    {
+      "name": "Flowscan",
+      "url": "https://evm.flow.com",
+      "kind": "block",
+      "verified": "browser 2026-08-18 — block page watched rendering the requested height",
+      "source": "sweep 2026-08-18 — moved from evm.flowscan.io"
+    }
+  ],
+  "FLOWT": [
+    {
+      "name": "Flowscan",
+      "url": "https://testnet.evm.flow.com",
+      "kind": "block",
+      "verified": "browser 2026-08-18 — block page watched rendering the requested height",
+      "source": "sweep 2026-08-18 — moved from evm-testnet.flowscan.io"
+    }
+  ],
+  "FTM250": [
+    {
+      "name": "Fantom Explorer",
+      "url": "https://explorer.fantom.network",
+      "kind": "blocks",
+      "verified": "browser 2026-08-18 — block page watched rendering the requested height",
+      "source": "sweep 2026-08-18 — ftmscan.com no longer resolves after the Sonic rebrand; this explorer serves /blocks/<n>, plural"
+    }
+  ],
+  "FUELNETWORK": [
+    {
+      "name": "Fuel Explorer",
+      "url": "https://app.fuel.network",
+      "kind": "block",
+      "verified": "browser 2026-08-18 — block page watched rendering the requested height",
+      "source": "curated"
+    }
+  ],
+  "FUSE": [
+    {
+      "name": "blockscout",
+      "url": "https://explorer.fuse.io",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#122"
+    }
+  ],
+  "FVM": [
+    {
+      "name": "Filfox",
+      "url": "https://filfox.info/en",
+      "kind": "home",
+      "verified": "registry — the chainlist row declares no url standard, so only the home page is offered",
+      "source": "ethereum-lists/chains#314"
+    },
+    {
+      "name": "Beryx",
+      "url": "https://beryx.zondax.ch",
+      "kind": "home",
+      "verified": "registry — the chainlist row declares no url standard, so only the home page is offered",
+      "source": "ethereum-lists/chains#314"
+    }
+  ],
+  "FVMT": [
+    {
+      "name": "Filscan - Calibration",
+      "url": "https://calibration.filscan.io",
+      "kind": "home",
+      "verified": "registry — the chainlist row declares no url standard, so only the home page is offered",
+      "source": "ethereum-lists/chains#314159"
+    },
+    {
+      "name": "Filscout - Calibration",
+      "url": "https://calibration.filscout.com/en",
+      "kind": "home",
+      "verified": "registry — the chainlist row declares no url standard, so only the home page is offered",
+      "source": "ethereum-lists/chains#314159"
+    }
+  ],
+  "HEDERA": [
+    {
+      "name": "HashScan",
+      "url": "https://hashscan.io/mainnet",
+      "kind": "block",
+      "verified": "browser 2026-08-17 — block page watched rendering the requested height",
+      "source": "curated — chainlist's 295 row omits HashScan, which its own 296 row lists as EIP3091"
+    }
+  ],
+  "HEDERAT": [
+    {
+      "name": "HashScan",
+      "url": "https://hashscan.io/testnet",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#296"
+    },
+    {
+      "name": "Arkhia Explorer",
+      "url": "https://explorer.arkhia.io",
+      "kind": "home",
+      "verified": "registry — the chainlist row declares no url standard, so only the home page is offered",
+      "source": "ethereum-lists/chains#296"
+    }
+  ],
+  "HOD1": [
+    {
+      "name": "dora",
+      "url": "https://light-hoodi.beaconcha.in",
+      "kind": "home",
+      "verified": "registry — the chainlist row declares no url standard, so only the home page is offered",
+      "source": "ethereum-lists/chains#560048"
+    }
+  ],
+  "HOL1": [
+    {
+      "name": "Blockscout",
+      "url": "https://eth-holesky.blockscout.com",
+      "kind": "home",
+      "verified": "browser 2026-08-18 — home page loads; /block/<n> answers 404, so no block link is offered",
+      "source": "sweep 2026-08-18 — holesky.beaconcha.in and holesky.etherscan.io no longer resolve"
+    }
+  ],
+  "HYDRATION": [
+    {
+      "name": "Subscan",
+      "url": "https://hydration.subscan.io",
+      "kind": "block",
+      "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
+      "source": "curated — Subscan runs one deployment per network on a shared codebase"
+    }
+  ],
+  "HYPERLIQUID": [
+    {
+      "name": "HyperEVMScan",
+      "url": "https://hyperevmscan.io",
+      "kind": "block",
+      "verified": "browser 2026-08-18 — block page watched rendering the requested height",
+      "source": "curated — chainlist's row for this chain id is a DIFFERENT chain (Wanchain Testnet also claims 999)"
+    }
+  ],
+  "INJECTIVE": [
+    {
+      "name": "mintscan",
+      "url": "https://www.mintscan.io/injective",
+      "kind": "blocks",
+      "verified": "inherited — cosmos/chain-registry proves www.mintscan.io serves /blocks/{block} on another chain; this is the same host",
+      "source": "cosmos/chain-registry/injective"
+    },
+    {
+      "name": "ezstaking",
+      "url": "https://ezstaking.app/injective",
+      "kind": "blocks",
+      "verified": "inherited — cosmos/chain-registry proves ezstaking.app serves /blocks/{block} on another chain; this is the same host",
+      "source": "cosmos/chain-registry/injective"
+    }
+  ],
+  "INJECTIVET": [
+    {
+      "name": "injectiveprotocol",
+      "url": "https://testnet.explorer.injective.network",
+      "kind": "home",
+      "verified": "registry — the registry row supplies no block page and this host proved none elsewhere, so only the home page is offered",
+      "source": "cosmos/chain-registry/testnets/injectivetestnet"
+    }
+  ],
+  "INK": [
+    {
+      "name": "Ink Explorer",
+      "url": "https://explorer.inkonchain.com",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#57073"
+    }
+  ],
+  "INKT": [
+    {
+      "name": "Ink Sepolia Explorer",
+      "url": "https://explorer-sepolia.inkonchain.com",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#763373"
+    }
+  ],
+  "ION": [
+    {
+      "name": "ION Explorer",
+      "url": "https://explorer.ice.io",
+      "kind": "home",
+      "verified": "browser 2026-08-17 — home page renders as ION Mainnet Explorer; no deep-link shape watched",
+      "source": "curated"
+    }
+  ],
+  "IOTA": [
+    {
+      "name": "IOTA Explorer",
+      "url": "https://explorer.iota.org",
+      "kind": "checkpoint",
+      "verified": "browser 2026-08-18 — block page watched rendering the requested height",
+      "source": "curated"
+    }
+  ],
+  "JUN1": [
+    {
+      "name": "ezstaking",
+      "url": "https://ezstaking.app/juno",
+      "kind": "blocks",
+      "verified": "inherited — cosmos/chain-registry proves ezstaking.app serves /blocks/{block} on another chain; this is the same host",
+      "source": "cosmos/chain-registry/juno"
+    },
+    {
+      "name": "ping.pub",
+      "url": "https://ping.pub/juno",
+      "kind": "block",
+      "verified": "inherited — cosmos/chain-registry proves ping.pub serves /block/{block} on another chain; this is the same host",
+      "source": "cosmos/chain-registry/juno"
+    }
+  ],
+  "JUNT1": [
+    {
+      "name": "🔥STAVR🔥",
+      "url": "https://explorer.stavr.tech/Juno-Testnet",
+      "kind": "home",
+      "verified": "registry — the registry row supplies no block page and this host proved none elsewhere, so only the home page is offered",
+      "source": "cosmos/chain-registry/testnets/junotestnet6"
+    }
+  ],
+  "KAVA": [
+    {
+      "name": "mintscan",
+      "url": "https://www.mintscan.io/kava",
+      "kind": "blocks",
+      "verified": "inherited — cosmos/chain-registry proves www.mintscan.io serves /blocks/{block} on another chain; this is the same host",
+      "source": "cosmos/chain-registry/kava"
+    },
+    {
+      "name": "staking-explorer.com",
+      "url": "https://staking-explorer.com/explorer/kava",
+      "kind": "home",
+      "verified": "registry — the registry row supplies no block page and this host proved none elsewhere, so only the home page is offered",
+      "source": "cosmos/chain-registry/kava"
+    }
+  ],
+  "KUSAMA": [
+    {
+      "name": "Subscan",
+      "url": "https://kusama.subscan.io",
+      "kind": "block",
+      "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
+      "source": "curated — Subscan runs one deployment per network on a shared codebase"
+    }
+  ],
+  "KUSAMAASSETHUB": [
+    {
+      "name": "Subscan",
+      "url": "https://assethub-kusama.subscan.io",
+      "kind": "block",
+      "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
+      "source": "curated — Subscan runs one deployment per network on a shared codebase"
+    }
+  ],
+  "KUSAMAASSETHUBT": [
+    {
+      "name": "Subscan",
+      "url": "https://assethub-westend.subscan.io",
+      "kind": "block",
+      "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
+      "source": "curated — Subscan runs one deployment per network on a shared codebase"
+    }
+  ],
+  "KUSAMAT": [
+    {
+      "name": "Subscan",
+      "url": "https://westend.subscan.io",
+      "kind": "block",
+      "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
+      "source": "curated — Subscan runs one deployment per network on a shared codebase"
+    }
+  ],
+  "LAV1": [
+    {
+      "name": "MELLIFERA",
+      "url": "https://lavatest.mellifera.network/lava",
+      "kind": "block",
+      "verified": "browser 2026-08-18 — block page watched rendering the requested height, backed by lav1.lava.build",
+      "source": "curated from docs.lavanet.xyz/block-explorer — the page's own \"official\" explorer (lava.explorers.guru) is gone: it redirects to explorers.guru, whose catalog lists 10 mainnets and 5 testnets with Lava among none of them. Its MELLIFERA link redirects here."
+    }
+  ],
+  "LAVA": [
+    {
+      "name": "LavaCenter",
+      "url": "https://lavacenter.xyz/lava",
+      "kind": "block",
+      "verified": "browser 2026-08-18 — block page watched rendering the requested height",
+      "source": "curated from docs.lavanet.xyz/block-explorer — the page's own \"official\" explorer (lava.explorers.guru) is gone: it redirects to explorers.guru, whose catalog lists 10 mainnets and 5 testnets with Lava among none of them. Its MELLIFERA link redirects here."
+    }
+  ],
+  "LINEA": [
+    {
+      "name": "Etherscan",
+      "url": "https://lineascan.build",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#59144"
+    },
+    {
+      "name": "Blockscout",
+      "url": "https://explorer.linea.build",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#59144"
+    }
+  ],
+  "LINEAT": [
+    {
+      "name": "Etherscan",
+      "url": "https://sepolia.lineascan.build",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#59141"
+    },
+    {
+      "name": "Blockscout",
+      "url": "https://explorer.sepolia.linea.build",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#59141"
+    }
+  ],
+  "LTC": [
+    {
+      "name": "Litecoin Space",
+      "url": "https://litecoinspace.org",
+      "kind": "block",
+      "verified": "browser 2026-08-17 — block page watched rendering the requested height",
+      "source": "curated"
+    }
+  ],
+  "MANTAPACIFIC": [
+    {
+      "name": "manta-pacific Explorer",
+      "url": "https://pacific-explorer.manta.network",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#169"
+    }
+  ],
+  "MANTAPACIFICT": [
+    {
+      "name": "manta-testnet Explorer",
+      "url": "https://manta-testnet.calderaexplorer.xyz",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#3441005"
+    }
+  ],
+  "MANTLE": [
+    {
+      "name": "mantlescan",
+      "url": "https://mantlescan.xyz",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#5000"
+    },
+    {
+      "name": "Mantle Explorer",
+      "url": "https://explorer.mantle.xyz",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#5000"
+    }
+  ],
+  "MANTLET": [
+    {
+      "name": "Mantlescan",
+      "url": "https://sepolia.mantlescan.xyz",
+      "kind": "block",
+      "verified": "browser 2026-08-18 — block page watched rendering the requested height",
+      "source": "sweep 2026-08-18 — moved from explorer.sepolia.mantle.xyz"
+    }
+  ],
+  "MINA": [
+    {
+      "name": "Minascan",
+      "url": "https://minascan.io/mainnet",
+      "kind": "block",
+      "verified": "browser 2026-08-18 — block page watched rendering the requested height",
+      "source": "curated"
+    }
+  ],
+  "MINAT": [
+    {
+      "name": "Minascan",
+      "url": "https://minascan.io/devnet",
+      "kind": "block",
+      "verified": "browser 2026-08-18 — block page watched rendering the requested height",
+      "source": "curated"
+    }
+  ],
+  "MONAD": [
+    {
+      "name": "Monad Vision",
+      "url": "https://monadvision.com",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#143"
+    },
+    {
+      "name": "Monadscan",
+      "url": "https://monadscan.com",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#143"
+    }
+  ],
+  "MONADT": [
+    {
+      "name": "Monad Testnet Explorer",
+      "url": "https://testnet.monadexplorer.com",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#10143"
+    }
+  ],
+  "MONERO": [
+    {
+      "name": "xmrchain",
+      "url": "https://xmrchain.net",
+      "kind": "custom",
+      "tpl": {
+        "block": "https://xmrchain.net/block/{block}"
+      },
+      "verified": "browser 2026-08-17 — block page watched rendering the requested height",
+      "source": "curated — a privacy chain has no address page"
+    }
+  ],
+  "MOONBEAM": [
+    {
+      "name": "moonscan",
+      "url": "https://moonbeam.moonscan.io",
+      "kind": "home",
+      "verified": "registry — the chainlist row declares no url standard, so only the home page is offered",
+      "source": "ethereum-lists/chains#1284"
+    }
+  ],
+  "MOONBEAMT": [
+    {
+      "name": "moonscan",
+      "url": "https://moonbase.moonscan.io",
+      "kind": "home",
+      "verified": "registry — the chainlist row declares no url standard, so only the home page is offered",
+      "source": "ethereum-lists/chains#1287"
+    }
+  ],
+  "MOONRIVER": [
+    {
+      "name": "moonscan",
+      "url": "https://moonriver.moonscan.io",
+      "kind": "home",
+      "verified": "registry — the chainlist row declares no url standard, so only the home page is offered",
+      "source": "ethereum-lists/chains#1285"
+    }
+  ],
+  "MOONRIVERT": [
+    {
+      "name": "moonscan",
+      "url": "https://moonbase.moonscan.io",
+      "kind": "home",
+      "verified": "registry — the chainlist row declares no url standard, so only the home page is offered",
+      "source": "ethereum-lists/chains#1287"
+    }
+  ],
+  "MOVEMENT": [
+    {
+      "name": "Movement Explorer",
+      "url": "https://explorer.movementnetwork.xyz",
+      "kind": "block",
+      "verified": "browser 2026-08-18 — block page watched rendering the requested height",
+      "source": "curated"
+    }
+  ],
+  "MULTIVERSX": [
+    {
+      "name": "MultiversX Explorer",
+      "url": "https://explorer.multiversx.com",
+      "kind": "home",
+      "verified": "home page only — its block page is addressed by hash, and a hash is not a value the dashboard holds",
+      "source": "curated — the block page is addressed by hash"
+    }
+  ],
+  "MULTIVERSXT": [
+    {
+      "name": "MultiversX Explorer",
+      "url": "https://testnet-explorer.multiversx.com",
+      "kind": "home",
+      "verified": "home page only — its block page is addressed by hash, and a hash is not a value the dashboard holds",
+      "source": "curated"
+    }
+  ],
+  "NEAR": [
+    {
+      "name": "NearBlocks",
+      "url": "https://nearblocks.io",
+      "kind": "home",
+      "verified": "home page only — its block page is addressed by hash, and a hash is not a value the dashboard holds",
+      "source": "curated — the block page is addressed by hash, so no height link is offered"
+    }
+  ],
+  "NEART": [
+    {
+      "name": "NearBlocks",
+      "url": "https://testnet.nearblocks.io",
+      "kind": "home",
+      "verified": "home page only — its block page is addressed by hash, and a hash is not a value the dashboard holds",
+      "source": "curated"
+    }
+  ],
+  "NEOX": [
+    {
+      "name": "Neo X - Explorer",
+      "url": "https://xexplorer.neo.org",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#47763"
+    }
+  ],
+  "NEOXT": [
+    {
+      "name": "neox-scan",
+      "url": "https://xt4scan.ngd.network",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#12227332"
+    }
+  ],
+  "NEUTRON": [
+    {
+      "name": "Mintscan",
+      "url": "https://www.mintscan.io/neutron",
+      "kind": "blocks",
+      "verified": "inherited — cosmos/chain-registry proves www.mintscan.io serves /blocks/{block} on another chain; this is the same host",
+      "source": "cosmos/chain-registry/neutron"
+    },
+    {
+      "name": "ezstaking",
+      "url": "https://ezstaking.app/neutron",
+      "kind": "blocks",
+      "verified": "inherited — cosmos/chain-registry proves ezstaking.app serves /blocks/{block} on another chain; this is the same host",
+      "source": "cosmos/chain-registry/neutron"
+    }
+  ],
+  "NEUTRONT": [
+    {
+      "name": "Ping.pub Explorer from Hypha",
+      "url": "https://explorer.rs-testnet.polypore.xyz/pion-1",
+      "kind": "home",
+      "verified": "registry — the registry row supplies no block page and this host proved none elsewhere, so only the home page is offered",
+      "source": "cosmos/chain-registry/testnets/neutrontestnet"
+    },
+    {
+      "name": "Mintscan",
+      "url": "https://mintscan.io/neutron-testnet",
+      "kind": "home",
+      "verified": "registry — the registry row supplies no block page and this host proved none elsewhere, so only the home page is offered",
+      "source": "cosmos/chain-registry/testnets/neutrontestnet"
+    }
+  ],
+  "OASIS": [
+    {
+      "name": "Oasis Sapphire Explorer",
+      "url": "https://explorer.oasis.io/mainnet/sapphire",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#23294"
+    }
+  ],
+  "OASIST": [
+    {
+      "name": "Oasis Sapphire Testnet Explorer",
+      "url": "https://explorer.oasis.io/testnet/sapphire",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#23295"
+    }
+  ],
+  "OKB": [
+    {
+      "name": "OKLink",
+      "url": "https://www.oklink.com/xlayer",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#196"
+    }
+  ],
+  "OKBT": [
+    {
+      "name": "OKLink",
+      "url": "https://web3.okx.com/explorer/x-layer-testnet",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#1952"
+    }
+  ],
+  "OPTM": [
+    {
+      "name": "etherscan",
+      "url": "https://optimistic.etherscan.io",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#10"
+    },
+    {
+      "name": "blockscout",
+      "url": "https://optimism.blockscout.com",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#10"
+    }
+  ],
+  "OPTMS": [
+    {
+      "name": "etherscan-sepolia-optimism",
+      "url": "https://sepolia-optimism.etherscan.io",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#11155420"
+    },
+    {
+      "name": "opscout",
+      "url": "https://optimism-sepolia.blockscout.com",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#11155420"
+    }
+  ],
+  "OSMOSIS": [
+    {
+      "name": "mintscan",
+      "url": "https://www.mintscan.io/osmosis",
+      "kind": "blocks",
+      "verified": "inherited — cosmos/chain-registry proves www.mintscan.io serves /blocks/{block} on another chain; this is the same host",
+      "source": "cosmos/chain-registry/osmosis"
+    },
+    {
+      "name": "ezstaking",
+      "url": "https://ezstaking.app/osmosis",
+      "kind": "blocks",
+      "verified": "inherited — cosmos/chain-registry proves ezstaking.app serves /blocks/{block} on another chain; this is the same host",
+      "source": "cosmos/chain-registry/osmosis"
+    }
+  ],
+  "OSMOSIST": [
+    {
+      "name": "mintscan",
+      "url": "https://mintscan.io/osmosis-testnet",
+      "kind": "home",
+      "verified": "registry — the registry row supplies no block page and this host proved none elsewhere, so only the home page is offered",
+      "source": "cosmos/chain-registry/testnets/osmosistestnet"
+    },
+    {
+      "name": "ping.pub",
+      "url": "https://explorer.osmotest5.osmosis.zone",
+      "kind": "home",
+      "verified": "registry — the registry row supplies no block page and this host proved none elsewhere, so only the home page is offered",
+      "source": "cosmos/chain-registry/testnets/osmosistestnet"
+    }
+  ],
+  "PLASMA": [
+    {
+      "name": "Routescan",
+      "url": "https://plasmascan.to",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#9745"
+    }
+  ],
+  "PLASMAT": [
+    {
+      "name": "Routescan",
+      "url": "https://testnet.plasmascan.to",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#9746"
+    }
+  ],
+  "PLUME": [
+    {
+      "name": "Blockscout",
+      "url": "https://explorer.plume.org",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#98866"
+    }
+  ],
+  "PLUMET": [
+    {
+      "name": "Blockscout",
+      "url": "https://testnet-explorer.plume.org",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#98867"
+    }
+  ],
+  "POLKADOT": [
+    {
+      "name": "Subscan",
+      "url": "https://polkadot.subscan.io",
+      "kind": "block",
+      "verified": "browser 2026-08-17 — block page watched rendering the requested height",
+      "source": "curated — Subscan runs one deployment per network on a shared codebase"
+    }
+  ],
+  "POLKADOTASSETHUB": [
+    {
+      "name": "Subscan",
+      "url": "https://assethub-polkadot.subscan.io",
+      "kind": "block",
+      "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
+      "source": "curated — Subscan runs one deployment per network on a shared codebase"
+    }
+  ],
+  "POLKADOTASSETHUBP": [
+    {
+      "name": "Subscan",
+      "url": "https://assethub-paseo.subscan.io",
+      "kind": "block",
+      "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
+      "source": "curated — Subscan runs one deployment per network on a shared codebase"
+    }
+  ],
+  "POLKADOTASSETHUBT": [
+    {
+      "name": "Subscan",
+      "url": "https://assethub-westend.subscan.io",
+      "kind": "block",
+      "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
+      "source": "curated — Subscan runs one deployment per network on a shared codebase"
+    }
+  ],
+  "POLKADOTT": [
+    {
+      "name": "Subscan",
+      "url": "https://westend.subscan.io",
+      "kind": "block",
+      "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
+      "source": "curated — Subscan runs one deployment per network on a shared codebase"
+    }
+  ],
+  "POLYGON": [
+    {
+      "name": "polygonscan",
+      "url": "https://polygonscan.com",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#137"
+    },
+    {
+      "name": "oklink",
+      "url": "https://www.oklink.com/polygon",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#137"
+    }
+  ],
+  "POLYGONA": [
+    {
+      "name": "polygonscan-amoy",
+      "url": "https://amoy.polygonscan.com",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#80002"
+    }
+  ],
+  "POLYMESH": [
+    {
+      "name": "Subscan",
+      "url": "https://polymesh.subscan.io",
+      "kind": "block",
+      "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
+      "source": "curated — Subscan runs one deployment per network on a shared codebase"
+    }
+  ],
+  "POLYMESHT": [
+    {
+      "name": "Subscan",
+      "url": "https://polymesh-testnet.subscan.io",
+      "kind": "block",
+      "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
+      "source": "curated — Subscan runs one deployment per network on a shared codebase"
+    }
+  ],
+  "RACE": [
+    {
+      "name": "blockscout",
+      "url": "https://racescan.io",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#6805"
+    }
+  ],
+  "RACET": [
+    {
+      "name": "blockscout",
+      "url": "https://testnet.racescan.io",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#6806"
+    }
+  ],
+  "SCROLL": [
+    {
+      "name": "Scrollscan",
+      "url": "https://scrollscan.com",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#534352"
+    }
+  ],
+  "SCROLLS": [
+    {
+      "name": "Scroll Sepolia Etherscan",
+      "url": "https://sepolia.scrollscan.com",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#534351"
+    }
+  ],
+  "SECRET": [
+    {
+      "name": "mintscan",
+      "url": "https://www.mintscan.io/secret",
+      "kind": "blocks",
+      "verified": "inherited — cosmos/chain-registry proves www.mintscan.io serves /blocks/{block} on another chain; this is the same host",
+      "source": "cosmos/chain-registry/secretnetwork"
+    },
+    {
+      "name": "ezstaking",
+      "url": "https://ezstaking.app/secretnetwork",
+      "kind": "blocks",
+      "verified": "inherited — cosmos/chain-registry proves ezstaking.app serves /blocks/{block} on another chain; this is the same host",
+      "source": "cosmos/chain-registry/secretnetwork"
+    }
+  ],
+  "SEI": [
+    {
+      "name": "mintscan",
+      "url": "https://www.mintscan.io/sei",
+      "kind": "blocks",
+      "verified": "inherited — cosmos/chain-registry proves www.mintscan.io serves /blocks/{block} on another chain; this is the same host",
+      "source": "cosmos/chain-registry/sei"
+    },
+    {
+      "name": "blockscout",
+      "url": "https://seitrace.com",
+      "kind": "home",
+      "verified": "registry — the registry row supplies no block page and this host proved none elsewhere, so only the home page is offered",
+      "source": "cosmos/chain-registry/sei"
+    }
+  ],
+  "SEP1": [
+    {
+      "name": "etherscan-sepolia",
+      "url": "https://sepolia.etherscan.io",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#11155111"
+    },
+    {
+      "name": "otterscan-sepolia",
+      "url": "https://sepolia.otterscan.io",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#11155111"
+    }
+  ],
+  "SOLANA": [
+    {
+      "name": "Solana Explorer",
+      "url": "https://explorer.solana.com",
+      "kind": "block",
+      "verified": "browser 2026-08-17 — block page watched rendering the requested height",
+      "source": "curated"
+    }
+  ],
+  "SOLANAD": [
+    {
+      "name": "Solana Explorer",
+      "url": "https://explorer.solana.com",
+      "kind": "block",
+      "suffix": "?cluster=devnet",
+      "verified": "browser 2026-08-17 — block page watched rendering the requested height (mainnet cluster; the suffix selects the cluster)",
+      "source": "curated"
+    }
+  ],
+  "SOLANAT": [
+    {
+      "name": "Solana Explorer",
+      "url": "https://explorer.solana.com",
+      "kind": "block",
+      "suffix": "?cluster=testnet",
+      "verified": "browser 2026-08-17 — block page watched rendering the requested height (mainnet cluster; the suffix selects the cluster)",
+      "source": "curated"
+    }
+  ],
+  "SONIC": [
+    {
+      "name": "etherscan",
+      "url": "https://sonicscan.org",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#146"
+    },
+    {
+      "name": "sonic",
+      "url": "https://explorer.soniclabs.com",
+      "kind": "home",
+      "verified": "registry — the chainlist row declares no url standard, so only the home page is offered",
+      "source": "ethereum-lists/chains#146"
+    }
+  ],
+  "SONICB": [
+    {
+      "name": "Sonicscan",
+      "url": "https://testnet.sonicscan.org",
+      "kind": "block",
+      "verified": "browser 2026-08-18 — block page watched rendering the requested height",
+      "source": "curated — chain-id 0xdede (57054) is Sonic Blaze, which upstream split out of SONICT into its own spec; this entry moved with the id"
+    }
+  ],
+  "SONICT": [
+    {
+      "name": "Sonic Testnet Explorer",
+      "url": "https://explorer.testnet.soniclabs.com",
+      "kind": "block",
+      "verified": "browser 2026-08-18 — block page watched rendering the requested height",
+      "source": "curated — SONICT is now chain-id 0x3909 (14601); the chainlist row declares no url standard, but /block/<n> was watched rendering"
+    }
+  ],
+  "SPARK": [
+    {
+      "name": "Blockscout",
+      "url": "https://explorer.fusespark.io",
+      "kind": "block",
+      "verified": "browser 2026-08-18 — block page watched rendering the requested height",
+      "source": "curated"
+    }
+  ],
+  "STACKS": [
+    {
+      "name": "Hiro Explorer",
+      "url": "https://explorer.hiro.so",
+      "kind": "block",
+      "suffix": "?chain=mainnet",
+      "verified": "browser 2026-08-18 — block page watched rendering the requested height",
+      "source": "curated"
+    }
+  ],
+  "STACKST": [
+    {
+      "name": "Hiro Explorer",
+      "url": "https://explorer.hiro.so",
+      "kind": "block",
+      "suffix": "?chain=testnet",
+      "verified": "browser 2026-08-18 — block page watched rendering the requested height",
+      "source": "curated"
+    }
+  ],
+  "STORY": [
+    {
+      "name": "Datanetscan",
+      "url": "https://www.datanetscan.io",
+      "kind": "block",
+      "verified": "browser 2026-08-18 — block page watched rendering the requested height",
+      "source": "sweep 2026-08-18 — canonical host is www"
+    }
+  ],
+  "STORYT": [
+    {
+      "name": "blockscout",
+      "url": "https://aeneid.datanetscan.io",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#1315"
+    }
+  ],
+  "STRGZ": [
+    {
+      "name": "mintscan",
+      "url": "https://www.mintscan.io/stargaze",
+      "kind": "blocks",
+      "verified": "inherited — cosmos/chain-registry proves www.mintscan.io serves /blocks/{block} on another chain; this is the same host",
+      "source": "cosmos/chain-registry/stargaze"
+    },
+    {
+      "name": "ezstaking",
+      "url": "https://ezstaking.app/stargaze",
+      "kind": "blocks",
+      "verified": "inherited — cosmos/chain-registry proves ezstaking.app serves /blocks/{block} on another chain; this is the same host",
+      "source": "cosmos/chain-registry/stargaze"
+    }
+  ],
+  "STRGZT": [
+    {
+      "name": "ping.pub",
+      "url": "https://testnet-explorer.publicawesome.dev/stargaze",
+      "kind": "home",
+      "verified": "registry — the registry row supplies no block page and this host proved none elsewhere, so only the home page is offered",
+      "source": "cosmos/chain-registry/testnets/stargazetestnet"
+    }
+  ],
+  "STRIDE": [
+    {
+      "name": "mintscan",
+      "url": "https://www.mintscan.io/stride",
+      "kind": "blocks",
+      "verified": "inherited — cosmos/chain-registry proves www.mintscan.io serves /blocks/{block} on another chain; this is the same host",
+      "source": "cosmos/chain-registry/stride"
+    },
+    {
+      "name": "BccNodes",
+      "url": "https://explorer.bccnodes.com/stride-M",
+      "kind": "home",
+      "verified": "registry — the registry row supplies no block page and this host proved none elsewhere, so only the home page is offered",
+      "source": "cosmos/chain-registry/stride"
+    }
+  ],
+  "STRK": [
+    {
+      "name": "Starkscan",
+      "url": "https://starkscan.co",
+      "kind": "block",
+      "verified": "browser 2026-08-17 — block page watched rendering the requested height",
+      "source": "curated"
+    }
+  ],
+  "STRKS": [
+    {
+      "name": "Voyager",
+      "url": "https://sepolia.voyager.online",
+      "kind": "home",
+      "verified": "browser 2026-08-18 — /block/<n> answers 200 and renders no block, so no block link is offered",
+      "source": "curated — sepolia.starkscan.co does not resolve; Voyager is the other Starknet explorer, but only its home page is usable here"
+    }
+  ],
+  "SUI": [
+    {
+      "name": "Suiscan",
+      "url": "https://suiscan.xyz/mainnet",
+      "kind": "checkpoint",
+      "verified": "browser 2026-08-18 — block page watched rendering the requested height",
+      "source": "curated — Sui has checkpoints, not blocks; no height-addressable page verified"
+    }
+  ],
+  "SUID": [
+    {
+      "name": "Suiscan",
+      "url": "https://suiscan.xyz/devnet",
+      "kind": "home",
+      "verified": "browser 2026-08-18 — home page only: /checkpoint/<n> renders nothing on devnet, which resets",
+      "source": "curated"
+    }
+  ],
+  "SUIT": [
+    {
+      "name": "Suiscan",
+      "url": "https://suiscan.xyz/testnet",
+      "kind": "checkpoint",
+      "verified": "browser 2026-08-18 — block page watched rendering the requested height",
+      "source": "curated"
+    }
+  ],
+  "TEMPO": [
+    {
+      "name": "tempo-explorer",
+      "url": "https://explore.tempo.xyz",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#4217"
+    }
+  ],
+  "TEMPOT": [
+    {
+      "name": "tempo-explorer",
+      "url": "https://explore.testnet.tempo.xyz",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#42431"
+    }
+  ],
+  "TEZOS": [
+    {
+      "name": "TzKT",
+      "url": "https://tzkt.io",
+      "kind": "root",
+      "verified": "browser 2026-08-17 — block page watched rendering the requested height",
+      "source": "curated"
+    }
+  ],
+  "TEZOST": [
+    {
+      "name": "TzKT",
+      "url": "https://shadownet.tzkt.io",
+      "kind": "root",
+      "verified": "browser 2026-08-17 — block page watched rendering the requested level",
+      "source": "curated — TzKT runs a Shadownet deployment on the same codebase as tzkt.io"
+    }
+  ],
+  "THORCHAIN": [
+    {
+      "name": "THORChain explorer",
+      "url": "https://thorchain.net",
+      "kind": "home",
+      "verified": "registry — the registry row supplies no block page and this host proved none elsewhere, so only the home page is offered",
+      "source": "cosmos/chain-registry/thorchain"
+    },
+    {
+      "name": "Runescan",
+      "url": "https://runescan.io",
+      "kind": "home",
+      "verified": "registry — the registry row supplies no block page and this host proved none elsewhere, so only the home page is offered",
+      "source": "cosmos/chain-registry/thorchain"
+    }
+  ],
+  "TON": [
+    {
+      "name": "Tonviewer",
+      "url": "https://tonviewer.com",
+      "kind": "block",
+      "verified": "browser 2026-08-18 — block page watched rendering the requested height",
+      "source": "curated"
+    }
+  ],
+  "TONT": [
+    {
+      "name": "Tonviewer",
+      "url": "https://testnet.tonviewer.com",
+      "kind": "block",
+      "verified": "browser 2026-08-18 — block page watched rendering the requested height",
+      "source": "curated"
+    }
+  ],
+  "TRX": [
+    {
+      "name": "Tronscan",
+      "url": "https://tronscan.org",
+      "kind": "hash-routed",
+      "verified": "browser 2026-08-18 — block page watched rendering the requested height",
+      "source": "curated"
+    }
+  ],
+  "TRXN": [
+    {
+      "name": "Tronscan",
+      "url": "https://nile.tronscan.org",
+      "kind": "hash-routed",
+      "verified": "inherited — the tronscan mainnet deployment was watched rendering /#/block/<n>; this is the same software on the network's own host",
+      "source": "curated"
+    }
+  ],
+  "TRXT": [
+    {
+      "name": "Tronscan",
+      "url": "https://shasta.tronscan.org",
+      "kind": "hash-routed",
+      "verified": "inherited — the tronscan mainnet deployment was watched rendering /#/block/<n>; this is the same software on the network's own host",
+      "source": "curated"
+    }
+  ],
+  "UNICHAIN": [
+    {
+      "name": "Unichain Mainnet Explorer",
+      "url": "https://uniscan.xyz",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#130"
+    },
+    {
+      "name": "Unichain Mainnet Explorer",
+      "url": "https://unichain.blockscout.com",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#130"
+    }
+  ],
+  "UNICHAINT": [
+    {
+      "name": "Unichain Sepolia Testnet Explorer",
+      "url": "https://unichain-sepolia.blockscout.com",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#1301"
+    },
+    {
+      "name": "Unichain Sepolia Testnet Explorer",
+      "url": "https://sepolia.uniscan.xyz",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#1301"
+    }
+  ],
+  "VECHAIN": [
+    {
+      "name": "VeChain Explorer",
+      "url": "https://explore.vechain.org",
+      "kind": "home",
+      "verified": "browser 2026-08-18 — home page only: /blocks/<n> is a 404 and /block/<n> was rate-limited",
+      "source": "curated"
+    }
+  ],
+  "WEMIX": [
+    {
+      "name": "WEMIX Block Explorer",
+      "url": "https://explorer.wemix.com",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#1111"
+    }
+  ],
+  "WEMIXT": [
+    {
+      "name": "WEMIX Testnet Microscope",
+      "url": "https://microscope.test.wemix.com",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#1112"
+    }
+  ],
+  "WORLDCHAIN": [
+    {
+      "name": "etherscan",
+      "url": "https://worldscan.org",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#480"
+    },
+    {
+      "name": "blockscout",
+      "url": "https://worldchain-mainnet.explorer.alchemy.com",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#480"
+    }
+  ],
+  "WORLDCHAINS": [
+    {
+      "name": "etherscan",
+      "url": "https://sepolia.worldscan.org",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#4801"
+    },
+    {
+      "name": "blockscout",
+      "url": "https://worldchain-sepolia.explorer.alchemy.com",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#4801"
+    }
+  ],
+  "XDC": [
+    {
+      "name": "xdcscan",
+      "url": "https://xdcscan.com",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#50"
+    },
+    {
+      "name": "openscan",
+      "url": "https://xdcscan.io",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#50"
+    }
+  ],
+  "XDCT": [
+    {
+      "name": "xdcscan",
+      "url": "https://testnet.xdcscan.com",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#51"
+    },
+    {
+      "name": "openscan",
+      "url": "https://apothem.xdcscan.io",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#51"
+    }
+  ],
+  "XLM": [
+    {
+      "name": "Stellar Expert",
+      "url": "https://stellar.expert/explorer/public",
+      "kind": "ledger",
+      "verified": "browser 2026-08-17 — block page watched rendering the requested height",
+      "source": "curated"
+    }
+  ],
+  "XLMT": [
+    {
+      "name": "Stellar Expert",
+      "url": "https://stellar.expert/explorer/testnet",
+      "kind": "ledger",
+      "verified": "browser 2026-08-17 — same site and path shape as the verified XLM entry",
+      "source": "curated"
+    }
+  ],
+  "XRP": [
+    {
+      "name": "XRPScan",
+      "url": "https://xrpscan.com",
+      "kind": "ledger",
+      "verified": "browser 2026-08-17 — block page watched rendering the requested height",
+      "source": "curated"
+    }
+  ],
+  "XRPT": [
+    {
+      "name": "XRPL Explorer",
+      "url": "https://testnet.xrpl.org",
+      "kind": "home",
+      "verified": "browser 2026-08-18 — home page only: /ledgers/<n> is the right route but answers “Ledger not Found” — this testnet's ledgers are pruned",
+      "source": "curated"
+    }
+  ],
+  "ZCASH": [
+    {
+      "name": "Blockchair",
+      "url": "https://blockchair.com/zcash",
+      "kind": "home",
+      "verified": "unverified — HTTP ERR from the build network",
+      "source": "curated — blockchair is unreachable from the build network, so only its home page is offered"
+    }
+  ],
+  "ZKSYNC": [
+    {
+      "name": "zkSync Era Block Explorer",
+      "url": "https://explorer.zksync.io",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#324"
+    }
+  ],
+  "ZKSYNCSP": [
+    {
+      "name": "zkSync Block Explorer",
+      "url": "https://sepolia.explorer.zksync.io",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#300"
+    }
+  ]
+}

@@ -13,10 +13,6 @@ function mockPrometheus(): void {
   vi.stubGlobal("fetch", async (input: URL | string) => {
     const url = typeof input === "string" ? input : input.toString();
 
-    if (url.includes("/-/ready")) {
-      return new Response("ok", { status: 200 });
-    }
-
     const query = new URL(url).searchParams.get("query") ?? "";
     let result: unknown[] = [];
 
@@ -59,6 +55,30 @@ function mockPrometheus(): void {
       ];
     } else if (query.includes("rpc_endpoint_overall_health")) {
       result = [{ metric: { spec: "ETH1", endpoint_id: "eth-lava" }, value: [1, "1"] }];
+    } else if (query.includes("deriv(rpc_endpoint_latest_block")) {
+      result = [{ metric: { spec: "ETH1" }, value: [1, "0.1"] }]; // 0.1 blocks/sec
+    } else if (query.includes("changes(rpc_endpoint_latest_block")) {
+      // eth-frozen's tip gauge never moved over the staleness window.
+      result = [
+        { metric: { spec: "ETH1", endpoint_id: "eth-lava", apiInterface: "jsonrpc" }, value: [1, "12"] },
+        { metric: { spec: "ETH1", endpoint_id: "eth-frozen", apiInterface: "jsonrpc" }, value: [1, "0"] },
+      ];
+    } else if (query.includes("max by (spec) (rpc_endpoint_latest_block")) {
+      result = [{ metric: { spec: "ETH1" }, value: [1, "100"] }]; // best tip
+    } else if (query.includes("max by (spec, endpoint_id, apiInterface)")) {
+      result = [
+        { metric: { spec: "ETH1", endpoint_id: "eth-lava", apiInterface: "jsonrpc" }, value: [1, "100"] },
+        { metric: { spec: "ETH1", endpoint_id: "eth-frozen", apiInterface: "jsonrpc" }, value: [1, "95"] },
+      ];
+    } else if (query.includes("changes(smartrouter_latest_block")) {
+      // 3 refreshes over the 15m window ⇒ a 300s cadence.
+      result = [
+        { metric: { spec: "ETH1", apiInterface: "jsonrpc", service: "eth-router" }, value: [1, "3"] },
+      ];
+    } else if (query.includes("smartrouter_latest_block")) {
+      result = [
+        { metric: { spec: "ETH1", apiInterface: "jsonrpc", service: "eth-router" }, value: [1, "90"] },
+      ];
     } else if (query.includes("rpc_endpoint_latest_block")) {
       result = [{ metric: { spec: "ETH1", endpoint_id: "eth-lava" }, value: [1, "100"] }];
     } else if (query.includes("overall_health")) {
@@ -322,4 +342,61 @@ describe("api routes", () => {
     }
     expect(body.trouble).toEqual([]);
   });
+
+  it("GET /api/metrics/block-heights → router + upstream tips, lag in seconds", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/metrics/block-heights" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.routerLabel).toBe("service");
+
+    const eth = body.chains.find((c: { spec: string }) => c.spec === "ETH1");
+    expect(eth.bestBlock).toBe(100);
+    expect(eth.blocksPerSec).toBe(0.1);
+
+    // Router tip 90 vs best upstream 100 = 10 blocks = 100s at 0.1 blocks/sec.
+    expect(eth.routers).toEqual([
+      {
+        router: "eth-router",
+        apiInterface: "jsonrpc",
+        block: 90,
+        behindBlocks: 10,
+        behindSec: 100,
+        // 15m ÷ 3 changes: the cadence the lag is judged against, so a lag of
+        // roughly one refresh reads as healthy rather than as a fault.
+        refreshSec: 300,
+      },
+    ]);
+
+    const lava = eth.upstreams.find((u: { endpointId: string }) => u.endpointId === "eth-lava");
+    expect(lava).toMatchObject({ block: 100, behindBlocks: 0, behindSec: 0, stale: false });
+  });
+
+  it("GET /api/metrics/block-heights → a frozen tip is stale, and 5 blocks is 50s", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/metrics/block-heights" });
+    const eth = res.json().chains.find((c: { spec: string }) => c.spec === "ETH1");
+    const frozen = eth.upstreams.find((u: { endpointId: string }) => u.endpointId === "eth-frozen");
+    expect(frozen).toMatchObject({ block: 95, behindBlocks: 5, behindSec: 50, stale: true });
+  });
+
+  it("GET /api/metrics/upstreams → roster carries seconds-behind + stale", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/metrics/upstreams" });
+    const row = res.json().upstreams.find((u: { endpointId: string }) => u.endpointId === "eth-lava");
+    expect(row).toMatchObject({ blockLag: 0, behindSec: 0, stale: false });
+  });
+
+
+  it("GET /api/metrics/block-heights?routerId= filters upstream tips by the config router", async () => {
+    // No config is mounted in this harness, so no upstream is declared by any
+    // router — the filter must empty the list rather than ignore the param.
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/metrics/block-heights?routerId=eth-prod",
+    });
+    expect(res.statusCode).toBe(200);
+    const eth = res.json().chains.find((c: { spec: string }) => c.spec === "ETH1");
+    expect(eth.upstreams).toEqual([]);
+    // The router rows are a chain-level series and are NOT narrowed by this axis.
+    expect(eth.routers).toHaveLength(1);
+  });
+
 });

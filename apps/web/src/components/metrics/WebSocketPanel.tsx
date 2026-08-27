@@ -9,6 +9,7 @@ import { buildChainMetaByIndex, type MetricWindow, type WebSocketReport } from "
 import { useApi } from "@/hooks/use-api";
 import { Tip } from "@/components/gateway/Tip";
 import { ThCol } from "@/components/gateway/SortTable";
+import { SkelValue, SkelRows } from "@/components/gateway/Skel";
 import { fmtComma, fmtNum } from "@/lib/format";
 import { useFilters } from "@/components/gateway/FiltersProvider";
 
@@ -16,7 +17,7 @@ const WS_TIP = "Long-lived WebSocket activity.\n\n**Active connections** is a li
 
 export function WebSocketPanel({ tw }: { tw: MetricWindow }) {
   const { scopeQ } = useFilters();
-  const { data: ws } = useApi<WebSocketReport>(`/api/metrics/websocket?window=${tw}${scopeQ}`);
+  const { data: ws, isLoading } = useApi<WebSocketReport>(`/api/metrics/websocket?window=${tw}${scopeQ}`);
 
   const active = ws?.activeConnections ?? null;
   const subs = ws?.subscriptions ?? null;
@@ -33,17 +34,17 @@ export function WebSocketPanel({ tw }: { tw: MetricWindow }) {
       {/* 3 headline stats */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 20, marginBottom: 24, paddingBottom: 24, borderBottom: "1px solid var(--line)" }}>
         <div>
-          <div className="gw-mono gw-tnum" style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.03em", lineHeight: 1, color: active == null ? "var(--text-4)" : "var(--text)" }}>{active != null ? fmtComma(active) : "—"}</div>
+          <div className="gw-mono gw-tnum" style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.03em", lineHeight: 1, color: active == null ? "var(--text-4)" : "var(--text)" }}>{isLoading ? <SkelValue w={78} /> : active != null ? fmtComma(active) : "—"}</div>
           <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 8, display: "inline-flex", alignItems: "center" }}>
             <span style={{ width: 6, height: 6, borderRadius: 999, background: active != null ? "var(--ok)" : "var(--text-4)", boxShadow: active != null ? "0 0 6px var(--ok)" : "none", marginRight: 6 }} />active connections · now
           </div>
         </div>
         <div>
-          <div className="gw-mono gw-tnum" style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.03em", lineHeight: 1, color: subs == null ? "var(--text-4)" : "var(--text)" }}>{subs != null ? fmtNum(subs) : "—"}</div>
+          <div className="gw-mono gw-tnum" style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.03em", lineHeight: 1, color: subs == null ? "var(--text-4)" : "var(--text)" }}>{isLoading ? <SkelValue /> : subs != null ? fmtNum(subs) : "—"}</div>
           <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 8 }}>subscriptions · since router start</div>
         </div>
         <div>
-          <div className="gw-mono gw-tnum" style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.03em", lineHeight: 1, color: errRate != null ? errColor(errRate) : "var(--text-4)" }}>{errRate != null ? errRate.toFixed(2) + "%" : "—"}</div>
+          <div className="gw-mono gw-tnum" style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.03em", lineHeight: 1, color: errRate != null ? errColor(errRate) : "var(--text-4)" }}>{isLoading ? <SkelValue w={104} /> : errRate != null ? errRate.toFixed(2) + "%" : "—"}</div>
           <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 8 }}>subscription error rate{errs != null ? <> · {fmtComma(Math.round(errs))} failed</> : null}</div>
         </div>
       </div>
@@ -62,6 +63,7 @@ export function WebSocketPanel({ tw }: { tw: MetricWindow }) {
           </tr>
         </thead>
         <tbody>
+          {isLoading && <SkelRows rows={3} cols={[{ w: 130 }, { w: 62, align: "right" }, { w: 62, align: "right" }, { w: 72, align: "right" }]} />}
           {(ws?.byChain ?? []).map((c) => {
             const meta = buildChainMetaByIndex(c.spec);
             const rate = c.subscriptions > 0 ? (c.errors / c.subscriptions) * 100 : 0;

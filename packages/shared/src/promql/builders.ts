@@ -8,7 +8,7 @@ import {
   OPTIMIZER_METRICS,
   ROUTER_METRICS,
 } from "../constants/metrics.js";
-import { WINDOWS, type MetricWindow } from "../constants/windows.js";
+import { DEFAULT_WINDOW, WINDOWS, type MetricWindow } from "../constants/windows.js";
 
 /** Build a `{spec="ETH1",...}` label selector; empty string for no filters. */
 export function selector(labels: Record<string, string | undefined>): string {
@@ -39,7 +39,7 @@ function off(offset?: string): string {
  */
 export function qRequestsTotal(
   spec?: string,
-  window: MetricWindow = "1d",
+  window: MetricWindow = DEFAULT_WINDOW,
   offset?: string,
 ): string {
   // round(): increase() extrapolates to the window edges and returns a float, so
@@ -53,7 +53,7 @@ export function qRequestsTotal(
 /** Client requests served over the window (one increment per client request). */
 export function qClientRequestsTotal(
   spec?: string,
-  window: MetricWindow = "1d",
+  window: MetricWindow = DEFAULT_WINDOW,
   offset?: string,
 ): string {
   return `round(sum(increase(${ROUTER_METRICS.latencyCount}${selector({ spec })}[${rangeFor(window)}]${off(offset)})))`;
@@ -62,7 +62,7 @@ export function qClientRequestsTotal(
 /** Client requests grouped by a label (`spec` or `function` = method). */
 export function qClientRequestsBy(
   by: "spec" | "function",
-  window: MetricWindow = "1d",
+  window: MetricWindow = DEFAULT_WINDOW,
   spec?: string,
 ): string {
   return `round(sum by (${by}) (increase(${ROUTER_METRICS.latencyCount}${selector({ spec })}[${rangeFor(window)}])))`;
@@ -81,7 +81,7 @@ export function qClientRpsSeriesExpr(step: string, spec?: string): string {
 /** Per-method p95/p50/… — the histogram DOES carry the method (as `function`). */
 export function qMethodLatencyQuantile(
   quantile: number,
-  window: MetricWindow = "1d",
+  window: MetricWindow = DEFAULT_WINDOW,
   spec?: string,
 ): string {
   return `histogram_quantile(${quantile}, sum by (function, le) (rate(${ROUTER_METRICS.latencyBucket}${selector({ spec })}[${rangeFor(window)}])))`;
@@ -97,7 +97,7 @@ export function qMethodLatencyQuantile(
  * of history, but the clamp keeps the KPI honest at every age. */
 export function qAvailability(
   spec?: string,
-  window: MetricWindow = "1d",
+  window: MetricWindow = DEFAULT_WINDOW,
   offset?: string,
 ): string {
   const sel = selector({ spec });
@@ -109,7 +109,7 @@ export function qAvailability(
 /** 1 - success/total → error rate (0..1). */
 export function qErrorRate(
   spec?: string,
-  window: MetricWindow = "1d",
+  window: MetricWindow = DEFAULT_WINDOW,
   offset?: string,
 ): string {
   return `1 - (${qAvailability(spec, window, offset)})`;
@@ -119,7 +119,7 @@ export function qErrorRate(
 export function qLatencyQuantile(
   quantile: number,
   spec?: string,
-  window: MetricWindow = "1d",
+  window: MetricWindow = DEFAULT_WINDOW,
   offset?: string,
 ): string {
   const sel = selector({ spec });
@@ -148,7 +148,7 @@ export function qEndpointScore(scoreType: string, spec?: string): string {
 }
 
 /** Per-endpoint request totals over the window, grouped by endpoint_id. */
-export function qEndpointRequests(spec?: string, window: MetricWindow = "1d"): string {
+export function qEndpointRequests(spec?: string, window: MetricWindow = DEFAULT_WINDOW): string {
   return `sum by (endpoint_id) (increase(${ENDPOINT_METRICS.totalRelaysServiced}${selector({ spec })}[${rangeFor(window)}]))`;
 }
 
@@ -162,7 +162,7 @@ export function qEndpointHealth(spec?: string): string {
 /** Absolute error count over the window (total − success), whole number. */
 export function qErrorCount(
   spec?: string,
-  window: MetricWindow = "1d",
+  window: MetricWindow = DEFAULT_WINDOW,
   offset?: string,
 ): string {
   const sel = selector({ spec });
@@ -179,7 +179,7 @@ export type ErrorsGroupBy = "spec" | "provider_address" | "method";
  */
 export function qErrorsBy(
   by: ErrorsGroupBy,
-  window: MetricWindow = "1d",
+  window: MetricWindow = DEFAULT_WINDOW,
   spec?: string,
 ): string {
   const sel = selector({ spec });
@@ -192,7 +192,7 @@ export function qErrorsBy(
 /** Relays grouped by a label over the window (whole numbers). */
 export function qRequestsBy(
   by: ErrorsGroupBy,
-  window: MetricWindow = "1d",
+  window: MetricWindow = DEFAULT_WINDOW,
   spec?: string,
 ): string {
   return `round(sum by (${by}) (increase(${ROUTER_METRICS.requestsTotal}${selector({ spec })}[${rangeFor(window)}])))`;
@@ -206,7 +206,7 @@ export function qRequestsBy(
 export function qLabelledErrorsBy(
   metricName: string,
   by: "spec" | "method" | "provider_address",
-  window: MetricWindow = "1d",
+  window: MetricWindow = DEFAULT_WINDOW,
   spec?: string,
 ): string {
   return `round(sum by (${by}) (increase(${metricName}${selector({ spec })}[${rangeFor(window)}])))`;
@@ -215,7 +215,7 @@ export function qLabelledErrorsBy(
 /** Total of a labelled error counter over the window (whole number). */
 export function qLabelledErrorsTotal(
   metricName: string,
-  window: MetricWindow = "1d",
+  window: MetricWindow = DEFAULT_WINDOW,
   spec?: string,
   offset?: string,
 ): string {
@@ -293,7 +293,7 @@ export function qBackupShareExpr(
 export function qEndpointLatencyQuantile(
   quantile: number,
   endpointId: string,
-  window: MetricWindow = "1d",
+  window: MetricWindow = DEFAULT_WINDOW,
 ): string {
   return `histogram_quantile(${quantile}, sum by (le) (rate(${ENDPOINT_METRICS.latencyBucket}${selector({ endpoint_id: endpointId })}[${rangeFor(window)}])))`;
 }
@@ -326,7 +326,7 @@ export function qUpstreamReadVolumeSeriesExpr(
 /** Per-upstream error rate over the window (router scope). */
 export function qUpstreamErrorRate(
   upstreamAddress: string,
-  window: MetricWindow = "1d",
+  window: MetricWindow = DEFAULT_WINDOW,
 ): string {
   const sel = selector({ provider_address: upstreamAddress });
   const r = rangeFor(window);
@@ -339,6 +339,96 @@ export function qUpstreamErrorRate(
 export function qBlockLagByEndpoint(spec?: string): string {
   const sel = selector({ spec });
   return `max by (spec) (${ENDPOINT_METRICS.latestBlock}${sel}) - on(spec) group_right() ${ENDPOINT_METRICS.latestBlock}${sel}`;
+}
+
+/* ── Block tips (latest block per router / per upstream) ─────────────────── */
+
+/**
+ * The TIP-STALENESS window. Long enough that a slow chain's normal inter-block
+ * gap doesn't read as frozen, short enough that a genuinely stuck endpoint
+ * surfaces within a poll or two.
+ */
+export const TIP_WINDOW = "15m";
+
+/** `TIP_WINDOW` in seconds, for the "did this chain produce blocks?" test. */
+export const TIP_WINDOW_SECONDS = 15 * 60;
+
+/**
+ * Chain block RATE in blocks/sec, from the per-endpoint gauge (which advances
+ * every poll — the router gauge is far coarser, see `qRouterTips`).
+ *
+ * This is the unit converter that makes a block delta comparable ACROSS chains:
+ * APT1 moves ~28 versions/sec and ETH1 ~0.08 blocks/sec, so a raw "7000 blocks
+ * behind" is 4 minutes on one chain and four centuries on the other. Every
+ * `behind` number the UI shows in seconds is a block delta divided by this.
+ */
+export function qBlockRateBySpec(spec?: string): string {
+  return `max by (spec) (deriv(${ENDPOINT_METRICS.latestBlock}${selector({ spec })}[${TIP_WINDOW}]))`;
+}
+
+/** Best (highest) upstream tip per chain — the reference every lag measures against. */
+export function qBestTipBySpec(spec?: string): string {
+  return `max by (spec) (${ENDPOINT_METRICS.latestBlock}${selector({ spec })})`;
+}
+
+/**
+ * Router tips split by DEPLOYMENT and interface.
+ *
+ * `smartrouter_latest_block` carries only `{spec, apiInterface}` — the router
+ * labels its series with the chain, not with itself — so two deployments
+ * serving one chain are told apart solely by the scrape target label
+ * (`ROUTER_SCOPE_LABEL`, `service` under the Prometheus Operator). Grouping BY
+ * that label is what turns one flattened number into a row per router; an
+ * invalid or absent label degrades to the interface-only split rather than
+ * emitting a query Prometheus rejects.
+ *
+ * ⚠ This gauge refreshes far more coarsely than the per-endpoint one (it moves
+ * on accepted tip observations, not on every poll), so its delta against the
+ * best upstream is dominated by refresh cadence on fast chains. Report it in
+ * SECONDS (see `qBlockRateBySpec`), never as a raw block count.
+ */
+export function qRouterTips(scopeLabel?: string, spec?: string): string {
+  const by = scopeLabel && isValidScopeLabelName(scopeLabel)
+    ? `${scopeLabel}, spec, apiInterface`
+    : "spec, apiInterface";
+  return `max by (${by}) (${ROUTER_METRICS.latestBlock}${selector({ spec })})`;
+}
+
+/** Per-upstream tips, keeping the interface split a per-endpoint_id roll-up loses. */
+export function qUpstreamTips(spec?: string): string {
+  return `max by (spec, endpoint_id, apiInterface) (${ENDPOINT_METRICS.latestBlock}${selector({ spec })})`;
+}
+
+/**
+ * How many times each ROUTER tip changed over `TIP_WINDOW` — i.e. the gauge's
+ * own refresh cadence, which is the yardstick its lag has to be judged against.
+ *
+ * `smartrouter_latest_block` moves on accepted tip observations, not on every
+ * poll, so it sits a refresh-interval behind the upstream gauge BY CONSTRUCTION.
+ * Comparing it to a fixed seconds threshold paints every healthy router amber;
+ * comparing it to `TIP_WINDOW ÷ changes` asks the only question that matters —
+ * is this router further behind than its own update rate explains?
+ */
+export function qRouterTipChanges(scopeLabel?: string, spec?: string): string {
+  const by = scopeLabel && isValidScopeLabelName(scopeLabel)
+    ? `${scopeLabel}, spec, apiInterface`
+    : "spec, apiInterface";
+  return `max by (${by}) (changes(${ROUTER_METRICS.latestBlock}${selector({ spec })}[${TIP_WINDOW}]))`;
+}
+
+/**
+ * How many times each upstream tip CHANGED over `TIP_WINDOW`. Zero means the
+ * gauge is frozen — but only counts as stale once the chain is fast enough to
+ * have produced blocks in that window (the caller pairs this with
+ * `qBlockRateBySpec`), otherwise every Bitcoin poll would flag stale.
+ */
+export function qTipChanges(spec?: string): string {
+  return `changes(${ENDPOINT_METRICS.latestBlock}${selector({ spec })}[${TIP_WINDOW}])`;
+}
+
+/** A label name Prometheus accepts in a `by (…)` clause. Mirrors `scope.ts`. */
+function isValidScopeLabelName(label: string): boolean {
+  return /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(label);
 }
 
 /** Block-lag series for ONE endpoint (needs its spec for the max side). */
@@ -366,11 +456,59 @@ export function qOptimizerScore(scoreType: string, spec?: string): string {
 }
 
 /**
+ * Optimizer-scope selection scores keyed PER ENDPOINT — the roster's QoS.
+ *
+ * The router computes one set of scores per upstream and publishes it through
+ * two gauges. `rpc_endpoint_selection_score` is written by the routing path, so
+ * it only appears once a relay has been routed and only covers the candidates
+ * of that selection (backups sit in a separate pool consulted on fallback, so
+ * they are usually absent from it entirely). `rpc_optimizer_selection_score` is
+ * written by a sampler that walks EVERY registered upstream on a timer, fed by
+ * the router's proactive probe loop — so it is there with no traffic at all.
+ *
+ * The numbers are the same numbers: both gauges are filled from one iteration
+ * of the optimizer's `CalculateProviderScores`, from the same locals. This is
+ * the same family `qOptimizerScore` reads for the chain-level series; the only
+ * difference here is that the rows are kept per `endpoint_id` instead of
+ * averaged, and every `score_type` comes back in one query.
+ *
+ * It carries no `apiInterface` label (one optimizer per chain), which suits the
+ * roster: rows are keyed by `endpoint_id` alone, so the per-interface gauge
+ * would silently let one interface's score overwrite another's.
+ */
+export function qOptimizerScoresByEndpoint(spec?: string): string {
+  return `${OPTIMIZER_METRICS.selectionScore}${selector({ spec })}`;
+}
+
+/**
+ * Latest-block poll outcomes per endpoint over the window — the liveness a
+ * zero-traffic upstream can still be judged by.
+ *
+ * `kind` picks the counter: successes or failures. Both are incremented by the
+ * per-endpoint chain tracker, which polls every configured upstream (backups
+ * included) whether or not anything routes to it.
+ *
+ * ⚠ Zero on BOTH counters means "not polled in this window", NOT "healthy" and
+ * not "down": the tracker has a gate that suppresses a poll when served traffic
+ * or a peer's poll already refreshed the tip. A caller must treat the
+ * both-zero case as unknown rather than reading 0 failures as good news.
+ */
+export function qEndpointPolls(
+  kind: "ok" | "failed",
+  spec?: string,
+  window: MetricWindow = DEFAULT_WINDOW,
+): string {
+  const metric =
+    kind === "ok" ? ENDPOINT_METRICS.fetchLatestSuccess : ENDPOINT_METRICS.fetchLatestFails;
+  return `sum by (endpoint_id) (increase(${metric}${selector({ spec })}[${rangeFor(window)}]))`;
+}
+
+/**
  * Consistency checks RUN over the window (smartrouter_consistency_total =
  * "relay requests that enforced a minimum seen block").
  */
 export function qConsistencyChecked(
-  window: MetricWindow = "1d",
+  window: MetricWindow = DEFAULT_WINDOW,
   offset?: string,
   spec?: string,
 ): string {
@@ -385,7 +523,7 @@ export function qConsistencyChecked(
  * "caught stale response" (the bug this replaced).
  */
 export function qConsistencyCaught(
-  window: MetricWindow = "1d",
+  window: MetricWindow = DEFAULT_WINDOW,
   offset?: string,
   spec?: string,
 ): string {
@@ -399,7 +537,7 @@ export function qCsm(): string {
 
 /** Latency histogram bucket distribution over the window (per le). */
 export function qLatencyDistribution(
-  window: MetricWindow = "1d",
+  window: MetricWindow = DEFAULT_WINDOW,
   spec?: string,
 ): string {
   return `sum by (le) (increase(${ROUTER_METRICS.latencyBucket}${selector({ spec })}[${rangeFor(window)}]))`;

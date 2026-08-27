@@ -10,7 +10,9 @@ import {
   qAvailability,
   qBlockLagByEndpoint,
   qChainDown,
+  qEndpointPolls,
   qCsm,
+  qOptimizerScoresByEndpoint,
   qErrorRate,
   qLatencyQuantile,
   qLatencySeriesExpr,
@@ -124,6 +126,12 @@ describe("applyScope", () => {
       qBlockLagByEndpoint("ETH1"),
       qChainDown(),
       qScoreExpr("composite", "ETH1"),
+      // The roster's traffic-free reads. The optimizer one is a BARE metric
+      // name when unfiltered — the shape a naive walker mangles.
+      qOptimizerScoresByEndpoint(),
+      qOptimizerScoresByEndpoint("ETH1"),
+      qEndpointPolls("ok", "ETH1", "1d"),
+      qEndpointPolls("failed", undefined, "1d"),
       qCsm(),
       qPresence("smartrouter_retries_total"),
     ];

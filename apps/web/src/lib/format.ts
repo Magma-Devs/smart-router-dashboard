@@ -29,3 +29,15 @@ export function fmtBlock(n: number | null | undefined): string {
   if (n === null || n === undefined) return "—";
   return `#${Math.round(n).toLocaleString()}`;
 }
+
+/**
+ * A tip lag in seconds, short-form. Seconds below a minute, then m/h — a lag
+ * that reaches hours is a dead upstream, not a number anyone reads precisely.
+ */
+export function fmtLag(sec: number | null | undefined): string {
+  if (sec === null || sec === undefined) return "—";
+  if (sec < 1) return "0s";
+  if (sec < 60) return `${Math.round(sec)}s`;
+  if (sec < 3600) return `${Math.round(sec / 60)}m`;
+  return `${(sec / 3600).toFixed(1)}h`;
+}

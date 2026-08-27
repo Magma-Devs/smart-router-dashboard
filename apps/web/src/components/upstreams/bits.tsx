@@ -1,7 +1,7 @@
 "use client";
 
 /* Small shared components — ported verbatim from the design prototype
- * (page-providers.jsx): StatusDot, EyeIcon, SecretInput, FL, FE, Hint,
+ * (page-providers.jsx): EyeIcon, SecretInput, FL, FE, Hint,
  * EncNote, KebabMenu, UrlParserPreview, UpstreamIdentityRow, SheetStepBar. */
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
@@ -13,14 +13,6 @@ import {
   parseUrlChain,
   type UpstreamCatalogEntry,
 } from "@/components/upstreams/catalog";
-
-export function StatusDot({ status }: { status: string }) {
-  /* Honest extra branch: "—" (no metrics in window) renders a neutral dot —
-     the design's else-branch red dot would falsely signal "down". */
-  if (status === "—") return <span className="dot" style={{ background: "var(--text-4)" }} />;
-  const cls = status === "healthy" ? "dot--ok" : status === "degraded" ? "dot--warn" : "dot--err";
-  return <span className={"dot " + cls} />;
-}
 
 export function EyeIcon({ show }: { show: boolean }) {
   return show

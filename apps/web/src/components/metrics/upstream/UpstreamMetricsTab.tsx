@@ -14,8 +14,11 @@
 import { useEffect, useState } from "react";
 import { buildChainMetaByIndex, WINDOWS, type MetricWindow, type UpstreamDetail } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
+import { useFilters } from "@/components/gateway/FiltersProvider";
 import { fmtNum } from "@/lib/format";
 import { uptimeColor } from "@/lib/colors";
+import { HEALTH_UNKNOWN_HINT, healthColor, healthLabel } from "@/lib/health";
+import { qosHint, qosIsStale, qosValue } from "@/lib/upstream-signals";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { PMRoster, usePMRosterData } from "./PMRoster";
 import { PMStat, PMNoVal } from "./PMPanel";
@@ -26,12 +29,13 @@ export function UpstreamMetricsTab({ timeWindow, chainFilter }: {
   timeWindow: MetricWindow;
   chainFilter: string | null;
 }) {
+  const { scopeQ, routerId } = useFilters();
   const rosterRes = usePMRosterData(timeWindow, chainFilter);
   const entries = rosterRes.data?.upstreams ?? [];
 
   const [provName, setProvName] = useState<string | null>(null);
-  // jump the deep-dive to the first upstream on the filtered chain
-  useEffect(() => { setProvName(null); }, [chainFilter]);
+  // jump the deep-dive to the first upstream on the filtered chain / router
+  useEffect(() => { setProvName(null); }, [chainFilter, routerId]);
 
   const visible = entries;
   const selValid = visible.some((e) => e.endpointId === provName);
@@ -39,7 +43,7 @@ export function UpstreamMetricsTab({ timeWindow, chainFilter }: {
   const pm = activeName ? visible.find((e) => e.endpointId === activeName) ?? null : null;
 
   const detailRes = useApi<UpstreamDetail>(
-    activeName ? `/api/metrics/upstream-detail?endpointId=${encodeURIComponent(activeName)}&window=${timeWindow}` : null,
+    activeName ? `/api/metrics/upstream-detail?endpointId=${encodeURIComponent(activeName)}&window=${timeWindow}${scopeQ}` : null,
   );
   const detail = detailRes.data;
 
@@ -56,7 +60,7 @@ export function UpstreamMetricsTab({ timeWindow, chainFilter }: {
   return (
     <div>
       {/* ── roster of every upstream — click a row to drill in below ── */}
-      <PMRoster rows={visible} activeName={activeName} onSelect={setProvName} timeWindow={timeWindow} />
+      <PMRoster rows={visible} activeName={activeName} onSelect={setProvName} timeWindow={timeWindow} loading={rosterRes.isLoading} refreshing={rosterRes.isValidating} />
 
       {pm && activeName && (
         <>
@@ -71,19 +75,36 @@ export function UpstreamMetricsTab({ timeWindow, chainFilter }: {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, marginBottom: 12 }}>
             <PMStat label="Status">
               {(() => {
-                const map = { operational: { c: "var(--ok)", t: "Live · up" }, unhealthy: { c: "var(--err)", t: "Down" }, unknown: { c: "var(--text-4)", t: "—" } } as const;
-                const s = map[pm.health] || map.operational;
+                /* Same three words every other health surface uses
+                   (`lib/health.ts`) — this card used to say "Live · up". */
+                const c = healthColor(pm.health);
                 return (
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ width: 10, height: 10, borderRadius: 999, background: s.c, boxShadow: `0 0 8px ${s.c}`, flexShrink: 0 }} />
-                    <span style={{ fontSize: 20, fontWeight: 700, color: s.c }}>{s.t}</span>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}
+                    title={pm.health === "unknown" ? HEALTH_UNKNOWN_HINT : undefined}>
+                    <span style={{ width: 10, height: 10, borderRadius: 999, background: c, boxShadow: `0 0 8px ${c}`, flexShrink: 0 }} />
+                    <span style={{ fontSize: 20, fontWeight: 700, color: c }}>{healthLabel(pm.health)}</span>
                   </div>
                 );
               })()}
               <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 8 }}>{chainName}</div>
+              {/* QoS rides the Status card rather than the traffic-derived
+                  cards below, because the router scores an upstream from its
+                  probe loop whether or not it routes anything here. */}
+              {(() => {
+                const q = qosValue(pm);
+                if (q === null) return null;
+                return (
+                  <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 4 }} title={qosHint(pm)}>
+                    QoS{" "}
+                    <span className="gw-mono gw-tnum" style={{ fontWeight: 700, color: q > 97 ? "var(--ok)" : q > 90 ? "var(--warn)" : "var(--err)", opacity: qosIsStale(pm) ? 0.55 : 1 }}>
+                      {Math.round(q)}
+                    </span>
+                  </div>
+                );
+              })()}
             </PMStat>
 
-            <PMStat label="Availability" tip={"**Successful synthetic probes** as a share of all probes — i.e. **success rate**, not wall-clock uptime or an SLA figure.\n\nThe large figure follows the window above; 1h / 24h / 7d are shown for context."}>
+            <PMStat label="Availability" tip={"**Requests this upstream answered** as a share of all requests routed to it — i.e. **success rate**, not wall-clock uptime or an SLA figure.\n\nIt is measured from real traffic, so it is empty until the router routes something here. The router's own block polls are reported separately below.\n\nThe large figure follows the window above; 1h / 24h / 7d are shown for context."}>
               {hasData && availPct != null ? (
                 <>
                   <div className="gw-mono gw-tnum" style={{ fontSize: 26, fontWeight: 700, lineHeight: 1, color: availCol(availPct) }}>{availPct.toFixed(2)}%</div>
@@ -144,7 +165,7 @@ export function UpstreamMetricsTab({ timeWindow, chainFilter }: {
             </PMStat>
           </div>
 
-          {hasData ? <PMBody pm={pm} detail={detail} name={activeName} timeWindow={timeWindow} /> : <PMEmpty name={activeName} chainName={chainName} />}
+          {hasData ? <PMBody pm={pm} detail={detail} name={activeName} timeWindow={timeWindow} /> : <PMEmpty pm={pm} name={activeName} chainName={chainName} timeWindow={timeWindow} />}
         </>
       )}
     </div>

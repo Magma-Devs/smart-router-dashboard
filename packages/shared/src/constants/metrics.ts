@@ -41,7 +41,14 @@ export const ENDPOINT_METRICS = {
   selectionScore: "rpc_endpoint_selection_score",
   requestsInFlight: "rpc_endpoint_requests_in_flight",
   totalRelaysServiced: "rpc_endpoint_total_relays_serviced",
+  // Latest-block poll outcomes from the per-endpoint chain tracker. These are
+  // the ONLY per-endpoint liveness signal that does not need relay traffic:
+  // the tracker polls every configured endpoint (backups included) on the
+  // chain's own block cadence, so an upstream nobody has routed to still
+  // reports whether it answers. `overallHealth` cannot do this — it is
+  // seeded optimistically at registration and only ever moved by a relay.
   fetchLatestSuccess: "rpc_endpoint_fetch_latest_success",
+  fetchLatestFails: "rpc_endpoint_fetch_latest_fails",
   latencyBucket: "rpc_endpoint_end_to_end_latency_milliseconds_bucket",
   latencyCount: "rpc_endpoint_end_to_end_latency_milliseconds_count",
   latencySum: "rpc_endpoint_end_to_end_latency_milliseconds_sum",

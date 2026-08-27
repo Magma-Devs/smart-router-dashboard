@@ -53,6 +53,17 @@ export const config = {
      * point it at `job` for a scrape config that names jobs per router.
      */
     routerScopeLabel: env("ROUTER_SCOPE_LABEL") ?? "service",
+    /**
+     * Credentials for a store that is not a bare Prometheus — a per-tenant
+     * read proxy, or Mimir behind a basic-auth gateway. Both halves of the
+     * pair are needed for the `Authorization` header to be sent at all.
+     * `orgId` becomes `X-Scope-OrgID` for a multi-tenant store that takes the
+     * org from the client; unset sends no header. All three unset = today's
+     * unauthenticated fetch, unchanged.
+     */
+    username: env("PROMETHEUS_USERNAME"),
+    password: env("PROMETHEUS_PASSWORD"),
+    orgId: env("PROMETHEUS_ORG_ID"),
   },
 
   /** Helm-values / router config the dashboard reflects (read-only). */
@@ -79,7 +90,26 @@ export const config = {
     googleClientId: env("GOOGLE_CLIENT_ID"),
   },
 
-  tenantId: env("TENANT_ID") ?? "default",
+  /**
+   * Direct-to-upstream relay (`POST /api/upstreams/relay`) — the api dials a
+   * configured upstream on the caller's behalf, bypassing the router, so the
+   * Try-me drawer can show what an upstream answers on its own.
+   *
+   * `enabled` is a real switch, not decoration: with the default
+   * AUTH_MODE=disabled, anyone who can reach the api can spend the operator's
+   * upstream quota (and send write methods) through this route, using
+   * credentials only the api holds. Turn it off on any deployment where that
+   * is not acceptable.
+   */
+  upstreamRelay: {
+    enabled: (env("UPSTREAM_RELAY_ENABLED") ?? "true").toLowerCase() !== "false",
+    timeoutMs: envInt("UPSTREAM_RELAY_TIMEOUT_MS", 10000),
+    /** Response bodies past this are truncated, not streamed. */
+    maxBodyBytes: envInt("UPSTREAM_RELAY_MAX_BODY_BYTES", 262144),
+    /** Per-IP per-minute, tighter than the global RATE_LIMIT_MAX. */
+    rateLimitMax: envInt("UPSTREAM_RELAY_RATE_LIMIT_MAX", 20),
+  },
+
   logLevel: (env("LOG_LEVEL") ?? "info").toLowerCase(),
 
   build: {

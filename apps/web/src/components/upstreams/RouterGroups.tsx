@@ -1,81 +1,91 @@
 "use client";
 
-/* Endpoints page — ported from the design prototype (page-endpoints.jsx
- * EndpointsPage): chain-grouped endpoint cards + search + all/mainnet/testnet
- * segctl. SELF-HOSTED REALITY: an "endpoint" is one (router × interface)
- * surface from the mounted values file; its URL is the local listen port
- * (http://localhost:<port>). JWT suffix / last-used are Magma-Cloud data —
- * they render "—" (never fabricated).
+/* Router grouping for the Upstreams page — one card per router in the mounted
+ * values file, rows for the (router × interface) endpoints it publishes.
  *
- * Each row with a local port carries a hover-revealed "Try now" button that
- * opens the TryMe request console inline (the former standalone Live-test
- * tab, folded in here so testing lives next to the endpoint it targets). */
+ * This is the former standalone Endpoints page (page-endpoints.jsx
+ * EndpointsPage), folded in as the roster's third grouping: the page already
+ * carved the same config three ways in prose ("who serves this chain", "what
+ * does this upstream serve"), and "what does this router publish" was the one
+ * living on its own tab. Rows read exactly as they did there — same iface tag,
+ * capability chips, address resolution, Try-now console and detail sheet — so
+ * moving the surface changed nothing about it.
+ *
+ * SELF-HOSTED REALITY: an "endpoint" is one (router × interface) surface; its
+ * address is the published gateway URL, else the local listen port. JWT suffix
+ * / last-used are Magma-Cloud data — they render "—" (never fabricated). */
 
 import { useMemo, useState } from "react";
 import {
   buildChainMetaByIndex,
   type ChainMetrics,
   type HealthState,
-  type UpstreamMetrics,
   type RouterTopology,
 } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
+import { ExplorerHomeLink } from "@/components/gateway/ExplorerLink";
 import { CopyButton } from "@/components/gateway/CopyButton";
-import { buildUpstreamRows } from "@/components/upstreams/catalog";
+import { CapabilityTags, capabilitiesOf } from "@/components/gateway/CapabilityTags";
+import { useFilters } from "@/components/gateway/FiltersProvider";
 import {
   IfaceTag,
   buildEndpointRows,
   epAddons,
   epDisplayHost,
-  epHasArchive,
   epHasWs,
   epHttpUrl,
   epWsUrl,
   upstreamCount,
   type EndpointRowModel,
 } from "@/components/endpoints/bits";
-import { CapabilityTags, capabilitiesOf } from "@/components/gateway/CapabilityTags";
 import { EndpointDetailSheet } from "@/components/endpoints/EndpointDetailSheet";
-import { CreateEndpointSheet } from "@/components/endpoints/CreateEndpointSheet";
 import { TryNowButton } from "@/components/try-me/try-now-button";
-import { useFilters } from "@/components/gateway/FiltersProvider";
+import type { UpstreamRow } from "@/components/upstreams/catalog";
 
-interface CardGroup {
+interface RouterGroup {
   routerId: string;
   spec: string;
   network: string;
   rows: EndpointRowModel[];
 }
 
-export function EndpointsView() {
-  const config = useApi<{ routers: RouterTopology[] }>("/api/config/routers", 60000);
-  const { scopeQ } = useFilters();
-  const live = useApi<{ upstreams: UpstreamMetrics[] }>(`/api/metrics/upstreams?window=1d${scopeQ}`);
+export function RouterGroups({
+  routers,
+  upstreams,
+  search,
+  netFilter,
+  chainFilter,
+  routerFilter,
+}: {
+  routers: RouterTopology[];
+  /** Upstream roster — the detail sheet lists the nodes behind an endpoint. */
+  upstreams: UpstreamRow[];
+  /** Page-level filters, applied to the rows this grouping renders. */
+  search: string;
+  netFilter: "all" | "mainnet" | "testnet";
+  /** Spec label from the page's chain picker; null = every chain. */
+  chainFilter: string | null;
+  /** Config router id from the page's router picker; null = every router. */
+  routerFilter: string | null;
+}) {
+  const { timeWindow, scopeQ } = useFilters();
   // Health per spec — threaded into the Try-now drawer's status tag (omitted
-  // when a chain has no live metrics; never a hardcoded status).
-  const chainMetrics = useApi<{ chains: ChainMetrics[] }>(`/api/metrics/chains?window=1d${scopeQ}`, 60000);
+  // when a chain has no live metrics; never a hardcoded status). Reads the
+  // page's shared window, like every other health figure.
+  const chainMetrics = useApi<{ chains: ChainMetrics[] }>(`/api/metrics/chains?window=${timeWindow}${scopeQ}`, 60000);
 
-  const [showCreate, setShowCreate] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [hoverId, setHoverId] = useState<string | null>(null);
-  const [search, setSearch] = useState("");
-  const [netFilter, setNetFilter] = useState<"all" | "mainnet" | "testnet">("all");
 
-  const routers = useMemo(() => config.data?.routers ?? [], [config.data]);
   const endpoints = useMemo(() => buildEndpointRows(routers), [routers]);
   const healthBySpec = useMemo(() => {
     const map = new Map<string, HealthState>();
     for (const c of chainMetrics.data?.chains ?? []) map.set(c.spec, c.health);
     return map;
   }, [chainMetrics.data]);
-  const upstreams = useMemo(
-    () => buildUpstreamRows(routers, live.data?.upstreams),
-    [routers, live.data],
-  );
 
-  /* ── group by router (the real per-chain grouping of the topology) ── */
-  const chainGroups = useMemo<CardGroup[]>(() => {
+  const groups = useMemo<RouterGroup[]>(() => {
     const filtered = endpoints.filter((ep) => {
       const c = buildChainMetaByIndex(ep.spec);
       const host = epHttpUrl(ep) ?? "";
@@ -87,13 +97,14 @@ export function EndpointsView() {
         ep.iface.toLowerCase().includes(q);
       // Mainnet/testnet comes from the chain map (ep.network is the lowercased
       // spec index, never literally "mainnet"/"testnet").
-      const isMainnet = c.mainnet;
       const matchNet =
         netFilter === "all" ||
-        (netFilter === "mainnet" ? isMainnet : !isMainnet);
-      return matchSearch && matchNet;
+        (netFilter === "mainnet" ? c.mainnet : !c.mainnet);
+      const matchChain = chainFilter === null || ep.spec === chainFilter;
+      const matchRouter = routerFilter === null || ep.routerId === routerFilter;
+      return matchSearch && matchNet && matchChain && matchRouter;
     });
-    const map = new Map<string, CardGroup>();
+    const map = new Map<string, RouterGroup>();
     filtered.forEach((ep) => {
       let g = map.get(ep.routerId);
       if (!g) {
@@ -103,7 +114,7 @@ export function EndpointsView() {
       g.rows.push(ep);
     });
     return [...map.values()];
-  }, [endpoints, search, netFilter]);
+  }, [endpoints, search, netFilter, chainFilter, routerFilter]);
 
   /* Specs served by more than one router — the config allows several routers
      on one chain (different ids/hostnames, same `network`), and those cards
@@ -121,51 +132,13 @@ export function EndpointsView() {
   const liveDetail = detailId ? endpoints.find((e) => e.id === detailId) ?? null : null;
   const detailRouter = liveDetail ? routers.find((r) => r.id === liveDetail.routerId) ?? null : null;
 
-  const loading = !config.data && !config.error;
-
   return (
-    <div className="gw-page fade-in">
-
-      {/* Header — "New endpoint" is hidden: endpoints come from the read-only
-          mounted config, so there's nothing to create here (a Magma Cloud
-          action). Restore the button when a create flow is wired. */}
-      <div className="gw-row" style={{ justifyContent: "space-between", marginBottom: 20 }}>
-        <h1>Endpoints</h1>
-      </div>
-
-      {/* Search + filter */}
-      <div className="gw-row" style={{ gap: 10, marginBottom: 16 }}>
-        <div style={{ position: "relative", flex: 1, maxWidth: 380 }}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-            style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }}>
-            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-          </svg>
-          <input className="gw-input" type="search" placeholder="Search chains, interfaces…"
-            value={search} onChange={(e) => setSearch(e.target.value)} style={{ paddingLeft: 32 }} />
-        </div>
-        <div className="gw-segctl">
-          {([["all", "All"], ["mainnet", "Mainnet"], ["testnet", "Testnet"]] as const).map(([val, lbl]) => (
-            <button key={val} className={netFilter === val ? "on" : ""} onClick={() => setNetFilter(val)}>{lbl}</button>
-          ))}
-        </div>
-      </div>
-
-      {/* Empty */}
-      {loading ? null : endpoints.length === 0 ? (
-        <div className="gw-empty">
-          <div className="gw-empty__icon">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-          </div>
-          <h2>No endpoints yet</h2>
-          <p>No router config mounted — set HELM_VALUES_DIR / mount core/values.yml and its chains and interfaces will appear here.</p>
-        </div>
-      ) : chainGroups.length === 0 ? (
-        <div style={{ textAlign: "center", padding: "48px 0", color: "var(--text-3)", fontSize: 13 }}>
-          No endpoints match your search.
-        </div>
+    <>
+      {groups.length === 0 ? (
+        <p className="lede" style={{ padding: "12px 2px" }}>No endpoints match this filter.</p>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {chainGroups.map((group) => {
+          {groups.map((group) => {
             const chain = buildChainMetaByIndex(group.spec);
             return (
               <div key={group.routerId} className="gw-card" style={{ padding: "14px 16px" }}>
@@ -177,8 +150,12 @@ export function EndpointsView() {
                     which is the only case where the chain name alone is
                     ambiguous. */}
                 <div className="gw-row" style={{ gap: 10, alignItems: "center", marginBottom: 10 }}>
-                  <ChainBadge spec={group.spec} size={26} />
-                  <span style={{ fontSize: 13, fontWeight: 600 }}>{chain.name}</span>
+                  <ExplorerHomeLink spec={group.spec}>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+                      <ChainBadge spec={group.spec} size={26} />
+                      <span style={{ fontSize: 13, fontWeight: 600 }}>{chain.name}</span>
+                    </span>
+                  </ExplorerHomeLink>
                   {duplicatedSpecs.has(group.spec) && (
                     <span className="gw-mono" style={{ fontSize: 11, color: "var(--text-3)" }}>{group.routerId}</span>
                   )}
@@ -189,7 +166,7 @@ export function EndpointsView() {
 
                 {/* Endpoint rows — compact, click to open sheet. Hover reveals
                     a "Try now" button that fires a live request against the
-                    local listen port (the former Live-test console, inline). */}
+                    endpoint's address (the request console, inline). */}
                 <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                   {group.rows.map((ep) => {
                     const host = epDisplayHost(ep);
@@ -232,7 +209,7 @@ export function EndpointsView() {
                             // config declares a websocket upstream for it —
                             // the drawer offers both transports.
                             wsUrl={epHasWs(ep) ? epWsUrl(ep) : null}
-                            hasArchive={epHasArchive(ep)}
+                            addons={epAddons(ep)}
                             health={healthBySpec.get(ep.spec)}
                             visible={hovered}
                           />
@@ -264,13 +241,6 @@ export function EndpointsView() {
         </div>
       )}
 
-      <CreateEndpointSheet
-        open={showCreate}
-        onClose={() => setShowCreate(false)}
-        routers={routers}
-        upstreams={upstreams}
-        existing={endpoints}
-      />
       <EndpointDetailSheet
         open={!!liveDetail}
         ep={liveDetail}
@@ -278,6 +248,6 @@ export function EndpointsView() {
         onClose={() => setDetailId(null)}
         upstreams={upstreams}
       />
-    </div>
+    </>
   );
 }

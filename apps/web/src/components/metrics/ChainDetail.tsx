@@ -14,6 +14,7 @@ import { PCTL_CLR, seriesColor } from "@/lib/colors";
 import { fmtNum } from "@/lib/format";
 import { seriesXY } from "./bits";
 import { useFilters } from "@/components/gateway/FiltersProvider";
+import { Skel } from "@/components/gateway/Skel";
 
 /** The already-loaded roster row backing the expanded chain. */
 export interface ChainDetailRow {
@@ -73,10 +74,18 @@ export function ChainDetail({ r, onChainClick, win }: { r: ChainDetailRow; onCha
   const { scopeQ } = useFilters();
   const { data } = useApi<ChainSeries>(`/api/metrics/chain-series?spec=${encodeURIComponent(r.spec)}&window=${win}${scopeQ}`);
 
+  // Ghosted rather than "Loading chain health…": the row expands inline, and a
+  // line of text collapses to a different height than the chart that replaces
+  // it, so the whole table jumped when the series landed.
   if (!data) {
     return (
-      <td colSpan={8} style={{ padding: 0, background: "var(--bg-2)", borderBottom: "1px solid var(--line)" }}>
-        <div style={{ padding: "14px 16px", fontSize: 12, color: "var(--text-3)" }}>Loading chain health…</div>
+      <td colSpan={9} style={{ padding: 0, background: "var(--bg-2)", borderBottom: "1px solid var(--line)" }}>
+        <div style={{ padding: "16px", display: "grid", gap: 12 }}>
+          <div style={{ display: "flex", gap: 8 }}>
+            {[0, 1, 2, 3].map((i) => <Skel key={i} w={78} h={22} r={999} />)}
+          </div>
+          <Skel w="100%" h={132} r={8} />
+        </div>
       </td>
     );
   }
@@ -131,7 +140,7 @@ export function ChainDetail({ r, onChainClick, win }: { r: ChainDetailRow; onCha
   const from = m.times.length ? roFmtTime(m.times[0]!, win) : roFmtTime(roTimes(win, 2)[0]!, win);
 
   return (
-    <td colSpan={8} style={{ padding: 0, background: "var(--bg-2)", borderBottom: "1px solid var(--line)" }}>
+    <td colSpan={9} style={{ padding: 0, background: "var(--bg-2)", borderBottom: "1px solid var(--line)" }}>
       <div style={{ padding: "14px 16px" }}>
         {/* metric switcher */}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>

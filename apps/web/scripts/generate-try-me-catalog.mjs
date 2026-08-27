@@ -15,7 +15,8 @@
  *     | { [iface in jsonrpc|rest|tendermintrpc|grpc]?: {
  *          regular?: Cmd[]; archive?: Cmd[]; debug?: Cmd[]; trace?: Cmd[] } } }
  *
- *   Cmd = { m: string; v?: string; l?: string; p?: string; d?: string }
+ *   Cmd = { m: string; v?: string; l?: string; p?: string; d?: string;
+ *           ip?: string; a?: 1 }
  *     m  method name (JSON-RPC method / REST path template / grpc Svc/Method)
  *     v  HTTP verb for REST when not GET
  *     l  label when different from m (curated)
@@ -23,6 +24,11 @@
  *        omitted when it equals the interface default ("[]" / the path
  *        template itself / "{}")
  *     d  one-line description (curated)
+ *     ip internal path of the collection that serves it (`/v2`, `/P`), when
+ *        the method is served under one. NOT part of the identifier — see
+ *        "Internal paths" below
+ *     a  1 when this REST name is declared under MORE than one internal path,
+ *        so the router's name-keyed lookup can only resolve it to one of them
  *
  * Tier derivation (verified against the spec data):
  *   - collection_data.add_on ""        → regular
@@ -38,11 +44,33 @@
  *     is synthesised from the curated ARCHIVE_HINTS below, filtered to
  *     methods that actually exist in the regular tier.
  *
- * Collection selection: for each (interface, tier) prefer internal_path ""
- * (which inherits the real methods via imports/inheritance_apis everywhere we
- * checked); when "" is absent or empty, fall back to the internal_path with
- * the most methods. All collection `type` variants at the chosen path merge
- * (REST specs split GET/POST into sibling collections).
+ * Collection selection: for each (interface, tier) EVERY internal_path is
+ * emitted. A spec that splits an interface across paths serves all of them —
+ * TON's /v2 + /v3, AVAX's /C/rpc + /P + /X — and emitting one silently dropped
+ * the others. All collection `type` variants merge (REST specs split GET/POST
+ * into sibling collections).
+ *
+ * Internal paths ride as `ip` METADATA, never inside `m`. What a client sends
+ * through the router is the api name exactly as the spec declares it — the
+ * router matches REST by api name alone (`matchSpecApiByName`, smart-router
+ * `protocol/chainlib/base_chain_parser.go`) and then dials the node-url
+ * pinned to that api's collection. A prefixed identifier does not route:
+ *
+ *   GET /getMasterchainInfo     → 200, toncenter v2 answers
+ *   GET /v2/getMasterchainInfo  → {"code":12,"message":"Not Implemented"}
+ *
+ * `ip` is what the DIRECT-to-upstream leg needs instead: an upstream pinned
+ * to `/v2` is already the v2 root, while an unpinned one is the shared root
+ * the router would have appended `/v2` to (`chain_router.go`
+ * `autoGenerateMissingInternalPaths`: `nodeUrl.Url = baseUrl + internalPath`).
+ * See `src/components/try-me/direct-request.ts`.
+ *
+ * REST emits one command per (name, internal path) — TON's `/estimateFee`
+ * exists under both /v2 and /v3 and they are different calls. Both carry
+ * `a: 1`, because the router's name-keyed REST lookup can reach only one of
+ * them. Other interfaces emit one command per NAME (a jsonrpc method resolves
+ * from the root url whatever its collection), carrying `ip` only when the
+ * name is unique to one path.
  *
  * Disabled specs (enabled:false — the abstract cosmossdk/ibc/tendermint base
  * specs) are indexed for import resolution but not emitted. Disabled
@@ -67,10 +95,19 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SPECS_DIR =
   process.env.LAVA_SPECS_DIR ??
   path.resolve(__dirname, "../../../../lava-specs");
-const OUT_PATH = path.resolve(
-  __dirname,
-  "../src/components/try-me/chain-methods.generated.json",
-);
+const OUT_PATH =
+  process.env.TRY_ME_OUT ??
+  path.resolve(__dirname, "../src/components/try-me/chain-methods.generated.json");
+/**
+ * Committed roll-call of (spec × interface) pairs whose regular tier has NO
+ * command that can be sent as-is. It exists to be diffed: a chain family
+ * nobody has curated hints for lands as a line in this file, which the drift
+ * check turns into a failure instead of a silent gap in the drawer. See
+ * `.claude/rules/chain-resync.md`.
+ */
+const NO_RUNNABLE_PATH =
+  process.env.NO_RUNNABLE_OUT ??
+  path.resolve(__dirname, "data/no-runnable-defaults.generated.json");
 // NOTE: chain display NAMES / families / icons are produced by the separate
 // generate-chain-map.mjs (→ packages/shared/.../chain-map.generated.json).
 // This script owns only the per-spec METHOD catalog.
@@ -199,6 +236,36 @@ const JSONRPC_HINTS = [
   // Casper
   { m: "info_get_status", p: "[]", d: "Returns the current node status." },
   { m: "chain_get_state_root_hash", p: "[]", d: "Returns the latest state root hash." },
+  // XRP Ledger — rippled's JSON-RPC takes ONE object inside the params array,
+  // so `[{}]` is the empty request, not `[]`. Verified against s1.ripple.com.
+  { m: "server_info", p: "[{}]", d: "Returns the server's state and the ledger range it holds.", only: ["XRP"] },
+  { m: "server_state", p: "[{}]", d: "Returns machine-readable server state.", only: ["XRP"] },
+  { m: "fee", p: "[{}]", d: "Returns the current transaction cost, in drops.", only: ["XRP"] },
+  { m: "ledger_current", p: "[{}]", d: "Returns the index of the ledger currently being built.", only: ["XRP"] },
+  { m: "ledger_closed", p: "[{}]", d: "Returns the hash and index of the most recently closed ledger.", only: ["XRP"] },
+  { m: "ping", p: "[{}]", d: "Round-trip check — returns an empty success.", only: ["XRP"] },
+  { m: "random", p: "[{}]", d: "Returns a random number from the server, for client-side seeding.", only: ["XRP"] },
+  // Monero — object params, not an array. Verified against a public node;
+  // `sync_info` is left out because restricted RPCs refuse it.
+  { m: "get_info", p: "{}", d: "Returns node and chain state: height, difficulty, connections.", only: ["MONERO"] },
+  { m: "get_block_count", p: "{}", d: "Returns the current block height.", only: ["MONERO"] },
+  { m: "get_last_block_header", p: "{}", d: "Returns the header of the chain tip.", only: ["MONERO"] },
+  { m: "get_fee_estimate", p: "{}", d: "Returns the estimated per-byte fee.", only: ["MONERO"] },
+  { m: "get_version", p: "{}", d: "Returns the node's RPC version and hard-fork table.", only: ["MONERO"] },
+  { m: "hard_fork_info", p: "{}", d: "Returns the state of the current hard fork.", only: ["MONERO"] },
+  // Avalanche P-chain — object params. Only the two verified against
+  // api.avax.network before it rate-limited; the rest of platform.* stays
+  // uncurated rather than guessed at.
+  { m: "platform.getHeight", p: "{}", d: "Returns the height of the last accepted P-chain block.", only: ["AVALANCHEP"] },
+  { m: "platform.getBlockchains", p: "{}", d: "Returns every blockchain the network validates.", only: ["AVALANCHEP"] },
+  // Celestia node API — the spec marks these DEFAULT (no block argument),
+  // unlike header.GetByHeight and friends. NOT live-fired: the node API is
+  // auth-gated, so there is no public endpoint to check against.
+  { m: "header.NetworkHead", p: "[]", d: "Returns the network head the node has synced to.", only: ["CELESTIA"] },
+  { m: "header.LocalHead", p: "[]", d: "Returns this node's local chain head.", only: ["CELESTIA"] },
+  { m: "header.SyncState", p: "[]", d: "Returns the header sync state.", only: ["CELESTIA"] },
+  { m: "node.Ready", p: "[]", d: "Reports whether the node is ready to serve requests.", only: ["CELESTIA"] },
+  { m: "das.SamplingStats", p: "[]", d: "Returns data-availability sampling statistics.", only: ["CELESTIA"] },
 ];
 
 const REST_HINTS = [
@@ -220,31 +287,37 @@ const REST_HINTS = [
   { m: "/accounts/{address}", d: "Returns account authentication key and sequence number.", only: ["APT", "MOVEMENT"] },
   { m: "/blocks/by_height/{block_height}", d: "Returns the block at the given height.", only: ["APT", "MOVEMENT"] },
   { m: "/estimate_gas_price", d: "Returns the estimated gas price.", only: ["APT", "MOVEMENT"] },
-  // EOS (nodeos chain API — every path is POST; only get_info needs no body)
+  // EOS (nodeos chain API — every path is POST; only get_info needs no body).
+  // `needs` marks the ones whose path is concrete but whose BODY isn't: the
+  // path alone can't carry a block number or an account name.
   { m: "/v1/chain/get_info", v: "POST", d: "Returns chain state: chain id, head block, server version." },
-  { m: "/v1/chain/get_block_info", v: "POST", d: "Returns block info — POST body {\"block_num\": <height>}." },
-  { m: "/v1/chain/get_account", v: "POST", d: "Returns an account's resources and permissions — POST body {\"account_name\":\"<name>\"}." },
-  { m: "/v1/chain/get_table_rows", v: "POST", d: "Reads rows from a contract table — POST body {\"code\":…,\"scope\":…,\"table\":…,\"json\":true}." },
-  { m: "/v1/chain/get_producers", v: "POST", d: "Returns the producer schedule — POST body {\"json\":true,\"limit\":10}." },
-  { m: "/v1/trace_api/get_block", v: "POST", d: "Returns a block's action traces — POST body {\"block_num\": <height>}." },
+  { m: "/v1/chain/get_block_info", v: "POST", needs: true, d: "Returns block info — POST body {\"block_num\": <height>}." },
+  { m: "/v1/chain/get_account", v: "POST", needs: true, d: "Returns an account's resources and permissions — POST body {\"account_name\":\"<name>\"}." },
+  { m: "/v1/chain/get_table_rows", v: "POST", needs: true, d: "Reads rows from a contract table — POST body {\"code\":…,\"scope\":…,\"table\":…,\"json\":true}." },
+  { m: "/v1/chain/get_producers", v: "POST", needs: true, d: "Returns the producer schedule — POST body {\"json\":true,\"limit\":10}." },
+  { m: "/v1/trace_api/get_block", v: "POST", needs: true, d: "Returns a block's action traces — POST body {\"block_num\": <height>}." },
   // VeChain Thor
   { m: "/blocks/{revision}", p: "/blocks/best", d: "Returns a block by number, id, or \"best\" for the chain head." },
   { m: "/accounts/{address}", p: "/accounts/0x0000000000000000000000000000456E65726779", d: "Returns an address's VET balance, VTHO energy and code flag.", only: ["VECHAIN"] },
   { m: "/node/network/peers", d: "Returns the node's connected peers." },
   { m: "/fees/priority", d: "Returns the suggested priority fee." },
   { m: "/fees/history", d: "Returns recent fee history." },
-  // TON HTTP API — toncenter v2 (/v2/get*) plus tonindex v3 (/v3/*). Ice Open
-  // Network is a TON fork and serves the same paths, so the address examples
-  // are scoped to TON (a TON address does not exist on ION) and every chain
-  // gets the paramless variant below.
-  { m: "/v2/getMasterchainInfo", d: "Returns the masterchain state — the latest known block." },
-  { m: "/v3/masterchainInfo", d: "Returns the masterchain state — the latest known block." },
-  { m: "/v2/getAddressInformation", p: "/v2/getAddressInformation?address=EQAAFhjXzKuQ5N0c96nsdZQWATcJm909LYSaCAvWFxVJP80D", d: "Returns balance, state and code for an address.", only: ["TON"] },
-  { m: "/v2/getAddressInformation", d: "Returns balance, state and code for an address — append ?address=<address>." },
-  { m: "/v3/addressInformation", p: "/v3/addressInformation?address=EQAAFhjXzKuQ5N0c96nsdZQWATcJm909LYSaCAvWFxVJP80D", d: "Returns balance, state and code for an address.", only: ["TON"] },
-  { m: "/v3/addressInformation", d: "Returns balance, state and code for an address — append ?address=<address>." },
-  { m: "/v3/blocks", d: "Lists recent blocks, newest first." },
-  { m: "/v3/transactions", d: "Lists recent transactions, newest first." },
+  // TON HTTP API — toncenter v2 (the /get* names) plus tonindex v3 (the rest).
+  // Names are the SPEC's, with no version prefix: that is what the router
+  // matches on, and it dials the node-url pinned to that name's collection.
+  // Ice Open Network is a TON fork serving the same names, so the address
+  // examples are scoped to TON (a TON address does not exist on ION) and every
+  // chain gets the paramless variant below.
+  { m: "/getMasterchainInfo", d: "Returns the masterchain state — the latest known block." },
+  { m: "/masterchainInfo", d: "Returns the masterchain state — the latest known block.", only: ["TON", "ION"] },
+  { m: "/getAddressInformation", p: "/getAddressInformation?address=EQAAFhjXzKuQ5N0c96nsdZQWATcJm909LYSaCAvWFxVJP80D", d: "Returns balance, state and code for an address.", only: ["TON"] },
+  { m: "/getAddressInformation", d: "Returns balance, state and code for an address — append ?address=<address>." },
+  { m: "/addressInformation", p: "/addressInformation?address=EQAAFhjXzKuQ5N0c96nsdZQWATcJm909LYSaCAvWFxVJP80D", d: "Returns balance, state and code for an address.", only: ["TON"] },
+  { m: "/addressInformation", d: "Returns balance, state and code for an address — append ?address=<address>." },
+  // Scoped: bare `/blocks` and `/transactions` are common REST names and these
+  // descriptions are the TON index's.
+  { m: "/blocks", d: "Lists recent blocks, newest first.", only: ["TON", "ION"] },
+  { m: "/transactions", d: "Lists recent transactions, newest first.", only: ["TON", "ION"] },
   // Concordium (node REST proxy — {…} segments are placeholders to replace)
   { m: "/v0/consensusInfo", d: "Returns consensus state: best block, epoch and finalization info." },
   { m: "/v0/chainParameters", d: "Returns the current chain parameters." },
@@ -268,21 +341,34 @@ const REST_HINTS = [
   { m: "/api/v1/transactions", d: "Lists recent transactions." },
 ];
 
+/**
+ * CometBFT's JSON-RPC wants an empty OBJECT for "no arguments", never an
+ * empty array: any method with optional parameters answers `params: {}` and
+ * rejects `params: []` with "error converting json params to arguments:
+ * expected 1 parameters ([height]), got 0". Verified against a live
+ * cosmoshub-4 RPC through the router — hence `{}` throughout, and
+ * `defaultParamsFor` matching it for the uncurated tail.
+ */
 const TENDERMINT_HINTS = [
   // WS-only (the drawer hides them on plain HTTP interfaces).
   { m: "subscribe", p: '{"query":"tm.event=\'NewBlock\'"}', d: "Subscribe to events over WebSocket (e.g. new blocks)." },
   { m: "unsubscribe", p: '{"query":"tm.event=\'NewBlock\'"}', d: "Unsubscribe from a WebSocket event query." },
-  { m: "status", p: "[]", d: "Returns node status: node info, sync info, validator info." },
-  { m: "health", p: "[]", d: "Returns node health — empty result means healthy." },
-  { m: "abci_info", p: "[]", d: "Returns ABCI application data." },
-  { m: "net_info", p: "[]", d: "Returns active peer network info." },
-  { m: "block", p: "[]", d: "Returns the block at the given height (latest when omitted)." },
-  { m: "block_results", p: "[]", d: "Returns execution results for the block at the given height." },
-  { m: "blockchain", p: "[]", d: "Returns block headers for a height range." },
-  { m: "genesis", p: "[]", d: "Returns the genesis document." },
-  { m: "validators", p: "[]", d: "Returns the validator set at the given height." },
-  { m: "consensus_state", p: "[]", d: "Returns a snapshot of the consensus state." },
-  { m: "num_unconfirmed_txs", p: "[]", d: "Returns the number of unconfirmed transactions." },
+  { m: "status", p: "{}", d: "Returns node status: node info, sync info, validator info." },
+  { m: "health", p: "{}", d: "Returns node health — empty result means healthy." },
+  { m: "abci_info", p: "{}", d: "Returns ABCI application data." },
+  { m: "net_info", p: "{}", d: "Returns active peer network info." },
+  { m: "block", p: "{}", d: "Returns the block at the given height — the latest when no height is given." },
+  { m: "block_results", p: "{}", d: "Returns execution results for a block — the latest when no height is given." },
+  { m: "blockchain", p: "{}", d: "Returns block headers for a height range — the last 20 by default." },
+  { m: "header", p: "{}", d: "Returns a block header — the latest when no height is given." },
+  { m: "commit", p: "{}", d: "Returns the commit for a block — the latest when no height is given." },
+  { m: "consensus_params", p: "{}", d: "Returns the consensus parameters at a height — the latest by default." },
+  { m: "validators", p: "{}", d: "Returns the validator set at a height — the latest by default." },
+  { m: "consensus_state", p: "{}", d: "Returns a snapshot of the consensus state." },
+  { m: "num_unconfirmed_txs", p: "{}", d: "Returns the number of unconfirmed transactions." },
+  // `genesis` is deliberately uncurated: on any chain with a sizable genesis
+  // document the node refuses it outright ("genesis response is large, please
+  // use the genesis_chunked API instead"), so it can't be offered as runnable.
 ];
 
 const GRPC_HINTS = [
@@ -299,6 +385,15 @@ const GRPC_HINTS = [
   { m: "cosmos.base.tendermint.v1beta1.Service/GetBlockByHeight", d: "Returns the block at the given height — pass a recent height, e.g. {\"height\":\"<recent>\"}." },
   { m: "cosmos.bank.v1beta1.Query/TotalSupply", p: "{}", d: "Returns total coin supply." },
   { m: "cosmos.staking.v1beta1.Query/Validators", p: "{}", d: "Returns all validators." },
+  // Sui's gRPC v2 API. Each verified with `grpcurl -d '{}'` against
+  // fullnode.mainnet.sui.io:443 — an empty request means "latest" here.
+  // StateService/ListBalances is deliberately absent: it answers
+  // "InvalidArgument: missing owner".
+  { m: "sui.rpc.v2.LedgerService/GetServiceInfo", p: "{}", d: "Returns chain id, epoch and checkpoint height.", only: ["SUI"] },
+  { m: "sui.rpc.v2.LedgerService/GetEpoch", p: "{}", d: "Returns the current epoch — first checkpoint, reference gas price.", only: ["SUI"] },
+  { m: "sui.rpc.v2.LedgerService/GetCheckpoint", p: "{}", d: "Returns the latest checkpoint when no sequence number is given.", only: ["SUI"] },
+  { m: "sui.rpc.v2.LedgerService/ListCheckpoints", p: "{}", d: "Lists checkpoints from the oldest available watermark.", only: ["SUI"] },
+  { m: "sui.rpc.v2.LedgerService/ListEvents", p: "{}", d: "Lists recent events.", only: ["SUI"] },
 ];
 
 const HINTS = {
@@ -445,7 +540,15 @@ function resolveSpec(index, stack = new Set()) {
       if (!api.name) continue;
       // A child re-declaring an api with enabled:false disables the
       // inherited one — record it, filter at emit time.
-      target.apis.set(api.name, { enabled: api.enabled !== false, verb: cd.type ?? "" });
+      target.apis.set(api.name, {
+        enabled: api.enabled !== false,
+        verb: cd.type ?? "",
+        // block_parsing is the only machine-readable arity signal the specs
+        // carry: a PARSE_BY_ARG / PARSE_CANONICAL rule names the ARGUMENT the
+        // block sits in, so the method demonstrably takes positional args.
+        // DEFAULT / EMPTY say nothing either way.
+        block: api.block_parsing ?? null,
+      });
     }
   }
 
@@ -497,7 +600,13 @@ function expandInheritance(colls) {
 /* ── Catalog assembly ────────────────────────────────────────────────────── */
 
 const defaultParamsFor = (iface, method) =>
-  iface === "rest" ? method : iface === "grpc" ? "{}" : "[]";
+  iface === "rest"
+    ? method
+    // CometBFT reads an empty ARRAY as "zero arguments supplied" and errors on
+    // any method with optional ones; an empty object is the no-arguments call.
+    : iface === "grpc" || iface === "tendermintrpc"
+      ? "{}"
+      : "[]";
 
 function hintApplies(hint, specIndex) {
   if (!hint.only) return true;
@@ -507,58 +616,167 @@ function hintApplies(hint, specIndex) {
 }
 
 /** Build one tier's Cmd list: hinted first (hint order), rest alphabetical. */
-function buildCmds(iface, specIndex, apiMap) {
-  const names = [...apiMap.keys()].filter((n) => apiMap.get(n).enabled);
-  const nameSet = new Set(names);
+/** Entries sorted by name, then by internal path — a name declared under two
+ *  paths keeps its alphabetical slot and its variants sit together. */
+function byNameThenPath(a, b) {
+  if (a.name !== b.name) return a.name < b.name ? -1 : 1;
+  return (a.ip ?? "") < (b.ip ?? "") ? -1 : 1;
+}
+
+function buildCmds(iface, specIndex, entries) {
+  const byName = new Map();
+  for (const e of entries) {
+    const list = byName.get(e.name);
+    if (list) list.push(e);
+    else byName.set(e.name, [e]);
+  }
   const hints = HINTS[iface] ?? [];
   const cmds = [];
   const used = new Set();
   for (const hint of hints) {
     // First applicable hint per method wins — scoped hints (`only`) precede
-    // their generic fallback in HINTS, so a spec never gets both.
-    if (used.has(hint.m) || !nameSet.has(hint.m) || !hintApplies(hint, specIndex)) continue;
-    cmds.push(makeCmd(iface, hint.m, apiMap.get(hint.m).verb, hint));
+    // their generic fallback in HINTS, so a spec never gets both. A REST name
+    // declared under two internal paths takes the hint on BOTH: it describes
+    // the call, and the two are the same call served by two versions.
+    if (used.has(hint.m) || !byName.has(hint.m) || !hintApplies(hint, specIndex)) continue;
+    for (const e of byName.get(hint.m).sort(byNameThenPath)) cmds.push(makeCmd(iface, e, hint));
     used.add(hint.m);
   }
-  for (const name of names.sort()) {
-    if (used.has(name)) continue;
-    cmds.push(makeCmd(iface, name, apiMap.get(name).verb, null));
+  for (const e of [...entries].sort(byNameThenPath)) {
+    if (used.has(e.name)) continue;
+    cmds.push(makeCmd(iface, e, null));
   }
   return cmds;
 }
 
-function makeCmd(iface, name, verb, hint) {
+/**
+ * Params that still need the caller to fill something in: an ellipsis
+ * stand-in (`["0x..."]`), an angle-bracket slot (`<subscription id>`), or a
+ * REST path template (`/blocks/{height}`). A JSON object is NOT a
+ * placeholder — `{"tracer":"callTracer"}` is a complete value — hence the
+ * quote-free character class.
+ */
+const PLACEHOLDER = /\.\.\.|<[^>]{2,}>|\{[a-z_ ]+\}/i;
+
+/** Does the spec's block_parsing prove the method takes positional args? */
+function specTakesArgs(block) {
+  const func = block?.parser_func ?? "";
+  if (func !== "PARSE_BY_ARG" && func !== "PARSE_CANONICAL") return false;
+  return /^\d+$/.test(String(block?.parser_arg?.[0] ?? ""));
+}
+
+/**
+ * Can this command be sent AS IS, or does the caller have to type something
+ * first? Three states, and the third admits to not knowing:
+ *
+ *   r=1  ready    — what ships with it is already a complete request.
+ *   n=1  needs    — it demonstrably takes input we cannot supply: a
+ *                   placeholder, a hint that documents the argument instead
+ *                   of curating one, or the spec's own arity rule.
+ *   —    unknown  — no hint, no arity rule. Rendered unmarked; claiming
+ *                   either way would go past what the data says.
+ *
+ * This cannot be recovered from the emitted JSON later: a hint of `p: "[]"`
+ * is dropped for equalling the default, which leaves a no-argument method
+ * indistinguishable from an uncurated one. So it is decided here, while the
+ * hint is still in hand.
+ */
+function runnability(iface, cmd, hint, api) {
+  const params = cmd.p ?? defaultParamsFor(iface, cmd.m);
+  if (hint?.needs || PLACEHOLDER.test(params)) return { n: 1 };
+  if (iface === "rest") {
+    // A write endpoint never runs out of the box — it wants a signed payload,
+    // and several specs declare one as GET (Aptos's encode_submission answers
+    // 405 to the GET its own collection type implies).
+    if (/(submit|broadcast|simulate|encode|sign|estimate_gas_unit)/i.test(cmd.m)) return {};
+    // A GET path with nothing to substitute is already a whole request. A
+    // POST may still want a body, so only a curated one counts as ready.
+    const verb = cmd.v ?? "GET";
+    return verb === "GET" || hint ? { r: 1 } : {};
+  }
+  // Elsewhere the params ARE the request, so only a curated example proves it.
+  if (hint?.p !== undefined) return { r: 1 };
+  // A hint that describes the argument instead of curating one is this
+  // table's way of saying no static value can work here.
+  if (hint) return { n: 1 };
+  return specTakesArgs(api?.block) ? { n: 1 } : {};
+}
+
+/**
+ * One catalog command from one resolved api.
+ *
+ * `entry` is `{ api, name, ip, ambiguous }` — the api as its collection
+ * declares it, plus that collection's internal path. The path never enters
+ * `m`: `m` is what the caller sends THROUGH THE ROUTER, and the router
+ * matches REST by api name alone.
+ */
+function makeCmd(iface, entry, hint) {
+  const { name, api, ip } = entry;
   const cmd = { m: iface === "rest" && !name.startsWith("/") ? `/${name}` : name };
-  const effVerb = hint?.v ?? verb;
+  const effVerb = hint?.v ?? api?.verb;
   if (iface === "rest" && effVerb && effVerb !== "GET") cmd.v = effVerb;
   if (hint?.l && hint.l !== cmd.m) cmd.l = hint.l;
   if (hint?.p !== undefined && hint.p !== defaultParamsFor(iface, cmd.m)) cmd.p = hint.p;
   if (hint?.d) cmd.d = hint.d;
+  Object.assign(cmd, runnability(iface, cmd, hint, api));
+  if (ip) cmd.ip = ip;
+  if (entry.ambiguous) cmd.a = 1;
   return cmd;
 }
 
-/** Pick the internal_path for (iface, tier): prefer "" when it has methods,
- *  else the path with the most methods (ties break alphabetically). */
-function pickPath(collList) {
-  const byPath = new Map();
-  for (const c of collList) {
-    const p = c.cd.internal_path ?? "";
-    if (!byPath.has(p)) byPath.set(p, []);
-    byPath.get(p).push(c);
-  }
-  const count = (colls) =>
-    colls.reduce((n, c) => n + [...c.apis.values()].filter((a) => a.enabled).length, 0);
-  if (byPath.has("") && count(byPath.get("")) > 0) return byPath.get("");
-  let best = null;
-  let bestCount = -1;
-  for (const p of [...byPath.keys()].sort()) {
-    const n = count(byPath.get(p));
-    if (n > bestCount) {
-      best = byPath.get(p);
-      bestCount = n;
+/** Every collection for (iface, tier), ordered "" first then by path, so the
+ *  root path's methods keep their historical position in the emitted list. */
+function byInternalPath(collList) {
+  return [...collList].sort((a, b) => {
+    const pa = a.cd.internal_path ?? "";
+    const pb = b.cd.internal_path ?? "";
+    if (pa === pb) return 0;
+    if (pa === "") return -1;
+    if (pb === "") return 1;
+    return pa < pb ? -1 : 1;
+  });
+}
+
+
+/**
+ * Flatten the collections of one (interface, tier) into catalog entries.
+ *
+ * REST keys on (internal path, name): TON declares `/estimateFee` under both
+ * /v2 and /v3 and they are different calls with different bodies. Every other
+ * interface keys on the name alone — a jsonrpc method resolves from the root
+ * url whichever collection declares it, because the spec loader registers each
+ * internal-path api under the empty path too (smart-router
+ * `protocol/chainlib/base_chain_parser.go`, `getServiceApis`).
+ *
+ * `ip` is set when the name is served under exactly ONE internal path, which
+ * is the only case where it identifies an upstream. A jsonrpc name repeated
+ * across versioned paths (STRK's /rpc/v0_8 … /rpc/v0_10) gets none — no single
+ * upstream owns it.
+ *
+ * `ambiguous` marks REST names the router cannot disambiguate: its REST lookup
+ * is keyed by (name, connection type) with no internal path, so one of the two
+ * collections wins and the other is unreachable through the router.
+ */
+function collectEntries(iface, tierColls) {
+  const pathsByKey = new Map(); // name\0verb → Set(internal path)
+  const entries = new Map();
+  for (const c of byInternalPath(tierColls)) {
+    const ip = c.cd.internal_path ?? "";
+    for (const [n, a] of c.apis) {
+      if (!a.enabled) continue;
+      const verbKey = `${n}\u0000${a.verb ?? ""}`;
+      if (!pathsByKey.has(verbKey)) pathsByKey.set(verbKey, new Set());
+      pathsByKey.get(verbKey).add(ip);
+      entries.set(iface === "rest" ? `${ip}\u0000${n}` : n, { name: n, api: a, ip });
     }
   }
-  return bestCount > 0 ? best : null;
+  return [...entries.values()].map((e) => {
+    const paths = pathsByKey.get(`${e.name}\u0000${e.api.verb ?? ""}`) ?? new Set();
+    const ambiguous = iface === "rest" && paths.size > 1;
+    // A name served from several paths names no single upstream.
+    const ip = iface === "rest" || paths.size === 1 ? e.ip : "";
+    return ambiguous ? { ...e, ip, ambiguous: true } : { ...e, ip };
+  });
 }
 
 function buildSpecEntry(index) {
@@ -573,19 +791,25 @@ function buildSpecEntry(index) {
     if (ifaceColls.length === 0) continue;
     const ifaceEntry = {};
     let regularNames = new Set();
+    let regularByName = new Map();
     for (const tier of ["regular", "debug", "trace"]) {
       const tierColls = ifaceColls.filter(
         (c) => TIER_BY_ADDON[c.cd.add_on ?? ""] === tier,
       );
-      const chosen = pickPath(tierColls);
-      if (!chosen) continue;
-      const apiMap = new Map();
-      for (const c of chosen) {
-        for (const [n, a] of c.apis) if (a.enabled) apiMap.set(n, a);
+      // EVERY internal path is emitted, not one. A spec that splits an
+      // interface across paths (TON's /v2 + /v3, AVAX's /C/rpc + /P + /X)
+      // serves all of them, and keeping one silently dropped the rest — TON
+      // lost 22 methods that way the moment its "" path went.
+      //
+      // The path rides as `ip` metadata; see the "Internal paths" note in the
+      // header for why it must not be spliced into the identifier.
+      const entries = collectEntries(iface, tierColls);
+      if (entries.length === 0) continue;
+      const cmds = buildCmds(iface, index, entries);
+      if (tier === "regular") {
+        regularNames = new Set(entries.map((e) => e.name));
+        regularByName = new Map(entries.map((e) => [e.name, e]));
       }
-      if (apiMap.size === 0) continue;
-      const cmds = buildCmds(iface, index, apiMap);
-      if (tier === "regular") regularNames = new Set(apiMap.keys());
       ifaceEntry[tier] = cmds;
     }
     // Archive: capability flag lives on collection extensions (own or
@@ -597,7 +821,10 @@ function buildSpecEntry(index) {
         const m = iface === "rest" && !hint.m.startsWith("/") ? `/${hint.m}` : hint.m;
         if (!regularNames.has(hint.m) && !regularNames.has(m)) continue;
         if (!hintApplies(hint, index)) continue;
-        cmds.push(makeCmd(iface, hint.m, "GET", hint));
+        // Same api as the regular tier, so it inherits that entry's internal
+        // path — an archive read of a /v2 method is still a /v2 call.
+        const regular = regularByName.get(hint.m) ?? regularByName.get(m);
+        cmds.push(makeCmd(iface, { name: hint.m, api: null, ip: regular?.ip ?? "" }, hint));
       }
       if (cmds.length > 0) ifaceEntry.archive = cmds;
     }
@@ -645,6 +872,26 @@ for (const index of [...specsByIndex.keys()].sort()) {
 const json = JSON.stringify(out);
 writeFileSync(OUT_PATH, `${json}\n`);
 
+/* ── Runnable-defaults roll-call ─────────────────────────────────────────── */
+
+/* Which (spec × interface) pairs ended up with nothing the drawer can offer
+   as a working default. Aliases resolve to their canonical entry, so a chain
+   that aliases a covered one is covered too. */
+const noRunnable = [];
+let readyTotal = 0;
+for (const index of Object.keys(out).sort()) {
+  let entry = out[index];
+  for (let hops = 0; typeof entry === "string" && hops < 4; hops++) entry = out[entry];
+  if (typeof entry !== "object") continue;
+  for (const iface of Object.keys(entry).sort()) {
+    const regular = entry[iface].regular ?? [];
+    const ready = regular.filter((c) => c.r).length;
+    readyTotal += ready;
+    if (ready === 0) noRunnable.push(`${index}/${iface}`);
+  }
+}
+writeFileSync(NO_RUNNABLE_PATH, `${JSON.stringify(noRunnable, null, 2)}\n`);
+
 /* ── Summary ─────────────────────────────────────────────────────────────── */
 
 const kb = (n) => `${(n / 1024).toFixed(1)} KB`;
@@ -653,7 +900,10 @@ console.log(`specs indexed    ${specsByIndex.size}`);
 console.log(`specs emitted    ${Object.keys(out).length} (${aliased} aliased to an identical entry)`);
 console.log(`iface entries    ${ifaceEntries} (canonical, aliases excluded)`);
 console.log(`methods by tier  regular=${tierTotals.regular} archive=${tierTotals.archive} debug=${tierTotals.debug} trace=${tierTotals.trace}`);
+console.log(`runnable         ${readyTotal} commands can be sent as-is`);
 console.log(`output           ${OUT_PATH} (${kb(Buffer.byteLength(json))})`);
+console.log(`no runnable      ${noRunnable.length} (spec × iface) pairs → ${NO_RUNNABLE_PATH}`);
+for (const pair of noRunnable) console.log(`  - ${pair}: no command runs without caller input`);
 if (skipped.length > 0) {
   console.log(`skipped          ${skipped.length}`);
   for (const s of skipped) console.log(`  - ${s.index ?? s.file}: ${s.reason}`);

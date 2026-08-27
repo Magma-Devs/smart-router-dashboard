@@ -19,7 +19,8 @@ import {
   qLatencySeriesExpr,
   qPerUpstreamRpsExpr,
   qPerSpecRpsExpr,
-  qRpsSeriesExpr,
+  qClientRps,
+  qClientRpsSeriesExpr,
   rangeFor,
   selector,
   type DashboardChainMeta,
@@ -104,9 +105,13 @@ export class MetricsDashboardService {
     const [successRate, p95Ms, rps, errorsNow, errorsPrior] = await Promise.all([
       kpi(qAvailability(spec, window), qAvailability(spec, window, r)),
       kpi(qLatencyQuantile(0.95, spec, window), qLatencyQuantile(0.95, spec, window, r)),
+      // CLIENT-scoped: the latency histogram _count increments once per client
+      // request. requests_total is relay-scoped (health probes and one
+      // increment per cross-validation participant), so the "RPC Traffic" tile
+      // reported non-zero req/s on a chain nobody was calling (MAG-2738).
       kpi(
-        `sum(rate(${ROUTER_METRICS.requestsTotal}${sel}[5m]))`,
-        `sum(rate(${ROUTER_METRICS.requestsTotal}${sel}[5m] offset ${r}))`,
+        qClientRps(spec),
+        `sum(rate(${ROUTER_METRICS.latencyCount}${sel}[5m] offset ${r}))`,
       ),
       this.prom.scalar(qErrorCount(spec, window)),
       this.prom.scalar(qErrorCount(spec, window, r)),
@@ -130,7 +135,10 @@ export class MetricsDashboardService {
       specRows,
       healthRows,
     ] = await Promise.all([
-      range(qRpsSeriesExpr(step, spec)),
+      // Client-scoped for the same reason as the KPI above — this series backs
+      // the tile's sparkline, so a relay-scoped one would disagree with the
+      // number printed on top of it.
+      range(qClientRpsSeriesExpr(step, spec)),
       range(qErrorCountSeriesExpr(step, spec)),
       range(qErrorRateSeriesExpr(step, spec)),
       range(qAvailabilitySeriesExpr(step, spec)),

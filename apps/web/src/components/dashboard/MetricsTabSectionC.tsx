@@ -17,6 +17,7 @@ import {
   type MetricWindow,
 } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
+import { useFilters } from "@/components/gateway/FiltersProvider";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { TroubleDetail } from "./TroubleDetail";
 import { DSHChip, DSHNoData, DSHSection, dshFmtComma, dshFmtNum } from "./bits";
@@ -40,6 +41,7 @@ export function MetricsTabSectionC({
   apiWindow: MetricWindow;
   data: DashboardData | undefined;
 }) {
+  const { scopeQ } = useFilters();
   const [trSort, setTrSort] = useState<{ col: string; dir: number }>({ col: "failoverPct", dir: -1 });
   const [trExp, setTrExp] = useState<DashboardTroubleRow | null>(null);
   const [scSort, setScSort] = useState<{ col: string; dir: number }>({ col: "qos", dir: -1 });
@@ -69,7 +71,7 @@ export function MetricsTabSectionC({
 
   /* Method-level table — live rows from the methods endpoint. */
   const methodsRes = useApi<{ methods: MethodUsage[]; classTotals: MethodClassTotals }>(
-    `/api/metrics/methods?window=${apiWindow}`,
+    `/api/metrics/methods?window=${apiWindow}${scopeQ}`,
     60000,
   );
   const methods = useMemo(() => {

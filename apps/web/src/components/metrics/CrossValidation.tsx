@@ -16,6 +16,7 @@ import { useApi } from "@/hooks/use-api";
 import { Tip } from "@/components/gateway/Tip";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { ThCol } from "@/components/gateway/SortTable";
+import { SkelValue, SkelRows } from "@/components/gateway/Skel";
 import { fmtComma, fmtNum } from "@/lib/format";
 import { useFilters } from "@/components/gateway/FiltersProvider";
 
@@ -23,7 +24,7 @@ const CV_TIP = "A **sampled subset** of requests is sent to several upstreams at
 
 export function CrossValidation({ tw }: { tw: MetricWindow }) {
   const { scopeQ } = useFilters();
-  const { data: cv } = useApi<CrossValidationReport>(`/api/metrics/cross-validation?window=${tw}${scopeQ}`);
+  const { data: cv, isLoading } = useApi<CrossValidationReport>(`/api/metrics/cross-validation?window=${tw}${scopeQ}`);
 
   const rounds = cv?.rounds ?? null;
   const consensusPct = cv?.consensusRate != null ? cv.consensusRate * 100 : null;
@@ -38,15 +39,15 @@ export function CrossValidation({ tw }: { tw: MetricWindow }) {
       {/* 3 headline stats */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 20, marginBottom: 24, paddingBottom: 24, borderBottom: "1px solid var(--line)" }}>
         <div>
-          <div className="gw-mono gw-tnum" style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.03em", lineHeight: 1, color: rounds == null ? "var(--text-4)" : "var(--text)" }}>{rounds != null ? fmtNum(rounds) : "—"}</div>
+          <div className="gw-mono gw-tnum" style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.03em", lineHeight: 1, color: rounds == null ? "var(--text-4)" : "var(--text)" }}>{isLoading ? <SkelValue /> : rounds != null ? fmtNum(rounds) : "—"}</div>
           <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 8 }}>requests cross-validated</div>
         </div>
         <div>
-          <div className="gw-mono gw-tnum" style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.03em", lineHeight: 1, color: consensusPct != null ? "var(--ok)" : "var(--text-4)" }}>{consensusPct != null ? consensusPct.toFixed(2) + "%" : "—"}</div>
+          <div className="gw-mono gw-tnum" style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.03em", lineHeight: 1, color: consensusPct != null ? "var(--ok)" : "var(--text-4)" }}>{isLoading ? <SkelValue w={104} /> : consensusPct != null ? consensusPct.toFixed(2) + "%" : "—"}</div>
           <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 8 }}>reached consensus</div>
         </div>
         <div>
-          <div className="gw-mono gw-tnum" style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.03em", lineHeight: 1, color: noConsensus == null ? "var(--text-4)" : noConsensus > 0 ? "var(--warn)" : "var(--text)" }}>{noConsensus != null ? fmtComma(noConsensus) : "—"}</div>
+          <div className="gw-mono gw-tnum" style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.03em", lineHeight: 1, color: noConsensus == null ? "var(--text-4)" : noConsensus > 0 ? "var(--warn)" : "var(--text)" }}>{isLoading ? <SkelValue w={78} /> : noConsensus != null ? fmtComma(noConsensus) : "—"}</div>
           <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 8 }}>no consensus — upstreams disagreed</div>
         </div>
       </div>
@@ -76,6 +77,7 @@ export function CrossValidation({ tw }: { tw: MetricWindow }) {
           </tr>
         </thead>
         <tbody>
+          {isLoading && <SkelRows rows={3} cols={[{ w: 130 }, { w: 60, align: "right" }, { w: 60, align: "right" }, { w: 72, align: "right" }]} />}
           {(cv?.byChain ?? []).map((p) => {
             const meta = buildChainMetaByIndex(p.spec);
             return (

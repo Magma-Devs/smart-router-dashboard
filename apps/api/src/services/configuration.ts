@@ -20,7 +20,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse } from "yaml";
-import type { RouterNode, RouterTopology } from "@sr/shared";
+import type { RouterNode, RouterTopology, UpstreamEndpointRef } from "@sr/shared";
 import { config } from "../config.js";
 
 /** First defined value among several key dialects (snake/kebab/camel). */
@@ -46,6 +46,20 @@ export function maskNodeUrl(url: string): string {
     return `${u.protocol}//${u.host}`;
   } catch {
     return "";
+  }
+}
+
+/**
+ * Whether the relay can dial this url on the user's behalf. http(s) and
+ * ws(s) only — a `grpcs://` upstream needs a gRPC client the api doesn't
+ * carry, and anything else isn't a transport we speak.
+ */
+export function isDirectable(url: string): boolean {
+  try {
+    const proto = new URL(url).protocol;
+    return proto === "http:" || proto === "https:" || proto === "ws:" || proto === "wss:";
+  } catch {
+    return false;
   }
 }
 
@@ -142,8 +156,154 @@ function publicUrlsFor(
   return urls;
 }
 
+/**
+ * Key under which a node endpoint's FULL (credentialed) url is recorded while
+ * the topology is normalized. Recording it in the same pass that builds the
+ * masked view is deliberate: a second, independent traversal could drift from
+ * the one that assigned the indices, and then the relay would dial the wrong
+ * upstream.
+ */
+export function endpointKey(routerId: string, node: string, index: number): string {
+  return `${routerId} ${node} ${index}`;
+}
+
+/* Temporary: mirror the chart's `lower | replace " " "-"` so node names match
+   what the router registers (and reports on `provider_address`). Drop once the
+   router matches `lava-select-provider` case-insensitively. */
+export function normalizeHelmNodeName(name: string): string {
+  return name.toLowerCase().replace(/ /g, "-");
+}
+
+/**
+ * Everything the relay needs to dial ONE configured endpoint. Every field is
+ * api-private: the url carries whatever key the operator put in it, and
+ * `authHeaders` IS a credential — neither ever reaches the masked topology
+ * the api serves.
+ */
+export interface EndpointDial {
+  /** FULL url — path, query, and any key the operator put in it. */
+  url: string;
+  /** `auth-config.auth-headers`, sent exactly as the router sends them. */
+  authHeaders: Record<string, string>;
+  /** `auth-config.auth-query`, appended to the url the way the router's own
+   *  `AddAuthPath` appends it (`?` when the url has no query yet, else `&`). */
+  authQuery: string | null;
+  /** Credentials the values file NAMES but does not carry: a `${VAR}` with no
+   *  literal under `miscellaneous.routers.env`, or a header handed over as a
+   *  `secretRef` that only exists inside a Kubernetes Secret. The relay
+   *  refuses on these rather than dialing half a credential and reporting the
+   *  upstream's 401 as if it were the upstream's opinion of the request. */
+  unresolved: string[];
+}
+
+/**
+ * The endpoint index the relay resolves against.
+ *
+ * Exact key first, then the same node-name folding the pin header goes
+ * through (`normalizeHelmNodeName`) — the two halves of the Try-me drawer
+ * ("via router, pinned" and "straight to the upstream") must address an
+ * upstream by ONE vocabulary, whichever casing the caller happens to hold.
+ * A folded name that two nodes answer to resolves to nothing: dialing a
+ * coin-flip upstream is worse than a 404.
+ */
+class EndpointIndex {
+  private readonly exact = new Map<string, EndpointDial>();
+  /** null marks a folded key more than one node answers to. */
+  private readonly folded = new Map<string, EndpointDial | null>();
+
+  record(routerId: string, node: string, index: number, dial: EndpointDial): void {
+    this.exact.set(endpointKey(routerId, node, index), dial);
+    const key = this.foldedKey(routerId, node, index);
+    this.folded.set(key, this.folded.has(key) ? null : dial);
+  }
+
+  get(ref: UpstreamEndpointRef): EndpointDial | null {
+    const exact = this.exact.get(endpointKey(ref.routerId, ref.node, ref.endpointIndex));
+    if (exact !== undefined) return exact;
+    return this.folded.get(this.foldedKey(ref.routerId, ref.node, ref.endpointIndex)) ?? null;
+  }
+
+  private foldedKey(routerId: string, node: string, index: number): string {
+    return endpointKey(normalizeHelmNodeName(routerId), normalizeHelmNodeName(node), index);
+  }
+}
+
+/**
+ * The `${VAR}` values the chart's config-processor initContainer would
+ * substitute (it runs `envsubst` over the rendered router config before the
+ * router reads it), as far as the mounted file itself declares them.
+ *
+ * Only literal `miscellaneous.routers.env[].value` entries are readable here.
+ * A `secretRef` lives in a Kubernetes Secret this process does not mount, and
+ * the api's OWN environment is deliberately not a source: a values file could
+ * otherwise name `${AUTH_SECRET}` and have the relay carry the dashboard's own
+ * signing key to an upstream host.
+ */
+function readRouterEnv(raw: Record<string, unknown>): Map<string, string> {
+  const misc = (raw["miscellaneous"] ?? {}) as Record<string, unknown>;
+  const routers = (misc["routers"] ?? {}) as Record<string, unknown>;
+  const env = new Map<string, string>();
+  for (const entry of asArray(routers["env"])) {
+    const name = asString(entry["name"]);
+    const value = entry["value"];
+    if (!name || value === undefined || value === null || typeof value === "object") continue;
+    env.set(name, String(value));
+  }
+  return env;
+}
+
+/** `${VAR}` → its literal, recording every name the values file leaves open. */
+function substituteEnv(text: string, env: Map<string, string>, unresolved: string[]): string {
+  if (!text.includes("${")) return text;
+  return text.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (whole: string, name: string) => {
+    const value = env.get(name);
+    if (value !== undefined) return value;
+    if (!unresolved.includes(whole)) unresolved.push(whole);
+    return whole;
+  });
+}
+
+/**
+ * One endpoint's `auth-config` (helm spells it `auth_config`, an SR_CONFIG
+ * file `auth-config`) → the headers and query string the router attaches to
+ * every relay it sends there. The TLS/cert members are gRPC-only and the
+ * relay dials no gRPC, so they are read past.
+ */
+function readEndpointAuth(
+  ep: Record<string, unknown>,
+  env: Map<string, string>,
+  unresolved: string[],
+): { authHeaders: Record<string, string>; authQuery: string | null } {
+  const raw = pick(ep, "auth_config", "auth-config", "authConfig");
+  if (typeof raw !== "object" || raw === null) return { authHeaders: {}, authQuery: null };
+  const cfg = raw as Record<string, unknown>;
+
+  const authHeaders: Record<string, string> = {};
+  const rawHeaders = pick(cfg, "auth_headers", "auth-headers", "authHeaders");
+  if (typeof rawHeaders === "object" && rawHeaders !== null) {
+    for (const [name, value] of Object.entries(rawHeaders as Record<string, unknown>)) {
+      if (!name) continue;
+      if (typeof value === "string") {
+        authHeaders[name] = substituteEnv(value, env, unresolved);
+        continue;
+      }
+      // `Authorization: {secretRef: {name, key}}` — the chart turns that into
+      // a container env var; the Secret never reaches the dashboard.
+      unresolved.push(`${name} (Kubernetes secret)`);
+    }
+  }
+
+  const rawQuery = pick(cfg, "auth_query", "auth-query", "authQuery");
+  const query = typeof rawQuery === "string" ? rawQuery.trim() : "";
+  return {
+    authHeaders,
+    authQuery: query === "" ? null : substituteEnv(query, env, unresolved),
+  };
+}
+
 /** Helm `routers:` shape → RouterTopology[] (pathBased resolved like the chart). */
-function normalizeHelm(raw: Record<string, unknown>): RouterTopology[] {
+function normalizeHelm(raw: Record<string, unknown>, dials: EndpointIndex): RouterTopology[] {
+  const env = readRouterEnv(raw);
   const misc = (raw["miscellaneous"] ?? {}) as Record<string, unknown>;
   const gateway = (misc["gateway"] ?? {}) as Record<string, unknown>;
   const pathBasedCfg = (gateway["pathBased"] ?? {}) as Record<string, unknown>;
@@ -153,23 +313,36 @@ function normalizeHelm(raw: Record<string, unknown>): RouterTopology[] {
   return asArray(raw["routers"]).map((router) => {
     const network = asString(router["network"]).toLowerCase();
     const override = pick(router, "pathBased", "path-based", "path_based");
+    const routerId = asString(router["id"]) || network.toUpperCase();
 
-    const nodes: RouterNode[] = asArray(router["nodes"]).map((node) => ({
-      name: asString(node["name"]) || network,
-      isBackup: Boolean(pick(node, "is_backup", "is-backup", "isBackup") ?? false),
-      endpoints: asArray(node["endpoints"])
-        .filter((ep) => asString(ep["url"]))
-        .map((ep) => ({
-          urlHost: maskNodeUrl(asString(ep["url"])),
-          interface: asString(ep["interface"]),
-          addons: Array.isArray(ep["addons"]) ? ep["addons"].map(String) : [],
-        })),
-    }));
+    const nodes: RouterNode[] = asArray(router["nodes"]).map((node) => {
+      const name = normalizeHelmNodeName(asString(node["name"])) || network;
+      return {
+        name,
+        isBackup: Boolean(pick(node, "is_backup", "is-backup", "isBackup") ?? false),
+        endpoints: asArray(node["endpoints"])
+          .filter((ep) => asString(ep["url"]))
+          .map((ep, index) => {
+            const unresolved: string[] = [];
+            const url = substituteEnv(asString(ep["url"]), env, unresolved);
+            const { authHeaders, authQuery } = readEndpointAuth(ep, env, unresolved);
+            dials.record(routerId, name, index, { url, authHeaders, authQuery, unresolved });
+            return {
+              urlHost: maskNodeUrl(url),
+              interface: asString(ep["interface"]),
+              addons: Array.isArray(ep["addons"]) ? ep["addons"].map(String) : [],
+              internalPath: asString(pick(ep, "internal_path", "internal-path", "internalPath")) || null,
+              index,
+              directable: isDirectable(url),
+            };
+          }),
+      };
+    });
 
     const interfaces = dedupe(nodes.flatMap((n) => n.endpoints.map((e) => e.interface)));
 
     return {
-      id: asString(router["id"]) || network.toUpperCase(),
+      id: routerId,
       spec: network.toUpperCase(),
       network,
       pathBased: override !== undefined ? Boolean(override) : globalPathBased,
@@ -186,7 +359,12 @@ function normalizeHelm(raw: Record<string, unknown>): RouterTopology[] {
 }
 
 /** SR_CONFIG shape → RouterTopology[] (grouped by chain, per-interface ports). */
-function normalizeSrConfig(raw: Record<string, unknown>): RouterTopology[] {
+function normalizeSrConfig(raw: Record<string, unknown>, dials: EndpointIndex): RouterTopology[] {
+  // An SR_CONFIG file carries no `miscellaneous.routers.env`: the router's own
+  // process environment supplies its `${VAR}`s, and the dashboard is a
+  // different process. Placeholders therefore stay unresolved, and the relay
+  // says so instead of dialing them literally.
+  const env = readRouterEnv(raw);
   // (chain-id → api-interface → port). Keyed per interface because one chain
   // can expose several interfaces on different ports (LAVA rest:3360 +
   // tendermintrpc:3361); "" buckets legacy entries that omit api-interface.
@@ -235,19 +413,25 @@ function normalizeSrConfig(raw: Record<string, unknown>): RouterTopology[] {
         byChain.set(chainId, router);
       }
 
+      const name = asString(provider["name"]) || chainId;
       const endpoints = asArray(provider["node-urls"])
         .filter((nu) => asString(nu["url"]))
-        .map((nu) => ({
-          urlHost: maskNodeUrl(asString(nu["url"])),
-          interface: iface,
-          addons: Array.isArray(nu["addons"]) ? nu["addons"].map(String) : [],
-        }));
+        .map((nu, index) => {
+          const unresolved: string[] = [];
+          const url = substituteEnv(asString(nu["url"]), env, unresolved);
+          const { authHeaders, authQuery } = readEndpointAuth(nu, env, unresolved);
+          dials.record(router.id, name, index, { url, authHeaders, authQuery, unresolved });
+          return {
+            urlHost: maskNodeUrl(url),
+            interface: iface,
+            addons: Array.isArray(nu["addons"]) ? nu["addons"].map(String) : [],
+            internalPath: asString(pick(nu, "internal-path", "internal_path", "internalPath")) || null,
+            index,
+            directable: isDirectable(url),
+          };
+        });
 
-      router.nodes.push({
-        name: asString(provider["name"]) || chainId,
-        isBackup,
-        endpoints,
-      });
+      router.nodes.push({ name, isBackup, endpoints });
       router.interfaces = dedupe([...router.interfaces, iface]);
     }
   };
@@ -274,16 +458,49 @@ export class ConfigurationService {
     }
   }
 
-  /** The normalized topology from EITHER supported values-file format. */
-  getRouters(): RouterTopology[] {
+  /**
+   * Normalize the mounted values file into BOTH the masked topology the api
+   * serves and the private url map the relay resolves against. The file is
+   * re-read per call (it is a live mount — the operator can edit it under a
+   * running api), so both views are always the same generation of the file.
+   */
+  private normalize(): { routers: RouterTopology[]; endpoints: EndpointIndex } {
     const raw = this.readRaw();
+    const endpoints = new EndpointIndex();
     switch (detectFormat(raw)) {
       case "helm":
-        return normalizeHelm(raw as Record<string, unknown>);
+        return { routers: normalizeHelm(raw as Record<string, unknown>, endpoints), endpoints };
       case "sr-config":
-        return normalizeSrConfig(raw as Record<string, unknown>);
+        return { routers: normalizeSrConfig(raw as Record<string, unknown>, endpoints), endpoints };
       default:
-        return [];
+        return { routers: [], endpoints };
     }
+  }
+
+  /** The normalized topology from EITHER supported values-file format. */
+  getRouters(): RouterTopology[] {
+    return this.normalize().routers;
+  }
+
+  /**
+   * The FULL url of one configured node endpoint — path, query and any API
+   * key the operator put in it. Unmasked, like `resolveEndpoint` it wraps; the
+   * only callers are the direct-relay route (which dials server-side and never
+   * echoes it back) and tests. Null when the triple names nothing in the
+   * current values file.
+   */
+  resolveEndpointUrl(ref: UpstreamEndpointRef): string | null {
+    return this.resolveEndpoint(ref)?.url ?? null;
+  }
+
+  /**
+   * The full dial info for one configured node endpoint — url plus the
+   * `auth-config` credential the router attaches to it. Same single caller
+   * and same secrecy contract as `resolveEndpointUrl`; the relay needs both
+   * halves, because an upstream whose key rides in a header answers 401 to a
+   * bare url and the comparison then blames the upstream.
+   */
+  resolveEndpoint(ref: UpstreamEndpointRef): EndpointDial | null {
+    return this.normalize().endpoints.get(ref);
   }
 }

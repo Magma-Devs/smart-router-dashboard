@@ -47,6 +47,11 @@
   --ord-1: #1c5cab;
   --ord-2: #3987e5;
   --ord-3: #86b6ef;
+  /* Skeleton base + sweep highlight. Opaque, not a translucent overlay: the
+     ghost sits on cards and on the page ground, and a translucent bar reads
+     as two different greys depending on which. */
+  --skel: #1f1f25;
+  --skel-hi: #2c2c34;
 }
 [data-theme="light"] {
   --bg: #fafaf9;
@@ -82,6 +87,10 @@
   --ord-1: #86b6ef;
   --ord-2: #2a78d6;
   --ord-3: #104281;
+  /* Light mode sweeps the other way — the highlight is BRIGHTER than the base,
+     so the motion reads as light travelling across, same as dark. */
+  --skel: #e7e7e4;
+  --skel-hi: #f6f6f4;
 }
 [data-density="compact"]     { --row-y: 8px;  --pad-card: 14px; --gap-card: 10px; }
 [data-density="comfortable"] { --row-y: 14px; --pad-card: 22px; --gap-card: 18px; }
@@ -135,6 +144,10 @@ html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); f
 /* ── Sidebar ── */
 .gw-side { width: 248px; flex-shrink: 0; background: var(--bg); border-right: 1px solid var(--line); display: flex; flex-direction: column; height: 100vh; position: sticky; top: 0; }
 .gw-side__brand { display: flex; align-items: center; gap: 10px; padding: 18px 18px 14px; }
+/* It is a link home — give it the same hover feedback the nav items have, so
+   it reads as clickable rather than as a header that happens to navigate. */
+a.gw-side__brand { transition: opacity 0.12s; }
+a.gw-side__brand:hover { opacity: 0.82; }
 .gw-side__brand .logo { width: 26px; height: 26px; border-radius: 6px; background: linear-gradient(135deg, #ff3900, #ff7a47); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .gw-side__brand .name { font-weight: 700; font-size: 14px; letter-spacing: -0.01em; color: var(--text); line-height: 1.2; }
 .gw-side__brand .sub  { font-size: 10px; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.12em; margin-top: 1px; }
@@ -244,6 +257,36 @@ table.gw-table tbody tr:hover td { background: var(--hover); }
 /* ── Animations ── */
 .fade-in { animation: fadeIn 220ms ease both; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+
+/* ── Loading skeletons ──
+   ONE loader for the whole page rather than one spinner per panel. The Metrics
+   page fires seven requests that land at different times; seven spinners would
+   read as seven separate things going wrong. Every ghost here shares this
+   keyframe and this duration and they all mount in the same frame, so the
+   sweep runs IN PHASE across every card — the page reads as a single surface
+   settling. Shapes are content-sized (see `Skel.tsx`), so nothing moves when
+   the real value lands.
+   Ghosts are for the FIRST load only. A skeleton on the 15s revalidate would
+   strobe the page every poll; a refetch keeps its numbers and says so in the
+   header instead. */
+.gw-skel {
+  display: block;
+  border-radius: 5px;
+  background-color: var(--skel);
+  background-image: linear-gradient(90deg, var(--skel) 0%, var(--skel-hi) 50%, var(--skel) 100%);
+  background-size: 300% 100%;
+  animation: gwSkel 1.5s ease-in-out infinite;
+}
+@keyframes gwSkel { from { background-position: 150% 50%; } to { background-position: -50% 50%; } }
+
+/* The "refreshing" cue on a panel that already has numbers — a breathing dot,
+   deliberately not a spinner: the data on screen is still valid. */
+.gw-refreshing { animation: gwBreathe 1.5s ease-in-out infinite; }
+@keyframes gwBreathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .gw-skel, .gw-refreshing { animation: none; }
+}
 
 /* ── Side-sheet ── */
 .gw-sheet-bg { position: fixed; inset: 0; z-index: 40; background: rgba(0,0,0,0.6); }

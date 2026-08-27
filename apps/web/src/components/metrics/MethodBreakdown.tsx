@@ -13,6 +13,7 @@ import { useMemo, useState } from "react";
 import type { MethodClassTotals, MethodUsage, MetricWindow } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { ThCol, useSort } from "@/components/gateway/SortTable";
+import { SkelRows } from "@/components/gateway/Skel";
 import { SideSheet, SheetStat } from "@/components/gateway/SideSheet";
 import { fmtNum } from "@/lib/format";
 import { labelStyle } from "@/lib/styles";
@@ -31,7 +32,7 @@ export function MethodBreakdown({ win, chainFilter }: { win: MetricWindow; chain
 
   const specQ = chainFilter ? `&spec=${encodeURIComponent(chainFilter)}` : "";
   const { scopeQ } = useFilters();
-  const { data } = useApi<{ methods: MethodUsage[]; classTotals: MethodClassTotals }>(`/api/metrics/methods?window=${win}${specQ}${scopeQ}`);
+  const { data, isLoading } = useApi<{ methods: MethodUsage[]; classTotals: MethodClassTotals }>(`/api/metrics/methods?window=${win}${specQ}${scopeQ}`);
 
   const filtered = useMemo(
     () => (data?.methods ?? []).filter((m) => cls === "all" || m.class === CLS_TO_CLASS[cls]),
@@ -87,6 +88,7 @@ export function MethodBreakdown({ win, chainFilter }: { win: MetricWindow; chain
             </tr>
           </thead>
           <tbody>
+            {isLoading && <SkelRows rows={5} cols={[{ w: "72%" }, { w: 52, align: "right" }, { w: 66, align: "right" }, { w: 56, align: "right" }, { w: 62, align: "right" }]} />}
             {pageRows.map((m) => {
               const ep = errPct(m);
               return (
