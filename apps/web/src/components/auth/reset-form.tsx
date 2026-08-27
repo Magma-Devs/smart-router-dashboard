@@ -213,9 +213,14 @@ export function ResetDead({ managed }: { managed: boolean }) {
             ? "Request a new one and we'll email it to you."
             : "Ask an administrator to generate a new one — this deployment has no mail server, so they hand it over directly."}
         </p>
+        {/* Managed sends people to the form that actually issues one. This used
+            to point at /login for both, from before /forgot-password existed —
+            so the button said "Request a new link" and went somewhere that
+            issues nothing, and for anyone still signed in /login bounces to the
+            dashboard, which is a worse landing still. */}
         <a
           className="gw-btn gw-btn--primary"
-          href="/login"
+          href={managed ? "/forgot-password" : "/login"}
           style={{ justifyContent: "center", width: "100%" }}
         >
           {managed ? "Request a new link" : "Go to sign in"}
