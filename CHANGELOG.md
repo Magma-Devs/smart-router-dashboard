@@ -22,25 +22,26 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   router id, beside the internal-path badge that does the same job for a node
   pinned per path. Only where the ambiguity is real, and computed from the rows
   the filters leave visible.
-- **"+26" now opens.** The chain count in an upstream card's header was plain
-  text: it said 26 more chains existed and offered no way to see them. It lists
-  them all on hover or keyboard focus, with icons, headed by the true total. It
-  also reads "+26 chains" rather than "+26", because the chain beside it is
-  whichever router declares the node first in the values file — config order,
-  not a primary, and "Arbitrum +26" read as an Arbitrum upstream.
-- **A viewport-fixed tooltip drifted off-screen when the page was scrolled.**
-  `.gw-page` carries `.fade-in`, whose `both` fill leaves a `transform`
-  animation permanently in effect — and an element with a transform in effect is
-  the containing block for its `position: fixed` descendants. The panel resolved
-  against the page instead of the viewport: correct at the top of the page, off
-  the top of the screen by exactly the scroll offset below it. It renders
-  through a portal to `document.body`. `<Tip>` positions the same way and is
-  liable to the same drift wherever it sits inside `.gw-page`; not touched here.
+- **The upstream card header no longer names a chain.** It showed the first
+  chain in config order plus a bare "+26" — which read as a primary the config
+  never declares (that head chain is only whichever router declares the node
+  first in the values file), and which is duplication now that every row names
+  its own chain. The card is about the upstream; the chains are the rows.
 
   The roster [before](./docs/assets/upstreams-by-upstream-before.png) and
-  [after](./docs/assets/upstreams-by-upstream-after.jpg), the
-  [chain list](./docs/assets/upstreams-chain-list.jpg), and
+  [after](./docs/assets/upstreams-by-upstream-after.jpg), and
   [two routers on one chain](./docs/assets/upstreams-router-disambiguation.jpg).
+
+### Known issues
+
+- **`<Tip>` drifts off-screen on a scrolled page.** `.gw-page` carries
+  `.fade-in`, whose `both` fill leaves a `transform` animation permanently in
+  effect — and an element with a transform in effect is the containing block for
+  its `position: fixed` descendants. So a panel positioned against the viewport
+  resolves against the page instead: correct at the top of the page, off the top
+  of the screen by exactly the scroll offset below it. Found while building a
+  header tooltip that has since been dropped (above); `<Tip>` itself positions
+  the same way and is untouched. A portal to `document.body` is the fix.
 
 ## [0.20.2]
 

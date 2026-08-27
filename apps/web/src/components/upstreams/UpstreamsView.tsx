@@ -15,7 +15,6 @@ import {
 } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
-import { ChainListTip } from "@/components/gateway/ChainListTip";
 import { ExplorerHomeLink } from "@/components/gateway/ExplorerLink";
 import { ChainSelect } from "@/components/gateway/ChainSelect";
 import { WindowSelect } from "@/components/gateway/WindowSelect";
@@ -487,25 +486,12 @@ export function UpstreamsView() {
                       : <InitialBadge name={pv.name} spec={pv.chains[0]} size={28} />}
                     <div className="gw-row" style={{ gap: 8 }}>
                       <span style={{ fontSize: 13, fontWeight: 600 }}>{pv.name}</span>
-                      {/* The head chain is whichever router declares this node
-                          FIRST in the values file — config order, not a
-                          primary. So the count spells out its unit ("+26
-                          chains", not "+26"), and carries the full list on
-                          hover: a summary you can't expand is a dead end. */}
-                      {pv.chains[0] && (
-                        <span className="gw-row" style={{ gap: 5, alignItems: "center" }}>
-                          <span style={{ color: "var(--text-4)" }}>·</span>
-                          <ChainBadge spec={pv.chains[0]} size={15} />
-                          <span style={{ fontSize: 12, color: "var(--text-2)" }}>{buildChainMetaByIndex(pv.chains[0]).name}</span>
-                          {pv.chains.length > 1 && (
-                            <ChainListTip chains={pv.chains}>
-                              <span style={{ fontSize: 10, color: "var(--text-3)", padding: "1px 5px", borderRadius: 4, border: "1px solid var(--line)", whiteSpace: "nowrap" }}>
-                                +{pv.chains.length - 1} chain{pv.chains.length - 1 !== 1 ? "s" : ""}
-                              </span>
-                            </ChainListTip>
-                          )}
-                        </span>
-                      )}
+                      {/* No chain here. The header used to name the first chain
+                          in config order and summarise the rest as "+26" —
+                          which read as a primary the config never declared, and
+                          is duplication now that every row below names its own
+                          chain. The card is about the upstream; the chains are
+                          the rows. */}
                       {pv.health !== "unknown" && <HealthTag health={pv.health} />}
                     </div>
                   </div>
