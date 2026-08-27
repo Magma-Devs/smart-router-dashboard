@@ -31,6 +31,37 @@ export async function accountRoutes(app: FastifyInstance) {
     return app.db;
   }
 
+  app.get(
+    "/api/account/me",
+    {
+      schema: {
+        tags: ["Account"],
+        summary: "Who the caller is right now — read from the row, not the token",
+      },
+    },
+    async (request, reply) => {
+      const me = requireAuth(request, reply);
+      if (!me) return reply;
+
+      // Deliberately from `me.user`, which the auth plugin resolved by joining
+      // the session to the live account on this request. The token carries a
+      // `role` claim too, but it is stamped once at sign-in and never refreshed
+      // — so a promotion or demotion would not reach the browser until the
+      // person signed in again, and the screen would disagree with the api for
+      // up to the 30-day session lifetime.
+      //
+      // The api was always right, because it authorises from this same row.
+      // This endpoint is what lets the UI be right as well.
+      return {
+        id: me.user.id,
+        email: me.user.email,
+        name: me.user.name,
+        avatarUrl: me.user.avatarUrl,
+        role: me.user.role,
+      };
+    },
+  );
+
   app.post(
     "/api/account/password",
     {
