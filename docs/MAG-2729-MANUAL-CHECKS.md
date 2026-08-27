@@ -390,8 +390,25 @@ remove yourself."*
 
 1. Open **Safari (or Firefox) private** and sign in as Dana. She is now signed
    in on two devices: incognito and Safari.
-2. **Admin window** → Account → **Active sessions** shows only *your* sessions,
-   so to see hers, leave both her windows open and trust the effect below.
+
+   Two, not three: neither redeeming an invitation nor first-run setup opens a
+   session any more. Both used to, and the page then signed in on top of it,
+   leaving everybody with a device on their list they had never used.
+2. Her own **Account → Active sessions** now lists two devices. Yours lists
+   only yours: the list is scoped to the caller, so an admin never sees anybody
+   else's sessions.
+
+> **This is the reset flow, not the change flow**, and they are different on
+> purpose. **Change password** on the Account tab needs your *current* one, takes
+> effect immediately, sends no email, and **keeps** the device you are on.
+> **Reset** is for when you cannot sign in at all: no current password, a link
+> delivered instead, and it closes **every** session including the one that used
+> it — because a reset is what somebody does when they think another person is
+> in their account.
+>
+> Only the reset flow has an email in it. If you change the password from the
+> Account tab, nothing is sent — a "your password was changed" notice is
+> MAG-2868's, not this ticket's.
 
 **Now the reset — entirely in the browser.** On managed, Dana asks for it
 herself.
@@ -430,17 +447,36 @@ the new password works where the old one does not.
 
 ## 9 · Expired and already-used links read the same
 
-You just spent a reset link in check 8. Paste **the same link** into the
-incognito window again.
+A reset link stops working for four different reasons, and the check is that
+whoever holds one **cannot tell which**:
 
-1. *"This link has expired."*
-2. Now invent one: http://localhost:3000/reset/a-token-that-was-never-issued
-3. **Word for word the same message.**
+| | |
+|---|---|
+| **Already used** | single-use; somebody set a password with it |
+| **Expired** | 1 hour managed, 24 hours on-prem |
+| **Superseded** | asking for a new link invalidates the previous one, so there is never more than one live way in |
+| **Never issued** | a guessed or invented token |
 
-Telling somebody a link was *already used* also tells an attacker it was already
-used, so used, expired and never-issued are one answer.
+1. You just spent a link in check 8. Paste **the same link** in again →
+   *"This link has expired."*
+2. Invent one: http://localhost:3000/reset/a-token-that-was-never-issued →
+   **word for word the same page.**
+3. If you would rather not spend a link to see this, use the third case instead:
+   request a reset, then request **another**, then open the **first** email's
+   link. Also dead, also the same message — and nothing was consumed.
 
-✅ **Passes if:** both screens are identical.
+Put two of them side by side. Same heading, same body, same button.
+
+**Why they must match.** If *"already used"* read differently, somebody holding a
+stolen or guessed token learns that it was real, belonged to an account, and had
+been used — an answer they should never get for free. Same reasoning as the
+sign-in page giving one answer for a wrong password and an unknown address.
+
+The only thing that varies is what to do next: managed offers to send another,
+on-prem says to ask an administrator. Both refuse identically, which is the part
+under test.
+
+✅ **Passes if:** every dead link gives the same heading and the same body.
 
 ---
 
