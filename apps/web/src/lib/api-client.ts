@@ -36,7 +36,11 @@ function resolveConfig(): Promise<RuntimeConfig> {
 
 /** Resolve base + (in AUTH_MODE=enabled) wait for the session bridge so
  *  the first page-load fetches don't race the token and 401. */
-async function requestContext(): Promise<{ base: string; headers: Record<string, string> }> {
+async function requestContext(): Promise<{
+  base: string;
+  headers: Record<string, string>;
+  authenticated: boolean;
+}> {
   const cfg = await resolveConfig();
   const headers: Record<string, string> = {};
   if (cfg.authMode === "enabled") {
@@ -45,7 +49,7 @@ async function requestContext(): Promise<{ base: string; headers: Record<string,
     const token = getAuthToken();
     if (token) headers.Authorization = `Bearer ${token}`;
   }
-  return { base: cfg.base, headers };
+  return { base: cfg.base, headers, authenticated: !!headers.Authorization };
 }
 
 /**
@@ -60,6 +64,49 @@ export async function apiUrl(): Promise<string> {
   return (await resolveConfig()).base;
 }
 
+/**
+ * A session that has ended somewhere else.
+ *
+ * Revoking a session is a server-side act — it cannot reach into the browser
+ * holding it. So a device that has been signed out from the sessions list, or
+ * by a password reset, or by being removed from the team, keeps its rendered
+ * page and looks signed in until it next speaks to the api. That is precisely
+ * the device somebody clicked "sign out" *about*, and leaving it looking
+ * usable is the wrong answer on a screen whose purpose is cutting off access
+ * you did not authorise.
+ *
+ * So the first 401 on a request we actually authenticated ends the session
+ * here too, and goes to /login.
+ *
+ * Three things it deliberately does not fire on:
+ *
+ *  - **403.** Wrong role, not a dead session. The person is signed in and
+ *    stays signed in; a demoted admin must not be thrown out of the app.
+ *  - **503.** The auth database is unreachable. Signing everybody out during a
+ *    database blip would turn a short outage into a support queue.
+ *  - **A request that carried no token.** In AUTH_MODE=enabled a page can load
+ *    before the session bridge has run, and the public pages (login, invite
+ *    redemption, reset) legitimately call the api with nobody signed in. A 401
+ *    there means "not signed in yet", which is not something to react to.
+ */
+let endingSession = false;
+
+/**
+ * Exported so the rule can be tested without a browser. The three exclusions
+ * above are the whole of it, and each one is a way of being wrong that would
+ * be worse than the problem being solved.
+ */
+export function shouldEndSession(status: number, authenticated: boolean): boolean {
+  return status === 401 && authenticated;
+}
+
+function noteAuthFailure(status: number, authenticated: boolean): void {
+  if (!shouldEndSession(status, authenticated)) return;
+  if (endingSession) return; // concurrent panels all 401 at once; act once
+  endingSession = true;
+  void import("next-auth/react").then(({ signOut }) => signOut({ redirectTo: "/login" }));
+}
+
 export class ApiError extends Error {
   constructor(
     public statusCode: number,
@@ -70,7 +117,7 @@ export class ApiError extends Error {
 }
 
 export async function apiGet<T>(path: string): Promise<T> {
-  const { base, headers } = await requestContext();
+  const { base, headers, authenticated } = await requestContext();
   const res = await fetch(`${base}${path}`, { headers });
   if (!res.ok) {
     let message = `Request failed (${res.status})`;
@@ -80,13 +127,14 @@ export async function apiGet<T>(path: string): Promise<T> {
     } catch {
       /* keep default */
     }
+    noteAuthFailure(res.status, authenticated);
     throw new ApiError(res.status, message);
   }
   return (await res.json()) as T;
 }
 
 export async function apiPost<T>(path: string, body: unknown): Promise<T> {
-  const { base, headers } = await requestContext();
+  const { base, headers, authenticated } = await requestContext();
   const res = await fetch(`${base}${path}`, {
     method: "POST",
     headers: { "content-type": "application/json", ...headers },
@@ -100,6 +148,7 @@ export async function apiPost<T>(path: string, body: unknown): Promise<T> {
     } catch {
       /* keep default */
     }
+    noteAuthFailure(res.status, authenticated);
     throw new ApiError(res.status, message);
   }
   return (await res.json()) as T;
@@ -115,7 +164,7 @@ export async function apiSend<T>(
   path: string,
   body?: unknown,
 ): Promise<T> {
-  const { base, headers } = await requestContext();
+  const { base, headers, authenticated } = await requestContext();
   const res = await fetch(`${base}${path}`, {
     method,
     headers: body === undefined ? headers : { "content-type": "application/json", ...headers },
@@ -129,6 +178,7 @@ export async function apiSend<T>(
     } catch {
       /* keep default */
     }
+    noteAuthFailure(res.status, authenticated);
     throw new ApiError(res.status, message);
   }
   // 204 and friends have no body; callers of those ignore the result.
@@ -140,9 +190,12 @@ export async function apiSend<T>(
  *  auth context, then hands the browser a blob — an `<a href>` to the api
  *  would carry no Authorization header. */
 export async function apiDownload(path: string, filename: string): Promise<void> {
-  const { base, headers } = await requestContext();
+  const { base, headers, authenticated } = await requestContext();
   const res = await fetch(`${base}${path}`, { headers });
-  if (!res.ok) throw new ApiError(res.status, `Export failed (${res.status})`);
+  if (!res.ok) {
+    noteAuthFailure(res.status, authenticated);
+    throw new ApiError(res.status, `Export failed (${res.status})`);
+  }
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
