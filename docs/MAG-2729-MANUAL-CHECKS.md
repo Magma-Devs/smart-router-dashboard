@@ -312,9 +312,17 @@ This is the one worth watching, because it is the difference between a role
 that is checked per request and one baked into a token at sign-in.
 
 1. **Admin window** → Team → Dana's row → **Change role** → **Admin**.
-2. **Incognito window** — reload Team. Her badge now reads **Admin**, and the
-   **Invite** button and the per-row **Change role** / **Remove** buttons appear.
-   She has not signed out; it is the same session throughout.
+2. **Incognito window** — reload Team. Her badge now reads **Admin**, the
+   **Invite** button and the **Invites** tab appear, and the admin controls
+   **Change role · Reset link · Remove** appear on the *other* member's row.
+
+   **Her own row stays empty**, and that is check 7 rather than a fault: nobody
+   can change or remove themselves, so those buttons are never drawn on your own
+   row. Look at the other person's row.
+
+   She has not signed out; it is the same session throughout. The page also
+   corrects itself within fifteen seconds without a reload, because the role is
+   polled.
 
    The screen follows the row because the page reads its own role from
    `GET /api/account/me` — the live account — rather than from the session,
