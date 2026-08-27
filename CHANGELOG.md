@@ -5,6 +5,43 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Fixed
+
+- **Upstreams → By upstream: the rows did not say which chain they were.** The
+  row component was written for the chain grouping, where the card header names
+  the chain, and the upstream grouping reused it — so a card's rows carried
+  role, url, interface and capabilities, and nothing chain-shaped. Node urls are
+  masked to scheme+host (the path is where API keys live), so a provider serving
+  every chain off one hostname rendered row after identical row: Lava's 27 all
+  read `https://g.w.lavanet.xyz`, Blockdaemon's the same. Rows now lead with the
+  chain, in a fixed-width slot so one long name can't step the row's other
+  columns out of line down a card of 27.
+- **A chain served by two routers now names them.** The config allows a staging
+  and a production router on one `network`, and a node both declare got a row
+  from each — still identical once the chain was named. Those rows carry the
+  router id, beside the internal-path badge that does the same job for a node
+  pinned per path. Only where the ambiguity is real, and computed from the rows
+  the filters leave visible.
+- **"+26" now opens.** The chain count in an upstream card's header was plain
+  text: it said 26 more chains existed and offered no way to see them. It lists
+  them all on hover or keyboard focus, with icons, headed by the true total. It
+  also reads "+26 chains" rather than "+26", because the chain beside it is
+  whichever router declares the node first in the values file — config order,
+  not a primary, and "Arbitrum +26" read as an Arbitrum upstream.
+- **A viewport-fixed tooltip drifted off-screen when the page was scrolled.**
+  `.gw-page` carries `.fade-in`, whose `both` fill leaves a `transform`
+  animation permanently in effect — and an element with a transform in effect is
+  the containing block for its `position: fixed` descendants. The panel resolved
+  against the page instead of the viewport: correct at the top of the page, off
+  the top of the screen by exactly the scroll offset below it. It renders
+  through a portal to `document.body`. `<Tip>` positions the same way and is
+  liable to the same drift wherever it sits inside `.gw-page`; not touched here.
+
+  The roster [before](./docs/assets/upstreams-by-upstream-before.png) and
+  [after](./docs/assets/upstreams-by-upstream-after.jpg), the
+  [chain list](./docs/assets/upstreams-chain-list.jpg), and
+  [two routers on one chain](./docs/assets/upstreams-router-disambiguation.jpg).
+
 ## [0.20.2]
 
 ### Fixed
