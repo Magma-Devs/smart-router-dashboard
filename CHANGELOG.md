@@ -5,6 +5,46 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.20.3]
+
+### Fixed
+
+- **Upstreams → By upstream: the rows did not say which chain they were.** The
+  row component was written for the chain grouping, where the card header names
+  the chain, and the upstream grouping reused it — so a card's rows carried
+  role, url, interface and capabilities, and nothing chain-shaped. Node urls are
+  masked to scheme+host (the path is where API keys live), so a provider serving
+  every chain off one hostname rendered row after identical row: Lava's 27 all
+  read `https://g.w.lavanet.xyz`, Blockdaemon's the same. Rows now lead with the
+  chain, in a fixed-width slot so one long name can't step the row's other
+  columns out of line down a card of 27.
+- **A chain served by two routers now names them.** The config allows a staging
+  and a production router on one `network`, and a node both declare got a row
+  from each — still identical once the chain was named. Those rows carry the
+  router id, beside the internal-path badge that does the same job for a node
+  pinned per path. Only where the ambiguity is real, and computed from the rows
+  the filters leave visible.
+- **The upstream card header no longer names a chain.** It showed the first
+  chain in config order plus a bare "+26" — which read as a primary the config
+  never declares (that head chain is only whichever router declares the node
+  first in the values file), and which is duplication now that every row names
+  its own chain. The card is about the upstream; the chains are the rows.
+
+  The roster [before](./docs/assets/upstreams-by-upstream-before.png) and
+  [after](./docs/assets/upstreams-by-upstream-after.jpg), and
+  [two routers on one chain](./docs/assets/upstreams-router-disambiguation.jpg).
+
+### Known issues
+
+- **`<Tip>` drifts off-screen on a scrolled page.** `.gw-page` carries
+  `.fade-in`, whose `both` fill leaves a `transform` animation permanently in
+  effect — and an element with a transform in effect is the containing block for
+  its `position: fixed` descendants. So a panel positioned against the viewport
+  resolves against the page instead: correct at the top of the page, off the top
+  of the screen by exactly the scroll offset below it. Found while building a
+  header tooltip that has since been dropped (above); `<Tip>` itself positions
+  the same way and is untouched. A portal to `document.body` is the fix.
+
 ## [0.20.2]
 
 ### Fixed

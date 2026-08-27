@@ -60,19 +60,32 @@ function InitialBadge({ name, spec, size = 28 }: { name: string; spec?: string; 
 /**
  * One upstream endpoint. Shared by the chain and upstream groupings, so a row
  * reads the same whichever card it sits in — only the identity it has to spell
- * out changes: an upstream card's header already names the upstream, a chain
- * card's names the chain.
+ * out changes: a chain card's header names the chain, so its rows name the
+ * upstream (`showUpstream`); an upstream card's names the upstream, so its
+ * rows name the chain (`showChain`).
+ *
+ * Each grouping MUST pass one of them. The url can't stand in for either: it
+ * is masked to scheme+host (the path is where API keys live), so a provider
+ * that serves every chain off one hostname — `g.w.lavanet.xyz`,
+ * `*.blockdaemon.com` — renders row after identical row without it.
  */
 function EndpointRow({
   upstream,
   row,
   routers,
   showUpstream = false,
+  showChain = false,
+  showRouter = false,
 }: {
   upstream: UpstreamRow;
   row: UpstreamChainRow;
   routers: RouterTopology[];
   showUpstream?: boolean;
+  showChain?: boolean;
+  /** Name the config router that declares this row — only where the card
+   *  holds more than one router's rows for the SAME chain, which the chain
+   *  label alone can't tell apart. */
+  showRouter?: boolean;
 }) {
   // Resolve this (router, interface)'s dialable address: the gateway URL a
   // Kubernetes deployment publishes, else the local listen port an SR_CONFIG
@@ -106,9 +119,26 @@ function EndpointRow({
           </span>
         </div>
       )}
-      {/* Role inline — the chain identity is on the card header, not repeated
-          per row. Only reserve the slot when the config actually marks a role
-          (helm is_backup). */}
+      {/* Chain identity — only on an upstream card, whose header names the
+          upstream (and can name only ONE of its chains). A HARD width, not a
+          minimum: this card runs to one row per chain served, and a single
+          long name ("Fuel Network GraphQL") widening its own slot would step
+          every column on that row out of line down a list of 27. The name
+          ellipsises instead, with the full name + spec index on hover. */}
+      {showChain && (
+        <div
+          className="gw-row"
+          style={{ gap: 7, flexShrink: 0, width: 168 }}
+          title={`${buildChainMetaByIndex(row.spec).name} · ${row.spec}`}
+        >
+          <ChainBadge spec={row.spec} size={18} />
+          <span style={{ fontSize: 12, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {buildChainMetaByIndex(row.spec).name}
+          </span>
+        </div>
+      )}
+      {/* Role inline. Only reserve the slot when the config actually marks a
+          role (helm is_backup). */}
       {(row.role === "primary" || row.role === "backup") && (
       <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0, minWidth: 78 }}>
         {row.role === "primary" && (
@@ -126,6 +156,21 @@ function EndpointRow({
       </div>
       )}
       <span className="gw-mono" style={{ fontSize: 11, color: "var(--text-2)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{row.urlHost || "—"}</span>
+      {/* The config allows several routers on one chain (a staging +
+          production pair on the same `network`), and a node they both declare
+          gets a row from each — identical even once the chain is named. Sits
+          with the internal-path badge below rather than on the left: same job
+          (telling apart rows the url can't), and the fixed left columns stay
+          aligned down a card of 27 rows. */}
+      {showRouter && (
+        <span
+          className="gw-mono"
+          title={`Declared by router ${row.routerId} — more than one router on this chain declares this upstream`}
+          style={{ fontSize: 10, padding: "1px 5px", borderRadius: 4, whiteSpace: "nowrap", color: "var(--text-3)", border: "1px solid var(--line)", flexShrink: 0 }}
+        >
+          {row.routerId}
+        </span>
+      )}
       {/* The masked host drops path + query, so a provider that pins one
           node-url per internal path (TON's v2 at the root, v3 under /api/v3)
           would render identical rows. The badge is what tells them apart. */}
@@ -416,6 +461,21 @@ export function UpstreamsView() {
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {displayed.map((pv) => {
+            const visibleRows = pv.chainRows.filter(
+              (row) => (!activeChain || row.spec === activeChain) &&
+                       (!routerId || row.routerId === routerId),
+            );
+            /* Which of this card's chains are declared by more than one
+               router — those rows need the router named to tell them apart
+               (see `showRouter`). Built from the VISIBLE rows, so a router
+               the filter already excluded doesn't make a lone row look
+               ambiguous. */
+            const routersPerSpec = new Map<string, Set<string>>();
+            for (const row of visibleRows) {
+              const seen = routersPerSpec.get(row.spec);
+              if (seen) seen.add(row.routerId);
+              else routersPerSpec.set(row.spec, new Set([row.routerId]));
+            }
             return (
               <div key={pv.id} className="gw-card" style={{ padding: "14px 16px", transition: "background 0.4s" }}>
                 {/* header */}
@@ -426,32 +486,31 @@ export function UpstreamsView() {
                       : <InitialBadge name={pv.name} spec={pv.chains[0]} size={28} />}
                     <div className="gw-row" style={{ gap: 8 }}>
                       <span style={{ fontSize: 13, fontWeight: 600 }}>{pv.name}</span>
-                      {/* Chain identity lives HERE (icon + name), so the
-                          per-endpoint rows below don't repeat it. */}
-                      {pv.chains[0] && (
-                        <span className="gw-row" style={{ gap: 5, alignItems: "center" }}>
-                          <span style={{ color: "var(--text-4)" }}>·</span>
-                          <ChainBadge spec={pv.chains[0]} size={15} />
-                          <span style={{ fontSize: 12, color: "var(--text-2)" }}>{buildChainMetaByIndex(pv.chains[0]).name}</span>
-                          {pv.chains.length > 1 && (
-                            <span style={{ fontSize: 10, color: "var(--text-3)" }}>+{pv.chains.length - 1}</span>
-                          )}
-                        </span>
-                      )}
+                      {/* No chain here. The header used to name the first chain
+                          in config order and summarise the rest as "+26" —
+                          which read as a primary the config never declared, and
+                          is duplication now that every row below names its own
+                          chain. The card is about the upstream; the chains are
+                          the rows. */}
                       {pv.health !== "unknown" && <HealthTag health={pv.health} />}
                     </div>
                   </div>
                 </div>
                 {/* endpoint rows, one per (chain, upstream endpoint) served —
                     narrowed to the picked chain, so a card never lists chains
-                    the filter excludes. */}
+                    the filter excludes. Each names its chain: the header can
+                    only name one, and the masked url names none. */}
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  {pv.chainRows
-                    .filter((row) => (!activeChain || row.spec === activeChain) &&
-                                     (!routerId || row.routerId === routerId))
-                    .map((row, i) => (
-                      <EndpointRow key={i} upstream={pv} row={row} routers={routers} />
-                    ))}
+                  {visibleRows.map((row, i) => (
+                    <EndpointRow
+                      key={i}
+                      upstream={pv}
+                      row={row}
+                      routers={routers}
+                      showChain
+                      showRouter={(routersPerSpec.get(row.spec)?.size ?? 0) > 1}
+                    />
+                  ))}
                 </div>
               </div>
             );
