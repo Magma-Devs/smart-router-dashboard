@@ -550,8 +550,24 @@ select count(*) as leaks from audit_events
        ~* 'passphrase|installer-printed|/invite/|/reset/'"
 ```
 
+**`0` is the pass.** It is also what a broken query returns, so prove the query
+works by pointing it at something you know is there:
+
+```bash
+docker exec smart-router-dashboard-dev-postgres-1 psql -U sr -d sr_dashboard -c "
+select count(*) as hits from audit_events
+ where coalesce(action,'') || coalesce(actor_name,'') || coalesce(actor_email,'')
+    || coalesce(target_name,'') || coalesce(target_id,'') || coalesce(note,'')
+    || coalesce(client,'')
+       ~* 'dana|passphrase|installer-printed'"
+```
+
+Same query, one word added. It should return a healthy count — every row
+mentioning Dana. That is what makes the `0` above mean something: the search
+finds things when there are things to find, and finds no secrets.
+
 ✅ **Passes if:** every action above is present, the role change has its
-before/after, and the leak count is **0**.
+before/after, the leak count is **0**, and the control query above is not.
 
 ---
 
