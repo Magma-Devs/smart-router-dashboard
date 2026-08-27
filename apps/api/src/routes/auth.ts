@@ -258,20 +258,28 @@ export async function authRoutes(app: FastifyInstance) {
         });
       }
 
-      const session = await createSession(db, {
-        userId: outcome.user.id,
-        authMethod: "password",
-        client,
-      });
-      await recordSignIn(db, outcome.user.id);
+      // Deliberately opens NO session.
+      //
+      // It used to, and returned the id — but the web ignores it and signs in
+      // through Auth.js with the password just typed, which opens a second one.
+      // Every first run therefore left a session nobody had ever used, alive for
+      // its full thirty days, showing up on the operator's own "active sessions"
+      // list as a device they did not recognise. On the one screen whose job is
+      // spotting a session that should not be there, that is the worst possible
+      // noise.
+      //
+      // Nobody is locked out by this: creating the account is followed by an
+      // ordinary sign-in, and `setup-routes.test.ts` asserts exactly that.
       await audit.write({
         action: "setup.completed",
         actor: { id: outcome.user.id, kind: "user" },
         target: { type: "member", id: outcome.user.id, name: outcome.user.email },
-        access: { ...client.access, sessionId: session.id },
+        // No session id — there is no session yet. The address and the device
+        // are what make this row worth reading, and both survive.
+        access: { ...client.access, sessionId: null },
       });
 
-      return reply.code(201).send({ user: toPublicUser(outcome.user), sessionId: session.id });
+      return reply.code(201).send({ user: toPublicUser(outcome.user) });
     },
   );
 
@@ -377,12 +385,12 @@ export async function authRoutes(app: FastifyInstance) {
         });
       }
 
-      const session = await createSession(db, {
-        userId: result.user.id,
-        authMethod: "invite",
-        client,
-      });
-      await recordSignIn(db, result.user.id);
+      // No session opened here either — same reason as first-run setup above.
+      // The page signs in with the password just chosen, and that sign-in is the
+      // one real session. Opening one here as well left every redeemed
+      // invitation showing two devices on the new member's account page, one of
+      // which they had never used.
+      //
       // No access context: the catalog files this under people, not access.
       // Defensible — "this invitation became an account" is complete without an
       // address, and the sign-in it implies is recorded separately.
@@ -392,7 +400,7 @@ export async function authRoutes(app: FastifyInstance) {
         target: { type: "invite", id: result.invitation.id, name: result.invitation.email },
       });
 
-      return reply.code(201).send({ user: toPublicUser(result.user), sessionId: session.id });
+      return reply.code(201).send({ user: toPublicUser(result.user) });
     },
   );
 
