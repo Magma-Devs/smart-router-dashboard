@@ -94,6 +94,22 @@ export function LoginForm({ providers }: { providers: ProviderFlags }) {
           <button className="gw-btn gw-btn--primary" type="submit" disabled={busy} style={{ marginTop: 4 }}>
             {busy ? "Signing in…" : "Sign in"}
           </button>
+          {/* Managed sends a link; on-prem's api answers 404 and the page says
+              to ask an administrator. Shown in both shapes rather than hidden
+              on-prem — somebody who cannot sign in needs a next step, and a
+              missing link is not one. */}
+          <a
+            href="/forgot-password"
+            style={{
+              fontSize: 12,
+              color: "var(--text-3)",
+              textAlign: "center",
+              textDecoration: "none",
+              marginTop: 2,
+            }}
+          >
+            Forgot your password?
+          </a>
         </form>
 
         {providerBadges.length > 0 && (
