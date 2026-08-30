@@ -125,7 +125,7 @@ describe("GET /api/team/members.csv", () => {
     // UTF-8 rather than the system code page.
     expect([...res.rawPayload.subarray(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
     const [header, first] = res.body.slice(1).split("\r\n");
-    expect(header).toBe("name,email,role,two_factor,last_active,joined");
+    expect(header).toBe("name,email,role,two_factor,last_active,joined,magma_account");
     expect(first!.startsWith(`"'=HYPERLINK(""http://evil"",""x"")",admin@example.com,admin,,`)).toBe(
       true,
     );

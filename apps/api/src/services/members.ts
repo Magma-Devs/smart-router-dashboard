@@ -25,6 +25,11 @@ export interface MemberRow {
   twoFactorEnabled: boolean | null;
   lastActiveAt: Date | null;
   joinedAt: Date;
+  /** True for the Magma Devs account on a managed deployment — see
+   *  `users.is_magma_account`. Carried so the list can label it; it is never
+   *  used to filter, because an account the customer can't see in their own
+   *  member list is exactly what the ticket forbids. */
+  isMagmaAccount: boolean;
 }
 
 /** Active members, most privileged first, then alphabetically. Removed people
@@ -47,6 +52,7 @@ export async function listMembers(db: Database): Promise<MemberRow[]> {
     twoFactorEnabled: null,
     lastActiveAt: u.lastActiveAt,
     joinedAt: u.createdAt,
+    isMagmaAccount: u.isMagmaAccount,
   }));
 }
 
