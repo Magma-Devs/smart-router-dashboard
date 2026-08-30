@@ -41,7 +41,10 @@ function envList(name: string): string[] | true {
       /* fall through to comma split */
     }
   }
-  return trimmed.split(",").map((o) => o.trim()).filter(Boolean);
+  return trimmed
+    .split(",")
+    .map((o) => o.trim())
+    .filter(Boolean);
 }
 
 export const config = {
@@ -105,8 +108,6 @@ export const config = {
     databaseUrl: env("DATABASE_URL"),
     adminEmail: env("ADMIN_EMAIL"),
     adminPassword: env("ADMIN_PASSWORD"),
-    /** Needed to validate the `aud` claim of Google ID tokens server-side. */
-    googleClientId: env("GOOGLE_CLIENT_ID"),
     /**
      * Shared secret proving a request came from our own web tier.
      *
@@ -121,6 +122,38 @@ export const config = {
     internalSecret: env("INTERNAL_AUTH_SECRET"),
   },
 
+  /**
+   * Which shape of deployment this is. It forks every credential-delivery path,
+   * because on-prem has no mail server and never will:
+   *
+   *  - `managed`  — we host. Invitations and password resets are emailed.
+   *  - `onprem`   — the customer hosts. Links are shown to an admin and handed
+   *                 over directly; the first admin is created through the
+   *                 first-run page using the installer's setup token.
+   *
+   * Defaults to `onprem`: assuming no mail server is the safe way to be wrong,
+   * since the failure is "an admin copies a link" rather than "an invitation
+   * silently never arrives".
+   */
+  deploymentMode: (env("DEPLOYMENT_MODE") ?? "onprem") as "managed" | "onprem",
+
+  /**
+   * Who this deployment belongs to, as it appears in the invitation subject
+   * ("You've been added to {customer} on Smart Router").
+   *
+   * An invitation arrives at an address that has never heard of us, so the
+   * customer's own name is what stops it reading as spam. Defaults to the
+   * product name rather than a placeholder: "You've been added to Smart Router
+   * on Smart Router" is clumsy, but "You've been added to {customer}" reaching
+   * somebody's inbox is worse.
+   */
+  customerName: env("CUSTOMER_NAME")?.trim() || "Smart Router",
+
+  /** Browser-facing origin of the web app, used to build invitation and
+   *  password-reset links. There is no sane default: guessing a host would
+   *  produce a link that looks right and goes nowhere, so the routes that need
+   *  it fail loudly instead. */
+  publicWebOrigin: env("PUBLIC_WEB_ORIGIN"),
   /**
    * Direct-to-upstream relay (`POST /api/upstreams/relay`) — the api dials a
    * configured upstream on the caller's behalf, bypassing the router, so the

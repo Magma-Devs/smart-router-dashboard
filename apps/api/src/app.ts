@@ -16,6 +16,8 @@ import { upstreamRoutes } from "./routes/upstreams.js";
 import { authRoutes } from "./routes/auth.js";
 import { auditRoutes } from "./routes/audit.js";
 import { auditTokenRoutes } from "./routes/audit-tokens.js";
+import { teamRoutes, teamPasswordRoutes, teamMemberRoutes } from "./routes/team.js";
+import { accountRoutes } from "./routes/account.js";
 
 /** Build the Fastify app with all plugins + routes registered. */
 export async function buildApp(): Promise<FastifyInstance> {
@@ -32,7 +34,19 @@ export async function buildApp(): Promise<FastifyInstance> {
   });
 
   await app.register(helmet, { contentSecurityPolicy: false });
-  await app.register(cors, { origin: config.server.corsOrigins, credentials: true });
+  // `methods` is explicit because @fastify/cors defaults to GET,HEAD,POST — and
+  // a method missing from the preflight fails in the browser only. The request
+  // never reaches Fastify, so there is no log line, no status code, and nothing
+  // an api-level test can observe: `app.inject()` and curl are same-origin and
+  // skip CORS entirely. This shipped broken once, and what it broke was every
+  // mutation the account and team screens make — sign out a device, sign out
+  // everywhere, revoke an invitation, change a role, remove a member — each one
+  // reported to the user as a bare "Failed to fetch".
+  await app.register(cors, {
+    origin: config.server.corsOrigins,
+    credentials: true,
+    methods: ["GET", "HEAD", "POST", "PATCH", "DELETE", "OPTIONS"],
+  });
   await app.register(rateLimit, { max: config.server.rateLimitMax, timeWindow: "1 minute" });
 
   await app.register(errorHandlerPlugin);
@@ -56,6 +70,10 @@ export async function buildApp(): Promise<FastifyInstance> {
     // is disabled.
     await app.register(auditRoutes);
     await app.register(auditTokenRoutes);
+    await app.register(teamRoutes);
+    await app.register(teamPasswordRoutes);
+    await app.register(teamMemberRoutes);
+    await app.register(accountRoutes);
   }
 
   await app.register(healthRoutes);

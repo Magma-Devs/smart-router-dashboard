@@ -38,9 +38,10 @@ API_IMAGE  ?= ghcr.io/magma-devs/smart-router-dashboard/backend:local
 WEB_IMAGE  ?= ghcr.io/magma-devs/smart-router-dashboard/frontend:local
 API_PORT   ?= 8000
 WEB_PORT   ?= 3000
+SES_UI_PORT ?= 8005
 API_URL    ?= http://localhost:$(API_PORT)
 
-.PHONY: up down dev dev-down up-auth dev-auth router ps clean builder build build-api build-web typecheck test
+.PHONY: up down dev dev-down up-auth dev-auth accounts accounts-managed accounts-reset router ps clean builder build build-api build-web typecheck test
 
 ## up: SELF-CONTAINED stack — router + Prometheus + api + web + logs (Loki/Grafana)
 up:
@@ -90,6 +91,37 @@ up-auth:
 dev-auth:
 	@echo "▶ dev stack with hot reload + auth (sign in: admin@example.com / admin1234; Grafana → :3001)"
 	AUTH_MODE=enabled docker compose -f docker-compose.dev.yml --profile router --profile auth --profile logs up --build
+
+## accounts: stack for exercising the MAG-2729 account system by hand (no seeded admin)
+accounts:
+	AUTH_MODE=enabled docker compose -f docker-compose.dev.yml -f docker-compose.accounts.yml \
+		--profile auth up -d --build postgres builder api web
+	@echo ""
+	@echo "  🔐 Fresh install — no accounts yet."
+	@echo "     Open http://localhost:$(WEB_PORT)  →  it redirects to /setup"
+	@echo "     Setup token:  installer-printed-this-token"
+	@echo ""
+	@echo "     Walkthrough: docs/AUTH.md → \"Trying the account system by hand\""
+	@echo "     Reset to a fresh install:  make accounts-reset"
+
+## accounts-managed: the same stack in MANAGED mode — invitations and resets are emailed
+accounts-managed:
+	AUTH_MODE=enabled docker compose -f docker-compose.dev.yml -f docker-compose.accounts.yml \
+		-f docker-compose.managed.yml --profile auth up -d --build postgres builder ses api web
+	@echo ""
+	@echo "  ✉️  Managed mode — invitations and resets are emailed."
+	@echo "     Mail goes to a local SES mock, so nothing leaves this machine."
+	@echo ""
+	@echo "     Inbox:  http://localhost:$(SES_UI_PORT)"
+	@echo "     App:    http://localhost:$(WEB_PORT)  →  /setup"
+	@echo ""
+	@echo "     Reset to a fresh install:  make accounts-reset"
+
+## accounts-reset: wipe the accounts database and start over from first-run
+accounts-reset:
+	docker compose -f docker-compose.dev.yml -f docker-compose.accounts.yml \
+		-f docker-compose.managed.yml --profile auth down -v
+	@echo '▶ wiped — run make accounts for a fresh first-run'
 
 ## router: bring up ONLY the router + Prometheus from this compose
 router:

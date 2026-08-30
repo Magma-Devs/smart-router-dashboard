@@ -1,7 +1,9 @@
 import { sql } from "drizzle-orm";
 import {
+  boolean,
   index,
   inet,
+  integer,
   pgEnum,
   pgTable,
   text,
@@ -21,12 +23,7 @@ import {
  * `requester` / `approver` are enforced by the config-approval flow (MAG-2731);
  * this package only defines the vocabulary and the ordering.
  */
-export const userRoleEnum = pgEnum("user_role", [
-  "read_only",
-  "requester",
-  "approver",
-  "admin",
-]);
+export const userRoleEnum = pgEnum("user_role", ["read_only", "requester", "approver", "admin"]);
 
 /**
  * Account state. Replaces the old `is_suspended` boolean — two overlapping
@@ -69,6 +66,24 @@ export const users = pgTable(
     discordId: varchar("discord_id", { length: 255 }).unique(),
     role: userRoleEnum("role").notNull().default("read_only"),
     status: userStatusEnum("status").notNull().default("active"),
+    /** Marks the account **Magma Devs** operates on a `managed` deployment: the
+     *  one created at first-run setup, which stays after handover rather than
+     *  being removed (MAG-2729, decided 26 Aug 2026).
+     *
+     *  It exists so the member list can say so out loud. An admin account that
+     *  is not one of the customer's people, sitting unlabelled among them, is a
+     *  hidden account however it got there — and the rule this replaced ("no
+     *  standing admin account inside a customer's deployment") became "no
+     *  hidden Magma account, and none the customer can't see in their member
+     *  list".
+     *
+     *  What it does **not** do is confer anything. No permission check reads
+     *  it, it never filters a list, an export or the audit log, and removal is
+     *  the ordinary path — a customer admin removes it like any other member.
+     *
+     *  Set only by `completeSetup`, and only under `DEPLOYMENT_MODE=managed`,
+     *  so an invitation cannot mint one and on-prem never has one. */
+    isMagmaAccount: boolean("is_magma_account").notNull().default(false),
     /** Who removed this person and when. Set together with `status='removed'`;
      *  `removed_by` is intentionally not a foreign key so the record survives
      *  the remover's own removal. */
@@ -158,6 +173,111 @@ export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type Session = typeof sessions.$inferSelect;
 export type NewSession = typeof sessions.$inferInsert;
+
+/**
+ * invitations — the only way an account comes into existence, apart from
+ * first-run setup.
+ *
+ * The raw token exists **only inside the link**; the row stores its SHA-256, so
+ * a database read can't be turned into a working invitation. Single-use is a
+ * conditional UPDATE rather than a read-then-write (see `services/invitations.ts`),
+ * and the redemption runs in one transaction with the account insert — a crash
+ * between them can't leave a redeemed invite with no account, or an account
+ * with a still-live invite.
+ *
+ * See `docs/ACCOUNTS-DESIGN.md` §4.3 and §6.2.
+ */
+export const invitations = pgTable(
+  "invitations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** Stored lowercased. The account is created with **this** address, never
+     *  the one the redeemer submits — that is what makes "redeemable only by
+     *  the address it was sent to" structural rather than a check someone can
+     *  forget to write. */
+    email: varchar("email", { length: 255 }).notNull(),
+    role: userRoleEnum("role").notNull(),
+    /** SHA-256 of the raw token. */
+    tokenHash: text("token_hash").notNull(),
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    /** Managed 7 days · on-prem 24 hours, where the link travels over a channel
+     *  we don't control. */
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    redeemedAt: timestamp("redeemed_at", { withTimezone: true }),
+    redeemedUserId: uuid("redeemed_user_id"),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    revokedBy: uuid("revoked_by"),
+    /** Stamped the first time an expired invite is observed, so `invite.expired`
+     *  fires exactly once without needing a sweeper to notice. */
+    expiredNotedAt: timestamp("expired_noted_at", { withTimezone: true }),
+    resendCount: integer("resend_count").notNull().default(0),
+  },
+  (table) => [
+    uniqueIndex("invitations_token_hash_idx").on(table.tokenHash),
+    /** "is this address already invited?" — the pending set only. */
+    index("invitations_pending_email_idx")
+      .on(sql`lower(${table.email})`)
+      .where(sql`${table.redeemedAt} is null and ${table.revokedAt} is null`),
+  ],
+);
+
+export type Invitation = typeof invitations.$inferSelect;
+export type NewInvitation = typeof invitations.$inferInsert;
+
+/**
+ * password_resets — a single-use link that lets someone set their own password.
+ *
+ * `created_by` is the column an auditor looks for: null means the holder asked
+ * for it themselves (managed, "forgot password"), set means an admin generated
+ * it (on-prem, where there is no mail server). An admin generating a *link* is
+ * the whole design — **nobody ever sets somebody else's password**, so an admin
+ * cannot take an account over silently.
+ */
+export const passwordResets = pgTable(
+  "password_resets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** SHA-256 of the raw token; the raw value exists only in the link. */
+    tokenHash: text("token_hash").notNull(),
+    createdBy: uuid("created_by"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    /** Managed 1 hour · on-prem 24 hours. */
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("password_resets_token_hash_idx").on(table.tokenHash),
+    index("password_resets_user_idx").on(table.userId),
+  ],
+);
+
+export type PasswordReset = typeof passwordResets.$inferSelect;
+
+/**
+ * login_attempts — per-account sign-in lockout.
+ *
+ * The per-IP limit is not the control that matters: a distributed attacker
+ * rotating addresses walks straight past it. This counts failures against the
+ * *identity* being targeted, so the wall is in front of the account rather than
+ * in front of one network path.
+ *
+ * Keyed on the submitted address whether or not it exists, so being locked out
+ * reveals nothing about whether an account is there.
+ */
+export const loginAttempts = pgTable("login_attempts", {
+  email: varchar("email", { length: 255 }).primaryKey(),
+  failedCount: integer("failed_count").notNull().default(0),
+  windowStart: timestamp("window_start", { withTimezone: true }).notNull().defaultNow(),
+  lockedUntil: timestamp("locked_until", { withTimezone: true }),
+});
+
+export type LoginAttempt = typeof loginAttempts.$inferSelect;
 
 /** MAG-2770 audit log — kept in its own module, re-exported so
  *  `import * as schema` still sees every table. */

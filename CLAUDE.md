@@ -452,6 +452,18 @@ Every `/api/metrics/*` route also accepts **`router?`** — the router scope
 | Endpoint | Params | Returns |
 |---|---|---|
 | `GET /docs` · `GET /docs/json` | — | Swagger UI explorer + OpenAPI 3.1 spec. Registered outside production only. |
+| `GET /auth/bootstrap` | — | `{ needsSetup, mode }` — whether this deployment still needs its first admin (derived from "no active users", never a flag), and which shape it is. Never reveals the setup token. Public |
+| `POST /auth/setup` | — | Creates the first admin on a fresh install: `{ token, email, password, name? }` → `{ user, sessionId }`. 403 on a wrong token, 409 once claimed. Public |
+| `POST /auth/invite/preview` | — | `{ token }` → `{ email, role, expiresAt }` — what an invitation link is for. Public; the token travels in the body, never a URL |
+| `POST /auth/invite/accept` | — | Redeem: `{ token, password }` → `{ user, sessionId }`. The account is created with the **invited** address, which the redeemer never supplies |
+| `GET /api/team/invites` | — | Invitations not yet redeemed, each with `state` (`pending`/`expired`/`revoked`). Admin |
+| `POST /api/team/invites` | — | `{ email, role }` → the invitation, plus `url` on-prem (shown once). 409 if already a member or already invited. Admin |
+| `POST /api/team/invites/:id/resend` · `DELETE …/:id` | — | New link (invalidating the old) / revoke. 410 once redeemed. Admin |
+| `POST /auth/password/forgot` | — | `{ email }` → always `202` (managed). `404` on-prem — there is nowhere to send it. Public |
+| `POST /auth/password/reset` | — | `{ token, password }` → sets the password, revokes every session, does **not** sign in. Public |
+| `POST /api/team/members/:id/reset-link` | — | `{ url, expiresAt }`, shown once. An admin generates a link; only the holder chooses the value. Admin |
+| `POST /api/account/password` | — | `{ current, next }` — signs out your other devices, keeps this one |
+| `GET /api/account/sessions` · `DELETE …/:id` · `DELETE …` | — | Your live sessions · sign out one device · sign out everywhere |
 | `GET /health` | — | Liveness — `{ health: "ok" }` |
 | `GET /health/ready` | — | Readiness — pings Prometheus; 503 + `components.prometheus:"ping_failed"` on failure |
 | `GET /version` | — | Build provenance — `{ commit, version, env, startedAt, uptimeSec }` |
@@ -513,9 +525,20 @@ Auth (only read when `AUTH_MODE=enabled`; the metrics path never touches the DB)
 | `AUTH_MODE` | `disabled` | `enabled` turns on the session gate + `/auth/*` + Postgres |
 | `AUTH_SECRET` | (unset) | HS256 signing secret shared with the web (must match) |
 | `DATABASE_URL` | (unset) | Postgres connection string for `users` + `sessions` |
-| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | (unset) | idempotent bootstrap-admin seed on first boot |
-| `GOOGLE_CLIENT_ID` | (unset) | validates the `aud` claim of Google ID tokens server-side |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | (unset) | idempotent admin seed on first boot, **development only** — refused under `NODE_ENV=production`, where first-run setup with the installer's `SETUP_TOKEN` is the only way an account comes into existence |
 | `INTERNAL_AUTH_SECRET` | (unset) | shared with the web; gates whether forwarded browser IP / User-Agent are trusted on `/auth/sign-in`. Unset ⇒ the api records what it observes |
+| `DEPLOYMENT_MODE` | `onprem` | `managed` (we host, email works) / `onprem` (customer hosts, no mail server). Forks invite + reset delivery; read by the web at runtime via `/api/config` |
+| `SETUP_TOKEN` | (generated) | First-run token, required to create the first admin. Unset ⇒ generated once at boot and logged at `warn` |
+| `SETUP_TOKEN_FILE` | (unset) | Path to write a generated token to (mode 0600), so an init container or mounted volume can surface it |
+| `PASSWORD_BREACH_CHECK` | `hibp` | `off` disables the HaveIBeenPwned check — the honest setting for an air-gapped install, rather than relying on a silent timeout |
+| `PUBLIC_WEB_ORIGIN` | (unset) | browser-facing origin of the web app, used to build invitation and password-reset links. Routes that need it fail loudly when it is unset rather than guessing a host |
+| `CUSTOMER_NAME` | `Smart Router` | Who the deployment belongs to, as it appears in the invitation subject ("You've been added to **{customer}** on Smart Router") |
+| `AWS_REGION` | (unset) | **Enables email.** Unset ⇒ nothing is sent and the body is logged at `warn`; on-prem that is correct, on managed it means the admin carries the link (MAG-2870) |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | (unset) | Optional. Absent ⇒ the SDK resolves credentials from the environment (IRSA / instance role), so production stores no static keys |
+| `EMAIL_FROM` | `Smart Router <noreply@smart-router.local>` | Sender. An unmonitored no-reply |
+| `EMAIL_REPLY_TO` | (unset) | Monitored inbox, so a reply to a reset email reaches somebody |
+| `EMAIL_CONFIGURATION_SET` | (unset) | SES configuration set. Keeps each environment's bounce/complaint reputation separate on a shared identity |
+| `SES_ENDPOINT` | (unset) | Points SES at a local mock for development — `make accounts-managed` runs one and serves its inbox on :8005 |
 
 Web — build-time vs. **runtime**:
 
@@ -527,8 +550,9 @@ Web — build-time vs. **runtime**:
 | `DASHBOARD_LOCAL_MODE` | (unset) | runtime override of `localMode`, same mechanism |
 | `DASHBOARD_GRAFANA_URL` | `http://localhost:3001` | Grafana base URL the "View full logs" button links to — runtime override via `/api/config`, same mechanism (falls back to `NEXT_PUBLIC_GRAFANA_URL`) |
 | `AUTH_MODE` / `AUTH_SECRET` | `disabled` / (unset) | must match the api; `enabled` renders the login page + edge gate |
+| `DEPLOYMENT_MODE` | `onprem` | must match the api. Surfaced to the browser by `GET /api/config`, so one image serves both shapes |
+| `INTERNAL_AUTH_SECRET` | (unset) | must match the api; lets the web forward the browser's real IP / User-Agent on sign-in |
 | `INTERNAL_API_BASE_URL` | (falls back to api url) | server-side api URL for Auth.js callbacks (compose sets `http://api:8000`) |
-| `{GOOGLE,GITHUB,DISCORD}_CLIENT_{ID,SECRET}` | (unset) | each provider's button appears only when its id+secret pair is set |
 
 The browser resolves its api base **once per session** from `/api/config`
 (`DASHBOARD_API_URL` → `NEXT_PUBLIC_API_URL` → `http://localhost:8000`),
