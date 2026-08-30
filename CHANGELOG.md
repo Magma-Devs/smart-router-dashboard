@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.20.3]
+
 ### Fixed
 
 - **WebSocket is served on every jsonrpc / tendermintrpc endpoint, and the
