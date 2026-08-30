@@ -259,6 +259,129 @@ current one and signs out your *other* devices, keeping the tab you are in.
 Being logged out of the window you just changed your password in is hostile;
 logging out the other devices is the security value.
 
+## Email (MAG-2870)
+
+Exactly two transactional emails, and the ticket is explicit that nothing else
+is in scope: the invitation, and the password reset. Both are ports of
+lava-connect's approach — SES v2 behind a single send function, table-based HTML
+with inline styles because that is what renders the same in Gmail, Outlook and
+Apple Mail.
+
+**On-prem sends nothing, ever.** That is the design, not a limitation: both
+flows produce a link the admin hands over, and no customer deployment needs a
+mail server. The copy still matters there, because the same link lands in a chat
+message instead.
+
+| Setting | Effect |
+|---|---|
+| `AWS_REGION` | **The switch.** Unset ⇒ nothing is sent, the body is logged at `warn`, and the caller is told |
+| `AWS_ACCESS_KEY_ID` / `SECRET` | Optional. Absent ⇒ resolved from the environment (IRSA, instance role), so production stores no static keys |
+| `EMAIL_FROM` | Sender; an unmonitored no-reply |
+| `EMAIL_REPLY_TO` | A monitored inbox, so a reply to a reset reaches somebody |
+| `EMAIL_CONFIGURATION_SET` | Keeps each environment's bounce reputation separate on a shared SES identity |
+| `SES_ENDPOINT` | Points at a local SES mock for development |
+| `CUSTOMER_NAME` | Appears in the invitation subject — an invite lands somewhere that has never heard of us, and the customer's own name is what stops it reading as spam |
+
+### Seeing the mail in development
+
+```bash
+make accounts-managed          # inbox at http://localhost:8005
+```
+
+Mail goes to a **local SES mock** (`dasprid/aws-ses-v2-local`, the image
+lava-connect uses) rather than to Amazon. It implements the SES v2 API, so
+`SES_ENDPOINT` is the only thing that differs from a real send — the SDK cannot
+tell, and neither can our transport. Nothing leaves the machine and no AWS
+account is involved.
+
+Two reasons this beats pointing at real SES in development. A new SES account is
+**sandboxed**, and silently drops mail to any address you have not verified with
+Amazon, so a test invitation to a made-up address looks accepted and never
+arrives. And the mock keeps every message in a browsable inbox, so the
+invitation and the redemption that follows it are one continuous flow: open the
+inbox, click **Set up your account**, land on `/invite/<token>`.
+
+To send for real, drop `SES_ENDPOINT` and supply real credentials. The demo path
+and the production path differ by that one variable.
+
+### A send that does not happen
+
+`sendEmail` **never throws**. An invitation row is committed before the send is
+attempted, so failing the request would report failure for something that half
+happened — and returning `201` with no link would leave an admin believing an
+invitation is on its way to somebody who will never receive it.
+
+So the three outcomes collapse into two shapes, and the response says which:
+
+- **sent** — the link is in the recipient's inbox and nowhere else. The response
+  carries no url.
+- **not sent** (no transport, or SES refused) — the response carries the url and
+  `deliveryFallback: true`, and the invite dialog says the email could not be
+  sent rather than reusing the on-prem wording, which would blame a deployment
+  shape for an operational fault.
+
+Password reset has no such fallback: there is no admin in that flow to hand a
+link to, and returning one would let anybody mint a reset for any address. The
+audit note is the only record it went nowhere.
+
+### Why there is no email-log table
+
+lava-connect has `user_emails` because it has sixteen types, an admin console
+answering "did this person already get X", CSV export, and SES bounce
+correlation to build on. None of that is in scope here, and a table nothing
+reads is schema to migrate around later.
+
+The one fact worth keeping — did it go, or is the admin holding the link — goes
+on the audit row that already describes the event: `member.invited`,
+`invite.resent`, `password.reset_requested` each carry a `note` of `emailed`,
+`link shown to the admin`, or `email failed, link shown to the admin`. That is
+where somebody investigating already looks.
+
+**The body is never persisted**, in either design. A rendered invitation
+contains a live token.
+
+<img src="./assets/account-emails.png" alt="The two account emails side by side, rendered by the shipping templates. Left: the invitation, subject &quot;You've been added to DFNS on Smart Router&quot;, headed &quot;Set up your account&quot;, with a Set up your account button, the same link repeated as selectable text beneath it, and a line reading &quot;The link works once and expires in 7 days. It only works for dana.okonkwo@dfns.co.&quot; Right: the password reset, subject &quot;Reset your Smart Router password&quot;, with a Reset password button, the link again as text, and &quot;This link expires in 1 hour. If you didn't request this, you can ignore this email — your password won't change.&quot; Neither has a footer, an unsubscribe link, or any image." width="820">
+
+### The rules the copy follows
+
+From the ticket, and each has a test:
+
+- **The link appears as text as well as a button.** Mail clients strip buttons
+  and people forward these.
+- **The expiry is in the message**, and is passed in rather than written into
+  the copy — lava-connect's template hardcodes 30 minutes and ours is an hour.
+- **No marketing footer, no tracking, no unsubscribe.** The shell has no footer
+  and **no `<img>` at all**: a remote image in a security email reports when it
+  was opened and from where, whether or not anybody meant it as a tracking
+  pixel. The wordmark is set in text.
+- **The invitation does not name the inviter.** It goes to an address nobody has
+  verified, so a mistyped one puts a colleague's name and address in a
+  stranger's inbox.
+- **The reset says what to do if it wasn't you**, as the last line.
+
+
+### The reset password page
+
+<img src="./assets/reset-password-states.png" alt="The three states of the reset password page, captured against a running stack. Setting a password: heading &quot;Choose a new password&quot; with the address dana.okonkwo@dfns.co underneath, New password and Repeat password fields, the rule &quot;At least 8 characters. Any characters, including spaces.&quot; shown beneath the first field before typing, and a Save password button. Done: &quot;Your password has been changed. You have been signed out everywhere else.&quot; and a Sign in button. Dead link: &quot;This link has expired&quot;, with on-prem wording asking an administrator to generate a new one, and a Go to sign in button." width="900">
+
+### Checking the whole thing
+
+```bash
+make accounts-reset && make accounts     # or accounts-managed
+node scripts/sanity-accounts.mjs
+```
+
+The eleven acceptance checks on MAG-2729, run against a live deployment over
+HTTP with the audit log read straight out of Postgres. To do the same by hand,
+through the screen, follow
+[`MAG-2729-MANUAL-CHECKS.md`](./MAG-2729-MANUAL-CHECKS.md). Several
+of them only mean something at runtime — "a lower role is refused the action
+when it's attempted directly, not just when the button is hidden" is a claim
+about the api holding a real token, and the runner makes exactly that call.
+
+It refuses to start against an install that already has accounts, because the
+first check is about a fresh one.
+
 ## Sign-in lockout
 
 Per-IP limiting is not the control that matters — a distributed attacker

@@ -1,0 +1,54 @@
+# MAG-2870 — the managed shape, for demos and for the managed-mode acceptance
+# check. Layer it on top of docker-compose.accounts.yml.
+#
+# The difference from on-prem is delivery, and only delivery: invitations and
+# password resets are emailed rather than handed to an admin. Everything else —
+# link generation, TTLs, single-use, the audit rows — is identical, which is why
+# one acceptance runner covers both shapes.
+#
+#     make accounts-managed        →  inbox at http://localhost:8005
+#
+# Mail goes to a local SES mock, so nothing leaves the machine and no AWS
+# account is involved. See the `ses` service below.
+services:
+  # A SES-compatible mock with an inbox UI (the same image lava-connect uses in
+  # its dev stack). It implements the SES v2 API, so the AWS SDK cannot tell it
+  # apart from the real thing — `SES_ENDPOINT` is the only difference, and that
+  # hook exists in the transport precisely so this is possible.
+  #
+  # It accepts every address without verification, which real SES does not: a
+  # new SES account is sandboxed and silently drops mail to unverified
+  # recipients. That difference is the main reason to develop against this
+  # rather than against a real sandbox.
+  #
+  # amd64-only, so it runs under emulation on Apple silicon. It is a dev-only
+  # service and the slowdown does not matter.
+  ses:
+    image: dasprid/aws-ses-v2-local
+    platform: linux/amd64
+    ports:
+      - "${SES_UI_PORT:-8005}:8005"
+
+  api:
+    environment:
+      - DEPLOYMENT_MODE=managed
+      - CUSTOMER_NAME=DFNS
+      - EMAIL_FROM=Smart Router <noreply@magmadevs.com>
+      - EMAIL_REPLY_TO=support@magmadevs.com
+      # A region is what switches the transport on; the endpoint is what keeps
+      # the mail local. Without SES_ENDPOINT these same two lines would send for
+      # real, which is the whole point — the demo path and the production path
+      # differ by one variable.
+      - AWS_REGION=us-east-1
+      - SES_ENDPOINT=http://ses:8005
+      # The mock ignores these, but the SDK insists on finding credentials
+      # somewhere. Explicit dummies stop it reaching for an instance role that
+      # is not there and stalling the first send.
+      - AWS_ACCESS_KEY_ID=local
+      - AWS_SECRET_ACCESS_KEY=local
+    depends_on:
+      - ses
+
+  web:
+    environment:
+      - DEPLOYMENT_MODE=managed
