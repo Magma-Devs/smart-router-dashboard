@@ -36,6 +36,13 @@
       "when": 1787040000000,
       "tag": "0004_password_lifecycle",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1788048000000,
+      "tag": "0005_magma_account",
+      "breakpoints": true
     }
   ]
 }

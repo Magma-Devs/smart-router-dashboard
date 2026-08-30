@@ -114,10 +114,21 @@ export type SetupOutcome = { ok: true; user: User } | { ok: false; reason: "alre
  *
  * The caller is responsible for having validated the password and the token —
  * this function is the state change, not the policy.
+ *
+ * `isMagmaAccount` is the one place that flag is ever written. On a managed
+ * deployment first-run is run by a Magma operator and that account stays after
+ * handover, so the member list has to show it as ours; on-prem the same page
+ * creates the customer's own admin and there is no Magma account to mark. It
+ * defaults false, so a caller that has no opinion cannot accidentally mint one.
  */
 export async function completeSetup(
   db: Database,
-  input: { email: string; password: string; name?: string | null },
+  input: {
+    email: string;
+    password: string;
+    name?: string | null;
+    isMagmaAccount?: boolean;
+  },
 ): Promise<SetupOutcome> {
   const passwordHash = await hashPassword(input.password);
 
@@ -136,6 +147,7 @@ export async function completeSetup(
         passwordHash,
         role: "admin",
         status: "active",
+        isMagmaAccount: input.isMagmaAccount ?? false,
         passwordUpdatedAt: new Date(),
       })
       .returning();

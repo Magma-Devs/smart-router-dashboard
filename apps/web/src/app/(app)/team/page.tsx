@@ -13,7 +13,13 @@ import { useState } from "react";
 import useSWR from "swr";
 import { ApiError, apiGet, apiDownload, apiSend } from "@/lib/api-client";
 import { type Role } from "@sr/shared";
-import { InitialsAvatar, RoleBadge, relativeTime, shortDate } from "@/components/team/bits";
+import {
+  InitialsAvatar,
+  MagmaAccountTag,
+  RoleBadge,
+  relativeTime,
+  shortDate,
+} from "@/components/team/bits";
 import { InviteModal } from "@/components/team/InviteModal";
 import { ChangeRoleModal, type MemberSummary } from "@/components/team/ChangeRoleModal";
 import { RemoveMemberModal } from "@/components/team/RemoveMemberModal";
@@ -32,6 +38,7 @@ interface MembersResponse {
     twoFactorEnabled: boolean | null;
     lastActiveAt: string | null;
     joinedAt: string;
+    isMagmaAccount: boolean;
   }>;
   adminCount: number;
   soleAdmin: boolean;
@@ -217,6 +224,7 @@ export default function TeamPage() {
                                 · you
                               </span>
                             )}
+                            {m.isMagmaAccount && <MagmaAccountTag />}
                           </div>
                           <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 1 }}>
                             {m.email}

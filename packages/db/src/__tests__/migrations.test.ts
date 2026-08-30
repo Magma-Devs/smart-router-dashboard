@@ -84,3 +84,42 @@ describe("0001_accounts", () => {
     expect(left.rows[0]?.n).toBe(0);
   });
 });
+
+/**
+ * The Magma Devs account marker (MAG-2729, decided 26 Aug 2026). What matters
+ * about this column is its default: every account that is not the managed
+ * first-run one must come out false, or the label stops meaning anything.
+ */
+describe("0005_magma_account", () => {
+  let t: TestDb;
+  beforeEach(async () => {
+    t = await createTestDb();
+  });
+  afterEach(async () => {
+    await t.close();
+  });
+
+  it("defaults to false, so an account is never ours by accident", async () => {
+    const [u] = await t.db.insert(users).values({ email: "customer@example.com" }).returning();
+    expect(u?.isMagmaAccount).toBe(false);
+  });
+
+  it("is not nullable — 'unknown whose account this is' is not a state", async () => {
+    const col = await t.db.execute<{ is_nullable: string; data_type: string }>(
+      sql`select is_nullable, data_type from information_schema.columns
+           where table_name = 'users' and column_name = 'is_magma_account'`,
+    );
+    expect(col.rows[0]).toEqual({ is_nullable: "NO", data_type: "boolean" });
+  });
+
+  it("backfills existing rows false", async () => {
+    // A deployment that predates the column has no marked account to find:
+    // on-prem never had one, and a managed install's operator account was
+    // created before anything recorded provenance.
+    await t.db.execute(sql`insert into users (email) values ('legacy@example.com')`);
+    const rows = await t.db.execute<{ is_magma_account: boolean }>(
+      sql`select is_magma_account from users where email = 'legacy@example.com'`,
+    );
+    expect(rows.rows[0]?.is_magma_account).toBe(false);
+  });
+});
