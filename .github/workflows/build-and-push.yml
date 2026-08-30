@@ -96,13 +96,18 @@ jobs:
 
           BRANCH_NAME="${{ github.ref_name }}"
 
-          # If branch is not main, append branch name to version
+          # Extract major.minor BEFORE the suffix is appended. The suffix lands
+          # on the patch component (0.16.1-my-branch), so cutting fields 1,2
+          # afterwards discarded it and every branch republished the shared
+          # `0.16` tag over whatever release was on it. MAG-3310.
+          MAJOR_MINOR=$(echo "$VERSION" | cut -d'.' -f1,2)
+
+          # If branch is not main, append branch name to both tags
           if [ "$BRANCH_NAME" != "main" ]; then
             VERSION="${VERSION}-${BRANCH_NAME}"
+            MAJOR_MINOR="${MAJOR_MINOR}-${BRANCH_NAME}"
           fi
 
-          # Extract major.minor version
-          MAJOR_MINOR=$(echo "$VERSION" | cut -d'.' -f1,2)
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "major_minor=$MAJOR_MINOR" >> $GITHUB_OUTPUT
 
