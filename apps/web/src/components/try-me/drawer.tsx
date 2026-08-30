@@ -93,6 +93,12 @@ interface TryMeDrawerProps {
    *  on the base interface's address, path-scoped). Set ⇒ the drawer offers a
    *  HTTP / WebSocket toggle; null ⇒ HTTP only. */
   wsUrl?: string | null;
+  /** Whether an upstream behind this endpoint declares a `ws(s)://` url. The
+   *  ws upgrade itself never depends on it — the listener always serves it —
+   *  but subscriptions do: with none configured the router installs its NoOp
+   *  subscription manager and refuses every `*_subscribe`. Undefined ⇒ not
+   *  known, and nothing is claimed. */
+  wsUpstream?: boolean;
   /** Which transport to open on. A ws-flagged upstream row opens on "ws". */
   initialTransport?: Transport;
   /** Live health from /api/metrics/chains, when the page has it. The status
@@ -161,6 +167,11 @@ function stableStringify(value: unknown): string {
   }
   return JSON.stringify(value) ?? "null";
 }
+
+/** `eth_subscribe` / `eth_unsubscribe` / CometBFT `subscribe` — the calls the
+ *  router answers from its subscription manager rather than as a plain relay,
+ *  and the only ones that need a ws upstream leg. */
+const SUBSCRIPTION_METHOD = /(un)?subscribe$/i;
 
 const SECTION_LABEL: CSSProperties = {
   fontSize: 10,
@@ -446,6 +457,7 @@ export function TryMeDrawer({
   cfg,
   endpointUrl: httpUrl,
   wsUrl = null,
+  wsUpstream,
   initialTransport = "http",
   health,
   selectUpstream,
@@ -494,7 +506,7 @@ export function TryMeDrawer({
     // Subscription methods ride a WebSocket — over plain HTTP they can only
     // fail ("notifications not supported"), so offer them on -ws variants only.
     if (iface.endsWith("-ws")) return all;
-    return all.filter((m) => !/(un)?subscribe$/i.test(m.command.method));
+    return all.filter((m) => !SUBSCRIPTION_METHOD.test(m.command.method));
   }, [cfg, iface]);
   /** Tiers in render order that actually have methods on this iface. */
   const availableTiers = useMemo(
@@ -1381,6 +1393,20 @@ export function TryMeDrawer({
                     style={{ fontSize: 10 }}
                   >
                     {selected.command.internalPath}
+                  </span>
+                )}
+                {/* The listener serves the upgrade regardless, but a
+                    subscription needs an upstream ws leg to ride — with none
+                    in the config the router answers every subscribe with
+                    "no websocket endpoints available". Say so before Send
+                    does. */}
+                {onWs && wsUpstream === false && !onDirect && SUBSCRIPTION_METHOD.test(selected.command.method) && (
+                  <span
+                    className="gw-tag"
+                    title="No upstream behind this endpoint declares a ws:// or wss:// url, so the router has nothing to subscribe on — it refuses this call. Plain requests over this WebSocket still work."
+                    style={{ fontSize: 10, color: "var(--warn)", background: "rgba(251,191,36,0.10)", borderColor: "rgba(251,191,36,0.25)" }}
+                  >
+                    no ws upstream
                   </span>
                 )}
                 {/* The same name under two internal paths. The router's REST

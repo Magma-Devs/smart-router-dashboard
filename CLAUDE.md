@@ -268,6 +268,16 @@ Websockets ride the **same** address as the base interface, path-scoped
 rejected 405. The values set no `appProtocol` on non-grpc ports, so the gateway
 serves the HTTP/1.1 upgrade on the interface's own hostname.
 
+Both listeners register those routes **unconditionally** (smart-router
+`protocol/chainlib/{jsonRPC,tendermintRPC}.go`), so ws availability is a
+property of the INTERFACE, never of the mounted values: `ifaceServesWs` in
+`components/endpoints/bits.tsx` is what the ws capability chip, the WSS url
+block and the Try-me transport toggle all read. A `wss://` upstream in the
+values is a separate fact — the leg **subscriptions** ride. With none
+configured the router installs its NoOp subscription manager and answers every
+`*_subscribe` with an error (plain calls over the socket still relay), which
+the drawer flags as `no ws upstream` on the method.
+
 **Several routers may serve one chain** (a staging + production pair on the
 same `network`, distinguished by `id` / `custom_url_prefix`). Topology handles
 that natively — separate cards, separate hostnames, and the router-grouped

@@ -34,6 +34,7 @@ import {
   epAddons,
   epDisplayHost,
   epHasWs,
+  epHasWsUpstream,
   epHttpUrl,
   epWsUrl,
   upstreamCount,
@@ -130,7 +131,6 @@ export function RouterGroups({
   }, [routers]);
 
   const liveDetail = detailId ? endpoints.find((e) => e.id === detailId) ?? null : null;
-  const detailRouter = liveDetail ? routers.find((r) => r.id === liveDetail.routerId) ?? null : null;
 
   return (
     <>
@@ -185,9 +185,11 @@ export function RouterGroups({
                           border: "1px solid var(--line)", alignItems: "center",
                         }}>
                         <IfaceTag id={ep.iface} />
-                        {/* Configured capabilities on this endpoint (addons +
-                            derived ws) — what the mounted config actually
-                            declares; nothing shown when it declares none. */}
+                        {/* Capabilities on this endpoint: the addons the
+                            mounted config declares on its upstreams, plus the
+                            ws chip every jsonrpc / tendermintrpc row carries
+                            (its listener serves the upgrade). Nothing shown
+                            when there is none. */}
                         <CapabilityTags
                           size="xs"
                           capabilities={capabilitiesOf({ addons: epAddons(ep), hasWs: epHasWs(ep) })}
@@ -205,10 +207,14 @@ export function RouterGroups({
                             network={ep.network}
                             iface={ep.iface}
                             url={url}
-                            // Same endpoint over its ws upgrade, when the
-                            // config declares a websocket upstream for it —
-                            // the drawer offers both transports.
+                            // Same endpoint over its ws upgrade — served
+                            // on every jsonrpc / tendermintrpc listener, so
+                            // the drawer offers both transports there.
                             wsUrl={epHasWs(ep) ? epWsUrl(ep) : null}
+                            // Subscriptions are the part that DOES need a
+                            // ws upstream leg; the drawer says so when the
+                            // config declares none.
+                            wsUpstream={epHasWsUpstream(ep)}
                             addons={epAddons(ep)}
                             health={healthBySpec.get(ep.spec)}
                             visible={hovered}
@@ -244,7 +250,6 @@ export function RouterGroups({
       <EndpointDetailSheet
         open={!!liveDetail}
         ep={liveDetail}
-        router={detailRouter}
         onClose={() => setDetailId(null)}
         upstreams={upstreams}
       />
