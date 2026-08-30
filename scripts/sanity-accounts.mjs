@@ -269,6 +269,25 @@ check("Create an account on managed — the person sets their own password");
     });
     ok("the invited person sets their own password", redeemed.status === 201);
     ok("the account is theirs", redeemed.body?.user?.email === MEMBER.email);
+
+    // MAG-2729, decided 26 Aug 2026. The two-step managed flow leaves a Magma
+    // operator account on the deployment permanently, and the rule it answers
+    // to is now visibility rather than absence: "no hidden Magma account, and
+    // none the customer can't see in their member list."
+    const roster = await call("GET", "/api/team/members", { token: adminToken });
+    const rows = roster.body?.members ?? [];
+    const ours = rows.find((m) => m.email === ADMIN.email);
+    const theirs = rows.find((m) => m.email === MEMBER.email);
+    ok("the Magma operator account is labelled as ours", ours?.isMagmaAccount === true);
+    ok("the customer's own person is not", theirs?.isMagmaAccount === false);
+    ok("and neither is hidden from the list", !!ours && !!theirs);
+
+    const csv = await call("GET", "/api/team/members.csv", { token: adminToken });
+    ok(
+      "the export carries the same label, unfiltered",
+      /\bmagma_account\b/.test(csv.text ?? "") &&
+        (csv.text ?? "").split("\n").some((r) => r.includes(ADMIN.email) && /,yes\s*$/.test(r)),
+    );
   }
 }
 
