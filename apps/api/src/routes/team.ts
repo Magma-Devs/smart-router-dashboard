@@ -387,6 +387,11 @@ export async function teamMemberRoutes(app: FastifyInstance) {
           twoFactorEnabled: m.twoFactorEnabled,
           lastActiveAt: m.lastActiveAt?.toISOString() ?? null,
           joinedAt: m.joinedAt.toISOString(),
+          /** Ours, not one of the customer's people — managed deployments
+           *  only. Sent to everyone who can read the list, and never used to
+           *  filter it: the whole point of the flag is that the account is
+           *  visible. */
+          isMagmaAccount: m.isMagmaAccount,
         })),
         adminCount: admins,
         /** Prompt, never a block: while there is one admin the screen suggests
@@ -409,7 +414,10 @@ export async function teamMemberRoutes(app: FastifyInstance) {
 
       const members = await listMembers(conn);
       const csv = toCsv(
-        ["name", "email", "role", "two_factor", "last_active", "joined"],
+        // `magma_account` is appended rather than slotted next to the identity
+        // columns, so a reviewer holding an older export can still diff the two
+        // side by side.
+        ["name", "email", "role", "two_factor", "last_active", "joined", "magma_account"],
         members.map((m) => [
           m.name,
           m.email,
@@ -419,6 +427,9 @@ export async function teamMemberRoutes(app: FastifyInstance) {
           m.twoFactorEnabled === null ? "" : m.twoFactorEnabled ? "yes" : "no",
           m.lastActiveAt?.toISOString() ?? "",
           m.joinedAt.toISOString(),
+          // Unlike two_factor, "no" here is simply true: the flag is known in
+          // both modes, and on-prem the honest answer for every row is no.
+          m.isMagmaAccount ? "yes" : "no",
         ]),
       );
 

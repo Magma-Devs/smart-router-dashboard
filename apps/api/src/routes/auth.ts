@@ -248,6 +248,14 @@ export async function authRoutes(app: FastifyInstance) {
         email: body.email,
         password: body.password,
         name: body.name ?? null,
+        // Managed only. On a deployment we host, this page is run by a Magma
+        // operator and the account it creates stays after handover — so it is
+        // marked, and the member list shows it as ours rather than leaving an
+        // admin nobody on the customer's side recognises. On-prem the same page
+        // creates the customer's own first admin; there is no Magma account.
+        //
+        // Read from the live env: `config` snapshots at module load.
+        isMagmaAccount: (process.env.DEPLOYMENT_MODE ?? config.deploymentMode) === "managed",
       });
       if (!outcome.ok) {
         // Lost the race against another first-run request.
