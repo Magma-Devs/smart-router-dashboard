@@ -126,9 +126,17 @@ deployment with nobody in it has nobody to sign in as regardless of who hosts it
 So on managed you also start here, which is a small divergence from the ticket's
 managed wording (*"we create the account and send a join link"*). In practice a
 Magma operator runs this page, then invites the customer's named person by email
-— check 2 — so nobody at Magma ever knows the customer's password. It does leave
-an operator account behind that has to be removed afterwards. Raised with Omer;
-no answer yet.
+— check 2 — so nobody at Magma ever knows the customer's password.
+
+**That operator account stays.** Omer settled it on 26 Aug: ship the two-step
+flow, don't build the separate provisioning route, and don't remove the account
+afterwards. What changed with it is the rule it answers to — *"we keep no
+standing admin account inside a customer's deployment"* became *"no hidden Magma
+account, and none the customer can't see in their member list"*. So on managed
+this account is labelled **Magma Devs** in the member list from the moment it
+exists, is full admin, is logged and exported like anyone else, and a customer
+admin can remove it like any other member. On-prem it is the customer's own
+first admin and carries no label at all. Check 2 is where you see the tag.
 
 **In the admin window**, go to http://localhost:3000.
 
@@ -185,8 +193,26 @@ was refused, the account created is an admin, and `/setup` is now closed.
    - **the inviter is not named.** An invite goes to an address nobody has
      verified, so a mistyped one would put your name in a stranger's inbox
 
-✅ **Passes if:** the admin never saw the link, the recipient did, and nowhere in
-the flow did anyone but Dana choose Dana's password.
+**Back in the admin window** → **Team** → **Members**.
+
+5. The row for `ops.admin@magmadevs.com` carries a brand-orange **Magma Devs**
+   tag beside the name. That is the account you created in check 1: it is ours,
+   it is staying, and the customer is looking at it rather than wondering who
+   the extra admin is. Hover it for the sentence that says it can be removed
+   like any other member.
+6. Nobody else has the tag — not Dana once she joins in check 3, and not an
+   admin the operator invites. The label means *this account is Magma's*, not
+   *Magma created it*, so only first-run setup ever applies it.
+7. **Export** the list. The CSV's last column is `magma_account`, `yes` on that
+   one row and `no` on the rest. Nothing is filtered out of either surface —
+   an account the customer cannot see in their own member list is the thing
+   this replaced.
+8. On-prem there is no such row: run the same page after `make accounts` and
+   every account is the customer's, tagless.
+
+✅ **Passes if:** the admin never saw the link, the recipient did, nowhere in
+the flow did anyone but Dana choose Dana's password, and the one Magma-owned
+account on the deployment says so on screen.
 
 ---
 
@@ -574,12 +600,13 @@ before/after, the leak count is **0**, and the control query above is not.
 ## What differs on-prem
 
 `make accounts-reset && make accounts` runs the same build with
-`DEPLOYMENT_MODE=onprem`. Everything above behaves identically **except
-delivery**, which is the only difference between the two shapes:
+`DEPLOYMENT_MODE=onprem`. Everything above behaves identically except
+**delivery** and the **Magma Devs tag**:
 
 | | Managed | On-prem |
 |---|---|---|
 | Check 2 | The whole check | **Does not apply** — there is no email, by design |
+| Magma Devs tag | On the first-run account, permanently | Never — on-prem gets no Magma account |
 | Invitation | Emailed; the admin never sees the link | The dialog shows the link **once**; the admin passes it on |
 | Reset | Dana clicks **Forgot your password?** and gets an email | The same button says there is no mail server and points at an administrator; use **Reset link** on her row instead |
 | Inbox | http://localhost:8005 | Nothing to look at |

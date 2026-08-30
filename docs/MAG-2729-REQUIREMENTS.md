@@ -6,7 +6,7 @@ taken on trust.
 
 | | |
 |---|---|
-| As of | 23 Aug 2026, `8594841` on `feat/MAG-2870-account-emails` — the top of the stack, containing every MAG-2729 slice plus MAG-2870 |
+| As of | 30 Aug 2026 on `feat/MAG-2870-account-emails` — the top of the stack, containing every MAG-2729 slice plus MAG-2870, and the Magma-account marker Omer's 26 Aug decision asked for |
 | Parent epic | [MAG-2686](https://magmadevs.atlassian.net/browse/MAG-2686) — Dashboard v2, config change + SOC 2 |
 | Design | [`ACCOUNTS-DESIGN.md`](./ACCOUNTS-DESIGN.md) (#109) · operator guide [`AUTH.md`](./AUTH.md) |
 | Acceptance | **11/11** of the checks on the ticket pass — [§4](#4-the-acceptance-checks) |
@@ -32,8 +32,10 @@ removed person's pending config changes (MAG-2731 owns that table), and the audi
 filtering and export (MAG-2770). This ticket emits into MAG-2770's writer; it does not own the
 reading side.
 
-Two places where the code disagreed with the ticket were found during this audit and fixed on the
-branch — see [§7](#7-mismatches-found-and-fixed). **Every row below that is not ✅ is explained in
+Three places where the code disagreed with the ticket were found and fixed on the branch — see
+[§7](#7-mismatches-found-and-fixed). The third arrived after the audit rather than during it:
+Omer's 26 Aug decision kept the Magma operator account on managed deployments and required it to be
+**visible as ours** in the member list, which nothing on that screen could say. **Every row below that is not ✅ is explained in
 [§6](#6-the-gaps-and-why-each-one-is-open)**, grouped by cause rather than listed one by one, since
 three of them are the same missing piece.
 
@@ -73,9 +75,9 @@ Seven pull requests, stacked. `#115` is MAG-2770's writer, merged in because sli
 | Email and password — "the only way in" | ✅ | Social sign-in removed outright, not left configurable |
 | On-prem first admin: email, password, repeat; nothing else opens | ✅ | `/` → `/login` → `/setup` |
 | First-run requires the installer's setup token | ✅ | Constant-time compare. The gate is `count(active users) == 0`, never a flag, so a backup restored with no users is covered — which the ticket calls out |
-| Managed first admin: we create it and send a join link | ✅ | An admin invites and the invitation is emailed; the holder sets the password. `/setup` is not mode-gated either, so a first admin is creatable both ways |
+| Managed first admin: we create it and send a join link | ✅ | **Two steps, by decision** (Omer, 26 Aug): a Magma operator runs `/setup`, then invites the customer's named admin, who sets their own password from the emailed link. `/setup` is not mode-gated — something has to create the very first account whoever hosts it — and the separate provisioning route was considered and declined |
 | Never a shared account; we never set a password for anyone | ✅ | True only after the `ADMIN_EMAIL` fix — see [§7](#7-mismatches-found-and-fixed) |
-| No standing admin account inside a customer's deployment | ✅ | Same fix |
+| ~~No standing admin account inside a customer's deployment~~ **No hidden Magma account, and none the customer can't see in their member list** | ✅ | Replaced by Omer on 26 Aug, once the two-step managed flow was accepted. The operator account **stays** and carries a **Magma Devs** tag in the member list and a `magma_account` column in the CSV — `users.is_magma_account`, written only by `/setup` under `DEPLOYMENT_MODE=managed`, so on-prem has none by construction. Its four conditions hold for the same reason: it is full admin because that is what `/setup` creates; nothing branches on the flag on a read path, so no list, export or audit row omits it; and removal is the ordinary `DELETE /api/team/members/:id`, asserted so a later well-meaning guard fails a test rather than quietly making the account unremovable. [§7](#7-mismatches-found-and-fixed) |
 
 **Passwords** (NIST 800-63B)
 
@@ -151,7 +153,7 @@ rename cannot rewrite history.
 | 1 | Signs in as themselves; the shared login no longer works | ⛔ cutover — [MAG-3002](https://magmadevs.atlassian.net/browse/MAG-3002) |
 | 2 | Fresh on-prem install asks for email and password before anything opens, and refuses without the setup token | ✅ |
 | 3 | A requester cannot approve anything | ◐ roles gate correctly; there is no approval surface to be refused from until MAG-2731 |
-| 4 | An invite redeemed from a different address is refused | ✅ |
+| 4 | An invite can only create the account it was issued for | ✅ reworded by Omer on 26 Aug, accepting the shipped shape: the redeemer supplies no address, so a mismatch cannot be expressed |
 | 5 | On-prem invites and resets work with no mail server | ✅ |
 | 6 | A breached password is refused with a clear message | ✅ |
 | 7 | A removed person's sessions die, **pending requests are cancelled**, history stays, email re-invitable | ◐ three of four; cancellation is MAG-2731's |
@@ -188,7 +190,7 @@ the refusal is the check.
 | # | Check | How it is exercised |
 |---|---|---|
 | 1 | Create an account through the install | A fresh install reports `needsSetup`, every `/api/*` route 401s an anonymous caller, `/` → `/login` → `/setup`, a wrong setup token is refused, the account created is an **admin**, and setup cannot be claimed twice |
-| 2 | Create an account on managed; the person sets their own password | The invitation is **emailed** and the link is *not* returned to the admin. Asserted against the recipient's mailbox: right destination, customer named in the subject, text alongside HTML, a reply-to somebody reads |
+| 2 | Create an account on managed; the person sets their own password | The invitation is **emailed** and the link is *not* returned to the admin. Asserted against the recipient's mailbox: right destination, customer named in the subject, text alongside HTML, a reply-to somebody reads. Then the member list: the operator account is labelled **Magma Devs**, the customer's own person is not, neither is hidden, and the CSV export carries the same label |
 | 3 | An admin invites and they join with exactly the role picked | Invite as `approver`, redeem, assert the created account's role. On-prem the same flow runs with no email at all |
 | 4 | An invite already used is refused | Second redemption refused, and the link stops previewing |
 | 5 | A lower role is refused **when attempted directly** | A valid *approver* token fires all four admin-only mutations — invite, change role, remove, mint a reset link. Four 403s, no UI involved |
@@ -311,6 +313,11 @@ It predates first-run setup and nobody removed it. Against the ticket:
 - *"We keep no standing admin account inside a customer's deployment"* — it is exactly that, for as
   long as the variables stay set.
 
+The third line was replaced on 26 Aug, and the fix does not depend on it: a seeded admin still needs
+no setup token and still has a password somebody at Magma chose, and those two are enough on their
+own. What the replacement rules out is a *hidden* account — and the seeded one was hidden in the
+sense that matters, since nothing on screen said where it came from.
+
 Both paths open on the same condition — no active users — so the room had two doors and a lock on
 one. Now **refused under `NODE_ENV=production`**, with a warning naming the variables so an operator
 expecting an admin learns it from a log line rather than a locked-out install. Kept for development,
@@ -320,6 +327,33 @@ That fix needed a second one to be usable: `resolveSetupToken` was only ever cal
 `POST /auth/setup`, so with no `SETUP_TOKEN` configured nothing was generated, logged, or written to
 `SETUP_TOKEN_FILE` until somebody had already submitted a wrong guess — and an init container
 reading that file runs before the api serves a request. It resolves at boot now.
+
+### The Magma account had nowhere to be visible
+
+Omer's 26 Aug decision kept the two-step managed flow **and** kept the account it leaves behind,
+replacing *"we keep no standing admin account inside a customer's deployment"* with *"no hidden
+Magma account, and none the customer can't see in their member list."* That turns an absence
+requirement into a visibility one, and the member list had no way to express it: every row was a
+name, a role and a date, so an admin account belonging to Magma sat among the customer's own people
+looking exactly like one of them.
+
+`users.is_magma_account` records the provenance. It is written in one place — first-run setup, and
+only under `DEPLOYMENT_MODE=managed` — so an invitation cannot mint one and on-prem never has one.
+A derived rule would have been cheaper (label any `@magmadevs.com` address) and would have been a
+guess: it labels a customer's own contractor at our domain, and misses an operator who used another.
+Recording what happened beats inferring it afterwards.
+
+The mark buys the account nothing. No permission check reads it, no list or export filters on it,
+and Remove is the ordinary route — which is asserted, because the plausible future mistake is a
+guard that feels protective and quietly makes the account unremovable.
+
+| | |
+|---|---|
+| Column | `users.is_magma_account`, `packages/db/migrations/0005_magma_account.sql`, backfilled false |
+| Written by | `completeSetup` ← `POST /auth/setup`, managed only |
+| Read by | `GET /api/team/members` (`isMagmaAccount`), `GET /api/team/members.csv` (`magma_account`) |
+| Shown as | a brand-coloured **Magma Devs** tag on the member row (`MagmaAccountTag`) |
+| Verified by | `magma-account.test.ts`, `migrations.test.ts` → `0005_magma_account`, and check 2 of the live runner |
 
 ### "Promote someone else first, then step down" could not be followed
 
