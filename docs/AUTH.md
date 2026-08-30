@@ -71,7 +71,8 @@ is "an admin copies a link", not "an invitation silently never arrives".
 
 | | Managed | On-prem |
 |---|---|---|
-| First admin | we create it, email a join link | first-run page + the installer's setup token |
+| First admin | a Magma operator runs the first-run page, then invites the customer's named admin | first-run page + the installer's setup token |
+| Magma Devs account | the first-run account is ours, stays, and is labelled | never — the first-run account is the customer's own |
 | Invite / reset delivery | emailed | link shown to an admin, handed over |
 | Invite TTL | 7 days | 24 hours |
 | Reset TTL | 1 hour | 24 hours |
@@ -138,6 +139,33 @@ afterwards through the ordinary credentials path, so the operator is not
 left staring at a login page holding a password they just set — but the
 session that carries them there is that one, minted the same way as every
 other. An api-side session would be a second row nobody ever presents.
+
+### The Magma Devs account (managed only)
+
+The page is not gated on the mode — something has to create the very first
+account whoever hosts the deployment. On **managed** that first account is
+therefore ours: a Magma operator runs the page, then invites the customer's
+named admin, who sets their own password from the invitation link. Nobody at
+Magma ever knows the customer's password, and the operator account **stays**
+after handover.
+
+The rule that governs it (MAG-2729, decided 26 Aug 2026) is *"no hidden Magma
+account, and none the customer can't see in their member list"* — visibility,
+not absence. So `POST /auth/setup` stamps `users.is_magma_account` when
+`DEPLOYMENT_MODE=managed`, and:
+
+- the member list shows the row with a **Magma Devs** tag, and
+  `members.csv` carries a `magma_account` column;
+- it is full admin, on by default;
+- it is logged like any other account — nothing filters it out of the member
+  list, the export or the audit log;
+- **a customer admin removes it like any other member.** No guard, no special
+  case. If you find yourself adding one, that is the requirement inverted;
+- on-prem no account ever carries it, because nothing else writes the column.
+
+An invitation never sets it, including one sent by the operator: the label
+means *this account is Magma's*, not *Magma created it*. The distinction is
+what keeps it useful after the customer's admin has invited their own team.
 
 ## Invitations
 
