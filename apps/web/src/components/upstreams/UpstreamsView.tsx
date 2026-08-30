@@ -31,7 +31,7 @@ import {
   type UpstreamChainRow,
   type UpstreamRow,
 } from "@/components/upstreams/catalog";
-import { IfaceTag } from "@/components/endpoints/bits";
+import { IfaceTag, epPublicWs, ifaceServesWs } from "@/components/endpoints/bits";
 import { RouterGroups } from "@/components/upstreams/RouterGroups";
 import { TryNowButton } from "@/components/try-me/try-now-button";
 import { useFilters } from "@/components/gateway/FiltersProvider";
@@ -77,21 +77,19 @@ function EndpointRow({
   // Resolve this (router, interface)'s dialable address: the gateway URL a
   // Kubernetes deployment publishes, else the local listen port an SR_CONFIG
   // mount declares. The router serves WebSocket on the SAME address as the
-  // base interface (no separate ws port/host), so a ws row dials it with the
-  // -ws catalog interface — which makes the Try-me drawer use its WebSocket
-  // transport.
+  // base interface (no separate ws port/host), path-scoped — so a ws row
+  // dials it with the -ws catalog interface, which makes the Try-me drawer
+  // use its WebSocket transport.
   const rtr = routers.find((r) => r.id === row.routerId);
   const isWsRow = row.urlHost.startsWith("ws://") || row.urlHost.startsWith("wss://") || row.iface.endsWith("-ws");
   const publicUrl = rtr?.publicUrls[row.iface] ?? null;
   const localPort = rtr?.localPorts[row.iface] ?? null;
-  // WS is served on the same address but ONLY under a path (/ws for jsonrpc,
-  // /websocket for tendermint) — a bare ws://host handshake is rejected with
-  // HTTP 405.
-  const wsPath = row.iface.startsWith("tendermintrpc") ? "/websocket" : "/ws";
   const tryUrl = publicUrl ?? (localPort !== null ? `http://localhost:${localPort}` : null);
   // Both transports go to the drawer; a ws-flagged upstream opens on
-  // WebSocket, and either can be toggled to.
-  const tryWsUrl = tryUrl === null ? null : tryUrl.replace(/^http/, "ws") + wsPath;
+  // WebSocket, and either can be toggled to. The upgrade rides every
+  // jsonrpc / tendermintrpc listener, so what the upstream declares doesn't
+  // gate it.
+  const tryWsUrl = tryUrl !== null && ifaceServesWs(row.iface) ? epPublicWs(tryUrl, row.iface) : null;
   return (
     <div className="gw-row" style={{ gap: 8, padding: "6px 10px", background: "var(--hover)", borderRadius: 6, border: "1px solid var(--line)" }}>
       {/* Upstream identity — only on a chain card, whose header names the
@@ -138,8 +136,9 @@ function EndpointRow({
           {row.internalPath}
         </span>
       )}
-      {/* interface tag + configured capabilities (addons + derived ws) — real
-          config values, nothing invented. Same IfaceTag component the
+      {/* interface tag + this UPSTREAM's capabilities — its addons, plus ws
+          when its own node-url is a ws(s) one (the leg subscriptions ride).
+          Real config values, nothing invented. Same IfaceTag component the
           Endpoints page uses so the badge label + colour are consistent. */}
       {row.iface && <IfaceTag id={row.iface} />}
       <CapabilityTags

@@ -5,6 +5,25 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Fixed
+
+- **WebSocket is served on every jsonrpc / tendermintrpc endpoint, and the
+  console now says so.** The ws capability chip, the WSS url on the endpoint
+  sheet and the Try-me HTTP/WS toggle all keyed off a `ws://` / `wss://`
+  node-url in the mounted values file — so an endpoint whose upstreams are all
+  HTTPS showed no WebSocket at all, while the router was answering handshakes
+  on it. Both listeners register `/ws` and `/websocket` unconditionally, so ws
+  availability is a property of the interface: `ifaceServesWs` is what those
+  three surfaces read now. The endpoint sheet also stops looking for a separate
+  `websocket` listen port that the router has no concept of — the upgrade rides
+  the interface's own address, path-scoped.
+
+  The upstream `wss://` url keeps its own meaning: it is the leg
+  **subscriptions** ride. With none configured the router refuses every
+  `*_subscribe` while plain calls over the same socket relay normally, so the
+  Try-me drawer flags subscription methods with `no ws upstream` instead of
+  hiding the transport that works.
+
 ## [0.20.2]
 
 ### Fixed

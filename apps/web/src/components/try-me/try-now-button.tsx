@@ -29,6 +29,12 @@ interface TryNowButtonProps {
   /** The same endpoint's WebSocket address, when it serves one. Set ⇒ the
    *  drawer offers a HTTP / WebSocket toggle. */
   wsUrl?: string | null;
+  /** Whether an upstream behind this endpoint declares a `ws(s)://` url. The
+   *  listener's upgrade never depends on it, but SUBSCRIPTIONS do: with none
+   *  configured the router's NoOp subscription manager refuses every
+   *  `*_subscribe`. Leave undefined where it isn't known — the drawer then
+   *  claims nothing. */
+  wsUpstream?: boolean;
   /** Open the drawer on the WebSocket transport (a ws-flagged upstream row). */
   initialTransport?: "http" | "ws";
   /** Add-ons the mounted config declares on this endpoint's upstreams
@@ -68,6 +74,7 @@ export function TryNowButton({
   iface,
   url,
   wsUrl = null,
+  wsUpstream,
   initialTransport = "http",
   addons,
   health,
@@ -121,6 +128,7 @@ export function TryNowButton({
           cfg={cfg}
           endpointUrl={url}
           wsUrl={wsUrl}
+          wsUpstream={wsUpstream}
           initialTransport={initialTransport}
           health={health}
           selectUpstream={selectUpstream}

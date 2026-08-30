@@ -51,8 +51,9 @@ export function epLocalWs(port: number, iface?: string): string {
 }
 
 /**
- * WebSocket URL for a PUBLIC (gateway) base URL — same host, ws(s) scheme,
- * same path rule as the local form. The HTTPRoutes carry no appProtocol on
+ * WebSocket URL for an http(s) base URL — a published gateway URL or a
+ * `http://localhost:<port>` listen address — same host, ws(s) scheme, same
+ * path rule as the local form. The HTTPRoutes carry no appProtocol on
  * non-grpc ports, so the gateway serves the HTTP/1.1 upgrade
  * on the interface's own hostname.
  */
@@ -189,20 +190,43 @@ export function epHasArchive(ep: EndpointRowModel): boolean {
   return ep.nodes.some((n) => n.addons.includes("archive"));
 }
 
-/** Union of addon capabilities across the endpoint's upstreams, plus a `ws`
- *  marker when the endpoint's interface serves websockets. Feeds the
- *  CapabilityTags chips on the Endpoints page. */
+/** Union of addon capabilities across the endpoint's upstreams. Feeds the
+ *  CapabilityTags chips on the Endpoints page, alongside the derived `ws`
+ *  marker from `epHasWs`. */
 export function epAddons(ep: EndpointRowModel): string[] {
   const set = new Set<string>();
   for (const n of ep.nodes) for (const a of n.addons) set.add(a);
   return [...set];
 }
 
-/** Whether this endpoint's interface is (or pairs with) a websocket transport
- *  — jsonrpc/tendermintrpc listeners also accept a ws upgrade. */
-export function epHasWs(ep: EndpointRowModel): boolean {
+/**
+ * Whether the router answers a WebSocket handshake on this api-interface.
+ * The jsonrpc and tendermintrpc listeners register `/ws` and `/websocket`
+ * unconditionally (smart-router `protocol/chainlib/jsonRPC.go`,
+ * `tendermintRPC.go`), so every chain served on one of them has a ws
+ * transport whether or not the mounted values name it. REST and gRPC have no
+ * ws form.
+ *
+ * A `wss://` upstream in the values is a DIFFERENT fact: it gives
+ * subscriptions an upstream leg to ride. It is not what opens the endpoint's
+ * own ws port, so it is not what gates this.
+ */
+export function ifaceServesWs(iface: string): boolean {
   return (
-    ep.iface.endsWith("-ws") ||
-    ep.nodes.some((n) => n.urlHost.startsWith("ws://") || n.urlHost.startsWith("wss://"))
+    iface === "websocket" ||
+    iface.startsWith("jsonrpc") ||
+    iface.startsWith("tendermintrpc")
   );
+}
+
+/** Whether this endpoint serves a websocket upgrade — a property of its
+ *  interface, not of the upstreams behind it (see `ifaceServesWs`). */
+export function epHasWs(ep: EndpointRowModel): boolean {
+  return ifaceServesWs(ep.iface);
+}
+
+/** Whether any upstream behind this endpoint declares a `ws(s)://` url — the
+ *  leg a subscription needs once a caller opens the endpoint's WebSocket. */
+export function epHasWsUpstream(ep: EndpointRowModel): boolean {
+  return ep.nodes.some((n) => n.urlHost.startsWith("ws://") || n.urlHost.startsWith("wss://"));
 }

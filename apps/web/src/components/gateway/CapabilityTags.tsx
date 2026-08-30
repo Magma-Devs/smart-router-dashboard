@@ -1,8 +1,12 @@
 /**
  * Capability chips for an upstream / endpoint: the addons + extensions the
  * mounted config declares (archive, debug, trace) plus a derived WS tag when
- * a websocket transport is configured. Honest-data: renders nothing when the
- * config declares no capabilities — never invents them.
+ * a websocket transport is available. Honest-data: renders nothing when there
+ * is no capability to show — never invents them.
+ *
+ * `hasWs` means different things by row, both true as stated: on an ENDPOINT
+ * it is the router's own ws upgrade (served on every jsonrpc / tendermintrpc
+ * listener); on an UPSTREAM it is that node-url being a ws(s) one.
  *
  * Addons come from the config parser's per-node `addons: [...]` (helm-values)
  * / node-url `addons` (SR_CONFIG); the router's own capability vocabulary.
@@ -12,14 +16,14 @@ const CAP_META: Record<string, { label: string; color: string; title: string }> 
   archive: { label: "archive", color: "#a78bfa", title: "Serves historical/archive state" },
   debug: { label: "debug", color: "#f472b6", title: "debug_* namespace enabled" },
   trace: { label: "trace", color: "#fbbf24", title: "trace_* namespace enabled" },
-  ws: { label: "ws", color: "#34d399", title: "WebSocket transport configured (subscriptions)" },
+  ws: { label: "ws", color: "#34d399", title: "WebSocket transport available (subscriptions)" },
 };
 
 /** Order chips consistently regardless of config order. */
 const CAP_ORDER = ["archive", "debug", "trace", "ws"];
 
-/** Derive the capability set from a node's addons + whether a ws transport
- *  is present (ws:// / wss:// url or a *-ws interface). */
+/** Derive the capability set from a row's addons + whether a ws transport is
+ *  available on it. */
 export function capabilitiesOf(opts: {
   addons?: string[];
   hasWs?: boolean;

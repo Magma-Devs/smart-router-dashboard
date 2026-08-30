@@ -12,7 +12,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import type { RouterTopology } from "@sr/shared";
 import { buildChainMetaByIndex } from "@sr/shared";
 import { labelStyle } from "@/lib/styles";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
@@ -24,18 +23,18 @@ import {
   IfaceTag,
   UrlBlock,
   epDisplayHost,
+  epHasWs,
   epHttpUrl,
   epLocalWs,
-  epPublicWs,
+  epWsUrl,
   type EndpointRowModel,
 } from "@/components/endpoints/bits";
 
 interface NodeGroup { name: string; isBackup: boolean; hosts: string[] }
 
-export function EndpointDetailSheet({ open, ep, router, onClose, upstreams }: {
+export function EndpointDetailSheet({ open, ep, onClose, upstreams }: {
   open: boolean;
   ep: EndpointRowModel | null;
-  router: RouterTopology | null;
   onClose: () => void;
   upstreams: UpstreamRow[];
 }) {
@@ -66,10 +65,10 @@ export function EndpointDetailSheet({ open, ep, router, onClose, upstreams }: {
   const chain = buildChainMetaByIndex(ep.spec);
   const host = epDisplayHost(ep);
   const httpUrl = epHttpUrl(ep);
-  // WS pairing: on a Kubernetes deployment the gateway serves the upgrade on this
-  // interface's own hostname; on an SR_CONFIG mount it needs a separate
-  // `websocket` listen port to exist.
-  const wsPort = router?.localPorts["websocket"] ?? null;
+  // WS pairing: the SAME address as the HTTP one, path-scoped — the router
+  // serves the upgrade on the interface's own listener, so there is no
+  // separate ws host or port to look up.
+  const wsUrl = epWsUrl(ep);
   const upstreamByName = (name: string): UpstreamRow | undefined => upstreams.find((p) => p.id === name);
 
   // Portal to <body>: the page uses a `transform` (fade-in) ancestor, which
@@ -116,9 +115,13 @@ export function EndpointDetailSheet({ open, ep, router, onClose, upstreams }: {
               ) : (
                 <UrlBlock label="HTTP POST" url={httpUrl} />
               )}
-              {ep.iface === "jsonrpc" && (ep.publicUrl
-                ? <UrlBlock label="WSS" url={epPublicWs(ep.publicUrl, "jsonrpc")} />
-                : wsPort !== null && <UrlBlock label="WSS" url={epLocalWs(wsPort, "jsonrpc")} />)}
+              {/* Every jsonrpc / tendermintrpc listener answers the ws
+                  upgrade, whatever the mounted values declare — so the pair
+                  is shown on all of them, not only where a ws upstream is
+                  configured. */}
+              {ep.iface !== "websocket" && epHasWs(ep) && wsUrl !== null && (
+                <UrlBlock label={wsUrl.startsWith("wss://") ? "WSS" : "WebSocket"} url={wsUrl} />
+              )}
             </div>
 
             {/* Participating upstreams */}
