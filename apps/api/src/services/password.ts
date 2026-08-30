@@ -157,8 +157,7 @@ export async function validatePassword(
   if (breach.breached) {
     return {
       code: "breached",
-      message:
-        "This password has appeared in a known data breach. Please choose a different one.",
+      message: "This password has appeared in a known data breach. Please choose a different one.",
     };
   }
   return null;

@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  boolean,
   index,
   inet,
   integer,
@@ -22,12 +23,7 @@ import {
  * `requester` / `approver` are enforced by the config-approval flow (MAG-2731);
  * this package only defines the vocabulary and the ordering.
  */
-export const userRoleEnum = pgEnum("user_role", [
-  "read_only",
-  "requester",
-  "approver",
-  "admin",
-]);
+export const userRoleEnum = pgEnum("user_role", ["read_only", "requester", "approver", "admin"]);
 
 /**
  * Account state. Replaces the old `is_suspended` boolean — two overlapping
@@ -70,6 +66,24 @@ export const users = pgTable(
     discordId: varchar("discord_id", { length: 255 }).unique(),
     role: userRoleEnum("role").notNull().default("read_only"),
     status: userStatusEnum("status").notNull().default("active"),
+    /** Marks the account **Magma Devs** operates on a `managed` deployment: the
+     *  one created at first-run setup, which stays after handover rather than
+     *  being removed (MAG-2729, decided 26 Aug 2026).
+     *
+     *  It exists so the member list can say so out loud. An admin account that
+     *  is not one of the customer's people, sitting unlabelled among them, is a
+     *  hidden account however it got there — and the rule this replaced ("no
+     *  standing admin account inside a customer's deployment") became "no
+     *  hidden Magma account, and none the customer can't see in their member
+     *  list".
+     *
+     *  What it does **not** do is confer anything. No permission check reads
+     *  it, it never filters a list, an export or the audit log, and removal is
+     *  the ordinary path — a customer admin removes it like any other member.
+     *
+     *  Set only by `completeSetup`, and only under `DEPLOYMENT_MODE=managed`,
+     *  so an invitation cannot mint one and on-prem never has one. */
+    isMagmaAccount: boolean("is_magma_account").notNull().default(false),
     /** Who removed this person and when. Set together with `status='removed'`;
      *  `removed_by` is intentionally not a foreign key so the record survives
      *  the remover's own removal. */
@@ -264,3 +278,7 @@ export const loginAttempts = pgTable("login_attempts", {
 });
 
 export type LoginAttempt = typeof loginAttempts.$inferSelect;
+
+/** MAG-2770 audit log — kept in its own module, re-exported so
+ *  `import * as schema` still sees every table. */
+export * from "./schema-audit.js";

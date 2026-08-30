@@ -1,5 +1,4 @@
 import { redirect } from "next/navigation";
-import { oauthProviderFlags } from "@/auth.config";
 import { LoginForm } from "@/components/auth/login-form";
 import { fetchBootstrap } from "@/lib/bootstrap";
 
@@ -8,9 +7,7 @@ export const dynamic = "force-dynamic";
 
 /**
  * Public sign-in page (AUTH_MODE=enabled only — disabled mode bounces
- * straight to the dashboard). Server component: reads the provider
- * credential pairs from the env and passes booleans down, so the client
- * bundle never learns the actual client ids.
+ * straight to the dashboard).
  */
 export default async function LoginPage() {
   if (process.env.AUTH_MODE !== "enabled") redirect("/overview");
@@ -21,5 +18,5 @@ export default async function LoginPage() {
   const state = await fetchBootstrap();
   if (state?.needsSetup) redirect("/setup");
 
-  return <LoginForm providers={oauthProviderFlags} />;
+  return <LoginForm />;
 }

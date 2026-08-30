@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { eq } from "drizzle-orm";
 import { createTestDb, type TestDb } from "@sr/db/testing";
 import { users } from "@sr/db";
+import { maybeSeedAdmin } from "../plugins/db.js";
 import {
   completeSetup,
   countActiveUsers,
@@ -162,7 +163,10 @@ describe("completeSetup", () => {
     const first = await completeSetup(t.db, { email: "one@example.com", password: "x".repeat(12) });
     expect(first.ok).toBe(true);
 
-    const second = await completeSetup(t.db, { email: "two@example.com", password: "y".repeat(12) });
+    const second = await completeSetup(t.db, {
+      email: "two@example.com",
+      password: "y".repeat(12),
+    });
     expect(second).toEqual({ ok: false, reason: "already_set_up" });
 
     const rows = await t.db.select().from(users);
@@ -170,7 +174,9 @@ describe("completeSetup", () => {
   });
 
   it("re-opens for a deployment whose accounts are all removed", async () => {
-    await t.db.insert(users).values({ email: "gone@example.com", status: "removed", role: "admin" });
+    await t.db
+      .insert(users)
+      .values({ email: "gone@example.com", status: "removed", role: "admin" });
     const outcome = await completeSetup(t.db, {
       email: "new@example.com",
       password: "correct horse battery staple",
@@ -180,5 +186,61 @@ describe("completeSetup", () => {
     // The removed row survives — their name stays in the audit trail.
     const rows = await t.db.select().from(users).where(eq(users.status, "removed"));
     expect(rows).toHaveLength(1);
+  });
+});
+
+describe("the ADMIN_EMAIL seed", () => {
+  /**
+   * The seed does three things the ticket forbids: creates the first admin with
+   * no setup token, sets a password for somebody, and leaves a standing admin
+   * account in a customer's deployment. It survives for development only, so
+   * the production guard is the whole feature — and a guard with no test is a
+   * guard that comes back.
+   */
+  const saved = {
+    NODE_ENV: process.env.NODE_ENV,
+    ADMIN_EMAIL: process.env.ADMIN_EMAIL,
+    ADMIN_PASSWORD: process.env.ADMIN_PASSWORD,
+  };
+  const log = { info: () => {}, warn: () => {} };
+  let t: TestDb;
+
+  beforeEach(async () => {
+    t = await createTestDb();
+    process.env.ADMIN_EMAIL = "seeded@example.com";
+    process.env.ADMIN_PASSWORD = "a-seeded-password-1";
+  });
+  afterEach(async () => {
+    await t.close();
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  });
+
+  it("does nothing in production, leaving /setup as the only way in", async () => {
+    process.env.NODE_ENV = "production";
+    await maybeSeedAdmin({ log } as never, t.db);
+
+    expect(await countActiveUsers(t.db)).toBe(0);
+    expect(await needsSetup(t.db)).toBe(true);
+  });
+
+  it("still seeds outside production, so `make dev-auth` keeps working", async () => {
+    process.env.NODE_ENV = "development";
+    await maybeSeedAdmin({ log } as never, t.db);
+
+    expect(await needsSetup(t.db)).toBe(false);
+    const [seeded] = await t.db.select().from(users).where(eq(users.email, "seeded@example.com"));
+    expect(seeded?.role).toBe("admin");
+  });
+
+  it("is inert when the variables are unset, in either environment", async () => {
+    delete process.env.ADMIN_EMAIL;
+    delete process.env.ADMIN_PASSWORD;
+    process.env.NODE_ENV = "development";
+    await maybeSeedAdmin({ log } as never, t.db);
+
+    expect(await needsSetup(t.db)).toBe(true);
   });
 });
