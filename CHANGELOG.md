@@ -14,6 +14,13 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   what was asked, what the router did, what went wrong, and — a required
   section — **what the logs do not record**.
 
+  Opening a trace is free: `GET /api/trace/:guid` returns the log lines and
+  makes no model call, and an **✦ Ask AI** button asks
+  `POST /api/trace/:guid/explain` for the explanation. Two routes because they
+  are two decisions — explaining on page load would bill the operator once per
+  reader of a link whose whole purpose is being pasted to whoever is on call,
+  and would leave no way to ask again when an answer is poor.
+
   There is deliberately **no log parser**. The router's zerolog JSON goes to
   the model as it was written; only the answer is structured, so the page can
   lay it out. The lines come back with the answer and render underneath it,

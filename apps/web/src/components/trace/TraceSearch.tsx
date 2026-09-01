@@ -36,7 +36,10 @@ export function TraceSearch({ initial = "", autoFocus = false }: { initial?: str
           style={{ flex: "1 1 320px", minWidth: 0 }}
         />
         <button className="gw-btn gw-btn--primary" type="submit" disabled={trimmed === "" || invalid}>
-          Explain relay
+          {/* This navigates — it does not call the model. The Ask AI button on
+              the trace page is what spends anything, and naming this one
+              "Explain" implied an action it never performed. */}
+          Look up
         </button>
       </div>
       {invalid && (

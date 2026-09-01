@@ -1,9 +1,20 @@
 # Relay Trace — explaining one relay from its logs
 
-`GET /api/trace/:guid` takes the GUID the router returns on every relay, pulls
-that relay's log lines out of Loki, hands them to Claude, and returns both the
-answer and the lines. The web surface is **`/trace`**, with `/trace/<guid>`
-deep-linkable — a trace is something you paste to whoever is on call.
+Two routes, because they are two decisions:
+
+```
+GET  /api/trace/:guid           the relay's log lines. No model call, no spend.
+POST /api/trace/:guid/explain   Claude's account of them. Costs money.
+```
+
+Opening a trace is free and shows the lines; an **✦ Ask AI** button asks for the
+explanation. Explaining on page load would bill the operator once per reader of
+a link whose whole purpose is being pasted to whoever is on call, and would
+leave no way to ask again when an answer is poor. The web surface is
+**`/trace`**, with `/trace/<guid>` deep-linkable.
+
+⚠ The **Look up** button next to the GUID box only navigates — it does not call
+the model. Only **Ask AI** spends anything.
 
 There is **no log parser**. The router's zerolog JSON goes to the model as it
 was written. What we structure is the *answer*, so the page can lay it out.

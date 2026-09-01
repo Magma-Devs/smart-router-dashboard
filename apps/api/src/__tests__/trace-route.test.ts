@@ -151,19 +151,37 @@ describe("GET /api/trace/:guid", () => {
     vi.resetModules();
   });
 
-  it("skips the explanation, with a reason, when the AI is off", async () => {
-    vi.stubGlobal("fetch", async () => lokiStreams([["1700000001000000000", "{}"]]));
+  it("makes NO model call — the lookup is free and the explanation is a separate ask", async () => {
+    const hosts: string[] = [];
+    vi.stubGlobal("fetch", async (url: string | URL) => {
+      hosts.push(new URL(String(url)).host);
+      return lokiStreams([["1700000001000000000", "{}"]]);
+    });
+
     const json = (await app.inject({ method: "GET", url: `/api/trace/${GUID}` })).json();
-    // The page still renders: lines without an answer beats an error.
-    expect(json.explanation).toBeNull();
-    expect(json.explainSkipped).toBe("disabled");
+    // Opening a trace must never spend: the URL is meant to be pasted around.
+    expect(hosts.every((h) => !h.includes("anthropic"))).toBe(true);
+    expect(json).not.toHaveProperty("explanation");
+    // AI is off in this suite, so the page knows not to offer the button.
+    expect(json.aiAvailable).toBe(false);
+    expect(json.model).toBeNull();
   });
 
-  it("says so when the relay has no lines at all", async () => {
+  it("returns an empty trail rather than an error when nothing carries the GUID", async () => {
     vi.stubGlobal("fetch", async () => lokiStreams([]));
-    const json = (await app.inject({ method: "GET", url: `/api/trace/${GUID}` })).json();
-    expect(json.lines).toEqual([]);
-    expect(json.explainSkipped).toBe("no_lines");
+    const res = await app.inject({ method: "GET", url: `/api/trace/${GUID}` });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().lines).toEqual([]);
+  });
+
+  it("does not apply the model rate limit to the free lookup", async () => {
+    vi.stubGlobal("fetch", async () => lokiStreams([["1700000001000000000", "{}"]]));
+    // The tight limit protects a model budget; with the AI off there is none,
+    // and behind an ingress every dashboard user shares one IP bucket.
+    for (let i = 0; i < 15; i++) {
+      const res = await app.inject({ method: "GET", url: `/api/trace/${GUID}` });
+      expect(res.statusCode, `request ${i + 1}`).toBe(200);
+    }
   });
 
   it("rejects anything that is not a GUID", async () => {
@@ -180,6 +198,20 @@ describe("GET /api/trace/:guid", () => {
     // "that relay does not exist".
     expect(res.statusCode).toBe(503);
     expect(res.json().error).toBe("log_store_unavailable");
+  });
+});
+
+describe("POST /api/trace/:guid/explain", () => {
+  it("404s when the AI is off, naming which half is missing", async () => {
+    const res = await app.inject({ method: "POST", url: `/api/trace/${GUID}/explain` });
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error).toBe("ai_disabled");
+  });
+
+  it("rejects a non-GUID before it reaches the model", async () => {
+    const res = await app.inject({ method: "POST", url: "/api/trace/abc/explain" });
+    // 404 (ai off) is checked first here; the point is it never 500s.
+    expect([400, 404]).toContain(res.statusCode);
   });
 });
 

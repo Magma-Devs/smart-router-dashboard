@@ -53,13 +53,15 @@ export interface TraceExplanation {
   notDetermined: string[];
 }
 
-/** Why an explanation is absent, when it is. */
-export type TraceExplainSkip =
-  | "disabled" /* TRACE_AI_ENABLED=false — the page still shows the lines. */
-  | "no_lines" /* Nothing to explain. */
-  | "failed"; /* The model call errored; `explainError` says how. */
-
-/** `GET /api/trace/:guid`. */
+/**
+ * `GET /api/trace/:guid` — the relay's log trail. Cheap, deterministic, and
+ * makes NO model call.
+ *
+ * Explaining is a separate POST behind an explicit button. Splitting them is
+ * what makes the cost a decision the user takes rather than a side effect of
+ * opening a URL — a trace is meant to be pasted to whoever is on call, and a
+ * link that bills the operator once per reader is not a link you can share.
+ */
 export interface RelayTrace {
   guid: string;
   /** Lines carrying this GUID, oldest first. */
@@ -67,14 +69,25 @@ export interface RelayTrace {
   /** How far back we had to look before we found them (Unix ms). */
   searched: { fromMs: number; toMs: number };
   /**
-   * True when the trail was longer than TRACE_MAX_LINES and we sent the model
-   * a prefix. Truncation must never be mistaken for a short relay.
+   * True when the trail was longer than TRACE_MAX_LINES. Truncation must never
+   * be mistaken for a short relay.
    */
   truncated: boolean;
-  /** Null when `explainSkipped` says why not. */
-  explanation: TraceExplanation | null;
-  explainSkipped: TraceExplainSkip | null;
-  explainError: string | null;
-  /** Model that answered, for the footer. Null when there was no call. */
+  /**
+   * Whether `POST /api/trace/:guid/explain` will answer on this deployment
+   * (`TRACE_AI_ENABLED` + a key). The page shows the Ask-AI button only when
+   * true, and says why when not — rather than offering a button that 404s.
+   */
+  aiAvailable: boolean;
+  /** Model that would answer, for the button's footnote. Null when unavailable. */
   model: string | null;
+}
+
+/** `POST /api/trace/:guid/explain` — the answer, and what produced it. */
+export interface TraceExplainResult {
+  guid: string;
+  explanation: TraceExplanation;
+  model: string;
+  /** Lines the model was given — may be fewer than the trail when truncated. */
+  linesConsidered: number;
 }
