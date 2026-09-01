@@ -75,7 +75,7 @@ services:
       # test can show which upstream served a request (and "Cached" on a cache
       # hit). Read by the browser from the Lava-Provider-Address response header.
       - "--cors-expose-headers"
-      - "Lava-Provider-Address,Lava-Retries,Provider-Latest-Block,lava-cross-validation-agreeing-providers,lava-cross-validation-disagreeing-providers"
+      - "Lava-Guid,Lava-Provider-Address,Lava-Retries,Provider-Latest-Block,lava-cross-validation-agreeing-providers,lava-cross-validation-disagreeing-providers"
       - "--log-level"
       - "${SR_LOG_LEVEL:-info}"
       - "--log-format"
@@ -90,6 +90,13 @@ services:
       # and an unreachable addr is logged, not fatal.
       - "--cache-be"
       - "${SR_CACHE_BE:-}"
+      # Debug HTTP server: /debug/endpoint-state, /debug/chain-state,
+      # /debug/provider-scores — the health read-outs from smart-router's
+      # `run-and-measure-locally` skill. EMPTY BY DEFAULT and those routes then
+      # do not exist at all; the demo overlay's `make demo` sets
+      # SR_DEBUG_ADDRESS=0.0.0.0:7999 and publishes the port.
+      - "--debug-address"
+      - "${SR_DEBUG_ADDRESS:-}"
     volumes:
       - ${SR_CONFIG_HOST:-./dev-config/values.yml}:/smart-router/values.yml:ro
     ports:
@@ -226,6 +233,16 @@ services:
       - PROMETHEUS_URL=http://prometheus:9090
       - CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
       - HELM_VALUES_DIR=/app/helm-values
+      # Relay Trace (GET /api/trace/:guid): the log store the GUID is looked up
+      # in. Points at the bundled `logs` profile's Loki; unset it and the route
+      # answers 503 "no log store configured" rather than an empty trace.
+      - LOKI_URL=${LOKI_URL:-http://loki:3100}
+      # The AI explanation is OFF unless you set both. It spends model tokens
+      # and sends the relay's log lines — request bodies included — to
+      # Anthropic. See docs/RELAY-TRACE.md.
+      - TRACE_AI_ENABLED=${TRACE_AI_ENABLED:-false}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - TRACE_AI_MODEL=${TRACE_AI_MODEL:-claude-sonnet-5}
       # Auth (see docs/AUTH.md): disabled (default) needs none of the rest.
       - AUTH_MODE=${AUTH_MODE:-disabled}
       - AUTH_SECRET=${AUTH_SECRET:-}

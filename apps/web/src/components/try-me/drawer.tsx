@@ -133,6 +133,9 @@ interface Outcome {
   /** Router-only telemetry, read off CORS-exposed response headers. A direct
    *  call has none of it — there is no router in the path to report. */
   servedBy: string | null;
+  /** `Lava-Guid` — the identifier the Relay Trace page looks up. Null when the
+   *  router doesn't CORS-expose it (older --cors-expose-headers list). */
+  guid: string | null;
   retries: number | null;
   cvStatus: string | null;
   cvAgreeing: string | null;
@@ -144,6 +147,7 @@ interface Outcome {
  *  in exactly this: with no router in the path there is nothing to report. */
 const NO_ROUTER_META = {
   servedBy: null,
+  guid: null,
   retries: null,
   cvStatus: null,
   cvAgreeing: null,
@@ -543,6 +547,9 @@ export function TryMeDrawer({
    *  the relay, or "Cached" when the router answered from cache. Null when the
    *  header wasn't readable (e.g. not CORS-exposed by the router). */
   const [servedBy, setServedBy] = useState<string | null>(null);
+  /** `Lava-Guid` for the relay just fired — the handle the Relay Trace page
+   *  looks up. Only the router path sets it; a direct call has no relay. */
+  const [guid, setGuid] = useState<string | null>(null);
   // Per-request relay telemetry from the router's CORS-exposed headers:
   // Lava-Retries (how many times the relay was retried before succeeding) and
   // Lava-Cross-Validation-Status/…-Agreeing-Providers.
@@ -625,6 +632,7 @@ export function TryMeDrawer({
     setLatencyMs(null);
     setHttpStatus(null);
     setServedBy(null);
+    setGuid(null);
     setRetries(null);
     setCvStatus(null);
     setCvAgreeing(null);
@@ -796,6 +804,7 @@ export function TryMeDrawer({
     setLatencyMs(o.latencyMs);
     setHttpStatus(o.httpStatus);
     setServedBy(o.servedBy);
+    setGuid(o.guid);
     setRetries(o.retries);
     setCvStatus(o.cvStatus);
     setCvAgreeing(o.cvAgreeing);
@@ -857,6 +866,7 @@ export function TryMeDrawer({
       // header (a real endpoint name, or "Cached" on a cache hit). Readable
       // only when the router CORS-exposes it; null otherwise.
       servedBy: res.headers.get("Lava-Provider-Address"),
+      guid: res.headers.get("Lava-Guid"),
       retries: retriesHdr !== null && retriesHdr !== "" ? Number(retriesHdr) || 0 : null,
       cvStatus: res.headers.get("Lava-Cross-Validation-Status"),
       cvAgreeing: res.headers.get("Lava-Cross-Validation-Agreeing-Providers"),
@@ -1628,6 +1638,22 @@ export function TryMeDrawer({
                     </span>
                   );
                 })()}
+                {/* The relay's own GUID, linking to its trace. This is the
+                    fastest path from "that looked wrong" to an explanation, and
+                    it only appears when the router CORS-exposes Lava-Guid. */}
+                {guid && (
+                  <a
+                    className="gw-tag"
+                    href={`/trace/${guid}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title={`Explain this relay (GUID ${guid})`}
+                    style={{ fontSize: 11, color: "var(--brand)", background: "rgba(255,57,0,0.10)", borderColor: "rgba(255,57,0,0.25)", display: "inline-flex", alignItems: "center", gap: 4, textDecoration: "none" }}
+                  >
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                    explain this relay
+                  </a>
+                )}
                 {/* Retry indicator — the router's Lava-Retries header counts how
                     many times this relay was retried before the answer you got. */}
                 {retries !== null && retries > 0 && (

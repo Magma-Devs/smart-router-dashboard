@@ -5,6 +5,43 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Added
+
+- **Relay Trace — paste a GUID, get the story of that relay.** A new `/trace`
+  surface (and `/trace/<guid>`, deep-linkable) takes the identifier the router
+  already returns in its `Lava-Guid` response header, pulls that relay's log
+  lines out of Loki, and hands them to Claude for a plain-English account:
+  what was asked, what the router did, what went wrong, and — a required
+  section — **what the logs do not record**.
+
+  There is deliberately **no log parser**. The router's zerolog JSON goes to
+  the model as it was written; only the answer is structured, so the page can
+  lay it out. The lines come back with the answer and render underneath it,
+  because nothing here verifies the model against them and showing the evidence
+  next to the claim is the honest mitigation.
+
+  Two things follow from how little the router logs by default, and both are
+  surfaced rather than hidden. At `--log-level info` a *successful* relay leaves
+  a single line — and none at all on tendermintrpc or grpc, which have no entry
+  line — so the model is told explicitly that a missing line means the router
+  did not record it, never that the thing did not happen. And `--log-level
+  debug` alone (NOT `--debug-relays`) adds the per-relay summary carrying the
+  real end-to-end `timeTaken`, because that line is keyed on `msgSeed`, which is
+  the GUID. The failure path is already rich at `info`: `provider blocked`
+  carries a typed reason and the remaining-pool counts.
+
+  The Try-me drawer now reads `Lava-Guid` and shows an **explain this relay**
+  link on the result, so firing a request and reading its story is one click.
+  Both compose files add `Lava-Guid` to `--cors-expose-headers` — the router
+  was already sending it, the browser just could not read it.
+
+  The AI half is off unless configured (`TRACE_AI_ENABLED` + `ANTHROPIC_API_KEY`):
+  it spends model tokens and sends the relay's log lines, request bodies
+  included, to Anthropic. With it off the page is still a GUID-scoped log
+  viewer. An unset `LOKI_URL` answers **503 `log_store_not_configured`** rather
+  than an empty trace — "there is no log store here" and "that relay does not
+  exist" are different facts. See [`docs/trace-ai-page/RELAY-TRACE.md`](docs/trace-ai-page/RELAY-TRACE.md).
+
 ## [0.20.3]
 
 ### Fixed

@@ -72,6 +72,41 @@ export const config = {
   },
 
   /**
+   * Loki, for the Relay Trace surface (`GET /api/trace/:guid`).
+   *
+   * `url` unset is the normal state on a deployment with no bundled log stack,
+   * and the route says so explicitly rather than answering with an empty
+   * trace — "no log store here" and "no such relay" are different facts.
+   */
+  loki: {
+    url: env("LOKI_URL"),
+    timeoutMs: envInt("LOKI_TIMEOUT_MS", 10000),
+    /**
+     * Stream selector for the router's logs. Which labels a collector attaches
+     * is a property of the deployment, not of the dashboard — the same reason
+     * `ROUTER_SCOPE_LABEL` exists for Prometheus. The bundled Promtail sets
+     * `service` from the compose service name.
+     */
+    routerSelector: env("LOKI_ROUTER_SELECTOR") ?? '{service="router"}',
+  },
+
+  /**
+   * The AI explanation layered on a trace. Off unless configured: it spends
+   * money and sends log content (which includes relay request bodies) to a
+   * third party. With it off, `/api/trace/:guid` still returns the raw lines,
+   * so the page degrades to a GUID-scoped log viewer rather than breaking.
+   */
+  traceAi: {
+    enabled: (env("TRACE_AI_ENABLED") ?? "false").toLowerCase() === "true",
+    apiKey: env("ANTHROPIC_API_KEY"),
+    model: env("TRACE_AI_MODEL") ?? "claude-sonnet-5",
+    /** Lines past this are dropped before the model call, oldest kept. */
+    maxLines: envInt("TRACE_MAX_LINES", 400),
+    /** Per-IP per-minute, tighter than RATE_LIMIT_MAX — each call costs. */
+    rateLimitMax: envInt("TRACE_AI_RATE_LIMIT_MAX", 10),
+  },
+
+  /**
    * Authentication (see docs/AUTH.md).
    *  - `disabled` (default) — no login, no DB; every route stays open.
    *  - `enabled`  — Auth.js (web) + HS256 JWT validated here; /api/* routes

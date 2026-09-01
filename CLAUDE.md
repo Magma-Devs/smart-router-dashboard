@@ -435,6 +435,7 @@ Every `/api/metrics/*` route also accepts **`router?`** — the router scope
 | `GET /api/metrics/query` | **`query`** (required) | Raw **instant** PromQL passthrough — `{ result }`. 400 without `query` |
 | `GET /api/config/routers` | — | `{ routers: RouterTopology[] }` — live topology from the mounted values file (either format), node URLs masked to scheme+host. Each endpoint also carries `index` (the handle the relay below resolves) + `directable` |
 | `POST /api/upstreams/relay` | body: `{routerId, node, endpointIndex, transport?, httpMethod?, path?, body?}` | Fires ONE request straight at a configured upstream, router excluded — `{httpStatus, latencyMs, body, truncated, transport}`. The target is resolved from the values file, never taken from the caller; the resolved url is never returned and is scrubbed out of the upstream's own body. Upstream 4xx/5xx come back **200** with their status inside; 502/504 mean our hop failed. Off with `UPSTREAM_RELAY_ENABLED=false`. See [`docs/UPSTREAM-DIRECT-TEST.md`](docs/UPSTREAM-DIRECT-TEST.md) |
+| `GET /api/trace/:guid` | — | `RelayTrace` — one relay's log trail from Loki plus Claude's account of it: `lines` (raw, oldest first), `searched`, `truncated`, `explanation` (`summary` / `timeline` / `findings` / **`notDetermined`**), `explainSkipped` (`disabled` \| `no_lines` \| `failed`). **No log parser** — the router's zerolog JSON goes to the model as written; only the ANSWER is structured. The GUID is validated (`^[0-9]{1,20}$`, ≤ 2⁶⁴−1), never escaped, because the LogQL is built by concatenation. Search window widens 15m→168h, stopping at the first hit. 400 on a non-GUID; **503 `log_store_not_configured`** when `LOKI_URL` is unset and **503 `log_store_unavailable`** when Loki is down — neither is ever an empty trace. A failed model call still returns the lines. See [`docs/trace-ai-page/RELAY-TRACE.md`](docs/trace-ai-page/RELAY-TRACE.md) |
 
 ## Environment variables
 
@@ -456,6 +457,14 @@ API (`apps/api/src/config.ts` is the source of truth):
 | `UPSTREAM_RELAY_TIMEOUT_MS` | `10000` | deadline on the api→upstream call |
 | `UPSTREAM_RELAY_MAX_BODY_BYTES` | `262144` | upstream responses past this come back `truncated: true` |
 | `UPSTREAM_RELAY_RATE_LIMIT_MAX` | `20` | per IP per minute, tighter than `RATE_LIMIT_MAX` |
+| `LOKI_URL` | unset | Log store for `GET /api/trace/:guid`. Unset ⇒ 503 `log_store_not_configured`, which must never read as "relay not found". Compose sets `http://loki:3100` |
+| `LOKI_TIMEOUT_MS` | `10000` | per-query abort |
+| `LOKI_ROUTER_SELECTOR` | `{service="router"}` | Stream selector for the router's logs — deployment-specific, same reasoning as `ROUTER_SCOPE_LABEL` |
+| `TRACE_MAX_LINES` | `400` | Lines sent to the model; oldest kept, past it `truncated: true` |
+| `TRACE_AI_ENABLED` | `false` | Off unless set — it spends model tokens and sends relay log lines (request bodies included) to Anthropic. Off, the page is still a GUID-scoped log viewer |
+| `ANTHROPIC_API_KEY` | unset | Server-side only; never reaches the browser |
+| `TRACE_AI_MODEL` | `claude-sonnet-5` | |
+| `TRACE_AI_RATE_LIMIT_MAX` | `10` | per IP per minute, tighter than `RATE_LIMIT_MAX` |
 | `LOG_LEVEL` | `info` | |
 | `TENANT_ID` | — | set by the chart, **not read**. The multi-tenant store pins `X-Scope-OrgID` from the credential that authenticated, so the api never names its own org — a config field that did would move the tenancy boundary into a values file |
 | `GIT_COMMIT` / `APP_VERSION` | `unknown` / `0.0.0` | surfaced by `/version` |
@@ -533,5 +542,6 @@ Compose / Makefile knobs:
 | Window params | `24h` is a wire alias of `1d`; unknown values silently fall back to `DEFAULT_WINDOW` = `30m` (never a 400). The web opens on the same constant, and a window the user picks persists to `localStorage` under `sr:window` — so a changed default only reaches someone who has never picked one. `1h` is in the catalog but not in the page-level select. |
 | Provider `role` | Only the helm values format marks backups (`is_backup`); with a raw SR_CONFIG mount, `role` is null and backup-share panels stay empty — that's honest, not a bug. |
 | Endpoint URLs | `localhost:<port>` comes from SR_CONFIG's listen ports, gateway hostnames from helm values' `publicUrls` — a mount never has both. Anything that renders or dials an endpoint address must resolve public → local → `—` (`epHttpUrl` / `epWsUrl` in `components/endpoints/bits.tsx`), never hardcode `localhost`. |
+| Relay trace depth | The trail is a property of the ROUTER'S FLAGS, not the relay. Measured on the dev stack: a successful relay leaves ~11 lines at `info` (including `Choosing providers`, which NAMES the chosen upstream) and ~18 at `debug`; a failing one ~20 and ~31. tendermintrpc/grpc leave no entry line at all. `--log-level debug` alone adds the per-relay summary with real `timeTaken` — it is NOT behind `--debug-relays`. Judge an explanation against the level the router was running. |
 | Health words | `HealthState` has exactly three states and exactly one wording — `lib/health.ts` / `<HealthTag>`. A panel that maps health to its own labels/colours is a bug, even when the words look nicer locally: the same upstream is read across panels. |
 | BuildKit cache | `make build*` targets use the isolated `srdash-builder` (see Docker / images / isolation). Plain `docker compose up --build` is fine for the stack itself. |
