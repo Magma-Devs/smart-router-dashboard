@@ -1,0 +1,56 @@
+# DEMO overlay — a real router you can point the Relay Trace page at, plus the
+# measurement rig from smart-router's `run-and-measure-locally` skill.
+#
+#   make demo          # bring it up (router + logs + counting proxy, debug logs)
+#   make demo-relays   # fire a spread of relays, print the Lava-Guid of each
+#   make demo-stats    # what the router actually sent upstream
+#   make demo-down
+#
+# Layered on top of docker-compose.yml, so everything there still applies:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.demo.yml \
+#     --profile router --profile logs --profile demo up -d --build
+#
+# What this overlay adds over `make up`:
+#
+#   1. A counting proxy in front of ONE upstream (ETH1 · publicnode). It counts
+#      every request the router sends that node, keyed by JSON-RPC method, and
+#      records the upstream status and RTT. Node-side and version-agnostic —
+#      the only method that can compare router versions across v1.3.3, where
+#      the router's own rpc_endpoint_tracker_requests_total did not yet exist.
+#   2. demo/values.demo.yml, which routes that upstream through it.
+#   3. Host port 7999 for the router's --debug-address server (the Makefile
+#      target sets SR_DEBUG_ADDRESS; the flag itself lives in the base file).
+#
+# Debug logging is NOT set here — it is an env var, so `make demo` exports
+# SR_LOG_LEVEL=debug. That matters: at the default `info` a SUCCESSFUL relay
+# leaves exactly one log line, so a trace of it has almost nothing to explain.
+# `debug` adds the per-relay summary (timeTaken, request, response, HasError).
+# See docs/RELAY-TRACE.md.
+
+services:
+  counting-proxy:
+    profiles: ["demo"]
+    build:
+      context: ./demo/counting-proxy
+    image: sr-counting-proxy:demo
+    environment:
+      # Repoint this at any node — a local one, or a gateway — and the number
+      # in /__stats is that node's own view of the router's traffic.
+      - UPSTREAM_URL=${DEMO_UPSTREAM_URL:-https://ethereum-rpc.publicnode.com}
+      - LISTEN_PORT=8899
+    ports:
+      - "8899:8899"
+    restart: unless-stopped
+
+  router:
+    # `ports` is one of the few keys compose CONCATENATES across files, so this
+    # adds 7999 to the base file's 3360-3367 + 7779 rather than replacing them.
+    # `command` is NOT concatenated — it is replaced wholesale — which is why
+    # --debug-address lives in the base file behind ${SR_DEBUG_ADDRESS}.
+    ports:
+      - "7999:7999" # --debug-address: /debug/endpoint-state|chain-state|provider-scores
+    depends_on:
+      counting-proxy:
+        condition: service_healthy
+        required: false

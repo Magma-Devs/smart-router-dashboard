@@ -40,7 +40,8 @@ API_PORT   ?= 8000
 WEB_PORT   ?= 3000
 API_URL    ?= http://localhost:$(API_PORT)
 
-.PHONY: up down dev dev-down up-auth dev-auth router ps clean builder build build-api build-web typecheck test
+.PHONY: up down dev dev-down up-auth dev-auth router ps clean builder build build-api build-web typecheck test \
+	demo demo-down demo-relays demo-stats demo-reset demo-health demo-logs
 
 ## up: SELF-CONTAINED stack — router + Prometheus + api + web + logs (Loki/Grafana)
 up:
@@ -90,6 +91,60 @@ up-auth:
 dev-auth:
 	@echo "▶ dev stack with hot reload + auth (sign in: admin@example.com / admin1234; Grafana → :3001)"
 	AUTH_MODE=enabled docker compose -f docker-compose.dev.yml --profile router --profile auth --profile logs up --build
+
+# ---- Demo stack (docker-compose.demo.yml) --------------------------------
+# A real router wired for a Relay Trace demo, plus the measurement rig from
+# smart-router's `run-and-measure-locally` skill. Differs from `up` in three
+# ways: debug log level (a successful relay leaves ONE line at info — see
+# docs/RELAY-TRACE.md), the --debug-address server on :7999, and a counting
+# proxy in front of the ETH1/publicnode upstream.
+DEMO_COMPOSE := -f docker-compose.yml -f docker-compose.demo.yml
+DEMO_PROFILES := --profile router --profile logs --profile demo
+DEMO_ENV := SR_CONFIG_HOST=./demo/values.demo.yml \
+            SR_DEBUG_ADDRESS=0.0.0.0:7999 \
+            SR_LOG_LEVEL=debug
+
+## demo: Relay Trace demo stack — router (debug logs + /debug/*) + Loki/Grafana + counting proxy
+demo:
+	$(DEMO_ENV) docker compose $(DEMO_COMPOSE) $(DEMO_PROFILES) up -d --build
+	@echo ""
+	@echo "  ✅ Demo up (router logs at DEBUG — traces have the per-relay summary):"
+	@echo "     UI       → http://localhost:$(WEB_PORT)        Trace → /trace"
+	@echo "     API      → http://localhost:$(API_PORT)        GET /api/trace/:guid"
+	@echo "     Grafana  → http://localhost:3001        (admin / admin)"
+	@echo "     Prom     → http://localhost:9090"
+	@echo "     /debug/* → http://localhost:7999/debug/endpoint-state"
+	@echo "     upstream → http://localhost:8899/__stats  (ETH1 · publicnode)"
+	@echo ""
+	@echo "  next: make demo-relays   (fires relays, prints each Lava-Guid)"
+
+## demo-relays: fire a spread of relays and print the Lava-Guid of each (PASSES=n)
+demo-relays:
+	@./demo/send-relays.sh $(or $(PASSES),1)
+
+## demo-stats: what the router actually sent the ETH1 upstream (node-side count)
+demo-stats:
+	@curl -s http://localhost:8899/__stats | jq .
+
+## demo-reset: zero the upstream counters — settle ~45s after boot first, so
+## one-off startup verification traffic is excluded from the window you measure.
+demo-reset:
+	@curl -sX POST http://localhost:8899/__reset | jq .
+	@echo "counters zeroed — send NO relays if you want proactive polls only"
+
+## demo-health: the health check for any run (see the skill: Enabled, 0 poll failures, TipFresh)
+demo-health:
+	@echo "── endpoint-state ──"  && curl -s http://localhost:7999/debug/endpoint-state | jq -r '["CHAIN","IFACE","UP","LATEST","FAILS","POLLms","HASH","UPSTREAM"], (.[]|[.ChainID,.ApiInterface,(.Enabled|tostring),(.LatestBlock|tostring),(.ConsecutivePollFailures|tostring),(.PollIntervalMs|tostring),.HashPolling,.NetworkAddress]) | @tsv' | column -t
+	@echo "── chain-state ──"     && curl -s http://localhost:7999/debug/chain-state    | jq .
+	@echo "── tracker requests ──" && curl -s http://localhost:7779/metrics | grep '^rpc_endpoint_tracker_requests_total' || echo "  (no tracker metric on this build)"
+
+## demo-logs: follow the router's logs (the lines the trace page reads)
+demo-logs:
+	$(DEMO_ENV) docker compose $(DEMO_COMPOSE) logs -f router
+
+## demo-down: stop the demo stack
+demo-down:
+	$(DEMO_ENV) docker compose $(DEMO_COMPOSE) $(DEMO_PROFILES) --profile auth --profile cache down
 
 ## router: bring up ONLY the router + Prometheus from this compose
 router:
