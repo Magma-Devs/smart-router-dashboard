@@ -20,6 +20,18 @@
   used via the `.gw-*` classes ported from the SR Dashboard prototype.
 - Page-level window selector + chain selector at the top; card titles inside cards.
 
+## Chart colors
+- Chart/series colors come ONLY from the theme tokens in `styles/globals.css`
+  (`--series-1..8`, `--series-other`, `--ord-1..3`) via the `lib/colors.ts`
+  helpers: `upstreamSlot` for upstream identity (stable per name, never cycled,
+  9th+ folds to "Other"), `PCTL_CLR` for p50/p95/p99, status vars only when the
+  series MEANS good/bad. Never hard-code a hex in a chart.
+- Tokens are validated (colorblind separation + surface contrast) with the
+  dataviz skill's `validate_palette.js` against the real surfaces (dark
+  `#131317`, light `#ffffff`) — re-run it if you change one. Never a dual-axis
+  chart; never repaint a series by its value (flag state in the legend with an
+  icon + label instead).
+
 ## Metrics
 - Metric names are GROUND TRUTH from a live scrape (`smartrouter_*`/`rpc_endpoint_*`),
   catalogued in `packages/shared/src/constants/metrics.ts`. Don't trust the design docs.
