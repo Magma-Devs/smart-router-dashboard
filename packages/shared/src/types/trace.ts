@@ -1,11 +1,11 @@
 /**
- * Relay Trace — the GUID-scoped log lookup and its AI explanation.
+ * Relay Investigator — the GUID-scoped log lookup and its AI explanation.
  *
  * There is deliberately no parsed event model here. The router's log lines go
  * to the model as they were written, and what comes back is the explanation.
  * The only structure we impose is on the ANSWER, so the page can lay it out.
  *
- * See `docs/RELAY-TRACE.md` for what the trail actually contains at each of
+ * See `docs/trace-ai-page/RELAY-TRACE.md` for what the trail actually contains at each of
  * the router's log levels — it is thin at `info`, which is why
  * `notDetermined` below is a required field rather than a nicety.
  */
@@ -122,4 +122,29 @@ export interface TraceExplainResult {
   usedCallerKey: boolean;
   /** Lines the model was given — may be fewer than the trail when truncated. */
   linesConsidered: number;
+}
+
+/** One model the configured provider will accept, for the settings picker. */
+export interface TraceModelOption {
+  /** What goes in `TraceAiSettings.model` and on the wire. */
+  id: string;
+  /** The provider's own display name, when it gives one. */
+  label: string;
+}
+
+/** Body of `POST /api/trace/models`. */
+export interface TraceModelsRequest {
+  provider?: TraceAiProviderId;
+  /** Same bring-your-own-key rule as the explain route: used for this one
+   *  call, never persisted. */
+  apiKey?: string;
+}
+
+/** `POST /api/trace/models` — what this provider will answer to, asked of the
+ *  provider itself rather than hardcoded, because model lists change. */
+export interface TraceModelsResponse {
+  provider: TraceAiProviderId;
+  models: TraceModelOption[];
+  /** The id the api would use if the caller leaves the model blank. */
+  defaultModel: string;
 }

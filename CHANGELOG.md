@@ -7,7 +7,7 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ### Added
 
-- **Relay Trace — paste a GUID, get the story of that relay.** A new `/trace`
+- **Relay Investigator — paste a GUID, get the story of that relay.** A new `/trace`
   surface (and `/trace/<guid>`, deep-linkable) takes the identifier the router
   already returns in its `Lava-Guid` response header, pulls that relay's log
   lines out of Loki, and hands them to Claude for a plain-English account:

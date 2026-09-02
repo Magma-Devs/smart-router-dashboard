@@ -12,7 +12,6 @@
 import type { CSSProperties } from "react";
 import { useApi } from "@/hooks/use-api";
 import { CloudNotice } from "@/components/gateway/CloudNotice";
-import { TraceAiSettingsCard } from "@/components/trace/TraceAiSettingsCard";
 
 interface VersionInfo {
   commit: string;
@@ -57,11 +56,6 @@ export default function AccountPage() {
     <div className="gw-page" style={{ maxWidth: 720 }}>
       <h1>Account Settings</h1>
       <p className="lede">Manage your credentials and session settings.</p>
-
-      {/* First: the one section on this page that actually does something on a
-          self-hosted deployment. Everything below is design chrome with honest
-          disabled states. */}
-      <TraceAiSettingsCard />
 
       <div className="gw-card" style={{ marginBottom: 14 }}>
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Basic details</div>

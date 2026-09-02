@@ -1,5 +1,5 @@
 /**
- * Relay Trace — one relay's log trail, and (on request) Claude's account of it.
+ * Relay Investigator — one relay's log trail, and (on request) Claude's account of it.
  *
  *   GET  /api/trace/:guid           the lines. No model call, no spend.
  *   POST /api/trace/:guid/explain   the explanation. Costs money.
@@ -19,11 +19,13 @@ import {
   type RelayTrace,
   type TraceExplainRequest,
   type TraceExplainResult,
+  type TraceModelsRequest,
+  type TraceModelsResponse,
   type TraceLogLine,
 } from "@sr/shared";
 import { config } from "../config.js";
 import { LokiClient, LokiUnavailableError } from "../services/loki-client.js";
-import { explainAvailable, explainTrace, TraceExplainError } from "../services/trace-explain.js";
+import { explainAvailable, explainTrace, listModels, TraceExplainError } from "../services/trace-explain.js";
 
 /**
  * Caller-supplied credentials, all optional. Omitted ⇒ the deployment's own
@@ -89,7 +91,7 @@ export async function traceRoutes(app: FastifyInstance) {
         body: {
           error: "log_store_not_configured",
           message:
-            "No log store is configured for this deployment (LOKI_URL is unset), so relay traces cannot be looked up.",
+            "No log store is configured for this deployment (LOKI_URL is unset), so relay investigations cannot be looked up.",
         },
       };
     }
@@ -139,6 +141,47 @@ export async function traceRoutes(app: FastifyInstance) {
         model: explainAvailable() ? config.traceAi.model : null,
       };
       return reply.send(body);
+    },
+  );
+
+  /**
+   * The model list for a provider, asked of the provider itself.
+   *
+   * Takes the same optional key as the explain route: the settings picker can
+   * validate a key the reader has just typed and populate from it, before
+   * anything is saved. Cheap — a list call, not a generation — but it does
+   * carry a credential, so it takes the same tighter limit.
+   */
+  app.post<{ Body: TraceModelsRequest }>(
+    "/api/trace/models",
+    {
+      schema: {
+        tags: ["Trace"],
+        summary: "Models the provider will accept",
+        body: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            provider: { type: "string", enum: ["anthropic", "gemini"] },
+            apiKey: { type: "string", maxLength: 512 },
+          },
+        },
+      },
+      config: { rateLimit: { max: config.traceAi.rateLimitMax, timeWindow: "1 minute" } },
+    },
+    async (request, reply) => {
+      const body = request.body ?? {};
+      try {
+        const out = await listModels({ provider: body.provider, apiKey: body.apiKey });
+        const res: TraceModelsResponse = out;
+        return reply.send(res);
+      } catch (e) {
+        if (e instanceof TraceExplainError) {
+          // 502: the provider would not tell us. Never echo the key back.
+          return reply.status(502).send({ error: "model_list_failed", message: e.message });
+        }
+        throw e;
+      }
     },
   );
 

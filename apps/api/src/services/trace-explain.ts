@@ -385,3 +385,80 @@ export function parseExplanation(raw: string): TraceExplanation {
       : [],
   };
 }
+
+/**
+ * The models this provider will actually answer to, asked of the provider
+ * rather than hardcoded.
+ *
+ * A checked-in list is wrong the week a provider ships or retires something —
+ * which happened to this feature mid-build, when `gemini-2.5-flash` closed to
+ * new users. Asking the provider means the picker is never stale, and it
+ * validates the key as a side effect.
+ */
+export async function listModels(overrides: ExplainOverrides = {}): Promise<{
+  provider: TraceAiProvider;
+  models: { id: string; label: string }[];
+  defaultModel: string;
+}> {
+  const provider = overrides.provider ?? config.traceAi.provider;
+  if (provider === null) {
+    throw new TraceExplainError("No model provider is configured (set ANTHROPIC_API_KEY or GEMINI_API_KEY).");
+  }
+  const apiKey = overrides.apiKey ?? apiKeyFor(provider);
+  if (!apiKey) {
+    throw new TraceExplainError(`No key for ${provider}. Paste one to load its model list.`);
+  }
+
+  const models = provider === "anthropic" ? await listAnthropic(apiKey) : await listGemini(apiKey);
+  return { provider, models, defaultModel: DEFAULT_TRACE_MODELS[provider] };
+}
+
+async function fetchJson(url: string, headers: Record<string, string>, who: string): Promise<unknown> {
+  let res: Response;
+  try {
+    res = await fetch(url, { headers });
+  } catch (e) {
+    throw new TraceExplainError(`Could not reach ${who}: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new TraceExplainError(`${who} answered ${res.status}${body ? `: ${body.slice(0, 200)}` : ""}`);
+  }
+  return res.json().catch(() => null);
+}
+
+async function listAnthropic(apiKey: string): Promise<{ id: string; label: string }[]> {
+  const json = (await fetchJson(
+    "https://api.anthropic.com/v1/models?limit=100",
+    { "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+    "Anthropic",
+  )) as { data?: { id?: string; display_name?: string }[] } | null;
+
+  return (json?.data ?? [])
+    .filter((m): m is { id: string; display_name?: string } => typeof m.id === "string")
+    .map((m) => ({ id: m.id, label: m.display_name ?? m.id }));
+}
+
+/**
+ * Gemini lists ~50 models, most of which cannot do this job — image, TTS,
+ * embedding and transcription models all advertise `generateContent`. The
+ * provider's own capability flag is the primary filter; the name check is a
+ * second pass for the ones it does not distinguish, and it is deliberately
+ * narrow so a genuinely new text model is never hidden.
+ */
+const GEMINI_NOT_TEXT = /(^|-)(tts|image|embedding|transcribe|aqa|vision)(-|$)/;
+
+async function listGemini(apiKey: string): Promise<{ id: string; label: string }[]> {
+  const json = (await fetchJson(
+    "https://generativelanguage.googleapis.com/v1beta/models?pageSize=200",
+    { "x-goog-api-key": apiKey },
+    "Gemini",
+  )) as {
+    models?: { name?: string; displayName?: string; supportedGenerationMethods?: string[] }[];
+  } | null;
+
+  return (json?.models ?? [])
+    .filter((m) => (m.supportedGenerationMethods ?? []).includes("generateContent"))
+    .map((m) => ({ id: (m.name ?? "").replace(/^models\//, ""), label: m.displayName ?? m.name ?? "" }))
+    .filter((m) => m.id !== "" && !GEMINI_NOT_TEXT.test(m.id));
+}

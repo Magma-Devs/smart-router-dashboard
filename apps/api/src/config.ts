@@ -109,7 +109,7 @@ export const config = {
   },
 
   /**
-   * Loki, for the Relay Trace surface (`GET /api/trace/:guid`).
+   * Loki, for the Relay Investigator surface (`GET /api/trace/:guid`).
    *
    * `url` unset is the normal state on a deployment with no bundled log stack,
    * and the route says so explicitly rather than answering with an empty

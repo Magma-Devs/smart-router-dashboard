@@ -1,5 +1,5 @@
 /**
- * Per-person model settings for the Relay Trace explanation.
+ * Per-person model settings for the Relay Investigator explanation.
  *
  * These live in the BROWSER and are sent with each ask. The key never reaches
  * the server's disk — the api uses it for that one call and drops it. That is

@@ -133,7 +133,7 @@ interface Outcome {
   /** Router-only telemetry, read off CORS-exposed response headers. A direct
    *  call has none of it — there is no router in the path to report. */
   servedBy: string | null;
-  /** `Lava-Guid` — the identifier the Relay Trace page looks up. Null when the
+  /** `Lava-Guid` — the identifier the Relay Investigator page looks up. Null when the
    *  router doesn't CORS-expose it (older --cors-expose-headers list). */
   guid: string | null;
   retries: number | null;
@@ -547,7 +547,7 @@ export function TryMeDrawer({
    *  the relay, or "Cached" when the router answered from cache. Null when the
    *  header wasn't readable (e.g. not CORS-exposed by the router). */
   const [servedBy, setServedBy] = useState<string | null>(null);
-  /** `Lava-Guid` for the relay just fired — the handle the Relay Trace page
+  /** `Lava-Guid` for the relay just fired — the handle the Relay Investigator page
    *  looks up. Only the router path sets it; a direct call has no relay. */
   const [guid, setGuid] = useState<string | null>(null);
   // Per-request relay telemetry from the router's CORS-exposed headers:

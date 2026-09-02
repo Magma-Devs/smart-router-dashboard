@@ -7,6 +7,7 @@ import { ApiError, apiPost } from "@/lib/api-client";
 import { PROVIDER_DEFAULT_MODEL, hasUsableKey, loadTraceSettings } from "@/lib/trace-settings";
 import type { TraceAiSettings } from "@sr/shared";
 import { TraceSearch } from "./TraceSearch";
+import { TraceAiSettingsCard } from "./TraceAiSettingsCard";
 
 /** Severity → the existing tag vocabulary. Nothing here invents its own. */
 const SEVERITY_TAG: Record<TraceSeverity, string> = {
@@ -75,6 +76,7 @@ export function TraceView({ guid }: { guid: string }) {
    *  client one. */
   const [mySettings, setMySettings] = useState<TraceAiSettings | null>(null);
   useEffect(() => setMySettings(loadTraceSettings()), []);
+  const [showSettings, setShowSettings] = useState(false);
 
   const askAi = useCallback(async () => {
     setAsk({ phase: "asking" });
@@ -155,9 +157,19 @@ export function TraceView({ guid }: { guid: string }) {
                         // source supplied the key. Hardcoding "Claude" was
                         // wrong the moment Gemini could answer.
                         ? `The model reads them and explains what the router did${modelLabel ? ` · ${modelLabel}` : ""}${myKey ? " · your key" : ""}.`
-                        : "No model key is configured. Add your own in Account settings to explain this relay."}
+                        : "No model key is configured. Add your own to explain this relay."}
                   </div>
                 </div>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
+                {trace.lines.length > 0 && (
+                  <button
+                    className="gw-btn gw-btn--ghost"
+                    onClick={() => setShowSettings((v) => !v)}
+                    style={{ fontSize: 12 }}
+                  >
+                    {showSettings ? "Close settings" : "Model settings"}
+                  </button>
+                )}
                 {canAsk && trace.lines.length > 0 && (
                   <button
                     className="gw-btn gw-btn--primary"
@@ -174,13 +186,22 @@ export function TraceView({ guid }: { guid: string }) {
                     )}
                   </button>
                 )}
+                </div>
               </div>
 
-              {!canAsk && trace.lines.length > 0 && (
+              {showSettings && (
+                <div style={{ marginTop: 14 }}>
+                  {/* Re-read the saved settings on change so the Ask button and
+                      the model label follow immediately. */}
+                  <TraceAiSettingsCard onChanged={() => setMySettings(loadTraceSettings())} />
+                </div>
+              )}
+
+              {!canAsk && !showSettings && trace.lines.length > 0 && (
                 <div style={{ marginTop: 12 }}>
-                  <a className="gw-btn" href="/account" style={{ fontSize: 12, textDecoration: "none" }}>
-                    Add a key in Account settings
-                  </a>
+                  <button className="gw-btn" onClick={() => setShowSettings(true)} style={{ fontSize: 12 }}>
+                    Add a model key
+                  </button>
                 </div>
               )}
 

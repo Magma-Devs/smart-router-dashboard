@@ -1,4 +1,4 @@
-# Relay Trace — explaining one relay from its logs
+# Relay Investigator — explaining one relay from its logs
 
 Two routes, because they are two decisions:
 
@@ -153,8 +153,16 @@ nothing unless it is used.
 
 ## Bring your own key
 
-`Account settings → Relay trace — AI explanation` lets each person pick a
-provider and model and paste their own key. It is stored in **that browser's
+**Model settings**, on the investigator pages themselves — the landing page
+and a toggle beside Ask AI — lets each person pick a provider and model and
+paste their own key. It lives with the feature it configures rather than in
+Account, so nobody has to know it exists.
+
+The model list is fetched from the provider (`POST /api/trace/models`) rather
+than hardcoded: a checked-in list is wrong the week something ships or
+retires, which happened here when `gemini-2.5-flash` closed to new users. It
+also validates the key as a side effect. A free-text field is the fallback for
+when the list cannot be loaded — which is exactly when the key is wrong. It is stored in **that browser's
 `localStorage`** and sent with each ask; the api uses it for that one call and
 drops it.
 

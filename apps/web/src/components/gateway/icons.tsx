@@ -59,7 +59,7 @@ export const IconChart = svg(
   </>,
 );
 export const IconPlay = svg(<polygon points="5 3 19 12 5 21 5 3" />);
-/** Relay Trace — a search lens over a signal line. */
+/** Relay Investigator — a search lens over a signal line. */
 export const IconTrace = svg(
   <>
     <polyline points="2 15 5 15 7 9 10 19 12 13 14 13" />
