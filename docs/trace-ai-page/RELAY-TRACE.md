@@ -101,18 +101,21 @@ The model returns JSON the page renders directly:
 | `summary` | One paragraph, outcome first |
 | `timeline` | `{at, what}[]` — only steps a line actually supports |
 | `findings` | `{severity, title, detail}[]` — `info` / `warning` / `critical` |
-| `notDetermined` | **What the logs do not record** |
+| `notDetermined` | Not rendered — see below |
 
-`notDetermined` is the one that earns its place. At `info` the router records no
-timing at all, so a model asked "how long did this take?" will answer anyway
-unless it has somewhere honest to put the gap — most easily by subtracting two
-log timestamps, which measures the interval between two log writes and not the
-relay. The system prompt (`apps/api/src/services/trace-explain.ts`) states the
-rule directly — *absence of a line means the router did not record it, never
-that the thing did not happen* — and requires the field.
+`notDetermined` had its own card, and the card did not survive contact with
+real output. Across five traces it produced two empties, the same minor
+observation twice ("the spec index is not in the log fields"), and one
+counterfactual — *whether a provider that was never asked would have returned
+the same error* — which no amount of logging could ever answer. None of that
+earned a quarter of the page.
 
-That list is also the most useful thing this feature produces: it names, per
-relay, what the router should have logged.
+The FIELD stays, because it does its work inside the prompt rather than on the
+screen: a sanctioned slot for what the model could not tell is what stops it
+filling a gap in the summary with a plausible guess. It is still on the wire,
+so aggregating it across many traces stays available — and volume is exactly
+what makes a "what should the router log" list mean anything, which one relay
+cannot.
 
 ## Two providers, one contract
 

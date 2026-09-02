@@ -42,13 +42,20 @@ export interface TraceExplanation {
   timeline: TraceStep[];
   findings: TraceFinding[];
   /**
-   * What the logs did not record. REQUIRED, and rendered on the page.
+   * What the router could have logged and did not.
    *
-   * At the router's default `info` level the provider selection is never
-   * written down, so a model asked "which upstream served this?" will answer
-   * anyway unless it has somewhere honest to put the gap. This is that place,
-   * and the list is also the most useful output we get: it names what the
-   * router should be logging.
+   * NOT rendered. It exists for the MODEL: a sanctioned slot for what it could
+   * not tell, so it never fills a gap in the summary with a plausible guess.
+   *
+   * It had its own card once, and the card did not survive contact with real
+   * output — across five traces it produced two empties, the same minor
+   * observation twice, and one counterfactual that no amount of logging could
+   * ever answer. The field stays because it does work inside the prompt; the
+   * quarter-page it occupied did not.
+   *
+   * Still on the wire, so aggregating it across traces stays available: a
+   * ranked "what should the router log" list needs volume to mean anything,
+   * which is exactly what one relay cannot give.
    */
   notDetermined: string[];
 }

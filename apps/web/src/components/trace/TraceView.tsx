@@ -268,26 +268,6 @@ export function TraceView({ guid }: { guid: string }) {
             </div>
           )}
 
-          {/* ---- The gaps. Same weight as the answer: what the router failed
-                  to record is the most actionable thing on this page. ---- */}
-          {explanation !== null && (
-            <div className="gw-card">
-              <div className="gw-label" style={{ marginBottom: 8 }}>What the logs don&rsquo;t say</div>
-              {explanation.notDetermined.length > 0 ? (
-                <ul style={{ margin: 0, paddingLeft: 18, color: "var(--text-2)", fontSize: 13 }}>
-                  {explanation.notDetermined.map((n, i) => (
-                    <li key={i} style={{ marginBottom: 4 }}>{n}</li>
-                  ))}
-                </ul>
-              ) : (
-                <Empty>
-                  Nothing flagged. That is the model&rsquo;s judgement, not a guarantee &mdash; the lines below are
-                  what it read.
-                </Empty>
-              )}
-            </div>
-          )}
-
           {/* ---- The evidence ---- */}
           <div className="gw-card">
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>

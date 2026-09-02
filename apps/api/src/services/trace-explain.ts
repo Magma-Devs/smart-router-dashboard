@@ -162,14 +162,22 @@ Reply with ONLY a JSON object, no prose around it, no markdown fence:
   "summary": "One paragraph. What was asked, on which chain, and how it went. Lead with the outcome.",
   "timeline": [{ "at": "clock time or offset from the first line", "what": "what the router did" }],
   "findings": [{ "severity": "info|warning|critical", "title": "short", "detail": "one or two sentences" }],
-  "notDetermined": ["facts the logs do not record"]
+  "notDetermined": ["facts the router COULD have logged and did not"]
 }
 
 timeline: only steps a line actually supports. Omit rather than pad.
 findings: what an operator should act on or notice. Empty array when a relay
 was unremarkable — do not manufacture concerns.
-notDetermined: required, and rarely empty at info level. Be specific: prefer
-"which upstream served the relay (not logged at info level)" over "some details".`;
+notDetermined: things the router could have written down and did not — a
+duration it never recorded, an upstream it never named. NOT things that are
+unknowable in principle: what a request that timed out would have returned, or
+what a provider that was never asked would have said, are not logging gaps and
+do not belong here. Empty is a fine and common answer, especially at debug
+level where the trail is nearly complete.
+
+This field is for you, not for the reader: it is somewhere honest to put what
+you could not tell, so you never fill a gap in the summary with a plausible
+guess. Nothing renders it.`;
 
 /** The key for the configured provider, or undefined when it is missing. */
 function apiKeyFor(provider: TraceAiProvider): string | undefined {
