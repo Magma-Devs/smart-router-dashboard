@@ -83,11 +83,43 @@ export interface RelayTrace {
   model: string | null;
 }
 
+/** Model providers the explanation can be asked of. */
+export type TraceAiProviderId = "anthropic" | "gemini";
+
+/**
+ * Per-person model settings, held in the BROWSER and sent with each ask.
+ *
+ * The key never reaches the server's disk: it is used for that one call and
+ * dropped. That is what makes "bring your own key" real — each person spends
+ * their own budget, and a deployment holds no secret that everyone who can
+ * reach it could spend. The tradeoff is stated on the settings page: anything
+ * that can run script in this origin can read `localStorage`.
+ */
+export interface TraceAiSettings {
+  provider: TraceAiProviderId;
+  /** Empty means "the provider's default", resolved server-side. */
+  model: string;
+  apiKey: string;
+}
+
+/** Body of `POST /api/trace/:guid/explain`. All optional — omitted means
+ *  "use whatever the deployment is configured with". */
+export interface TraceExplainRequest {
+  provider?: TraceAiProviderId;
+  model?: string;
+  /** Used for this one call and never persisted or echoed back. */
+  apiKey?: string;
+}
+
 /** `POST /api/trace/:guid/explain` — the answer, and what produced it. */
 export interface TraceExplainResult {
   guid: string;
   explanation: TraceExplanation;
   model: string;
+  /** Which provider answered — the caller's or the deployment's. */
+  provider: TraceAiProviderId;
+  /** True when the caller supplied the key, false when the deployment did. */
+  usedCallerKey: boolean;
   /** Lines the model was given — may be fewer than the trail when truncated. */
   linesConsidered: number;
 }

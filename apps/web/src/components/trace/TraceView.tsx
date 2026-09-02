@@ -1,9 +1,11 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { RelayTrace, TraceExplainResult, TraceSeverity } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { ApiError, apiPost } from "@/lib/api-client";
+import { PROVIDER_DEFAULT_MODEL, hasUsableKey, loadTraceSettings } from "@/lib/trace-settings";
+import type { TraceAiSettings } from "@sr/shared";
 import { TraceSearch } from "./TraceSearch";
 
 /** Severity → the existing tag vocabulary. Nothing here invents its own. */
@@ -68,11 +70,23 @@ export function TraceView({ guid }: { guid: string }) {
    *  lines are then the only content on the page. */
   const [showLinesPref, setShowLinesPref] = useState<boolean | null>(null);
   const [errorsOnly, setErrorsOnly] = useState(false);
+  /** This browser's own key, if the reader saved one in Account settings.
+   *  Read on mount — localStorage differs between the server pass and the
+   *  client one. */
+  const [mySettings, setMySettings] = useState<TraceAiSettings | null>(null);
+  useEffect(() => setMySettings(loadTraceSettings()), []);
 
   const askAi = useCallback(async () => {
     setAsk({ phase: "asking" });
     try {
-      const result = await apiPost<TraceExplainResult>(`/api/trace/${guid}/explain`, {});
+      // Send this browser's key when there is one; an empty body means "use
+      // whatever the deployment is configured with".
+      const result = await apiPost<TraceExplainResult>(
+        `/api/trace/${guid}/explain`,
+        hasUsableKey(mySettings)
+          ? { provider: mySettings.provider, model: mySettings.model, apiKey: mySettings.apiKey }
+          : {},
+      );
       setAsk({ phase: "done", result });
       // Collapse the lines once there is an answer to read, unless the reader
       // has already made that choice themselves.
@@ -83,13 +97,22 @@ export function TraceView({ guid }: { guid: string }) {
         message: e instanceof ApiError ? e.message : "The explanation could not be generated.",
       });
     }
-  }, [guid]);
+  }, [guid, mySettings]);
 
   const answered = ask.phase === "done";
   const showLines = showLinesPref ?? !answered;
   const errorCount = trace?.lines.filter((l) => l.level === "error").length ?? 0;
   const visibleLines = (trace?.lines ?? []).filter((l) => !errorsOnly || l.level === "error");
   const explanation = ask.phase === "done" ? ask.result.explanation : null;
+  /** Either source of a key makes the ask possible: this browser's, or the
+   *  one the deployment was configured with. */
+  const myKey = hasUsableKey(mySettings);
+  const canAsk = myKey || trace?.aiAvailable === true;
+  // Name the actual model, not "gemini default" — the reader wants to know
+  // what answered, and a blank field means the provider's default.
+  const modelLabel = myKey
+    ? mySettings.model.trim() || PROVIDER_DEFAULT_MODEL[mySettings.provider]
+    : (trace?.model ?? "");
 
   return (
     <div className="gw-page">
@@ -127,15 +150,15 @@ export function TraceView({ guid }: { guid: string }) {
                   <div style={{ fontSize: 12.5, color: "var(--text-3)" }}>
                     {trace.lines.length === 0
                       ? "Nothing to explain — no lines carry this GUID in the window searched."
-                      : trace.aiAvailable
-                        // Provider-agnostic: the model is named from the api,
-                        // and hardcoding "Claude" was wrong the moment Gemini
-                        // could answer.
-                        ? `The model reads them and explains what the router did${trace.model ? ` · ${trace.model}` : ""}.`
-                        : "The AI explanation is turned off on this deployment (TRACE_AI_ENABLED)."}
+                      : canAsk
+                        // Provider-agnostic: the model is named from whichever
+                        // source supplied the key. Hardcoding "Claude" was
+                        // wrong the moment Gemini could answer.
+                        ? `The model reads them and explains what the router did${modelLabel ? ` · ${modelLabel}` : ""}${myKey ? " · your key" : ""}.`
+                        : "No model key is configured. Add your own in Account settings to explain this relay."}
                   </div>
                 </div>
-                {trace.aiAvailable && trace.lines.length > 0 && (
+                {canAsk && trace.lines.length > 0 && (
                   <button
                     className="gw-btn gw-btn--primary"
                     onClick={askAi}
@@ -152,6 +175,14 @@ export function TraceView({ guid }: { guid: string }) {
                   </button>
                 )}
               </div>
+
+              {!canAsk && trace.lines.length > 0 && (
+                <div style={{ marginTop: 12 }}>
+                  <a className="gw-btn" href="/account" style={{ fontSize: 12, textDecoration: "none" }}>
+                    Add a key in Account settings
+                  </a>
+                </div>
+              )}
 
               {ask.phase === "error" && (
                 <div style={{ marginTop: 12, fontSize: 12.5, color: "var(--err)" }}>

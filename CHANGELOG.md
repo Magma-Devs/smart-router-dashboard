@@ -14,6 +14,15 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   what was asked, what the router did, what went wrong, and — a required
   section — **what the logs do not record**.
 
+  **Each person can bring their own key.** Account settings gains a provider
+  picker, a free-text model field and a key field; the key lives in that
+  browser and is sent with each ask, and the api uses it for that one call and
+  never writes it down. So each person spends their own budget, and a
+  deployment holds no secret that everyone who can reach it could spend —
+  which matters because `AUTH_MODE=disabled` is the default and a shared
+  server-side key would be readable by any visitor. Precedence is browser key
+  → deployment env key → no button, and the card says which is in use.
+
   Either **Anthropic or Gemini** can answer — set one key and the provider is
   inferred from it, or name it with `TRACE_AI_PROVIDER`. Both get the same
   system prompt and the same JSON contract, so the page renders either

@@ -151,6 +151,34 @@ valid JSON" on maybe one call in three. Hence the per-provider ceilings
 (`MAX_ANSWER_TOKENS`): 2000 for Anthropic, 8000 for Gemini. The headroom costs
 nothing unless it is used.
 
+## Bring your own key
+
+`Account settings → Relay trace — AI explanation` lets each person pick a
+provider and model and paste their own key. It is stored in **that browser's
+`localStorage`** and sent with each ask; the api uses it for that one call and
+drops it.
+
+That is the point: each person spends their own budget, and the deployment
+holds no secret that everyone who can reach it could spend. With
+`AUTH_MODE=disabled` — the default — a server-side shared key would be exactly
+that, readable and spendable by any visitor, which is the same reasoning
+`UPSTREAM_RELAY_ENABLED` exists for.
+
+Precedence is **browser key → deployment env key → no button**. The Ask-AI card
+says which is in use ("· your key" when it is the reader's own), and with
+neither it offers a link to Account settings instead of a dead button.
+
+⚠ The tradeoff, stated on the settings page itself: `localStorage` is readable
+by anything able to run script on the page, and does not follow the reader to
+another device. It suits a key scoped to model access only — not one with
+broader authority.
+
+The key is never persisted, never logged, and never echoed back: the response
+carries `model`, `provider` and `usedCallerKey`, and nothing else about the
+credential. The request body is `additionalProperties: false`, so a field
+nobody declared cannot ride along with it (Fastify's ajv strips extras rather
+than rejecting them, which has the same effect here).
+
 ## Honesty and failure modes
 
 - **The model is not verified against the lines.** Showing the raw lines under

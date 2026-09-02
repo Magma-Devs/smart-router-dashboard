@@ -48,7 +48,7 @@ export type TraceAiProvider = "anthropic" | "gemini";
 /** Default model per provider. `TRACE_AI_MODEL` overrides either — model names
  *  move faster than this file does, so the override is the supported escape
  *  hatch rather than an edge case. */
-const DEFAULT_TRACE_MODELS: Record<TraceAiProvider, string> = {
+export const DEFAULT_TRACE_MODELS: Record<TraceAiProvider, string> = {
   anthropic: "claude-sonnet-5",
   gemini: "gemini-3.6-flash",
 };

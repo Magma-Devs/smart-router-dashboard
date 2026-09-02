@@ -127,8 +127,11 @@ describe("the Gemini request", () => {
     // so 2000 truncates SOMETIMES — the worst kind of failure.
     expect(body.generationConfig.maxOutputTokens).toBeGreaterThanOrEqual(8000);
 
-    expect(out.summary).toContain("eth_getBalance");
-    expect(out.notDetermined).toHaveLength(1);
+    expect(out.explanation.summary).toContain("eth_getBalance");
+    expect(out.explanation.notDetermined).toHaveLength(1);
+    // The caller supplied no key here, so the deployment's answered.
+    expect(out.usedCallerKey).toBe(false);
+    expect(out.provider).toBe("gemini");
   });
 
   it("treats an EMPTY TRACE_AI_MODEL as unset, not as a model name", async () => {
@@ -184,6 +187,6 @@ describe("the Gemini request", () => {
   it("still tolerates a fenced answer, mime-type constraint notwithstanding", async () => {
     vi.stubGlobal("fetch", async () => geminiOk("```json\n" + JSON.stringify(ANSWER) + "\n```"));
     const { explainTrace } = await loadWith({ ...CLEAN, GEMINI_API_KEY: "g-key" });
-    expect((await explainTrace("42", LINES, false)).summary).toContain("eth_getBalance");
+    expect((await explainTrace("42", LINES, false)).explanation.summary).toContain("eth_getBalance");
   });
 });

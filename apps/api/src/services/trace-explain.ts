@@ -16,7 +16,7 @@
  */
 import Anthropic from "@anthropic-ai/sdk";
 import type { TraceExplanation, TraceLogLine } from "@sr/shared";
-import { config, type TraceAiProvider } from "../config.js";
+import { config, DEFAULT_TRACE_MODELS, type TraceAiProvider } from "../config.js";
 
 /** The model call failed. The route reports this rather than an empty answer —
  *  "we could not ask" and "there was nothing to say" are different facts. */
@@ -164,12 +164,33 @@ export function explainAvailable(): boolean {
   return config.traceAi.enabled && p !== null && Boolean(apiKeyFor(p));
 }
 
+/** Credentials + model for one call. Absent fields fall back to the
+ *  deployment's own configuration. */
+export interface ExplainOverrides {
+  provider?: TraceAiProvider;
+  model?: string;
+  /** Used for this call only. NEVER logged, persisted, or echoed back. */
+  apiKey?: string;
+}
+
+export interface ExplainOutcome {
+  explanation: TraceExplanation;
+  provider: TraceAiProvider;
+  model: string;
+  usedCallerKey: boolean;
+}
+
 /**
- * Ask the configured model to account for one relay.
+ * Ask a model to account for one relay.
  *
  * Both providers get the SAME system prompt and are held to the same JSON
  * contract, so the page renders either identically and the answer can be
- * compared across them. Only the transport differs. Throws
+ * compared across them. Only the transport differs.
+ *
+ * A caller may bring its own provider, model and key — that is the
+ * bring-your-own-key path, where each person spends their own budget and the
+ * deployment holds no secret everyone who can reach it could spend. With no
+ * override the deployment's own configuration answers. Throws
  * `TraceExplainError` when the call or the parse fails — never a partial
  * answer.
  */
@@ -177,25 +198,36 @@ export async function explainTrace(
   guid: string,
   lines: TraceLogLine[],
   truncated: boolean,
-): Promise<TraceExplanation> {
-  const provider = config.traceAi.provider;
+  overrides: ExplainOverrides = {},
+): Promise<ExplainOutcome> {
+  const usedCallerKey = Boolean(overrides.apiKey);
+  const provider = overrides.provider ?? config.traceAi.provider;
   if (provider === null) {
     throw new TraceExplainError("No model provider is configured (set ANTHROPIC_API_KEY or GEMINI_API_KEY).");
   }
-  const apiKey = apiKeyFor(provider);
+
+  const apiKey = overrides.apiKey ?? apiKeyFor(provider);
   if (!apiKey) {
     throw new TraceExplainError(
-      `TRACE_AI_PROVIDER is "${provider}" but its key is not set (${provider === "anthropic" ? "ANTHROPIC_API_KEY" : "GEMINI_API_KEY"}).`,
+      `No key for ${provider}. Paste one in Account settings, or set ${provider === "anthropic" ? "ANTHROPIC_API_KEY" : "GEMINI_API_KEY"} on the deployment.`,
     );
   }
+
+  // An override without its own model must not inherit the OTHER provider's
+  // default — asking Gemini for "claude-sonnet-5" 404s in a confusing way.
+  const model =
+    overrides.model?.trim() ||
+    (overrides.provider && overrides.provider !== config.traceAi.provider
+      ? DEFAULT_TRACE_MODELS[overrides.provider]
+      : config.traceAi.model);
 
   const userMessage = buildUserMessage(guid, lines, truncated);
   const raw =
     provider === "anthropic"
-      ? await callAnthropic(apiKey, userMessage)
-      : await callGemini(apiKey, userMessage);
+      ? await callAnthropic(apiKey, model, userMessage)
+      : await callGemini(apiKey, model, userMessage);
 
-  return parseExplanation(raw);
+  return { explanation: parseExplanation(raw), provider, model, usedCallerKey };
 }
 
 /** The lines as the model sees them, with our own relative-offset prefix. */
@@ -214,11 +246,11 @@ function buildUserMessage(guid: string, lines: TraceLogLine[], truncated: boolea
   ].join("\n");
 }
 
-async function callAnthropic(apiKey: string, userMessage: string): Promise<string> {
+async function callAnthropic(apiKey: string, model: string, userMessage: string): Promise<string> {
   const client = new Anthropic({ apiKey });
   try {
     const res = await client.messages.create({
-      model: config.traceAi.model,
+      model,
       max_tokens: MAX_ANSWER_TOKENS.anthropic,
       system: SYSTEM_PROMPT,
       messages: [{ role: "user", content: userMessage }],
@@ -241,9 +273,9 @@ async function callAnthropic(apiKey: string, userMessage: string): Promise<strin
  * model to emit bare JSON, which is the drift `parseExplanation` otherwise has
  * to tolerate a markdown fence for.
  */
-async function callGemini(apiKey: string, userMessage: string): Promise<string> {
+async function callGemini(apiKey: string, model: string, userMessage: string): Promise<string> {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
-    config.traceAi.model,
+    model,
   )}:generateContent`;
 
   let res: Response;

@@ -203,13 +203,76 @@ describe("GET /api/trace/:guid", () => {
 
 describe("POST /api/trace/:guid/explain", () => {
   it("404s when the AI is off, naming which half is missing", async () => {
-    const res = await app.inject({ method: "POST", url: `/api/trace/${GUID}/explain` });
+    const res = await app.inject({ method: "POST", url: `/api/trace/${GUID}/explain`, payload: {} });
     expect(res.statusCode).toBe(404);
     expect(res.json().error).toBe("ai_disabled");
   });
 
+  it("accepts a caller's own key even when the deployment has none", async () => {
+    // The whole point of bring-your-own-key: a deployment holding no secret
+    // must not block someone who brought their own.
+    let body: Record<string, unknown> = {};
+    vi.stubGlobal("fetch", async (url: string | URL, init: RequestInit) => {
+      if (String(url).includes("generativelanguage")) {
+        body = JSON.parse(String(init.body));
+        return new Response(
+          JSON.stringify({
+            candidates: [{ content: { parts: [{ text: JSON.stringify({ summary: "ok" }) }] }, finishReason: "STOP" }],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      return lokiStreams([["1700000001000000000", "{}"]]);
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/trace/${GUID}/explain`,
+      payload: { provider: "gemini", model: "gemini-3.6-flash", apiKey: "caller-key" },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const json = res.json();
+    expect(json.usedCallerKey).toBe(true);
+    expect(json.provider).toBe("gemini");
+    // A secret that arrived in a request body has no business in the response.
+    expect(res.body).not.toContain("caller-key");
+    expect(json).not.toHaveProperty("apiKey");
+    expect(body).not.toEqual({});
+  });
+
+  it("strips unknown fields so they never reach the handler", async () => {
+    // Fastify's ajv runs with removeAdditional, so `additionalProperties:
+    // false` DROPS extras rather than 400ing on them. Either is safe; what
+    // matters is that a field nobody declared cannot ride along with a body
+    // that carries a secret.
+    let outbound = "";
+    vi.stubGlobal("fetch", async (url: string | URL, init: RequestInit) => {
+      if (String(url).includes("generativelanguage")) {
+        outbound = String(init.body);
+        return new Response(
+          JSON.stringify({
+            candidates: [{ content: { parts: [{ text: JSON.stringify({ summary: "ok" }) }] }, finishReason: "STOP" }],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      return lokiStreams([["1700000001000000000", "{}"]]);
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/trace/${GUID}/explain`,
+      payload: { provider: "gemini", apiKey: "caller-key", exfiltrateTo: "https://evil.example" },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(outbound).not.toContain("evil.example");
+    expect(res.body).not.toContain("evil.example");
+  });
+
   it("rejects a non-GUID before it reaches the model", async () => {
-    const res = await app.inject({ method: "POST", url: "/api/trace/abc/explain" });
+    const res = await app.inject({ method: "POST", url: "/api/trace/abc/explain", payload: {} });
     // 404 (ai off) is checked first here; the point is it never 500s.
     expect([400, 404]).toContain(res.statusCode);
   });

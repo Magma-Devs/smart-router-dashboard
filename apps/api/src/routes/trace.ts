@@ -17,12 +17,34 @@ import type { FastifyBaseLogger, FastifyInstance } from "fastify";
 import {
   isValidGuid,
   type RelayTrace,
+  type TraceExplainRequest,
   type TraceExplainResult,
   type TraceLogLine,
 } from "@sr/shared";
 import { config } from "../config.js";
 import { LokiClient, LokiUnavailableError } from "../services/loki-client.js";
 import { explainAvailable, explainTrace, TraceExplainError } from "../services/trace-explain.js";
+
+/**
+ * Caller-supplied credentials, all optional. Omitted ⇒ the deployment's own
+ * configuration answers.
+ *
+ * `additionalProperties: false` matters here: this body carries a secret, and
+ * a field nobody declared must not be able to ride along with it. Fastify's
+ * ajv runs with `removeAdditional`, so extras are STRIPPED rather than
+ * rejected — the effect we want either way is that they never reach the
+ * handler.
+ */
+const explainBody = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    provider: { type: "string", enum: ["anthropic", "gemini"] },
+    // Long enough for any real model id, short enough not to be a payload.
+    model: { type: "string", maxLength: 128 },
+    apiKey: { type: "string", maxLength: 512 },
+  },
+} as const;
 
 const guidParams = {
   type: "object",
@@ -120,19 +142,23 @@ export async function traceRoutes(app: FastifyInstance) {
     },
   );
 
-  app.post<{ Params: { guid: string } }>(
+  app.post<{ Params: { guid: string }; Body: TraceExplainRequest }>(
     "/api/trace/:guid/explain",
     {
       schema: {
         tags: ["Trace"],
-        summary: "Ask Claude to explain this relay",
+        summary: "Ask a model to explain this relay",
         params: guidParams,
+        body: explainBody,
       },
       // Tighter than the global ceiling: every call here spends model tokens.
       config: { rateLimit: { max: config.traceAi.rateLimitMax, timeWindow: "1 minute" } },
     },
     async (request, reply) => {
-      if (!explainAvailable()) {
+      const overrides = request.body ?? {};
+      // A caller bringing its own key does not need the deployment to have
+      // one — that is the whole point of bring-your-own-key.
+      if (!overrides.apiKey && !explainAvailable()) {
         return reply.status(404).send({
           error: "ai_disabled",
           message: !config.traceAi.enabled
@@ -156,11 +182,19 @@ export async function traceRoutes(app: FastifyInstance) {
       }
 
       try {
-        const explanation = await explainTrace(trail.guid, trail.lines, trail.truncated);
+        const out = await explainTrace(trail.guid, trail.lines, trail.truncated, {
+          provider: overrides.provider,
+          model: overrides.model,
+          apiKey: overrides.apiKey,
+        });
+        // Note what comes back: the model and provider, never the key. A
+        // secret that arrived in a request body has no business in a response.
         const body: TraceExplainResult = {
           guid: trail.guid,
-          explanation,
-          model: config.traceAi.model,
+          explanation: out.explanation,
+          model: out.model,
+          provider: out.provider,
+          usedCallerKey: out.usedCallerKey,
           linesConsidered: trail.lines.length,
         };
         return reply.send(body);
