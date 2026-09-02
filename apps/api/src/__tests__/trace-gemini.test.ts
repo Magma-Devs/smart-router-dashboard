@@ -109,7 +109,7 @@ describe("the Gemini request", () => {
     const { explainTrace } = await loadWith({ ...CLEAN, GEMINI_API_KEY: "g-key" });
     const out = await explainTrace("42", LINES, false);
 
-    expect(url).toContain("/v1beta/models/gemini-2.5-flash:generateContent");
+    expect(url).toContain("/v1beta/models/gemini-3.6-flash:generateContent");
     // Key in a header, not the query string: a URL is the thing proxies and
     // access logs keep.
     expect((init.headers as Record<string, string>)["x-goog-api-key"]).toBe("g-key");
@@ -122,6 +122,10 @@ describe("the Gemini request", () => {
     // Constrains the model to bare JSON, which is the drift the parser would
     // otherwise have to absorb.
     expect(body.generationConfig.responseMimeType).toBe("application/json");
+    // Gemini's flash models think, and thinking counts against this budget.
+    // Measured: a steady ~650-token answer against thoughts ranging 692-1388,
+    // so 2000 truncates SOMETIMES — the worst kind of failure.
+    expect(body.generationConfig.maxOutputTokens).toBeGreaterThanOrEqual(8000);
 
     expect(out.summary).toContain("eth_getBalance");
     expect(out.notDetermined).toHaveLength(1);
@@ -138,7 +142,7 @@ describe("the Gemini request", () => {
     });
     const { explainTrace } = await loadWith({ ...CLEAN, GEMINI_API_KEY: "g-key", TRACE_AI_MODEL: "" });
     await explainTrace("42", LINES, false);
-    expect(url).toContain("gemini-2.5-flash:generateContent");
+    expect(url).toContain("gemini-3.6-flash:generateContent");
     expect(url).not.toContain("models/:");
   });
 

@@ -50,7 +50,7 @@ export type TraceAiProvider = "anthropic" | "gemini";
  *  hatch rather than an edge case. */
 const DEFAULT_TRACE_MODELS: Record<TraceAiProvider, string> = {
   anthropic: "claude-sonnet-5",
-  gemini: "gemini-2.5-flash",
+  gemini: "gemini-3.6-flash",
 };
 
 /**

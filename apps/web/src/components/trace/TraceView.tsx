@@ -128,7 +128,10 @@ export function TraceView({ guid }: { guid: string }) {
                     {trace.lines.length === 0
                       ? "Nothing to explain — no lines carry this GUID in the window searched."
                       : trace.aiAvailable
-                        ? `Claude reads them and explains what the router did${trace.model ? ` · ${trace.model}` : ""}.`
+                        // Provider-agnostic: the model is named from the api,
+                        // and hardcoding "Claude" was wrong the moment Gemini
+                        // could answer.
+                        ? `The model reads them and explains what the router did${trace.model ? ` · ${trace.model}` : ""}.`
                         : "The AI explanation is turned off on this deployment (TRACE_AI_ENABLED)."}
                   </div>
                 </div>

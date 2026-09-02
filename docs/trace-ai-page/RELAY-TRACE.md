@@ -139,8 +139,17 @@ unparseable JSON rather than a short one. Gemini reports that case as
 "invalid JSON" and sending someone to debug the wrong thing.
 
 ⚠ **Model names move faster than this repository.** The defaults are
-`claude-sonnet-5` and `gemini-2.5-flash`; if either 404s, set `TRACE_AI_MODEL`
-rather than editing code.
+`claude-sonnet-5` and `gemini-3.6-flash`; if either 404s, set `TRACE_AI_MODEL`
+rather than editing code. Google's 404 names the successor, which is how the
+Gemini default got here — `gemini-2.5-flash` is closed to new users.
+
+⚠ **Gemini's flash models think, and thinking counts against the output
+budget.** Measured on a 30-line trace: the answer is a steady ~650 tokens, but
+`thoughtsTokenCount` ranged **692–1388** across runs — so a 2000 ceiling fits
+sometimes and truncates sometimes, surfacing as "The model's answer was not
+valid JSON" on maybe one call in three. Hence the per-provider ceilings
+(`MAX_ANSWER_TOKENS`): 2000 for Anthropic, 8000 for Gemini. The headroom costs
+nothing unless it is used.
 
 ## Honesty and failure modes
 
@@ -168,7 +177,7 @@ rather than editing code.
 | `TRACE_AI_ENABLED` | `false` | Off unless set. Without it the page is a GUID-scoped log viewer |
 | `TRACE_AI_PROVIDER` | inferred | `anthropic` \| `gemini` |
 | `ANTHROPIC_API_KEY` / `GEMINI_API_KEY` | unset | Set one. Server-side only; neither reaches the browser |
-| `TRACE_AI_MODEL` | per provider | `claude-sonnet-5` / `gemini-2.5-flash` |
+| `TRACE_AI_MODEL` | per provider | `claude-sonnet-5` / `gemini-3.6-flash` |
 | `TRACE_AI_RATE_LIMIT_MAX` | `10` | Per IP per minute, tighter than `RATE_LIMIT_MAX` |
 
 ## Limits worth stating

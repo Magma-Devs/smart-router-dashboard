@@ -465,7 +465,7 @@ API (`apps/api/src/config.ts` is the source of truth):
 | `TRACE_AI_ENABLED` | `false` | Off unless set — it spends model tokens and sends relay log lines (request bodies included) to the model provider. Off, the page is still a GUID-scoped log viewer |
 | `TRACE_AI_PROVIDER` | inferred | `anthropic` \| `gemini`. Unset ⇒ inferred from whichever key is set (anthropic wins if both are, an arbitrary but stated tie-break) |
 | `ANTHROPIC_API_KEY` / `GEMINI_API_KEY` | unset | Set ONE. Server-side only; neither reaches the browser. The Ask-AI button needs the flag **and** the chosen provider's key — a button for a call that can only 401 is worse than none |
-| `TRACE_AI_MODEL` | per provider | `claude-sonnet-5` / `gemini-2.5-flash`. Model names move faster than this repo; this override is the supported escape hatch |
+| `TRACE_AI_MODEL` | per provider | `claude-sonnet-5` / `gemini-3.6-flash`. Model names move faster than this repo; this override is the supported escape hatch |
 | `TRACE_AI_RATE_LIMIT_MAX` | `10` | per IP per minute, tighter than `RATE_LIMIT_MAX` |
 | `LOG_LEVEL` | `info` | |
 | `TENANT_ID` | — | set by the chart, **not read**. The multi-tenant store pins `X-Scope-OrgID` from the credential that authenticated, so the api never names its own org — a config field that did would move the tenancy boundary into a values file |

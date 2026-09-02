@@ -27,9 +27,21 @@ export class TraceExplainError extends Error {
   }
 }
 
-/** Answer ceiling. Both providers get the same budget so the answers are
- *  comparable — and a cut-off answer is unparseable JSON, not a short one. */
-const MAX_ANSWER_TOKENS = 2000;
+/**
+ * Output ceilings. A cut-off answer is unparseable JSON, not a short one, so
+ * these are sized for the worst case rather than the typical one.
+ *
+ * They differ because Gemini's current flash models THINK, and thinking tokens
+ * count against the same budget as the answer. Measured on a 30-line trace:
+ * the answer is a steady ~600-700 tokens, but `thoughtsTokenCount` ranged
+ * 692-1388 across runs — so a 2000 ceiling fits sometimes and truncates
+ * sometimes, which is the worst possible failure mode. The headroom is not
+ * spent unless the model uses it; billing is on actual tokens.
+ */
+const MAX_ANSWER_TOKENS: Record<TraceAiProvider, number> = {
+  anthropic: 2000,
+  gemini: 8000,
+};
 
 const SYSTEM_PROMPT = `You explain single RPC relays to engineers operating the Magma Devs Smart Router.
 
@@ -207,7 +219,7 @@ async function callAnthropic(apiKey: string, userMessage: string): Promise<strin
   try {
     const res = await client.messages.create({
       model: config.traceAi.model,
-      max_tokens: MAX_ANSWER_TOKENS,
+      max_tokens: MAX_ANSWER_TOKENS.anthropic,
       system: SYSTEM_PROMPT,
       messages: [{ role: "user", content: userMessage }],
     });
@@ -245,7 +257,7 @@ async function callGemini(apiKey: string, userMessage: string): Promise<string> 
         systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
         contents: [{ role: "user", parts: [{ text: userMessage }] }],
         generationConfig: {
-          maxOutputTokens: MAX_ANSWER_TOKENS,
+          maxOutputTokens: MAX_ANSWER_TOKENS.gemini,
           responseMimeType: "application/json",
         },
       }),
@@ -267,7 +279,10 @@ async function callGemini(apiKey: string, userMessage: string): Promise<string> 
     // filtered — say which, rather than reporting "invalid JSON" downstream.
     const reason = json?.candidates?.[0]?.finishReason;
     throw new TraceExplainError(
-      `Gemini returned no text${reason ? ` (finishReason: ${reason})` : ""}.`,
+      `Gemini returned no text${reason ? ` (finishReason: ${reason})` : ""}.` +
+        (reason === "MAX_TOKENS"
+          ? " Thinking tokens count against the output budget on Gemini's flash models — raise MAX_ANSWER_TOKENS.gemini."
+          : ""),
     );
   }
   return text;
