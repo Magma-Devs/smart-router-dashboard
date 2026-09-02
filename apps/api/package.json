@@ -21,7 +21,7 @@
     "@sr/shared": "workspace:*",
     "bcryptjs": "^3.0.3",
     "drizzle-orm": "^0.45.2",
-    "fastify": "^5.10.0",
+    "fastify": "^5.12.1",
     "fastify-plugin": "^6.0.0",
     "pino": "^10.3.1",
     "yaml": "^2.9.0"
