@@ -193,7 +193,7 @@ export function TraceView({ guid }: { guid: string }) {
                 <div style={{ marginTop: 14 }}>
                   {/* Re-read the saved settings on change so the Ask button and
                       the model label follow immediately. */}
-                  <TraceAiSettingsCard onChanged={() => setMySettings(loadTraceSettings())} />
+                  <TraceAiSettingsCard defaultOpen onChanged={() => setMySettings(loadTraceSettings())} />
                 </div>
               )}
 

@@ -35,7 +35,17 @@ type ModelsState =
  * The key is saved in this browser and sent with each ask; the api uses it for
  * that one call and never writes it down.
  */
-export function TraceAiSettingsCard({ onChanged }: { onChanged?: () => void }) {
+export function TraceAiSettingsCard({
+  onChanged,
+  /** Start open. The detail page passes this because the reader has already
+   *  clicked to reveal the panel — collapsing it again would be a second
+   *  click for the same intent. */
+  defaultOpen = false,
+}: {
+  onChanged?: () => void;
+  defaultOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
   const [saved, setSaved] = useState<TraceAiSettings | null>(null);
   const [draft, setDraft] = useState<TraceAiSettings>(EMPTY_SETTINGS);
   const [editing, setEditing] = useState(false);
@@ -46,6 +56,10 @@ export function TraceAiSettingsCard({ onChanged }: { onChanged?: () => void }) {
     setSaved(s);
     setDraft(s ?? EMPTY_SETTINGS);
     setEditing(!hasUsableKey(s));
+    // Nothing saved yet: the card is the next thing to do, not a detail to
+    // fold away. Once a key is set it collapses to a one-line summary.
+    if (!hasUsableKey(s) && !defaultOpen) setOpen(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /** Ask the provider what it will answer to. A checked-in list goes stale the
@@ -80,13 +94,13 @@ export function TraceAiSettingsCard({ onChanged }: { onChanged?: () => void }) {
   const [providerPicked, setProviderPicked] = useState(false);
 
   useEffect(() => {
-    if (!editing) return;
+    if (!open || !editing) return;
     void loadModels(providerPicked ? draft.provider : null, draft.apiKey).then((p) => {
       if (p !== null && !providerPicked) setDraft((d) => ({ ...d, provider: p }));
     });
     // Re-fetch when the provider changes, not on every keystroke of the key.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editing, providerPicked, draft.provider]);
+  }, [open, editing, providerPicked, draft.provider]);
 
   function save() {
     const next: TraceAiSettings = {
@@ -110,10 +124,32 @@ export function TraceAiSettingsCard({ onChanged }: { onChanged?: () => void }) {
 
   const configured = hasUsableKey(saved);
 
+  const summary = configured
+    ? `${PROVIDER_LABEL[saved.provider]} · ${saved.model || PROVIDER_DEFAULT_MODEL[saved.provider]} · your key`
+    : "Using this deployment's key";
+
   return (
     <div className="gw-card">
-      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10 }}>Model settings</div>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        style={{
+          display: "flex", alignItems: "center", gap: 10, width: "100%",
+          background: "none", border: "none", padding: 0, cursor: "pointer",
+          color: "inherit", font: "inherit", textAlign: "left",
+        }}
+      >
+        <Chevron open={open} />
+        <span style={{ fontSize: 13, fontWeight: 600 }}>Model settings</span>
+        {/* The summary is the point of collapsing: folded away, the card still
+            answers "what is this going to use?". */}
+        <span className="gw-mono" style={{ fontSize: 11.5, color: "var(--text-3)", marginLeft: "auto", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {summary}
+        </span>
+      </button>
 
+      {!open ? null : (
+      <div style={{ marginTop: 14 }}>
       {configured && !editing ? (
         <div style={{ display: "grid", gap: 10 }}>
           <Row label="Provider" value={PROVIDER_LABEL[saved.provider]} />
@@ -249,7 +285,21 @@ export function TraceAiSettingsCard({ onChanged }: { onChanged?: () => void }) {
         anything able to run script on this page could read it, so use a key scoped to model access
         and remove it when you are done. Without a key this page still shows the log lines.
       </div>
+      </div>
+      )}
     </div>
+  );
+}
+
+function Chevron({ open }: { open: boolean }) {
+  return (
+    <svg
+      width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
+      style={{ color: "var(--text-3)", flexShrink: 0, transform: open ? "rotate(90deg)" : "none", transition: "transform 120ms" }}
+    >
+      <polyline points="9 18 15 12 9 6" />
+    </svg>
   );
 }
 
