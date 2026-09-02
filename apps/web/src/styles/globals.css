@@ -250,8 +250,13 @@ table.gw-table tbody tr:hover td { background: var(--hover); }
 .gw-refreshing { animation: gwBreathe 1.5s ease-in-out infinite; }
 @keyframes gwBreathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 
+/* Inline spinner (Ask AI button). CSS-animated, not SMIL, so the
+   reduced-motion rule below can actually stop it. */
+.gw-spin { animation: gwSpin 0.8s linear infinite; }
+@keyframes gwSpin { to { transform: rotate(360deg); } }
+
 @media (prefers-reduced-motion: reduce) {
-  .gw-skel, .gw-refreshing { animation: none; }
+  .gw-skel, .gw-refreshing, .gw-spin { animation: none; }
 }
 
 /* ── Side-sheet ── */

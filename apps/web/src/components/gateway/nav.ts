@@ -3,6 +3,7 @@ import {
   IconChart,
   IconServer,
   IconSettings,
+  IconTrace,
   IconUsers,
 } from "./icons";
 
@@ -28,6 +29,12 @@ export const NAV_SECTIONS: NavSection[] = [
       // the same config the other two groupings read.
       { href: "/metrics", label: "Metrics", icon: IconChart },
       { href: "/upstreams", label: "Upstreams", icon: IconServer },
+      // A point lookup on ONE relay, not an aggregate view, so it sits
+      // outside the chain/router/window filter model the others share — which
+      // is exactly why it is a route of its own rather than a tab. The path
+      // stays /trace: it is short, still accurate, and a URL people paste to
+      // each other is the last thing worth churning.
+      { href: "/trace", label: "Relay investigator", icon: IconTrace },
     ],
   },
   {

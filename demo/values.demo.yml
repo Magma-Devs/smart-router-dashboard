@@ -1,0 +1,286 @@
+# Smart Router DEMO config — the multi-chain dev topology, with ONE upstream
+# routed through the counting proxy.
+#
+# Identical to dev-config/values.yml except for `eth-publicnode`: its HTTP leg
+# points at http://counting-proxy:8899, which forwards verbatim to
+# https://ethereum-rpc.publicnode.com and counts every request keyed by
+# JSON-RPC method. That is the node's own vantage point — the measurement
+# method from smart-router's `run-and-measure-locally` skill (section C).
+#
+#   curl -s localhost:8899/__stats  | jq   # counters + upstream RTT
+#   curl -sX POST localhost:8899/__reset   # zero them (settle 45s first)
+#
+# Its websocket leg stays DIRECT (the proxy is HTTP-only), so subscription
+# traffic is deliberately not in the count. Every other chain and every other
+# ETH1 group also talks to its vendor directly, so the counter is scoped to
+# exactly one endpoint — which is what makes the number comparable to the
+# skill's reference table.
+
+# Prometheus scrape address (the --metrics-listen-address flag overrides).
+metrics-listen-address: "0.0.0.0:7779"
+
+# Relay cache is wired via the router's --cache-be flag (compose/SR_CACHE_BE),
+# not from this file.
+
+endpoints:
+  - listen-address: "0.0.0.0:3360"
+    chain-id: "ETH1"
+    api-interface: "jsonrpc"
+    network-address: "0.0.0.0:3360"
+
+  - listen-address: "0.0.0.0:3361"
+    chain-id: "SOLANA"
+    api-interface: "jsonrpc"
+    network-address: "0.0.0.0:3361"
+
+  - listen-address: "0.0.0.0:3362"
+    chain-id: "BTC"
+    api-interface: "jsonrpc"
+    network-address: "0.0.0.0:3362"
+
+  - listen-address: "0.0.0.0:3363"
+    chain-id: "HYPERLIQUID"
+    api-interface: "jsonrpc"
+    network-address: "0.0.0.0:3363"
+
+  - listen-address: "0.0.0.0:3364"
+    chain-id: "COSMOSHUB"
+    api-interface: "rest"
+    network-address: "0.0.0.0:3364"
+
+  - listen-address: "0.0.0.0:3365"
+    chain-id: "COSMOSHUB"
+    api-interface: "tendermintrpc"
+    network-address: "0.0.0.0:3365"
+
+  - listen-address: "0.0.0.0:3366"
+    chain-id: "COSMOSHUB"
+    api-interface: "grpc"
+    network-address: "0.0.0.0:3366"
+
+  - listen-address: "0.0.0.0:3367"
+    chain-id: "APT1"
+    api-interface: "rest"
+    network-address: "0.0.0.0:3367"
+
+direct-rpc:
+  - name: "eth-publicnode"
+    group-label: "publicnode"
+    chain-id: "ETH1"
+    api-interface: "jsonrpc"
+    node-urls:
+      # ↓ counted. The proxy forwards to https://ethereum-rpc.publicnode.com.
+      - url: "http://counting-proxy:8899"
+      - url: "wss://ethereum-rpc.publicnode.com"
+
+  - name: "eth-tenderly"
+    group-label: "tenderly"
+    chain-id: "ETH1"
+    api-interface: "jsonrpc"
+    node-urls:
+      - url: "https://mainnet.gateway.tenderly.co"
+        addons: ["archive"]
+      - url: "wss://mainnet.gateway.tenderly.co"
+
+  - name: "eth-mevblocker"
+    group-label: "mevblocker"
+    chain-id: "ETH1"
+    api-interface: "jsonrpc"
+    node-urls:
+      - url: "https://rpc.mevblocker.io"
+        addons: ["archive"]
+
+  # ---- Solana (SOLANA) — HTTP-only ----
+  - name: "sol-publicnode"
+    group-label: "publicnode"
+    chain-id: "SOLANA"
+    api-interface: "jsonrpc"
+    node-urls:
+      - url: "https://solana-rpc.publicnode.com"
+        skip-verifications:
+          - tokens-owner-indexed
+
+  - name: "sol-solana-labs"
+    group-label: "solana-labs"
+    chain-id: "SOLANA"
+    api-interface: "jsonrpc"
+    node-urls:
+      - url: "https://api.mainnet-beta.solana.com"
+
+  # ---- Bitcoin (BTC) — single public source ----
+  - name: "btc-publicnode"
+    group-label: "publicnode"
+    chain-id: "BTC"
+    api-interface: "jsonrpc"
+    node-urls:
+      - url: "https://bitcoin-rpc.publicnode.com"
+
+  # ---- Hyperliquid (HYPERLIQUID) — single public source ----
+  - name: "hyperliquid-official"
+    group-label: "hyperliquid"
+    chain-id: "HYPERLIQUID"
+    api-interface: "jsonrpc"
+    node-urls:
+      - url: "https://rpc.hyperliquid.xyz/evm"
+
+  # ---- Cosmos Hub (COSMOSHUB) — rest + tendermintrpc + grpc, two vendors each.
+  # Public nodes are pruned → skip the pruning probe.
+  - name: "cosmos-rest-publicnode"
+    group-label: "publicnode"
+    chain-id: "COSMOSHUB"
+    api-interface: "rest"
+    node-urls:
+      - url: "https://cosmos-rest.publicnode.com"
+        timeout: 10s
+        skip-verifications:
+          - pruning
+
+  - name: "cosmos-rest-polkachu"
+    group-label: "polkachu"
+    chain-id: "COSMOSHUB"
+    api-interface: "rest"
+    node-urls:
+      - url: "https://cosmos-api.polkachu.com"
+        timeout: 10s
+        skip-verifications:
+          - pruning
+
+  - name: "cosmos-tendermintrpc-publicnode"
+    group-label: "publicnode"
+    chain-id: "COSMOSHUB"
+    api-interface: "tendermintrpc"
+    node-urls:
+      - url: "https://cosmos-rpc.publicnode.com:443"
+        timeout: 10s
+        skip-verifications:
+          - pruning
+      - url: "wss://cosmos-rpc.publicnode.com:443/websocket"
+        skip-verifications:
+          - pruning
+
+  - name: "cosmos-tendermintrpc-polkachu"
+    group-label: "polkachu"
+    chain-id: "COSMOSHUB"
+    api-interface: "tendermintrpc"
+    node-urls:
+      # HTTP only — polkachu has no websocket leg.
+      - url: "https://cosmos-rpc.polkachu.com"
+        timeout: 10s
+        skip-verifications:
+          - pruning
+
+  - name: "cosmos-grpc-publicnode"
+    group-label: "publicnode"
+    chain-id: "COSMOSHUB"
+    api-interface: "grpc"
+    node-urls:
+      - url: "grpcs://cosmos-grpc.publicnode.com:443"
+        auth-config:
+          use-tls: true
+        skip-verifications:
+          - pruning
+          - tx-indexing
+
+  - name: "cosmos-grpc-polkachu"
+    group-label: "polkachu"
+    chain-id: "COSMOSHUB"
+    api-interface: "grpc"
+    node-urls:
+      - url: "grpc://cosmos-grpc.polkachu.com:14990"
+        # Plaintext gRPC.
+        grpc-config:
+          allow-insecure: true
+        skip-verifications:
+          - pruning
+          - tx-indexing
+
+  # ---- Aptos (APT1) — REST, two sources; HTTP-only ----
+  - name: "aptos-publicnode"
+    group-label: "publicnode"
+    chain-id: "APT1"
+    api-interface: "rest"
+    node-urls:
+      - url: "https://aptos-rest.publicnode.com/v1"
+        timeout: 10s
+
+  - name: "aptos-labs"
+    group-label: "aptos-labs"
+    chain-id: "APT1"
+    api-interface: "rest"
+    node-urls:
+      - url: "https://fullnode.mainnet.aptoslabs.com/v1"
+        timeout: 10s
+
+# Emergency fallback tier — consulted only when every primary for a
+# chain<>interface is exhausted. Distinct vendor from the primaries it covers;
+# cross-validation targets primaries only. Keep ONLY backups that pass startup
+# verification. No keyless second vendor exists today for SOLANA / BTC / APT1 /
+# COSMOSHUB grpc (tested 2026-07) — add a keyed/private URL to cover those.
+backup-direct-rpc:
+  - name: "eth-flashbots-backup"
+    group-label: "flashbots"
+    chain-id: "ETH1"
+    api-interface: "jsonrpc"
+    node-urls:
+      - url: "https://rpc.flashbots.net"
+        timeout: 10s
+        skip-verifications:
+          - pruning
+
+  - name: "hyperliquid-purroofgroup-backup"
+    group-label: "purroofgroup"
+    chain-id: "HYPERLIQUID"
+    api-interface: "jsonrpc"
+    node-urls:
+      - url: "https://rpc.purroofgroup.com/evm"
+        timeout: 10s
+
+  - name: "cosmos-rest-ecostake-backup"
+    group-label: "ecostake"
+    chain-id: "COSMOSHUB"
+    api-interface: "rest"
+    node-urls:
+      - url: "https://rest-cosmoshub.ecostake.com"
+        timeout: 10s
+        skip-verifications:
+          - pruning
+
+  - name: "cosmos-tendermintrpc-ecostake-backup"
+    group-label: "ecostake"
+    chain-id: "COSMOSHUB"
+    api-interface: "tendermintrpc"
+    node-urls:
+      - url: "https://rpc-cosmoshub.ecostake.com"
+        timeout: 10s
+        skip-verifications:
+          - pruning
+
+# Per-method cross-validation. Knobs resolve as clamp(caller, floor, cap);
+# a bare number N = {floor: N}. Policies on stateful methods are rejected.
+# RULES OF THUMB (tested 2026-07):
+#   • Only methods with byte-identical responses across vendors can carry
+#     agreement-threshold: 2 (receipts differ per vendor — blobGasUsed;
+#     getEpochInfo changes every slot → both were removed).
+#   • REST method names are the spec's PATH PATTERNS, not gRPC names.
+#   • Every group referenced must survive startup verification, or the
+#     policy fails with "maxParticipants exceeds available candidates".
+cross-validation:
+  policies:
+    # ETH1 — balance reads corroborated across two groups (works for archive
+    # blocks too: tenderly + mevblocker both serve archive).
+    - chain-id: ETH1
+      api-interface: jsonrpc
+      method: eth_getBalance
+      enabled: true
+      agreement-threshold: 2
+      max-participants: 2
+      min-groups: 2
+
+    # COSMOSHUB REST — bank balance corroborated across both vendors.
+    - chain-id: COSMOSHUB
+      api-interface: rest
+      method: /cosmos/bank/v1beta1/balances/{address}/by_denom
+      enabled: true
+      agreement-threshold: 2
+      max-participants: 2
+      min-groups: 2
