@@ -226,23 +226,34 @@ export function TraceView({ guid }: { guid: string }) {
             </div>
           )}
 
-          {explanation !== null && explanation.timeline.length > 0 && (
+          {explanation !== null && (
             <div className="gw-card">
               <div className="gw-label" style={{ marginBottom: 12 }}>Timeline</div>
-              <ol style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 10 }}>
-                {explanation.timeline.map((step, i) => (
-                  <li key={i} style={{ display: "grid", gridTemplateColumns: "88px 1fr", gap: 12, alignItems: "baseline" }}>
-                    <span className="gw-mono gw-tnum" style={{ fontSize: 11.5, color: "var(--text-3)" }}>{step.at}</span>
-                    <span style={{ fontSize: 13.5 }}>{step.what}</span>
-                  </li>
-                ))}
-              </ol>
+              {explanation.timeline.length > 0 ? (
+                <ol style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 10 }}>
+                  {explanation.timeline.map((step, i) => (
+                    <li key={i} style={{ display: "grid", gridTemplateColumns: "88px 1fr", gap: 12, alignItems: "baseline" }}>
+                      <span className="gw-mono gw-tnum" style={{ fontSize: 11.5, color: "var(--text-3)" }}>{step.at}</span>
+                      <span style={{ fontSize: 13.5 }}>{step.what}</span>
+                    </li>
+                  ))}
+                </ol>
+              ) : (
+                <Empty>No step the log lines support. That usually means the trail is too thin to order — check the lines below.</Empty>
+              )}
             </div>
           )}
 
-          {explanation !== null && explanation.findings.length > 0 && (
+          {explanation !== null && (
             <div className="gw-card">
               <div className="gw-label" style={{ marginBottom: 12 }}>Findings</div>
+              {explanation.findings.length === 0 && (
+                // An unremarkable relay HAS no findings, and the prompt tells
+                // the model not to manufacture concerns. Say that, rather than
+                // dropping the section — a page whose shape changes between
+                // relays reads as broken.
+                <Empty>Nothing an operator needs to act on. The relay behaved as configured.</Empty>
+              )}
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 {explanation.findings.map((f, i) => (
                   <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
@@ -269,9 +280,10 @@ export function TraceView({ guid }: { guid: string }) {
                   ))}
                 </ul>
               ) : (
-                <p style={{ margin: 0, color: "var(--text-3)", fontSize: 13 }}>
-                  Nothing flagged. Treat that as the model&rsquo;s judgement, not a guarantee — check the lines below.
-                </p>
+                <Empty>
+                  Nothing flagged. That is the model&rsquo;s judgement, not a guarantee &mdash; the lines below are
+                  what it read.
+                </Empty>
               )}
             </div>
           )}
@@ -353,6 +365,16 @@ export function TraceView({ guid }: { guid: string }) {
       )}
     </div>
   );
+}
+
+/** The empty state for a section that is present but has nothing in it.
+ *
+ *  Every section renders on every trace. Hiding the ones that came back empty
+ *  made the page a different shape for each relay, which reads as something
+ *  having gone wrong — and it threw away real information, because "no
+ *  findings" is a fact about the relay, not an absence of output. */
+function Empty({ children }: { children: React.ReactNode }) {
+  return <p style={{ margin: 0, color: "var(--text-3)", fontSize: 13 }}>{children}</p>;
 }
 
 /** Inline spinner for the Ask-AI button. A model call takes seconds, and a
