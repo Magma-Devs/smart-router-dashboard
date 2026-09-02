@@ -1,5 +1,9 @@
 /**
- * Hand a relay's log lines to Claude and get back an account of what happened.
+ * Hand a relay's log lines to a model and get back an account of what happened.
+ *
+ * Anthropic or Gemini, chosen by `TRACE_AI_PROVIDER` or inferred from whichever
+ * key is set. Both get the SAME system prompt and the same JSON contract, so
+ * the page renders either identically and answers stay comparable.
  *
  * There is no parser between the logs and the model on purpose. The router
  * writes zerolog JSON with the attributes flat at the top level, which reads
@@ -12,7 +16,7 @@
  */
 import Anthropic from "@anthropic-ai/sdk";
 import type { TraceExplanation, TraceLogLine } from "@sr/shared";
-import { config } from "../config.js";
+import { config, type TraceAiProvider } from "../config.js";
 
 /** The model call failed. The route reports this rather than an empty answer —
  *  "we could not ask" and "there was nothing to say" are different facts. */
@@ -22,6 +26,10 @@ export class TraceExplainError extends Error {
     this.name = "TraceExplainError";
   }
 }
+
+/** Answer ceiling. Both providers get the same budget so the answers are
+ *  comparable — and a cut-off answer is unparseable JSON, not a short one. */
+const MAX_ANSWER_TOKENS = 2000;
 
 const SYSTEM_PROMPT = `You explain single RPC relays to engineers operating the Magma Devs Smart Router.
 
@@ -133,24 +141,58 @@ was unremarkable — do not manufacture concerns.
 notDetermined: required, and rarely empty at info level. Be specific: prefer
 "which upstream served the relay (not logged at info level)" over "some details".`;
 
-/** Ask the model to account for one relay. Throws `TraceExplainError` when the
- *  call or the parse fails — never returns a partial answer. */
+/** The key for the configured provider, or undefined when it is missing. */
+function apiKeyFor(provider: TraceAiProvider): string | undefined {
+  return provider === "anthropic" ? config.traceAi.anthropicApiKey : config.traceAi.geminiApiKey;
+}
+
+/** Whether an explanation can actually be produced: a provider AND its key. */
+export function explainAvailable(): boolean {
+  const p = config.traceAi.provider;
+  return config.traceAi.enabled && p !== null && Boolean(apiKeyFor(p));
+}
+
+/**
+ * Ask the configured model to account for one relay.
+ *
+ * Both providers get the SAME system prompt and are held to the same JSON
+ * contract, so the page renders either identically and the answer can be
+ * compared across them. Only the transport differs. Throws
+ * `TraceExplainError` when the call or the parse fails — never a partial
+ * answer.
+ */
 export async function explainTrace(
   guid: string,
   lines: TraceLogLine[],
   truncated: boolean,
 ): Promise<TraceExplanation> {
-  if (!config.traceAi.apiKey) {
-    throw new TraceExplainError("No ANTHROPIC_API_KEY is configured.");
+  const provider = config.traceAi.provider;
+  if (provider === null) {
+    throw new TraceExplainError("No model provider is configured (set ANTHROPIC_API_KEY or GEMINI_API_KEY).");
+  }
+  const apiKey = apiKeyFor(provider);
+  if (!apiKey) {
+    throw new TraceExplainError(
+      `TRACE_AI_PROVIDER is "${provider}" but its key is not set (${provider === "anthropic" ? "ANTHROPIC_API_KEY" : "GEMINI_API_KEY"}).`,
+    );
   }
 
-  const client = new Anthropic({ apiKey: config.traceAi.apiKey });
+  const userMessage = buildUserMessage(guid, lines, truncated);
+  const raw =
+    provider === "anthropic"
+      ? await callAnthropic(apiKey, userMessage)
+      : await callGemini(apiKey, userMessage);
+
+  return parseExplanation(raw);
+}
+
+/** The lines as the model sees them, with our own relative-offset prefix. */
+function buildUserMessage(guid: string, lines: TraceLogLine[], truncated: boolean): string {
   const first = lines[0]?.tMs;
   const rendered = lines
     .map((l) => (first === undefined ? l.line : `[+${((l.tMs - first) / 1000).toFixed(3)}s] ${l.line}`))
     .join("\n");
-
-  const userMessage = [
+  return [
     `Relay GUID: ${guid}`,
     `Log lines: ${lines.length}${truncated ? " (TRUNCATED — this is the beginning of a longer trail; say so in notDetermined)" : ""}`,
     "",
@@ -158,16 +200,18 @@ export async function explainTrace(
     "",
     rendered,
   ].join("\n");
+}
 
-  let raw: string;
+async function callAnthropic(apiKey: string, userMessage: string): Promise<string> {
+  const client = new Anthropic({ apiKey });
   try {
     const res = await client.messages.create({
       model: config.traceAi.model,
-      max_tokens: 2000,
+      max_tokens: MAX_ANSWER_TOKENS,
       system: SYSTEM_PROMPT,
       messages: [{ role: "user", content: userMessage }],
     });
-    raw = res.content
+    return res.content
       .filter((b): b is Anthropic.TextBlock => b.type === "text")
       .map((b) => b.text)
       .join("")
@@ -175,8 +219,65 @@ export async function explainTrace(
   } catch (e) {
     throw new TraceExplainError(e instanceof Error ? e.message : String(e));
   }
+}
 
-  return parseExplanation(raw);
+/**
+ * Gemini via the REST API rather than an SDK — one fetch, no extra dependency,
+ * and stubbable in tests exactly like the Loki client is.
+ *
+ * `responseMimeType: "application/json"` is worth having: it constrains the
+ * model to emit bare JSON, which is the drift `parseExplanation` otherwise has
+ * to tolerate a markdown fence for.
+ */
+async function callGemini(apiKey: string, userMessage: string): Promise<string> {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+    config.traceAi.model,
+  )}:generateContent`;
+
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      // Header rather than ?key=, so the key never lands in a URL that some
+      // proxy or access log might keep.
+      headers: { "content-type": "application/json", "x-goog-api-key": apiKey },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+        contents: [{ role: "user", parts: [{ text: userMessage }] }],
+        generationConfig: {
+          maxOutputTokens: MAX_ANSWER_TOKENS,
+          responseMimeType: "application/json",
+        },
+      }),
+    });
+  } catch (e) {
+    throw new TraceExplainError(`Could not reach Gemini: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new TraceExplainError(`Gemini answered ${res.status}${body ? `: ${body.slice(0, 300)}` : ""}`);
+  }
+
+  const json = (await res.json().catch(() => null)) as GeminiResponse | null;
+  const parts = json?.candidates?.[0]?.content?.parts ?? [];
+  const text = parts.map((p) => p.text ?? "").join("").trim();
+  if (text === "") {
+    // An empty answer usually means the response hit the token ceiling or was
+    // filtered — say which, rather than reporting "invalid JSON" downstream.
+    const reason = json?.candidates?.[0]?.finishReason;
+    throw new TraceExplainError(
+      `Gemini returned no text${reason ? ` (finishReason: ${reason})` : ""}.`,
+    );
+  }
+  return text;
+}
+
+interface GeminiResponse {
+  candidates?: {
+    content?: { parts?: { text?: string }[] };
+    finishReason?: string;
+  }[];
 }
 
 /**

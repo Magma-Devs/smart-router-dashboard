@@ -14,6 +14,11 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   what was asked, what the router did, what went wrong, and — a required
   section — **what the logs do not record**.
 
+  Either **Anthropic or Gemini** can answer — set one key and the provider is
+  inferred from it, or name it with `TRACE_AI_PROVIDER`. Both get the same
+  system prompt and the same JSON contract, so the page renders either
+  identically and two answers to one trace are comparable.
+
   Opening a trace is free: `GET /api/trace/:guid` returns the log lines and
   makes no model call, and an **✦ Ask AI** button asks
   `POST /api/trace/:guid/explain` for the explanation. Two routes because they

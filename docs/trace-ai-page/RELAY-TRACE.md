@@ -114,6 +114,34 @@ that the thing did not happen* — and requires the field.
 That list is also the most useful thing this feature produces: it names, per
 relay, what the router should have logged.
 
+## Two providers, one contract
+
+Either **Anthropic** or **Gemini** can answer. Set one key and the provider is
+inferred from it; `TRACE_AI_PROVIDER` decides explicitly, and is only needed to
+break the tie when both keys are set (anthropic wins by default).
+
+Both get the **same system prompt** and are held to the same JSON contract, so
+the page renders either identically and two answers to the same trace are
+comparable. Only the transport differs:
+
+- **Anthropic** goes through `@anthropic-ai/sdk`.
+- **Gemini** goes over plain `fetch` to `v1beta/…:generateContent` — one
+  request, no extra dependency, and stubbable in tests the same way the Loki
+  client is. The key travels in the `x-goog-api-key` header rather than the
+  query string, because a URL is the thing proxies and access logs keep. It
+  also sets `responseMimeType: "application/json"`, which constrains the model
+  to bare JSON — the drift `parseExplanation` otherwise absorbs with a
+  markdown-fence fallback.
+
+Both share one answer ceiling (`MAX_ANSWER_TOKENS`), so a cut-off answer is
+unparseable JSON rather than a short one. Gemini reports that case as
+`finishReason: MAX_TOKENS` and the error says so, rather than surfacing it as
+"invalid JSON" and sending someone to debug the wrong thing.
+
+⚠ **Model names move faster than this repository.** The defaults are
+`claude-sonnet-5` and `gemini-2.5-flash`; if either 404s, set `TRACE_AI_MODEL`
+rather than editing code.
+
 ## Honesty and failure modes
 
 - **The model is not verified against the lines.** Showing the raw lines under
@@ -138,8 +166,9 @@ relay, what the router should have logged.
 | `LOKI_ROUTER_SELECTOR` | `{service="router"}` | Deployment-specific stream selector |
 | `TRACE_MAX_LINES` | `400` | Lines sent to the model; oldest kept |
 | `TRACE_AI_ENABLED` | `false` | Off unless set. Without it the page is a GUID-scoped log viewer |
-| `ANTHROPIC_API_KEY` | unset | Server-side only; never reaches the browser |
-| `TRACE_AI_MODEL` | `claude-sonnet-5` | |
+| `TRACE_AI_PROVIDER` | inferred | `anthropic` \| `gemini` |
+| `ANTHROPIC_API_KEY` / `GEMINI_API_KEY` | unset | Set one. Server-side only; neither reaches the browser |
+| `TRACE_AI_MODEL` | per provider | `claude-sonnet-5` / `gemini-2.5-flash` |
 | `TRACE_AI_RATE_LIMIT_MAX` | `10` | Per IP per minute, tighter than `RATE_LIMIT_MAX` |
 
 ## Limits worth stating

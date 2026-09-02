@@ -22,13 +22,7 @@ import {
 } from "@sr/shared";
 import { config } from "../config.js";
 import { LokiClient, LokiUnavailableError } from "../services/loki-client.js";
-import { explainTrace, TraceExplainError } from "../services/trace-explain.js";
-
-/** `TRACE_AI_ENABLED` alone isn't enough — a key has to be there too, or the
- *  button would be offered for a call that can only 401. */
-function aiAvailable(): boolean {
-  return config.traceAi.enabled && Boolean(config.traceAi.apiKey);
-}
+import { explainAvailable, explainTrace, TraceExplainError } from "../services/trace-explain.js";
 
 const guidParams = {
   type: "object",
@@ -119,8 +113,8 @@ export async function traceRoutes(app: FastifyInstance) {
 
       const body: RelayTrace = {
         ...res.trail,
-        aiAvailable: aiAvailable(),
-        model: aiAvailable() ? config.traceAi.model : null,
+        aiAvailable: explainAvailable(),
+        model: explainAvailable() ? config.traceAi.model : null,
       };
       return reply.send(body);
     },
@@ -138,12 +132,14 @@ export async function traceRoutes(app: FastifyInstance) {
       config: { rateLimit: { max: config.traceAi.rateLimitMax, timeWindow: "1 minute" } },
     },
     async (request, reply) => {
-      if (!aiAvailable()) {
+      if (!explainAvailable()) {
         return reply.status(404).send({
           error: "ai_disabled",
-          message: config.traceAi.enabled
-            ? "The AI explanation is configured but has no ANTHROPIC_API_KEY, so it cannot run."
-            : "The AI explanation is turned off on this deployment (TRACE_AI_ENABLED=false).",
+          message: !config.traceAi.enabled
+            ? "The AI explanation is turned off on this deployment (TRACE_AI_ENABLED=false)."
+            : config.traceAi.provider === null
+              ? "No model provider is configured — set ANTHROPIC_API_KEY or GEMINI_API_KEY."
+              : `TRACE_AI_PROVIDER is "${config.traceAi.provider}" but its key is not set.`,
         });
       }
 

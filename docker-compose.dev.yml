@@ -226,12 +226,17 @@ services:
       # in. Points at the bundled `logs` profile's Loki; unset it and the route
       # answers 503 "no log store configured" rather than an empty trace.
       - LOKI_URL=${LOKI_URL:-http://loki:3100}
-      # The AI explanation is OFF unless you set both. It spends model tokens
-      # and sends the relay's log lines — request bodies included — to
-      # Anthropic. See docs/RELAY-TRACE.md.
+      # The AI explanation is OFF unless enabled AND given a key. It spends
+      # model tokens and sends the relay's log lines — request bodies included
+      # — to whichever provider answers. Set ONE of the two keys; the provider
+      # is inferred from it (TRACE_AI_PROVIDER overrides). TRACE_AI_MODEL is
+      # unset by default so each provider uses its own default model.
+      # See docs/trace-ai-page/RELAY-TRACE.md.
       - TRACE_AI_ENABLED=${TRACE_AI_ENABLED:-false}
+      - TRACE_AI_PROVIDER=${TRACE_AI_PROVIDER:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
-      - TRACE_AI_MODEL=${TRACE_AI_MODEL:-claude-sonnet-5}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - TRACE_AI_MODEL=${TRACE_AI_MODEL:-}
       - CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
       # Auth (see docs/AUTH.md): disabled (default) needs none of the rest.
       - AUTH_MODE=${AUTH_MODE:-disabled}

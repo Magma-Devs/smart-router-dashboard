@@ -3,8 +3,21 @@
  * Every default is documented in the env-var table in the repo CLAUDE.md.
  */
 
+/**
+ * An env var, with EMPTY treated as unset.
+ *
+ * Compose passes optional vars through as `FOO=${FOO:-}`, which sets them to
+ * the empty string rather than leaving them out — and `""` is not `undefined`,
+ * so `env("X") ?? fallback` would hand back `""` and skip the default. That
+ * silently produced a model name of `""` and a request to
+ * `/models/:generateContent`, which 404s in a way that reads like a bad key.
+ * Every caller here means "unset" when the value is blank.
+ */
 function env(name: string): string | undefined {
-  return process.env[name];
+  const raw = process.env[name];
+  if (raw === undefined) return undefined;
+  const trimmed = raw.trim();
+  return trimmed === "" ? undefined : trimmed;
 }
 
 function envInt(name: string, fallback: number): number {
@@ -27,6 +40,30 @@ function envList(name: string): string[] | true {
     }
   }
   return trimmed.split(",").map((o) => o.trim()).filter(Boolean);
+}
+
+/** Model providers the relay-trace explanation can call. */
+export type TraceAiProvider = "anthropic" | "gemini";
+
+/** Default model per provider. `TRACE_AI_MODEL` overrides either — model names
+ *  move faster than this file does, so the override is the supported escape
+ *  hatch rather than an edge case. */
+const DEFAULT_TRACE_MODELS: Record<TraceAiProvider, string> = {
+  anthropic: "claude-sonnet-5",
+  gemini: "gemini-2.5-flash",
+};
+
+/**
+ * `TRACE_AI_PROVIDER` when set and valid; otherwise inferred from whichever
+ * key is present. `null` means neither — the Ask-AI button is not offered and
+ * the explain route 404s, rather than a button that can only fail.
+ */
+function traceAiProvider(): TraceAiProvider | null {
+  const named = env("TRACE_AI_PROVIDER")?.trim().toLowerCase();
+  if (named === "anthropic" || named === "gemini") return named;
+  if (env("ANTHROPIC_API_KEY")) return "anthropic";
+  if (env("GEMINI_API_KEY")) return "gemini";
+  return null;
 }
 
 export const config = {
@@ -98,8 +135,18 @@ export const config = {
    */
   traceAi: {
     enabled: (env("TRACE_AI_ENABLED") ?? "false").toLowerCase() === "true",
-    apiKey: env("ANTHROPIC_API_KEY"),
-    model: env("TRACE_AI_MODEL") ?? "claude-sonnet-5",
+    /**
+     * Which model answers. `TRACE_AI_PROVIDER` decides explicitly; with it
+     * unset the provider is inferred from whichever key is present, so setting
+     * one key is all a deployment normally has to do. Anthropic wins when both
+     * are set and neither is named — an arbitrary tie-break, but a stated one,
+     * and `TRACE_AI_PROVIDER` overrides it.
+     */
+    provider: traceAiProvider(),
+    anthropicApiKey: env("ANTHROPIC_API_KEY"),
+    geminiApiKey: env("GEMINI_API_KEY"),
+    /** Per-provider default; `TRACE_AI_MODEL` overrides either. */
+    model: env("TRACE_AI_MODEL") ?? DEFAULT_TRACE_MODELS[traceAiProvider() ?? "anthropic"],
     /** Lines past this are dropped before the model call, oldest kept. */
     maxLines: envInt("TRACE_MAX_LINES", 400),
     /** Per-IP per-minute, tighter than RATE_LIMIT_MAX — each call costs. */
