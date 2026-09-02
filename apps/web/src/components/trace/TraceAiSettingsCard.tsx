@@ -21,6 +21,10 @@ type ModelsState =
   | { phase: "idle" }
   | { phase: "loading" }
   | { phase: "ready"; models: { id: string; label: string }[]; defaultModel: string }
+  /** No key for this provider yet. NOT an error — nothing failed, the reader
+   *  just has not typed one. Rendering it red made picking a provider the
+   *  deployment has no key for look like that provider was unsupported. */
+  | { phase: "needsKey" }
   | { phase: "error"; message: string };
 
 /**
@@ -60,10 +64,11 @@ export function TraceAiSettingsCard({ onChanged }: { onChanged?: () => void }) {
       setModels({ phase: "ready", models: res.models, defaultModel: res.defaultModel });
       return res.provider;
     } catch (e) {
-      setModels({
-        phase: "error",
-        message: e instanceof ApiError ? e.message : "Could not load the model list.",
-      });
+      setModels(
+        e instanceof ApiError && e.statusCode === 400
+          ? { phase: "needsKey" }
+          : { phase: "error", message: e instanceof ApiError ? e.message : "Could not load the model list." },
+      );
       return null;
     }
   }, []);
@@ -163,7 +168,13 @@ export function TraceAiSettingsCard({ onChanged }: { onChanged?: () => void }) {
 
           <div>
             <div style={labelStyle}>Model</div>
-            {models.phase === "ready" ? (
+            {models.phase === "loading" || models.phase === "needsKey" || models.phase === "idle" ? (
+              <select className="gw-input gw-mono" disabled value="" style={{ width: "100%" }}>
+                <option value="">
+                  {models.phase === "loading" ? "Loading models…" : "Enter an API key to load models"}
+                </option>
+              </select>
+            ) : models.phase === "ready" ? (
               <select
                 className="gw-input gw-mono"
                 value={draft.model}
@@ -192,6 +203,8 @@ export function TraceAiSettingsCard({ onChanged }: { onChanged?: () => void }) {
             )}
             <div style={hintStyle}>
               {models.phase === "loading" && "Asking the provider what it will accept…"}
+              {(models.phase === "needsKey" || models.phase === "idle") &&
+                `The list comes from ${PROVIDER_LABEL[draft.provider]} itself, so it is never out of date.`}
               {models.phase === "ready" &&
                 `${models.models.length} models this key can use. Leave on the default unless you have a reason.`}
               {models.phase === "error" && (

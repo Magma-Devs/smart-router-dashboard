@@ -28,6 +28,24 @@ export class TraceExplainError extends Error {
 }
 
 /**
+ * No key for the chosen provider yet.
+ *
+ * Separate from `TraceExplainError` because it is a precondition the CALLER
+ * can fix by typing, not a failure of the provider — and the settings picker
+ * renders the two very differently. Conflating them made choosing a provider
+ * the deployment has no key for look like that provider was broken.
+ */
+export class TraceKeyMissingError extends Error {
+  constructor(
+    message: string,
+    readonly provider: TraceAiProvider,
+  ) {
+    super(message);
+    this.name = "TraceKeyMissingError";
+  }
+}
+
+/**
  * Output ceilings. A cut-off answer is unparseable JSON, not a short one, so
  * these are sized for the worst case rather than the typical one.
  *
@@ -406,7 +424,7 @@ export async function listModels(overrides: ExplainOverrides = {}): Promise<{
   }
   const apiKey = overrides.apiKey ?? apiKeyFor(provider);
   if (!apiKey) {
-    throw new TraceExplainError(`No key for ${provider}. Paste one to load its model list.`);
+    throw new TraceKeyMissingError(`Enter an ${provider} API key to load its models.`, provider);
   }
 
   const models = provider === "anthropic" ? await listAnthropic(apiKey) : await listGemini(apiKey);

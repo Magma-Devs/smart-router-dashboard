@@ -190,3 +190,36 @@ describe("the Gemini request", () => {
     expect((await explainTrace("42", LINES, false)).explanation.summary).toContain("eth_getBalance");
   });
 });
+
+describe("the model list", () => {
+  it("reports a missing key as a precondition, not a provider failure", async () => {
+    // These are different facts and the settings picker renders them very
+    // differently: one is a prompt to type, the other is red. Conflating them
+    // made choosing a provider the deployment has no key for look like that
+    // provider was unsupported.
+    const { listModels, TraceKeyMissingError } = await loadWith({ ...CLEAN, GEMINI_API_KEY: "g-key" });
+    await expect(listModels({ provider: "anthropic" })).rejects.toThrow(TraceKeyMissingError);
+  });
+
+  it("keeps only models that can actually answer", async () => {
+    // Gemini advertises generateContent on image, tts and embedding models,
+    // none of which can produce the JSON this feature needs.
+    vi.stubGlobal("fetch", async () =>
+      new Response(
+        JSON.stringify({
+          models: [
+            { name: "models/gemini-3.6-flash", displayName: "Gemini 3.6 Flash", supportedGenerationMethods: ["generateContent"] },
+            { name: "models/gemini-2.5-flash-preview-tts", displayName: "TTS", supportedGenerationMethods: ["generateContent"] },
+            { name: "models/gemini-3.1-flash-image", displayName: "Image", supportedGenerationMethods: ["generateContent"] },
+            { name: "models/text-embedding-004", displayName: "Embedding", supportedGenerationMethods: ["embedContent"] },
+          ],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+    const { listModels } = await loadWith({ ...CLEAN, GEMINI_API_KEY: "g-key" });
+    const out = await listModels({});
+    expect(out.models.map((m) => m.id)).toEqual(["gemini-3.6-flash"]);
+    expect(out.defaultModel).toBe("gemini-3.6-flash");
+  });
+});

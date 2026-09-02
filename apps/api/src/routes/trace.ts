@@ -25,7 +25,13 @@ import {
 } from "@sr/shared";
 import { config } from "../config.js";
 import { LokiClient, LokiUnavailableError } from "../services/loki-client.js";
-import { explainAvailable, explainTrace, listModels, TraceExplainError } from "../services/trace-explain.js";
+import {
+  explainAvailable,
+  explainTrace,
+  listModels,
+  TraceExplainError,
+  TraceKeyMissingError,
+} from "../services/trace-explain.js";
 
 /**
  * Caller-supplied credentials, all optional. Omitted ⇒ the deployment's own
@@ -176,6 +182,12 @@ export async function traceRoutes(app: FastifyInstance) {
         const res: TraceModelsResponse = out;
         return reply.send(res);
       } catch (e) {
+        if (e instanceof TraceKeyMissingError) {
+          // 400, not 502: nothing failed. The caller has simply not supplied a
+          // key yet, which is a thing they fix by typing — and the picker
+          // renders it as a prompt rather than an error.
+          return reply.status(400).send({ error: "no_key", message: e.message, provider: e.provider });
+        }
         if (e instanceof TraceExplainError) {
           // 502: the provider would not tell us. Never echo the key back.
           return reply.status(502).send({ error: "model_list_failed", message: e.message });
