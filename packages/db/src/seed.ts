@@ -1,5 +1,5 @@
 import bcrypt from "bcryptjs";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { Database } from "./client.js";
 import { users } from "./schema.js";
 
@@ -32,7 +32,15 @@ export async function seedAdmin(
   db: Database,
   opts: SeedAdminOptions,
 ): Promise<SeedResult> {
-  const existing = await db.select().from(users).where(eq(users.email, opts.email)).limit(1);
+  // Scoped to active accounts throughout: a removed person's row keeps their
+  // email (that is what makes the audit trail readable), so an unscoped lookup
+  // would try to promote a departed account, and an unscoped count would treat
+  // a deployment whose only rows are removed people as "populated".
+  const existing = await db
+    .select()
+    .from(users)
+    .where(and(eq(users.email, opts.email), eq(users.status, "active")))
+    .limit(1);
   const found = existing[0];
 
   if (found) {
@@ -41,9 +49,12 @@ export async function seedAdmin(
     return { status: "promoted", reason: "existing user promoted to admin" };
   }
 
-  // Only create when the table is empty — we don't want to silently insert
-  // an admin into a populated install.
-  const countRow = await db.select({ count: sql<number>`count(*)::int` }).from(users);
+  // Only create when there are no active users — we don't want to silently
+  // insert an admin into a populated install.
+  const countRow = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(users)
+    .where(eq(users.status, "active"));
   const count = countRow[0]?.count ?? 0;
   if (count > 0) {
     return { status: "noop", reason: "table populated and admin email not present" };
