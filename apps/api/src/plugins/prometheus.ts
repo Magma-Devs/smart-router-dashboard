@@ -5,7 +5,8 @@ import { MetricsService } from "../services/metrics.js";
 import { MetricsDetailService } from "../services/metrics-detail.js";
 import { MetricsDashboardService } from "../services/metrics-dashboard.js";
 import { ConfigurationService } from "../services/configuration.js";
-import { config } from "../config.js";
+import { ROUTER_METRICS } from "@sr/shared";
+import { config, readMetricsScope } from "../config.js";
 
 /** Services bound to one router scope (or to the whole cluster when unset). */
 export interface ScopedServices {
@@ -33,7 +34,36 @@ declare module "fastify" {
 
 /** Decorate the app with the Prometheus client + domain services. */
 export const prometheusPlugin = fp(async (app: FastifyInstance) => {
-  const prom = new PrometheusClient();
+  // The deployment scope rides on the ONE client everything derives from —
+  // `withScope` copies below inherit it, so the router scope stacks on top and
+  // the scope-discovery query lists only this deployment's routers. A bad
+  // pair throws here and the boot fails with the reason.
+  const baseScope = readMetricsScope();
+  if (baseScope && baseScope.label === config.prometheus.routerScopeLabel) {
+    // Two matchers on one label: the same value is redundant, different
+    // values are an empty result. Neither is what anyone configured.
+    throw new Error(
+      `METRICS_SCOPE_LABEL and ROUTER_SCOPE_LABEL are both "${baseScope.label}" — the deployment scope and the per-router scope must select on different labels`,
+    );
+  }
+  const prom = new PrometheusClient(undefined, undefined, null, undefined, { baseScope, logger: app.log });
+  if (baseScope) {
+    app.log.info({ scope: baseScope }, `metrics scope: every query carries ${baseScope.label}="${baseScope.value}"`);
+    // A value that matches nothing is every panel empty with no error
+    // anywhere — the failure the customer described, one typo away. The
+    // health gauge is exported by every running router, traffic or not, so
+    // a zero here means the scope selects no router. Advisory: a zone still
+    // provisioning is also zero, and readiness must not hinge on it.
+    app.addHook("onReady", async () => {
+      const routers = await prom.scalar(`count(${ROUTER_METRICS.overallHealth})`);
+      if (!routers) {
+        app.log.warn(
+          { scope: baseScope, probe: ROUTER_METRICS.overallHealth },
+          `metrics scope ${baseScope.label}="${baseScope.value}" matches no router series — check METRICS_SCOPE_VALUE; every panel stays empty until a router in this scope reports`,
+        );
+      }
+    });
+  }
   const routerConfig = new ConfigurationService();
   app.decorate("prom", prom);
   app.decorate("routerConfig", routerConfig);
