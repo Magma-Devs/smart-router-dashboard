@@ -17,6 +17,15 @@
       "source": "ethereum-lists/chains#16602"
     }
   ],
+  "ACA": [
+    {
+      "name": "Blockscout",
+      "url": "https://blockscout.acala.network",
+      "kind": "block",
+      "verified": "browser 2026-09-08 — block page watched rendering the requested height (\"Block 1000 - Acala Chain Explorer\"; /block/<n> redirects to /block/<n>/transactions on the same page)",
+      "source": "curated — acala.subscan.io, the Subscan deployment Acala's docs name, answers 404 on every path as of 2026-09-08; Acala's own Blockscout counts the same heights, since EVM+ is a pallet on the one chain"
+    }
+  ],
   "AGR": [
     {
       "name": "Atomscan",
@@ -264,6 +273,30 @@
       "source": "ethereum-lists/chains#43113"
     }
   ],
+  "AVT": [
+    {
+      "name": "Aventus Explorer",
+      "url": "https://explorer.mainnet.aventus.io",
+      "kind": "custom",
+      "tpl": {
+        "block": "https://explorer.mainnet.aventus.io/aventus/block/{block}"
+      },
+      "verified": "browser 2026-09-08 — block page watched rendering the requested height (\"Block #1000\", Block height 1000)",
+      "source": "curated — the project's own explorer; its router namespaces every path under a network slug"
+    }
+  ],
+  "AVTT": [
+    {
+      "name": "Aventus Explorer",
+      "url": "https://explorer.testnet.aventus.io",
+      "kind": "custom",
+      "tpl": {
+        "block": "https://explorer.testnet.aventus.io/aventus/block/{block}"
+      },
+      "verified": "browser 2026-09-08 — block page watched rendering the requested height (\"Block #1000\", Block height 1000)",
+      "source": "curated — the project's own explorer, the same software as mainnet on the testnet host; the network slug in the path is still `aventus`"
+    }
+  ],
   "AXELAR": [
     {
       "name": "mintscan",
@@ -355,15 +388,8 @@
   ],
   "BERA": [
     {
-      "name": "Berascan",
+      "name": "Berascan Berachain Block Explorer",
       "url": "https://berascan.com",
-      "kind": "block",
-      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
-      "source": "ethereum-lists/chains#80094"
-    },
-    {
-      "name": "Beratrail",
-      "url": "https://beratrail.io",
       "kind": "block",
       "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
       "source": "ethereum-lists/chains#80094"
@@ -371,10 +397,10 @@
   ],
   "BERAB": [
     {
-      "name": "Beratrail",
-      "url": "https://bepolia.beratrail.io",
-      "kind": "home",
-      "verified": "registry — the chainlist row declares no url standard, so only the home page is offered",
+      "name": "Berascan Bepolia Testnet Block Explorer",
+      "url": "https://testnet.berascan.com",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
       "source": "ethereum-lists/chains#80069"
     }
   ],
@@ -410,6 +436,15 @@
       "kind": "block",
       "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
       "source": "ethereum-lists/chains#168587773"
+    }
+  ],
+  "BNC": [
+    {
+      "name": "Subscan",
+      "url": "https://bifrost.subscan.io",
+      "kind": "block",
+      "verified": "browser 2026-09-08 — block page watched rendering the requested height",
+      "source": "curated — Subscan runs one deployment per network on a shared codebase"
     }
   ],
   "BOB": [
@@ -527,6 +562,22 @@
       "kind": "home",
       "verified": "home probed 2026-08-17",
       "source": "curated"
+    }
+  ],
+  "CELESTIA": [
+    {
+      "name": "Nodes.Guru",
+      "url": "https://celestia.explorers.guru",
+      "kind": "home",
+      "verified": "registry — the registry row supplies no block page and this host proved none elsewhere, so only the home page is offered",
+      "source": "cosmos/chain-registry/celestia"
+    },
+    {
+      "name": "CelestiaHub [Noders]",
+      "url": "https://celestiahub.org/explorer/dashboard",
+      "kind": "home",
+      "verified": "registry — the registry row supplies no block page and this host proved none elsewhere, so only the home page is offered",
+      "source": "cosmos/chain-registry/celestia"
     }
   ],
   "CELESTIATA": [
@@ -715,13 +766,22 @@
       "source": "cosmos/chain-registry/testnets/dydxtestnet"
     }
   ],
-  "ENJIN": [
+  "ENJ": [
     {
       "name": "Subscan",
       "url": "https://enjin.subscan.io",
       "kind": "block",
-      "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
+      "verified": "browser 2026-09-08 — block page watched rendering the requested height, titled \"Enjin Relay Block Details\"",
       "source": "curated — Subscan runs one deployment per network on a shared codebase"
+    }
+  ],
+  "ENJIN": [
+    {
+      "name": "Subscan",
+      "url": "https://matrix.subscan.io",
+      "kind": "block",
+      "verified": "browser 2026-09-08 — block page watched rendering the requested height, titled \"Enjin Matrix Block Details\"",
+      "source": "curated — Subscan runs one deployment per network on a shared codebase. enjin.subscan.io, which this entry used to name, is the RELAY chain's deployment (\"Enjin Relay Block Details\") — that host now belongs to ENJ"
     }
   ],
   "ENJINT": [
@@ -730,6 +790,15 @@
       "url": "https://canary-matrix.subscan.io",
       "kind": "block",
       "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
+      "source": "curated — Subscan runs one deployment per network on a shared codebase"
+    }
+  ],
+  "ENJT": [
+    {
+      "name": "Subscan",
+      "url": "https://canary.subscan.io",
+      "kind": "block",
+      "verified": "browser 2026-09-08 — block page watched rendering the requested height, titled \"Canary Relay Block Details\"",
       "source": "curated — Subscan runs one deployment per network on a shared codebase"
     }
   ],
@@ -1257,6 +1326,18 @@
       "source": "ethereum-lists/chains#59141"
     }
   ],
+  "LIT": [
+    {
+      "name": "Statescan",
+      "url": "https://heima.statescan.io",
+      "kind": "custom",
+      "tpl": {
+        "block": "https://heima.statescan.io/#/blocks/{block}"
+      },
+      "verified": "browser 2026-09-08 — block page watched rendering the requested height (\"Block #1,000\")",
+      "source": "curated — Statescan is the explorer Heima's app links to; heima.subscan.io and litentry.subscan.io both answer 404 as of 2026-09-08. Client-side routing behind /#/blocks/, which no shared kind spells"
+    }
+  ],
   "LTC": [
     {
       "name": "Litecoin Space",
@@ -1595,6 +1676,24 @@
       "source": "cosmos/chain-registry/testnets/osmosistestnet"
     }
   ],
+  "PEAQ": [
+    {
+      "name": "Subscan",
+      "url": "https://peaq.subscan.io",
+      "kind": "block",
+      "verified": "browser 2026-09-08 — block page watched rendering the requested height",
+      "source": "curated — Subscan runs one deployment per network on a shared codebase. chainlist (ethereum-lists/chains#3338) lists the same host with no url standard, which is why the registry row was home-only"
+    }
+  ],
+  "PEAQT": [
+    {
+      "name": "Subscan",
+      "url": "https://agung-testnet.subscan.io",
+      "kind": "block",
+      "verified": "browser 2026-09-08 — block page watched rendering the requested height (\"agung Block Details\")",
+      "source": "curated — Subscan runs one deployment per network on a shared codebase. chainlist (ethereum-lists/chains#9990) lists the same host with no url standard; its other row is a polkadot.js apps deep link, which is an RPC client rather than an explorer"
+    }
+  ],
   "PLASMA": [
     {
       "name": "Routescan",
@@ -1753,6 +1852,22 @@
       "kind": "block",
       "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
       "source": "ethereum-lists/chains#534351"
+    }
+  ],
+  "SDN": [
+    {
+      "name": "subscan",
+      "url": "https://shiden.subscan.io",
+      "kind": "home",
+      "verified": "registry — the chainlist row declares no url standard, so only the home page is offered",
+      "source": "ethereum-lists/chains#336"
+    },
+    {
+      "name": "blockscout",
+      "url": "https://blockscout.com/shiden",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#336"
     }
   ],
   "SECRET": [
@@ -2069,6 +2184,15 @@
       "source": "curated"
     }
   ],
+  "TRAC": [
+    {
+      "name": "Subscan",
+      "url": "https://neuroweb.subscan.io",
+      "kind": "block",
+      "verified": "browser 2026-09-08 — block page watched rendering the requested height",
+      "source": "curated — Subscan runs one deployment per network on a shared codebase"
+    }
+  ],
   "TRX": [
     {
       "name": "Tronscan",
@@ -2253,6 +2377,15 @@
       "kind": "home",
       "verified": "browser 2026-08-18 — home page only: /ledgers/<n> is the right route but answers “Ledger not Found” — this testnet's ledgers are pruned",
       "source": "curated"
+    }
+  ],
+  "XRT": [
+    {
+      "name": "Subscan",
+      "url": "https://robonomics.subscan.io",
+      "kind": "block",
+      "verified": "browser 2026-09-08 — block page watched rendering the requested height",
+      "source": "curated — Subscan runs one deployment per network on a shared codebase"
     }
   ],
   "ZCASH": [

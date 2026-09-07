@@ -5,6 +5,46 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Added
+
+- **Chain resync — fourteen Substrate chains arrived upstream.** lava-specs
+  added Acala (`ACA`), Aventus (`AVT`, `AVTT`), Bifrost Polkadot (`BNC`),
+  Basilisk (`BSX`), the Enjin Relaychain and its Canary (`ENJ`, `ENJT`), Heima
+  and its Paseo testnet (`LIT`, `LITT`), peaq and Agung (`PEAQ`, `PEAQT`),
+  Shiden (`SDN`), NeuroWeb (`TRAC`) and Robonomics (`XRT`), which is what the
+  drift gate caught on the 0.21.0 push. All fourteen open the Try-it drawer on
+  runnable Substrate defaults with no new hint — the family already had them.
+
+  Nine icons are vendored (`acala`, `aventus`, `basilisk`, `bifrost`, `heima`,
+  `neuroweb`, `peaq`, `robonomics`, `shiden`); the five testnets inherit, and
+  every chain in the map still resolves to a real SVG. Twelve of the fourteen
+  gained an explorer whose block page was watched rendering height 1000:
+  Subscan for Bifrost, the Enjin Relay and Canary Relay, peaq, Agung, NeuroWeb
+  and Robonomics; Acala's own Blockscout, since `acala.subscan.io` is gone;
+  Statescan for Heima; Aventus's own explorer for mainnet and testnet, whose
+  router namespaces every block page under `/aventus/`. Basilisk and Heima
+  Paseo are recorded as accepted gaps with the reason.
+
+  261 chains, 218 with an explorer, 173 primaries linking a height.
+
+### Fixed
+
+- **Enjin Matrixchain linked to the Relay chain's explorer.** `ENJIN` pointed
+  at `enjin.subscan.io`, which Subscan titles "Enjin Relay Block Details" — a
+  different network, the same failure as Celo Alfajores in 0.18.1. The
+  Matrixchain lives at `matrix.subscan.io`, watched rendering a height; the
+  Relay host now belongs to `ENJ`, the chain it was serving all along.
+- **A testnet named without a testnet word stayed on the fallback icon.**
+  `generate-chain-map.mjs` demoted "Canary Relaychain" (`ENJT` ← `ENJ`) to a
+  testnet AFTER the pass that lets testnets inherit their mainnet's icon, and
+  that pass skips mainnets — so ENJT wore `default.svg` next to an ENJ that
+  had one. The demotion runs first now.
+- **The explorer registry snapshot was re-fetched**, which is what resolved
+  peaq, Agung and Shiden from chainlist. Along the way Berachain's row moved
+  to Berascan alone (Beratrail is no longer listed), Bepolia gained a block
+  link on `testnet.berascan.com`, and Celestia picked up two chain-registry
+  home pages.
+
 ## [0.21.0]
 
 ### Added

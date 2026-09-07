@@ -17,6 +17,15 @@
     ],
     "mainnet": false
   },
+  "ACA": {
+    "name": "Acala",
+    "family": "evm",
+    "icon": "acala",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
   "AGR": {
     "name": "Agoric",
     "family": "cosmos",
@@ -241,6 +250,24 @@
     ],
     "mainnet": false
   },
+  "AVT": {
+    "name": "Aventus",
+    "family": "substrate",
+    "icon": "aventus",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "AVTT": {
+    "name": "Aventus Testnet",
+    "family": "substrate",
+    "icon": "aventus",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": false
+  },
   "AXELAR": {
     "name": "Axelar",
     "family": "cosmos",
@@ -393,6 +420,15 @@
     ],
     "mainnet": false
   },
+  "BNC": {
+    "name": "Bifrost Polkadot",
+    "family": "evm",
+    "icon": "bifrost",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
   "BOB": {
     "name": "BOB",
     "family": "evm",
@@ -428,6 +464,15 @@
       "jsonrpc"
     ],
     "mainnet": false
+  },
+  "BSX": {
+    "name": "Basilisk",
+    "family": "substrate",
+    "icon": "basilisk",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
   },
   "BTC": {
     "name": "Bitcoin",
@@ -731,6 +776,15 @@
     ],
     "mainnet": false
   },
+  "ENJ": {
+    "name": "Enjin Relaychain",
+    "family": "substrate",
+    "icon": "enjin",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
   "ENJIN": {
     "name": "Enjin Matrixchain",
     "family": "substrate",
@@ -742,6 +796,15 @@
   },
   "ENJINT": {
     "name": "Enjin Canary Matrixchain",
+    "family": "substrate",
+    "icon": "enjin",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": false
+  },
+  "ENJT": {
+    "name": "Canary Relaychain",
     "family": "substrate",
     "icon": "enjin",
     "interfaces": [
@@ -1279,6 +1342,24 @@
     ],
     "mainnet": false
   },
+  "LIT": {
+    "name": "Heima",
+    "family": "evm",
+    "icon": "heima",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "LITT": {
+    "name": "Heima Paseo Testnet",
+    "family": "evm",
+    "icon": "heima",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": false
+  },
   "LTC": {
     "name": "Litecoin",
     "family": "bitcoin",
@@ -1611,6 +1692,24 @@
     ],
     "mainnet": false
   },
+  "PEAQ": {
+    "name": "Peaq",
+    "family": "evm",
+    "icon": "peaq",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "PEAQT": {
+    "name": "Peaq Agung Testnet",
+    "family": "evm",
+    "icon": "peaq",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": false
+  },
   "PLASMA": {
     "name": "Plasma",
     "family": "evm",
@@ -1768,6 +1867,15 @@
       "jsonrpc"
     ],
     "mainnet": false
+  },
+  "SDN": {
+    "name": "Shiden",
+    "family": "evm",
+    "icon": "shiden",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
   },
   "SECRET": {
     "name": "Secret",
@@ -2108,6 +2216,15 @@
     ],
     "mainnet": false
   },
+  "TRAC": {
+    "name": "NeuroWeb",
+    "family": "evm",
+    "icon": "neuroweb",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
   "TRX": {
     "name": "Tron",
     "family": "tron",
@@ -2302,6 +2419,15 @@
       "jsonrpc"
     ],
     "mainnet": false
+  },
+  "XRT": {
+    "name": "Robonomics",
+    "family": "substrate",
+    "icon": "robonomics",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
   },
   "ZCASH": {
     "name": "Zcash",
