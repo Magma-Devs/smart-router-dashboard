@@ -353,6 +353,42 @@ value is the router's Service name (`<router-id-lowered>-router`).
   `withScope(url)`. A selection that disappears from the list resets to "All
   routers" instead of silently filtering every panel to nothing.
 
+#### The deployment scope
+
+`/api/config/routers` is per deployment by construction (it reads the mounted
+values file); the metrics routes are not — they read whatever the store holds.
+One dashboard per zone against a shared Prometheus therefore shows every
+zone's routers. `METRICS_SCOPE_LABEL` + `METRICS_SCOPE_VALUE` pin the
+deployment to one label value:
+
+- The pair becomes a base scope on the ONE `PrometheusClient` the plugin
+  builds (`plugins/prometheus.ts`), so every query carries it — `cache_*`
+  included (the deployment owns its cache, unlike a router), the
+  `count by (label)` behind `GET /api/metrics/routers` (the filter then lists
+  only this deployment's routers), and the raw `/query` passthrough. The
+  per-request `?router=` scope stacks on top: each selector ends up with both
+  matchers.
+- Same `applyScope` walker, run twice (`{ cache: true }` for the base pass).
+  Only the catalog + prefix families are reached, so a passthrough over some
+  foreign metric name stays unscoped — the label is not a query rewrite.
+- Half a pair, or a label/value that cannot sit in a matcher, **throws at
+  boot** (`readMetricsScope()` in `config.ts`). Ignoring it would read the
+  whole store under a scoped name — the exact failure the pair exists to
+  prevent. Unset = no matcher, byte-identical to before.
+- Failed Prometheus calls (non-2xx, unreachable, `status: "error"`) are
+  logged at warn by the client, one line per distinct failure per minute.
+  The result is still `[]` — the panels degrade as before — but a bad URL or
+  a 401 now shows in the api log instead of reading like a quiet router.
+- The readiness probe (`vector(1)`) has no selector and stays unscoped: a
+  scope that matches nothing is an empty dashboard, not a NotReady pod. What
+  catches the typo instead is a one-shot `onReady` probe —
+  `count(smartrouter_overall_health)` through the scoped client, a gauge
+  every running router exports whether or not it has traffic — that warns
+  when it counts zero. Advisory only: a zone still provisioning is also zero.
+- `METRICS_SCOPE_LABEL` equal to `ROUTER_SCOPE_LABEL` is refused at boot:
+  the router scope would put a second matcher on the same label — redundant
+  for the same value, an empty result for any other.
+
 ### Shared filters and the health vocabulary
 
 Two things every chain- or health-aware surface must go through, so the same
@@ -444,11 +480,12 @@ API (`apps/api/src/config.ts` is the source of truth):
 |---|---|---|
 | `API_PORT` | `8000` | |
 | `API_HOST` | `0.0.0.0` | |
-| `PROMETHEUS_URL` | `http://localhost:9090` | compose sets `http://prometheus:9090` |
+| `PROMETHEUS_URL` | `http://localhost:9090` | compose sets `http://prometheus:9090`. A path prefix (Mimir's `/prometheus`) and a query string are both kept on every call |
 | `PROMETHEUS_TIMEOUT_MS` | `10000` | per-query abort |
 | `PROMETHEUS_USERNAME` / `PROMETHEUS_PASSWORD` | unset | Basic auth on every Prometheus call — for a per-tenant read proxy or Mimir behind an auth gateway. Both or neither: one half alone sends no header |
 | `PROMETHEUS_ORG_ID` | unset | Sent as `X-Scope-OrgID`, for a multi-tenant store that takes the org from the client. The fleet's read proxy pins the org from the credential and ignores this |
 | `ROUTER_SCOPE_LABEL` | `service` | Target label carrying the router identity for `?router=` (Prometheus Operator's `service`; `job` for a per-router scrape config). Parsed at import — a change needs a restart |
+| `METRICS_SCOPE_LABEL` / `METRICS_SCOPE_VALUE` | unset | Deployment scope: a `label="value"` matcher EVERY metrics query carries (`cache_*`, router discovery and the `/query` passthrough included), for one dashboard per zone / tenant against a shared store. Both or neither — half a pair, a value that cannot sit in a matcher, or a label equal to `ROUTER_SCOPE_LABEL` refuses the boot. A scope that selects no router series warns at boot. Unset = the whole store, as before. See "The deployment scope" |
 | `CORS_ORIGINS` | all | comma list or JSON array |
 | `RATE_LIMIT_MAX` | `300` | per IP per minute |
 | `HELM_VALUES_DIR` | `/app/helm-values` | reads `<dir>/core/values.yml` (either format) |

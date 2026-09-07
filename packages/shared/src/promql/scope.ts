@@ -24,12 +24,25 @@ import {
   ROUTER_METRICS,
 } from "../constants/metrics.js";
 
-/** Which router a query is restricted to, as a Prometheus label matcher. */
+/** A Prometheus label matcher every scoped selector in a query gains. */
 export interface MetricScope {
-  /** Target label carrying the router identity (`service` by default). */
+  /** Label name — the router target label (`service` by default), or the
+   *  deployment label (`zone`, say) from `METRICS_SCOPE_LABEL`. */
   label: string;
-  /** That label's value — a Service name like `ethereum-router`. */
+  /** That label's value — a Service name like `ethereum-router`, or the
+   *  deployment's value of the label. */
   value: string;
+}
+
+/** Which metric families a scope reaches. */
+export interface ScopeOptions {
+  /**
+   * Also scope the `cache_*` families. Off for the per-router scope (the cache
+   * sidecar carries no router's label — see `SCOPED_METRIC_NAMES`); on for the
+   * deployment scope, whose label the collector attaches to every target the
+   * deployment owns, the cache included.
+   */
+  cache?: boolean;
 }
 
 /**
@@ -53,7 +66,8 @@ const SCOPED_METRIC_NAMES: ReadonlySet<string> = new Set(
 
 const SCOPED_PREFIXES = ["smartrouter_", "rpc_endpoint_", "rpc_optimizer_"] as const;
 
-function isScopedMetric(name: string): boolean {
+function isScopedMetric(name: string, opts: ScopeOptions): boolean {
+  if (opts.cache && name.startsWith("cache_")) return true;
   return SCOPED_METRIC_NAMES.has(name) || SCOPED_PREFIXES.some((p) => name.startsWith(p));
 }
 
@@ -91,8 +105,12 @@ export function isValidScope(scope: MetricScope | null | undefined): scope is Me
  *
  * Returns `expr` untouched when the scope is absent or malformed — a bad
  * scope must never silently become a different query.
+ *
+ * Applying a second scope to the output stacks the matchers: each selector
+ * then carries both, which is how the per-request router scope rides on top
+ * of a deployment scope.
  */
-export function applyScope(expr: string, scope?: MetricScope | null): string {
+export function applyScope(expr: string, scope?: MetricScope | null, opts: ScopeOptions = {}): string {
   if (!isValidScope(scope)) return expr;
   const matcher = `${scope.label}="${scope.value}"`;
 
@@ -130,23 +148,32 @@ export function applyScope(expr: string, scope?: MetricScope | null): string {
       out += name;
       i = j;
 
-      if (isScopedMetric(name)) {
-        let k = i;
-        while (k < expr.length && expr[k] === " ") k++;
-        if (expr[k] === "{") {
+      let k = i;
+      while (k < expr.length && expr[k] === " ") k++;
+      const braced = expr[k] === "{";
+
+      if (isScopedMetric(name, opts)) {
+        if (braced) {
           // Merge into the selector the builder already emitted.
           out += expr.slice(i, k + 1) + matcher + (nextIsBraceClose(expr, k + 1) ? "" : ",");
           i = k + 1;
         } else {
           out += `{${matcher}}`;
         }
+      } else if (braced) {
+        // An unscoped metric's own selector (`cache_total_hits{zone="a"}`
+        // under a router scope, say) — consume the `{` so the bare-brace
+        // branch below cannot mistake it for a nameless selector.
+        out += expr.slice(i, k + 1);
+        i = k + 1;
       }
       continue;
     }
 
     // A selector with no metric name in front — `{__name__="…"}`. Every other
     // PromQL construct groups with parens, so any `{` reaching here starts one
-    // (a metric's own `{` is consumed by the identifier branch above).
+    // (a metric's own `{` is consumed by the identifier branch above, scoped
+    // or not).
     if (ch === "{") {
       out += "{";
       i++;

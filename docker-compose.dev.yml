@@ -214,6 +214,9 @@ services:
       - NODE_ENV=development
       - API_PORT=8000
       - PROMETHEUS_URL=http://prometheus:9090
+      # Deployment scope (see .env.example). Empty = unset = the whole store.
+      - METRICS_SCOPE_LABEL=${METRICS_SCOPE_LABEL:-}
+      - METRICS_SCOPE_VALUE=${METRICS_SCOPE_VALUE:-}
       - HELM_VALUES_DIR=/app/helm-values
       - CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
       # Auth (see docs/AUTH.md): disabled (default) needs none of the rest.

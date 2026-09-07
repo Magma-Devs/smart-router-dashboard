@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { buildApp } from "../app.js";
+import { readMetricsScope } from "../config.js";
 
 /**
  * `?router=` scoping. The router labels its series with the CHAIN, so two
@@ -13,8 +14,12 @@ import { buildApp } from "../app.js";
 let app: FastifyInstance | null = null;
 let sent: string[] = [];
 
-/** Records every query and answers with an empty (but valid) result set. */
-function mockPrometheus(routerLabelValues: string[] = []): void {
+/**
+ * Records every query and answers with an empty (but valid) result set.
+ * `present` names optional families whose presence probe answers 1, so the
+ * reads behind them are issued.
+ */
+function mockPrometheus(routerLabelValues: string[] = [], present: string[] = [], routersInScope = 1): void {
   sent = [];
   vi.stubGlobal("fetch", async (input: URL | string) => {
     const url = typeof input === "string" ? input : input.toString();
@@ -22,11 +27,20 @@ function mockPrometheus(routerLabelValues: string[] = []): void {
     const query = new URL(url).searchParams.get("query") ?? "";
     sent.push(query);
 
+    // The deployment-scope sanity probe at boot.
+    if (/^count\(smartrouter_overall_health\{/.test(query)) {
+      const result = routersInScope > 0 ? [{ metric: {}, value: [1, String(routersInScope)] }] : [];
+      return Response.json({ status: "success", data: { resultType: "vector", result } });
+    }
+
     // The scope-discovery aggregation is the only one that needs real rows.
     const scopeMatch = /^count by \((\w+)\) \(smartrouter_requests_total/.exec(query);
+    const probed = /^count\(\{(?:[^}]*,)?__name__="([^"]+)"\}\)$/.exec(query)?.[1];
     const result = scopeMatch
       ? routerLabelValues.map((v) => ({ metric: { [scopeMatch[1]!]: v }, value: [1, "1"] }))
-      : [];
+      : probed && present.includes(probed)
+        ? [{ metric: {}, value: [1, "1"] }]
+        : [];
 
     return new Response(JSON.stringify({ status: "success", data: { resultType: "vector", result } }), {
       status: 200,
@@ -171,5 +185,188 @@ describe("ROUTER_SCOPE_LABEL", () => {
       else process.env.ROUTER_SCOPE_LABEL = saved;
       vi.resetModules();
     }
+  });
+});
+
+describe("readMetricsScope", () => {
+  it("is null when neither half is set — no matcher, the whole store", () => {
+    expect(readMetricsScope({})).toBeNull();
+    expect(readMetricsScope({ METRICS_SCOPE_LABEL: "", METRICS_SCOPE_VALUE: "" })).toBeNull();
+  });
+
+  it("returns the pair", () => {
+    expect(readMetricsScope({ METRICS_SCOPE_LABEL: "zone", METRICS_SCOPE_VALUE: "eu-west" })).toEqual({
+      label: "zone",
+      value: "eu-west",
+    });
+  });
+
+  it("refuses half a pair — a scoped name over an unscoped read is the bug this prevents", () => {
+    expect(() => readMetricsScope({ METRICS_SCOPE_LABEL: "zone" })).toThrow(/set together/);
+    expect(() => readMetricsScope({ METRICS_SCOPE_VALUE: "eu-west" })).toThrow(/set together/);
+  });
+
+  it("refuses a label or value that cannot be a matcher", () => {
+    expect(() => readMetricsScope({ METRICS_SCOPE_LABEL: "app.kubernetes.io/zone", METRICS_SCOPE_VALUE: "a" })).toThrow(
+      /not a Prometheus label name/,
+    );
+    expect(() => readMetricsScope({ METRICS_SCOPE_LABEL: "zone", METRICS_SCOPE_VALUE: 'a" or b="c' })).toThrow(
+      /cannot be embedded/,
+    );
+  });
+});
+
+describe("METRICS_SCOPE_LABEL / METRICS_SCOPE_VALUE (deployment scope)", () => {
+  const saved: Record<string, string | undefined> = {};
+
+  function setScope(label: string | undefined, value: string | undefined): void {
+    saved.METRICS_SCOPE_LABEL = process.env.METRICS_SCOPE_LABEL;
+    saved.METRICS_SCOPE_VALUE = process.env.METRICS_SCOPE_VALUE;
+    if (label === undefined) delete process.env.METRICS_SCOPE_LABEL;
+    else process.env.METRICS_SCOPE_LABEL = label;
+    if (value === undefined) delete process.env.METRICS_SCOPE_VALUE;
+    else process.env.METRICS_SCOPE_VALUE = value;
+  }
+
+  afterEach(() => {
+    for (const k of ["METRICS_SCOPE_LABEL", "METRICS_SCOPE_VALUE"]) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+  });
+
+  const ROUTES = [
+    "/api/metrics/overview",
+    "/api/metrics/dashboard",
+    "/api/metrics/chains",
+    "/api/metrics/upstreams",
+    "/api/metrics/errors",
+    "/api/metrics/specs",
+    "/api/metrics/chain-series?spec=ETH1",
+  ];
+
+  it.each(ROUTES)("puts the deployment matcher on every metric selector of %s", async (route) => {
+    setScope("zone", "eu-west");
+    app = await buildApp();
+
+    const res = await app.inject({ method: "GET", url: route });
+    expect(res.statusCode).toBe(200);
+
+    const queries = metricQueries();
+    expect(queries.length).toBeGreaterThan(0);
+    expect(queries.filter((q) => !q.includes('zone="eu-west"'))).toEqual([]);
+  });
+
+  it("reaches the cache sidecar's families too — the deployment owns the cache", async () => {
+    mockPrometheus([], ["cache_total_hits"]);
+    setScope("zone", "eu-west");
+    app = await buildApp();
+
+    // The hero cards read the cache hit rate once its presence probe answers.
+    expect((await app.inject({ method: "GET", url: "/api/metrics/dashboard-summary" })).statusCode).toBe(200);
+    const cacheReads = sent.filter((q) => q.includes("cache_total_hits") && !q.includes("__name__"));
+    expect(cacheReads.length).toBeGreaterThan(0);
+    for (const q of cacheReads) {
+      expect(q).not.toMatch(/cache_total_(?:hits|misses)(?!\{zone="eu-west")/);
+    }
+  });
+
+  it("narrows router discovery, so the filter lists only this deployment's routers", async () => {
+    setScope("zone", "eu-west");
+    app = await buildApp();
+
+    expect((await app.inject({ method: "GET", url: "/api/metrics/routers" })).statusCode).toBe(200);
+    expect(sent).toContain('count by (service) (smartrouter_requests_total{zone="eu-west"})');
+  });
+
+  it("stacks the per-request router scope on top", async () => {
+    setScope("zone", "eu-west");
+    app = await buildApp();
+
+    const res = await app.inject({ method: "GET", url: "/api/metrics/chains?router=eth-router" });
+    expect(res.statusCode).toBe(200);
+
+    // The boot probe runs on the base client (deployment scope only) — it is
+    // not a request and carries no router.
+    const queries = metricQueries().filter((q) => !q.startsWith("count(smartrouter_overall_health{"));
+    expect(queries.length).toBeGreaterThan(0);
+    expect(queries.filter((q) => !q.includes('service="eth-router"') || !q.includes('zone="eu-west"'))).toEqual([]);
+  });
+
+  it("scopes the raw PromQL passthrough", async () => {
+    setScope("zone", "eu-west");
+    app = await buildApp();
+
+    const res = await app.inject({ method: "GET", url: "/api/metrics/query?query=smartrouter_overall_health" });
+    expect(res.statusCode).toBe(200);
+    expect(sent).toContain('smartrouter_overall_health{zone="eu-west"}');
+  });
+
+  it("leaves the readiness probe unscoped", async () => {
+    setScope("zone", "eu-west");
+    app = await buildApp();
+
+    expect((await app.inject({ method: "GET", url: "/health/ready" })).statusCode).toBe(200);
+    expect(sent).toContain("vector(1)");
+    expect(sent.filter((q) => q.startsWith("vector(1)") && q.includes("zone="))).toEqual([]);
+  });
+
+  it("probes the scope once at boot and warns when it selects no router", async () => {
+    mockPrometheus([], [], 0);
+    setScope("zone", "eu-wesst");
+    app = await buildApp();
+    const warned: string[] = [];
+    app.log.warn = ((...args: unknown[]) => {
+      warned.push(String(args[args.length - 1]));
+    }) as typeof app.log.warn;
+
+    await app.ready();
+    expect(sent).toEqual(['count(smartrouter_overall_health{zone="eu-wesst"})']);
+    expect(warned.filter((m) => m.includes("matches no router series"))).toHaveLength(1);
+    // Advisory: the pod is still ready.
+    expect((await app.inject({ method: "GET", url: "/health/ready" })).statusCode).toBe(200);
+  });
+
+  it("stays quiet at boot when the scope selects routers", async () => {
+    mockPrometheus([], [], 3);
+    setScope("zone", "eu-west");
+    app = await buildApp();
+    const warned: string[] = [];
+    app.log.warn = ((...args: unknown[]) => {
+      warned.push(String(args[args.length - 1]));
+    }) as typeof app.log.warn;
+
+    await app.ready();
+    expect(warned).toEqual([]);
+  });
+
+  it("does not probe at all without a scope", async () => {
+    setScope(undefined, undefined);
+    app = await buildApp();
+    await app.ready();
+    expect(sent).toEqual([]);
+  });
+
+  it("refuses to boot when the deployment label is the router-scope label", async () => {
+    setScope("service", "eth-router");
+    await expect(buildApp()).rejects.toThrow(/both "service"/);
+  });
+
+  it("sends nothing extra when unset — today's behaviour", async () => {
+    setScope(undefined, undefined);
+    app = await buildApp();
+
+    expect((await app.inject({ method: "GET", url: "/api/metrics/chains" })).statusCode).toBe(200);
+    expect(sent.filter((q) => q.includes("zone="))).toEqual([]);
+  });
+
+  it("refuses to boot on half a pair — never a scoped name over an unscoped read", async () => {
+    setScope("zone", undefined);
+    await expect(buildApp()).rejects.toThrow(/set together/);
+  });
+
+  it("refuses to boot on a value that could break out of the matcher", async () => {
+    setScope("zone", 'x" or spec="ETH1');
+    await expect(buildApp()).rejects.toThrow(/cannot be embedded/);
   });
 });

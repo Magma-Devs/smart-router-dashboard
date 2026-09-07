@@ -89,6 +89,40 @@ describe("applyScope", () => {
     );
   });
 
+  it("reaches the cache families only when asked — the deployment scope's case", () => {
+    // A deployment label (`zone`) is on every target the deployment owns,
+    // the cache sidecar included; a router label is not.
+    const ZONE: MetricScope = { label: "zone", value: "eu-west" };
+    expect(applyScope("increase(cache_total_hits[300s])", ZONE, { cache: true })).toBe(
+      'increase(cache_total_hits{zone="eu-west"}[300s])',
+    );
+    expect(applyScope("increase(cache_total_hits[300s])", ZONE, { cache: false })).toBe(
+      "increase(cache_total_hits[300s])",
+    );
+  });
+
+  it("leaves an unscoped metric's own selector alone", () => {
+    // The `{` after a metric the scope skips is that metric's selector, not
+    // a nameless `{__name__=…}` one — the trap a stacked scope walks into.
+    expect(applyScope('increase(cache_total_hits{zone="a"}[300s])', SCOPE)).toBe(
+      'increase(cache_total_hits{zone="a"}[300s])',
+    );
+    expect(applyScope('up{job="x"}', SCOPE)).toBe('up{job="x"}');
+  });
+
+  it("stacks: a second scope over the first's output puts both on every selector", () => {
+    const ZONE: MetricScope = { label: "zone", value: "eu-west" };
+    const once = applyScope('sum(smartrouter_requests_total{spec="ETH1"}) - sum(smartrouter_requests_success_total)', ZONE, {
+      cache: true,
+    });
+    expect(applyScope(once, SCOPE)).toBe(
+      `sum(smartrouter_requests_total{${M},zone="eu-west",spec="ETH1"}) - sum(smartrouter_requests_success_total{${M},zone="eu-west"})`,
+    );
+    expect(applyScope(applyScope('count({__name__="smartrouter_retries_total"})', ZONE), SCOPE)).toBe(
+      `count({${M},zone="eu-west",__name__="smartrouter_retries_total"})`,
+    );
+  });
+
   it("covers metric families not in the catalog via the prefix rule", () => {
     expect(applyScope("smartrouter_some_future_total", SCOPE)).toBe(
       `smartrouter_some_future_total{${M}}`,

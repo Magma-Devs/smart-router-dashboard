@@ -5,6 +5,48 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Added
+
+- **A deployment can pin every metrics query to one label value** —
+  `METRICS_SCOPE_LABEL` + `METRICS_SCOPE_VALUE`. One dashboard per zone
+  against a shared Prometheus showed every zone's routers: the config route
+  reads the mounted values file and is per deployment by construction, but
+  the metrics routes queried the store with no matcher of their own, so a
+  zone with 2 routers rendered another zone's 15. The pair is a base scope on
+  the one client every service derives from, so it reaches every query —
+  `cache_*` (the deployment owns its cache, unlike a router), the router
+  discovery behind the "All routers" filter (which now lists only this
+  deployment's routers), and the raw `/api/metrics/query` passthrough — and
+  the per-request `?router=` scope stacks on top of it. Half a pair, or a
+  value that cannot sit in a label matcher, refuses to boot rather than
+  reading the whole store under a scoped name. Unset is byte-identical to
+  before. The api refuses to boot when the pair collides with
+  `ROUTER_SCOPE_LABEL` (two matchers on one label is never what anyone
+  configured), and warns at boot when the scope selects no router series
+  (a value one typo off is otherwise every panel empty with no error
+  anywhere).
+- **A query string on `PROMETHEUS_URL` now reaches every call.** The client
+  resolves each api path against the base URL, which drops the base's query
+  string — so a proxy that takes its tenant or filter from the URL silently
+  lost it. The base's parameters are carried over on every request. (This
+  is not a way to scope by label: Prometheus ignores unknown parameters —
+  use `METRICS_SCOPE_*` for that.)
+- **Failed Prometheus calls are logged.** The client folds a non-2xx, an
+  unreachable store and a `status: "error"` envelope into an empty result,
+  which the panels degrade on — correct for "no data", but a bad URL or a 401
+  read exactly like a quiet router. Each distinct failure now warns once a
+  minute in the api log, with the status, the response body and the query.
+
+### Fixed
+
+- **The scope walker treated any metric-with-labels it did not scope as a
+  nameless selector.** `cache_total_hits{zone="a"}` under a router scope
+  became `cache_total_hits{service="…",zone="a"}` — the `{` after a skipped
+  metric fell through to the `{__name__="…"}` branch. Unreachable from the
+  builders before (none emits a labelled `cache_*` selector), reachable
+  through the passthrough, and hit on every query once a deployment scope
+  runs first.
+
 ## [0.20.3]
 
 ### Fixed
