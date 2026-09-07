@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.22.0]
+
 ### Added
 
 - **Chain resync — fourteen Substrate chains arrived upstream.** lava-specs
