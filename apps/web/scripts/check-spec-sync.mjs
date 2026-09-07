@@ -16,9 +16,11 @@
  * the one that catches a subtler regression: a new chain whose methods all need
  * caller input, so the Try-it drawer has no working default to open on.
  *
- * The fix is always regenerate + commit; `.claude/rules/chain-resync.md` has
- * the full procedure, including what to do about a chain with no runnable
- * defaults and what to do about one with no explorer.
+ * The fix is always regenerate + commit; `.claude/skills/chain-resync/SKILL.md`
+ * maps every line this script can print to the exact steps, and
+ * `.claude/rules/chain-resync.md` carries the reasoning behind them,
+ * including what to do about a chain with no runnable defaults and what to
+ * do about one with no explorer.
  *
  * The explorer catalog reads a COMMITTED registry snapshot rather than the
  * live ethereum-lists/cosmos registries, so this check stays a lava-specs
@@ -37,6 +39,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { fetchSpecsToDir } from "./lib/lava-specs.mjs";
+import { loadSpecIndex, summarizeMethodDrift } from "./lib/drift-summary.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const WEB = path.resolve(__dirname, "..");
@@ -93,18 +96,20 @@ const ARTIFACTS = [
     outEnv: "TRY_ME_OUT",
     committed: path.join(WEB, "src/components/try-me/chain-methods.generated.json"),
     fix: "LAVA_SPECS_DIR=<clone> node apps/web/scripts/generate-try-me-catalog.mjs",
-    summarize: (before, after) => {
+    // The catalog holds each spec's RESOLVED surface (imports merged), so a
+    // base-spec change moves every importer at once. The summary says what
+    // each spec gained or lost and which imported base they have in common,
+    // so "43 specs changed" reads as "ethereum.json changed" — a regenerate
+    // and commit, not 43 chains to look at.
+    summarize: (before, after, specIndex) => {
       const a = JSON.parse(before);
       const b = JSON.parse(after);
       const added = Object.keys(b).filter((k) => !(k in a));
       const removed = Object.keys(a).filter((k) => !(k in b));
-      const changed = Object.keys(b).filter(
-        (k) => k in a && JSON.stringify(a[k]) !== JSON.stringify(b[k]),
-      );
       return [
         added.length ? `  new specs (${added.length}): ${added.join(", ")}` : "",
         removed.length ? `  removed (${removed.length}): ${removed.join(", ")}` : "",
-        changed.length ? `  methods changed (${changed.length}): ${changed.slice(0, 20).join(", ")}${changed.length > 20 ? " …" : ""}` : "",
+        ...summarizeMethodDrift(a, b, specIndex),
       ].filter(Boolean);
     },
   },
@@ -164,13 +169,13 @@ try {
     specsDir = process.env.LAVA_SPECS_DIR ?? (await fetchSpecsToDir());
   } catch (err) {
     // Fetch failed (rate limit, network). Don't block the merge.
-    console.log(`::warning title=spec drift check skipped::could not reach lava-specs — ${err.message}`);
+    console.log(
+      `::warning title=spec drift check skipped::could not reach lava-specs — ${err.message}`,
+    );
     process.exit(0);
   }
 
-  const fresh = Object.fromEntries(
-    ARTIFACTS.map((a) => [a.label, path.join(tmp, a.label)]),
-  );
+  const fresh = Object.fromEntries(ARTIFACTS.map((a) => [a.label, path.join(tmp, a.label)]));
   const env = {
     ...process.env,
     LAVA_SPECS_DIR: specsDir,
@@ -187,9 +192,20 @@ try {
     try {
       execFileSync("node", [artifact.script], { stdio: ["ignore", "ignore", "inherit"], env });
     } catch (err) {
-      console.log(`::warning title=spec drift check skipped::${artifact.label} could not be regenerated — ${err.message}`);
+      console.log(
+        `::warning title=spec drift check skipped::${artifact.label} could not be regenerated — ${err.message}`,
+      );
       process.exit(0);
     }
+  }
+
+  // For attribution only — a failure to read the dir must not turn a real
+  // drift into a crash, so the index degrades to "no attribution".
+  let specIndex = null;
+  try {
+    specIndex = loadSpecIndex(specsDir);
+  } catch {
+    specIndex = null;
   }
 
   const stale = [];
@@ -208,7 +224,7 @@ try {
   console.error("\n✗ committed spec artifacts are OUT OF SYNC with lava-specs\n");
   for (const { artifact, committed, regenerated } of stale) {
     console.error(`${artifact.label}:`);
-    for (const line of artifact.summarize(committed, regenerated)) console.error(line);
+    for (const line of artifact.summarize(committed, regenerated, specIndex)) console.error(line);
     console.error("");
   }
   console.error(
@@ -217,7 +233,8 @@ try {
       "       LAVA_SPECS_DIR=<clone> node apps/web/scripts/generate-chain-explorers.mjs\n" +
       "       LAVA_SPECS_DIR=<clone> node apps/web/scripts/generate-try-me-catalog.mjs\n" +
       "       and commit the regenerated files.\n" +
-      "       Procedure and what to check afterwards: .claude/rules/chain-resync.md",
+      "       Step-by-step, keyed on the lines above: .claude/skills/chain-resync/SKILL.md\n" +
+      "       (or `/chain-resync` in Claude Code). Reasoning: .claude/rules/chain-resync.md",
   );
   console.error("::error title=spec drift::lava-specs changed; regenerate the committed catalogs");
   process.exit(1);

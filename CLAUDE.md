@@ -216,10 +216,12 @@ result, never hand-editing.
 
 The part that needs judgement is what happens after: the Try-it drawer opens
 only on commands that can be sent AS-IS, so a chain family nobody has curated
-hints for arrives with an empty default list. **Read
-[`.claude/rules/chain-resync.md`](.claude/rules/chain-resync.md) before doing a
-resync** — it covers the procedure, when hints are needed, and the rule that a
-curated example must be fired against a real endpoint before it ships.
+hints for arrives with an empty default list. **When the drift gate is red, run
+[`/chain-resync`](.claude/skills/chain-resync/SKILL.md)** — the skill maps every
+line the gate prints to the exact steps (regenerate, icons, explorers, roll-calls,
+release, PR). [`.claude/rules/chain-resync.md`](.claude/rules/chain-resync.md) is
+the reasoning behind them: when hints are needed, and the rule that a curated
+example must be fired against a real endpoint before it ships.
 
 ## Config passing (values file — BOTH formats)
 

@@ -5,6 +5,29 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Added
+
+- **The drift gate says why the method catalog moved.** `check-spec-sync`
+  compares each spec's resolved surface — imports merged transitively — so a
+  change to a base spec moves every importer at once, and the old output
+  listed the importers: `methods changed (43): 0G, ALFAJORES, ARBITRUM, …`,
+  leaving the reader to work out that `ethereum.json` changed. Each changed
+  spec now prints what it gained, lost and altered (`ARBITRUM +1 -0 ~0`), and
+  the summary names the base every changed spec is or imports — "one
+  base-spec change, not 43 unrelated ones" — or says the specs changed on
+  their own. Attribution reads `imports` from the fetched specs and degrades
+  to counts alone if that read fails, so it can never turn a drift into a
+  crash. Verified the two shapes that motivated it: a method added to `ETH1`
+  flags 43 importers under one cause, and a spec that swaps an import for the
+  equivalent explicit method list stays green, because nothing it resolves to
+  changed.
+- **`/chain-resync` — the runbook for a red gate.** A repo skill keyed on the
+  lines the gate prints: new chains (icons, explorers watched in a browser,
+  runnable defaults), a base-spec change (regenerate and commit), a removed
+  chain, a renamed one, explorer and roll-call moves, then release, PR and the
+  docs-site follow-up. The gate's footer points at it; the existing rule stays
+  as the reasoning behind each step.
+
 ## [0.22.0]
 
 ### Added

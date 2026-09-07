@@ -1,5 +1,10 @@
 # Chain resync (lava-specs → committed catalogs)
 
+> **Gate red? Start with the runbook:** [`.claude/skills/chain-resync/SKILL.md`](../skills/chain-resync/SKILL.md)
+> (`/chain-resync` in Claude Code) maps every line `check-spec-sync.mjs` prints to
+> the exact steps. This rule is the reasoning behind those steps — read it when a
+> step asks for judgement.
+
 Five committed files are **generated from lava-specs**. Never hand-edit them:
 
 | File | Generator | What it drives |
