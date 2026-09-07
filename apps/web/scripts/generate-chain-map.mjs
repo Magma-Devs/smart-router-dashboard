@@ -389,7 +389,21 @@ for (const indices of byBase.values()) {
   }
 }
 
-// Third pass: a testnet that is *branded* differently from its mainnet still
+// Third pass: an index that is its mainnet's index plus a trailing "T" is a
+// testnet even when neither the name nor the index says so — Enjin's "Canary
+// Matrixchain" (ENJINT ← ENJIN) is the case that needs it. Same index pairing
+// the icon pass below uses, and it only ever flips true → false. It runs
+// BEFORE that pass because the pass skips mainnets: "Canary Relaychain"
+// (ENJT ← ENJ) carries no testnet word, so with the order reversed it was
+// still a mainnet when icons were inherited and stayed on default.svg.
+let demoted = 0;
+for (const [index, e] of Object.entries(out)) {
+  if (!e.mainnet || !index.endsWith("T") || !out[index.slice(0, -1)]) continue;
+  e.mainnet = false;
+  demoted += 1;
+}
+
+// Fourth pass: a testnet that is *branded* differently from its mainnet still
 // belongs to it — Astar's testnet is "Shibuya", Polkadot's is "Westend",
 // Berachain's is "Bepolia" — so grouping by name can't pair them. The spec
 // index does: a testnet index is its mainnet's index plus a suffix ("T" for
@@ -415,17 +429,6 @@ for (const [index, e] of Object.entries(out)) {
     defaultIcon -= 1;
     break;
   }
-}
-
-// Fourth pass: an index that is its mainnet's index plus a trailing "T" is a
-// testnet even when neither the name nor the index says so — Enjin's "Canary
-// Matrixchain" (ENJINT ← ENJIN) is the case that needs it. Same index pairing
-// the icon pass above uses, and it only ever flips true → false.
-let demoted = 0;
-for (const [index, e] of Object.entries(out)) {
-  if (!e.mainnet || !index.endsWith("T") || !out[index.slice(0, -1)]) continue;
-  e.mainnet = false;
-  demoted += 1;
 }
 
 // Deterministic key order for a diff-clean file.

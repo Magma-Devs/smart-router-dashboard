@@ -73,6 +73,26 @@ it "Arbitrum Nova Testnet" until
 map may still classify it as a testnet until that lands and the catalog is
 regenerated.
 
+Nine Substrate chains arrived in the 0.22.0 resync. `acala`, `peaq` and
+`shiden` are web3icons' `networks/mono` glyphs; `aventus` (AVT), `basilisk`
+(BSX), `heima` (LIT — Litentry's token, the chain rebranded in 2025),
+`neuroweb` (TRAC — OriginTrail's token, NeuroWeb is its parachain) and
+`robonomics` (XRT) come from `tokens/mono/` because the network has no entry.
+Circle colours are each icon's own `background` backdrop: `#764BC4` (Shiden),
+`#1D2733` (Aventus), `#03A2E5` (Robonomics), black (Basilisk), white (peaq —
+the same white-circle case as `hydration`). Where the backdrop is a gradient
+the circle takes one of its stops: `#E40C5B` for Acala (the mid stop of its
+blue→pink→coral), `#00C967` for Heima and `#30C7B4` for NeuroWeb (the dark end
+of each). Heima, NeuroWeb and peaq are light enough that the glyph is `#111`.
+Basilisk keeps the glyph in its own `#4EFFAF` on the black backdrop, the way
+`canton` keeps its lime.
+
+`bifrost` is not in web3icons at all. It is the parallelogram from
+[polkadot-js/apps](https://github.com/polkadot-js/apps)' `ui/logos/nodes/bifrost.svg`
+(Apache-2.0), scaled 0.24 from its 100-unit grid, on that logo's own black
+circle. The source draws the glyph as a six-stop gradient, so per the rule
+above it takes one stop — `#68CEFA`, the blue at 0.2.
+
 ## One icon per chain, not per network
 
 A testnet index inherits its mainnet's icon (by base name, then index prefix),

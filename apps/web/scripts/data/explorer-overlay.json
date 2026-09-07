@@ -1,4 +1,15 @@
 {
+  "ACA": {
+    "explorers": [
+      {
+        "name": "Blockscout",
+        "url": "https://blockscout.acala.network",
+        "kind": "block",
+        "verified": "browser 2026-09-08 — block page watched rendering the requested height (\"Block 1000 - Acala Chain Explorer\"; /block/<n> redirects to /block/<n>/transactions on the same page)",
+        "source": "curated — acala.subscan.io, the Subscan deployment Acala's docs name, answers 404 on every path as of 2026-09-08; Acala's own Blockscout counts the same heights, since EVM+ is a pallet on the one chain"
+      }
+    ]
+  },
   "AGR": {
     "explorers": [
       {
@@ -131,6 +142,34 @@
       }
     ]
   },
+  "AVT": {
+    "explorers": [
+      {
+        "name": "Aventus Explorer",
+        "url": "https://explorer.mainnet.aventus.io",
+        "kind": "custom",
+        "tpl": {
+          "block": "https://explorer.mainnet.aventus.io/aventus/block/{block}"
+        },
+        "verified": "browser 2026-09-08 — block page watched rendering the requested height (\"Block #1000\", Block height 1000)",
+        "source": "curated — the project's own explorer; its router namespaces every path under a network slug"
+      }
+    ]
+  },
+  "AVTT": {
+    "explorers": [
+      {
+        "name": "Aventus Explorer",
+        "url": "https://explorer.testnet.aventus.io",
+        "kind": "custom",
+        "tpl": {
+          "block": "https://explorer.testnet.aventus.io/aventus/block/{block}"
+        },
+        "verified": "browser 2026-09-08 — block page watched rendering the requested height (\"Block #1000\", Block height 1000)",
+        "source": "curated — the project's own explorer, the same software as mainnet on the testnet host; the network slug in the path is still `aventus`"
+      }
+    ]
+  },
   "BABYLONT": {
     "none": "not in cosmos/chain-registry and no public explorer verified"
   },
@@ -167,6 +206,20 @@
   },
   "BITTENSORT": {
     "none": "no public explorer verified for this testnet"
+  },
+  "BNC": {
+    "explorers": [
+      {
+        "name": "Subscan",
+        "url": "https://bifrost.subscan.io",
+        "kind": "block",
+        "verified": "browser 2026-09-08 — block page watched rendering the requested height",
+        "source": "curated — Subscan runs one deployment per network on a shared codebase"
+      }
+    ]
+  },
+  "BSX": {
+    "none": "no public explorer left for Basilisk as of 2026-09-08 — basilisk.subscan.io (the deployment polkadot.js apps still links to) answers 404 on every path, explorer.bsx.fi does not resolve, and the only page that renders a height is polkadot.js apps pointed at a third-party RPC (rpc.basilisk.cloud), which is an RPC client rather than an explorer"
   },
   "BTC": {
     "explorers": [
@@ -348,14 +401,25 @@
   "ELYS": {
     "none": "not in cosmos/chain-registry and no public explorer verified"
   },
-  "ENJIN": {
+  "ENJ": {
     "explorers": [
       {
         "name": "Subscan",
         "url": "https://enjin.subscan.io",
         "kind": "block",
-        "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
+        "verified": "browser 2026-09-08 — block page watched rendering the requested height, titled \"Enjin Relay Block Details\"",
         "source": "curated — Subscan runs one deployment per network on a shared codebase"
+      }
+    ]
+  },
+  "ENJIN": {
+    "explorers": [
+      {
+        "name": "Subscan",
+        "url": "https://matrix.subscan.io",
+        "kind": "block",
+        "verified": "browser 2026-09-08 — block page watched rendering the requested height, titled \"Enjin Matrix Block Details\"",
+        "source": "curated — Subscan runs one deployment per network on a shared codebase. enjin.subscan.io, which this entry used to name, is the RELAY chain's deployment (\"Enjin Relay Block Details\") — that host now belongs to ENJ"
       }
     ]
   },
@@ -366,6 +430,17 @@
         "url": "https://canary-matrix.subscan.io",
         "kind": "block",
         "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
+        "source": "curated — Subscan runs one deployment per network on a shared codebase"
+      }
+    ]
+  },
+  "ENJT": {
+    "explorers": [
+      {
+        "name": "Subscan",
+        "url": "https://canary.subscan.io",
+        "kind": "block",
+        "verified": "browser 2026-09-08 — block page watched rendering the requested height, titled \"Canary Relay Block Details\"",
         "source": "curated — Subscan runs one deployment per network on a shared codebase"
       }
     ]
@@ -646,6 +721,23 @@
       }
     ]
   },
+  "LIT": {
+    "explorers": [
+      {
+        "name": "Statescan",
+        "url": "https://heima.statescan.io",
+        "kind": "custom",
+        "tpl": {
+          "block": "https://heima.statescan.io/#/blocks/{block}"
+        },
+        "verified": "browser 2026-09-08 — block page watched rendering the requested height (\"Block #1,000\")",
+        "source": "curated — Statescan is the explorer Heima's app links to; heima.subscan.io and litentry.subscan.io both answer 404 as of 2026-09-08. Client-side routing behind /#/blocks/, which no shared kind spells"
+      }
+    ]
+  },
+  "LITT": {
+    "none": "no public explorer found for Heima's Paseo testnet — Statescan has no paseo deployment (heima-paseo / litentry-paseo do not resolve) and Subscan answers 404 for every Heima host, as of 2026-09-08"
+  },
   "LTC": {
     "explorers": [
       {
@@ -771,6 +863,28 @@
         "kind": "home",
         "verified": "home page only — its block page is addressed by hash, and a hash is not a value the dashboard holds",
         "source": "curated"
+      }
+    ]
+  },
+  "PEAQ": {
+    "explorers": [
+      {
+        "name": "Subscan",
+        "url": "https://peaq.subscan.io",
+        "kind": "block",
+        "verified": "browser 2026-09-08 — block page watched rendering the requested height",
+        "source": "curated — Subscan runs one deployment per network on a shared codebase. chainlist (ethereum-lists/chains#3338) lists the same host with no url standard, which is why the registry row was home-only"
+      }
+    ]
+  },
+  "PEAQT": {
+    "explorers": [
+      {
+        "name": "Subscan",
+        "url": "https://agung-testnet.subscan.io",
+        "kind": "block",
+        "verified": "browser 2026-09-08 — block page watched rendering the requested height (\"agung Block Details\")",
+        "source": "curated — Subscan runs one deployment per network on a shared codebase. chainlist (ethereum-lists/chains#9990) lists the same host with no url standard; its other row is a polkadot.js apps deep link, which is an RPC client rather than an explorer"
       }
     ]
   },
@@ -1071,6 +1185,17 @@
       }
     ]
   },
+  "TRAC": {
+    "explorers": [
+      {
+        "name": "Subscan",
+        "url": "https://neuroweb.subscan.io",
+        "kind": "block",
+        "verified": "browser 2026-09-08 — block page watched rendering the requested height",
+        "source": "curated — Subscan runs one deployment per network on a shared codebase"
+      }
+    ]
+  },
   "TRX": {
     "explorers": [
       {
@@ -1168,6 +1293,17 @@
         "kind": "home",
         "verified": "browser 2026-08-18 — home page only: /ledgers/<n> is the right route but answers “Ledger not Found” — this testnet's ledgers are pruned",
         "source": "curated"
+      }
+    ]
+  },
+  "XRT": {
+    "explorers": [
+      {
+        "name": "Subscan",
+        "url": "https://robonomics.subscan.io",
+        "kind": "block",
+        "verified": "browser 2026-09-08 — block page watched rendering the requested height",
+        "source": "curated — Subscan runs one deployment per network on a shared codebase"
       }
     ]
   },
