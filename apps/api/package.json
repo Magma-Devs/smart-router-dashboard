@@ -8,7 +8,8 @@
     "dev": "tsx watch --include '../../packages/*/dist/**' src/main.ts",
     "start": "node dist/main.js",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "recover": "tsx src/recover.ts"
   },
   "dependencies": {
     "@aws-sdk/client-sesv2": "^3.1113.0",
