@@ -5,6 +5,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { roleAtLeast, type Role } from "@sr/shared";
 import type { Session, User } from "@sr/db";
 import { checkSession, touchSession, type SessionRejection } from "../services/sessions.js";
+import { totpKeyConfigured, twoFactorStatus } from "../services/two-factor.js";
 
 /** Bind session JWTs to a known issuer/audience so another HS256 token
  *  signed with `AUTH_SECRET` can't be confused with a session token. The
@@ -68,6 +69,11 @@ export const AUTH_ERROR_CODES = {
   accountInactive: "ACCOUNT_INACTIVE",
   forbidden: "FORBIDDEN",
   unavailable: "AUTH_UNAVAILABLE",
+  /** Signed in, but the dashboard stays shut until an authenticator is set up.
+   *  Distinct from `forbidden` on purpose: the web has somewhere to send this
+   *  person, and looping them back to the login page would be a dead end —
+   *  their password is fine and signing in again changes nothing. */
+  twoFactorRequired: "TWO_FACTOR_REQUIRED",
 } as const;
 
 type AuthErrorCode = (typeof AUTH_ERROR_CODES)[keyof typeof AUTH_ERROR_CODES];
@@ -163,6 +169,19 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
     );
   }
 
+  // Checked at boot, not at first use, because of what "at first use" would
+  // mean here. MAG-2730's gate shuts the dashboard to anyone without an
+  // authenticator; enrolment is the only way through it; and enrolment needs
+  // this key to seal a secret. Missing it therefore locks out **every account
+  // at once, with no route back in** — an outage that would present as "the
+  // dashboard stopped working for everybody overnight" and be traced to one
+  // unset variable. The same posture AUTH_SECRET takes, for a worse failure.
+  if (!totpKeyConfigured()) {
+    throw new Error(
+      "AUTH_MODE=enabled requires TOTP_ENCRYPTION_KEY — two-factor secrets are encrypted at rest and without it nobody can enrol, which locks out every account. Generate one with `openssl rand -base64 32`.",
+    );
+  }
+
   await app.register(jwt, {
     secret,
     sign: {
@@ -240,6 +259,40 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
       user: check.user,
       session: check.session,
     };
+
+    /**
+     * The must-enrol gate.
+     *
+     * Everyone who uses the dashboard sets up an authenticator. The single
+     * exception is the first admin on a fresh install, during their grace
+     * period — and `twoFactorStatus` is the only thing that decides whether
+     * someone is in it, so the gate, the invite route and the header countdown
+     * cannot end up disagreeing about whose clock is running.
+     *
+     * It runs here, in the hook, rather than on each route. A gate that has to
+     * be added per route is a gate somebody forgets on the route that matters,
+     * and "which endpoints did we remember" is not a thing a security review
+     * should have to establish by reading forty files.
+     *
+     * `escapeHatch` is deliberately tiny: the enrolment pair, and the identity
+     * read the enrolment screen needs to render itself. Nothing else — the
+     * point of a blocked dashboard is that it is blocked.
+     */
+    if (!isPublic && twoFactorStatus(check.user).enrolmentRequired) {
+      const path = request.url.split("?")[0] ?? request.url;
+      const escapeHatch =
+        path === "/api/account/2fa/begin" ||
+        path === "/api/account/2fa/confirm" ||
+        path === "/api/account/me";
+      if (!escapeHatch) {
+        return sendAuthError(
+          reply,
+          403,
+          AUTH_ERROR_CODES.twoFactorRequired,
+          "Set up two-factor authentication to continue.",
+        );
+      }
+    }
 
     // Heartbeat, throttled to one write a minute. Never a reason to fail the
     // request it rode in on.
