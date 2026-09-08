@@ -120,6 +120,24 @@ export const config = {
      * Unset ⇒ forwarded context is always ignored (safe, less useful).
      */
     internalSecret: env("INTERNAL_AUTH_SECRET"),
+    /**
+     * 32 bytes, base64 or hex, encrypting every enrolled TOTP secret at rest.
+     *
+     * **Deliberately not derived from `AUTH_SECRET`.** That key signs sessions
+     * and rotating it is a routine operation; if it also unlocked the
+     * authenticator secrets, one rotation would invalidate every enrolled phone
+     * in the deployment at once. Two very different blast radii, so two keys.
+     *
+     * No default, and none is possible: a per-boot random key would encrypt
+     * secrets the next restart could not read, which presents as "everyone's
+     * authenticator broke overnight". Required whenever AUTH_MODE=enabled —
+     * `services/two-factor.ts` throws with the `openssl` line to generate one.
+     */
+    totpEncryptionKey: env("TOTP_ENCRYPTION_KEY"),
+    /** What an authenticator app shows as the issuer. Overridable so somebody
+     *  administering two dashboards can tell the two entries apart; defaults to
+     *  `TOTP_DEFAULT_ISSUER` in `@sr/shared`. */
+    totpIssuer: env("TOTP_ISSUER"),
   },
 
   /**

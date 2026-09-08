@@ -37,6 +37,25 @@ export async function findUserById(db: Database, id: string): Promise<User | nul
   return rows[0] ?? null;
 }
 
+/**
+ * Stamp a successful sign-in.
+ *
+ * `first_signin_at` is set once and never again — it is when the first admin's
+ * 2FA grace period starts counting, so it must survive every later sign-in.
+ * `coalesce` in SQL rather than a read-then-write: two concurrent sign-ins would
+ * otherwise race, and the database's own clock is the right one for a security
+ * window (same reasoning as the lockout's window boundary).
+ *
+ * `now()` rather than an interpolated `Date`: pglite accepts a JS Date in a
+ * `sql` template and postgres-js throws `ERR_INVALID_ARG_TYPE`, so a test-only
+ * suite would not catch it.
+ */
 export async function recordSignIn(db: Database, id: string): Promise<void> {
-  await db.update(users).set({ lastSignInAt: new Date() }).where(eq(users.id, id));
+  await db
+    .update(users)
+    .set({
+      lastSignInAt: new Date(),
+      firstSignInAt: sql`coalesce(${users.firstSignInAt}, now())`,
+    })
+    .where(eq(users.id, id));
 }
