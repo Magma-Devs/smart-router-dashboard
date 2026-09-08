@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   boolean,
   index,
   inet,
@@ -97,6 +98,44 @@ export const users = pgTable(
      *  so the member list is one query. Written at most once a minute per
      *  session — see `services/sessions.ts`. */
     lastActiveAt: timestamp("last_active_at", { withTimezone: true }),
+    /**
+     * The enrolled authenticator secret, as an AES-256-GCM envelope — never the
+     * secret itself. `services/two-factor.ts` seals and opens it; the key is
+     * `TOTP_ENCRYPTION_KEY`, deliberately not `AUTH_SECRET`, so rotating the
+     * session signing key does not invalidate every enrolled phone at once.
+     *
+     * Null means not enrolled. **Never returned by any API** — not on the
+     * account route, not in the member list, not in the CSV export. The one
+     * moment the plaintext secret is visible is the enrolment response that
+     * created it.
+     */
+    totpSecret: text("totp_secret"),
+    /** When the person confirmed a code and enrolment took effect. Set together
+     *  with `totp_secret`; the pair is the answer to "is 2FA set up". */
+    totpEnrolledAt: timestamp("totp_enrolled_at", { withTimezone: true }),
+    /**
+     * The TOTP counter (`unix seconds / 30`) of the last code this account spent.
+     *
+     * This is the replay guard, and it is not optional: the ±1-step tolerance
+     * that lets a phone with a 20-second-wrong clock sign in is, without this, a
+     * 90-second window in which an observed code can be spent a second time.
+     * `verifyTotp` takes it as an argument so a call site cannot forget it.
+     */
+    totpLastStep: bigint("totp_last_step", { mode: "number" }),
+    /**
+     * True for the account first-run setup created — the deployment's first
+     * admin, and the only account that may defer 2FA.
+     *
+     * Written once by `completeSetup`. Not derivable from anything else:
+     * `is_magma_account` is managed-only, `last_sign_in_at` is overwritten every
+     * sign-in, and reading the `setup.completed` audit row would make the audit
+     * log load-bearing for an access decision.
+     */
+    createdBySetup: boolean("created_by_setup").notNull().default(false),
+    /** First successful sign-in. The grace period's start — the ticket counts
+     *  its thirty days "from their first sign-in", not from account creation,
+     *  because an account nobody has signed into has cost nobody anything. */
+    firstSignInAt: timestamp("first_signin_at", { withTimezone: true }),
     /** Bulk revocation cutoff: any JWT with `iat` at or before this is refused.
      *  Stamped on password change/reset, sign-out-everywhere, and removal.
      *
@@ -258,6 +297,47 @@ export const passwordResets = pgTable(
 );
 
 export type PasswordReset = typeof passwordResets.$inferSelect;
+
+/**
+ * two_factor_challenges — the ticket that carries a sign-in between its two
+ * screens.
+ *
+ * `POST /auth/sign-in` verifies the password and, when the account is enrolled,
+ * issues one of these instead of a session. `POST /auth/2fa/verify` spends it
+ * alongside a code, and only *that* call opens a session row.
+ *
+ * **The absence of a session in between is the security property.** The api
+ * refuses any token whose `sid` resolves to nothing, so there is no shape a
+ * half-authenticated caller can take — as opposed to a session row carrying a
+ * `pending` flag, where every route's correctness would depend on remembering to
+ * read it.
+ *
+ * Same token shape as `password_resets` for the same reasons: 32 random bytes,
+ * base64url in the response body, SHA-256 in the row, single-use by conditional
+ * UPDATE, and never a signed JWT (design §7.4).
+ */
+export const twoFactorChallenges = pgTable(
+  "two_factor_challenges",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** SHA-256 of the raw token; the raw value exists only in the response. */
+    tokenHash: text("token_hash").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    /** Minutes, not hours. This is the gap between typing a password and typing
+     *  a code with a phone already in hand — see `CHALLENGE_TTL_MS`. */
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("two_factor_challenges_token_hash_idx").on(table.tokenHash),
+    index("two_factor_challenges_user_idx").on(table.userId),
+  ],
+);
+
+export type TwoFactorChallenge = typeof twoFactorChallenges.$inferSelect;
 
 /**
  * login_attempts — per-account sign-in lockout.
