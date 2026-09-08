@@ -65,7 +65,7 @@ function note(text) {
 
 // ── http ────────────────────────────────────────────────────────────────────
 
-async function call(method, path, { body, token, base = API, origin } = {}) {
+async function call(method, path, { body, token, base = API, origin, _retried } = {}) {
   const headers = {};
   if (token) headers.authorization = `Bearer ${token}`;
   if (origin) headers.origin = origin;
@@ -83,6 +83,18 @@ async function call(method, path, { body, token, base = API, origin } = {}) {
   } catch {
     /* not json */
   }
+
+  // `/auth/*` allows 10 a minute per address, and two-factor doubled the number
+  // of calls a sign-in costs — so this run now crosses it where it used to sit
+  // just under. Slept off rather than raised for the run: raising it would stop
+  // exercising the configuration that ships, and the wait is the honest price.
+  if (res.status === 429 && !_retried) {
+    const secs = Number(/retry in (\d+)/.exec(text)?.[1] ?? 60) + 2;
+    note(`per-IP rate limit hit — waiting ${secs}s (10/min on /auth/*)`);
+    await new Promise((r) => setTimeout(r, secs * 1000));
+    return call(method, path, { body, token, base, origin, _retried: true });
+  }
+
   return { status: res.status, body: json, text, headers: res.headers };
 }
 
@@ -111,8 +123,19 @@ function mintToken({ userId, email, sessionId, role = "admin" }) {
   return jwt;
 }
 
-const tokenFor = (signIn) =>
-  mintToken({ userId: signIn.user.id, email: signIn.user.email, sessionId: signIn.sessionId });
+const tokenFor = (signIn) => {
+  // A sign-in that did not sign in is the commonest way this runner goes wrong,
+  // and `undefined is not an object` three frames away says nothing about which
+  // call failed or why. Fail here, with the response.
+  if (!signIn?.user?.id || !signIn?.sessionId) {
+    throw new Error(`expected a completed sign-in, got: ${JSON.stringify(signIn)}`);
+  }
+  return mintToken({
+    userId: signIn.user.id,
+    email: signIn.user.email,
+    sessionId: signIn.sessionId,
+  });
+};
 
 // ── two-factor ──────────────────────────────────────────────────────────────
 //
@@ -182,10 +205,24 @@ async function enrol(token) {
 async function signInFully(creds, secret) {
   const first = await call("POST", "/auth/sign-in", { body: creds });
   if (!secret || !first.body?.twoFactorRequired) return first;
-  const step = Math.floor(Date.now() / 30000) + 1;
-  return call("POST", "/auth/2fa/verify", {
-    body: { challenge: first.body.challenge, code: totpCode(secret, step) },
+  // The CURRENT step, not the next one. `+1` was the right choice immediately
+  // after enrolling — which spends the current step — and the wrong one here,
+  // where minutes have passed: it hands the api a code from the future edge of
+  // its window and, once that step is spent, the next sign-in in the same
+  // 30 seconds is refused as a replay. Now spends the step the phone is on.
+  const second = await call("POST", "/auth/2fa/verify", {
+    body: { challenge: first.body.challenge, code: totpCode(secret) },
   });
+  if (second.status !== 200) {
+    // Same code, one step on: the current step was already spent by an earlier
+    // sign-in inside this same 30 seconds. A person cannot be this fast.
+    await new Promise((r) => setTimeout(r, 30_000 - (Date.now() % 30_000) + 500));
+    const retry = await call("POST", "/auth/sign-in", { body: creds });
+    return call("POST", "/auth/2fa/verify", {
+      body: { challenge: retry.body?.challenge, code: totpCode(secret) },
+    });
+  }
+  return second;
 }
 
 /**
@@ -435,10 +472,14 @@ check("An admin invites someone and they join with exactly the role picked");
   });
   ok("they join", redeemed.status === 201, `${redeemed.status} ${redeemed.text}`);
 
-  // An invited person gets no grace period: they have a session, and the only
-  // thing it opens is enrolment. That is "before the dashboard opens", stated
-  // as a route rather than as a screen.
-  const joinedToken = tokenFor(redeemed.body);
+  // An invited person gets no grace period. Redemption opens no session — the
+  // page signs in with the password just chosen — so that sign-in is what they
+  // hold, and the only thing it opens is enrolment. "Before the dashboard
+  // opens", stated as a route rather than as a screen.
+  const joinedIn = await call("POST", "/auth/sign-in", {
+    body: { email, password: MEMBER.password },
+  });
+  const joinedToken = tokenFor(joinedIn.body);
   ok(
     "and the dashboard stays shut until they set up an authenticator",
     (await call("GET", "/api/team/members", { token: joinedToken })).status === 403,
@@ -608,9 +649,8 @@ check("Forgot password — sets a new password, does not sign in, ends other ses
       globalThis.__memberSecret,
     )
   ).body;
-  // A step apart, so the second code is not the first one replayed — the api
-  // spends every code it accepts, which is the point of the guard.
-  await new Promise((r) => setTimeout(r, 30_000 - (Date.now() % 30_000) + 200));
+  // signInFully waits out the step when it has to — the api spends every code
+  // it accepts, so two sign-ins inside one 30-second window need two steps.
   const s2 = (
     await signInFully(
       { email: globalThis.__memberEmail, password: MEMBER.password },

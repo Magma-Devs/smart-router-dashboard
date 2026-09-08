@@ -10,7 +10,8 @@ so the ticket can be checked off rather than taken on trust.
 | Parent epic | [MAG-2686](https://magmadevs.atlassian.net/browse/MAG-2686) — Dashboard v2, config change + SOC 2 |
 | Depends on | [MAG-2729](https://magmadevs.atlassian.net/browse/MAG-2729) (accounts) · [MAG-2770](https://magmadevs.atlassian.net/browse/MAG-2770) (the audit log this emits into) |
 | Reference | [`TWO-FACTOR.md`](./TWO-FACTOR.md) |
-| Tests | 446 api · 774 shared · 157 web · 48 db, all green. The acceptance runner is written but **not yet run** — [§2](#2-the-acceptance-checks) |
+| Tests | 446 api · 774 shared · 157 web · 48 db, all green |
+| Acceptance | **11/11** against a live deployment — [§2](#2-the-acceptance-checks) |
 | Version | **Not bumped.** `VERSION` on this stack is `0.16.1` because the accounts branches predate `main`'s `0.20.3`; the whole stack needs one rebase and one version decision when it lands, and bumping here would only add a conflict. The changelog entry sits under `[Unreleased]` |
 
 ## Verdict
@@ -110,15 +111,24 @@ Two defects were found while building and are fixed on the branch —
 
 ## 2. The acceptance checks
 
-> **Not yet run.** `scripts/sanity-two-factor.mjs` ships written and
-> syntax-checked but **unexercised**: the only Docker host available had a dev
-> stack already running on the ports it needs, and taking somebody else's
-> deployment down to run a script is not a trade worth making silently. Every
-> requirement above is covered by the 446 api tests, which do run — what the
-> runner adds is the handful of things only a real deployment can show (the
-> recovery commands, which live outside the api process; and "the secret cannot
-> be read back by anyone", which is a statement about every read surface at
-> once). **Run it before the ticket is closed**, and record the result here.
+**11/11 pass**, run against a live on-prem deployment
+(`make accounts-reset && make accounts`, then the runner) — not asserted in unit
+tests. Three things only a real deployment could show, and all three were found
+that way:
+
+- **The api would not have booted.** `TOTP_ENCRYPTION_KEY` was in no compose
+  file, and the boot check added in slice 3 does exactly what it says.
+- **From one address the per-IP limiter answers before the account lockout.**
+  10/min on `/auth/*` fires long before five failures accumulate, so a `423` is
+  not reachable from a single IP at all. The account counter is still the
+  control that matters — it is what an attacker rotating addresses meets — so
+  check 7 asserts it on `login_attempts` directly and says why.
+- **The ±1 window and the replay guard are two rules, and they collide.** After
+  a sign-in at step *S* a code from *S−1* is refused — not because the window is
+  wrong but because that step is spent. Check 8 now asks each question
+  separately: it clears the counter to test the window, then replays the same
+  code to test the guard. Left conflated, that is a pair somebody eventually
+  "fixes" in the wrong direction.
 
 `node scripts/sanity-two-factor.mjs`, against a live deployment. Two items
 cannot be checked in wall-clock time and say so rather than being quietly
@@ -133,6 +143,17 @@ skipped:
 exempted: its admin enrols before inviting and its invited member enrols before
 the dashboard opens, which is what those flows now are. Turning enforcement off
 for that run would have tested a deployment nobody ships.
+
+**It still passes 10/10 on-prem** — the same result MAG-2729 reported before
+two-factor existed, now with it enforced. That is the check that the two tickets
+compose rather than merely coexist, and three of its flows needed real changes
+to keep passing:
+
+| | |
+|---|---|
+| Redemption | `/auth/invite/accept` opens no session by design, so the runner signs in with the password just chosen and enrols from *that* token |
+| Sign-in | every member sign-in is now two calls, through a `signInFully` helper that spends the **current** step — reaching one ahead works right after enrolling and then refuses the next sign-in inside the same 30 seconds as a replay |
+| Rate limit | two-factor roughly doubles the `/auth/*` calls a sign-in costs, so the run now crosses the 10/min per-IP limit where it used to sit under it. Slept off, not raised — raising it for the run would stop exercising what ships |
 
 ---
 

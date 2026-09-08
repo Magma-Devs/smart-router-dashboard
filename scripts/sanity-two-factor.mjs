@@ -56,7 +56,19 @@ function note(text) {
   process.stdout.write(`   \x1b[90m·\x1b[0m \x1b[90m${text}\x1b[0m\n`);
 }
 
-async function call(method, path, { body, token } = {}) {
+/**
+ * One request, waiting out the per-IP limiter rather than failing on it.
+ *
+ * `/auth/*` allows 10 a minute per address and this script makes far more than
+ * that, all from one. Raising the limit for the run would be the easy fix and
+ * the wrong one — it would stop exercising the configuration that ships. So a
+ * 429 is slept off and retried, which costs wall-clock and tests what is real.
+ *
+ * That the limiter fires at all is worth seeing: from a single address it
+ * answers **before** the per-account lockout ever can. The account counter is
+ * for the attacker who rotates addresses and walks straight past this one.
+ */
+async function call(method, path, { body, token, _retried } = {}) {
   const headers = {};
   if (token) headers.authorization = `Bearer ${token}`;
   if (body !== undefined) headers["content-type"] = "application/json";
@@ -72,6 +84,14 @@ async function call(method, path, { body, token } = {}) {
   } catch {
     /* not json */
   }
+
+  if (res.status === 429 && !_retried) {
+    const secs = Number(/retry in (\d+)/.exec(text)?.[1] ?? 60) + 2;
+    note(`per-IP rate limit hit — waiting ${secs}s (10/min on /auth/*)`);
+    await new Promise((r) => setTimeout(r, secs * 1000));
+    return call(method, path, { body, token, _retried: true });
+  }
+
   return { status: res.status, body: json, text, headers: res.headers };
 }
 
@@ -285,7 +305,17 @@ const joined = await call("POST", "/auth/invite/accept", {
   body: { token, password: MEMBER.password, name: "Dana Okonkwo" },
 });
 ok("they join", joined.status === 201, `${joined.status} ${joined.text}`);
-const memberToken = tokenFor(joined.body);
+// Redemption opens no session — the page signs in with the password just
+// chosen, and that is the one real session (MAG-2729: opening one here too left
+// every new member's account page showing a device they had never used). They
+// have no authenticator yet, so this is still a one-step sign-in.
+const memberIn = await call("POST", "/auth/sign-in", { body: MEMBER });
+ok(
+  "and sign in with the password they chose",
+  memberIn.status === 200 && !!memberIn.body?.sessionId,
+  `${memberIn.status}`,
+);
+const memberToken = tokenFor(memberIn.body);
 ok(
   "and the dashboard is shut until they enrol",
   (await call("GET", "/api/metrics/specs", { token: memberToken })).status === 403,
@@ -332,16 +362,34 @@ check("A wrong code, a reused code, and a sixth attempt each behave as described
 
   // Five failures, then the wall. Four wrong passwords and one wrong code, to
   // show they land in the same counter.
+  await sql(`delete from login_attempts where email = lower('${MEMBER.email}')`);
   for (let i = 0; i < 4; i++) {
     await call("POST", "/auth/sign-in", { body: { ...MEMBER, password: "wrong" } });
   }
+  const [[afterFour]] = await sql(
+    `select failed_count from login_attempts where email = lower('${MEMBER.email}')`,
+  );
+  ok("four wrong passwords are counted", afterFour === "4", afterFour);
+
   const fifth = await call("POST", "/auth/sign-in", { body: MEMBER });
   await call("POST", "/auth/2fa/verify", {
     body: { challenge: fifth.body?.challenge, code: "000000" },
   });
-  const sixth = await call("POST", "/auth/sign-in", { body: MEMBER });
-  ok("a sixth attempt is locked out", sixth.status === 423, `${sixth.status}`);
+
+  // Asserted on the counter rather than on a 423, because from ONE address the
+  // per-IP limiter answers first — 429 before the account is ever consulted.
+  // The account wall is the one that matters against an attacker rotating
+  // addresses, and this is where it is visible.
+  const [[count, locked]] = await sql(
+    `select failed_count, locked_until is not null
+       from login_attempts where email = lower('${MEMBER.email}')`,
+  );
+  ok("a wrong CODE lands in the same counter as the wrong passwords", count === "5", count);
+  ok("and the fifth failure locks the account", locked === "t", locked);
   note("failed codes and failed passwords share one counter — five total, not five each");
+  note(
+    "asserted on login_attempts: from one IP the per-IP limiter answers before the account wall",
+  );
   await sql(`delete from login_attempts where email = lower('${MEMBER.email}')`);
 }
 
@@ -350,6 +398,15 @@ check("A code from a phone whose clock is 20 seconds out still works");
 {
   // 20s out lands in the neighbouring step at least a third of the time; the
   // window is what makes it work whenever it does.
+  //
+  // The behind-code needs the counter cleared first, and that is the two rules
+  // meeting rather than a workaround. The window says "accept the previous
+  // step"; the replay guard says "never accept a step already spent". After the
+  // sign-ins above, the previous step IS spent, so it is correctly refused as a
+  // replay — which the check below asserts on its own. Clearing the counter
+  // asks the window's question of a step nothing has claimed.
+  await sql(`update users set totp_last_step = null where email = lower('${MEMBER.email}')`);
+
   for (const offset of [-1, +1]) {
     const first = await call("POST", "/auth/sign-in", { body: MEMBER });
     const res = await call("POST", "/auth/2fa/verify", {
@@ -363,6 +420,20 @@ check("A code from a phone whose clock is 20 seconds out still works");
       res.status === 200,
       `${res.status}`,
     );
+    if (offset < 0) {
+      // And immediately again, with the counter now at that step: the same
+      // code, still inside its own window, refused. The window and the guard
+      // are two different rules and this is where they are told apart.
+      const replay = await call("POST", "/auth/sign-in", { body: MEMBER });
+      const again = await call("POST", "/auth/2fa/verify", {
+        body: {
+          challenge: replay.body.challenge,
+          code: totpCode(memberEnrolment.secret, stepNow() + offset),
+        },
+      });
+      ok("but not a second time — the window is not a replay window", again.status === 401);
+      await sql(`update users set totp_last_step = null where email = lower('${MEMBER.email}')`);
+    }
   }
   const far = await call("POST", "/auth/sign-in", { body: MEMBER });
   const tooFar = await call("POST", "/auth/2fa/verify", {
@@ -493,51 +564,49 @@ check("A deployment with no working admin can be recovered from the host");
 // 11 ─────────────────────────────────────────────────────────────────────────
 check("The secret cannot be read back out by anyone, including us");
 {
-  const secrets = [adminEnrolment.secret, memberEnrolment.secret];
+  // Check 9's reset destroyed the member's secret, so enrol them again — there
+  // has to be a live one for "cannot be read back" to mean anything.
+  const backIn = await call("POST", "/auth/sign-in", { body: MEMBER });
+  const freshToken = tokenFor(backIn.body);
+  const fresh = (await enrol(freshToken)).secret;
+  const secrets = [adminEnrolment.secret, memberEnrolment.secret, fresh];
 
   const [[stored]] = await sql(
-    `select coalesce(totp_secret, '') from users where email = '${MEMBER.email}'`,
-  ).catch(() => [[""]]);
+    `select coalesce(totp_secret, '(null)') from users where email = lower('${MEMBER.email}')`,
+  );
   ok(
     "the database column holds an envelope, never the secret",
-    secrets.every((s) => !stored.includes(s)),
-    stored.slice(0, 24),
+    !!stored && secrets.every((x) => !stored.includes(x)),
+    `${stored?.slice(0, 28)}…`,
   );
 
   const surfaces = await Promise.all([
-    call("GET", "/api/account/me", { token: adminToken }),
+    call("GET", "/api/account/me", { token: freshToken }),
     call("GET", "/api/team/members", { token: adminToken }),
     call("GET", "/api/team/members.csv", { token: adminToken }),
   ]);
   ok(
     "no read surface returns it",
-    surfaces.every((r) => secrets.every((s) => !r.text.includes(s))),
+    surfaces.every((r) => secrets.every((x) => !r.text.includes(x))),
   );
 
   const auditText = (
-    await sql(`select coalesce(note,'') || coalesce(actor_name,'') from audit_events`)
+    await sql(`select coalesce(note, '') || coalesce(actor_name, '') from audit_events`)
   )
     .map((r) => r[0])
     .join("\n");
   ok(
     "and it is nowhere in the audit log",
-    secrets.every((s) => !auditText.includes(s)),
+    secrets.every((x) => !auditText.includes(x)),
   );
 
-  // Asked of the MEMBER, not the admin: check 10's reset cleared the admin's,
-  // so asking there would test the un-enrolled path and pass for the wrong
-  // reason. Their session died with the reset, so sign in again first.
-  const memberBack = await signInFully(MEMBER, memberEnrolment.secret);
-  const reoffer = await call("POST", "/api/account/2fa/begin", {
-    token: tokenFor(memberBack.body),
-    body: {},
-  });
+  const reoffer = await call("POST", "/api/account/2fa/begin", { token: freshToken, body: {} });
   ok(
     "an enrolled account cannot re-offer its own secret",
     reoffer.status === 409,
     `${reoffer.status}`,
   );
-  ok("and the refusal carries nothing to read back", !reoffer.text.includes(secrets[1]));
+  ok("and the refusal carries nothing to read back", !reoffer.text.includes(fresh));
 }
 
 // ── summary ─────────────────────────────────────────────────────────────────
