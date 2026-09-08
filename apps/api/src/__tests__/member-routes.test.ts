@@ -101,7 +101,8 @@ describe("GET /api/team/members", () => {
       "reader@example.com",
     ]);
     expect(body.soleAdmin).toBe(true);
-    expect(body.members[0].twoFactorEnabled).toBeNull();
+    // A real value since MAG-2730, and false: this fixture has no authenticator.
+    expect(body.members[0].twoFactorEnabled).toBe(false);
   });
 
   it("needs a session at all", async () => {
@@ -126,7 +127,7 @@ describe("GET /api/team/members.csv", () => {
     expect([...res.rawPayload.subarray(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
     const [header, first] = res.body.slice(1).split("\r\n");
     expect(header).toBe("name,email,role,two_factor,last_active,joined,magma_account");
-    expect(first!.startsWith(`"'=HYPERLINK(""http://evil"",""x"")",admin@example.com,admin,,`)).toBe(
+    expect(first!.startsWith(`"'=HYPERLINK(""http://evil"",""x"")",admin@example.com,admin,no,`)).toBe(
       true,
     );
   });
