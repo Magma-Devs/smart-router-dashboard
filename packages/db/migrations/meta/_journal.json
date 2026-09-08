@@ -43,6 +43,13 @@
       "when": 1788048000000,
       "tag": "0005_magma_account",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1788480000000,
+      "tag": "0006_two_factor",
+      "breakpoints": true
     }
   ]
 }
