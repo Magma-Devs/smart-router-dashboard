@@ -5,6 +5,59 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Added
+
+- **Two-factor login (TOTP).** Everyone who uses the dashboard sets up an
+  authenticator app and enters a six-digit code when they sign in. The one
+  softening is a grace period for the very first admin on a fresh install, which
+  ends the moment they invite somebody or after 30 days, whichever comes first.
+  A countdown sits in the header the whole time. Only under
+  `AUTH_MODE=enabled` — the default deployment is unchanged.
+
+  **A verified password now opens no session.** `POST /auth/sign-in` returns a
+  short-lived single-use challenge for an enrolled account, and only
+  `POST /auth/2fa/verify` opens a session row. The api already refuses any token
+  whose session id resolves to nothing, so a half-authenticated caller has no
+  shape it can take — as opposed to opening the session early and hanging a
+  "pending" flag off it, where every route's correctness would rest on
+  remembering to read that flag.
+
+  Failed codes count into the **same** per-account lockout as failed passwords —
+  five failures in fifteen minutes, one counter keyed on the address. A separate
+  counter would quietly hand out five password attempts and then five more.
+
+- **`POST /api/account/2fa/begin` · `POST /api/account/2fa/confirm`** —
+  enrolment. The QR is rendered server-side and the secret comes back as text
+  beside it, once; a desktop password manager cannot scan a screen.
+
+- **`POST /api/team/members/:id/2fa/reset`** — the lost-phone path, and the only
+  one. The secret is destroyed rather than disabled, the member's sessions end,
+  and they enrol again at their next sign-in from a secret only they will hold.
+  Logged as `2fa.reset`, naming both people. Self re-enrolment is refused.
+
+- **Host recovery** — `reset-2fa`, `reset-password` and `promote-admin`, run on
+  the machine the dashboard runs on (`make recover CMD="…"`). Shell access is
+  the authorisation and these hand out nothing new; what they add is that each
+  writes a `host.recovery` row naming the command and the operator, so a
+  recovery shows up in the customer's own audit log and cannot be done quietly.
+  `reset-password` prints a link and never sets a password.
+
+- **The member list's 2FA column is real** — it was pinned to `—` while 2FA did
+  not exist. Under the enforcement rule only the first admin can read "No", and
+  only during their grace period, so a second one is marked to be noticed.
+
+### Changed
+
+- **`AUTH_MODE=enabled` now requires `TOTP_ENCRYPTION_KEY`** and refuses to boot
+  without it. Two-factor secrets are encrypted at rest with it, and it is
+  deliberately not derived from `AUTH_SECRET`: rotating the session signing key
+  would otherwise invalidate every enrolled phone in the deployment at once.
+  Generate one with `openssl rand -base64 32`. Failing at boot turns "the
+  dashboard stopped working for everybody overnight" into a startup error naming
+  the variable — without the key, nobody can enrol, and the gate lets nobody
+  through who has not.
+
+
 ## [0.16.1]
 
 ### Fixed

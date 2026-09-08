@@ -232,6 +232,10 @@ services:
       - DATABASE_URL=${DATABASE_URL:-postgres://sr:dev@postgres:5432/sr_dashboard}
       - ADMIN_EMAIL=${ADMIN_EMAIL:-}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
+      # Required under AUTH_MODE=enabled — 32 bytes, `openssl rand -base64 32`.
+      # No default on purpose: a generated one would encrypt secrets the next
+      # restart could not read. See docs/TWO-FACTOR.md.
+      - TOTP_ENCRYPTION_KEY=${TOTP_ENCRYPTION_KEY:-}
       # Needed api-side to validate the `aud` claim of Google ID tokens.
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
     volumes:
