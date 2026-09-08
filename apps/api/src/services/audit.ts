@@ -15,15 +15,23 @@ import type { AuditActionOf } from "@sr/shared";
  */
 
 /**
- * Event names this task emits — the four groups it owns, resolved from
+ * Event names the dashboard emits — the groups it owns, resolved from
  * MAG-2770's catalog rather than hand-maintained here.
  *
  * The consequence is worth stating: adding an event to one of those groups in
  * the catalog silently widens what these call sites are allowed to emit. That
  * is the right trade — one definition, no drift — but it makes a group
  * assignment over there a real decision rather than bookkeeping.
+ *
+ * `2fa` and `recovery` are MAG-2730's, and adding them here is the whole of
+ * what that ticket needed from the vocabulary: `2fa.enrolled`, `2fa.reset` and
+ * `host.recovery` were written into the catalog ahead of the code, tagged with
+ * their origin. What is still deliberately absent is `config` and `approval` —
+ * MAG-2731's, and the two groups a CHECK constraint forbids from carrying an IP.
  */
-export type AuditAction = AuditActionOf<"access" | "accounts" | "people" | "setup">;
+export type AuditAction = AuditActionOf<
+  "access" | "accounts" | "people" | "setup" | "2fa" | "recovery"
+>;
 
 /**
  * The event shape is **MAG-2770's**, narrowed to the verbs this task emits.

@@ -20,6 +20,8 @@ import {
   removeMember,
 } from "../services/members.js";
 import { findUserById } from "../services/users.js";
+import { clearEnrolment, isEnrolled, revokeChallenges } from "../services/two-factor.js";
+import { revokeAllForUser } from "../services/sessions.js";
 import { config } from "../config.js";
 import { EMAIL_DELIVERY_NOTES } from "@sr/shared";
 import { sendInvitationEmail } from "../services/email-templates.js";
@@ -287,6 +289,80 @@ export async function teamRoutes(app: FastifyInstance) {
       return { ok: true };
     },
   );
+
+  app.post(
+    "/api/team/members/:id/2fa/reset",
+    {
+      schema: {
+        tags: ["Team"],
+        summary: "Clear someone's authenticator — the lost-phone path",
+        params: {
+          type: "object" as const,
+          required: ["id"],
+          properties: { id: { type: "string" as const, format: "uuid" } },
+        },
+      },
+    },
+    async (request, reply) => {
+      const me = requireRole(request, reply, "admin");
+      if (!me) return reply;
+      const db = dbOr503(reply);
+      if (!db) return reply;
+
+      const { id } = request.params as { id: string };
+      const target = await findUserById(db, id);
+      if (!target || target.status !== "active") {
+        return reply
+          .code(404)
+          .send({ statusCode: 404, error: "Not Found", message: "No such member." });
+      }
+
+      if (!isEnrolled(target)) {
+        // Not an error worth failing on — the outcome the admin wanted is
+        // already true — but 409 rather than a silent 200, because "I reset it
+        // and they still cannot get in" is the support ticket this prevents.
+        return reply.code(409).send({
+          statusCode: 409,
+          error: "Conflict",
+          message: "That member has not set up two-factor authentication.",
+        });
+      }
+
+      // Three writes, and each one is load-bearing:
+      //
+      //  1. the secret is destroyed, not disabled — there is nothing left to
+      //     restore, and nothing an admin could ever read back;
+      //  2. any live challenge is retired, so a second step already in flight
+      //     against the old secret cannot still be completed;
+      //  3. their sessions end, because the account is being reset precisely
+      //     when nobody is sure who is holding it.
+      //
+      // The admin never sees or sets the replacement. The member enrols again
+      // on their next sign-in, from a secret only they will ever hold — which
+      // is the same rule as passwords, and for the same reason: an admin who
+      // could set someone's second factor could sign in as them.
+      await clearEnrolment(db, target.id);
+      await revokeChallenges(db, target.id);
+      await revokeAllForUser(db, target.id, { reason: "admin", by: me.id });
+
+      await audit.write({
+        action: "2fa.reset",
+        actor: { id: me.id, kind: "user" },
+        // Both people named, as the ticket requires: the row has to answer
+        // "who cleared whose" without a join.
+        target: { type: "member", id: target.id, name: target.email },
+        access: { ip: me.session.ip, client: me.session.client, sessionId: me.sessionId },
+        note: `two-factor reset for ${target.email}`,
+      });
+
+      // The member is told. On managed that is an email (MAG-2870's transport);
+      // on-prem there is no mail server and never will be, so it is the
+      // enrolment screen they meet at their next sign-in, which says an
+      // administrator reset it. Either way they cannot miss it: their sessions
+      // just ended and the next screen explains why.
+      return { ok: true, notified: config.deploymentMode === "managed" ? "email" : "on_next_signin" };
+    },
+  );
 }
 
 /**
@@ -493,9 +569,12 @@ export async function teamMemberRoutes(app: FastifyInstance) {
           m.name,
           m.email,
           m.role,
-          // Not "no" — 2FA doesn't exist yet (MAG-2730), and "no" would be true
-          // today and wrong the day it ships.
-          m.twoFactorEnabled === null ? "" : m.twoFactorEnabled ? "yes" : "no",
+          // Real since MAG-2730 — it was blank while 2FA did not exist, because
+          // "no" would have been true then and wrong the day it shipped. Under
+          // the enforcement rule only the first admin can read "no", and only
+          // during their grace period, so a second "no" in this column is the
+          // thing a reviewer should stop on.
+          m.twoFactorEnabled ? "yes" : "no",
           m.lastActiveAt?.toISOString() ?? "",
           m.joinedAt.toISOString(),
           // Unlike two_factor, "no" here is simply true: the flag is known in

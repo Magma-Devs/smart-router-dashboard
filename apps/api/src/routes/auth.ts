@@ -1,6 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import type { Database } from "@sr/db";
+import type { Database, User } from "@sr/db";
 import { findUserByEmail, recordSignIn, toPublicUser } from "../services/users.js";
 import { validatePassword, verifyPassword } from "../services/password.js";
 import { createSession, revokeSession, type ClientContext } from "../services/sessions.js";
@@ -14,6 +14,12 @@ import {
   RESET_TTL_MS,
 } from "../services/password-reset.js";
 import { checkLock, clearFailures, recordFailure } from "../services/lockout.js";
+import {
+  consumeChallenge,
+  consumeCode,
+  isEnrolled,
+  issueChallenge,
+} from "../services/two-factor.js";
 import { lazyAuditWriter, type AuditWriter } from "../services/audit.js";
 import { sendPasswordResetEmail } from "../services/email-templates.js";
 import { EMAIL_DELIVERY_NOTES } from "@sr/shared";
@@ -42,6 +48,12 @@ interface ForwardedClientContext {
 interface SignInBody {
   email: string;
   password: string;
+  clientContext?: ForwardedClientContext;
+}
+
+interface TwoFactorVerifyBody {
+  challenge: string;
+  code: string;
   clientContext?: ForwardedClientContext;
 }
 
@@ -173,6 +185,42 @@ export async function authRoutes(app: FastifyInstance) {
   // that is taken at module load, before a test (or a late-loaded secrets file)
   // can set it. Same reason the auth plugin re-reads AUTH_SECRET.
   const internalSecret = process.env.INTERNAL_AUTH_SECRET ?? config.auth.internalSecret;
+
+  /**
+   * Everything that happens once a sign-in is genuinely complete.
+   *
+   * Both paths end here — an account with no authenticator finishes at
+   * `/auth/sign-in`, an enrolled one at `/auth/2fa/verify` — and the point of
+   * one function is that the session row, the sign-in stamp and the
+   * `signin.succeeded` row cannot fall out of step between them. `authMethod`
+   * is what tells the two apart afterwards, on the account's own sessions list.
+   */
+  async function completeSignIn(
+    db: Database,
+    user: User,
+    client: ResolvedClient,
+    authMethod: "password" | "password+totp",
+  ) {
+    // Cleared HERE and nowhere else, and that placement is the whole point.
+    //
+    // It used to sit at the end of the password check, which was correct while
+    // the password was the only factor. With a second one it is a hole: an
+    // attacker holding a correct password would reset the counter on every
+    // attempt, so five wrong codes could never accumulate and the per-account
+    // lockout would simply never trip for them — against exactly the person it
+    // most needs to stop. A failure counter for sign-ins clears when a sign-in
+    // succeeds, and a sign-in has not succeeded until both factors have passed.
+    await clearFailures(db, user.email);
+
+    const session = await createSession(db, { userId: user.id, authMethod, client });
+    await recordSignIn(db, user.id);
+    await audit.write({
+      action: "signin.succeeded",
+      actor: { id: user.id, kind: "user" },
+      access: { ...client.access, sessionId: session.id },
+    });
+    return { user: toPublicUser(user), sessionId: session.id };
+  }
 
   /** The db plugin connects lazily; 503 (not 500) while it settles. */
   function dbOr503(reply: FastifyReply): Database | null {
@@ -658,21 +706,125 @@ export async function authRoutes(app: FastifyInstance) {
           .send({ statusCode: 401, error: "Unauthorized", message: "Invalid email or password" });
       }
 
-      await clearFailures(db, body.email);
+      // The password was right. If this account has an authenticator, that is
+      // as far as this request goes: it returns a challenge and **no session**.
+      //
+      // No session is the security property, not an implementation detail. The
+      // auth plugin refuses any token whose `sid` resolves to nothing, so there
+      // is no shape a half-authenticated caller can take — as opposed to
+      // opening the session now and hanging a `pending` flag off it, where
+      // every route's correctness would rest on remembering to read the flag.
+      //
+      // Nothing is written to the audit log here. `signin.succeeded` would be a
+      // lie about a sign-in that has not happened, and the log's own vocabulary
+      // has no half-way event — deliberately. A code that then fails writes
+      // `signin.failed`, which is the row an investigation wants: a run of
+      // those against one account is somebody holding a correct password.
+      if (isEnrolled(user)) {
+        const challenge = await issueChallenge(db, user.id);
+        return {
+          twoFactorRequired: true,
+          challenge: challenge.token,
+          expiresAt: challenge.expiresAt.toISOString(),
+        };
+      }
 
-      const session = await createSession(db, {
-        userId: user.id,
-        authMethod: "password",
-        client,
-      });
-      await recordSignIn(db, user.id);
-      await audit.write({
-        action: "signin.succeeded",
-        actor: { id: user.id, kind: "user" },
-        access: { ...client.access, sessionId: session.id },
-      });
+      return completeSignIn(db, user, client, "password");
+    },
+  );
 
-      return { user: toPublicUser(user), sessionId: session.id };
+  app.post(
+    "/auth/2fa/verify",
+    {
+      config: { rateLimit: STRICT_AUTH_RATE_LIMIT },
+      schema: {
+        tags: ["Auth"],
+        summary: "Second step: spend a challenge with a 6-digit code and open the session",
+        body: {
+          type: "object" as const,
+          required: ["challenge", "code"],
+          properties: {
+            challenge: { type: "string" as const, minLength: 1 },
+            code: { type: "string" as const, minLength: 1 },
+            clientContext: {
+              type: "object" as const,
+              description:
+                "The browser's own IP and User-Agent, forwarded by the web tier. Honoured only with a valid X-Internal-Auth header.",
+              properties: {
+                ip: { type: "string" as const },
+                userAgent: { type: "string" as const },
+              },
+            },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const db = dbOr503(reply);
+      if (!db) return reply;
+      const body = request.body as TwoFactorVerifyBody;
+      const client = resolveClientContext(request, body.clientContext, internalSecret);
+
+      /** One message for every way this can fail. The ticket: "a wrong code
+       *  gives a generic error with no hint about which factor failed" — and
+       *  that has to cover a dead challenge too, since "your challenge expired"
+       *  versus "wrong code" is itself the hint. */
+      const refuse = () =>
+        reply
+          .code(401)
+          .send({ statusCode: 401, error: "Unauthorized", message: "Invalid email or password" });
+
+      // Spent before the code is checked, on purpose: a challenge that survived
+      // a wrong code would let someone try code after code against a single
+      // password verification, which is the exact thing the second factor is
+      // there to stop. A wrong code costs a fresh sign-in.
+      const claimed = await consumeChallenge(db, body.challenge);
+      if (!claimed.ok) return refuse();
+
+      const email = claimed.user.email;
+
+      // Same wall as the password. Deliberately the SAME counter, keyed on the
+      // same address — a second counter would quietly hand an attacker five
+      // password attempts and then five code attempts.
+      const lock = await checkLock(db, email);
+      if (lock.locked) {
+        await audit.write({
+          action: "signin.blocked",
+          actor: { id: claimed.user.id, kind: "user", label: email, email },
+          access: { ...client.access, sessionId: null },
+          note: "too many failed attempts",
+        });
+        return reply.code(423).send({
+          statusCode: 423,
+          error: "Locked",
+          message: "Too many failed attempts. Try again later.",
+        });
+      }
+
+      const outcome = await consumeCode(db, claimed.user, body.code);
+      if (!outcome.ok) {
+        const lockState = await recordFailure(db, email);
+        await audit.write({
+          action: "signin.failed",
+          actor: { id: claimed.user.id, kind: "user", label: email, email },
+          access: { ...client.access, sessionId: null },
+          // The one place the distinction is recorded. A run of these against
+          // one account means somebody holds a correct password, which reads
+          // very differently from a run of "wrong password".
+          note: "wrong two-factor code",
+        });
+        if (lockState.locked) {
+          await audit.write({
+            action: "signin.blocked",
+            actor: { id: claimed.user.id, kind: "user", label: email, email },
+            access: { ...client.access, sessionId: null },
+            note: "too many failed attempts",
+          });
+        }
+        return refuse();
+      }
+
+      return completeSignIn(db, claimed.user, client, "password+totp");
     },
   );
 
