@@ -25,6 +25,7 @@ import { InviteModal } from "@/components/team/InviteModal";
 import { ChangeRoleModal, type MemberSummary } from "@/components/team/ChangeRoleModal";
 import { RemoveMemberModal } from "@/components/team/RemoveMemberModal";
 import { ResetLinkModal } from "@/components/team/ResetLinkModal";
+import { ResetTwoFactorModal } from "@/components/team/ResetTwoFactorModal";
 
 const TABS = ["members", "invites"] as const;
 type Tab = (typeof TABS)[number];
@@ -35,7 +36,7 @@ interface MembersResponse {
     name: string | null;
     email: string;
     role: Role;
-    twoFactorEnabled: boolean | null;
+    twoFactorEnabled: boolean;
     lastActiveAt: string | null;
     joinedAt: string;
     isMagmaAccount: boolean;
@@ -70,6 +71,7 @@ export default function TeamPage() {
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
   const [resetting, setResetting] = useState<MemberSummary | null>(null);
+  const [resettingTwoFactor, setResettingTwoFactor] = useState<MemberSummary | null>(null);
 
   const members = useSWR<MembersResponse>("/api/team/members", apiGet, { refreshInterval: 30000 });
   // Both from the live row, not the session — see `useMe`.
@@ -220,10 +222,18 @@ export default function TeamPage() {
                     </td>
                     <td><RoleBadge role={m.role} /></td>
                     <td>
-                      {/* Not "No" — two-factor doesn't exist yet, and "No" would
-                          be true today and wrong the day it ships. */}
-                      <span style={{ fontSize: 12, color: "var(--text-3)" }}>
-                        {m.twoFactorEnabled === null ? "—" : m.twoFactorEnabled ? "Yes" : "No"}
+                      {/* Under the enforcement rule only the first admin can
+                          read "No", and only during their grace period — so a
+                          second "No" here means something is wrong, and it is
+                          coloured to be noticed rather than skimmed past. */}
+                      <span
+                        style={{
+                          fontSize: 12,
+                          color: m.twoFactorEnabled ? "var(--text-3)" : "var(--danger, #f43)",
+                          fontWeight: m.twoFactorEnabled ? 400 : 600,
+                        }}
+                      >
+                        {m.twoFactorEnabled ? "Yes" : "No"}
                       </span>
                     </td>
                     <td style={{ textAlign: "right", fontSize: 12, color: "var(--text-3)" }}>
@@ -250,6 +260,16 @@ export default function TeamPage() {
                           >
                             Reset link
                           </button>
+                          {m.twoFactorEnabled && (
+                            <button
+                              className="gw-btn"
+                              style={{ fontSize: 11, padding: "4px 8px", marginRight: 6 }}
+                              onClick={() => setResettingTwoFactor(m)}
+                              title="Clear their authenticator — for a lost phone"
+                            >
+                              Reset 2FA
+                            </button>
+                          )}
                           <button
                             className="gw-btn gw-btn--danger"
                             style={{ fontSize: 11, padding: "4px 8px" }}
@@ -391,6 +411,13 @@ export default function TeamPage() {
         open={!!resetting}
         onClose={() => setResetting(null)}
         member={resetting}
+      />
+      <ResetTwoFactorModal
+        key={`reset-2fa-${resettingTwoFactor?.id ?? "none"}`}
+        open={!!resettingTwoFactor}
+        onClose={() => setResettingTwoFactor(null)}
+        member={resettingTwoFactor}
+        onReset={() => void members.mutate()}
       />
       <RemoveMemberModal
         key={`remove-${removing?.id ?? "none"}`}

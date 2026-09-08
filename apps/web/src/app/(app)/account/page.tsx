@@ -16,6 +16,7 @@ import type { CSSProperties } from "react";
 import Link from "next/link";
 import { useApi } from "@/hooks/use-api";
 import { ChangePasswordCard } from "@/components/account/ChangePasswordCard";
+import { TwoFactorCard } from "@/components/account/TwoFactorCard";
 import { SessionsCard } from "@/components/account/SessionsCard";
 import { useAuthMode } from "@/components/gateway/auth-mode";
 
@@ -87,6 +88,8 @@ export default function AccountPage() {
             that has to be your primary address. Nothing on this page disconnects one.
           </div>
         </div>
+
+        <TwoFactorCard />
 
         <ChangePasswordCard />
 

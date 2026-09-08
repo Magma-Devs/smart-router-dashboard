@@ -4,12 +4,25 @@ import { useApi } from "@/hooks/use-api";
 import { getAuthState } from "@/lib/auth-store";
 import { roleAtLeast, type Role } from "@sr/shared";
 
+export interface MeTwoFactor {
+  enrolled: boolean;
+  /** The dashboard stays shut until they enrol. */
+  enrolmentRequired: boolean;
+  /** When deferring stops working — the first admin only, and only during their
+   *  grace period. Null for everybody else, in both directions. */
+  graceEndsAt: string | null;
+  daysLeft: number | null;
+}
+
 export interface Me {
   id: string;
   email: string;
   name: string | null;
   avatarUrl: string | null;
   role: Role;
+  /** Absent until the first read lands, and in AUTH_MODE=disabled where these
+   *  routes are not registered at all. */
+  twoFactor?: MeTwoFactor;
 }
 
 /**
@@ -31,12 +44,19 @@ export interface Me {
  * house default and is fast enough: the api refuses the moment the row changes,
  * so the window is one of *looking* wrong, never of *being* permissive.
  */
-export function useMe(): { me: Me | null; isAdmin: boolean; loading: boolean } {
+export function useMe(): {
+  me: Me | null;
+  isAdmin: boolean;
+  loading: boolean;
+  twoFactor: MeTwoFactor | null;
+  /** Re-read after enrolling, so the gate lifts without a page reload. */
+  refresh: () => void;
+} {
   // The store is empty in AUTH_MODE=disabled, where these routes are not even
   // registered — asking would 404 on every page. It is also empty before the
   // session bridge has run, and asking then would race it.
   const bridged = getAuthState().user;
-  const { data: live, isLoading } = useApi<Me>(bridged ? "/api/account/me" : null);
+  const { data: live, isLoading, mutate } = useApi<Me>(bridged ? "/api/account/me" : null);
   // `useApi` keeps the previous key's data across a key change, including a
   // change to no key. Without this, a screen with nobody signed in would go on
   // answering for whoever was signed in last.
@@ -62,5 +82,11 @@ export function useMe(): { me: Me | null; isAdmin: boolean; loading: boolean } {
     // cannot work, which is the defect this hook exists to remove.
     isAdmin: roleAtLeast(data?.role, "admin"),
     loading: isLoading && !data,
+    // Only from the live read, never from the session fallback: the gate is a
+    // "shut the dashboard" decision, and guessing at it from a stale token
+    // would either strand somebody who has enrolled or wave through somebody
+    // who has not.
+    twoFactor: data?.twoFactor ?? null,
+    refresh: () => void mutate(),
   };
 }
