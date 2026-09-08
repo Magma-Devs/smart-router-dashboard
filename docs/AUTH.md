@@ -394,6 +394,34 @@ Counted on the submitted address whether or not an account exists, and
 case-insensitively. If only real addresses locked, the lockout itself would
 answer the question sign-in refuses to answer.
 
+**Failed two-factor codes land in the same row**, at the same five-in-fifteen.
+One counter, keyed on the address — a second one would quietly hand an attacker
+five password attempts and then five code attempts. The corollary is that the
+counter clears when a *sign-in completes*, not when a password is accepted:
+with two factors those are different moments, and clearing on a correct password
+lets whoever holds one reset the wall on every attempt.
+
+## Two-factor (TOTP)
+
+Everyone who uses the dashboard sets one up. The full reference —  the two-step
+sign-in, the grace period for the first admin, the encrypted secret, the
+lost-phone reset and the host recovery commands — is
+[`TWO-FACTOR.md`](./TWO-FACTOR.md).
+
+Three things to know here, because they change what `AUTH_MODE=enabled` means:
+
+- **`TOTP_ENCRYPTION_KEY` is required and the api refuses to boot without it.**
+  The gate shuts the dashboard to anyone without an authenticator, enrolment is
+  the only way through it, and enrolment needs that key — so a missing one locks
+  out every account at once. `openssl rand -base64 32`.
+- **`POST /auth/sign-in` no longer always opens a session.** For an enrolled
+  account it returns `{ twoFactorRequired: true, challenge }` and nothing else;
+  `POST /auth/2fa/verify` is what opens one. Anything driving the api directly —
+  a script, a test, a runbook — has to do both steps.
+- **An unenrolled session reaches three routes only** (`/api/account/2fa/begin`,
+  `/api/account/2fa/confirm`, `/api/account/me`) and gets `403
+  TWO_FACTOR_REQUIRED` everywhere else.
+
 ## Sign-in methods
 
 **Email and password. That is the only way in** — the ticket's words, and
@@ -505,17 +533,43 @@ sign in as. Create the first admin.
   `PASSWORD_BREACH_CHECK=off`, not a mystery timeout.
 - Then a real one. You land signed in, on the dashboard.
 
-**2. Invite someone.** Team → Invite. Pick a role; the description under
+Note the header: **"Set up 2FA — 30 days left"**. The first admin on a
+fresh install is the one account that may defer, and the countdown is not
+dismissible, because what it counts down to is the dashboard closing.
+
+**2. Two-factor.** Try Team → Invite *first*: refused, with "set up
+two-factor authentication before inviting anyone". The grace period ends
+the moment you hand somebody else access, and that refusal is the ending —
+there is no flag to write.
+
+Account → Two-factor → Set up. Scan the QR with Google Authenticator, or
+copy the key beside it into a password manager, then type the code back.
+The countdown disappears and the invite goes through.
+
+Sign out and back in: the password now gets you a second screen asking for
+a code. Type a wrong one — it says "Invalid email or password", the same
+words as a wrong password, and sends you back to the start. It is not
+being coy: the challenge is spent before the code is checked, so there is
+genuinely nothing left to retry against, and that is what stops somebody
+grinding codes against one password.
+
+**3. Invite someone.** Team → Invite. Pick a role; the description under
 each says what it can do.
 
 - On-prem has no mail server, so the link is shown **once** and you copy
   it. Open it in a private window: the invited address is fixed text, not
   a field — the account is created with the invitation's address, so there
   is nothing there that could disagree with it.
-- Accept it. That person is now in the members table.
+- Accept it. They land on **"Two-factor authentication is required"** —
+  an invited person gets no grace period, and the only thing their session
+  opens is enrolment. Set it up and the dashboard appears underneath,
+  without another sign-in.
+- That person is now in the members table, with **Yes** under 2FA. Under
+  the enforcement rule only the first admin can read **No** there, and only
+  during their grace period — so a second "No" is the thing to stop on.
 - Open the same link again: dead. Single-use.
 
-**3. Change a role.** Team → Change role. It takes effect on whatever that
+**4. Change a role.** Team → Change role. It takes effect on whatever that
 person has open *right now*, not at their next sign-in — the api reads the
 role from the row on every request.
 
@@ -523,19 +577,19 @@ To watch that: sign in as them in a private window, leave the Team page
 open, demote them to Read-only from your window, and have them act. The
 admin-only controls stop working immediately.
 
-**4. Remove someone.** Team → Remove. The dialog says what will happen,
+**5. Remove someone.** Team → Remove. The dialog says what will happen,
 because "remove" reads like a deletion and this deliberately is not one.
 Their sessions die within one request, their name stays in the audit log,
 and their address can be invited again as a new account — try it.
 
-**5. Your own account.** Account → Change password signs out your *other*
+**6. Your own account.** Account → Change password signs out your *other*
 devices and keeps the one you are using. Active sessions lists every
 device with what it is and where from; sign one out and watch it go.
 
 Sign in from a second browser to see two sessions, then use "Sign out
 everywhere" — which signs out the tab you are in too, deliberately.
 
-**6. Password reset, on-prem.** **An admin never sets someone else's
+**7. Password reset, on-prem.** **An admin never sets someone else's
 password** — they generate a link, and only the holder chooses the value.
 The route exists and is audited; the members-table button that should
 trigger it does not (see "What has no screen yet" below), so drive it
@@ -567,24 +621,28 @@ Two refusals worth seeing: an account with no password set answers 409
 (defensive — setup and invite redemption both set one), and a removed
 member answers 404.
 
-**7. Lockout.** Five wrong passwords for the same address and the sixth
+**8. Lockout.** Five wrong passwords for the same address and the sixth
 attempt is refused — `423`, even when that sixth one is right. The window
 closes fifteen minutes after the **first** wrong password, not the fifth,
 so hammering it doesn't extend the ban. A successful sign-in clears the
 slate, or somebody who mistyped four times would spend the rest of the
 window one slip from a lockout.
 
+Failed **codes** land in the same counter, at the same five in fifteen —
+so four wrong passwords and one wrong code is a lockout. One wall in
+front of the account, not one per factor.
+
 The count is keyed on the address whether or not an account exists, so a
 lockout reveals nothing about who is a member — and a sign-in attempt
 against an unknown address answers the same `401` a wrong password does.
 
-**8. Export.** Team → Export CSV. This is the artifact an auditor asks for
+**9. Export.** Team → Export CSV. This is the artifact an auditor asks for
 first, and it is the whole member list, not the page you are looking at.
 The two-factor column reads `—` in the table and is **blank** in the CSV,
 rather than "No" — two-factor is MAG-2730 and has not shipped, so "No"
 would be true today and wrong the day it does.
 
-**9. The audit log.** Every step above wrote a row. There is no viewer yet
+**10. The audit log.** Every step above wrote a row. There is no viewer yet
 (MAG-2770), so read them directly:
 
 ```bash
@@ -614,6 +672,33 @@ MAG-2729's design PR, on `docs/MAG-2729-accounts-design`.
 The second is not exercisable in this stack anyway: `DEPLOYMENT_MODE=onprem`
 makes `/auth/password/forgot` answer 404 by design, because there is
 nowhere to send an email.
+
+**11. Lost phone.** Team → Reset 2FA on that member. Their sessions end
+immediately and their key is destroyed rather than disabled — there is
+nothing to restore and nothing you could have read. They sign in with
+their password and meet the enrolment screen again. The log carries a
+`2fa.reset` row naming both of you.
+
+**12. When nobody can get in.** From the host, not the browser:
+
+```bash
+make recover CMD="reset-2fa      --email you@example.com"
+make recover CMD="reset-password --email you@example.com"
+make recover CMD="promote-admin  --email you@example.com"
+```
+
+Shell access is the authorisation and these hand out nothing new — what
+they add is a `host.recovery` row per run, naming the command and the
+operator, so a recovery shows up in the log afterwards. The viewer is
+MAG-2770's and is not on this branch, so read it the way step 10 does:
+
+```sql
+select occurred_at, actor_name, note from audit_events
+ where action = 'host.recovery' order by occurred_at;
+```
+
+`reset-password` prints a link and never sets a password. Full reference:
+[`TWO-FACTOR.md`](./TWO-FACTOR.md).
 
 ## Roles
 

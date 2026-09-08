@@ -9,6 +9,7 @@ import { buildApp } from "../app.js";
 import { SESSION_JWT_AUDIENCE, SESSION_JWT_ISSUER } from "../plugins/auth.js";
 import { createSession } from "../services/sessions.js";
 import { hashPassword } from "../services/password.js";
+import { resetSetupTokenForTests } from "../services/setup.js";
 import { totpCodeAtStep, totpStepAt } from "../services/totp.js";
 import {
   beginEnrolment,
@@ -1026,5 +1027,120 @@ describe("the invite trigger", () => {
       headers: { authorization: `Bearer ${await tokenFor(admin)}` },
     });
     expect(res.statusCode).toBe(200);
+  });
+});
+
+// ── The wiring, end to end from a fresh install ─────────────────────────────
+
+describe("the first admin, from /auth/setup onwards", () => {
+  /**
+   * The grace period tested through the routes that actually create and sign in
+   * the account, rather than against a fixture with the columns set by hand.
+   *
+   * This is the gap that hand-set fixtures leave: `twoFactorStatus` was right
+   * and `completeSetup` was not writing `created_by_setup` at all, so every
+   * policy test passed while the deployment's first admin would have been
+   * refused the dashboard on their first sign-in — the exact person the grace
+   * period exists for.
+   */
+  it("is marked by setup, gets a countdown, and is blocked from inviting", async () => {
+    setEnv({
+      SETUP_TOKEN: "installer-printed-this",
+      DEPLOYMENT_MODE: "onprem",
+      // The route validates the password, and this fixture's is famously
+      // breached. Off, so the test fails for a two-factor reason or not at all.
+      PASSWORD_BREACH_CHECK: "off",
+    });
+    resetSetupTokenForTests();
+    app = await buildAuthApp();
+
+    const created = await app.inject({
+      method: "POST",
+      url: "/auth/setup",
+      payload: {
+        token: "installer-printed-this",
+        email: "ops@example.com",
+        password: PASSWORD,
+        name: "Ops",
+      },
+    });
+    expect(created.statusCode).toBe(201);
+
+    // Setup opens no session; the clock starts at the sign-in that follows.
+    const signedIn = await app.inject({
+      method: "POST",
+      url: "/auth/sign-in",
+      payload: { email: "ops@example.com", password: PASSWORD },
+    });
+    expect(signedIn.statusCode).toBe(200);
+    const token = await mint({
+      sub: signedIn.json().user.id,
+      sid: signedIn.json().sessionId,
+      role: "admin",
+    });
+    const auth = { authorization: `Bearer ${token}` };
+
+    // The dashboard opens, with a countdown.
+    const me = await app.inject({ method: "GET", url: "/api/account/me", headers: auth });
+    expect(me.json().twoFactor).toMatchObject({ enrolled: false, enrolmentRequired: false });
+    expect(me.json().twoFactor.daysLeft).toBe(30);
+    expect(
+      (await app.inject({ method: "GET", url: "/api/account/sessions", headers: auth })).statusCode,
+    ).toBe(200);
+
+    // But inviting is not allowed — the moment they hand somebody else access,
+    // the countdown is over.
+    const invite = await app.inject({
+      method: "POST",
+      url: "/api/team/invites",
+      headers: auth,
+      payload: { email: "dana@example.com", role: "requester" },
+    });
+    expect(invite.statusCode).toBe(403);
+    expect(invite.json().code).toBe("TWO_FACTOR_REQUIRED");
+
+    // Enrol, and it opens.
+    const begin = await app.inject({
+      method: "POST",
+      url: "/api/account/2fa/begin",
+      headers: auth,
+    });
+    await app.inject({
+      method: "POST",
+      url: "/api/account/2fa/confirm",
+      headers: auth,
+      payload: { code: totpCodeAtStep(begin.json().secret, totpStepAt())! },
+    });
+    const invited = await app.inject({
+      method: "POST",
+      url: "/api/team/invites",
+      headers: auth,
+      payload: { email: "dana@example.com", role: "requester" },
+    });
+    expect(invited.statusCode).toBe(201);
+  });
+
+  it("gives an invited person no grace — they enrol before the dashboard opens", async () => {
+    setEnv({
+      SETUP_TOKEN: "installer-printed-this",
+      DEPLOYMENT_MODE: "onprem",
+      // The route validates the password, and this fixture's is famously
+      // breached. Off, so the test fails for a two-factor reason or not at all.
+      PASSWORD_BREACH_CHECK: "off",
+    });
+    resetSetupTokenForTests();
+    app = await buildAuthApp();
+
+    // Redeemed accounts must not inherit the marker. If they did, every person
+    // who ever joined would arrive with thirty days of their own.
+    const invited = await seedUser();
+    expect(invited.createdBySetup).toBe(false);
+
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/account/sessions",
+      headers: { authorization: `Bearer ${await tokenFor(invited)}` },
+    });
+    expect(res.statusCode).toBe(403);
   });
 });
