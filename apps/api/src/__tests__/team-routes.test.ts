@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { SignJWT } from "jose";
-import { createTestDb, type TestDb } from "@sr/db/testing";
+import { createTestDb, enrolledTwoFactor, type TestDb } from "@sr/db/testing";
 import { sessions, users, type User } from "@sr/db";
 import { buildApp } from "../app.js";
 import { SESSION_JWT_AUDIENCE, SESSION_JWT_ISSUER } from "../plugins/auth.js";
@@ -16,6 +16,8 @@ import { SESSION_JWT_AUDIENCE, SESSION_JWT_ISSUER } from "../plugins/auth.js";
  */
 
 const SECRET = "test-secret-for-auth-tests-32-chars!";
+/** MAG-2730: the api refuses to boot accounts without it. */
+const TOTP_KEY = "Ozw3vJk9pQ0sT6xN2mB8fH4dR1yL5aC7eU3gI9oK0jM=";
 const DEAD_DB = "postgres://sr:x@192.0.2.1:5432/na";
 const WEB_ORIGIN = "https://dash.example.com";
 
@@ -32,7 +34,7 @@ function setEnv(vars: Record<string, string | undefined>): void {
 }
 
 async function member(email: string, role: "admin" | "read_only"): Promise<User> {
-  const [row] = await t.db.insert(users).values({ email, role }).returning();
+  const [row] = await t.db.insert(users).values({ ...enrolledTwoFactor(), email, role }).returning();
   return row!;
 }
 
@@ -60,6 +62,7 @@ beforeEach(async () => {
   setEnv({
     AUTH_MODE: "enabled",
     AUTH_SECRET: SECRET,
+    TOTP_ENCRYPTION_KEY: TOTP_KEY,
     DATABASE_URL: DEAD_DB,
     PUBLIC_WEB_ORIGIN: WEB_ORIGIN,
     DEPLOYMENT_MODE: "onprem",
