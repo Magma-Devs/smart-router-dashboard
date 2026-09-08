@@ -117,6 +117,18 @@ accounts-managed:
 	@echo ""
 	@echo "     Reset to a fresh install:  make accounts-reset"
 
+## recover: run a host recovery command against the running accounts database
+##   make recover CMD="reset-2fa --email dana@example.com"
+##
+## The three commands are reset-2fa, reset-password and promote-admin. Each
+## writes a host.recovery row naming the command and the operator, so a recovery
+## shows up in the dashboard afterwards and cannot be done quietly. Shell access
+## on the host is the authorisation — see docs/TWO-FACTOR.md.
+recover:
+	@test -n "$(CMD)" || (echo 'set CMD, e.g. make recover CMD="reset-2fa --email dana@example.com"'; exit 2)
+	docker compose -f docker-compose.dev.yml -f docker-compose.accounts.yml \
+		--profile auth exec api node dist/recover.js $(CMD)
+
 ## accounts-reset: wipe the accounts database and start over from first-run
 accounts-reset:
 	docker compose -f docker-compose.dev.yml -f docker-compose.accounts.yml \
