@@ -235,6 +235,12 @@ services:
       - DATABASE_URL=${DATABASE_URL:-}
       - ADMIN_EMAIL=${ADMIN_EMAIL:-}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
+      # Two-factor secrets are encrypted at rest with this, and the api refuses
+      # to boot under AUTH_MODE=enabled without it (docs/TWO-FACTOR.md). Empty
+      # here like every auth value; the make targets that enable auth supply a
+      # fixed development key, so an accounts-reset cycle does not orphan the
+      # secrets enrolled before it.
+      - TOTP_ENCRYPTION_KEY=${TOTP_ENCRYPTION_KEY:-}
       # Needed api-side to validate the `aud` claim of Google ID tokens.
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
       # First-run setup (docs/AUTH.md → "First run"). Unset ⇒ the api mints a

@@ -79,7 +79,8 @@ dev-down:
 	docker compose -f docker-compose.dev.yml --profile router --profile auth --profile logs down
 
 ## up-auth: prod-style stack WITH authentication (postgres + login) — see docs/AUTH.md.
-## Requires AUTH_SECRET in the environment. The first admin is created at
+## Requires AUTH_SECRET and TOTP_ENCRYPTION_KEY (`openssl rand -base64 32`) in
+## the environment — the api refuses to boot without the key. The first admin is created at
 ## /setup with the setup token: this is a production build, and it ignores
 ## ADMIN_EMAIL / ADMIN_PASSWORD.
 ## (logs profile is on by default here too — Grafana → :3001.)
@@ -99,7 +100,8 @@ up-auth:
 
 ## dev-auth: hot-reload stack WITH authentication (dev-default admin@example.com / admin1234)
 ##
-## The dev secret and the dev admin live here, not in docker-compose.dev.yml:
+## The dev secret, the dev 2FA key and the dev admin live here, not in
+## docker-compose.dev.yml (the key is a fixed development value, never real):
 ## a stack running with auth OFF should not carry a password for an
 ## administrator it is never going to create. Every value is overridable.
 dev-auth:
@@ -107,6 +109,7 @@ dev-auth:
 	AUTH_MODE=enabled \
 	AUTH_SECRET=$${AUTH_SECRET:-dev-secret-change-me-please-32chars!} \
 	DATABASE_URL=$${DATABASE_URL:-postgres://sr:$${POSTGRES_PASSWORD:-dev}@postgres:5432/sr_dashboard} \
+	TOTP_ENCRYPTION_KEY=$${TOTP_ENCRYPTION_KEY:-ZGV2LW9ubHkta2V5LW5vdC1mb3ItcHJvZHVjdGlvbiE=} \
 	ADMIN_EMAIL=$${ADMIN_EMAIL:-admin@example.com} \
 	ADMIN_PASSWORD=$${ADMIN_PASSWORD:-admin1234} \
 	docker compose -f docker-compose.dev.yml --profile router --profile auth --profile logs up --build
@@ -116,6 +119,7 @@ accounts:
 	AUTH_MODE=enabled \
 	AUTH_SECRET=$${AUTH_SECRET:-dev-secret-change-me-please-32chars!} \
 	DATABASE_URL=$${DATABASE_URL:-postgres://sr:$${POSTGRES_PASSWORD:-dev}@postgres:5432/sr_dashboard} \
+	TOTP_ENCRYPTION_KEY=$${TOTP_ENCRYPTION_KEY:-ZGV2LW9ubHkta2V5LW5vdC1mb3ItcHJvZHVjdGlvbiE=} \
 	docker compose -f docker-compose.dev.yml -f docker-compose.accounts.yml \
 		--profile auth up -d --build postgres builder api web
 	@echo ""
@@ -131,6 +135,7 @@ accounts-managed:
 	AUTH_MODE=enabled \
 	AUTH_SECRET=$${AUTH_SECRET:-dev-secret-change-me-please-32chars!} \
 	DATABASE_URL=$${DATABASE_URL:-postgres://sr:$${POSTGRES_PASSWORD:-dev}@postgres:5432/sr_dashboard} \
+	TOTP_ENCRYPTION_KEY=$${TOTP_ENCRYPTION_KEY:-ZGV2LW9ubHkta2V5LW5vdC1mb3ItcHJvZHVjdGlvbiE=} \
 	docker compose -f docker-compose.dev.yml -f docker-compose.accounts.yml \
 		-f docker-compose.managed.yml --profile auth up -d --build postgres builder ses api web
 	@echo ""
@@ -156,7 +161,7 @@ accounts-managed:
 recover:
 	@test -n "$(CMD)" || (echo 'set CMD, e.g. make recover CMD="reset-2fa --email dana@example.com"'; exit 2)
 	docker compose -f docker-compose.dev.yml -f docker-compose.accounts.yml \
-		--profile auth exec api node dist/recover.js $(CMD) \
+		--profile auth exec api pnpm --filter @sr/api exec tsx src/recover.ts $(CMD) \
 		$(if $(findstring --by,$(CMD)),,--by "$${SUDO_USER:-$$USER}")
 
 ## accounts-reset: wipe the accounts database and start over from first-run
