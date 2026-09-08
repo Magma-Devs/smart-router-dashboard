@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { eq, sql } from "drizzle-orm";
-import { createTestDb, type TestDb } from "@sr/db/testing";
+import { createTestDb, enrolledTwoFactor, type TestDb } from "@sr/db/testing";
 import { sessions, users, type User } from "@sr/db";
 import { buildApp } from "../app.js";
 import { createInvitation } from "../services/invitations.js";
@@ -17,6 +17,8 @@ import { createInvitation } from "../services/invitations.js";
  */
 
 const SECRET = "test-secret-for-auth-tests-32-chars!";
+/** MAG-2730: the api refuses to boot accounts without it. */
+const TOTP_KEY = "Ozw3vJk9pQ0sT6xN2mB8fH4dR1yL5aC7eU3gI9oK0jM=";
 const DEAD_DB = "postgres://sr:x@192.0.2.1:5432/na";
 const GOOGLE_CLIENT_ID = "test-client-id.apps.googleusercontent.com";
 const GOOD_PASSWORD = "correct horse battery staple";
@@ -65,13 +67,14 @@ beforeEach(async () => {
   t = await createTestDb();
   const [created] = await t.db
     .insert(users)
-    .values({ email: "admin@example.com", role: "admin", name: "Admin" })
+    .values({ ...enrolledTwoFactor(), email: "admin@example.com", role: "admin", name: "Admin" })
     .returning();
   admin = created!;
 
   setEnv({
     AUTH_MODE: "enabled",
     AUTH_SECRET: SECRET,
+    TOTP_ENCRYPTION_KEY: TOTP_KEY,
     DATABASE_URL: DEAD_DB,
     GOOGLE_CLIENT_ID,
     PASSWORD_BREACH_CHECK: "off",

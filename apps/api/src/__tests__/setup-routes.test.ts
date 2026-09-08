@@ -13,6 +13,9 @@ import { resetSetupTokenForTests } from "../services/setup.js";
  */
 
 const SECRET = "test-secret-for-auth-tests-32-chars!";
+/** Any 32 bytes — these tests never verify a code, they only need the api
+ *  to boot with AUTH_MODE=enabled. */
+const TOTP_KEY = "Ozw3vJk9pQ0sT6xN2mB8fH4dR1yL5aC7eU3gI9oK0jM=";
 const TOKEN = "setup-token-from-the-installer";
 const DEAD_DB = "postgres://sr:x@192.0.2.1:5432/na";
 const GOOD_PASSWORD = "correct horse battery staple";
@@ -49,6 +52,7 @@ async function buildSetupApp(mode: "managed" | "onprem" = "onprem"): Promise<Fas
   setEnv({
     AUTH_MODE: "enabled",
     AUTH_SECRET: SECRET,
+    TOTP_ENCRYPTION_KEY: TOTP_KEY,
     DATABASE_URL: DEAD_DB,
     SETUP_TOKEN: TOKEN,
     DEPLOYMENT_MODE: mode,

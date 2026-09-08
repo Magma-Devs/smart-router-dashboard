@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { SignJWT } from "jose";
-import { createTestDb, type TestDb } from "@sr/db/testing";
+import { createTestDb, enrolledTwoFactor, type TestDb } from "@sr/db/testing";
 import { sessions, users, type User } from "@sr/db";
 import type { Role } from "@sr/shared";
 import { buildApp } from "../app.js";
@@ -17,6 +17,8 @@ import { SESSION_JWT_AUDIENCE, SESSION_JWT_ISSUER } from "../plugins/auth.js";
  */
 
 const SECRET = "test-secret-for-auth-tests-32-chars!";
+/** MAG-2730: the api refuses to boot accounts without it. */
+const TOTP_KEY = "Ozw3vJk9pQ0sT6xN2mB8fH4dR1yL5aC7eU3gI9oK0jM=";
 const DEAD_DB = "postgres://sr:x@192.0.2.1:5432/na";
 
 let app: FastifyInstance | null = null;
@@ -32,7 +34,7 @@ function setEnv(vars: Record<string, string | undefined>): void {
 }
 
 async function member(email: string, role: Role, name?: string): Promise<User> {
-  const [row] = await t.db.insert(users).values({ email, role, name }).returning();
+  const [row] = await t.db.insert(users).values({ ...enrolledTwoFactor(), email, role, name }).returning();
   return row!;
 }
 
@@ -69,6 +71,7 @@ beforeEach(async () => {
   setEnv({
     AUTH_MODE: "enabled",
     AUTH_SECRET: SECRET,
+    TOTP_ENCRYPTION_KEY: TOTP_KEY,
     DATABASE_URL: DEAD_DB,
     PUBLIC_WEB_ORIGIN: "https://dash.example.com",
     DEPLOYMENT_MODE: "onprem",
@@ -101,8 +104,8 @@ describe("GET /api/team/members", () => {
       "reader@example.com",
     ]);
     expect(body.soleAdmin).toBe(true);
-    // A real value since MAG-2730, and false: this fixture has no authenticator.
-    expect(body.members[0].twoFactorEnabled).toBe(false);
+    // A real value since MAG-2730, and true: the fixture has an authenticator.
+    expect(body.members[0].twoFactorEnabled).toBe(true);
   });
 
   it("needs a session at all", async () => {
@@ -127,7 +130,7 @@ describe("GET /api/team/members.csv", () => {
     expect([...res.rawPayload.subarray(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
     const [header, first] = res.body.slice(1).split("\r\n");
     expect(header).toBe("name,email,role,two_factor,last_active,joined,magma_account");
-    expect(first!.startsWith(`"'=HYPERLINK(""http://evil"",""x"")",admin@example.com,admin,no,`)).toBe(
+    expect(first!.startsWith(`"'=HYPERLINK(""http://evil"",""x"")",admin@example.com,admin,yes,`)).toBe(
       true,
     );
   });

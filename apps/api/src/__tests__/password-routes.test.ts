@@ -3,7 +3,7 @@ import bcrypt from "bcryptjs";
 import type { FastifyInstance } from "fastify";
 import { SignJWT } from "jose";
 import { eq, sql } from "drizzle-orm";
-import { createTestDb, type TestDb } from "@sr/db/testing";
+import { createTestDb, enrolledTwoFactor, type TestDb } from "@sr/db/testing";
 import { passwordResets, sessions, users, type User } from "@sr/db";
 import { buildApp } from "../app.js";
 import { SESSION_JWT_AUDIENCE, SESSION_JWT_ISSUER } from "../plugins/auth.js";
@@ -21,6 +21,8 @@ import { LOCKOUT_MAX_FAILURES } from "../services/lockout.js";
  */
 
 const SECRET = "test-secret-for-auth-tests-32-chars!";
+/** MAG-2730: the api refuses to boot accounts without it. */
+const TOTP_KEY = "Ozw3vJk9pQ0sT6xN2mB8fH4dR1yL5aC7eU3gI9oK0jM=";
 const DEAD_DB = "postgres://sr:x@192.0.2.1:5432/na";
 const OLD_PASSWORD = "the-old-one-1234";
 const NEW_PASSWORD = "a-brand-new-passphrase";
@@ -43,7 +45,7 @@ async function member(
 ): Promise<User> {
   const [row] = await t.db
     .insert(users)
-    .values({
+    .values({ ...enrolledTwoFactor(),
       email,
       role: opts.role ?? "read_only",
       passwordHash: opts.password === null ? null : await hashPassword(opts.password ?? OLD_PASSWORD),
@@ -82,6 +84,7 @@ beforeEach(async () => {
   setEnv({
     AUTH_MODE: "enabled",
     AUTH_SECRET: SECRET,
+    TOTP_ENCRYPTION_KEY: TOTP_KEY,
     DATABASE_URL: DEAD_DB,
     PUBLIC_WEB_ORIGIN: "https://dash.example.com",
     DEPLOYMENT_MODE: "onprem",
@@ -181,7 +184,7 @@ describe("POST /api/account/password", () => {
     for (let i = 0; i < 11; i++) {
       const [who] = await t.db
         .insert(users)
-        .values({ email: `member-${i}@example.com`, passwordHash })
+        .values({ ...enrolledTwoFactor(), email: `member-${i}@example.com`, passwordHash })
         .returning();
       const res = await app!.inject({
         method: "POST",
