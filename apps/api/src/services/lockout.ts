@@ -81,6 +81,33 @@ export async function recordAttempt(db: Database, email: string): Promise<LockSt
   return { locked: row.failedCount > LOCKOUT_MAX_FAILURES, until, attempts: row.failedCount };
 }
 
+/**
+ * Give back the one attempt a correct first factor spent, without clearing the
+ * window.
+ *
+ * For an account with two factors, a right password is not a sign-in: clearing
+ * the window there would let somebody holding the password reset the counter
+ * before every code guess, so the lockout would never trip against the one
+ * person it most needs to stop. But leaving the password's attempt spent means
+ * each sign-in costs two — someone who mistyped their password four times
+ * would be locked out at the code screen with the right code in hand. Refunding
+ * exactly one keeps both: each wrong factor costs one attempt, a right one
+ * costs nothing, and the window clears only when both have passed.
+ *
+ * The lock mark goes with it once the count is back under the budget, since
+ * `checkLock` reads it.
+ */
+export async function refundAttempt(db: Database, email: string): Promise<void> {
+  await db
+    .update(loginAttempts)
+    .set({
+      failedCount: sql`greatest(${loginAttempts.failedCount} - 1, 0)`,
+      lockedUntil: sql`case when ${loginAttempts.failedCount} - 1 < ${LOCKOUT_MAX_FAILURES}
+                            then null else ${loginAttempts.lockedUntil} end`,
+    })
+    .where(eq(loginAttempts.email, email.toLowerCase()));
+}
+
 /** A correct credential refunds the window — otherwise someone who mistyped
  *  four times would stay one slip from a lockout until it lapsed. */
 export async function clearFailures(db: Database, email: string): Promise<void> {
