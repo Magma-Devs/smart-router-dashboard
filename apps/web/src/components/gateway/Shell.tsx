@@ -12,6 +12,7 @@ import { useFilters } from "@/components/gateway/FiltersProvider";
 import { fmtNum } from "@/lib/format";
 import { getAuthVersion, subscribeAuth } from "@/lib/auth-store";
 import { useMe } from "@/hooks/use-me";
+import { TwoFactorCountdown, TwoFactorGate } from "@/components/auth/two-factor-gate";
 
 export function ThemeToggle() {
   const [theme, setTheme] = useState<"dark" | "light">("dark");
@@ -211,6 +212,9 @@ function Topbar({ here }: { here: string }) {
         {/* The router filter lives in the page header next to the chain one
             (RouterFilterSelect) — it sets the label scope this control used to
             own, plus the config-router filter, so one control does both. */}
+        {/* Shows only for the one account that may still defer 2FA. Not
+            dismissible: what it counts down to is the dashboard closing. */}
+        <TwoFactorCountdown />
         <ThemeToggle />
       </div>
     </header>
@@ -226,14 +230,20 @@ export function Shell({ children }: { children: React.ReactNode }) {
     )?.label ?? "Overview";
 
   return (
-    <div className="gw-app">
-      <Sidebar />
-      <div className="gw-main">
-        <Topbar here={here} />
-        <div className="fade-in" key={pathname}>
-          {children}
+    // Outside the chrome, not inside it: a blocked dashboard should not render a
+    // sidebar full of links that 403. The api refuses every request from an
+    // unenrolled session regardless — this is what the person sees instead of
+    // watching forty panels fail one by one.
+    <TwoFactorGate>
+      <div className="gw-app">
+        <Sidebar />
+        <div className="gw-main">
+          <Topbar here={here} />
+          <div className="fade-in" key={pathname}>
+            {children}
+          </div>
         </div>
       </div>
-    </div>
+    </TwoFactorGate>
   );
 }
