@@ -19,6 +19,7 @@ import Link from "next/link";
 import type { CSSProperties } from "react";
 import { useApi } from "@/hooks/use-api";
 import { ChangePasswordCard } from "@/components/account/ChangePasswordCard";
+import { TwoFactorCard } from "@/components/account/TwoFactorCard";
 import { SessionsCard } from "@/components/account/SessionsCard";
 
 interface VersionInfo {
@@ -76,6 +77,8 @@ export default function AccountPage() {
           </div>
         ))}
       </div>
+
+      <TwoFactorCard />
 
       <ChangePasswordCard />
 
