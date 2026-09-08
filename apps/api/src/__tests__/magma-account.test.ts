@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { SignJWT } from "jose";
 import { eq } from "drizzle-orm";
-import { createTestDb, type TestDb } from "@sr/db/testing";
+import { createTestDb, enrolledTwoFactor, type TestDb } from "@sr/db/testing";
 import { users } from "@sr/db";
 import { buildApp } from "../app.js";
 import { SESSION_JWT_AUDIENCE, SESSION_JWT_ISSUER } from "../plugins/auth.js";
@@ -26,6 +26,9 @@ import { resetSetupTokenForTests } from "../services/setup.js";
  */
 
 const SECRET = "test-secret-for-auth-tests-32-chars!";
+/** Any 32 bytes — these tests never verify a code, they only need the api
+ *  to boot with AUTH_MODE=enabled. */
+const TOTP_KEY = "Ozw3vJk9pQ0sT6xN2mB8fH4dR1yL5aC7eU3gI9oK0jM=";
 const TOKEN = "setup-token-from-the-installer";
 const DEAD_DB = "postgres://sr:x@192.0.2.1:5432/na";
 const PASSWORD = "thistle-cobalt-marina-7781";
@@ -62,6 +65,7 @@ async function buildFor(mode: "managed" | "onprem"): Promise<FastifyInstance> {
   setEnv({
     AUTH_MODE: "enabled",
     AUTH_SECRET: SECRET,
+    TOTP_ENCRYPTION_KEY: TOTP_KEY,
     DATABASE_URL: DEAD_DB,
     SETUP_TOKEN: TOKEN,
     DEPLOYMENT_MODE: mode,
@@ -90,7 +94,13 @@ async function firstRun(email = "ops.admin@magmadevs.com") {
 async function customerAdmin(email = "dana@dfns.co") {
   const [admin] = await t.db
     .insert(users)
-    .values({ email, role: "admin", name: "Dana Levi", passwordHash: await hashPassword(PASSWORD) })
+    .values({
+      email,
+      role: "admin",
+      name: "Dana Levi",
+      passwordHash: await hashPassword(PASSWORD),
+      ...enrolledTwoFactor(),
+    })
     .returning();
   const session = await createSession(t.db, {
     userId: admin!.id,

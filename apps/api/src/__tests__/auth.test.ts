@@ -16,6 +16,9 @@ import { SESSION_JWT_AUDIENCE, SESSION_JWT_ISSUER } from "../plugins/auth.js";
  */
 
 const SECRET = "test-secret-for-auth-tests-32-chars!";
+/** Any 32 bytes — these tests never verify a code, they only need the api
+ *  to boot with AUTH_MODE=enabled. */
+const TOTP_KEY = "Ozw3vJk9pQ0sT6xN2mB8fH4dR1yL5aC7eU3gI9oK0jM=";
 // Unroutable per RFC 5737 (TEST-NET) — connect fails fast, no retries hang.
 const DEAD_DB = "postgres://sr:x@192.0.2.1:5432/na";
 
@@ -82,13 +85,15 @@ describe("AUTH_MODE=enabled", () => {
   });
 
   it("refuses to boot without DATABASE_URL", async () => {
-    setEnv({ AUTH_MODE: "enabled", AUTH_SECRET: SECRET, DATABASE_URL: undefined });
+    setEnv({ AUTH_MODE: "enabled", AUTH_SECRET: SECRET,
+    TOTP_ENCRYPTION_KEY: TOTP_KEY, DATABASE_URL: undefined });
     await expect(buildApp()).rejects.toThrow(/DATABASE_URL/);
   });
 
   describe("with secret + (unreachable) database", () => {
     async function enabledApp(): Promise<FastifyInstance> {
-      setEnv({ AUTH_MODE: "enabled", AUTH_SECRET: SECRET, DATABASE_URL: DEAD_DB });
+      setEnv({ AUTH_MODE: "enabled", AUTH_SECRET: SECRET,
+    TOTP_ENCRYPTION_KEY: TOTP_KEY, DATABASE_URL: DEAD_DB });
       return buildApp();
     }
 

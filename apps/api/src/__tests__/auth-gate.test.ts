@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { SignJWT } from "jose";
 import { eq } from "drizzle-orm";
-import { createTestDb, type TestDb } from "@sr/db/testing";
+import { createTestDb, enrolledTwoFactor, type TestDb } from "@sr/db/testing";
 import { users, type User } from "@sr/db";
 import type { Role } from "@sr/shared";
 import { buildApp } from "../app.js";
@@ -20,6 +20,9 @@ import { hashPassword } from "../services/password.js";
  */
 
 const SECRET = "test-secret-for-auth-tests-32-chars!";
+/** Any 32 bytes — these tests never verify a code, they only need the api
+ *  to boot with AUTH_MODE=enabled. */
+const TOTP_KEY = "Ozw3vJk9pQ0sT6xN2mB8fH4dR1yL5aC7eU3gI9oK0jM=";
 const INTERNAL = "internal-secret-for-tests";
 // Unroutable per RFC 5737 — the lazy connect loop fails fast and we swap in
 // pglite by hand, so nothing waits on a real Postgres.
@@ -58,6 +61,7 @@ async function buildGatedApp(): Promise<FastifyInstance> {
   setEnv({
     AUTH_MODE: "enabled",
     AUTH_SECRET: SECRET,
+    TOTP_ENCRYPTION_KEY: TOTP_KEY,
     DATABASE_URL: DEAD_DB,
     INTERNAL_AUTH_SECRET: INTERNAL,
   });
@@ -81,6 +85,10 @@ async function seedUser(overrides: Partial<typeof users.$inferInsert> = {}): Pro
       email: `dana+${++seq}@example.com`,
       name: "Dana Levi",
       role: "read_only",
+      // Enrolled unless a case says otherwise — MAG-2730's gate shuts the
+      // dashboard to anyone without an authenticator, and these tests are about
+      // the session and role checks that sit in front of it.
+      ...enrolledTwoFactor(),
       ...overrides,
     })
     .returning();
@@ -217,6 +225,11 @@ describe("POST /auth/sign-in", () => {
     await seedUser({
       email: "dana@example.com",
       passwordHash: await hashPassword("correct horse battery staple"),
+      // Not enrolled: this block is about the password leg, which is the whole
+      // of a sign-in only for an account with no authenticator. The two-step
+      // path an enrolled account takes is `two-factor.test.ts`'s.
+      totpSecret: null,
+      totpEnrolledAt: null,
     });
   });
 
