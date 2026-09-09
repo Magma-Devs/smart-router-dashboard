@@ -218,13 +218,15 @@ describe("POST /auth/invite/accept — social", () => {
       method: "POST",
       url: "/auth/invite/accept",
       remoteAddress: "10.0.0.9",
-      headers: { "user-agent": "undici", "x-internal-auth": INTERNAL },
-      payload: {
-        token,
-        oauthProvider: "google",
-        oauthToken: "an-id-token",
-        clientContext: { ip: "84.229.11.6", userAgent: FIREFOX },
+      // The browser's own address and agent, as the web tier forwards them:
+      // headers, vouched for by the internal secret.
+      headers: {
+        "user-agent": "undici",
+        "x-internal-auth": INTERNAL,
+        "x-forwarded-client-ip": "84.229.11.6",
+        "x-forwarded-client-ua": FIREFOX,
       },
+      payload: { token, oauthProvider: "google", oauthToken: "an-id-token" },
     });
     expect(res.statusCode).toBe(201);
 

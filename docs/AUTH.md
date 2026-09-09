@@ -587,6 +587,7 @@ exercising the real flow.
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | api | **development-only** admin seed; ignored (with a warning) when `NODE_ENV=production` |
 | `INTERNAL_AUTH_SECRET` | api + web | Proves a caller is our own web tier, so forwarded browser IP / User-Agent are honoured on the routes that open a session. Unset ⇒ ignored, and sessions record what the api observes |
 | `TRUST_PROXY` | api | How far to believe `X-Forwarded-For`. Hop count (default `1`), a comma list of proxy IPs/CIDRs, or `false` |
+| `TRUST_PROXY_HOPS` | web | How many proxies sit in front of the web (default `1`). Picks the browser's entry out of `X-Forwarded-For`, counting from the right |
 | `DEPLOYMENT_MODE` | api + web | `onprem` (default) / `managed` — forks invite and reset delivery |
 | `SETUP_TOKEN` | api | First-run token. Unset ⇒ generated once at boot and logged |
 | `SETUP_TOKEN_FILE` | api | Where to write a generated token (mode 0600) so an init container can surface it |
@@ -1002,15 +1003,31 @@ string ("Chrome 141 / macOS"). Getting these right needs care, because
 pod and the User-Agent is undici's.
 
 So `authorize(credentials, request)` reads the browser's own address and
-User-Agent from *its* request and forwards them — and the api believes
-them **only** when the caller also presents `INTERNAL_AUTH_SECRET`. The
-route is public, so without that check anyone could pin any address to
-their own sign-in attempts and write a false trail. Unset ⇒ forwarded
-context is always ignored and the api records what it observes. The
-same holds on the other two routes Auth.js calls to open a session:
+User-Agent from *its* request and forwards them as `X-Forwarded-Client-Ip`
+and `X-Forwarded-Client-Ua` — and the api believes them **only** when the
+caller also presents `INTERNAL_AUTH_SECRET`. The route is public, so
+without that check anyone could pin any address to their own sign-in
+attempts and write a false trail. Unset ⇒ forwarded context is always
+ignored and the api records what it observes. The same holds on the other
+routes Auth.js calls to open a session: `/auth/2fa/verify`,
 `/auth/oauth/:provider`, and `/auth/invite/accept` when an invitation is
 redeemed with Google or GitHub — which also writes a `signin.succeeded`
 row for the session it opens.
+
+**Headers, not a body field.** The api's per-IP limiter on `/auth/*` runs
+in `onRequest`, before a body exists, and it keys on this same address.
+Read it any later and every sign-in in the deployment shares one bucket of
+ten a minute, which two-factor roughly doubles the cost of — a team
+signing in together would lock each other out of the code screen.
+
+**Which entry of `X-Forwarded-For` is the browser.** Counted from the
+right, `TRUST_PROXY_HOPS` places back (default `1`). Never the left-most:
+most ingresses append rather than replace, so the left of that header is
+whatever the caller sent, and reading it hands the choice of recorded
+address to the person being recorded. Set it to the number of proxies in
+front of the web, and keep it consistent with the api's `TRUST_PROXY`. A
+chain shorter than the hop count reports nothing, and the api falls back
+to what it observes.
 
 Both values are the caller's to write, so both are cut to what their
 columns take before any insert: a browser version longer than four

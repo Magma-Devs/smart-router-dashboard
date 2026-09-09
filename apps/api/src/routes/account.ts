@@ -42,7 +42,7 @@ export async function accountRoutes(app: FastifyInstance) {
     // The audit shape — parsed device string and normalised address. The raw
     // User-Agent overflows the 128-character column, and a standalone audit
     // write that fails is swallowed, so the row would silently vanish.
-    const { access } = resolveClientContext(request, undefined, undefined);
+    const { access } = resolveClientContext(request, undefined);
     return { ...access, sessionId };
   }
 

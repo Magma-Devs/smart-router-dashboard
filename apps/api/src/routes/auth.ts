@@ -54,42 +54,45 @@ import {
 import { requireAuth } from "../plugins/auth.js";
 import { config, deploymentMode, publicWebOrigin } from "../config.js";
 
-/** Tighter per-IP limit on the credential surface than the global default. */
-/** Per-IP limit for every route that tests a credential. Exported because
- *  changing your password tests one too — the current password. */
+/** Per-IP limit for a route that tests a credential, keyed on the connection.
+ *  Exported for the routes the browser calls directly — changing your password
+ *  tests one too, the current password. The routes here use
+ *  {@link strictAuthRateLimit}, which keys on the browser behind the web tier. */
 export const STRICT_AUTH_RATE_LIMIT = { max: 10, timeWindow: "1 minute" } as const;
+
+/**
+ * The same limit, keyed on the **browser's** address rather than the
+ * connection's.
+ *
+ * Auth.js calls `/auth/sign-in`, `/auth/2fa/verify` and `/auth/oauth/:provider`
+ * from the web tier, so keying on `request.ip` would put every person in the
+ * deployment in one bucket of ten a minute — and two-factor roughly doubles the
+ * calls a sign-in costs, so a team signing in together would lock each other out
+ * of the code screen. Falls back to the connection address, which is what a
+ * direct caller gets.
+ */
+function strictAuthRateLimit(internalSecret: string | undefined) {
+  return {
+    max: 10,
+    timeWindow: "1 minute",
+    keyGenerator: (request: FastifyRequest) =>
+      forwardedClientIp(request, internalSecret) ?? request.ip,
+  } as const;
+}
 
 /** Every email a request carries. 254 is the RFC 5321 ceiling, under the
  *  `varchar(255)` every email column uses, so an over-long address is a 400
  *  here rather than a failed INSERT — sign-in's lockout records any address. */
 export const EMAIL_FIELD = { type: "string" as const, format: "email", maxLength: 254 };
 
-/** On every route that opens a session. Auth.js makes those calls from the web
- *  tier, so without this the api would record the web pod as the device. */
-const CLIENT_CONTEXT_FIELD = {
-  type: "object" as const,
-  description:
-    "The browser's own IP and User-Agent, forwarded by the web tier. Honoured only with a valid X-Internal-Auth header.",
-  properties: {
-    ip: { type: "string" as const },
-    userAgent: { type: "string" as const },
-  },
-};
-
 /** One message for every dead reset link. MAG-2870: "The same message for both
  *  cases. Telling someone a link was already used also tells an attacker it was
  *  already used." */
 const RESET_GONE = "This link has expired.";
 
-interface ForwardedClientContext {
-  ip?: unknown;
-  userAgent?: unknown;
-}
-
 interface SignInBody {
   email: string;
   password: string;
-  clientContext?: ForwardedClientContext;
   /** Check the password and report which step comes next, without opening a
    *  session. The login form asks first — it has to know whether to show the
    *  code screen — and Auth.js signs in afterwards through this same route.
@@ -100,7 +103,6 @@ interface SignInBody {
 interface TwoFactorVerifyBody {
   challenge: string;
   code: string;
-  clientContext?: ForwardedClientContext;
 }
 
 interface InvitePreviewBody {
@@ -117,7 +119,6 @@ interface InviteAcceptBody {
   oauthProvider?: OAuthProvider;
   oauthToken?: string;
   name?: string;
-  clientContext?: ForwardedClientContext;
 }
 
 const OAUTH_PROVIDERS = ["google", "github"] as const;
@@ -142,7 +143,6 @@ interface SetupBody {
 
 interface OAuthBody {
   token: string;
-  clientContext?: ForwardedClientContext;
 }
 
 /** Constant-time comparison that doesn't leak length through early return. */
@@ -172,23 +172,39 @@ export interface ResolvedClient extends ClientContext {
   access: { ip: string | null; client: string | null };
 }
 
+/** Set by the web tier beside `X-Internal-Auth`, and believed only with it.
+ *  Headers rather than a body field because the rate limiter runs in
+ *  `onRequest`, before a body exists, and it has to key on the same address
+ *  this records — otherwise every sign-in in the deployment shares one bucket. */
+export const FORWARDED_IP_HEADER = "x-forwarded-client-ip";
+export const FORWARDED_UA_HEADER = "x-forwarded-client-ua";
+
+/** The forwarded address, or null when nothing vouches for one. Shared with the
+ *  rate limiter so the two cannot disagree about who is calling. */
+export function forwardedClientIp(
+  request: FastifyRequest,
+  expected: string | undefined,
+): string | null {
+  if (!expected) return null;
+  const supplied = request.headers["x-internal-auth"];
+  if (typeof supplied !== "string" || !secretsMatch(supplied, expected)) return null;
+  const ip = request.headers[FORWARDED_IP_HEADER];
+  return typeof ip === "string" && ip ? ip : null;
+}
+
 /**
  * Decide what to record as the caller's device.
  *
- * The browser never reaches `/auth/sign-in` directly — Auth.js calls it from
- * the web tier — so `request.ip` here is the web pod and the User-Agent is
- * undici's. The web therefore forwards what *it* saw, and this is where we
- * decide whether to believe it.
- *
- * The route is publicly reachable, so an unauthenticated caller could otherwise
- * put any address on their own sign-in attempts, which is a way to write a false
- * audit trail. Forwarded context is honoured only alongside the shared internal
- * secret; otherwise we fall back to what we observed ourselves — which for a
- * direct caller is their own real address.
+ * The browser never reaches the session-opening routes directly — Auth.js
+ * calls them from the web tier — so `request.ip` there is the web pod and the
+ * User-Agent is undici's. The web forwards what *it* saw, and this decides
+ * whether to believe it: only alongside the shared internal secret, otherwise we
+ * record what we observed, which for a direct caller is their own real address.
+ * The routes are publicly reachable, so without that gate anyone could write a
+ * false trail.
  */
 export function resolveClientContext(
   request: FastifyRequest,
-  forwarded: ForwardedClientContext | undefined,
   expected: string | undefined,
 ): ResolvedClient {
   const withAccess = (raw: ClientContext): ResolvedClient => ({
@@ -201,20 +217,22 @@ export function resolveClientContext(
     userAgent: request.headers["user-agent"] ?? null,
   };
 
-  if (!expected || !forwarded) return withAccess(observed);
-
-  const supplied = request.headers["x-internal-auth"];
-  if (typeof supplied !== "string" || !secretsMatch(supplied, expected)) {
-    request.log.warn("clientContext supplied without a valid internal secret — ignoring");
+  const forwardedIp = forwardedClientIp(request, expected);
+  if (!forwardedIp) {
+    // Sent but not believed: either no secret is configured on this side, or
+    // the caller could not produce it. Worth a line either way — the first is a
+    // deployment recording its own address against every sign-in.
+    const suppliedIp = request.headers[FORWARDED_IP_HEADER];
+    if (typeof suppliedIp === "string" && suppliedIp) {
+      request.log.warn("forwarded client address supplied without a valid internal secret");
+    }
     return withAccess(observed);
   }
 
+  const forwardedUa = request.headers[FORWARDED_UA_HEADER];
   return withAccess({
-    ip: typeof forwarded.ip === "string" && forwarded.ip ? forwarded.ip : observed.ip,
-    userAgent:
-      typeof forwarded.userAgent === "string" && forwarded.userAgent
-        ? forwarded.userAgent
-        : observed.userAgent,
+    ip: forwardedIp,
+    userAgent: typeof forwardedUa === "string" && forwardedUa ? forwardedUa : observed.userAgent,
   });
 }
 
@@ -245,6 +263,7 @@ export async function authRoutes(app: FastifyInstance) {
   // that is taken at module load, before a test (or a late-loaded secrets file)
   // can set it. Same reason the auth plugin re-reads AUTH_SECRET.
   const internalSecret = process.env.INTERNAL_AUTH_SECRET ?? config.auth.internalSecret;
+  const strictLimit = strictAuthRateLimit(internalSecret);
 
   /**
    * Everything that happens once a sign-in is genuinely complete.
@@ -314,7 +333,7 @@ export async function authRoutes(app: FastifyInstance) {
   app.post(
     "/auth/setup",
     {
-      config: { rateLimit: STRICT_AUTH_RATE_LIMIT },
+      config: { rateLimit: strictLimit },
       schema: {
         tags: ["Auth"],
         summary: "Create the first admin on a fresh install. Requires the installer's setup token.",
@@ -334,7 +353,7 @@ export async function authRoutes(app: FastifyInstance) {
       const db = dbOr503(reply);
       if (!db) return reply;
       const body = request.body as SetupBody;
-      const client = resolveClientContext(request, undefined, internalSecret);
+      const client = resolveClientContext(request, internalSecret);
 
       // Cheap check first, so an already-claimed install doesn't become a
       // token-guessing oracle. The authoritative check runs inside the
@@ -442,7 +461,7 @@ export async function authRoutes(app: FastifyInstance) {
   app.post(
     "/auth/invite/preview",
     {
-      config: { rateLimit: STRICT_AUTH_RATE_LIMIT },
+      config: { rateLimit: strictLimit },
       schema: {
         tags: ["Auth"],
         summary: "What an invitation link is for, so the redemption page can show it",
@@ -477,7 +496,7 @@ export async function authRoutes(app: FastifyInstance) {
   app.post(
     "/auth/invite/accept",
     {
-      config: { rateLimit: STRICT_AUTH_RATE_LIMIT },
+      config: { rateLimit: strictLimit },
       schema: {
         tags: ["Auth"],
         summary: "Redeem an invitation: create the account and open a session",
@@ -490,7 +509,6 @@ export async function authRoutes(app: FastifyInstance) {
             oauthProvider: { type: "string" as const, enum: [...OAUTH_PROVIDERS] },
             oauthToken: { type: "string" as const, minLength: 1 },
             name: { type: "string" as const },
-            clientContext: CLIENT_CONTEXT_FIELD,
           },
         },
       },
@@ -499,7 +517,7 @@ export async function authRoutes(app: FastifyInstance) {
       const db = dbOr503(reply);
       if (!db) return reply;
       const body = request.body as InviteAcceptBody;
-      const client = resolveClientContext(request, body.clientContext, internalSecret);
+      const client = resolveClientContext(request, internalSecret);
 
       let verifiedEmail: string | undefined;
       let provider: { column: ReturnType<typeof providerKey>; id: string } | undefined;
@@ -611,7 +629,7 @@ export async function authRoutes(app: FastifyInstance) {
   app.post(
     "/auth/password/forgot",
     {
-      config: { rateLimit: STRICT_AUTH_RATE_LIMIT },
+      config: { rateLimit: strictLimit },
       schema: {
         tags: ["Auth"],
         summary: "Request a reset link by email — managed deployments with a mail transport only",
@@ -651,7 +669,7 @@ export async function authRoutes(app: FastifyInstance) {
         });
       }
       const { email } = request.body as { email: string };
-      const client = resolveClientContext(request, undefined, internalSecret);
+      const client = resolveClientContext(request, internalSecret);
 
       // Always 202, whether or not the address exists, and whether or not the
       // account has a password at all — anything else turns this into a way to
@@ -724,7 +742,7 @@ export async function authRoutes(app: FastifyInstance) {
   app.post(
     "/auth/password/reset/preview",
     {
-      config: { rateLimit: STRICT_AUTH_RATE_LIMIT },
+      config: { rateLimit: strictLimit },
       schema: {
         tags: ["Auth"],
         summary: "What a reset link is for — the address it changes. Does not spend it",
@@ -758,7 +776,7 @@ export async function authRoutes(app: FastifyInstance) {
   app.post(
     "/auth/password/reset",
     {
-      config: { rateLimit: STRICT_AUTH_RATE_LIMIT },
+      config: { rateLimit: strictLimit },
       schema: {
         tags: ["Auth"],
         summary: "Set a new password from a reset link. Does not sign anyone in.",
@@ -776,7 +794,7 @@ export async function authRoutes(app: FastifyInstance) {
       const db = dbOr503(reply);
       if (!db) return reply;
       const body = request.body as ResetBody;
-      const client = resolveClientContext(request, undefined, internalSecret);
+      const client = resolveClientContext(request, internalSecret);
 
       const problem = await validatePassword(body.password, request.log);
       if (problem) {
@@ -826,7 +844,7 @@ export async function authRoutes(app: FastifyInstance) {
   app.post(
     "/auth/sign-in",
     {
-      config: { rateLimit: STRICT_AUTH_RATE_LIMIT },
+      config: { rateLimit: strictLimit },
       schema: {
         tags: ["Auth"],
         summary: "Verify email + password, open a session, and return the user record",
@@ -836,7 +854,6 @@ export async function authRoutes(app: FastifyInstance) {
           properties: {
             email: EMAIL_FIELD,
             password: { type: "string" as const, minLength: 1 },
-            clientContext: CLIENT_CONTEXT_FIELD,
             probe: {
               type: "boolean" as const,
               description:
@@ -850,7 +867,7 @@ export async function authRoutes(app: FastifyInstance) {
       const db = dbOr503(reply);
       if (!db) return reply;
       const body = request.body as SignInBody;
-      const client = resolveClientContext(request, body.clientContext, internalSecret);
+      const client = resolveClientContext(request, internalSecret);
 
       // Spend the attempt BEFORE the password is looked at. Counting first is
       // what keeps a parallel burst inside the per-account budget; a correct
@@ -942,7 +959,7 @@ export async function authRoutes(app: FastifyInstance) {
   app.post(
     "/auth/2fa/verify",
     {
-      config: { rateLimit: STRICT_AUTH_RATE_LIMIT },
+      config: { rateLimit: strictLimit },
       schema: {
         tags: ["Auth"],
         summary: "Second step: spend a challenge with a 6-digit code and open the session",
@@ -952,7 +969,6 @@ export async function authRoutes(app: FastifyInstance) {
           properties: {
             challenge: { type: "string" as const, minLength: 1 },
             code: { type: "string" as const, minLength: 1 },
-            clientContext: CLIENT_CONTEXT_FIELD,
           },
         },
       },
@@ -961,7 +977,7 @@ export async function authRoutes(app: FastifyInstance) {
       const db = dbOr503(reply);
       if (!db) return reply;
       const body = request.body as TwoFactorVerifyBody;
-      const client = resolveClientContext(request, body.clientContext, internalSecret);
+      const client = resolveClientContext(request, internalSecret);
 
       /** One message for every way this can fail. The ticket: "a wrong code
        *  gives a generic error with no hint about which factor failed" — and
@@ -1038,7 +1054,7 @@ export async function authRoutes(app: FastifyInstance) {
   app.post(
     "/auth/oauth/:provider",
     {
-      config: { rateLimit: STRICT_AUTH_RATE_LIMIT },
+      config: { rateLimit: strictLimit },
       schema: {
         tags: ["Auth"],
         summary: "Verify a Google or GitHub token server-side and open a session — or, for an account with an authenticator, return a challenge for its code",
@@ -1054,7 +1070,6 @@ export async function authRoutes(app: FastifyInstance) {
           required: ["token"],
           properties: {
             token: { type: "string" as const, minLength: 1 },
-            clientContext: CLIENT_CONTEXT_FIELD,
           },
         },
       },
@@ -1063,8 +1078,8 @@ export async function authRoutes(app: FastifyInstance) {
       const db = dbOr503(reply);
       if (!db) return reply;
       const provider = (request.params as { provider: OAuthProvider }).provider;
-      const { token, clientContext } = request.body as OAuthBody;
-      const client = resolveClientContext(request, clientContext, internalSecret);
+      const { token } = request.body as OAuthBody;
+      const client = resolveClientContext(request, internalSecret);
 
       let profile;
       try {
