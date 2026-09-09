@@ -51,6 +51,7 @@ beforeEach(async () => {
     AUTH_MODE: "enabled",
     AUTH_SECRET: SECRET,
     TOTP_ENCRYPTION_KEY: TOTP_KEY,
+    INTERNAL_AUTH_SECRET: "internal-secret-for-tests",
     DATABASE_URL: DEAD_DB,
     SETUP_TOKEN: "installer-token",
     DEPLOYMENT_MODE: "onprem",

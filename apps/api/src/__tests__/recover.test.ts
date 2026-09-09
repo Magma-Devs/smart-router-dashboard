@@ -145,11 +145,7 @@ describe("reset-password", () => {
     const user = await seedUser();
     const before = (await t.db.select().from(users).where(eq(users.id, user.id)))[0]!.passwordHash;
 
-    const out = await runRecovery(
-      t.db,
-      { command: "reset-password", email: user.email },
-      ONPREM,
-    );
+    const out = await runRecovery(t.db, { command: "reset-password", email: user.email }, ONPREM);
     expect(out.message).toContain("https://dash.example.com/reset/");
 
     // The whole rule, in one assertion: nobody ever sets somebody else's
@@ -192,11 +188,7 @@ describe("promote-admin", () => {
 describe("the audit row", () => {
   it("names the command and the operator, and carries no browser context", async () => {
     const user = await seedUser(enrolledTwoFactor());
-    await runRecovery(
-      t.db,
-      { command: "reset-2fa", email: user.email, by: "victoria" },
-      ONPREM,
-    );
+    await runRecovery(t.db, { command: "reset-2fa", email: user.email, by: "victoria" }, ONPREM);
 
     const [row] = await auditRows();
     expect(row).toMatchObject({
@@ -253,11 +245,7 @@ describe("the audit row", () => {
 describe("finding the account", () => {
   it("sees a suspended account — recovery is for when the state is already wrong", async () => {
     const user = await seedUser({ status: "suspended" });
-    const out = await runRecovery(
-      t.db,
-      { command: "promote-admin", email: user.email },
-      ONPREM,
-    );
+    const out = await runRecovery(t.db, { command: "promote-admin", email: user.email }, ONPREM);
     expect(out.message).toContain("active again");
   });
 

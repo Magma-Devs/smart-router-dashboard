@@ -21,7 +21,9 @@ repo root — `apps/`, `packages/`, `docker-compose*.yml`, `Makefile`.
 > api resolves it to a live session and the live user row on every request, and
 > four cumulative roles (`read_only · requester · approver · admin`) gate from
 > that row — so revoking a session or demoting someone takes effect on the
-> request in flight, not at their next sign-in. See [`docs/AUTH.md`](docs/AUTH.md).
+> request in flight, not at their next sign-in. With `AUTH_MODE=enabled` everyone also sets up an authenticator app — see
+> [`docs/TWO-FACTOR.md`](docs/TWO-FACTOR.md), which needs `TOTP_ENCRYPTION_KEY`.
+> See [`docs/AUTH.md`](docs/AUTH.md).
 
 ## Quick start
 
@@ -448,6 +450,9 @@ Every `/api/metrics/*` route also accepts **`router?`** — the router scope
 | `GET /api/metrics/query` | **`query`** (required) | Raw **instant** PromQL passthrough — `{ result }`. 400 without `query` |
 | `GET /api/config/routers` | — | `{ routers: RouterTopology[] }` — live topology from the mounted values file (either format), node URLs masked to scheme+host. Each endpoint also carries `index` (the handle the relay below resolves) + `directable` |
 | `POST /api/upstreams/relay` | body: `{routerId, node, endpointIndex, transport?, httpMethod?, path?, body?}` | Fires ONE request straight at a configured upstream, router excluded — `{httpStatus, latencyMs, body, truncated, transport}`. The target is resolved from the values file, never taken from the caller; the resolved url is never returned and is scrubbed out of the upstream's own body. Upstream 4xx/5xx come back **200** with their status inside; 502/504 mean our hop failed. Off with `UPSTREAM_RELAY_ENABLED=false`. See [`docs/UPSTREAM-DIRECT-TEST.md`](docs/UPSTREAM-DIRECT-TEST.md) |
+| `POST /auth/2fa/verify` | body: `{challenge, code}` | Second sign-in step. `/auth/sign-in` returns a challenge and **no session** for an enrolled account; only this opens one. Wrong code, dead challenge and unknown challenge all answer the same 401 |
+| `POST /api/account/2fa/begin` · `/confirm` | — · `{code}` | Enrolment. `begin` returns the QR (server-rendered SVG) and the secret as text, once; `confirm` proves a code and turns 2FA on. Refused 409 for an already-enrolled account — an admin reset is the only way back |
+| `POST /api/team/members/:id/2fa/reset` | — | Admin only. Destroys the secret, retires live challenges, ends their sessions. Logs `2fa.reset` naming both people. See [`docs/TWO-FACTOR.md`](docs/TWO-FACTOR.md) |
 
 ## Environment variables
 
@@ -481,11 +486,13 @@ Auth (only read when `AUTH_MODE=enabled`; the metrics path never touches the DB)
 | `AUTH_SECRET` | (unset) | HS256 signing secret shared with the web (must match) |
 | `DATABASE_URL` | (unset) | Postgres connection string for `users` + `sessions` |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | (unset) | idempotent admin seed on first boot, **development only** — refused under `NODE_ENV=production`, where first-run setup with the installer's `SETUP_TOKEN` is the only way an account comes into existence |
-| `INTERNAL_AUTH_SECRET` | (unset) | shared with the web; gates whether forwarded browser IP / User-Agent are trusted on `/auth/sign-in`. Unset ⇒ the api records what it observes |
+| `INTERNAL_AUTH_SECRET` | (unset) | shared with the web; gates whether the forwarded browser IP / User-Agent (`X-Forwarded-Client-Ip` / `-Ua`) are trusted on `/auth/sign-in` and `/auth/2fa/verify`, and whether the per-IP limiter keys on them. Unset ⇒ the api records what it observes and every sign-in shares one bucket |
 | `DEPLOYMENT_MODE` | `onprem` | `managed` (we host, email works) / `onprem` (customer hosts, no mail server). Forks invite + reset delivery; read by the web at runtime via `/api/config` |
 | `SETUP_TOKEN` | (generated) | First-run token, required to create the first admin. Unset ⇒ generated once at boot and logged at `warn` |
 | `SETUP_TOKEN_FILE` | (unset) | Path to write a generated token to (mode 0600), so an init container or mounted volume can surface it |
 | `PASSWORD_BREACH_CHECK` | `hibp` | `off` disables the HaveIBeenPwned check — the honest setting for an air-gapped install, rather than relying on a silent timeout |
+| `TOTP_ENCRYPTION_KEY` | (unset) | **Required.** 32 bytes (base64 or hex) encrypting every enrolled TOTP secret at rest. The api refuses to boot without it: the 2FA gate shuts the dashboard to anyone unenrolled, enrolment is the only way through, and enrolment needs this key — so missing it locks out every account at once. Deliberately NOT derived from `AUTH_SECRET`, whose rotation is routine and would otherwise invalidate every enrolled phone. `openssl rand -base64 32` |
+| `TOTP_ISSUER` | `Smart Router` | What an authenticator app shows as the issuer. Override it so somebody administering two dashboards can tell the entries apart |
 | `PUBLIC_WEB_ORIGIN` | (unset) | browser-facing origin of the web app, used to build invitation and password-reset links. Routes that need it fail loudly when it is unset rather than guessing a host |
 | `CUSTOMER_NAME` | `Smart Router` | Who the deployment belongs to, as it appears in the invitation subject ("You've been added to **{customer}** on Smart Router") |
 | `AWS_REGION` | (unset) | **Enables email.** Unset ⇒ nothing is sent and the body is logged at `warn`; on-prem that is correct, on managed it means the admin carries the link (MAG-2870) |
@@ -507,6 +514,7 @@ Web — build-time vs. **runtime**:
 | `AUTH_MODE` / `AUTH_SECRET` | `disabled` / (unset) | must match the api; `enabled` renders the login page + edge gate |
 | `DEPLOYMENT_MODE` | `onprem` | must match the api. Surfaced to the browser by `GET /api/config`, so one image serves both shapes |
 | `INTERNAL_AUTH_SECRET` | (unset) | must match the api; lets the web forward the browser's real IP / User-Agent on sign-in |
+| `TRUST_PROXY_HOPS` | `1` | how many proxies sit in front of the web. The browser's entry is that many back from the right of `X-Forwarded-For`; the left-most is caller-supplied and never used |
 | `INTERNAL_API_BASE_URL` | (falls back to api url) | server-side api URL for Auth.js callbacks (compose sets `http://api:8000`) |
 
 The browser resolves its api base **once per session** from `/api/config`

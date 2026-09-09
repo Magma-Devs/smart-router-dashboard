@@ -65,7 +65,7 @@ function note(text) {
 
 // ── http ────────────────────────────────────────────────────────────────────
 
-async function call(method, path, { body, token, base = API, origin } = {}) {
+async function call(method, path, { body, token, base = API, origin, _retried } = {}) {
   const headers = {};
   if (token) headers.authorization = `Bearer ${token}`;
   if (origin) headers.origin = origin;
@@ -83,6 +83,18 @@ async function call(method, path, { body, token, base = API, origin } = {}) {
   } catch {
     /* not json */
   }
+
+  // `/auth/*` allows 10 a minute per address, and two-factor doubled the number
+  // of calls a sign-in costs — so this run now crosses it where it used to sit
+  // just under. Slept off rather than raised for the run: raising it would stop
+  // exercising the configuration that ships, and the wait is the honest price.
+  if (res.status === 429 && !_retried) {
+    const secs = Number(/retry in (\d+)/.exec(text)?.[1] ?? 60) + 2;
+    note(`per-IP rate limit hit — waiting ${secs}s (10/min on /auth/*)`);
+    await new Promise((r) => setTimeout(r, secs * 1000));
+    return call(method, path, { body, token, base, origin, _retried: true });
+  }
+
   return { status: res.status, body: json, text, headers: res.headers };
 }
 
@@ -111,8 +123,107 @@ function mintToken({ userId, email, sessionId, role = "admin" }) {
   return jwt;
 }
 
-const tokenFor = (signIn) =>
-  mintToken({ userId: signIn.user.id, email: signIn.user.email, sessionId: signIn.sessionId });
+const tokenFor = (signIn) => {
+  // A sign-in that did not sign in is the commonest way this runner goes wrong,
+  // and `undefined is not an object` three frames away says nothing about which
+  // call failed or why. Fail here, with the response.
+  if (!signIn?.user?.id || !signIn?.sessionId) {
+    throw new Error(`expected a completed sign-in, got: ${JSON.stringify(signIn)}`);
+  }
+  return mintToken({
+    userId: signIn.user.id,
+    email: signIn.user.email,
+    sessionId: signIn.sessionId,
+  });
+};
+
+// ── two-factor ──────────────────────────────────────────────────────────────
+//
+// MAG-2730 made an authenticator mandatory, so this runner has to hold one. The
+// alternative — turning enforcement off for the run — would test a deployment
+// nobody ships. Twenty lines of RFC 4226 rather than a dependency, matching
+// `apps/api/src/services/totp.ts`, which is what these codes are checked against.
+
+const B32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+
+function b32decode(text) {
+  let bits = 0;
+  let value = 0;
+  const out = [];
+  for (const c of text.replace(/[\s=-]/g, "").toUpperCase()) {
+    value = (value << 5) | B32.indexOf(c);
+    bits += 5;
+    if (bits >= 8) {
+      out.push((value >>> (bits - 8)) & 0xff);
+      bits -= 8;
+    }
+  }
+  return Buffer.from(out);
+}
+
+/** The six-digit code for a step, default "now". */
+function totpCode(secret, step = Math.floor(Date.now() / 30000)) {
+  const counter = Buffer.alloc(8);
+  counter.writeBigUInt64BE(BigInt(step));
+  const d = createHmac("sha1", b32decode(secret)).update(counter).digest();
+  const o = d[d.length - 1] & 0x0f;
+  const n =
+    ((d[o] & 0x7f) << 24) |
+    ((d[o + 1] & 0xff) << 16) |
+    ((d[o + 2] & 0xff) << 8) |
+    (d[o + 3] & 0xff);
+  return String(n % 1000000).padStart(6, "0");
+}
+
+/** Enrol the account this token belongs to, and return its secret. */
+async function enrol(token) {
+  const begun = await call("POST", "/api/account/2fa/begin", { token, body: {} });
+  if (begun.status !== 200) {
+    throw new Error(`2FA enrolment could not start: ${begun.status} ${begun.text}`);
+  }
+  const secret = begun.body.secret;
+  const done = await call("POST", "/api/account/2fa/confirm", {
+    token,
+    body: { code: totpCode(secret) },
+  });
+  if (done.status !== 200) throw new Error(`2FA confirm failed: ${done.status} ${done.text}`);
+  return secret;
+}
+
+/**
+ * Sign in all the way, both factors.
+ *
+ * Returns the same `{ user, sessionId }` shape a one-step sign-in used to, so
+ * every call site below reads as it did. Without a secret it is the one-step
+ * flow, which is still what an un-enrolled account gets.
+ *
+ * The code is taken from the NEXT step, not the current one: enrolment and the
+ * sign-in that follows it land inside the same 30 seconds, and the api spends
+ * the step it accepts — so reusing the current one is refused as a replay,
+ * correctly. A person is never this fast.
+ */
+async function signInFully(creds, secret) {
+  const first = await call("POST", "/auth/sign-in", { body: creds });
+  if (!secret || !first.body?.twoFactorRequired) return first;
+  // The CURRENT step, not the next one. `+1` was the right choice immediately
+  // after enrolling — which spends the current step — and the wrong one here,
+  // where minutes have passed: it hands the api a code from the future edge of
+  // its window and, once that step is spent, the next sign-in in the same
+  // 30 seconds is refused as a replay. Now spends the step the phone is on.
+  const second = await call("POST", "/auth/2fa/verify", {
+    body: { challenge: first.body.challenge, code: totpCode(secret) },
+  });
+  if (second.status !== 200) {
+    // Same code, one step on: the current step was already spent by an earlier
+    // sign-in inside this same 30 seconds. A person cannot be this fast.
+    await new Promise((r) => setTimeout(r, 30_000 - (Date.now() % 30_000) + 500));
+    const retry = await call("POST", "/auth/sign-in", { body: creds });
+    return call("POST", "/auth/2fa/verify", {
+      body: { challenge: retry.body?.challenge, code: totpCode(secret) },
+    });
+  }
+  return second;
+}
 
 /**
  * Wait past the current second before minting a token after a bulk revocation.
@@ -217,6 +328,12 @@ check("Create an account through the install");
 
 const adminSignIn = (await call("POST", "/auth/sign-in", { body: ADMIN })).body;
 const adminToken = tokenFor(adminSignIn);
+
+// The first admin may defer 2FA — but not past inviting anyone, which is the
+// next thing this runner does. So it enrols here, which is also the shape a
+// real first admin's day takes.
+const ADMIN_SECRET = await enrol(adminToken);
+note("the first admin enrolled an authenticator (MAG-2730: required before inviting)");
 
 // 2 ──────────────────────────────────────────────────────────────────────────
 check("Create an account on managed — the person sets their own password");
@@ -354,6 +471,24 @@ check("An admin invites someone and they join with exactly the role picked");
     body: { token, password: MEMBER.password, name: "Dana Okonkwo" },
   });
   ok("they join", redeemed.status === 201, `${redeemed.status} ${redeemed.text}`);
+
+  // An invited person gets no grace period. Redemption opens no session — the
+  // page signs in with the password just chosen — so that sign-in is what they
+  // hold, and the only thing it opens is enrolment. "Before the dashboard
+  // opens", stated as a route rather than as a screen.
+  const joinedIn = await call("POST", "/auth/sign-in", {
+    body: { email, password: MEMBER.password },
+  });
+  const joinedToken = tokenFor(joinedIn.body);
+  ok(
+    "and the dashboard stays shut until they set up an authenticator",
+    (await call("GET", "/api/team/members", { token: joinedToken })).status === 403,
+  );
+  globalThis.__memberSecret = await enrol(joinedToken);
+  ok(
+    "which opens it",
+    (await call("GET", "/api/team/members", { token: joinedToken })).status === 200,
+  );
   ok(
     "with exactly the role that was picked",
     redeemed.body?.user?.role === "approver",
@@ -401,9 +536,10 @@ check("An invite already used is refused — and one cannot be redirected to ano
 check("A lower role is refused the action when it is attempted directly");
 {
   const memberSignIn = (
-    await call("POST", "/auth/sign-in", {
-      body: { email: globalThis.__memberEmail, password: MEMBER.password },
-    })
+    await signInFully(
+      { email: globalThis.__memberEmail, password: MEMBER.password },
+      globalThis.__memberSecret,
+    )
   ).body;
   const approverToken = tokenFor(memberSignIn);
   globalThis.__memberId = memberSignIn.user.id;
@@ -508,14 +644,18 @@ check("Forgot password — sets a new password, does not sign in, ends other ses
 {
   // Two live sessions for the target, so "ends their other sessions" is visible.
   const s1 = (
-    await call("POST", "/auth/sign-in", {
-      body: { email: globalThis.__memberEmail, password: MEMBER.password },
-    })
+    await signInFully(
+      { email: globalThis.__memberEmail, password: MEMBER.password },
+      globalThis.__memberSecret,
+    )
   ).body;
+  // signInFully waits out the step when it has to — the api spends every code
+  // it accepts, so two sign-ins inside one 30-second window need two steps.
   const s2 = (
-    await call("POST", "/auth/sign-in", {
-      body: { email: globalThis.__memberEmail, password: MEMBER.password },
-    })
+    await signInFully(
+      { email: globalThis.__memberEmail, password: MEMBER.password },
+      globalThis.__memberSecret,
+    )
   ).body;
   const t1 = tokenFor(s1);
   const t2 = tokenFor(s2);
@@ -563,9 +703,10 @@ check("Forgot password — sets a new password, does not sign in, ends other ses
   );
 
   await pastCutoff();
-  const signedIn = await call("POST", "/auth/sign-in", {
-    body: { email: globalThis.__memberEmail, password: RESET_PW },
-  });
+  const signedIn = await signInFully(
+    { email: globalThis.__memberEmail, password: RESET_PW },
+    globalThis.__memberSecret,
+  );
   ok("the new password works", signedIn.status === 200, `${signedIn.status}`);
   const old = await call("POST", "/auth/sign-in", {
     body: { email: globalThis.__memberEmail, password: MEMBER.password },

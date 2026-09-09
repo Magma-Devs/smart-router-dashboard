@@ -5,6 +5,117 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Added
+
+- **Two-factor login (TOTP).** Everyone who uses the dashboard sets up an
+  authenticator app and enters a six-digit code when they sign in. The one
+  softening is a grace period for the very first admin on a fresh install, which
+  ends the moment they invite somebody or after 30 days, whichever comes first.
+  A countdown sits in the header the whole time. Only under
+  `AUTH_MODE=enabled` — the default deployment is unchanged.
+
+  **A verified password now opens no session.** `POST /auth/sign-in` returns a
+  short-lived single-use challenge for an enrolled account, and only
+  `POST /auth/2fa/verify` opens a session row. The api already refuses any token
+  whose session id resolves to nothing, so a half-authenticated caller has no
+  shape it can take — as opposed to opening the session early and hanging a
+  "pending" flag off it, where every route's correctness would rest on
+  remembering to read that flag.
+
+  Failed codes count into the **same** per-account lockout as failed passwords —
+  five failures in fifteen minutes, one counter keyed on the address. A separate
+  counter would quietly hand out five password attempts and then five more.
+
+- **`POST /api/account/2fa/begin` · `POST /api/account/2fa/confirm`** —
+  enrolment. The QR is rendered server-side and the secret comes back as text
+  beside it, once; a desktop password manager cannot scan a screen.
+
+- **`POST /api/team/members/:id/2fa/reset`** — the lost-phone path, and the only
+  one. The secret is destroyed rather than disabled, the member's sessions end,
+  and they enrol again at their next sign-in from a secret only they will hold.
+  Logged as `2fa.reset`, naming both people. Self re-enrolment is refused.
+
+- **Host recovery** — `reset-2fa`, `reset-password` and `promote-admin`, run on
+  the machine the dashboard runs on (`make recover CMD="…"`). Shell access is
+  the authorisation and these hand out nothing new; what they add is that each
+  writes a `host.recovery` row naming the command and the operator, so a
+  recovery shows up in the customer's own audit log and cannot be done quietly.
+  `reset-password` prints a link and never sets a password.
+
+- **The member list's 2FA column is real** — it was pinned to `—` while 2FA did
+  not exist. Under the enforcement rule only the first admin can read "No", and
+  only during their grace period, so a second one is marked to be noticed.
+
+### Changed
+
+- **`AUTH_MODE=enabled` now requires `TOTP_ENCRYPTION_KEY`** and refuses to boot
+  without it. Two-factor secrets are encrypted at rest with it, and it is
+  deliberately not derived from `AUTH_SECRET`: rotating the session signing key
+  would otherwise invalidate every enrolled phone in the deployment at once.
+  Generate one with `openssl rand -base64 32`. Failing at boot turns "the
+  dashboard stopped working for everybody overnight" into a startup error naming
+  the variable — without the key, nobody can enrol, and the gate lets nobody
+  through who has not.
+
+### Fixed
+
+- **Opening a session is one transaction.** The session row, the sign-in stamp
+  and the `signin.succeeded` event were four separate writes, so a failure
+  partway left a device with no record of arriving — the row an investigation
+  goes looking for — or handed the web a session id a later failure had rolled
+  back.
+
+- **The database pool is sized for what the gate does.** It was five, on the
+  rationale that the api only touches the database on auth flows; since the
+  session became a row, every authenticated request resolves it.
+
+- **Session rows are not pruned, and the schema no longer says they are.** Three
+  comments and the operator guide described an ageing job that does not exist.
+  How long to keep one is the same question as access-event retention, which
+  MAG-2770 owns and has left open.
+
+- **A refreshed token outran the sign-out-everywhere cutoff.** `users.
+  signed_out_all_at` is compared to the token's `iat`, and the web re-signed the
+  token with `iat` set to "now" on every session read — so a tab that reloaded
+  after somebody signed out everywhere carried itself back over the line. It
+  matters most where nothing else would catch it: that cutoff is the lever for
+  tokens no session row is held for. `iat` is now fixed at sign-in and carried
+  through every re-encode.
+
+- **`AUTH_MODE=enabled` now requires `INTERNAL_AUTH_SECRET`** on both tiers, and
+  the api refuses to boot without it. Unset, it failed in the direction nobody
+  notices: the api ignored the address the web forwards and recorded its own, so
+  every session row and every access event carried the web pod on a log whose
+  job is answering where a sign-in came from, and the per-IP limiter keyed on
+  the same one address for the whole deployment. The web logs an error rather
+  than failing, because the two tiers can be configured apart.
+
+- **The browser's address was taken from the wrong end of `X-Forwarded-For`.**
+  It read the left-most entry, which most ingresses leave as whatever the caller
+  sent — so a client could choose the address written to its own session row and
+  every access event for that sign-in, which is the forgery the internal secret
+  exists to prevent. The web now counts back from the right by `TRUST_PROXY_HOPS`
+  (default `1`) and reports nothing when the chain is shorter than that.
+
+- **The code check shared one rate-limit bucket for the whole deployment.** The
+  per-IP limit on `/auth/*` keyed on the connection, and Auth.js calls those
+  routes from the web tier — so ten sign-in steps a minute across every person,
+  which two-factor roughly doubles the cost of. It now keys on the forwarded
+  browser address when the internal secret vouches for it, falling back to the
+  connection for direct callers. The forwarded context moved from the request
+  body to `X-Forwarded-Client-Ip` / `-Ua` headers, because the limiter runs
+  before a body exists.
+
+- **A sign-in without a second factor opened two sessions.** The login form asks
+  the api which step comes next, then Auth.js signs in through the same route —
+  so an account with no authenticator was completed twice, leaving a device on
+  its sessions list that nobody had signed in from and two `signin.succeeded`
+  rows carrying different addresses. The form's first call now sends
+  `probe: true`, which checks the password and opens nothing. Only accounts
+  inside the first admin's grace period could reach it; an enrolled account
+  finishes at `/auth/2fa/verify` and never had the problem.
+
+
 ## [0.16.1]
 
 ### Fixed

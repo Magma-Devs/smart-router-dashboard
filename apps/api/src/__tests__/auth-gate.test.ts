@@ -269,14 +269,16 @@ describe("POST /auth/sign-in", () => {
     const credentials = {
       email: "dana@example.com",
       password: "correct horse battery staple",
-      clientContext: {
-        ip: "203.0.113.7",
-        userAgent: "Mozilla/5.0 (Windows NT 10.0) Firefox/131.0",
-      },
+    };
+    /** Sent as headers, not a body field: the rate limiter runs before a body
+     *  exists and has to key on this same address. */
+    const forwarded = {
+      "x-forwarded-client-ip": "203.0.113.7",
+      "x-forwarded-client-ua": "Mozilla/5.0 (Windows NT 10.0) Firefox/131.0",
     };
 
     it("is recorded when the caller proves it is our web tier", async () => {
-      const res = await signIn(credentials, { "x-internal-auth": INTERNAL });
+      const res = await signIn(credentials, { ...forwarded, "x-internal-auth": INTERNAL });
       expect(res.statusCode).toBe(200);
 
       const [row] = await t.db.query.sessions.findMany({ limit: 1 });
@@ -287,7 +289,7 @@ describe("POST /auth/sign-in", () => {
     it("is ignored without the internal secret, so nobody can forge an audit trail", async () => {
       // The route is publicly reachable. Without this, an attacker could pin
       // any address to their own sign-in attempts.
-      const res = await signIn(credentials);
+      const res = await signIn(credentials, forwarded);
       expect(res.statusCode).toBe(200);
 
       const [row] = await t.db.query.sessions.findMany({ limit: 1 });
@@ -295,7 +297,7 @@ describe("POST /auth/sign-in", () => {
     });
 
     it("is ignored when the secret is wrong", async () => {
-      const res = await signIn(credentials, { "x-internal-auth": "not-the-secret" });
+      const res = await signIn(credentials, { ...forwarded, "x-internal-auth": "not-the-secret" });
       expect(res.statusCode).toBe(200);
 
       const [row] = await t.db.query.sessions.findMany({ limit: 1 });

@@ -222,6 +222,16 @@ services:
       - DATABASE_URL=${DATABASE_URL:-postgres://sr:dev@postgres:5432/sr_dashboard}
       - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@example.com}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin1234}
+      # Two-factor secrets are encrypted at rest with this, and the api refuses
+      # to boot under AUTH_MODE=enabled without it (docs/TWO-FACTOR.md). A fixed
+      # development value, so a `make accounts-reset` cycle does not orphan the
+      # secrets enrolled before it — a per-boot key would present as "everyone's
+      # authenticator broke". Never use it anywhere real.
+      - TOTP_ENCRYPTION_KEY=${TOTP_ENCRYPTION_KEY:-ZGV2LW9ubHkta2V5LW5vdC1mb3ItcHJvZHVjdGlvbiE=}
+      # Shared with the web so forwarded browser addresses are believed. The api
+      # refuses to boot under AUTH_MODE=enabled without it; a fixed development
+      # value keeps `make dev-auth` working. Never use it anywhere real.
+      - INTERNAL_AUTH_SECRET=${INTERNAL_AUTH_SECRET:-dev-internal-secret-change-me-32chars!}
       # Needed api-side to validate the `aud` claim of Google ID tokens.
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
     volumes:
@@ -259,6 +269,9 @@ services:
       - AUTH_SECRET=${AUTH_SECRET:-dev-secret-change-me-please-32chars!}
       - AUTH_URL=${AUTH_URL:-http://localhost:3000}
       - INTERNAL_API_BASE_URL=http://api:8000
+      # Must match the api's.
+      - INTERNAL_AUTH_SECRET=${INTERNAL_AUTH_SECRET:-dev-internal-secret-change-me-32chars!}
+      - TRUST_PROXY_HOPS=${TRUST_PROXY_HOPS:-1}
       # OAuth providers — the login page shows a provider's button only
       # when its id+secret pair is set.
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}

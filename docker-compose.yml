@@ -232,6 +232,14 @@ services:
       - DATABASE_URL=${DATABASE_URL:-postgres://sr:dev@postgres:5432/sr_dashboard}
       - ADMIN_EMAIL=${ADMIN_EMAIL:-}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
+      # Required under AUTH_MODE=enabled — 32 bytes, `openssl rand -base64 32`.
+      # No default on purpose: a generated one would encrypt secrets the next
+      # restart could not read. See docs/TWO-FACTOR.md.
+      - TOTP_ENCRYPTION_KEY=${TOTP_ENCRYPTION_KEY:-}
+      # Also required under AUTH_MODE=enabled, and shared with the web. Without
+      # it the api records its own address on every sign-in instead of the
+      # browser's, and the per-IP limit keys on the web tier.
+      - INTERNAL_AUTH_SECRET=${INTERNAL_AUTH_SECRET:-}
       # Needed api-side to validate the `aud` claim of Google ID tokens.
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
     volumes:
@@ -265,6 +273,10 @@ services:
       - AUTH_SECRET=${AUTH_SECRET:-}
       - AUTH_URL=${AUTH_URL:-http://localhost:3000}
       - INTERNAL_API_BASE_URL=http://api:8000
+      # Must match the api's. Proves to it that a forwarded browser address is
+      # ours to report; TRUST_PROXY_HOPS says which X-Forwarded-For entry.
+      - INTERNAL_AUTH_SECRET=${INTERNAL_AUTH_SECRET:-}
+      - TRUST_PROXY_HOPS=${TRUST_PROXY_HOPS:-1}
       # OAuth providers — the login page shows a provider's button only
       # when its id+secret pair is set.
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
