@@ -5,6 +5,43 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.24.0]
+
+### Added
+
+- **A refresh button on every page header.** One shared control
+  (`gateway/RefreshButton`) broadcasts an SWR revalidation to every mounted
+  key, so a page re-fetches on demand instead of waiting out the 15s poll. It
+  sits next to the window selector on Overview and Metrics (`RouterHeader`),
+  on Upstreams, and in the Dashboard header.
+- **"Skip cache" on Try-it router sends.** A checkbox next to Send adds the
+  router's `lava-force-cache-refresh` directive header, so the relay bypasses
+  the cache read and asks a live upstream even when a cached answer exists —
+  "Served by" then names the upstream rather than "Cached". Router HTTP legs
+  only: a browser WebSocket handshake cannot carry the header, and the
+  direct-to-upstream leg has no router cache to skip, so "Compare both"
+  honours it on its router half.
+
+### Fixed
+
+- **The upstream roster attributes rows per (endpoint × chain).** Rows and
+  router attribution keyed on node name alone, so a vendor name reused across
+  chains — the helm-values shape, where every chain's router declares
+  `lava`/`publicnode`-style nodes — collapsed into one row wearing whichever
+  spec Prometheus returned first, and every chain's row named the first router
+  in the values file (the Router column read ETH for every chain). Rows, the
+  role/interface lookup, router attribution, the uptime and error joins and
+  tip-change staleness now key on `(endpoint_id × spec)`; the in-flight and
+  p95 rollups keep `spec` in their by-clause, so one chain's latency is never
+  quoted for another.
+
+### Changed
+
+- **The Routers table drops its QoS column.** The column, its sort key and its
+  tooltip go. The expanded ChainDetail keeps its QoS graph — a different
+  surface, where the composite score stays readable per chain without being
+  ranked in the rollup.
+
 ## [0.23.0]
 
 ### Added
