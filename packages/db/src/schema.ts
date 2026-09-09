@@ -164,7 +164,11 @@ export const users = pgTable(
  * what makes revocation immediate rather than "at next sign-in".
  *
  * Rows are **not** deleted on revoke: a revoked session is evidence, and
- * MAG-2770's access events reference it. Expired rows are pruned on a schedule.
+ * MAG-2770's access events reference it. **Nothing prunes them either** — there
+ * is no ageing job yet, and how long a session row is kept is the same question
+ * as how long an access event is kept, which MAG-2770 owns and has left open.
+ * A team's sign-ins are a handful of rows a month, so the table's growth is not
+ * what makes that decision urgent.
  *
  * See `docs/ACCOUNTS-DESIGN.md` §4.2 and §5.
  */
@@ -203,7 +207,7 @@ export const sessions = pgTable(
     index("sessions_user_active_idx")
       .on(table.userId)
       .where(sql`${table.revokedAt} is null`),
-    /** For the prune job. */
+    /** Every authenticated request tests this, and an ageing job would too. */
     index("sessions_expires_at_idx").on(table.expiresAt),
   ],
 );

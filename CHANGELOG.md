@@ -59,6 +59,21 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ### Fixed
 
+- **Opening a session is one transaction.** The session row, the sign-in stamp
+  and the `signin.succeeded` event were four separate writes, so a failure
+  partway left a device with no record of arriving — the row an investigation
+  goes looking for — or handed the web a session id a later failure had rolled
+  back.
+
+- **The database pool is sized for what the gate does.** It was five, on the
+  rationale that the api only touches the database on auth flows; since the
+  session became a row, every authenticated request resolves it.
+
+- **Session rows are not pruned, and the schema no longer says they are.** Three
+  comments and the operator guide described an ageing job that does not exist.
+  How long to keep one is the same question as access-event retention, which
+  MAG-2770 owns and has left open.
+
 - **A refreshed token outran the sign-out-everywhere cutoff.** `users.
   signed_out_all_at` is compared to the token's `iat`, and the web re-signed the
   token with `iat` set to "now" on every session read — so a tab that reloaded

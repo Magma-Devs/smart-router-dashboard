@@ -839,8 +839,11 @@ The codes are machine-readable so the web can tell "sign in again" from
   and "sign out this device" possible.
 
 Session rows are **never deleted on revoke** — a revoked session is
-evidence, and the audit log's access events reference it. Expired rows
-are pruned on a schedule.
+evidence, and the audit log's access events reference it. Nor are they
+pruned: there is no ageing job. How long to keep a session row is the
+same question as how long to keep an access event, which MAG-2770 owns
+and has deliberately left open; a team's sign-ins are a few rows a month,
+so growth is not what forces the answer.
 
 There is deliberately **no cache** on the lookup. A cache is precisely
 what would turn "revoked" into "revoked eventually", and the same request
