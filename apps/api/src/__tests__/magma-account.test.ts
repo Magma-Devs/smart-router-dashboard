@@ -66,6 +66,7 @@ async function buildFor(mode: "managed" | "onprem"): Promise<FastifyInstance> {
     AUTH_MODE: "enabled",
     AUTH_SECRET: SECRET,
     TOTP_ENCRYPTION_KEY: TOTP_KEY,
+    INTERNAL_AUTH_SECRET: "internal-secret-for-tests",
     DATABASE_URL: DEAD_DB,
     SETUP_TOKEN: TOKEN,
     DEPLOYMENT_MODE: mode,

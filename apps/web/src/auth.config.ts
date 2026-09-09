@@ -114,7 +114,17 @@ export function clientIpFrom(headers: Headers | null, hops = trustedHops()): str
  */
 function forwardedClientHeaders(headers: Headers | null): Record<string, string> {
   const secret = process.env.INTERNAL_AUTH_SECRET;
-  if (!headers || !secret) return {};
+  if (!secret) {
+    // The api refuses to boot without this, so a deployment that reaches here
+    // has the web and the api configured differently — which is silent by
+    // nature: sign-in works, and every session and access event just records
+    // the api's own address.
+    console.error(
+      "INTERNAL_AUTH_SECRET is not set on the web tier. The browser's address and device cannot be forwarded, so the api will record its own on every sign-in. It must match the api's value.",
+    );
+    return {};
+  }
+  if (!headers) return {};
 
   const ip = clientIpFrom(headers);
   const userAgent = headers.get("user-agent") ?? undefined;

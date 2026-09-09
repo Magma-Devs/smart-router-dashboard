@@ -19,6 +19,7 @@ const SECRET = "test-secret-for-auth-tests-32-chars!";
 /** Any 32 bytes — these tests never verify a code, they only need the api
  *  to boot with AUTH_MODE=enabled. */
 const TOTP_KEY = "Ozw3vJk9pQ0sT6xN2mB8fH4dR1yL5aC7eU3gI9oK0jM=";
+const INTERNAL = "internal-secret-for-tests";
 // Unroutable per RFC 5737 (TEST-NET) — connect fails fast, no retries hang.
 const DEAD_DB = "postgres://sr:x@192.0.2.1:5432/na";
 
@@ -85,15 +86,40 @@ describe("AUTH_MODE=enabled", () => {
   });
 
   it("refuses to boot without DATABASE_URL", async () => {
-    setEnv({ AUTH_MODE: "enabled", AUTH_SECRET: SECRET,
-    TOTP_ENCRYPTION_KEY: TOTP_KEY, DATABASE_URL: undefined });
+    setEnv({
+      AUTH_MODE: "enabled",
+      AUTH_SECRET: SECRET,
+      TOTP_ENCRYPTION_KEY: TOTP_KEY,
+      INTERNAL_AUTH_SECRET: INTERNAL,
+      DATABASE_URL: undefined,
+    });
     await expect(buildApp()).rejects.toThrow(/DATABASE_URL/);
+  });
+
+  it("refuses to boot without INTERNAL_AUTH_SECRET", async () => {
+    // It fails quietly rather than loudly: unset, the api ignores the address
+    // the web forwards and records its own, so every session row and access
+    // event carries the web pod on a log whose job is saying where a sign-in
+    // came from. Nothing looks wrong — the addresses are all the same one.
+    setEnv({
+      AUTH_MODE: "enabled",
+      AUTH_SECRET: SECRET,
+      TOTP_ENCRYPTION_KEY: TOTP_KEY,
+      INTERNAL_AUTH_SECRET: undefined,
+      DATABASE_URL: DEAD_DB,
+    });
+    await expect(buildApp()).rejects.toThrow(/INTERNAL_AUTH_SECRET/);
   });
 
   describe("with secret + (unreachable) database", () => {
     async function enabledApp(): Promise<FastifyInstance> {
-      setEnv({ AUTH_MODE: "enabled", AUTH_SECRET: SECRET,
-    TOTP_ENCRYPTION_KEY: TOTP_KEY, DATABASE_URL: DEAD_DB });
+      setEnv({
+        AUTH_MODE: "enabled",
+        AUTH_SECRET: SECRET,
+        TOTP_ENCRYPTION_KEY: TOTP_KEY,
+        INTERNAL_AUTH_SECRET: INTERNAL,
+        DATABASE_URL: DEAD_DB,
+      });
       return buildApp();
     }
 

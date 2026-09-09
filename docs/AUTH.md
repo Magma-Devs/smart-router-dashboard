@@ -486,7 +486,7 @@ exercising the real flow.
 | `AUTH_SECRET` | api + web | HS256 signing secret, must match. `openssl rand -base64 32` |
 | `DATABASE_URL` | api | `postgres://sr:dev@postgres:5432/sr_dashboard` in compose |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | api | **development-only** admin seed; ignored (with a warning) when `NODE_ENV=production` |
-| `INTERNAL_AUTH_SECRET` | api + web | Proves a caller is our own web tier, so forwarded browser IP / User-Agent are honoured. Unset ⇒ ignored, and sessions record what the api observes |
+| `INTERNAL_AUTH_SECRET` | api + web | Proves a caller is our own web tier, so the forwarded browser IP / User-Agent are honoured and the per-IP limit keys on the person. **Required under `AUTH_MODE=enabled`** — the api refuses to boot without it, because unset it fails silently: every session and access event records the api's own address |
 | `TRUST_PROXY` | api | How far to believe `X-Forwarded-For`. Hop count (default `1`), a comma list of proxy IPs/CIDRs, or `false` |
 | `TRUST_PROXY_HOPS` | web | How many proxies sit in front of the web (default `1`). Picks the browser's entry out of `X-Forwarded-For`, counting from the right |
 | `DEPLOYMENT_MODE` | api + web | `onprem` (default) / `managed` — forks invite and reset delivery |

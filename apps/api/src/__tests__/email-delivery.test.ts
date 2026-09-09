@@ -43,6 +43,7 @@ async function boot(mode: "managed" | "onprem"): Promise<string> {
     AUTH_MODE: "enabled",
     AUTH_SECRET: SECRET,
     TOTP_ENCRYPTION_KEY: TOTP_KEY,
+    INTERNAL_AUTH_SECRET: "internal-secret-for-tests",
     DATABASE_URL: DEAD_DB,
     DEPLOYMENT_MODE: mode,
     PUBLIC_WEB_ORIGIN: "https://dash.example.com",
