@@ -57,6 +57,17 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   the variable — without the key, nobody can enrol, and the gate lets nobody
   through who has not.
 
+### Fixed
+
+- **A sign-in without a second factor opened two sessions.** The login form asks
+  the api which step comes next, then Auth.js signs in through the same route —
+  so an account with no authenticator was completed twice, leaving a device on
+  its sessions list that nobody had signed in from and two `signin.succeeded`
+  rows carrying different addresses. The form's first call now sends
+  `probe: true`, which checks the password and opens nothing. Only accounts
+  inside the first admin's grace period could reach it; an enrolled account
+  finishes at `/auth/2fa/verify` and never had the problem.
+
 
 ## [0.16.1]
 
