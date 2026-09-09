@@ -28,7 +28,6 @@ import {
   qMethodLatencyQuantile,
   qPresence,
   qRequestsBy,
-  qRequestsTotal,
   qRouterTipChanges,
   qRouterTips,
   qTipChanges,
