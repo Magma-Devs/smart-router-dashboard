@@ -79,8 +79,9 @@ dev-down:
 	docker compose -f docker-compose.dev.yml --profile router --profile auth --profile logs down
 
 ## up-auth: prod-style stack WITH authentication (postgres + login) — see docs/AUTH.md.
-## Requires AUTH_SECRET and TOTP_ENCRYPTION_KEY (`openssl rand -base64 32`) in
-## the environment — the api refuses to boot without the key. The first admin is created at
+## Requires AUTH_SECRET, TOTP_ENCRYPTION_KEY and INTERNAL_AUTH_SECRET (each
+## `openssl rand -base64 32`) in the environment — the api refuses to boot
+## without the last two. The first admin is created at
 ## /setup with the setup token: this is a production build, and it ignores
 ## ADMIN_EMAIL / ADMIN_PASSWORD.
 ## (logs profile is on by default here too — Grafana → :3001.)
@@ -112,6 +113,7 @@ dev-auth:
 	TOTP_ENCRYPTION_KEY=$${TOTP_ENCRYPTION_KEY:-ZGV2LW9ubHkta2V5LW5vdC1mb3ItcHJvZHVjdGlvbiE=} \
 	ADMIN_EMAIL=$${ADMIN_EMAIL:-admin@example.com} \
 	ADMIN_PASSWORD=$${ADMIN_PASSWORD:-admin1234} \
+	INTERNAL_AUTH_SECRET=$${INTERNAL_AUTH_SECRET:-dev-internal-secret} \
 	docker compose -f docker-compose.dev.yml --profile router --profile auth --profile logs up --build
 
 ## accounts: stack for exercising the MAG-2729 account system by hand (no seeded admin)

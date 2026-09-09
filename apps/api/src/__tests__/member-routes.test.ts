@@ -73,6 +73,7 @@ beforeEach(async () => {
     AUTH_SECRET: SECRET,
     TOTP_ENCRYPTION_KEY: TOTP_KEY,
     DATABASE_URL: DEAD_DB,
+    INTERNAL_AUTH_SECRET: "test-internal-secret-32-characters!",
     PUBLIC_WEB_ORIGIN: "https://dash.example.com",
     DEPLOYMENT_MODE: "onprem",
   });

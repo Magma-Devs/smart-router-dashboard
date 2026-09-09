@@ -53,6 +53,7 @@ async function buildSetupApp(mode: "managed" | "onprem" = "onprem"): Promise<Fas
     AUTH_MODE: "enabled",
     AUTH_SECRET: SECRET,
     TOTP_ENCRYPTION_KEY: TOTP_KEY,
+    INTERNAL_AUTH_SECRET: "internal-secret-for-tests",
     DATABASE_URL: DEAD_DB,
     SETUP_TOKEN: TOKEN,
     DEPLOYMENT_MODE: mode,
