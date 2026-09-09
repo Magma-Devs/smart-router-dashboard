@@ -18,14 +18,23 @@ documented and tested.
 ## The shape of a sign-in
 
 ```
-POST /auth/sign-in     { email, password }
-  ├─ not enrolled  →  { user, sessionId }            ← signed in
+POST /auth/sign-in     { email, password, probe: true }   ← the login form asks
+  ├─ not enrolled  →  { twoFactorRequired: false }         ← NO session
   └─ enrolled      →  { twoFactorRequired: true, challenge, expiresAt }
-                                                      ← NO session
+                                                           ← NO session
 
-POST /auth/2fa/verify  { challenge, code }
-                     →  { user, sessionId }           ← signed in
+POST /auth/sign-in     { email, password }                ← Auth.js signs in
+                     →  { user, sessionId }                ← signed in
+
+POST /auth/2fa/verify  { challenge, code }                ← Auth.js signs in
+                     →  { user, sessionId }                ← signed in
 ```
+
+**`probe` is why the form's question costs nothing.** The browser has to know
+which screen comes next before Auth.js can sign anybody in, and Auth.js reaches
+this same route again a moment later. Without the flag an account with no
+authenticator gets a session from each call, and the one nobody is holding sits
+on their sessions list for thirty days.
 
 **A verified password opens no session.** That is the load-bearing decision, not
 an implementation detail. `plugins/auth.ts` refuses any token whose `sid`

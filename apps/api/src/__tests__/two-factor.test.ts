@@ -3,7 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { SignJWT } from "jose";
 import { eq, sql } from "drizzle-orm";
 import { createTestDb, type TestDb } from "@sr/db/testing";
-import { auditEvents, loginAttempts, twoFactorChallenges, users, type User } from "@sr/db";
+import { auditEvents, loginAttempts, sessions, twoFactorChallenges, users, type User } from "@sr/db";
 import type { Role } from "@sr/shared";
 import { buildApp } from "../app.js";
 import { SESSION_JWT_AUDIENCE, SESSION_JWT_ISSUER } from "../plugins/auth.js";
@@ -498,6 +498,92 @@ describe("two-step sign-in", () => {
     expect(res.statusCode).toBe(200);
     expect(res.json().sessionId).toEqual(expect.any(String));
     expect(res.json().twoFactorRequired).toBeUndefined();
+  });
+
+  it("opens no session on a probe, which is what the login form sends first", async () => {
+    app = await buildAuthApp();
+    const user = await seedUser();
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/auth/sign-in",
+      payload: { email: user.email, password: PASSWORD, probe: true },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().twoFactorRequired).toBe(false);
+    expect(res.json().sessionId).toBeUndefined();
+    const rows = await t.db.select().from(sessions).where(eq(sessions.userId, user.id));
+    expect(rows).toHaveLength(0);
+  });
+
+  it("leaves one session behind for the two calls a sign-in without a code makes", async () => {
+    app = await buildAuthApp();
+    const user = await seedUser();
+
+    // Exactly what the browser does: the form probes, then Auth.js signs in
+    // through the same route. Before the probe flag both calls completed, and
+    // the account was left holding a device it had never signed in from.
+    await app.inject({
+      method: "POST",
+      url: "/auth/sign-in",
+      payload: { email: user.email, password: PASSWORD, probe: true },
+    });
+    const real = await app.inject({
+      method: "POST",
+      url: "/auth/sign-in",
+      payload: { email: user.email, password: PASSWORD },
+    });
+
+    expect(real.json().sessionId).toEqual(expect.any(String));
+    const rows = await t.db.select().from(sessions).where(eq(sessions.userId, user.id));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.id).toBe(real.json().sessionId);
+  });
+
+  it("lets the probe and the sign-in after it through, four mistypes in", async () => {
+    // The probe verifies a right password and refunds its attempt; the sign-in
+    // that follows spends its own. Without the refund the two would cost two,
+    // and the fifth and sixth attempts of somebody who mistyped four times
+    // would lock them out with the right password in hand.
+    app = await buildAuthApp();
+    const user = await seedUser();
+    for (let i = 0; i < 4; i++) {
+      await app.inject({
+        method: "POST",
+        url: "/auth/sign-in",
+        payload: { email: user.email, password: "wrong" },
+      });
+    }
+
+    const probe = await app.inject({
+      method: "POST",
+      url: "/auth/sign-in",
+      payload: { email: user.email, password: PASSWORD, probe: true },
+    });
+    expect(probe.statusCode).toBe(200);
+    const real = await app.inject({
+      method: "POST",
+      url: "/auth/sign-in",
+      payload: { email: user.email, password: PASSWORD },
+    });
+    expect(real.statusCode).toBe(200);
+    expect(real.json().sessionId).toEqual(expect.any(String));
+  });
+
+  it("still asks an enrolled account for a code when probed", async () => {
+    app = await buildAuthApp();
+    const user = await seedUser();
+    await enrol(user);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/auth/sign-in",
+      payload: { email: user.email, password: PASSWORD, probe: true },
+    });
+
+    expect(res.json().twoFactorRequired).toBe(true);
+    expect(res.json().challenge).toEqual(expect.any(String));
   });
 
   it("completes on a correct code", async () => {
