@@ -59,6 +59,14 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ### Fixed
 
+- **A refreshed token outran the sign-out-everywhere cutoff.** `users.
+  signed_out_all_at` is compared to the token's `iat`, and the web re-signed the
+  token with `iat` set to "now" on every session read — so a tab that reloaded
+  after somebody signed out everywhere carried itself back over the line. It
+  matters most where nothing else would catch it: that cutoff is the lever for
+  tokens no session row is held for. `iat` is now fixed at sign-in and carried
+  through every re-encode.
+
 - **`AUTH_MODE=enabled` now requires `INTERNAL_AUTH_SECRET`** on both tiers, and
   the api refuses to boot without it. Unset, it failed in the direction nobody
   notices: the api ignored the address the web forwards and recorded its own, so
