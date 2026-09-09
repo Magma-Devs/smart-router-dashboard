@@ -59,6 +59,22 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ### Fixed
 
+- **The browser's address was taken from the wrong end of `X-Forwarded-For`.**
+  It read the left-most entry, which most ingresses leave as whatever the caller
+  sent — so a client could choose the address written to its own session row and
+  every access event for that sign-in, which is the forgery the internal secret
+  exists to prevent. The web now counts back from the right by `TRUST_PROXY_HOPS`
+  (default `1`) and reports nothing when the chain is shorter than that.
+
+- **The code check shared one rate-limit bucket for the whole deployment.** The
+  per-IP limit on `/auth/*` keyed on the connection, and Auth.js calls those
+  routes from the web tier — so ten sign-in steps a minute across every person,
+  which two-factor roughly doubles the cost of. It now keys on the forwarded
+  browser address when the internal secret vouches for it, falling back to the
+  connection for direct callers. The forwarded context moved from the request
+  body to `X-Forwarded-Client-Ip` / `-Ua` headers, because the limiter runs
+  before a body exists.
+
 - **A sign-in without a second factor opened two sessions.** The login form asks
   the api which step comes next, then Auth.js signs in through the same route —
   so an account with no authenticator was completed twice, leaving a device on
