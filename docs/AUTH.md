@@ -828,6 +828,13 @@ The codes are machine-readable so the web can tell "sign in again" from
   The comparison is `<=`, not `<`: both sides have one-second resolution,
   so a token minted in the same second as the revocation must lose, or an
   attacker racing the sign-out keeps a live session.
+
+  **`iat` is the sign-in time and never moves.** The web re-signs the
+  token on every session read, so stamping "now" each time would let any
+  tab that reloads carry itself past the cutoff — and this is the lever
+  that reaches tokens no session row is held for, which is exactly the
+  case where nothing else would catch it. `decode` carries `iat` through
+  and both encode paths re-stamp the same value.
 - `sessions.revoked_at` — kills one device. What makes the sessions list
   and "sign out this device" possible.
 

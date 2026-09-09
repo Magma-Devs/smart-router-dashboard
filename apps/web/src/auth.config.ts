@@ -165,6 +165,18 @@ function secretKey(): Uint8Array {
 }
 
 /**
+ * When this session was signed in, in seconds — the value the api compares to
+ * `users.signed_out_all_at`. Preserved across every re-encode; absent only on
+ * the sign-in itself, where "now" is the right answer.
+ *
+ * Exported for tests: that the number does not move is the whole property.
+ */
+export function issuedAt(token: { iat?: unknown } | null | undefined): number {
+  const iat = token?.iat;
+  return typeof iat === "number" && Number.isFinite(iat) ? iat : Math.floor(Date.now() / 1000);
+}
+
+/**
  * Email and password, and nothing else.
  *
  * Google, GitHub and Discord sign-in used to be here, offered whenever their
@@ -273,7 +285,12 @@ export const authConfig = {
         .setProtectedHeader({ alg: "HS256", typ: "JWT" })
         .setIssuer(SESSION_JWT_ISSUER)
         .setAudience(SESSION_JWT_AUDIENCE)
-        .setIssuedAt()
+        // The ORIGINAL issue time, not now. `users.signed_out_all_at` is a
+        // cutoff the api compares this against, so re-stamping it on every
+        // refresh would let a tab that reloads walk its own token past the
+        // moment the account was signed out everywhere — the one lever that
+        // kills tokens no session row is held for. Fixed at sign-in, it cannot.
+        .setIssuedAt(issuedAt(token))
         .setExpirationTime("30d")
         .sign(secretKey());
     },
@@ -293,6 +310,9 @@ export const authConfig = {
           avatarUrl: (payload.avatarUrl as string | null | undefined) ?? null,
           role: (payload.role as UserRole) ?? DEFAULT_ROLE,
           sid: (payload.sid as string | undefined) ?? undefined,
+          // Carried so the next encode can re-stamp the same value. Dropped
+          // here, every refresh would mint a token issued "now".
+          iat: payload.iat,
         };
       } catch {
         return null;
@@ -339,7 +359,10 @@ export const authConfig = {
         .setProtectedHeader({ alg: "HS256", typ: "JWT" })
         .setIssuer(SESSION_JWT_ISSUER)
         .setAudience(SESSION_JWT_AUDIENCE)
-        .setIssuedAt()
+        // Same original issue time as the cookie's — see `encode`. This is the
+        // token the api actually reads, so re-stamping it here alone would
+        // leave the cutoff unenforceable no matter what the cookie says.
+        .setIssuedAt(issuedAt(token))
         .setExpirationTime("30d")
         .sign(secretKey());
       return session;
