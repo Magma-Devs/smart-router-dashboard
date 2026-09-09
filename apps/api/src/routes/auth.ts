@@ -242,16 +242,27 @@ export async function authRoutes(app: FastifyInstance) {
     // lockout would simply never trip for them — against exactly the person it
     // most needs to stop. A failure counter for sign-ins clears when a sign-in
     // succeeds, and a sign-in has not succeeded until both factors have passed.
-    await clearFailures(db, user.email);
+    // One transaction, because these four are one event. A session row whose
+    // signin.succeeded never landed is a device with no record of arriving,
+    // which is the row an investigation goes looking for; and the id is handed
+    // to the web to sign into a token, so it must not name a session a later
+    // failure rolled back. The writer propagates rather than swallows when it
+    // is given a transaction, so a failed audit write takes the sign-in with it.
+    return db.transaction(async (tx) => {
+      await clearFailures(tx, user.email);
 
-    const session = await createSession(db, { userId: user.id, authMethod, client });
-    await recordSignIn(db, user.id);
-    await audit.write({
-      action: "signin.succeeded",
-      actor: { id: user.id, kind: "user" },
-      access: { ...client.access, sessionId: session.id },
+      const session = await createSession(tx, { userId: user.id, authMethod, client });
+      await recordSignIn(tx, user.id);
+      await audit.write(
+        {
+          action: "signin.succeeded",
+          actor: { id: user.id, kind: "user" },
+          access: { ...client.access, sessionId: session.id },
+        },
+        tx,
+      );
+      return { user: toPublicUser(user), sessionId: session.id };
     });
-    return { user: toPublicUser(user), sessionId: session.id };
   }
 
   /** The db plugin connects lazily; 503 (not 500) while it settles. */

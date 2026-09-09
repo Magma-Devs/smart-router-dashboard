@@ -99,7 +99,7 @@ export const auditEvents = pgTable(
     /**
      * Ties a run of actions to one sign-in.
      *
-     * **Not a foreign key.** Sessions are pruned once they expire, and a FK with
+     * **Not a foreign key.** Whenever session rows do start ageing out, a FK with
      * `ON DELETE SET NULL` would quietly blank this on rows that are years old —
      * which is exactly the evidence an incident review is looking for. Same
      * reasoning as `users.removed_by` and `sessions.revoked_by`: the audit row
