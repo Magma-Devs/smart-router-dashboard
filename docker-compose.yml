@@ -258,7 +258,8 @@ services:
       # (sign-in, social sign-in, social invite redemption). Unset ⇒ forwarded
       # context is ignored and the session records this container's address
       # instead of the person's, which makes the audit log's access events
-      # useless for telling two sign-ins apart.
+      # useless for telling two sign-ins apart. Required under
+      # AUTH_MODE=enabled: the api refuses to boot without it.
       - INTERNAL_AUTH_SECRET=${INTERNAL_AUTH_SECRET:-}
       # `hibp` (default) checks new passwords against HaveIBeenPwned by
       # k-anonymity and fails OPEN if the service is unreachable. `off` is the
@@ -311,10 +312,10 @@ services:
       - AUTH_SECRET=${AUTH_SECRET:-}
       - AUTH_URL=${AUTH_URL:-http://localhost:3000}
       - INTERNAL_API_BASE_URL=http://api:8000
-      # Same secret as the api's. This is the half that SENDS the forwarded
-      # browser context; without it the web doesn't claim one and the api
-      # wouldn't believe it anyway.
+      # Must match the api's. Proves to it that a forwarded browser address is
+      # ours to report; TRUST_PROXY_HOPS says which X-Forwarded-For entry.
       - INTERNAL_AUTH_SECRET=${INTERNAL_AUTH_SECRET:-}
+      - TRUST_PROXY_HOPS=${TRUST_PROXY_HOPS:-1}
       # OAuth providers — the login page shows a provider's button only
       # when its id+secret pair is set.
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
