@@ -993,8 +993,11 @@ from the sessions list, a removal, a password reset, or a password change
 <img src="./assets/account-sessions.png" alt="The Account page, scrolled down: the end of a Connected accounts card saying that a Google or GitHub sign-in whose verified address matches links to this account the first time it is used; a Change password card with current, new and repeat fields and a note that other devices will be signed out while this one stays; an Active sessions card listing this device as Chrome on Linux, highlighted, and a second unrecognised device with its own Sign out button, plus a Sign out everywhere button; and a Leaving? card saying accounts are never deleted and nobody removes their own, so ask another administrator, and that your name stays in the audit log." width="560">
 
 Session rows are **never deleted on revoke** — a revoked session is
-evidence, and the audit log's access events reference it. Expired rows
-are pruned on a schedule.
+evidence, and the audit log's access events reference it. Nor are they
+pruned: there is no ageing job. How long to keep a session row is the
+same question as how long to keep an access event, which MAG-2770 owns
+and has deliberately left open; a team's sign-ins are a few rows a month,
+so growth is not what forces the answer.
 
 There is deliberately **no cache** on the lookup. A cache is precisely
 what would turn "revoked" into "revoked eventually", and the same request
