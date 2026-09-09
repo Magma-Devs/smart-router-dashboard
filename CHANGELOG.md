@@ -59,6 +59,14 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ### Fixed
 
+- **`AUTH_MODE=enabled` now requires `INTERNAL_AUTH_SECRET`** on both tiers, and
+  the api refuses to boot without it. Unset, it failed in the direction nobody
+  notices: the api ignored the address the web forwards and recorded its own, so
+  every session row and every access event carried the web pod on a log whose
+  job is answering where a sign-in came from, and the per-IP limiter keyed on
+  the same one address for the whole deployment. The web logs an error rather
+  than failing, because the two tiers can be configured apart.
+
 - **The browser's address was taken from the wrong end of `X-Forwarded-For`.**
   It read the left-most entry, which most ingresses leave as whatever the caller
   sent — so a client could choose the address written to its own session row and

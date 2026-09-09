@@ -182,6 +182,19 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
     );
   }
 
+  // Required for the same reason, and it fails in the opposite direction:
+  // quietly. Without it the api ignores the address the web forwards and
+  // records its own instead, so every session row and every access event in the
+  // audit log carries the web pod — on a log whose whole job is answering
+  // "where was this signed in from". Nothing looks wrong; the addresses are
+  // simply all the same one. The per-IP limiter degrades with it, putting the
+  // deployment in a single bucket. Both are worth a startup error over.
+  if (!(process.env.INTERNAL_AUTH_SECRET ?? "").trim()) {
+    throw new Error(
+      "AUTH_MODE=enabled requires INTERNAL_AUTH_SECRET — without it the api records its own address on every sign-in instead of the browser's, and the per-IP limit keys on the web tier. Generate one with `openssl rand -base64 32` (must match the web's).",
+    );
+  }
+
   await app.register(jwt, {
     secret,
     sign: {
