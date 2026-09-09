@@ -49,6 +49,11 @@ interface SignInBody {
   email: string;
   password: string;
   clientContext?: ForwardedClientContext;
+  /** Check the password and report which step comes next, without opening a
+   *  session. The login form asks first — it has to know whether to show the
+   *  code screen — and Auth.js signs in afterwards through this same route.
+   *  Without it that pair of calls opens two sessions for one sign-in. */
+  probe?: boolean;
 }
 
 interface TwoFactorVerifyBody {
@@ -653,6 +658,11 @@ export async function authRoutes(app: FastifyInstance) {
                 userAgent: { type: "string" as const },
               },
             },
+            probe: {
+              type: "boolean" as const,
+              description:
+                "Verify the password and report whether a code is needed, without opening a session.",
+            },
           },
         },
       },
@@ -728,6 +738,15 @@ export async function authRoutes(app: FastifyInstance) {
           expiresAt: challenge.expiresAt.toISOString(),
         };
       }
+
+      // A probe stops here. The login form asks this route what the next step
+      // is before handing the sign-in to Auth.js, which calls this same route
+      // again — so completing here would open a session the browser never
+      // addresses, leaving an unused device on the account's own sessions list
+      // and two `signin.succeeded` rows, one of them from an address nobody
+      // signed in from. Only accounts without an authenticator reach this line,
+      // which is why the enrolled path above never had the problem.
+      if (body.probe) return { twoFactorRequired: false };
 
       return completeSignIn(db, user, client, "password");
     },

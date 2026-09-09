@@ -22,6 +22,11 @@ import { apiUrl } from "@/lib/api-client";
  * handed the finished thing: `signIn` runs once, on the second step, against a
  * response that already carries a session id.
  *
+ * That first call is a **probe**: it asks which step comes next and opens
+ * nothing. An account with no authenticator finishes through `signIn`, which
+ * reaches the same api route a second time — so a probe that completed the
+ * sign-in would leave a session nobody is holding.
+ *
  * Nothing sensitive is held here. The challenge is single-use, dies in five
  * minutes, and is worthless without a code from the phone.
  */
@@ -33,7 +38,6 @@ type Stage =
 interface SignInPhaseOne {
   twoFactorRequired?: boolean;
   challenge?: string;
-  sessionId?: string;
 }
 
 export function LoginForm() {
@@ -59,7 +63,7 @@ export function LoginForm() {
       const res = await fetch(`${base}/auth/sign-in`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email, password, probe: true }),
       });
       if (res.status === 423) {
         setError("Too many failed attempts. Try again in a few minutes.");
