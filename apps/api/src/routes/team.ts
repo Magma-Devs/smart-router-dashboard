@@ -390,7 +390,7 @@ export async function teamRoutes(app: FastifyInstance) {
         });
       }
 
-      const { access } = resolveClientContext(request, undefined, undefined);
+      const { access } = resolveClientContext(request, undefined);
 
       // Three writes, each load-bearing, in one transaction with their audit
       // rows — a reset that half happened would be worse than none:
@@ -565,7 +565,7 @@ export async function teamPasswordRoutes(app: FastifyInstance) {
       // takeover, so "from where" is part of the record. From where THIS
       // request came, not where the admin signed in: the two differ exactly
       // when a session is used from somewhere else, which is the case to catch.
-      const { access } = resolveClientContext(request, undefined, undefined);
+      const { access } = resolveClientContext(request, undefined);
       await audit.write({
         action: "password.reset_link_generated",
         actor: { id: me.id, kind: "user" },

@@ -583,7 +583,7 @@ Auth (only read when `AUTH_MODE=enabled`; the metrics path never touches the DB)
 | `DATABASE_URL` | (unset) | Postgres connection string for `users` + `sessions` |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | (unset) | idempotent admin seed on first boot, **development only** — refused under `NODE_ENV=production`, where first-run setup with the installer's `SETUP_TOKEN` is the only way an account comes into existence |
 | `GOOGLE_CLIENT_ID` | (unset) | validates the `aud` claim of Google ID tokens server-side |
-| `INTERNAL_AUTH_SECRET` | (unset) | shared with the web; gates whether forwarded browser IP / User-Agent are trusted on the routes that open a session (`/auth/sign-in`, `/auth/oauth/:provider`, `/auth/invite/accept`). Unset ⇒ the api records what it observes |
+| `INTERNAL_AUTH_SECRET` | (unset) | shared with the web; gates whether the forwarded browser IP / User-Agent (`X-Forwarded-Client-Ip` / `-Ua` headers) are trusted on the routes that open a session (`/auth/sign-in`, `/auth/2fa/verify`, `/auth/oauth/:provider`, `/auth/invite/accept`), and whether the per-IP limiter keys on them. Unset ⇒ the api records what it observes and every sign-in shares one bucket |
 | `DEPLOYMENT_MODE` | `onprem` | `managed` (we host) / `onprem` (customer hosts, no mail server). Forks invite + reset delivery (managed emails them, on-prem hands the admin a link), sets their lifetimes, and marks the first account as Magma's on managed. Read by the web at runtime via `/api/config` |
 | `SETUP_TOKEN` | (generated) | First-run token, required to create the first admin. Must be ≥ 16 characters; unset (or shorter) ⇒ generated once at boot, on an install that still needs setting up, and logged at `warn` |
 | `SETUP_TOKEN_FILE` | (unset) | Path to write a generated token to (mode 0600), so an init container or mounted volume can surface it |
@@ -611,6 +611,7 @@ Web — build-time vs. **runtime**:
 | `AUTH_MODE` / `AUTH_SECRET` | `disabled` / (unset) | must match the api; `enabled` renders the login page + edge gate |
 | `DEPLOYMENT_MODE` | `onprem` | must match the api. Surfaced to the browser by `GET /api/config`, so one image serves both shapes |
 | `INTERNAL_AUTH_SECRET` | (unset) | must match the api; lets the web forward the browser's real IP / User-Agent on sign-in |
+| `TRUST_PROXY_HOPS` | `1` | how many proxies sit in front of the web. The browser's entry is that many back from the right of `X-Forwarded-For`; the left-most is caller-supplied and never used |
 | `INTERNAL_API_BASE_URL` | (falls back to api url) | server-side api URL for Auth.js callbacks (compose sets `http://api:8000`) |
 | `{GOOGLE,GITHUB}_CLIENT_{ID,SECRET}` | (unset) | each provider's button appears only when its id+secret pair is set |
 
