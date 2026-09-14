@@ -9,6 +9,23 @@ on:
   pull_request:
   push:
     branches: [main]
+  # Run it by hand against any branch.
+  #
+  # `pull_request` is the only trigger a stacked PR normally has, and it depends
+  # on GitHub computing the PR's merge ref. Force-pushing a chain of branches
+  # whose bases move at the same moment can wedge that: the PRs sit at
+  # `mergeable: unknown`, no `synchronize` event is dispatched, and the gate
+  # silently keeps showing its result for the superseded commit — a green tick
+  # that means nothing about what is now on the branch. Closing and reopening
+  # the PR does not shake it loose.
+  #
+  # So: a manual dispatch. `gh workflow run quality-gate.yml --ref <branch>`
+  # attaches a run to that branch's head, which is what the PR displays.
+  #
+  # NOTE: GitHub only offers this from the DEFAULT branch's copy of the file, so
+  # it does nothing for the stack that prompted it — it is reachable once this
+  # has merged, which is the next time it happens.
+  workflow_dispatch:
 
 # Checkout + run tests only — no write surface needed.
 permissions:
