@@ -1,0 +1,21 @@
+{
+  "name": "@sr/e2e",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Browser tests for the flows that gate access to the dashboard.",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "e2e": "playwright test",
+    "e2e:ui": "playwright test --ui",
+    "e2e:report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@sr/db": "workspace:^",
+    "@sr/shared": "workspace:*",
+    "@types/node": "^26.1.0",
+    "drizzle-orm": "^0.45.2",
+    "typescript": "^6.0.3"
+  }
+}

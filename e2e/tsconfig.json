@@ -1,0 +1,14 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "rootDir": ".",
+    // Node for the test process, DOM for the callbacks `page.evaluate` ships
+    // into the browser — this project is the one place both run.
+    "lib": ["ES2022", "DOM"],
+    "types": ["node"]
+  },
+  "include": ["**/*.ts"]
+}
