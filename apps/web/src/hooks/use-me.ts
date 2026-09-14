@@ -1,7 +1,8 @@
 "use client";
 
+import { useSyncExternalStore } from "react";
 import { useApi } from "@/hooks/use-api";
-import { getAuthState } from "@/lib/auth-store";
+import { getAuthState, getAuthVersion, subscribeAuth } from "@/lib/auth-store";
 import { roleAtLeast, type Role } from "@sr/shared";
 
 export interface MeTwoFactor {
@@ -53,6 +54,18 @@ export function useMe(): {
   /** Re-read after enrolling, so the gate lifts without a page reload. */
   refresh: () => void;
 } {
+  // Subscribe to the store, don't merely read it.
+  //
+  // `getAuthState()` is a module-level snapshot that `ApiTokenBridge` fills in
+  // an effect, so it is null on the first render of every cold page load. A
+  // component that only reads it renders once with null and is never told when
+  // it changes — which meant `/api/account/me` was never asked for, and
+  // `TwoFactorGate` therefore never knew the dashboard was supposed to be shut.
+  // Somebody who had not enrolled saw the full chrome with every panel 403ing,
+  // instead of the screen telling them what to do about it. The Sidebar had
+  // subscribed for itself and so looked fine, which is what hid this.
+  useSyncExternalStore(subscribeAuth, getAuthVersion, () => 0);
+
   // The store is empty in AUTH_MODE=disabled, where these routes are not even
   // registered — asking would 404 on every page. It is also empty before the
   // session bridge has run, and asking then would race it.
