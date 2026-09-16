@@ -5,6 +5,52 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.24.2]
+
+### Fixed
+
+- **Try-it: "Ready to send" now means it.** The group is headed *"These carry a
+  checked example. Pick one and press Send — nothing else to fill in."* Nothing
+  in the pipeline ever sent one, and the claim had drifted. Every ready command
+  on the affected surfaces was fired at a live public endpoint; what follows is
+  what came back.
+- **Stellar's JSON-RPC could not answer a single call.** Soroban unmarshals
+  params straight into a typed request struct, so `[]` — the catalog's JSON-RPC
+  default — answers `-32602 cannot unmarshal array into Go value of type
+  protocol.GetHealthRequest` on *every* method, including the ones that take no
+  arguments. All twelve XLM/XLMT methods failed, the four in "Ready to send"
+  among them. They carry an object now, curated or not. Two causes: the Stellar
+  hints shipped `[]`, and Solana's unscoped `getHealth` hint reached Stellar —
+  where it was also the method the drawer opened on.
+- **A GET whose arguments live in the query string is not a complete request.**
+  The generator read "a path with nothing to substitute is already a whole
+  request", which holds for path-templated REST and is false for toncenter:
+  `/getAddressBalance` has no slot to fill and means nothing without
+  `?address=`. 25 of TON's 41 ready commands answered 422. TON is now
+  classified from what the endpoint returned — 14 ready, 27 asking for the
+  query parameter they want by name — and the Ice Open Network fork, whose
+  endpoints are not publicly reachable from here, claims nothing rather than
+  claiming wrongly.
+- **123 commands across 28 specs fired a URL with a literal `{…}` in it.** The
+  placeholder guard matched `{a-z_ }`, so it saw `{height}` and missed every
+  slot carrying a hyphen (`{asset-id}`), a dot (`{packet_id.channel_id}`), a
+  digit (`{token0_address}`) or a grpc-gateway wildcard (`{denom=**}`) — every
+  cosmos chain's IBC fee and transfer paths among them. The slot class is now
+  "anything but a quote", which still lets a JSON object through as the
+  complete value it is.
+- **Commands that were checked and still cannot be sent leave the head.** Five
+  VeChain `/subscriptions/*` are WebSocket upgrades (400 on GET); four Tezos
+  `/monitor/*` are chunked streams that stay open for the life of the chain;
+  ten Arweave paths are peer-to-peer routes public gateways 404; thirteen Stacks
+  paths are query-string routes or routes Hiro has removed; four MultiversX
+  paths are authenticated or operator-disabled. Each keeps a one-line
+  description saying which.
+- **Send no longer spins forever.** The router leg was a bare `fetch` with no
+  `AbortController` — the WebSocket leg has capped at 15s all along. A response
+  that never finishes is the same dead end as one that never arrives, so the
+  30s ceiling covers the body read too: a Tezos stream resolves the fetch and
+  then never settles `res.json()`.
+
 ## [0.24.1]
 
 ### Fixed
