@@ -5,6 +5,40 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.25.0]
+
+### Added
+
+- **Bitcoin and Bitcoin Cash serve REST.** lava-specs gave BTC, BCH and the
+  Bitcoin testnets a Rosetta-style REST collection, so those chains now offer a
+  REST console alongside JSON-RPC — 17 paths each, six of which run as-is
+  (`/`, `/txs`, `/block_identifiers`, `/sync/block_id`, `/sync/block_number`,
+  `/tx/estimate_fee`); the account and transaction lookups ask for the address
+  or id they need. The rest of the bitcoin family (LTC, DOGE, DASH, ZCASH) is
+  unchanged and still JSON-RPC only — the surface is per-spec, not per-family,
+  so none of them are offered paths they cannot answer.
+- **TON gained 37 REST methods**, upstream's fill-in of the methods its spec was
+  missing: the v3 indexer surface (`/blocks`, `/transactions`, `/traces`,
+  `/messages`, `/nft/sales`, the `/staking/nominatorPools/*` and `/validators/*`
+  families) plus `/masterchainInfo` and the `*Std` variants. Nothing was removed.
+
+  261 chains, 218 with an explorer, 173 primaries linking a height.
+
+### Fixed
+
+- **The drift gate crashed instead of reporting this resync.**
+  `check-spec-sync.mjs` died on `Object.entries("BTCS").map is not a function`
+  before printing a single line of method drift. 140 of the 261 catalog entries
+  are stored as an *alias* — a bare string naming the index whose surface they
+  share — and `diffMethodEntry` assumed every entry was an object, so it walked
+  the alias string character by character. Bitcoin's new REST collection is
+  exactly the shape that triggers it: `BTCT` stopped being an alias to `BTCS`
+  and became its own entry, and `BTCT4` was retargeted from `BTCS` to `BTCT`.
+  The diff now resolves aliases first (cycle-safe, dangling and circular ones
+  count as an empty surface), can no longer throw on an unexpected shape, and
+  labels an alias move on the count line so a `+0 -0 ~0` row reads as what it
+  is.
+
 ## [0.24.2]
 
 ### Fixed

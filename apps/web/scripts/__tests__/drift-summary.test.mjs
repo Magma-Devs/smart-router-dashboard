@@ -3,6 +3,7 @@ import {
   attributeToImports,
   diffMethodEntry,
   importClosure,
+  resolveEntry,
   summarizeMethodDrift,
 } from "../lib/drift-summary.mjs";
 
@@ -53,6 +54,43 @@ describe("diffMethodEntry", () => {
   it("is zero for an identical entry and tolerates a missing side", () => {
     expect(diffMethodEntry(before, before)).toEqual({ added: 0, removed: 0, changed: 0 });
     expect(diffMethodEntry(undefined, before)).toEqual({ added: 3, removed: 0, changed: 0 });
+  });
+  it("counts an unresolved alias string as an empty surface instead of throwing", () => {
+    // Over half the catalog is stored as an alias; reaching here with one
+    // used to crash the gate on `Object.entries("BTCS").map`.
+    expect(() => diffMethodEntry("BTCS", before)).not.toThrow();
+    expect(diffMethodEntry("BTCS", before)).toEqual({ added: 3, removed: 0, changed: 0 });
+    expect(diffMethodEntry(before, "BTCS")).toEqual({ added: 0, removed: 3, changed: 0 });
+  });
+  it("ignores a malformed tier that is not a list of methods", () => {
+    expect(diffMethodEntry({ jsonrpc: { regular: "nope" } }, before)).toEqual({
+      added: 3,
+      removed: 0,
+      changed: 0,
+    });
+  });
+});
+
+describe("resolveEntry", () => {
+  const catalog = {
+    BTC: { jsonrpc: { regular: [{ m: "getblockcount" }] } },
+    BTCT: "BTC",
+    BTCT4: "BTCT",
+    DANGLING: "NOPE",
+    LOOP_A: "LOOP_B",
+    LOOP_B: "LOOP_A",
+  };
+  it("returns a real entry unchanged", () => {
+    expect(resolveEntry(catalog, "BTC")).toBe(catalog.BTC);
+  });
+  it("follows an alias, including a chain of them", () => {
+    expect(resolveEntry(catalog, "BTCT")).toBe(catalog.BTC);
+    expect(resolveEntry(catalog, "BTCT4")).toBe(catalog.BTC);
+  });
+  it("returns an empty surface for a dangling alias, a cycle or a missing key", () => {
+    expect(resolveEntry(catalog, "DANGLING")).toEqual({});
+    expect(resolveEntry(catalog, "LOOP_A")).toEqual({});
+    expect(resolveEntry(catalog, "ABSENT")).toEqual({});
   });
 });
 
@@ -110,6 +148,22 @@ describe("summarizeMethodDrift", () => {
     expect(summarizeMethodDrift(before, after, specIndex).join("\n")).toContain(
       "XRT changed in its own file (xrt.json)",
     );
+  });
+  it("diffs the RESOLVED surface when an alias becomes its own entry", () => {
+    // The exact shape that crashed the gate: BTCT was an alias to BTCS,
+    // then lava-specs gave Bitcoin a REST collection and BTCT became real.
+    const aliasBefore = { ...before, BTCS: before.ETH1, BTCT: "BTCS" };
+    const aliasAfter = { ...aliasBefore, BTCT: bump(before.ETH1) };
+    const lines = summarizeMethodDrift(aliasBefore, aliasAfter, specIndex);
+    expect(lines).toContainEqual(
+      expect.stringMatching(/^ {4}BTCT +\+1 -0 ~0 {2}\(was an alias to BTCS, now its own entry\)$/),
+    );
+  });
+  it("notes an alias that was retargeted at another index", () => {
+    const aliasBefore = { ...before, BTCS: before.ETH1, BTCT: before.ETH1, BTCT4: "BTCS" };
+    const aliasAfter = { ...aliasBefore, BTCT4: "BTCT" };
+    const lines = summarizeMethodDrift(aliasBefore, aliasAfter, specIndex);
+    expect(lines).toContainEqual(expect.stringMatching(/^ {4}BTCT4 +\+0 -0 ~0 {2}\(alias BTCS → BTCT\)$/));
   });
   it("skips attribution without a spec index and caps the list", () => {
     const after = { ...before, SDN: bump(before.SDN), ETH1: bump(before.ETH1) };

@@ -213,8 +213,24 @@ describe("gRPC surfaces with no method catalog", () => {
   });
 
   it("still hides the console for a non-gRPC interface with no catalog", () => {
-    // Bitcoin has no REST surface anywhere — nothing honest to render.
-    expect(getInterfaceConfig("BTC", "rest", [])).toBeNull();
+    // LTC is bitcoin-family and JSON-RPC only — no REST in its spec, and the
+    // bitcoin fallback curates none. Nothing honest to render.
+    expect(getInterfaceConfig("LTC", "rest", [])).toBeNull();
+  });
+
+  it("serves a REST console only to the bitcoin-family chains whose spec has one", () => {
+    // BTC and BCH gained a Rosetta REST collection upstream; the rest of the
+    // family did not. The per-spec generated catalog is what keeps them
+    // apart — a family-wide bitcoin REST fallback would offer Bitcoin's
+    // Rosetta paths to chains that answer none of them.
+    for (const spec of ["BTC", "BCH"]) {
+      const cfg = getInterfaceConfig(spec, "rest", []);
+      expect(cfg, `${spec} should serve REST`).not.toBeNull();
+      expect(cfg!.regular.map((c) => c.params)).toContain("/sync/block_number");
+    }
+    for (const spec of ["LTC", "DOGE", "DASH", "ZCASH"]) {
+      expect(getInterfaceConfig(spec, "rest", []), `${spec} has no REST surface`).toBeNull();
+    }
   });
 });
 

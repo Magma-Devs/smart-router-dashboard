@@ -335,7 +335,8 @@
     "family": "bitcoin",
     "icon": "bitcoincash",
     "interfaces": [
-      "jsonrpc"
+      "jsonrpc",
+      "rest"
     ],
     "mainnet": true
   },
@@ -344,7 +345,8 @@
     "family": "bitcoin",
     "icon": "bitcoincash",
     "interfaces": [
-      "jsonrpc"
+      "jsonrpc",
+      "rest"
     ],
     "mainnet": false
   },
@@ -479,7 +481,8 @@
     "family": "bitcoin",
     "icon": "bitcoin",
     "interfaces": [
-      "jsonrpc"
+      "jsonrpc",
+      "rest"
     ],
     "mainnet": true
   },
@@ -497,7 +500,8 @@
     "family": "bitcoin",
     "icon": "bitcoin",
     "interfaces": [
-      "jsonrpc"
+      "jsonrpc",
+      "rest"
     ],
     "mainnet": false
   },
@@ -506,7 +510,8 @@
     "family": "bitcoin",
     "icon": "bitcoin",
     "interfaces": [
-      "jsonrpc"
+      "jsonrpc",
+      "rest"
     ],
     "mainnet": false
   },
