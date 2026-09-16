@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useEffect, useState, useSyncExternalStore, type ComponentType } from "react";
 import { signOut } from "next-auth/react";
 import type { OverviewData } from "@sr/shared";
-import { NAV_SECTIONS } from "./nav";
+import { NAV_SECTIONS, visibleNavSections } from "./nav";
 import { IconMoon, IconSun, type IconProps } from "./icons";
 import { useApi } from "@/hooks/use-api";
 import { useFilters } from "@/components/gateway/FiltersProvider";
@@ -13,6 +13,7 @@ import { fmtNum } from "@/lib/format";
 import { getAuthVersion, subscribeAuth } from "@/lib/auth-store";
 import { useMe } from "@/hooks/use-me";
 import { TwoFactorCountdown, TwoFactorGate } from "@/components/auth/two-factor-gate";
+import { useAuthMode } from "./auth-mode";
 
 export function ThemeToggle() {
   const [theme, setTheme] = useState<"dark" | "light">("dark");
@@ -41,6 +42,7 @@ export function ThemeToggle() {
 
 function Sidebar() {
   const pathname = usePathname();
+  const sections = visibleNavSections(useAuthMode());
   return (
     <aside className="gw-side">
       {/* The brand is the way home, as it is on every product: `/` redirects to
@@ -65,7 +67,7 @@ function Sidebar() {
         </div>
       </Link>
       <nav className="gw-side__nav">
-        {NAV_SECTIONS.map((section, i) => (
+        {sections.map((section, i) => (
           <div key={i}>
             {section.label && <div className="gw-side__section-label">{section.label}</div>}
             {section.items.map((item) => {

@@ -10,6 +10,11 @@ export interface NavItem {
   href: string;
   label: string;
   icon: ComponentType<{ size?: number; className?: string }>;
+  /** Drawn only where the deployment has accounts (`AUTH_MODE=enabled`).
+   *  Without it the entry leads to a screen whose api routes are not even
+   *  registered, which presents as a broken page rather than an absent
+   *  feature. Set it on anything the account system owns. */
+  requiresAuth?: boolean;
 }
 
 export interface NavSection {
@@ -33,8 +38,26 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     label: "Account",
     items: [
-      { href: "/team", label: "Team", icon: IconUsers },
+      { href: "/team", label: "Team", icon: IconUsers, requiresAuth: true },
+      // Account stays without accounts: most of it is the build provenance an
+      // operator reads off a self-hosted deployment. The page hides its own
+      // credential cards — see `(app)/account/page.tsx`.
       { href: "/account", label: "Account", icon: IconSettings },
     ],
   },
 ];
+
+/**
+ * The sections to draw, with account-only entries removed when the deployment
+ * has none, and any section left empty dropped along with its label.
+ *
+ * Exported and pure so the rule is testable without rendering the shell —
+ * "what does the sidebar offer on a deployment with no accounts" is a question
+ * worth an assertion rather than a screenshot.
+ */
+export function visibleNavSections(authEnabled: boolean): NavSection[] {
+  return NAV_SECTIONS.map((section) => ({
+    ...section,
+    items: section.items.filter((item) => authEnabled || !item.requiresAuth),
+  })).filter((section) => section.items.length > 0);
+}

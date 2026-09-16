@@ -77,6 +77,46 @@ describe("AUTH_MODE=disabled (default)", () => {
     });
     expect(signIn.statusCode).toBe(404);
   });
+
+  it("mounts no part of the account system, and needs no database to say so", async () => {
+    // The toggle's api half, asserted as a surface rather than one route.
+    // `disabled` is the default and what every deployment runs today: an
+    // account route that survived into it would be reachable with no session
+    // check in front of it, because the gate is registered in the same block.
+    setEnv({ AUTH_MODE: undefined, AUTH_SECRET: undefined, DATABASE_URL: undefined });
+    app = await buildApp();
+
+    const routes: Array<[string, string]> = [
+      ["POST", "/auth/setup"],
+      ["GET", "/auth/bootstrap"],
+      ["POST", "/auth/2fa/verify"],
+      ["POST", "/auth/sign-out"],
+      ["POST", "/auth/password/forgot"],
+      ["POST", "/auth/invite/preview"],
+      ["GET", "/api/account/me"],
+      ["GET", "/api/account/sessions"],
+      ["POST", "/api/account/password"],
+      ["GET", "/api/team/members"],
+      ["GET", "/api/team/members.csv"],
+      ["GET", "/api/team/invites"],
+    ];
+
+    for (const [method, url] of routes) {
+      const res = await app.inject({ method: method as "GET" | "POST", url, payload: {} });
+      expect(`${method} ${url} -> ${res.statusCode}`).toBe(`${method} ${url} -> 404`);
+    }
+  });
+
+  it("keeps the metrics surface open, which is the whole point of the mode", async () => {
+    setEnv({ AUTH_MODE: undefined, AUTH_SECRET: undefined, DATABASE_URL: undefined });
+    app = await buildApp();
+
+    for (const url of ["/health", "/version", "/api/config/routers"]) {
+      const res = await app.inject({ method: "GET", url });
+      expect(`${url} -> ${res.statusCode}`).not.toBe(`${url} -> 401`);
+      expect(`${url} -> ${res.statusCode}`).not.toBe(`${url} -> 404`);
+    }
+  });
 });
 
 describe("AUTH_MODE=enabled", () => {

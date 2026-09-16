@@ -21,6 +21,7 @@ import { useApi } from "@/hooks/use-api";
 import { ChangePasswordCard } from "@/components/account/ChangePasswordCard";
 import { TwoFactorCard } from "@/components/account/TwoFactorCard";
 import { SessionsCard } from "@/components/account/SessionsCard";
+import { useAuthMode } from "@/components/gateway/auth-mode";
 
 interface VersionInfo {
   commit: string;
@@ -40,6 +41,10 @@ function fmtUptime(sec: number): string {
 }
 
 export default function AccountPage() {
+  // The page survives AUTH_MODE=disabled because most of it is not about an
+  // account: build provenance is what an operator reads off a self-hosted
+  // deployment, and it is the reason this entry stays in the sidebar there.
+  const authEnabled = useAuthMode();
   // REAL build provenance — same `${NEXT_PUBLIC_API_URL}/version` fetch as
   // before, via the shared api client (runtime-config base resolution).
   const { data: version } = useApi<VersionInfo>("/version", 60000);
@@ -64,7 +69,11 @@ export default function AccountPage() {
   return (
     <div className="gw-page" style={{ maxWidth: 720 }}>
       <h1>Account Settings</h1>
-      <p className="lede">Manage your credentials and session settings.</p>
+      <p className="lede">
+        {authEnabled
+          ? "Manage your credentials and session settings."
+          : "Build and runtime details for this deployment."}
+      </p>
 
       <div className="gw-card" style={{ marginBottom: 14 }}>
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Basic details</div>
@@ -78,11 +87,20 @@ export default function AccountPage() {
         ))}
       </div>
 
-      <TwoFactorCard />
+      {/* Credentials, a second factor and a device list are things an account
+          has, and this deployment may have no accounts at all. Rendered anyway
+          they are three cards posting to routes the api never registered —
+          a change-password form that looks usable and silently fails, which is
+          worse than the greyed-out controls this page removed on purpose. */}
+      {authEnabled && (
+        <>
+          <TwoFactorCard />
 
-      <ChangePasswordCard />
+          <ChangePasswordCard />
 
-      <SessionsCard />
+          <SessionsCard />
+        </>
+      )}
 
       {/* Not a CloudNotice, and not a disabled Delete button.
        *
@@ -95,23 +113,28 @@ export default function AccountPage() {
        *
        * A greyed-out "Delete account" next to "this is a Magma Cloud feature"
        * promised that paying would unlock it. It wouldn't. So the card states
-       * the rule and names who can act instead. */}
-      <div className="gw-card">
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Leaving?</div>
-        <div style={{ fontSize: 12.5, color: "var(--text-2)", lineHeight: 1.65 }}>
-          Accounts here are never deleted, and nobody can remove their own — including
-          administrators. Ask another administrator to remove you from{" "}
-          <Link href="/team" style={{ color: "var(--brand)" }}>
-            Team
-          </Link>
-          .
-          <div style={{ marginTop: 8 }}>
-            Removal ends every session you have within one request and frees your address to be
-            invited again later. Your name stays in the audit log permanently — that record is the
-            point, and deleting the row would erase the trail it exists to keep.
+       * the rule and names who can act instead.
+       *
+       * It is also about accounts, so it goes with them: with none, there is
+       * nobody to ask and no Team page to link to. */}
+      {authEnabled && (
+        <div className="gw-card">
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Leaving?</div>
+          <div style={{ fontSize: 12.5, color: "var(--text-2)", lineHeight: 1.65 }}>
+            Accounts here are never deleted, and nobody can remove their own — including
+            administrators. Ask another administrator to remove you from{" "}
+            <Link href="/team" style={{ color: "var(--brand)" }}>
+              Team
+            </Link>
+            .
+            <div style={{ marginTop: 8 }}>
+              Removal ends every session you have within one request and frees your address to be
+              invited again later. Your name stays in the audit log permanently — that record is the
+              point, and deleting the row would erase the trail it exists to keep.
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

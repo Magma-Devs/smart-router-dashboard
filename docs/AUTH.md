@@ -11,6 +11,33 @@ The dashboard has two auth modes, selected by the `AUTH_MODE` env var
 The implementation is a trimmed port of `lava-connect`'s auth stack — same
 JWT codec, same plugin layout, same seed semantics.
 
+### What the switch actually switches
+
+One variable, on both tiers, and nothing in the account system reads
+anything else. This is the table to check a claim against.
+
+| | `disabled` *(default)* | `enabled` |
+|---|---|---|
+| Api routes | `/auth/*`, `/api/team/*`, `/api/account/*` are never registered — a request to one 404s | registered, behind the gate |
+| Api plugins | no Postgres, no JWT plugin, no gate; the api boots with no database at all | db + auth plugins, fail-closed |
+| Edge gate (`proxy.ts`) | a no-op; every page is open | runs the `authorized` callback per request |
+| Auth.js | `/api/auth/*` returns 404; `SessionProvider` never mounts | mounted by the root layout |
+| Login, setup, invite, reset, forgot | redirect to `/overview` | render |
+| Team | hidden from the sidebar; `/team` redirects to `/overview` | full member list |
+| Account | in the sidebar, showing build provenance only | adds two-factor, change password, sessions |
+| Api client | attaches no token, waits for no session bridge | attaches the Bearer |
+
+Two rules keep it that way. The api registers the whole account system in
+**one block** in `app.ts`, so a route cannot arrive without its gate. The
+web decides once, in the authenticated layout, and hands the answer down
+through `useAuthMode()` — so a surface cannot draw itself before the
+answer lands and then take itself away.
+
+**Adding an account-only surface?** Mark its nav entry `requiresAuth` and
+give its route a layout that redirects in `disabled`. Both are one line,
+and `visibleNavSections` is unit-tested so the sidebar rule holds without
+anyone rendering the shell.
+
 > **Ticket coverage:** [`MAG-2729-REQUIREMENTS.md`](./MAG-2729-REQUIREMENTS.md)
 > maps every line of MAG-2729 to what implements it, with what is outstanding and
 > who owns it.

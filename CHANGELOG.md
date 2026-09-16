@@ -59,6 +59,15 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ### Fixed
 
+- **`AUTH_MODE=disabled` now reaches the screens as well as the routes.** The
+  api has always registered nothing account-shaped in that mode, but the sidebar
+  offered Team and Account regardless. Team then reported "could not load the
+  member list" — a broken deployment, rather than one never built with a team —
+  and Account rendered a change-password form, a two-factor card and a device
+  list, all posting to routes that do not exist. Team is now hidden and
+  redirects; Account keeps its build provenance, which is the half an operator
+  of a self-hosted deployment actually reads, and drops the credential cards.
+
 - **Opening a session is one transaction.** The session row, the sign-in stamp
   and the `signin.succeeded` event were four separate writes, so a failure
   partway left a device with no record of arriving — the row an investigation
