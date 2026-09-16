@@ -15,6 +15,21 @@ import { configRoutes } from "./routes/config.js";
 import { upstreamRoutes } from "./routes/upstreams.js";
 import { authRoutes } from "./routes/auth.js";
 
+/**
+ * `TRUST_PROXY` as a hop count, in the shape Fastify's types accept.
+ *
+ * A number is what the setting means — "believe this many proxies" — and what
+ * `proxy-addr` takes underneath, but `FastifyServerOptions.trustProxy` is
+ * `boolean | string | string[] | TrustProxyFunction`, so the count has to
+ * arrive as the predicate `proxy-addr` would have built from it: trust a hop
+ * while it is nearer than the count. Same behaviour, spelled in the type.
+ */
+function trustProxyOption(
+  setting: (typeof config)["server"]["trustProxy"],
+): boolean | string | string[] | ((address: string, hop: number) => boolean) {
+  return typeof setting === "number" ? (_address, hop) => hop < setting : setting;
+}
+
 /** Build the Fastify app with all plugins + routes registered. */
 export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({
@@ -22,7 +37,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     // any caller set X-Forwarded-For to whatever it likes — which both defeats
     // the per-IP rate limit and lets an attacker choose the address recorded
     // against their sign-in attempts. See config.server.trustProxy.
-    trustProxy: config.server.trustProxy,
+    trustProxy: trustProxyOption(config.server.trustProxy),
     logger: {
       level: config.logLevel,
       transport: config.isDev ? { target: "pino-pretty" } : undefined,
