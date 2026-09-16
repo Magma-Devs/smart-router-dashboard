@@ -52,22 +52,46 @@ export function importClosure(index, specIndex, seen = new Set()) {
 }
 
 /**
+ * Resolve one catalog entry to its method surface. Better than half the
+ * catalog is stored as an alias — a bare string naming the index whose
+ * surface this one shares — so a caller that reads `catalog[index]` gets
+ * either `{ [iface]: { [tier]: [...] } }` or `"BTCS"`. Follows the alias
+ * chain (cycle-safe) and returns `{}` for a dangling or circular one.
+ */
+export function resolveEntry(catalog, key, seen = new Set()) {
+  let entry = catalog?.[key];
+  while (typeof entry === "string") {
+    if (seen.has(entry)) return {};
+    seen.add(entry);
+    entry = catalog?.[entry];
+  }
+  return entry && typeof entry === "object" ? entry : {};
+}
+
+/**
  * Count what changed inside one catalog entry. Entries are
  * `{ [iface]: { [tier]: [{ m, p?, d?, … }] } }`; a method is keyed by `m`
- * within its (iface, tier) slot.
+ * within its (iface, tier) slot. Pass resolved entries — an alias string
+ * reaching here counts as an empty surface rather than throwing.
  */
 export function diffMethodEntry(before, after) {
   const counts = { added: 0, removed: 0, changed: 0 };
+  const shape = (e) => (e && typeof e === "object" ? e : {});
+  const [x, y] = [shape(before), shape(after)];
   const slots = new Set();
-  for (const src of [before, after]) {
-    for (const [iface, tiers] of Object.entries(src ?? {})) {
-      for (const tier of Object.keys(tiers ?? {})) slots.add(`${iface} ${tier}`);
+  for (const src of [x, y]) {
+    for (const [iface, tiers] of Object.entries(src)) {
+      for (const tier of Object.keys(shape(tiers))) slots.add(`${iface} ${tier}`);
     }
   }
+  const methods = (entry, iface, tier) => {
+    const list = shape(entry[iface])[tier];
+    return new Map(Array.isArray(list) ? list.map((m) => [m.m, m]) : []);
+  };
   for (const slot of slots) {
     const [iface, tier] = slot.split(" ");
-    const a = new Map((before?.[iface]?.[tier] ?? []).map((x) => [x.m, x]));
-    const b = new Map((after?.[iface]?.[tier] ?? []).map((x) => [x.m, x]));
+    const a = methods(x, iface, tier);
+    const b = methods(y, iface, tier);
     for (const m of a.keys()) if (!b.has(m)) counts.removed += 1;
     for (const [m, entry] of b) {
       if (!a.has(m)) counts.added += 1;
@@ -108,6 +132,19 @@ export function attributeToImports(changed, specIndex) {
 }
 
 /**
+ * Trailing note for a count line whose entry is, or was, an alias — a
+ * `+0 -0 ~0` row is otherwise unreadable when only the alias string moved.
+ */
+function aliasNote(before, after) {
+  const a = typeof before === "string" ? before : null;
+  const b = typeof after === "string" ? after : null;
+  if (a && b) return a === b ? "" : `  (alias ${a} → ${b})`;
+  if (a) return `  (was an alias to ${a}, now its own entry)`;
+  if (b) return `  (now an alias to ${b})`;
+  return "";
+}
+
+/**
  * Lines for the "methods changed" section of the gate output. `before` and
  * `after` are the parsed catalogs; `specIndex` may be null when the specs
  * dir was not available (attribution is then skipped, counts still print).
@@ -119,8 +156,13 @@ export function summarizeMethodDrift(before, after, specIndex, { max = 20 } = {}
   if (changed.length === 0) return [];
   const lines = [`  methods changed (${changed.length}):`];
   for (const k of changed.slice(0, max)) {
-    const c = diffMethodEntry(before[k], after[k]);
-    lines.push(`    ${k.padEnd(14)} +${c.added} -${c.removed} ~${c.changed}`);
+    // Diff the resolved surfaces: an alias moving to another index, or
+    // becoming an entry of its own, changes what the chain serves even
+    // though only the alias string moved.
+    const c = diffMethodEntry(resolveEntry(before, k), resolveEntry(after, k));
+    lines.push(
+      `    ${k.padEnd(14)} +${c.added} -${c.removed} ~${c.changed}${aliasNote(before[k], after[k])}`,
+    );
   }
   if (changed.length > max) lines.push(`    … and ${changed.length - max} more`);
   if (specIndex) {
