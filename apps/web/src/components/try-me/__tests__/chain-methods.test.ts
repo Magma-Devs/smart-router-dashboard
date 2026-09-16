@@ -37,6 +37,15 @@ describe("runnable defaults", () => {
       ["NEAR", "jsonrpc"],
       ["STRK", "jsonrpc"],
       ["XRP", "jsonrpc"],
+      ["XLM", "jsonrpc"],
+      ["XLM", "rest"],
+      ["TON", "rest"],
+      ["VECHAIN", "rest"],
+      ["TEZOS", "rest"],
+      ["STACKS", "rest"],
+      ["ARWEAVE", "rest"],
+      ["MULTIVERSX", "rest"],
+      ["ALGORAND", "rest"],
     ] as const) {
       const commands = head(spec, iface);
       expect(commands.length, `${spec}/${iface} has no runnable default`).toBeGreaterThan(0);
@@ -44,7 +53,10 @@ describe("runnable defaults", () => {
         expect(cmd.ready, `${spec}/${iface} ${cmd.method}`).toBe(true);
         expect(cmd.needsInput, `${spec}/${iface} ${cmd.method}`).toBeUndefined();
         // Nothing in the head may carry a slot the caller has to fill in.
-        expect(cmd.params, `${spec}/${iface} ${cmd.method}`).not.toMatch(/\.\.\.|<[^>]{2,}>|\{[a-z_ ]+\}/i);
+        // The slot class is "anything but a quote": `{asset-id}`,
+        // `{packet_id.channel_id}` and `{denom=**}` are placeholders too, and
+        // 123 commands rode into the head while the class was `{a-z_ }`.
+        expect(cmd.params, `${spec}/${iface} ${cmd.method}`).not.toMatch(/\.\.\.|<[^>]{2,}>|\{[^}"]+\}/);
       }
     }
   });
@@ -92,6 +104,57 @@ describe("runnable defaults", () => {
     // Aptos declares it under a GET collection but answers 405 — a write
     // endpoint never runs without a payload.
     expect(submission?.ready).toBeUndefined();
+  });
+
+  it("sends Soroban an empty object — it rejects an array on every method", () => {
+    // stellar-rpc unmarshals params straight into a typed request struct, so
+    // `[]` answers `-32602 cannot unmarshal array into Go value of type
+    // protocol.GetHealthRequest` even for the methods that take nothing.
+    // Every XLM jsonrpc command carries an object, curated or not.
+    const cfg = getInterfaceConfig("XLM", "jsonrpc", []);
+    expect(cfg?.regular.length).toBeGreaterThan(0);
+    for (const cmd of cfg!.regular) {
+      expect(cmd.params, `XLM/jsonrpc ${cmd.method}`).not.toMatch(/^\s*\[/);
+    }
+    expect(cfg?.regular.find((c) => c.method === "getHealth")?.params).toBe("{}");
+    // The testnet aliases the mainnet entry, so it inherits the fix.
+    expect(getInterfaceConfig("XLMT", "jsonrpc", [])).toBe(cfg);
+  });
+
+  it("keeps Solana's getHealth hint off Stellar", () => {
+    // One unscoped hint reached both chains and handed Stellar Solana's `[]`
+    // — on the very method the drawer opens on.
+    expect(getInterfaceConfig("SOLANA", "jsonrpc", [])?.regular
+      .find((c) => c.method === "getHealth")?.params).toBe("[]");
+  });
+
+  it("does not call a query-string REST path complete just because it is a GET", () => {
+    // toncenter takes its arguments in the query string, so every path looks
+    // structurally complete and 25 of TON's 41 "ready" commands answered 422.
+    const cfg = getInterfaceConfig("TON", "rest", []);
+    // For REST the catalog's `method` is the HTTP verb — the path is `label`.
+    const byName = (name: string) => cfg?.regular.find((c) => c.label === name);
+    expect(byName("/getAddressBalance")?.needsInput).toBe(true);
+    expect(byName("/getAddressBalance")?.ready).toBeUndefined();
+    expect(byName("/getBlockHeader")?.needsInput).toBe(true);
+    // The ones that DO answer bare keep their place.
+    expect(byName("/getMasterchainInfo")?.ready).toBe(true);
+    expect(byName("/getConsensusBlock")?.ready).toBe(true);
+  });
+
+  it("keeps endpoints that were checked and still cannot be sent out of the head", () => {
+    const vechain = getInterfaceConfig("VECHAIN", "rest", []);
+    // A WebSocket upgrade — a plain GET answers 400.
+    const subscription = vechain?.regular.find((c) => c.label === "/subscriptions/block");
+    expect(subscription?.ready).toBeUndefined();
+    expect(subscription?.needsInput).toBeUndefined();
+    expect(subscription?.desc).toMatch(/WebSocket/);
+
+    // A chunked stream that never closes — Send would spin forever.
+    const tezos = getInterfaceConfig("TEZOS", "rest", []);
+    expect(tezos?.regular.find((c) => c.label === "/monitor/applied_blocks")?.ready).toBeUndefined();
+    // The two monitor routes that DO return stay runnable.
+    expect(tezos?.regular.find((c) => c.label === "/monitor/bootstrapped")?.ready).toBe(true);
   });
 
   it("classifies the static fallback catalog the same way", () => {

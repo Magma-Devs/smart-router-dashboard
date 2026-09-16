@@ -224,12 +224,28 @@ the runnable ones, so a chain with none opens on a list where nothing works.
    send: CometBFT wants `{}` and rejects `[]`; XRPL wants `[{}]`; Monero and
    Avalanche-P want `{}`; EVM wants `[]`. If you cannot reach an endpoint, say
    so in the PR rather than implying a check happened.
-5. **A method needing an argument stays out.** Use a description (`d` with no
-   `p`) to tell the caller what to supply — the generator reads that as "needs
-   params" and labels it in the drawer. Never invent a plausible address, hash
-   or height to make something look runnable: a baked-in value that 404s later
-   is worse than an honest label.
-6. **Accepting a gap is allowed.** GraphQL-over-POST surfaces (Mina, Fuel,
+5. **A method needing an argument stays out.** On JSON-RPC, a description (`d`
+   with no `p`) is enough — the generator reads that as "needs params" and
+   labels it in the drawer. On REST a described GET still counts as runnable,
+   so say it outright with `needs: true`; the drawer shows the `d` beside the
+   label either way. Never invent a plausible address, hash or height to make
+   something look runnable: a baked-in value that 404s later is worse than an
+   honest label.
+
+   `unserved: true` is the other half of that: checked, and it still cannot be
+   sent from the drawer — a WebSocket upgrade served over GET, a stream that
+   never closes, an authenticated route, a path the chain's public endpoints do
+   not serve. It lands in "Not verified" rather than "Needs params", because
+   there are no params that would help. Put the reason in `d`.
+
+6. **A GET is only self-contained when the PATH carries the arguments.** Where
+   they live in the query string — toncenter, and anything shaped like it —
+   every path looks structurally complete and almost none of them are. Add the
+   spec to `QUERY_STRING_REST` in the generator: a bare, uncurated GET on those
+   then claims nothing, and the ones you actually fire get a hint. This is what
+   put 25 of TON's 41 "ready" commands behind a 422.
+
+7. **Accepting a gap is allowed.** GraphQL-over-POST surfaces (Mina, Fuel,
    Subgraph) need a query body the console has no field for. Commit the
    roll-call file with the entry in it; the diff records the decision.
 

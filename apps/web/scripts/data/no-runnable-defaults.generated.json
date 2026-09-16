@@ -1,5 +1,7 @@
 [
   "FUELNETWORK/rest",
+  "ION/rest",
+  "IONT/rest",
   "MINA/rest",
   "MINAT/rest",
   "SQDSUBGRAPH/rest"
