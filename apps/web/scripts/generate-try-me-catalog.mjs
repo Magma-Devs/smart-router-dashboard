@@ -118,7 +118,17 @@ const NO_RUNNABLE_PATH =
  *  different things on different chains); adding `exact: true` matches the
  *  index itself instead of a prefix, for hints carrying data that is valid on
  *  ONE network only (a genesis hash — BTC's does not hold on BTCS/BTCT4).
- *  Order = display order. */
+ *  Order = display order.
+ *
+ *  Two flags say a command is NOT sendable as it stands, and they mean
+ *  different things:
+ *    `needs: true`    it wants an argument — a query parameter, a body, a
+ *                     hash. The drawer labels it "Needs params".
+ *    `unserved: true` it was checked and still cannot be sent from the
+ *                     drawer: a WebSocket upgrade, a stream that never
+ *                     closes, an authenticated route, a path the chain's
+ *                     public endpoints do not serve. The `d` carries the
+ *                     reason. */
 
 const JSONRPC_HINTS = [
   // EVM
@@ -179,7 +189,9 @@ const JSONRPC_HINTS = [
   { m: "getTransaction", d: "Returns transaction details for a confirmed transaction — paste a recent tx signature, e.g. [\"SIGNATURE\", {\"maxSupportedTransactionVersion\":0}].", only: ["SOLANA", "KOII"] },
   { m: "getAccountInfo", p: '["11111111111111111111111111111111"]', d: "Returns all information associated with the account.", only: ["SOLANA", "KOII"] },
   { m: "getEpochInfo", p: "[]", d: "Returns information about the current epoch." },
-  { m: "getHealth", p: "[]", d: "Returns the health of the node." },
+  // Scoped: Stellar declares `getHealth` too, and Soroban rejects the `[]`
+  // this sends (see the Stellar block below).
+  { m: "getHealth", p: "[]", d: "Returns the health of the node.", only: ["SOLANA", "KOII"] },
   { m: "getVersion", p: "[]", d: "Returns the software version of the node." },
   // NEAR
   { m: "status", p: "[]", d: "Returns the state of the node.", only: ["NEAR"] },
@@ -229,10 +241,17 @@ const JSONRPC_HINTS = [
   { m: "sui_getTotalTransactionBlocks", p: "[]", d: "Returns the total number of transaction blocks." },
   { m: "iota_getChainIdentifier", p: "[]", d: "Returns the chain identifier." },
   { m: "iota_getLatestCheckpointSequenceNumber", p: "[]", d: "Returns the sequence number of the latest checkpoint." },
-  // Stellar (soroban-rpc)
-  { m: "getVersionInfo", p: "[]", d: "Returns version information of the RPC instance." },
-  { m: "getNetwork", p: "[]", d: "Returns network configuration info." },
-  { m: "getLatestLedger", p: "[]", d: "Returns the latest known ledger." },
+  // Stellar (soroban-rpc) — OBJECT params, never an array, on every method
+  // including the ones that take no arguments. `[]` answers `-32602 invalid
+  // parameters: cannot unmarshal array into Go value of type
+  // protocol.GetHealthRequest`. Verified against mainnet.sorobanrpc.com and
+  // soroban-testnet.stellar.org; `OBJECT_PARAM_JSONRPC` carries the same fact
+  // to the uncurated tail.
+  { m: "getHealth", p: "{}", d: "Returns the health of the node.", only: ["XLM"] },
+  { m: "getVersionInfo", p: "{}", d: "Returns version information of the RPC instance.", only: ["XLM"] },
+  { m: "getNetwork", p: "{}", d: "Returns network configuration info.", only: ["XLM"] },
+  { m: "getLatestLedger", p: "{}", d: "Returns the latest known ledger.", only: ["XLM"] },
+  { m: "getFeeStats", p: "{}", d: "Returns inclusion-fee statistics for the past 10 ledgers.", only: ["XLM"] },
   // Casper
   { m: "info_get_status", p: "[]", d: "Returns the current node status." },
   { m: "chain_get_state_root_hash", p: "[]", d: "Returns the latest state root hash." },
@@ -301,7 +320,16 @@ const REST_HINTS = [
   { m: "/accounts/{address}", p: "/accounts/0x0000000000000000000000000000456E65726779", d: "Returns an address's VET balance, VTHO energy and code flag.", only: ["VECHAIN"] },
   { m: "/node/network/peers", d: "Returns the node's connected peers." },
   { m: "/fees/priority", d: "Returns the suggested priority fee." },
-  { m: "/fees/history", d: "Returns recent fee history." },
+  { m: "/fees/history", needs: true, d: "Returns recent fee history — append ?blockCount=10&newestBlock=best. A bare GET answers 400.", only: ["VECHAIN"] },
+  // Thor serves /subscriptions/* as WebSocket upgrades; a plain GET answers
+  // 400 Bad Request. Switch the drawer to the WS transport to use them.
+  { m: "/subscriptions/beat2", unserved: true, d: "WebSocket subscription — block summaries. A plain GET answers 400; use the WS transport.", only: ["VECHAIN"] },
+  { m: "/subscriptions/block", unserved: true, d: "WebSocket subscription — new blocks. A plain GET answers 400; use the WS transport.", only: ["VECHAIN"] },
+  { m: "/subscriptions/event", unserved: true, d: "WebSocket subscription — contract events. A plain GET answers 400; use the WS transport.", only: ["VECHAIN"] },
+  { m: "/subscriptions/transfer", unserved: true, d: "WebSocket subscription — VET transfers. A plain GET answers 400; use the WS transport.", only: ["VECHAIN"] },
+  { m: "/subscriptions/txpool", unserved: true, d: "WebSocket subscription — pending transactions. A plain GET answers 400; use the WS transport.", only: ["VECHAIN"] },
+  { m: "/node/txpool", unserved: true, d: "Pending-pool dump — public Thor nodes answer 503 \"txpool API is disabled\".", only: ["VECHAIN"] },
+  { m: "/node/txpool/status", unserved: true, d: "Pending-pool size — public Thor nodes answer 503 \"txpool API is disabled\".", only: ["VECHAIN"] },
   // TON HTTP API — toncenter v2 (the /get* names) plus tonindex v3 (the rest).
   // Names are the SPEC's, with no version prefix: that is what the router
   // matches on, and it dials the node-url pinned to that name's collection.
@@ -311,13 +339,110 @@ const REST_HINTS = [
   { m: "/getMasterchainInfo", d: "Returns the masterchain state — the latest known block." },
   { m: "/masterchainInfo", d: "Returns the masterchain state — the latest known block.", only: ["TON", "ION"] },
   { m: "/getAddressInformation", p: "/getAddressInformation?address=EQAAFhjXzKuQ5N0c96nsdZQWATcJm909LYSaCAvWFxVJP80D", d: "Returns balance, state and code for an address.", only: ["TON"] },
-  { m: "/getAddressInformation", d: "Returns balance, state and code for an address — append ?address=<address>." },
+  { m: "/getAddressInformation", needs: true, d: "Returns balance, state and code for an address — append ?address=<address>." },
   { m: "/addressInformation", p: "/addressInformation?address=EQAAFhjXzKuQ5N0c96nsdZQWATcJm909LYSaCAvWFxVJP80D", d: "Returns balance, state and code for an address.", only: ["TON"] },
-  { m: "/addressInformation", d: "Returns balance, state and code for an address — append ?address=<address>." },
+  { m: "/addressInformation", needs: true, d: "Returns balance, state and code for an address — append ?address=<address>." },
   // Scoped: bare `/blocks` and `/transactions` are common REST names and these
   // descriptions are the TON index's.
   { m: "/blocks", d: "Lists recent blocks, newest first.", only: ["TON", "ION"] },
   { m: "/transactions", d: "Lists recent transactions, newest first.", only: ["TON", "ION"] },
+  // Every TON GET below was fired at toncenter (v2 + v3) on 2026-09-16. The
+  // ones with a `d` alone answered 200 bare; the `needs` ones answered 422
+  // naming the query parameter they wanted. `QUERY_STRING_REST` covers the
+  // uncurated tail and the ION fork, whose api names carry a `/v2` / `/v3`
+  // prefix and so match none of these.
+  { m: "/getConsensusBlock", d: "Returns the latest consensus (masterchain) block seqno.", only: ["TON"] },
+  { m: "/actions", d: "Lists recent decoded actions, newest first.", only: ["TON"] },
+  { m: "/traces", d: "Lists recent transaction traces, newest first.", only: ["TON"] },
+  { m: "/topAccountsByBalance", d: "Lists accounts ordered by TON balance.", only: ["TON"] },
+  { m: "/jetton/burns", d: "Lists recent jetton burns.", only: ["TON"] },
+  { m: "/jetton/masters", d: "Lists jetton master contracts.", only: ["TON"] },
+  { m: "/jetton/transfers", d: "Lists recent jetton transfers.", only: ["TON"] },
+  { m: "/jetton/wallets", d: "Lists jetton wallet contracts.", only: ["TON"] },
+  { m: "/nft/collections", d: "Lists NFT collections.", only: ["TON"] },
+  { m: "/nft/items", d: "Lists NFT items.", only: ["TON"] },
+  { m: "/nft/transfers", d: "Lists recent NFT transfers.", only: ["TON"] },
+  // v2 — the address family.
+  { m: "/getAddressBalance", needs: true, d: "Returns an address's balance — append ?address=<address>.", only: ["TON"] },
+  { m: "/getAddressState", needs: true, d: "Returns an address's contract state — append ?address=<address>.", only: ["TON"] },
+  { m: "/getExtendedAddressInformation", needs: true, d: "Returns extended address info — append ?address=<address>.", only: ["TON"] },
+  { m: "/getWalletInformation", needs: true, d: "Returns wallet type, seqno and balance — append ?address=<address>.", only: ["TON"] },
+  { m: "/getTransactions", needs: true, d: "Returns an address's transactions — append ?address=<address>.", only: ["TON"] },
+  { m: "/getTokenData", needs: true, d: "Returns jetton/NFT contract data — append ?address=<address>.", only: ["TON"] },
+  { m: "/detectAddress", needs: true, d: "Returns every encoding of an address — append ?address=<address>.", only: ["TON"] },
+  { m: "/packAddress", needs: true, d: "Packs a raw address into user-friendly form — append ?address=<raw address>.", only: ["TON"] },
+  { m: "/unpackAddress", needs: true, d: "Unpacks a user-friendly address into raw form — append ?address=<address>.", only: ["TON"] },
+  // v2 — the block family. workchain/shard/seqno are required, not optional.
+  { m: "/getBlockHeader", needs: true, d: "Returns a block header — append ?workchain=-1&shard=<shard>&seqno=<seqno>.", only: ["TON"] },
+  { m: "/getBlockTransactions", needs: true, d: "Returns a block's transactions — append ?workchain=-1&shard=<shard>&seqno=<seqno>.", only: ["TON"] },
+  { m: "/getBlockTransactionsExt", needs: true, d: "Returns a block's transactions with full data — append ?workchain=-1&shard=<shard>&seqno=<seqno>.", only: ["TON"] },
+  { m: "/getShardBlockProof", needs: true, d: "Returns a shard block's proof — append ?workchain=-1&shard=<shard>&seqno=<seqno>.", only: ["TON"] },
+  { m: "/lookupBlock", needs: true, d: "Finds a block by seqno, logical time or unixtime — append ?workchain=-1&shard=<shard>&seqno=<seqno>.", only: ["TON"] },
+  { m: "/shards", needs: true, d: "Returns the shards of a masterchain block — append ?seqno=<masterchain seqno>.", only: ["TON"] },
+  { m: "/getMasterchainBlockSignatures", needs: true, d: "Returns a masterchain block's validator signatures — append ?seqno=<seqno>.", only: ["TON"] },
+  { m: "/getConfigParam", needs: true, d: "Returns one blockchain config parameter — append ?config_id=<id>.", only: ["TON"] },
+  { m: "/tryLocateTx", needs: true, d: "Locates a transaction — append ?source=&destination=&created_lt=.", only: ["TON"] },
+  { m: "/tryLocateResultTx", needs: true, d: "Locates the result transaction of a message — append ?source=&destination=&created_lt=.", only: ["TON"] },
+  { m: "/tryLocateSourceTx", needs: true, d: "Locates the source transaction of a message — append ?source=&destination=&created_lt=.", only: ["TON"] },
+  // v3 — everything here wants at least one address.
+  { m: "/accountStates", needs: true, d: "Returns account states — append ?address=<address>.", only: ["TON"] },
+  { m: "/addressBook", needs: true, d: "Returns address-book entries — append ?address=<address>.", only: ["TON"] },
+  { m: "/metadata", needs: true, d: "Returns address metadata — append ?address=<address>.", only: ["TON"] },
+  { m: "/walletStates", needs: true, d: "Returns wallet states — append ?address=<address>.", only: ["TON"] },
+  { m: "/walletInformation", needs: true, d: "Returns wallet information — append ?address=<address>.", only: ["TON"] },
+  { m: "/pendingActions", needs: true, d: "Returns pending actions — append ?account=<address> or ?ext_msg_hash=<hash>.", only: ["TON"] },
+  { m: "/pendingTraces", needs: true, d: "Returns pending traces — append ?account=<address> or ?ext_msg_hash=<hash>.", only: ["TON"] },
+  { m: "/dnsEntities", unserved: true, d: "Declared by the spec; toncenter v3 answers 500 \"Cannot GET dnsEntities\".", only: ["TON"] },
+  // Stellar Horizon — these five are collection endpoints that refuse an
+  // unfiltered listing (400 invalid_*), unlike /ledgers, /transactions and
+  // the rest of the collections. Verified against horizon.stellar.org.
+  { m: "/accounts", needs: true, d: "Lists accounts filtered by ?signer=, ?sponsor=, ?asset= or ?liquidity_pool= — one is required.", only: ["XLM"] },
+  { m: "/order_book", needs: true, d: "Returns an order book — append ?selling_asset_type=native&buying_asset_type=credit_alphanum4&buying_asset_code=&buying_asset_issuer=.", only: ["XLM"] },
+  { m: "/paths/strict-receive", needs: true, d: "Finds payment paths — append ?destination_asset_type=native&destination_amount=&source_account=.", only: ["XLM"] },
+  { m: "/paths/strict-send", needs: true, d: "Finds payment paths — append ?source_asset_type=native&source_amount=&destination_account=.", only: ["XLM"] },
+  { m: "/trade_aggregations", needs: true, d: "Returns OHLC trade buckets — append ?base_asset_type=&counter_asset_type=&resolution=.", only: ["XLM"] },
+  // Tezos — octez serves these four as chunked streams that stay open for the
+  // life of the chain. The drawer has one response to render, so there is
+  // nothing for it to wait for. /monitor/bootstrapped and
+  // /chains/main/mempool/monitor_operations do return and stay runnable.
+  { m: "/monitor/active_chains", unserved: true, d: "Long-poll stream — the connection stays open indefinitely. Not a single-response call.", only: ["TEZOS"] },
+  { m: "/monitor/applied_blocks", unserved: true, d: "Long-poll stream — the connection stays open indefinitely. Not a single-response call.", only: ["TEZOS"] },
+  { m: "/monitor/protocols", unserved: true, d: "Long-poll stream — the connection stays open indefinitely. Not a single-response call.", only: ["TEZOS"] },
+  { m: "/monitor/validated_blocks", unserved: true, d: "Long-poll stream — the connection stays open indefinitely. Not a single-response call.", only: ["TEZOS"] },
+  // Arweave — declared by the spec, 404 on the public gateways. These are
+  // peer-to-peer routes an arweave node serves to other nodes, not to
+  // clients. Verified against arweave.net.
+  { m: "/block_index", unserved: true, d: "Peer-to-peer route — public gateways answer 404.", only: ["ARWEAVE"] },
+  { m: "/block_index2", unserved: true, d: "Peer-to-peer route — public gateways answer 404.", only: ["ARWEAVE"] },
+  { m: "/data_sync_record", unserved: true, d: "Peer-to-peer route — public gateways answer 404.", only: ["ARWEAVE"] },
+  { m: "/footprint_buckets", unserved: true, d: "Peer-to-peer route — public gateways answer 404.", only: ["ARWEAVE"] },
+  { m: "/hash_list", unserved: true, d: "Peer-to-peer route — public gateways answer 404.", only: ["ARWEAVE"] },
+  { m: "/recent_hash_list", unserved: true, d: "Peer-to-peer route — public gateways answer 404.", only: ["ARWEAVE"] },
+  { m: "/recent_hash_list_diff", unserved: true, d: "Peer-to-peer route — public gateways answer 404.", only: ["ARWEAVE"] },
+  { m: "/sync_buckets", unserved: true, d: "Peer-to-peer route — public gateways answer 404.", only: ["ARWEAVE"] },
+  { m: "/time", unserved: true, d: "Peer-to-peer route — public gateways answer 404.", only: ["ARWEAVE"] },
+  { m: "/wallet_list", unserved: true, d: "Peer-to-peer route — public gateways answer 404.", only: ["ARWEAVE"] },
+  // Stacks — query-string routes, then five the Hiro API no longer serves.
+  // Verified against api.hiro.so.
+  { m: "/extended/v1/contract/by_trait", needs: true, d: "Finds contracts implementing a trait — append ?trait_abi=<json>.", only: ["STACKS"] },
+  { m: "/extended/v1/tokens/nft/history", needs: true, d: "Returns an NFT's history — append ?asset_identifier=&value=.", only: ["STACKS"] },
+  { m: "/extended/v1/tokens/nft/holdings", needs: true, d: "Returns an address's NFT holdings — append ?principal=<address>.", only: ["STACKS"] },
+  { m: "/extended/v1/tokens/nft/mints", needs: true, d: "Returns an asset's mints — append ?asset_identifier=<identifier>.", only: ["STACKS"] },
+  { m: "/extended/v1/tx/events", needs: true, d: "Returns transaction events — append ?address=<address> or ?tx_id=<id>.", only: ["STACKS"] },
+  { m: "/extended/v1/tx/multiple", needs: true, d: "Returns several transactions — append ?tx_id=<id>&tx_id=<id>.", only: ["STACKS"] },
+  { m: "/extended/v2/smart-contracts/status", needs: true, d: "Returns deployment status — append ?contract_id=<id>.", only: ["STACKS"] },
+  { m: "/v2/attachments/inv", needs: true, d: "Returns an attachment inventory — append ?index_block_hash=&pages_indexes=.", only: ["STACKS"] },
+  { m: "/extended/v1/faucets/btc", unserved: true, d: "Declared by the spec; the Hiro API answers 404 — route removed.", only: ["STACKS"] },
+  { m: "/extended/v1/faucets/stx", unserved: true, d: "Declared by the spec; the Hiro API answers 404 — route removed.", only: ["STACKS"] },
+  { m: "/extended/v1/fee_rate/", unserved: true, d: "Declared by the spec; the Hiro API answers 404 — route removed.", only: ["STACKS"] },
+  { m: "/extended/v1/microblock/", unserved: true, d: "Declared by the spec; the Hiro API answers 404 — microblocks are gone post-Nakamoto.", only: ["STACKS"] },
+  { m: "/extended/v1/microblock/unanchored/txs", unserved: true, d: "Declared by the spec; the Hiro API answers 404 — microblocks are gone post-Nakamoto.", only: ["STACKS"] },
+  // MultiversX — authenticated or operator-disabled on the public gateway.
+  // Verified against gateway.multiversx.com.
+  { m: "/network/delegated-info", unserved: true, d: "Requires Basic Authentication on the public gateway (401).", only: ["MULTIVERSX"] },
+  { m: "/network/direct-staked-info", unserved: true, d: "Requires Basic Authentication on the public gateway (401).", only: ["MULTIVERSX"] },
+  { m: "/about/nodes-versions", unserved: true, d: "Blocked on the public gateway (403).", only: ["MULTIVERSX"] },
+  { m: "/transaction/pool", unserved: true, d: "Operator-gated — the public gateway answers 500 \"operation not allowed\".", only: ["MULTIVERSX"] },
   // Concordium (node REST proxy — {…} segments are placeholders to replace)
   { m: "/v0/consensusInfo", d: "Returns consensus state: best block, epoch and finalization info." },
   { m: "/v0/chainParameters", d: "Returns the current chain parameters." },
@@ -599,6 +724,35 @@ function expandInheritance(colls) {
 
 /* ── Catalog assembly ────────────────────────────────────────────────────── */
 
+/**
+ * JSON-RPC surfaces whose params are an OBJECT, never an array. Soroban
+ * (`stellar-rpc`) unmarshals straight into a typed request struct and answers
+ * `-32602 invalid parameters — cannot unmarshal array into Go value of type
+ * protocol.GetHealthRequest` to `[]`, on EVERY method including the ones that
+ * take no arguments. Verified against mainnet.sorobanrpc.com and
+ * soroban-testnet.stellar.org. Matched as an index prefix, so XLMT rides XLM.
+ */
+const OBJECT_PARAM_JSONRPC = ["XLM"];
+
+/**
+ * REST surfaces that take their arguments in the QUERY STRING.
+ *
+ * The bare-GET rule below reads "a path with nothing to substitute is already
+ * a whole request". That holds for path-templated REST — Cosmos, Horizon,
+ * Aptos — and is false here: `/getAddressBalance` has no slot to fill and
+ * means nothing without `?address=`, so toncenter answers 422. Structurally
+ * every path on these specs looks complete, which made 25 of TON's 41
+ * "ready" commands unsendable.
+ *
+ * For a spec in this list a bare, uncurated GET claims nothing. Curate the
+ * ones that are checked: a hint with `d` says it runs, `needs: true` says it
+ * wants a query argument.
+ */
+const QUERY_STRING_REST = ["TON", "ION"];
+
+const specMatches = (list, specIndex) =>
+  list.some((prefix) => specIndex.startsWith(prefix));
+
 const defaultParamsFor = (iface, method) =>
   iface === "rest"
     ? method
@@ -639,12 +793,14 @@ function buildCmds(iface, specIndex, entries) {
     // declared under two internal paths takes the hint on BOTH: it describes
     // the call, and the two are the same call served by two versions.
     if (used.has(hint.m) || !byName.has(hint.m) || !hintApplies(hint, specIndex)) continue;
-    for (const e of byName.get(hint.m).sort(byNameThenPath)) cmds.push(makeCmd(iface, e, hint));
+    for (const e of byName.get(hint.m).sort(byNameThenPath)) {
+      cmds.push(makeCmd(iface, e, hint, specIndex));
+    }
     used.add(hint.m);
   }
   for (const e of [...entries].sort(byNameThenPath)) {
     if (used.has(e.name)) continue;
-    cmds.push(makeCmd(iface, e, null));
+    cmds.push(makeCmd(iface, e, null, specIndex));
   }
   return cmds;
 }
@@ -655,8 +811,16 @@ function buildCmds(iface, specIndex, entries) {
  * REST path template (`/blocks/{height}`). A JSON object is NOT a
  * placeholder — `{"tracer":"callTracer"}` is a complete value — hence the
  * quote-free character class.
+ *
+ * The slot class is "anything but a quote", because a path template is not
+ * spelled one way. `{a-z_ }` matched `{height}` and missed every slot
+ * carrying a hyphen (`{asset-id}`), a dot (`{packet_id.channel_id}`), a digit
+ * (`{token0_address}`) or a grpc-gateway wildcard (`{denom=**}`) — 123
+ * commands across 28 specs sat in "Ready to send" and fired a URL with a
+ * literal brace in it. `{}` stays out on its own: the empty object is a
+ * complete value, and a JSON object always carries a quoted key.
  */
-const PLACEHOLDER = /\.\.\.|<[^>]{2,}>|\{[a-z_ ]+\}/i;
+const PLACEHOLDER = /\.\.\.|<[^>]{2,}>|\{[^}"]+\}/;
 
 /** Does the spec's block_parsing prove the method takes positional args? */
 function specTakesArgs(block) {
@@ -681,17 +845,25 @@ function specTakesArgs(block) {
  * indistinguishable from an uncurated one. So it is decided here, while the
  * hint is still in hand.
  */
-function runnability(iface, cmd, hint, api) {
+function runnability(iface, cmd, hint, api, specIndex) {
   const params = cmd.p ?? defaultParamsFor(iface, cmd.m);
   if (hint?.needs || PLACEHOLDER.test(params)) return { n: 1 };
+  // Checked, and it still cannot be sent from here — a WebSocket upgrade, a
+  // chunked stream that never closes, an authenticated route, a path the
+  // public endpoints of this chain do not serve. None of those is "needs
+  // params", and none of them belongs in a list headed "press Send". The
+  // command keeps its `d`, which is where the reason is.
+  if (hint?.unserved) return {};
   if (iface === "rest") {
     // A write endpoint never runs out of the box — it wants a signed payload,
     // and several specs declare one as GET (Aptos's encode_submission answers
     // 405 to the GET its own collection type implies).
     if (/(submit|broadcast|simulate|encode|sign|estimate_gas_unit)/i.test(cmd.m)) return {};
-    // A GET path with nothing to substitute is already a whole request. A
-    // POST may still want a body, so only a curated one counts as ready.
+    // A GET path with nothing to substitute is already a whole request —
+    // unless the arguments live in the query string, where no path ever has
+    // anything to substitute. There, only a curated hint proves anything.
     const verb = cmd.v ?? "GET";
+    if (!hint && specMatches(QUERY_STRING_REST, specIndex)) return {};
     return verb === "GET" || hint ? { r: 1 } : {};
   }
   // Elsewhere the params ARE the request, so only a curated example proves it.
@@ -710,7 +882,7 @@ function runnability(iface, cmd, hint, api) {
  * `m`: `m` is what the caller sends THROUGH THE ROUTER, and the router
  * matches REST by api name alone.
  */
-function makeCmd(iface, entry, hint) {
+function makeCmd(iface, entry, hint, specIndex) {
   const { name, api, ip } = entry;
   const cmd = { m: iface === "rest" && !name.startsWith("/") ? `/${name}` : name };
   const effVerb = hint?.v ?? api?.verb;
@@ -718,7 +890,13 @@ function makeCmd(iface, entry, hint) {
   if (hint?.l && hint.l !== cmd.m) cmd.l = hint.l;
   if (hint?.p !== undefined && hint.p !== defaultParamsFor(iface, cmd.m)) cmd.p = hint.p;
   if (hint?.d) cmd.d = hint.d;
-  Object.assign(cmd, runnability(iface, cmd, hint, api));
+  // Emitted, not folded into `defaultParamsFor`: the runtime expander reads
+  // the interface and not the spec, so an elided `{}` would come back as the
+  // `[]` that Soroban rejects.
+  if (cmd.p === undefined && iface === "jsonrpc" && specMatches(OBJECT_PARAM_JSONRPC, specIndex)) {
+    cmd.p = "{}";
+  }
+  Object.assign(cmd, runnability(iface, cmd, hint, api, specIndex));
   if (ip) cmd.ip = ip;
   if (entry.ambiguous) cmd.a = 1;
   return cmd;

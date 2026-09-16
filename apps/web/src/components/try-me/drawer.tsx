@@ -67,6 +67,22 @@ type WsProbe = "checking" | "online" | "offline";
  *  the TCP connection but never upgrades would otherwise hang the tag. */
 const WS_PROBE_TIMEOUT_MS = 6_000;
 
+/** Give up on a router relay that hasn't answered by then.
+ *
+ *  Covers the body as well as the headers, because a response that never
+ *  finishes is the same dead end as one that never arrives: octez serves
+ *  `/monitor/*` as a chunked stream that stays open for the life of the
+ *  chain, so `fetch` resolves and `res.json()` never settles. Send used to
+ *  spin there until the drawer was closed.
+ *
+ *  30s is a console ceiling, not the router's: a handful of specs declare
+ *  `timeout_ms` well past it (60s, and 180s on one) for hanging write apis.
+ *  Those are the `sendTransaction` family, which the drawer never offers as
+ *  runnable — nothing it opens on takes anywhere near this long, and a
+ *  read that has not answered in 30s has failed as far as a caller watching
+ *  the drawer is concerned. */
+const HTTP_SEND_TIMEOUT_MS = 30_000;
+
 /** Human-facing label for the iface — shown as a pill in the drawer header
  *  so the user can see at a glance which transport they're firing against. */
 export const IFACE_LABEL: Record<CatalogInterface, string> = {
@@ -448,6 +464,37 @@ async function sendWebSocket(
       }
     };
   });
+}
+
+/** Fire the relay and read what came back. Module-scope: it closes over
+ *  nothing, and keeping it out of the component makes the timeout wrapper in
+ *  `fireViaRouter` read as one thing. */
+async function readRelay(url: string, init: RequestInit, t0: number): Promise<Outcome> {
+  const res = await fetch(url, init);
+  const dt = Math.round(performance.now() - t0);
+  let json: unknown;
+  try {
+    json = await res.clone().json();
+  } catch {
+    const text = await res.text();
+    json = { _raw: text };
+  }
+  const retriesHdr = res.headers.get("Lava-Retries");
+  return {
+    errored: !res.ok || (typeof json === "object" && json !== null && "error" in json),
+    httpStatus: res.status,
+    latencyMs: dt,
+    body: json,
+    // Which upstream served the relay — the router's Lava-Provider-Address
+    // header (a real endpoint name, or "Cached" on a cache hit). Readable
+    // only when the router CORS-exposes it; null otherwise.
+    servedBy: res.headers.get("Lava-Provider-Address"),
+    retries: retriesHdr !== null && retriesHdr !== "" ? Number(retriesHdr) || 0 : null,
+    cvStatus: res.headers.get("Lava-Cross-Validation-Status"),
+    cvAgreeing: res.headers.get("Lava-Cross-Validation-Agreeing-Providers"),
+    cvDisagreeing: res.headers.get("Lava-Cross-Validation-Disagreeing-Providers"),
+    truncated: false,
+  };
 }
 
 export function TryMeDrawer({
@@ -846,31 +893,24 @@ export function TryMeDrawer({
         init.body = JSON.stringify(resolved.body);
       }
     }
-    const res = await fetch(resolved.url, init);
-    const dt = Math.round(performance.now() - t0);
-    let json: unknown;
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), HTTP_SEND_TIMEOUT_MS);
     try {
-      json = await res.clone().json();
-    } catch {
-      const text = await res.text();
-      json = { _raw: text };
+      return await readRelay(resolved.url, { ...init, signal: ctl.signal }, t0);
+    } catch (e) {
+      // Only OUR abort becomes a timeout outcome — a genuine network failure
+      // still travels to the caller's error surface.
+      if (!ctl.signal.aborted) throw e;
+      return {
+        ...NO_ROUTER_META,
+        errored: true,
+        httpStatus: null,
+        latencyMs: Math.round(performance.now() - t0),
+        body: { error: { message: `Timed out after ${HTTP_SEND_TIMEOUT_MS}ms` } },
+      };
+    } finally {
+      clearTimeout(timer);
     }
-    const retriesHdr = res.headers.get("Lava-Retries");
-    return {
-      errored: !res.ok || (typeof json === "object" && json !== null && "error" in json),
-      httpStatus: res.status,
-      latencyMs: dt,
-      body: json,
-      // Which upstream served the relay — the router's Lava-Provider-Address
-      // header (a real endpoint name, or "Cached" on a cache hit). Readable
-      // only when the router CORS-exposes it; null otherwise.
-      servedBy: res.headers.get("Lava-Provider-Address"),
-      retries: retriesHdr !== null && retriesHdr !== "" ? Number(retriesHdr) || 0 : null,
-      cvStatus: res.headers.get("Lava-Cross-Validation-Status"),
-      cvAgreeing: res.headers.get("Lava-Cross-Validation-Agreeing-Providers"),
-      cvDisagreeing: res.headers.get("Lava-Cross-Validation-Disagreeing-Providers"),
-      truncated: false,
-    };
   }, [resolved, selectUpstream, skipCache]);
 
   /** Straight at the upstream, via the api — no router in the path at all.
