@@ -135,6 +135,87 @@ left staring at a login page holding a password they just set — but the
 session that carries them there is that one, minted the same way as every
 other. An api-side session would be a second row nobody ever presents.
 
+## Invitations
+
+After first-run setup, the **only** way an account comes into existence. Two
+properties carry the security of the flow:
+
+- **The account is created with the invitation's address, never the submitted
+  one.** That makes "redeemable only by the address it was sent to" structural
+  rather than a check someone can forget to write. The Google path compares the
+  verified claim to the invited address and refuses a mismatch by name, so an
+  honest person who used the wrong account knows which one to use.
+- **The raw token exists only inside the link.** The row stores its SHA-256, so
+  a backup, a log line or a support screenshot can't be turned back into a
+  working invitation.
+
+Single-use is a conditional `UPDATE … WHERE redeemed_at IS NULL AND revoked_at
+IS NULL AND expires_at > now()`, run in the same transaction as the account
+insert. Zero rows affected means somebody else got there first and the whole
+transaction unwinds — a race can't produce two accounts from one invite, and a
+crash can't leave a redeemed invite with no account.
+
+| | Managed | On-prem |
+|---|---|---|
+| Delivery | emailed | link returned to the admin, once, and handed over |
+| TTL | 7 days | 24 hours |
+
+**Resending mints a new token and kills the old link**, so it replaces the
+attack surface rather than widening it. **Expiry needs no sweeper**: the first
+read that observes it stamps `expired_noted_at` conditionally, which is what
+lets `invite.expired` fire exactly once.
+
+Every dead-link reason — used, revoked, expired, never issued — returns the same
+message **and the same 410**. The holder can't act on the difference, and
+distinguishing them would tell a stranger which of those a guessed token hit; a
+404 for "never issued" beside a 410 for the rest would have said it in the
+status line while the message withheld it.
+
+<img src="./assets/invite-redemption.png" alt="The invitation redemption page: a card headed &quot;Join this dashboard&quot;, with a panel restating the invitation — the address it was sent to, shown as fixed text rather than an editable field, the role Approver, and a line describing what that role can do. Below it, optional name, password and repeat-password fields, a note that any characters are accepted from 8 to 64 and checked against known breached passwords, and an Accept invitation button." width="440">
+
+> **OAuth is link-only from here on.** `upsertOAuthUser` used to fall through to
+> an insert, which was correct while accounts came only from a seed. With
+> invitations that is a hole big enough to walk through: anyone with a Google
+> account could reach `POST /auth/oauth/google` and provision themselves.
+> Account creation now lives in exactly two places — first-run setup, and invite
+> redemption.
+
+### Redeeming with Google
+
+Because OAuth sign-in links and never creates, a bare `signIn("google")` on an
+invitation can only ever answer 403 — the account does not exist yet. The two
+facts also arrive at different moments: the browser has the invitation token
+from the start, and a verified Google identity exists only after the provider
+redirects back.
+
+```
+/invite/<token>  ──POST /api/invite/handoff──▶  sr_invite cookie (httpOnly, lax, 10 min)
+       │
+       └─ signIn("google") ──▶ Google ──▶ Auth.js `signIn` callback
+                                              │ reads sr_invite
+                                              ▼
+                                    POST /auth/invite/accept
+                                    { token, googleIdToken }
+                                              │
+                            201 { user, sessionId } ──▶ JWT `sid`
+```
+
+The token rides in a cookie rather than the OAuth `state`, which Auth.js owns
+and signs for its own CSRF purposes. `httpOnly` keeps it away from page scripts;
+`lax` is required, because `strict` drops the cookie on exactly the top-level
+redirect back from Google that it exists to survive. It is burned the moment it
+is spent, successfully or not, so a failed attempt can't be replayed.
+
+A redemption that bounces — the wrong Google account, an expired link — returns
+the person to `/invite/<token>?error=…` with something they can act on, rather
+than Auth.js's generic error screen.
+
+**This is the one redemption path that opens a session server-side**, and the
+asymmetry is deliberate: the Google caller holds a one-shot `id_token` and
+cannot start the round-trip again, so the session has to come from the
+redemption. The password path lets the ordinary credentials sign-in mint it a
+moment later, exactly as `/auth/setup` does.
+
 ## Password policy
 
 Aligned to NIST 800-63B, which is what auditors reference and is mostly a
@@ -200,6 +281,7 @@ users table → admin created; populated table without that email → no-op
 | `SETUP_TOKEN` | api | First-run token. Unset ⇒ generated once at boot and logged |
 | `SETUP_TOKEN_FILE` | api | Where to write a generated token (mode 0600) so an init container can surface it |
 | `PASSWORD_BREACH_CHECK` | api | `hibp` (default) / `off` — turn the breach check off deliberately on an air-gapped site |
+| `PUBLIC_WEB_ORIGIN` | api | Browser-facing origin of the web app; invitation and reset links are built from it. No default — guessing a host would produce links that look right and go nowhere |
 | `AUTH_URL` | web | Auth.js base URL (default `http://localhost:3000`) |
 | `INTERNAL_API_BASE_URL` | web | server-side api URL for Auth.js callbacks (`http://api:8000` in compose) |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | web (+ id on api) | unset = no Google button. The api needs the id to pin the token audience |
