@@ -259,6 +259,11 @@ function deriveFamily(index, interfaces, imports) {
   // fork and serves the identical paths, so the surface pairs them.
   if (serves("/v3/runGetMethod", "/v2/sendBoc", "/v3/masterchainInfo")) return "ton";
   if (servesPrefix("concordium.v2.")) return "concordium";
+  // Rosetta (the chain-agnostic node API). Keyed on the /construction/*
+  // endpoints the spec mandates, because everything else a Rosetta node serves
+  // is too generic to identify it — `/block`, `/mempool` and `/status` carry no
+  // ecosystem marker, so without this the chain reaches the `evm` tail below.
+  if (serves("/construction/metadata", "/construction/payloads")) return "rosetta";
 
   // Polkadot ecosystem (relay chains + asset hubs) — substrate, but grouped
   // under the pre-existing family the v1 overlay already uses for them.

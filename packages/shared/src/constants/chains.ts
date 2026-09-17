@@ -58,7 +58,8 @@ export type ChainFamily =
   | "arweave"
   | "mina"
   | "multiversx"
-  | "stacks";
+  | "stacks"
+  | "rosetta";
 
 interface ChainMapEntry {
   name: string;

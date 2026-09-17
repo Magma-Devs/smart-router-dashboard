@@ -464,6 +464,15 @@ const REST_HINTS = [
   // Hedera mirror node
   { m: "/api/v1/accounts/{idOrAliasOrEvmAddress}", p: "/api/v1/accounts/0.0.1", d: "Returns info for the given account." },
   { m: "/api/v1/transactions", d: "Lists recent transactions." },
+  // Internet Computer (Rosetta). Every Rosetta call but this one is a POST
+  // carrying a JSON body — a network_identifier, and often a block or account
+  // on top — and the REST drawer has no body field: it reads the params box as
+  // a path and sends `body: null`. So they stay unmarked and ICP/rest is an
+  // accepted gap in the roll-call, the same call Mina and Fuel get. `/status`
+  // is the one GET, declared in its own collection, but the node answers 404
+  // on it — without this hint it is ICP's only "press Send" command and it is
+  // dead. Checked against rosetta-api.internetcomputer.org on 2026-09-17.
+  { m: "/status", unserved: true, d: "Not served — the public ICP Rosetta node answers 404 on this path. Sync state comes from /network/status, a POST carrying a Rosetta network_identifier body.", only: ["ICP"] },
 ];
 
 /**

@@ -1,5 +1,6 @@
 [
   "FUELNETWORK/rest",
+  "ICP/rest",
   "ION/rest",
   "IONT/rest",
   "MINA/rest",

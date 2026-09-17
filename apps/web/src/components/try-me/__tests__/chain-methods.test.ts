@@ -282,12 +282,15 @@ describe("familyForSpec", () => {
   });
 
   it("returns null for map families the static catalog doesn't curate", () => {
-    // The chain map assigns 27 chain-type families; FAMILY_METHODS curates
+    // The chain map assigns 31 chain-type families; FAMILY_METHODS curates
     // method sets for 6. The rest resolve to null *on purpose* — serving a
     // near-miss family here would offer methods the chain cannot answer.
     // Regression: these all used to derive as `evm`, so the drawer offered
     // eth_* for Monero and Stacks whenever the generated chunk hadn't landed.
-    for (const spec of ["MONERO", "STACKS", "ALGORAND", "ARWEAVE", "MINA", "ALEO", "MULTIVERSX", "ENJIN", "POLYMESH", "CONCORDIUM", "EOS", "VECHAIN", "ION"]) {
+    // ICP is the same case, caught when Internet Computer landed: a Rosetta
+    // node serves `/block` and `/mempool` and nothing that names an ecosystem,
+    // so it fell through every marker to the map's `evm` tail.
+    for (const spec of ["MONERO", "STACKS", "ALGORAND", "ARWEAVE", "MINA", "ALEO", "MULTIVERSX", "ENJIN", "POLYMESH", "CONCORDIUM", "EOS", "VECHAIN", "ION", "ICP"]) {
       expect(familyForSpec(spec), `${spec} should not borrow a catalog family`).toBeNull();
     }
   });

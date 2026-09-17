@@ -5,6 +5,55 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Added
+
+- **Five chains arrived upstream.** **Arc** (`ARC` / `ARCT`) and **Robinhood
+  Chain** (`ROBINHOOD` / `ROBINHOODT`) are EVM chains importing `ETH1`, so they
+  inherit the whole Ethereum JSON-RPC surface and needed no method curation.
+  **Internet Computer** (`ICP`) is the catalog's first **Rosetta** chain: 19
+  REST paths, mainnet only. Icons are vendored for the three mainnets
+  (`arc`, `robinhood`, `internet-computer`) and both testnets inherit theirs.
+  Arc and Robinhood took their explorers from the refreshed chainlist snapshot
+  (Arc Explorer, Arcscan, robinscan + Blockscout); ICP's is curated — the ICP
+  Dashboard addresses a block by its ledger index at `/transaction/{block}`,
+  watched resolving one in a browser. The registry refresh moved no other
+  chain's explorer.
+
+  **ICP's REST console is an accepted gap.** Every Rosetta call but `/status`
+  is a POST carrying a JSON body — a `network_identifier`, often a block or
+  account on top — and the REST drawer has no body field: it reads the params
+  box as a path and sends no body. So `ICP/rest` joins `MINA`, `FUELNETWORK`
+  and the others in the runnable-defaults roll-call rather than advertising
+  commands it cannot send. The calls themselves are live — `/network/list`,
+  `/network/status`, `/network/options`, `/mempool`, `/block` and
+  `/search/transactions` all answered against
+  `rosetta-api.internetcomputer.org` while this was checked.
+
+  The method catalog also reports `ARC` as the new canonical entry for the
+  shared `ETH1` surface, which moves 31 specs from `alias BASE` to `alias ARC`.
+  No chain's method set changed — `ARC` simply sorts ahead of `BASE`.
+
+  266 chains, 223 with an explorer, 178 primaries linking a height.
+
+### Fixed
+
+- **Internet Computer was labelled an EVM chain.** `deriveFamily` still ended
+  in a blanket `return "evm"`, and a Rosetta node serves nothing that names an
+  ecosystem — `/block`, `/mempool` and `/status` are as generic as paths get —
+  so ICP fell through every marker to that tail. It is now its own `rosetta`
+  family, keyed on the `/construction/*` endpoints the Rosetta spec mandates.
+  This is the case `familyForSpec` exists to prevent: an uncurated family
+  resolves to `null` and the drawer offers nothing, where `evm` would have
+  offered `eth_*` methods to a chain that answers none of them. Nine other
+  REST-only chains still reach the same fallback (the `ETHBEACON*` set,
+  `CANTON`, `FUELNETWORK`, `MORALIS`, `SQDSUBGRAPH`); each needs a family of
+  its own and is left for a separate pass.
+- **ICP offered one runnable command, and it was dead.** `/status` is the
+  chain's only GET, so it was the single path in ICP's drawer headed "press
+  Send" — and the public Rosetta node answers 404 on it, on every verb. It now
+  carries the reason instead of the claim.
+
+
 ## [0.25.0]
 
 ### Added

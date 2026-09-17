@@ -157,6 +157,24 @@
       "source": "ethereum-lists/chains#421614"
     }
   ],
+  "ARC": [
+    {
+      "name": "Arc Explorer",
+      "url": "https://explorer.arc.io",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#5042"
+    }
+  ],
+  "ARCT": [
+    {
+      "name": "Arcscan",
+      "url": "https://testnet.arcscan.app",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#5042002"
+    }
+  ],
   "ARWEAVE": [
     {
       "name": "ViewBlock",
@@ -1138,6 +1156,18 @@
       "source": "curated — chainlist's row for this chain id is a DIFFERENT chain (Wanchain Testnet also claims 999)"
     }
   ],
+  "ICP": [
+    {
+      "name": "ICP Dashboard",
+      "url": "https://dashboard.internetcomputer.org",
+      "kind": "custom",
+      "tpl": {
+        "block": "https://dashboard.internetcomputer.org/transaction/{block}"
+      },
+      "verified": "browser 2026-09-17 — /transaction/38444903 resolved the ledger block index server-side (302 to that block's transaction hash, ?index=38444903) and the page rendered \"Index 38'444'903\"",
+      "source": "curated — the ledger block index is what the chain's Rosetta /block call returns, and the dashboard addresses a block by it; /block/<n> answers 404, and icpexplorer.org redirects every hash-routed path to its home page"
+    }
+  ],
   "INJECTIVE": [
     {
       "name": "mintscan",
@@ -1834,6 +1864,31 @@
       "kind": "block",
       "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
       "source": "ethereum-lists/chains#6806"
+    }
+  ],
+  "ROBINHOOD": [
+    {
+      "name": "robinscan",
+      "url": "https://robinscan.io",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#4663"
+    },
+    {
+      "name": "blockscout",
+      "url": "https://robinhoodchain.blockscout.com",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#4663"
+    }
+  ],
+  "ROBINHOODT": [
+    {
+      "name": "blockscout",
+      "url": "https://explorer.testnet.chain.robinhood.com",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#46630"
     }
   ],
   "SCROLL": [
