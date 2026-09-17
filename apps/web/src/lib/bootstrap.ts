@@ -76,3 +76,32 @@ export async function previewInvitation(token: string): Promise<InvitePreview | 
     return null;
   }
 }
+
+/**
+ * Which account a reset link changes, without spending it. Null for every dead
+ * reason, for the same purpose as `previewInvitation` above.
+ *
+ * This page used to refuse to preview at all, on the argument that revealing
+ * whose account a token belongs to turns a guessed token into a way to ask who
+ * has an account. That argument does not hold: the token is 32 random bytes, so
+ * anybody who can present a valid one can already set the password and read the
+ * address from the inside. It gives away nothing the holder cannot take. And
+ * MAG-2870 asks for the address on screen for a good reason — somebody with two
+ * accounts needs to know which one they are changing.
+ */
+export async function previewReset(token: string): Promise<{ email: string } | null> {
+  try {
+    const res = await fetch(`${INTERNAL_BASE}/auth/password/reset/preview`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+      cache: "no-store",
+      signal: AbortSignal.timeout(3000),
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { email?: unknown };
+    return typeof body.email === "string" ? { email: body.email } : null;
+  } catch {
+    return null;
+  }
+}
