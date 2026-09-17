@@ -28,11 +28,6 @@
         "name": "blockscout",
         "url": "https://optimism.blockscout.com",
         "standard": "EIP3091"
-      },
-      {
-        "name": "Routescan",
-        "url": "https://mainnet.superscan.network",
-        "standard": "EIP3091"
       }
     ],
     "14": [
@@ -479,6 +474,28 @@
         "standard": "EIP3091"
       }
     ],
+    "4663": [
+      {
+        "name": "robinscan",
+        "url": "https://robinscan.io",
+        "standard": "EIP3091"
+      },
+      {
+        "name": "blockscout",
+        "url": "https://robinhoodchain.blockscout.com",
+        "standard": "EIP3091"
+      },
+      {
+        "name": "hoodscan",
+        "url": "https://hoodscan.co",
+        "standard": "EIP3091"
+      },
+      {
+        "name": "stonkscan",
+        "url": "https://stonkscan.io",
+        "standard": "EIP3091"
+      }
+    ],
     "4801": [
       {
         "name": "etherscan",
@@ -507,6 +524,13 @@
       {
         "name": "blockscout",
         "url": "https://explorer.sepolia.mantle.xyz",
+        "standard": "EIP3091"
+      }
+    ],
+    "5042": [
+      {
+        "name": "Arc Explorer",
+        "url": "https://explorer.arc.io",
         "standard": "EIP3091"
       }
     ],
@@ -697,6 +721,13 @@
       {
         "name": "Alfajoresscan",
         "url": "https://alfajores.celoscan.io",
+        "standard": "EIP3091"
+      }
+    ],
+    "46630": [
+      {
+        "name": "blockscout",
+        "url": "https://explorer.testnet.chain.robinhood.com",
         "standard": "EIP3091"
       }
     ],
@@ -911,6 +942,13 @@
         "standard": "EIP3091"
       }
     ],
+    "5042002": [
+      {
+        "name": "Arcscan",
+        "url": "https://testnet.arcscan.app",
+        "standard": "EIP3091"
+      }
+    ],
     "11142220": [
       {
         "name": "Celo Sepolia Explorer",
@@ -1101,6 +1139,13 @@
           "block_page": null,
           "tx_page": "https://moon-runners.net/akash/mainnet/finder?search=${txHash}",
           "account_page": "https://moon-runners.net/akash/mainnet/finder?search=${accountAddress}"
+        },
+        {
+          "kind": "Crouton Digital",
+          "url": "https://explorer.crouton.digital/mainnets/akash/overview",
+          "block_page": null,
+          "tx_page": "https://explorer.crouton.digital/mainnets/akash/transactions/${txHash}",
+          "account_page": "https://explorer.crouton.digital/mainnets/akash/account/${accountAddress}"
         }
       ]
     },
@@ -1273,6 +1318,13 @@
           "block_page": null,
           "tx_page": "https://babylon.valopers.com/transactions/${txHash}",
           "account_page": "https://babylon.valopers.com/account/${accountAddress}"
+        },
+        {
+          "kind": "moon-runners",
+          "url": "https://moon-runners.net/babylon/mainnet",
+          "block_page": null,
+          "tx_page": "https://moon-runners.net/babylon/mainnet/finder?search=${txHash}",
+          "account_page": "https://moon-runners.net/babylon/mainnet/finder?search=${accountAddress}"
         }
       ]
     },
@@ -1613,6 +1665,13 @@
           "block_page": null,
           "tx_page": "https://dydx.valopers.com/transactions/${txHash}",
           "account_page": "https://dydx.valopers.com/account/${accountAddress}"
+        },
+        {
+          "kind": "moon-runners",
+          "url": "https://moon-runners.net/dydx/mainnet",
+          "block_page": null,
+          "tx_page": "https://moon-runners.net/dydx/mainnet/finder?search=${txHash}",
+          "account_page": "https://moon-runners.net/dydx/mainnet/finder?search=${accountAddress}"
         }
       ]
     },
@@ -1827,6 +1886,13 @@
           "block_page": null,
           "tx_page": "https://asi.valopers.com/transactions/${txHash}",
           "account_page": "https://asi.valopers.com/account/${accountAddress}"
+        },
+        {
+          "kind": "moon-runners",
+          "url": "https://moon-runners.net/fetchhub/mainnet",
+          "block_page": null,
+          "tx_page": "https://moon-runners.net/fetchhub/mainnet/finder?search=${txHash}",
+          "account_page": "https://moon-runners.net/fetchhub/mainnet/finder?search=${accountAddress}"
         }
       ]
     },
@@ -2043,6 +2109,13 @@
           "block_page": null,
           "tx_page": "https://kava.valopers.com/transactions/${txHash}",
           "account_page": "https://kava.valopers.com/account/${accountAddress}"
+        },
+        {
+          "kind": "moon-runners",
+          "url": "https://moon-runners.net/kava/mainnet",
+          "block_page": null,
+          "tx_page": "https://moon-runners.net/kava/mainnet/finder?search=${txHash}",
+          "account_page": "https://moon-runners.net/kava/mainnet/finder?search=${accountAddress}"
         }
       ]
     },
@@ -2428,6 +2501,13 @@
           "block_page": null,
           "tx_page": "https://mainnet.whispernode.com/sei/tx/${txHash}",
           "account_page": "https://mainnet.whispernode.com/sei/account/${accountAddress}"
+        },
+        {
+          "kind": "moon-runners",
+          "url": "https://moon-runners.net/sei/mainnet",
+          "block_page": null,
+          "tx_page": "https://moon-runners.net/sei/mainnet/finder?search=${txHash}",
+          "account_page": "https://moon-runners.net/sei/mainnet/finder?search=${accountAddress}"
         }
       ]
     },

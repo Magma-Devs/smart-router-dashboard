@@ -160,6 +160,24 @@
     ],
     "mainnet": false
   },
+  "ARC": {
+    "name": "Arc",
+    "family": "evm",
+    "icon": "arc",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "ARCT": {
+    "name": "Arc Testnet",
+    "family": "evm",
+    "icon": "arc",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": false
+  },
   "ARWEAVE": {
     "name": "Arweave",
     "family": "arweave",
@@ -1126,6 +1144,15 @@
     ],
     "mainnet": false
   },
+  "ICP": {
+    "name": "Internet Computer",
+    "family": "rosetta",
+    "icon": "internet-computer",
+    "interfaces": [
+      "rest"
+    ],
+    "mainnet": true
+  },
   "INJECTIVE": {
     "name": "Injective",
     "family": "cosmos",
@@ -1850,6 +1877,24 @@
     "name": "RACE Testnet",
     "family": "evm",
     "icon": "race",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": false
+  },
+  "ROBINHOOD": {
+    "name": "Robinhood Chain",
+    "family": "evm",
+    "icon": "robinhood",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "ROBINHOODT": {
+    "name": "Robinhood Chain Testnet",
+    "family": "evm",
+    "icon": "robinhood",
     "interfaces": [
       "jsonrpc"
     ],

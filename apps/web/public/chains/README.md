@@ -93,6 +93,15 @@ Basilisk keeps the glyph in its own `#4EFFAF` on the black backdrop, the way
 circle. The source draws the glyph as a six-stop gradient, so per the rule
 above it takes one stop — `#68CEFA`, the blue at 0.2.
 
+Arc, Robinhood Chain and Internet Computer brought three more. `arc` and
+`robinhood` are web3icons' `networks/mono` glyphs; `internet-computer` comes
+from `tokens/mono/ICP` because the network has no entry. Arc's backdrop is a
+navy-to-plum gradient, so per the rule above the circle takes one of its own
+stops — `#182680`, the navy at the top of the sweep. Robinhood's is a flat
+`#CCFF00`, light enough that white sits at roughly 1.2:1 against it, so the
+glyph is `#111`. Internet Computer's is a flat `#46ABE3`, where white clears
+the line at about 2.6:1 and the glyph stays white.
+
 ## One icon per chain, not per network
 
 A testnet index inherits its mainnet's icon (by base name, then index prefix),

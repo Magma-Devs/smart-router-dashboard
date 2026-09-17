@@ -615,6 +615,20 @@
   "HYPERLIQUIDT": {
     "none": "testnet.purrsec.com answers 404 and no other testnet explorer verified"
   },
+  "ICP": {
+    "explorers": [
+      {
+        "name": "ICP Dashboard",
+        "url": "https://dashboard.internetcomputer.org",
+        "kind": "custom",
+        "tpl": {
+          "block": "https://dashboard.internetcomputer.org/transaction/{block}"
+        },
+        "verified": "browser 2026-09-17 — /transaction/38444903 resolved the ledger block index server-side (302 to that block's transaction hash, ?index=38444903) and the page rendered \"Index 38'444'903\"",
+        "source": "curated — the ledger block index is what the chain's Rosetta /block call returns, and the dashboard addresses a block by it; /block/<n> answers 404, and icpexplorer.org redirects every hash-routed path to its home page"
+      }
+    ]
+  },
   "ION": {
     "explorers": [
       {

@@ -150,6 +150,11 @@ describe("buildChainMetaByIndex", () => {
     // Ice Open Network is a TON fork: no eth_* at all, same /v2 + /v3 TON
     // HTTP API. It used to hit the generator's blanket evm fallback.
     expect(buildChainMetaByIndex("ION").family).toBe("ton");
+    // Internet Computer speaks Rosetta, whose paths name no ecosystem at all
+    // (`/block`, `/mempool`, `/status`), so it reached the same blanket
+    // fallback. The /construction/* endpoints the Rosetta spec mandates are
+    // what identify it.
+    expect(buildChainMetaByIndex("ICP").family).toBe("rosetta");
   });
   it("inherits a forked chain's family from its imports", () => {
     // Dash imports BTC and Koii imports SOLANA; neither index shares a prefix
