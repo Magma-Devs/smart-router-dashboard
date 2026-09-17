@@ -80,16 +80,32 @@ dev-down:
 ## up-auth: prod-style stack WITH authentication (postgres + login) — see docs/AUTH.md.
 ## Requires AUTH_SECRET + ADMIN_EMAIL + ADMIN_PASSWORD in the environment.
 ## (logs profile is on by default here too — Grafana → :3001.)
+##
+## DATABASE_URL is supplied HERE rather than as a compose default: the compose
+## files leave every auth value empty so a stack with auth off has nothing
+## pointing at a database. Override it to use a postgres other than the one the
+## `auth` profile starts.
 up-auth:
-	AUTH_MODE=enabled docker compose --profile router --profile auth --profile logs up -d --build
+	AUTH_MODE=enabled \
+	DATABASE_URL=$${DATABASE_URL:-postgres://sr:$${POSTGRES_PASSWORD:-dev}@postgres:5432/sr_dashboard} \
+	docker compose --profile router --profile auth --profile logs up -d --build
 	@echo ""
 	@echo "  🔐 Auth enabled — sign in at http://localhost:$(WEB_PORT)/login"
 	@echo "     Grafana → http://localhost:3001  (admin / admin)"
 
 ## dev-auth: hot-reload stack WITH authentication (dev-default admin@example.com / admin1234)
+##
+## The dev secret and the dev admin live here, not in docker-compose.dev.yml:
+## a stack running with auth OFF should not carry a password for an
+## administrator it is never going to create. Every value is overridable.
 dev-auth:
 	@echo "▶ dev stack with hot reload + auth (sign in: admin@example.com / admin1234; Grafana → :3001)"
-	AUTH_MODE=enabled docker compose -f docker-compose.dev.yml --profile router --profile auth --profile logs up --build
+	AUTH_MODE=enabled \
+	AUTH_SECRET=$${AUTH_SECRET:-dev-secret-change-me-please-32chars!} \
+	DATABASE_URL=$${DATABASE_URL:-postgres://sr:$${POSTGRES_PASSWORD:-dev}@postgres:5432/sr_dashboard} \
+	ADMIN_EMAIL=$${ADMIN_EMAIL:-admin@example.com} \
+	ADMIN_PASSWORD=$${ADMIN_PASSWORD:-admin1234} \
+	docker compose -f docker-compose.dev.yml --profile router --profile auth --profile logs up --build
 
 ## router: bring up ONLY the router + Prometheus from this compose
 router:

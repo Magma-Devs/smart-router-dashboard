@@ -69,9 +69,21 @@ export async function buildApp(): Promise<FastifyInstance> {
     // Once the database is up, mint + log the first-run token if this install
     // still needs one. Not awaited: `dbReady` retries forever by design, and
     // the api must come up and serve /health while postgres is still starting.
+    //
+    // `closing` is why this is not a bare `.then()`: the connect loop can win
+    // its race long after a short-lived app has been closed — every api test
+    // that builds an app against pglite hits exactly that — and querying a
+    // closed handle logged an error for a shutdown nobody asked about.
+    let closing = false;
+    app.addHook("onClose", async () => {
+      closing = true;
+    });
     void app.dbReady
-      .then(() => (app.db ? announceSetupToken(app.db, app.log) : undefined))
-      .catch((err: unknown) => app.log.error({ err }, "could not resolve the first-run setup token"));
+      .then(() => (app.db && !closing ? announceSetupToken(app.db, app.log) : undefined))
+      .catch((err: unknown) => {
+        if (closing) return;
+        app.log.error({ err }, "could not resolve the first-run setup token");
+      });
   }
 
   await app.register(healthRoutes);

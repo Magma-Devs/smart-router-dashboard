@@ -219,12 +219,22 @@ services:
       - METRICS_SCOPE_VALUE=${METRICS_SCOPE_VALUE:-}
       - HELM_VALUES_DIR=/app/helm-values
       - CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
-      # Auth (see docs/AUTH.md): disabled (default) needs none of the rest.
+      # Auth + database (docs/AUTH.md). EVERY value here is empty by default,
+      # and that is the whole point: with AUTH_MODE=disabled the api registers
+      # no database plugin, so it opens NO connection and applies NO migrations
+      # — `migrate()` is reachable only from `plugins/db.ts`, which is inside
+      # the `if (authMode === "enabled")` block in `app.ts`. The `postgres`
+      # service above is behind the `auth` profile, so it is not created either.
+      #
+      # The dev admin (admin@example.com / admin1234) and the dev signing secret
+      # used to live here as defaults. They now live in `make dev-auth`, which
+      # is the only thing that should be creating an administrator: a stack with
+      # no login had no business carrying a password for one.
       - AUTH_MODE=${AUTH_MODE:-disabled}
-      - AUTH_SECRET=${AUTH_SECRET:-dev-secret-change-me-please-32chars!}
-      - DATABASE_URL=${DATABASE_URL:-postgres://sr:dev@postgres:5432/sr_dashboard}
-      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@example.com}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin1234}
+      - AUTH_SECRET=${AUTH_SECRET:-}
+      - DATABASE_URL=${DATABASE_URL:-}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
       # Needed api-side to validate the `aud` claim of Google ID tokens.
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
     volumes:
@@ -258,8 +268,10 @@ services:
       # bundled `logs` profile's Grafana on :3001; override to point elsewhere.
       - DASHBOARD_GRAFANA_URL=${DASHBOARD_GRAFANA_URL:-http://localhost:3001}
       # Auth (see docs/AUTH.md) — same AUTH_MODE + AUTH_SECRET as the api.
+      # Empty by default, like the api's: with AUTH_MODE=disabled the web mounts
+      # no login and never calls the api's /auth/* routes.
       - AUTH_MODE=${AUTH_MODE:-disabled}
-      - AUTH_SECRET=${AUTH_SECRET:-dev-secret-change-me-please-32chars!}
+      - AUTH_SECRET=${AUTH_SECRET:-}
       - AUTH_URL=${AUTH_URL:-http://localhost:3000}
       - INTERNAL_API_BASE_URL=http://api:8000
       # OAuth providers — the login page shows a provider's button only

@@ -192,7 +192,7 @@ users table → admin created; populated table without that email → no-op
 |---|---|---|
 | `AUTH_MODE` | api + web | `disabled` (default) / `enabled` — must match on both |
 | `AUTH_SECRET` | api + web | HS256 signing secret, must match. `openssl rand -base64 32` |
-| `DATABASE_URL` | api | `postgres://sr:dev@postgres:5432/sr_dashboard` in compose |
+| `DATABASE_URL` | api | Empty in both compose files. `make up-auth` / `make dev-auth` supply `postgres://sr:dev@postgres:5432/sr_dashboard`; only read when `AUTH_MODE=enabled` |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | api | bootstrap admin seed |
 | `INTERNAL_AUTH_SECRET` | api + web | Proves a caller is our own web tier, so forwarded browser IP / User-Agent are honoured. Unset ⇒ ignored, and sessions record what the api observes |
 | `TRUST_PROXY` | api | How far to believe `X-Forwarded-For`. Hop count (default `1`), a comma list of proxy IPs/CIDRs, or `false` |
@@ -209,22 +209,36 @@ users table → admin created; populated table without that email → no-op
 ## Running it
 
 ```bash
-# dev stack with auth (postgres joins via the auth profile):
-AUTH_MODE=enabled docker compose -f docker-compose.dev.yml \
-  --profile router --profile auth up --build
-
-# sign in at http://localhost:3000/login with the dev-default seed:
-#   admin@example.com / admin1234        (override via ADMIN_EMAIL/ADMIN_PASSWORD)
+# dev stack with auth — supplies the dev secret, database URL and seed admin:
+make dev-auth
+# sign in at http://localhost:3000/login as admin@example.com / admin1234
+# (override any of them: ADMIN_EMAIL=you@example.com make dev-auth)
 
 # prod-style:
-AUTH_MODE=enabled AUTH_SECRET=$(openssl rand -base64 32) \
+AUTH_SECRET=$(openssl rand -base64 32) \
 ADMIN_EMAIL=you@example.com ADMIN_PASSWORD=change-me \
-  docker compose --profile router --profile auth up -d --build
+  make up-auth
 ```
 
-> The dev compose ships working defaults (`admin@example.com` /
-> `admin1234`, a fixed dev `AUTH_SECRET`) so `AUTH_MODE=enabled` works
-> out of the box. **Production must override all three.**
+### With auth off, the database is not merely unused
+
+`AUTH_MODE=disabled` is the default in both compose files, and every auth
+and database variable beside it is **empty** — no `DATABASE_URL`, no
+`AUTH_SECRET`, no seed admin. That is deliberate rather than tidy:
+
+- `migrate()` is reachable from exactly one place, `plugins/db.ts`, and that
+  plugin is registered only inside the `authMode === "enabled"` branch of
+  `app.ts`. No plugin, no connection, and **no migrations applied at all**.
+- The `postgres` service sits behind the `auth` profile, so a default
+  `docker compose up` does not create it.
+- Nothing is left pointing at a database the stack is not using, and the
+  dev stack no longer carries an administrator password for an account it
+  is never going to create.
+
+`apps/api/src/__tests__/auth.test.ts` pins this: with `AUTH_MODE=disabled`
+and a `DATABASE_URL` deliberately set, the app has neither the `db` nor the
+`dbReady` decorator. The values live in `make up-auth` / `make dev-auth`,
+which is what turns the whole thing on.
 
 ## Roles
 
