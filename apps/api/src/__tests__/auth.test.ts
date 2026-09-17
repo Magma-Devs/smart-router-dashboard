@@ -72,6 +72,28 @@ describe("AUTH_MODE=disabled (default)", () => {
     });
     expect(signIn.statusCode).toBe(404);
   });
+
+  it("opens no database connection and applies no migrations", async () => {
+    // The guarantee the compose files rest on: auth off means the database is
+    // not merely unused, it is never reached for. `migrate()` is called from
+    // exactly one place — `plugins/db.ts` — and that plugin is registered only
+    // inside the `authMode === "enabled"` branch of `app.ts`, so the absence of
+    // its decorators IS the absence of a connection and of any migration.
+    //
+    // DATABASE_URL is deliberately set to a real-looking value here: a stack
+    // that has one configured but auth off must still touch nothing. That is
+    // the case the compose default used to create on every single boot.
+    setEnv({ AUTH_MODE: "disabled", AUTH_SECRET: undefined, DATABASE_URL: DEAD_DB });
+    app = await buildApp();
+    await app.ready();
+
+    expect(app.hasDecorator("db")).toBe(false);
+    expect(app.hasDecorator("dbReady")).toBe(false);
+
+    // And the api is fully serving regardless — the whole point of the
+    // zero-dependency boot.
+    expect((await app.inject({ method: "GET", url: "/health" })).statusCode).toBe(200);
+  });
 });
 
 describe("AUTH_MODE=enabled", () => {
