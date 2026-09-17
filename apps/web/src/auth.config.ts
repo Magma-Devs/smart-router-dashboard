@@ -352,6 +352,12 @@ export const authConfig = {
       if (path === "/setup") {
         return signedIn ? Response.redirect(new URL("/overview", url)) : true;
       }
+      // Invitation redemption: the whole point is that the person has no
+      // account yet. Already-signed-in visitors go to the dashboard rather than
+      // being offered a second account.
+      if (path.startsWith("/invite/")) {
+        return signedIn ? Response.redirect(new URL("/overview", url)) : true;
+      }
       // Auth.js's own endpoints + the runtime-config route stay public.
       if (path.startsWith("/api/auth") || path === "/api/config") return true;
       // Static assets.
