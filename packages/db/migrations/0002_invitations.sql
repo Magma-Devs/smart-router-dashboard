@@ -1,7 +1,10 @@
 -- MAG-2729 slice 3 — invitations. See docs/ACCOUNTS-DESIGN.md §4.3.
 --
--- 0002 is reserved for MAG-2770's audit tables, which are developed in
--- parallel; this takes 0003 so the two can land in either order.
+-- MAG-2770's audit tables are developed in parallel and were holding 0002.
+-- They cannot: drizzle applies a migration only when its journal `when` beats
+-- the highest already recorded, so a lane that lands second with an equal or
+-- earlier timestamp is skipped in silence. Slices are numbered in the order
+-- they merge, and the audit lane renumbers -- file AND `when` -- when it lands.
 
 CREATE TABLE "invitations" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
