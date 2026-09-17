@@ -1,8 +1,12 @@
 name: Quality Gate
 
 on:
+  # Every pull request, whatever it targets — NOT just PRs into main.
+  # This epic stacks PRs (slice 2 onto slice 1, the audit writer onto that),
+  # and with a `branches: [main]` filter those never ran the gate at all: the
+  # only checks that fired were the image builds, so a stacked PR showed a
+  # green tick that meant nothing about lint, types, or tests.
   pull_request:
-    branches: [main]
   push:
     branches: [main]
 
@@ -43,6 +47,12 @@ jobs:
   spec-drift:
     name: Chain catalogs ↔ lava-specs drift
     runs-on: ubuntu-latest
+    # Only meaningful when the base is `main`. A `pull_request` job runs against
+    # head-merged-into-base, so on a stacked PR the base is a feature branch and
+    # this compares *that branch's* chain map to upstream — reporting the base's
+    # staleness as if it were the PR's fault. Typecheck and tests above are
+    # meaningful on any base; this one isn't, so it sits out.
+    if: github.event_name == 'push' || github.base_ref == 'main'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
