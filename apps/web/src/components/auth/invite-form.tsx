@@ -12,22 +12,62 @@ import { ROLE_DESCRIPTIONS, ROLE_LABELS, type Role } from "@sr/shared";
  * account is created with the invitation's address server-side, so there is no
  * field here that could disagree with it.
  */
+/** What the Google round-trip can come back saying, in words the person can
+ *  act on. `auth.config.ts` puts the code in the query string; Auth.js's own
+ *  error screen would only have said "something went wrong". */
+const HANDOFF_ERRORS: Record<string, string> = {
+  email_mismatch:
+    "That Google account is not the address this invitation was sent to. Sign in with the invited account, or set a password below instead.",
+  invite_failed:
+    "That invitation could not be accepted. It may have expired or already been used — ask an administrator for a new link.",
+};
+
 export function InviteForm({
   token,
   email,
   role,
   googleEnabled,
+  handoffError,
 }: {
   token: string;
   email: string;
   role: Role;
   googleEnabled: boolean;
+  handoffError?: string;
 }) {
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [repeat, setRepeat] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(
+    handoffError ? (HANDOFF_ERRORS[handoffError] ?? HANDOFF_ERRORS.invite_failed!) : null,
+  );
   const [busy, setBusy] = useState(false);
+
+  /**
+   * Redeem with Google.
+   *
+   * Two steps because the two halves arrive at different moments: park the
+   * invitation token, then hand off to Auth.js, whose `signIn` callback reads
+   * it back and calls `/auth/invite/accept` with the verified Google identity.
+   * A bare `signIn("google")` cannot work — OAuth sign-in links to an existing
+   * account and never creates one, so on an invitee it can only answer 403.
+   */
+  async function onGoogle() {
+    setBusy(true);
+    setError(null);
+    try {
+      const parked = await fetch("/api/invite/handoff", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token }),
+      });
+      if (!parked.ok) throw new Error("handoff refused");
+      await signIn("google", { callbackUrl: "/overview" });
+    } catch {
+      setError("Could not start Google sign-in. Please try again, or set a password below.");
+      setBusy(false);
+    }
+  }
 
   const mismatch = repeat.length > 0 && password !== repeat;
 
@@ -116,7 +156,8 @@ export function InviteForm({
             <button
               className="gw-btn"
               style={{ width: "100%", justifyContent: "center", marginBottom: 14 }}
-              onClick={() => void signIn("google", { callbackUrl: "/overview" })}
+              onClick={() => void onGoogle()}
+              disabled={busy}
               type="button"
             >
               Accept with Google

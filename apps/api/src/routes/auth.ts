@@ -260,6 +260,21 @@ export async function authRoutes(app: FastifyInstance) {
    *  tell a stranger which of those a guessed token hit. */
   const INVITE_GONE = "That invitation link is no longer valid. Ask an administrator for a new one.";
 
+  /**
+   * One reply for every dead invitation — one message AND one status.
+   *
+   * The message was already uniform. The status was not: `not_found` answered
+   * 404 and the rest 410, which told a stranger exactly what the uniform
+   * message was there to withhold — whether a guessed token had hit a real
+   * invitation. 410 for all of them: as far as the holder of a link is
+   * concerned, "never existed" and "no longer works" are the same event.
+   */
+  function replyInviteGone(reply: FastifyReply) {
+    return reply
+      .code(410)
+      .send({ statusCode: 410, error: "Gone", message: INVITE_GONE });
+  }
+
   /** `invite.expired` fires from wherever the expiry is first *observed* —
    *  which is a read, not a scheduled sweep, so there is nothing to run. */
   async function auditExpiryOnce(lookup: InviteLookup): Promise<void> {
@@ -293,9 +308,7 @@ export async function authRoutes(app: FastifyInstance) {
       const lookup = await lookupInvitation(db, token);
       if (!lookup.ok) {
         await auditExpiryOnce(lookup);
-        return reply
-          .code(lookup.reason === "not_found" ? 404 : 410)
-          .send({ statusCode: lookup.reason === "not_found" ? 404 : 410, error: "Gone", message: INVITE_GONE });
+        return replyInviteGone(reply);
       }
 
       // Only what the page needs to render, and nothing about the account it
@@ -385,27 +398,34 @@ export async function authRoutes(app: FastifyInstance) {
             message: `This invitation is for ${invited}. Sign in with that account to accept it.`,
           });
         }
-        return reply
-          .code(result.reason === "not_found" ? 404 : 410)
-          .send({ statusCode: result.reason === "not_found" ? 404 : 410, error: "Gone", message: INVITE_GONE });
+        return replyInviteGone(reply);
       }
 
-      const session = await createSession(db, {
-        userId: result.user.id,
-        authMethod: provider ? "google" : "invite",
-        client,
-      });
-      await recordSignIn(db, result.user.id);
+      // A session is opened for the OAuth path and only for it, and the
+      // asymmetry is the point rather than an oversight.
+      //
+      // The Google caller is the web tier finishing a sign-in it cannot start
+      // again: it holds a one-shot id_token, not a password, so there is no
+      // second round-trip to fall back on and the session has to come from
+      // here. The password caller is a browser that is about to sign in the
+      // ordinary way a moment later with credentials it just chose — a session
+      // minted here would be one nobody ever presents, exactly the stray row
+      // `/auth/setup` stopped creating.
+      const session = provider
+        ? await createSession(db, { userId: result.user.id, authMethod: "google", client })
+        : null;
+      if (session) await recordSignIn(db, result.user.id);
       await audit.write({
         action: "invite.redeemed",
         actor: { id: result.user.id, kind: "user" },
         target: { type: "invite", id: result.invitation.id, name: result.invitation.email },
-        access: { ip: client.ip, client: client.userAgent, sessionId: session.id },
+        access: { ip: client.ip, client: client.userAgent, sessionId: session?.id ?? null },
       });
 
-      return reply
-        .code(201)
-        .send({ user: toPublicUser(result.user), sessionId: session.id });
+      return reply.code(201).send({
+        user: toPublicUser(result.user),
+        ...(session ? { sessionId: session.id } : {}),
+      });
     },
   );
 
