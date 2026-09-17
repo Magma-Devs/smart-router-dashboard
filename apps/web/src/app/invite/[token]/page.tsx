@@ -19,10 +19,18 @@ export const dynamic = "force-dynamic";
  * use, and `Referrer-Policy: no-referrer` from the root layout. It is never put
  * in an *api* URL: the preview and accept calls carry it in a POST body.
  */
-export default async function InvitePage({ params }: { params: Promise<{ token: string }> }) {
+export default async function InvitePage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ token: string }>;
+  searchParams: Promise<{ error?: string }>;
+}) {
   if (process.env.AUTH_MODE !== "enabled") redirect("/overview");
 
   const { token } = await params;
+  // Set when a Google redemption bounced back — see `auth.config.ts`.
+  const { error } = await searchParams;
   const invite = await previewInvitation(token);
   if (!invite) return <InviteDead />;
 
@@ -32,6 +40,7 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
       email={invite.email}
       role={invite.role}
       googleEnabled={oauthProviderFlags.google}
+      handoffError={error}
     />
   );
 }

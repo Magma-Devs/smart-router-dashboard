@@ -6,6 +6,7 @@ import Credentials from "next-auth/providers/credentials";
 import { jwtVerify, SignJWT } from "jose";
 import type { Role } from "@sr/shared";
 import { INTERNAL_API_BASE_URL } from "@/lib/internal-api";
+import { INVITE_HANDOFF_COOKIE } from "@/lib/invite-handoff";
 
 /**
  * Auth.js v5 configuration (ported from lava-connect's auth.config.ts,
@@ -85,6 +86,32 @@ function clientContextFrom(headers: Headers | null): {
     clientContext: { ...(ip ? { ip } : {}), ...(userAgent ? { userAgent } : {}) },
     internalHeaders: { "X-Internal-Auth": secret },
   };
+}
+
+/**
+ * The invitation token parked by `/api/invite/handoff`, if this Google flow
+ * started on an invite page. `next/headers` is imported dynamically for the
+ * same reason the `signIn` callback does it: `proxy.ts` pulls this module into
+ * the edge bundle, where the module does not exist and this never runs.
+ */
+async function readInviteHandoff(): Promise<string | null> {
+  try {
+    const { cookies } = await import("next/headers");
+    return (await cookies()).get(INVITE_HANDOFF_COOKIE)?.value ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Burn the handoff cookie the moment it has been spent, successfully or not —
+ *  a token that survived a failed attempt would be replayed by the next one. */
+async function clearInviteHandoff(): Promise<void> {
+  try {
+    const { cookies } = await import("next/headers");
+    (await cookies()).delete(INVITE_HANDOFF_COOKIE);
+  } catch {
+    // Not in a mutable request scope; the cookie's short max-age bounds it.
+  }
 }
 
 declare module "next-auth" {
@@ -269,13 +296,40 @@ export const authConfig = {
       }
       const { clientContext, internalHeaders } = clientContextFrom(requestHeaders);
 
+      // Redeeming an invitation with Google, rather than signing in with it.
+      //
+      // `upsertOAuthUser` links only — it never creates — so on a fresh
+      // invitee `/auth/oauth/google` can only ever answer 403. The account has
+      // to come from `/auth/invite/accept`, which is the one place besides
+      // first-run setup that is allowed to create one. The token got here in a
+      // cookie the invite page set just before starting this round-trip.
+      const inviteToken =
+        provider === "google" ? await readInviteHandoff() : null;
+      const endpoint = inviteToken
+        ? `${apiBase}/auth/invite/accept`
+        : `${apiBase}/auth/oauth/${provider}`;
+      const payload = inviteToken
+        ? { token: inviteToken, googleIdToken: token, name: user.name ?? undefined }
+        : { token };
+
       try {
-        const res = await fetch(`${apiBase}/auth/oauth/${provider}`, {
+        const res = await fetch(endpoint, {
           method: "POST",
           headers: { "Content-Type": "application/json", ...internalHeaders },
-          body: JSON.stringify({ token, ...(clientContext ? { clientContext } : {}) }),
+          body: JSON.stringify({ ...payload, ...(clientContext ? { clientContext } : {}) }),
         });
-        if (!res.ok) return false;
+        if (inviteToken) await clearInviteHandoff();
+        if (!res.ok) {
+          // Send an invitee back to their own page with something to read.
+          // Auth.js's default is a generic error screen, which on a redemption
+          // that failed because they picked the wrong Google account is the
+          // difference between a fixable mistake and a dead end.
+          if (inviteToken) {
+            const reason = res.status === 403 ? "email_mismatch" : "invite_failed";
+            return `/invite/${encodeURIComponent(inviteToken)}?error=${reason}`;
+          }
+          return false;
+        }
         const body = (await res.json()) as SignInResponse;
         user.id = body.user.id;
         user.email = body.user.email;
@@ -285,6 +339,7 @@ export const authConfig = {
         user.sessionId = body.sessionId;
         return true;
       } catch {
+        if (inviteToken) await clearInviteHandoff();
         return false;
       }
     },
@@ -354,8 +409,16 @@ export const authConfig = {
       if (path.startsWith("/invite/")) {
         return signedIn ? Response.redirect(new URL("/overview", url)) : true;
       }
-      // Auth.js's own endpoints + the runtime-config route stay public.
-      if (path.startsWith("/api/auth") || path === "/api/config") return true;
+      // Auth.js's own endpoints + the runtime-config route stay public, and so
+      // does the invite handoff: its whole job is to run before there is a
+      // session. It only parks a token the api re-checks on every use.
+      if (
+        path.startsWith("/api/auth") ||
+        path === "/api/config" ||
+        path === "/api/invite/handoff"
+      ) {
+        return true;
+      }
       // Static assets.
       if (path.startsWith("/_next/") || path === "/favicon.ico") return true;
       if (/\.[a-zA-Z0-9]+$/.test(path)) return true;
