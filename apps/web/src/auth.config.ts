@@ -57,7 +57,9 @@ interface SignInUserPayload {
  *  without one is refused, so this is not optional. */
 interface SignInResponse {
   user: SignInUserPayload;
-  sessionId: string;
+  /** Absent when the api answered `twoFactorRequired` — a verified password
+   *  opens no session, so there is nothing to address. */
+  sessionId?: string;
 }
 
 /**
@@ -133,26 +135,57 @@ providers.push(
     credentials: {
       email: { label: "Email", type: "email" },
       password: { label: "Password", type: "password" },
+      /** Second step. Present together or not at all — see `authorize`. */
+      challenge: { label: "Challenge", type: "text" },
+      code: { label: "Authenticator code", type: "text" },
     },
     // The second argument is the browser's own request to
     // /api/auth/callback/credentials — the only place in this flow that can see
     // the client. Auth.js v5 passes it; omitting it (as this once did) leaves
     // the api recording the web container's address for every sign-in, and
     // every access event in the audit log inherits that.
+    /**
+     * Two shapes reach here, and they are two different api calls.
+     *
+     *  - `{ email, password }` — an account with no authenticator. The api opens
+     *    a session and this mints the token from it.
+     *  - `{ email, challenge, code }` — the second step. The password was
+     *    already checked by `/auth/sign-in`, which returned a challenge and
+     *    **no session**; `/auth/2fa/verify` is what opens one.
+     *
+     * The password path can also come back saying two-factor is required, and
+     * that returns null: there is no session to mint a token from, and the form
+     * is the thing that knows what to do next (show the code screen). Auth.js
+     * has no notion of a partial sign-in, and inventing one here — a token
+     * marked "half" — is exactly the shape the api refuses on purpose.
+     */
     async authorize(credentials, request) {
       const email = credentials?.email;
+      if (typeof email !== "string") return null;
+
+      const challenge = credentials?.challenge;
+      const code = credentials?.code;
+      const secondStep = typeof challenge === "string" && typeof code === "string" && !!challenge;
+
       const password = credentials?.password;
-      if (typeof email !== "string" || typeof password !== "string") return null;
+      if (!secondStep && typeof password !== "string") return null;
 
       const { clientContext, internalHeaders } = clientContextFrom(request?.headers ?? null);
+      const url = secondStep ? `${apiBase}/auth/2fa/verify` : `${apiBase}/auth/sign-in`;
+      const payload = secondStep
+        ? { challenge, code, ...(clientContext ? { clientContext } : {}) }
+        : { email, password, ...(clientContext ? { clientContext } : {}) };
+
       try {
-        const res = await fetch(`${apiBase}/auth/sign-in`, {
+        const res = await fetch(url, {
           method: "POST",
           headers: { "Content-Type": "application/json", ...internalHeaders },
-          body: JSON.stringify({ email, password, ...(clientContext ? { clientContext } : {}) }),
+          body: JSON.stringify(payload),
         });
         if (!res.ok) return null;
         const body = (await res.json()) as SignInResponse;
+        // No session id ⇒ the api answered `twoFactorRequired`. Nothing to mint.
+        if (!body.sessionId) return null;
         return {
           id: body.user.id,
           email: body.user.email,
@@ -293,6 +326,11 @@ export const authConfig = {
       // Reset links are usable while signed in — the usual reason someone
       // follows one is that they think somebody else is signed in as them.
       if (path.startsWith("/reset/") || path === "/forgot-password") return true;
+      // Enrolment needs a session and is reachable with one. Whether it is
+      // *required* is the api's call — the edge cannot see the database, and a
+      // gate that guessed would either strand somebody who has enrolled or wave
+      // through somebody who has not. `TwoFactorGate` renders the block.
+      if (path === "/account/two-factor") return signedIn;
       // Auth.js's own endpoints + the runtime-config route stay public.
       if (path.startsWith("/api/auth") || path === "/api/config") return true;
       // Static assets.
