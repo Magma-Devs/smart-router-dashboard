@@ -166,8 +166,10 @@ read that observes it stamps `expired_noted_at` conditionally, which is what
 lets `invite.expired` fire exactly once.
 
 Every dead-link reason — used, revoked, expired, never issued — returns the same
-message. The holder can't act on the difference, and distinguishing them would
-tell a stranger which of those a guessed token hit.
+message **and the same 410**. The holder can't act on the difference, and
+distinguishing them would tell a stranger which of those a guessed token hit; a
+404 for "never issued" beside a 410 for the rest would have said it in the
+status line while the message withheld it.
 
 <img src="./assets/invite-redemption.png" alt="The invitation redemption page: a card headed &quot;Join this dashboard&quot;, with a panel restating the invitation — the address it was sent to, shown as fixed text rather than an editable field, the role Approver, and a line describing what that role can do. Below it, optional name, password and repeat-password fields, a note that any characters are accepted from 8 to 64 and checked against known breached passwords, and an Accept invitation button." width="440">
 
@@ -177,6 +179,42 @@ tell a stranger which of those a guessed token hit.
 > account could reach `POST /auth/oauth/google` and provision themselves.
 > Account creation now lives in exactly two places — first-run setup, and invite
 > redemption.
+
+### Redeeming with Google
+
+Because OAuth sign-in links and never creates, a bare `signIn("google")` on an
+invitation can only ever answer 403 — the account does not exist yet. The two
+facts also arrive at different moments: the browser has the invitation token
+from the start, and a verified Google identity exists only after the provider
+redirects back.
+
+```
+/invite/<token>  ──POST /api/invite/handoff──▶  sr_invite cookie (httpOnly, lax, 10 min)
+       │
+       └─ signIn("google") ──▶ Google ──▶ Auth.js `signIn` callback
+                                              │ reads sr_invite
+                                              ▼
+                                    POST /auth/invite/accept
+                                    { token, googleIdToken }
+                                              │
+                            201 { user, sessionId } ──▶ JWT `sid`
+```
+
+The token rides in a cookie rather than the OAuth `state`, which Auth.js owns
+and signs for its own CSRF purposes. `httpOnly` keeps it away from page scripts;
+`lax` is required, because `strict` drops the cookie on exactly the top-level
+redirect back from Google that it exists to survive. It is burned the moment it
+is spent, successfully or not, so a failed attempt can't be replayed.
+
+A redemption that bounces — the wrong Google account, an expired link — returns
+the person to `/invite/<token>?error=…` with something they can act on, rather
+than Auth.js's generic error screen.
+
+**This is the one redemption path that opens a session server-side**, and the
+asymmetry is deliberate: the Google caller holds a one-shot `id_token` and
+cannot start the round-trip again, so the session has to come from the
+redemption. The password path lets the ordinary credentials sign-in mint it a
+moment later, exactly as `/auth/setup` does.
 
 ## Password policy
 
