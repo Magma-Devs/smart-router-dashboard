@@ -12,6 +12,7 @@ import {
   resetSetupTokenForTests,
   resolveSetupToken,
   setupTokenMatches,
+  announceSetupToken,
 } from "../services/setup.js";
 
 const savedEnv: Record<string, string | undefined> = {};
@@ -66,6 +67,70 @@ describe("the setup token", () => {
     // A bad mount path must not be the reason an install can't be completed.
     setEnv({ SETUP_TOKEN: undefined, SETUP_TOKEN_FILE: "/nope/definitely/not/writable" });
     expect(resolveSetupToken(quietLog)).toBeTruthy();
+  });
+
+  it("refuses a SETUP_TOKEN short enough to guess, and generates one instead", () => {
+    // `/auth/setup` is public at 10 attempts a minute. That bounds guessing; it
+    // does not stop a wordlist. Honouring `changeme` would leave the door on a
+    // latch, and refusing outright would brick an install over a typo.
+    setEnv({ SETUP_TOKEN: "changeme", SETUP_TOKEN_FILE: undefined });
+    const errors: unknown[] = [];
+    const token = resolveSetupToken({ warn: () => {}, error: (obj) => errors.push(obj) });
+
+    expect(token).not.toBe("changeme");
+    expect(token).toMatch(/^[A-Za-z0-9_-]{40,}$/);
+    expect(errors).toHaveLength(1);
+  });
+
+  it("honours a configured token that is long enough", () => {
+    setEnv({ SETUP_TOKEN: "x".repeat(16), SETUP_TOKEN_FILE: undefined });
+    expect(resolveSetupToken(quietLog)).toBe("x".repeat(16));
+  });
+});
+
+describe("announceSetupToken — the boot pass", () => {
+  let t: TestDb;
+
+  beforeEach(async () => {
+    t = await createTestDb();
+    resetSetupTokenForTests();
+  });
+  afterEach(async () => {
+    await t.close();
+    resetSetupTokenForTests();
+    for (const [k, v] of Object.entries(savedEnv)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  });
+
+  it("mints, logs and persists the token at boot on an install that needs setting up", async () => {
+    // The regression this exists for: resolving the token lazily, inside
+    // POST /auth/setup, leaves an operator with nothing to type. Nothing has
+    // generated the value yet, so SETUP_TOKEN_FILE is absent and the log is
+    // silent — they would have to guess wrong once just to mint it.
+    const file = join(mkdtempSync(join(tmpdir(), "sr-setup-boot-")), "token");
+    setEnv({ SETUP_TOKEN: undefined, SETUP_TOKEN_FILE: file });
+    const warnings: unknown[] = [];
+
+    await announceSetupToken(t.db, { warn: (obj) => warnings.push(obj), error: () => {} });
+
+    expect(warnings).toHaveLength(1);
+    expect(readFileSync(file, "utf8").trim()).toMatch(/^[A-Za-z0-9_-]{40,}$/);
+  });
+
+  it("says nothing on an install that is already claimed", async () => {
+    // A deployment that has been running for a year must not mint and log a
+    // first-run token on every restart.
+    const file = join(mkdtempSync(join(tmpdir(), "sr-setup-claimed-")), "token");
+    setEnv({ SETUP_TOKEN: undefined, SETUP_TOKEN_FILE: file });
+    await t.db.insert(users).values({ email: "admin@example.com", role: "admin" });
+    const warnings: unknown[] = [];
+
+    await announceSetupToken(t.db, { warn: (obj) => warnings.push(obj), error: () => {} });
+
+    expect(warnings).toHaveLength(0);
+    expect(() => readFileSync(file, "utf8")).toThrow();
   });
 });
 

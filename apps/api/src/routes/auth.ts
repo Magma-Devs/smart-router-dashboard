@@ -219,22 +219,21 @@ export async function authRoutes(app: FastifyInstance) {
         });
       }
 
-      const session = await createSession(db, {
-        userId: outcome.user.id,
-        authMethod: "password",
-        client,
-      });
-      await recordSignIn(db, outcome.user.id);
+      // No session is opened here, deliberately. The web signs the new admin
+      // in straight afterwards through the ordinary credentials path — it has
+      // no way to hand an api-minted session to Auth.js — so a session opened
+      // now is one nobody ever presents: a row that outlives setup by its full
+      // TTL and shows up in Active Sessions as a device the admin never used.
+      // The account exists and its password is known to the person who just
+      // typed it; that is what "signed in afterwards" rests on.
       await audit.write({
         action: "setup.completed",
         actor: { id: outcome.user.id, kind: "user" },
         target: { type: "member", id: outcome.user.id, name: outcome.user.email },
-        access: { ip: client.ip, client: client.userAgent, sessionId: session.id },
+        access: { ip: client.ip, client: client.userAgent, sessionId: null },
       });
 
-      return reply
-        .code(201)
-        .send({ user: toPublicUser(outcome.user), sessionId: session.id });
+      return reply.code(201).send({ user: toPublicUser(outcome.user) });
     },
   );
 

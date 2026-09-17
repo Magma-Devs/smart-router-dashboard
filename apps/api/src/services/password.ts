@@ -107,6 +107,15 @@ export async function checkPasswordBreached(
     return { breached: false, indeterminate: true, reason: "disabled" };
   }
 
+  // SHA-1 is the protocol here, not a choice: HIBP's range API is defined over
+  // SHA-1 prefixes, and the digest never leaves this process — only its first
+  // five hex characters go out. Passwords are STORED with bcrypt cost 12
+  // (`hashPassword` above).
+  //
+  // CodeQL matches the shape rather than the use and raises
+  // `js/insufficient-password-hash` on this line. It is dismissed as a false
+  // positive in code scanning; inline `codeql[...]` comments are not honoured
+  // by the default setup, so this note is the only thing that survives here.
   const sha1 = createHash("sha1").update(plain, "utf8").digest("hex").toUpperCase();
   const prefix = sha1.slice(0, 5);
   const suffix = sha1.slice(5);

@@ -14,6 +14,7 @@ import { metricRoutes } from "./routes/metrics.js";
 import { configRoutes } from "./routes/config.js";
 import { upstreamRoutes } from "./routes/upstreams.js";
 import { authRoutes } from "./routes/auth.js";
+import { announceSetupToken } from "./services/setup.js";
 
 /**
  * `TRUST_PROXY` as a hop count, in the shape Fastify's types accept.
@@ -64,6 +65,13 @@ export async function buildApp(): Promise<FastifyInstance> {
     await app.register(dbPlugin);
     await app.register(authPlugin);
     await app.register(authRoutes);
+
+    // Once the database is up, mint + log the first-run token if this install
+    // still needs one. Not awaited: `dbReady` retries forever by design, and
+    // the api must come up and serve /health while postgres is still starting.
+    void app.dbReady
+      .then(() => (app.db ? announceSetupToken(app.db, app.log) : undefined))
+      .catch((err: unknown) => app.log.error({ err }, "could not resolve the first-run setup token"));
   }
 
   await app.register(healthRoutes);

@@ -1,4 +1,5 @@
 import "server-only";
+import { INTERNAL_API_BASE_URL } from "@/lib/internal-api";
 
 /**
  * First-run state, read server-side.
@@ -13,12 +14,6 @@ export interface BootstrapState {
   mode: "managed" | "onprem";
 }
 
-const INTERNAL_BASE =
-  process.env.INTERNAL_API_BASE_URL ??
-  process.env.DASHBOARD_API_URL ??
-  process.env.NEXT_PUBLIC_API_URL ??
-  "http://localhost:8000";
-
 /**
  * Returns null when the api can't be reached or hasn't got a database yet.
  *
@@ -29,7 +24,7 @@ const INTERNAL_BASE =
  */
 export async function fetchBootstrap(): Promise<BootstrapState | null> {
   try {
-    const res = await fetch(`${INTERNAL_BASE}/auth/bootstrap`, {
+    const res = await fetch(`${INTERNAL_API_BASE_URL}/auth/bootstrap`, {
       cache: "no-store",
       signal: AbortSignal.timeout(3000),
     });

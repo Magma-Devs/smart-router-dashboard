@@ -27,6 +27,16 @@ import { hashPassword } from "./password.js";
 const TOKEN_BYTES = 32;
 
 /**
+ * Shortest `SETUP_TOKEN` worth honouring. `/auth/setup` is public and rate
+ * limited to 10/min, which bounds guessing but does not stop it: `changeme`
+ * falls to a wordlist in under an hour. A configured value below this is
+ * refused and a generated one used instead — refusing outright would brick an
+ * install over a typo, and silently accepting it would leave the door on a
+ * latch.
+ */
+const MIN_CONFIGURED_TOKEN_LENGTH = 16;
+
+/**
  * Postgres advisory-lock key for the setup transaction. Any constant works; it
  * only has to be the same one in every process racing to create the first admin.
  */
@@ -37,8 +47,9 @@ let cachedToken: string | null = null;
 /**
  * The setup token for this deployment, resolved once per process.
  *
- *  - `SETUP_TOKEN` set → use it. This is the path a helm chart takes: the value
- *    lives in a Secret and the installer prints it.
+ *  - `SETUP_TOKEN` set, and at least `MIN_CONFIGURED_TOKEN_LENGTH` long → use
+ *    it. This is the path a helm chart takes: the value lives in a Secret and
+ *    the installer prints it. A shorter one is refused and treated as unset.
  *  - otherwise → generate one, log it once at `warn` so it is visible in
  *    `kubectl logs` without a debug level, and write it to `SETUP_TOKEN_FILE`
  *    when that is set, so an init container or a mounted volume can surface it.
@@ -54,9 +65,15 @@ export function resolveSetupToken(log?: {
   if (cachedToken) return cachedToken;
 
   const configured = process.env.SETUP_TOKEN?.trim();
-  if (configured) {
+  if (configured && configured.length >= MIN_CONFIGURED_TOKEN_LENGTH) {
     cachedToken = configured;
     return cachedToken;
+  }
+  if (configured) {
+    log?.error(
+      { configuredLength: configured.length, minimum: MIN_CONFIGURED_TOKEN_LENGTH },
+      `SETUP_TOKEN is shorter than ${MIN_CONFIGURED_TOKEN_LENGTH} characters and would be guessable — ignoring it and generating one instead`,
+    );
   }
 
   cachedToken = randomBytes(TOKEN_BYTES).toString("base64url");
@@ -80,7 +97,16 @@ export function resetSetupTokenForTests(): void {
   cachedToken = null;
 }
 
-/** Constant-time comparison that doesn't leak length through an early return. */
+/**
+ * Constant-time comparison of the supplied token against the expected one.
+ *
+ * The early return on a length mismatch does leak the expected length — it has
+ * to, since `timingSafeEqual` throws on unequal buffers. That is not worth
+ * defending: the length of a 43-character base64url token is not the secret,
+ * and the 32 bytes behind it are what an attacker would still have to guess.
+ * What the constant-time compare buys is the part that matters — no byte-by-byte
+ * early exit to walk the value one character at a time.
+ */
 export function setupTokenMatches(supplied: string, expected: string): boolean {
   const a = Buffer.from(supplied);
   const b = Buffer.from(expected);
@@ -146,4 +172,28 @@ export async function completeSetup(
     if (!created) throw new Error("setup insert returned no row");
     return { ok: true, user: created };
   });
+}
+
+/**
+ * Resolve — and so, when it has to be generated, log and persist — the setup
+ * token at boot, but only on an install that still needs setting up.
+ *
+ * This is what makes `SETUP_TOKEN_FILE` and the `warn` line reachable at all.
+ * Resolving lazily inside `POST /auth/setup` is too late to be useful: an
+ * operator with no `SETUP_TOKEN` configured has nothing to type, because
+ * nothing has generated the value yet — they would have to guess wrong once,
+ * purely to make the api mint a token, and then read it out of the log.
+ *
+ * Gated on `needsSetup` so a long-running deployment that is already claimed
+ * never mints or logs a token it has no use for.
+ */
+export async function announceSetupToken(
+  db: Database,
+  log: {
+    warn: (obj: unknown, msg: string) => void;
+    error: (obj: unknown, msg: string) => void;
+  },
+): Promise<void> {
+  if (!(await needsSetup(db))) return;
+  resolveSetupToken(log);
 }
