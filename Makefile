@@ -127,7 +127,7 @@ accounts-managed:
 recover:
 	@test -n "$(CMD)" || (echo 'set CMD, e.g. make recover CMD="reset-2fa --email dana@example.com"'; exit 2)
 	docker compose -f docker-compose.dev.yml -f docker-compose.accounts.yml \
-		--profile auth exec api node dist/recover.js $(CMD)
+		--profile auth exec api pnpm --filter @sr/api exec tsx src/recover.ts $(CMD)
 
 ## accounts-reset: wipe the accounts database and start over from first-run
 accounts-reset:

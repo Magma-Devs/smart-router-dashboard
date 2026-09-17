@@ -19,6 +19,7 @@ const SECRET = "test-secret-for-auth-tests-32-chars!";
 /** Any 32 bytes — these tests never verify a code, they only need the api
  *  to boot with AUTH_MODE=enabled. */
 const TOTP_KEY = "Ozw3vJk9pQ0sT6xN2mB8fH4dR1yL5aC7eU3gI9oK0jM=";
+const INTERNAL = "internal-secret-for-tests";
 // Unroutable per RFC 5737 (TEST-NET) — connect fails fast, no retries hang.
 const DEAD_DB = "postgres://sr:x@192.0.2.1:5432/na";
 
@@ -76,6 +77,46 @@ describe("AUTH_MODE=disabled (default)", () => {
     });
     expect(signIn.statusCode).toBe(404);
   });
+
+  it("mounts no part of the account system, and needs no database to say so", async () => {
+    // The toggle's api half, asserted as a surface rather than one route.
+    // `disabled` is the default and what every deployment runs today: an
+    // account route that survived into it would be reachable with no session
+    // check in front of it, because the gate is registered in the same block.
+    setEnv({ AUTH_MODE: undefined, AUTH_SECRET: undefined, DATABASE_URL: undefined });
+    app = await buildApp();
+
+    const routes: Array<[string, string]> = [
+      ["POST", "/auth/setup"],
+      ["GET", "/auth/bootstrap"],
+      ["POST", "/auth/2fa/verify"],
+      ["POST", "/auth/sign-out"],
+      ["POST", "/auth/password/forgot"],
+      ["POST", "/auth/invite/preview"],
+      ["GET", "/api/account/me"],
+      ["GET", "/api/account/sessions"],
+      ["POST", "/api/account/password"],
+      ["GET", "/api/team/members"],
+      ["GET", "/api/team/members.csv"],
+      ["GET", "/api/team/invites"],
+    ];
+
+    for (const [method, url] of routes) {
+      const res = await app.inject({ method: method as "GET" | "POST", url, payload: {} });
+      expect(`${method} ${url} -> ${res.statusCode}`).toBe(`${method} ${url} -> 404`);
+    }
+  });
+
+  it("keeps the metrics surface open, which is the whole point of the mode", async () => {
+    setEnv({ AUTH_MODE: undefined, AUTH_SECRET: undefined, DATABASE_URL: undefined });
+    app = await buildApp();
+
+    for (const url of ["/health", "/version", "/api/config/routers"]) {
+      const res = await app.inject({ method: "GET", url });
+      expect(`${url} -> ${res.statusCode}`).not.toBe(`${url} -> 401`);
+      expect(`${url} -> ${res.statusCode}`).not.toBe(`${url} -> 404`);
+    }
+  });
 });
 
 describe("AUTH_MODE=enabled", () => {
@@ -85,15 +126,40 @@ describe("AUTH_MODE=enabled", () => {
   });
 
   it("refuses to boot without DATABASE_URL", async () => {
-    setEnv({ AUTH_MODE: "enabled", AUTH_SECRET: SECRET,
-    TOTP_ENCRYPTION_KEY: TOTP_KEY, DATABASE_URL: undefined });
+    setEnv({
+      AUTH_MODE: "enabled",
+      AUTH_SECRET: SECRET,
+      TOTP_ENCRYPTION_KEY: TOTP_KEY,
+      INTERNAL_AUTH_SECRET: INTERNAL,
+      DATABASE_URL: undefined,
+    });
     await expect(buildApp()).rejects.toThrow(/DATABASE_URL/);
+  });
+
+  it("refuses to boot without INTERNAL_AUTH_SECRET", async () => {
+    // It fails quietly rather than loudly: unset, the api ignores the address
+    // the web forwards and records its own, so every session row and access
+    // event carries the web pod on a log whose job is saying where a sign-in
+    // came from. Nothing looks wrong — the addresses are all the same one.
+    setEnv({
+      AUTH_MODE: "enabled",
+      AUTH_SECRET: SECRET,
+      TOTP_ENCRYPTION_KEY: TOTP_KEY,
+      INTERNAL_AUTH_SECRET: undefined,
+      DATABASE_URL: DEAD_DB,
+    });
+    await expect(buildApp()).rejects.toThrow(/INTERNAL_AUTH_SECRET/);
   });
 
   describe("with secret + (unreachable) database", () => {
     async function enabledApp(): Promise<FastifyInstance> {
-      setEnv({ AUTH_MODE: "enabled", AUTH_SECRET: SECRET,
-    TOTP_ENCRYPTION_KEY: TOTP_KEY, DATABASE_URL: DEAD_DB });
+      setEnv({
+        AUTH_MODE: "enabled",
+        AUTH_SECRET: SECRET,
+        TOTP_ENCRYPTION_KEY: TOTP_KEY,
+        INTERNAL_AUTH_SECRET: INTERNAL,
+        DATABASE_URL: DEAD_DB,
+      });
       return buildApp();
     }
 

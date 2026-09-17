@@ -32,29 +32,43 @@ import {
 import { requireAuth } from "../plugins/auth.js";
 import { config } from "../config.js";
 
-/** Tighter per-IP limit on the credential surface than the global default. */
-const STRICT_AUTH_RATE_LIMIT = { max: 10, timeWindow: "1 minute" } as const;
+/**
+ * Tighter per-IP limit on the credential surface than the global default.
+ *
+ * Keyed on the **browser's** address, not the connection's. Auth.js calls
+ * `/auth/sign-in` and `/auth/2fa/verify` from the web tier, so keying on
+ * `request.ip` would put every person in the deployment in one bucket of ten a
+ * minute — and two-factor roughly doubles the calls a sign-in costs, so a team
+ * signing in together would lock each other out of the code screen. Falls back
+ * to the connection address, which is what a direct caller gets.
+ */
+function strictAuthRateLimit(internalSecret: string | undefined) {
+  return {
+    max: 10,
+    timeWindow: "1 minute",
+    keyGenerator: (request: FastifyRequest) =>
+      forwardedClientIp(request, internalSecret) ?? request.ip,
+  } as const;
+}
 
 /** One message for every dead reset link. MAG-2870: "The same message for both
  *  cases. Telling someone a link was already used also tells an attacker it was
  *  already used." */
 const RESET_GONE = "This link has expired.";
 
-interface ForwardedClientContext {
-  ip?: unknown;
-  userAgent?: unknown;
-}
-
 interface SignInBody {
   email: string;
   password: string;
-  clientContext?: ForwardedClientContext;
+  /** Check the password and report which step comes next, without opening a
+   *  session. The login form asks first — it has to know whether to show the
+   *  code screen — and Auth.js signs in afterwards through this same route.
+   *  Without it that pair of calls opens two sessions for one sign-in. */
+  probe?: boolean;
 }
 
 interface TwoFactorVerifyBody {
   challenge: string;
   code: string;
-  clientContext?: ForwardedClientContext;
 }
 
 interface InvitePreviewBody {
@@ -92,20 +106,6 @@ function secretsMatch(supplied: string, expected: string): boolean {
 }
 
 /**
- * Decide what to record as the caller's device.
- *
- * The browser never reaches `/auth/sign-in` directly — Auth.js calls it from
- * the web tier — so `request.ip` here is the web pod and the User-Agent is
- * undici's. The web therefore forwards what *it* saw, and this is where we
- * decide whether to believe it.
- *
- * The route is publicly reachable, so an unauthenticated caller could otherwise
- * put any address on their own sign-in attempts, which is a way to write a false
- * audit trail. Forwarded context is honoured only alongside the shared internal
- * secret; otherwise we fall back to what we observed ourselves — which for a
- * direct caller is their own real address.
- */
-/**
  * What the caller looks like, in the two shapes that need it.
  *
  * `raw` goes to `createSession`, which parses and normalises on the way in.
@@ -124,9 +124,38 @@ interface ResolvedClient extends ClientContext {
   access: { ip: string | null; client: string | null };
 }
 
+/** Set by the web tier beside `X-Internal-Auth`, and believed only with it.
+ *  Headers rather than a body field because the rate limiter runs in
+ *  `onRequest`, before a body exists, and it has to key on the same address
+ *  this records — otherwise every sign-in in the deployment shares one bucket. */
+export const FORWARDED_IP_HEADER = "x-forwarded-client-ip";
+export const FORWARDED_UA_HEADER = "x-forwarded-client-ua";
+
+/** The forwarded address, or null when nothing vouches for one. Shared with the
+ *  rate limiter so the two cannot disagree about who is calling. */
+export function forwardedClientIp(
+  request: FastifyRequest,
+  expected: string | undefined,
+): string | null {
+  if (!expected) return null;
+  const supplied = request.headers["x-internal-auth"];
+  if (typeof supplied !== "string" || !secretsMatch(supplied, expected)) return null;
+  const ip = request.headers[FORWARDED_IP_HEADER];
+  return typeof ip === "string" && ip ? ip : null;
+}
+
+/**
+ * Decide what to record as the caller's device.
+ *
+ * The browser never reaches `/auth/sign-in` directly — Auth.js calls it from
+ * the web tier — so `request.ip` here is the web pod and the User-Agent is
+ * undici's. The web forwards what *it* saw, and this decides whether to believe
+ * it: only alongside the shared internal secret, otherwise we record what we
+ * observed, which for a direct caller is their own real address. The route is
+ * publicly reachable, so without that gate anyone could write a false trail.
+ */
 function resolveClientContext(
   request: FastifyRequest,
-  forwarded: ForwardedClientContext | undefined,
   expected: string | undefined,
 ): ResolvedClient {
   const withAccess = (raw: ClientContext): ResolvedClient => ({
@@ -139,20 +168,22 @@ function resolveClientContext(
     userAgent: request.headers["user-agent"] ?? null,
   };
 
-  if (!expected || !forwarded) return withAccess(observed);
-
-  const supplied = request.headers["x-internal-auth"];
-  if (typeof supplied !== "string" || !secretsMatch(supplied, expected)) {
-    request.log.warn("clientContext supplied without a valid internal secret — ignoring");
+  const forwardedIp = forwardedClientIp(request, expected);
+  const suppliedIp = request.headers[FORWARDED_IP_HEADER];
+  if (!forwardedIp) {
+    // Sent but not believed: either no secret is configured on this side, or
+    // the caller could not produce it. Worth a line either way — the first is a
+    // deployment recording its own address against every sign-in.
+    if (typeof suppliedIp === "string" && suppliedIp) {
+      request.log.warn("forwarded client address supplied without a valid internal secret");
+    }
     return withAccess(observed);
   }
 
+  const forwardedUa = request.headers[FORWARDED_UA_HEADER];
   return withAccess({
-    ip: typeof forwarded.ip === "string" && forwarded.ip ? forwarded.ip : observed.ip,
-    userAgent:
-      typeof forwarded.userAgent === "string" && forwarded.userAgent
-        ? forwarded.userAgent
-        : observed.userAgent,
+    ip: forwardedIp,
+    userAgent: typeof forwardedUa === "string" && forwardedUa ? forwardedUa : observed.userAgent,
   });
 }
 
@@ -185,6 +216,7 @@ export async function authRoutes(app: FastifyInstance) {
   // that is taken at module load, before a test (or a late-loaded secrets file)
   // can set it. Same reason the auth plugin re-reads AUTH_SECRET.
   const internalSecret = process.env.INTERNAL_AUTH_SECRET ?? config.auth.internalSecret;
+  const STRICT_AUTH_RATE_LIMIT = strictAuthRateLimit(internalSecret);
 
   /**
    * Everything that happens once a sign-in is genuinely complete.
@@ -210,16 +242,27 @@ export async function authRoutes(app: FastifyInstance) {
     // lockout would simply never trip for them — against exactly the person it
     // most needs to stop. A failure counter for sign-ins clears when a sign-in
     // succeeds, and a sign-in has not succeeded until both factors have passed.
-    await clearFailures(db, user.email);
+    // One transaction, because these four are one event. A session row whose
+    // signin.succeeded never landed is a device with no record of arriving,
+    // which is the row an investigation goes looking for; and the id is handed
+    // to the web to sign into a token, so it must not name a session a later
+    // failure rolled back. The writer propagates rather than swallows when it
+    // is given a transaction, so a failed audit write takes the sign-in with it.
+    return db.transaction(async (tx) => {
+      await clearFailures(tx, user.email);
 
-    const session = await createSession(db, { userId: user.id, authMethod, client });
-    await recordSignIn(db, user.id);
-    await audit.write({
-      action: "signin.succeeded",
-      actor: { id: user.id, kind: "user" },
-      access: { ...client.access, sessionId: session.id },
+      const session = await createSession(tx, { userId: user.id, authMethod, client });
+      await recordSignIn(tx, user.id);
+      await audit.write(
+        {
+          action: "signin.succeeded",
+          actor: { id: user.id, kind: "user" },
+          access: { ...client.access, sessionId: session.id },
+        },
+        tx,
+      );
+      return { user: toPublicUser(user), sessionId: session.id };
     });
-    return { user: toPublicUser(user), sessionId: session.id };
   }
 
   /** The db plugin connects lazily; 503 (not 500) while it settles. */
@@ -276,7 +319,7 @@ export async function authRoutes(app: FastifyInstance) {
       const db = dbOr503(reply);
       if (!db) return reply;
       const body = request.body as SetupBody;
-      const client = resolveClientContext(request, undefined, internalSecret);
+      const client = resolveClientContext(request, internalSecret);
 
       // Cheap check first, so an already-claimed install doesn't become a
       // token-guessing oracle. The authoritative check runs inside the
@@ -431,7 +474,7 @@ export async function authRoutes(app: FastifyInstance) {
       const db = dbOr503(reply);
       if (!db) return reply;
       const body = request.body as InviteAcceptBody;
-      const client = resolveClientContext(request, undefined, internalSecret);
+      const client = resolveClientContext(request, internalSecret);
 
       const problem = await validatePassword(body.password, request.log);
       if (problem) {
@@ -513,7 +556,7 @@ export async function authRoutes(app: FastifyInstance) {
         });
       }
       const { email } = request.body as ForgotBody;
-      const client = resolveClientContext(request, undefined, internalSecret);
+      const client = resolveClientContext(request, internalSecret);
 
       const user = await findUserByEmail(db, email);
       if (user?.passwordHash) {
@@ -601,7 +644,7 @@ export async function authRoutes(app: FastifyInstance) {
       const db = dbOr503(reply);
       if (!db) return reply;
       const body = request.body as ResetBody;
-      const client = resolveClientContext(request, undefined, internalSecret);
+      const client = resolveClientContext(request, internalSecret);
 
       const problem = await validatePassword(body.password, request.log);
       if (problem) {
@@ -644,14 +687,10 @@ export async function authRoutes(app: FastifyInstance) {
           properties: {
             email: { type: "string" as const, format: "email" },
             password: { type: "string" as const, minLength: 1 },
-            clientContext: {
-              type: "object" as const,
+            probe: {
+              type: "boolean" as const,
               description:
-                "The browser's own IP and User-Agent, forwarded by the web tier. Honoured only with a valid X-Internal-Auth header.",
-              properties: {
-                ip: { type: "string" as const },
-                userAgent: { type: "string" as const },
-              },
+                "Verify the password and report whether a code is needed, without opening a session.",
             },
           },
         },
@@ -661,7 +700,7 @@ export async function authRoutes(app: FastifyInstance) {
       const db = dbOr503(reply);
       if (!db) return reply;
       const body = request.body as SignInBody;
-      const client = resolveClientContext(request, body.clientContext, internalSecret);
+      const client = resolveClientContext(request, internalSecret);
 
       // Per-account lockout, checked before the password is even looked at.
       // The per-IP limiter alone is walked past by anyone rotating addresses.
@@ -729,6 +768,15 @@ export async function authRoutes(app: FastifyInstance) {
         };
       }
 
+      // A probe stops here. The login form asks this route what the next step
+      // is before handing the sign-in to Auth.js, which calls this same route
+      // again — so completing here would open a session the browser never
+      // addresses, leaving an unused device on the account's own sessions list
+      // and two `signin.succeeded` rows, one of them from an address nobody
+      // signed in from. Only accounts without an authenticator reach this line,
+      // which is why the enrolled path above never had the problem.
+      if (body.probe) return { twoFactorRequired: false };
+
       return completeSignIn(db, user, client, "password");
     },
   );
@@ -746,15 +794,6 @@ export async function authRoutes(app: FastifyInstance) {
           properties: {
             challenge: { type: "string" as const, minLength: 1 },
             code: { type: "string" as const, minLength: 1 },
-            clientContext: {
-              type: "object" as const,
-              description:
-                "The browser's own IP and User-Agent, forwarded by the web tier. Honoured only with a valid X-Internal-Auth header.",
-              properties: {
-                ip: { type: "string" as const },
-                userAgent: { type: "string" as const },
-              },
-            },
           },
         },
       },
@@ -763,7 +802,7 @@ export async function authRoutes(app: FastifyInstance) {
       const db = dbOr503(reply);
       if (!db) return reply;
       const body = request.body as TwoFactorVerifyBody;
-      const client = resolveClientContext(request, body.clientContext, internalSecret);
+      const client = resolveClientContext(request, internalSecret);
 
       /** One message for every way this can fail. The ticket: "a wrong code
        *  gives a generic error with no hint about which factor failed" — and

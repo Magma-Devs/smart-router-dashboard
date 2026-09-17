@@ -27,12 +27,15 @@ export interface DbHandle {
  * Open a Postgres connection and return a Drizzle handle. Caller owns
  * lifecycle — call `handle.sql.end()` on shutdown to close the pool.
  *
- * Pool sized small (5 max): the dashboard api only touches the DB on
- * auth flows, not on the metrics hot path.
+ * Pool size follows what the gate does, not what the routes do: since the
+ * session became a row, **every authenticated request** resolves it with one
+ * indexed join, so this is on the path of the metrics hot path too rather than
+ * beside it. Sized for a team's concurrent panels — each dashboard page fans
+ * out several polls — with room to queue rather than to sit idle.
  */
 export function createDb(databaseUrl: string): DbHandle {
   const sql = postgres(databaseUrl, {
-    max: 5,
+    max: 20,
     idle_timeout: 30,
     connect_timeout: 10,
   });
