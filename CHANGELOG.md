@@ -42,6 +42,12 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   recovery shows up in the customer's own audit log and cannot be done quietly.
   `reset-password` prints a link and never sets a password.
 
+- **Browser tests for the flows that gate access** (`e2e/`, Playwright against
+  a live api + web, one CI job). Four specs cover the two-step login, the
+  enrolment screen that shuts the dashboard, the grace-period countdown and the
+  admin's 2FA reset — the places where what is under test is what a person sees,
+  and an HTTP check can only prove that markup was sent. `pnpm e2e` runs them.
+
 - **The member list's 2FA column is real** — it was pinned to `—` while 2FA did
   not exist. Under the enforcement rule only the first admin can read "No", and
   only during their grace period, so a second one is marked to be noticed.
