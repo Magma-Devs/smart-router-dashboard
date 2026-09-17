@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { SignJWT } from "jose";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { createTestDb, type TestDb } from "@sr/db/testing";
 import { loginAttempts, twoFactorChallenges, users, type User } from "@sr/db";
 import type { Role } from "@sr/shared";
@@ -77,6 +77,7 @@ async function buildAuthApp(): Promise<FastifyInstance> {
     DATABASE_URL: DEAD_DB,
     INTERNAL_AUTH_SECRET: INTERNAL,
     TOTP_ENCRYPTION_KEY: KEY,
+    PUBLIC_WEB_ORIGIN: "https://dash.example.com",
   });
   const instance = await buildApp();
   instance.db = t.db;
@@ -631,6 +632,58 @@ describe("two-step sign-in", () => {
     expect(await t.db.select().from(loginAttempts)).toHaveLength(0);
   });
 
+  it("writes signin.succeeded only after the code, and signin.failed for a wrong one", async () => {
+    app = await buildAuthApp();
+    const user = await seedUser();
+    const { secret } = await enrol(user);
+
+    const actions = async () =>
+      (
+        await t.db.execute<{ action: string; note: string | null }>(
+          sql`select action, note from audit_events order by occurred_at`,
+        )
+      ).rows;
+
+    // Phase 1 alone writes nothing. `signin.succeeded` about a sign-in that has
+    // not happened would be a lie, and the catalog has no half-way event.
+    const first = await app.inject({
+      method: "POST",
+      url: "/auth/sign-in",
+      payload: { email: user.email, password: PASSWORD },
+    });
+    expect((await actions()).map((r) => r.action)).not.toContain("signin.succeeded");
+
+    // A wrong code is a failed sign-in, attributed to the account. A run of
+    // these means somebody is holding a correct password — which reads very
+    // differently from a run of "wrong password", so the note says which.
+    await app.inject({
+      method: "POST",
+      url: "/auth/2fa/verify",
+      payload: { challenge: first.json().challenge, code: "000000" },
+    });
+    const afterWrong = await actions();
+    expect(afterWrong.map((r) => r.action)).toContain("signin.failed");
+    expect(afterWrong.find((r) => r.action === "signin.failed")?.note).toBe(
+      "wrong two-factor code",
+    );
+
+    // And the whole thing, done properly.
+    const second = await app.inject({
+      method: "POST",
+      url: "/auth/sign-in",
+      payload: { email: user.email, password: PASSWORD },
+    });
+    await app.inject({
+      method: "POST",
+      url: "/auth/2fa/verify",
+      payload: {
+        challenge: second.json().challenge,
+        code: totpCodeAtStep(secret, totpStepAt() + 1)!,
+      },
+    });
+    expect((await actions()).map((r) => r.action)).toContain("signin.succeeded");
+  });
+
   it("stamps first_signin_at once and never moves it", async () => {
     app = await buildAuthApp();
     const user = await seedUser({ createdBySetup: true });
@@ -716,6 +769,7 @@ describe("enrolment and reset over HTTP", () => {
   it("lets an admin clear someone's authenticator and ends their sessions", async () => {
     app = await buildAuthApp();
     const admin = await seedUser({ role: "admin", email: `admin+${++seq}@example.com` });
+    await enrol(admin);
     const member = await seedUser();
     await enrol(member);
     // A session and a challenge, both of which must not survive the reset.
@@ -729,7 +783,7 @@ describe("enrolment and reset over HTTP", () => {
     const res = await app.inject({
       method: "POST",
       url: `/api/team/members/${member.id}/2fa/reset`,
-      headers: { authorization: `Bearer ${await tokenFor(admin)}` },
+      headers: { authorization: `Bearer ${await tokenFor(await reload(admin.id))}` },
     });
     expect(res.statusCode).toBe(200);
 
@@ -750,13 +804,14 @@ describe("enrolment and reset over HTTP", () => {
   it("refuses a non-admin the reset", async () => {
     app = await buildAuthApp();
     const approver = await seedUser({ role: "approver" });
+    await enrol(approver);
     const member = await seedUser();
     await enrol(member);
 
     const res = await app.inject({
       method: "POST",
       url: `/api/team/members/${member.id}/2fa/reset`,
-      headers: { authorization: `Bearer ${await tokenFor(approver)}` },
+      headers: { authorization: `Bearer ${await tokenFor(await reload(approver.id))}` },
     });
     expect(res.statusCode).toBe(403);
   });
@@ -764,12 +819,13 @@ describe("enrolment and reset over HTTP", () => {
   it("says so rather than silently succeeding when there is nothing to reset", async () => {
     app = await buildAuthApp();
     const admin = await seedUser({ role: "admin" });
+    await enrol(admin);
     const member = await seedUser();
 
     const res = await app.inject({
       method: "POST",
       url: `/api/team/members/${member.id}/2fa/reset`,
-      headers: { authorization: `Bearer ${await tokenFor(admin)}` },
+      headers: { authorization: `Bearer ${await tokenFor(await reload(admin.id))}` },
     });
     expect(res.statusCode).toBe(409);
   });
@@ -780,5 +836,195 @@ describe("enrolment and reset over HTTP", () => {
     await clearEnrolment(t.db, user.id);
     const { secret: fresh } = await enrol(await reload(user.id));
     expect(fresh).not.toBe(old);
+  });
+});
+
+// ── The must-enrol gate ─────────────────────────────────────────────────────
+
+describe("the gate", () => {
+  const DAY = 24 * 60 * 60 * 1000;
+
+  /** Any authenticated route that is not part of the enrolment escape hatch. */
+  const BLOCKED = "/api/account/sessions";
+
+  it("shuts the dashboard to an invited person who has not enrolled", async () => {
+    app = await buildAuthApp();
+    const user = await seedUser();
+
+    const res = await app.inject({
+      method: "GET",
+      url: BLOCKED,
+      headers: { authorization: `Bearer ${await tokenFor(user)}` },
+    });
+    expect(res.statusCode).toBe(403);
+    // Distinct from FORBIDDEN: the web has somewhere to send this person, and
+    // bouncing them to the login page would be a dead end — their password is
+    // fine and signing in again changes nothing.
+    expect(res.json().code).toBe("TWO_FACTOR_REQUIRED");
+  });
+
+  it("leaves exactly the enrolment path open", async () => {
+    app = await buildAuthApp();
+    const user = await seedUser();
+    const auth = { authorization: `Bearer ${await tokenFor(user)}` };
+
+    const me = await app.inject({ method: "GET", url: "/api/account/me", headers: auth });
+    expect(me.statusCode).toBe(200);
+    expect(me.json().twoFactor.enrolmentRequired).toBe(true);
+
+    const begin = await app.inject({
+      method: "POST",
+      url: "/api/account/2fa/begin",
+      headers: auth,
+    });
+    expect(begin.statusCode).toBe(200);
+
+    const confirm = await app.inject({
+      method: "POST",
+      url: "/api/account/2fa/confirm",
+      headers: auth,
+      payload: { code: totpCodeAtStep(begin.json().secret, totpStepAt())! },
+    });
+    expect(confirm.statusCode).toBe(200);
+
+    // And the dashboard opens the moment enrolment lands — no new sign-in.
+    const after = await app.inject({ method: "GET", url: BLOCKED, headers: auth });
+    expect(after.statusCode).toBe(200);
+  });
+
+  it("lets the first admin through during their grace period", async () => {
+    app = await buildAuthApp();
+    const admin = await seedUser({
+      role: "admin",
+      createdBySetup: true,
+      firstSignInAt: new Date(Date.now() - 18 * DAY),
+    });
+
+    const res = await app.inject({
+      method: "GET",
+      url: BLOCKED,
+      headers: { authorization: `Bearer ${await tokenFor(admin)}` },
+    });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it("shuts it on the first admin once thirty days are up", async () => {
+    app = await buildAuthApp();
+    const admin = await seedUser({
+      role: "admin",
+      createdBySetup: true,
+      firstSignInAt: new Date(Date.now() - GRACE_PERIOD_MS - 1000),
+    });
+
+    const res = await app.inject({
+      method: "GET",
+      url: BLOCKED,
+      headers: { authorization: `Bearer ${await tokenFor(admin)}` },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.json().code).toBe("TWO_FACTOR_REQUIRED");
+  });
+
+  it("gives an ordinary admin no grace at all — it is the first admin's alone", async () => {
+    app = await buildAuthApp();
+    // Same role, same age of account. The difference is createdBySetup.
+    const admin = await seedUser({
+      role: "admin",
+      createdBySetup: false,
+      firstSignInAt: new Date(Date.now() - DAY),
+    });
+
+    const res = await app.inject({
+      method: "GET",
+      url: BLOCKED,
+      headers: { authorization: `Bearer ${await tokenFor(admin)}` },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it("still 401s an unauthenticated caller rather than 403", async () => {
+    app = await buildAuthApp();
+    // The gate must not turn "who are you" into "set up 2FA" — that would leak
+    // that the endpoint exists behind a valid session.
+    const res = await app.inject({ method: "GET", url: BLOCKED });
+    expect(res.statusCode).toBe(401);
+  });
+});
+
+// ── The invite trigger ──────────────────────────────────────────────────────
+
+describe("the invite trigger", () => {
+  const DAY = 24 * 60 * 60 * 1000;
+
+  async function graceAdmin(): Promise<User> {
+    return seedUser({
+      role: "admin",
+      createdBySetup: true,
+      firstSignInAt: new Date(Date.now() - 3 * DAY),
+    });
+  }
+
+  it("refuses an invite from an admin who is still deferring", async () => {
+    app = await buildAuthApp();
+    const admin = await graceAdmin();
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/team/invites",
+      headers: { authorization: `Bearer ${await tokenFor(admin)}` },
+      payload: { email: "new@example.com", role: "requester" },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.json().code).toBe("TWO_FACTOR_REQUIRED");
+  });
+
+  it("allows it the moment they enrol — no re-sign-in", async () => {
+    app = await buildAuthApp();
+    const admin = await graceAdmin();
+    const token = await tokenFor(admin);
+    await enrol(admin);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/team/invites",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { email: "new@example.com", role: "requester" },
+    });
+    expect(res.statusCode).toBe(201);
+  });
+
+  it("blocks resend too, so 'invite, fail, resend' is not a way around it", async () => {
+    app = await buildAuthApp();
+    // An enrolled admin creates the invitation…
+    const enroller = await seedUser({ role: "admin" });
+    await enrol(enroller);
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/team/invites",
+      headers: { authorization: `Bearer ${await tokenFor(await reload(enroller.id))}` },
+      payload: { email: "pending@example.com", role: "requester" },
+    });
+    expect(created.statusCode).toBe(201);
+
+    // …and a deferring admin tries to send it again.
+    const deferring = await graceAdmin();
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/team/invites/${created.json().invite.id}/resend`,
+      headers: { authorization: `Bearer ${await tokenFor(deferring)}` },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it("leaves reading the member list alone — the block is on granting access", async () => {
+    app = await buildAuthApp();
+    const admin = await graceAdmin();
+
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/team/members",
+      headers: { authorization: `Bearer ${await tokenFor(admin)}` },
+    });
+    expect(res.statusCode).toBe(200);
   });
 });

@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { SignJWT } from "jose";
-import { sql } from "drizzle-orm";
-import { createTestDb, type TestDb } from "@sr/db/testing";
+import { eq, sql } from "drizzle-orm";
+import { createTestDb, enrolledTwoFactor, type TestDb } from "@sr/db/testing";
 import { users } from "@sr/db";
 import { buildApp } from "../app.js";
 import { SESSION_JWT_AUDIENCE, SESSION_JWT_ISSUER } from "../plugins/auth.js";
@@ -22,6 +22,9 @@ import { resetSetupTokenForTests } from "../services/setup.js";
  */
 
 const SECRET = "test-secret-for-auth-tests-32-chars!";
+/** Any 32 bytes — these tests never verify a code, they only need the api
+ *  to boot with AUTH_MODE=enabled. */
+const TOTP_KEY = "Ozw3vJk9pQ0sT6xN2mB8fH4dR1yL5aC7eU3gI9oK0jM=";
 const DEAD_DB = "postgres://sr:x@192.0.2.1:5432/na";
 const PASSWORD = "thistle-cobalt-marina-7781";
 
@@ -47,6 +50,7 @@ beforeEach(async () => {
   setEnv({
     AUTH_MODE: "enabled",
     AUTH_SECRET: SECRET,
+    TOTP_ENCRYPTION_KEY: TOTP_KEY,
     DATABASE_URL: DEAD_DB,
     SETUP_TOKEN: "installer-token",
     DEPLOYMENT_MODE: "onprem",
@@ -94,6 +98,7 @@ async function adminToken(): Promise<{ token: string; id: string }> {
       email: "admin@example.com",
       role: "admin",
       passwordHash: await hashPassword(PASSWORD),
+      ...enrolledTwoFactor(),
     })
     .returning();
   const session = await createSession(t.db, {
@@ -135,6 +140,14 @@ describe("events reach the log", () => {
 
   it("records a successful and a failed sign-in differently", async () => {
     await adminToken();
+    // The password leg is the whole of a sign-in only for an account with no
+    // authenticator. What the two-step path writes — including that a wrong
+    // code records `signin.failed` against a named account — is asserted in
+    // `two-factor.test.ts`, where a real secret can be sealed.
+    await t.db
+      .update(users)
+      .set({ totpSecret: null, totpEnrolledAt: null })
+      .where(eq(users.email, "admin@example.com"));
 
     await app!.inject({
       method: "POST",

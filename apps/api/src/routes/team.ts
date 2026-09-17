@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type { Database } from "@sr/db";
 import { isRole, roleAtLeast, toCsv, type Role } from "@sr/shared";
-import { requireRole } from "../plugins/auth.js";
+import { requireRole, type AuthUser } from "../plugins/auth.js";
 import { lazyAuditWriter, type AuditWriter } from "../services/audit.js";
 import {
   createInvitation,
@@ -74,6 +74,36 @@ export async function teamRoutes(app: FastifyInstance) {
     return origin;
   }
 
+
+  /**
+   * The grace period's other end.
+   *
+   * The first admin on a fresh install may defer 2FA — but only while they are
+   * one person poking at a box. Inviting somebody makes them an admin over
+   * another person's access, and the ticket ends the countdown at exactly that
+   * moment: "the invite screen is blocked until 2FA is set up".
+   *
+   * There is no flag to write. The countdown "ending" IS this refusal, which is
+   * what the ticket describes and is the honest implementation — a stored
+   * "grace revoked" bit would be a second source of truth for a question the
+   * account row already answers.
+   *
+   * It sits on invite creation AND resend: a resend is an invitation being sent,
+   * and blocking only the first would leave "invite, fail, resend" as a way
+   * around it for anybody who had a pending row already.
+   */
+  function requireEnrolledToInvite(me: AuthUser, reply: FastifyReply): boolean {
+    if (isEnrolled(me.user)) return true;
+    void reply.code(403).send({
+      statusCode: 403,
+      error: "Forbidden",
+      code: "TWO_FACTOR_REQUIRED",
+      message:
+        "Set up two-factor authentication before inviting anyone. You are about to give somebody else access to this deployment.",
+    });
+    return false;
+  }
+
   app.get(
     "/api/team/invites",
     { schema: { tags: ["Team"], summary: "Invitations not yet redeemed, newest first" } },
@@ -122,6 +152,12 @@ export async function teamRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const me = requireRole(request, reply, "admin");
       if (!me) return reply;
+      // Before the configuration check below, deliberately. "Set up 2FA first"
+      // is an answer about the caller; "PUBLIC_WEB_ORIGIN is unset" is an answer
+      // about the deployment, and reporting the deployment's problem to someone
+      // who was never going to be allowed through tells them something they had
+      // no business learning.
+      if (!requireEnrolledToInvite(me, reply)) return reply;
       const db = dbOr503(reply);
       if (!db) return reply;
       const origin = webOrigin(reply);
@@ -207,6 +243,7 @@ export async function teamRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const me = requireRole(request, reply, "admin");
       if (!me) return reply;
+      if (!requireEnrolledToInvite(me, reply)) return reply;
       const db = dbOr503(reply);
       if (!db) return reply;
       const origin = webOrigin(reply);

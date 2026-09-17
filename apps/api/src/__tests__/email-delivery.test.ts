@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { SignJWT } from "jose";
 import { desc, eq } from "drizzle-orm";
-import { createTestDb, type TestDb } from "@sr/db/testing";
+import { createTestDb, enrolledTwoFactor, type TestDb } from "@sr/db/testing";
 import { auditEvents, users } from "@sr/db";
 import { buildApp } from "../app.js";
 import { SESSION_JWT_AUDIENCE, SESSION_JWT_ISSUER } from "../plugins/auth.js";
@@ -21,6 +21,9 @@ import { resetEmailClientForTests } from "../services/email.js";
  */
 
 const SECRET = "test-secret-for-email-delivery-32ch!";
+/** Any 32 bytes — these tests never verify a code, they only need the api
+ *  to boot with AUTH_MODE=enabled. */
+const TOTP_KEY = "Ozw3vJk9pQ0sT6xN2mB8fH4dR1yL5aC7eU3gI9oK0jM=";
 const DEAD_DB = "postgres://sr:x@192.0.2.1:5432/na";
 
 let app: FastifyInstance | null = null;
@@ -39,6 +42,7 @@ async function boot(mode: "managed" | "onprem"): Promise<string> {
   setEnv({
     AUTH_MODE: "enabled",
     AUTH_SECRET: SECRET,
+    TOTP_ENCRYPTION_KEY: TOTP_KEY,
     DATABASE_URL: DEAD_DB,
     DEPLOYMENT_MODE: mode,
     PUBLIC_WEB_ORIGIN: "https://dash.example.com",
@@ -57,6 +61,7 @@ async function boot(mode: "managed" | "onprem"): Promise<string> {
       name: "Admin",
       role: "admin",
       passwordHash: await hashPassword("an-admin-passphrase-1"),
+      ...enrolledTwoFactor(),
     })
     .returning();
   const session = await createSession(t.db, {

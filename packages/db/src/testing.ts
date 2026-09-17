@@ -45,3 +45,28 @@ export async function createTestDb(): Promise<TestDb> {
 
   return { db, close: () => client.close() };
 }
+
+/**
+ * The two columns a fixture needs so the api's must-enrol gate lets it past.
+ *
+ * MAG-2730 shut the dashboard to anyone without an authenticator, which is the
+ * ticket's whole point — and it means every HTTP-level test whose subject is
+ * something else (invitations, roles, the audit log, the Magma account label)
+ * has to seed an account that has one, or it spends its time asserting 403.
+ *
+ * Spread into the insert:
+ *
+ * ```ts
+ * await db.insert(users).values({ email: "a@b.c", role: "admin", ...enrolledTwoFactor() })
+ * ```
+ *
+ * The secret is a **fixed, invalid envelope on purpose**. These fixtures never
+ * submit a code — they hold a session token already — so the gate's question
+ * ("is there an enrolled secret") is answered without any test needing a real
+ * key configured. A test that actually verifies codes seals a real one; that is
+ * `apps/api/src/__tests__/two-factor.test.ts`, and it is the only place the
+ * enrolment and challenge paths are exercised.
+ */
+export function enrolledTwoFactor(): { totpSecret: string; totpEnrolledAt: Date } {
+  return { totpSecret: "fixture-not-a-real-envelope", totpEnrolledAt: new Date("2026-01-01") };
+}
