@@ -454,7 +454,7 @@ Every `/api/metrics/*` route also accepts **`router?`** — the router scope
 |---|---|---|
 | `GET /docs` · `GET /docs/json` | — | Swagger UI explorer + OpenAPI 3.1 spec. Registered outside production only. |
 | `GET /auth/bootstrap` | — | `{ needsSetup, mode }` — whether this deployment still needs its first admin (derived from "no active users", never a flag), and which shape it is. Never reveals the setup token. Public |
-| `POST /auth/setup` | — | Creates the first admin on a fresh install: `{ token, email, password, name? }` → `{ user, sessionId }`. 403 on a wrong token, 409 once claimed. Public |
+| `POST /auth/setup` | — | Creates the first admin on a fresh install: `{ token, email, password, name? }` → `{ user }`. Opens no session — the web signs in straight afterwards on the ordinary credentials path. 403 on a wrong token, 409 once claimed. Public |
 | `GET /health` | — | Liveness — `{ health: "ok" }` |
 | `GET /health/ready` | — | Readiness — runs `vector(1)` against the store (not `-/ready`, which Mimir and a query-only proxy don't serve) with the configured credential; 503 + `components.prometheus:"ping_failed"` on failure, including a 401 |
 | `GET /version` | — | Build provenance — `{ commit, version, env, startedAt, uptimeSec }` |
@@ -518,7 +518,7 @@ Auth (only read when `AUTH_MODE=enabled`; the metrics path never touches the DB)
 | `GOOGLE_CLIENT_ID` | (unset) | validates the `aud` claim of Google ID tokens server-side |
 | `INTERNAL_AUTH_SECRET` | (unset) | shared with the web; gates whether forwarded browser IP / User-Agent are trusted on `/auth/sign-in`. Unset ⇒ the api records what it observes |
 | `DEPLOYMENT_MODE` | `onprem` | `managed` (we host, email works) / `onprem` (customer hosts, no mail server). Forks invite + reset delivery; read by the web at runtime via `/api/config` |
-| `SETUP_TOKEN` | (generated) | First-run token, required to create the first admin. Unset ⇒ generated once at boot and logged at `warn` |
+| `SETUP_TOKEN` | (generated) | First-run token, required to create the first admin. Must be ≥ 16 characters; unset (or shorter) ⇒ generated once at boot, on an install that still needs setting up, and logged at `warn` |
 | `SETUP_TOKEN_FILE` | (unset) | Path to write a generated token to (mode 0600), so an init container or mounted volume can surface it |
 | `PASSWORD_BREACH_CHECK` | `hibp` | `off` disables the HaveIBeenPwned check — the honest setting for an air-gapped install, rather than relying on a silent timeout |
 

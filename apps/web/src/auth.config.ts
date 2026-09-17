@@ -5,6 +5,7 @@ import Discord from "next-auth/providers/discord";
 import Credentials from "next-auth/providers/credentials";
 import { jwtVerify, SignJWT } from "jose";
 import type { Role } from "@sr/shared";
+import { INTERNAL_API_BASE_URL } from "@/lib/internal-api";
 
 /**
  * Auth.js v5 configuration (ported from lava-connect's auth.config.ts,
@@ -34,14 +35,9 @@ export type UserRole = Role;
 /** Least privilege — what an unknown or missing role decays to. */
 const DEFAULT_ROLE: UserRole = "read_only";
 
-/** Server-side base URL for talking to the api from inside Auth.js
- *  callbacks. In docker compose the api is reachable as `http://api:8000`
- *  from the web container while the browser hits `http://localhost:8000`. */
-const apiBase =
-  process.env.INTERNAL_API_BASE_URL ??
-  process.env.DASHBOARD_API_URL ??
-  process.env.NEXT_PUBLIC_API_URL ??
-  "http://localhost:8000";
+/** Server-side base URL for talking to the api from inside Auth.js callbacks.
+ *  Shared with `lib/bootstrap.ts`, which needs the same resolution. */
+const apiBase = INTERNAL_API_BASE_URL;
 
 /** Must match the api's expected values in `apps/api/src/plugins/auth.ts`. */
 const SESSION_JWT_ISSUER = "smart-router-dashboard-web";

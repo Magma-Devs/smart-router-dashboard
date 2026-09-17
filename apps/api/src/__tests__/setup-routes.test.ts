@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { SignJWT } from "jose";
 import { createTestDb, type TestDb } from "@sr/db/testing";
-import { users } from "@sr/db";
+import { sessions, users } from "@sr/db";
 import { buildApp } from "../app.js";
 import { SESSION_JWT_AUDIENCE, SESSION_JWT_ISSUER } from "../plugins/auth.js";
 import { resetSetupTokenForTests } from "../services/setup.js";
@@ -99,7 +99,7 @@ describe("POST /auth/setup", () => {
     expect(await t.db.select().from(users)).toHaveLength(0);
   });
 
-  it("creates the first admin and signs them in", async () => {
+  it("creates the first admin, who can then sign in", async () => {
     app = await buildSetupApp();
     const res = await setup({
       token: TOKEN,
@@ -113,13 +113,26 @@ describe("POST /auth/setup", () => {
     expect(body.user.role).toBe("admin");
     expect(body.user.email).toBe("dana@example.com");
 
-    // The returned session must be one the gate then accepts — otherwise the
-    // operator finishes setup and is immediately locked out.
+    // Setup opens no session of its own — the web signs the new admin in on
+    // the ordinary credentials path straight afterwards, and an api-minted
+    // session would be a row nobody ever presents. What has to hold is that
+    // the account it just created is one that path accepts.
+    const signedIn = await app.inject({
+      method: "POST",
+      url: "/auth/sign-in",
+      payload: { email: "dana@example.com", password: GOOD_PASSWORD },
+    });
+    expect(signedIn.statusCode).toBe(200);
+    const sessionId = signedIn.json().sessionId as string;
+    expect(sessionId).toBeTruthy();
+
+    // And that the session it hands back is one the gate then honours —
+    // otherwise the operator finishes setup and is immediately locked out.
     const token = await new SignJWT({
       sub: body.user.id,
       email: body.user.email,
       role: "admin",
-      sid: body.sessionId,
+      sid: sessionId,
     })
       .setProtectedHeader({ alg: "HS256", typ: "JWT" })
       .setIssuer(SESSION_JWT_ISSUER)
@@ -134,6 +147,15 @@ describe("POST /auth/setup", () => {
       headers: { authorization: `Bearer ${token}` },
     });
     expect(after.statusCode).not.toBe(401);
+  });
+
+  it("leaves no session behind — the web opens the only one", async () => {
+    app = await buildSetupApp();
+    const res = await setup({ token: TOKEN, email: "a@example.com", password: GOOD_PASSWORD });
+
+    expect(res.statusCode).toBe(201);
+    expect(res.json().sessionId).toBeUndefined();
+    expect(await t.db.select().from(sessions)).toHaveLength(0);
   });
 
   it("closes the door behind itself", async () => {

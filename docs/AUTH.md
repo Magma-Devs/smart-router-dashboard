@@ -97,24 +97,43 @@ Two properties matter more than the rest:
   reachable.
 
 ```
-api boot, AUTH_MODE=enabled, no active users
-  ├─ SETUP_TOKEN set?  → use it            (helm: value lives in a Secret)
-  └─ else              → generate 32 bytes, log once at warn,
-                         write to SETUP_TOKEN_FILE when set
+api boot, AUTH_MODE=enabled, database up, no active users
+  ├─ SETUP_TOKEN set, ≥ 16 chars?  → use it   (helm: value lives in a Secret)
+  └─ else                          → generate 32 bytes, log once at warn,
+                                     write to SETUP_TOKEN_FILE when set
 ```
+
+This happens at **boot**, not on the first request, and that is the whole
+point: an operator with no `SETUP_TOKEN` configured has nothing to type
+until something has generated the value. It is gated on "no active users",
+so a deployment that is already claimed never mints or logs a token.
 
 Generating rather than disabling setup is deliberate: an operator who
 forgot to configure a token should still be able to finish the install,
-from a value only log or filesystem access reveals.
+from a value only log or filesystem access reveals. A `SETUP_TOKEN` shorter
+than 16 characters is refused the same way and a generated one used in its
+place — `/auth/setup` is public, and 10 attempts a minute bounds guessing
+without stopping it.
+
+**The window reopens whenever there are no active accounts**, not only on a
+fresh install: suspend or remove every member and the deployment is
+claimable again by whoever holds the token. That is deliberate — it is what
+makes a restored backup and a locked-out install recoverable — but it means
+the token stays security-relevant for the life of the deployment, and it
+sits in the pod log. Rotate `SETUP_TOKEN` if that log is widely readable.
 
 <img src="./assets/first-run-setup.png" alt="The first-run page: a single card headed &quot;Set up this dashboard — create the first administrator&quot;, explaining that nothing else opens until this is done and that the setup token is printed by the installer. Fields for the setup token, an optional name, email, password and repeat password, with a note that any characters are accepted from 8 to 64, that the password is checked against known breached passwords, and that there are no other rules and it never expires." width="450">
 
 `POST /auth/setup` re-checks the zero-user condition **inside the
 transaction**, behind an advisory lock — the check outside it is only
 advice, and two people opening the page at the same moment would otherwise
-both become admin. It then opens a session like any other sign-in, so the
-operator is not left staring at a login page holding a password they just
-set.
+both become admin.
+
+It does **not** open a session. The web signs the new admin in immediately
+afterwards through the ordinary credentials path, so the operator is not
+left staring at a login page holding a password they just set — but the
+session that carries them there is that one, minted the same way as every
+other. An api-side session would be a second row nobody ever presents.
 
 ## Password policy
 
