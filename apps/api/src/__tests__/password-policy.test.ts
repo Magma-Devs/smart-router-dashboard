@@ -34,8 +34,8 @@ const SUFFIX = HUNTER_SHA1.slice(5);
 
 /** Stub the range endpoint with a body in HIBP's `SUFFIX:COUNT` format. */
 function stubHibp(body: string, init: { ok?: boolean; status?: number } = {}) {
-  const fetchMock = vi.fn(async () =>
-    new Response(body, { status: init.status ?? (init.ok === false ? 500 : 200) }),
+  const fetchMock = vi.fn(
+    async () => new Response(body, { status: init.status ?? (init.ok === false ? 500 : 200) }),
   );
   vi.stubGlobal("fetch", fetchMock);
   return fetchMock;
@@ -56,7 +56,12 @@ describe("validatePasswordShape", () => {
   it("imposes no composition rules", () => {
     // NIST 800-63B, and the ticket: no "must contain a symbol". Spaces and
     // all-lowercase are fine.
-    for (const value of ["        a", "aaaaaaaaaaaa", "a b c d e f", "パスワードをここに入力してください"]) {
+    for (const value of [
+      "        a",
+      "aaaaaaaaaaaa",
+      "a b c d e f",
+      "パスワードをここに入力してください",
+    ]) {
       expect(validatePasswordShape(value), value).toBeNull();
     }
   });
@@ -106,7 +111,12 @@ describe("checkPasswordBreached", () => {
     // On-prem may have no egress at all. Failing closed here would make the
     // first admin account uncreatable — locking an operator out of their own
     // install to enforce a defence-in-depth check.
-    vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("getaddrinfo ENOTFOUND"); }));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new Error("getaddrinfo ENOTFOUND");
+      }),
+    );
     const result = await checkPasswordBreached(HUNTER);
     expect(result.breached).toBe(false);
     expect(result.indeterminate).toBe(true);

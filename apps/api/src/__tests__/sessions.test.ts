@@ -42,7 +42,10 @@ describe("sessions", () => {
     createSession(t.db, {
       userId: user.id,
       authMethod: "password",
-      client: { ip: "84.229.11.6", userAgent: "Mozilla/5.0 (Macintosh) Chrome/141.0.0.0 Safari/537.36" },
+      client: {
+        ip: "84.229.11.6",
+        userAgent: "Mozilla/5.0 (Macintosh) Chrome/141.0.0.0 Safari/537.36",
+      },
     });
 
   /** Seconds-since-epoch "now", the shape of a JWT `iat`. */

@@ -39,7 +39,15 @@ describe("escapeCsvField", () => {
 describe("toCsv", () => {
   it("writes a header and rows with CRLF endings", () => {
     // Excel on Windows collapses everything into one cell without CRLF.
-    expect(toCsv(["a", "b"], [["1", "2"], ["3", "4"]])).toBe("a,b\r\n1,2\r\n3,4");
+    expect(
+      toCsv(
+        ["a", "b"],
+        [
+          ["1", "2"],
+          ["3", "4"],
+        ],
+      ),
+    ).toBe("a,b\r\n1,2\r\n3,4");
   });
 
   it("has no trailing newline", () => {

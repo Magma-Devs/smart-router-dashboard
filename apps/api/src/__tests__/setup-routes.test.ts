@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { SignJWT } from "jose";
 import { createTestDb, type TestDb } from "@sr/db/testing";
-import { users } from "@sr/db";
+import { sessions, users } from "@sr/db";
 import { buildApp } from "../app.js";
 import { SESSION_JWT_AUDIENCE, SESSION_JWT_ISSUER } from "../plugins/auth.js";
 import { resetSetupTokenForTests } from "../services/setup.js";
@@ -99,7 +99,7 @@ describe("POST /auth/setup", () => {
     expect(await t.db.select().from(users)).toHaveLength(0);
   });
 
-  it("creates the first admin and signs them in", async () => {
+  it("creates the first admin, and leaves them able to sign in", async () => {
     app = await buildSetupApp();
     const res = await setup({
       token: TOKEN,
@@ -113,13 +113,28 @@ describe("POST /auth/setup", () => {
     expect(body.user.role).toBe("admin");
     expect(body.user.email).toBe("dana@example.com");
 
-    // The returned session must be one the gate then accepts — otherwise the
-    // operator finishes setup and is immediately locked out.
+    // Setup deliberately opens no session, so there is no id to return. It used
+    // to, and the web ignored it and signed in anyway — leaving every first run
+    // with a session nobody had used, on the one screen meant for spotting
+    // exactly that.
+    expect(body.sessionId).toBeUndefined();
+
+    // What actually has to hold is that the operator is not locked out: the
+    // account exists and the password they just chose works.
+    const signedIn = await app.inject({
+      method: "POST",
+      url: "/auth/sign-in",
+      payload: { email: "dana@example.com", password: GOOD_PASSWORD },
+    });
+    expect(signedIn.statusCode).toBe(200);
+    expect(signedIn.json().sessionId).toEqual(expect.any(String));
+
+    // And that session is one the gate accepts.
     const token = await new SignJWT({
       sub: body.user.id,
       email: body.user.email,
       role: "admin",
-      sid: body.sessionId,
+      sid: signedIn.json().sessionId,
     })
       .setProtectedHeader({ alg: "HS256", typ: "JWT" })
       .setIssuer(SESSION_JWT_ISSUER)
@@ -136,9 +151,26 @@ describe("POST /auth/setup", () => {
     expect(after.statusCode).not.toBe(401);
   });
 
+  it("leaves exactly one session behind after setup and sign-in", async () => {
+    app = await buildSetupApp();
+    await setup({ token: TOKEN, email: "dana@example.com", password: GOOD_PASSWORD });
+    await app.inject({
+      method: "POST",
+      url: "/auth/sign-in",
+      payload: { email: "dana@example.com", password: GOOD_PASSWORD },
+    });
+
+    // Two would mean the phantom is back: one opened by setup and never used,
+    // one opened by the sign-in that follows it.
+    const rows = await t.db.select().from(sessions);
+    expect(rows).toHaveLength(1);
+  });
+
   it("closes the door behind itself", async () => {
     app = await buildSetupApp();
-    expect((await setup({ token: TOKEN, email: "one@example.com", password: GOOD_PASSWORD })).statusCode).toBe(201);
+    expect(
+      (await setup({ token: TOKEN, email: "one@example.com", password: GOOD_PASSWORD })).statusCode,
+    ).toBe(201);
 
     const second = await setup({ token: TOKEN, email: "two@example.com", password: GOOD_PASSWORD });
     expect(second.statusCode).toBe(409);
@@ -150,7 +182,11 @@ describe("POST /auth/setup", () => {
     app = await buildSetupApp();
     await t.db.insert(users).values({ email: "someone@example.com", role: "admin" });
 
-    const res = await setup({ token: TOKEN, email: "attacker@example.com", password: GOOD_PASSWORD });
+    const res = await setup({
+      token: TOKEN,
+      email: "attacker@example.com",
+      password: GOOD_PASSWORD,
+    });
     expect(res.statusCode).toBe(409);
   });
 
@@ -164,7 +200,9 @@ describe("POST /auth/setup", () => {
 
   it("reopens for an install whose accounts have all been removed", async () => {
     app = await buildSetupApp();
-    await t.db.insert(users).values({ email: "gone@example.com", role: "admin", status: "removed" });
+    await t.db
+      .insert(users)
+      .values({ email: "gone@example.com", role: "admin", status: "removed" });
     expect((await bootstrap()).json().needsSetup).toBe(true);
 
     const res = await setup({ token: TOKEN, email: "new@example.com", password: GOOD_PASSWORD });

@@ -1,0 +1,38 @@
+# MAG-2729 — a stack for exercising the account system by hand.
+#
+# Layer this on the dev compose. It differs from `make dev-auth` in the two
+# ways that matter for testing the ticket:
+#
+#   * NO seeded admin. `dev-auth` sets ADMIN_EMAIL/ADMIN_PASSWORD, which means
+#     the deployment already has an account and the first-run page never
+#     appears — so the flow the ticket is actually about can't be reached.
+#   * The invite and reset links need somewhere to point (PUBLIC_WEB_ORIGIN)
+#     and a way to be trusted (INTERNAL_AUTH_SECRET), neither of which the dev
+#     defaults set.
+#
+# Dev credentials only. Every value here is deliberately guessable.
+services:
+  api:
+    environment:
+      - AUTH_MODE=enabled
+      # Empty, not unset: the dev compose uses `${ADMIN_EMAIL:-default}`, which
+      # substitutes on empty too — so these have to be cleared here.
+      - ADMIN_EMAIL=
+      - ADMIN_PASSWORD=
+      - SETUP_TOKEN=installer-printed-this-token
+      - DEPLOYMENT_MODE=onprem
+      - INTERNAL_AUTH_SECRET=dev-internal-secret
+      - PUBLIC_WEB_ORIGIN=http://localhost:3000
+      # Leave the breach check on — it is part of what the ticket delivers, and
+      # rejecting a known-breached password is worth seeing. Set to `off` if you
+      # are working without internet.
+      - PASSWORD_BREACH_CHECK=hibp
+  web:
+    environment:
+      - AUTH_MODE=enabled
+      - DEPLOYMENT_MODE=onprem
+      - INTERNAL_AUTH_SECRET=dev-internal-secret
+  prometheus:
+    # The non-dev compose project also publishes 9090; remapped so both can run.
+    ports: !override
+      - "9091:9090"

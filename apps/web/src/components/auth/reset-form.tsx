@@ -63,7 +63,13 @@ export function ResetForm({ token }: { token: string }) {
       <div className="gw-card" style={{ width: "100%", maxWidth: 400, padding: 32 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/magma-logo.png" width={32} height={32} alt="Magma" style={{ objectFit: "contain" }} />
+          <img
+            src="/magma-logo.png"
+            width={32}
+            height={32}
+            alt="Magma"
+            style={{ objectFit: "contain" }}
+          />
           <div>
             <div style={{ fontWeight: 700, fontSize: 16 }}>Choose a new password</div>
             <div style={{ fontSize: 12, color: "var(--text-3)" }}>Smart Router Dashboard</div>
@@ -75,11 +81,22 @@ export function ResetForm({ token }: { token: string }) {
             <p style={{ fontSize: 13, color: "var(--text-2)", lineHeight: 1.6, margin: "0 0 8px" }}>
               Your password has been changed.
             </p>
-            <p style={{ fontSize: 12.5, color: "var(--text-3)", lineHeight: 1.6, margin: "0 0 20px" }}>
-              Every device that was signed in to this account has been signed out, including any
-              you don&apos;t recognise.
+            <p
+              style={{
+                fontSize: 12.5,
+                color: "var(--text-3)",
+                lineHeight: 1.6,
+                margin: "0 0 20px",
+              }}
+            >
+              Every device that was signed in to this account has been signed out, including any you
+              don&apos;t recognise.
             </p>
-            <a className="gw-btn gw-btn--primary" href="/login" style={{ justifyContent: "center", width: "100%" }}>
+            <a
+              className="gw-btn gw-btn--primary"
+              href="/login"
+              style={{ justifyContent: "center", width: "100%" }}
+            >
               Sign in
             </a>
           </>
@@ -112,7 +129,9 @@ export function ResetForm({ token }: { token: string }) {
               />
             </label>
 
-            <p style={{ fontSize: 11.5, color: "var(--text-3)", margin: "2px 0 0", lineHeight: 1.5 }}>
+            <p
+              style={{ fontSize: 11.5, color: "var(--text-3)", margin: "2px 0 0", lineHeight: 1.5 }}
+            >
               Setting this signs out every device on the account. Any characters, 8 to 64, checked
               against known breached passwords.
             </p>

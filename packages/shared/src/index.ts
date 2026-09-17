@@ -1,4 +1,6 @@
 export * from "./types/index.js";
 export * from "./constants/index.js";
 export * from "./promql/index.js";
+export * from "./audit/index.js";
 export * from "./utils/index.js";
+export * from "./audit/index.js";

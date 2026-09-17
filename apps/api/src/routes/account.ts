@@ -1,14 +1,10 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type { Database } from "@sr/db";
 import { requireAuth } from "../plugins/auth.js";
-import { noopAuditWriter, type AuditWriter } from "../services/audit.js";
+import { lazyAuditWriter, type AuditWriter } from "../services/audit.js";
 import { validatePassword, verifyPassword } from "../services/password.js";
 import { changeOwnPassword } from "../services/password-reset.js";
-import {
-  listActiveSessions,
-  revokeSession,
-  signOutEverywhere,
-} from "../services/sessions.js";
+import { listActiveSessions, revokeSession, signOutEverywhere } from "../services/sessions.js";
 
 interface ChangePasswordBody {
   current: string;
@@ -21,17 +17,50 @@ interface ChangePasswordBody {
  * session at all.
  */
 export async function accountRoutes(app: FastifyInstance) {
-  const audit: AuditWriter = noopAuditWriter(app.log);
+  const audit: AuditWriter = lazyAuditWriter(app);
 
   function dbOr503(reply: FastifyReply): Database | null {
     if (!app.db) {
-      void reply
-        .code(503)
-        .send({ statusCode: 503, error: "Service Unavailable", message: "auth database not ready" });
+      void reply.code(503).send({
+        statusCode: 503,
+        error: "Service Unavailable",
+        message: "auth database not ready",
+      });
       return null;
     }
     return app.db;
   }
+
+  app.get(
+    "/api/account/me",
+    {
+      schema: {
+        tags: ["Account"],
+        summary: "Who the caller is right now — read from the row, not the token",
+      },
+    },
+    async (request, reply) => {
+      const me = requireAuth(request, reply);
+      if (!me) return reply;
+
+      // Deliberately from `me.user`, which the auth plugin resolved by joining
+      // the session to the live account on this request. The token carries a
+      // `role` claim too, but it is stamped once at sign-in and never refreshed
+      // — so a promotion or demotion would not reach the browser until the
+      // person signed in again, and the screen would disagree with the api for
+      // up to the 30-day session lifetime.
+      //
+      // The api was always right, because it authorises from this same row.
+      // This endpoint is what lets the UI be right as well.
+      return {
+        id: me.user.id,
+        email: me.user.email,
+        name: me.user.name,
+        avatarUrl: me.user.avatarUrl,
+        role: me.user.role,
+      };
+    },
+  );
 
   app.post(
     "/api/account/password",
@@ -57,12 +86,15 @@ export async function accountRoutes(app: FastifyInstance) {
       const body = request.body as ChangePasswordBody;
 
       if (!me.user.passwordHash) {
-        // An OAuth-only account has no password to change. Saying so beats a
-        // "current password is wrong" message about a password that never was.
+        // Defensive. Both ways an account is created — first-run setup and
+        // invite redemption — set a hash, so this is unreachable today; it was
+        // reachable while social sign-in existed. Kept because the column is
+        // nullable, and because "your current password is wrong" about a
+        // password that never existed is the worst way to find out.
         return reply.code(409).send({
           statusCode: 409,
           error: "Conflict",
-          message: "This account signs in with Google and has no password to change.",
+          message: "This account has no password set.",
         });
       }
 

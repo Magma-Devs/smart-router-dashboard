@@ -42,7 +42,8 @@ afterEach(async () => {
 async function mintToken(
   overrides: { iss?: string; aud?: string; secret?: string; sid?: string | null } = {},
 ): Promise<string> {
-  const sid = overrides.sid === null ? {} : { sid: overrides.sid ?? "00000000-0000-4000-8000-0000000000ff" };
+  const sid =
+    overrides.sid === null ? {} : { sid: overrides.sid ?? "00000000-0000-4000-8000-0000000000ff" };
   return new SignJWT({
     sub: "00000000-0000-4000-8000-000000000001",
     email: "t@example.com",
