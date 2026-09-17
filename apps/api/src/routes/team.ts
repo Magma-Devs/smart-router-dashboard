@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type { Database } from "@sr/db";
-import { isRole, type Role } from "@sr/shared";
+import { isRole, roleAtLeast, toCsv, type Role } from "@sr/shared";
 import { requireRole } from "../plugins/auth.js";
 import { noopAuditWriter, type AuditWriter } from "../services/audit.js";
 import {
@@ -12,6 +12,13 @@ import {
   type DeploymentMode,
 } from "../services/invitations.js";
 import { createPasswordReset, resetUrl } from "../services/password-reset.js";
+import {
+  changeMemberRole,
+  countAdmins,
+  listMembers,
+  onMemberDeactivated,
+  removeMember,
+} from "../services/members.js";
 import { findUserById } from "../services/users.js";
 import { config } from "../config.js";
 
@@ -317,6 +324,193 @@ export async function teamPasswordRoutes(app: FastifyInstance) {
         url: resetUrl(origin, created.rawToken),
         expiresAt: created.expiresAt.toISOString(),
       };
+    },
+  );
+}
+
+interface RoleBody {
+  role: string;
+}
+
+/** The member list and the two mutations that act on somebody else. Split from
+ *  the invite routes above only for length — same registration. */
+export async function teamMemberRoutes(app: FastifyInstance) {
+  const audit: AuditWriter = noopAuditWriter(app.log);
+
+  function db(reply: FastifyReply): Database | null {
+    if (!app.db) {
+      void reply.code(503).send({
+        statusCode: 503,
+        error: "Service Unavailable",
+        message: "auth database not ready",
+      });
+      return null;
+    }
+    return app.db;
+  }
+
+  app.get(
+    "/api/team/members",
+    { schema: { tags: ["Team"], summary: "Everyone with access — the access-review list" } },
+    async (request, reply) => {
+      // Readable by every role, including read-only. This *is* the review, and
+      // a review only some people can see is not one.
+      if (!requireRole(request, reply, "read_only")) return reply;
+      const conn = db(reply);
+      if (!conn) return reply;
+
+      const [members, admins] = await Promise.all([listMembers(conn), countAdmins(conn)]);
+      return {
+        members: members.map((m) => ({
+          id: m.id,
+          name: m.name,
+          email: m.email,
+          role: m.role,
+          twoFactorEnabled: m.twoFactorEnabled,
+          lastActiveAt: m.lastActiveAt?.toISOString() ?? null,
+          joinedAt: m.joinedAt.toISOString(),
+        })),
+        adminCount: admins,
+        /** Prompt, never a block: while there is one admin the screen suggests
+         *  adding a second. Preventing anything here would make admin
+         *  untransferable, and a departing employee unremovable. */
+        soleAdmin: admins === 1,
+      };
+    },
+  );
+
+  app.get(
+    "/api/team/members.csv",
+    { schema: { tags: ["Team"], summary: "The member list as CSV — the artifact auditors ask for" } },
+    async (request, reply) => {
+      if (!requireRole(request, reply, "read_only")) return reply;
+      const conn = db(reply);
+      if (!conn) return reply;
+
+      const members = await listMembers(conn);
+      const csv = toCsv(
+        ["name", "email", "role", "two_factor", "last_active", "joined"],
+        members.map((m) => [
+          m.name,
+          m.email,
+          m.role,
+          // Not "no" — 2FA doesn't exist yet (MAG-2730), and "no" would be true
+          // today and wrong the day it ships.
+          m.twoFactorEnabled === null ? "" : m.twoFactorEnabled ? "yes" : "no",
+          m.lastActiveAt?.toISOString() ?? "",
+          m.joinedAt.toISOString(),
+        ]),
+      );
+
+      return reply
+        .header("Content-Type", "text/csv; charset=utf-8")
+        .header("Content-Disposition", 'attachment; filename="members.csv"')
+        .send(csv);
+    },
+  );
+
+  app.patch(
+    "/api/team/members/:id",
+    {
+      schema: {
+        tags: ["Team"],
+        summary: "Change a member's role. Takes effect on their current session.",
+        params: {
+          type: "object" as const,
+          required: ["id"],
+          properties: { id: { type: "string" as const, format: "uuid" } },
+        },
+        body: {
+          type: "object" as const,
+          required: ["role"],
+          properties: {
+            role: { type: "string" as const, enum: ["read_only", "requester", "approver", "admin"] },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const me = requireRole(request, reply, "admin");
+      if (!me) return reply;
+      const conn = db(reply);
+      if (!conn) return reply;
+
+      const { id } = request.params as { id: string };
+      const { role } = request.body as RoleBody;
+      if (!isRole(role)) {
+        return reply
+          .code(400)
+          .send({ statusCode: 400, error: "Bad Request", message: "Unknown role" });
+      }
+
+      const result = await changeMemberRole(conn, { id, role, actorId: me.id });
+      if (!result.ok) {
+        return result.reason === "self"
+          ? reply.code(409).send({
+              statusCode: 409,
+              error: "Conflict",
+              message: "You cannot change your own role. Promote someone else first, then step down.",
+            })
+          : reply.code(404).send({ statusCode: 404, error: "Not Found", message: "No such member." });
+      }
+
+      await audit.write({
+        action: "member.role_changed",
+        actor: { id: me.id, kind: "user" },
+        target: { type: "member", id: result.user.id, name: result.user.email },
+        changes: [{ field: "role", from: result.previousRole ?? "", to: result.user.role }],
+      });
+
+      // Losing the ability to approve has the same consequence as leaving, for
+      // anything currently waiting on them.
+      if (!roleAtLeast(result.user.role, "approver") && roleAtLeast(result.previousRole, "approver")) {
+        await onMemberDeactivated(conn, result.user.id, "demoted");
+      }
+
+      return { member: { id: result.user.id, email: result.user.email, role: result.user.role } };
+    },
+  );
+
+  app.delete(
+    "/api/team/members/:id",
+    {
+      schema: {
+        tags: ["Team"],
+        summary: "Remove a member — a state change, not a deletion",
+        params: {
+          type: "object" as const,
+          required: ["id"],
+          properties: { id: { type: "string" as const, format: "uuid" } },
+        },
+      },
+    },
+    async (request, reply) => {
+      const me = requireRole(request, reply, "admin");
+      if (!me) return reply;
+      const conn = db(reply);
+      if (!conn) return reply;
+
+      const { id } = request.params as { id: string };
+      const result = await removeMember(conn, { id, actorId: me.id });
+      if (!result.ok) {
+        return result.reason === "self"
+          ? reply.code(409).send({
+              statusCode: 409,
+              error: "Conflict",
+              message: "You cannot remove yourself.",
+            })
+          : reply.code(404).send({ statusCode: 404, error: "Not Found", message: "No such member." });
+      }
+
+      await audit.write({
+        action: "member.removed",
+        actor: { id: me.id, kind: "user" },
+        target: { type: "member", id: result.user.id, name: result.user.email },
+        changes: [{ field: "status", from: "active", to: "removed" }],
+      });
+      await onMemberDeactivated(conn, result.user.id, "removed");
+
+      return { ok: true };
     },
   );
 }
