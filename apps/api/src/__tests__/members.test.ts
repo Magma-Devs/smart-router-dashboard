@@ -37,10 +37,32 @@ describe("members", () => {
       expect(dana.joinedAt).toBeInstanceOf(Date);
     });
 
-    it("leaves 2FA null rather than claiming 'no'", async () => {
-      // MAG-2730 hasn't shipped. "No" would be true today and wrong the day it
-      // does, and the repo's honesty contract rules out inventing the value.
-      expect((await listMembers(t.db)).every((r) => r.twoFactorEnabled === null)).toBe(true);
+    it("reports 2FA as a real boolean now that MAG-2730 has shipped", async () => {
+      // It was null while 2FA did not exist — "no" would have been true then and
+      // wrong the day it shipped. Today the column is the access review's whole
+      // point, so it has to be a value.
+      expect((await listMembers(t.db)).every((r) => r.twoFactorEnabled === false)).toBe(true);
+    });
+
+    it("counts a half-finished enrolment as not enrolled", async () => {
+      // A secret offered but never confirmed protects nothing. Reading it as
+      // "yes" would put a `yes` in the column for an account that still signs in
+      // on a password alone — which is the exact thing this column exists to
+      // make visible.
+      await t.db
+        .update(users)
+        .set({ totpSecret: "pending-envelope", totpEnrolledAt: null })
+        .where(eq(users.id, member.id));
+      const dana = (await listMembers(t.db)).find((r) => r.id === member.id)!;
+      expect(dana.twoFactorEnabled).toBe(false);
+
+      await t.db
+        .update(users)
+        .set({ totpEnrolledAt: new Date() })
+        .where(eq(users.id, member.id));
+      expect((await listMembers(t.db)).find((r) => r.id === member.id)!.twoFactorEnabled).toBe(
+        true,
+      );
     });
 
     it("omits removed people — their record is for the audit log, not this screen", async () => {

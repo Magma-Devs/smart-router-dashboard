@@ -1,6 +1,7 @@
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { invitations, sessions, users, type Database, type User } from "@sr/db";
 import type { Role } from "@sr/shared";
+import { isEnrolled } from "./two-factor.js";
 
 /**
  * The member list, and the two mutations that act on somebody else.
@@ -19,9 +20,16 @@ export interface MemberRow {
   email: string;
   role: Role;
   status: "active" | "suspended" | "removed";
-  /** Populated by MAG-2730. Null until then — and rendered as an em dash
-   *  rather than "No", which would be true today and misleading tomorrow. */
-  twoFactorEnabled: boolean | null;
+  /**
+   * Whether this person has an authenticator set up.
+   *
+   * Never null now that MAG-2730 has landed — the column was `null` while 2FA
+   * did not exist, because "No" would have been true and misleading. A pending
+   * enrolment (a secret offered, no code confirmed yet) reads **false**: a
+   * half-finished enrolment does not protect the account, and the point of this
+   * column is that a second `no` in it means something is wrong.
+   */
+  twoFactorEnabled: boolean;
   lastActiveAt: Date | null;
   joinedAt: Date;
   /** True for the Magma Devs account on a managed deployment — see
@@ -46,7 +54,7 @@ export async function listMembers(db: Database): Promise<MemberRow[]> {
     email: u.email,
     role: u.role,
     status: u.status,
-    twoFactorEnabled: null,
+    twoFactorEnabled: isEnrolled(u),
     lastActiveAt: u.lastActiveAt,
     joinedAt: u.createdAt,
     isMagmaAccount: u.isMagmaAccount,
