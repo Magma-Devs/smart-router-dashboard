@@ -4,6 +4,7 @@ import { useState, type FormEvent } from "react";
 import { signIn } from "next-auth/react";
 import { apiUrl } from "@/lib/api-client";
 import { ROLE_DESCRIPTIONS, ROLE_LABELS, type Role } from "@sr/shared";
+import { enabledProviders, type ProviderFlags } from "./oauth-providers";
 
 /**
  * Accepting an invitation.
@@ -26,15 +27,16 @@ export function InviteForm({
   token,
   email,
   role,
-  googleEnabled,
+  providers,
   handoffError,
 }: {
   token: string;
   email: string;
   role: Role;
-  googleEnabled: boolean;
+  providers: ProviderFlags;
   handoffError?: string;
 }) {
+  const providerBadges = enabledProviders(providers);
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [repeat, setRepeat] = useState("");
@@ -44,15 +46,18 @@ export function InviteForm({
   const [busy, setBusy] = useState(false);
 
   /**
-   * Redeem with Google.
+   * Redeem with a social account — any provider the deployment offers, not
+   * just Google. OAuth sign-in is link-only, so redemption is the only way a
+   * social account comes to exist; a provider missing from here is a provider
+   * nobody can ever sign in with.
    *
    * Two steps because the two halves arrive at different moments: park the
    * invitation token, then hand off to Auth.js, whose `signIn` callback reads
-   * it back and calls `/auth/invite/accept` with the verified Google identity.
-   * A bare `signIn("google")` cannot work — OAuth sign-in links to an existing
-   * account and never creates one, so on an invitee it can only answer 403.
+   * it back and calls `/auth/invite/accept` with the verified identity. A bare
+   * `signIn(provider)` cannot work — it links to an existing account and never
+   * creates one, so on an invitee it can only answer 403.
    */
-  async function onGoogle() {
+  async function onOAuth(provider: string) {
     setBusy(true);
     setError(null);
     try {
@@ -62,9 +67,9 @@ export function InviteForm({
         body: JSON.stringify({ token }),
       });
       if (!parked.ok) throw new Error("handoff refused");
-      await signIn("google", { callbackUrl: "/overview" });
+      await signIn(provider, { callbackUrl: "/overview" });
     } catch {
-      setError("Could not start Google sign-in. Please try again, or set a password below.");
+      setError("Could not start that sign-in. Please try again, or set a password below.");
       setBusy(false);
     }
   }
@@ -151,17 +156,28 @@ export function InviteForm({
           </div>
         </div>
 
-        {googleEnabled && (
+        {providerBadges.length > 0 && (
           <>
-            <button
-              className="gw-btn"
-              style={{ width: "100%", justifyContent: "center", marginBottom: 14 }}
-              onClick={() => void onGoogle()}
-              disabled={busy}
-              type="button"
-            >
-              Accept with Google
-            </button>
+            {providerBadges.map((p) => (
+              <button
+                key={p.id}
+                className="gw-btn"
+                style={{
+                  width: "100%",
+                  justifyContent: "center",
+                  marginBottom: 8,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                }}
+                onClick={() => void onOAuth(p.id)}
+                disabled={busy}
+                type="button"
+              >
+                {p.icon}
+                Accept with {p.label}
+              </button>
+            ))}
             <div
               style={{
                 display: "flex",

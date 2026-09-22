@@ -127,6 +127,8 @@ export async function upsertOAuthUser(
  *  bad token so the route can answer 403-with-a-reason rather than 401. */
 export class OAuthAccountNotFoundError extends Error {}
 
-function providerKey(provider: OAuthProvider): "googleId" | "githubId" | "discordId" {
+/** The `users` column holding a provider's subject id. Exported because invite
+ *  redemption links the provider as it inserts the row. */
+export function providerKey(provider: OAuthProvider): "googleId" | "githubId" | "discordId" {
   return provider === "google" ? "googleId" : provider === "github" ? "githubId" : "discordId";
 }

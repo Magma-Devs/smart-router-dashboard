@@ -180,13 +180,19 @@ status line while the message withheld it.
 > Account creation now lives in exactly two places — first-run setup, and invite
 > redemption.
 
-### Redeeming with Google
+### Redeeming with a social account
 
-Because OAuth sign-in links and never creates, a bare `signIn("google")` on an
+Because OAuth sign-in links and never creates, a bare `signIn(provider)` on an
 invitation can only ever answer 403 — the account does not exist yet. The two
 facts also arrive at different moments: the browser has the invitation token
-from the start, and a verified Google identity exists only after the provider
+from the start, and a verified identity exists only after the provider
 redirects back.
+
+**Every provider the deployment offers goes through this**, not just Google.
+Redemption is the only way a social account comes to exist, so a provider the
+invitation page fails to offer is one nobody can ever sign in with — the
+sign-in and invitation screens share a single provider list
+(`components/auth/oauth-providers.tsx`) so they cannot drift.
 
 ```
 /invite/<token>  ──POST /api/invite/handoff──▶  sr_invite cookie (httpOnly, lax, 10 min)
@@ -195,7 +201,7 @@ redirects back.
                                               │ reads sr_invite
                                               ▼
                                     POST /auth/invite/accept
-                                    { token, googleIdToken }
+                                    { token, oauthProvider, oauthToken }
                                               │
                             201 { user, sessionId } ──▶ JWT `sid`
 ```
@@ -206,14 +212,18 @@ and signs for its own CSRF purposes. `httpOnly` keeps it away from page scripts;
 redirect back from Google that it exists to survive. It is burned the moment it
 is spent, successfully or not, so a failed attempt can't be replayed.
 
-A redemption that bounces — the wrong Google account, an expired link — returns
-the person to `/invite/<token>?error=…` with something they can act on, rather
-than Auth.js's generic error screen.
+A redemption that bounces because the person picked the wrong account (403)
+returns them to `/invite/<token>?error=email_mismatch` with something they can
+act on, rather than Auth.js's generic error screen.
+
+A **dead** invitation falls through to an ordinary sign-in instead. The handoff
+cookie outlives an abandoned attempt by up to its max-age, so a plain sign-in
+started inside that window would otherwise be dragged through a redemption that
+cannot succeed; falling through gives that person what they actually asked for.
 
 **This is the one redemption path that opens a session server-side**, and the
-asymmetry is deliberate: the Google caller holds a one-shot `id_token` and
-cannot start the round-trip again, so the session has to come from the
-redemption. The password path lets the ordinary credentials sign-in mint it a
+asymmetry is deliberate: the OAuth caller holds a one-shot token and cannot
+start the round-trip again, so the session has to come from the redemption. The password path lets the ordinary credentials sign-in mint it a
 moment later, exactly as `/auth/setup` does.
 
 ## Password policy

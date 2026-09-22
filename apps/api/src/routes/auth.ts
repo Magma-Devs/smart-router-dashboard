@@ -6,6 +6,7 @@ import {
   recordSignIn,
   toPublicUser,
   upsertOAuthUser,
+  providerKey,
   OAuthAccountNotFoundError,
   type OAuthProvider,
 } from "../services/users.js";
@@ -48,9 +49,23 @@ interface InvitePreviewBody {
 interface InviteAcceptBody {
   token: string;
   password?: string;
-  googleIdToken?: string;
+  /** Redeeming with a social account: which provider, and its token. Every
+   *  provider the deployment offers, not just Google — with OAuth sign-in now
+   *  link-only, redemption is the ONLY way a social account comes to exist,
+   *  so a provider missing here is a provider nobody can ever sign in with. */
+  oauthProvider?: OAuthProvider;
+  oauthToken?: string;
   name?: string;
 }
+
+const OAUTH_PROVIDERS = ["google", "github", "discord"] as const;
+
+/** For error copy, so a failed GitHub redemption doesn't say "Google". */
+const PROVIDER_LABEL: Record<OAuthProvider, string> = {
+  google: "Google",
+  github: "GitHub",
+  discord: "Discord",
+};
 
 interface SetupBody {
   token: string;
@@ -334,7 +349,8 @@ export async function authRoutes(app: FastifyInstance) {
           properties: {
             token: { type: "string" as const, minLength: 1 },
             password: { type: "string" as const, minLength: 1 },
-            googleIdToken: { type: "string" as const, minLength: 1 },
+            oauthProvider: { type: "string" as const, enum: [...OAUTH_PROVIDERS] },
+            oauthToken: { type: "string" as const, minLength: 1 },
             name: { type: "string" as const },
           },
         },
@@ -347,19 +363,28 @@ export async function authRoutes(app: FastifyInstance) {
       const client = resolveClientContext(request, undefined, internalSecret);
 
       let verifiedEmail: string | undefined;
-      let provider: { column: "googleId"; id: string } | undefined;
+      let provider: { column: ReturnType<typeof providerKey>; id: string } | undefined;
+      const oauthProvider = body.oauthToken ? body.oauthProvider : undefined;
 
-      if (body.googleIdToken) {
+      if (body.oauthToken && !oauthProvider) {
+        return reply.code(400).send({
+          statusCode: 400,
+          error: "Bad Request",
+          message: "Say which provider that token is from.",
+        });
+      }
+
+      if (oauthProvider && body.oauthToken) {
         try {
-          const profile = await verifyOAuthToken("google", body.googleIdToken);
+          const profile = await verifyOAuthToken(oauthProvider, body.oauthToken);
           if (!profile.email) throw new Error("no verified email");
           verifiedEmail = profile.email;
-          provider = { column: "googleId", id: profile.providerId };
+          provider = { column: providerKey(oauthProvider), id: profile.providerId };
         } catch {
           return reply.code(401).send({
             statusCode: 401,
             error: "Unauthorized",
-            message: "Google sign-in could not be verified.",
+            message: `${PROVIDER_LABEL[oauthProvider]} sign-in could not be verified.`,
           });
         }
       } else if (body.password) {
@@ -373,7 +398,7 @@ export async function authRoutes(app: FastifyInstance) {
         return reply.code(400).send({
           statusCode: 400,
           error: "Bad Request",
-          message: "Choose a password or sign in with Google.",
+          message: "Choose a password, or accept with a linked account.",
         });
       }
 
@@ -411,9 +436,14 @@ export async function authRoutes(app: FastifyInstance) {
       // ordinary way a moment later with credentials it just chose — a session
       // minted here would be one nobody ever presents, exactly the stray row
       // `/auth/setup` stopped creating.
-      const session = provider
-        ? await createSession(db, { userId: result.user.id, authMethod: "google", client })
-        : null;
+      const session =
+        provider && oauthProvider
+          ? await createSession(db, {
+              userId: result.user.id,
+              authMethod: oauthProvider,
+              client,
+            })
+          : null;
       if (session) await recordSignIn(db, result.user.id);
       await audit.write({
         action: "invite.redeemed",

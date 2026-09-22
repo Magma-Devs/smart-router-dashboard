@@ -42,20 +42,20 @@ function setEnv(vars: Record<string, string | undefined>): void {
  * `services/oauth.ts`'s business in any case; what is under test here is what
  * the route does with a verified identity.
  */
-const google = vi.hoisted(() => ({ email: "dana@example.com", verified: true }));
+const oauth = vi.hoisted(() => ({ email: "dana@example.com", verified: true }));
 
 vi.mock("../services/oauth.js", () => ({
-  verifyOAuthToken: async () => ({
-    providerId: "google-subject-123",
-    email: google.verified ? google.email : null,
+  verifyOAuthToken: async (provider: string) => ({
+    providerId: `${provider}-subject-123`,
+    email: oauth.verified ? oauth.email : null,
     name: "Dana Levi",
     avatarUrl: null,
   }),
 }));
 
-function stubGoogle(email: string, verified = true): void {
-  google.email = email;
-  google.verified = verified;
+function stubOAuth(email: string, verified = true): void {
+  oauth.email = email;
+  oauth.verified = verified;
 }
 
 beforeEach(async () => {
@@ -139,15 +139,45 @@ describe("POST /auth/invite/accept — password", () => {
   });
 });
 
-describe("POST /auth/invite/accept — Google", () => {
+describe("POST /auth/invite/accept — social", () => {
+  // Every provider the deployment offers, not just Google. OAuth sign-in is
+  // link-only, so redemption is the ONLY way a social account comes to exist:
+  // a provider missing from this route is a provider nobody can ever sign in
+  // with. Google-only coverage is exactly what let that gap through once.
+  it.each([
+    ["google", "googleId"],
+    ["github", "githubId"],
+    ["discord", "discordId"],
+  ] as const)("redeems with %s and links the provider id", async (provider, column) => {
+    const token = await freshInvite();
+    stubOAuth("dana@example.com");
+
+    const res = await accept({ token, oauthProvider: provider, oauthToken: "a-token" });
+    expect(res.statusCode).toBe(201);
+    expect(res.json().sessionId).toBeTruthy();
+
+    const [account] = await t.db.select().from(users).where(eq(users.email, "dana@example.com"));
+    expect(account?.[column]).toBe(`${provider}-subject-123`);
+
+    const rows = await t.db.select().from(sessions);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.authMethod).toBe(provider);
+  });
+
+  it("refuses a token with no provider named", async () => {
+    const token = await freshInvite();
+    const res = await accept({ token, oauthToken: "a-token" });
+    expect(res.statusCode).toBe(400);
+  });
+
   it("creates the account and opens the session, because there is no second sign-in to fall back on", async () => {
     // The web reaches this through Auth.js, holding a one-shot id_token rather
     // than a password: it cannot start the round-trip again, so the session has
     // to come from here.
     const token = await freshInvite();
-    stubGoogle("dana@example.com");
+    stubOAuth("dana@example.com");
 
-    const res = await accept({ token, googleIdToken: "an-id-token" });
+    const res = await accept({ token, oauthProvider: "google", oauthToken: "an-id-token" });
     expect(res.statusCode).toBe(201);
 
     const sessionId = res.json().sessionId as string;
@@ -163,9 +193,9 @@ describe("POST /auth/invite/accept — Google", () => {
 
   it("refuses a Google account that is not the invited address", async () => {
     const token = await freshInvite("dana@example.com");
-    stubGoogle("someone.else@example.com");
+    stubOAuth("someone.else@example.com");
 
-    const res = await accept({ token, googleIdToken: "an-id-token" });
+    const res = await accept({ token, oauthProvider: "google", oauthToken: "an-id-token" });
     expect(res.statusCode).toBe(403);
     // Named on purpose: the holder already has the link, and an honest person
     // who picked the wrong Google account needs to know which one to use.
@@ -173,10 +203,12 @@ describe("POST /auth/invite/accept — Google", () => {
     expect(await t.db.select().from(sessions)).toHaveLength(0);
   });
 
-  it("refuses an unverified Google address", async () => {
+  it("refuses a provider account with no verified address", async () => {
     const token = await freshInvite();
-    stubGoogle("dana@example.com", false);
-    expect((await accept({ token, googleIdToken: "an-id-token" })).statusCode).toBe(401);
+    stubOAuth("dana@example.com", false);
+    expect(
+      (await accept({ token, oauthProvider: "github", oauthToken: "an-access-token" })).statusCode,
+    ).toBe(401);
   });
 });
 

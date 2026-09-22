@@ -303,33 +303,48 @@ export const authConfig = {
       // to come from `/auth/invite/accept`, which is the one place besides
       // first-run setup that is allowed to create one. The token got here in a
       // cookie the invite page set just before starting this round-trip.
-      const inviteToken =
-        provider === "google" ? await readInviteHandoff() : null;
-      const endpoint = inviteToken
-        ? `${apiBase}/auth/invite/accept`
-        : `${apiBase}/auth/oauth/${provider}`;
-      const payload = inviteToken
-        ? { token: inviteToken, googleIdToken: token, name: user.name ?? undefined }
-        : { token };
+      // Every provider, not just Google: `upsertOAuthUser` links and never
+      // creates, so redemption is the only way a social account comes to
+      // exist. A provider that skipped this branch would be one nobody could
+      // ever sign in with on an invite-only deployment.
+      const inviteToken = await readInviteHandoff();
 
-      try {
-        const res = await fetch(endpoint, {
+      async function post(url: string, payload: Record<string, unknown>) {
+        return fetch(url, {
           method: "POST",
           headers: { "Content-Type": "application/json", ...internalHeaders },
           body: JSON.stringify({ ...payload, ...(clientContext ? { clientContext } : {}) }),
         });
-        if (inviteToken) await clearInviteHandoff();
-        if (!res.ok) {
-          // Send an invitee back to their own page with something to read.
-          // Auth.js's default is a generic error screen, which on a redemption
-          // that failed because they picked the wrong Google account is the
-          // difference between a fixable mistake and a dead end.
-          if (inviteToken) {
-            const reason = res.status === 403 ? "email_mismatch" : "invite_failed";
-            return `/invite/${encodeURIComponent(inviteToken)}?error=${reason}`;
+      }
+
+      try {
+        let res: Response;
+        if (inviteToken) {
+          await clearInviteHandoff();
+          res = await post(`${apiBase}/auth/invite/accept`, {
+            token: inviteToken,
+            oauthProvider: provider,
+            oauthToken: token,
+            name: user.name ?? undefined,
+          });
+
+          // A handoff cookie outlives an abandoned attempt by up to its
+          // max-age, so an ordinary sign-in started inside that window would
+          // otherwise be dragged through a redemption that cannot succeed.
+          // A dead invitation is exactly that case: fall through to signing
+          // in, which is what this person actually asked for. Only a mismatch
+          // (403) is worth interrupting them over — they chose the wrong
+          // account and can fix it.
+          if (!res.ok && res.status !== 403) {
+            res = await post(`${apiBase}/auth/oauth/${provider}`, { token });
+          } else if (res.status === 403) {
+            return `/invite/${encodeURIComponent(inviteToken)}?error=email_mismatch`;
           }
-          return false;
+        } else {
+          res = await post(`${apiBase}/auth/oauth/${provider}`, { token });
         }
+
+        if (!res.ok) return false;
         const body = (await res.json()) as SignInResponse;
         user.id = body.user.id;
         user.email = body.user.email;
@@ -339,7 +354,6 @@ export const authConfig = {
         user.sessionId = body.sessionId;
         return true;
       } catch {
-        if (inviteToken) await clearInviteHandoff();
         return false;
       }
     },

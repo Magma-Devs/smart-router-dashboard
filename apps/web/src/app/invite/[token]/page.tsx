@@ -39,7 +39,7 @@ export default async function InvitePage({
       token={token}
       email={invite.email}
       role={invite.role}
-      googleEnabled={oauthProviderFlags.google}
+      providers={oauthProviderFlags}
       handoffError={error}
     />
   );
