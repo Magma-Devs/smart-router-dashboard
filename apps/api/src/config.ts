@@ -76,6 +76,21 @@ export const config = {
     url: env("PROMETHEUS_URL") ?? "http://localhost:9090",
     timeoutMs: envInt("PROMETHEUS_TIMEOUT_MS", 10000),
     /**
+     * `PROMETHEUS_TRACE=1` writes one stderr line per query — duration,
+     * outcome, expression — so a slow or failing read against a remote
+     * Prometheus can be found without guessing. Off by default.
+     */
+    trace: env("PROMETHEUS_TRACE") === "1" || env("PROMETHEUS_TRACE") === "true",
+    /**
+     * Queries in flight at once against Prometheus, across every request this
+     * process serves. A status read fans out to ~35 queries and the web polls
+     * several panels at once; fired unbounded, a remote Prometheus queues them
+     * behind its own `query.max-concurrency` and an ingress in front cuts the
+     * queue at its timeout — at which point even a trivial selector fails.
+     * Eight keeps a read under a few seconds and never floods the server.
+     */
+    maxConcurrency: Math.max(1, envInt("PROMETHEUS_MAX_CONCURRENCY", 8)),
+    /**
      * Target label that identifies ONE router deployment, used by the
      * `?router=` scope (see `promql/scope.ts`). The router labels its series
      * with the chain, not with itself, so telling two routers on one chain
@@ -170,6 +185,14 @@ export const config = {
      * not stop a signed-in one looping, and Bedrock has no per-key budget.
      */
     rateLimitMax: envInt("BEDROCK_RATE_LIMIT_MAX", 10),
+  },
+
+  /** Optional: the router's log store. Set `LOKI_URL` and the Status page's
+   *  "latest errors" drill-in lights up; unset, the api says the text lives
+   *  in the logs and links Grafana instead. */
+  loki: {
+    url: env("LOKI_URL"),
+    timeoutMs: envInt("LOKI_TIMEOUT_MS", 10000),
   },
 
   /** Helm-values / router config the dashboard reflects (read-only). */

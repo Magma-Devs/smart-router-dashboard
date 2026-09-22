@@ -516,8 +516,54 @@ export class MetricsService {
   }
 
   async chains(window: MetricWindow): Promise<ChainMetrics[]> {
+    // Eight GROUPED queries for the whole table, never per-chain fan-out:
+    // `chainRow` per spec is 8 queries x every chain, and on a customer
+    // deployment (31 chains, a struggling Prometheus) that is ~250 queries
+    // queuing for minutes. Same numbers, grouped `by (spec)`.
     const specs = await this.listSpecs();
-    return Promise.all(specs.map((spec) => this.chainRow(spec, window)));
+    const r = rangeFor(window);
+    const R = ROUTER_METRICS;
+    const E = ENDPOINT_METRICS;
+    const [reqRows, okRows, totRows, p95Rows, qosRows, healthRows, blockRows, upRows] =
+      await Promise.all([
+        this.prom.query(`round(sum by (spec) (increase(${R.latencyCount}[${r}])))`),
+        this.prom.query(`sum by (spec) (increase(${R.requestsSuccessTotal}[${r}]))`),
+        this.prom.query(`sum by (spec) (increase(${R.requestsTotal}[${r}]))`),
+        this.prom.query(`histogram_quantile(0.95, sum by (spec, le) (rate(${R.latencyBucket}[${r}])))`),
+        this.prom.query(`avg by (spec) (${E.selectionScore}{score_type="composite"})`),
+        this.prom.query(`max by (spec) (${E.overallHealth})`),
+        this.prom.query(`max by (spec) (${R.latestBlock})`),
+        this.prom.query(`count by (spec) (count by (spec, endpoint_id) (${E.overallHealth}))`),
+      ]);
+    const bySpec = (rows: Awaited<ReturnType<PrometheusClient["query"]>>) => {
+      const m = new Map<string, number>();
+      for (const row of rows) {
+        const v = Number(row.value[1]);
+        if (row.metric.spec && Number.isFinite(v)) m.set(row.metric.spec, v);
+      }
+      return m;
+    };
+    const reqM = bySpec(reqRows), okM = bySpec(okRows), totM = bySpec(totRows);
+    const p95M = bySpec(p95Rows), qosM = bySpec(qosRows), healthM = bySpec(healthRows);
+    const blockM = bySpec(blockRows), upM = bySpec(upRows);
+    return specs.map((spec) => {
+      const meta = buildChainMetaByIndex(spec);
+      const tot = totM.get(spec) ?? 0;
+      const availability = tot > 0 ? Math.min((okM.get(spec) ?? 0) / tot, 1) : null;
+      return {
+        spec,
+        name: meta.name,
+        color: meta.color,
+        requests: reqM.get(spec) ?? 0,
+        availability,
+        errorRate: availability == null ? null : 1 - availability,
+        p95Ms: p95M.get(spec) ?? null,
+        qos: qosM.get(spec) ?? null,
+        health: health(healthM.get(spec) ?? null),
+        latestBlock: blockM.get(spec) ?? null,
+        upstreamCount: upM.get(spec) ?? 0,
+      };
+    });
   }
 
   /** @internal Reused by `routers()`, including on a scoped sibling instance. */

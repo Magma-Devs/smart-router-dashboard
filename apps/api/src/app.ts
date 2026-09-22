@@ -6,6 +6,7 @@ import { config } from "./config.js";
 import { errorHandlerPlugin } from "./plugins/error-handler.js";
 import { swaggerPlugin } from "./plugins/swagger.js";
 import { prometheusPlugin } from "./plugins/prometheus.js";
+import { metricsCachePlugin } from "./plugins/metrics-cache.js";
 import { authPlugin } from "./plugins/auth.js";
 import { dbPlugin } from "./plugins/db.js";
 import { healthRoutes } from "./routes/health.js";
@@ -54,6 +55,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   // Swagger must be registered before the routes so their schemas are collected.
   await app.register(swaggerPlugin);
   await app.register(prometheusPlugin);
+  await app.register(metricsCachePlugin);
 
   // AUTH_MODE=enabled flips on: Postgres users (lazy connect + migrate +
   // admin seed), HS256 JWT validation, a global /api/* auth gate, and the

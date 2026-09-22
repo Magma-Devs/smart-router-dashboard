@@ -1,4 +1,6 @@
 import type { FastifyInstance } from "fastify";
+import { LokiService, groupErrors } from "../services/loki.js";
+import { IncidentsService } from "../services/incidents.js";
 import { DEFAULT_WINDOW, WINDOWS, toMetricWindow, type MetricWindow } from "@sr/shared";
 import { sendApiError } from "../plugins/error-handler.js";
 import { config } from "../config.js";
@@ -209,6 +211,39 @@ export async function metricRoutes(app: FastifyInstance) {
       .scoped(request.query.router)
       .metricsDetail.errors(parseWindow(request.query.window), spec, routerId);
   });
+
+  // The Status page: is this deployment healthy, what exactly is wrong, and
+  // what should be done. Prometheus + the mounted config only — no Loki, so it
+  // works on every deployment.
+  app.get(
+    "/api/metrics/incidents",
+    tag("Incidents — bursts of final customer failures over the last 24h, explained and customer-ready"),
+    async () => new IncidentsService(app.prom, app.routerConfig).incidents(24),
+  );
+
+  app.get<{ Querystring: { spec?: string; upstream?: string; code?: string } }>(
+    "/api/metrics/errors/recent",
+    tag("Latest error lines from the router's logs (Loki) — the raw text Prometheus cannot hold"),
+    async (request) => {
+      const loki = new LokiService();
+      if (!loki.available) return { available: false, sampled: 0, groups: [] };
+      const lines = await loki.recentErrors(request.query.spec, request.query.upstream, 200, undefined, undefined, request.query.code);
+      return { available: true, sampled: lines.length, groups: groupErrors(lines) };
+    },
+  );
+
+  app.get<{ Querystring: WindowQuery }>("/api/metrics/status", tag("Status page — findings, failover risk, totals"), async (request) =>
+    app.scoped(request.query.router).metricsDetail.status(parseWindow(request.query.window)),
+  );
+
+  // Which upstream is failing, and on how many chains — the "is it this
+  // provider everywhere, or only here?" read. Two independent counts per
+  // (provider × chain): errors they RETURNED vs relays that never landed.
+  app.get<{ Querystring: WindowQuery }>("/api/metrics/provider-faults", tag("Per-upstream faults across chains"), async (request) =>
+    app
+      .scoped(request.query.router)
+      .metricsDetail.providerFaults(parseWindow(request.query.window), request.query.spec),
+  );
 
   // Chains whose every backing endpoint is down (CurrentlyUnavailable strip).
   app.get<{ Querystring: WindowQuery }>("/api/metrics/unavailable", {

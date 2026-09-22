@@ -43,6 +43,24 @@ import {
   qCsm,
   qLatencyDistribution,
   qPresence,
+  qAnsweredWithin,
+  qSlowerThan,
+  qPeakServedRateByUpstream,
+  qTipMovement,
+  qTipNow,
+  qFreshnessChecks,
+  qFreshnessCaught,
+  qSelectionScores,
+  qServedShare,
+  qNodeErrorsByUpstream,
+  qUnreachableByUpstream,
+  qRelaysServicedByUpstream,
+  qClassifiedErrorsByName,
+  qClassifiedErrorsByChainAndName,
+  qCrossValidationRounds,
+  qCrossValidationFailedByReason,
+  qCrossValidationDisagreementsByUpstream,
+  qCrossValidationAgreementsByUpstream,
 } from "../promql/builders.js";
 import { buildChainMetaByIndex } from "../constants/chains.js";
 import {
@@ -485,5 +503,74 @@ describe("block tips", () => {
 
   it("tip changes count over the staleness window", () => {
     expect(qTipChanges()).toBe("changes(rpc_endpoint_latest_block[15m])");
+  });
+});
+
+describe("status-page builders", () => {
+  it("answered-within reads the cumulative bucket alone, with an optional offset for the week-earlier baseline", () => {
+    expect(qAnsweredWithin(10000)).toBe(
+      'round(sum by (spec) (increase(smartrouter_end_to_end_latency_milliseconds_bucket{le="10000"}[1800s])))',
+    );
+    expect(qAnsweredWithin(10000, "1d", "ETH1", "7d")).toBe(
+      'round(sum by (spec) (increase(smartrouter_end_to_end_latency_milliseconds_bucket{spec="ETH1",le="10000"}[86400s] offset 7d)))',
+    );
+  });
+
+  it("slower-than is count minus the bucket, floored at zero", () => {
+    expect(qSlowerThan(10000)).toBe(
+      'round(clamp_min(sum by (spec) (increase(smartrouter_end_to_end_latency_milliseconds_count[1800s])) - sum by (spec) (increase(smartrouter_end_to_end_latency_milliseconds_bucket{le="10000"}[1800s])), 0))',
+    );
+  });
+
+  it("peak served rate coarsens its grid with the window — 1m up to 3h, 5m up to a day, 15m beyond", () => {
+    expect(qPeakServedRateByUpstream("30m")).toBe(
+      "max by (endpoint_id, spec) (max_over_time(rate(rpc_endpoint_total_relays_serviced[1m])[1800s:1m]))",
+    );
+    expect(qPeakServedRateByUpstream("1d")).toBe(
+      "max by (endpoint_id, spec) (max_over_time(rate(rpc_endpoint_total_relays_serviced[5m])[86400s:5m]))",
+    );
+    expect(qPeakServedRateByUpstream("7d")).toBe(
+      "max by (endpoint_id, spec) (max_over_time(rate(rpc_endpoint_total_relays_serviced[15m])[604800s:15m]))",
+    );
+  });
+
+  it("tip movement and tip now read the endpoint gauge", () => {
+    expect(qTipMovement()).toBe("changes(rpc_endpoint_latest_block[1800s])");
+    expect(qTipNow()).toBe("rpc_endpoint_latest_block");
+  });
+
+  it("freshness checks / caught read the consistency counters per chain", () => {
+    expect(qFreshnessChecks()).toBe("round(sum by (spec) (increase(smartrouter_consistency_total[1800s])))");
+    expect(qFreshnessCaught()).toBe("round(sum by (spec) (increase(smartrouter_consistency_failed_total[1800s])))");
+  });
+
+  it("per-upstream cells: served, unreachable, error replies — and the selection scores gauge", () => {
+    expect(qSelectionScores()).toBe("rpc_endpoint_selection_score");
+    expect(qServedShare()).toBe("round(sum by (endpoint_id, spec) (increase(rpc_endpoint_total_relays_serviced[1800s])))");
+    expect(qRelaysServicedByUpstream()).toBe(qServedShare());
+    expect(qUnreachableByUpstream()).toBe("round(sum by (endpoint_id, spec) (increase(rpc_endpoint_total_errored[1800s])))");
+    expect(qNodeErrorsByUpstream()).toBe("round(sum by (provider_address, spec) (increase(smartrouter_node_errors_total[1800s])))");
+  });
+
+  it("classified errors are a birth-aware delta, not increase() — a code born mid-window must count", () => {
+    expect(qClassifiedErrorsByName()).toBe(
+      "round(sum by (error_name) ((smartrouter_errors_total - (smartrouter_errors_total offset 1800s)) or smartrouter_errors_total))",
+    );
+    expect(qClassifiedErrorsByChainAndName()).toBe(
+      "round(sum by (chain_id, error_name) ((smartrouter_errors_total - (smartrouter_errors_total offset 1800s)) or smartrouter_errors_total))",
+    );
+  });
+
+  it("cross-validation reads the four real families; disagreements carry the provider", () => {
+    expect(qCrossValidationRounds()).toBe("round(sum by (spec) (increase(smartrouter_cross_validation_requests_total[1800s])))");
+    expect(qCrossValidationFailedByReason()).toBe(
+      "round(sum by (spec, reason) (increase(smartrouter_cross_validation_failures_total[1800s])))",
+    );
+    expect(qCrossValidationDisagreementsByUpstream("7d")).toBe(
+      "round(sum by (spec, provider_address) (increase(smartrouter_cross_validation_provider_disagreements_total[604800s])))",
+    );
+    expect(qCrossValidationAgreementsByUpstream("7d")).toBe(
+      "round(sum by (spec, provider_address) (increase(smartrouter_cross_validation_provider_agreements_total[604800s])))",
+    );
   });
 });

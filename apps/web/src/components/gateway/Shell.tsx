@@ -4,12 +4,8 @@ import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { useEffect, useState, useSyncExternalStore, type ComponentType } from "react";
 import { signOut } from "next-auth/react";
-import type { OverviewData } from "@sr/shared";
 import { NAV_SECTIONS } from "./nav";
 import { IconMoon, IconSun, type IconProps } from "./icons";
-import { useApi } from "@/hooks/use-api";
-import { useFilters } from "@/components/gateway/FiltersProvider";
-import { fmtNum } from "@/lib/format";
 import { getAuthState, getAuthVersion, subscribeAuth } from "@/lib/auth-store";
 
 export function ThemeToggle() {
@@ -128,13 +124,9 @@ function SidebarUser() {
 }
 
 function Topbar({ here }: { here: string }) {
-  // Live throughput + health for the top-bar stats (real data; CU/mo is a
-  // Lava-consumer concept the router doesn't emit, so it's omitted here).
-  // Scoped like every other panel, so the pills describe the selected router.
-  const { scopeQ } = useFilters();
-  const { data } = useApi<OverviewData>(`/api/metrics/overview?window=1h${scopeQ}`, 30000);
-  const rps = data?.throughputRps.value;
-  const ok = data?.health === "operational";
+  // Crumbs + theme only. The RPS pill and the health/findings pill that used
+  // to sit here were removed on request: a verdict in the chrome competes with
+  // the page's own, and the Status page carries the only verdict that counts.
   return (
     <header className="gw-top">
       <div className="gw-top__crumbs">
@@ -143,19 +135,9 @@ function Topbar({ here }: { here: string }) {
         <span className="here">{here}</span>
       </div>
       <div className="gw-top__right">
-        <span className="pill gw-mono" title="Live throughput">
-          {fmtNum(rps)} RPS
-        </span>
-        <span className="pill">
-          <span className={ok ? "dot-ok" : "dot-warn"} />
-          {ok ? "All systems normal" : data ? "Degraded" : "…"}
-        </span>
-        {/* Router scope — global, so it sits next to the theme toggle rather
-            than in any one page's header. Hides itself when the metrics can't
-            be split per router. */}
         {/* The router filter lives in the page header next to the chain one
-            (RouterFilterSelect) — it sets the label scope this control used to
-            own, plus the config-router filter, so one control does both. */}
+            (RouterFilterSelect) — it sets the label scope plus the
+            config-router filter, so one control does both. */}
         <ThemeToggle />
       </div>
     </header>

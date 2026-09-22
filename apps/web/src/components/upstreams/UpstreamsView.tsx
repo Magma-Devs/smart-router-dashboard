@@ -315,12 +315,6 @@ export function UpstreamsView() {
       <div className="gw-row" style={{ justifyContent: "space-between", marginBottom: 20 }}>
         <div>
           <h1>Upstreams</h1>
-          <p className="lede">
-            {groupBy === "router"
-              ? "Every endpoint your routers publish, and the upstream RPC nodes behind them"
-              : "The upstream RPC nodes this router routes through"} · config{" "}
-            <span className="gw-mono" style={{ color: "var(--text-2)" }}>read-only mount</span>.
-          </p>
         </div>
       </div>
 

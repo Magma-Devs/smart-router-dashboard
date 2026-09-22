@@ -41,6 +41,14 @@ export const ENDPOINT_METRICS = {
   selectionScore: "rpc_endpoint_selection_score",
   requestsInFlight: "rpc_endpoint_requests_in_flight",
   totalRelaysServiced: "rpc_endpoint_total_relays_serviced",
+  /**
+   * Relays to this endpoint that FAILED — we never got an answer. The
+   * companion to `smartrouter_node_errors_total`, which counts answers that
+   * WERE returned and were errors. Both are needed per upstream: one is
+   * reachability, the other is answer quality, and an upstream can be perfect
+   * on one while catastrophic on the other (see `ProviderFault`).
+   */
+  totalErrored: "rpc_endpoint_total_errored",
   // Latest-block poll outcomes from the per-endpoint chain tracker. These are
   // the ONLY per-endpoint liveness signal that does not need relay traffic:
   // the tracker polls every configured endpoint (backups included) on the

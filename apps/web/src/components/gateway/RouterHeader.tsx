@@ -13,7 +13,7 @@ import { WindowSelect } from "./WindowSelect";
    NEXT_PUBLIC_GRAFANA_URL, then to the bundled `logs` profile's :3001. */
 const BUILD_GRAFANA_URL = process.env.NEXT_PUBLIC_GRAFANA_URL ?? "http://localhost:3001";
 
-function useGrafanaUrl(): string {
+export function useGrafanaUrl(): string {
   const [url, setUrl] = useState(BUILD_GRAFANA_URL);
   useEffect(() => {
     let alive = true;
@@ -33,7 +33,7 @@ function useGrafanaUrl(): string {
 /** Build the "Smart Router Dashboard Logs" board URL, scoped to the router
     service and the header's current time window. Mirrors the board's variables:
     var-service=router, var-search=<chain>, from=now-<window>s. */
-function fullLogsHref(grafanaBase: string, timeWindow: MetricWindow, chainFilter: string): string {
+export function fullLogsHref(grafanaBase: string, timeWindow: MetricWindow, chainFilter: string): string {
   const rangeSeconds = WINDOWS[timeWindow].rangeSeconds;
   const params = new URLSearchParams({
     orgId: "1",

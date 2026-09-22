@@ -6,6 +6,7 @@
 import {
   ENDPOINT_METRICS,
   OPTIMIZER_METRICS,
+  OPTIONAL_METRICS,
   ROUTER_METRICS,
 } from "../constants/metrics.js";
 import { DEFAULT_WINDOW, WINDOWS, type MetricWindow } from "../constants/windows.js";
@@ -546,4 +547,247 @@ export function qLatencyDistribution(
 /** Presence probe: non-empty result ⇒ the family is registered/emitted. */
 export function qPresence(metricName: string): string {
   return `count({__name__="${metricName}"})`;
+}
+
+/* ── Fault split — whose problem is it ──────────────────────────────────── */
+
+/**
+ * `error_name` prefix → owning layer, in `error_codes.go` order.
+ *
+ * The prefix set is CLOSED (`PROTOCOL_` / `NODE_` / `CHAIN_` / `USER_`), so a
+ * name matching none of them is genuinely unnamed by the registry rather than a
+ * gap in this table — which is why the caller buckets the remainder as
+ * `unclassified` instead of picking a nearest match.
+ */
+export const FAULT_LAYER_PREFIX = {
+  router: "PROTOCOL_",
+  upstream: "NODE_",
+  chain: "CHAIN_",
+  caller: "USER_",
+} as const;
+
+/**
+ * Classified errors grouped by `error_name` over the window.
+ *
+ * ⚠ `smartrouter_errors_total` keys on **`chain_id`**, not `spec` — it is the
+ * one family that does, and it carries NO provider label. So this can answer
+ * "what kind of failure" or (via `nodeErrorsTotal`) "which upstream", never
+ * both at once.
+ *
+ * ⚠ NOT `increase()`. Each error code is its own series, born the first time
+ * that code ever fires, and `increase()` cannot see a birth: with no prior
+ * sample to subtract from, a series that appears mid-window at 11 and stays
+ * there reads as **0**. Verified live — `USER_INVALID_PARAMS` sat at 11 events
+ * while `increase(…[30m])` returned 0, hiding the entire caller-fault layer.
+ *
+ * That is the common case here rather than an edge one: a caller ships a bug,
+ * fires a burst of invalid requests, someone fixes it — burst-then-silence is
+ * exactly the shape `increase()` erases, and error codes fire in bursts by
+ * nature.
+ *
+ * So: subtract the window-start value, and fall back to the current value for
+ * any series with no window-start sample (`or` fills only series absent from
+ * the left operand, which is precisely the born-inside-the-window set).
+ */
+export function qClassifiedErrorsByName(
+  window: MetricWindow = DEFAULT_WINDOW,
+  spec?: string,
+): string {
+  const m = `${OPTIONAL_METRICS.errorsClassifiedTotal}${selector({ chain_id: spec })}`;
+  const r = rangeFor(window);
+  return `round(sum by (error_name) ((${m} - (${m} offset ${r})) or ${m}))`;
+}
+
+/* ── Per-upstream faults — which provider, on which chains ──────────────── */
+
+/**
+ * Errors an upstream RETURNED, by (provider, chain).
+ *
+ * This is the count a per-provider error rate normally misses: the upstream
+ * answered, so the relay counts as a transport success, while the answer itself
+ * was an error. On GK8 production this is where a provider's real breakage
+ * lives — 635k/day on one (provider × chain) pair against 22 failed relays.
+ */
+export function qNodeErrorsByUpstream(
+  window: MetricWindow = DEFAULT_WINDOW,
+  spec?: string,
+  offset?: string,
+): string {
+  return `round(sum by (provider_address, spec) (increase(${OPTIONAL_METRICS.nodeErrorsTotal}${selector({ spec })}[${rangeFor(window)}]${offset ? ` offset ${offset}` : ""})))`;
+}
+
+/** Relays to an upstream that never got an answer, by (endpoint, chain). */
+export function qUnreachableByUpstream(
+  window: MetricWindow = DEFAULT_WINDOW,
+  spec?: string,
+): string {
+  return `round(sum by (endpoint_id, spec) (increase(${ENDPOINT_METRICS.totalErrored}${selector({ spec })}[${rangeFor(window)}])))`;
+}
+
+/** Relays an upstream DID serve — the denominator for reachability. */
+export function qRelaysServicedByUpstream(
+  window: MetricWindow = DEFAULT_WINDOW,
+  spec?: string,
+): string {
+  return `round(sum by (endpoint_id, spec) (increase(${ENDPOINT_METRICS.totalRelaysServiced}${selector({ spec })}[${rangeFor(window)}])))`;
+}
+
+/** Classified error kinds per chain — the `what` that pairs with the `who`. */
+export function qClassifiedErrorsByChainAndName(
+  window: MetricWindow = DEFAULT_WINDOW,
+  spec?: string,
+): string {
+  const m = `${OPTIONAL_METRICS.errorsClassifiedTotal}${selector({ chain_id: spec })}`;
+  const r = rangeFor(window);
+  return `round(sum by (chain_id, error_name) ((${m} - (${m} offset ${r})) or ${m}))`;
+}
+
+/**
+ * Peak sustained request rate an upstream actually achieved, per second.
+ *
+ * The estimate behind "this is roughly your ceiling": the highest one-minute
+ * rate that got served before the upstream started refusing. It is a LOWER
+ * BOUND on the real limit, never the limit itself — the provider publishes
+ * that, we can only report the fastest we were let go.
+ */
+export function qPeakServedRateByUpstream(
+  window: MetricWindow = DEFAULT_WINDOW,
+  spec?: string,
+): string {
+  const w = rangeFor(window);
+  // Resolution follows the window: a 1-minute grid over a day is 1,440
+  // evaluations per endpoint — past an ingress timeout on a real deployment —
+  // and a ceiling estimate does not need minute precision over a day.
+  const secs = WINDOWS[window].rangeSeconds;
+  const res = secs <= 3 * 3600 ? "1m" : secs <= 86400 ? "5m" : "15m";
+  return `max by (endpoint_id, spec) (max_over_time(rate(${ENDPOINT_METRICS.totalRelaysServiced}${selector({ spec })}[${res}])[${w}:${res}]))`;
+}
+
+
+/* ── Answered, but not usable ────────────────────────────────────────────
+   The axis a failure-counter page cannot see. Every one of these fires while
+   the upstream is returning HTTP 200 and every error counter reads zero. */
+
+/**
+ * Per-upstream tip movement over the window.
+ *
+ * ⚠ Deliberately NOT gated on `deriv(rpc_endpoint_latest_block)` by spec. That
+ * reference is derived from the very gauges being tested, so a chain whose only
+ * upstream is frozen yields a block rate of 0, and a staleness check built on it
+ * concludes "blocks were not expected to move" and passes the frozen node. The
+ * caller must compare this against a STATIC expected block time per chain.
+ */
+export function qTipMovement(window: MetricWindow = DEFAULT_WINDOW, spec?: string): string {
+  return `changes(${ENDPOINT_METRICS.latestBlock}${selector({ spec })}[${rangeFor(window)}])`;
+}
+
+/** Current tip per upstream — the value the movement check is about. */
+export function qTipNow(spec?: string): string {
+  return `${ENDPOINT_METRICS.latestBlock}${selector({ spec })}`;
+}
+
+/**
+ * Customer-visible requests slower than a ceiling, per chain.
+ *
+ * `_count` is client-scoped (one per customer request) and `le` must be one of
+ * the histogram's own bucket edges. This is the only metric that can express
+ * "served correctly, too late to be useful" — the case where our provider wait
+ * and the caller's client timeout are both 10s, so four customer-visible
+ * failures were recorded as four successes.
+ */
+export function qSlowerThan(
+  leMs: number,
+  window: MetricWindow = DEFAULT_WINDOW,
+  spec?: string,
+): string {
+  const r = rangeFor(window);
+  const sel = selector({ spec });
+  const bucketSel = selector({ spec, le: String(leMs) });
+  return `round(clamp_min(sum by (spec) (increase(${ROUTER_METRICS.latencyCount}${sel}[${r}])) - sum by (spec) (increase(${ROUTER_METRICS.latencyBucket}${bucketSel}[${r}])), 0))`;
+}
+
+/**
+ * Requests answered within `leMs`, per chain — the cumulative bucket alone.
+ * The complement of `qSlowerThan` for a caller that already holds the
+ * per-chain request count: one family read instead of two, which on a large
+ * deployment is the difference between a day-long window answering and not.
+ * `offset` (e.g. `"7d"`) reads the same window that long ago.
+ */
+export function qAnsweredWithin(
+  leMs: number,
+  window: MetricWindow = DEFAULT_WINDOW,
+  spec?: string,
+  offset?: string,
+): string {
+  const r = rangeFor(window);
+  const bucketSel = selector({ spec, le: String(leMs) });
+  return `round(sum by (spec) (increase(${ROUTER_METRICS.latencyBucket}${bucketSel}[${r}]${offset ? ` offset ${offset}` : ""})))`;
+}
+
+/** Reads that enforced a minimum seen block, per chain. A flat zero is itself
+ *  the finding: nothing on that chain is checking the answer's freshness. */
+export function qFreshnessChecks(window: MetricWindow = DEFAULT_WINDOW, spec?: string): string {
+  const r = rangeFor(window);
+  return `round(sum by (spec) (increase(${ROUTER_METRICS.consistencyTotal}${selector({ spec })}[${r}])))`;
+}
+
+/**
+ * Those checks that FAILED — a stale answer caught before it was served.
+ *
+ * Lazily registered: an absent family means zero failures, not "unknown". So an
+ * empty result here is a true zero, whereas an empty `qFreshnessChecks` means
+ * nothing on the chain is checking at all. The two empties say opposite things.
+ */
+export function qFreshnessCaught(window: MetricWindow = DEFAULT_WINDOW, spec?: string): string {
+  const r = rangeFor(window);
+  return `round(sum by (spec) (increase(${OPTIONAL_METRICS.consistencyFailedTotal}${selector({ spec })}[${r}])))`;
+}
+
+/**
+ * The optimizer's own reasoning, per upstream and score type.
+ *
+ * This is the one metric that answers "why that provider and not the other" —
+ * it is emitted on every deployment and nothing in the product reads it. It
+ * detects nothing; it ADJUDICATES. A sync score sitting at 1.0 while the tip is
+ * frozen says the optimizer never saw the staleness; a higher-scoring upstream
+ * taking no traffic says selection ignored its own score.
+ */
+export function qSelectionScores(spec?: string): string {
+  return `${ENDPOINT_METRICS.selectionScore}${selector({ spec })}`;
+}
+
+/** Each upstream's share of served traffic — the counterweight to the score. */
+export function qServedShare(window: MetricWindow = DEFAULT_WINDOW, spec?: string): string {
+  return `round(sum by (endpoint_id, spec) (increase(${ENDPOINT_METRICS.totalRelaysServiced}${selector({ spec })}[${rangeFor(window)}])))`;
+}
+
+
+/* ── Verification: is anything checking the answers, and who fails it ──── */
+
+/**
+ * Cross-validation rounds per chain, and those that FAILED with a reason.
+ *
+ * Lazily registered: the whole family is absent until cross-validation fires
+ * for the first time, so callers probe presence first. On GK8 production it
+ * has never registered — every verification there is the consistency check.
+ */
+export function qCrossValidationRounds(window: MetricWindow = DEFAULT_WINDOW, spec?: string): string {
+  return `round(sum by (spec) (increase(${OPTIONAL_METRICS.crossValidationRequestsTotal}${selector({ spec })}[${rangeFor(window)}])))`;
+}
+export function qCrossValidationFailedByReason(window: MetricWindow = DEFAULT_WINDOW, spec?: string): string {
+  return `round(sum by (spec, reason) (increase(${OPTIONAL_METRICS.crossValidationFailuresTotal}${selector({ spec })}[${rangeFor(window)}])))`;
+}
+
+/**
+ * Per-provider agreements and disagreements — the one place a provider is
+ * NAMED on a verification outcome. No attribution inference: the counter
+ * carries `provider_address`. "Disagreed" means this provider's answer was the
+ * one that did not match the quorum — it gave a different answer from its
+ * peers to the same question.
+ */
+export function qCrossValidationDisagreementsByUpstream(window: MetricWindow = DEFAULT_WINDOW, spec?: string): string {
+  return `round(sum by (spec, provider_address) (increase(${OPTIONAL_METRICS.crossValidationDisagreementsTotal}${selector({ spec })}[${rangeFor(window)}])))`;
+}
+export function qCrossValidationAgreementsByUpstream(window: MetricWindow = DEFAULT_WINDOW, spec?: string): string {
+  return `round(sum by (spec, provider_address) (increase(${OPTIONAL_METRICS.crossValidationAgreementsTotal}${selector({ spec })}[${rangeFor(window)}])))`;
 }
