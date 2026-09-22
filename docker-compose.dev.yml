@@ -235,6 +235,23 @@ services:
       - DATABASE_URL=${DATABASE_URL:-}
       - ADMIN_EMAIL=${ADMIN_EMAIL:-}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
+      # AI / Bedrock (docs/BEDROCK-IAM.md). Empty by default, so the stack
+      # boots with AI off and calls nothing. A deployment supplies these in its
+      # own .env or an override file — the secret NEVER lives in this file.
+      #
+      # Two ways to give it an identity, both resolved by the AWS SDK:
+      #   AWS_BEARER_TOKEN_BEDROCK  a Bedrock API key. Simplest per-deployment.
+      #   (nothing)                 SigV4 from the credential chain — mount
+      #                             ~/.aws and an IAM Roles Anywhere cert
+      #                             instead, and no long-lived secret exists.
+      - BEDROCK_ENABLED=${BEDROCK_ENABLED:-false}
+      - BEDROCK_ALLOW_UNAUTHENTICATED=${BEDROCK_ALLOW_UNAUTHENTICATED:-false}
+      - AWS_BEARER_TOKEN_BEDROCK=${AWS_BEARER_TOKEN_BEDROCK:-}
+      - BEDROCK_REGION=${BEDROCK_REGION:-us-east-1}
+      - BEDROCK_MODEL=${BEDROCK_MODEL:-global.anthropic.claude-sonnet-5}
+      - BEDROCK_ROLE_ARN=${BEDROCK_ROLE_ARN:-}
+      - BEDROCK_ROLE_EXTERNAL_ID=${BEDROCK_ROLE_EXTERNAL_ID:-}
+      - BEDROCK_RATE_LIMIT_MAX=${BEDROCK_RATE_LIMIT_MAX:-10}
       # Needed api-side to validate the `aud` claim of Google ID tokens.
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
     volumes:

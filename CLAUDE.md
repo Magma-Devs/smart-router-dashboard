@@ -477,6 +477,7 @@ Every `/api/metrics/*` route also accepts **`router?`** — the router scope
 | `GET /api/metrics/cross-validation` | `window` | `CrossValidationReport` — `emitted:false` + nulls until `cross_validation_*` fires; **`consistency` (total/caught) is real either way**, but **no web consumer** since MAG-2527 removed the strip that rendered it (consistency checks are head-freshness verification, not cross-validation). `caught` still surfaces as the hero's `staleCaught` |
 | `GET /api/metrics/websocket` | `window` | `WebSocketReport` — `emitted:false` + nulls until `ws_*` fires (first subscription) |
 | `GET /api/metrics/query` | **`query`** (required) | Raw **instant** PromQL passthrough — `{ result }`. 400 without `query` |
+| `GET /api/ai/health` | — | `{ ok, reason?, provider, auth, model, region, roleArn }` — whether a model is enabled, allowed, and reachable. **Free** — makes no model call. `reason` is `disabled` (`BEDROCK_ENABLED` unset), `auth_required` (enabled but `AUTH_MODE=disabled`, so it must not be spendable anonymously) or `roleArn` names the assumed role, `null` when the chain's own identity is used. Resolves no credentials, which would block on IMDS — `POST /api/ai/verify` makes one real ~30-token call and is what proves the identity may actually invoke the model |
 | `GET /api/config/routers` | — | `{ routers: RouterTopology[] }` — live topology from the mounted values file (either format), node URLs masked to scheme+host. Each endpoint also carries `index` (the handle the relay below resolves) + `directable` |
 | `POST /api/upstreams/relay` | body: `{routerId, node, endpointIndex, transport?, httpMethod?, path?, body?}` | Fires ONE request straight at a configured upstream, router excluded — `{httpStatus, latencyMs, body, truncated, transport}`. The target is resolved from the values file, never taken from the caller; the resolved url is never returned and is scrubbed out of the upstream's own body. Upstream 4xx/5xx come back **200** with their status inside; 502/504 mean our hop failed. Off with `UPSTREAM_RELAY_ENABLED=false`. See [`docs/UPSTREAM-DIRECT-TEST.md`](docs/UPSTREAM-DIRECT-TEST.md) |
 
@@ -506,6 +507,40 @@ API (`apps/api/src/config.ts` is the source of truth):
 | `TENANT_ID` | — | set by the chart, **not read**. The multi-tenant store pins `X-Scope-OrgID` from the credential that authenticated, so the api never names its own org — a config field that did would move the tenancy boundary into a values file |
 | `GIT_COMMIT` / `APP_VERSION` | `unknown` / `0.0.0` | surfaced by `/version` |
 | `NODE_ENV` | `production` | non-prod enables `/docs` + pretty logs |
+
+AI / Amazon Bedrock (MAG-3702). Our code holds **no credential of any kind** —
+the AWS SDK resolves one, either from `AWS_BEARER_TOKEN_BEDROCK` (the key the
+ticket provisioned) or, when that is unset, SigV4 from the default credential
+chain. One build serves both deployments:
+
+- **Local dev** — nothing to configure. `aws configure` once; if
+  `aws sts get-caller-identity` answers, so does the dashboard.
+- **A customer's dedicated server** — `BEDROCK_ROLE_ARN` names the role to run
+  as. The box proves who it is once (an IAM Roles Anywhere certificate, an
+  instance profile, a key) and the SDK assumes that role on top, refreshing the
+  short-lived credentials itself. **No long-lived secret in the deployment.**
+
+Setup for both, including Roles Anywhere on non-AWS hardware:
+[`docs/BEDROCK-IAM.md`](docs/BEDROCK-IAM.md).
+
+| Variable | Default | Notes |
+|---|---|---|
+| `BEDROCK_ENABLED` | `false` | Explicit opt-in — model calls cost money, so ambient AWS credentials must not quietly start billing |
+| `BEDROCK_ALLOW_UNAUTHENTICATED` | `false` | Serve AI while `AUTH_MODE=disabled`, which installs no `/api/*` gate. Needed on a fresh clone (the zero-dependency boot is the default); **not** for anything reachable from outside — same trade `UPSTREAM_RELAY_ENABLED` makes |
+| `AWS_BEARER_TOKEN_BEDROCK` | (unset) | A Bedrock API key (MAG-3702). Read by the **SDK**, not by our code — set it and SigV4 is skipped entirely. The simplest way to give a deployment an identity; a role is the safer one |
+| `BEDROCK_REGION` | `us-east-1` | |
+| `BEDROCK_MODEL` | `global.anthropic.claude-sonnet-5` | A cross-region **inference profile**, not a bare model id — `global.` routes to whichever region has capacity. Verify with `aws bedrock list-inference-profiles` |
+| `BEDROCK_MAX_TOKENS` | `4096` | **Always sent.** Unset, Bedrock reserves the model's maximum quota per call — the usual cause of an unexplained `ThrottlingException` |
+| `BEDROCK_TIMEOUT_MS` | `60000` | |
+| `BEDROCK_RATE_LIMIT_MAX` | `10` | Per IP per minute on the routes that call the model, tighter than `RATE_LIMIT_MAX` — same reasoning as `UPSTREAM_RELAY_RATE_LIMIT_MAX`. Auth stops an anonymous caller, not a signed-in one looping |
+| `BEDROCK_ROLE_ARN` | (unset) | The role to assume. Unset ⇒ the chain's own identity, which is the local case |
+| `BEDROCK_ROLE_EXTERNAL_ID` | (unset) | `sts:ExternalId`. Set whenever the role lives in another account — without it, anyone the role trusts who learns its ARN can assume it |
+
+`bedrockGate()` refuses while `AUTH_MODE=disabled` rather than trusting the
+`/api/*` JWT gate, which that mode does not install at all: an open api would let
+anyone who can reach it spend the account's Bedrock budget under this identity.
+Calls go through **Converse**, not InvokeModel — one request shape for every
+model, so changing `BEDROCK_MODEL` is a config change, not a rewrite.
 
 Auth (only read when `AUTH_MODE=enabled`; the metrics path never touches the DB):
 

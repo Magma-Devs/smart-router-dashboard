@@ -145,3 +145,9 @@ coverage/
 
 # Design-drop prototype — kept on disk for reference, never committed.
 SR_Dashboard/
+
+# Local dev-server definitions for the Claude Code browser preview. Personal
+# to a machine — ports, and whatever PROMETHEUS_URL / LOKI_URL you point at,
+# which may be a customer's. Never committed: the checked-in configs read
+# those from the shell and default to localhost.
+.claude/launch.json
