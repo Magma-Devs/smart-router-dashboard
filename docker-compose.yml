@@ -244,6 +244,24 @@ services:
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
       # Needed api-side to validate the `aud` claim of Google ID tokens.
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      # First-run setup (docs/AUTH.md → "First run"). Unset ⇒ the api mints a
+      # token at boot on an install that still needs one and logs it once at
+      # `warn`; set SETUP_TOKEN_FILE to a mounted path to have it written there
+      # (mode 0600) so an init container or a volume can surface it instead of
+      # `docker compose logs`. A configured SETUP_TOKEN must be >= 16 chars.
+      - SETUP_TOKEN=${SETUP_TOKEN:-}
+      - SETUP_TOKEN_FILE=${SETUP_TOKEN_FILE:-}
+      # Proves a request came from our own web tier, so the browser IP and
+      # User-Agent it forwards are honoured on /auth/sign-in. Unset ⇒ forwarded
+      # context is ignored and the session records this container's address
+      # instead of the person's, which makes the audit log's access events
+      # useless for telling two sign-ins apart.
+      - INTERNAL_AUTH_SECRET=${INTERNAL_AUTH_SECRET:-}
+      # `hibp` (default) checks new passwords against HaveIBeenPwned by
+      # k-anonymity and fails OPEN if the service is unreachable. `off` is the
+      # honest setting for an air-gapped install — it says so in the logs
+      # rather than relying on a silent timeout on every password set.
+      - PASSWORD_BREACH_CHECK=${PASSWORD_BREACH_CHECK:-hibp}
     volumes:
       # Mount the live router config so /api/config/routers reflects the
       # running topology — exactly the v1 mechanism (core/values.yml).
@@ -275,6 +293,10 @@ services:
       - AUTH_SECRET=${AUTH_SECRET:-}
       - AUTH_URL=${AUTH_URL:-http://localhost:3000}
       - INTERNAL_API_BASE_URL=http://api:8000
+      # Same secret as the api's. This is the half that SENDS the forwarded
+      # browser context; without it the web doesn't claim one and the api
+      # wouldn't believe it anyway.
+      - INTERNAL_AUTH_SECRET=${INTERNAL_AUTH_SECRET:-}
       # OAuth providers — the login page shows a provider's button only
       # when its id+secret pair is set.
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
