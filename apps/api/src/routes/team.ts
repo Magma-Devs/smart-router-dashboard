@@ -43,7 +43,10 @@ export async function teamRoutes(app: FastifyInstance) {
   /** Where invite links point. Without it we can't build one, and returning a
    *  link to a host we guessed would be worse than saying so. */
   function webOrigin(reply: FastifyReply): string | null {
-    const origin = config.publicWebOrigin;
+    // Live env first: `config` snapshots at module load, so a test that sets
+    // this per-case would otherwise read whatever was there at import time.
+    // Same reason `app.ts` re-reads AUTH_MODE and `plugins/db.ts` DATABASE_URL.
+    const origin = process.env.PUBLIC_WEB_ORIGIN ?? config.publicWebOrigin;
     if (!origin) {
       void reply.code(500).send({
         statusCode: 500,

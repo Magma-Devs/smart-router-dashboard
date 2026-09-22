@@ -262,6 +262,18 @@ services:
       # honest setting for an air-gapped install — it says so in the logs
       # rather than relying on a silent timeout on every password set.
       - PASSWORD_BREACH_CHECK=${PASSWORD_BREACH_CHECK:-hibp}
+      # Where invitation links point. No default in the api on purpose — a
+      # guessed host produces a link that looks right and goes nowhere — so
+      # POST /api/team/invites answers 500 without it and nobody can be
+      # invited. Defaults to the web's own AUTH_URL, which is the same origin
+      # by definition; set it explicitly when the browser reaches the web on a
+      # different host than AUTH_URL names.
+      - PUBLIC_WEB_ORIGIN=${PUBLIC_WEB_ORIGIN:-${AUTH_URL:-http://localhost:3000}}
+      # managed (we host, invitations are emailed) vs onprem (customer hosts,
+      # the admin copies the link). Also sets the invitation TTL: 7 days vs 24
+      # hours. Declared rather than left to the code's default so the shape of
+      # the deployment is visible in the file.
+      - DEPLOYMENT_MODE=${DEPLOYMENT_MODE:-onprem}
     volumes:
       # Mount the live router config so /api/config/routers reflects the
       # running topology — exactly the v1 mechanism (core/values.yml).
@@ -289,6 +301,9 @@ services:
       # on :3001; set it to your Grafana origin in a real deployment.
       - DASHBOARD_GRAFANA_URL=${DASHBOARD_GRAFANA_URL:-http://localhost:3001}
       # Auth (see docs/AUTH.md) — same AUTH_MODE + AUTH_SECRET as the api.
+      # DEPLOYMENT_MODE must match the api's: the web serves it from
+      # /api/config and forks the invitation copy on it.
+      - DEPLOYMENT_MODE=${DEPLOYMENT_MODE:-onprem}
       - AUTH_MODE=${AUTH_MODE:-disabled}
       - AUTH_SECRET=${AUTH_SECRET:-}
       - AUTH_URL=${AUTH_URL:-http://localhost:3000}
