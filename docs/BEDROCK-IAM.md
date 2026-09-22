@@ -28,34 +28,100 @@ BEDROCK_ENABLED=true AUTH_MODE=enabled pnpm --filter @sr/api dev
 Leave `BEDROCK_ROLE_ARN` unset — the chain's own identity is used directly.
 Everything below is for the customer deployment.
 
-## The situation
+## Already set up — you do NOT repeat this
 
-The dashboard runs on **Vultr bare metal** — outside AWS. That rules out every
-mechanism that works by asking the surrounding infrastructure who you are:
-instance profiles, ECS task roles, EKS Pod Identity, IRSA. None of them exist
-off-AWS.
+Provisioned in account `811430801429` on 2026-09-22 and shared by **every**
+customer deployment. One role for all of them; adding a deployment adds no AWS
+resources.
 
-Two options remain, and the difference is whether you are willing to run a
-certificate authority.
+| | |
+|---|---|
+| Role | `arn:aws:iam::811430801429:role/SmartRouterDashboardBedrock` |
+| Policy | `SmartRouterDashboardBedrockInvoke` — Sonnet 5 only, verified to deny every other model |
+| Trust anchor | `arn:aws:rolesanywhere:us-east-1:811430801429:trust-anchor/587b3dfa-a58a-4fed-9121-72121a6cecbf` |
+| Profile | `arn:aws:rolesanywhere:us-east-1:811430801429:profile/2d5a53ad-ee1f-483c-83ae-c2c78653b542` |
+| CA | `~/bedrock-ca/` on Omer's machine — **`ca.key` belongs in a vault** |
 
-| | IAM Roles Anywhere | Scoped IAM user key |
-|---|---|---|
-| Credential on the box | X.509 cert → **short-lived** session credentials | **Long-lived** access key |
-| Identity in CloudTrail | an assumed **role** session | an IAM user |
-| Revoke | disable the profile or trust anchor — instant | delete the key, hope nothing cached it |
-| Rotation | certificate, on your schedule | access key, manually |
-| Setup | ~1 hour, and you own a CA | ~15 minutes |
-| Cost | free with your own CA (`CERTIFICATE_BUNDLE`); AWS Private CA bills monthly per CA | free |
+Verified end to end: certificate → role session → `SMART_ROUTER_BEDROCK_OK`, and
+the same role denied on `nova-micro` with `AccessDeniedException`.
 
-**Recommendation: Roles Anywhere.** A bare-metal fleet is stable and small,
-which is the case it suits best — you issue a cert per host once and the
-credentials it mints expire on their own. Section 2 is the honest fallback if
-you need AI working today; it is still far better than what MAG-3702
-provisioned, because the policy is scoped to one model instead of `*`.
+## Per deployment — the only steps you repeat
 
-Whichever you pick, do **section 0 first** — the permissions are identical.
+### 1. Issue a certificate for the new server
+
+On the machine holding the CA:
+
+```bash
+cd ~/bedrock-ca
+HOST=<customer>-dash-01          # anything unique; it names the box in CloudTrail
+
+openssl genrsa -out ${HOST}.key 2048
+chmod 600 ${HOST}.key
+openssl req -new -key ${HOST}.key -out ${HOST}.csr -subj "/CN=${HOST}/O=Magma Devs"
+openssl x509 -req -in ${HOST}.csr -CA ca.crt -CAkey ca.key -CAcreateserial \
+  -out ${HOST}.crt -days 365 -sha256 -extfile client-ext.cnf -extensions client
+```
+
+`client-ext.cnf` is already in `~/bedrock-ca`. The extensions are not optional —
+Roles Anywhere rejects a client certificate without `digitalSignature`.
+
+### 2. Copy two files to the server
+
+`${HOST}.crt` and `${HOST}.key` → `/etc/smart-router/`, mode `0600`, owned by the
+user the api runs as. **Never copy `ca.key`** — that one signs new identities.
+
+### 3. Install the signing helper there
+
+```bash
+# x86_64. Swap X86_64→Aarch64 for arm; Linux→Darwin for macOS.
+sudo curl -sSLo /usr/local/bin/aws_signing_helper \
+  https://rolesanywhere.amazonaws.com/releases/1.6.0/X86_64/Linux/aws_signing_helper
+sudo chmod +x /usr/local/bin/aws_signing_helper
+```
+
+### 4. Point the credential chain at it
+
+```ini
+# ~/.aws/config for the api's user — all one line after `credential_process =`
+[default]
+region = us-east-1
+credential_process = /usr/local/bin/aws_signing_helper credential-process --certificate /etc/smart-router/dash.crt --private-key /etc/smart-router/dash.key --trust-anchor-arn arn:aws:rolesanywhere:us-east-1:811430801429:trust-anchor/587b3dfa-a58a-4fed-9121-72121a6cecbf --profile-arn arn:aws:rolesanywhere:us-east-1:811430801429:profile/2d5a53ad-ee1f-483c-83ae-c2c78653b542 --role-arn arn:aws:iam::811430801429:role/SmartRouterDashboardBedrock
+```
+
+Leave **`BEDROCK_ROLE_ARN` unset.** The profile already maps the certificate onto
+the role; setting it too would assume a role on top of a role.
+
+### 5. Turn it on and check
+
+```bash
+BEDROCK_ENABLED=true
+AUTH_MODE=enabled
+```
+
+```bash
+aws sts get-caller-identity        # expect assumed-role/SmartRouterDashboardBedrock/...
+curl -s localhost:8000/api/ai/health
+```
+
+`{"ok":true,...}` and you are done.
+
+### Revoking one server
+
+Certificates are per host, so a compromised box is revocable on its own — delete
+its `.crt`/`.key` and its credentials die within the hour. To cut **every**
+deployment at once, disable the profile:
+
+```bash
+aws rolesanywhere disable-profile --region us-east-1 \
+  --profile-id 2d5a53ad-ee1f-483c-83ae-c2c78653b542
+```
 
 ---
+
+# Reference — how the one-time setup was built
+
+Only needed to rebuild it, or to audit what exists. **Skip it for a new
+deployment.**
 
 ## 0. The permissions policy (both options)
 
@@ -111,11 +177,44 @@ for temporary credentials.
 
 Skip if you already run one — use the existing root and go to 1.2.
 
+AWS rejects a CA certificate with no **path length constraint** —
+`-subj` alone produces one and fails with "Incorrect basic constraints for CA
+certificate". The extensions file is required:
+
 ```bash
-mkdir -p ~/bedrock-ca && cd ~/bedrock-ca
+mkdir -p ~/bedrock-ca && chmod 700 ~/bedrock-ca && cd ~/bedrock-ca
+
+cat > ca-ext.cnf <<'CFG'
+[req]
+distinguished_name = dn
+x509_extensions    = v3_ca
+prompt             = no
+
+[dn]
+CN = Magma Devs Bedrock CA
+O  = Magma Devs
+
+[v3_ca]
+# pathlen:0 — signs server certificates only, never another CA.
+basicConstraints = critical, CA:TRUE, pathlen:0
+keyUsage         = critical, keyCertSign, cRLSign, digitalSignature
+subjectKeyIdentifier = hash
+CFG
+
 openssl genrsa -out ca.key 4096
-openssl req -x509 -new -nodes -key ca.key -sha256 -days 3650 \
-  -out ca.crt -subj "/CN=Magma Devs Bedrock CA/O=Magma Devs"
+chmod 600 ca.key
+openssl req -x509 -new -nodes -key ca.key -sha256 -days 3650 -out ca.crt -config ca-ext.cnf
+```
+
+And the client extensions used in step 1 of the per-deployment section:
+
+```bash
+cat > client-ext.cnf <<'CFG'
+[client]
+basicConstraints = critical, CA:FALSE
+keyUsage         = critical, digitalSignature
+extendedKeyUsage = clientAuth
+CFG
 ```
 
 `ca.key` is now the most sensitive file in this process — anyone holding it can
@@ -226,8 +325,8 @@ region = us-east-1
 credential_process = /usr/local/bin/aws_signing_helper credential-process \
   --certificate /etc/smart-router/bedrock.crt \
   --private-key  /etc/smart-router/bedrock.key \
-  --trust-anchor-arn arn:aws:rolesanywhere:us-east-1:811430801429:trust-anchor/TRUST_ANCHOR_ID \
-  --profile-arn      arn:aws:rolesanywhere:us-east-1:811430801429:profile/PROFILE_ID \
+  --trust-anchor-arn arn:aws:rolesanywhere:us-east-1:811430801429:trust-anchor/587b3dfa-a58a-4fed-9121-72121a6cecbf \
+  --profile-arn      arn:aws:rolesanywhere:us-east-1:811430801429:profile/2d5a53ad-ee1f-483c-83ae-c2c78653b542 \
   --role-arn         arn:aws:iam::811430801429:role/SmartRouterDashboardBedrock
 ```
 
