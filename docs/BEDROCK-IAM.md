@@ -40,6 +40,56 @@ Drop `AWS_BEARER_TOKEN_BEDROCK` and it uses your own `aws configure` identity
 instead; drop `BEDROCK_ALLOW_UNAUTHENTICATED` and add `AUTH_MODE=enabled` for
 the real thing.
 
+## Per-deployment API key (the simple path)
+
+A key per customer deployment, handed over in that deployment's own YAML. No
+CA, no certificates, no signing helper — and because the key is per deployment,
+revoking one customer does not touch the others.
+
+Mint it **scoped and expiring**. `create-service-specific-credential` without
+`--credential-age-days` produces a credential that never expires, which is how
+MAG-3702's ended up permanent:
+
+```bash
+CUST=gk8
+aws iam create-user --user-name sr-dash-${CUST}
+aws iam attach-user-policy --user-name sr-dash-${CUST} \
+  --policy-arn arn:aws:iam::811430801429:policy/SmartRouterDashboardBedrockInvoke
+aws iam create-service-specific-credential --user-name sr-dash-${CUST} \
+  --service-name bedrock.amazonaws.com --credential-age-days 90
+```
+
+Note the two differences from the credential the ticket provisioned: the narrow
+policy instead of `AmazonBedrockLimitedAccess` on `Resource: "*"`, and an expiry.
+The secret is printed **once**.
+
+Then in that deployment's env file — never in a file that is committed:
+
+```bash
+# /etc/smart-router/.env, 0600, read by docker compose
+BEDROCK_ENABLED=true
+AWS_BEARER_TOKEN_BEDROCK=<the value printed once>
+```
+
+`docker-compose.yml` passes all of these through, so nothing else is needed. Set
+`BEDROCK_ALLOW_UNAUTHENTICATED=true` as well if that deployment runs with
+`AUTH_MODE=disabled`.
+
+To revoke one customer, or to rotate on expiry:
+
+```bash
+aws iam list-service-specific-credentials --user-name sr-dash-${CUST}
+aws iam delete-service-specific-credential --user-name sr-dash-${CUST} \
+  --service-specific-credential-id <id>
+```
+
+**Versus the certificate path below:** a key is a password sitting on a server
+until it expires, and anyone who reads that env file has it. A certificate
+yields credentials that expire hourly and can be tied to one host. Per-customer
+keys with a 90-day life are a reasonable middle — they keep the blast radius to
+one deployment and force rotation — but they are not as good, and the
+difference is one you accept knowingly rather than by default.
+
 ## Already set up — never repeated
 
 Provisioned 2026-09-22 and shared by **every** customer deployment. Adding a
