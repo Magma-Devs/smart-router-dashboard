@@ -1,19 +1,38 @@
 /**
- * AI routes (MAG-3702).
+ * AI routes (MAG-3702). Two, with one job each:
  *
- * One route for now, and it makes no model call: whether a model is reachable
- * and, when it is not, WHICH reason applies. Every AI surface built on this
- * should call it before offering a button, so the UI can say "not enabled",
- * "sign-in required" or "no AWS credentials" instead of a dead control.
+ *   GET  /api/ai/health   free, instant — is AI configured and allowed?
+ *   POST /api/ai/verify   costs ~30 tokens — does the model actually answer?
+ *
+ * The split matters. Flags are cheap enough for a monitor to poll; proving the
+ * identity can invoke the model needs a real call, because a role can hold a
+ * valid session and still be denied `bedrock:InvokeModel`.
  *
  * `/api/ai/*` sits under the same auth gate as the rest of `/api/*`, so with
  * `AUTH_MODE=enabled` the caller is already identified. With
- * `AUTH_MODE=disabled` there is no gate — which is exactly why `bedrockGate()`
- * refuses in that mode rather than trusting a gate that was never installed.
+ * `AUTH_MODE=disabled` there is no gate — which is why `bedrockGate()` refuses
+ * in that mode rather than trusting a gate that was never installed.
  */
 import type { FastifyInstance } from "fastify";
 import { config } from "../config.js";
 import { BedrockError, BedrockService, bedrockGate } from "../services/bedrock.js";
+
+/** Which model this deployment would call. Nothing here is secret — no credential exists to leak. */
+function target() {
+  return {
+    provider: "bedrock",
+    auth: "sigv4",
+    model: config.bedrock.model,
+    region: config.bedrock.region,
+    // An ARN names a role; it is not a secret. `null` = the chain's own identity.
+    roleArn: config.bedrock.roleArn ?? null,
+  };
+}
+
+/** Read the live env, as the auth plugin does, so the two cannot disagree. */
+function gate() {
+  return bedrockGate(process.env.AUTH_MODE ?? config.auth.mode);
+}
 
 export async function aiRoutes(app: FastifyInstance) {
   app.get(
@@ -21,46 +40,16 @@ export async function aiRoutes(app: FastifyInstance) {
     {
       schema: {
         tags: ["AI"],
-        summary: "Is a model configured, allowed, and reachable?",
+        summary: "Is a model configured and allowed to be called?",
         description:
-          "Free — makes no model call. `reason` is `disabled` (BEDROCK_ENABLED unset), " +
-          "`auth_required` (enabled but AUTH_MODE=disabled, so it must not be spendable " +
-          "anonymously), or `no_credentials` (the chain resolved nothing — with " +
-          "BEDROCK_ROLE_ARN set, that includes a role the box is not allowed to assume). " +
-          "`roleArn` names the assumed role, or null when the chain's own identity is used. " +
-          "There is no credential to leak: the SDK signs with SigV4 per request.",
+          "Free and instant — no model call, and deliberately no credential resolution " +
+          "either, which blocks for seconds on IMDS when there are none. `reason` is " +
+          "`disabled` (BEDROCK_ENABLED unset) or `auth_required` (enabled but " +
+          "AUTH_MODE=disabled, so it must not be spendable anonymously). " +
+          "Use POST /api/ai/verify to prove the model actually answers.",
       },
     },
-    async () => {
-      // Read the live env, not the boot snapshot — the auth plugin registers
-      // against the live value too, so the two cannot disagree.
-      const authMode = process.env.AUTH_MODE ?? config.auth.mode;
-      const gate = bedrockGate(authMode);
-
-      const base = {
-        provider: "bedrock",
-        auth: "sigv4" as const,
-        model: config.bedrock.model,
-        region: config.bedrock.region,
-        // Which role the process acts as, so an operator can tell a customer
-        // deployment from a developer's own credentials at a glance. An ARN
-        // names a role; it is not a secret. `null` = the chain's own identity.
-        roleArn: config.bedrock.roleArn ?? null,
-      };
-      if (!gate.ok) return { ...gate, ...base };
-
-      // Only worth resolving the chain once the cheap checks pass — it can
-      // touch IMDS or the SSO cache.
-      const hasCredentials = await new BedrockService(
-        config.bedrock.region,
-        config.bedrock.model,
-        app.log,
-      ).hasCredentials();
-
-      return hasCredentials
-        ? { ok: true, ...base }
-        : { ok: false, reason: "no_credentials" as const, ...base };
-    },
+    async () => ({ ...gate(), ...target() }),
   );
 
   app.post(
@@ -70,58 +59,46 @@ export async function aiRoutes(app: FastifyInstance) {
         tags: ["AI"],
         summary: "Send one tiny prompt to the model and report what came back",
         description:
-          "COSTS MONEY — a real model call, ~30 tokens. The deployment check: " +
-          "`/api/ai/health` proves credentials resolve, which is not the same as being " +
-          "allowed to invoke this model. A role can hold a valid session and still be " +
-          "denied InvokeModel, and that only shows up on a real call. Run this once after " +
-          "wiring a new server.",
+          "COSTS MONEY — a real call, ~30 tokens. The deployment check: credentials " +
+          "resolving is not the same as being allowed to invoke this model, and only a " +
+          "real call tells them apart. Run it once after wiring a new server.",
       },
     },
     async (_request, reply) => {
-      const authMode = process.env.AUTH_MODE ?? config.auth.mode;
-      const gate = bedrockGate(authMode);
-      if (!gate.ok) {
-        // 503: the dashboard is up, the thing it would call is not reachable
-        // from here. Same shape as /health/ready refusing on Prometheus.
+      const g = gate();
+      if (!g.ok) {
+        // Checked BEFORE the call, so a shut gate spends nothing. 503: the
+        // dashboard is up, the thing it would call is not reachable from here.
         reply.status(503);
-        return { ...gate, model: config.bedrock.model, region: config.bedrock.region };
+        return { ...g, ...target() };
       }
 
       const startedAt = Date.now();
       try {
-        const answer = await new BedrockService(
-          config.bedrock.region,
-          config.bedrock.model,
-          app.log,
-        ).complete({
-          // Fixed and trivial on purpose: this measures the round trip, not
-          // the model, and every run should cost the same.
+        const answer = await new BedrockService(config.bedrock.model, app.log).complete({
+          // Fixed and trivial on purpose: this measures the round trip, not the
+          // model, and every run should cost the same.
           messages: [{ role: "user", content: "Reply with exactly: SMART_ROUTER_BEDROCK_OK" }],
           maxTokens: 32,
         });
-
         return {
           ok: true,
-          model: config.bedrock.model,
-          region: config.bedrock.region,
-          roleArn: config.bedrock.roleArn ?? null,
+          ...target(),
           answer: answer.text,
           latencyMs: Date.now() - startedAt,
           inputTokens: answer.inputTokens,
           outputTokens: answer.outputTokens,
         };
       } catch (err) {
-        // Hand back AWS's own reason. AccessDeniedException (policy or model
-        // access), ThrottlingException (quota) and a network failure need
-        // three different fixes, and collapsing them wastes the call.
         reply.status(502);
         return {
           ok: false,
           reason: "model_call_failed",
+          // AWS's own name for it — AccessDenied, Throttling and an unreachable
+          // endpoint need three different fixes, and collapsing them wastes the call.
           awsErrorName: err instanceof BedrockError ? err.awsErrorName : null,
           detail: err instanceof Error ? err.message : String(err),
-          model: config.bedrock.model,
-          region: config.bedrock.region,
+          ...target(),
         };
       }
     },

@@ -135,8 +135,6 @@ export const config = {
      * assume it. Set whenever `roleArn` points into someone else's account.
      */
     roleExternalId: env("BEDROCK_ROLE_EXTERNAL_ID"),
-    /** Names the session in the customer's CloudTrail, so the calls are attributable. */
-    roleSessionName: env("BEDROCK_ROLE_SESSION_NAME") ?? "smart-router-dashboard",
     region: env("BEDROCK_REGION") ?? "us-east-1",
     /**
      * A cross-region inference profile, not a bare model id. `global.` routes

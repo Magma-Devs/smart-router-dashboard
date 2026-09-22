@@ -2,47 +2,28 @@
  * Amazon Bedrock client — the one place the dashboard calls a model.
  *
  * **No credential passes through this code.** The AWS SDK signs each request
- * with SigV4 using the default provider chain, so the identity comes from
- * wherever the process already has one:
+ * with SigV4 from the default provider chain, so the identity comes from
+ * wherever the process already has one — env, `~/.aws/credentials`, SSO, a
+ * container or instance role, or an IAM Roles Anywhere certificate. One code
+ * path therefore serves both deployments:
  *
- *   env vars → shared config (`~/.aws/credentials`, what `aws configure`
- *   writes) → SSO → container credentials → EC2/EKS instance or pod role.
- *
- * One code path serves both deployments, which is the point:
- *
- *  - **Local dev** — nothing to configure. Whatever `aws configure` left in
- *    `~/.aws/credentials` is what `aws sts get-caller-identity` reports, and
- *    the SDK finds it.
+ *  - **Local dev** — nothing to configure beyond `aws configure`.
  *  - **A customer's dedicated server** — `BEDROCK_ROLE_ARN` names a role to
- *    assume on top of that. The box proves who it is once (a Roles Anywhere
- *    certificate, an instance profile, a key), and the role is what it acts
- *    as. Credentials from `AssumeRole` are short-lived and the SDK refreshes
- *    them on its own; `BEDROCK_ROLE_EXTERNAL_ID` carries the confused-deputy
- *    guard when the role lives in the customer's account.
+ *    assume on top of whatever the box proved itself with. Credentials from
+ *    `AssumeRole` are short-lived and the SDK refreshes them by itself.
  *
- * Either way nothing here reads, stores, logs or returns a credential,
- * because nothing here ever holds one — which is what MAG-3702's bearer key
- * would have required. See `docs/BEDROCK-IAM.md`.
- *
- * Uses **Converse**, not InvokeModel: one request shape for every model, so
- * swapping the model is a config change rather than a rewrite of the body.
+ * See `docs/BEDROCK-IAM.md`.
  */
-import {
-  BedrockRuntimeClient,
-  ConverseCommand,
-  type Message,
-} from "@aws-sdk/client-bedrock-runtime";
+import { BedrockRuntimeClient, ConverseCommand } from "@aws-sdk/client-bedrock-runtime";
 import { fromTemporaryCredentials } from "@aws-sdk/credential-providers";
 import { config } from "../config.js";
 
-/** Why AI is not available, in the order the checks run. */
+/** Why AI is unavailable. Both are flag checks — no network, no credentials. */
 export type BedrockUnavailable =
   /** `BEDROCK_ENABLED` is not `true`. Off by default — model calls cost money. */
   | "disabled"
-  /** `AUTH_MODE=disabled`: nobody is identified, so nobody may spend the account's budget. */
-  | "auth_required"
-  /** Enabled and gated, but the AWS credential chain resolved nothing. */
-  | "no_credentials";
+  /** `AUTH_MODE=disabled`: nobody is identified, so nobody may spend the budget. */
+  | "auth_required";
 
 export type BedrockAvailability = { ok: true } | { ok: false; reason: BedrockUnavailable };
 
@@ -50,11 +31,11 @@ export type BedrockAvailability = { ok: true } | { ok: false; reason: BedrockUna
 export class BedrockError extends Error {
   readonly statusCode = 502;
   constructor(
-    readonly reason: string,
+    message: string,
     /** The SDK's exception name (`ThrottlingException`, `AccessDeniedException`, …). */
     readonly awsErrorName: string | null = null,
   ) {
-    super(`bedrock call failed: ${reason}`);
+    super(message);
     this.name = "BedrockError";
   }
 }
@@ -73,8 +54,9 @@ export interface BedrockLogger {
 }
 
 /**
- * The cheap half of the availability check: flags only, no network, no
- * credential resolution. Safe to call on every request.
+ * Is AI configured and allowed? Flags only, so this is genuinely instant and
+ * safe on every request — it deliberately does NOT resolve credentials, which
+ * blocks for seconds on IMDS when there are none.
  *
  * `authMode` is passed in rather than read from `config` so the check follows
  * the live env the auth plugin registered against, as the auth gate does.
@@ -95,7 +77,6 @@ export class BedrockService {
   private readonly client: BedrockRuntimeClient;
 
   constructor(
-    private readonly region: string = config.bedrock.region,
     private readonly model: string = config.bedrock.model,
     private readonly logger?: BedrockLogger,
     client?: BedrockRuntimeClient,
@@ -103,7 +84,7 @@ export class BedrockService {
     this.client =
       client ??
       new BedrockRuntimeClient({
-        region,
+        region: config.bedrock.region,
         // Adaptive retry adds client-side rate limiting, which is what makes
         // a ThrottlingException back off instead of hammering.
         maxAttempts: 5,
@@ -116,35 +97,16 @@ export class BedrockService {
               credentials: fromTemporaryCredentials({
                 params: {
                   RoleArn: config.bedrock.roleArn,
-                  RoleSessionName: config.bedrock.roleSessionName,
+                  RoleSessionName: "smart-router-dashboard",
                   ...(config.bedrock.roleExternalId
                     ? { ExternalId: config.bedrock.roleExternalId }
                     : {}),
                 },
-                // The base identity comes from the default chain; this only
-                // says which region to reach STS in.
-                clientConfig: { region },
+                clientConfig: { region: config.bedrock.region },
               }),
             }
           : {}),
       });
-  }
-
-  /**
-   * Does the credential chain resolve to anything? The expensive half of the
-   * availability check — it can touch IMDS or the SSO cache, so it is not for
-   * every request. Never returns or logs what it resolved, only whether it did.
-   */
-  async hasCredentials(): Promise<boolean> {
-    try {
-      // With BEDROCK_ROLE_ARN set this performs the AssumeRole, so a role the
-      // base identity may not assume fails HERE rather than on the first real
-      // call — which is what makes /api/ai/health worth asking.
-      const resolved = await this.client.config.credentials();
-      return Boolean(resolved?.accessKeyId);
-    } catch {
-      return false;
-    }
   }
 
   /**
@@ -160,18 +122,13 @@ export class BedrockService {
     system?: string;
     maxTokens?: number;
   }): Promise<BedrockAnswer> {
-    if (opts.messages.length === 0) throw new BedrockError("no_messages");
-
-    const messages: Message[] = opts.messages.map((m) => ({
-      role: m.role,
-      content: [{ text: m.content }],
-    }));
+    if (opts.messages.length === 0) throw new BedrockError("no messages");
 
     try {
       const res = await this.client.send(
         new ConverseCommand({
           modelId: this.model,
-          messages,
+          messages: opts.messages.map((m) => ({ role: m.role, content: [{ text: m.content }] })),
           ...(opts.system ? { system: [{ text: opts.system }] } : {}),
           inferenceConfig: { maxTokens: opts.maxTokens ?? config.bedrock.maxTokens },
         }),
@@ -191,12 +148,12 @@ export class BedrockService {
         outputTokens: res.usage?.outputTokens ?? null,
       };
     } catch (err) {
-      // The SDK's exception name is the actionable part — AccessDeniedException
-      // means the IAM identity lacks bedrock:InvokeModel or the model is not
-      // enabled in the region, which is a very different fix from a throttle.
+      // The SDK's exception name is the actionable part: AccessDeniedException
+      // (policy, or the role could not be assumed), ThrottlingException (quota)
+      // and an unreachable endpoint need three different fixes.
       const name = err instanceof Error ? err.name : null;
       const message = err instanceof Error ? err.message : String(err);
-      this.logger?.warn({ error: message, awsErrorName: name, model: this.model, region: this.region }, "bedrock call failed");
+      this.logger?.warn({ error: message, awsErrorName: name, model: this.model }, "bedrock call failed");
       throw new BedrockError(message, name);
     }
   }

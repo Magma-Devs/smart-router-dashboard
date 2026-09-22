@@ -477,7 +477,7 @@ Every `/api/metrics/*` route also accepts **`router?`** — the router scope
 | `GET /api/metrics/cross-validation` | `window` | `CrossValidationReport` — `emitted:false` + nulls until `cross_validation_*` fires; **`consistency` (total/caught) is real either way**, but **no web consumer** since MAG-2527 removed the strip that rendered it (consistency checks are head-freshness verification, not cross-validation). `caught` still surfaces as the hero's `staleCaught` |
 | `GET /api/metrics/websocket` | `window` | `WebSocketReport` — `emitted:false` + nulls until `ws_*` fires (first subscription) |
 | `GET /api/metrics/query` | **`query`** (required) | Raw **instant** PromQL passthrough — `{ result }`. 400 without `query` |
-| `GET /api/ai/health` | — | `{ ok, reason?, provider, auth, model, region, roleArn }` — whether a model is enabled, allowed, and reachable. **Free** — makes no model call. `reason` is `disabled` (`BEDROCK_ENABLED` unset), `auth_required` (enabled but `AUTH_MODE=disabled`, so it must not be spendable anonymously) or `no_credentials` (the chain resolved nothing — with `BEDROCK_ROLE_ARN` set, that includes a role the box may not assume). `roleArn` names the assumed role, `null` when the chain's own identity is used |
+| `GET /api/ai/health` | — | `{ ok, reason?, provider, auth, model, region, roleArn }` — whether a model is enabled, allowed, and reachable. **Free** — makes no model call. `reason` is `disabled` (`BEDROCK_ENABLED` unset), `auth_required` (enabled but `AUTH_MODE=disabled`, so it must not be spendable anonymously) or `roleArn` names the assumed role, `null` when the chain's own identity is used. Resolves no credentials, which would block on IMDS — `POST /api/ai/verify` makes one real ~30-token call and is what proves the identity may actually invoke the model |
 | `GET /api/config/routers` | — | `{ routers: RouterTopology[] }` — live topology from the mounted values file (either format), node URLs masked to scheme+host. Each endpoint also carries `index` (the handle the relay below resolves) + `directable` |
 | `POST /api/upstreams/relay` | body: `{routerId, node, endpointIndex, transport?, httpMethod?, path?, body?}` | Fires ONE request straight at a configured upstream, router excluded — `{httpStatus, latencyMs, body, truncated, transport}`. The target is resolved from the values file, never taken from the caller; the resolved url is never returned and is scrubbed out of the upstream's own body. Upstream 4xx/5xx come back **200** with their status inside; 502/504 mean our hop failed. Off with `UPSTREAM_RELAY_ENABLED=false`. See [`docs/UPSTREAM-DIRECT-TEST.md`](docs/UPSTREAM-DIRECT-TEST.md) |
 
@@ -530,7 +530,6 @@ Setup for both, including Roles Anywhere on non-AWS hardware:
 | `BEDROCK_TIMEOUT_MS` | `60000` | |
 | `BEDROCK_ROLE_ARN` | (unset) | The role to assume. Unset ⇒ the chain's own identity, which is the local case |
 | `BEDROCK_ROLE_EXTERNAL_ID` | (unset) | `sts:ExternalId`. Set whenever the role lives in another account — without it, anyone the role trusts who learns its ARN can assume it |
-| `BEDROCK_ROLE_SESSION_NAME` | `smart-router-dashboard` | Names the session in CloudTrail, so calls are attributable |
 
 `bedrockGate()` refuses while `AUTH_MODE=disabled` rather than trusting the
 `/api/*` JWT gate, which that mode does not install at all: an open api would let
