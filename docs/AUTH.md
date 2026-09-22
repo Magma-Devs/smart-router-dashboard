@@ -281,7 +281,7 @@ users table → admin created; populated table without that email → no-op
 | `SETUP_TOKEN` | api | First-run token. Unset ⇒ generated once at boot and logged |
 | `SETUP_TOKEN_FILE` | api | Where to write a generated token (mode 0600) so an init container can surface it |
 | `PASSWORD_BREACH_CHECK` | api | `hibp` (default) / `off` — turn the breach check off deliberately on an air-gapped site |
-| `PUBLIC_WEB_ORIGIN` | api | Browser-facing origin of the web app; invitation and reset links are built from it. No default — guessing a host would produce links that look right and go nowhere |
+| `PUBLIC_WEB_ORIGIN` | api | Browser-facing origin of the web app; invitation and reset links are built from it. **No default in the api** — guessing a host would produce links that look right and go nowhere, so `POST /api/team/invites` answers 500 without it. The compose files default it to the web's `AUTH_URL`, which is the same origin by definition |
 | `AUTH_URL` | web | Auth.js base URL (default `http://localhost:3000`) |
 | `INTERNAL_API_BASE_URL` | web | server-side api URL for Auth.js callbacks (`http://api:8000` in compose) |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | web (+ id on api) | unset = no Google button. The api needs the id to pin the token audience |

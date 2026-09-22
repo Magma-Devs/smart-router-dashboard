@@ -526,7 +526,7 @@ Auth (only read when `AUTH_MODE=enabled`; the metrics path never touches the DB)
 | `SETUP_TOKEN` | (generated) | First-run token, required to create the first admin. Must be ≥ 16 characters; unset (or shorter) ⇒ generated once at boot, on an install that still needs setting up, and logged at `warn` |
 | `SETUP_TOKEN_FILE` | (unset) | Path to write a generated token to (mode 0600), so an init container or mounted volume can surface it |
 | `PASSWORD_BREACH_CHECK` | `hibp` | `off` disables the HaveIBeenPwned check — the honest setting for an air-gapped install, rather than relying on a silent timeout |
-| `PUBLIC_WEB_ORIGIN` | (unset) | browser-facing origin of the web app, used to build invitation and password-reset links. Routes that need it fail loudly when it is unset rather than guessing a host |
+| `PUBLIC_WEB_ORIGIN` | (unset) | browser-facing origin of the web app, used to build invitation and password-reset links. Routes that need it fail loudly when it is unset rather than guessing a host — `POST /api/team/invites` 500s. Both compose files default it to the web's `AUTH_URL` |
 
 Web — build-time vs. **runtime**:
 

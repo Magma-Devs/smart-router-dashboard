@@ -255,6 +255,18 @@ services:
       # honest setting for an air-gapped install — it says so in the logs
       # rather than relying on a silent timeout on every password set.
       - PASSWORD_BREACH_CHECK=${PASSWORD_BREACH_CHECK:-hibp}
+      # Where invitation links point. No default in the api on purpose — a
+      # guessed host produces a link that looks right and goes nowhere — so
+      # POST /api/team/invites answers 500 without it and nobody can be
+      # invited. Defaults to the web's own AUTH_URL, which is the same origin
+      # by definition; set it explicitly when the browser reaches the web on a
+      # different host than AUTH_URL names.
+      - PUBLIC_WEB_ORIGIN=${PUBLIC_WEB_ORIGIN:-${AUTH_URL:-http://localhost:3000}}
+      # managed (we host, invitations are emailed) vs onprem (customer hosts,
+      # the admin copies the link). Also sets the invitation TTL: 7 days vs 24
+      # hours. Declared rather than left to the code's default so the shape of
+      # the deployment is visible in the file.
+      - DEPLOYMENT_MODE=${DEPLOYMENT_MODE:-onprem}
     volumes:
       - ./apps/api/src:/app/apps/api/src
       - ./apps/api/tsconfig.json:/app/apps/api/tsconfig.json
@@ -286,6 +298,9 @@ services:
       # bundled `logs` profile's Grafana on :3001; override to point elsewhere.
       - DASHBOARD_GRAFANA_URL=${DASHBOARD_GRAFANA_URL:-http://localhost:3001}
       # Auth (see docs/AUTH.md) — same AUTH_MODE + AUTH_SECRET as the api.
+      # DEPLOYMENT_MODE must match the api's: the web serves it from
+      # /api/config and forks the invitation copy on it.
+      - DEPLOYMENT_MODE=${DEPLOYMENT_MODE:-onprem}
       # Empty by default, like the api's: with AUTH_MODE=disabled the web mounts
       # no login and never calls the api's /auth/* routes.
       - AUTH_MODE=${AUTH_MODE:-disabled}
