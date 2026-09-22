@@ -149,6 +149,13 @@ export const config = {
      */
     maxTokens: envInt("BEDROCK_MAX_TOKENS", 4096),
     timeoutMs: envInt("BEDROCK_TIMEOUT_MS", 60000),
+    /**
+     * Per-IP per-minute on the routes that actually call the model, tighter
+     * than the global RATE_LIMIT_MAX — the same reasoning as
+     * `UPSTREAM_RELAY_RATE_LIMIT_MAX`. Auth stops an anonymous caller; it does
+     * not stop a signed-in one looping, and Bedrock has no per-key budget.
+     */
+    rateLimitMax: envInt("BEDROCK_RATE_LIMIT_MAX", 10),
   },
 
   /** Helm-values / router config the dashboard reflects (read-only). */

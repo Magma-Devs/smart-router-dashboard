@@ -55,6 +55,9 @@ export async function aiRoutes(app: FastifyInstance) {
   app.post(
     "/api/ai/verify",
     {
+      // Tighter than the global limit: this one spends money, and a signed-in
+      // caller looping it is the failure auth does not prevent.
+      config: { rateLimit: { max: config.bedrock.rateLimitMax, timeWindow: "1 minute" } },
       schema: {
         tags: ["AI"],
         summary: "Send one tiny prompt to the model and report what came back",

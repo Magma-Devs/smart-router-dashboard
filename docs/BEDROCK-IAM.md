@@ -108,14 +108,30 @@ none.
 
 ### Revoking
 
-Certificates are per host, so one box is revocable on its own — delete its
-`.crt`/`.key` and its credentials die within the hour. To cut **every**
-deployment at once:
+**Deleting a server's `.crt`/`.key` only helps if nobody copied them.** It stops
+that machine getting fresh credentials, and the ones it holds expire within the
+hour — but a certificate someone exfiltrated keeps working until it expires, up
+to a year. The files are not the identity; the certificate is.
+
+Real revocation needs a CRL, and **none is imported today** (`aws rolesanywhere
+list-crls` returns `[]`). To revoke one certificate:
+
+```bash
+# Sign a CRL with the CA, then hand it to Roles Anywhere.
+aws rolesanywhere import-crl --region us-east-1 --name magma-bedrock-crl --enabled \
+  --trust-anchor-arn arn:aws:rolesanywhere:us-east-1:811430801429:trust-anchor/587b3dfa-a58a-4fed-9121-72121a6cecbf \
+  --crl-data fileb://crl.der
+```
+
+Until that exists, the only certain revocation is the blunt one, which cuts
+**every** deployment at once:
 
 ```bash
 aws rolesanywhere disable-profile --region us-east-1 \
   --profile-id 2d5a53ad-ee1f-483c-83ae-c2c78653b542
 ```
+
+Worth setting up a CRL before this is on more than one or two servers.
 
 ## Rebuilding the one-time setup
 

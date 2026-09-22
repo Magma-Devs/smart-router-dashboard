@@ -528,6 +528,7 @@ Setup for both, including Roles Anywhere on non-AWS hardware:
 | `BEDROCK_MODEL` | `global.anthropic.claude-sonnet-5` | A cross-region **inference profile**, not a bare model id — `global.` routes to whichever region has capacity. Verify with `aws bedrock list-inference-profiles` |
 | `BEDROCK_MAX_TOKENS` | `4096` | **Always sent.** Unset, Bedrock reserves the model's maximum quota per call — the usual cause of an unexplained `ThrottlingException` |
 | `BEDROCK_TIMEOUT_MS` | `60000` | |
+| `BEDROCK_RATE_LIMIT_MAX` | `10` | Per IP per minute on the routes that call the model, tighter than `RATE_LIMIT_MAX` — same reasoning as `UPSTREAM_RELAY_RATE_LIMIT_MAX`. Auth stops an anonymous caller, not a signed-in one looping |
 | `BEDROCK_ROLE_ARN` | (unset) | The role to assume. Unset ⇒ the chain's own identity, which is the local case |
 | `BEDROCK_ROLE_EXTERNAL_ID` | (unset) | `sts:ExternalId`. Set whenever the role lives in another account — without it, anyone the role trusts who learns its ARN can assume it |
 
