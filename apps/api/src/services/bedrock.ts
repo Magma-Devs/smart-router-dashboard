@@ -8,12 +8,21 @@
  *   env vars → shared config (`~/.aws/credentials`, what `aws configure`
  *   writes) → SSO → container credentials → EC2/EKS instance or pod role.
  *
- * That last link is the point of doing it this way. In a cluster the api runs
- * under an IAM role (IRSA / EKS Pod Identity) and there is **no long-lived
- * secret to store, mount, rotate or leak** — which is what MAG-3702's bearer
- * key would have been. Locally it is whatever `aws sts get-caller-identity`
- * reports. Nothing here reads, stores, logs or returns a credential, because
- * nothing here ever holds one.
+ * One code path serves both deployments, which is the point:
+ *
+ *  - **Local dev** — nothing to configure. Whatever `aws configure` left in
+ *    `~/.aws/credentials` is what `aws sts get-caller-identity` reports, and
+ *    the SDK finds it.
+ *  - **A customer's dedicated server** — `BEDROCK_ROLE_ARN` names a role to
+ *    assume on top of that. The box proves who it is once (a Roles Anywhere
+ *    certificate, an instance profile, a key), and the role is what it acts
+ *    as. Credentials from `AssumeRole` are short-lived and the SDK refreshes
+ *    them on its own; `BEDROCK_ROLE_EXTERNAL_ID` carries the confused-deputy
+ *    guard when the role lives in the customer's account.
+ *
+ * Either way nothing here reads, stores, logs or returns a credential,
+ * because nothing here ever holds one — which is what MAG-3702's bearer key
+ * would have required. See `docs/BEDROCK-IAM.md`.
  *
  * Uses **Converse**, not InvokeModel: one request shape for every model, so
  * swapping the model is a config change rather than a rewrite of the body.
@@ -23,6 +32,7 @@ import {
   ConverseCommand,
   type Message,
 } from "@aws-sdk/client-bedrock-runtime";
+import { fromTemporaryCredentials } from "@aws-sdk/credential-providers";
 import { config } from "../config.js";
 
 /** Why AI is not available, in the order the checks run. */
@@ -99,6 +109,24 @@ export class BedrockService {
         maxAttempts: 5,
         retryMode: "adaptive",
         requestHandler: { requestTimeout: config.bedrock.timeoutMs },
+        // Omitted entirely when no role is named, so the SDK falls through to
+        // its own default chain rather than being handed a wrapper around it.
+        ...(config.bedrock.roleArn
+          ? {
+              credentials: fromTemporaryCredentials({
+                params: {
+                  RoleArn: config.bedrock.roleArn,
+                  RoleSessionName: config.bedrock.roleSessionName,
+                  ...(config.bedrock.roleExternalId
+                    ? { ExternalId: config.bedrock.roleExternalId }
+                    : {}),
+                },
+                // The base identity comes from the default chain; this only
+                // says which region to reach STS in.
+                clientConfig: { region },
+              }),
+            }
+          : {}),
       });
   }
 
@@ -109,6 +137,9 @@ export class BedrockService {
    */
   async hasCredentials(): Promise<boolean> {
     try {
+      // With BEDROCK_ROLE_ARN set this performs the AssumeRole, so a role the
+      // base identity may not assume fails HERE rather than on the first real
+      // call — which is what makes /api/ai/health worth asking.
       const resolved = await this.client.config.credentials();
       return Boolean(resolved?.accessKeyId);
     } catch {

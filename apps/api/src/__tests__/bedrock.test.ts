@@ -160,3 +160,35 @@ describe("BedrockService.complete", () => {
     expect(client.send).not.toHaveBeenCalled();
   });
 });
+
+describe("BEDROCK_ROLE_ARN — the customer-deployment path", () => {
+  /**
+   * The role is wired through the SDK's own `fromTemporaryCredentials`, so
+   * these pin the CONTRACT rather than re-testing AWS's provider: with no
+   * role the client must be left to the default chain, and a role the box
+   * cannot assume must surface as "no credentials" rather than as a crash on
+   * the first real call.
+   */
+  it("reports no credentials — not a throw — when the role cannot be assumed", async () => {
+    const client = fakeClient({
+      credentials: async () => {
+        throw Object.assign(new Error("not authorized to perform: sts:AssumeRole"), {
+          name: "AccessDenied",
+        });
+      },
+    });
+    const svc = new BedrockService("us-east-1", "m", undefined, client);
+    await expect(svc.hasCredentials()).resolves.toBe(false);
+  });
+
+  it("leaves the client's credentials alone when no role is named", async () => {
+    // config.bedrock.roleArn is unset in tests, so a real client must carry no
+    // explicit credentials provider — the SDK's default chain has to win.
+    const svc = new BedrockService("us-east-1", "m");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const resolved = await (svc as any).client.config.credentials();
+    // Resolves from this machine's own chain; the point is it did not throw
+    // because we handed it an AssumeRole wrapper for a role nobody named.
+    expect(resolved).toHaveProperty("accessKeyId");
+  });
+});

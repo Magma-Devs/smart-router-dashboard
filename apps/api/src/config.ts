@@ -118,6 +118,25 @@ export const config = {
   bedrock: {
     /** Explicit opt-in. Off by default so ambient AWS credentials can't quietly start billing. */
     enabled: env("BEDROCK_ENABLED") === "true" || env("BEDROCK_ENABLED") === "1",
+    /**
+     * A role to ASSUME on top of whatever the chain resolved. This is how a
+     * customer deployment is handed an identity: the box proves who it is
+     * once (a Roles Anywhere certificate, an instance profile, a key), and
+     * this names the role it should actually act as.
+     *
+     * Unset — the local case — the chain's own identity is used directly, so
+     * a developer with `aws configure` done needs no extra setup.
+     */
+    roleArn: env("BEDROCK_ROLE_ARN"),
+    /**
+     * Shared secret the role's trust policy can demand (`sts:ExternalId`).
+     * The standard confused-deputy guard for a role assumed across accounts:
+     * without it, anyone who learns the role ARN and is trusted by it can
+     * assume it. Set whenever `roleArn` points into someone else's account.
+     */
+    roleExternalId: env("BEDROCK_ROLE_EXTERNAL_ID"),
+    /** Names the session in the customer's CloudTrail, so the calls are attributable. */
+    roleSessionName: env("BEDROCK_ROLE_SESSION_NAME") ?? "smart-router-dashboard",
     region: env("BEDROCK_REGION") ?? "us-east-1",
     /**
      * A cross-region inference profile, not a bare model id. `global.` routes

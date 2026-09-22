@@ -25,9 +25,10 @@ export async function aiRoutes(app: FastifyInstance) {
         description:
           "Free — makes no model call. `reason` is `disabled` (BEDROCK_ENABLED unset), " +
           "`auth_required` (enabled but AUTH_MODE=disabled, so it must not be spendable " +
-          "anonymously), or `no_credentials` (the AWS credential chain resolved nothing). " +
-          "Reports the model and region; there is no credential to leak, since the SDK " +
-          "signs with SigV4 from the ambient identity.",
+          "anonymously), or `no_credentials` (the chain resolved nothing — with " +
+          "BEDROCK_ROLE_ARN set, that includes a role the box is not allowed to assume). " +
+          "`roleArn` names the assumed role, or null when the chain's own identity is used. " +
+          "There is no credential to leak: the SDK signs with SigV4 per request.",
       },
     },
     async () => {
@@ -41,6 +42,10 @@ export async function aiRoutes(app: FastifyInstance) {
         auth: "sigv4" as const,
         model: config.bedrock.model,
         region: config.bedrock.region,
+        // Which role the process acts as, so an operator can tell a customer
+        // deployment from a developer's own credentials at a glance. An ARN
+        // names a role; it is not a secret. `null` = the chain's own identity.
+        roleArn: config.bedrock.roleArn ?? null,
       };
       if (!gate.ok) return { ...gate, ...base };
 
