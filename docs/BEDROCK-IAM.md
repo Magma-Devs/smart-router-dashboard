@@ -427,13 +427,32 @@ IAM user `smart-router-dashboard-dev` and its **non-expiring** key on
 `Resource: "*"` have no consumer, and the safest credential is one that does
 not exist:
 
+A Bedrock API key is a **service-specific credential**, not an access key, so
+`list-access-keys` reports nothing and looks reassuring. It is not. Use:
+
 ```bash
-aws iam list-access-keys --user-name smart-router-dashboard-dev
-aws iam delete-access-key --user-name smart-router-dashboard-dev --access-key-id <id>
+aws iam list-service-specific-credentials --user-name smart-router-dashboard-dev
+
+aws iam delete-service-specific-credential \
+  --user-name smart-router-dashboard-dev \
+  --service-specific-credential-id ACCA3Z3ILOAKXPXISEJUD
 ```
 
-The GitHub repo secret `SMART_ROUTER_DASHBOARD_BEDROCK_API_KEY` can go with it
-unless a workflow starts using it — nothing does today.
+Then the user itself, which carries `AmazonBedrockLimitedAccess` — `InvokeModel`
+on `Resource: "*"`, every model in the account:
+
+```bash
+aws iam detach-user-policy --user-name smart-router-dashboard-dev \
+  --policy-arn arn:aws:iam::aws:policy/AmazonBedrockLimitedAccess
+aws iam delete-user --user-name smart-router-dashboard-dev
+```
+
+The GitHub repo secret `SMART_ROUTER_DASHBOARD_BEDROCK_API_KEY` goes with it —
+no workflow reads it, and the key it holds will no longer exist:
+
+```bash
+gh secret delete SMART_ROUTER_DASHBOARD_BEDROCK_API_KEY
+```
 
 Bedrock has no per-key budget, so set an **AWS Budget alarm** on the account
 before this is reachable from anywhere.
