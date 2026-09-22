@@ -62,6 +62,33 @@ describe("GET /api/ai/health", () => {
   });
 });
 
+describe("POST /api/ai/verify", () => {
+  let app: FastifyInstance;
+  const saved = process.env.BEDROCK_ENABLED;
+
+  beforeEach(() => {
+    vi.stubGlobal("fetch", async () => new Response(JSON.stringify({ status: "success", data: { resultType: "vector", result: [] } }), { status: 200 }));
+  });
+
+  afterEach(async () => {
+    await app?.close();
+    vi.unstubAllGlobals();
+    if (saved === undefined) delete process.env.BEDROCK_ENABLED;
+    else process.env.BEDROCK_ENABLED = saved;
+  });
+
+  it("503s WITHOUT calling the model when the gate is shut", async () => {
+    // The gate has to be checked before the spend, not after — a route that
+    // bills first and refuses second is the bug this pins.
+    delete process.env.BEDROCK_ENABLED;
+    app = await buildApp();
+
+    const res = await app.inject({ method: "POST", url: "/api/ai/verify" });
+    expect(res.statusCode).toBe(503);
+    expect(res.json()).toMatchObject({ ok: false, reason: "disabled" });
+  });
+});
+
 function res_json(res: { json(): unknown }): Record<string, unknown> {
   return res.json() as Record<string, unknown>;
 }
