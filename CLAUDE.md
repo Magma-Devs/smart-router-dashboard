@@ -477,6 +477,7 @@ Every `/api/metrics/*` route also accepts **`router?`** — the router scope
 | `GET /api/metrics/cross-validation` | `window` | `CrossValidationReport` — `emitted:false` + nulls until `cross_validation_*` fires; **`consistency` (total/caught) is real either way**, but **no web consumer** since MAG-2527 removed the strip that rendered it (consistency checks are head-freshness verification, not cross-validation). `caught` still surfaces as the hero's `staleCaught` |
 | `GET /api/metrics/websocket` | `window` | `WebSocketReport` — `emitted:false` + nulls until `ws_*` fires (first subscription) |
 | `GET /api/metrics/query` | **`query`** (required) | Raw **instant** PromQL passthrough — `{ result }`. 400 without `query` |
+| `GET /api/ai/health` | — | `{ ok, reason?, provider, model, region }` — whether a model is configured AND allowed to be called. **Free** — makes no model call. `reason` is `not_configured` (no `AWS_BEARER_TOKEN_BEDROCK`) or `auth_required` (a key is set but `AUTH_MODE=disabled`, so it must not be spendable anonymously). Never returns the credential |
 | `GET /api/config/routers` | — | `{ routers: RouterTopology[] }` — live topology from the mounted values file (either format), node URLs masked to scheme+host. Each endpoint also carries `index` (the handle the relay below resolves) + `directable` |
 | `POST /api/upstreams/relay` | body: `{routerId, node, endpointIndex, transport?, httpMethod?, path?, body?}` | Fires ONE request straight at a configured upstream, router excluded — `{httpStatus, latencyMs, body, truncated, transport}`. The target is resolved from the values file, never taken from the caller; the resolved url is never returned and is scrubbed out of the upstream's own body. Upstream 4xx/5xx come back **200** with their status inside; 502/504 mean our hop failed. Off with `UPSTREAM_RELAY_ENABLED=false`. See [`docs/UPSTREAM-DIRECT-TEST.md`](docs/UPSTREAM-DIRECT-TEST.md) |
 
@@ -506,6 +507,23 @@ API (`apps/api/src/config.ts` is the source of truth):
 | `TENANT_ID` | — | set by the chart, **not read**. The multi-tenant store pins `X-Scope-OrgID` from the credential that authenticated, so the api never names its own org — a config field that did would move the tenancy boundary into a values file |
 | `GIT_COMMIT` / `APP_VERSION` | `unknown` / `0.0.0` | surfaced by `/version` |
 | `NODE_ENV` | `production` | non-prod enables `/docs` + pretty logs |
+
+AI / Amazon Bedrock (MAG-3702) — off unless `AWS_BEARER_TOKEN_BEDROCK` is set,
+and refused while `AUTH_MODE=disabled`:
+
+| Variable | Default | Notes |
+|---|---|---|
+| `AWS_BEARER_TOKEN_BEDROCK` | (unset) | Bedrock API key — a bearer token for an IAM user, **not** an access-key pair, so no SigV4 and no AWS SDK. Unset ⇒ every AI surface reports `not_configured`. CI reads it from the repo secret `SMART_ROUTER_DASHBOARD_BEDROCK_API_KEY`; a cluster needs it as a **k8s Secret** — a GitHub secret cannot reach a running pod. Locally it belongs in `.env.local` (gitignored) |
+| `BEDROCK_REGION` | `us-east-1` | |
+| `BEDROCK_MODEL` | `global.anthropic.claude-sonnet-5` | A cross-region **inference profile**, not a bare model id — `global.` routes to whichever region has capacity |
+| `BEDROCK_MAX_TOKENS` | `4096` | Ceiling on one answer; thinking counts against it |
+| `BEDROCK_TIMEOUT_MS` | `60000` | |
+
+⚠ The credential's IAM policy is `bedrock:InvokeModel` on `Resource: "*"`, so it
+can invoke **any** model in the AWS account, not only the one named above — which
+is why `bedrockAvailability()` refuses to serve it while auth is off, rather than
+trusting a gate that `AUTH_MODE=disabled` does not install. `temperature` is never
+sent: Claude Sonnet 5 rejects it with a 400.
 
 Auth (only read when `AUTH_MODE=enabled`; the metrics path never touches the DB):
 
