@@ -7,21 +7,38 @@ we run it:
 
 | | What you configure | Where the identity comes from |
 |---|---|---|
+| **Anyone, quickest** | `AWS_BEARER_TOKEN_BEDROCK` | the Bedrock API key MAG-3702 provisioned |
 | **Local dev** | nothing | `aws configure` |
 | **Customer's dedicated server** | a certificate | IAM Roles Anywhere → the shared role |
+
+The SDK resolves all three; our code reads none of them. A bearer token wins
+when set, otherwise SigV4 from the chain.
 
 Account `811430801429` · region `us-east-1` · model
 `global.anthropic.claude-sonnet-5`.
 
-## Local
+## Just make it work
 
-If `aws sts get-caller-identity` answers, you are done:
+On a fresh clone, with no Postgres and no AWS config:
 
 ```bash
-BEDROCK_ENABLED=true AUTH_MODE=enabled pnpm --filter @sr/api dev
+BEDROCK_ENABLED=true \
+BEDROCK_ALLOW_UNAUTHENTICATED=true \
+AWS_BEARER_TOKEN_BEDROCK=<the key> \
+pnpm --filter @sr/api dev
+
+curl -X POST localhost:8000/api/ai/verify
 ```
 
-Then, signed in, `POST /api/ai/verify`.
+`BEDROCK_ALLOW_UNAUTHENTICATED` is what lets AI run under the default
+`AUTH_MODE=disabled`, which installs no `/api/*` gate. Fine on a laptop, **not**
+on anything reachable from outside — there it means anyone who can reach the api
+can spend the model budget, the same trade `UPSTREAM_RELAY_ENABLED` already
+makes for the relay.
+
+Drop `AWS_BEARER_TOKEN_BEDROCK` and it uses your own `aws configure` identity
+instead; drop `BEDROCK_ALLOW_UNAUTHENTICATED` and add `AUTH_MODE=enabled` for
+the real thing.
 
 ## Already set up — never repeated
 

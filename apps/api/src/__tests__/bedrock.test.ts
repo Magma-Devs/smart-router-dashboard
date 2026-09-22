@@ -39,8 +39,18 @@ describe("bedrockGate", () => {
     }
   });
 
-  it("opens only with both enabled AND auth on", () => {
+  it("opens with both enabled AND auth on", () => {
     expect(bedrockGate("enabled", true)).toEqual({ ok: true });
+  });
+
+  it("opens WITHOUT auth only when the deployment says so out loud", () => {
+    // The zero-dependency boot is the default, so a fresh clone has no
+    // Postgres and no AUTH_SECRET. Demanding both to try one feature means
+    // nobody tries it — but an exposed deployment has to opt in explicitly.
+    expect(bedrockGate("disabled", true, true)).toEqual({ ok: true });
+    expect(bedrockGate("disabled", true, false)).toEqual({ ok: false, reason: "auth_required" });
+    // Still off when not enabled at all, whatever this says.
+    expect(bedrockGate("disabled", false, true)).toEqual({ ok: false, reason: "disabled" });
   });
 });
 

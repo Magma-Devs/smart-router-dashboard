@@ -64,12 +64,15 @@ export interface BedrockLogger {
 export function bedrockGate(
   authMode: string = config.auth.mode,
   enabled: boolean = config.bedrock.enabled,
+  allowUnauthenticated: boolean = config.bedrock.allowUnauthenticated,
 ): BedrockAvailability {
   if (!enabled) return { ok: false, reason: "disabled" };
-  // Refused rather than trusting the /api/* gate, which AUTH_MODE=disabled
-  // does not install at all. An open api would let anyone spend the account's
-  // Bedrock budget under our IAM identity.
-  if (authMode !== "enabled") return { ok: false, reason: "auth_required" };
+  // AUTH_MODE=disabled installs no /api/* gate at all, so anyone who can reach
+  // the api could spend the model budget. Refused unless the deployment says
+  // otherwise — which a laptop legitimately does, and an exposed one must not.
+  if (authMode !== "enabled" && !allowUnauthenticated) {
+    return { ok: false, reason: "auth_required" };
+  }
   return { ok: true };
 }
 

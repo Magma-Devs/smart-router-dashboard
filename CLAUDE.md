@@ -508,8 +508,10 @@ API (`apps/api/src/config.ts` is the source of truth):
 | `GIT_COMMIT` / `APP_VERSION` | `unknown` / `0.0.0` | surfaced by `/version` |
 | `NODE_ENV` | `production` | non-prod enables `/docs` + pretty logs |
 
-AI / Amazon Bedrock (MAG-3702). **There is no API key.** The AWS SDK signs with
-SigV4 from the default credential chain, so one build serves both deployments:
+AI / Amazon Bedrock (MAG-3702). Our code holds **no credential of any kind** —
+the AWS SDK resolves one, either from `AWS_BEARER_TOKEN_BEDROCK` (the key the
+ticket provisioned) or, when that is unset, SigV4 from the default credential
+chain. One build serves both deployments:
 
 - **Local dev** — nothing to configure. `aws configure` once; if
   `aws sts get-caller-identity` answers, so does the dashboard.
@@ -524,6 +526,8 @@ Setup for both, including Roles Anywhere on non-AWS hardware:
 | Variable | Default | Notes |
 |---|---|---|
 | `BEDROCK_ENABLED` | `false` | Explicit opt-in — model calls cost money, so ambient AWS credentials must not quietly start billing |
+| `BEDROCK_ALLOW_UNAUTHENTICATED` | `false` | Serve AI while `AUTH_MODE=disabled`, which installs no `/api/*` gate. Needed on a fresh clone (the zero-dependency boot is the default); **not** for anything reachable from outside — same trade `UPSTREAM_RELAY_ENABLED` makes |
+| `AWS_BEARER_TOKEN_BEDROCK` | (unset) | A Bedrock API key (MAG-3702). Read by the **SDK**, not by our code — set it and SigV4 is skipped entirely. The simplest way to give a deployment an identity; a role is the safer one |
 | `BEDROCK_REGION` | `us-east-1` | |
 | `BEDROCK_MODEL` | `global.anthropic.claude-sonnet-5` | A cross-region **inference profile**, not a bare model id — `global.` routes to whichever region has capacity. Verify with `aws bedrock list-inference-profiles` |
 | `BEDROCK_MAX_TOKENS` | `4096` | **Always sent.** Unset, Bedrock reserves the model's maximum quota per call — the usual cause of an unexplained `ThrottlingException` |

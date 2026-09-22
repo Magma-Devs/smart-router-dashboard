@@ -119,6 +119,20 @@ export const config = {
     /** Explicit opt-in. Off by default so ambient AWS credentials can't quietly start billing. */
     enabled: env("BEDROCK_ENABLED") === "true" || env("BEDROCK_ENABLED") === "1",
     /**
+     * Serve AI even with `AUTH_MODE=disabled`, which installs no `/api/*` gate
+     * at all — so anyone who can reach the api can spend the model budget.
+     *
+     * Exists because the zero-dependency boot IS the default: a developer who
+     * clones the repo has no Postgres and no `AUTH_SECRET`, and demanding both
+     * to try one feature means nobody tries it. Same trade `UPSTREAM_RELAY_ENABLED`
+     * already makes for the relay, which spends the operator's upstream quota
+     * on the same terms.
+     *
+     * Off by default, so an exposed deployment has to say this out loud.
+     */
+    allowUnauthenticated:
+      env("BEDROCK_ALLOW_UNAUTHENTICATED") === "true" || env("BEDROCK_ALLOW_UNAUTHENTICATED") === "1",
+    /**
      * A role to ASSUME on top of whatever the chain resolved. This is how a
      * customer deployment is handed an identity: the box proves who it is
      * once (a Roles Anywhere certificate, an instance profile, a key), and
