@@ -1,99 +1,122 @@
 /**
- * Bedrock client + availability gate (MAG-3702).
+ * Bedrock client + the availability gate (MAG-3702).
  *
- * `fetch` is stubbed throughout — nothing here reaches AWS, and no test needs
- * a credential. The point of most of these is the REFUSALS: the gate is the
- * feature, and a regression that quietly opens it would otherwise be invisible.
+ * The SDK client is injected and stubbed throughout — nothing here reaches
+ * AWS, and no test needs a credential. Most of these pin the REFUSALS: the
+ * gate is the feature, and a regression that quietly opens it would otherwise
+ * be invisible.
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import {
-  BedrockService,
-  BedrockError,
-  bedrockAvailability,
-} from "../services/bedrock.js";
+import { describe, it, expect, vi } from "vitest";
+import type { BedrockRuntimeClient } from "@aws-sdk/client-bedrock-runtime";
+import { BedrockService, BedrockError, bedrockGate } from "../services/bedrock.js";
 
-const KEY = "test-bearer-token";
-
-function stubFetch(impl: (url: string, init: RequestInit) => Response | Promise<Response>) {
-  const spy = vi.fn(async (url: unknown, init: unknown) => impl(String(url), init as RequestInit));
-  vi.stubGlobal("fetch", spy);
-  return spy;
+/** A stand-in for BedrockRuntimeClient — only `send` and `config` are used. */
+function fakeClient(opts: {
+  send?: (cmd: unknown) => unknown;
+  credentials?: () => Promise<{ accessKeyId: string } | undefined>;
+}): BedrockRuntimeClient {
+  return {
+    send: vi.fn(async (cmd: unknown) => {
+      if (!opts.send) return {};
+      const out = opts.send(cmd);
+      return out instanceof Promise ? await out : out;
+    }),
+    config: { credentials: opts.credentials ?? (async () => ({ accessKeyId: "ASIA-test" })) },
+  } as unknown as BedrockRuntimeClient;
 }
 
-function ok(body: unknown): Response {
-  return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
-}
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
-
-describe("bedrockAvailability", () => {
-  it("is unavailable with no key, whatever the auth mode", () => {
-    expect(bedrockAvailability("enabled", undefined)).toEqual({ ok: false, reason: "not_configured" });
-    expect(bedrockAvailability("disabled", undefined)).toEqual({ ok: false, reason: "not_configured" });
+describe("bedrockGate", () => {
+  it("is off by default — model calls cost money", () => {
+    expect(bedrockGate("enabled", false)).toEqual({ ok: false, reason: "disabled" });
+    expect(bedrockGate("disabled", false)).toEqual({ ok: false, reason: "disabled" });
   });
 
-  it("REFUSES a configured key while auth is disabled", () => {
-    // The whole point: an open api must not hand out a credential whose IAM
-    // policy covers InvokeModel on Resource:"*".
-    expect(bedrockAvailability("disabled", KEY)).toEqual({ ok: false, reason: "auth_required" });
+  it("REFUSES while auth is disabled, even when enabled", () => {
+    // The whole point: an open api would let anyone spend the account's
+    // Bedrock budget under our own IAM identity.
+    expect(bedrockGate("disabled", true)).toEqual({ ok: false, reason: "auth_required" });
   });
 
   it("does not treat an unknown auth mode as enabled", () => {
-    expect(bedrockAvailability("", KEY)).toEqual({ ok: false, reason: "auth_required" });
-    expect(bedrockAvailability("ENABLED", KEY)).toEqual({ ok: false, reason: "auth_required" });
+    expect(bedrockGate("", true)).toEqual({ ok: false, reason: "auth_required" });
+    expect(bedrockGate("ENABLED", true)).toEqual({ ok: false, reason: "auth_required" });
   });
 
-  it("is available only with a key AND auth enabled", () => {
-    expect(bedrockAvailability("enabled", KEY)).toEqual({ ok: true });
+  it("opens only with both enabled AND auth on", () => {
+    expect(bedrockGate("enabled", true)).toEqual({ ok: true });
+  });
+});
+
+describe("BedrockService.hasCredentials", () => {
+  it("is true when the chain resolves an identity", async () => {
+    const svc = new BedrockService("us-east-1", "m", undefined, fakeClient({}));
+    await expect(svc.hasCredentials()).resolves.toBe(true);
+  });
+
+  it("is false — not a throw — when the chain resolves nothing", async () => {
+    const client = fakeClient({
+      credentials: async () => {
+        throw new Error("Could not load credentials from any providers");
+      },
+    });
+    const svc = new BedrockService("us-east-1", "m", undefined, client);
+    await expect(svc.hasCredentials()).resolves.toBe(false);
   });
 });
 
 describe("BedrockService.complete", () => {
-  beforeEach(() => {
-    vi.stubGlobal("fetch", vi.fn());
-  });
-
-  it("sends bearer auth to the region's InvokeModel endpoint", async () => {
-    const spy = stubFetch(() => ok({ content: [{ type: "text", text: "hi" }], stop_reason: "end_turn" }));
-    const svc = new BedrockService(KEY, "us-east-1", "global.anthropic.claude-sonnet-5");
+  it("ALWAYS sends maxTokens — unset reserves the model's maximum quota", async () => {
+    const client = fakeClient({
+      send: () => ({ output: { message: { content: [{ text: "hi" }] } }, stopReason: "end_turn" }),
+    });
+    const svc = new BedrockService("us-east-1", "global.anthropic.claude-sonnet-5", undefined, client);
 
     await svc.complete({ messages: [{ role: "user", content: "hello" }] });
 
-    const [url, init] = spy.mock.calls[0] as unknown as [string, RequestInit];
-    expect(url).toBe(
-      "https://bedrock-runtime.us-east-1.amazonaws.com/model/global.anthropic.claude-sonnet-5/invoke",
-    );
-    expect((init.headers as Record<string, string>).Authorization).toBe(`Bearer ${KEY}`);
+    const cmd = (client.send as unknown as { mock: { calls: [{ input: Record<string, unknown> }][] } }).mock.calls[0]![0];
+    const input = cmd.input as { inferenceConfig?: { maxTokens?: number }; modelId?: string };
+    expect(input.inferenceConfig?.maxTokens).toBeGreaterThan(0);
+    expect(input.modelId).toBe("global.anthropic.claude-sonnet-5");
   });
 
-  it("never sends temperature — Sonnet 5 rejects it with a 400", async () => {
-    const spy = stubFetch(() => ok({ content: [{ type: "text", text: "x" }] }));
-    await new BedrockService(KEY).complete({ messages: [{ role: "user", content: "hi" }] });
+  it("sends the Converse message shape, and omits system when none is given", async () => {
+    const client = fakeClient({ send: () => ({ output: { message: { content: [{ text: "x" }] } } }) });
+    await new BedrockService("us-east-1", "m", undefined, client).complete({
+      messages: [{ role: "user", content: "hello" }],
+    });
 
-    const body = JSON.parse((spy.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
-    expect(body).not.toHaveProperty("temperature");
-    expect(body.anthropic_version).toBe("bedrock-2023-05-31");
+    const input = ((client.send as unknown as { mock: { calls: [{ input: Record<string, unknown> }][] } }).mock.calls[0]![0]).input as {
+      messages: { role: string; content: { text: string }[] }[];
+      system?: unknown;
+    };
+    expect(input.messages).toEqual([{ role: "user", content: [{ text: "hello" }] }]);
+    expect(input).not.toHaveProperty("system");
   });
 
-  it("omits `system` entirely when none is given, rather than sending empty", async () => {
-    const spy = stubFetch(() => ok({ content: [{ type: "text", text: "x" }] }));
-    await new BedrockService(KEY).complete({ messages: [{ role: "user", content: "hi" }] });
+  it("passes a system prompt through as Converse expects", async () => {
+    const client = fakeClient({ send: () => ({ output: { message: { content: [{ text: "x" }] } } }) });
+    await new BedrockService("us-east-1", "m", undefined, client).complete({
+      messages: [{ role: "user", content: "hi" }],
+      system: "be terse",
+    });
 
-    const body = JSON.parse((spy.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
-    expect(body).not.toHaveProperty("system");
+    const input = ((client.send as unknown as { mock: { calls: [{ input: Record<string, unknown> }][] } }).mock.calls[0]![0]).input as {
+      system?: { text: string }[];
+    };
+    expect(input.system).toEqual([{ text: "be terse" }]);
   });
 
   it("concatenates every text block and reports usage", async () => {
-    stubFetch(() =>
-      ok({
-        content: [{ type: "text", text: "one " }, { type: "thinking" }, { type: "text", text: "two" }],
-        stop_reason: "end_turn",
-        usage: { input_tokens: 11, output_tokens: 22 },
+    const client = fakeClient({
+      send: () => ({
+        output: { message: { content: [{ text: "one " }, { toolUse: {} }, { text: "two" }] } },
+        stopReason: "end_turn",
+        usage: { inputTokens: 11, outputTokens: 22 },
       }),
-    );
-    const answer = await new BedrockService(KEY).complete({ messages: [{ role: "user", content: "hi" }] });
+    });
+    const answer = await new BedrockService("us-east-1", "m", undefined, client).complete({
+      messages: [{ role: "user", content: "hi" }],
+    });
 
     expect(answer.text).toBe("one two");
     expect(answer.stopReason).toBe("end_turn");
@@ -102,38 +125,38 @@ describe("BedrockService.complete", () => {
   });
 
   it("surfaces a truncated answer rather than hiding it", async () => {
-    stubFetch(() => ok({ content: [{ type: "text", text: "cut" }], stop_reason: "max_tokens" }));
-    const answer = await new BedrockService(KEY).complete({ messages: [{ role: "user", content: "hi" }] });
+    const client = fakeClient({
+      send: () => ({ output: { message: { content: [{ text: "cut" }] } }, stopReason: "max_tokens" }),
+    });
+    const answer = await new BedrockService("us-east-1", "m", undefined, client).complete({
+      messages: [{ role: "user", content: "hi" }],
+    });
     expect(answer.stopReason).toBe("max_tokens");
   });
 
-  it("throws with the upstream status on an HTTP error", async () => {
-    stubFetch(() => new Response("ValidationException: bad model", { status: 400 }));
-    const svc = new BedrockService(KEY);
+  it("keeps the AWS exception name — AccessDenied and Throttling need different fixes", async () => {
+    const denied = Object.assign(new Error("not authorized to perform bedrock:InvokeModel"), {
+      name: "AccessDeniedException",
+    });
+    const client = fakeClient({
+      send: () => {
+        throw denied;
+      },
+    });
+    const svc = new BedrockService("us-east-1", "m", undefined, client);
 
     await expect(svc.complete({ messages: [{ role: "user", content: "hi" }] })).rejects.toMatchObject({
       name: "BedrockError",
       statusCode: 502,
-      upstreamStatus: 400,
+      awsErrorName: "AccessDeniedException",
     });
   });
 
-  it("throws when the key is absent instead of calling out unauthenticated", async () => {
-    const spy = stubFetch(() => ok({}));
+  it("refuses an empty conversation instead of calling out", async () => {
+    const client = fakeClient({});
     await expect(
-      new BedrockService(undefined).complete({ messages: [{ role: "user", content: "hi" }] }),
+      new BedrockService("us-east-1", "m", undefined, client).complete({ messages: [] }),
     ).rejects.toBeInstanceOf(BedrockError);
-    expect(spy).not.toHaveBeenCalled();
-  });
-
-  it("never puts the credential in a log line", async () => {
-    stubFetch(() => new Response("boom", { status: 500 }));
-    const warn = vi.fn();
-    const svc = new BedrockService(KEY, "us-east-1", "m", 60000, { warn });
-
-    await expect(svc.complete({ messages: [{ role: "user", content: "hi" }] })).rejects.toThrow();
-
-    expect(warn).toHaveBeenCalled();
-    expect(JSON.stringify(warn.mock.calls)).not.toContain(KEY);
+    expect(client.send).not.toHaveBeenCalled();
   });
 });

@@ -105,28 +105,31 @@ export const config = {
   /**
    * Amazon Bedrock — the model behind any AI surface (MAG-3702).
    *
-   * Authenticated with a Bedrock API key (a long-lived bearer token minted
-   * for an IAM user), NOT SigV4: `Authorization: Bearer <token>`, which is
-   * why no AWS SDK is needed here. The token is read from the environment
-   * and never logged, echoed, or returned by any route.
+   * There is deliberately **no API key here.** The AWS SDK signs with SigV4
+   * from the default credential chain (env → `~/.aws/credentials` → SSO →
+   * container → instance/pod role), so in a cluster the api runs under an IAM
+   * role and there is no long-lived secret to mount, rotate or leak. Locally
+   * it is whatever `aws configure` / `aws sso login` left behind.
    *
-   * Off unless `apiKey` is set. It is also refused outright while
-   * `AUTH_MODE=disabled` — see `bedrockAvailability()`. A key sitting behind
-   * an open api is spendable by anyone who can reach it, and this one's IAM
-   * policy covers `bedrock:InvokeModel` on `Resource: "*"`, so the blast
-   * radius is every model in the account, not just the one named here.
+   * Off unless `enabled`, because model calls cost money, and refused while
+   * `AUTH_MODE=disabled` — see `bedrockGate()`. An open api would let anyone
+   * who can reach it spend the account's Bedrock budget under our identity.
    */
   bedrock: {
-    /** `AWS_BEARER_TOKEN_BEDROCK` — the name the AWS tooling itself uses. */
-    apiKey: env("AWS_BEARER_TOKEN_BEDROCK"),
+    /** Explicit opt-in. Off by default so ambient AWS credentials can't quietly start billing. */
+    enabled: env("BEDROCK_ENABLED") === "true" || env("BEDROCK_ENABLED") === "1",
     region: env("BEDROCK_REGION") ?? "us-east-1",
     /**
      * A cross-region inference profile, not a bare model id. `global.` routes
      * to whichever region has capacity; a bare `anthropic.claude-sonnet-5`
-     * is rejected for models that are only offered through a profile.
+     * is rejected for models only offered through a profile.
      */
     model: env("BEDROCK_MODEL") ?? "global.anthropic.claude-sonnet-5",
-    /** Ceiling on one answer. Thinking counts against this budget. */
+    /**
+     * Ceiling on one answer, ALWAYS sent. Unset, Bedrock defaults to the
+     * model's maximum and reserves that much quota per call — the usual cause
+     * of an unexplained ThrottlingException.
+     */
     maxTokens: envInt("BEDROCK_MAX_TOKENS", 4096),
     timeoutMs: envInt("BEDROCK_TIMEOUT_MS", 60000),
   },
