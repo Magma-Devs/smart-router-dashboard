@@ -169,7 +169,10 @@ export function digestInputs(i: FailureInputs): string {
         code: g.errorName,
         count: g.count,
         methods: g.methods.slice(0, 5),
-        example: g.example,
+        // Truncated on purpose. "missing trie node <64 hex> (path ) state
+        // 0x<64 hex> is not available" says everything in its first clause;
+        // the hashes are per-request and carry nothing a verdict can use.
+        example: g.example.slice(0, 220),
       })),
       othersOnThisChain: i.peers,
       sameProviderOtherChains: i.otherChains,
@@ -192,12 +195,23 @@ export class FailureAnalysisService {
     const answer = await this.bedrock.complete({
       system: SYSTEM_PROMPT,
       messages: [{ role: "user", content: digestInputs(inputs) }],
-      // One pair, so the answer is short — far below the brief's ceiling.
-      maxTokens: 2000,
+      // One pair, but the error EXAMPLES are long: a node's own message runs
+      // to hundreds of characters ("missing trie node a5270f38... path ...
+      // state 0x... is not available"), and six of them plus a per-code
+      // verdict overran 2000. Headroom, since a cut answer is unparseable.
+      maxTokens: 4000,
     });
 
+    // Truncation is its own failure with its own fix, and reporting it as
+    // "did not return JSON" — which is what happens if you only log it and
+    // fall through — sends whoever reads it to look at the prompt. Measured:
+    // AVALANCHECT x lava with six real error groups did exactly that.
     if (answer.stopReason === "max_tokens") {
-      this.logger?.warn({ spec: inputs.spec, upstream: inputs.upstream }, "failure analysis truncated");
+      this.logger?.warn(
+        { spec: inputs.spec, upstream: inputs.upstream, outputTokens: answer.outputTokens },
+        "failure analysis hit the token ceiling",
+      );
+      throw new Error("the verdict was cut off at the token ceiling");
     }
 
     const start = answer.text.indexOf("{");
