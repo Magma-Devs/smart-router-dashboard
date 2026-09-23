@@ -178,28 +178,32 @@ export async function metricRoutes(app: FastifyInstance) {
     return app.scoped(request.query.router).metricsDetail.chainSeries(spec, parseWindow(request.query.window));
   });
 
-  // Upstream deep-dive (PMBody).
-  app.get<{ Querystring: { window?: string; endpointId?: string; router?: string } }>("/api/metrics/upstream-detail", {
+  // Upstream deep-dive (PMBody). An upstream is a name ON A CHAIN — vendors
+  // reuse one node name across every chain they serve — so `spec` is required.
+  app.get<{ Querystring: { window?: string; endpointId?: string; spec?: string; router?: string } }>("/api/metrics/upstream-detail", {
     schema: {
       tags: ["Metrics"],
       summary: "Upstream deep-dive (stats, series, QoS sub-scores)",
       querystring: {
         type: "object" as const,
-        required: ["endpointId"],
+        required: ["endpointId", "spec"],
         properties: {
           window: windowQuerySchema.properties.window,
           router: windowQuerySchema.properties.router,
           endpointId: { type: "string" as const, description: "Backing endpoint id (= upstream name)" },
+          spec: { type: "string" as const, description: "Chain the upstream serves (Lava spec index)" },
         },
       },
     },
   }, async (request, reply) => {
-    const { endpointId } = request.query;
-    if (!endpointId) {
-      sendApiError(reply, 400, "endpointId is required");
+    const { endpointId, spec } = request.query;
+    if (!endpointId || !spec) {
+      sendApiError(reply, 400, "endpointId and spec are required");
       return reply;
     }
-    return app.scoped(request.query.router).metricsDetail.upstreamDetail(endpointId, parseWindow(request.query.window));
+    return app
+      .scoped(request.query.router)
+      .metricsDetail.upstreamDetail({ spec, endpointId }, parseWindow(request.query.window));
   });
 
   // Errors-breakdown tab (derived totals/hotspots/pivots + family presence).
