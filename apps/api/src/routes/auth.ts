@@ -10,7 +10,7 @@ import {
   OAuthAccountNotFoundError,
   type OAuthProvider,
 } from "../services/users.js";
-import { validatePassword, verifyPassword } from "../services/password.js";
+import { validatePassword, verifyPasswordOrDecoy } from "../services/password.js";
 import { verifyOAuthToken } from "../services/oauth.js";
 import { createSession, revokeSession, type ClientContext } from "../services/sessions.js";
 import {
@@ -34,6 +34,14 @@ import { config, deploymentMode } from "../config.js";
 /** Per-IP limit for every route that tests a credential. Exported because
  *  changing your password tests one too — the current password. */
 export const STRICT_AUTH_RATE_LIMIT = { max: 10, timeWindow: "1 minute" } as const;
+
+/**
+ * Every email a request carries. 254 is the RFC 5321 ceiling on an address, and
+ * it sits under the `varchar(255)` every email column uses — without it a
+ * 256-character address reached an INSERT and came back as a 500, including on
+ * public sign-in, where the lockout records any address submitted.
+ */
+export const EMAIL_FIELD = { type: "string" as const, format: "email", maxLength: 254 };
 
 interface ForwardedClientContext {
   ip?: unknown;
@@ -114,7 +122,9 @@ function secretsMatch(supplied: string, expected: string): boolean {
  * secret; otherwise we fall back to what we observed ourselves — which for a
  * direct caller is their own real address.
  */
-function resolveClientContext(
+/** The IP and User-Agent an event is attributed to — this request's, or the
+ *  browser's own when our web tier forwards it with the internal secret. */
+export function resolveClientContext(
   request: FastifyRequest,
   forwarded: ForwardedClientContext | undefined,
   expected: string | undefined,
@@ -207,7 +217,7 @@ export async function authRoutes(app: FastifyInstance) {
           required: ["token", "email", "password"],
           properties: {
             token: { type: "string" as const, minLength: 1 },
-            email: { type: "string" as const, format: "email" },
+            email: EMAIL_FIELD,
             password: { type: "string" as const, minLength: 1 },
             name: { type: "string" as const },
           },
@@ -482,7 +492,7 @@ export async function authRoutes(app: FastifyInstance) {
         body: {
           type: "object" as const,
           required: ["email"],
-          properties: { email: { type: "string" as const, format: "email" } },
+          properties: { email: EMAIL_FIELD },
         },
       },
     },
@@ -516,7 +526,7 @@ export async function authRoutes(app: FastifyInstance) {
           actor: { id: user.id, kind: "user" },
           access: { ip: client.ip, client: client.userAgent, sessionId: null },
         });
-        // TODO(slice: email adapter) — managed delivery. Until the adapter
+        // TODO(MAG-2870, #147): managed delivery. Until the email adapter
         // lands the link is logged, which is visible to an operator and to
         // nobody else. It is never returned in the response.
         request.log.warn(
@@ -594,7 +604,7 @@ export async function authRoutes(app: FastifyInstance) {
           type: "object" as const,
           required: ["email", "password"],
           properties: {
-            email: { type: "string" as const, format: "email" },
+            email: EMAIL_FIELD,
             password: { type: "string" as const, minLength: 1 },
             clientContext: {
               type: "object" as const,
@@ -643,9 +653,10 @@ export async function authRoutes(app: FastifyInstance) {
       }
 
       const user = await findUserByEmail(db, body.email);
-      // Identical response for unknown email and wrong password — no
-      // account enumeration through the sign-in surface.
-      const ok = user?.passwordHash ? await verifyPassword(body.password, user.passwordHash) : false;
+      // Identical response for unknown email and wrong password — and identical
+      // cost: the decoy runs one bcrypt when there is no hash, so the timing
+      // doesn't answer the question the response refuses to.
+      const ok = await verifyPasswordOrDecoy(body.password, user?.passwordHash);
       if (!user || !ok) {
         // Counted on the submitted address whether or not it exists, so a
         // lockout says nothing about whether an account is there.

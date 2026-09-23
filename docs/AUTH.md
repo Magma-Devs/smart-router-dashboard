@@ -267,11 +267,15 @@ differ. What is identical, and is the point:
 
 | | Managed | On-prem |
 |---|---|---|
-| Started by | the holder, from `/login` → "Forgot password" | an admin, from the members table |
+| Started by | the holder | an admin |
 | Endpoint | `POST /auth/password/forgot` | `POST /api/team/members/:id/reset-link` |
-| Delivery | emailed | link returned once, handed over |
+| Delivery | written to the api log — email delivery is MAG-2870 | link returned once, handed over |
 | TTL | 1 hour | 24 hours |
 | `password_resets.created_by` | null | the admin's id — the column an auditor reads |
+
+Both are API endpoints with no screen in front of them: there is no "Forgot
+password" page, no link to one from `/login`, and no members table to start an
+admin reset from. The page either link lands on — `/reset/<token>` — exists.
 
 Both converge on `POST /auth/password/reset`, which in **one transaction**
 claims the token with a conditional update, writes the hash, **revokes every
@@ -322,6 +326,11 @@ locked for the rest of the window, answering `423` and emitting
 Counted on the submitted address whether or not an account exists, and
 case-insensitively. If only real addresses locked, the lockout itself would
 answer the question sign-in refuses to answer.
+
+Sign-in answers in the same **time** either way, too: an address with no account
+(or no password) is checked against a decoy hash, so it costs one bcrypt like a
+wrong password does. Without that, a real account took ~380 ms and a stranger
+~8 ms, and the identical `401` was withholding nothing.
 
 The `423` carries `Retry-After` and says in minutes when the lock lifts — safe
 to say, since an address with no account locks too.
