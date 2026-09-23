@@ -121,8 +121,9 @@ interface TryMeDrawerProps {
    *  tag is omitted entirely when undefined — never a hardcoded status. */
   health?: HealthState;
   /** When set, pin the relay to THIS provider via the router's
-   *  `lava-select-provider` header (HTTP only — browsers can't set custom
-   *  headers on a WebSocket handshake). Used by the per-upstream Try-now. */
+   *  `lava-select-provider` directive: a header on HTTP, call metadata in the
+   *  gRPC snippets. Not on WebSocket — browsers can't set custom headers on
+   *  the handshake. Used by the per-upstream Try-now. */
   selectUpstream?: string;
   /** Identity of the upstream endpoint(s) this row stands for. Set ⇒ the
    *  drawer offers "Direct to upstream": the api dials the upstream itself,
@@ -1332,6 +1333,10 @@ export function TryMeDrawer({
                     <span className="gw-mono">-32000 Selected provider not available</span> however healthy this upstream is. Send it{" "}
                     {directTarget ? "direct to the upstream instead" : "through the router unpinned, or read it on the Upstreams roster"}.
                   </>
+                ) : selectUpstream && !canFire ? (
+                  <>
+                    Pinned to <strong style={{ color: "var(--text)", fontFamily: "var(--font-mono)", fontWeight: 600 }}>{selectUpstream}</strong> — the snippets below send <span className="gw-mono">lava-select-provider</span> as gRPC metadata so the router routes the call to that upstream (a cache hit may still answer as &quot;Cached&quot;).
+                  </>
                 ) : selectUpstream ? (
                   <>
                     Pinned to <strong style={{ color: "var(--text)", fontFamily: "var(--font-mono)", fontWeight: 600 }}>{selectUpstream}</strong> — sent with the <span className="gw-mono">lava-select-provider</span> header so the router routes this request to that upstream (a cache hit may still answer as &quot;Cached&quot;).
@@ -1388,7 +1393,7 @@ export function TryMeDrawer({
                   itself what it serves.
                 </span>
               </div>
-              <CodeBlock code={grpcDiscoveryCli(endpointUrl)} language="bash" />
+              <CodeBlock code={grpcDiscoveryCli(endpointUrl, selectUpstream)} language="bash" />
             </div>
           ) : (
           <>
