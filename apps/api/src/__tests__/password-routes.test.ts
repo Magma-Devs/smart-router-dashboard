@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import bcrypt from "bcryptjs";
 import type { FastifyInstance } from "fastify";
 import { SignJWT } from "jose";
 import { createTestDb, type TestDb } from "@sr/db/testing";
@@ -93,9 +94,34 @@ afterEach(async () => {
 const signIn = (email: string, password: string) =>
   app!.inject({ method: "POST", url: "/auth/sign-in", payload: { email, password } });
 
+/** 297 characters: valid as an address, too long for a `varchar(255)` column. */
+const TOO_LONG =
+  "a".repeat(60) + "." + "b".repeat(60) + "@" + ["c", "d", "e", "f"].map((x) => x.repeat(40)).join(".") + ".example.com";
+
 async function lockOut(email: string): Promise<void> {
   for (let i = 0; i < LOCKOUT_MAX_FAILURES; i++) await signIn(email, "wrong-password-every-time");
 }
+
+describe("sign-in", () => {
+  it("refuses an over-long address at the schema, rather than 500ing on the lockout's INSERT", async () => {
+    // The lockout records any address submitted, and every email column is
+    // varchar(255): a 297-character address reached the INSERT and came back
+    // as a 500 on the most public route there is.
+    expect(TOO_LONG.length).toBeGreaterThan(255);
+    const res = await signIn(TOO_LONG, "whatever");
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("spends a bcrypt on an address with no account, so timing cannot tell them apart", async () => {
+    // A real account cost one bcrypt (~380 ms) and a stranger none (~8 ms): a
+    // gap that answers "is this person a member?" as surely as a different
+    // status would. Asserted on the call, not the clock — the clock flakes.
+    const compare = vi.spyOn(bcrypt, "compare");
+    await signIn("nobody@example.com", "whatever");
+    expect(compare).toHaveBeenCalledTimes(1);
+    compare.mockRestore();
+  });
+});
 
 describe("sign-in lockout", () => {
   it("answers 423 once tripped, and says when it lifts", async () => {
@@ -154,6 +180,31 @@ describe("POST /api/account/password", () => {
     for (let i = 0; i < 11; i++) statuses.push((await guess()).statusCode);
     expect(statuses.slice(0, 10).every((s) => s === 401)).toBe(true);
     expect(statuses[10]).toBe(429);
+  });
+
+  it("audits the address THIS request came from, not the one the session opened at", async () => {
+    // The two differ exactly when it matters — a session used from somewhere
+    // other than the device that signed in. Auditing the session's sign-in
+    // address named the owner's own laptop as the source of a password change
+    // made with a stolen token.
+    const dana = await member("dana@example.com");
+    const token = await bearer(dana);
+    const debug = vi.spyOn(app!.log, "debug");
+
+    const res = await app!.inject({
+      method: "POST",
+      url: "/api/account/password",
+      headers: { authorization: `Bearer ${token}` },
+      remoteAddress: "203.0.113.9",
+      payload: { current: OLD_PASSWORD, next: NEW_PASSWORD },
+    });
+    expect(res.statusCode).toBe(200);
+
+    const event = debug.mock.calls
+      .map((c) => (c[0] as { audit?: { action: string; access?: { ip: string | null } } }).audit)
+      .find((a) => a?.action === "password.changed");
+    expect(event?.access?.ip).toBe("203.0.113.9");
+    debug.mockRestore();
   });
 
   it("names the provider a password-less member actually uses", async () => {

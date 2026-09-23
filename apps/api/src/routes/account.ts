@@ -1,4 +1,4 @@
-import type { FastifyInstance, FastifyReply } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { Database } from "@sr/db";
 import { requireAuth } from "../plugins/auth.js";
 import { noopAuditWriter, type AuditWriter } from "../services/audit.js";
@@ -10,7 +10,7 @@ import {
   signOutEverywhere,
 } from "../services/sessions.js";
 import { linkedProviderNames } from "../services/users.js";
-import { STRICT_AUTH_RATE_LIMIT } from "./auth.js";
+import { STRICT_AUTH_RATE_LIMIT, resolveClientContext } from "./auth.js";
 
 interface ChangePasswordBody {
   current: string;
@@ -24,6 +24,18 @@ interface ChangePasswordBody {
  */
 export async function accountRoutes(app: FastifyInstance) {
   const audit: AuditWriter = noopAuditWriter(app.log);
+
+  /**
+   * Where THIS request came from — not where the session was opened. The two
+   * differ exactly when it matters: a session used from somewhere other than
+   * the device that signed in. Auditing the session's sign-in address named the
+   * owner's own laptop as the source of a password change made with a stolen
+   * token.
+   */
+  function accessFrom(request: FastifyRequest, sessionId: string) {
+    const client = resolveClientContext(request, undefined, undefined);
+    return { ip: client.ip, client: client.userAgent, sessionId };
+  }
 
   function dbOr503(reply: FastifyReply): Database | null {
     if (!app.db) {
@@ -92,7 +104,7 @@ export async function accountRoutes(app: FastifyInstance) {
       await audit.write({
         action: "password.changed",
         actor: { id: me.id, kind: "user" },
-        access: { ip: me.session.ip, client: me.session.client, sessionId: me.sessionId },
+        access: accessFrom(request, me.sessionId),
       });
 
       return { ok: true };
@@ -159,7 +171,7 @@ export async function accountRoutes(app: FastifyInstance) {
         action: "session.revoked",
         actor: { id: me.id, kind: "user" },
         target: { type: "session", id, name: "own device" },
-        access: { ip: me.session.ip, client: me.session.client, sessionId: me.sessionId },
+        access: accessFrom(request, me.sessionId),
       });
 
       return { ok: true };
@@ -181,7 +193,7 @@ export async function accountRoutes(app: FastifyInstance) {
       await audit.write({
         action: "signout",
         actor: { id: me.id, kind: "user" },
-        access: { ip: me.session.ip, client: me.session.client, sessionId: me.sessionId },
+        access: accessFrom(request, me.sessionId),
         note: `signed out of ${count} device${count === 1 ? "" : "s"}`,
       });
 

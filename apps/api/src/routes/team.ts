@@ -13,6 +13,7 @@ import {
 import { createPasswordReset, resetUrl } from "../services/password-reset.js";
 import { findUserById, linkedProviderNames } from "../services/users.js";
 import { deploymentMode, publicWebOrigin } from "../config.js";
+import { EMAIL_FIELD } from "./auth.js";
 
 interface InviteBody {
   email: string;
@@ -94,7 +95,7 @@ export async function teamRoutes(app: FastifyInstance) {
           type: "object" as const,
           required: ["email", "role"],
           properties: {
-            email: { type: "string" as const, format: "email" },
+            email: EMAIL_FIELD,
             role: { type: "string" as const, enum: ["read_only", "requester", "approver", "admin"] },
           },
         },

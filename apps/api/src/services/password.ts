@@ -1,5 +1,5 @@
 import bcrypt from "bcryptjs";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 
 /** bcrypt cost 12 — same as lava-connect (industry default). */
 export async function hashPassword(plain: string): Promise<string> {
@@ -8,6 +8,27 @@ export async function hashPassword(plain: string): Promise<string> {
 
 export async function verifyPassword(plain: string, hash: string): Promise<boolean> {
   return bcrypt.compare(plain, hash);
+}
+
+let decoy: Promise<string> | null = null;
+
+/**
+ * Verify against `hash` — or, when there is none, against a decoy — so the call
+ * costs one bcrypt either way and always says no to the missing one.
+ *
+ * Sign-in skipped bcrypt for an address with no account, and a real account
+ * then took ~380 ms against ~8 ms for a stranger: a gap anyone can measure, and
+ * an answer to "is this person a member?" that the identical 401 was meant to
+ * withhold. The decoy hashes a value nobody holds, once, on first use.
+ */
+export async function verifyPasswordOrDecoy(
+  plain: string,
+  hash: string | null | undefined,
+): Promise<boolean> {
+  if (hash) return verifyPassword(plain, hash);
+  decoy ??= hashPassword(randomBytes(32).toString("base64url"));
+  await verifyPassword(plain, await decoy);
+  return false;
 }
 
 /**

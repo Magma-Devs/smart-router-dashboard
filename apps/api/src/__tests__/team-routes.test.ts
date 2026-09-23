@@ -137,6 +137,13 @@ describe("POST /api/team/invites", () => {
     expect((await invite(token, { email: "dana@example.com", role: "approver" })).statusCode).toBe(409);
   });
 
+  it("refuses an over-long address at the schema, not with a 500 from the INSERT", async () => {
+    const admin = await member("admin@example.com", "admin");
+    const long = "a".repeat(250) + "@example.com";
+    const res = await invite(await bearer(admin), { email: long, role: "approver" });
+    expect(res.statusCode).toBe(400);
+  });
+
   it("refuses an address that is already a member", async () => {
     const admin = await member("admin@example.com", "admin");
     await member("dana@example.com", "read_only");
