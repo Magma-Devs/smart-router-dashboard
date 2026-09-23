@@ -7,6 +7,16 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ### Fixed
 
+- **Every PATCH and DELETE from the browser died in the CORS preflight.**
+  `@fastify/cors` allows only GET, HEAD and POST unless it is given a method
+  list, and the web calls the api cross-origin (`:3000` → `:8000`), so the
+  browser refused to change a role, remove a member, revoke an invitation or
+  sign a device out before the api ever saw the request. The api now allows
+  PATCH and DELETE.
+- **`next build` failed fetching fonts.** `next/font/google` downloads them at
+  build time, and gstatic began 404ing the Inter file this Next version asks
+  for. Inter and JetBrains Mono are vendored as latin-subset variable files, so
+  the build no longer reaches the internet for them.
 - **A pinned gRPC Try-now copied an unpinned call.** The banner said the
   request was pinned with `lava-select-provider`, but only the HTTP snippets
   carried it. The router reads the pin from gRPC call metadata through the same
@@ -22,6 +32,24 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   doesn't apply there, and points to HTTP or Direct to upstream.
 
 ### Added
+
+- **The Team page manages people** (`AUTH_MODE=enabled`). The member list is
+  readable by every role and exports as CSV, with spreadsheet formula leads
+  neutralised because members choose their own display names. From a member's
+  row an admin can:
+  - **change their role**, which applies to the session they have open without
+    signing them out;
+  - **remove them**, which in one transaction revokes their sessions, stamps the
+    sign-out cutoff, clears their linked Google/GitHub/Discord ids and revokes
+    any pending invitation to their address. The row stays, so the audit log
+    keeps their name, and the same person can be invited back later;
+  - **generate a password-reset link** to hand over.
+
+  Each change re-checks under a row lock that the caller is still an admin, so
+  two admins acting on each other at once can't leave the team with none.
+  Invitations are created, re-sent and revoked from the same page. On the
+  Account page, changing your password and the list of active sessions (sign
+  out one device, or all of them) now work.
 
 - **Five chains arrived upstream.** **Arc** (`ARC` / `ARCT`) and **Robinhood
   Chain** (`ROBINHOOD` / `ROBINHOODT`) are EVM chains importing `ETH1`, so they

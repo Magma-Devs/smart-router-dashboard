@@ -438,6 +438,33 @@ The web uses the same helper to decide which controls to render. That is
 **cosmetic only**: hiding a button is not a permission check, and the api
 re-reads the live row on every request regardless.
 
+## Members
+
+The Team page lists everyone with access and exports it as CSV — the artifact
+an access review asks for first. Every role can read it, because a review only
+some people can see is not one; only an admin changes it.
+
+- **A role change revokes nothing.** The gate reads the role from the row on
+  every request, so a demotion lands on whatever the person has open.
+- **Removal is a state change, in one transaction.** Status becomes `removed`,
+  the provider ids are cleared, `signed_out_all_at` is stamped, every live
+  session is revoked, and any pending invitation to their address is revoked.
+  The row stays, so the audit log keeps their name. The partial unique index on
+  email and the cleared provider ids let the same person be invited back as a
+  new account, Google login included.
+- **There is always an admin.** An admin can't demote or remove themselves.
+  Each write locks the caller's and the target's rows and re-checks that the
+  caller is still an admin, so two admins acting on each other at once can't
+  both succeed. A sole admin sees a prompt to add a second one — a prompt,
+  never a refusal, because admin has to stay transferable.
+- **The export neutralises formula leads.** A field starting with `=`, `+`,
+  `-`, `@`, a tab or a CR gets a leading apostrophe: display names are chosen
+  by the people in the list, and the file opens in a spreadsheet. Line endings
+  are CRLF (RFC 4180).
+- **2FA shows an em dash, not "No",** until MAG-2730 ships.
+
+<img src="./assets/team-members.png" alt="The Team page's Members tab: a table of five people with columns for member, role, 2FA, last active and joined. Two admins are listed first, then an approver, a requester and a read-only member, sorted by address within each role. The 2FA column shows an em dash for everyone; one member who has never signed in shows an em dash for last active. Every row except the signed-in admin's own has Change role, Reset password and Remove buttons. Under the table, a panel shows a password reset link for one member, with a note to hand it over, that it works once until a stated time, and that any earlier link no longer works." width="100%">
+
 ## JWT shape
 
 ```ts
@@ -481,6 +508,8 @@ The codes are machine-readable so the web can tell "sign in again" from
   attacker racing the sign-out keeps a live session.
 - `sessions.revoked_at` — kills one device. What makes the sessions list
   and "sign out this device" possible.
+
+<img src="./assets/account-sessions.png" alt="The Account page: a Change password card with current, new and repeat fields and a note that other devices will be signed out while this one stays; an Active sessions card listing this device as Chrome on Linux, highlighted, and a second unrecognised device with its own Sign out button, plus a Sign out everywhere button; and a Delete account card whose notice says to ask an administrator to remove you, because removal is a state change and your name stays in the audit log." width="560">
 
 Session rows are **never deleted on revoke** — a revoked session is
 evidence, and the audit log's access events reference it. Expired rows

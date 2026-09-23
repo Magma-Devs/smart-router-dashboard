@@ -463,6 +463,8 @@ Every `/api/metrics/*` route also accepts **`router?`** — the router scope
 | `POST /auth/password/forgot` | — | `{ email }` → `404` on every deployment, for every address, and writes nothing: there is no way to deliver a link until email (MAG-2870). Fails closed rather than issuing a link nobody receives. Public |
 | `POST /auth/password/reset` | — | `{ token, password }` → in one transaction: sets the password, revokes every session, **clears the lockout**. Does **not** sign in. Public |
 | `POST /api/team/members/:id/reset-link` | — | `{ url, expiresAt }`, shown once. An admin generates a link; only the holder chooses the value. Admin |
+| `GET /api/team/members` · `GET /api/team/members.csv` | — | `{ members[], adminCount, soleAdmin }`, admins first · the same list as CSV with formula leads neutralised. Every role — the access review is for everyone |
+| `PATCH /api/team/members/:id` · `DELETE …/:id` | — | `{ role }` → change a role (revokes nothing; the gate reads the row) · remove (state change, one transaction: sessions, cutoff, provider ids, pending invite). 409 on your own row, 404 on someone not active, 403 if you stopped being an admin mid-request. Admin |
 | `POST /api/account/password` | — | `{ current, next }` — signs out your other devices, keeps this one. Tests a credential, so: sign-in's per-IP limit (10/min) **and** the account's lockout budget (`423` once spent) |
 | `GET /api/account/sessions` · `DELETE …/:id` · `DELETE …` | — | Your live sessions · sign out one device · sign out everywhere |
 | `GET /health` | — | Liveness — `{ health: "ok" }` |
