@@ -31,6 +31,12 @@ export const RESET_TTL_MS = {
 
 export type DeploymentMode = keyof typeof RESET_TTL_MS;
 
+/**
+ * SHA-256, not bcrypt, on purpose. The input is 32 random bytes, not a chosen
+ * password, so there is nothing to slow a guesser down against — and the hash
+ * is the lookup key behind a unique index, which a salted hash cannot be.
+ * CodeQL flags this by name; the alert is dismissed as a false positive.
+ */
 function hashToken(raw: string): string {
   return createHash("sha256").update(raw, "utf8").digest("hex");
 }
