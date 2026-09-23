@@ -54,31 +54,55 @@ export default function TeamPage() {
   const [changing, setChanging] = useState<MemberSummary | null>(null);
   const [removing, setRemoving] = useState<MemberSummary | null>(null);
   const [busyInvite, setBusyInvite] = useState<string | null>(null);
-  const [freshLink, setFreshLink] = useState<{ id: string; url: string } | null>(null);
+  const [freshLink, setFreshLink] = useState<{ id: string; email: string; url: string } | null>(null);
+  const [inviteError, setInviteError] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
   const [busyReset, setBusyReset] = useState<string | null>(null);
   const [resetLink, setResetLink] = useState<
     { email: string; url: string; expiresAt: string } | { email: string; error: string } | null
   >(null);
 
   const members = useSWR<MembersResponse>("/api/team/members", apiGet, { refreshInterval: 30000 });
+  const me = getAuthState().user;
+  // My role as the api enforces it: the row, which this list is and which
+  // refreshes every 30s. The token's role is the one I signed in with and can be
+  // a month stale, so after a role change it would draw controls that 403 and
+  // hide ones that work. Until the list arrives, no admin controls.
+  const myRole = members.data?.members.find((m) => m.email === me?.email)?.role;
+  const isAdmin = roleAtLeast(myRole, "admin");
   // Only admins may read invitations, so don't even ask otherwise — a 403 in
   // the console is noise, not information.
-  const me = getAuthState().user;
-  const isAdmin = roleAtLeast(me?.role, "admin");
   const invites = useSWR<InvitesResponse>(isAdmin ? "/api/team/invites" : null, apiGet);
 
-  async function inviteAction(id: string, action: "resend" | "revoke") {
-    setBusyInvite(id);
+  async function inviteAction(invite: { id: string; email: string }, action: "resend" | "revoke") {
+    setBusyInvite(invite.id);
+    setInviteError(null);
+    // A link belongs to one invitation. Drop the last one before acting, so a
+    // failed action can never leave it on screen beside a different row.
+    setFreshLink(null);
     try {
       if (action === "resend") {
-        const res = await apiSend<{ url?: string }>("POST", `/api/team/invites/${id}/resend`);
-        if (res?.url) setFreshLink({ id, url: res.url });
+        const res = await apiSend<{ url: string }>("POST", `/api/team/invites/${invite.id}/resend`);
+        setFreshLink({ id: invite.id, email: invite.email, url: res.url });
       } else {
-        await apiSend("DELETE", `/api/team/invites/${id}`);
+        await apiSend("DELETE", `/api/team/invites/${invite.id}`);
       }
-      await invites.mutate();
+    } catch (e) {
+      setInviteError(e instanceof Error ? e.message : "That didn't work.");
     } finally {
       setBusyInvite(null);
+      // Either way: a 410 means this list is stale — the invitation was
+      // redeemed or revoked elsewhere — and the row should stop offering it.
+      void invites.mutate();
+    }
+  }
+
+  async function exportCsv() {
+    setExportError(null);
+    try {
+      await apiDownload("/api/team/members.csv", "members.csv");
+    } catch (e) {
+      setExportError(e instanceof Error ? e.message : "The export failed.");
     }
   }
 
@@ -113,7 +137,7 @@ export default function TeamPage() {
         <div className="gw-row" style={{ gap: 8 }}>
           <button
             className="gw-btn"
-            onClick={() => void apiDownload("/api/team/members.csv", "members.csv")}
+            onClick={() => void exportCsv()}
           >
             Export CSV
           </button>
@@ -142,6 +166,10 @@ export default function TeamPage() {
         </div>
       )}
 
+      {exportError && (
+        <div role="alert" style={{ fontSize: 12, color: "var(--err)", marginBottom: 12 }}>{exportError}</div>
+      )}
+
       <div className="gw-row" style={{ gap: 0, borderBottom: "1px solid var(--line)", marginBottom: 20 }}>
         {TABS.filter((t) => t === "members" || isAdmin).map((t) => (
           <button key={t} onClick={() => setTab(t)} style={{
@@ -159,6 +187,13 @@ export default function TeamPage() {
 
       {tab === "members" && (
         <div className="gw-card" style={{ padding: 0, overflow: "hidden" }}>
+          {/* An access review that silently shows nobody is worse than one that
+              says it couldn't load. */}
+          {members.error && (
+            <div role="alert" style={{ padding: "12px 14px", fontSize: 12, color: "var(--err)", borderBottom: "1px solid var(--line)" }}>
+              Could not load the member list: {members.error instanceof Error ? members.error.message : "request failed"}
+            </div>
+          )}
           <table className="gw-table">
             <thead>
               <tr>
@@ -256,8 +291,16 @@ export default function TeamPage() {
         </div>
       )}
 
+      {tab === "invites" && isAdmin && inviteError && (
+        <div role="alert" style={{ fontSize: 12, color: "var(--err)", marginBottom: 12 }}>{inviteError}</div>
+      )}
+
       {tab === "invites" && isAdmin && (
-        invites.data?.invites.length ? (
+        invites.error ? (
+          <div role="alert" style={{ fontSize: 12, color: "var(--err)" }}>
+            Could not load invitations: {invites.error instanceof Error ? invites.error.message : "request failed"}
+          </div>
+        ) : !invites.data ? null : invites.data.invites.length ? (
           <div className="gw-card" style={{ padding: 0, overflow: "hidden" }}>
             <table className="gw-table">
               <thead>
@@ -287,7 +330,7 @@ export default function TeamPage() {
                             className="gw-btn"
                             style={{ fontSize: 11, padding: "4px 8px", marginRight: 6 }}
                             disabled={busyInvite === i.id}
-                            onClick={() => void inviteAction(i.id, "resend")}
+                            onClick={() => void inviteAction(i, "resend")}
                           >
                             New link
                           </button>
@@ -295,7 +338,7 @@ export default function TeamPage() {
                             className="gw-btn gw-btn--danger"
                             style={{ fontSize: 11, padding: "4px 8px" }}
                             disabled={busyInvite === i.id}
-                            onClick={() => void inviteAction(i.id, "revoke")}
+                            onClick={() => void inviteAction(i, "revoke")}
                           >
                             Revoke
                           </button>
@@ -309,7 +352,8 @@ export default function TeamPage() {
             {freshLink && (
               <div style={{ padding: "12px 14px", borderTop: "1px solid var(--line)", fontSize: 12 }}>
                 <div style={{ marginBottom: 6, color: "var(--text-2)" }}>
-                  New link — the previous one no longer works. Shown once.
+                  New link for <strong>{freshLink.email}</strong> — the previous one no longer works.
+                  Shown once.
                 </div>
                 <div className="gw-mono" style={{ fontSize: 11, wordBreak: "break-all", userSelect: "all" }}>
                   {freshLink.url}
@@ -334,16 +378,22 @@ export default function TeamPage() {
         onInvited={() => void invites.mutate()}
       />
       <ChangeRoleModal
+        key={`role-${changing?.id ?? "none"}`}
         open={!!changing}
         member={changing}
         onClose={() => setChanging(null)}
         onChanged={() => void members.mutate()}
       />
       <RemoveMemberModal
+        key={`remove-${removing?.id ?? "none"}`}
         open={!!removing}
         member={removing}
         onClose={() => setRemoving(null)}
-        onRemoved={() => void members.mutate()}
+        onRemoved={() => {
+          // A reset link for someone who no longer has an account is dead.
+          if (resetLink?.email === removing?.email) setResetLink(null);
+          void members.mutate();
+        }}
       />
     </div>
   );

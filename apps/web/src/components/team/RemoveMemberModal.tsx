@@ -9,6 +9,9 @@ import type { MemberSummary } from "./ChangeRoleModal";
  * Removal needs no approval — a confirmation naming the person is enough. What
  * it does need is to say plainly what happens, because "remove" reads like a
  * deletion and this deliberately isn't one.
+ *
+ * Mounted per member (the page keys it by id), so one person's error never
+ * greets the next.
  */
 export function RemoveMemberModal({
   open,

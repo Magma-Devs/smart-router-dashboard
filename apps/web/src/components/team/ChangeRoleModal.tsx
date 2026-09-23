@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Modal } from "@/components/gateway/Modal";
 import { apiSend } from "@/lib/api-client";
 import { ROLES, ROLE_DESCRIPTIONS, ROLE_LABELS, type Role } from "@sr/shared";
@@ -12,6 +12,8 @@ export interface MemberSummary {
   role: Role;
 }
 
+/** Mounted per member (the page keys it by id), so the selection and any
+ *  error start fresh for each one rather than being synced in an effect. */
 export function ChangeRoleModal({
   open,
   onClose,
@@ -26,10 +28,6 @@ export function ChangeRoleModal({
   const [role, setRole] = useState<Role>(member?.role ?? "read_only");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (member) { setRole(member.role); setError(null); }
-  }, [member]);
 
   async function save() {
     if (!member) return;
