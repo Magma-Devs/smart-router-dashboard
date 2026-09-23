@@ -233,11 +233,14 @@ describe("api routes", () => {
     expect(body.backupShare).toBeNull();
   });
 
-  it("GET /api/metrics/upstream-detail requires endpointId; errors stay empty until emitted", async () => {
-    const missing = await app.inject({ method: "GET", url: "/api/metrics/upstream-detail?window=1d" });
+  it("GET /api/metrics/upstream-detail requires endpointId + spec; errors stay empty until emitted", async () => {
+    const missing = await app.inject({ method: "GET", url: "/api/metrics/upstream-detail?spec=ETH1&window=1d" });
     expect(missing.statusCode).toBe(400);
+    // A name alone spans every chain the vendor serves — refused, not guessed.
+    const noSpec = await app.inject({ method: "GET", url: "/api/metrics/upstream-detail?endpointId=eth-lava&window=1d" });
+    expect(noSpec.statusCode).toBe(400);
 
-    const res = await app.inject({ method: "GET", url: "/api/metrics/upstream-detail?endpointId=eth-lava&window=1d" });
+    const res = await app.inject({ method: "GET", url: "/api/metrics/upstream-detail?endpointId=eth-lava&spec=ETH1&window=1d" });
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.endpointId).toBe("eth-lava");
