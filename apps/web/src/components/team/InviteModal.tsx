@@ -8,9 +8,10 @@ import { labelStyle } from "@/lib/styles";
 
 interface InviteResponse {
   invite: { id: string; email: string; role: Role; expiresAt: string };
-  /** On-prem only: there is no mail server, so the admin carries the link. */
-  url?: string;
-  delivery: "link" | "email";
+  /** The admin carries the link on every deployment until email exists
+   *  (MAG-2870). */
+  url: string;
+  delivery: "link";
 }
 
 export function InviteModal({
@@ -47,8 +48,8 @@ export function InviteModal({
     }
   }
 
-  // Two states in one modal: the form, then — on-prem — the link, which is
-  // shown exactly once and cannot be read back afterwards.
+  // Two states in one modal: the form, then the link, which is shown exactly
+  // once and cannot be read back afterwards.
   return (
     <Modal
       open={open}
@@ -77,36 +78,28 @@ export function InviteModal({
             <strong>{result.invite.email}</strong> has been invited as{" "}
             {ROLE_LABELS[result.invite.role]}.
           </div>
-          {result.url ? (
-            <>
-              <div style={{ fontSize: 12.5, color: "var(--text-2)", lineHeight: 1.6 }}>
-                This deployment has no mail server, so pass this link to them yourself. It works
-                once, and <strong>you will not be able to see it again</strong>.
-              </div>
-              <div
-                className="gw-mono"
-                style={{
-                  fontSize: 11.5, background: "var(--bg)", border: "1px solid var(--line)",
-                  borderRadius: 7, padding: "10px 12px", wordBreak: "break-all", userSelect: "all",
-                }}
-              >
-                {result.url}
-              </div>
-              <button
-                className="gw-btn"
-                onClick={() => {
-                  void navigator.clipboard.writeText(result.url!);
-                  setCopied(true);
-                }}
-              >
-                {copied ? "Copied" : "Copy link"}
-              </button>
-            </>
-          ) : (
-            <div style={{ fontSize: 12.5, color: "var(--text-2)" }}>
-              We&apos;ve emailed them a join link. It expires in seven days.
-            </div>
-          )}
+          <div style={{ fontSize: 12.5, color: "var(--text-2)", lineHeight: 1.6 }}>
+            Pass this link to them yourself — nothing is emailed. It works once, and{" "}
+            <strong>you will not be able to see it again</strong>.
+          </div>
+          <div
+            className="gw-mono"
+            style={{
+              fontSize: 11.5, background: "var(--bg)", border: "1px solid var(--line)",
+              borderRadius: 7, padding: "10px 12px", wordBreak: "break-all", userSelect: "all",
+            }}
+          >
+            {result.url}
+          </div>
+          <button
+            className="gw-btn"
+            onClick={() => {
+              void navigator.clipboard.writeText(result.url);
+              setCopied(true);
+            }}
+          >
+            {copied ? "Copied" : "Copy link"}
+          </button>
         </div>
       ) : (
         <div style={{ display: "grid", gap: 14 }}>
