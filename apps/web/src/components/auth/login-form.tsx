@@ -25,7 +25,13 @@ export function LoginForm({ providers }: { providers: ProviderFlags }) {
     // error instead of bouncing through /login?error=…
     const res = await signIn("credentials", { email, password, redirect: false });
     if (res?.error) {
-      setError("Invalid email or password.");
+      // A lockout is not a wrong password: saying "invalid" to someone with
+      // the right one sends them to try again, which keeps them locked.
+      setError(
+        res.code === "locked"
+          ? "Too many failed attempts on this account. It unlocks within 15 minutes — or ask an administrator for a reset link."
+          : "Invalid email or password.",
+      );
       setBusy(false);
       return;
     }

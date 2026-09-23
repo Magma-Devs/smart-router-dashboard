@@ -256,106 +256,102 @@ on a silent timeout every time.
 
 ## Password reset
 
-The shape is the same in both modes; only who starts it and how it travels
-differ. What is identical, and is the point:
-
-> **Nobody ever sets somebody else's password.** An admin on-prem generates a
-> *link*; the account holder chooses the value. lava-connect's equivalent
-> endpoint takes a password in the body, and that is precisely the design this
-> rejects — it lets an admin take an account over and sign in as them, which is
-> the takeover the audit log exists to make visible.
+**An admin never chooses someone else's password.** They generate a *link*,
+and the holder chooses the value. That makes a takeover *visible*, not
+impossible: the admin holds the link and could use it themselves. What they
+cannot do is set a password silently — `password_resets.created_by` records
+who generated each link, and `password.reset_completed` names that admin when
+their link is redeemed. (lava-connect's equivalent takes a password in the
+body, which leaves nothing to see.)
 
 | | Managed | On-prem |
 |---|---|---|
-| Started by | the holder | an admin |
+| Started by | the holder — **not available**: see below | an admin |
 | Endpoint | `POST /auth/password/forgot` | `POST /api/team/members/:id/reset-link` |
-| Delivery | written to the api log — email delivery is MAG-2870 | link returned once, handed over |
+| Delivery | — | link returned once, handed over |
 | TTL | 1 hour | 24 hours |
-| `password_resets.created_by` | null | the admin's id — the column an auditor reads |
+| `created_by` | null | the admin's id |
 
-Both are API endpoints with no screen in front of them: there is no "Forgot
-password" page, no link to one from `/login`, and no members table to start an
-admin reset from. The page either link lands on — `/reset/<token>` — exists.
+**Self-serve reset fails closed.** `POST /auth/password/forgot` answers `404`
+on every deployment, for every address, and writes nothing, because there is
+no way to deliver a link — email is MAG-2870. Issuing one would look delivered
+while reaching nobody, and would invalidate any live link the member holds.
 
-Both converge on `POST /auth/password/reset`, which in **one transaction**
-claims the token with a conditional update, writes the hash, **revokes every
-session for the account** — per-device rows *and* the `signed_out_all_at`
-cutoff — and **clears the account's lockout**. A reset is what someone does
-when they think they are compromised; leaving the attacker's session alive
-would defeat the entire exercise, and the transaction is what stops a failure
-part-way from doing exactly that.
+The admin route is API-only: there is no members table to start it from.
+The page a link lands on, `/reset/<token>`, exists.
 
-Clearing the lockout is what makes a reset a recovery path. Completing one
-proves control of the account; without it the owner's brand-new password was
-answered `423` for up to a whole window, and anyone who knew the address could
-keep them out indefinitely by re-tripping it.
+`POST /auth/password/reset`, in **one transaction**, claims the token with a
+conditional update, writes the hash, **revokes every session for the account**
+— per-device rows *and* the `signed_out_all_at` cutoff — and **clears the
+account's lockout**. A reset is what someone does when they think they are
+compromised; the transaction is what stops a failure part-way from leaving an
+attacker's session alive under the new password. Clearing the lockout lets the
+owner use the new password at once; it does not stop anyone re-tripping it.
 
 It does **not** sign anyone in. A reset link that logs you in is a reset link
 worth stealing.
 
 <img src="./assets/password-reset.png" alt="The password reset page: a card headed &quot;Choose a new password&quot;, with new-password and repeat-password fields and a note that setting it signs out every device on the account, that any characters are accepted from 8 to 64, and that the password is checked against known breached passwords." width="420">
 
-`/auth/password/forgot` always answers `202`, whether or not the address exists
-and whether or not the account has a password at all — anything else turns it
-into a way to ask "is this person a member?". It also answers in the **same
-time** either way: the lookup and the link are issued after the reply, because
-a uniform body is no help if one branch visibly does two writes and an audit
-row that the other skips. On-prem it answers `404` with a reason, because there
-is genuinely nowhere to send anything.
-
 **Changing your own password** (`POST /api/account/password`) requires the
 current one and signs out your *other* devices, keeping the tab you are in.
-Being logged out of the window you just changed your password in is hostile;
-logging out the other devices is the security value. It carries sign-in's rate
-limit, because checking the current password tests a credential: under the
-global limit a stolen session could guess at it 300 times a minute, and a hit
-ends with the owner's password changed and their other devices signed out.
+Checking the current password is a credential guess, so it carries sign-in's
+per-IP limit **and** spends from the account's budget below.
 
 For an account with no password — one that signs in through a linked provider
-— both this and the admin's reset link say which provider it uses, rather than
-assuming Google.
+— both this and the admin's reset link say which provider it uses.
 
 ## Sign-in lockout
 
-Per-IP limiting is not the control that matters — a distributed attacker
-rotating addresses walks straight past it. `login_attempts` counts failures
-against the **identity being targeted**: 5 in 15 minutes and the account is
-locked for the rest of the window, answering `423` and emitting
-`signin.blocked`.
+Each address has a budget of **5 attempts per 15 minutes**, counted whether or
+not an account exists, case-insensitively — so a lockout says nothing about
+membership. Past it, sign-in and the current-password check both answer `423`
+with `Retry-After`, and the login form says the account is locked rather than
+that the password is wrong.
 
-Counted on the submitted address whether or not an account exists, and
-case-insensitively. If only real addresses locked, the lockout itself would
-answer the question sign-in refuses to answer.
+The attempt is **counted before the credential is checked**: the upsert hands
+each request its own count, so a parallel burst gets exactly the budget, not
+one guess per request that passed a read before any count moved. A correct
+credential refunds the window.
 
-Sign-in answers in the same **time** either way, too: an address with no account
-(or no password) is checked against a decoy hash, so it costs one bcrypt like a
-wrong password does. Without that, a real account took ~380 ms and a stranger
-~8 ms, and the identical `401` was withholding nothing.
+The budget is per **identity**, which is why it holds where a per-IP limit does
+not: with the api reachable directly and `TRUST_PROXY` at its default, a caller
+chooses its own `X-Forwarded-For`, and the per-IP limit follows.
 
-The `423` carries `Retry-After` and says in minutes when the lock lifts — safe
-to say, since an address with no account locks too.
+> **The trade-off.** Anyone who knows an address can keep that account locked
+> by spending its budget every window, and the correct password is refused
+> while it is. A reset clears the lock, but it can be re-tripped. The way back
+> in for a locked admin is the database:
+>
+> ```sql
+> DELETE FROM login_attempts WHERE email = lower('admin@example.com');
+> ```
 
-Because every address anyone types lands in `login_attempts`, rows whose window
-has lapsed and that hold no live lock are **pruned on the failure path**, a
-bounded batch at a time over an index on `window_start`. The table then grows
-with failures *per window* rather than failures *ever*, and stops being a record
-of every address anyone has tried.
+`signin.blocked` names the account (when there is one), the address and how
+many attempts this window. Sign-in costs one bcrypt whether or not the address
+has an account — a decoy hash stands in — so timing does not answer the
+question the identical `401` refuses to.
+
+Rows whose window has lapsed are **pruned on every attempt**, a bounded batch
+over an index on `window_start`, so the table is sized by attempts per window
+rather than attempts ever.
 
 ## Sign-in methods
 
 - **Email + password** — always available in enabled mode. Verified
   api-side (`POST /auth/sign-in`, bcrypt cost 12, enumeration-proof
   responses), which also opens the session row and returns its id.
-  Accounts come from the admin seed or OAuth — there is no self-serve
-  sign-up (invitations land in slice 3).
+  Accounts come from first-run setup or an invitation — there is no
+  self-serve sign-up.
 - **Google / GitHub / Discord** — each provider's button appears on the
   login page **only when its `*_CLIENT_ID` + `*_CLIENT_SECRET` pair is
   set**. The web forwards the provider token to the api
   (`POST /auth/oauth/:provider`), which re-verifies it against the
   provider's own API (Google tokeninfo with `aud` pinning; GitHub
-  `/user` + `/user/emails`; Discord `/users/@me`) and upserts the user
-  (find by provider id → link by email → create). Avatars are captured
-  backfill-only — the first provider that supplies one wins.
+  `/user` + `/user/emails`; Discord `/users/@me`) and resolves an
+  existing account — by provider id, then by email, linking the provider.
+  It never creates one; a new person redeems an invitation. Avatars are
+  captured backfill-only — the first provider that supplies one wins.
 
 ## Bootstrap admin seed
 
@@ -538,8 +534,7 @@ on a real rowcount, and cascade-on-delete.
 > (`ERR_INVALID_ARG_TYPE: Received an instance of Date`) — so a green test
 > suite is not proof the production driver is happy.
 >
-> This bit once, in the lockout counter, and was caught only by running the
-> real stack. Prefer computing values **in SQL** (`now()`,
-> `make_interval(...)`) over interpolating JS values into raw templates: it
-> sidesteps the divergence, and for anything time-based it is more correct
-> anyway, since the app and the database can disagree about the clock.
+> Prefer computing values **in SQL** (`now()`, `make_interval(...)`) over
+> interpolating JS values into raw templates: it sidesteps the divergence, and
+> for anything time-based it is more correct anyway, since the app and the
+> database can disagree about the clock.

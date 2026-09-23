@@ -1,4 +1,4 @@
-import type { NextAuthConfig } from "next-auth";
+import { CredentialsSignin, type NextAuthConfig } from "next-auth";
 import Google from "next-auth/providers/google";
 import GitHub from "next-auth/providers/github";
 import Discord from "next-auth/providers/discord";
@@ -141,6 +141,12 @@ function secretKey(): Uint8Array {
   return new TextEncoder().encode(secret);
 }
 
+/** A lockout, told apart from a wrong password so the form can say which. The
+ *  code rides in the URL, and is safe there: addresses with no account lock too. */
+class AccountLocked extends CredentialsSignin {
+  code = "locked";
+}
+
 /** A provider is offered only when BOTH halves of its credential pair are
  *  set — this is what makes the login page's badges conditional. */
 export const oauthProviderFlags = {
@@ -200,6 +206,7 @@ providers.push(
           headers: { "Content-Type": "application/json", ...internalHeaders },
           body: JSON.stringify({ email, password, ...(clientContext ? { clientContext } : {}) }),
         });
+        if (res.status === 423) throw new AccountLocked();
         if (!res.ok) return null;
         const body = (await res.json()) as SignInResponse;
         return {
@@ -210,7 +217,8 @@ providers.push(
           role: body.user.role,
           sessionId: body.sessionId,
         };
-      } catch {
+      } catch (err) {
+        if (err instanceof AccountLocked) throw err;
         return null;
       }
     },
@@ -425,7 +433,7 @@ export const authConfig = {
       }
       // Reset links are usable while signed in — the usual reason someone
       // follows one is that they think somebody else is signed in as them.
-      if (path.startsWith("/reset/") || path === "/forgot-password") return true;
+      if (path.startsWith("/reset/")) return true;
       // Auth.js's own endpoints + the runtime-config route stay public, and so
       // does the invite handoff: its whole job is to run before there is a
       // session. It only parks a token the api re-checks on every use.

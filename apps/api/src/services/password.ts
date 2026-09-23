@@ -12,15 +12,9 @@ export async function verifyPassword(plain: string, hash: string): Promise<boole
 
 let decoy: Promise<string> | null = null;
 
-/**
- * Verify against `hash` — or, when there is none, against a decoy — so the call
- * costs one bcrypt either way and always says no to the missing one.
- *
- * Sign-in skipped bcrypt for an address with no account, and a real account
- * then took ~380 ms against ~8 ms for a stranger: a gap anyone can measure, and
- * an answer to "is this person a member?" that the identical 401 was meant to
- * withhold. The decoy hashes a value nobody holds, once, on first use.
- */
+/** Verify against `hash`, or against a decoy when there is none, so the call
+ *  costs one bcrypt either way — an address with no account then takes as long
+ *  as a wrong password. The decoy hashes a value nobody holds, once. */
 export async function verifyPasswordOrDecoy(
   plain: string,
   hash: string | null | undefined,

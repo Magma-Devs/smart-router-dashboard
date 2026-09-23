@@ -84,7 +84,7 @@ export async function createPasswordReset(
 export type ResetRejection = "not_found" | "used" | "expired" | "user_inactive";
 
 export type ResetOutcome =
-  | { ok: true; user: User }
+  | { ok: true; user: User; createdBy: string | null }
   | { ok: false; reason: ResetRejection };
 
 /**
@@ -99,15 +99,11 @@ export type ResetOutcome =
  *     and the `signed_out_all_at` cutoff. A reset is what someone does when
  *     they think their account is compromised, so leaving the attacker's
  *     session alive would defeat the entire point;
- *  4. **the account's lockout is cleared.** Completing a reset proves control
- *     of the account; leaving the failure count in place meant the owner's
- *     brand-new password was answered 423 for up to a whole window — and that
- *     anyone who knew the address could keep them out indefinitely, reset or
- *     not, by re-tripping it.
+ *  4. **the account's lockout is cleared**, so the owner can use the new
+ *     password at once. It does not stop anyone re-tripping the lock after.
  *
- * The transaction is what makes "together" true. Separate statements let a
- * failure after (2) keep an attacker's session alive past the victim's reset,
- * which is precisely the outcome (3) exists to prevent.
+ * One transaction, so a failure part-way cannot leave the old sessions alive
+ * under the new password — the outcome (3) exists to prevent.
  *
  * It deliberately does **not** sign anyone in: the person proves the new
  * password works by using it.
@@ -151,7 +147,7 @@ export async function consumePasswordReset(
     await signOutEverywhere(txDb, row.user.id, { reason: "password_change" });
     await clearFailures(txDb, row.user.email);
 
-    return { ok: true, user: { ...row.user, passwordHash } } as const;
+    return { ok: true, user: { ...row.user, passwordHash }, createdBy: row.reset.createdBy } as const;
   });
 }
 
