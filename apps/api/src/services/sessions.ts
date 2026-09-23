@@ -96,9 +96,13 @@ export async function createSession(
  * Resolve a session id to its live session and account, applying every reason a
  * token may no longer be honoured:
  *
- *  1. the session row is gone, revoked, or past its expiry;
- *  2. the account is suspended or removed;
+ *  1. the account is suspended or removed;
+ *  2. the session row is gone, revoked, or past its expiry;
  *  3. the token predates the account's bulk revocation cutoff.
+ *
+ * The account comes first because removal also revokes every session: checked
+ * the other way round, a removed person would only ever hear "sign in again",
+ * which cannot help them, instead of "this account is no longer active".
  *
  * (3) is the second half of the revocation story: `signed_out_all_at` kills
  * every outstanding token in one write without enumerating rows, while
@@ -125,9 +129,9 @@ export async function checkSession(
   if (!row) return { ok: false, reason: "not_found" };
 
   const { session, user } = row;
+  if (user.status !== "active") return { ok: false, reason: "user_inactive" };
   if (session.revokedAt) return { ok: false, reason: "revoked" };
   if (session.expiresAt.getTime() <= Date.now()) return { ok: false, reason: "expired" };
-  if (user.status !== "active") return { ok: false, reason: "user_inactive" };
 
   if (user.signedOutAllAt) {
     const cutoffSec = Math.floor(user.signedOutAllAt.getTime() / 1000);
