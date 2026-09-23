@@ -353,6 +353,26 @@ export async function teamMemberRoutes(app: FastifyInstance) {
     return app.db;
   }
 
+  /** The refusals both mutations share. `not_admin` means the caller lost
+   *  admin between the request arriving and the write landing. */
+  function refuse(
+    reply: FastifyReply,
+    reason: "not_found" | "self" | "not_admin",
+    selfMessage: string,
+  ): FastifyReply {
+    if (reason === "self") {
+      return reply.code(409).send({ statusCode: 409, error: "Conflict", message: selfMessage });
+    }
+    if (reason === "not_admin") {
+      return reply.code(403).send({
+        statusCode: 403,
+        error: "Forbidden",
+        message: "You are no longer an administrator.",
+      });
+    }
+    return reply.code(404).send({ statusCode: 404, error: "Not Found", message: "No such member." });
+  }
+
   app.get(
     "/api/team/members",
     { schema: { tags: ["Team"], summary: "Everyone with access — the access-review list" } },
@@ -449,13 +469,11 @@ export async function teamMemberRoutes(app: FastifyInstance) {
 
       const result = await changeMemberRole(conn, { id, role, actorId: me.id });
       if (!result.ok) {
-        return result.reason === "self"
-          ? reply.code(409).send({
-              statusCode: 409,
-              error: "Conflict",
-              message: "You cannot change your own role. Promote someone else first, then step down.",
-            })
-          : reply.code(404).send({ statusCode: 404, error: "Not Found", message: "No such member." });
+        return refuse(
+          reply,
+          result.reason,
+          "You cannot change your own role. Promote someone else first, then step down.",
+        );
       }
 
       await audit.write({
@@ -497,13 +515,7 @@ export async function teamMemberRoutes(app: FastifyInstance) {
       const { id } = request.params as { id: string };
       const result = await removeMember(conn, { id, actorId: me.id });
       if (!result.ok) {
-        return result.reason === "self"
-          ? reply.code(409).send({
-              statusCode: 409,
-              error: "Conflict",
-              message: "You cannot remove yourself.",
-            })
-          : reply.code(404).send({ statusCode: 404, error: "Not Found", message: "No such member." });
+        return refuse(reply, result.reason, "You cannot remove yourself.");
       }
 
       await audit.write({
