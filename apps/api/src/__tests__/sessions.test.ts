@@ -49,6 +49,19 @@ describe("sessions", () => {
   const nowSec = () => Math.floor(Date.now() / 1000);
 
   describe("createSession", () => {
+    it("counts signing in as activity", async () => {
+      // The member list reads last_active_at. A new session has never been
+      // touched, and the heartbeat is throttled, so without this the list says
+      // "—" for someone who arrived seconds ago.
+      const [before] = await t.db.select().from(users).where(eq(users.id, user.id));
+      expect(before?.lastActiveAt).toBeNull();
+
+      const session = await open();
+
+      const [after] = await t.db.select().from(users).where(eq(users.id, user.id));
+      expect(after?.lastActiveAt?.getTime()).toBe(session.createdAt.getTime());
+    });
+
     it("stores the parsed client alongside the raw user-agent", async () => {
       const session = await open();
       expect(session.client).toBe("Chrome 141 / macOS");
@@ -200,14 +213,18 @@ describe("sessions", () => {
 
     it("writes once the interval has passed, and updates the member list column", async () => {
       const session = await open();
-      const stale = { ...session, lastSeenAt: new Date(Date.now() - TOUCH_INTERVAL_MS - 1_000) };
+      // Signing in already stamped the column, so wind it back: otherwise the
+      // assertion below holds whether or not the heartbeat wrote anything.
+      const earlier = new Date(Date.now() - TOUCH_INTERVAL_MS - 1_000);
+      await t.db.update(users).set({ lastActiveAt: earlier }).where(eq(users.id, user.id));
+      const stale = { ...session, lastSeenAt: earlier };
       await touchSession(t.db, stale);
 
       const [row] = await t.db.select().from(sessions).where(eq(sessions.id, session.id));
       expect(row!.lastSeenAt.getTime()).toBeGreaterThan(stale.lastSeenAt.getTime());
 
       const [account] = await t.db.select().from(users).where(eq(users.id, user.id));
-      expect(account?.lastActiveAt).toBeInstanceOf(Date);
+      expect(account!.lastActiveAt!.getTime()).toBeGreaterThan(earlier.getTime());
     });
   });
 
