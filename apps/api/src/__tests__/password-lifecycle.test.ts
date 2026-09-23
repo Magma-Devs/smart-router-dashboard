@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { createTestDb, type TestDb } from "@sr/db/testing";
-import { passwordResets, sessions, users, type User } from "@sr/db";
+import { loginAttempts, passwordResets, users, type User } from "@sr/db";
 import {
   RESET_TTL_MS,
   changeOwnPassword,
@@ -10,8 +10,10 @@ import {
 } from "../services/password-reset.js";
 import {
   LOCKOUT_MAX_FAILURES,
+  LOCKOUT_WINDOW_MS,
   checkLock,
   clearFailures,
+  pruneLapsed,
   recordFailure,
 } from "../services/lockout.js";
 import { createSession, listActiveSessions } from "../services/sessions.js";
@@ -88,6 +90,20 @@ describe("password reset", () => {
     expect(await verifyPassword("the-old-one-1234", row!.passwordHash!)).toBe(false);
     expect(row?.signedOutAllAt).toBeInstanceOf(Date);
     expect(await listActiveSessions(t.db, user.id)).toHaveLength(0);
+  });
+
+  it("clears the lockout, so the new password is not answered 423", async () => {
+    // The owner proves control by completing the reset. Leaving the failure
+    // count in place kept their brand-new password locked out for up to a
+    // whole window — and let anyone who knew the address keep them out
+    // indefinitely by re-tripping it, reset or not.
+    for (let i = 0; i < LOCKOUT_MAX_FAILURES; i++) await recordFailure(t.db, "dana@example.com");
+    expect((await checkLock(t.db, "dana@example.com")).locked).toBe(true);
+
+    const link = await createPasswordReset(t.db, { userId: user.id, mode: "managed" });
+    expect((await consumePasswordReset(t.db, link.rawToken, "a-brand-new-passphrase")).ok).toBe(true);
+
+    expect((await checkLock(t.db, "dana@example.com")).locked).toBe(false);
   });
 
   it("is single-use", async () => {
@@ -222,5 +238,49 @@ describe("per-account lockout", () => {
 
   it("reports an untouched address as unlocked", async () => {
     expect(await checkLock(t.db, "stranger@example.com")).toEqual({ locked: false, until: null });
+  });
+
+  describe("pruning", () => {
+    // Every address anyone types lands here, account or not. Before pruning
+    // nothing ever left, so a credential-stuffing run grew the table without
+    // bound and kept a record of every address ever tried.
+    const lapsedAt = () => new Date(Date.now() - LOCKOUT_WINDOW_MS - 60_000);
+
+    it("removes rows whose window has lapsed and hold no lock", async () => {
+      await t.db.insert(loginAttempts).values([
+        { email: "old-1@example.com", failedCount: 2, windowStart: lapsedAt() },
+        { email: "old-2@example.com", failedCount: 1, windowStart: lapsedAt() },
+      ]);
+      await pruneLapsed(t.db);
+      expect(await t.db.select().from(loginAttempts)).toHaveLength(0);
+    });
+
+    it("keeps a row still inside its window, so the count is not reset early", async () => {
+      await recordFailure(t.db, "live@example.com");
+      await pruneLapsed(t.db);
+      expect(await t.db.select().from(loginAttempts)).toHaveLength(1);
+    });
+
+    it("keeps a row whose lock has not lifted, even though its window lapsed", async () => {
+      await t.db.insert(loginAttempts).values({
+        email: "locked@example.com",
+        failedCount: LOCKOUT_MAX_FAILURES,
+        windowStart: lapsedAt(),
+        lockedUntil: new Date(Date.now() + 60_000),
+      });
+      await pruneLapsed(t.db);
+      expect((await checkLock(t.db, "locked@example.com")).locked).toBe(true);
+    });
+
+    it("runs on the failure path, so growth pays for its own cleanup", async () => {
+      await t.db.insert(loginAttempts).values({
+        email: "stale@example.com",
+        failedCount: 1,
+        windowStart: lapsedAt(),
+      });
+      await recordFailure(t.db, "fresh@example.com");
+      const left = (await t.db.select().from(loginAttempts)).map((r) => r.email);
+      expect(left).toEqual(["fresh@example.com"]);
+    });
   });
 });

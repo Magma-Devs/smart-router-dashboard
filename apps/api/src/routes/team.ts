@@ -9,11 +9,10 @@ import {
   listInvitations,
   resendInvitation,
   revokeInvitation,
-  type DeploymentMode,
 } from "../services/invitations.js";
 import { createPasswordReset, resetUrl } from "../services/password-reset.js";
-import { findUserById } from "../services/users.js";
-import { config } from "../config.js";
+import { findUserById, linkedProviderNames } from "../services/users.js";
+import { deploymentMode, publicWebOrigin } from "../config.js";
 
 interface InviteBody {
   email: string;
@@ -30,7 +29,6 @@ interface InviteBody {
  */
 export async function teamRoutes(app: FastifyInstance) {
   const audit: AuditWriter = noopAuditWriter(app.log);
-  const mode: DeploymentMode = config.deploymentMode;
 
   function dbOr503(reply: FastifyReply): Database | null {
     if (!app.db) {
@@ -48,7 +46,7 @@ export async function teamRoutes(app: FastifyInstance) {
     // Live env first: `config` snapshots at module load, so a test that sets
     // this per-case would otherwise read whatever was there at import time.
     // Same reason `app.ts` re-reads AUTH_MODE and `plugins/db.ts` DATABASE_URL.
-    const origin = process.env.PUBLIC_WEB_ORIGIN ?? config.publicWebOrigin;
+    const origin = publicWebOrigin();
     if (!origin) {
       void reply.code(500).send({
         statusCode: 500,
@@ -109,6 +107,7 @@ export async function teamRoutes(app: FastifyInstance) {
       if (!db) return reply;
       const origin = webOrigin(reply);
       if (!origin) return reply;
+      const mode = deploymentMode();
 
       const body = request.body as InviteBody;
       if (!isRole(body.role)) {
@@ -178,6 +177,7 @@ export async function teamRoutes(app: FastifyInstance) {
       if (!db) return reply;
       const origin = webOrigin(reply);
       if (!origin) return reply;
+      const mode = deploymentMode();
 
       const { id } = request.params as { id: string };
       const result = await resendInvitation(db, id, mode);
@@ -277,7 +277,7 @@ export async function teamPasswordRoutes(app: FastifyInstance) {
           message: "auth database not ready",
         });
       }
-      const origin = config.publicWebOrigin;
+      const origin = publicWebOrigin();
       if (!origin) {
         return reply.code(500).send({
           statusCode: 500,
@@ -297,13 +297,13 @@ export async function teamPasswordRoutes(app: FastifyInstance) {
         return reply.code(409).send({
           statusCode: 409,
           error: "Conflict",
-          message: `${target.email} signs in with Google and has no password to reset.`,
+          message: `${target.email} signs in with ${linkedProviderNames(target)} and has no password to reset.`,
         });
       }
 
       const created = await createPasswordReset(db, {
         userId: target.id,
-        mode: config.deploymentMode,
+        mode: deploymentMode(),
         // The column an auditor reads: an admin started this, not the holder.
         createdBy: me.id,
       });

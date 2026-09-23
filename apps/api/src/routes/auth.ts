@@ -18,11 +18,7 @@ import {
   redeemInvitation,
   type InviteLookup,
 } from "../services/invitations.js";
-import {
-  consumePasswordReset,
-  createPasswordReset,
-  resetUrl,
-} from "../services/password-reset.js";
+import { consumePasswordReset, createPasswordReset } from "../services/password-reset.js";
 import { checkLock, clearFailures, recordFailure } from "../services/lockout.js";
 import { noopAuditWriter, type AuditWriter } from "../services/audit.js";
 import {
@@ -32,10 +28,12 @@ import {
   setupTokenMatches,
 } from "../services/setup.js";
 import { requireAuth } from "../plugins/auth.js";
-import { config } from "../config.js";
+import { config, deploymentMode } from "../config.js";
 
 /** Tighter per-IP limit on the credential surface than the global default. */
-const STRICT_AUTH_RATE_LIMIT = { max: 10, timeWindow: "1 minute" } as const;
+/** Per-IP limit for every route that tests a credential. Exported because
+ *  changing your password tests one too — the current password. */
+export const STRICT_AUTH_RATE_LIMIT = { max: 10, timeWindow: "1 minute" } as const;
 
 interface ForwardedClientContext {
   ip?: unknown;
@@ -193,7 +191,7 @@ export async function authRoutes(app: FastifyInstance) {
       // Deliberately says nothing about the setup token. Anyone can ask whether
       // an install is unclaimed — that is visible from the login page anyway —
       // but only someone with log or filesystem access can claim it.
-      return { needsSetup: await needsSetup(db), mode: config.deploymentMode };
+      return { needsSetup: await needsSetup(db), mode: deploymentMode() };
     },
   );
 
@@ -489,7 +487,7 @@ export async function authRoutes(app: FastifyInstance) {
       },
     },
     async (request, reply) => {
-      if (config.deploymentMode !== "managed") {
+      if (deploymentMode() !== "managed") {
         // On-prem has nowhere to send it. Saying so is better than accepting
         // the request and silently doing nothing.
         return reply.code(404).send({
@@ -503,8 +501,15 @@ export async function authRoutes(app: FastifyInstance) {
       const { email } = request.body as ForgotBody;
       const client = resolveClientContext(request, undefined, internalSecret);
 
-      const user = await findUserByEmail(db, email);
-      if (user?.passwordHash) {
+      // The work happens AFTER the reply, not before it. A uniform 202 body is
+      // not enough on its own: an address with a password took two writes, an
+      // audit row and a log line, and one without took a single SELECT — a gap
+      // anyone can time, which answers "is this person a member?" as surely as
+      // a different status would. Both branches now answer in the same time
+      // because neither waits for the other half.
+      void (async () => {
+        const user = await findUserByEmail(db, email);
+        if (!user?.passwordHash) return;
         const created = await createPasswordReset(db, { userId: user.id, mode: "managed" });
         await audit.write({
           action: "password.reset_requested",
@@ -518,7 +523,7 @@ export async function authRoutes(app: FastifyInstance) {
           { resetFor: user.email, expiresAt: created.expiresAt },
           "password reset link generated (no mail transport configured)",
         );
-      }
+      })().catch((err: unknown) => request.log.error({ err }, "password reset request failed"));
 
       // Always 202, whether or not the address exists, and whether or not the
       // account has a password at all. Anything else turns this into a way to
@@ -620,10 +625,20 @@ export async function authRoutes(app: FastifyInstance) {
           access: { ip: client.ip, client: client.userAgent, sessionId: null },
           note: "too many failed attempts",
         });
+        // `until` is computed for exactly this — telling someone when, rather
+        // than leaving them to guess and trip it again. Safe to say: the lock
+        // applies to addresses with no account too, so it reveals nothing.
+        const retryAfterSec = lock.until
+          ? Math.max(1, Math.ceil((lock.until.getTime() - Date.now()) / 1000))
+          : undefined;
+        if (retryAfterSec) reply.header("Retry-After", String(retryAfterSec));
+        const minutes = retryAfterSec ? Math.ceil(retryAfterSec / 60) : undefined;
         return reply.code(423).send({
           statusCode: 423,
           error: "Locked",
-          message: "Too many failed attempts. Try again later.",
+          message: minutes
+            ? `Too many failed attempts. Try again in ${minutes} minute${minutes === 1 ? "" : "s"}.`
+            : "Too many failed attempts. Try again later.",
         });
       }
 

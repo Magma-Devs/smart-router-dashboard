@@ -9,6 +9,8 @@ import {
   revokeSession,
   signOutEverywhere,
 } from "../services/sessions.js";
+import { linkedProviderNames } from "../services/users.js";
+import { STRICT_AUTH_RATE_LIMIT } from "./auth.js";
 
 interface ChangePasswordBody {
   current: string;
@@ -36,6 +38,11 @@ export async function accountRoutes(app: FastifyInstance) {
   app.post(
     "/api/account/password",
     {
+      // This route tests a credential — the current password — and so gets the
+      // same limit as sign-in. Under the global one it allowed 300 guesses a
+      // minute to anyone holding a session, and a correct guess ends with them
+      // changing the password and signing the real owner out everywhere.
+      config: { rateLimit: STRICT_AUTH_RATE_LIMIT },
       schema: {
         tags: ["Account"],
         summary: "Change your own password. Signs out your other devices.",
@@ -62,7 +69,7 @@ export async function accountRoutes(app: FastifyInstance) {
         return reply.code(409).send({
           statusCode: 409,
           error: "Conflict",
-          message: "This account signs in with Google and has no password to change.",
+          message: `This account signs in with ${linkedProviderNames(me.user)} and has no password to change.`,
         });
       }
 

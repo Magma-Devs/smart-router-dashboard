@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { loginAttempts, type Database } from "@sr/db";
 
 /**
@@ -79,12 +79,43 @@ export async function recordFailure(db: Database, email: string): Promise<LockSt
   const row = rows[0];
   if (!row) return { locked: false, until: null };
 
+  await pruneLapsed(db);
+
   if (row.failedCount >= LOCKOUT_MAX_FAILURES) {
     const until = new Date(row.windowStart.getTime() + LOCKOUT_WINDOW_MS);
     await db.update(loginAttempts).set({ lockedUntil: until }).where(eq(loginAttempts.email, key));
     return { locked: true, until };
   }
   return { locked: false, until: null };
+}
+
+/** Rows removed per failure. Fixed, so a failure under attack pays a bounded
+ *  cost rather than a table scan, and always removes more than it adds. */
+export const PRUNE_BATCH = 100;
+
+/**
+ * Delete rows whose window has lapsed and that hold no live lock.
+ *
+ * Every address anyone types lands here, account or not — that is what makes
+ * a lockout reveal nothing. Without this nothing ever left: a credential-
+ * stuffing run grew the table without bound, and the table kept a record of
+ * every address ever tried. Pruning on the failure path makes the size follow
+ * failures *per window* instead of failures *ever*.
+ */
+export async function pruneLapsed(db: Database): Promise<void> {
+  const windowFloor = sql`now() - make_interval(secs => ${LOCKOUT_WINDOW_MS / 1000})`;
+  const lapsed = db
+    .select({ email: loginAttempts.email })
+    .from(loginAttempts)
+    .where(
+      and(
+        lt(loginAttempts.windowStart, windowFloor),
+        or(isNull(loginAttempts.lockedUntil), lte(loginAttempts.lockedUntil, sql`now()`)),
+      ),
+    )
+    .orderBy(loginAttempts.windowStart)
+    .limit(PRUNE_BATCH);
+  await db.delete(loginAttempts).where(inArray(loginAttempts.email, lapsed));
 }
 
 /** A successful sign-in clears the slate — otherwise a person who mistyped four
