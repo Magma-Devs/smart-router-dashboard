@@ -12,7 +12,7 @@
 
 import type { CSSProperties } from "react";
 import { useApi } from "@/hooks/use-api";
-import { CloudNotice } from "@/components/gateway/CloudNotice";
+import { Notice } from "@/components/gateway/CloudNotice";
 import { ChangePasswordCard } from "@/components/account/ChangePasswordCard";
 import { SessionsCard } from "@/components/account/SessionsCard";
 
@@ -24,7 +24,7 @@ interface VersionInfo {
   uptimeSec: number;
 }
 
-const NOT_AVAILABLE = "Not available on self-hosted deployments";
+const NOT_AVAILABLE = "Not available yet";
 
 function fmtUptime(sec: number): string {
   const d = Math.floor(sec / 86400);
@@ -72,7 +72,7 @@ export default function AccountPage() {
 
       <div className="gw-card" style={{ marginBottom: 14 }}>
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Connected accounts</div>
-        <div style={{ marginBottom: 12 }}><CloudNotice feature="Linking a provider" detail="you sign in with the method you joined with. Attaching another provider to an existing account isn't available yet." compact /></div>
+        <div style={{ marginBottom: 12 }}><Notice lead="Linking another provider isn't available yet." detail="You sign in with the method you joined with." compact /></div>
         <div style={{ display: "grid", gap: 7 }}>
           {providers.map(p => (
             <div key={p.id} className="gw-row" style={{ padding: "9px 11px", borderRadius: 7, background: "var(--bg)", border: "1px solid var(--line)", gap: 10 }}>
@@ -89,7 +89,7 @@ export default function AccountPage() {
 
       <div className="gw-card" style={{ borderColor: "rgba(239,68,68,0.3)" }}>
         <div style={{ fontSize: 13, fontWeight: 500, color: "var(--err)", marginBottom: 12 }}>Delete account</div>
-        <div style={{ marginBottom: 12 }}><CloudNotice feature="Deleting your own account" detail="ask an administrator to remove you. Removal is a state change, not a deletion — your name stays in the audit log, which is what makes the trail readable." compact /></div>
+        <div style={{ marginBottom: 12 }}><Notice lead="Ask an administrator to remove you." detail="Removal is a state change, not a deletion — your name stays in the audit log, which is what makes the trail readable." compact /></div>
         <button className="gw-btn gw-btn--danger" disabled title={NOT_AVAILABLE}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6"/></svg>
           Delete account
