@@ -84,13 +84,10 @@ export function BriefPanel() {
 
   return (
     <section className="gw-card" style={{ marginBottom: 16 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: brief || refusal ? 12 : 0 }}>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 13, fontWeight: 600 }}>What connects these findings</div>
-          <div style={{ fontSize: 12, color: "var(--muted-fg)" }}>
-            Reads every tab at once and groups findings that share a cause.
-          </div>
-        </div>
+      {/* No standfirst. The button says what it does, and a paragraph
+          explaining the mechanism sat above every row on the page for the sake
+          of a control most people press once. */}
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: brief || refusal ? 12 : 0 }}>
         <button className="gw-btn" onClick={run} disabled={running} style={{ whiteSpace: "nowrap" }}>
           {running ? "Reading…" : brief ? "Run again" : "Explain"}
         </button>
