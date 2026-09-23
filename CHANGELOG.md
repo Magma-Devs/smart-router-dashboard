@@ -15,6 +15,11 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   the gRPC-Web metadata argument, plus the discovery snippet's method call. The
   banner now says the snippets carry the pin, because the drawer can't send
   gRPC itself.
+- **A pinned Try-now on a WebSocket claimed a pin that can't exist.** The
+  router reads no directives on a WebSocket connection, from any client: every
+  frame is parsed with no request headers. So a WS test was routed however the
+  router liked, while the banner said it was pinned. The banner now says a pin
+  doesn't apply there, and points to HTTP or Direct to upstream.
 
 ### Added
 

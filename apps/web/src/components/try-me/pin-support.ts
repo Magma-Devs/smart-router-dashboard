@@ -37,6 +37,25 @@ export function pinRefusalHintFor(tier: UpstreamTier): string | null {
   return "Backup upstream — the router reaches it only after every primary is exhausted, and picks the backup itself. Send it direct instead.";
 }
 
+/** The transports the drawer drives. */
+export type PinTransport = "http" | "ws" | "grpc";
+
+/**
+ * How a pin reaches the router on this transport, or null where none can.
+ *
+ * - `header`: an HTTP request carries `lava-select-provider`, and Send does.
+ * - `metadata`: the router's gRPC listener hands call metadata to the same
+ *   directive parser as an HTTP header. The browser can't dial gRPC, so only
+ *   the snippets carry it.
+ * - `null` on a WebSocket: the router parses every frame with no request
+ *   headers (`protocol/chainlib/consumer_websocket_manager.go`), so no
+ *   directive reaches it, whichever client opened the socket.
+ */
+export function pinCarrierFor(transport: PinTransport): "header" | "metadata" | null {
+  if (transport === "ws") return null;
+  return transport === "grpc" ? "metadata" : "header";
+}
+
 /** Whether the router honours a pin naming this upstream. */
 export function isPinnable(tier: UpstreamTier): boolean {
   return pinRefusalFor(tier) === null;
