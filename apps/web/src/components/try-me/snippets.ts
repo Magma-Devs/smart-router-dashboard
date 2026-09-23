@@ -440,7 +440,7 @@ function isPlaintext(url: string): boolean {
   return url.startsWith("http://") || url.startsWith("ws://");
 }
 
-function grpcCli(req: ResolvedGrpc): SnippetBlock[] {
+function grpcCli(req: ResolvedGrpc, metadata: Record<string, string> = {}): SnippetBlock[] {
   const flags = isPlaintext(req.url) ? "-plaintext " : "";
   return [
     {
@@ -448,6 +448,7 @@ function grpcCli(req: ResolvedGrpc): SnippetBlock[] {
       code: [
         `grpcurl \\`,
         `  ${flags}-d '${jsonInline(req.body)}' \\`,
+        ...Object.entries(metadata).map(([k, v]) => `  -H "${k}: ${v}" \\`),
         `  ${grpcDialAddress(req)} \\`,
         `  ${req.fqMethod}`,
       ].join("\n"),
@@ -460,9 +461,10 @@ function grpcCli(req: ResolvedGrpc): SnippetBlock[] {
  * the spec behind it declares no gRPC collection, so the only honest thing to
  * offer is the call that asks the endpoint itself what it serves.
  */
-export function grpcDiscoveryCli(url: string): string {
+export function grpcDiscoveryCli(url: string, selectUpstream?: string): string {
   const addr = dialAuthority(url);
   const flags = isPlaintext(url) ? "-plaintext " : "";
+  const pin = selectUpstream ? `-H "lava-select-provider: ${selectUpstream}" ` : "";
   return [
     `# What does this endpoint serve?`,
     `grpcurl ${flags}${addr} list`,
@@ -471,13 +473,14 @@ export function grpcDiscoveryCli(url: string): string {
     `grpcurl ${flags}${addr} describe <service>`,
     ``,
     `# Call one of its methods`,
-    `grpcurl ${flags}-d '{}' ${addr} <service>/<Method>`,
+    `grpcurl ${flags}-d '{}' ${pin}${addr} <service>/<Method>`,
   ].join("\n");
 }
 
-function grpcPython(req: ResolvedGrpc): SnippetBlock[] {
+function grpcPython(req: ResolvedGrpc, metadata: Record<string, string> = {}): SnippetBlock[] {
   const stubName = req.service.split(".").pop() ?? "Service";
   const stubMod = stubName.toLowerCase();
+  const pairs = Object.entries(metadata).map(([k, v]) => `("${k}", "${v}")`);
   return [
     {
       label: "Installation",
@@ -515,16 +518,19 @@ function grpcPython(req: ResolvedGrpc): SnippetBlock[] {
             ]),
         `stub = ${stubName}Stub(channel)`,
         `request = ${req.methodName}Request(**${jsonPretty(req.body)})`,
-        `response = stub.${req.methodName}(request)`,
+        pairs.length
+          ? `response = stub.${req.methodName}(request, metadata=[${pairs.join(", ")}])`
+          : `response = stub.${req.methodName}(request)`,
         `print(response)`,
       ].join("\n"),
     },
   ];
 }
 
-function grpcGo(req: ResolvedGrpc): SnippetBlock[] {
+function grpcGo(req: ResolvedGrpc, metadata: Record<string, string> = {}): SnippetBlock[] {
   const stubName = req.service.split(".").pop() ?? "Service";
   const stubMod = stubName.toLowerCase();
+  const kv = Object.entries(metadata).flatMap(([k, v]) => [`"${k}"`, `"${v}"`]);
   return [
     {
       label: "Installation",
@@ -561,6 +567,7 @@ function grpcGo(req: ResolvedGrpc): SnippetBlock[] {
         isPlaintext(req.url)
           ? `${INDENT}"google.golang.org/grpc/credentials/insecure"`
           : `${INDENT}"google.golang.org/grpc/credentials"`,
+        ...(kv.length ? [`${INDENT}"google.golang.org/grpc/metadata"`] : []),
         `${INDENT}pb "./gen/${stubMod}"`,
         `)`,
         ``,
@@ -576,8 +583,11 @@ function grpcGo(req: ResolvedGrpc): SnippetBlock[] {
         `${INDENT}defer conn.Close()`,
         ``,
         `${INDENT}client := pb.New${stubName}Client(conn)`,
+        ...(kv.length
+          ? [`${INDENT}ctx := metadata.AppendToOutgoingContext(context.Background(), ${kv.join(", ")})`]
+          : []),
         `${INDENT}resp, err := client.${req.methodName}(`,
-        `${INDENT}${INDENT}context.Background(),`,
+        `${INDENT}${INDENT}${kv.length ? "ctx" : "context.Background()"},`,
         `${INDENT}${INDENT}&pb.${req.methodName}Request{},`,
         `${INDENT})`,
         `${INDENT}if err != nil { panic(err) }`,
@@ -588,11 +598,13 @@ function grpcGo(req: ResolvedGrpc): SnippetBlock[] {
   ];
 }
 
-function grpcJs(req: ResolvedGrpc): SnippetBlock[] {
+function grpcJs(req: ResolvedGrpc, metadata: Record<string, string> = {}): SnippetBlock[] {
   const stubName = req.service.split(".").pop() ?? "Service";
   const stubMod = stubName.toLowerCase();
   const methodCamel =
     req.methodName.charAt(0).toLowerCase() + req.methodName.slice(1);
+  const entries = Object.entries(metadata).map(([k, v]) => `"${k}": "${v}"`);
+  const md = entries.length ? `{ ${entries.join(", ")} }` : "{}";
   return [
     {
       label: "Installation",
@@ -623,7 +635,7 @@ function grpcJs(req: ResolvedGrpc): SnippetBlock[] {
         `const request = new ${req.methodName}Request();`,
         `// populate request from: ${jsonInline(req.body)}`,
         ``,
-        `client.${methodCamel}(request, {}, (err, resp) => {`,
+        `client.${methodCamel}(request, ${md}, (err, resp) => {`,
         `${INDENT}if (err) { console.error(err); return; }`,
         `${INDENT}console.log(resp.toObject());`,
         `});`,
@@ -635,17 +647,18 @@ function grpcJs(req: ResolvedGrpc): SnippetBlock[] {
 // ──────────────── Dispatch ────────────────
 
 export function snippetsFor(req: ResolvedRequest, selectUpstream?: string): Snippets {
+  // The upstream pin, so a copied snippet reproduces the pinned call. HTTP
+  // carries it as a header; gRPC as call metadata, which the router's gRPC
+  // listener hands to the same directive parser as an HTTP header.
+  const pin: Record<string, string> = selectUpstream
+    ? { "lava-select-provider": selectUpstream }
+    : {};
   if (req.transport === "http") {
-    // Pin header threads into HTTP snippets so a copied curl/fetch reproduces the
-    // same upstream-pinned call the live Send makes.
-    const extra: Record<string, string> = selectUpstream
-      ? { "lava-select-provider": selectUpstream }
-      : {};
     return {
-      cli: httpCli(req, extra),
-      python: httpPython(req, extra),
-      go: httpGo(req, extra),
-      javascript: httpJs(req, extra),
+      cli: httpCli(req, pin),
+      python: httpPython(req, pin),
+      go: httpGo(req, pin),
+      javascript: httpJs(req, pin),
     };
   }
   if (req.transport === "ws") {
@@ -657,9 +670,9 @@ export function snippetsFor(req: ResolvedRequest, selectUpstream?: string): Snip
     };
   }
   return {
-    cli: grpcCli(req),
-    python: grpcPython(req),
-    go: grpcGo(req),
-    javascript: grpcJs(req),
+    cli: grpcCli(req, pin),
+    python: grpcPython(req, pin),
+    go: grpcGo(req, pin),
+    javascript: grpcJs(req, pin),
   };
 }

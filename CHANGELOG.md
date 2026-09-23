@@ -5,6 +5,17 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Fixed
+
+- **A pinned gRPC Try-now copied an unpinned call.** The banner said the
+  request was pinned with `lava-select-provider`, but only the HTTP snippets
+  carried it. The router reads the pin from gRPC call metadata through the same
+  directive parser as an HTTP header, so every gRPC snippet now sends it:
+  grpcurl `-H`, Python `metadata=`, Go `metadata.AppendToOutgoingContext`, and
+  the gRPC-Web metadata argument, plus the discovery snippet's method call. The
+  banner now says the snippets carry the pin, because the drawer can't send
+  gRPC itself.
+
 ### Added
 
 - **Five chains arrived upstream.** **Arc** (`ARC` / `ARCT`) and **Robinhood
