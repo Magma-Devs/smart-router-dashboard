@@ -2,6 +2,7 @@
 
 import useSWR from "swr";
 import { useState } from "react";
+import { signOut } from "next-auth/react";
 import { apiGet, apiSend } from "@/lib/api-client";
 import { relativeTime } from "@/components/team/bits";
 
@@ -24,12 +25,16 @@ export function SessionsCard() {
     refreshInterval: 30000,
   });
   const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   async function revoke(id: string) {
     setBusy(id);
+    setError(null);
     try {
       await apiSend("DELETE", `/api/account/sessions/${id}`);
       await mutate();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not sign that device out.");
     } finally {
       setBusy(null);
     }
@@ -37,10 +42,15 @@ export function SessionsCard() {
 
   async function revokeAll() {
     setBusy("all");
+    setError(null);
     try {
       await apiSend("DELETE", "/api/account/sessions");
-      // This signs out the tab we're in too, deliberately.
-      window.location.href = "/login";
+      // This tab's api session is gone too, deliberately, so end the web
+      // session with it. Its cookie is still valid, and the edge gate sends a
+      // signed-in cookie from /login straight back to the dashboard.
+      await signOut({ redirectTo: "/login" });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not sign out everywhere.");
     } finally {
       setBusy(null);
     }
@@ -83,6 +93,7 @@ export function SessionsCard() {
           </div>
         ))}
       </div>
+      {error && <div role="alert" style={{ fontSize: 12, color: "var(--err)", marginTop: 10 }}>{error}</div>}
     </div>
   );
 }
