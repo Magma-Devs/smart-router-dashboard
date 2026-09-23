@@ -172,3 +172,19 @@ describe("POST /api/team/invites", () => {
     expect(res.statusCode).toBe(409);
   });
 });
+
+describe("POST /api/team/invites/:id/resend · DELETE /api/team/invites/:id", () => {
+  it("take the id in any case, and refuse the urn form at the schema rather than with a 500", async () => {
+    const admin = await member("admin@example.com", "admin");
+    const token = await bearer(admin);
+    const created = await invite(token, { email: "dana@example.com", role: "approver" });
+    const id: string = created.json().invite.id;
+    const send = (method: "POST" | "DELETE", url: string) =>
+      app!.inject({ method, url, headers: { authorization: `Bearer ${token}` } });
+
+    expect((await send("POST", `/api/team/invites/urn:uuid:${id}/resend`)).statusCode).toBe(400);
+    expect((await send("DELETE", `/api/team/invites/urn:uuid:${id}`)).statusCode).toBe(400);
+    expect((await send("POST", `/api/team/invites/${id.toUpperCase()}/resend`)).statusCode).toBe(200);
+    expect((await send("DELETE", `/api/team/invites/${id.toUpperCase()}`)).statusCode).toBe(200);
+  });
+});

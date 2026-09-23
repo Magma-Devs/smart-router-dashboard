@@ -248,6 +248,21 @@ describe("POST /api/team/members/:id/reset-link", () => {
     expect(res.statusCode).toBe(200);
     expect((res.json().url as string).startsWith("https://dash.example.com/reset/")).toBe(true);
   });
+
+  it("takes the id in any case, and refuses the urn form at the schema rather than with a 500", async () => {
+    const admin = await member("admin@example.com", { role: "admin" });
+    const dana = await member("dana@example.com");
+    const token = await bearer(admin);
+    const post = (id: string) =>
+      app!.inject({
+        method: "POST",
+        url: `/api/team/members/${id}/reset-link`,
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+    expect((await post(dana.id.toUpperCase())).statusCode).toBe(200);
+    expect((await post(`urn:uuid:${dana.id}`)).statusCode).toBe(400);
+  });
 });
 
 describe("POST /auth/password/forgot", () => {

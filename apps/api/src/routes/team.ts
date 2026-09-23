@@ -22,6 +22,24 @@ import { findUserById, linkedProviderNames } from "../services/users.js";
 import { deploymentMode, publicWebOrigin } from "../config.js";
 import { EMAIL_FIELD } from "./auth.js";
 
+/**
+ * An id path parameter, in the 8-4-4-4-12 form only. `format: "uuid"` also
+ * admits a `urn:uuid:` prefix, which Postgres refuses as a uuid — a 500 rather
+ * than a 400. Handlers lower-case it, because the services compare ids as
+ * strings and Postgres returns them lower-case: an upper-cased id of your own
+ * would otherwise miss the self check and read as "No such member."
+ */
+const ID_PARAMS = {
+  type: "object" as const,
+  required: ["id"],
+  properties: {
+    id: {
+      type: "string" as const,
+      pattern: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+    },
+  },
+};
+
 interface InviteBody {
   email: string;
   role: string;
@@ -173,11 +191,7 @@ export async function teamRoutes(app: FastifyInstance) {
       schema: {
         tags: ["Team"],
         summary: "Mint a fresh link, invalidating the previous one",
-        params: {
-          type: "object" as const,
-          required: ["id"],
-          properties: { id: { type: "string" as const, format: "uuid" } },
-        },
+        params: ID_PARAMS,
       },
     },
     async (request, reply) => {
@@ -189,7 +203,7 @@ export async function teamRoutes(app: FastifyInstance) {
       if (!origin) return reply;
       const mode = deploymentMode();
 
-      const { id } = request.params as { id: string };
+      const id = (request.params as { id: string }).id.toLowerCase();
       const result = await resendInvitation(db, id, mode);
       if (!result) {
         return reply.code(410).send({
@@ -225,11 +239,7 @@ export async function teamRoutes(app: FastifyInstance) {
       schema: {
         tags: ["Team"],
         summary: "Revoke an invitation — the link dies immediately",
-        params: {
-          type: "object" as const,
-          required: ["id"],
-          properties: { id: { type: "string" as const, format: "uuid" } },
-        },
+        params: ID_PARAMS,
       },
     },
     async (request, reply) => {
@@ -238,7 +248,7 @@ export async function teamRoutes(app: FastifyInstance) {
       const db = dbOr503(reply);
       if (!db) return reply;
 
-      const { id } = request.params as { id: string };
+      const id = (request.params as { id: string }).id.toLowerCase();
       const revoked = await revokeInvitation(db, id, me.id);
       if (!revoked) {
         return reply.code(410).send({
@@ -269,11 +279,7 @@ export async function teamPasswordRoutes(app: FastifyInstance) {
       schema: {
         tags: ["Team"],
         summary: "Generate a password-reset link for a member (on-prem: no mail server)",
-        params: {
-          type: "object" as const,
-          required: ["id"],
-          properties: { id: { type: "string" as const, format: "uuid" } },
-        },
+        params: ID_PARAMS,
       },
     },
     async (request, reply) => {
@@ -296,7 +302,7 @@ export async function teamPasswordRoutes(app: FastifyInstance) {
         });
       }
 
-      const { id } = request.params as { id: string };
+      const id = (request.params as { id: string }).id.toLowerCase();
       const target = await findUserById(db, id);
       if (!target || target.status !== "active") {
         return reply
@@ -333,24 +339,6 @@ export async function teamPasswordRoutes(app: FastifyInstance) {
     },
   );
 }
-
-/**
- * A member id, in the 8-4-4-4-12 form only. `format: "uuid"` also admits a
- * `urn:uuid:` prefix, which Postgres refuses as a uuid — a 500 rather than a
- * 400. Handlers lower-case it, because the services compare ids as strings and
- * Postgres returns them lower-case: an upper-cased id of your own would
- * otherwise miss the self check and read as "No such member."
- */
-const MEMBER_ID_PARAMS = {
-  type: "object" as const,
-  required: ["id"],
-  properties: {
-    id: {
-      type: "string" as const,
-      pattern: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
-    },
-  },
-};
 
 interface RoleBody {
   role: string;
@@ -459,7 +447,7 @@ export async function teamMemberRoutes(app: FastifyInstance) {
       schema: {
         tags: ["Team"],
         summary: "Change a member's role. Takes effect on their current session.",
-        params: MEMBER_ID_PARAMS,
+        params: ID_PARAMS,
         body: {
           type: "object" as const,
           required: ["role"],
@@ -508,7 +496,7 @@ export async function teamMemberRoutes(app: FastifyInstance) {
       schema: {
         tags: ["Team"],
         summary: "Remove a member — a state change, not a deletion",
-        params: MEMBER_ID_PARAMS,
+        params: ID_PARAMS,
       },
     },
     async (request, reply) => {
