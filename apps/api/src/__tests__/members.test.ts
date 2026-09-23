@@ -8,7 +8,8 @@ import {
   listMembers,
   removeMember,
 } from "../services/members.js";
-import { createInvitation } from "../services/invitations.js";
+import { createInvitation, redeemInvitation } from "../services/invitations.js";
+import { OAuthAccountNotFoundError, upsertOAuthUser } from "../services/users.js";
 import { createSession, listActiveSessions } from "../services/sessions.js";
 
 describe("members", () => {
@@ -40,6 +41,15 @@ describe("members", () => {
       const dana = rows.find((r) => r.email === "dana@example.com")!;
       expect(dana.role).toBe("approver");
       expect(dana.joinedAt).toBeInstanceOf(Date);
+    });
+
+    it("puts admins first, then sorts by address", async () => {
+      await t.db.insert(users).values({ email: "aaron@example.com", role: "read_only" });
+      expect((await listMembers(t.db)).map((r) => r.email)).toEqual([
+        "admin@example.com",
+        "dana@example.com",
+        "aaron@example.com",
+      ]);
     });
 
     it("leaves 2FA null rather than claiming 'no'", async () => {
@@ -100,6 +110,18 @@ describe("members", () => {
         ok: false,
         reason: "not_found",
       });
+    });
+
+    it("refuses an actor who stopped being an admin after the request arrived", async () => {
+      // The route checked the role on arrival. Two admins demoting each other
+      // at once would both pass that check and leave no admin at all.
+      await t.db.update(users).set({ role: "approver" }).where(eq(users.id, admin.id));
+      expect(await changeMemberRole(t.db, { id: member.id, role: "read_only", actorId: admin.id })).toEqual({
+        ok: false,
+        reason: "not_admin",
+      });
+      const [row] = await t.db.select().from(users).where(eq(users.id, member.id));
+      expect(row?.role).toBe("approver");
     });
   });
 
@@ -167,6 +189,59 @@ describe("members", () => {
         mode: "onprem",
       });
       expect(again.ok).toBe(true);
+    });
+
+    it("lets them come back as a new account with the same Google login", async () => {
+      // Provider ids are unique across every row, removed ones included. Kept
+      // on the removed row, the new account's insert collides with it.
+      await t.db.update(users).set({ googleId: "google-dana" }).where(eq(users.id, member.id));
+      await removeMember(t.db, { id: member.id, actorId: admin.id });
+
+      const again = await createInvitation(t.db, {
+        email: "dana@example.com",
+        role: "read_only",
+        createdBy: admin.id,
+        mode: "onprem",
+      });
+      if (!again.ok) throw new Error("setup");
+      const redeemed = await redeemInvitation(t.db, {
+        rawToken: again.created.rawToken,
+        verifiedEmail: "dana@example.com",
+        provider: { column: "googleId", id: "google-dana" },
+      });
+
+      expect(redeemed.ok).toBe(true);
+      if (!redeemed.ok) return;
+      expect(redeemed.user.id).not.toBe(member.id);
+      expect(redeemed.user.googleId).toBe("google-dana");
+    });
+
+    it("leaves their old Google login with no account to sign in to", async () => {
+      await t.db.update(users).set({ googleId: "google-dana" }).where(eq(users.id, member.id));
+      await removeMember(t.db, { id: member.id, actorId: admin.id });
+
+      await expect(
+        upsertOAuthUser(t.db, "google", {
+          providerId: "google-dana",
+          email: "dana@example.com",
+          name: null,
+          avatarUrl: null,
+        }),
+      ).rejects.toBeInstanceOf(OAuthAccountNotFoundError);
+    });
+
+    it("refuses an actor who was removed after the request arrived", async () => {
+      const [other] = await t.db
+        .insert(users)
+        .values({ email: "other@example.com", role: "admin" })
+        .returning();
+      await removeMember(t.db, { id: admin.id, actorId: other!.id });
+
+      expect(await removeMember(t.db, { id: other!.id, actorId: admin.id })).toEqual({
+        ok: false,
+        reason: "not_admin",
+      });
+      expect(await countAdmins(t.db)).toBe(1);
     });
 
     it("refuses self-removal", async () => {

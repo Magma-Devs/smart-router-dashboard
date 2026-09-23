@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { invitations, sessions, users, type Database, type User } from "@sr/db";
 import type { Role } from "@sr/shared";
 
@@ -33,7 +33,9 @@ export async function listMembers(db: Database): Promise<MemberRow[]> {
     .select()
     .from(users)
     .where(eq(users.status, "active"))
-    .orderBy(asc(users.email));
+    // `user_role` is declared least to most privileged, so descending puts
+    // admins first.
+    .orderBy(desc(users.role), asc(users.email));
 
   return rows.map((u) => ({
     id: u.id,
@@ -59,7 +61,35 @@ export async function countAdmins(db: Database): Promise<number> {
 
 export type MemberMutation =
   | { ok: true; user: User; previousRole?: Role }
-  | { ok: false; reason: "not_found" | "self" };
+  | { ok: false; reason: "not_found" | "self" | "not_admin" };
+
+/**
+ * Lock the actor's and the target's rows for the rest of the transaction, and
+ * read them back. Locked in id order, so two admins acting on each other queue
+ * rather than deadlock.
+ *
+ * `requireRole` checked the actor when the request arrived. This check holds
+ * when the write lands. Without it, two admins removing or demoting each other
+ * at once both pass, and nobody is left who can manage the team.
+ */
+async function lockActorAndTarget(
+  tx: Database,
+  actorId: string,
+  targetId: string,
+): Promise<{ actorIsAdmin: boolean; target: User | undefined }> {
+  const rows = await tx
+    .select()
+    .from(users)
+    .where(inArray(users.id, [actorId, targetId]))
+    .orderBy(asc(users.id))
+    .for("update");
+  const actor = rows.find((r) => r.id === actorId);
+  const target = rows.find((r) => r.id === targetId);
+  return {
+    actorIsAdmin: actor?.status === "active" && actor.role === "admin",
+    target: target?.status === "active" ? target : undefined,
+  };
+}
 
 /**
  * Change someone's role.
@@ -77,21 +107,19 @@ export async function changeMemberRole(
 ): Promise<MemberMutation> {
   if (input.id === input.actorId) return { ok: false, reason: "self" };
 
-  const existing = await db
-    .select()
-    .from(users)
-    .where(and(eq(users.id, input.id), eq(users.status, "active")))
-    .limit(1);
-  const target = existing[0];
-  if (!target) return { ok: false, reason: "not_found" };
+  return db.transaction(async (tx): Promise<MemberMutation> => {
+    const { actorIsAdmin, target } = await lockActorAndTarget(tx, input.actorId, input.id);
+    if (!actorIsAdmin) return { ok: false, reason: "not_admin" };
+    if (!target) return { ok: false, reason: "not_found" };
 
-  const updated = await db
-    .update(users)
-    .set({ role: input.role })
-    .where(eq(users.id, input.id))
-    .returning();
+    const updated = await tx
+      .update(users)
+      .set({ role: input.role })
+      .where(eq(users.id, input.id))
+      .returning();
 
-  return { ok: true, user: updated[0]!, previousRole: target.role };
+    return { ok: true, user: updated[0]!, previousRole: target.role };
+  });
 }
 
 /**
@@ -102,6 +130,9 @@ export async function changeMemberRole(
  *  - `status = 'removed'` — their name stays in the audit log permanently, and
  *    the partial unique index frees their address so it can be invited again
  *    under a new account.
+ *  - provider ids cleared — those columns are unique across every row, removed
+ *    ones included, so a kept id would make the new account's Google (or
+ *    GitHub, or Discord) sign-in collide with the old one.
  *  - `signed_out_all_at` — kills every outstanding token in one write, including
  *    any we hold no session row for.
  *  - every live session revoked — so their access dies within one request, not
@@ -118,15 +149,11 @@ export async function removeMember(
 ): Promise<MemberMutation> {
   if (input.id === input.actorId) return { ok: false, reason: "self" };
 
-  const existing = await db
-    .select()
-    .from(users)
-    .where(and(eq(users.id, input.id), eq(users.status, "active")))
-    .limit(1);
-  const target = existing[0];
-  if (!target) return { ok: false, reason: "not_found" };
+  return db.transaction(async (tx): Promise<MemberMutation> => {
+    const { actorIsAdmin, target } = await lockActorAndTarget(tx, input.actorId, input.id);
+    if (!actorIsAdmin) return { ok: false, reason: "not_admin" };
+    if (!target) return { ok: false, reason: "not_found" };
 
-  const removed = await db.transaction(async (tx) => {
     const updated = await tx
       .update(users)
       .set({
@@ -134,6 +161,9 @@ export async function removeMember(
         removedAt: new Date(),
         removedBy: input.actorId,
         signedOutAllAt: new Date(),
+        googleId: null,
+        githubId: null,
+        discordId: null,
       })
       .where(eq(users.id, input.id))
       .returning();
@@ -158,10 +188,8 @@ export async function removeMember(
         ),
       );
 
-    return updated[0]!;
+    return { ok: true, user: updated[0]! };
   });
-
-  return { ok: true, user: removed };
 }
 
 /**
