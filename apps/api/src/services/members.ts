@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { invitations, sessions, users, type Database, type User } from "@sr/db";
-import type { Role } from "@sr/shared";
+import { roleAtLeast, type Role } from "@sr/shared";
 import type { AuditWriter } from "./audit.js";
 
 /**
@@ -135,6 +135,11 @@ export async function changeMemberRole(
       },
       tx,
     );
+    // Losing the ability to approve has the same consequence as leaving, for
+    // anything currently waiting on them.
+    if (!roleAtLeast(user.role, "approver") && roleAtLeast(target.role, "approver")) {
+      await onMemberDeactivated(tx, user.id, "demoted");
+    }
 
     return { ok: true, user, previousRole: target.role };
   });
@@ -151,17 +156,18 @@ export async function changeMemberRole(
  *  - provider ids cleared — those columns are unique across every row, removed
  *    ones included, so a kept id would make the new account's Google (or
  *    GitHub, or Discord) sign-in collide with the old one.
- *  - `signed_out_all_at` — kills every outstanding token in one write, including
- *    any we hold no session row for.
+ *  - `signed_out_all_at` — the account-wide cutoff, so no token issued before
+ *    the removal is honoured even if a session row were missed.
  *  - every live session revoked — so their access dies within one request, not
  *    at their next sign-in.
- *  - any pending invitation to their address revoked — otherwise removing
- *    someone mid-onboarding leaves a live link that recreates them.
+ *  - any pending invitation to their address revoked — two admins inviting
+ *    the same address at once can both pass the one-pending check, and the
+ *    invitation they did not use would otherwise recreate them.
  *  - the audit row — written with the transaction, so a removal the log can't
  *    record doesn't happen.
  *
  * Cancelling their in-flight change requests is MAG-2731's table and therefore
- * its job; the hook is `onMemberDeactivated`, called at the end.
+ * its job; the hook is `onMemberDeactivated`, called inside the transaction.
  */
 export async function removeMember(
   db: Database,
@@ -219,6 +225,7 @@ export async function removeMember(
       },
       tx,
     );
+    await onMemberDeactivated(tx, user.id, "removed");
 
     return { ok: true, user };
   });
@@ -229,8 +236,10 @@ export async function removeMember(
  *
  * MAG-2731 owns change requests, so this is the seam rather than the
  * implementation: their pending requests have to be cancelled, and the
- * cancellation has to say why. Documented here so it doesn't quietly become a
- * done-when nobody delivered.
+ * cancellation has to say why. It runs inside the removal or demotion
+ * transaction, so the cancellation and the change it follows land together.
+ * MAG-2729's done-when lists the cancellation; it is delivered with MAG-2731's
+ * table, not here.
  */
 export async function onMemberDeactivated(
   _db: Database,

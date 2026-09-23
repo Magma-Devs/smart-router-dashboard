@@ -243,8 +243,9 @@ describe("members", () => {
     });
 
     it("revokes a pending invitation to their address", async () => {
-      // Otherwise removing someone mid-onboarding leaves a live link that
-      // recreates them.
+      // Reachable when two admins invite the same address at once: both pass
+      // the one-pending check, and the invitation the person did not use would
+      // otherwise recreate them after removal.
       const invited = await createInvitation(t.db, {
         email: "newcomer@example.com",
         role: "requester",
@@ -337,10 +338,11 @@ describe("members", () => {
       });
     });
 
-    it("does not block removing the last admin", async () => {
+    it("lets one admin remove another, as long as one is left", async () => {
       // Deliberate divergence from lava-connect: admin has to stay
       // transferable, or a departing employee's account can't be removed. The
-      // sole-admin case is a prompt on the screen, not a refusal here.
+      // sole-admin case is a prompt on the screen, not a refusal here. The
+      // last admin itself can never be removed: nobody removes themselves.
       const [other] = await t.db
         .insert(users)
         .values({ email: "other@example.com", role: "admin" })

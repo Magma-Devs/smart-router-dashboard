@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type { Database } from "@sr/db";
-import { isRole, roleAtLeast, toCsv, type Role } from "@sr/shared";
+import { isRole, toCsv, type Role } from "@sr/shared";
 import { requireRole } from "../plugins/auth.js";
 import { noopAuditWriter, type AuditWriter } from "../services/audit.js";
 import {
@@ -15,7 +15,6 @@ import {
   changeMemberRole,
   countAdmins,
   listMembers,
-  onMemberDeactivated,
   removeMember,
 } from "../services/members.js";
 import { findUserById, linkedProviderNames } from "../services/users.js";
@@ -476,14 +475,8 @@ export async function teamMemberRoutes(app: FastifyInstance) {
         return refuse(
           reply,
           result.reason,
-          "You cannot change your own role. Promote someone else first, then step down.",
+          "You cannot change your own role. Another admin has to change it for you.",
         );
-      }
-
-      // Losing the ability to approve has the same consequence as leaving, for
-      // anything currently waiting on them.
-      if (!roleAtLeast(result.user.role, "approver") && roleAtLeast(result.previousRole, "approver")) {
-        await onMemberDeactivated(conn, result.user.id, "demoted");
       }
 
       return { member: { id: result.user.id, email: result.user.email, role: result.user.role } };
@@ -510,8 +503,6 @@ export async function teamMemberRoutes(app: FastifyInstance) {
       if (!result.ok) {
         return refuse(reply, result.reason, "You cannot remove yourself.");
       }
-
-      await onMemberDeactivated(conn, result.user.id, "removed");
 
       return { ok: true };
     },
