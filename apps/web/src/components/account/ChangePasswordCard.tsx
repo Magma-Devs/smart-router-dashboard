@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useSWRConfig } from "swr";
 import { apiPost } from "@/lib/api-client";
 
 /** Changing your own password signs out your *other* devices and keeps this
@@ -13,6 +14,7 @@ export function ChangePasswordCard() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  const { mutate } = useSWRConfig();
 
   const mismatch = repeat.length > 0 && next !== repeat;
 
@@ -21,6 +23,9 @@ export function ChangePasswordCard() {
     try {
       await apiPost("/api/account/password", { current, next });
       setCurrent(""); setNext(""); setRepeat(""); setDone(true);
+      // Every other device was just signed out; the list below should say so
+      // now, not at its next 30-second poll.
+      void mutate("/api/account/sessions");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not change your password.");
     } finally {

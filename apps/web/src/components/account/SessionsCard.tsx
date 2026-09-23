@@ -21,7 +21,7 @@ interface SessionsResponse {
 /** Where you are signed in, and the ability to cut any of it off. This is the
  *  screen that makes "I think someone else is in my account" actionable. */
 export function SessionsCard() {
-  const { data, mutate } = useSWR<SessionsResponse>("/api/account/sessions", apiGet, {
+  const { data, error: loadError, mutate } = useSWR<SessionsResponse>("/api/account/sessions", apiGet, {
     refreshInterval: 30000,
   });
   const [busy, setBusy] = useState<string | null>(null);
@@ -93,6 +93,11 @@ export function SessionsCard() {
           </div>
         ))}
       </div>
+      {loadError && !data && (
+        <div role="alert" style={{ fontSize: 12, color: "var(--err)" }}>
+          Could not load your sessions: {loadError instanceof Error ? loadError.message : "request failed"}
+        </div>
+      )}
       {error && <div role="alert" style={{ fontSize: 12, color: "var(--err)", marginTop: 10 }}>{error}</div>}
     </div>
   );
