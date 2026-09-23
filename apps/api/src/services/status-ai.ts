@@ -120,6 +120,13 @@ return no themes.
 A short honest brief is worth more than a complete-sounding one. Two real
 themes beat six padded ones.
 
+**At most SIX themes.** Not a formatting preference: a brief nobody finishes
+reading has failed, and a busy report is exactly when grouping matters most.
+If you have more than six, you have not grouped hard enough — the same provider
+across four chains is ONE theme, not four. Rank and drop the tail rather than
+listing everything; cite every finding a theme covers, so nothing is lost by
+being grouped.
+
 ## Your answer
 
 Reply with ONLY a JSON object, no prose around it, no markdown fence:
@@ -191,7 +198,19 @@ function digest(report: StatusReport, incidents: Incident[]): string {
         capabilityGap: i.capabilityGap,
         story: i.story,
       })),
-      chainsWithoutFailover: report.noFailover.map((c) => c.spec),
+      // Citable, like everything else. Sent as bare spec strings these were a
+      // fact the model could read and had no way to ground a claim on, so a
+      // theme about single-upstream chains — a structural risk worth raising —
+      // was deleted by dropUncited for citing nothing. Giving a fact to the
+      // model without giving it an id is the same as withholding it.
+      chainsWithoutFailover: report.noFailover.map((c) => ({
+        id: `nofailover:${c.spec}`,
+        spec: c.spec,
+        chain: c.name,
+        configured: c.configured,
+        effective: c.effective,
+        reason: c.reason,
+      })),
     },
     null,
     1,
@@ -204,6 +223,7 @@ function citableIds(report: StatusReport, incidents: Incident[]): Set<string> {
   for (const f of report.findings) ids.add(f.id);
   for (const i of report.insights) ids.add(`insight:${i.kind}:${i.spec}:${i.upstream ?? ""}`);
   for (const i of incidents) ids.add(i.id);
+  for (const c of report.noFailover) ids.add(`nofailover:${c.spec}`);
   return ids;
 }
 
@@ -261,12 +281,12 @@ export class StatusAiService {
     const answer = await this.bedrock.complete({
       system: SYSTEM_PROMPT,
       messages: [{ role: "user", content: digest(report, incidents) }],
-      // Sized for the worst case, not the typical one. Measured on GK8: a
-      // 12-finding report answers in ~1400 tokens, but the ceiling has to
-      // clear a bad day — 31 chains all with findings — because a cut-off
-      // answer is unparseable JSON rather than a shorter brief. Billing is on
-      // tokens actually produced, so the headroom is free unless it is used.
-      maxTokens: 8000,
+      // Headroom over the SIX-theme cap the prompt sets, not over an
+      // unbounded answer: measured on GK8, four themes over 12 findings ran
+      // ~5.5k tokens, and an uncapped answer over a 34-finding report blew
+      // through 8000 and came back cut mid-object. The cap is what keeps the
+      // brief readable; this is what stops the cap's worst case truncating.
+      maxTokens: 16000,
     });
 
     // Truncation and refusal are different problems with different fixes, and

@@ -137,3 +137,47 @@ describe("StatusAiService.analyse", () => {
     expect(out.droppedUncited).toBe(0);
   });
 });
+
+describe("structural facts are citable, not just readable", () => {
+  /**
+   * The bug this pins: `noFailover` chains went into the digest as bare spec
+   * strings with no id. The model could read them and had nothing to cite, so
+   * a theme about single-upstream chains — exactly the structural risk the
+   * page exists to raise — was deleted by dropUncited for citing nothing.
+   * Handing the model a fact without an id is the same as withholding it.
+   */
+  const withNoFailover = {
+    computedAtUnix: 1,
+    findings: [],
+    insights: [],
+    noFailover: [{ spec: "IOTA", name: "IOTA", configured: 1, effective: 1, topUpstream: null, topSharePct: null, provenBackups: 0, reason: "one upstream" }],
+    chains: [],
+    totals: { requestsServed: 0, attemptsPerRequest: null, upstreamFailureRate: null, chainsClear: 0, chainsTotal: 1, prior: { requestsServed: null, attemptsPerRequest: null, upstreamFailureRate: null } },
+    lastCritical24h: null,
+    worstMover: null,
+    emitted: true,
+  } as unknown as StatusReport;
+
+  it("keeps a theme resting on a single-upstream chain", async () => {
+    const bedrock = {
+      complete: vi.fn(async () => ({
+        text: JSON.stringify({
+          headline: "h",
+          themes: [{ title: "no failover", detail: "d", severity: "advisory", findingIds: ["nofailover:IOTA"] }],
+        }),
+        stopReason: "end_turn",
+        inputTokens: 1,
+        outputTokens: 1,
+      })),
+    } as unknown as BedrockService;
+
+    const out = await new StatusAiService(bedrock).analyse(withNoFailover, []);
+    expect(out.themes).toHaveLength(1);
+    expect(out.droppedUncited).toBe(0);
+
+    // And the id has to be IN the digest, or the model cannot cite it.
+    const sent = (bedrock.complete as unknown as { mock: { calls: [{ messages: { content: string }[] }][] } })
+      .mock.calls[0]![0];
+    expect(sent.messages[0]!.content).toContain("nofailover:IOTA");
+  });
+});
