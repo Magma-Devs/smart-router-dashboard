@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.26.0]
+
 ### Added
 
 - **Two-factor login (TOTP).** Everyone who uses the dashboard sets up an
