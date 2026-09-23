@@ -375,7 +375,10 @@ export default function TeamPage() {
       <InviteModal
         open={showInvite}
         onClose={() => setShowInvite(false)}
-        onInvited={() => void invites.mutate()}
+        onInvited={() => {
+          setInviteError(null);
+          void invites.mutate();
+        }}
       />
       <ChangeRoleModal
         key={`role-${changing?.id ?? "none"}`}
