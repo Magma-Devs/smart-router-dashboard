@@ -16,7 +16,10 @@ export function ChangePasswordCard() {
   const [done, setDone] = useState(false);
   const { mutate } = useSWRConfig();
 
+  // The repeat field is the only guard against a typo in the new password, and
+  // a change signs every other device out — so an empty repeat never submits.
   const mismatch = repeat.length > 0 && next !== repeat;
+  const confirmed = next.length > 0 && next === repeat;
 
   async function submit() {
     setBusy(true); setError(null); setDone(false);
@@ -55,7 +58,7 @@ export function ChangePasswordCard() {
         )}
         {done && <div style={{ fontSize: 12, color: "var(--ok, var(--text-2))" }}>Password changed.</div>}
         <button className="gw-btn gw-btn--primary" style={{ alignSelf: "flex-start" }}
-          disabled={busy || mismatch || !current || !next}
+          disabled={busy || !current || !confirmed}
           onClick={() => void submit()}>
           {busy ? "Saving…" : "Update password"}
         </button>
