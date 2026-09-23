@@ -48,7 +48,14 @@ export async function buildApp(): Promise<FastifyInstance> {
   });
 
   await app.register(helmet, { contentSecurityPolicy: false });
-  await app.register(cors, { origin: config.server.corsOrigins, credentials: true });
+  // The browser calls the api cross-origin (web :3000, api :8000), and
+  // @fastify/cors allows only GET/HEAD/POST unless told otherwise — so without
+  // the list, every PATCH and DELETE dies in the preflight before reaching us.
+  await app.register(cors, {
+    origin: config.server.corsOrigins,
+    credentials: true,
+    methods: ["GET", "HEAD", "POST", "PATCH", "DELETE"],
+  });
   await app.register(rateLimit, { max: config.server.rateLimitMax, timeWindow: "1 minute" });
 
   await app.register(errorHandlerPlugin);
