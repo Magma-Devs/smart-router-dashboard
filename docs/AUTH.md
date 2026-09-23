@@ -445,22 +445,26 @@ an access review asks for first. Every role can read it, because a review only
 some people can see is not one; only an admin changes it.
 
 - **A role change revokes nothing.** The gate reads the role from the row on
-  every request, so a demotion lands on whatever the person has open.
+  every request, so a demotion lands on whatever the person has open. The Team
+  page takes the caller's own admin controls from that row too (through the
+  member list, polled every 30 seconds), not from the role in their token.
 - **Removal is a state change, in one transaction.** Status becomes `removed`,
   the provider ids are cleared, `signed_out_all_at` is stamped, every live
   session is revoked, and any pending invitation to their address is revoked.
   The row stays, so the audit log keeps their name. The partial unique index on
   email and the cleared provider ids let the same person be invited back as a
-  new account, Google login included.
+  new account, Google login included. Each change writes its audit row in the
+  same transaction, so a change the log can't record doesn't happen.
 - **There is always an admin.** An admin can't demote or remove themselves.
   Each write locks the caller's and the target's rows and re-checks that the
   caller is still an admin, so two admins acting on each other at once can't
   both succeed. A sole admin sees a prompt to add a second one — a prompt,
   never a refusal, because admin has to stay transferable.
 - **The export neutralises formula leads.** A field starting with `=`, `+`,
-  `-`, `@`, a tab or a CR gets a leading apostrophe: display names are chosen
-  by the people in the list, and the file opens in a spreadsheet. Line endings
-  are CRLF (RFC 4180).
+  `-`, `@`, a tab, CR or LF gets a leading apostrophe: display names are chosen
+  by the people in the list, and the file opens in a spreadsheet. It starts
+  with a UTF-8 byte-order mark, without which Excel reads it in the system code
+  page, and line endings are CRLF (RFC 4180).
 - **2FA shows an em dash, not "No",** until MAG-2730 ships.
 
 <img src="./assets/team-members.png" alt="The Team page's Members tab: a table of five people with columns for member, role, 2FA, last active and joined. Two admins are listed first, then an approver, a requester and a read-only member, sorted by address within each role. The 2FA column shows an em dash for everyone; one member who has never signed in shows an em dash for last active. Every row except the signed-in admin's own has Change role, Reset password and Remove buttons. Under the table, a panel shows a password reset link for one member, with a note to hand it over, that it works once until a stated time, and that any earlier link no longer works." width="100%">

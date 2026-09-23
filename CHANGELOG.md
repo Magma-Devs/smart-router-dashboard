@@ -5,18 +5,25 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Changed
+
+- **Invitations hand the link over on every deployment.** A managed
+  deployment answered with `delivery: "email"` and no link, though nothing
+  sends email until MAG-2870 — an invitation nobody received. The admin now
+  gets the link to pass on, as on-prem; the expiry still differs by mode.
+- **The web build no longer downloads its fonts.** `next/font/google` fetches
+  them at build time, and in August gstatic 404'd the Inter file this Next
+  version asks for, failing `next build` outright. Inter and JetBrains Mono are
+  vendored as latin-subset variable files, with their OFL license beside them.
+  Characters outside latin (ł, ř, ș, …) fall back to the system font.
+
 ### Fixed
 
-- **Every PATCH and DELETE from the browser died in the CORS preflight.**
-  `@fastify/cors` allows only GET, HEAD and POST unless it is given a method
-  list, and the web calls the api cross-origin (`:3000` → `:8000`), so the
-  browser refused to change a role, remove a member, revoke an invitation or
-  sign a device out before the api ever saw the request. The api now allows
-  PATCH and DELETE.
-- **`next build` failed fetching fonts.** `next/font/google` downloads them at
-  build time, and gstatic began 404ing the Inter file this Next version asks
-  for. Inter and JetBrains Mono are vendored as latin-subset variable files, so
-  the build no longer reaches the internet for them.
+- **The api refused every cross-origin PATCH and DELETE.** `@fastify/cors`
+  allows only GET, HEAD and POST unless it is given a method list, and the web
+  calls the api cross-origin (`:3000` → `:8000`). Nothing in the web sent
+  either until this release's Team and Account pages, which need both; the api
+  now allows them.
 - **A pinned gRPC Try-now copied an unpinned call.** The banner said the
   request was pinned with `lava-select-provider`, but only the HTTP snippets
   carried it. The router reads the pin from gRPC call metadata through the same
@@ -46,10 +53,17 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   - **generate a password-reset link** to hand over.
 
   Each change re-checks under a row lock that the caller is still an admin, so
-  two admins acting on each other at once can't leave the team with none.
-  Invitations are created, re-sent and revoked from the same page. On the
-  Account page, changing your password and the list of active sessions (sign
-  out one device, or all of them) now work.
+  two admins acting on each other at once can't leave the team with none, and
+  writes its audit row in the same transaction. The page's admin controls
+  follow the caller's live role, so a role change shows up within 30 seconds
+  rather than at the next sign-in. Invitations are created, re-sent and
+  revoked from the same page. On the Account page, changing your password and
+  the list of active sessions (sign out one device, or all of them) now work.
+
+  The export is UTF-8 with a byte-order mark, so Excel reads non-latin names
+  correctly. With `AUTH_MODE=disabled` — the default — none of this appears:
+  Team leaves the sidebar and `/team` redirects, and Account shows only the
+  build details.
 
 - **Five chains arrived upstream.** **Arc** (`ARC` / `ARCT`) and **Robinhood
   Chain** (`ROBINHOOD` / `ROBINHOODT`) are EVM chains importing `ETH1`, so they
