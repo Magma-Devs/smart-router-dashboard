@@ -18,6 +18,8 @@ import { config } from "../config.js";
 import { BedrockError, BedrockService, bedrockGate } from "../services/bedrock.js";
 import { StatusAiService } from "../services/status-ai.js";
 import { IncidentsService } from "../services/incidents.js";
+import { FailureAnalysisService } from "../services/failure-analysis.js";
+import { LokiService, groupErrors } from "../services/loki.js";
 import { parseWindow } from "./metrics.js";
 
 /** Which model this deployment would call. Nothing here is secret — no credential exists to leak. */
@@ -58,14 +60,14 @@ export async function aiRoutes(app: FastifyInstance) {
   app.post(
     "/api/ai/verify",
     {
-      // Tighter than the global limit: this one spends money, and a signed-in
-      // caller looping it is the failure auth does not prevent.
+      // Tighter than the global limit: this one reaches an external service,
+      // and a signed-in caller looping it is the failure auth does not prevent.
       config: { rateLimit: { max: config.bedrock.rateLimitMax, timeWindow: "1 minute" } },
       schema: {
         tags: ["AI"],
         summary: "Send one tiny prompt to the model and report what came back",
         description:
-          "COSTS MONEY — a real call, ~30 tokens. The deployment check: credentials " +
+          "Makes one real model call. The deployment check: credentials " +
           "resolving is not the same as being allowed to invoke this model, and only a " +
           "real call tells them apart. Run it once after wiring a new server.",
       },
@@ -118,7 +120,7 @@ export async function aiRoutes(app: FastifyInstance) {
         tags: ["AI"],
         summary: "Relate the Status page's findings to each other",
         description:
-          "COSTS MONEY. Reads the whole Status report plus 24h of incidents and returns " +
+          "Reads the whole Status report plus 24h of incidents and returns " +
           "correlated themes — the join the page cannot make, since one provider can appear " +
           "as an Issue, an Insight and the blamed party in an Incident with nothing linking " +
           "them. Every theme cites the finding ids it rests on; any that cites nothing real " +
@@ -168,6 +170,113 @@ export async function aiRoutes(app: FastifyInstance) {
           awsErrorName: err instanceof BedrockError ? err.awsErrorName : null,
           detail: err instanceof Error ? err.message : String(err),
           ...target(),
+        };
+      }
+    },
+  );
+
+  app.post<{ Querystring: { spec?: string; upstream?: string; window?: string; router?: string } }>(
+    "/api/ai/failure-analysis",
+    {
+      config: { rateLimit: { max: config.bedrock.rateLimitMax, timeWindow: "1 minute" } },
+      schema: {
+        tags: ["AI"],
+        summary: "Why one provider is failing on one chain, and whose problem it is",
+        description:
+          "Takes `spec` and `upstream`. Reads the findings naming that pair, the real error " +
+          "lines from the logs, the chain's OTHER providers over the same window, and the " +
+          "same provider's other chains — then returns a verdict in the page's own " +
+          "vocabulary: provider, setup, caller, chain, or undetermined. The peers are the " +
+          "decisive input: one provider failing while its peers are clean is the provider's " +
+          "problem; every provider failing identically is the chain's or the caller's.",
+      },
+    },
+    async (request, reply) => {
+      const { spec, upstream } = request.query;
+      if (!spec || !upstream) {
+        reply.status(400);
+        return { error: "spec and upstream are both required" };
+      }
+
+      const g = gate();
+      if (!g.ok) {
+        reply.status(503);
+        return { ...g, ...target() };
+      }
+
+      const window = parseWindow(request.query.window);
+      const scoped = app.scoped(request.query.router);
+      const loki = new LokiService();
+
+      const [report, faults, lines] = await Promise.all([
+        scoped.metricsDetail.status(window),
+        scoped.metricsDetail.providerFaults(window),
+        // Absent Loki the verdict rests on codes alone, which is weaker but
+        // still honest — the prompt is told what it has, never told it is complete.
+        loki.available
+          ? loki.recentErrors(spec, upstream, 200).catch(() => [])
+          : Promise.resolve([]),
+      ]);
+
+      const findings = report.findings.filter((f) => f.spec === spec && f.upstream === upstream);
+      const chainName = findings[0]?.chainName ?? spec;
+
+      // The peers: every OTHER provider on this chain, and whether the page has
+      // a finding against it in the same window. This is what separates "this
+      // node is broken" from "the chain is".
+      const peerNames = new Set<string>();
+      for (const f of report.findings) {
+        if (f.spec === spec && f.upstream && f.upstream !== upstream) peerNames.add(f.upstream);
+      }
+      const fault = faults.providers.find((p) => p.provider === upstream);
+      for (const c of fault?.chains ?? []) {
+        if (c.spec !== spec) continue;
+      }
+      const peers = [...peerNames].map((name) => {
+        const theirs = report.findings.filter((f) => f.spec === spec && f.upstream === name);
+        return {
+          upstream: name,
+          failing: theirs.length > 0,
+          note: theirs.map((f) => f.headline).join("; "),
+        };
+      });
+
+      // Elsewhere: the same provider's other chains, from the per-provider
+      // fault rollup rather than inferred.
+      const otherChains = (fault?.chains ?? [])
+        .filter((c) => c.spec !== spec && (c.answeredWithError > 0 || c.unreachable > 0))
+        .slice(0, 8)
+        .map((c) => ({
+          spec: c.spec,
+          chainName: c.name,
+          note: `${c.answeredWithError} error answers, ${c.unreachable} unreachable`,
+        }));
+
+      try {
+        const svc = new FailureAnalysisService(new BedrockService(config.bedrock.model, app.log), app.log);
+        const analysis = await svc.analyse({
+          spec,
+          chainName,
+          upstream,
+          role: findings[0]?.role ?? null,
+          findings,
+          errorGroups: groupErrors(lines, 6),
+          peers,
+          otherChains,
+        });
+        return {
+          ok: true,
+          ...analysis,
+          // What it had to work with, so a thin verdict is explicable.
+          read: { findings: findings.length, errorGroups: groupErrors(lines, 6).length, peers: peers.length, otherChains: otherChains.length },
+        };
+      } catch (err) {
+        reply.status(502);
+        return {
+          ok: false,
+          reason: "model_call_failed",
+          awsErrorName: err instanceof BedrockError ? err.awsErrorName : null,
+          detail: err instanceof Error ? err.message : String(err),
         };
       }
     },

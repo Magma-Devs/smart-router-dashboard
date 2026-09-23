@@ -86,6 +86,31 @@ export async function apiGet<T>(path: string): Promise<T> {
   return (await res.json()) as T;
 }
 
+/**
+ * POST that hands back the parsed body whatever the status.
+ *
+ * `apiPost` throws on non-2xx and discards the body, which is right when a
+ * failure is just a failure. It is wrong for a route whose refusal IS the
+ * answer — `/api/ai/status-analysis` returns 503 with a `reason` saying
+ * whether AI is off, needs sign-in, or could not reach the model, and those
+ * are three different things to put on screen.
+ */
+export async function apiPostResult<T>(
+  path: string,
+  body?: unknown,
+): Promise<{ status: number; body: T }> {
+  const { base, headers } = await requestContext();
+  // The content-type goes on ONLY with a body: Fastify rejects a POST that
+  // declares application/json and sends nothing with a 400 before the route
+  // ever runs, which reads as the route being broken.
+  const res = await fetch(`${base}${path}`, {
+    method: "POST",
+    headers: body === undefined ? headers : { "content-type": "application/json", ...headers },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+  return { status: res.status, body: (await res.json()) as T };
+}
+
 export async function apiPost<T>(path: string, body: unknown): Promise<T> {
   const { base, headers } = await requestContext();
   const res = await fetch(`${base}${path}`, {

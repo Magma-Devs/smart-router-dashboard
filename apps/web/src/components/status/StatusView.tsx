@@ -42,6 +42,7 @@ import { fmtComma } from "@/lib/format";
 import { ProvidersTab } from "./ProvidersTab";
 import { IncidentsTab } from "./IncidentsTab";
 import { useFilters } from "@/components/gateway/FiltersProvider";
+import { BriefPanel } from "./BriefPanel";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { WindowSelect } from "@/components/gateway/WindowSelect";
 
@@ -460,6 +461,7 @@ export function StatusView() {
       </div>
 
       {tab === "issues" && (<>
+        <BriefPanel />
       <Section title="Critical"
         color={apiDown ? "var(--err)" : critical.length ? "var(--err)" : isLoading && !data ? "var(--text-4)" : "var(--text-3)"}
         count={critical.length}>
