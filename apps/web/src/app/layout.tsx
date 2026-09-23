@@ -16,7 +16,8 @@ import "@/styles/globals.css";
 //
 // These are the latin-subset variable files (one per family, ~47 KB and ~39 KB),
 // which cover every weight the design uses. Refresh them from
-// fonts.googleapis.com/css2 if a new weight or subset is ever needed.
+// fonts.googleapis.com/css2 if a new weight or subset is ever needed. Both are
+// SIL OFL 1.1; the license travels with them in ./fonts/OFL.txt.
 const inter = localFont({
   src: "./fonts/Inter-latin.woff2",
   weight: "100 900",
