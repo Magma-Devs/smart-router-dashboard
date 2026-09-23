@@ -277,8 +277,8 @@ on every deployment, for every address, and writes nothing, because there is
 no way to deliver a link — email is MAG-2870. Issuing one would look delivered
 while reaching nobody, and would invalidate any live link the member holds.
 
-The admin route is API-only: there is no members table to start it from.
-The page a link lands on, `/reset/<token>`, exists.
+An admin starts one from the member's row on the Team page, which shows the
+link once; it lands on `/reset/<token>`. A new link kills any earlier one.
 
 `POST /auth/password/reset`, in **one transaction**, claims the token with a
 conditional update, writes the hash, **revokes every session for the account**
