@@ -492,15 +492,24 @@ or revoked.
 Every authenticated request resolves `sid` to a session joined to its
 account, and refuses the request if any of these hold:
 
-| Condition | Response |
+| Condition, in the order checked | Response |
 |---|---|
-| No session row, or `revoked_at` set, or past `expires_at` | `401` · `SESSION_INVALID` |
+| No session row | `401` · `SESSION_INVALID` |
 | Account `status` is `suspended` or `removed` | `403` · `ACCOUNT_INACTIVE` |
+| `revoked_at` set, or past `expires_at` | `401` · `SESSION_INVALID` |
 | Token `iat` at or before `users.signed_out_all_at` | `401` · `SESSION_INVALID` |
 | Database not reachable yet | `503` · `AUTH_UNAVAILABLE` |
 
+The account comes before the session because removal revokes every session:
+the other way round, a removed person would only ever be told to sign in again.
+
 The codes are machine-readable so the web can tell "sign in again" from
 "you are not allowed" and stop rather than looping through the edge gate.
+The web acts on exactly three of them — `401 SESSION_INVALID`, `401
+AUTH_REQUIRED` on a request that carried a token, and `403 ACCOUNT_INACTIVE` —
+by signing the browser out and going to `/login`, so a device revoked or
+removed from somewhere else stops looking signed in. A route's own 401 (a wrong
+current password), a role `403 FORBIDDEN`, and a `503` never sign anyone out.
 
 **Two revocation mechanisms, both needed.** They do different jobs:
 

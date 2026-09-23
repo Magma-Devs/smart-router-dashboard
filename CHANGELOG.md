@@ -60,6 +60,11 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   revoked from the same page. On the Account page, changing your password and
   the list of active sessions (sign out one device, or all of them) now work.
 
+  A device whose session is revoked, or whose person is removed, signs itself
+  out and lands on `/login` at its next request rather than going on looking
+  signed in; a removed person is told the account is no longer active, not to
+  sign in again. Changing your password needs the repeat field to match.
+
   The export is UTF-8 with a byte-order mark, so Excel reads non-latin names
   correctly. With `AUTH_MODE=disabled` — the default — none of this appears:
   Team leaves the sidebar and `/team` redirects, and Account shows only the
