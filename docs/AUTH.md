@@ -5,7 +5,7 @@ The dashboard has two auth modes, selected by the `AUTH_MODE` env var
 
 | Mode | What it means |
 |---|---|
-| `disabled` *(default)* | Today's behaviour — no login, no database, every route open. The zero-dependency self-hosted posture. |
+| `disabled` *(default)* | Today's behaviour — no login, no database, every route open. The zero-dependency self-hosted posture. The api registers none of the account routes, and the web follows: no Team entry in the sidebar, `/team` redirects, and Account shows only the build details. |
 | `enabled` | Auth.js v5 sign-in (email+password, plus OAuth), Postgres-backed users, HS256 JWT shared between web and api. `/api/*` requires a Bearer token. |
 
 The implementation is a trimmed port of `lava-connect`'s auth stack — same
