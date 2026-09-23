@@ -196,7 +196,7 @@ describe("PATCH /api/team/members/:id", () => {
 });
 
 describe("DELETE /api/team/members/:id", () => {
-  it("ends the target's open session on its very next request", async () => {
+  it("ends the target's open session on its very next request, and says why", async () => {
     const admin = await member("admin@example.com", "admin");
     const dana = await member("dana@example.com", "approver");
     const danaToken = await bearer(dana);
@@ -205,7 +205,11 @@ describe("DELETE /api/team/members/:id", () => {
     const res = await call("DELETE", `/api/team/members/${dana.id}`, await bearer(admin));
 
     expect(res.statusCode).toBe(200);
-    expect((await call("GET", "/api/team/members", danaToken)).statusCode).toBe(401);
+    // Not "sign in again": removal revokes her sessions too, but signing in
+    // again cannot help a removed person, and the code is what the web keys on.
+    const after = await call("GET", "/api/team/members", danaToken);
+    expect(after.statusCode).toBe(403);
+    expect(after.json().code).toBe("ACCOUNT_INACTIVE");
   });
 
   it("is admin-only", async () => {
