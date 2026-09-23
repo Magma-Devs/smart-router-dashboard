@@ -97,7 +97,7 @@ export async function teamRoutes(app: FastifyInstance) {
     {
       schema: {
         tags: ["Team"],
-        summary: "Invite an address. On-prem returns the link — there is no mail server.",
+        summary: "Invite an address. Returns the link, shown once, for the admin to hand over.",
         body: {
           type: "object" as const,
           required: ["email", "role"],
@@ -157,10 +157,12 @@ export async function teamRoutes(app: FastifyInstance) {
           expiresAt: invitation.expiresAt.toISOString(),
           state: "pending",
         },
-        // On-prem has no mail server, so the admin copies this and hands it
-        // over. Shown once; it is not stored anywhere it can be read back.
-        url: mode === "onprem" ? inviteUrl(origin, rawToken) : undefined,
-        delivery: mode === "onprem" ? "link" : "email",
+        // Every deployment hands the link over for now: on-prem has no mail
+        // server, and managed has no mailer until MAG-2870. Answering "email"
+        // with no link would issue an invitation nobody receives. Shown once;
+        // it is not stored anywhere it can be read back.
+        url: inviteUrl(origin, rawToken),
+        delivery: "link",
       });
     },
   );
@@ -211,8 +213,8 @@ export async function teamRoutes(app: FastifyInstance) {
           expiresAt: result.invitation.expiresAt.toISOString(),
           state: "pending",
         },
-        url: mode === "onprem" ? inviteUrl(origin, result.rawToken) : undefined,
-        delivery: mode === "onprem" ? "link" : "email",
+        url: inviteUrl(origin, result.rawToken),
+        delivery: "link",
       };
     },
   );

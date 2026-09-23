@@ -130,6 +130,27 @@ describe("POST /api/team/invites", () => {
     expect(res.statusCode).toBe(401);
   });
 
+  it("hands the link over on a managed deployment too, since nothing can email it yet", async () => {
+    // Answering "emailed" with no link would issue an invitation nobody
+    // receives. Email is MAG-2870; until then every deployment gets the link.
+    setEnv({ DEPLOYMENT_MODE: "managed" });
+    const admin = await member("admin@example.com", "admin");
+    const token = await bearer(admin);
+
+    const created = await invite(token, { email: "dana@example.com", role: "approver" });
+    expect(created.statusCode).toBe(201);
+    expect(created.json().delivery).toBe("link");
+    expect(created.json().url.startsWith(`${WEB_ORIGIN}/invite/`)).toBe(true);
+
+    const resent = await app!.inject({
+      method: "POST",
+      url: `/api/team/invites/${created.json().invite.id}/resend`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(resent.statusCode).toBe(200);
+    expect(resent.json().url.startsWith(`${WEB_ORIGIN}/invite/`)).toBe(true);
+  });
+
   it("refuses a second live invitation for the same address", async () => {
     const admin = await member("admin@example.com", "admin");
     const token = await bearer(admin);

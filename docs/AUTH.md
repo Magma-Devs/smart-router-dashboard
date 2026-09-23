@@ -157,7 +157,7 @@ crash can't leave a redeemed invite with no account.
 
 | | Managed | On-prem |
 |---|---|---|
-| Delivery | emailed | link returned to the admin, once, and handed over |
+| Delivery | link returned to the admin, once, and handed over — email is MAG-2870 | link returned to the admin, once, and handed over |
 | TTL | 7 days | 24 hours |
 
 **Resending mints a new token and kills the old link**, so it replaces the
