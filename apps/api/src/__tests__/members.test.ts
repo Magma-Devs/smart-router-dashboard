@@ -152,6 +152,41 @@ describe("members", () => {
     });
   });
 
+  describe("the row lock", () => {
+    // What keeps "there is always an admin" true under concurrency: two admins
+    // demoting each other at once must queue on the same rows, or both pass the
+    // re-check and leave none. pglite has one connection, so no test here can
+    // race two transactions — this pins the statement that makes the race
+    // safe instead. Verified against Postgres 18: without it, the pair leaves
+    // zero admins; with it, the second waits and gets `not_admin`.
+    it.each([
+      ["a role change", (db: TestDb["db"], a: User, m: User) =>
+        changeMemberRole(db, { id: m.id, role: "read_only", actorId: a.id }, recordingAudit())],
+      ["a removal", (db: TestDb["db"], a: User, m: User) =>
+        removeMember(db, { id: m.id, actorId: a.id }, recordingAudit())],
+    ])("is taken on both rows, in id order, by %s", async (_label, mutate) => {
+      const statements: string[] = [];
+      const watched = await createTestDb({ onQuery: (sql) => statements.push(sql) });
+      try {
+        const [a] = await watched.db.insert(users).values({ email: "a@example.com", role: "admin" }).returning();
+        const [m] = await watched.db.insert(users).values({ email: "m@example.com", role: "approver" }).returning();
+        statements.length = 0;
+
+        expect((await mutate(watched.db, a!, m!)).ok).toBe(true);
+
+        const lock = statements.find((q) => /for update/i.test(q));
+        expect(lock).toMatch(/"users"\."id" in \(\$1, \$2\)/);
+        expect(lock).toMatch(/order by "users"\."id" asc for update/i);
+        // Taken before the row it guards is written.
+        expect(statements.indexOf(lock!)).toBeLessThan(
+          statements.findIndex((q) => /^update "users"/i.test(q)),
+        );
+      } finally {
+        await watched.close();
+      }
+    });
+  });
+
   describe("removing someone", () => {
     it("is a state change, not a deletion", async () => {
       const result = await removeMember(t.db, { id: member.id, actorId: admin.id }, audit);

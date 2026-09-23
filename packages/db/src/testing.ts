@@ -25,9 +25,20 @@ export interface TestDb {
   close: () => Promise<void>;
 }
 
-export async function createTestDb(): Promise<TestDb> {
+export async function createTestDb(
+  options: {
+    /** Sees every statement drizzle sends, migrations included. For asserting
+     *  SQL a single-connection database can't exercise — a row lock needs a
+     *  second connection to contend with, and pglite has one. */
+    onQuery?: (sql: string) => void;
+  } = {},
+): Promise<TestDb> {
   const client = new PGlite();
-  const db = drizzle(client, { schema });
+  const { onQuery } = options;
+  const db = drizzle(client, {
+    schema,
+    logger: onQuery ? { logQuery: (sql) => onQuery(sql) } : undefined,
+  });
 
   // src/testing.ts -> ../migrations (dev, via vitest)
   // dist/testing.js -> ../migrations (built)
