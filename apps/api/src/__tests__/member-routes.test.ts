@@ -165,6 +165,23 @@ describe("PATCH /api/team/members/:id", () => {
     expect(res.statusCode).toBe(409);
   });
 
+  it("treats an upper-cased id as the same member", async () => {
+    // Postgres compares uuids case-insensitively; the self check must too.
+    const admin = await member("admin@example.com", "admin");
+    const dana = await member("dana@example.com", "read_only");
+    const token = await bearer(admin);
+
+    const self = await call("PATCH", `/api/team/members/${admin.id.toUpperCase()}`, token, {
+      role: "read_only",
+    });
+    expect(self.statusCode).toBe(409);
+
+    const other = await call("PATCH", `/api/team/members/${dana.id.toUpperCase()}`, token, {
+      role: "approver",
+    });
+    expect(other.statusCode).toBe(200);
+  });
+
   it("refuses a role that doesn't exist, at the schema", async () => {
     const admin = await member("admin@example.com", "admin");
     const dana = await member("dana@example.com", "read_only");
@@ -201,6 +218,13 @@ describe("DELETE /api/team/members/:id", () => {
     expect((await call("DELETE", `/api/team/members/${admin.id}`, await bearer(admin))).statusCode).toBe(
       409,
     );
+  });
+
+  it("refuses an id in urn form at the schema, not with a 500 from Postgres", async () => {
+    const admin = await member("admin@example.com", "admin");
+    const dana = await member("dana@example.com", "read_only");
+    const res = await call("DELETE", `/api/team/members/urn:uuid:${dana.id}`, await bearer(admin));
+    expect(res.statusCode).toBe(400);
   });
 
   it("answers 404 for someone already removed", async () => {
