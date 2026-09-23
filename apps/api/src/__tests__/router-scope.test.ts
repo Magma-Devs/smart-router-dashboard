@@ -101,7 +101,7 @@ describe("?router= scoping", () => {
     "/api/metrics/unavailable",
     "/api/metrics/specs",
     "/api/metrics/chain-series?spec=ETH1",
-    "/api/metrics/upstream-detail?endpointId=eth-lava",
+    "/api/metrics/upstream-detail?endpointId=eth-lava&spec=ETH1",
   ];
 
   it.each(SCOPED_ROUTES)("scopes every metric selector on %s", async (route) => {
@@ -368,5 +368,24 @@ describe("METRICS_SCOPE_LABEL / METRICS_SCOPE_VALUE (deployment scope)", () => {
   it("refuses to boot on a value that could break out of the matcher", async () => {
     setScope("zone", 'x" or spec="ETH1');
     await expect(buildApp()).rejects.toThrow(/cannot be embedded/);
+  });
+});
+
+describe("GET /api/metrics/upstream-detail", () => {
+  // Vendors reuse one node name on every chain they serve. A selector keyed by
+  // the name alone summed them all, so Solana's deep-dive showed Base's errors.
+  it("addresses the upstream on its chain in every query that names it", async () => {
+    mockPrometheus([], ["smartrouter_node_errors_total", "smartrouter_protocol_errors_total"]);
+    app = await buildApp();
+
+    const res = await app.inject({ method: "GET", url: "/api/metrics/upstream-detail?endpointId=blockdaemon&spec=SOLANA" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().spec).toBe("SOLANA");
+
+    const naming = sent.filter((q) => q.includes('"blockdaemon"'));
+    expect(naming.length).toBeGreaterThan(0);
+    expect(naming.filter((q) => !/spec="SOLANA",(endpoint_id|provider_address)="blockdaemon"/.test(q))).toEqual([]);
+    // …and the node-error reads are among them, not skipped.
+    expect(naming.some((q) => q.includes("smartrouter_node_errors_total"))).toBe(true);
   });
 });

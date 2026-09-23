@@ -7,7 +7,7 @@
  * API's (requests desc), like the design's unsorted default. */
 
 import { useEffect, useState } from "react";
-import { buildChainMetaByIndex, type MetricWindow, type UpstreamMetrics } from "@sr/shared";
+import { buildChainMetaByIndex, type MetricWindow, type UpstreamMetrics, type UpstreamRef } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { uptimeColor } from "@/lib/colors";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
@@ -21,6 +21,16 @@ import { qosHint, qosIsStale, qosValue } from "@/lib/upstream-signals";
 import { useRouterFilter } from "@/hooks/use-router-options";
 
 const BLOCK_TIP = "**The head this upstream reports** — `rpc_endpoint_latest_block`, its own tip rather than the router's.\n\n**Click a height** to open it on the chain\u2019s block explorer and check it against the public chain. Chains with no verified block page show the number plain — the chain name still opens their explorer.";
+
+/**
+ * A roster row's identity — one per (endpoint × chain). A vendor reuses its
+ * node name on every chain it serves, so the name alone can't key a row, pick
+ * one, or address its deep-dive: selecting `blockdaemon` on Solana used to
+ * light up (and fetch) whichever `blockdaemon` came first.
+ */
+export function upstreamKey(ref: UpstreamRef): string {
+  return `${ref.endpointId}\u0000${ref.spec}`;
+}
 
 interface RosterRow {
   pm: UpstreamMetrics;
@@ -43,10 +53,11 @@ interface RosterRow {
   qos: number;
 }
 
-export function PMRoster({ rows, activeName, onSelect, timeWindow, loading = false, refreshing = false }: {
+export function PMRoster({ rows, activeKey, onSelect, timeWindow, loading = false, refreshing = false }: {
   rows: UpstreamMetrics[];
-  activeName: string | null;
-  onSelect: (name: string) => void;
+  /** `upstreamKey` of the selected row. */
+  activeKey: string | null;
+  onSelect: (key: string) => void;
   timeWindow: MetricWindow;
   /** Revalidating with rows already on screen — a cue, never a ghost. */
   refreshing?: boolean;
@@ -123,11 +134,10 @@ export function PMRoster({ rows, activeName, onSelect, timeWindow, loading = fal
         <tbody>
           {pageRows.map((r) => {
             const v = r.pm;
-            const on = r.name === activeName;
+            const key = upstreamKey(v);
+            const on = key === activeKey;
             return (
-              // One row per (endpoint × chain) — a vendor name reused
-              // across chains is several rows, so the name alone can't key them.
-              <tr key={`${r.name}\u0000${r.pm.spec}`} onClick={() => onSelect(r.name)} style={{ cursor: "pointer", background: on ? "rgba(255,57,0,0.06)" : undefined, boxShadow: on ? "inset 2px 0 0 var(--brand)" : undefined }}>
+              <tr key={key} onClick={() => onSelect(key)} style={{ cursor: "pointer", background: on ? "rgba(255,57,0,0.06)" : undefined, boxShadow: on ? "inset 2px 0 0 var(--brand)" : undefined }}>
                 <td>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <HealthDot health={v.health} />

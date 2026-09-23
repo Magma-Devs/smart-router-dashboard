@@ -9,6 +9,7 @@ import {
   ROUTER_METRICS,
 } from "../constants/metrics.js";
 import { DEFAULT_WINDOW, WINDOWS, type MetricWindow } from "../constants/windows.js";
+import type { UpstreamRef } from "../types/domain.js";
 
 /** Build a `{spec="ETH1",...}` label selector; empty string for no filters. */
 export function selector(labels: Record<string, string | undefined>): string {
@@ -287,48 +288,59 @@ export function qBackupShareExpr(
   return `sum(rate(${ROUTER_METRICS.requestsTotal}${backupSel}[${step}])) / sum(rate(${ROUTER_METRICS.requestsTotal}${sel}[${step}]))`;
 }
 
-/* ── Endpoint-scope (per-upstream) latency + volume ──────────────────────── */
+/* ── Per-upstream (one name on one chain) latency + volume ─────────────── */
 
-/** histogram_quantile over ONE endpoint's latency histogram (window scalar). */
+/*
+ * These take an `UpstreamRef`, never a bare name: a vendor reuses its node
+ * name on every chain it serves, so a name-only selector sums them all. Two
+ * families address an upstream under two label names — `rpc_endpoint_*` by
+ * `endpoint_id`, `smartrouter_*` by `provider_address` — and both carry `spec`.
+ */
+
+/** `{spec, endpoint_id}` selector — the `rpc_endpoint_*` families. */
+export function upstreamEndpointSelector(ref: UpstreamRef): string {
+  return selector({ spec: ref.spec, endpoint_id: ref.endpointId });
+}
+
+/** `{spec, provider_address}` selector — the `smartrouter_*` families. */
+export function upstreamProviderSelector(ref: UpstreamRef): string {
+  return selector({ spec: ref.spec, provider_address: ref.endpointId });
+}
+
+/** histogram_quantile over ONE upstream's latency histogram (window scalar). */
 export function qEndpointLatencyQuantile(
   quantile: number,
-  endpointId: string,
+  ref: UpstreamRef,
   window: MetricWindow = DEFAULT_WINDOW,
 ): string {
-  return `histogram_quantile(${quantile}, sum by (le) (rate(${ENDPOINT_METRICS.latencyBucket}${selector({ endpoint_id: endpointId })}[${rangeFor(window)}])))`;
+  return `histogram_quantile(${quantile}, sum by (le) (rate(${ENDPOINT_METRICS.latencyBucket}${upstreamEndpointSelector(ref)}[${rangeFor(window)}])))`;
 }
 
-/** Latency-quantile series for one endpoint. */
+/** Latency-quantile series for one upstream. */
 export function qEndpointLatencySeriesExpr(
   quantile: number,
-  endpointId: string,
+  ref: UpstreamRef,
   step: string,
 ): string {
-  return `histogram_quantile(${quantile}, sum by (le) (rate(${ENDPOINT_METRICS.latencyBucket}${selector({ endpoint_id: endpointId })}[${step}])))`;
+  return `histogram_quantile(${quantile}, sum by (le) (rate(${ENDPOINT_METRICS.latencyBucket}${upstreamEndpointSelector(ref)}[${step}])))`;
 }
 
-/** One upstream's request-volume series (router scope, by provider_address). */
-export function qUpstreamVolumeSeriesExpr(
-  upstreamAddress: string,
-  step: string,
-): string {
-  return `sum(increase(${ROUTER_METRICS.requestsTotal}${selector({ provider_address: upstreamAddress })}[${step}]))`;
+/** One upstream's request-volume series (router scope). */
+export function qUpstreamVolumeSeriesExpr(ref: UpstreamRef, step: string): string {
+  return `sum(increase(${ROUTER_METRICS.requestsTotal}${upstreamProviderSelector(ref)}[${step}]))`;
 }
 
 /** One upstream's READ-volume series (requests_read_total is real). */
-export function qUpstreamReadVolumeSeriesExpr(
-  upstreamAddress: string,
-  step: string,
-): string {
-  return `sum(increase(${ROUTER_METRICS.requestsReadTotal}${selector({ provider_address: upstreamAddress })}[${step}]))`;
+export function qUpstreamReadVolumeSeriesExpr(ref: UpstreamRef, step: string): string {
+  return `sum(increase(${ROUTER_METRICS.requestsReadTotal}${upstreamProviderSelector(ref)}[${step}]))`;
 }
 
 /** Per-upstream error rate over the window (router scope). */
 export function qUpstreamErrorRate(
-  upstreamAddress: string,
+  ref: UpstreamRef,
   window: MetricWindow = DEFAULT_WINDOW,
 ): string {
-  const sel = selector({ provider_address: upstreamAddress });
+  const sel = upstreamProviderSelector(ref);
   const r = rangeFor(window);
   return `1 - (sum(increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${r}])) / sum(increase(${ROUTER_METRICS.requestsTotal}${sel}[${r}])))`;
 }
@@ -431,9 +443,9 @@ function isValidScopeLabelName(label: string): boolean {
   return /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(label);
 }
 
-/** Block-lag series for ONE endpoint (needs its spec for the max side). */
-export function qEndpointBlockLagSeriesExpr(spec: string, endpointId: string): string {
-  return `max(${ENDPOINT_METRICS.latestBlock}${selector({ spec })}) - max(${ENDPOINT_METRICS.latestBlock}${selector({ spec, endpoint_id: endpointId })})`;
+/** Block-lag series for ONE upstream: its chain's best tip − its own. */
+export function qEndpointBlockLagSeriesExpr(ref: UpstreamRef): string {
+  return `max(${ENDPOINT_METRICS.latestBlock}${selector({ spec: ref.spec })}) - max(${ENDPOINT_METRICS.latestBlock}${upstreamEndpointSelector(ref)})`;
 }
 
 /** Specs whose every endpoint is down (bool per spec). */
