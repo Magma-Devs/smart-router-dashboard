@@ -60,6 +60,19 @@ export interface FailureInputs {
   peers: { upstream: string; failing: boolean; note: string }[];
   /** Other chains where this provider is producing errors. */
   otherChains: { spec: string; chainName: string; note: string }[];
+  /**
+   * The router's OWN answer to "is this provider serving right now", from
+   * `smartrouter_csm_provider_blocked` — rewritten every state tick, zeros
+   * included, so it is never stale.
+   *
+   * `null` means the router does not emit that family, which is a real state
+   * and not a healthy one: older builds publish only the per-chain COUNT of
+   * blocked providers, so the deployment can say how many are out and never
+   * which. Reported as unknown rather than inferred from error rates.
+   */
+  blocked: { state: "blocked" | "serving"; reason: string | null } | null;
+  /** Chain serving tier: primaries / backups-only / nothing left. Null when absent. */
+  servingTier: "primaries" | "backups-only" | "none" | null;
 }
 
 const SYSTEM_PROMPT = `You tell an engineer operating the Magma Devs Smart Router whose problem a
@@ -95,7 +108,14 @@ Four owners, and these exact words:
 Decide from what you are given. Never introduce an error code, provider, chain
 or number that is not in the input.
 
-The peers are the strongest evidence you have. One provider failing while its
+If a block state is given, it is the router own answer and outranks every
+inference. "blocked" means the router took this provider out of rotation, and
+the reason names why: all-endpoints-disabled is the provider, while
+explicit-block-signal may be the setup. When the block state is null the router
+does not publish that family at all — say it is unknown rather than treating
+error rates as equivalent, and never read null as serving.
+
+The peers are the next strongest evidence you have. One provider failing while its
 peers are clean is **provider**. Every provider failing identically is **chain**
 or **caller** — read the error to tell those apart. Say which comparison drove
 your verdict.
@@ -153,6 +173,9 @@ export function digestInputs(i: FailureInputs): string {
       })),
       othersOnThisChain: i.peers,
       sameProviderOtherChains: i.otherChains,
+      // The router's own state, or an explicit "not published by this build".
+      routerBlockState: i.blocked ?? "not published by this router build",
+      chainServingTier: i.servingTier ?? "not published by this router build",
     },
     null,
     1,

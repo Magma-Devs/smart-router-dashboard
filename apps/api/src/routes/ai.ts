@@ -20,6 +20,7 @@ import { StatusAiService } from "../services/status-ai.js";
 import { IncidentsService } from "../services/incidents.js";
 import { FailureAnalysisService } from "../services/failure-analysis.js";
 import { LokiService, groupErrors } from "../services/loki.js";
+import { OPTIONAL_METRICS } from "@sr/shared";
 import { parseWindow } from "./metrics.js";
 
 /** Which model this deployment would call. Nothing here is secret — no credential exists to leak. */
@@ -208,7 +209,12 @@ export async function aiRoutes(app: FastifyInstance) {
       const scoped = app.scoped(request.query.router);
       const loki = new LokiService();
 
-      const [report, faults, lines] = await Promise.all([
+      // The router's own block state, when this build publishes it. Probed
+      // rather than assumed: older builds emit only the per-chain COUNT of
+      // blocked providers, which cannot name one, and an empty vector from a
+      // family that does not exist must not read as "serving".
+      const sel = `{spec="${spec}",provider_address="${upstream}"}`;
+      const [report, faults, lines, blockedRows, tierRows] = await Promise.all([
         scoped.metricsDetail.status(window),
         scoped.metricsDetail.providerFaults(window),
         // Absent Loki the verdict rests on codes alone, which is weaker but
@@ -216,7 +222,22 @@ export async function aiRoutes(app: FastifyInstance) {
         loki.available
           ? loki.recentErrors(spec, upstream, 200).catch(() => [])
           : Promise.resolve([]),
+        app.prom.query(`${OPTIONAL_METRICS.csmProviderBlocked}${sel}`),
+        app.prom.query(`${OPTIONAL_METRICS.endpointServingTier}{spec="${spec}"}`),
       ]);
+
+      // A sample present = the family exists and this is its current value.
+      // No sample = the build does not publish it, which stays null.
+      const blockedSample = blockedRows[0];
+      const blocked = blockedSample
+        ? {
+            state: (Number(blockedSample.value[1]) === 1 ? "blocked" : "serving") as "blocked" | "serving",
+            reason: blockedSample.metric.reason ?? null,
+          }
+        : null;
+      const tierValue = tierRows[0] ? Number(tierRows[0].value[1]) : null;
+      const servingTier =
+        tierValue === 2 ? "primaries" : tierValue === 1 ? "backups-only" : tierValue === 0 ? "none" : null;
 
       const findings = report.findings.filter((f) => f.spec === spec && f.upstream === upstream);
       const chainName = findings[0]?.chainName ?? spec;
@@ -263,12 +284,22 @@ export async function aiRoutes(app: FastifyInstance) {
           errorGroups: groupErrors(lines, 6),
           peers,
           otherChains,
+          blocked,
+          servingTier,
         });
         return {
           ok: true,
           ...analysis,
           // What it had to work with, so a thin verdict is explicable.
-          read: { findings: findings.length, errorGroups: groupErrors(lines, 6).length, peers: peers.length, otherChains: otherChains.length },
+          read: {
+            findings: findings.length,
+            errorGroups: groupErrors(lines, 6).length,
+            peers: peers.length,
+            otherChains: otherChains.length,
+            // Names the gap rather than hiding it: a verdict reached without
+            // the router's own block state is a weaker verdict.
+            blockStateAvailable: blocked !== null,
+          },
         };
       } catch (err) {
         reply.status(502);

@@ -30,6 +30,8 @@ const inputs: FailureInputs = {
   ],
   peers: [{ upstream: "lava", failing: false, note: "" }],
   otherChains: [{ spec: "NEAR", chainName: "Near", note: "67 error answers" }],
+  blocked: null,
+  servingTier: null,
 };
 
 function fakeBedrock(text: string): BedrockService {
@@ -70,6 +72,35 @@ describe("digestInputs", () => {
   it("sends the provider's other chains, so 'broken everywhere' is visible", () => {
     expect(digestInputs(inputs)).toContain("sameProviderOtherChains");
     expect(digestInputs(inputs)).toContain("Near");
+  });
+});
+
+describe("the router's own block state", () => {
+  it("tells the model the family is NOT PUBLISHED, never that the provider is serving", () => {
+    // The trap this guards: an older router build emits only the per-chain
+    // count of blocked providers, so the per-provider gauge returns nothing.
+    // Rendering that absence as "serving" would turn "we cannot see" into a
+    // clean bill of health for a provider that may be out of rotation.
+    const body = digestInputs({ ...inputs, blocked: null, servingTier: null });
+    expect(body).toContain("not published by this router build");
+    expect(body).not.toContain('"state": "serving"');
+  });
+
+  it("passes the state and its reason through when the build does publish it", () => {
+    const body = digestInputs({
+      ...inputs,
+      blocked: { state: "blocked", reason: "all-endpoints-disabled" },
+      servingTier: "backups-only",
+    });
+    expect(body).toContain("all-endpoints-disabled");
+    expect(body).toContain("backups-only");
+  });
+
+  it("carries a serving verdict too — a provider erroring but NOT blocked is a real distinction", () => {
+    // Errors without a block means the router still routes to it, which reads
+    // very differently from one it has taken out.
+    const body = digestInputs({ ...inputs, blocked: { state: "serving", reason: null }, servingTier: "primaries" });
+    expect(body).toContain('"state": "serving"');
   });
 });
 

@@ -128,6 +128,29 @@ export const OPTIONAL_METRICS = {
   // registered lazily like the rest; consistency_total/_success_total in
   // ROUTER_METRICS count checks run / checks passed.
   consistencyFailedTotal: "smartrouter_consistency_failed_total",
+  /**
+   * Provider block state, per provider — the ONLY source that always shows
+   * what is true right now.
+   *
+   * The router rewrites every series on each state tick, zeros included, so it
+   * cannot get stuck on a stale value. `rpc_endpoint_overall_health` carries
+   * the same 1/0 shape and must NOT be used for this: it moves only when a
+   * relay succeeds or fails, so a provider with no traffic keeps its last
+   * value for as long as it stays quiet.
+   *
+   * A provider is blocked only when ALL of its endpoints are disabled — one
+   * bad node url takes out an endpoint, not the provider.
+   *
+   * Newer than the aggregate `csmBlockedProviders` in ROUTER_METRICS, which
+   * counts blocked providers per chain but does not name them. A router that
+   * emits only the aggregate can say how many are out and never which.
+   */
+  csmProviderBlocked: "smartrouter_csm_provider_blocked",
+  /** Why they are out: all-endpoints-disabled | explicit-block-signal |
+   *  blocked-in-previous-epoch | unspecified. */
+  csmBlockedByReason: "smartrouter_csm_blocked_providers_by_reason",
+  /** Can the chain serve at all — 2 primaries, 1 backups only, 0 nothing left. */
+  endpointServingTier: "smartrouter_endpoint_serving_tier",
   wsConnectionsActive: "smartrouter_ws_connections_active",
   wsSubscriptionsTotal: "smartrouter_ws_subscriptions_total",
   wsSubscriptionErrorsTotal: "smartrouter_ws_subscription_errors_total",
