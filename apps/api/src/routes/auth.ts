@@ -18,8 +18,8 @@ import {
   redeemInvitation,
   type InviteLookup,
 } from "../services/invitations.js";
-import { consumePasswordReset, createPasswordReset } from "../services/password-reset.js";
-import { checkLock, clearFailures, recordFailure } from "../services/lockout.js";
+import { consumePasswordReset } from "../services/password-reset.js";
+import { clearFailures, lockedReply, recordAttempt } from "../services/lockout.js";
 import { noopAuditWriter, type AuditWriter } from "../services/audit.js";
 import {
   completeSetup,
@@ -35,12 +35,9 @@ import { config, deploymentMode } from "../config.js";
  *  changing your password tests one too — the current password. */
 export const STRICT_AUTH_RATE_LIMIT = { max: 10, timeWindow: "1 minute" } as const;
 
-/**
- * Every email a request carries. 254 is the RFC 5321 ceiling on an address, and
- * it sits under the `varchar(255)` every email column uses — without it a
- * 256-character address reached an INSERT and came back as a 500, including on
- * public sign-in, where the lockout records any address submitted.
- */
+/** Every email a request carries. 254 is the RFC 5321 ceiling, under the
+ *  `varchar(255)` every email column uses, so an over-long address is a 400
+ *  here rather than a failed INSERT — sign-in's lockout records any address. */
 export const EMAIL_FIELD = { type: "string" as const, format: "email", maxLength: 254 };
 
 interface ForwardedClientContext {
@@ -78,10 +75,6 @@ const PROVIDER_LABEL: Record<OAuthProvider, string> = {
   github: "GitHub",
   discord: "Discord",
 };
-
-interface ForgotBody {
-  email: string;
-}
 
 interface ResetBody {
   token: string;
@@ -488,7 +481,7 @@ export async function authRoutes(app: FastifyInstance) {
       config: { rateLimit: STRICT_AUTH_RATE_LIMIT },
       schema: {
         tags: ["Auth"],
-        summary: "Request a reset link (managed only — on-prem has no mail server)",
+        summary: "Self-serve reset — not available until email delivery exists (MAG-2870)",
         body: {
           type: "object" as const,
           required: ["email"],
@@ -496,49 +489,16 @@ export async function authRoutes(app: FastifyInstance) {
         },
       },
     },
-    async (request, reply) => {
-      if (deploymentMode() !== "managed") {
-        // On-prem has nowhere to send it. Saying so is better than accepting
-        // the request and silently doing nothing.
-        return reply.code(404).send({
-          statusCode: 404,
-          error: "Not Found",
-          message: "Self-serve password reset is not available on this deployment. Ask an administrator.",
-        });
-      }
-      const db = dbOr503(reply);
-      if (!db) return reply;
-      const { email } = request.body as ForgotBody;
-      const client = resolveClientContext(request, undefined, internalSecret);
-
-      // The work happens AFTER the reply, not before it. A uniform 202 body is
-      // not enough on its own: an address with a password took two writes, an
-      // audit row and a log line, and one without took a single SELECT — a gap
-      // anyone can time, which answers "is this person a member?" as surely as
-      // a different status would. Both branches now answer in the same time
-      // because neither waits for the other half.
-      void (async () => {
-        const user = await findUserByEmail(db, email);
-        if (!user?.passwordHash) return;
-        const created = await createPasswordReset(db, { userId: user.id, mode: "managed" });
-        await audit.write({
-          action: "password.reset_requested",
-          actor: { id: user.id, kind: "user" },
-          access: { ip: client.ip, client: client.userAgent, sessionId: null },
-        });
-        // TODO(MAG-2870, #147): managed delivery. Until the email adapter
-        // lands the link is logged, which is visible to an operator and to
-        // nobody else. It is never returned in the response.
-        request.log.warn(
-          { resetFor: user.email, expiresAt: created.expiresAt },
-          "password reset link generated (no mail transport configured)",
-        );
-      })().catch((err: unknown) => request.log.error({ err }, "password reset request failed"));
-
-      // Always 202, whether or not the address exists, and whether or not the
-      // account has a password at all. Anything else turns this into a way to
-      // ask "is this person a member?".
-      return reply.code(202).send({ ok: true });
+    async (_request, reply) => {
+      // There is no way to deliver a link — email is MAG-2870 — so this fails
+      // closed, the same on every deployment and for every address. Issuing one
+      // would look delivered while reaching nobody, and would invalidate any
+      // live link the member already holds.
+      return reply.code(404).send({
+        statusCode: 404,
+        error: "Not Found",
+        message: "Self-serve password reset is not available on this deployment. Ask an administrator.",
+      });
     },
   );
 
@@ -581,10 +541,16 @@ export async function authRoutes(app: FastifyInstance) {
         });
       }
 
+      // The link is a bearer credential, so who used it is unknowable; who
+      // generated it is not, and that is what an auditor needs to connect an
+      // admin-issued link to its redemption.
       await audit.write({
         action: "password.reset_completed",
         actor: { id: outcome.user.id, kind: "user" },
         access: { ip: client.ip, client: client.userAgent, sessionId: null },
+        note: outcome.createdBy
+          ? `redeemed a link generated by admin ${outcome.createdBy}`
+          : "redeemed a self-serve link",
       });
 
       // No session. The person proves the new password works by using it —
@@ -625,31 +591,22 @@ export async function authRoutes(app: FastifyInstance) {
       const body = request.body as SignInBody;
       const client = resolveClientContext(request, body.clientContext, internalSecret);
 
-      // Per-account lockout, checked before the password is even looked at.
-      // The per-IP limiter alone is walked past by anyone rotating addresses.
-      const lock = await checkLock(db, body.email);
-      if (lock.locked) {
+      // Spend the attempt BEFORE the password is looked at. Counting first is
+      // what keeps a parallel burst inside the per-account budget; a correct
+      // password refunds it below.
+      const attempt = await recordAttempt(db, body.email);
+      if (attempt.locked) {
+        const target = await findUserByEmail(db, body.email);
         await audit.write({
           action: "signin.blocked",
-          actor: { id: null, kind: "user", },
+          actor: { id: null, kind: "user" },
+          ...(target ? { target: { type: "member" as const, id: target.id, name: target.email } } : {}),
           access: { ip: client.ip, client: client.userAgent, sessionId: null },
-          note: "too many failed attempts",
+          note: `${attempt.attempts} attempts on ${body.email.toLowerCase()} this window`,
         });
-        // `until` is computed for exactly this — telling someone when, rather
-        // than leaving them to guess and trip it again. Safe to say: the lock
-        // applies to addresses with no account too, so it reveals nothing.
-        const retryAfterSec = lock.until
-          ? Math.max(1, Math.ceil((lock.until.getTime() - Date.now()) / 1000))
-          : undefined;
-        if (retryAfterSec) reply.header("Retry-After", String(retryAfterSec));
-        const minutes = retryAfterSec ? Math.ceil(retryAfterSec / 60) : undefined;
-        return reply.code(423).send({
-          statusCode: 423,
-          error: "Locked",
-          message: minutes
-            ? `Too many failed attempts. Try again in ${minutes} minute${minutes === 1 ? "" : "s"}.`
-            : "Too many failed attempts. Try again later.",
-        });
+        const locked = lockedReply(attempt.until);
+        if (locked.retryAfterSec) reply.header("Retry-After", String(locked.retryAfterSec));
+        return reply.code(423).send({ statusCode: 423, error: "Locked", message: locked.message });
       }
 
       const user = await findUserByEmail(db, body.email);
@@ -658,9 +615,6 @@ export async function authRoutes(app: FastifyInstance) {
       // doesn't answer the question the response refuses to.
       const ok = await verifyPasswordOrDecoy(body.password, user?.passwordHash);
       if (!user || !ok) {
-        // Counted on the submitted address whether or not it exists, so a
-        // lockout says nothing about whether an account is there.
-        await recordFailure(db, body.email);
         await audit.write({
           action: "signin.failed",
           actor: { id: user?.id ?? null, kind: "user" },

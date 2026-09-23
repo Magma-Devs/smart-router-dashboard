@@ -2,114 +2,108 @@ import { and, eq, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { loginAttempts, type Database } from "@sr/db";
 
 /**
- * Per-account sign-in lockout.
- *
- * The per-IP limit already on `/auth/*` is not the control that matters: a
- * distributed attacker rotating addresses walks straight past it, and with a
- * permissive `trustProxy` they needn't even rotate anything. This counts
- * failures against the **identity being targeted**, so the wall stands in front
- * of the account rather than in front of one network path.
- *
- * Counted on the submitted address whether or not an account exists, so being
- * locked out reveals nothing about whether one does — the same reason sign-in
- * answers identically for a wrong password and an unknown address.
- *
- * See `docs/ACCOUNTS-DESIGN.md` §7.3.
+ * Per-account lockout: a budget of attempts per address per window, counted
+ * whether or not an account exists, so a lockout says nothing about membership.
+ * It fences the identity rather than one network path — the only limit a
+ * spoofed `X-Forwarded-For` cannot sidestep. See `docs/ACCOUNTS-DESIGN.md` §7.3.
  */
 
 export const LOCKOUT_MAX_FAILURES = 5;
 export const LOCKOUT_WINDOW_MS = 15 * 60 * 1000;
 
 export interface LockState {
+  /** True when THIS attempt is refused. */
   locked: boolean;
-  /** When the lock lifts — surfaced so the response can say "try again in N
-   *  minutes" rather than leaving someone guessing. */
+  /** When the lock lifts, for `Retry-After`. */
   until: Date | null;
+  /** Attempts counted this window, including this one. */
+  attempts: number;
 }
 
+/** The window's start, from the database's clock rather than the app's. */
+const windowFloor = () => sql`now() - make_interval(secs => ${LOCKOUT_WINDOW_MS / 1000})`;
+
+/** Read-only: is this address locked right now, by the database's clock? */
 export async function checkLock(db: Database, email: string): Promise<LockState> {
   const rows = await db
-    .select()
+    .select({
+      until: loginAttempts.lockedUntil,
+      active: sql<boolean>`coalesce(${loginAttempts.lockedUntil} > now(), false)`,
+      attempts: loginAttempts.failedCount,
+    })
     .from(loginAttempts)
     .where(eq(loginAttempts.email, email.toLowerCase()))
     .limit(1);
-
   const row = rows[0];
-  if (!row?.lockedUntil) return { locked: false, until: null };
-  if (row.lockedUntil.getTime() <= Date.now()) return { locked: false, until: null };
-  return { locked: true, until: row.lockedUntil };
+  if (!row?.active) return { locked: false, until: null, attempts: row?.attempts ?? 0 };
+  return { locked: true, until: row.until, attempts: row.attempts };
 }
 
 /**
- * Record a failure and lock the account once the threshold is crossed.
+ * Spend one attempt against an address, BEFORE the credential is checked.
  *
- * The window is *sliding on the counter, not the clock*: a slow drip of
- * attempts still trips the limit, because the count only resets when the window
- * has genuinely lapsed since it started or on a successful sign-in.
+ * The upsert hands each request its own count, so a parallel burst cannot all
+ * pass a read-then-check: the attempt after the budget is refused before
+ * bcrypt. The window is fixed from its first attempt and restarts once it
+ * lapses. A correct credential refunds the attempt through `clearFailures`.
  */
-export async function recordFailure(db: Database, email: string): Promise<LockState> {
+export async function recordAttempt(db: Database, email: string): Promise<LockState> {
   const key = email.toLowerCase();
-
-  // The window boundary is computed **in SQL**, from the database's clock.
-  //
-  // Two reasons, one of which cost an afternoon. It is more correct — the app
-  // and the database can disagree about the time, and this is a security
-  // window. And a bare JS `Date` interpolated into a `sql` template is not
-  // portable: pglite accepts it, postgres-js throws
-  // `ERR_INVALID_ARG_TYPE: Received an instance of Date`. Tests that only ever
-  // run on pglite will not catch that.
-  const windowFloor = sql`now() - make_interval(secs => ${LOCKOUT_WINDOW_MS / 1000})`;
-
+  const floor = windowFloor();
   const rows = await db
     .insert(loginAttempts)
     .values({ email: key, failedCount: 1 })
     .onConflictDoUpdate({
       target: loginAttempts.email,
       set: {
-        // Restart the count when the previous window has lapsed; otherwise add
-        // to it. Done in SQL so two concurrent failures can't both read 4.
-        failedCount: sql`case when ${loginAttempts.windowStart} < ${windowFloor}
+        failedCount: sql`case when ${loginAttempts.windowStart} < ${floor}
                               then 1 else ${loginAttempts.failedCount} + 1 end`,
-        windowStart: sql`case when ${loginAttempts.windowStart} < ${windowFloor}
+        windowStart: sql`case when ${loginAttempts.windowStart} < ${floor}
                               then now() else ${loginAttempts.windowStart} end`,
       },
     })
     .returning();
 
-  const row = rows[0];
-  if (!row) return { locked: false, until: null };
-
   await pruneLapsed(db);
 
-  if (row.failedCount >= LOCKOUT_MAX_FAILURES) {
-    const until = new Date(row.windowStart.getTime() + LOCKOUT_WINDOW_MS);
-    await db.update(loginAttempts).set({ lockedUntil: until }).where(eq(loginAttempts.email, key));
-    return { locked: true, until };
+  const row = rows[0];
+  if (!row) return { locked: false, until: null, attempts: 0 };
+
+  // The budget is spent once the count reaches the maximum; the attempt that
+  // reaches it still gets its answer, and every attempt past it is refused.
+  if (row.failedCount < LOCKOUT_MAX_FAILURES) {
+    return { locked: false, until: null, attempts: row.failedCount };
   }
-  return { locked: false, until: null };
+  const until = new Date(row.windowStart.getTime() + LOCKOUT_WINDOW_MS);
+  if (!row.lockedUntil || row.lockedUntil.getTime() !== until.getTime()) {
+    await db.update(loginAttempts).set({ lockedUntil: until }).where(eq(loginAttempts.email, key));
+  }
+  return { locked: row.failedCount > LOCKOUT_MAX_FAILURES, until, attempts: row.failedCount };
 }
 
-/** Rows removed per failure. Fixed, so a failure under attack pays a bounded
- *  cost rather than a table scan, and always removes more than it adds. */
+/** A correct credential refunds the window — otherwise someone who mistyped
+ *  four times would stay one slip from a lockout until it lapsed. */
+export async function clearFailures(db: Database, email: string): Promise<void> {
+  await db.delete(loginAttempts).where(eq(loginAttempts.email, email.toLowerCase()));
+}
+
+/** Rows removed per attempt: bounded, so pruning never becomes a table scan,
+ *  and always more than an attempt adds. */
 export const PRUNE_BATCH = 100;
 
 /**
- * Delete rows whose window has lapsed and that hold no live lock.
- *
- * Every address anyone types lands here, account or not — that is what makes
- * a lockout reveal nothing. Without this nothing ever left: a credential-
- * stuffing run grew the table without bound, and the table kept a record of
- * every address ever tried. Pruning on the failure path makes the size follow
- * failures *per window* instead of failures *ever*.
+ * Delete rows whose window has lapsed and that hold no live lock. Every address
+ * anyone types gets a row, so this is what keeps the table sized by attempts
+ * per window, not attempts ever — and keeps it from recording every address
+ * anyone has tried.
  */
 export async function pruneLapsed(db: Database): Promise<void> {
-  const windowFloor = sql`now() - make_interval(secs => ${LOCKOUT_WINDOW_MS / 1000})`;
   const lapsed = db
     .select({ email: loginAttempts.email })
     .from(loginAttempts)
     .where(
       and(
-        lt(loginAttempts.windowStart, windowFloor),
+        lt(loginAttempts.windowStart, windowFloor()),
         or(isNull(loginAttempts.lockedUntil), lte(loginAttempts.lockedUntil, sql`now()`)),
       ),
     )
@@ -118,8 +112,14 @@ export async function pruneLapsed(db: Database): Promise<void> {
   await db.delete(loginAttempts).where(inArray(loginAttempts.email, lapsed));
 }
 
-/** A successful sign-in clears the slate — otherwise a person who mistyped four
- *  times would stay one slip from a lockout for the rest of the window. */
-export async function clearFailures(db: Database, email: string): Promise<void> {
-  await db.delete(loginAttempts).where(eq(loginAttempts.email, email.toLowerCase()));
+/** What a refused attempt tells the person: seconds for `Retry-After`, and the
+ *  same thing in words. Safe to say — addresses with no account lock too. */
+export function lockedReply(until: Date | null): { retryAfterSec?: number; message: string } {
+  if (!until) return { message: "Too many failed attempts. Try again later." };
+  const retryAfterSec = Math.max(1, Math.ceil((until.getTime() - Date.now()) / 1000));
+  const minutes = Math.ceil(retryAfterSec / 60);
+  return {
+    retryAfterSec,
+    message: `Too many failed attempts. Try again in ${minutes} minute${minutes === 1 ? "" : "s"}.`,
+  };
 }

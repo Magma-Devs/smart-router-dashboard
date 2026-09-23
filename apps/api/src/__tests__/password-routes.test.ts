@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import bcrypt from "bcryptjs";
 import type { FastifyInstance } from "fastify";
 import { SignJWT } from "jose";
+import { eq } from "drizzle-orm";
 import { createTestDb, type TestDb } from "@sr/db/testing";
 import { passwordResets, sessions, users, type User } from "@sr/db";
 import { buildApp } from "../app.js";
@@ -130,14 +131,14 @@ describe("sign-in lockout", () => {
 
     const res = await signIn("dana@example.com", OLD_PASSWORD);
     expect(res.statusCode).toBe(423);
-    // `until` is computed for exactly this; the 423 used to discard it.
+    // `until` exists for exactly this: telling the person when.
     expect(Number(res.headers["retry-after"])).toBeGreaterThan(0);
     expect(res.json().message).toMatch(/Try again in \d+ minutes?/);
   });
 
   it("lets the owner straight back in after a completed reset", async () => {
-    // The whole failure, end to end: locked out, handed a reset link, sets a
-    // new password — and until now was still answered 423 with it.
+    // End to end: locked out, handed a reset link, sets a new password — and
+    // is let straight in with it, because the reset clears the lock.
     const admin = await member("admin@example.com", { role: "admin" });
     const dana = await member("dana@example.com");
     await lockOut("dana@example.com");
@@ -162,31 +163,32 @@ describe("sign-in lockout", () => {
 });
 
 describe("POST /api/account/password", () => {
-  it("is limited like sign-in, because it tests a credential too", async () => {
-    // Under the global limit this allowed 300 guesses a minute at the current
-    // password to anyone holding a session — and a correct guess ends with them
-    // setting a new one and signing the owner out everywhere.
-    const dana = await member("dana@example.com");
-    const token = await bearer(dana);
-    const guess = () =>
-      app!.inject({
+  it("is limited like sign-in per address, because it tests a credential too", async () => {
+    // One guess per member, all from one address: the per-account budget never
+    // fires, so what stops the eleventh is the per-IP limit alone. One shared
+    // hash, because eleven bcrypt hashes at cost 12 outrun the test timeout.
+    const passwordHash = await hashPassword(OLD_PASSWORD);
+    const statuses: number[] = [];
+    for (let i = 0; i < 11; i++) {
+      const [who] = await t.db
+        .insert(users)
+        .values({ email: `member-${i}@example.com`, passwordHash })
+        .returning();
+      const res = await app!.inject({
         method: "POST",
         url: "/api/account/password",
-        headers: { authorization: `Bearer ${token}` },
+        headers: { authorization: `Bearer ${await bearer(who!)}` },
         payload: { current: "a-guess-at-the-current", next: NEW_PASSWORD },
       });
-
-    const statuses: number[] = [];
-    for (let i = 0; i < 11; i++) statuses.push((await guess()).statusCode);
+      statuses.push(res.statusCode);
+    }
     expect(statuses.slice(0, 10).every((s) => s === 401)).toBe(true);
     expect(statuses[10]).toBe(429);
   });
 
   it("audits the address THIS request came from, not the one the session opened at", async () => {
-    // The two differ exactly when it matters — a session used from somewhere
-    // other than the device that signed in. Auditing the session's sign-in
-    // address named the owner's own laptop as the source of a password change
-    // made with a stolen token.
+    // The request's address and the session's sign-in address differ exactly
+    // when a session is used from somewhere else — a stolen token, say.
     const dana = await member("dana@example.com");
     const token = await bearer(dana);
     const debug = vi.spyOn(app!.log, "debug");
@@ -249,31 +251,190 @@ describe("POST /api/team/members/:id/reset-link", () => {
 });
 
 describe("POST /auth/password/forgot", () => {
+  // There is no way to deliver a link (email is MAG-2870), so it fails closed:
+  // the same answer on every deployment and for every address, and nothing
+  // written — issuing a link nobody receives would also kill any live one.
   const forgot = (email: string) =>
     app!.inject({ method: "POST", url: "/auth/password/forgot", payload: { email } });
 
-  it("says it isn't available on-prem rather than silently doing nothing", async () => {
-    expect((await forgot("dana@example.com")).statusCode).toBe(404);
-  });
-
-  it("answers a member and a stranger identically, and issues a link only for the member", async () => {
-    setEnv({ DEPLOYMENT_MODE: "managed" });
+  it.each(["onprem", "managed"])("answers 404 on %s, member or stranger alike", async (mode) => {
+    setEnv({ DEPLOYMENT_MODE: mode });
     await member("dana@example.com");
-
     const known = await forgot("dana@example.com");
     const unknown = await forgot("nobody@example.com");
-    expect(known.statusCode).toBe(202);
-    expect(unknown.statusCode).toBe(202);
+    expect(known.statusCode).toBe(404);
     expect(known.json()).toEqual(unknown.json());
+    expect(await t.db.select().from(passwordResets)).toHaveLength(0);
+  });
 
-    // The link is issued after the reply — that is what closes the timing
-    // gap — so wait for it rather than expecting it synchronously.
-    const deadline = Date.now() + 10_000;
-    let rows = await t.db.select().from(passwordResets);
-    while (rows.length === 0 && Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, 50));
-      rows = await t.db.select().from(passwordResets);
+  it("leaves a member's live admin-issued link working", async () => {
+    setEnv({ DEPLOYMENT_MODE: "managed" });
+    const admin = await member("admin@example.com", { role: "admin" });
+    const dana = await member("dana@example.com");
+    const link = await app!.inject({
+      method: "POST",
+      url: `/api/team/members/${dana.id}/reset-link`,
+      headers: { authorization: `Bearer ${await bearer(admin)}` },
+    });
+    const token = (link.json().url as string).split("/reset/")[1]!;
+
+    await forgot("dana@example.com");
+
+    const reset = await app!.inject({
+      method: "POST",
+      url: "/auth/password/reset",
+      payload: { token, password: NEW_PASSWORD },
+    });
+    expect(reset.statusCode).toBe(200);
+  });
+});
+
+describe("the per-account budget", () => {
+  it("holds against a parallel burst from many addresses", async () => {
+    // Counted before bcrypt, so the burst cannot all pass a read-then-check.
+    await member("dana@example.com");
+    const res = await Promise.all(
+      Array.from({ length: 10 }, (_, i) =>
+        app!.inject({
+          method: "POST",
+          url: "/auth/sign-in",
+          remoteAddress: `198.51.100.${i + 1}`,
+          payload: { email: "dana@example.com", password: `guess-${i}` },
+        }),
+      ),
+    );
+    const codes = res.map((r) => r.statusCode);
+    expect(codes.filter((c) => c === 401)).toHaveLength(LOCKOUT_MAX_FAILURES);
+    expect(codes.filter((c) => c === 423)).toHaveLength(10 - LOCKOUT_MAX_FAILURES);
+  });
+
+  it("covers the current-password check, whatever address the guesses come from", async () => {
+    // A spoofed X-Forwarded-For sidesteps the per-IP limit; the account's
+    // budget is keyed on the identity, so it does not.
+    const dana = await member("dana@example.com");
+    const token = await bearer(dana);
+    const codes: number[] = [];
+    for (let i = 0; i <= LOCKOUT_MAX_FAILURES; i++) {
+      const res = await app!.inject({
+        method: "POST",
+        url: "/api/account/password",
+        headers: { authorization: `Bearer ${token}`, "x-forwarded-for": `198.51.100.${i + 1}` },
+        payload: { current: `guess-${i}`, next: NEW_PASSWORD },
+      });
+      codes.push(res.statusCode);
     }
-    expect(rows).toHaveLength(1);
+    expect(codes.slice(0, LOCKOUT_MAX_FAILURES).every((c) => c === 401)).toBe(true);
+    expect(codes[LOCKOUT_MAX_FAILURES]).toBe(423);
+  });
+
+  it("audits a refused sign-in with the account and how many attempts", async () => {
+    // "who, how many attempts, IP" — what MAG-2729 asks signin.blocked to carry.
+    const dana = await member("dana@example.com");
+    await lockOut("dana@example.com");
+    const debug = vi.spyOn(app!.log, "debug");
+    await signIn("dana@example.com", OLD_PASSWORD);
+    const event = debug.mock.calls
+      .map((c) => (c[0] as { audit?: { action: string; target?: { id: string }; note?: string } }).audit)
+      .find((a) => a?.action === "signin.blocked");
+    expect(event?.target?.id).toBe(dana.id);
+    expect(event?.note).toMatch(/^6 attempts on dana@example\.com/);
+    debug.mockRestore();
+  });
+});
+
+describe("POST /auth/password/reset", () => {
+  it("records who generated the link it redeemed", async () => {
+    // The link is a bearer credential, so who USED it is unknowable; who issued
+    // it is what connects an admin-generated link to its redemption.
+    const admin = await member("admin@example.com", { role: "admin" });
+    const dana = await member("dana@example.com");
+    const link = await app!.inject({
+      method: "POST",
+      url: `/api/team/members/${dana.id}/reset-link`,
+      headers: { authorization: `Bearer ${await bearer(admin)}` },
+    });
+    const token = (link.json().url as string).split("/reset/")[1]!;
+    const debug = vi.spyOn(app!.log, "debug");
+    await app!.inject({ method: "POST", url: "/auth/password/reset", payload: { token, password: NEW_PASSWORD } });
+    const event = debug.mock.calls
+      .map((c) => (c[0] as { audit?: { action: string; note?: string } }).audit)
+      .find((a) => a?.action === "password.reset_completed");
+    expect(event?.note).toContain(admin.id);
+    debug.mockRestore();
+  });
+});
+
+describe("/api/account/sessions", () => {
+  async function sessionFor(user: User, ip: string) {
+    const [row] = await t.db
+      .insert(sessions)
+      .values({ userId: user.id, expiresAt: new Date(Date.now() + 3_600_000), authMethod: "password", ip })
+      .returning();
+    return row!;
+  }
+
+  it("lists only your own live sessions, marking the one you're on", async () => {
+    const dana = await member("dana@example.com");
+    const other = await member("other@example.com");
+    await sessionFor(dana, "10.0.0.2");
+    await sessionFor(other, "10.0.0.9");
+    const token = await bearer(dana);
+
+    const res = await app!.inject({
+      method: "GET",
+      url: "/api/account/sessions",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const list = res.json().sessions as Array<{ ip: string | null; current: boolean }>;
+    expect(list).toHaveLength(2);
+    expect(list.filter((x) => x.current)).toHaveLength(1);
+    expect(list.map((x) => x.ip)).not.toContain("10.0.0.9");
+  });
+
+  it("signs out one of your own devices", async () => {
+    const dana = await member("dana@example.com");
+    const laptop = await sessionFor(dana, "10.0.0.2");
+    const res = await app!.inject({
+      method: "DELETE",
+      url: `/api/account/sessions/${laptop.id}`,
+      headers: { authorization: `Bearer ${await bearer(dana)}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const [row] = await t.db.select().from(sessions).where(eq(sessions.id, laptop.id));
+    expect(row?.revokedAt).not.toBeNull();
+  });
+
+  it("refuses to sign out someone else's device, and says nothing about it existing", async () => {
+    const dana = await member("dana@example.com");
+    const other = await member("other@example.com");
+    const theirs = await sessionFor(other, "10.0.0.9");
+    const res = await app!.inject({
+      method: "DELETE",
+      url: `/api/account/sessions/${theirs.id}`,
+      headers: { authorization: `Bearer ${await bearer(dana)}` },
+    });
+    expect(res.statusCode).toBe(404);
+    const [row] = await t.db.select().from(sessions).where(eq(sessions.id, theirs.id));
+    expect(row?.revokedAt).toBeNull();
+  });
+
+  it("signs out everywhere, this device included", async () => {
+    const dana = await member("dana@example.com");
+    await sessionFor(dana, "10.0.0.2");
+    const token = await bearer(dana);
+    const res = await app!.inject({
+      method: "DELETE",
+      url: "/api/account/sessions",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().revoked).toBe(2);
+    const after = await app!.inject({
+      method: "GET",
+      url: "/api/account/sessions",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(after.statusCode).toBe(401);
   });
 });

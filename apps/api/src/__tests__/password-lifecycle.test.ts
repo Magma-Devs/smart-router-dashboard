@@ -14,7 +14,7 @@ import {
   checkLock,
   clearFailures,
   pruneLapsed,
-  recordFailure,
+  recordAttempt,
 } from "../services/lockout.js";
 import { createSession, listActiveSessions } from "../services/sessions.js";
 import { hashPassword, verifyPassword } from "../services/password.js";
@@ -93,11 +93,9 @@ describe("password reset", () => {
   });
 
   it("clears the lockout, so the new password is not answered 423", async () => {
-    // The owner proves control by completing the reset. Leaving the failure
-    // count in place kept their brand-new password locked out for up to a
-    // whole window — and let anyone who knew the address keep them out
-    // indefinitely by re-tripping it, reset or not.
-    for (let i = 0; i < LOCKOUT_MAX_FAILURES; i++) await recordFailure(t.db, "dana@example.com");
+    // Completing a reset proves control of the account, so the owner can use
+    // the new password at once. (It does not stop anyone re-tripping the lock.)
+    for (let i = 0; i < LOCKOUT_MAX_FAILURES; i++) await recordAttempt(t.db, "dana@example.com");
     expect((await checkLock(t.db, "dana@example.com")).locked).toBe(true);
 
     const link = await createPasswordReset(t.db, { userId: user.id, mode: "managed" });
@@ -197,53 +195,64 @@ describe("per-account lockout", () => {
     await t.close();
   });
 
-  it("locks after the threshold and says when it lifts", async () => {
-    for (let i = 1; i < LOCKOUT_MAX_FAILURES; i++) {
-      expect((await recordFailure(t.db, "dana@example.com")).locked, `attempt ${i}`).toBe(false);
+  it("allows the budget, locks once it is spent, and refuses the attempt after", async () => {
+    for (let i = 1; i <= LOCKOUT_MAX_FAILURES; i++) {
+      expect((await recordAttempt(t.db, "dana@example.com")).locked, `attempt ${i}`).toBe(false);
     }
-    const tripped = await recordFailure(t.db, "dana@example.com");
-    expect(tripped.locked).toBe(true);
-    expect(tripped.until).toBeInstanceOf(Date);
+    // The last attempt in the budget still got its answer; the lock is now on.
+    const lock = await checkLock(t.db, "dana@example.com");
+    expect(lock.locked).toBe(true);
+    expect(lock.until).toBeInstanceOf(Date);
 
-    expect((await checkLock(t.db, "dana@example.com")).locked).toBe(true);
+    const refused = await recordAttempt(t.db, "dana@example.com");
+    expect(refused.locked).toBe(true);
+    expect(refused.attempts).toBe(LOCKOUT_MAX_FAILURES + 1);
+  });
+
+  it("holds the budget against a parallel burst", async () => {
+    // Counted before the credential is checked, so each request gets its own
+    // count from the upsert — a burst cannot all pass a read-then-check.
+    const burst = await Promise.all(
+      Array.from({ length: 12 }, () => recordAttempt(t.db, "dana@example.com")),
+    );
+    expect(burst.filter((a) => !a.locked)).toHaveLength(LOCKOUT_MAX_FAILURES);
   });
 
   it("counts an address that has no account, so lockout leaks nothing", async () => {
     // If only real addresses locked, the lockout itself would answer "is this
     // person a member?" — the exact question sign-in refuses to answer.
     for (let i = 0; i < LOCKOUT_MAX_FAILURES; i++) {
-      await recordFailure(t.db, "nobody@example.com");
+      await recordAttempt(t.db, "nobody@example.com");
     }
     expect((await checkLock(t.db, "nobody@example.com")).locked).toBe(true);
   });
 
   it("is case-insensitive, so varying the capitals doesn't reset the count", async () => {
-    for (let i = 0; i < LOCKOUT_MAX_FAILURES - 1; i++) {
-      await recordFailure(t.db, "dana@example.com");
+    for (let i = 0; i < LOCKOUT_MAX_FAILURES; i++) {
+      await recordAttempt(t.db, "dana@example.com");
     }
-    expect((await recordFailure(t.db, "DANA@Example.com")).locked).toBe(true);
+    expect((await recordAttempt(t.db, "DANA@Example.com")).locked).toBe(true);
   });
 
   it("clears on a successful sign-in", async () => {
-    await recordFailure(t.db, "dana@example.com");
-    await recordFailure(t.db, "dana@example.com");
+    await recordAttempt(t.db, "dana@example.com");
+    await recordAttempt(t.db, "dana@example.com");
     await clearFailures(t.db, "dana@example.com");
 
     // Back to a clean slate, not one slip from a lockout for the rest of the
     // window.
     for (let i = 1; i < LOCKOUT_MAX_FAILURES; i++) {
-      expect((await recordFailure(t.db, "dana@example.com")).locked).toBe(false);
+      expect((await recordAttempt(t.db, "dana@example.com")).locked).toBe(false);
     }
   });
 
   it("reports an untouched address as unlocked", async () => {
-    expect(await checkLock(t.db, "stranger@example.com")).toEqual({ locked: false, until: null });
+    expect(await checkLock(t.db, "stranger@example.com")).toEqual({ locked: false, until: null, attempts: 0 });
   });
 
   describe("pruning", () => {
-    // Every address anyone types lands here, account or not. Before pruning
-    // nothing ever left, so a credential-stuffing run grew the table without
-    // bound and kept a record of every address ever tried.
+    // Every address anyone types gets a row, account or not; pruning is what
+    // keeps the table sized by attempts per window rather than attempts ever.
     const lapsedAt = () => new Date(Date.now() - LOCKOUT_WINDOW_MS - 60_000);
 
     it("removes rows whose window has lapsed and hold no lock", async () => {
@@ -256,7 +265,7 @@ describe("per-account lockout", () => {
     });
 
     it("keeps a row still inside its window, so the count is not reset early", async () => {
-      await recordFailure(t.db, "live@example.com");
+      await recordAttempt(t.db, "live@example.com");
       await pruneLapsed(t.db);
       expect(await t.db.select().from(loginAttempts)).toHaveLength(1);
     });
@@ -272,13 +281,13 @@ describe("per-account lockout", () => {
       expect((await checkLock(t.db, "locked@example.com")).locked).toBe(true);
     });
 
-    it("runs on the failure path, so growth pays for its own cleanup", async () => {
+    it("runs on every attempt, so growth pays for its own cleanup", async () => {
       await t.db.insert(loginAttempts).values({
         email: "stale@example.com",
         failedCount: 1,
         windowStart: lapsedAt(),
       });
-      await recordFailure(t.db, "fresh@example.com");
+      await recordAttempt(t.db, "fresh@example.com");
       const left = (await t.db.select().from(loginAttempts)).map((r) => r.email);
       expect(left).toEqual(["fresh@example.com"]);
     });

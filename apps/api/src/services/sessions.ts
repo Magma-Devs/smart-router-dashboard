@@ -165,8 +165,9 @@ export async function revokeSession(
 /**
  * Revoke every live session for one account and return how many were closed.
  *
- * Callers that need *every* outstanding token gone — password change, removal —
- * must also stamp `users.signed_out_all_at`; see `signOutEverywhere`.
+ * Callers that need *every* outstanding token gone — a reset, a removal — also
+ * stamp `users.signed_out_all_at`; see `signOutEverywhere`. Changing your own
+ * password does not, so the session it was changed from survives.
  */
 export async function revokeAllForUser(
   db: Database,

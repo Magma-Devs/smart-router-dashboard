@@ -10,6 +10,7 @@ import {
   signOutEverywhere,
 } from "../services/sessions.js";
 import { linkedProviderNames } from "../services/users.js";
+import { clearFailures, lockedReply, recordAttempt } from "../services/lockout.js";
 import { STRICT_AUTH_RATE_LIMIT, resolveClientContext } from "./auth.js";
 
 interface ChangePasswordBody {
@@ -25,13 +26,8 @@ interface ChangePasswordBody {
 export async function accountRoutes(app: FastifyInstance) {
   const audit: AuditWriter = noopAuditWriter(app.log);
 
-  /**
-   * Where THIS request came from — not where the session was opened. The two
-   * differ exactly when it matters: a session used from somewhere other than
-   * the device that signed in. Auditing the session's sign-in address named the
-   * owner's own laptop as the source of a password change made with a stolen
-   * token.
-   */
+  /** Where THIS request came from, not where its session was opened — they
+   *  differ exactly when a session is used from somewhere it didn't sign in. */
   function accessFrom(request: FastifyRequest, sessionId: string) {
     const client = resolveClientContext(request, undefined, undefined);
     return { ip: client.ip, client: client.userAgent, sessionId };
@@ -50,10 +46,8 @@ export async function accountRoutes(app: FastifyInstance) {
   app.post(
     "/api/account/password",
     {
-      // This route tests a credential — the current password — and so gets the
-      // same limit as sign-in. Under the global one it allowed 300 guesses a
-      // minute to anyone holding a session, and a correct guess ends with them
-      // changing the password and signing the real owner out everywhere.
+      // Checking the current password is a credential guess, so it carries
+      // sign-in's per-IP limit and spends from the same per-account budget.
       config: { rateLimit: STRICT_AUTH_RATE_LIMIT },
       schema: {
         tags: ["Account"],
@@ -85,6 +79,15 @@ export async function accountRoutes(app: FastifyInstance) {
         });
       }
 
+      // The per-IP limit alone can be sidestepped with a spoofed
+      // X-Forwarded-For; the account's budget cannot. A correct password
+      // refunds the attempt.
+      const attempt = await recordAttempt(db, me.user.email);
+      if (attempt.locked) {
+        const locked = lockedReply(attempt.until);
+        if (locked.retryAfterSec) reply.header("Retry-After", String(locked.retryAfterSec));
+        return reply.code(423).send({ statusCode: 423, error: "Locked", message: locked.message });
+      }
       if (!(await verifyPassword(body.current, me.user.passwordHash))) {
         return reply.code(401).send({
           statusCode: 401,
@@ -92,6 +95,7 @@ export async function accountRoutes(app: FastifyInstance) {
           message: "That current password is not correct.",
         });
       }
+      await clearFailures(db, me.user.email);
 
       const problem = await validatePassword(body.next, request.log);
       if (problem) {
