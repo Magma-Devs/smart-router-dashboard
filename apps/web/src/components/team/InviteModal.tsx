@@ -28,10 +28,22 @@ export function InviteModal({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<InviteResponse | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<"idle" | "copied" | "failed">("idle");
 
   function reset() {
-    setEmail(""); setRole("read_only"); setError(null); setResult(null); setCopied(false);
+    setEmail(""); setRole("read_only"); setError(null); setResult(null); setCopied("idle");
+  }
+
+  // The link is shown once, so "Copied" has to be true: an admin who closes the
+  // dialog on a copy that failed has lost the link. `navigator.clipboard` is
+  // undefined outside a secure context — an on-prem dashboard on plain http.
+  async function copyLink(url: string) {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied("copied");
+    } catch {
+      setCopied("failed");
+    }
   }
 
   async function submit() {
@@ -91,15 +103,14 @@ export function InviteModal({
           >
             {result.url}
           </div>
-          <button
-            className="gw-btn"
-            onClick={() => {
-              void navigator.clipboard.writeText(result.url);
-              setCopied(true);
-            }}
-          >
-            {copied ? "Copied" : "Copy link"}
+          <button className="gw-btn" onClick={() => void copyLink(result.url)}>
+            {copied === "copied" ? "Copied" : "Copy link"}
           </button>
+          {copied === "failed" && (
+            <div role="alert" style={{ fontSize: 12, color: "var(--err)" }}>
+              Couldn&apos;t copy it here — select the link above and copy it by hand.
+            </div>
+          )}
         </div>
       ) : (
         <div style={{ display: "grid", gap: 14 }}>
@@ -122,6 +133,7 @@ export function InviteModal({
               {ROLES.map((r) => (
                 <button
                   key={r}
+                  aria-pressed={role === r}
                   onClick={() => setRole(r)}
                   style={{
                     display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 12px",

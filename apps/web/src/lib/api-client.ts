@@ -149,6 +149,11 @@ export async function apiDownload(path: string, filename: string): Promise<void>
   const a = document.createElement("a");
   a.href = url;
   a.download = filename;
+  // Attached for the click, and the URL revoked well after it: some browsers
+  // ignore a click on a detached anchor, and some cancel a download whose URL
+  // is revoked before they have read it.
+  document.body.appendChild(a);
   a.click();
-  URL.revokeObjectURL(url);
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 30_000);
 }
