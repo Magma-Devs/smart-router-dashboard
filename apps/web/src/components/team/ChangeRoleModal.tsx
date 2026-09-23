@@ -66,6 +66,7 @@ export function ChangeRoleModal({
         {ROLES.map((r) => (
           <button
             key={r}
+            aria-pressed={role === r}
             onClick={() => setRole(r)}
             style={{
               display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 12px",
