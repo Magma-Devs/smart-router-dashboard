@@ -332,6 +332,24 @@ export async function teamPasswordRoutes(app: FastifyInstance) {
   );
 }
 
+/**
+ * A member id, in the 8-4-4-4-12 form only. `format: "uuid"` also admits a
+ * `urn:uuid:` prefix, which Postgres refuses as a uuid — a 500 rather than a
+ * 400. Handlers lower-case it, because the services compare ids as strings and
+ * Postgres returns them lower-case: an upper-cased id of your own would
+ * otherwise miss the self check and read as "No such member."
+ */
+const MEMBER_ID_PARAMS = {
+  type: "object" as const,
+  required: ["id"],
+  properties: {
+    id: {
+      type: "string" as const,
+      pattern: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+    },
+  },
+};
+
 interface RoleBody {
   role: string;
 }
@@ -439,11 +457,7 @@ export async function teamMemberRoutes(app: FastifyInstance) {
       schema: {
         tags: ["Team"],
         summary: "Change a member's role. Takes effect on their current session.",
-        params: {
-          type: "object" as const,
-          required: ["id"],
-          properties: { id: { type: "string" as const, format: "uuid" } },
-        },
+        params: MEMBER_ID_PARAMS,
         body: {
           type: "object" as const,
           required: ["role"],
@@ -459,7 +473,7 @@ export async function teamMemberRoutes(app: FastifyInstance) {
       const conn = db(reply);
       if (!conn) return reply;
 
-      const { id } = request.params as { id: string };
+      const id = (request.params as { id: string }).id.toLowerCase();
       const { role } = request.body as RoleBody;
       if (!isRole(role)) {
         return reply
@@ -492,11 +506,7 @@ export async function teamMemberRoutes(app: FastifyInstance) {
       schema: {
         tags: ["Team"],
         summary: "Remove a member — a state change, not a deletion",
-        params: {
-          type: "object" as const,
-          required: ["id"],
-          properties: { id: { type: "string" as const, format: "uuid" } },
-        },
+        params: MEMBER_ID_PARAMS,
       },
     },
     async (request, reply) => {
@@ -505,7 +515,7 @@ export async function teamMemberRoutes(app: FastifyInstance) {
       const conn = db(reply);
       if (!conn) return reply;
 
-      const { id } = request.params as { id: string };
+      const id = (request.params as { id: string }).id.toLowerCase();
       const result = await removeMember(conn, { id, actorId: me.id }, audit);
       if (!result.ok) {
         return refuse(reply, result.reason, "You cannot remove yourself.");
