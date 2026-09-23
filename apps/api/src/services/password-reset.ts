@@ -3,6 +3,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { passwordResets, users, type Database, type User } from "@sr/db";
 import { hashPassword } from "./password.js";
 import { revokeAllForUser, signOutEverywhere } from "./sessions.js";
+import { clearFailures } from "./lockout.js";
 
 /**
  * Password reset — a single-use link that lets someone set **their own**
@@ -83,7 +84,7 @@ export type ResetOutcome =
 /**
  * Consume a reset link and set the new password.
  *
- * Three things happen together, and all three matter:
+ * Four things happen, in **one transaction**, and all of them matter:
  *
  *  1. the token is claimed with a conditional update, so it is single-use even
  *     if two tabs submit at once;
@@ -91,7 +92,16 @@ export type ResetOutcome =
  *  3. **every session for that account is revoked** — both the per-device rows
  *     and the `signed_out_all_at` cutoff. A reset is what someone does when
  *     they think their account is compromised, so leaving the attacker's
- *     session alive would defeat the entire point.
+ *     session alive would defeat the entire point;
+ *  4. **the account's lockout is cleared.** Completing a reset proves control
+ *     of the account; leaving the failure count in place meant the owner's
+ *     brand-new password was answered 423 for up to a whole window — and that
+ *     anyone who knew the address could keep them out indefinitely, reset or
+ *     not, by re-tripping it.
+ *
+ * The transaction is what makes "together" true. Separate statements let a
+ * failure after (2) keep an attacker's session alive past the victim's reset,
+ * which is precisely the outcome (3) exists to prevent.
  *
  * It deliberately does **not** sign anyone in: the person proves the new
  * password works by using it.
@@ -114,22 +124,29 @@ export async function consumePasswordReset(
   if (row.reset.expiresAt.getTime() <= Date.now()) return { ok: false, reason: "expired" };
   if (row.user.status !== "active") return { ok: false, reason: "user_inactive" };
 
-  const claimed = await db
-    .update(passwordResets)
-    .set({ usedAt: new Date() })
-    .where(and(eq(passwordResets.id, row.reset.id), isNull(passwordResets.usedAt)))
-    .returning({ id: passwordResets.id });
-  if (claimed.length === 0) return { ok: false, reason: "used" };
-
+  // Hashed before the transaction opens: bcrypt at cost 12 is the slow part,
+  // and there is no reason to hold row locks across it.
   const passwordHash = await hashPassword(newPassword);
-  await db
-    .update(users)
-    .set({ passwordHash, passwordUpdatedAt: new Date() })
-    .where(eq(users.id, row.user.id));
 
-  await signOutEverywhere(db, row.user.id, { reason: "password_change" });
+  return db.transaction(async (tx) => {
+    const txDb = tx as unknown as Database;
+    const claimed = await tx
+      .update(passwordResets)
+      .set({ usedAt: new Date() })
+      .where(and(eq(passwordResets.id, row.reset.id), isNull(passwordResets.usedAt)))
+      .returning({ id: passwordResets.id });
+    if (claimed.length === 0) return { ok: false, reason: "used" } as const;
 
-  return { ok: true, user: { ...row.user, passwordHash } };
+    await tx
+      .update(users)
+      .set({ passwordHash, passwordUpdatedAt: new Date() })
+      .where(eq(users.id, row.user.id));
+
+    await signOutEverywhere(txDb, row.user.id, { reason: "password_change" });
+    await clearFailures(txDb, row.user.email);
+
+    return { ok: true, user: { ...row.user, passwordHash } } as const;
+  });
 }
 
 /** Set a password for someone who is signed in and knows their current one.
@@ -142,14 +159,21 @@ export async function changeOwnPassword(
   keepSessionId: string,
 ): Promise<void> {
   const passwordHash = await hashPassword(newPassword);
-  await db
-    .update(users)
-    .set({ passwordHash, passwordUpdatedAt: new Date() })
-    .where(eq(users.id, userId));
+  // One transaction, for the same reason as a reset: a new password with the
+  // old devices still signed in is the state this exists to prevent.
+  await db.transaction(async (tx) => {
+    await tx
+      .update(users)
+      .set({ passwordHash, passwordUpdatedAt: new Date() })
+      .where(eq(users.id, userId));
 
-  // Per-device revoke, not the cutoff: `signed_out_all_at` compares against the
-  // token's `iat` and would kill the surviving session too. Being logged out of
-  // the tab you just changed your password in is hostile, so the other devices
-  // go and this one stays.
-  await revokeAllForUser(db, userId, { reason: "password_change", except: keepSessionId });
+    // Per-device revoke, not the cutoff: `signed_out_all_at` compares against the
+    // token's `iat` and would kill the surviving session too. Being logged out of
+    // the tab you just changed your password in is hostile, so the other devices
+    // go and this one stays.
+    await revokeAllForUser(tx as unknown as Database, userId, {
+      reason: "password_change",
+      except: keepSessionId,
+    });
+  });
 }

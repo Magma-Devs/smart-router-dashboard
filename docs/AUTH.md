@@ -273,11 +273,18 @@ differ. What is identical, and is the point:
 | TTL | 1 hour | 24 hours |
 | `password_resets.created_by` | null | the admin's id — the column an auditor reads |
 
-Both converge on `POST /auth/password/reset`, which claims the token with a
-conditional update, writes the hash, and **revokes every session for the
-account** — per-device rows *and* the `signed_out_all_at` cutoff. A reset is
-what someone does when they think they are compromised; leaving the attacker's
-session alive would defeat the entire exercise.
+Both converge on `POST /auth/password/reset`, which in **one transaction**
+claims the token with a conditional update, writes the hash, **revokes every
+session for the account** — per-device rows *and* the `signed_out_all_at`
+cutoff — and **clears the account's lockout**. A reset is what someone does
+when they think they are compromised; leaving the attacker's session alive
+would defeat the entire exercise, and the transaction is what stops a failure
+part-way from doing exactly that.
+
+Clearing the lockout is what makes a reset a recovery path. Completing one
+proves control of the account; without it the owner's brand-new password was
+answered `423` for up to a whole window, and anyone who knew the address could
+keep them out indefinitely by re-tripping it.
 
 It does **not** sign anyone in. A reset link that logs you in is a reset link
 worth stealing.
@@ -286,13 +293,23 @@ worth stealing.
 
 `/auth/password/forgot` always answers `202`, whether or not the address exists
 and whether or not the account has a password at all — anything else turns it
-into a way to ask "is this person a member?". On-prem it answers `404` with a
-reason, because there is genuinely nowhere to send anything.
+into a way to ask "is this person a member?". It also answers in the **same
+time** either way: the lookup and the link are issued after the reply, because
+a uniform body is no help if one branch visibly does two writes and an audit
+row that the other skips. On-prem it answers `404` with a reason, because there
+is genuinely nowhere to send anything.
 
 **Changing your own password** (`POST /api/account/password`) requires the
 current one and signs out your *other* devices, keeping the tab you are in.
 Being logged out of the window you just changed your password in is hostile;
-logging out the other devices is the security value.
+logging out the other devices is the security value. It carries sign-in's rate
+limit, because checking the current password tests a credential: under the
+global limit a stolen session could guess at it 300 times a minute, and a hit
+ends with the owner's password changed and their other devices signed out.
+
+For an account with no password — one that signs in through a linked provider
+— both this and the admin's reset link say which provider it uses, rather than
+assuming Google.
 
 ## Sign-in lockout
 
@@ -305,6 +322,15 @@ locked for the rest of the window, answering `423` and emitting
 Counted on the submitted address whether or not an account exists, and
 case-insensitively. If only real addresses locked, the lockout itself would
 answer the question sign-in refuses to answer.
+
+The `423` carries `Retry-After` and says in minutes when the lock lifts — safe
+to say, since an address with no account locks too.
+
+Because every address anyone types lands in `login_attempts`, rows whose window
+has lapsed and that hold no live lock are **pruned on the failure path**, a
+bounded batch at a time over an index on `window_start`. The table then grows
+with failures *per window* rather than failures *ever*, and stops being a record
+of every address anyone has tried.
 
 ## Sign-in methods
 

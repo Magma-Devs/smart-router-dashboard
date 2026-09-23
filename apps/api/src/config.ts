@@ -195,6 +195,25 @@ export const config = {
 } as const;
 
 /**
+ * The web origin links are built on, and the deployment's shape — read from the
+ * live environment first.
+ *
+ * `config` snapshots at module load, which is before any test's `beforeEach`
+ * can set a variable, so a route reading the snapshot cannot be tested with
+ * more than one value. Every route that builds a link or forks on the mode
+ * reads these instead, so they cannot disagree with one another.
+ */
+export function publicWebOrigin(): string | undefined {
+  return process.env.PUBLIC_WEB_ORIGIN?.trim() || config.publicWebOrigin;
+}
+
+export function deploymentMode(): "managed" | "onprem" {
+  const live = process.env.DEPLOYMENT_MODE;
+  if (live === "managed" || live === "onprem") return live;
+  return config.deploymentMode;
+}
+
+/**
  * The deployment scope: a `label="value"` matcher EVERY metrics query carries,
  * from `METRICS_SCOPE_LABEL` + `METRICS_SCOPE_VALUE`. For one dashboard per
  * zone (or per tenant) against a shared store whose series all carry that

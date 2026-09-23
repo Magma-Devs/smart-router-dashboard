@@ -127,6 +127,27 @@ export async function upsertOAuthUser(
  *  bad token so the route can answer 403-with-a-reason rather than 401. */
 export class OAuthAccountNotFoundError extends Error {}
 
+const PROVIDER_NAME: Record<OAuthProvider, string> = {
+  google: "Google",
+  github: "GitHub",
+  discord: "Discord",
+};
+
+/**
+ * How this account signs in when it has no password — "Google", "GitHub and
+ * Discord". For copy that tells someone why a password action doesn't apply;
+ * saying "Google" to a GitHub-only member is the kind of thing that makes
+ * people think their account is broken.
+ */
+export function linkedProviderNames(user: User): string {
+  const linked = (Object.keys(PROVIDER_NAME) as OAuthProvider[])
+    .filter((p) => user[providerKey(p)])
+    .map((p) => PROVIDER_NAME[p]);
+  if (linked.length === 0) return "a linked account";
+  if (linked.length === 1) return linked[0]!;
+  return `${linked.slice(0, -1).join(", ")} and ${linked[linked.length - 1]}`;
+}
+
 /** The `users` column holding a provider's subject id. Exported because invite
  *  redemption links the provider as it inserts the row. */
 export function providerKey(provider: OAuthProvider): "googleId" | "githubId" | "discordId" {

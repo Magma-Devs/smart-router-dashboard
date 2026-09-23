@@ -256,11 +256,19 @@ export type PasswordReset = typeof passwordResets.$inferSelect;
  * Keyed on the submitted address whether or not it exists, so being locked out
  * reveals nothing about whether an account is there.
  */
-export const loginAttempts = pgTable("login_attempts", {
-  email: varchar("email", { length: 255 }).primaryKey(),
-  failedCount: integer("failed_count").notNull().default(0),
-  windowStart: timestamp("window_start", { withTimezone: true }).notNull().defaultNow(),
-  lockedUntil: timestamp("locked_until", { withTimezone: true }),
-});
+export const loginAttempts = pgTable(
+  "login_attempts",
+  {
+    email: varchar("email", { length: 255 }).primaryKey(),
+    failedCount: integer("failed_count").notNull().default(0),
+    windowStart: timestamp("window_start", { withTimezone: true }).notNull().defaultNow(),
+    lockedUntil: timestamp("locked_until", { withTimezone: true }),
+  },
+  (table) => [
+    /** Backs the prune on the failure path — oldest lapsed rows first, as an
+     *  index range scan rather than a sequential scan of every address. */
+    index("login_attempts_window_start_idx").on(table.windowStart),
+  ],
+);
 
 export type LoginAttempt = typeof loginAttempts.$inferSelect;
