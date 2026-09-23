@@ -15,10 +15,13 @@
  * name and the local part of their address. Without the guard, a member called
  * `=HYPERLINK("http://evil","click")` executes when the auditor opens the file.
  *
- * Tab and CR are included because some parsers treat them as leading
+ * Tab, CR and LF are included because some parsers treat them as leading
  * whitespace and then re-examine the *next* character for a formula.
  */
-const FORMULA_LEAD = new Set(["=", "+", "-", "@", "\t", "\r"]);
+const FORMULA_LEAD = new Set(["=", "+", "-", "@", "\t", "\r", "\n"]);
+
+/** Leads every file `toCsv` produces — see there for why. */
+export const UTF8_BOM = "﻿";
 
 /**
  * Escape one field: neutralise a formula lead, then quote when the value holds
@@ -37,6 +40,10 @@ export function escapeCsvField(value: string | null | undefined): string {
 /**
  * Serialise a header row plus data rows.
  *
+ * Starts with a UTF-8 byte-order mark. Excel opens a CSV without one in the
+ * system's ANSI code page, so a name in Hebrew or with a diacritic arrives
+ * garbled in the file an auditor reads; with it, Excel and Sheets read UTF-8.
+ *
  * CRLF line endings per RFC 4180 — Excel on Windows needs them or it collapses
  * every row into one cell, and every other parser accepts them. No trailing
  * newline.
@@ -47,5 +54,5 @@ export function toCsv(
 ): string {
   const lines = [headers.map(escapeCsvField).join(",")];
   for (const row of rows) lines.push(row.map(escapeCsvField).join(","));
-  return lines.join("\r\n");
+  return UTF8_BOM + lines.join("\r\n");
 }

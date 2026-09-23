@@ -121,7 +121,10 @@ describe("GET /api/team/members.csv", () => {
     expect(res.statusCode).toBe(200);
     expect(res.headers["content-type"]).toMatch(/^text\/csv/);
     expect(res.headers["content-disposition"]).toContain("members.csv");
-    const [header, first] = res.body.split("\r\n");
+    // The UTF-8 byte-order mark reaches the wire, so Excel reads the file as
+    // UTF-8 rather than the system code page.
+    expect([...res.rawPayload.subarray(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
+    const [header, first] = res.body.slice(1).split("\r\n");
     expect(header).toBe("name,email,role,two_factor,last_active,joined");
     expect(first!.startsWith(`"'=HYPERLINK(""http://evil"",""x"")",admin@example.com,admin,,`)).toBe(
       true,
