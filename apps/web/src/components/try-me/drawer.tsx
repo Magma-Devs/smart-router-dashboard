@@ -14,7 +14,7 @@ import { apiPost } from "@/lib/api-client";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { CopyButton } from "@/components/gateway/CopyButton";
 import { HealthTag } from "@/components/gateway/HealthTag";
-import { initialTargetFor, pinRefusalFor, pinRefusalHintFor, type UpstreamTier } from "./pin-support";
+import { initialTargetFor, pinCarrierFor, pinRefusalFor, pinRefusalHintFor, type UpstreamTier } from "./pin-support";
 import {
   buildRequest,
   paramsKindFor,
@@ -122,8 +122,8 @@ interface TryMeDrawerProps {
   health?: HealthState;
   /** When set, pin the relay to THIS provider via the router's
    *  `lava-select-provider` directive: a header on HTTP, call metadata in the
-   *  gRPC snippets. Not on WebSocket — browsers can't set custom headers on
-   *  the handshake. Used by the per-upstream Try-now. */
+   *  gRPC snippets. A WebSocket can't be pinned — the router reads no
+   *  directives on one (see `pinCarrierFor`). Used by the per-upstream Try-now. */
   selectUpstream?: string;
   /** Identity of the upstream endpoint(s) this row stands for. Set ⇒ the
    *  drawer offers "Direct to upstream": the api dials the upstream itself,
@@ -569,6 +569,9 @@ export function TryMeDrawer({
    *  the drawer is on WS. */
   const directAvailable = directTarget !== null && canFire && directAvailableFor(directTarget, onWs);
   const onDirect = target === "upstream" && directAvailable;
+  /** How `selectUpstream` reaches the router on this transport — null on a
+   *  WebSocket, where the router reads no directives at all. */
+  const pinCarrier = pinCarrierFor(onWs ? "ws" : canFire ? "http" : "grpc");
   /** Masked `scheme://host` of the upstream a direct call would hit. Display
    *  only — the path (where API keys live) never leaves the api. */
   const directHost = (onWs ? directTarget?.wsHost : directTarget?.httpHost) ?? null;
@@ -1333,7 +1336,14 @@ export function TryMeDrawer({
                     <span className="gw-mono">-32000 Selected provider not available</span> however healthy this upstream is. Send it{" "}
                     {directTarget ? "direct to the upstream instead" : "through the router unpinned, or read it on the Upstreams roster"}.
                   </>
-                ) : selectUpstream && !canFire ? (
+                ) : selectUpstream && pinCarrier === null ? (
+                  <>
+                    <strong style={{ color: "var(--text)" }}>A pin doesn&apos;t apply on a WebSocket.</strong>{" "}
+                    The router reads no <span className="gw-mono">lava-select-provider</span> on a WebSocket connection, from any client, so it picks the upstream for this one itself. Switch to HTTP to pin it to{" "}
+                    <strong style={{ color: "var(--text)", fontFamily: "var(--font-mono)", fontWeight: 600 }}>{selectUpstream}</strong>
+                    {directAvailable ? ", or send it direct to the upstream." : "."}
+                  </>
+                ) : selectUpstream && pinCarrier === "metadata" ? (
                   <>
                     Pinned to <strong style={{ color: "var(--text)", fontFamily: "var(--font-mono)", fontWeight: 600 }}>{selectUpstream}</strong> — the snippets below send <span className="gw-mono">lava-select-provider</span> as gRPC metadata so the router routes the call to that upstream (a cache hit may still answer as &quot;Cached&quot;).
                   </>

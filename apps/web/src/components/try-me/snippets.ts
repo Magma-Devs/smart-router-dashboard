@@ -649,7 +649,8 @@ function grpcJs(req: ResolvedGrpc, metadata: Record<string, string> = {}): Snipp
 export function snippetsFor(req: ResolvedRequest, selectUpstream?: string): Snippets {
   // The upstream pin, so a copied snippet reproduces the pinned call. HTTP
   // carries it as a header; gRPC as call metadata, which the router's gRPC
-  // listener hands to the same directive parser as an HTTP header.
+  // listener hands to the same directive parser as an HTTP header. WebSocket
+  // carries none — the router reads no directives there (`pinCarrierFor`).
   const pin: Record<string, string> = selectUpstream
     ? { "lava-select-provider": selectUpstream }
     : {};
