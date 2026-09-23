@@ -14,7 +14,7 @@ interface WindowQuery {
   routerId?: string;
 }
 
-function parseWindow(raw: string | undefined): MetricWindow {
+export function parseWindow(raw: string | undefined): MetricWindow {
   // Exact key → wire alias (24h ⇒ 1d) → default. Garbage falls back.
   return toMetricWindow(raw);
 }

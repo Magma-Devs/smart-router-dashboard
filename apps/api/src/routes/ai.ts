@@ -16,6 +16,9 @@
 import type { FastifyInstance } from "fastify";
 import { config } from "../config.js";
 import { BedrockError, BedrockService, bedrockGate } from "../services/bedrock.js";
+import { StatusAiService } from "../services/status-ai.js";
+import { IncidentsService } from "../services/incidents.js";
+import { parseWindow } from "./metrics.js";
 
 /** Which model this deployment would call. Nothing here is secret — no credential exists to leak. */
 function target() {
@@ -99,6 +102,69 @@ export async function aiRoutes(app: FastifyInstance) {
           reason: "model_call_failed",
           // AWS's own name for it — AccessDenied, Throttling and an unreachable
           // endpoint need three different fixes, and collapsing them wastes the call.
+          awsErrorName: err instanceof BedrockError ? err.awsErrorName : null,
+          detail: err instanceof Error ? err.message : String(err),
+          ...target(),
+        };
+      }
+    },
+  );
+
+  app.post<{ Querystring: { window?: string; router?: string } }>(
+    "/api/ai/status-analysis",
+    {
+      config: { rateLimit: { max: config.bedrock.rateLimitMax, timeWindow: "1 minute" } },
+      schema: {
+        tags: ["AI"],
+        summary: "Relate the Status page's findings to each other",
+        description:
+          "COSTS MONEY. Reads the whole Status report plus 24h of incidents and returns " +
+          "correlated themes — the join the page cannot make, since one provider can appear " +
+          "as an Issue, an Insight and the blamed party in an Incident with nothing linking " +
+          "them. Every theme cites the finding ids it rests on; any that cites nothing real " +
+          "is dropped server-side before it renders, and `droppedUncited` counts them.",
+      },
+    },
+    async (request, reply) => {
+      const g = gate();
+      if (!g.ok) {
+        reply.status(503);
+        return { ...g, ...target() };
+      }
+
+      const scoped = app.scoped(request.query.router);
+      // Both reads happen regardless of the model — a brief over a half-read
+      // report would be worse than no brief.
+      const [report, incidentsReport] = await Promise.all([
+        scoped.metricsDetail.status(parseWindow(request.query.window)),
+        new IncidentsService(app.prom, app.routerConfig).incidents(24),
+      ]);
+
+      const startedAt = Date.now();
+      try {
+        const svc = new StatusAiService(
+          new BedrockService(config.bedrock.model, app.log),
+          app.log,
+        );
+        const analysis = await svc.analyse(report, incidentsReport.incidents);
+        return {
+          ok: true,
+          ...target(),
+          ...analysis,
+          model: config.bedrock.model,
+          latencyMs: Date.now() - startedAt,
+          // What it read, so a thin brief is explicable rather than suspicious.
+          input: {
+            findings: report.findings.length,
+            insights: report.insights.length,
+            incidents: incidentsReport.incidents.length,
+          },
+        };
+      } catch (err) {
+        reply.status(502);
+        return {
+          ok: false,
+          reason: "model_call_failed",
           awsErrorName: err instanceof BedrockError ? err.awsErrorName : null,
           detail: err instanceof Error ? err.message : String(err),
           ...target(),
