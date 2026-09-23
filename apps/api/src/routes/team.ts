@@ -467,7 +467,7 @@ export async function teamMemberRoutes(app: FastifyInstance) {
           .send({ statusCode: 400, error: "Bad Request", message: "Unknown role" });
       }
 
-      const result = await changeMemberRole(conn, { id, role, actorId: me.id });
+      const result = await changeMemberRole(conn, { id, role, actorId: me.id }, audit);
       if (!result.ok) {
         return refuse(
           reply,
@@ -475,13 +475,6 @@ export async function teamMemberRoutes(app: FastifyInstance) {
           "You cannot change your own role. Promote someone else first, then step down.",
         );
       }
-
-      await audit.write({
-        action: "member.role_changed",
-        actor: { id: me.id, kind: "user" },
-        target: { type: "member", id: result.user.id, name: result.user.email },
-        changes: [{ field: "role", from: result.previousRole ?? "", to: result.user.role }],
-      });
 
       // Losing the ability to approve has the same consequence as leaving, for
       // anything currently waiting on them.
@@ -513,17 +506,11 @@ export async function teamMemberRoutes(app: FastifyInstance) {
       if (!conn) return reply;
 
       const { id } = request.params as { id: string };
-      const result = await removeMember(conn, { id, actorId: me.id });
+      const result = await removeMember(conn, { id, actorId: me.id }, audit);
       if (!result.ok) {
         return refuse(reply, result.reason, "You cannot remove yourself.");
       }
 
-      await audit.write({
-        action: "member.removed",
-        actor: { id: me.id, kind: "user" },
-        target: { type: "member", id: result.user.id, name: result.user.email },
-        changes: [{ field: "status", from: "active", to: "removed" }],
-      });
       await onMemberDeactivated(conn, result.user.id, "removed");
 
       return { ok: true };

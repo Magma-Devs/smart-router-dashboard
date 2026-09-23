@@ -11,14 +11,28 @@ import {
 import { createInvitation, redeemInvitation } from "../services/invitations.js";
 import { OAuthAccountNotFoundError, upsertOAuthUser } from "../services/users.js";
 import { createSession, listActiveSessions } from "../services/sessions.js";
+import type { AuditWriter } from "../services/audit.js";
+
+/** Records each event and whether it arrived with the caller's transaction. */
+function recordingAudit(): AuditWriter & { events: Array<{ action: string; inTx: boolean }> } {
+  const events: Array<{ action: string; inTx: boolean }> = [];
+  return {
+    events,
+    async write(event, tx) {
+      events.push({ action: event.action, inTx: tx !== undefined });
+    },
+  };
+}
 
 describe("members", () => {
   let t: TestDb;
   let admin: User;
   let member: User;
+  let audit: ReturnType<typeof recordingAudit>;
 
   beforeEach(async () => {
     t = await createTestDb();
+    audit = recordingAudit();
     const [a] = await t.db
       .insert(users)
       .values({ email: "admin@example.com", role: "admin", name: "Admin" })
@@ -59,7 +73,7 @@ describe("members", () => {
     });
 
     it("omits removed people — their record is for the audit log, not this screen", async () => {
-      await removeMember(t.db, { id: member.id, actorId: admin.id });
+      await removeMember(t.db, { id: member.id, actorId: admin.id }, audit);
       expect((await listMembers(t.db)).map((r) => r.email)).toEqual(["admin@example.com"]);
       // But the row itself survives.
       expect(await t.db.select().from(users)).toHaveLength(2);
@@ -67,7 +81,7 @@ describe("members", () => {
 
     it("counts admins, for the prompt that is never a block", async () => {
       expect(await countAdmins(t.db)).toBe(1);
-      await changeMemberRole(t.db, { id: member.id, role: "admin", actorId: admin.id });
+      await changeMemberRole(t.db, { id: member.id, role: "admin", actorId: admin.id }, audit);
       expect(await countAdmins(t.db)).toBe(2);
     });
   });
@@ -78,11 +92,24 @@ describe("members", () => {
         id: member.id,
         role: "read_only",
         actorId: admin.id,
-      });
+      }, audit);
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.previousRole).toBe("approver");
       expect(result.user.role).toBe("read_only");
+    });
+
+    it("records the change inside its own transaction", async () => {
+      await changeMemberRole(t.db, { id: member.id, role: "read_only", actorId: admin.id }, audit);
+      expect(audit.events).toEqual([{ action: "member.role_changed", inTx: true }]);
+    });
+
+    it("records nothing for a role they already have", async () => {
+      // An audit row reading "approver → approver" is noise an auditor has to
+      // read past.
+      const result = await changeMemberRole(t.db, { id: member.id, role: "approver", actorId: admin.id }, audit);
+      expect(result.ok).toBe(true);
+      expect(audit.events).toEqual([]);
     });
 
     it("does not revoke sessions, because it does not need to", async () => {
@@ -93,20 +120,20 @@ describe("members", () => {
         authMethod: "password",
         client: { ip: null, userAgent: null },
       });
-      await changeMemberRole(t.db, { id: member.id, role: "read_only", actorId: admin.id });
+      await changeMemberRole(t.db, { id: member.id, role: "read_only", actorId: admin.id }, audit);
       expect(await listActiveSessions(t.db, member.id)).toHaveLength(1);
     });
 
     it("refuses self-demotion", async () => {
-      expect(await changeMemberRole(t.db, { id: admin.id, role: "read_only", actorId: admin.id })).toEqual({
+      expect(await changeMemberRole(t.db, { id: admin.id, role: "read_only", actorId: admin.id }, audit)).toEqual({
         ok: false,
         reason: "self",
       });
     });
 
     it("refuses someone already removed", async () => {
-      await removeMember(t.db, { id: member.id, actorId: admin.id });
-      expect(await changeMemberRole(t.db, { id: member.id, role: "admin", actorId: admin.id })).toEqual({
+      await removeMember(t.db, { id: member.id, actorId: admin.id }, audit);
+      expect(await changeMemberRole(t.db, { id: member.id, role: "admin", actorId: admin.id }, audit)).toEqual({
         ok: false,
         reason: "not_found",
       });
@@ -116,7 +143,7 @@ describe("members", () => {
       // The route checked the role on arrival. Two admins demoting each other
       // at once would both pass that check and leave no admin at all.
       await t.db.update(users).set({ role: "approver" }).where(eq(users.id, admin.id));
-      expect(await changeMemberRole(t.db, { id: member.id, role: "read_only", actorId: admin.id })).toEqual({
+      expect(await changeMemberRole(t.db, { id: member.id, role: "read_only", actorId: admin.id }, audit)).toEqual({
         ok: false,
         reason: "not_admin",
       });
@@ -127,7 +154,7 @@ describe("members", () => {
 
   describe("removing someone", () => {
     it("is a state change, not a deletion", async () => {
-      const result = await removeMember(t.db, { id: member.id, actorId: admin.id });
+      const result = await removeMember(t.db, { id: member.id, actorId: admin.id }, audit);
       expect(result.ok).toBe(true);
 
       const [row] = await t.db.select().from(users).where(eq(users.id, member.id));
@@ -139,11 +166,35 @@ describe("members", () => {
       expect(row?.name).toBe("Dana Levi");
     });
 
+    it("records the removal inside its own transaction", async () => {
+      await removeMember(t.db, { id: member.id, actorId: admin.id }, audit);
+      expect(audit.events).toEqual([{ action: "member.removed", inTx: true }]);
+    });
+
+    it("does not happen when the audit log can't record it", async () => {
+      // AuditWriter propagates a failure inside a transaction, so the removal
+      // unwinds with it rather than landing unrecorded.
+      await createSession(t.db, { userId: member.id, authMethod: "password", client: { ip: null, userAgent: null } });
+      const failing: AuditWriter = {
+        async write() {
+          throw new Error("audit log unavailable");
+        },
+      };
+
+      await expect(removeMember(t.db, { id: member.id, actorId: admin.id }, failing)).rejects.toThrow(
+        "audit log unavailable",
+      );
+
+      const [row] = await t.db.select().from(users).where(eq(users.id, member.id));
+      expect(row?.status).toBe("active");
+      expect(await listActiveSessions(t.db, member.id)).toHaveLength(1);
+    });
+
     it("kills their sessions within the same transaction", async () => {
       await createSession(t.db, { userId: member.id, authMethod: "password", client: { ip: null, userAgent: null } });
       await createSession(t.db, { userId: member.id, authMethod: "password", client: { ip: null, userAgent: null } });
 
-      await removeMember(t.db, { id: member.id, actorId: admin.id });
+      await removeMember(t.db, { id: member.id, actorId: admin.id }, audit);
 
       expect(await listActiveSessions(t.db, member.id)).toHaveLength(0);
       const rows = await t.db.select().from(sessions).where(eq(sessions.userId, member.id));
@@ -151,7 +202,7 @@ describe("members", () => {
     });
 
     it("stamps the cutoff too, for tokens we hold no session row for", async () => {
-      await removeMember(t.db, { id: member.id, actorId: admin.id });
+      await removeMember(t.db, { id: member.id, actorId: admin.id }, audit);
       const [row] = await t.db.select().from(users).where(eq(users.id, member.id));
       expect(row?.signedOutAllAt).toBeInstanceOf(Date);
     });
@@ -171,7 +222,7 @@ describe("members", () => {
         .values({ email: "newcomer@example.com", role: "requester" })
         .returning();
 
-      await removeMember(t.db, { id: newcomer!.id, actorId: admin.id });
+      await removeMember(t.db, { id: newcomer!.id, actorId: admin.id }, audit);
 
       const [inv] = await t.db
         .select()
@@ -181,7 +232,7 @@ describe("members", () => {
     });
 
     it("frees their address to be invited again", async () => {
-      await removeMember(t.db, { id: member.id, actorId: admin.id });
+      await removeMember(t.db, { id: member.id, actorId: admin.id }, audit);
       const again = await createInvitation(t.db, {
         email: "dana@example.com",
         role: "read_only",
@@ -195,7 +246,7 @@ describe("members", () => {
       // Provider ids are unique across every row, removed ones included. Kept
       // on the removed row, the new account's insert collides with it.
       await t.db.update(users).set({ googleId: "google-dana" }).where(eq(users.id, member.id));
-      await removeMember(t.db, { id: member.id, actorId: admin.id });
+      await removeMember(t.db, { id: member.id, actorId: admin.id }, audit);
 
       const again = await createInvitation(t.db, {
         email: "dana@example.com",
@@ -218,7 +269,7 @@ describe("members", () => {
 
     it("leaves their old Google login with no account to sign in to", async () => {
       await t.db.update(users).set({ googleId: "google-dana" }).where(eq(users.id, member.id));
-      await removeMember(t.db, { id: member.id, actorId: admin.id });
+      await removeMember(t.db, { id: member.id, actorId: admin.id }, audit);
 
       await expect(
         upsertOAuthUser(t.db, "google", {
@@ -235,9 +286,9 @@ describe("members", () => {
         .insert(users)
         .values({ email: "other@example.com", role: "admin" })
         .returning();
-      await removeMember(t.db, { id: admin.id, actorId: other!.id });
+      await removeMember(t.db, { id: admin.id, actorId: other!.id }, audit);
 
-      expect(await removeMember(t.db, { id: other!.id, actorId: admin.id })).toEqual({
+      expect(await removeMember(t.db, { id: other!.id, actorId: admin.id }, audit)).toEqual({
         ok: false,
         reason: "not_admin",
       });
@@ -245,7 +296,7 @@ describe("members", () => {
     });
 
     it("refuses self-removal", async () => {
-      expect(await removeMember(t.db, { id: admin.id, actorId: admin.id })).toEqual({
+      expect(await removeMember(t.db, { id: admin.id, actorId: admin.id }, audit)).toEqual({
         ok: false,
         reason: "self",
       });
@@ -259,7 +310,7 @@ describe("members", () => {
         .insert(users)
         .values({ email: "other@example.com", role: "admin" })
         .returning();
-      expect((await removeMember(t.db, { id: admin.id, actorId: other!.id })).ok).toBe(true);
+      expect((await removeMember(t.db, { id: admin.id, actorId: other!.id }, audit)).ok).toBe(true);
       expect(await countAdmins(t.db)).toBe(1);
     });
   });

@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { invitations, sessions, users, type Database, type User } from "@sr/db";
 import type { Role } from "@sr/shared";
+import type { AuditWriter } from "./audit.js";
 
 /**
  * The member list, and the two mutations that act on somebody else.
@@ -100,10 +101,15 @@ async function lockActorAndTarget(
  * Refuses self-demotion — an admin removing their own last privilege by
  * accident is a support ticket, and doing it deliberately is what "transfer
  * then step down" is for.
+ *
+ * The audit row is written inside the transaction, so it and the change it
+ * records commit or roll back together. Setting the role someone already has
+ * changes nothing and records nothing.
  */
 export async function changeMemberRole(
   db: Database,
   input: { id: string; role: Role; actorId: string },
+  audit: AuditWriter,
 ): Promise<MemberMutation> {
   if (input.id === input.actorId) return { ok: false, reason: "self" };
 
@@ -111,14 +117,26 @@ export async function changeMemberRole(
     const { actorIsAdmin, target } = await lockActorAndTarget(tx, input.actorId, input.id);
     if (!actorIsAdmin) return { ok: false, reason: "not_admin" };
     if (!target) return { ok: false, reason: "not_found" };
+    if (target.role === input.role) return { ok: true, user: target, previousRole: target.role };
 
     const updated = await tx
       .update(users)
       .set({ role: input.role })
       .where(eq(users.id, input.id))
       .returning();
+    const user = updated[0]!;
 
-    return { ok: true, user: updated[0]!, previousRole: target.role };
+    await audit.write(
+      {
+        action: "member.role_changed",
+        actor: { id: input.actorId, kind: "user" },
+        target: { type: "member", id: user.id, name: user.email },
+        changes: [{ field: "role", from: target.role, to: user.role }],
+      },
+      tx,
+    );
+
+    return { ok: true, user, previousRole: target.role };
   });
 }
 
@@ -139,6 +157,8 @@ export async function changeMemberRole(
  *    at their next sign-in.
  *  - any pending invitation to their address revoked — otherwise removing
  *    someone mid-onboarding leaves a live link that recreates them.
+ *  - the audit row — written with the transaction, so a removal the log can't
+ *    record doesn't happen.
  *
  * Cancelling their in-flight change requests is MAG-2731's table and therefore
  * its job; the hook is `onMemberDeactivated`, called at the end.
@@ -146,6 +166,7 @@ export async function changeMemberRole(
 export async function removeMember(
   db: Database,
   input: { id: string; actorId: string },
+  audit: AuditWriter,
 ): Promise<MemberMutation> {
   if (input.id === input.actorId) return { ok: false, reason: "self" };
 
@@ -188,7 +209,18 @@ export async function removeMember(
         ),
       );
 
-    return { ok: true, user: updated[0]! };
+    const user = updated[0]!;
+    await audit.write(
+      {
+        action: "member.removed",
+        actor: { id: input.actorId, kind: "user" },
+        target: { type: "member", id: user.id, name: user.email },
+        changes: [{ field: "status", from: "active", to: "removed" }],
+      },
+      tx,
+    );
+
+    return { ok: true, user };
   });
 }
 
