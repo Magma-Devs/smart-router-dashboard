@@ -70,6 +70,9 @@ export default function TeamPage() {
   const members = useSWR<MembersResponse>("/api/team/members", apiGet, { refreshInterval: 30000 });
   // Both from the live row, not the session — see `useMe`.
   const { me, isAdmin } = useMe();
+  // The Invites tab is admin-only. Someone demoted while it is open would
+  // otherwise be left looking at a tab bar with nothing selected and no panel.
+  const shownTab: Tab = isAdmin ? tab : "members";
   // Only admins may read invitations, so don't even ask otherwise — a 403 in
   // the console is noise, not information.
   const invites = useSWR<InvitesResponse>(isAdmin ? "/api/team/invites" : null, apiGet);
@@ -152,10 +155,10 @@ export default function TeamPage() {
       <div className="gw-row" style={{ gap: 0, borderBottom: "1px solid var(--line)", marginBottom: 20 }}>
         {TABS.filter((t) => t === "members" || isAdmin).map((t) => (
           <button key={t} onClick={() => setTab(t)} style={{
-            padding: "8px 16px", fontSize: 13, fontWeight: tab === t ? 600 : 400,
+            padding: "8px 16px", fontSize: 13, fontWeight: shownTab === t ? 600 : 400,
             border: "none", background: "transparent", cursor: "pointer",
-            color: tab === t ? "var(--text)" : "var(--text-3)",
-            borderBottom: `2px solid ${tab === t ? "var(--brand)" : "transparent"}`,
+            color: shownTab === t ? "var(--text)" : "var(--text-3)",
+            borderBottom: `2px solid ${shownTab === t ? "var(--brand)" : "transparent"}`,
             marginBottom: -1, fontFamily: "var(--font-ui)", textTransform: "capitalize",
           }}>
             {t}
@@ -164,7 +167,7 @@ export default function TeamPage() {
         ))}
       </div>
 
-      {tab === "members" && (
+      {shownTab === "members" && (
         <div className="gw-card" style={{ padding: 0, overflow: "hidden" }}>
           {/* An access review that silently shows nobody is worse than one that
               says it couldn't load. */}
@@ -253,11 +256,11 @@ export default function TeamPage() {
         </div>
       )}
 
-      {tab === "invites" && isAdmin && inviteError && (
+      {shownTab === "invites" && inviteError && (
         <div role="alert" style={{ fontSize: 12, color: "var(--err)", marginBottom: 12 }}>{inviteError}</div>
       )}
 
-      {tab === "invites" && isAdmin && (
+      {shownTab === "invites" && (
         invites.error ? (
           <div role="alert" style={{ fontSize: 12, color: "var(--err)" }}>
             Could not load invitations: {invites.error instanceof Error ? invites.error.message : "request failed"}

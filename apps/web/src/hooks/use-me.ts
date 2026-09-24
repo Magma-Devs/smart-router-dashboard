@@ -18,14 +18,13 @@ export interface Me {
  *
  * The session's `role` is stamped once at sign-in and never refreshed —
  * `auth.config.ts`'s `jwt()` callback only sets `token.role` when `user` is
- * present, which is the sign-in call. So a promotion or a demotion never
- * reached the browser: a demoted person kept seeing admin buttons that then
- * 403'd, and a promoted one saw none of their new ones, until they signed in
- * again. Up to thirty days of the screen disagreeing with the server.
+ * present, which is the sign-in call. Read from the session, a demoted person
+ * would keep seeing admin buttons that 403, and a promoted one none of their
+ * new ones, for up to the session's thirty days.
  *
- * The api was never wrong — it authorises from this same row on every request,
- * which is what "a role change takes effect straight away" means. This is what
- * lets the UI say the same thing.
+ * The api authorises from this same row on every request, which is what "a
+ * role change takes effect straight away" means. This is what lets the UI say
+ * the same thing.
  *
  * Polling rather than an event, because a role change originates on somebody
  * else's screen and there is no channel to push it down. Fifteen seconds is the
@@ -37,7 +36,11 @@ export function useMe(): { me: Me | null; isAdmin: boolean; loading: boolean } {
   // registered — asking would 404 on every page. It is also empty before the
   // session bridge has run, and asking then would race it.
   const bridged = getAuthState().user;
-  const { data, isLoading } = useApi<Me>(bridged ? "/api/account/me" : null);
+  const { data: live, isLoading } = useApi<Me>(bridged ? "/api/account/me" : null);
+  // `useApi` keeps the previous key's data across a key change, including a
+  // change to no key. Without this, a screen with nobody signed in would go on
+  // answering for whoever was signed in last.
+  const data = bridged ? live : undefined;
 
   // Fall back to the session while the first read is in flight, so the sidebar
   // does not flicker from a name to a placeholder and back on every navigation.
