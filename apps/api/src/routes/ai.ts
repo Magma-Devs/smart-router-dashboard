@@ -496,4 +496,101 @@ export async function aiRoutes(app: FastifyInstance) {
       }
     },
   );
+
+  app.post<{ Querystring: { hours?: string; limit?: string; router?: string } }>(
+    "/api/ai/incident-feed",
+    {
+      config: { rateLimit: { max: config.bedrock.rateLimitMax, timeWindow: "1 minute" } },
+      schema: {
+        tags: ["AI"],
+        summary: "The incident feed — every recent incident, explained",
+        description:
+          "Detects incidents once and explains each in the same pass, so nothing is looked " +
+          "up by an id that a later re-detection has already moved. Each item is the causal " +
+          "chain in the team's own style, built from the episode's own error lines and the " +
+          "chain's configured providers. `hours` (default 24), `limit` (default 5).",
+      },
+    },
+    async (request, reply) => {
+      const g = gate();
+      if (!g.ok) {
+        reply.status(503);
+        return { ...g, ...target() };
+      }
+
+      const hours = Math.min(Math.max(Number(request.query.hours) || 24, 1), 72);
+      const limit = Math.min(Math.max(Number(request.query.limit) || 5, 1), 10);
+
+      // ONE detection for the whole feed. Looking each incident up by id
+      // afterwards is what produced 404s on a list that was correct when it
+      // was read: episodes are re-derived per call and the ranking moves.
+      const report = await new IncidentsService(app.prom, app.routerConfig).incidents(hours);
+      const incidents = report.incidents.slice(0, limit);
+      if (incidents.length === 0) {
+        return { ok: true, hours, incidents: [], note: "no incident crossed the floor in this window" };
+      }
+
+      const loki = new LokiService();
+      const routers = app.routerConfig?.getRouters() ?? [];
+      const svc = new IncidentExplainService(new BedrockService(config.bedrock.model, app.log), app.log);
+
+      const items = await Promise.all(
+        incidents.map(async (incident) => {
+          const lines = loki.available
+            ? await loki
+                .recentErrors(incident.spec, undefined, 200, incident.startUnix - 60, incident.endUnix + 60)
+                .catch(() => [])
+            : [];
+          const configured = routers
+            .filter((r) => r.spec === incident.spec)
+            .flatMap((r) =>
+              r.nodes.map((n) => ({
+                upstream: n.name,
+                role: (n.isBackup ? "backup" : "primary") as "primary" | "backup",
+                addons: [...new Set(n.endpoints.flatMap((e) => e.addons ?? []))],
+              })),
+            );
+
+          const base = {
+            id: incident.id,
+            spec: incident.spec,
+            chain: incident.chainName,
+            startUnix: incident.startUnix,
+            endUnix: incident.endUnix,
+            ongoing: incident.ongoing,
+            failures: incident.failures,
+            recovered: incident.retriesRecovered,
+          };
+
+          try {
+            const explanation = await svc.explain({ incident, errorGroups: groupErrors(lines, 6), configured });
+            return { ...base, ...explanation, explained: true as const };
+          } catch (err) {
+            // One item failing must not empty the feed: the others are still
+            // worth reading, and a row that says why it has no explanation is
+            // more use than a row silently missing.
+            return {
+              ...base,
+              explained: false as const,
+              error: err instanceof Error ? err.message : String(err),
+              // The deterministic story the page already computes, so the row
+              // is never blank.
+              steps: incident.story,
+              conclusion: "",
+              owner: "undetermined" as const,
+            };
+          }
+        }),
+      );
+
+      return {
+        ok: true,
+        hours,
+        computedAtUnix: report.computedAtUnix,
+        logsAvailable: loki.available,
+        configAvailable: routers.length > 0,
+        incidents: items,
+      };
+    },
+  );
 }

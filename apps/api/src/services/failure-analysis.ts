@@ -24,7 +24,7 @@
  */
 import type { StatusFinding } from "@sr/shared";
 import type { ErrorGroup } from "./loki.js";
-import { BedrockService, type BedrockLogger } from "./bedrock.js";
+import { BedrockService, parseModelJson, type BedrockLogger } from "./bedrock.js";
 
 /** Whose problem it is. The page's vocabulary, and a closed set on purpose. */
 export type FaultOwner = "provider" | "setup" | "caller" | "chain" | "undetermined";
@@ -202,27 +202,7 @@ export class FailureAnalysisService {
       maxTokens: 4000,
     });
 
-    // Truncation is its own failure with its own fix, and reporting it as
-    // "did not return JSON" — which is what happens if you only log it and
-    // fall through — sends whoever reads it to look at the prompt. Measured:
-    // AVALANCHECT x lava with six real error groups did exactly that.
-    if (answer.stopReason === "max_tokens") {
-      this.logger?.warn(
-        { spec: inputs.spec, upstream: inputs.upstream, outputTokens: answer.outputTokens },
-        "failure analysis hit the token ceiling",
-      );
-      throw new Error("the verdict was cut off at the token ceiling");
-    }
-
-    const start = answer.text.indexOf("{");
-    const end = answer.text.lastIndexOf("}");
-    if (start === -1 || end <= start) throw new Error("model did not return JSON");
-    let parsed: Record<string, unknown>;
-    try {
-      parsed = JSON.parse(answer.text.slice(start, end + 1)) as Record<string, unknown>;
-    } catch {
-      throw new Error("model did not return JSON");
-    }
+    const parsed = parseModelJson(answer, "verdict", this.logger);
 
     const rawErrors = Array.isArray(parsed.errors) ? parsed.errors : [];
     return {

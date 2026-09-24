@@ -32,7 +32,7 @@
  */
 import type { StatusFinding } from "@sr/shared";
 import type { ErrorGroup } from "./loki.js";
-import { BedrockService, type BedrockLogger } from "./bedrock.js";
+import { BedrockService, parseModelJson, type BedrockLogger } from "./bedrock.js";
 
 export type FaultOwner = "provider" | "setup" | "caller" | "chain" | "undetermined";
 const OWNERS: readonly FaultOwner[] = ["provider", "setup", "caller", "chain", "undetermined"];
@@ -232,20 +232,7 @@ export class ChainAnalysisService {
       maxTokens: 6000,
     });
 
-    if (answer.stopReason === "max_tokens") {
-      this.logger?.warn({ spec: inputs.spec, outputTokens: answer.outputTokens }, "chain analysis hit the ceiling");
-      throw new Error("the analysis was cut off at the token ceiling");
-    }
-
-    const start = answer.text.indexOf("{");
-    const end = answer.text.lastIndexOf("}");
-    if (start === -1 || end <= start) throw new Error("model did not return JSON");
-    let parsed: Record<string, unknown>;
-    try {
-      parsed = JSON.parse(answer.text.slice(start, end + 1)) as Record<string, unknown>;
-    } catch {
-      throw new Error("model did not return JSON");
-    }
+    const parsed = parseModelJson(answer, "chain analysis", this.logger);
 
     // Roles come from the config, never from the model — it has no reason to
     // get them right and a wrong one changes what the reader concludes.

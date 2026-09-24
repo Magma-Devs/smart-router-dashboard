@@ -36,7 +36,7 @@
  */
 import type { Incident } from "@sr/shared";
 import type { ErrorGroup } from "./loki.js";
-import { BedrockService, type BedrockLogger } from "./bedrock.js";
+import { BedrockService, parseModelJson, type BedrockLogger } from "./bedrock.js";
 
 export interface IncidentExplanation {
   incidentId: string;
@@ -100,6 +100,12 @@ latency degradation". Write for someone who will paste it into Slack.
 Exact numbers from the input, never rounded into vagueness. If you have both a
 failure count and a total, give the share as they do.
 
+The log lines are a SAMPLE of the most recent errors, never a census. Read them
+for WHICH errors happened and in what mix; take counts from the failure totals.
+Do not observe that the sample is smaller than the total and conclude the cause
+is unknown — a sample is how logs work, not a gap in the evidence. Say "mostly
+timeouts" from a sample; do not say "only 200 of 5,823 are explained".
+
 **Stop when the chain is told.** Four clear steps beat eight padded ones.
 There is no quota. Do not add a step that only restates the one above it.
 
@@ -140,7 +146,9 @@ export function digestIncident(i: IncidentExplainInputs): string {
       providersFailing: i.incident.blamed.map((b) => ({
         upstream: b.upstream,
         role: b.role,
-        shareOfItsRelaysThatFailed: b.failRate,
+        // Rounded: the raw ratio is a float and the model quotes what it is
+        // given, so an unrounded one reaches the reader as "52.99665253409586%".
+        shareOfItsRelaysThatFailed: Math.round(b.failRate * 1000) / 10 + "%",
       })),
       failedMethods: i.incident.failedMethods.map((m) => ({
         method: m.method,
@@ -148,12 +156,21 @@ export function digestIncident(i: IncidentExplainInputs): string {
         errorName: m.errorName,
         example: m.example,
       })),
-      errorsFromLogs: i.errorGroups.map((g) => ({
-        code: g.errorName,
-        count: g.count,
-        methods: g.methods.slice(0, 5),
-        example: g.example,
-      })),
+      // A SAMPLE, and labelled as one. Loki is asked for the most recent N
+      // lines, so on a 5,000-failure episode these counts describe the sample
+      // and not the episode — handing them over unlabelled invites the reader
+      // to reconcile 200 log lines against 5,823 metric failures and conclude
+      // the cause is unknown, which is what happened before this said so.
+      errorsFromLogs: {
+        note: "A SAMPLE of the most recent error lines, not every failure. Use these for the KINDS of error and their relative mix; take totals from finalCustomerFailures above, never by adding these counts.",
+        sampledLines: i.errorGroups.reduce((n, g) => n + g.count, 0),
+        groups: i.errorGroups.map((g) => ({
+          code: g.errorName,
+          count: g.count,
+          methods: g.methods.slice(0, 5),
+          example: g.example.slice(0, 220),
+        })),
+      },
       // The config is what answers "why did failover not save it" — which
       // provider could have taken over, and what each one is declared to serve.
       providersConfiguredOnThisChain: i.configured,
@@ -174,19 +191,13 @@ export class IncidentExplainService {
     const answer = await this.bedrock.complete({
       system: SYSTEM_PROMPT,
       messages: [{ role: "user", content: digestIncident(inputs) }],
-      // One incident, a handful of steps. Short by construction.
-      maxTokens: 1500,
+      // Was 1500, sized before Loki was wired. With real log lines an
+      // incident carries methods, codes and error text, and the causal chain
+      // that comes back is correspondingly longer.
+      maxTokens: 4000,
     });
 
-    const start = answer.text.indexOf("{");
-    const end = answer.text.lastIndexOf("}");
-    if (start === -1 || end <= start) throw new Error("model did not return JSON");
-    let parsed: Record<string, unknown>;
-    try {
-      parsed = JSON.parse(answer.text.slice(start, end + 1)) as Record<string, unknown>;
-    } catch {
-      throw new Error("model did not return JSON");
-    }
+    const parsed = parseModelJson(answer, "incident explanation", this.logger);
 
     const steps = Array.isArray(parsed.steps)
       ? parsed.steps.filter((s): s is string => typeof s === "string" && s.trim() !== "")
