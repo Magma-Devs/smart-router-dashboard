@@ -9,6 +9,23 @@ on:
   pull_request:
   push:
     branches: [main]
+  # Run it by hand against any branch.
+  #
+  # `pull_request` is the only trigger a stacked PR normally has, and it depends
+  # on GitHub computing the PR's merge ref. Force-pushing a chain of branches
+  # whose bases move at the same moment can wedge that: the PRs sit at
+  # `mergeable: unknown`, no `synchronize` event is dispatched, and the gate
+  # silently keeps showing its result for the superseded commit — a green tick
+  # that means nothing about what is now on the branch. Closing and reopening
+  # the PR does not shake it loose.
+  #
+  # So: a manual dispatch. `gh workflow run quality-gate.yml --ref <branch>`
+  # attaches a run to that branch's head, which is what the PR displays.
+  #
+  # NOTE: GitHub only offers this from the DEFAULT branch's copy of the file, so
+  # it does nothing for the stack that prompted it — it is reachable once this
+  # has merged, which is the next time it happens.
+  workflow_dispatch:
 
 # Checkout + run tests only — no write surface needed.
 permissions:
@@ -43,6 +60,65 @@ jobs:
 
       - name: Tests (all packages)
         run: pnpm -r test
+
+  e2e:
+    name: Browser tests (2FA flows)
+    runs-on: ubuntu-latest
+    services:
+      # The accounts database. The api migrates it on boot, so nothing here
+      # has to know the schema.
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: sr
+          POSTGRES_PASSWORD: dev
+          POSTGRES_DB: sr_dashboard
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sr -d sr_dashboard"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Enable corepack and install dependencies
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+
+      # api and web run from source here, and both read `@sr/shared` and
+      # `@sr/db` out of dist/ — the same reason the checks job builds them.
+      - name: Build workspace packages
+        run: pnpm --filter @sr/shared build && pnpm --filter @sr/db build
+
+      - name: Install Chromium
+        run: pnpm --filter @sr/e2e exec playwright install --with-deps chromium
+
+      # Playwright boots the api and the web itself (see e2e/playwright.config.ts)
+      # — there is no compose stack in CI, and the dev one bind-mounts a
+      # developer's working tree.
+      - name: Run the suite
+        env:
+          E2E_DATABASE_URL: postgres://sr:dev@localhost:5432/sr_dashboard
+        run: pnpm e2e
+
+      - name: Upload the report on failure
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: playwright-report
+          path: |
+            e2e/playwright-report/
+            e2e/.playwright/results/
+          retention-days: 7
 
   spec-drift:
     name: Chain catalogs ↔ lava-specs drift
