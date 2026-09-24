@@ -66,7 +66,8 @@ export const users = pgTable(
     googleId: varchar("google_id", { length: 255 }).unique(),
     /** GitHub user id (numeric, stored as string). */
     githubId: varchar("github_id", { length: 255 }).unique(),
-    /** Discord user id (snowflake). */
+    /** Discord user id (snowflake). Nothing writes it — Discord is not a way
+     *  in — and it stays rather than being migrated away. */
     discordId: varchar("discord_id", { length: 255 }).unique(),
     role: userRoleEnum("role").notNull().default("read_only"),
     status: userStatusEnum("status").notNull().default("active"),
@@ -142,7 +143,7 @@ export const sessions = pgTable(
     /** Parsed once at creation ("Chrome 141 / macOS"), never on read: this is
      *  what the audit log records, and it must not shift if the parser changes. */
     client: varchar("client", { length: 128 }),
-    /** `password` · `google` · `github` · `discord` · `invite`. */
+    /** `password` · `google` · `github` · `invite`. */
     authMethod: varchar("auth_method", { length: 32 }).notNull(),
   },
   (table) => [

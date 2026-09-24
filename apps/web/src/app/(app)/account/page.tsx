@@ -50,7 +50,6 @@ export default function AccountPage() {
   const providers = [
     { id: "google", label: "Google" },
     { id: "github", label: "GitHub" },
-    { id: "discord", label: "Discord" },
   ];
   const fl: CSSProperties = { fontSize: 11, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600, marginBottom: 8 };
 

@@ -68,13 +68,12 @@ interface InviteAcceptBody {
   name?: string;
 }
 
-const OAUTH_PROVIDERS = ["google", "github", "discord"] as const;
+const OAUTH_PROVIDERS = ["google", "github"] as const;
 
 /** For error copy, so a failed GitHub redemption doesn't say "Google". */
 const PROVIDER_LABEL: Record<OAuthProvider, string> = {
   google: "Google",
   github: "GitHub",
-  discord: "Discord",
 };
 
 interface ResetBody {
@@ -678,12 +677,12 @@ export async function authRoutes(app: FastifyInstance) {
       config: { rateLimit: STRICT_AUTH_RATE_LIMIT },
       schema: {
         tags: ["Auth"],
-        summary: "Verify a Google/GitHub/Discord token server-side, upsert the user, open a session",
+        summary: "Verify a Google or GitHub token server-side, upsert the user, open a session",
         params: {
           type: "object" as const,
           required: ["provider"],
           properties: {
-            provider: { type: "string" as const, enum: ["google", "github", "discord"] },
+            provider: { type: "string" as const, enum: ["google", "github"] },
           },
         },
         body: {

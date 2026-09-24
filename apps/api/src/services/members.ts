@@ -155,7 +155,7 @@ export async function changeMemberRole(
  *    under a new account.
  *  - provider ids cleared — those columns are unique across every row, removed
  *    ones included, so a kept id would make the new account's Google (or
- *    GitHub, or Discord) sign-in collide with the old one.
+ *    GitHub) sign-in collide with the old one.
  *  - `signed_out_all_at` — the account-wide cutoff, so no token issued before
  *    the removal is honoured even if a session row were missed.
  *  - every live session revoked — so their access dies within one request, not

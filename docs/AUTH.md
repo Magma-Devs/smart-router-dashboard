@@ -343,15 +343,21 @@ rather than attempts ever.
   responses), which also opens the session row and returns its id.
   Accounts come from first-run setup or an invitation — there is no
   self-serve sign-up.
-- **Google / GitHub / Discord** — each provider's button appears on the
+- **Google / GitHub** — each provider's button appears on the
   login page **only when its `*_CLIENT_ID` + `*_CLIENT_SECRET` pair is
   set**. The web forwards the provider token to the api
   (`POST /auth/oauth/:provider`), which re-verifies it against the
   provider's own API (Google tokeninfo with `aud` pinning; GitHub
-  `/user` + `/user/emails`; Discord `/users/@me`) and resolves an
+  `/user` + `/user/emails`) and resolves an
   existing account — by provider id, then by email, linking the provider.
   It never creates one; a new person redeems an invitation. Avatars are
   captured backfill-only — the first provider that supplies one wins.
+
+  MAG-2729 puts social sign-in out of scope, on revocation grounds: a
+  personal account outlives someone leaving the customer's company. Google
+  and GitHub are offered by decision (2026-09-24) — removing a person from
+  Team still ends every session they have, whatever they signed in with.
+  Discord is not offered; its `discord_id` column is unwritten.
 
 ## Bootstrap admin seed
 
@@ -379,7 +385,6 @@ users table → admin created; populated table without that email → no-op
 | `INTERNAL_API_BASE_URL` | web | server-side api URL for Auth.js callbacks (`http://api:8000` in compose) |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | web (+ id on api) | unset = no Google button. The api needs the id to pin the token audience |
 | `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | web | unset = no GitHub button |
-| `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET` | web | unset = no Discord button |
 
 ## Running it
 

@@ -187,7 +187,7 @@ export interface RedeemInput {
   /** Set for the OAuth path — the **verified** address from the provider. */
   verifiedEmail?: string;
   /** Provider column to link, when redeeming with OAuth. */
-  provider?: { column: "googleId" | "githubId" | "discordId"; id: string };
+  provider?: { column: "googleId" | "githubId"; id: string };
   name?: string | null;
 }
 

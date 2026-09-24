@@ -34,7 +34,7 @@ The observability dashboard for the [Smart Router](https://github.com/Magma-Devs
 - **Topology-aware** — one values file drives both the router and the dashboard, so the Upstreams page always reflects the running configuration.
 - **Live test console** — fire requests at any chain × interface the router serves, straight from the browser, with a full method catalog generated from the [lava-specs](https://github.com/Magma-Devs/lava-specs) repo (238 chains, jsonrpc/rest/tendermint/grpc, archive/debug/trace tiers).
 - **Self-contained** — `make up` gives you router + Prometheus + api + web from nothing. No accounts, no cloud, optional auth.
-- **Optional authentication** — `AUTH_MODE=enabled` adds Auth.js sign-in (email+password + Google/GitHub/Discord) backed by Postgres. Default is open (`disabled`) for private deployments.
+- **Optional authentication** — `AUTH_MODE=enabled` adds Auth.js sign-in (email+password + Google/GitHub) backed by Postgres. Default is open (`disabled`) for private deployments.
 
 > **Repo layout:** a pnpm/TypeScript monorepo — `apps/api` (Fastify 5 Prometheus proxy) + `apps/web` (Next.js 16) + `packages/shared` + `packages/db`. Everything runs from the repo root.
 
@@ -109,7 +109,7 @@ router uses its in-process cache.
 Two modes via `AUTH_MODE` (full guide: [`docs/AUTH.md`](./docs/AUTH.md)):
 
 - **`disabled`** (default) — no login, no database. The dashboard opens straight on Overview. For private/self-hosted deployments.
-- **`enabled`** — Auth.js v5 sign-in backed by Postgres (Drizzle), bcrypt credentials + optional Google/GitHub/Discord (each button appears only when its client id/secret pair is set), HS256 JWT shared between web and api, idempotent `ADMIN_EMAIL`/`ADMIN_PASSWORD` bootstrap seed.
+- **`enabled`** — Auth.js v5 sign-in backed by Postgres (Drizzle), bcrypt credentials + optional Google/GitHub (each button appears only when its client id/secret pair is set), HS256 JWT shared between web and api, idempotent `ADMIN_EMAIL`/`ADMIN_PASSWORD` bootstrap seed.
 
 ```bash
 AUTH_MODE=enabled AUTH_SECRET=$(openssl rand -base64 32) \
