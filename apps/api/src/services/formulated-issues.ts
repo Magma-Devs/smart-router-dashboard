@@ -291,9 +291,26 @@ Use the real error TEXT to understand what happened, then say it plainly. An
 a provider account limit — write "tatum is rate-limiting you on its current
 plan", not the raw string.
 
-Never invent a number, provider, method or error that is not in the input. If
-the input does not say what a retry did, say so in one short point rather than
-assuming. Do not recommend a fix. Do not set a severity — it is decided for you.
+Never invent a number, provider, method or error that is not in the input.
+Do not recommend a fix. Do not set a severity — it is decided for you.
+
+## When the provider list is missing
+
+\`providersConfigured\` is absent on a deployment with no values file mounted.
+Absent is NOT empty: you do not know the roles, the addons, or whether a
+failover existed — you do not know that there are none.
+
+So write nothing about failover at all. Leave that point out and write a
+shorter issue; two points that finish are better than four where two say you
+were not told something. In particular:
+
+  - Never write "no providers are configured" or "no backup exists". You were
+    not given the list. Naming a provider in one point and denying the list
+    exists in another is the card contradicting itself.
+  - Never spend the bottom line on what you could not check. It is the one
+    line that has to say whether they can work.
+  - Say "we were not told whether a retry had anywhere to go" AT MOST ONCE,
+    and only when it changes what they would do about it.
 
 ## Your answer
 
@@ -319,7 +336,13 @@ export function digestForIssue(i: FormulatedInputs): string {
         : {}),
       // Roles and addons: an addon only one provider declares is why a failure
       // there has nowhere to go, which is the answer to question three.
-      providersConfigured: i.configured,
+      //
+      // OMITTED when empty, never sent as []. No values file mounted means we
+      // do not know the roster; an empty array reads as "this chain has no
+      // providers", and the model duly wrote "no providers are configured for
+      // Solana" one line under two points naming them. The key being absent
+      // is what the prompt is told to stay quiet about.
+      ...(i.configured.length ? { providersConfigured: i.configured } : {}),
       whatWeMeasured: i.findings.map((f) => ({
         upstream: f.upstream,
         headline: f.headline,
