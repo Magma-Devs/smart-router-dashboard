@@ -44,6 +44,8 @@ export interface FormulatedIssue {
   impact: string;
   /** The findings this rests on, validated against the report. */
   findingIds: string[];
+  /** Newest activity across those findings — what the by-time order reads. */
+  lastSeenUnix: number | null;
 }
 
 /** The tier a chain's worst finding carries, mapped to the page's own words. */
@@ -194,6 +196,11 @@ export class FormulatedIssueService {
       whatTheRouterTried: str("whatTheRouterTried"),
       impact: str("impact"),
       findingIds: inputs.findings.map((f) => f.id),
+      lastSeenUnix:
+        inputs.findings.reduce<number | null>(
+          (newest, f) => (f.lastSeenUnix && (!newest || f.lastSeenUnix > newest) ? f.lastSeenUnix : newest),
+          null,
+        ),
     };
   }
 }
