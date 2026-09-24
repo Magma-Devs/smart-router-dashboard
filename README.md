@@ -109,14 +109,13 @@ router uses its in-process cache.
 Two modes via `AUTH_MODE` (full guide: [`docs/AUTH.md`](./docs/AUTH.md)):
 
 - **`disabled`** (default) — no login, no database. The dashboard opens straight on Overview. For private/self-hosted deployments.
-- **`enabled`** — Auth.js v5 sign-in backed by Postgres (Drizzle), bcrypt credentials + optional Google/GitHub (each button appears only when its client id/secret pair is set), HS256 JWT shared between web and api, idempotent `ADMIN_EMAIL`/`ADMIN_PASSWORD` bootstrap seed.
+- **`enabled`** — Auth.js v5 sign-in backed by Postgres (Drizzle), bcrypt credentials + optional Google/GitHub (each button appears only when its client id/secret pair is set), HS256 JWT shared between web and api. The first admin is created at `/setup` with the installer's setup token; everyone after that is invited.
 
 ```bash
-AUTH_MODE=enabled AUTH_SECRET=$(openssl rand -base64 32) \
-ADMIN_EMAIL=you@example.com ADMIN_PASSWORD=change-me \
-  docker compose --profile router --profile auth up -d --build
-# sign in at :3000/login with ADMIN_EMAIL / ADMIN_PASSWORD
-# (the dev compose ships working defaults — see docs/AUTH.md)
+AUTH_SECRET=$(openssl rand -base64 32) make up-auth
+# open :3000 — a fresh install redirects to /setup
+# setup token: the SETUP_TOKEN you set, or: docker compose logs api | grep -iE 'setup_?token'
+# (make dev-auth seeds a development admin instead — see docs/AUTH.md)
 ```
 
 ## Development

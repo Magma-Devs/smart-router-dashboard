@@ -78,7 +78,9 @@ dev-down:
 	docker compose -f docker-compose.dev.yml --profile router --profile auth --profile logs down
 
 ## up-auth: prod-style stack WITH authentication (postgres + login) — see docs/AUTH.md.
-## Requires AUTH_SECRET + ADMIN_EMAIL + ADMIN_PASSWORD in the environment.
+## Requires AUTH_SECRET in the environment. The first admin is created at
+## /setup with the setup token: this is a production build, and it ignores
+## ADMIN_EMAIL / ADMIN_PASSWORD.
 ## (logs profile is on by default here too — Grafana → :3001.)
 ##
 ## DATABASE_URL is supplied HERE rather than as a compose default: the compose
@@ -91,7 +93,7 @@ up-auth:
 	docker compose --profile router --profile auth --profile logs up -d --build
 	@echo ""
 	@echo "  🔐 Auth enabled — open http://localhost:$(WEB_PORT); a fresh install goes to /setup"
-	@echo "     Setup token: docker compose logs api | grep -i 'setup token'"
+	@echo "     Setup token: the SETUP_TOKEN you set, or: docker compose logs api | grep -iE 'setup_?token'"
 	@echo "     Grafana → http://localhost:3001  (admin / admin)"
 
 ## dev-auth: hot-reload stack WITH authentication (dev-default admin@example.com / admin1234)

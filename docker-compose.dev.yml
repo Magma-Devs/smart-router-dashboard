@@ -245,7 +245,8 @@ services:
       - SETUP_TOKEN=${SETUP_TOKEN:-}
       - SETUP_TOKEN_FILE=${SETUP_TOKEN_FILE:-}
       # Proves a request came from our own web tier, so the browser IP and
-      # User-Agent it forwards are honoured on /auth/sign-in. Unset ⇒ forwarded
+      # User-Agent it forwards are honoured on the routes that open a session
+      # (sign-in, social sign-in, social invite redemption). Unset ⇒ forwarded
       # context is ignored and the session records this container's address
       # instead of the person's, which makes the audit log's access events
       # useless for telling two sign-ins apart.
