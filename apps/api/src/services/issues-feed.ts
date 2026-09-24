@@ -76,7 +76,10 @@ export class IssuesFeedService {
     return this.running.has(window);
   }
 
-  async refresh(window: MetricWindow = DEFAULT_WINDOW, limit = 8): Promise<IssuesSnapshot | null> {
+  // 20, not 8: eleven chains had findings and only eight were written, so
+  // three were missing from the page with nothing saying so. A cap exists to
+  // stop a pathological deployment, not to quietly truncate a normal one.
+  async refresh(window: MetricWindow = DEFAULT_WINDOW, limit = 20): Promise<IssuesSnapshot | null> {
     if (this.running.has(window)) return this.snapshots.get(window) ?? null;
     // Checked here, not at the route: an unconfigured deployment must not run
     // a model loop it was never allowed to run.
