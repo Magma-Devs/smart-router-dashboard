@@ -29,19 +29,18 @@ export interface FormulatedIssue {
   severity: IssueSeverity;
   spec: string;
   chain: string;
-  /** One line, addressed to the person whose traffic this is. */
+  /** "You have an issue with X" — one line. */
   title: string;
-  /** The symptom, in their terms. */
-  whatHappened: string;
-  /** The cause, from the error text and the config. */
-  whyItHappened: string;
   /**
-   * Whether the router failed over, and what happened when it did. The step
-   * people ask for immediately and the page never answers.
+   * The facts, one per line, in causal order. Three to five, never more.
+   *
+   * Numbered one-liners rather than four labelled paragraphs, because that is
+   * how this team already writes them in Slack and the paragraphs read as an
+   * essay nobody finishes. Each point is ONE fact.
    */
-  whatTheRouterTried: string;
-  /** Can they work. The line that decides whether this gets escalated. */
-  impact: string;
+  points: string[];
+  /** One sentence: can they work. The line that decides an escalation. */
+  bottomLine: string;
   /** The findings this rests on, validated against the report. */
   findingIds: string[];
   /** Newest activity across those findings — what the by-time order reads. */
@@ -67,75 +66,80 @@ export interface FormulatedInputs {
   failures: number | null;
 }
 
-const SYSTEM_PROMPT = `You write the issue statement a customer reads first about their own chain.
+const SYSTEM_PROMPT = `You write the one-screen issue a customer reads about their own chain.
 
 The Magma Devs Smart Router sits in front of raw blockchain RPC endpoints and
 multiplexes across them. For one client request it picks an upstream provider,
 relays, and may retry or hedge to another. "Provider", "upstream" and
 "endpoint" all mean the node the router relays TO. A provider is configured as
-primary or backup, and declares addons (archive, debug, trace) saying what it
+primary or backup and declares addons (archive, debug, trace) saying what it
 can serve.
 
-## Who is reading and what they ask
+## How this team writes
 
-Someone whose traffic runs on this chain. They ask, in this order:
+Short numbered facts, then a bottom line. Real example of theirs:
 
-  1. I am getting errors on my chain.     → whatHappened
-  2. Why?                                  → whyItHappened
-  3. Did it move to another provider?      → whatTheRouterTried
-  4. So can I work, or not?                → impact
+  1. There were 6 failures out of 3,310 requests, which is 0.18%.
+  2. All 6 were POST /transactions.
+  3. Tatum was the only eligible provider.
+  4. Tatum did not answer within 7 seconds.
+  5. No backup was available, so all 6 failed completely.
+  Bottom line: Tatum was slow again, and with one eligible provider and no
+  retry for stateful calls, that keeps reaching customers.
 
-Answer those four, in those words, in that order. Number three and four are
-the ones nothing else tells them, so do not skimp on either.
+Copy that. **One fact per point. One sentence per point. Under 20 words.**
+Three to five points — never more, and fewer when fewer will do.
 
-## Number three is the important one
+Do NOT write paragraphs. Do not stack three clauses into one point. Do not
+quote raw error strings in parentheses; say what the error MEANS in your own
+short words.
 
-They want to know whether the router did its job. Say whether it retried,
-whether it had somewhere to go, and what happened when it got there:
+## What the points must walk, in this order
 
-  - "The router retried on blockdaemon, the backup, and those calls succeeded."
-  - "Both providers timed out, so the retry had nowhere better to land."
-  - "lava is the only provider here that declares debug, so when it failed
-     these calls had no second option — tatum and blockdaemon do not serve it."
+  1. What is failing, with the number.
+  2. Why — the cause.
+  3. What the router did: did it retry, did it have somewhere to go.
+  4. Why the failover did or did not save it. This is the one people act on.
+
+Not every issue needs all four. Stop when the chain is told.
 
 The configured providers and their addons are given to you. An addon only one
 provider declares means a failure there CANNOT fail over, and that is the most
-useful sentence you can write.
+useful point you can write. Say it in one line:
 
-If the input does not say what the retry did, say so plainly rather than
-assuming it worked or did not.
+  "lava is the only provider here that serves debug, so those calls had no
+   second option."
 
-## Number four decides whether someone escalates
+## The bottom line
 
-"Can I work" is the point. Be concrete:
+One sentence: can they work. Concrete.
 
-  - "Read calls are being served normally; only debug traces are failing."
-  - "Roughly 4 in 10 requests on this chain are failing outright."
-  - "Nothing is failing outright — the router is absorbing this, but it is
-     working harder than usual to do it."
+  - "Read calls are fine; only debug traces are failing."
+  - "About 3 in 10 requests on this chain are failing outright."
+  - "Nothing is failing — the router is absorbing it, but working harder."
 
 ## Rules
 
-Plain language, addressed to them. "your requests", "your chain". No error
-codes in the sentences, no metric names, no internal vocabulary.
+Plain language, addressed to them: "your requests", "your chain". No error
+codes, no metric names, no internal vocabulary in the sentences.
 
-Use the real error TEXT you are given. It is far more specific than a code —
-an "UNKNOWN_ERROR" reading "Request timeout on the free plan, please upgrade"
-is a provider account problem and the code says none of that.
+Use the real error TEXT to understand what happened, then say it plainly. An
+"UNKNOWN_ERROR" reading "Request timeout on the free plan, please upgrade" is
+a provider account limit — write "tatum is rate-limiting you on its current
+plan", not the raw string.
 
-Never invent a number, a provider, a method or an error that is not in the
-input. Do not recommend a fix. Do not set a severity — it is decided for you.
+Never invent a number, provider, method or error that is not in the input. If
+the input does not say what a retry did, say so in one short point rather than
+assuming. Do not recommend a fix. Do not set a severity — it is decided for you.
 
 ## Your answer
 
 Reply with ONLY a JSON object, no prose around it, no markdown fence:
 
 {
-  "title": "One line naming the issue, in their terms.",
-  "whatHappened": "The symptom.",
-  "whyItHappened": "The cause.",
-  "whatTheRouterTried": "Whether it failed over, where, and what happened.",
-  "impact": "Whether they can work."
+  "title": "One line: the issue, in their terms.",
+  "points": ["one fact", "one fact", "one fact"],
+  "bottomLine": "One sentence: can they work."
 }`;
 
 export function digestForIssue(i: FormulatedInputs): string {
@@ -191,10 +195,12 @@ export class FormulatedIssueService {
       spec: inputs.spec,
       chain: inputs.chain,
       title: str("title"),
-      whatHappened: str("whatHappened"),
-      whyItHappened: str("whyItHappened"),
-      whatTheRouterTried: str("whatTheRouterTried"),
-      impact: str("impact"),
+      // Capped here as well as in the prompt: a model that ignores "three to
+      // five" must not turn the card back into the essay this replaced.
+      points: (Array.isArray(parsed.points) ? parsed.points : [])
+        .filter((x): x is string => typeof x === "string" && x.trim() !== "")
+        .slice(0, 5),
+      bottomLine: str("bottomLine"),
       findingIds: inputs.findings.map((f) => f.id),
       lastSeenUnix:
         inputs.findings.reduce<number | null>(

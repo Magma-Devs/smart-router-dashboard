@@ -9,13 +9,11 @@
  * put, and why. The numbers are still there, on the finding rows the issue
  * cites, one disclosure away.
  *
- * Four lines, in the order people actually ask:
- *
- *   What's happening   the symptom, in their words
- *   Why                the cause, from the error text and the config
- *   Did it fail over   whether the router had somewhere to go — the step
- *                      nothing else on the page answers
- *   Can you work       the line that decides whether this gets escalated
+ * Short numbered facts and a bottom line, copied from how this team already
+ * writes these in Slack. The points walk the chain — what is failing, why,
+ * what the router did, and why the failover did or did not save it — but they
+ * are ONE fact per line, not four labelled paragraphs. The paragraph version
+ * read as an essay, which is the thing a bottom line exists to avoid.
  *
  * Severity sections are fixed (Critical · Degraded · Config) because that is
  * the page's own vocabulary. The toggle is a secondary ORDER — by chain, or by
@@ -30,10 +28,8 @@ interface Issue {
   spec: string;
   chain: string;
   title: string;
-  whatHappened: string;
-  whyItHappened: string;
-  whatTheRouterTried: string;
-  impact: string;
+  points: string[];
+  bottomLine: string;
   findingIds: string[];
   /** Newest activity across the findings behind it. Drives the by-time order. */
   lastSeenUnix?: number | null;
@@ -72,44 +68,34 @@ function refusalText(r: Refusal): string {
   return `Could not reach the model. ${r.detail ?? ""}`.trim();
 }
 
-function Line({ label, text }: { label: string; text: string }) {
-  if (!text) return null;
-  return (
-    <div style={{ display: "flex", gap: 10, padding: "3px 0" }}>
-      <span
-        style={{
-          fontSize: 10,
-          fontWeight: 700,
-          textTransform: "uppercase",
-          letterSpacing: "0.04em",
-          color: "var(--text-4)",
-          minWidth: 104,
-          flexShrink: 0,
-          paddingTop: 2,
-        }}
-      >
-        {label}
-      </span>
-      <span style={{ fontSize: 12.5, lineHeight: 1.55, color: "var(--text-2)" }}>{text}</span>
-    </div>
-  );
-}
-
 function Card({ issue, color }: { issue: Issue; color: string }) {
   const when = ago(issue.lastSeenUnix);
   return (
-    <div style={{ borderLeft: `3px solid ${color}`, padding: "10px 0 12px 12px", marginBottom: 2 }}>
+    <div style={{ borderLeft: `3px solid ${color}`, padding: "10px 0 12px 12px", marginBottom: 4 }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
         <span style={{ fontSize: 13, fontWeight: 700 }}>{issue.chain}</span>
         <span style={{ fontSize: 9.5, color: "var(--text-4)", fontFamily: "var(--font-mono)" }}>{issue.spec}</span>
         <span style={{ flex: 1 }} />
         {when && <span style={{ fontSize: 10.5, color: "var(--text-4)" }}>{when}</span>}
       </div>
-      <div style={{ fontSize: 12.5, fontWeight: 600, margin: "3px 0 7px", color: "var(--text)" }}>{issue.title}</div>
-      <Line label="What's happening" text={issue.whatHappened} />
-      <Line label="Why" text={issue.whyItHappened} />
-      <Line label="Did it fail over" text={issue.whatTheRouterTried} />
-      <Line label="Can you work" text={issue.impact} />
+
+      <div style={{ fontSize: 12.5, fontWeight: 600, margin: "3px 0 7px" }}>{issue.title}</div>
+
+      {/* One fact per line, numbered. The shape this team already writes in. */}
+      <ol style={{ margin: 0, paddingLeft: 18, display: "flex", flexDirection: "column", gap: 3 }}>
+        {issue.points.map((p, i) => (
+          <li key={i} style={{ fontSize: 12.5, lineHeight: 1.5, color: "var(--text-2)" }}>
+            {p}
+          </li>
+        ))}
+      </ol>
+
+      {issue.bottomLine && (
+        <div style={{ fontSize: 12.5, lineHeight: 1.5, marginTop: 7, color: "var(--text)" }}>
+          <span style={{ fontWeight: 700 }}>Bottom line: </span>
+          {issue.bottomLine}
+        </div>
+      )}
     </div>
   );
 }
