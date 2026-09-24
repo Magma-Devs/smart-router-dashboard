@@ -47,10 +47,79 @@ export interface FormulatedIssue {
   lastSeenUnix: number | null;
 }
 
-/** The tier a chain's worst finding carries, mapped to the page's own words. */
+/**
+ * Severity by CUSTOMER IMPACT, not by a threshold being crossed.
+ *
+ * The tier on a finding says a rate went over a line — 5% errors is critical,
+ * 1-5% degraded. That produced a red badge above "your requests are still
+ * getting through" and an amber one above "your chain is fine", which is how
+ * a status page teaches people to ignore its badges.
+ *
+ * The question that should decide the colour is whether the caller felt it:
+ *
+ *   critical  they got an error, a timeout, or bad data. The router did not
+ *             save them. Worst case, nothing on this chain works at all.
+ *   degraded  it still works, but worse — the router is absorbing something,
+ *             or there is a risk it will not be able to next time.
+ *   config    nothing is failing because of us or the provider. The setup or
+ *             the caller's own requests are what to change.
+ *
+ * `FindingKind` already encodes exactly this, because the rules were written
+ * around "what reached the caller" in the first place — `answered-error` IS
+ * an error in the body the caller received, while `no-backup` is "serving
+ * fine, nowhere to go if it stops". Reading the kind rather than the rate is
+ * what lines the badge up with the sentence under it.
+ */
+const REACHED_THE_CALLER: ReadonlyArray<StatusFinding["kind"]> = [
+  "dead", // nothing served it — the request died
+  "answered-error", // an error in the body they got back
+  "answered-late", // answered past the deadline they could use
+];
+
+// `answered-stale` is deliberately NOT here. Its own headline reads "3 stale
+// answers caught" — the consistency check REJECTED those answers, so nothing
+// wrong reached anybody. That is the system working, and colouring it critical
+// puts a red badge on the one mechanism that prevented harm.
+
+/**
+ * An error the CHAIN produced answering correctly, not a failure of ours.
+ *
+ * `answered-error` covers both "the provider fell over" and "the chain refused
+ * a transaction whose nonce was too low", so the kind alone cannot decide.
+ * CHAIN_ and USER_ codes are the caller's; everything else is ours.
+ */
+const CALLER_SIDE = /^(CHAIN|USER)_/;
+
+/**
+ * Is this finding mostly the caller's doing?
+ *
+ * By EVENT COUNT, not by which codes appear. Presence was not enough: measured
+ * on GK8, StarkNet's answered-error is 581 events of which every one is a
+ * CHAIN_STARKNET_* rejection, while Ethereum's is 28 CHAIN_TX_REJECTED against
+ * 22 NODE_SERVER_ERROR. Reading the list rather than the counts made the first
+ * critical — a red badge over "your requests are working fine".
+ *
+ * Without counts, fall back to the codes themselves; a finding with neither
+ * counts as ours, because silence is not evidence the caller was at fault.
+ */
+function mostlyCallerSide(f: StatusFinding): boolean {
+  const counts = f.codeCounts;
+  if (counts && Object.keys(counts).length > 0) {
+    let theirs = 0;
+    let total = 0;
+    for (const [code, n] of Object.entries(counts)) {
+      total += n;
+      if (CALLER_SIDE.test(code)) theirs += n;
+    }
+    return total > 0 && theirs / total > 0.5;
+  }
+  return f.codes.length > 0 && f.codes.every((c) => CALLER_SIDE.test(c));
+}
+
 export function severityOf(findings: StatusFinding[]): IssueSeverity {
-  if (findings.some((f) => f.tier === "critical")) return "critical";
-  if (findings.some((f) => f.tier === "attention")) return "degraded";
+  const ours = findings.filter((f) => !mostlyCallerSide(f));
+  if (ours.some((f) => REACHED_THE_CALLER.includes(f.kind))) return "critical";
+  if (ours.some((f) => f.kind !== "config")) return "degraded";
   return "config";
 }
 
@@ -143,6 +212,16 @@ If a point would make someone ask "what does that actually mean?", it is not
 finished.
 
 ## Rules
+
+The severity you are given follows ONE rule: critical means the caller felt it
+— they got an error, a timeout, or bad data, and the router did not save them.
+Degraded means it still works and the router is absorbing something. Config
+means nothing is failing because of us or the provider.
+
+Write a bottom line that agrees with that. On a critical issue, name what the
+caller actually got. Never write "your requests are still getting through" on
+one — if that is genuinely true, the finding behind it is not critical and you
+should say what DID reach them instead.
 
 Plain language, addressed to them: "your requests", "your chain". No error
 codes, no metric names, no internal vocabulary in the sentences.

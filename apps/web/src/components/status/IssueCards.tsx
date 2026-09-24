@@ -98,7 +98,9 @@ function Card({ issue, color }: { issue: Issue; color: string }) {
         {when && <span style={{ fontSize: 10.5, color: "var(--text-4)" }}>{when}</span>}
       </div>
 
-      <div style={{ fontSize: 13, fontWeight: 600, margin: "7px 0 8px" }}>{issue.title}</div>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 7, margin: "7px 0 8px" }}>
+        <span style={{ fontSize: 13, fontWeight: 600 }}>{issue.title}</span>
+      </div>
 
       <ol style={{ margin: 0, paddingLeft: 18, display: "flex", flexDirection: "column", gap: 3 }}>
         {shown.map((p, i) => (
@@ -149,9 +151,11 @@ export function IssueCards({ chainsAffected }: { chainsAffected: string[] }) {
   const warming = refusal?.reason === "warming";
 
   const sorted = (list: Issue[]): Issue[] =>
-    order === "time"
-      ? [...list].sort((a, b) => (b.lastSeenUnix ?? 0) - (a.lastSeenUnix ?? 0))
-      : [...list].sort((a, b) => a.chain.localeCompare(b.chain));
+    [...list].sort((a, b) =>
+      order === "time"
+        ? (b.lastSeenUnix ?? 0) - (a.lastSeenUnix ?? 0)
+        : a.chain.localeCompare(b.chain),
+    );
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
