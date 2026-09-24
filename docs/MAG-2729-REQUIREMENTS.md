@@ -110,7 +110,7 @@ Seven pull requests, stacked. `#115` is MAG-2770's writer, merged in because sli
 | Invite by email address and role | ✅ | |
 | Managed: invitation email with a join link | ⚠️ | No transport (MAG-2870). Every deployment returns the link to the admin, who hands it over |
 | On-prem: link shown to the admin. No mail server ever required | ✅ | Shown once, not readable back |
-| Redeemable only by the address it was sent to | ✅ | **Structural**: the account is created with the invitation's address and the redeemer supplies none |
+| An invite can only create the account it was issued for (replaced "redeemable only by the address it was sent to", 26 Aug 2026) | ✅ | **Structural**: the account is created with the invitation's address. A password redemption supplies no address. A Google or GitHub redemption supplies the provider's verified one, because those stay as ways in (§1); it must equal the invited address, or the route answers 403 and names the address to use |
 | Single-use; 7 days managed, 24 hours on-prem | ✅ | Exactly as specified |
 | Pending tab with sent and expiry dates; resend and revoke | ✅ | Resend mints a new token and kills the old link. Expiry needs no sweeper — the first read that observes it stamps the row, so `invite.expired` fires once |
 | Members table: name, email, role, 2FA, last active, joined | ✅ | 2FA renders `—`, not "No" — it is MAG-2730's, and "No" would be true today and wrong the day it ships |
@@ -122,9 +122,11 @@ Seven pull requests, stacked. `#115` is MAG-2770's writer, merged in because sli
 
 ### 3 · Audit log
 
-The log itself is MAG-2770. This ticket emits into it. All sixteen events are in the typed catalog
-**and** fire from a call site — checked separately, because being catalogued does not mean being
-emitted.
+The log itself is MAG-2770. This ticket emits into it. All sixteen events are in the typed catalog,
+and fifteen fire from a call site — checked separately, because being catalogued does not mean being
+emitted. The sixteenth, `password.reset_requested`, has nothing to record yet: `POST
+/auth/password/forgot` answers 404 on every deployment until email exists, so nobody can request a
+reset. It arrives with that route, in [MAG-2870](https://magmadevs.atlassian.net/browse/MAG-2870).
 
 | Group | Events |
 |---|---|
@@ -145,7 +147,7 @@ rename cannot rewrite history.
 | 1 | Signs in as themselves; the shared login no longer works | ⛔ cutover — MAG-2805 |
 | 2 | Fresh on-prem install asks for email and password before anything opens, and refuses without the setup token | ✅ |
 | 3 | A requester cannot approve anything | ◐ roles gate correctly; there is no approval surface to be refused from until MAG-2731 |
-| 4 | An invite redeemed from a different address is refused | ✅ |
+| 4 | An invite can only create the account it was issued for | ✅ |
 | 5 | On-prem invites and resets work with no mail server | ✅ |
 | 6 | A breached password is refused with a clear message | ✅ |
 | 7 | A removed person's sessions die, **pending requests are cancelled**, history stays, email re-invitable | ◐ three of four; cancellation is MAG-2731's |
