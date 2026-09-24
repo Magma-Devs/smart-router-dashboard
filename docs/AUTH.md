@@ -73,7 +73,7 @@ is "an admin copies a link", not "an invitation silently never arrives".
 |---|---|---|
 | First admin | a Magma operator runs the first-run page, then invites the customer's named admin | first-run page + the installer's setup token |
 | Magma Devs account | the first-run account is ours, stays, and is labelled | never — the first-run account is the customer's own |
-| Invite / reset delivery | emailed | link shown to an admin, handed over |
+| Invite / reset delivery | link shown to an admin, handed over — until email exists ([MAG-2870](https://magmadevs.atlassian.net/browse/MAG-2870)), when it is emailed | link shown to an admin, handed over |
 | Invite TTL | 7 days | 24 hours |
 | Reset TTL | 1 hour | 24 hours |
 
@@ -419,7 +419,7 @@ exercising the real flow.
 | `AUTH_SECRET` | api + web | HS256 signing secret, must match. `openssl rand -base64 32` |
 | `DATABASE_URL` | api | Empty in both compose files. `make up-auth` / `make dev-auth` supply `postgres://sr:dev@postgres:5432/sr_dashboard`; only read when `AUTH_MODE=enabled` |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | api | **development-only** admin seed; ignored (with a warning) when `NODE_ENV=production` |
-| `INTERNAL_AUTH_SECRET` | api + web | Proves a caller is our own web tier, so forwarded browser IP / User-Agent are honoured. Unset ⇒ ignored, and sessions record what the api observes |
+| `INTERNAL_AUTH_SECRET` | api + web | Proves a caller is our own web tier, so forwarded browser IP / User-Agent are honoured on the routes that open a session. Unset ⇒ ignored, and sessions record what the api observes |
 | `TRUST_PROXY` | api | How far to believe `X-Forwarded-For`. Hop count (default `1`), a comma list of proxy IPs/CIDRs, or `false` |
 | `DEPLOYMENT_MODE` | api + web | `onprem` (default) / `managed` — forks invite and reset delivery |
 | `SETUP_TOKEN` | api | First-run token. Unset ⇒ generated once at boot and logged |
@@ -777,7 +777,19 @@ User-Agent from *its* request and forwards them — and the api believes
 them **only** when the caller also presents `INTERNAL_AUTH_SECRET`. The
 route is public, so without that check anyone could pin any address to
 their own sign-in attempts and write a false trail. Unset ⇒ forwarded
-context is always ignored and the api records what it observes.
+context is always ignored and the api records what it observes. The
+same holds on the other two routes Auth.js calls to open a session:
+`/auth/oauth/:provider`, and `/auth/invite/accept` when an invitation is
+redeemed with Google or GitHub — which also writes a `signin.succeeded`
+row for the session it opens.
+
+Both values are the caller's to write, so both are cut to what their
+columns take before any insert: a browser version longer than four
+digits is dropped from the device string, and an address `inet` would
+refuse is not recorded. A value the column refused would otherwise fail
+the insert — and a standalone audit write swallows its failure, so the
+row would vanish without a trace. The audit writer applies the same rule
+again, for any caller that skips it.
 
 Routes the browser calls **directly** never accept forwarded context;
 they read `request.ip` themselves. The rule is that whichever party
