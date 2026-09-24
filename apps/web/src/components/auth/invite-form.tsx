@@ -306,16 +306,17 @@ export function InviteDead() {
 /**
  * Someone already signed in, following an invitation link.
  *
- * The edge gate used to redirect this case to the dashboard. The rule behind it
- * is right — an invitation exists to create an account for somebody who hasn't
- * got one, and offering the form to a signed-in visitor offers them a second —
- * but a silent bounce reads as a broken link.
+ * Said rather than redirected. An invitation exists to create an account for
+ * somebody who hasn't got one, so the form is not offered to a signed-in
+ * visitor — but a silent bounce to the dashboard reads as a broken link, and
+ * the invitation sits pending with nobody able to explain why.
  *
- * The case that matters is not an admin testing their own link. It is somebody
- * who already has an account clicking an invitation meant for a second address:
- * they land on the dashboard, conclude nothing happened, and the invitation sits
- * pending with nobody able to explain why. Signing out returns here rather than
- * to the login page, so accepting is one click from this screen.
+ * Two people land here. Somebody with an account, clicking an invitation meant
+ * for a second address. And somebody whose browser still holds a sign-in for
+ * the invited address itself — which can only be an account since removed or
+ * suspended, because invitations only go to addresses with no active account.
+ * Sending that person to the login page would be a dead end. Either way,
+ * signing out returns here, so accepting is one click from this screen.
  */
 export function InviteSignedIn({
   token,
@@ -348,33 +349,39 @@ export function InviteSignedIn({
           <strong style={{ color: "var(--text)" }}>{invitedEmail}</strong>.
         </p>
         <p style={{ fontSize: 12.5, color: "var(--text-3)", lineHeight: 1.65, margin: "0 0 20px" }}>
+          {/* An invitation only goes to an address with no active account, so
+              a sign-in for that same address belongs to an account that has
+              since been removed or suspended. Signing in again cannot work;
+              accepting is the way back. */}
           {sameAddress
-            ? "That address already has an account, so there is nothing to accept — just sign in."
+            ? "That sign-in belongs to an account that is no longer active. Sign out, and you will come straight back here to accept."
             : "Accepting it creates a separate account, so you need to sign out of this one first. You will come straight back here."}
         </p>
         <div style={{ display: "grid", gap: 8 }}>
-          <SignOutAndReturn token={token} sameAddress={sameAddress} />
-          <a
-            className="gw-btn"
-            href="/overview"
-            style={{ justifyContent: "center", fontSize: 12.5 }}
-          >
-            Stay signed in as {signedInAs}
-          </a>
+          <SignOutAndReturn token={token} />
+          {!sameAddress && (
+            <a
+              className="gw-btn"
+              href="/overview"
+              style={{ justifyContent: "center", fontSize: 12.5 }}
+            >
+              Stay signed in as {signedInAs}
+            </a>
+          )}
         </div>
       </div>
     </main>
   );
 }
 
-function SignOutAndReturn({ token, sameAddress }: { token: string; sameAddress: boolean }) {
+function SignOutAndReturn({ token }: { token: string }) {
   return (
     <button
       className="gw-btn gw-btn--primary"
       style={{ justifyContent: "center" }}
-      onClick={() => void signOut({ redirectTo: sameAddress ? "/login" : `/invite/${token}` })}
+      onClick={() => void signOut({ redirectTo: `/invite/${token}` })}
     >
-      {sameAddress ? "Sign out and sign in as them" : "Sign out and accept"}
+      Sign out and accept
     </button>
   );
 }
