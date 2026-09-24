@@ -30,6 +30,10 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ### Fixed
 
+- **Signing out left the session live on the api.** The browser's Sign out
+  cleared only the Auth.js cookie. The api session went on working until it
+  expired, stayed in the sessions list, and wrote no `signout` row. Signing
+  out now closes it too.
 - **The api refused every cross-origin PATCH and DELETE.** `@fastify/cors`
   allows only GET, HEAD and POST unless it is given a method list, and the web
   calls the api cross-origin (`:3000` → `:8000`). Nothing in the web sent
