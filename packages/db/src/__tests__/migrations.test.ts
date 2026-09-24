@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { sql } from "drizzle-orm";
 import { createTestDb, type TestDb } from "../testing.js";
@@ -126,8 +129,16 @@ describe("0005_magma_account", () => {
   it("backfills existing rows false", async () => {
     // A deployment that predates the column has no marked account to find:
     // on-prem never had one, and a managed install's operator account was
-    // created before anything recorded provenance.
+    // created before anything recorded provenance. So: take the column off
+    // again, add a row that predates it, and replay the migration's own SQL.
+    await t.db.execute(sql`alter table users drop column is_magma_account`);
     await t.db.execute(sql`insert into users (email) values ('legacy@example.com')`);
+    const migration = resolve(
+      dirname(fileURLToPath(import.meta.url)),
+      "../../migrations/0005_magma_account.sql",
+    );
+    await t.db.execute(sql.raw(readFileSync(migration, "utf8")));
+
     const rows = await t.db.execute<{ is_magma_account: boolean }>(
       sql`select is_magma_account from users where email = 'legacy@example.com'`,
     );
