@@ -180,22 +180,25 @@ export function resolveClientContext(
 }
 
 /**
- * Registered ONLY when AUTH_MODE=enabled:
+ * Registered ONLY when AUTH_MODE=enabled. Three routes open a session, and the
+ * web's Auth.js callbacks are what call them:
  *
  *  - POST /auth/sign-in          : email + password → { user, sessionId }
  *  - POST /auth/oauth/:provider  : provider token (verified server-side)
- *                                  → upsert → { user, sessionId }
- *  - POST /auth/sign-out         : revoke the calling session
+ *                                  → the account it is linked to
+ *  - POST /auth/invite/accept    : with a provider token, redeems and signs in.
+ *                                  A password redemption comes from the
+ *                                  browser, opens no session, and signs in
+ *                                  through /auth/sign-in afterwards.
  *
- * The first two are consumed by the web's Auth.js callbacks — the browser never
- * calls them directly. Each opens a session row and returns its id, which the
- * web puts in the token's `sid` claim; the api resolves it on every subsequent
- * request. Creating the session here (rather than in a register call afterwards)
- * is what lets it commit in the same breath as the sign-in and carry the
- * browser's own address. See `docs/ACCOUNTS-DESIGN.md` §5.2.
+ * Each returns the session's id, which the web puts in the token's `sid`
+ * claim; the api resolves it on every subsequent request. Creating the session
+ * here (rather than in a register call afterwards) is what lets it commit in
+ * the same breath as the sign-in and carry the browser's own address. See
+ * `docs/ACCOUNTS-DESIGN.md` §5.2.
  *
- * No self-serve sign-up: accounts come from the ADMIN_EMAIL seed or OAuth until
- * invitations land in slice 3.
+ * No self-serve sign-up: an account comes from first-run setup or an
+ * invitation. OAuth links to an existing account and never creates one.
  */
 export async function authRoutes(app: FastifyInstance) {
   const audit: AuditWriter = lazyAuditWriter(app);
