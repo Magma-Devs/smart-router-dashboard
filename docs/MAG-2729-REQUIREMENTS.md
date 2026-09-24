@@ -6,7 +6,7 @@ taken on trust.
 
 | | |
 |---|---|
-| As of | 19 Aug 2026, `cedb1af` on `feat/MAG-2729-slice6-audit-emission` |
+| As of | 24 Sep 2026, `feat/MAG-2729-slice6-audit-emission` (#122), re-cut onto slice 5 (#121) |
 | Parent epic | [MAG-2686](https://magmadevs.atlassian.net/browse/MAG-2686) — Dashboard v2, config change + SOC 2 |
 | Design | [`ACCOUNTS-DESIGN.md`](./ACCOUNTS-DESIGN.md) (#109) · operator guide [`AUTH.md`](./AUTH.md) |
 
@@ -69,7 +69,7 @@ Seven pull requests, stacked. `#115` is MAG-2770's writer, merged in because sli
 | First-run requires the installer's setup token | ✅ | Constant-time compare. The gate is `count(active users) == 0`, never a flag, so a backup restored with no users is covered — which the ticket calls out |
 | Managed first admin: we create it and send a join link | ◐ | `/setup` on a managed deployment creates the Magma operator's account — marked, and shown as ours in the member list — who invites the customer's named admin. The join link is handed over until email exists (MAG-2870) |
 | Never a shared account; we never set a password for anyone | ✅ | True only after the `ADMIN_EMAIL` fix — see [§6](#6-mismatches-found-and-fixed) |
-| No standing admin account inside a customer's deployment | ✅ | Same fix |
+| No hidden Magma account — the ticket's "no standing admin account", revised 26 Aug 2026 | ✅ | On managed, the account `/setup` creates is Magma's and stays after handover, marked and shown as ours in the member list. Nothing else creates one: the `ADMIN_EMAIL` seed is refused in production (§6) |
 
 **Passwords** (NIST 800-63B)
 
@@ -159,7 +159,7 @@ rename cannot rewrite history.
 
 | | State | Owner |
 |---|---|---|
-| **Managed-mode delivery** | No mail transport exists. Invitations withhold the link with nothing to send it; forgot-password logs it; the managed first-admin flow has no route | [MAG-2870](https://magmadevs.atlassian.net/browse/MAG-2870) — assigned, To Do |
+| **Managed-mode delivery** | No mail transport exists. Invitations and admin reset links are handed over by the admin, as on-prem; self-serve forgot-password answers 404 and issues nothing | [MAG-2870](https://magmadevs.atlassian.net/browse/MAG-2870) — assigned, To Do |
 | Pending config changes cancelled on removal | `onMemberDeactivated` is a documented empty seam | MAG-2731 |
 | Shared login disabled at cutover | Not this repo | MAG-2805 · victoria |
 | Managed "Forgot password?" on `/login` | The screen MAG-2870 specifies, on the flow it delivers | [MAG-2870](https://magmadevs.atlassian.net/browse/MAG-2870) |
@@ -170,9 +170,10 @@ rename cannot rewrite history.
 
 ## 5. The gaps, and why each one is open
 
-Six rows above are not ✅. They collapse into three causes, and only one was ever work sitting on
-this ticket — that one is now built, which is why it no longer appears. Nothing here is undecided;
-each has a ticket.
+Six rows above are not ✅. One is a decision rather than a gap: Google and GitHub stay as ways in
+(§2, Sign-in). The other five collapse into three causes, and only one was ever work sitting on this
+ticket — that one is now built, which is why it no longer appears. Nothing here is undecided; each
+has a ticket.
 
 ### Cause 1 — there is no mail transport. Three of them.
 
@@ -182,9 +183,9 @@ bugs.
 
 | | What happens today |
 |---|---|
-| **Managed invitation** | The row is created with the right 7-day TTL, and — like on-prem — the response hands the admin the link to pass on, because nothing can email it yet. The earlier behaviour withheld it on managed, which left an invitation nobody could reach |
+| **Managed invitation** | The row is created with the right 7-day TTL, and — like on-prem — the response hands the admin the link to pass on, because nothing can email it yet |
 | **Managed forgot-password** | Fails closed: `POST /auth/password/forgot` answers 404 on every deployment and writes nothing, so it never issues a link nobody receives or kills one a member already holds |
-| **Managed first admin** | No route for the flow the ticket describes. It does not *block* a managed deployment: `/setup` is not gated on `DEPLOYMENT_MODE`, so a first admin is still creatable with the setup token |
+| **Managed first admin** | Works, minus the email: a Magma operator runs `/setup` with the setup token, which creates the marked Magma account, and that account invites the customer's named admin. The join link is handed over by hand |
 
 **Who owns it:** [MAG-2870](https://magmadevs.atlassian.net/browse/MAG-2870), which scopes exactly
 two emails — invitation and password reset — with the copy written out, and confirms on-prem sends
