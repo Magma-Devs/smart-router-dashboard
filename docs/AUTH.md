@@ -746,12 +746,26 @@ current password), a role `403 FORBIDDEN`, and a `503` never sign anyone out.
 
 - `users.signed_out_all_at` — a cutoff compared to the token's `iat`.
   Kills every outstanding token in one write without enumerating
-  anything. Stamped on password change, sign-out-everywhere, and removal.
+  anything. Stamped on a password reset, sign-out-everywhere, and removal.
+  Not on your own password change, which revokes your other devices one by
+  one so the tab you changed it in stays signed in.
   The comparison is `<=`, not `<`: both sides have one-second resolution,
   so a token minted in the same second as the revocation must lose, or an
   attacker racing the sign-out keeps a live session.
 - `sessions.revoked_at` — kills one device. What makes the sessions list
   and "sign out this device" possible.
+
+**Signing out closes the api session too.** Auth.js only clears its cookie,
+so its `events.signOut` calls `POST /auth/sign-out` with a Bearer for the
+session that cookie addressed. The device leaves the sessions list, and the
+log gets its `signout` row. It is best effort, with a 3-second timeout: the
+cookie is cleared regardless, so an api that is down cannot keep anybody
+signed in.
+
+**Every session that ends gets a row.** The holder signing out is `signout`.
+Anything else is one `session.revoked` per session, naming why: revoked
+from the sessions list, a removal, a password reset, or a password change
+(for the other devices).
 
 <img src="./assets/account-sessions.png" alt="The Account page, scrolled down: the end of a Connected accounts card saying that a Google or GitHub sign-in whose verified address matches links to this account the first time it is used; a Change password card with current, new and repeat fields and a note that other devices will be signed out while this one stays; an Active sessions card listing this device as Chrome on Linux, highlighted, and a second unrecognised device with its own Sign out button, plus a Sign out everywhere button; and a Leaving? card saying accounts are never deleted and nobody removes their own, so ask another administrator, and that your name stays in the audit log." width="560">
 
