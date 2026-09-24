@@ -18,7 +18,7 @@ const cell = (p: Partial<StatusCell> & { upstream: string; spec: string }): Stat
 
 describe("effectiveUpstreams", () => {
   it("reports one effective upstream when one carries everything", () => {
-    // GK8's Arbitrum: four configured, tatum serves 100%.
+    // A production shape: four configured, tatum serves 100%.
     const e = effectiveUpstreams([
       cell({ upstream: "tatum", spec: "ARBITRUM", served: 1_572_348 }),
       cell({ upstream: "blockdaemon", spec: "ARBITRUM", served: 0 }),
@@ -240,7 +240,7 @@ describe("buildStatusReport", () => {
 
 describe("caller-side blockchain errors — the 27 Aug nonce_too_low night", () => {
   it("files repeating chain rejections as Config with the sender named at fault", () => {
-    // GK8's client sent transactions with reused nonces; every provider
+    // A client sent transactions with reused nonces; every provider
     // answered nonce_too_low and the page stayed green — a Slack thread and a
     // call did what this row now does.
     const [f] = deriveChainFindings(
@@ -519,7 +519,7 @@ describe("verification — did anything check the answers, and who failed", () =
   const served = [cell({ upstream: "tatum", spec: "ETH1", served: 5000, role: "primary" })];
 
   it("flags a chain where nothing verified the answers", () => {
-    // GK8's common state: consistency family present but zero checks on the
+    // A common production state: consistency family present but zero checks on the
     // chain, cross-validation family never registered. A frozen upstream is
     // invisible by construction — that is the class behind every 7-10h RCA.
     const [f] = deriveChainFindings({ spec: "ETH1", counts: {} }, served, [], 1800, undefined,

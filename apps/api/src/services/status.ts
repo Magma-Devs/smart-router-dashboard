@@ -15,7 +15,7 @@
  * 2. **Two independent failure counts per upstream.** "No answer" (the relay
  *    failed) and "bad answer" (it replied, with an error) are different
  *    problems with different remedies, and the gap between them can be enormous
- *    - on GK8 one upstream showed 520k bad answers against zero failed relays.
+ *    - in production one upstream showed 520k bad answers against zero failed relays.
  *    A single error rate reports that upstream as perfect.
  *
  * 3. **Never invent an owner.** Error KINDS are recorded per chain
@@ -207,9 +207,9 @@ export interface UpstreamBaseline {
  *
  * Two families, two meanings, never merged (MAG-2527 conflated them and
  * deleted the wrong strip):
- * - consistency: a read enforced a minimum seen block. Present at GK8.
+ * - consistency: a read enforced a minimum seen block. Present in production.
  * - cross-validation: several providers answered the same question and were
- *   compared. Lazily registered; absent at GK8 as of 2026-08-18.
+ *   compared. Lazily registered; absent in production as of 2026-08-18.
  */
 export interface ChainVerification {
   spec: string;
@@ -282,7 +282,7 @@ export function dominantUpstream(cells: StatusCell[]): string | null {
  * Effective upstreams - `1 / Σ(share²)` over a chain's served traffic.
  *
  * Answers "how many upstreams do you actually have", which the configured
- * count cannot: on GK8, Arbitrum lists four and one serves 100.0%. Returns null
+ * count cannot: in production, Arbitrum lists four and one serves 100.0%. Returns null
  * when the chain served nothing.
  */
 export function effectiveUpstreams(
@@ -523,9 +523,9 @@ export function deriveChainFindings(
   }
 
   /* ── The chain said no - and the caller is the reason ─────────────────
-     The 27 Aug GK8 night: their client's transactions all came back
+     In one production incident a client's transactions all came back
      nonce_too_low from every provider, and it took a Slack thread and a call
-     for Tom to say "this is a blockchain error, the issue is on the
+     to establish "this is a blockchain error, the issue is on the
      customer's end". These answers are transport SUCCESSES - no provider is
      at fault and no failover helps - so without this row the page stays
      green while the customer's own pipeline is broken. */

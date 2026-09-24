@@ -88,8 +88,8 @@ const REACHED_THE_CALLER: ReadonlyArray<StatusFinding["kind"]> = [
 ];
 
 // `answered-late` is deliberately NOT here either. It is a latency percentile
-// crossing a line, not a proven failure — the answer arrived. Measured on GK8
-// it produced "Slow answers on Tezos, but no confirmed failures" under a red
+// crossing a line, not a proven failure — the answer arrived. Measured in
+// production it produced "Slow answers on Tezos, but no confirmed failures" under a red
 // badge, which is the contradiction this whole ladder exists to remove. Slow
 // is "works, but worse": degraded.
 
@@ -111,7 +111,7 @@ const CALLER_SIDE = /^(CHAIN|USER)_/;
  * Is this finding mostly the caller's doing?
  *
  * By EVENT COUNT, not by which codes appear. Presence was not enough: measured
- * on GK8, StarkNet's answered-error is 581 events of which every one is a
+ * in production, StarkNet's answered-error is 581 events of which every one is a
  * CHAIN_STARKNET_* rejection, while Ethereum's is 28 CHAIN_TX_REJECTED against
  * 22 NODE_SERVER_ERROR. Reading the list rather than the counts made the first
  * critical — a red badge over "your requests are working fine".
@@ -147,7 +147,7 @@ export interface FormulatedInputs {
    * Other chains carrying the SAME caller-side problem, folded in.
    *
    * Nonce and funds rejections are the client's own doing, so they recur
-   * identically wherever that client sends transactions — GK8 had 1,066 on
+   * identically wherever that client sends transactions — one deployment had 1,066 on
    * Ethereum, 254 on Polygon and 79 on Base, rendered as three cards saying
    * one thing. One problem, one fix, one card.
    */

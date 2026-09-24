@@ -51,7 +51,7 @@ Mint it **scoped and expiring**. `create-service-specific-credential` without
 MAG-3702's ended up permanent:
 
 ```bash
-CUST=gk8
+CUST=acme
 aws iam create-user --user-name sr-dash-${CUST}
 aws iam attach-user-policy --user-name sr-dash-${CUST} \
   --policy-arn arn:aws:iam::811430801429:policy/SmartRouterDashboardBedrockInvoke

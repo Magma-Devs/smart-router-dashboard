@@ -8,7 +8,7 @@
  *
  * ## The house style is not invented here, it is copied
  *
- * Idan's write-ups in #updates-gk8 have a fixed shape, and it is a good one:
+ * The team's incident write-ups have a fixed shape, and it is a good one:
  *
  *   In short:
  *   • This is the same recurring Stellar/Tatum issue again.

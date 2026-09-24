@@ -605,7 +605,7 @@ export function qClassifiedErrorsByName(
  *
  * This is the count a per-provider error rate normally misses: the upstream
  * answered, so the relay counts as a transport success, while the answer itself
- * was an error. On GK8 production this is where a provider's real breakage
+ * was an error. In production this is where a provider's real breakage
  * lives — 635k/day on one (provider × chain) pair against 22 failed relays.
  */
 export function qNodeErrorsByUpstream(
@@ -768,8 +768,8 @@ export function qServedShare(window: MetricWindow = DEFAULT_WINDOW, spec?: strin
  * Cross-validation rounds per chain, and those that FAILED with a reason.
  *
  * Lazily registered: the whole family is absent until cross-validation fires
- * for the first time, so callers probe presence first. On GK8 production it
- * has never registered — every verification there is the consistency check.
+ * for the first time, so callers probe presence first. On the production deployments checked so
+ * far it has never registered — every verification there is the consistency check.
  */
 export function qCrossValidationRounds(window: MetricWindow = DEFAULT_WINDOW, spec?: string): string {
   return `round(sum by (spec) (increase(${OPTIONAL_METRICS.crossValidationRequestsTotal}${selector({ spec })}[${rangeFor(window)}])))`;

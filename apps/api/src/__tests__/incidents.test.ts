@@ -36,7 +36,7 @@ describe("composeStory — the customer-ready bullets", () => {
     failedMethods: [{ method: "debug_traceBlockByNumber", count: 63, errorName: "NODE_METHOD_NOT_FOUND", example: "x" }],
     capabilityGap: "On this chain only chainstack serves DEBUG calls — tatum rejects them as an unsupported method, so debug_* traffic has no fallback.",
   };
-  it("tells the DFNS story: who failed, what was saved, what still failed and why", () => {
+  it("tells the incident story: who failed, what was saved, what still failed and why", () => {
     const story = composeStory(base, "Base Sepolia");
     expect(story[0]).toBe("chainstack, the primary provider on Base Sepolia, was failing for ~6 minutes (98% of its relays).");
     expect(story[1]).toBe("The router retried and recovered 114 requests automatically.");

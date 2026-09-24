@@ -2,7 +2,7 @@
  * Incidents — bursts of FINAL customer failures, explained.
  *
  * The shape follows the way a real incident was actually written up for a
- * customer (the DFNS base-sepolia case): the primary was down for ~6 minutes,
+ * customer: the primary was down for ~6 minutes,
  * the router recovered 114 requests by failing over, and the 63 that still
  * failed were all debug_* calls — because only the primary declares DEBUG.
  * Every line of that story is derivable: episodes from

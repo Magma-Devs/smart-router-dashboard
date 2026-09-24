@@ -282,7 +282,7 @@ export class StatusAiService {
       system: SYSTEM_PROMPT,
       messages: [{ role: "user", content: digest(report, incidents) }],
       // Headroom over the SIX-theme cap the prompt sets, not over an
-      // unbounded answer: measured on GK8, four themes over 12 findings ran
+      // unbounded answer: measured in production, four themes over 12 findings ran
       // ~5.5k tokens, and an uncapped answer over a 34-finding report blew
       // through 8000 and came back cut mid-object. The cap is what keeps the
       // brief readable; this is what stops the cap's worst case truncating.

@@ -436,7 +436,7 @@ export interface ErrorPivotRow {
 
 /**
  * Severity on the status page. Three tiers, and the line between the first two
- * is not ours: it is where GK8's own production alert sits.
+ * is not ours: it is where a customer's own production alert sits.
  *
  * - `critical`  — a customer request DIED. The router exhausted its options.
  * - `attention` — the router absorbed it, at the cost of your redundancy.
@@ -528,7 +528,7 @@ export interface StatusFinding {
  * concentration inverse. A chain with four upstreams where one serves 100% has
  * `configured: 4, effective: 1`. `provenBackups` counts backups that actually
  * served something: a backup that has never served has never been tested, and
- * on GK8 the ones that were tested failed.
+ * in production the ones that were tested failed.
  */
 export interface NoFailoverChain {
   spec: string;
@@ -670,9 +670,9 @@ export interface StatusReport {
  * answers "is this provider broken everywhere, or just here?".
  *
  * Two INDEPENDENT counts, because a single provider error-rate lies. Verified
- * on GK8 production: Tatum on AVALANCHECT showed 635,678 `answeredWithError`
- * against 22 `unreachable` — a 30,000× gap. Their war room reads the second
- * one and reports Tatum at 0.39%, while Tatum returns 635k error bodies a day.
+ * in production: Tatum on AVALANCHECT showed 635,678 `answeredWithError`
+ * against 22 `unreachable` — a 30,000× gap. A war room reading the second one
+ * reports Tatum at 0.39%, while Tatum returns 635k error bodies a day.
  * Transport-perfect, functionally broken.
  */
 export interface ProviderFault {

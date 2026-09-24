@@ -181,7 +181,7 @@ export const config = {
      * Converse does not stream, so nothing arrives until the whole answer is
      * built and the SDK's inactivity timer runs the entire generation. A
      * 60s default is fine for a one-line verify and wrong for a brief:
-     * measured on GK8, a 12-finding report answers in ~5.5k tokens and takes
+     * measured in production, a 12-finding report answers in ~5.5k tokens and takes
      * past a minute, which surfaced as "stream timed out because of no
      * activity" — a message that reads like a network fault and is not one.
      */
