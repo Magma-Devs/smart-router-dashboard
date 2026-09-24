@@ -18,6 +18,7 @@ import {
   lookupInvitation,
   redeemInvitation,
   type InviteLookup,
+  type RedeemResult,
 } from "../services/invitations.js";
 import { consumePasswordReset } from "../services/password-reset.js";
 import { clearFailures, lockedReply, recordAttempt } from "../services/lockout.js";
@@ -352,9 +353,10 @@ export async function authRoutes(app: FastifyInstance) {
       .send({ statusCode: 410, error: "Gone", message: INVITE_GONE });
   }
 
-  /** `invite.expired` fires from wherever the expiry is first *observed* —
-   *  which is a read, not a scheduled sweep, so there is nothing to run. */
-  async function auditExpiryOnce(lookup: InviteLookup): Promise<void> {
+  /** `invite.expired` fires from wherever the expiry is first *observed* — a
+   *  preview, a redemption attempt, or the admin's Invites list — which is a
+   *  read, not a scheduled sweep, so there is nothing to run. */
+  async function auditExpiryOnce(lookup: InviteLookup | RedeemResult): Promise<void> {
     if (lookup.ok || !lookup.justExpired || !lookup.invitation) return;
     await audit.write({
       action: "invite.expired",
@@ -486,6 +488,7 @@ export async function authRoutes(app: FastifyInstance) {
             message: `This invitation is for ${invited}. Sign in with that account to accept it.`,
           });
         }
+        await auditExpiryOnce(result);
         return replyInviteGone(reply);
       }
 

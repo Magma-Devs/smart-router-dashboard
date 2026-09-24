@@ -3,13 +3,14 @@ import type { FastifyInstance } from "fastify";
 import { SignJWT } from "jose";
 import { sql } from "drizzle-orm";
 import { createTestDb, type TestDb } from "@sr/db/testing";
-import { users, type User } from "@sr/db";
+import { invitations, users, type User } from "@sr/db";
 import { buildApp } from "../app.js";
 import { SESSION_JWT_AUDIENCE, SESSION_JWT_ISSUER } from "../plugins/auth.js";
 import { createSession } from "../services/sessions.js";
 import { hashPassword } from "../services/password.js";
 import { resetSetupTokenForTests } from "../services/setup.js";
 import { createPasswordReset } from "../services/password-reset.js";
+import { createInvitation } from "../services/invitations.js";
 
 /**
  * Events reaching the real writer, end to end.
@@ -384,5 +385,62 @@ describe("what ends a session is recorded, one row per session", () => {
     expect(await revokedRows()).toEqual(
       dana.sessionIds.slice(1).map((id) => ({ target_id: id, note: "password changed" })),
     );
+  });
+});
+
+describe("invite.expired lands once, wherever the expiry is first seen", () => {
+  async function expiredInvite(): Promise<string> {
+    const { id: admin } = await adminToken();
+    const created = await createInvitation(t.db, {
+      email: "late@example.com",
+      role: "read_only",
+      createdBy: admin,
+      mode: "onprem",
+    });
+    if (!created.ok) throw new Error(created.reason);
+    await t.db.update(invitations).set({ expiresAt: new Date(Date.now() - 1000) });
+    return created.created.rawToken;
+  }
+  const expiredRows = async () => (await actions()).filter((a) => a === "invite.expired").length;
+
+  it("by the accept route", async () => {
+    const token = await expiredInvite();
+    const accept = () =>
+      app!.inject({ method: "POST", url: "/auth/invite/accept", payload: { token, password: PASSWORD } });
+
+    expect((await accept()).statusCode).toBe(410);
+    expect(await expiredRows()).toBe(1);
+
+    // Seen again, by either route: still once.
+    await accept();
+    await app!.inject({ method: "POST", url: "/auth/invite/preview", payload: { token } });
+    expect(await expiredRows()).toBe(1);
+  });
+
+  it("by the admin's Invites list, when nobody opens the link", async () => {
+    await expiredInvite();
+    const [admin] = await t.db.select().from(users).where(sql`email = 'admin@example.com'`);
+    const session = await createSession(t.db, {
+      userId: admin!.id,
+      authMethod: "password",
+      client: { ip: null, userAgent: null },
+    });
+    const bearer = await new SignJWT({ sub: admin!.id, email: admin!.email, role: "admin", sid: session.id })
+      .setProtectedHeader({ alg: "HS256", typ: "JWT" })
+      .setIssuer(SESSION_JWT_ISSUER)
+      .setAudience(SESSION_JWT_AUDIENCE)
+      .setIssuedAt()
+      .setExpirationTime("1h")
+      .sign(new TextEncoder().encode(SECRET));
+    const list = () =>
+      app!.inject({ method: "GET", url: "/api/team/invites", headers: { authorization: `Bearer ${bearer}` } });
+
+    const res = await list();
+    expect(res.statusCode).toBe(200);
+    expect(res.json().invites[0].state).toBe("expired");
+    expect(await expiredRows()).toBe(1);
+
+    await list();
+    expect(await expiredRows()).toBe(1);
   });
 });

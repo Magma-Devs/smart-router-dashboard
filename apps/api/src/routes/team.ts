@@ -7,6 +7,7 @@ import {
   createInvitation,
   inviteUrl,
   listInvitations,
+  noteExpiredInvitations,
   resendInvitation,
   revokeInvitation,
 } from "../services/invitations.js";
@@ -90,6 +91,17 @@ export async function teamRoutes(app: FastifyInstance) {
       if (!requireRole(request, reply, "admin")) return reply;
       const db = dbOr503(reply);
       if (!db) return reply;
+
+      // `invite.expired` fires from wherever an expiry is first observed. This
+      // list sees every invitation, so an expired one nobody opens is still
+      // recorded — the first time an admin looks, and only then.
+      for (const expired of await noteExpiredInvitations(db)) {
+        await audit.write({
+          action: "invite.expired",
+          actor: { id: null, kind: "system" },
+          target: { type: "invite", id: expired.id, name: expired.email },
+        });
+      }
 
       const rows = await listInvitations(db);
       const now = Date.now();
