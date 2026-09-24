@@ -18,9 +18,14 @@
  * Severity sections are fixed (Critical · Degraded · Config) because that is
  * the page's own vocabulary. The toggle is a secondary ORDER — by chain, or by
  * time, which answers "what just started" rather than "what is worst".
+ *
+ * There is no analyse button. The api computes these on a loop and the page
+ * reads the warm cache, because the page already knows which chains have
+ * issues the moment it loads — a button would only ask the reader to start
+ * the wait themselves.
  */
-import { useEffect, useState } from "react";
-import { apiPostResult } from "@/lib/api-client";
+import { useState } from "react";
+import { useApi } from "@/hooks/use-api";
 import { useFilters } from "@/components/gateway/FiltersProvider";
 
 interface Issue {
@@ -102,37 +107,14 @@ function Card({ issue, color }: { issue: Issue; color: string }) {
 
 export function IssueCards({ chainsAffected }: { chainsAffected: string[] }) {
   const { timeWindow, scopeQ } = useFilters();
-  const [issues, setIssues] = useState<Issue[] | null>(null);
-  const [refusal, setRefusal] = useState<Refusal | null>(null);
-  const [running, setRunning] = useState(false);
   const [order, setOrder] = useState<"chain" | "time">("chain");
 
-  async function run() {
-    setRunning(true);
-    setRefusal(null);
-    try {
-      const { body } = await apiPostResult<Answer | Refusal>(
-        `/api/ai/issues?window=${timeWindow}${scopeQ}`,
-      );
-      if (body.ok) setIssues(body.issues);
-      else {
-        setIssues(null);
-        setRefusal(body);
-      }
-    } catch (err) {
-      setIssues(null);
-      setRefusal({ ok: false, reason: "model_call_failed", detail: String(err) });
-    } finally {
-      setRunning(false);
-    }
-  }
-
-  // A changed window means the issues on screen describe a period nobody is
-  // looking at any more. Cleared rather than left stale — an issue captioned
-  // with the wrong window is worse than an empty section.
-  useEffect(() => {
-    setIssues(null);
-  }, [timeWindow]);
+  // Polled, not pressed. `warming` comes back while a window is still being
+  // computed, so the poll keeps asking until it lands.
+  const { data } = useApi<Answer | Refusal>(`/api/ai/issues?window=${timeWindow}${scopeQ}`);
+  const issues = data?.ok ? data.issues : null;
+  const refusal = data && !data.ok ? data : null;
+  const warming = refusal?.reason === "warming";
 
   const sorted = (list: Issue[]): Issue[] =>
     order === "time"
@@ -159,29 +141,28 @@ export function IssueCards({ chainsAffected }: { chainsAffected: string[] }) {
             By {k}
           </button>
         ))}
-        <span style={{ flex: 1 }} />
-        <button className="gw-btn" onClick={run} disabled={running} style={{ fontSize: 11 }}>
-          {running ? "Analysing…" : issues ? "Refresh" : "Explain these issues"}
-        </button>
       </div>
 
-      {refusal && <div style={{ fontSize: 12, color: "var(--text-3)" }}>{refusalText(refusal)}</div>}
-
-      {/* Never a blank page while it runs: naming the chains it is working
-          through is the difference between "loading" and "stuck". */}
-      {running && !issues && (
+      {/* Naming the chains it is working through is the difference between
+          "loading" and "stuck" — and it is a wait nobody asked for, so it
+          should at least say what it is doing. */}
+      {warming && (
         <div style={{ fontSize: 12, color: "var(--text-3)" }}>
           Reading errors and config for {chainsAffected.length}{" "}
-          {chainsAffected.length === 1 ? "chain" : "chains"} — {chainsAffected.slice(0, 4).join(", ")}
+          {chainsAffected.length === 1 ? "chain" : "chains"}
+          {chainsAffected.length ? ` — ${chainsAffected.slice(0, 4).join(", ")}` : ""}
           {chainsAffected.length > 4 ? "…" : ""}
         </div>
       )}
 
-      {!issues && !running && !refusal && (
+      {refusal && !warming && (
+        <div style={{ fontSize: 12, color: "var(--text-3)" }}>{refusalText(refusal)}</div>
+      )}
+
+      {issues && issues.length === 0 && (
+        // Not "all clear" — the page never says that. No rule crossed.
         <div style={{ fontSize: 12, color: "var(--text-3)" }}>
-          {chainsAffected.length === 0
-            ? "No chain crossed a rule in this window."
-            : `${chainsAffected.length} ${chainsAffected.length === 1 ? "chain has" : "chains have"} issues in this window.`}
+          No chain crossed a rule in this window.
         </div>
       )}
 

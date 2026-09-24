@@ -711,4 +711,45 @@ export async function aiRoutes(app: FastifyInstance) {
       };
     },
   );
+
+  app.get<{ Querystring: { window?: string } }>(
+    "/api/ai/issues",
+    {
+      schema: {
+        tags: ["AI"],
+        summary: "The written issues, from the warm cache — instant",
+        description:
+          "Served from the background loop. Each chain's issue is memoised on a fingerprint " +
+          "of its findings, so unchanged findings keep the sentence already written rather " +
+          "than being re-worded every cycle. `warming: true` means this window is being " +
+          "computed now — the loop warms the default window, another is computed on first ask.",
+      },
+    },
+    async (request, reply) => {
+      const g = gate();
+      if (!g.ok) {
+        reply.status(503);
+        return { ...g, ...target() };
+      }
+      const window = parseWindow(request.query.window);
+      const snapshot = app.issuesFeed.current(window);
+      if (snapshot) return { ok: true, warming: false, ...snapshot };
+
+      // Nothing for this window yet. Start it and say so — "working on it" and
+      // "not configured" must not look the same to the page.
+      if (!app.issuesFeed.isRunning(window)) {
+        // Logged, never swallowed: an empty catch here means a compute that
+        // fails on every attempt looks identical to one still running, and
+        // the page polls a 503 forever with nothing in the log to explain it.
+        void app.issuesFeed.refresh(window).catch((err) => {
+          app.log.warn(
+            { window, err: err instanceof Error ? err.message : String(err) },
+            "issues feed could not compute this window",
+          );
+        });
+      }
+      reply.status(503);
+      return { ok: false, reason: "warming", detail: "computing this window now" };
+    },
+  );
 }
