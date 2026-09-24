@@ -32,11 +32,14 @@ export interface FormulatedIssue {
   /** "You have an issue with X" — one line. */
   title: string;
   /**
-   * The facts, one per line, in causal order. Three to five, never more.
+   * The facts, one per line, in causal order. Two to four, never more.
    *
    * Numbered one-liners rather than four labelled paragraphs, because that is
    * how this team already writes them in Slack and the paragraphs read as an
    * essay nobody finishes. Each point is ONE fact.
+   *
+   * All of them render — there is no disclosure — so the cap is not a display
+   * detail, it is the length of the card.
    */
   points: string[];
   /** One sentence: can they work. The line that decides an escalation. */
@@ -198,8 +201,10 @@ Short numbered facts, then a bottom line. Real example of theirs:
   Bottom line: Tatum was slow again, and with one eligible provider and no
   retry for stateful calls, that keeps reaching customers.
 
-Copy that. **One fact per point. One sentence per point. Under 20 words.**
-Three to five points — never more, and fewer when fewer will do.
+Copy that. **One fact per point. One sentence per point. Under 14 words.**
+Two to four points — never more, and fewer when fewer will do. Every point is
+on screen at once, with no "show more" to hide behind: a fourth point costs
+the reader the first three.
 
 Do NOT write paragraphs. Do not stack three clauses into one point. Do not
 quote raw error strings in parentheses; say what the error MEANS in your own
@@ -212,7 +217,12 @@ short words.
   3. What the router did: did it retry, did it have somewhere to go.
   4. Why the failover did or did not save it. This is the one people act on.
 
-Not every issue needs all four. Stop when the chain is told.
+Not every issue needs all four. Stop when the chain is told — three points
+that finish the story beat four padded to look thorough.
+
+**Never write the title again as a point.** The title is on screen directly
+above them. If the title already names what is failing and the number, start
+at the cause.
 
 Drift against last week, when given, is worth one point — a provider several
 times slower than its own past is a different story from one that is simply
@@ -240,6 +250,10 @@ severity is already on screen, so say what makes it that severity.
 
 The pattern in each: the impact, then the ONE fact that explains why it is not
 merely annoying. Usually that fact is about failover.
+
+Say it in different words from the point it came from. A bottom line that
+repeats point four verbatim has made the card longer without making it
+clearer.
 
 ## Never leave a phrase the reader has to decode
 
@@ -364,11 +378,12 @@ export class FormulatedIssueService {
         (f) => f.ongoing === true,
       ),
       title: str("title"),
-      // Capped here as well as in the prompt: a model that ignores "three to
-      // five" must not turn the card back into the essay this replaced.
+      // Capped here as well as in the prompt: a model that ignores "two to
+      // four" must not turn the card back into the essay this replaced. Four,
+      // not five — every point renders, so the cap IS what the reader sees.
       points: (Array.isArray(parsed.points) ? parsed.points : [])
         .filter((x): x is string => typeof x === "string" && x.trim() !== "")
-        .slice(0, 5),
+        .slice(0, 4),
       bottomLine: str("bottomLine"),
       findingIds: inputs.findings.map((f) => f.id),
       lastSeenUnix:

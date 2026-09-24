@@ -15,9 +15,18 @@
  * are ONE fact per line, not four labelled paragraphs. The paragraph version
  * read as an essay, which is the thing a bottom line exists to avoid.
  *
+ * EVERYTHING ON THE CARD IS ON SCREEN. There is no "view more": a disclosure
+ * is a card admitting it wrote more than it should have and then charging the
+ * reader a click for the rest — and what sat behind it was as often the cause
+ * as the padding. So the cap moved upstream instead. The model writes two to
+ * four facts under fourteen words, is told not to repeat the title, and is
+ * told not to restate a point in the bottom line. A card is four short lines,
+ * read in about five seconds, and the measurements stay one level down on the
+ * findings it cites.
+ *
  * Severity sections are fixed (Critical · Degraded · Config) because that is
- * the page's own vocabulary. The toggle is a secondary ORDER — by chain, or by
- * time, which answers "what just started" rather than "what is worst".
+ * the page's own vocabulary. The toggle is a secondary ORDER — Recent, which
+ * answers "what just started", or by chain.
  *
  * There is no analyse button. The api computes these on a loop and the page
  * reads the warm cache, because the page already knows which chains have
@@ -70,6 +79,10 @@ function ago(unix?: number | null): string | null {
   return `${Math.round(s / 86400)}d ago`;
 }
 
+function specLabel(specs: string[]): string {
+  return specs.length <= 3 ? specs.join(" · ") : `${specs.slice(0, 3).join(" · ")} +${specs.length - 3}`;
+}
+
 function refusalText(r: Refusal): string {
   if (r.reason === "disabled") return "AI is not enabled on this deployment.";
   if (r.reason === "auth_required") return "AI needs sign-in on this deployment.";
@@ -77,13 +90,11 @@ function refusalText(r: Refusal): string {
 }
 
 function Card({ issue, color }: { issue: Issue; color: string }) {
-  const when = ago(issue.lastSeenUnix);
-  const [open, setOpen] = useState(false);
-  // Three points is the gist; the rest is there for whoever wants it. Keeps a
-  // five-point issue from reading as the wall of text this replaced.
-  const shown = open ? issue.points : issue.points.slice(0, 3);
-  const hidden = issue.points.length - shown.length;
-
+  // No disclosure. A "View more · 2 more" is the card admitting it wrote more
+  // than it should have and then making the reader work for the rest — and
+  // the hidden points were as often the cause as the padding. The fix is
+  // upstream: the model writes two to four short facts, and all of them are
+  // on screen.
   return (
     <div
       className="gw-card"
@@ -119,32 +130,26 @@ function Card({ issue, color }: { issue: Issue; color: string }) {
               be about one chain while its points name four. */}
           {(issue.specs?.length ?? 1) > 1 ? `${issue.specs!.length} chains` : issue.chain}
         </span>
+        {/* The spec index is what appears in their own logs and queries, so
+            it stays — but a merged issue printing twelve of them is a line of
+            noise above the sentence that matters. */}
         <span className="gw-mono" style={{ fontSize: 9.5, color: "var(--text-4)" }}>
-          {(issue.specs ?? [issue.spec]).join(" · ")}
+          {specLabel(issue.specs ?? [issue.spec])}
+          {/* Recent is the default order, and nothing else on the card said
+              when — a list sorted by an invisible key reads as arbitrary. */}
+          {ago(issue.lastSeenUnix) ? ` · ${ago(issue.lastSeenUnix)}` : ""}
         </span>
       </div>
 
-      <div style={{ display: "flex", alignItems: "baseline", gap: 7, margin: "7px 0 8px" }}>
-        <span style={{ fontSize: 13, fontWeight: 600 }}>{issue.title}</span>
-      </div>
+      <div style={{ fontSize: 13, fontWeight: 600, margin: "7px 0 8px" }}>{issue.title}</div>
 
       <ol style={{ margin: 0, paddingLeft: 18, display: "flex", flexDirection: "column", gap: 3 }}>
-        {shown.map((p, i) => (
+        {issue.points.map((p, i) => (
           <li key={i} style={{ fontSize: 12.5, lineHeight: 1.5, color: "var(--text-2)" }}>
             {p}
           </li>
         ))}
       </ol>
-
-      {(hidden > 0 || open) && (
-        <button
-          className="gw-btn gw-btn--ghost"
-          onClick={() => setOpen((o) => !o)}
-          style={{ fontSize: 11, marginTop: 6, padding: "2px 8px" }}
-        >
-          {open ? "Show less" : `View more · ${hidden} more`}
-        </button>
-      )}
 
       {issue.bottomLine && (
         <div
