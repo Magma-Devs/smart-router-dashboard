@@ -317,8 +317,6 @@ services:
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
       - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID:-}
       - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET:-}
-      - DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID:-}
-      - DISCORD_CLIENT_SECRET=${DISCORD_CLIENT_SECRET:-}
     volumes:
       - ./apps/web/src:/app/apps/web/src
       - ./apps/web/public:/app/apps/web/public

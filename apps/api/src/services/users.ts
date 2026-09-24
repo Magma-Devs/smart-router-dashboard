@@ -41,12 +41,13 @@ export async function recordSignIn(db: Database, id: string): Promise<void> {
   await db.update(users).set({ lastSignInAt: new Date() }).where(eq(users.id, id));
 }
 
-export type OAuthProvider = "google" | "github" | "discord";
+/** The social ways in, beside email and password. `discord_id` exists as a
+ *  column and nothing writes it. */
+export type OAuthProvider = "google" | "github";
 
 const PROVIDER_ID_COLUMN = {
   google: users.googleId,
   github: users.githubId,
-  discord: users.discordId,
 } as const;
 
 export interface OAuthProfile {
@@ -130,12 +131,11 @@ export class OAuthAccountNotFoundError extends Error {}
 const PROVIDER_NAME: Record<OAuthProvider, string> = {
   google: "Google",
   github: "GitHub",
-  discord: "Discord",
 };
 
 /**
- * How this account signs in when it has no password — "Google", "GitHub and
- * Discord". For copy that tells someone why a password action doesn't apply;
+ * How this account signs in when it has no password — "Google", "Google and
+ * GitHub". For copy that tells someone why a password action doesn't apply;
  * saying "Google" to a GitHub-only member is the kind of thing that makes
  * people think their account is broken.
  */
@@ -150,6 +150,6 @@ export function linkedProviderNames(user: User): string {
 
 /** The `users` column holding a provider's subject id. Exported because invite
  *  redemption links the provider as it inserts the row. */
-export function providerKey(provider: OAuthProvider): "googleId" | "githubId" | "discordId" {
-  return provider === "google" ? "googleId" : provider === "github" ? "githubId" : "discordId";
+export function providerKey(provider: OAuthProvider): "googleId" | "githubId" {
+  return provider === "google" ? "googleId" : "githubId";
 }

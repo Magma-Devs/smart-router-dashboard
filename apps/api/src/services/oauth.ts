@@ -71,26 +71,6 @@ async function verifyGithub(accessToken: string): Promise<OAuthProfile> {
   };
 }
 
-/** Discord: /users/@me with the OAuth access token. Avatar hash → CDN URL. */
-async function verifyDiscord(accessToken: string): Promise<OAuthProfile> {
-  const me = await fetchJson<{
-    id: string;
-    username: string;
-    email?: string | null;
-    verified?: boolean;
-    avatar?: string | null;
-  }>("https://discord.com/api/users/@me", {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-
-  return {
-    providerId: me.id,
-    email: me.verified ? (me.email ?? null) : null,
-    name: me.username,
-    avatarUrl: me.avatar ? `https://cdn.discordapp.com/avatars/${me.id}/${me.avatar}.png` : null,
-  };
-}
-
 export async function verifyOAuthToken(
   provider: OAuthProvider,
   token: string,
@@ -100,7 +80,5 @@ export async function verifyOAuthToken(
       return verifyGoogle(token);
     case "github":
       return verifyGithub(token);
-    case "discord":
-      return verifyDiscord(token);
   }
 }

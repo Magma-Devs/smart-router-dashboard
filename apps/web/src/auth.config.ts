@@ -1,7 +1,6 @@
 import { CredentialsSignin, type NextAuthConfig } from "next-auth";
 import Google from "next-auth/providers/google";
 import GitHub from "next-auth/providers/github";
-import Discord from "next-auth/providers/discord";
 import Credentials from "next-auth/providers/credentials";
 import { jwtVerify, SignJWT } from "jose";
 import type { Role } from "@sr/shared";
@@ -152,7 +151,6 @@ class AccountLocked extends CredentialsSignin {
 export const oauthProviderFlags = {
   google: !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET),
   github: !!(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET),
-  discord: !!(process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET),
 } as const;
 
 const providers: NextAuthConfig["providers"] = [];
@@ -171,14 +169,6 @@ if (oauthProviderFlags.github) {
       clientSecret: process.env.GITHUB_CLIENT_SECRET,
       // user:email so the api can pull the verified primary address.
       authorization: { params: { scope: "read:user user:email" } },
-    }),
-  );
-}
-if (oauthProviderFlags.discord) {
-  providers.push(
-    Discord({
-      clientId: process.env.DISCORD_CLIENT_ID,
-      clientSecret: process.env.DISCORD_CLIENT_SECRET,
     }),
   );
 }
@@ -286,7 +276,7 @@ export const authConfig = {
       // a session not backed by a DB row.
       if (!account) return true;
       const provider = account.provider;
-      if (provider !== "google" && provider !== "github" && provider !== "discord") return true;
+      if (provider !== "google" && provider !== "github") return true;
 
       const token = provider === "google" ? account.id_token : account.access_token;
       if (!token) return false;

@@ -43,7 +43,7 @@ export interface ClientContext {
 
 export interface CreateSessionInput {
   userId: string;
-  /** `password` · `google` · `github` · `discord` · `invite`. */
+  /** `password` · `google` · `github` · `invite`. */
   authMethod: string;
   client: ClientContext;
 }

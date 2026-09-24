@@ -39,7 +39,7 @@ function setEnv(vars: Record<string, string | undefined>): void {
 
 async function member(
   email: string,
-  opts: { role?: "admin" | "read_only"; password?: string | null; githubId?: string; discordId?: string } = {},
+  opts: { role?: "admin" | "read_only"; password?: string | null; githubId?: string } = {},
 ): Promise<User> {
   const [row] = await t.db
     .insert(users)
@@ -48,7 +48,6 @@ async function member(
       role: opts.role ?? "read_only",
       passwordHash: opts.password === null ? null : await hashPassword(opts.password ?? OLD_PASSWORD),
       githubId: opts.githubId ?? null,
-      discordId: opts.discordId ?? null,
     })
     .returning();
   return row!;
@@ -231,14 +230,14 @@ describe("POST /api/account/password", () => {
 describe("POST /api/team/members/:id/reset-link", () => {
   it("names the provider a password-less member actually uses", async () => {
     const admin = await member("admin@example.com", { role: "admin" });
-    const dana = await member("dana@example.com", { password: null, discordId: "dc-1" });
+    const dana = await member("dana@example.com", { password: null, githubId: "gh-1" });
     const res = await app!.inject({
       method: "POST",
       url: `/api/team/members/${dana.id}/reset-link`,
       headers: { authorization: `Bearer ${await bearer(admin)}` },
     });
     expect(res.statusCode).toBe(409);
-    expect(res.json().message).toContain("Discord");
+    expect(res.json().message).toContain("GitHub");
     expect(res.json().message).not.toContain("Google");
   });
 

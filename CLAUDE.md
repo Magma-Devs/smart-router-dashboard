@@ -504,7 +504,7 @@ Every `/api/metrics/*` route also accepts **`router?`** — the router scope
 | `GET /auth/bootstrap` | — | `{ needsSetup, mode }` — whether this deployment still needs its first admin (derived from "no active users", never a flag), and which shape it is. Never reveals the setup token. Public |
 | `POST /auth/setup` | — | Creates the first admin on a fresh install: `{ token, email, password, name? }` → `{ user }`. Opens no session — the web signs in straight afterwards on the ordinary credentials path. 403 on a wrong token, 409 once claimed. Public |
 | `POST /auth/invite/preview` | — | `{ token }` → `{ email, role, expiresAt }` — what an invitation link is for. Public; the token travels in the body, never a URL. 410 for every dead reason, including one that never existed |
-| `POST /auth/invite/accept` | — | Redeem: `{ token, password }` → `{ user }`, or `{ token, oauthProvider, oauthToken }` → `{ user, sessionId }` for **any** configured provider (google/github/discord). The account is created with the **invited** address and the provider id is linked as it inserts. Only the OAuth path opens a session — it holds a one-shot token and has no second sign-in to fall back on; the password path lets the credentials sign-in do it. 403 on an address mismatch, 410 on a dead link |
+| `POST /auth/invite/accept` | — | Redeem: `{ token, password }` → `{ user }`, or `{ token, oauthProvider, oauthToken }` → `{ user, sessionId }` for **any** configured provider (google/github). The account is created with the **invited** address and the provider id is linked as it inserts. Only the OAuth path opens a session — it holds a one-shot token and has no second sign-in to fall back on; the password path lets the credentials sign-in do it. 403 on an address mismatch, 410 on a dead link |
 | `GET /api/team/invites` | — | Invitations not yet redeemed, each with `state` (`pending`/`expired`/`revoked`). Admin |
 | `POST /api/team/invites` | — | `{ email, role }` → the invitation plus its `url` (shown once) on every deployment — nothing emails it until MAG-2870. 409 if already a member or already invited. Admin |
 | `POST /api/team/invites/:id/resend` · `DELETE …/:id` | — | New link (invalidating the old) / revoke. 410 once redeemed. Admin |
@@ -596,7 +596,7 @@ Web — build-time vs. **runtime**:
 | `DEPLOYMENT_MODE` | `onprem` | must match the api. Surfaced to the browser by `GET /api/config`, so one image serves both shapes |
 | `INTERNAL_AUTH_SECRET` | (unset) | must match the api; lets the web forward the browser's real IP / User-Agent on sign-in |
 | `INTERNAL_API_BASE_URL` | (falls back to api url) | server-side api URL for Auth.js callbacks (compose sets `http://api:8000`) |
-| `{GOOGLE,GITHUB,DISCORD}_CLIENT_{ID,SECRET}` | (unset) | each provider's button appears only when its id+secret pair is set |
+| `{GOOGLE,GITHUB}_CLIENT_{ID,SECRET}` | (unset) | each provider's button appears only when its id+secret pair is set |
 
 The browser resolves its api base **once per session** from `/api/config`
 (`DASHBOARD_API_URL` → `NEXT_PUBLIC_API_URL` → `http://localhost:8000`),

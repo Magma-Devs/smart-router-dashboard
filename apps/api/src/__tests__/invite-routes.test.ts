@@ -147,7 +147,6 @@ describe("POST /auth/invite/accept — social", () => {
   it.each([
     ["google", "googleId"],
     ["github", "githubId"],
-    ["discord", "discordId"],
   ] as const)("redeems with %s and links the provider id", async (provider, column) => {
     const token = await freshInvite();
     stubOAuth("dana@example.com");
@@ -168,6 +167,16 @@ describe("POST /auth/invite/accept — social", () => {
     const token = await freshInvite();
     const res = await accept({ token, oauthToken: "a-token" });
     expect(res.statusCode).toBe(400);
+  });
+
+  it("refuses Discord, which is not a way in any more", async () => {
+    // Email and password, Google and GitHub are the ways in. Refused at the
+    // schema, before any token is sent anywhere, and the invitation stays live.
+    const token = await freshInvite();
+    stubOAuth("dana@example.com");
+    const res = await accept({ token, oauthProvider: "discord", oauthToken: "a-token" });
+    expect(res.statusCode).toBe(400);
+    expect(await t.db.select().from(users).where(eq(users.email, "dana@example.com"))).toHaveLength(0);
   });
 
   it("creates the account and opens the session, because there is no second sign-in to fall back on", async () => {
@@ -209,6 +218,18 @@ describe("POST /auth/invite/accept — social", () => {
     expect(
       (await accept({ token, oauthProvider: "github", oauthToken: "an-access-token" })).statusCode,
     ).toBe(401);
+  });
+});
+
+describe("POST /auth/oauth/:provider", () => {
+  it("refuses Discord at the schema — Google and GitHub are the social ways in", async () => {
+    stubOAuth("dana@example.com");
+    const res = await app!.inject({
+      method: "POST",
+      url: "/auth/oauth/discord",
+      payload: { token: "a-token" },
+    });
+    expect(res.statusCode).toBe(400);
   });
 });
 
