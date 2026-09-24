@@ -20,6 +20,7 @@ import { StatusAiService } from "../services/status-ai.js";
 import { IncidentsService } from "../services/incidents.js";
 import { FailureAnalysisService } from "../services/failure-analysis.js";
 import { IncidentExplainService } from "../services/incident-explain.js";
+import { ChainAnalysisService } from "../services/chain-analysis.js";
 import { LokiService, groupErrors } from "../services/loki.js";
 import { OPTIONAL_METRICS } from "@sr/shared";
 import { parseWindow } from "./metrics.js";
@@ -400,6 +401,89 @@ export async function aiRoutes(app: FastifyInstance) {
           ...explanation,
           chain: incident.chainName,
           read: { errorGroups: groupErrors(lines, 6).length, configuredProviders: configured.length },
+        };
+      } catch (err) {
+        reply.status(502);
+        return {
+          ok: false,
+          reason: "model_call_failed",
+          awsErrorName: err instanceof BedrockError ? err.awsErrorName : null,
+          detail: err instanceof Error ? err.message : String(err),
+        };
+      }
+    },
+  );
+
+  app.post<{ Querystring: { spec?: string; window?: string; router?: string } }>(
+    "/api/ai/chain-analysis",
+    {
+      config: { rateLimit: { max: config.bedrock.rateLimitMax, timeWindow: "1 minute" } },
+      schema: {
+        tags: ["AI"],
+        summary: "One chain: its providers, and their errors clustered with the explanation",
+        description:
+          "The container is the CHAIN, for the customer who asks what is happening with " +
+          "theirs. Inside it the providers; inside each provider, batches of errors that " +
+          "share a cause, with the explanation on the batch rather than on a code. Uses " +
+          "the real error TEXT from the logs, and the config's addons — an addon only one " +
+          "provider declares is why a failure there has nowhere to fail over to.",
+      },
+    },
+    async (request, reply) => {
+      const spec = request.query.spec;
+      if (!spec) {
+        reply.status(400);
+        return { error: "spec is required" };
+      }
+
+      const g = gate();
+      if (!g.ok) {
+        reply.status(503);
+        return { ...g, ...target() };
+      }
+
+      const window = parseWindow(request.query.window);
+      const scoped = app.scoped(request.query.router);
+      const loki = new LokiService();
+
+      const [report, lines] = await Promise.all([
+        scoped.metricsDetail.status(window),
+        loki.available ? loki.recentErrors(spec, undefined, 300).catch(() => []) : Promise.resolve([]),
+      ]);
+
+      const findings = report.findings.filter((f) => f.spec === spec);
+      const chainName = findings[0]?.chainName ?? spec;
+
+      const configured = (app.routerConfig?.getRouters() ?? [])
+        .filter((r) => r.spec === spec)
+        .flatMap((r) =>
+          r.nodes.map((n) => ({
+            upstream: n.name,
+            role: (n.isBackup ? "backup" : "primary") as "primary" | "backup",
+            addons: [...new Set(n.endpoints.flatMap((e) => e.addons ?? []))],
+          })),
+        );
+
+      try {
+        const svc = new ChainAnalysisService(new BedrockService(config.bedrock.model, app.log), app.log);
+        const analysis = await svc.analyse({
+          spec,
+          chainName,
+          findings,
+          // More groups than the per-pair view: this covers every provider on
+          // the chain, so the clusters have to come from all of them.
+          errorGroups: groupErrors(lines, 12),
+          configured,
+        });
+        return {
+          ok: true,
+          ...analysis,
+          read: {
+            findings: findings.length,
+            errorGroups: groupErrors(lines, 12).length,
+            configuredProviders: configured.length,
+            logsAvailable: loki.available,
+          },
         };
       } catch (err) {
         reply.status(502);
