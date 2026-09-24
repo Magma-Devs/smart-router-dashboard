@@ -3,12 +3,11 @@
 /* Port of SR_Dashboard/magma/pages.jsx AccountPage. Inline styles are verbatim
  * from the prototype.
  *
- * Change password and Active sessions are now real (MAG-2729 slices 4-5) and
- * act on the signed-in account. Basic details carries the REAL build provenance
- * from the api's /version endpoint. The one disabled control is linking a
- * second provider, which doesn't exist yet and says so. Self-deletion is not a
- * control at all: it is a rule, and the "Leaving?" card states it. The theme
- * toggle lives in the Topbar.
+ * Change password and Active sessions act on the signed-in account. Basic
+ * details carries the REAL build provenance from the api's /version endpoint.
+ * Connected accounts and Leaving? are statements, not controls: a provider
+ * links itself by verified address at sign-in, and nobody deletes their own
+ * account. The theme toggle lives in the Topbar.
  *
  * With AUTH_MODE=disabled there are no accounts, so only Basic details renders:
  * the other cards post to routes the api never registers in that mode. */
@@ -16,7 +15,6 @@
 import type { CSSProperties } from "react";
 import Link from "next/link";
 import { useApi } from "@/hooks/use-api";
-import { Notice } from "@/components/gateway/CloudNotice";
 import { ChangePasswordCard } from "@/components/account/ChangePasswordCard";
 import { SessionsCard } from "@/components/account/SessionsCard";
 import { useAuthMode } from "@/components/gateway/auth-mode";
@@ -28,8 +26,6 @@ interface VersionInfo {
   startedAt: string;
   uptimeSec: number;
 }
-
-const NOT_AVAILABLE = "Not available yet";
 
 function fmtUptime(sec: number): string {
   const d = Math.floor(sec / 86400);
@@ -48,10 +44,6 @@ export default function AccountPage() {
   // before, via the shared api client (runtime-config base resolution).
   const { data: version } = useApi<VersionInfo>("/version", 60000);
 
-  const providers = [
-    { id: "google", label: "Google" },
-    { id: "github", label: "GitHub" },
-  ];
   const fl: CSSProperties = { fontSize: 11, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600, marginBottom: 8 };
 
   const build = [
@@ -83,16 +75,16 @@ export default function AccountPage() {
 
       {authEnabled && (
         <>
+        {/* No provider list and no Connect buttons. Which providers this
+            deployment offers is server-side configuration this page cannot
+            see, and linking needs no button: a Google or GitHub sign-in whose
+            verified address matches an account links to it (upsertOAuthUser). */}
         <div className="gw-card" style={{ marginBottom: 14 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Connected accounts</div>
-          <div style={{ marginBottom: 12 }}><Notice lead="Linking another provider isn't available yet." detail="You sign in with the method you joined with." compact /></div>
-          <div style={{ display: "grid", gap: 7 }}>
-            {providers.map(p => (
-              <div key={p.id} className="gw-row" style={{ padding: "9px 11px", borderRadius: 7, background: "var(--bg)", border: "1px solid var(--line)", gap: 10 }}>
-                <div style={{ fontSize: 13, fontWeight: 500, flex: 1 }}>{p.label}</div>
-                <button className="gw-btn" style={{ fontSize: 11, padding: "5px 9px" }} disabled title={NOT_AVAILABLE}>Connect</button>
-              </div>
-            ))}
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Connected accounts</div>
+          <div style={{ fontSize: 12.5, color: "var(--text-2)", lineHeight: 1.65 }}>
+            Where this deployment offers Google or GitHub sign-in, signing in with an account whose
+            verified address matches this one links it here the first time you use it — on GitHub,
+            that has to be your primary address. Nothing on this page disconnects one.
           </div>
         </div>
 
