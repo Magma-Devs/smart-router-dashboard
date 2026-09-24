@@ -129,7 +129,7 @@ export const AUDIT_EVENTS = {
   "session.revoked": {
     group: "access",
     description:
-      "A session was ended by something other than its holder signing out — revoked from the sessions list, or killed by a password change, a role change or a removal.",
+      "A session was ended by something other than its holder signing out — revoked from the sessions list, or ended by a password change, a password reset or a removal.",
     carriesChanges: false,
     carriesAccessContext: true,
     origin: "MAG-2729",
@@ -216,7 +216,7 @@ export const AUDIT_EVENTS = {
   "invite.redeemed": {
     group: "people",
     description:
-      "An invitation was redeemed and the account created. Only the invited address can redeem it.",
+      "An invitation was redeemed and the account created, with the address it was issued to.",
     carriesChanges: false,
     carriesAccessContext: true,
     origin: "MAG-2729",

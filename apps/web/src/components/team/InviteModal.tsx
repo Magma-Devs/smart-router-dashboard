@@ -141,7 +141,8 @@ export function InviteModal({
               onChange={(e) => setEmail(e.target.value)}
             />
             <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 6 }}>
-              The invitation can only be accepted by this address.
+              The account is created with this address. Whoever holds the link can accept it,
+              so give it to this person only.
             </div>
           </div>
           <div>
