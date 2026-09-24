@@ -41,6 +41,13 @@ export interface FormulatedIssue {
   points: string[];
   /** One sentence: can they work. The line that decides an escalation. */
   bottomLine: string;
+  /**
+   * Still happening as of the last read, from the findings behind it.
+   *
+   * The difference between "act now" and "read this later", and the page had
+   * no way to say it — every card looked equally live.
+   */
+  ongoing: boolean;
   /** Every chain this issue covers — one for most, several when merged. */
   specs: string[];
   /** The findings this rests on, validated against the report. */
@@ -353,6 +360,9 @@ export class FormulatedIssueService {
       spec: inputs.spec,
       chain: inputs.chain,
       specs: [inputs.spec, ...(inputs.alsoOnChains ?? []).map((c) => c.spec)],
+      ongoing: [...inputs.findings, ...(inputs.alsoOnChains ?? []).flatMap((c) => c.findings)].some(
+        (f) => f.ongoing === true,
+      ),
       title: str("title"),
       // Capped here as well as in the prompt: a model that ignores "three to
       // five" must not turn the card back into the essay this replaced.

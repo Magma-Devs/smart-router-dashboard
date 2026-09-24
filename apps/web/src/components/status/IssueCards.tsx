@@ -37,6 +37,8 @@ interface Issue {
   points: string[];
   bottomLine: string;
   findingIds: string[];
+  ongoing?: boolean;
+  specs?: string[];
   /** Newest activity across the findings behind it. Drives the by-time order. */
   lastSeenUnix?: number | null;
 }
@@ -90,10 +92,32 @@ function Card({ issue, color }: { issue: Issue; color: string }) {
       <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
         {/* The chain's own mark, the same one every other surface uses. */}
         <ChainBadge spec={issue.spec} size={22} />
-        <span style={{ fontSize: 13, fontWeight: 700 }}>{issue.chain}</span>
-        <span className="gw-mono" style={{ fontSize: 9.5, color: "var(--text-4)" }}>
-          {issue.spec}
+        <span style={{ fontSize: 13, fontWeight: 700 }}>
+          {/* A merged issue names every chain it covers, or the card claims to
+              be about one chain while its points name four. */}
+          {(issue.specs?.length ?? 1) > 1 ? `${issue.specs!.length} chains` : issue.chain}
         </span>
+        <span className="gw-mono" style={{ fontSize: 9.5, color: "var(--text-4)" }}>
+          {(issue.specs ?? [issue.spec]).join(" · ")}
+        </span>
+        {issue.ongoing && (
+          // Still happening, not a burst that has passed. The one thing that
+          // changes whether you act now or read it later.
+          <span
+            style={{
+              fontSize: 9,
+              fontWeight: 700,
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+              padding: "1px 6px",
+              borderRadius: 3,
+              color,
+              border: `1px solid ${color}`,
+            }}
+          >
+            Ongoing
+          </span>
+        )}
         <span style={{ flex: 1 }} />
         {when && <span style={{ fontSize: 10.5, color: "var(--text-4)" }}>{when}</span>}
       </div>
@@ -183,11 +207,24 @@ export function IssueCards({ chainsAffected }: { chainsAffected: string[] }) {
           "loading" and "stuck" — and it is a wait nobody asked for, so it
           should at least say what it is doing. */}
       {warming && (
-        <div style={{ fontSize: 12, color: "var(--text-3)" }}>
-          Reading errors and config for {chainsAffected.length}{" "}
-          {chainsAffected.length === 1 ? "chain" : "chains"}
-          {chainsAffected.length ? ` — ${chainsAffected.slice(0, 4).join(", ")}` : ""}
-          {chainsAffected.length > 4 ? "…" : ""}
+        // Skeletons, not a sentence. Changing the window recomputes and that
+        // takes a minute; an unchanged page with one grey line on it reads as
+        // broken, while a card-shaped placeholder reads as "coming".
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ fontSize: 12, color: "var(--text-3)", display: "flex", alignItems: "center", gap: 7 }}>
+            <span className="gw-live-dot gw-live-dot--busy" />
+            Reading errors and config for {chainsAffected.length}{" "}
+            {chainsAffected.length === 1 ? "chain" : "chains"}
+            {chainsAffected.length ? ` — ${chainsAffected.slice(0, 4).join(", ")}` : ""}
+            {chainsAffected.length > 4 ? "…" : ""}
+          </div>
+          {Array.from({ length: Math.min(Math.max(chainsAffected.length, 1), 3) }).map((_, i) => (
+            <div key={i} className="gw-card" style={{ padding: "12px 14px", opacity: 0.45 }}>
+              <div style={{ height: 11, width: "34%", background: "var(--text-4)", borderRadius: 3, opacity: 0.25 }} />
+              <div style={{ height: 9, width: "72%", background: "var(--text-4)", borderRadius: 3, opacity: 0.18, marginTop: 9 }} />
+              <div style={{ height: 9, width: "58%", background: "var(--text-4)", borderRadius: 3, opacity: 0.18, marginTop: 6 }} />
+            </div>
+          ))}
         </div>
       )}
 

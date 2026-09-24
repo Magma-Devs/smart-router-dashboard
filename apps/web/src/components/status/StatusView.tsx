@@ -95,7 +95,7 @@ function Freshness({ lastOk, staleSec, refreshing, down, paused, promDown }: {
 
 
 export function StatusView() {
-  const { timeWindow, setTimeWindow } = useFilters();
+  const { timeWindow, setTimeWindow, scopeQ } = useFilters();
   const { data, error, isValidating, mutate } = useApi<StatusReport>(`/api/metrics/status?window=${timeWindow}`);
   // An SRE alt-tabbing back mid-incident needs a fresh read, not the last one
   // from before they left. useApi turns revalidateOnFocus off globally; this
@@ -132,9 +132,14 @@ export function StatusView() {
   // windowLabel / critical / byTier went with the metric rows — the written
   // issue carries its own window and its own severity now.
   const findings = data?.findings ?? [];
-  // One issue per affected chain — what IssueCards renders. Counted here from
-  // the same findings so the badge cannot drift from the list under it.
-  const issueCount = new Set(findings.map((f) => f.spec)).size;
+  // The badge counts what the cards render, by reading the same endpoint.
+  // Deriving it from findings drifted twice — once when cards became
+  // per-chain, again when caller-side chains merged into one — because a
+  // second derivation of the same number is a second thing to keep in sync.
+  const { data: issuesData } = useApi<{ ok: boolean; issues?: unknown[] }>(
+    `/api/ai/issues?window=${timeWindow}${scopeQ}`,
+  );
+  const issueCount = issuesData?.ok ? (issuesData.issues?.length ?? null) : null;
 
   const tabs: [Tab, string, number | null][] = [
     // The count is the ISSUES on screen, not the raw findings behind them.
