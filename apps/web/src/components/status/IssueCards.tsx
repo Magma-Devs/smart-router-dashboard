@@ -26,6 +26,7 @@
  */
 import { useState } from "react";
 import { useApi } from "@/hooks/use-api";
+import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { useFilters } from "@/components/gateway/FiltersProvider";
 
 interface Issue {
@@ -75,29 +76,60 @@ function refusalText(r: Refusal): string {
 
 function Card({ issue, color }: { issue: Issue; color: string }) {
   const when = ago(issue.lastSeenUnix);
+  const [open, setOpen] = useState(false);
+  // Three points is the gist; the rest is there for whoever wants it. Keeps a
+  // five-point issue from reading as the wall of text this replaced.
+  const shown = open ? issue.points : issue.points.slice(0, 3);
+  const hidden = issue.points.length - shown.length;
+
   return (
-    <div style={{ borderLeft: `3px solid ${color}`, padding: "10px 0 12px 12px", marginBottom: 4 }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+    <div
+      className="gw-card"
+      style={{ borderLeft: `3px solid ${color}`, marginBottom: 8, padding: "12px 14px" }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+        {/* The chain's own mark, the same one every other surface uses. */}
+        <ChainBadge spec={issue.spec} size={22} />
         <span style={{ fontSize: 13, fontWeight: 700 }}>{issue.chain}</span>
-        <span style={{ fontSize: 9.5, color: "var(--text-4)", fontFamily: "var(--font-mono)" }}>{issue.spec}</span>
+        <span className="gw-mono" style={{ fontSize: 9.5, color: "var(--text-4)" }}>
+          {issue.spec}
+        </span>
         <span style={{ flex: 1 }} />
         {when && <span style={{ fontSize: 10.5, color: "var(--text-4)" }}>{when}</span>}
       </div>
 
-      <div style={{ fontSize: 12.5, fontWeight: 600, margin: "3px 0 7px" }}>{issue.title}</div>
+      <div style={{ fontSize: 13, fontWeight: 600, margin: "7px 0 8px" }}>{issue.title}</div>
 
-      {/* One fact per line, numbered. The shape this team already writes in. */}
       <ol style={{ margin: 0, paddingLeft: 18, display: "flex", flexDirection: "column", gap: 3 }}>
-        {issue.points.map((p, i) => (
+        {shown.map((p, i) => (
           <li key={i} style={{ fontSize: 12.5, lineHeight: 1.5, color: "var(--text-2)" }}>
             {p}
           </li>
         ))}
       </ol>
 
+      {(hidden > 0 || open) && (
+        <button
+          className="gw-btn gw-btn--ghost"
+          onClick={() => setOpen((o) => !o)}
+          style={{ fontSize: 11, marginTop: 6, padding: "2px 8px" }}
+        >
+          {open ? "Show less" : `View more · ${hidden} more`}
+        </button>
+      )}
+
       {issue.bottomLine && (
-        <div style={{ fontSize: 12.5, lineHeight: 1.5, marginTop: 7, color: "var(--text)" }}>
-          <span style={{ fontWeight: 700 }}>Bottom line: </span>
+        <div
+          style={{
+            fontSize: 12.5,
+            lineHeight: 1.5,
+            marginTop: 9,
+            paddingTop: 8,
+            borderTop: "1px solid var(--border, #222)",
+            color: "var(--text)",
+          }}
+        >
+          <span style={{ fontWeight: 700, color }}>Bottom line: </span>
           {issue.bottomLine}
         </div>
       )}
@@ -172,17 +204,8 @@ export function IssueCards({ chainsAffected }: { chainsAffected: string[] }) {
           // An empty section is wallpaper — the page's own rule.
           if (rows.length === 0) return null;
           return (
-            <section key={key} className="gw-card">
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  marginBottom: 8,
-                  paddingBottom: 6,
-                  borderBottom: "1px solid var(--border, #222)",
-                }}
-              >
+            <div key={key}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 7 }}>
                 <span style={{ width: 7, height: 7, borderRadius: 99, background: color }} />
                 <span style={{ fontSize: 12, fontWeight: 700 }}>{label}</span>
                 <span style={{ fontSize: 11, color: "var(--text-4)" }}>{rows.length}</span>
@@ -190,7 +213,7 @@ export function IssueCards({ chainsAffected }: { chainsAffected: string[] }) {
               {rows.map((i) => (
                 <Card key={i.spec} issue={i} color={color} />
               ))}
-            </section>
+            </div>
           );
         })}
     </div>

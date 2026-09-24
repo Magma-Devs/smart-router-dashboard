@@ -112,11 +112,35 @@ useful point you can write. Say it in one line:
 
 ## The bottom line
 
-One sentence: can they work. Concrete.
+One sentence: can they work, AND why it is as bad as its severity says. A
+bottom line that only restates the symptom has not earned its place — the
+severity is already on screen, so say what makes it that severity.
 
-  - "Read calls are fine; only debug traces are failing."
-  - "About 3 in 10 requests on this chain are failing outright."
-  - "Nothing is failing — the router is absorbing it, but working harder."
+  - "About 3 in 10 requests fail outright: the router does try the backups,
+     but both are down, so there is nowhere for a retry to go."
+  - "Read calls are fine; only debug traces fail, and only because lava is the
+     one provider that serves them."
+  - "Nothing is failing — the router is absorbing it, but it is retrying more
+     than usual to do so."
+
+The pattern in each: the impact, then the ONE fact that explains why it is not
+merely annoying. Usually that fact is about failover.
+
+## Never leave a phrase the reader has to decode
+
+Our own shorthand is not plain language. Write what it MEANS:
+
+  - not "mostly no reply"     -> "the node accepted the request and then never
+                                  answered before the timeout"
+  - not "rate-limited"        -> "the provider refused the calls because the
+                                  account is over its request limit"
+  - not "stale answers"       -> "answers from a block behind the chain's head,
+                                  which the router threw away"
+  - not "malformed responses" -> "replies with neither a result nor an error in
+                                  them, which the router cannot use"
+
+If a point would make someone ask "what does that actually mean?", it is not
+finished.
 
 ## Rules
 
