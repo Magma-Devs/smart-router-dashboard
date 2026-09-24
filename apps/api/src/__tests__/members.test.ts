@@ -206,6 +206,31 @@ describe("members", () => {
       expect(audit.events).toEqual([{ action: "member.removed", inTx: true }]);
     });
 
+    it("records each session and invitation it ended, in the same transaction", async () => {
+      // The ticket's session.revoked covers a session killed "by a removal".
+      // A pending invitation to a member's address only survives a race
+      // between two admins, so it is planted directly here.
+      const client = { ip: null, userAgent: null };
+      await createSession(t.db, { userId: member.id, authMethod: "password", client });
+      await createSession(t.db, { userId: member.id, authMethod: "password", client });
+      await t.db.insert(invitations).values({
+        email: "dana@example.com",
+        role: "read_only",
+        tokenHash: "f".repeat(64),
+        createdBy: admin.id,
+        expiresAt: new Date(Date.now() + 3_600_000),
+      });
+
+      await removeMember(t.db, { id: member.id, actorId: admin.id }, audit);
+
+      expect(audit.events).toEqual([
+        { action: "member.removed", inTx: true },
+        { action: "session.revoked", inTx: true },
+        { action: "session.revoked", inTx: true },
+        { action: "invite.revoked", inTx: true },
+      ]);
+    });
+
     it("does not happen when the audit log can't record it", async () => {
       // AuditWriter propagates a failure inside a transaction, so the removal
       // unwinds with it rather than landing unrecorded.

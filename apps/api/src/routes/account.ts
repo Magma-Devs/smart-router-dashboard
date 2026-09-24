@@ -138,12 +138,24 @@ export async function accountRoutes(app: FastifyInstance) {
           .send({ statusCode: 400, error: "Bad Request", message: problem.message });
       }
 
-      await changeOwnPassword(db, me.id, body.next, me.sessionId);
+      const ended = await changeOwnPassword(db, me.id, body.next, me.sessionId);
       await audit.write({
         action: "password.changed",
         actor: { id: me.id, kind: "user" },
         access: accessFrom(request, me.sessionId),
       });
+      // The other devices this change signed out, one row each, as a reset's
+      // and a removal's are. The session it was changed from stays, and so
+      // gets no row.
+      for (const id of ended) {
+        await audit.write({
+          action: "session.revoked",
+          actor: { id: me.id, kind: "user" },
+          target: { type: "session", id, name: me.user.email },
+          access: accessFrom(request, me.sessionId),
+          note: "password changed",
+        });
+      }
 
       return { ok: true };
     },
@@ -227,7 +239,7 @@ export async function accountRoutes(app: FastifyInstance) {
 
       // Everything, this device included — and the cutoff too, so a token we
       // hold no row for dies with the rest.
-      const count = await signOutEverywhere(db, me.id, { reason: "sign_out_all", by: me.id });
+      const count = (await signOutEverywhere(db, me.id, { reason: "sign_out_all", by: me.id })).length;
       await audit.write({
         action: "signout",
         actor: { id: me.id, kind: "user" },

@@ -3,12 +3,13 @@ import type { FastifyInstance } from "fastify";
 import { SignJWT } from "jose";
 import { sql } from "drizzle-orm";
 import { createTestDb, type TestDb } from "@sr/db/testing";
-import { users } from "@sr/db";
+import { users, type User } from "@sr/db";
 import { buildApp } from "../app.js";
 import { SESSION_JWT_AUDIENCE, SESSION_JWT_ISSUER } from "../plugins/auth.js";
 import { createSession } from "../services/sessions.js";
 import { hashPassword } from "../services/password.js";
 import { resetSetupTokenForTests } from "../services/setup.js";
+import { createPasswordReset } from "../services/password-reset.js";
 
 /**
  * Events reaching the real writer, end to end.
@@ -297,5 +298,91 @@ describe("events reach the log", () => {
       sql`select ip::text, client from audit_events where action = 'signin.failed'`,
     );
     expect(rows.rows).toEqual([{ ip: null, client: "Chrome / macOS" }]);
+  });
+});
+
+/** A member with a password and `count` open sessions, and a Bearer for the first. */
+async function memberWithSessions(count: number): Promise<{ user: User; token: string; sessionIds: string[] }> {
+  const [user] = await t.db
+    .insert(users)
+    .values({ email: "dana@example.com", role: "approver", passwordHash: await hashPassword(PASSWORD) })
+    .returning();
+  const sessionIds: string[] = [];
+  for (let i = 0; i < count; i++) {
+    const session = await createSession(t.db, {
+      userId: user!.id,
+      authMethod: "password",
+      client: { ip: null, userAgent: null },
+    });
+    sessionIds.push(session.id);
+  }
+  const token = await new SignJWT({ sub: user!.id, email: user!.email, role: "approver", sid: sessionIds[0] })
+    .setProtectedHeader({ alg: "HS256", typ: "JWT" })
+    .setIssuer(SESSION_JWT_ISSUER)
+    .setAudience(SESSION_JWT_AUDIENCE)
+    .setIssuedAt()
+    .setExpirationTime("1h")
+    .sign(new TextEncoder().encode(SECRET));
+  return { user: user!, token, sessionIds };
+}
+
+/** `session.revoked` rows, as (session id, note). */
+async function revokedRows(): Promise<Array<{ target_id: string; note: string | null }>> {
+  const rows = await t.db.execute<{ target_id: string; note: string | null }>(
+    sql`select target_id, note from audit_events where action = 'session.revoked' order by seq`,
+  );
+  return rows.rows;
+}
+
+describe("what ends a session is recorded, one row per session", () => {
+  // The ticket's session.revoked: "a session is killed from the account screen,
+  // or by a removal or password reset — who did it, whose session, why".
+
+  it("a removal", async () => {
+    const { token } = await adminToken();
+    const dana = await memberWithSessions(2);
+
+    const res = await app!.inject({
+      method: "DELETE",
+      url: `/api/team/members/${dana.user.id}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(200);
+
+    expect(await revokedRows()).toEqual(
+      dana.sessionIds.map((id) => ({ target_id: id, note: "member removed" })),
+    );
+  });
+
+  it("a password reset", async () => {
+    const dana = await memberWithSessions(2);
+    const link = await createPasswordReset(t.db, { userId: dana.user.id, mode: "onprem" });
+
+    const res = await app!.inject({
+      method: "POST",
+      url: "/auth/password/reset",
+      payload: { token: link.rawToken, password: "an-entirely-new-passphrase" },
+    });
+    expect(res.statusCode).toBe(200);
+
+    expect(await revokedRows()).toEqual(
+      dana.sessionIds.map((id) => ({ target_id: id, note: "password reset" })),
+    );
+  });
+
+  it("a password change — the other devices, not the one it was changed from", async () => {
+    const dana = await memberWithSessions(3);
+
+    const res = await app!.inject({
+      method: "POST",
+      url: "/api/account/password",
+      headers: { authorization: `Bearer ${dana.token}` },
+      payload: { current: PASSWORD, next: "an-entirely-new-passphrase" },
+    });
+    expect(res.statusCode).toBe(200);
+
+    expect(await revokedRows()).toEqual(
+      dana.sessionIds.slice(1).map((id) => ({ target_id: id, note: "password changed" })),
+    );
   });
 });

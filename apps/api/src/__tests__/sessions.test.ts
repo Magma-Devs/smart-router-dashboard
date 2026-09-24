@@ -185,7 +185,7 @@ describe("sessions", () => {
         reason: "password_change",
         except: keep.id,
       });
-      expect(closed).toBe(2);
+      expect(closed).toHaveLength(2);
 
       const live = await listActiveSessions(t.db, user.id);
       expect(live.map((s) => s.id)).toEqual([keep.id]);
@@ -195,7 +195,7 @@ describe("sessions", () => {
       await open();
       await open();
       const closed = await signOutEverywhere(t.db, user.id, { reason: "sign_out_all" });
-      expect(closed).toBe(2);
+      expect(closed).toHaveLength(2);
 
       const [row] = await t.db.select().from(users).where(eq(users.id, user.id));
       expect(row?.signedOutAllAt).toBeInstanceOf(Date);

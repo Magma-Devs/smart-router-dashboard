@@ -169,8 +169,10 @@ export async function changeMemberRole(
  *  - any pending invitation to their address revoked — two admins inviting
  *    the same address at once can both pass the one-pending check, and the
  *    invitation they did not use would otherwise recreate them.
- *  - the audit row — written with the transaction, so a removal the log can't
- *    record doesn't happen.
+ *  - the audit rows — `member.removed`, then a `session.revoked` for each
+ *    session it ended and an `invite.revoked` for each invitation it cancelled,
+ *    all written with the transaction, so a removal the log can't record
+ *    doesn't happen.
  *
  * Cancelling their in-flight change requests is MAG-2731's table and therefore
  * its job; the hook is `onMemberDeactivated`, called inside the transaction.
@@ -201,16 +203,17 @@ export async function removeMember(
       .where(eq(users.id, input.id))
       .returning();
 
-    await tx
+    const endedSessions = await tx
       .update(sessions)
       .set({
         revokedAt: new Date(),
         revokedReason: "member_removed",
         revokedBy: input.actorId,
       })
-      .where(and(eq(sessions.userId, input.id), isNull(sessions.revokedAt)));
+      .where(and(eq(sessions.userId, input.id), isNull(sessions.revokedAt)))
+      .returning({ id: sessions.id });
 
-    await tx
+    const cancelledInvites = await tx
       .update(invitations)
       .set({ revokedAt: new Date(), revokedBy: input.actorId })
       .where(
@@ -219,7 +222,8 @@ export async function removeMember(
           isNull(invitations.redeemedAt),
           isNull(invitations.revokedAt),
         ),
-      );
+      )
+      .returning({ id: invitations.id, email: invitations.email });
 
     const user = updated[0]!;
     // No `changes`: MAG-2770's catalog says this verb carries no diff, and it
@@ -233,6 +237,31 @@ export async function removeMember(
       },
       tx,
     );
+    // The ticket's `session.revoked` covers a session killed "by a removal",
+    // and its `invite.revoked` an invitation an admin cancels. One row each, so
+    // a reader following a session id from its sign-in finds how it ended.
+    for (const session of endedSessions) {
+      await audit.write(
+        {
+          action: "session.revoked",
+          actor: { id: input.actorId, kind: "user" },
+          target: { type: "session", id: session.id, name: user.email },
+          note: "member removed",
+        },
+        tx,
+      );
+    }
+    for (const invite of cancelledInvites) {
+      await audit.write(
+        {
+          action: "invite.revoked",
+          actor: { id: input.actorId, kind: "user" },
+          target: { type: "invite", id: invite.id, name: invite.email },
+          note: "member removed",
+        },
+        tx,
+      );
+    }
     await onMemberDeactivated(tx, user.id, "removed");
 
     return { ok: true, user };
