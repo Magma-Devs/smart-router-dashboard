@@ -19,7 +19,7 @@
  * 1-5% degraded, structural is config — and a model re-deriving that would
  * quietly produce a second scale that disagrees with the rows beneath it.
  */
-import type { StatusFinding } from "@sr/shared";
+import type { StatusFinding, StatusInsight } from "@sr/shared";
 import type { ErrorGroup } from "./loki.js";
 import { BedrockService, parseModelJson, type BedrockLogger } from "./bedrock.js";
 
@@ -41,6 +41,8 @@ export interface FormulatedIssue {
   points: string[];
   /** One sentence: can they work. The line that decides an escalation. */
   bottomLine: string;
+  /** Every chain this issue covers — one for most, several when merged. */
+  specs: string[];
   /** The findings this rests on, validated against the report. */
   findingIds: string[];
   /** Newest activity across those findings — what the by-time order reads. */
@@ -73,8 +75,13 @@ export interface FormulatedIssue {
 const REACHED_THE_CALLER: ReadonlyArray<StatusFinding["kind"]> = [
   "dead", // nothing served it — the request died
   "answered-error", // an error in the body they got back
-  "answered-late", // answered past the deadline they could use
 ];
+
+// `answered-late` is deliberately NOT here either. It is a latency percentile
+// crossing a line, not a proven failure — the answer arrived. Measured on GK8
+// it produced "Slow answers on Tezos, but no confirmed failures" under a red
+// badge, which is the contradiction this whole ladder exists to remove. Slow
+// is "works, but worse": degraded.
 
 // `answered-stale` is deliberately NOT here. Its own headline reads "3 stale
 // answers caught" — the consistency check REJECTED those answers, so nothing
@@ -126,14 +133,42 @@ export function severityOf(findings: StatusFinding[]): IssueSeverity {
 export interface FormulatedInputs {
   spec: string;
   chain: string;
+  /**
+   * Other chains carrying the SAME caller-side problem, folded in.
+   *
+   * Nonce and funds rejections are the client's own doing, so they recur
+   * identically wherever that client sends transactions — GK8 had 1,066 on
+   * Ethereum, 254 on Polygon and 79 on Base, rendered as three cards saying
+   * one thing. One problem, one fix, one card.
+   */
+  alsoOnChains?: { spec: string; chain: string; findings: StatusFinding[] }[];
   findings: StatusFinding[];
   errorGroups: ErrorGroup[];
   configured: { upstream: string; role: "primary" | "backup" | null; addons: string[] }[];
+  /**
+   * Week-over-week drift on this chain. Not a finding — nothing has crossed a
+   * line — but "this provider is 5x slower than it was last week" is the
+   * sentence that turns a degraded issue into one worth acting on, and it had
+   * nowhere to appear once the Insights tab went.
+   */
+  insights: StatusInsight[];
   /** Requests the router recovered by retrying on this chain, when known. */
   recovered: number | null;
   /** Final customer failures on this chain, when known. */
   failures: number | null;
 }
+
+const CROSS_CHAIN_NOTE = `
+
+## This one spans several chains
+
+You are given more than one chain because the SAME problem is happening on all
+of them, and it is the caller's own requests that are being rejected — not any
+provider. Write ONE issue about that, not one per chain.
+
+Name the chains and give the total. "Your signing code is reusing nonces: 1,399
+transactions rejected across Ethereum, Base and Polygon" is the issue. Three
+cards each saying the same thing about one chain is the thing this replaces.`;
 
 const SYSTEM_PROMPT = `You write the one-screen issue a customer reads about their own chain.
 
@@ -171,6 +206,10 @@ short words.
   4. Why the failover did or did not save it. This is the one people act on.
 
 Not every issue needs all four. Stop when the chain is told.
+
+Drift against last week, when given, is worth one point — a provider several
+times slower than its own past is a different story from one that is simply
+slow. Use the numbers as given.
 
 The configured providers and their addons are given to you. An addon only one
 provider declares means a failure there CANNOT fail over, and that is the most
@@ -249,6 +288,14 @@ export function digestForIssue(i: FormulatedInputs): string {
   return JSON.stringify(
     {
       chain: { spec: i.spec, name: i.chain },
+      ...(i.alsoOnChains?.length
+        ? {
+            sameProblemOnTheseChainsToo: i.alsoOnChains.map((c) => ({
+              chain: c.chain,
+              whatWeMeasured: c.findings.map((f) => `${f.headline} (${f.metric.value} ${f.metric.label})`),
+            })),
+          }
+        : {}),
       // Roles and addons: an addon only one provider declares is why a failure
       // there has nowhere to go, which is the answer to question three.
       providersConfigured: i.configured,
@@ -257,6 +304,12 @@ export function digestForIssue(i: FormulatedInputs): string {
         headline: f.headline,
         metric: `${f.metric.value} ${f.metric.label}`,
         ongoing: f.ongoing,
+      })),
+      driftAgainstLastWeek: i.insights.map((x) => ({
+        upstream: x.upstream,
+        headline: x.headline,
+        now: x.value,
+        weekEarlier: x.baseline,
       })),
       routerRecoveredByRetry: i.recovered,
       finalCustomerFailures: i.failures,
@@ -284,7 +337,9 @@ export class FormulatedIssueService {
 
   async formulate(inputs: FormulatedInputs): Promise<FormulatedIssue> {
     const answer = await this.bedrock.complete({
-      system: SYSTEM_PROMPT,
+      // The cross-chain instruction is appended only when it applies, so a
+      // single-chain issue is never told about a shape it cannot produce.
+      system: inputs.alsoOnChains?.length ? SYSTEM_PROMPT + CROSS_CHAIN_NOTE : SYSTEM_PROMPT,
       messages: [{ role: "user", content: digestForIssue(inputs) }],
       maxTokens: 2000,
     });
@@ -297,6 +352,7 @@ export class FormulatedIssueService {
       severity: severityOf(inputs.findings),
       spec: inputs.spec,
       chain: inputs.chain,
+      specs: [inputs.spec, ...(inputs.alsoOnChains ?? []).map((c) => c.spec)],
       title: str("title"),
       // Capped here as well as in the prompt: a model that ignores "three to
       // five" must not turn the card back into the essay this replaced.

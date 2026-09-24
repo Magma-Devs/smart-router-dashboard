@@ -692,6 +692,7 @@ export async function aiRoutes(app: FastifyInstance) {
               findings,
               errorGroups: groupErrors(lines, 6),
               configured,
+              insights: report.insights.filter((x) => x.spec === spec),
               recovered: null,
               failures: null,
             });

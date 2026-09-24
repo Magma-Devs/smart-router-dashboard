@@ -26,7 +26,7 @@
  * ask and served warm afterwards, the same serve-last shape `metrics-cache`
  * already uses for every metrics read.
  */
-import { DEFAULT_WINDOW, type MetricWindow, type StatusFinding } from "@sr/shared";
+import { DEFAULT_WINDOW, type MetricWindow, type StatusFinding, type StatusInsight } from "@sr/shared";
 import type { PrometheusClient } from "./prometheus-client.js";
 import type { ConfigurationService } from "./configuration.js";
 import type { MetricsDetailService } from "./metrics-detail.js";
@@ -47,9 +47,14 @@ export interface IssuesSnapshot {
  * What makes an issue worth rewriting. Headlines carry the numbers, so a rate
  * moving from 4% to 38% changes this and a quiet chain does not.
  */
-export function fingerprint(findings: StatusFinding[]): string {
-  return findings
-    .map((f) => `${f.id}|${f.tier}|${f.headline}`)
+export function fingerprint(findings: StatusFinding[], insights: StatusInsight[] = []): string {
+  return [
+    ...findings.map((f) => `${f.id}|${f.tier}|${f.headline}`),
+    // Drift is part of the story, so it is part of what makes the story
+    // stale — otherwise a chain quietly getting slower keeps last week's
+    // sentence forever.
+    ...insights.map((x) => `i:${x.kind}:${x.spec}:${x.upstream ?? ""}|${x.value}`),
+  ]
     .sort()
     .join("~");
 }
@@ -96,16 +101,42 @@ export class IssuesFeedService {
       }
 
       const rank = { critical: 0, degraded: 1, config: 2 } as const;
-      const chains = [...bySpec.entries()]
-        .sort((a, b) => rank[severityOf(a[1])] - rank[severityOf(b[1])] || b[1].length - a[1].length)
-        .slice(0, limit);
+      const ranked = [...bySpec.entries()].sort(
+        (a, b) => rank[severityOf(a[1])] - rank[severityOf(b[1])] || b[1].length - a[1].length,
+      );
+
+      // Caller-side chains fold into ONE issue. Nonce and funds rejections are
+      // the client's own doing, so they recur identically wherever that client
+      // sends transactions — three cards saying "your nonces are stale" about
+      // three chains is one problem rendered three times.
+      const callerSide = ranked.filter(([, f]) => severityOf(f) === "config");
+      const rest = ranked.filter(([, f]) => severityOf(f) !== "config");
+      const chains: [string, StatusFinding[], { spec: string; chain: string; findings: StatusFinding[] }[]][] = [
+        ...rest.slice(0, limit).map(([spec, f]) => [spec, f, []] as [string, StatusFinding[], never[]]),
+      ];
+      if (callerSide.length > 0) {
+        const [leadSpec, leadFindings] = callerSide[0]!;
+        chains.push([
+          leadSpec,
+          leadFindings,
+          callerSide.slice(1).map(([spec, findings]) => ({
+            spec,
+            chain: findings[0]?.chainName ?? spec,
+            findings,
+          })),
+        ]);
+      }
 
       const routers = this.configSvc?.getRouters() ?? [];
       const svc = new FormulatedIssueService(new BedrockService(config.bedrock.model, this.logger), this.logger);
 
       const issues: FormulatedIssue[] = [];
-      for (const [spec, findings] of chains) {
-        const print = fingerprint(findings);
+      for (const [spec, findings, alsoOnChains] of chains) {
+        const chainInsights = report.insights.filter((x) => x.spec === spec);
+        const print = fingerprint(
+          [...findings, ...alsoOnChains.flatMap((c) => c.findings)],
+          chainInsights,
+        );
         const hit = this.memo.get(spec);
         if (hit && hit.print === print) {
           // Same findings, same sentence. Rewriting it would only change how
@@ -134,6 +165,8 @@ export class IssuesFeedService {
             findings,
             errorGroups: groupErrors(lines, 6),
             configured,
+            insights: chainInsights,
+            alsoOnChains,
             recovered: null,
             failures: null,
           });
