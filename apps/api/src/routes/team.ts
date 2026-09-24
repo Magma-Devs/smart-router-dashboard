@@ -19,7 +19,7 @@ import {
 } from "../services/members.js";
 import { findUserById, linkedProviderNames } from "../services/users.js";
 import { deploymentMode, publicWebOrigin } from "../config.js";
-import { EMAIL_FIELD } from "./auth.js";
+import { EMAIL_FIELD, resolveClientContext } from "./auth.js";
 
 /**
  * An id path parameter, in the 8-4-4-4-12 form only. `format: "uuid"` also
@@ -327,12 +327,15 @@ export async function teamPasswordRoutes(app: FastifyInstance) {
 
       // Access context is required here by the catalog, and rightly: an admin
       // minting a reset link for somebody else is the first half of an account
-      // takeover, so "from where" is part of the record.
+      // takeover, so "from where" is part of the record. From where THIS
+      // request came, not where the admin signed in: the two differ exactly
+      // when a session is used from somewhere else, which is the case to catch.
+      const { access } = resolveClientContext(request, undefined, undefined);
       await audit.write({
         action: "password.reset_link_generated",
         actor: { id: me.id, kind: "user" },
         target: { type: "member", id: target.id, name: target.email },
-        access: { ip: me.session.ip, client: me.session.client, sessionId: me.sessionId },
+        access: { ...access, sessionId: me.sessionId },
       });
 
       // An admin never sets someone else's password — they hand over a link and

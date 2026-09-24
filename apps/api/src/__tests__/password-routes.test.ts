@@ -241,6 +241,24 @@ describe("POST /api/team/members/:id/reset-link", () => {
     expect(res.json().message).not.toContain("Google");
   });
 
+  it("audits the address THIS request came from, not the one the admin signed in at", async () => {
+    // A stolen admin token used from elsewhere is exactly the case this row
+    // exists to catch, and the session's sign-in address would hide it.
+    const admin = await member("admin@example.com", { role: "admin" });
+    const dana = await member("dana@example.com");
+    const res = await app!.inject({
+      method: "POST",
+      url: `/api/team/members/${dana.id}/reset-link`,
+      headers: { authorization: `Bearer ${await bearer(admin)}` },
+      remoteAddress: "203.0.113.9",
+    });
+    expect(res.statusCode).toBe(200);
+
+    const row = await auditRow("password.reset_link_generated");
+    expect(row?.ip).toBe("203.0.113.9");
+    expect(row?.target_id).toBe(dana.id);
+  });
+
   it("builds the link on the configured origin", async () => {
     const admin = await member("admin@example.com", { role: "admin" });
     const dana = await member("dana@example.com");
