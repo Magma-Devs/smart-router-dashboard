@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   selector,
+  upstreamEndpointSelector,
+  upstreamProviderSelector,
   rangeFor,
   qRequestsTotal,
   qAvailability,
@@ -335,27 +337,46 @@ describe("series expressions", () => {
   });
 });
 
-describe("endpoint-scope builders", () => {
+describe("per-upstream builders", () => {
+  const ref = { spec: "ETH1", endpointId: "eth-lava" };
+
+  it("selectors pin the upstream to its chain under each family's label", () => {
+    expect(upstreamEndpointSelector(ref)).toBe('{spec="ETH1",endpoint_id="eth-lava"}');
+    expect(upstreamProviderSelector(ref)).toBe('{spec="ETH1",provider_address="eth-lava"}');
+  });
   it("endpoint latency quantile targets rpc_endpoint buckets", () => {
-    expect(qEndpointLatencyQuantile(0.99, "eth-lava", "1d")).toBe(
-      'histogram_quantile(0.99, sum by (le) (rate(rpc_endpoint_end_to_end_latency_milliseconds_bucket{endpoint_id="eth-lava"}[86400s])))',
+    expect(qEndpointLatencyQuantile(0.99, ref, "1d")).toBe(
+      'histogram_quantile(0.99, sum by (le) (rate(rpc_endpoint_end_to_end_latency_milliseconds_bucket{spec="ETH1",endpoint_id="eth-lava"}[86400s])))',
     );
   });
   it("endpoint latency series uses the step", () => {
-    expect(qEndpointLatencySeriesExpr(0.5, "eth-lava", "10m")).toContain("[10m]");
+    expect(qEndpointLatencySeriesExpr(0.5, ref, "10m")).toContain("[10m]");
   });
   it("provider volume + read volume target router counters by provider_address", () => {
-    expect(qUpstreamVolumeSeriesExpr("eth-lava", "10m")).toContain(
-      'smartrouter_requests_total{provider_address="eth-lava"}',
+    expect(qUpstreamVolumeSeriesExpr(ref, "10m")).toContain(
+      'smartrouter_requests_total{spec="ETH1",provider_address="eth-lava"}',
     );
-    expect(qUpstreamReadVolumeSeriesExpr("eth-lava", "10m")).toContain(
-      'smartrouter_requests_read_total{provider_address="eth-lava"}',
+    expect(qUpstreamReadVolumeSeriesExpr(ref, "10m")).toContain(
+      'smartrouter_requests_read_total{spec="ETH1",provider_address="eth-lava"}',
     );
   });
   it("provider error rate is 1 − success/total scoped by provider_address", () => {
-    const q = qUpstreamErrorRate("eth-lava", "1d");
+    const q = qUpstreamErrorRate(ref, "1d");
     expect(q.startsWith("1 - (")).toBe(true);
-    expect(q).toContain('provider_address="eth-lava"');
+    expect(q).toContain('{spec="ETH1",provider_address="eth-lava"}');
+  });
+  it("never selects an upstream by name alone — a name spans every chain it serves", () => {
+    const queries = [
+      qEndpointLatencyQuantile(0.5, ref),
+      qEndpointLatencySeriesExpr(0.5, ref, "1m"),
+      qUpstreamVolumeSeriesExpr(ref, "1m"),
+      qUpstreamReadVolumeSeriesExpr(ref, "1m"),
+      qUpstreamErrorRate(ref),
+      qEndpointBlockLagSeriesExpr(ref),
+    ];
+    for (const q of queries) {
+      expect(q).not.toMatch(/\{(endpoint_id|provider_address)="eth-lava"\}/);
+    }
   });
 });
 
@@ -366,7 +387,7 @@ describe("health / lag / score / gauge builders", () => {
     expect(q).toContain("on(spec) group_right()");
   });
   it("single-endpoint block-lag series subtracts max()s", () => {
-    expect(qEndpointBlockLagSeriesExpr("ETH1", "eth-lava")).toBe(
+    expect(qEndpointBlockLagSeriesExpr({ spec: "ETH1", endpointId: "eth-lava" })).toBe(
       'max(rpc_endpoint_latest_block{spec="ETH1"}) - max(rpc_endpoint_latest_block{spec="ETH1",endpoint_id="eth-lava"})',
     );
   });

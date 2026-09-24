@@ -348,6 +348,17 @@ export interface UpstreamRecentError {
   message: string;
 }
 
+/**
+ * What identifies ONE upstream: its name on ONE chain. Vendors reuse a node
+ * name on every chain they serve (`blockdaemon` backs ~25 specs on one
+ * deployment), so the name alone addresses all of them at once — and a query
+ * keyed by it silently sums every chain together.
+ */
+export interface UpstreamRef {
+  spec: string;
+  endpointId: string;
+}
+
 export interface UpstreamDetail {
   endpointId: string;
   spec: string;

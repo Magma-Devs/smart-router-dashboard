@@ -31,12 +31,15 @@ import {
   qScoreExpr,
   rangeFor,
   selector,
+  upstreamEndpointSelector,
+  upstreamProviderSelector,
   SCORE_TYPES,
   type ChainSeries,
   type CrossValidationReport,
   type ErrorsReport,
   type MetricWindow,
   type UpstreamDetail,
+  type UpstreamRef,
   type ScoreType,
   type TimePoint,
   type UnavailableChain,
@@ -119,17 +122,21 @@ export class MetricsDetailService {
     return { spec, availability, p95Ms, errorRate, rps, qos, backupShare };
   }
 
-  /** PMBody payload for one backing endpoint. */
-  async upstreamDetail(endpointId: string, window: MetricWindow): Promise<UpstreamDetail> {
+  /**
+   * PMBody payload for ONE upstream on ONE chain. The chain is part of the
+   * address, not a filter: vendors reuse a node name on every chain they
+   * serve, and a name-only read summed all of them — Solana's deep-dive showed
+   * Base's errors because Base happened to be the first series back.
+   */
+  async upstreamDetail(ref: UpstreamRef, window: MetricWindow): Promise<UpstreamDetail> {
+    const { endpointId, spec } = ref;
     const { step } = this.windowBounds(window);
     const r = rangeFor(window);
-    const epSel = selector({ endpoint_id: endpointId });
-    const provSel = selector({ provider_address: endpointId });
+    const epSel = upstreamEndpointSelector(ref);
+    const provSel = upstreamProviderSelector(ref);
 
-    // Resolve the endpoint's spec (needed for block-lag math and links).
-    const healthRows = await this.prom.query(`${ENDPOINT_METRICS.overallHealth}${epSel}`);
-    const spec = healthRows[0]?.metric.spec ?? "";
-    const healthVal = healthRows.length ? Number(healthRows[0]!.value[1]) : null;
+    // One gauge per api interface; the worst of them is the upstream's health.
+    const healthVal = await this.prom.scalar(`min(${ENDPOINT_METRICS.overallHealth}${epSel})`);
 
     const [
       requests,
@@ -148,15 +155,13 @@ export class MetricsDetailService {
       this.prom.scalar(
         `clamp_max(sum(increase(${ROUTER_METRICS.requestsSuccessTotal}${provSel}[${r}])) / sum(increase(${ROUTER_METRICS.requestsTotal}${provSel}[${r}])), 1)`,
       ),
-      this.prom.scalar(qUpstreamErrorRate(endpointId, window)),
-      this.prom.scalar(qEndpointLatencyQuantile(0.5, endpointId, window)),
-      this.prom.scalar(qEndpointLatencyQuantile(0.95, endpointId, window)),
-      this.prom.scalar(qEndpointLatencyQuantile(0.99, endpointId, window)),
+      this.prom.scalar(qUpstreamErrorRate(ref, window)),
+      this.prom.scalar(qEndpointLatencyQuantile(0.5, ref, window)),
+      this.prom.scalar(qEndpointLatencyQuantile(0.95, ref, window)),
+      this.prom.scalar(qEndpointLatencyQuantile(0.99, ref, window)),
       this.prom.scalar(`sum(${ENDPOINT_METRICS.requestsInFlight}${epSel})`),
       this.prom.query(`${ENDPOINT_METRICS.selectionScore}${epSel}`),
-      spec
-        ? this.prom.scalar(qEndpointBlockLagSeriesExpr(spec, endpointId))
-        : Promise.resolve(null),
+      this.prom.scalar(qEndpointBlockLagSeriesExpr(ref)),
     ]);
 
     const scores: Partial<Record<ScoreType, number>> = {};
@@ -166,14 +171,12 @@ export class MetricsDetailService {
     }
 
     const [latP50, latP95, latP99, volTotal, volRead, blockLagSeries] = await Promise.all([
-      this.series(qEndpointLatencySeriesExpr(0.5, endpointId, step), window),
-      this.series(qEndpointLatencySeriesExpr(0.95, endpointId, step), window),
-      this.series(qEndpointLatencySeriesExpr(0.99, endpointId, step), window),
-      this.series(qUpstreamVolumeSeriesExpr(endpointId, step), window),
-      this.series(qUpstreamReadVolumeSeriesExpr(endpointId, step), window),
-      spec
-        ? this.series(qEndpointBlockLagSeriesExpr(spec, endpointId), window)
-        : Promise.resolve([] as TimePoint[]),
+      this.series(qEndpointLatencySeriesExpr(0.5, ref, step), window),
+      this.series(qEndpointLatencySeriesExpr(0.95, ref, step), window),
+      this.series(qEndpointLatencySeriesExpr(0.99, ref, step), window),
+      this.series(qUpstreamVolumeSeriesExpr(ref, step), window),
+      this.series(qUpstreamReadVolumeSeriesExpr(ref, step), window),
+      this.series(qEndpointBlockLagSeriesExpr(ref), window),
     ]);
 
     const scoreSeries: Partial<Record<ScoreType, TimePoint[]>> = {};
@@ -181,7 +184,7 @@ export class MetricsDetailService {
       SCORE_TYPES.map(async (type) => {
         if (scores[type] === undefined) return; // only chart emitted score types
         scoreSeries[type] = await this.series(
-          qScoreExpr(type, undefined, endpointId),
+          qScoreExpr(type, spec, endpointId),
           window,
         );
       }),

@@ -20,7 +20,7 @@ import { uptimeColor } from "@/lib/colors";
 import { HEALTH_UNKNOWN_HINT, healthColor, healthLabel } from "@/lib/health";
 import { qosHint, qosIsStale, qosValue } from "@/lib/upstream-signals";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
-import { PMRoster, usePMRosterData } from "./PMRoster";
+import { PMRoster, upstreamKey, usePMRosterData } from "./PMRoster";
 import { PMStat, PMNoVal } from "./PMPanel";
 import { PMEmpty } from "./PMEmpty";
 import { PMBody } from "./PMBody";
@@ -33,17 +33,18 @@ export function UpstreamMetricsTab({ timeWindow, chainFilter }: {
   const rosterRes = usePMRosterData(timeWindow, chainFilter);
   const entries = rosterRes.data?.upstreams ?? [];
 
-  const [provName, setProvName] = useState<string | null>(null);
+  const [selKey, setSelKey] = useState<string | null>(null);
   // jump the deep-dive to the first upstream on the filtered chain / router
-  useEffect(() => { setProvName(null); }, [chainFilter, routerId]);
+  useEffect(() => { setSelKey(null); }, [chainFilter, routerId]);
 
   const visible = entries;
-  const selValid = visible.some((e) => e.endpointId === provName);
-  const activeName = selValid ? provName : (visible[0]?.endpointId ?? null);
-  const pm = activeName ? visible.find((e) => e.endpointId === activeName) ?? null : null;
+  const pm = visible.find((e) => upstreamKey(e) === selKey) ?? visible[0] ?? null;
+  const activeName = pm?.endpointId ?? null;
 
+  // The chain is part of the address: the same name on another chain is
+  // another upstream, and the api refuses a name alone.
   const detailRes = useApi<UpstreamDetail>(
-    activeName ? `/api/metrics/upstream-detail?endpointId=${encodeURIComponent(activeName)}&window=${timeWindow}${scopeQ}` : null,
+    pm ? `/api/metrics/upstream-detail?endpointId=${encodeURIComponent(pm.endpointId)}&spec=${encodeURIComponent(pm.spec)}&window=${timeWindow}${scopeQ}` : null,
   );
   const detail = detailRes.data;
 
@@ -60,7 +61,7 @@ export function UpstreamMetricsTab({ timeWindow, chainFilter }: {
   return (
     <div>
       {/* ── roster of every upstream — click a row to drill in below ── */}
-      <PMRoster rows={visible} activeName={activeName} onSelect={setProvName} timeWindow={timeWindow} loading={rosterRes.isLoading} refreshing={rosterRes.isValidating} />
+      <PMRoster rows={visible} activeKey={pm ? upstreamKey(pm) : null} onSelect={setSelKey} timeWindow={timeWindow} loading={rosterRes.isLoading} refreshing={rosterRes.isValidating} />
 
       {pm && activeName && (
         <>
