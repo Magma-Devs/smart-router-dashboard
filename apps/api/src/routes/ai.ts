@@ -738,6 +738,11 @@ export async function aiRoutes(app: FastifyInstance) {
 
       // Nothing for this window yet. Start it and say so — "working on it" and
       // "not configured" must not look the same to the page.
+      //
+      // 200, NOT 503: the web's apiGet throws on a non-2xx, and SWR then keeps
+      // the PREVIOUS data while it retries. Changing the window therefore left
+      // the last window's issues on screen with nothing saying they were
+      // stale. Warming is a state, not a failure, so it comes back as one.
       if (!app.issuesFeed.isRunning(window)) {
         // Logged, never swallowed: an empty catch here means a compute that
         // fails on every attempt looks identical to one still running, and
@@ -749,8 +754,7 @@ export async function aiRoutes(app: FastifyInstance) {
           );
         });
       }
-      reply.status(503);
-      return { ok: false, reason: "warming", detail: "computing this window now" };
+      return { ok: false, warming: true, reason: "warming", detail: "computing this window now" };
     },
   );
 }

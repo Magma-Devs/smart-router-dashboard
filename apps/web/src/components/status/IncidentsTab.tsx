@@ -8,6 +8,7 @@
 import { useState } from "react";
 import type { IncidentsReport } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
+import { useFilters } from "@/components/gateway/FiltersProvider";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { fmtComma } from "@/lib/format";
 
@@ -34,7 +35,8 @@ function CopyStory({ text }: { text: string }) {
 }
 
 export function IncidentsTab() {
-  const { data } = useApi<IncidentsReport>("/api/metrics/incidents", 60000);
+  const { withScope } = useFilters();
+  const { data } = useApi<IncidentsReport>(withScope("/api/metrics/incidents"), 60000);
   if (!data) {
     return <div className="gw-card" style={{ padding: "14px 16px", fontSize: 12.5, color: "var(--text-4)" }}>Checking…</div>;
   }

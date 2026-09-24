@@ -87,8 +87,30 @@ function Card({ issue, color }: { issue: Issue; color: string }) {
   return (
     <div
       className="gw-card"
-      style={{ borderLeft: `3px solid ${color}`, marginBottom: 8, padding: "12px 14px" }}
+      style={{ borderLeft: `3px solid ${color}`, marginBottom: 8, padding: "12px 14px", position: "relative" }}
     >
+      {issue.ongoing && (
+        // A bookmark down the right edge rather than a chip in the header: it
+        // is the one property you scan a list for, and scanning one column
+        // beats reading every title.
+        <span
+          style={{
+            position: "absolute",
+            top: 0,
+            right: 14,
+            padding: "3px 7px 5px",
+            background: color,
+            color: "#fff",
+            fontSize: 8.5,
+            fontWeight: 700,
+            textTransform: "uppercase",
+            letterSpacing: "0.06em",
+            borderRadius: "0 0 3px 3px",
+          }}
+        >
+          Ongoing
+        </span>
+      )}
       <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
         {/* The chain's own mark, the same one every other surface uses. */}
         <ChainBadge spec={issue.spec} size={22} />
@@ -100,26 +122,6 @@ function Card({ issue, color }: { issue: Issue; color: string }) {
         <span className="gw-mono" style={{ fontSize: 9.5, color: "var(--text-4)" }}>
           {(issue.specs ?? [issue.spec]).join(" · ")}
         </span>
-        {issue.ongoing && (
-          // Still happening, not a burst that has passed. The one thing that
-          // changes whether you act now or read it later.
-          <span
-            style={{
-              fontSize: 9,
-              fontWeight: 700,
-              textTransform: "uppercase",
-              letterSpacing: "0.05em",
-              padding: "1px 6px",
-              borderRadius: 3,
-              color,
-              border: `1px solid ${color}`,
-            }}
-          >
-            Ongoing
-          </span>
-        )}
-        <span style={{ flex: 1 }} />
-        {when && <span style={{ fontSize: 10.5, color: "var(--text-4)" }}>{when}</span>}
       </div>
 
       <div style={{ display: "flex", alignItems: "baseline", gap: 7, margin: "7px 0 8px" }}>
@@ -165,7 +167,9 @@ function Card({ issue, color }: { issue: Issue; color: string }) {
 
 export function IssueCards({ chainsAffected }: { chainsAffected: string[] }) {
   const { timeWindow, scopeQ } = useFilters();
-  const [order, setOrder] = useState<"chain" | "time">("chain");
+  // Recent first by default: opening the page, the question is what just
+  // started, not which chain sorts first alphabetically.
+  const [order, setOrder] = useState<"recent" | "chain">("recent");
 
   // Polled, not pressed. `warming` comes back while a window is still being
   // computed, so the poll keeps asking until it lands.
@@ -176,7 +180,7 @@ export function IssueCards({ chainsAffected }: { chainsAffected: string[] }) {
 
   const sorted = (list: Issue[]): Issue[] =>
     [...list].sort((a, b) =>
-      order === "time"
+      order === "recent"
         ? (b.lastSeenUnix ?? 0) - (a.lastSeenUnix ?? 0)
         : a.chain.localeCompare(b.chain),
     );
@@ -184,7 +188,7 @@ export function IssueCards({ chainsAffected }: { chainsAffected: string[] }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        {(["chain", "time"] as const).map((k) => (
+        {(["recent", "chain"] as const).map((k) => (
           <button
             key={k}
             onClick={() => setOrder(k)}
@@ -198,7 +202,7 @@ export function IssueCards({ chainsAffected }: { chainsAffected: string[] }) {
               border: `1px solid ${order === k ? "var(--brand)" : "var(--border, #333)"}`,
             }}
           >
-            By {k}
+            {k === "recent" ? "Recent" : "By chain"}
           </button>
         ))}
       </div>

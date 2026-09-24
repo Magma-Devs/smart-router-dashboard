@@ -96,7 +96,7 @@ function Freshness({ lastOk, staleSec, refreshing, down, paused, promDown }: {
 
 export function StatusView() {
   const { timeWindow, setTimeWindow, scopeQ } = useFilters();
-  const { data, error, isValidating, mutate } = useApi<StatusReport>(`/api/metrics/status?window=${timeWindow}`);
+  const { data, error, isValidating, mutate } = useApi<StatusReport>(`/api/metrics/status?window=${timeWindow}${scopeQ}`);
   // An SRE alt-tabbing back mid-incident needs a fresh read, not the last one
   // from before they left. useApi turns revalidateOnFocus off globally; this
   // page turns it back on by hand.
