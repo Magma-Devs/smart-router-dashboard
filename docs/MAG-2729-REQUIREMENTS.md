@@ -325,4 +325,4 @@ failures without its fix; the seed guard gives `expected 1 to be 0`. Both invita
 were checked by rendering them against a running stack, signed out and signed in, rather than by
 typechecking them.
 
-On 24 Sep 2026: `pnpm lint` 0 errors, `pnpm -r typecheck` clean, **1858 tests** pass (1039 shared · 493 api · 272 web · 54 db).
+On 24 Sep 2026: `pnpm lint` 0 errors, `pnpm -r typecheck` clean, **1867 tests** pass (1039 shared · 499 api · 275 web · 54 db).
