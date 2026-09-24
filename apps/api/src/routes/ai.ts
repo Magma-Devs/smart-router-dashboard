@@ -21,6 +21,7 @@ import { IncidentsService } from "../services/incidents.js";
 import { FailureAnalysisService } from "../services/failure-analysis.js";
 import { IncidentExplainService } from "../services/incident-explain.js";
 import { ChainAnalysisService } from "../services/chain-analysis.js";
+import { FormulatedIssueService, severityOf } from "../services/formulated-issues.js";
 import { LokiService, groupErrors } from "../services/loki.js";
 import { OPTIONAL_METRICS } from "@sr/shared";
 import { parseWindow } from "./metrics.js";
@@ -621,6 +622,93 @@ export async function aiRoutes(app: FastifyInstance) {
         return { ok: false, reason: "cold", detail: "the first feed cycle has not finished yet" };
       }
       return { ok: true, ...feed };
+    },
+  );
+
+  app.post<{ Querystring: { window?: string; limit?: string; router?: string } }>(
+    "/api/ai/issues",
+    {
+      config: { rateLimit: { max: config.bedrock.rateLimitMax, timeWindow: "1 minute" } },
+      schema: {
+        tags: ["AI"],
+        summary: "Formulated issues — one per affected chain, in the order people ask",
+        description:
+          "Groups the findings by chain and writes each as a statement answering, in order: " +
+          "what happened, why, whether the router failed over and what happened when it did, " +
+          "and whether you can work. The third and fourth are what nothing else on the page " +
+          "answers. Severity comes from the findings' own tier, never from the model.",
+      },
+    },
+    async (request, reply) => {
+      const g = gate();
+      if (!g.ok) {
+        reply.status(503);
+        return { ...g, ...target() };
+      }
+
+      const window = parseWindow(request.query.window);
+      const limit = Math.min(Math.max(Number(request.query.limit) || 6, 1), 12);
+      const scoped = app.scoped(request.query.router);
+      const loki = new LokiService();
+
+      const report = await scoped.metricsDetail.status(window);
+
+      // One issue per CHAIN: several rules crossing on one chain are one thing
+      // happening, not three problems.
+      const bySpec = new Map<string, typeof report.findings>();
+      for (const f of report.findings) {
+        const list = bySpec.get(f.spec) ?? [];
+        list.push(f);
+        bySpec.set(f.spec, list);
+      }
+
+      // Worst chains first, so a truncated list never drops a critical one.
+      const rank = { critical: 0, degraded: 1, config: 2 } as const;
+      const chains = [...bySpec.entries()]
+        .sort((a, b) => rank[severityOf(a[1])] - rank[severityOf(b[1])] || b[1].length - a[1].length)
+        .slice(0, limit);
+
+      const routers = app.routerConfig?.getRouters() ?? [];
+      const svc = new FormulatedIssueService(new BedrockService(config.bedrock.model, app.log), app.log);
+
+      const issues = await Promise.all(
+        chains.map(async ([spec, findings]) => {
+          const lines = loki.available
+            ? await loki.recentErrors(spec, undefined, 150).catch(() => [])
+            : [];
+          const configured = routers
+            .filter((r) => r.spec === spec)
+            .flatMap((r) =>
+              r.nodes.map((n) => ({
+                upstream: n.name,
+                role: (n.isBackup ? "backup" : "primary") as "primary" | "backup",
+                addons: [...new Set(n.endpoints.flatMap((e) => e.addons ?? []))],
+              })),
+            );
+          try {
+            return await svc.formulate({
+              spec,
+              chain: findings[0]?.chainName ?? spec,
+              findings,
+              errorGroups: groupErrors(lines, 6),
+              configured,
+              recovered: null,
+              failures: null,
+            });
+          } catch (err) {
+            app.log.warn({ spec, err: String(err) }, "could not formulate an issue");
+            return null;
+          }
+        }),
+      );
+
+      return {
+        ok: true,
+        window,
+        logsAvailable: loki.available,
+        configAvailable: routers.length > 0,
+        issues: issues.filter((i): i is NonNullable<typeof i> => i !== null),
+      };
     },
   );
 }

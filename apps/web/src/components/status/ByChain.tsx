@@ -24,13 +24,13 @@ import { useState } from "react";
 import type { StatusFinding, RouterTopology } from "@sr/shared";
 
 const TIER_COLOR: Record<string, string> = {
-  fatal: "var(--err, #ef4444)",
+  critical: "var(--err, #ef4444)",
   attention: "var(--warn, #f59e0b)",
   config: "var(--text-3, #64748b)",
 };
 
 /** Worst tier first, so a chain is ranked by its worst row. */
-const TIER_RANK: Record<string, number> = { fatal: 0, attention: 1, config: 2 };
+const TIER_RANK: Record<string, number> = { critical: 0, attention: 1, config: 2 };
 
 export interface ChainGroup {
   spec: string;
@@ -118,7 +118,7 @@ function ProviderLine({
 }) {
   const mine = findings.filter((f) => f.upstream === c.upstream);
   const worst = mine.reduce((acc, f) => Math.min(acc, TIER_RANK[f.tier] ?? 9), 9);
-  const tone = worst === 0 ? TIER_COLOR.fatal : worst === 1 ? TIER_COLOR.attention : undefined;
+  const tone = worst === 0 ? TIER_COLOR.critical : worst === 1 ? TIER_COLOR.attention : undefined;
 
   return (
     <div style={{ padding: "7px 0", borderTop: "1px solid var(--border, #222)" }}>
@@ -191,7 +191,7 @@ export function ByChain({ groups }: { groups: ChainGroup[] }) {
                 cursor: "pointer",
                 textAlign: "left",
                 borderLeft: `3px solid ${
-                  g.worstRank === 0 ? TIER_COLOR.fatal : g.worstRank === 1 ? TIER_COLOR.attention : TIER_COLOR.config
+                  g.worstRank === 0 ? TIER_COLOR.critical : g.worstRank === 1 ? TIER_COLOR.attention : TIER_COLOR.config
                 }`,
               }}
             >
