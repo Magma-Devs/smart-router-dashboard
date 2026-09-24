@@ -285,6 +285,13 @@ many requests the router saved by retrying them on another provider
 Name the provider that took the retries only when exactly one other provider
 is configured on the chain; otherwise write "another provider".
 
+The outcome is for the whole chain. It does not say which problem caused each
+failure, and savedByRetry of 0 does not mean a retry was even attempted:
+
+  - Never write that the router retried unless savedByRetry is above 0.
+  - Tie the failures to one cause only when the input gives exactly one.
+    Otherwise put the two facts side by side and let the reader join them.
+
 When there is no \`outcome\`, you were not told what the retries did. Say
 nothing about it — not "we weren't told", not "it is unclear". A line about
 what you do not know is a line the reader has to read for nothing.
