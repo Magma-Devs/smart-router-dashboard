@@ -514,6 +514,7 @@ Every `/api/metrics/*` route also accepts **`router?`** — the router scope
 | `GET /api/team/members` · `GET /api/team/members.csv` | — | `{ members[], adminCount, soleAdmin }`, admins first · the same list as CSV with formula leads neutralised. Every role — the access review is for everyone |
 | `PATCH /api/team/members/:id` · `DELETE …/:id` | — | `{ role }` → change a role (revokes nothing; the gate reads the row) · remove (state change, one transaction: sessions, cutoff, provider ids, pending invite). 409 on your own row, 404 on someone not active, 403 if you stopped being an admin mid-request. Admin |
 | `POST /api/account/password` | — | `{ current, next }` — signs out your other devices, keeps this one. Tests a credential, so: sign-in's per-IP limit (10/min) **and** the account's lockout budget (`423` once spent) |
+| `GET /api/account/me` | — | The caller from the live account row — id, email, name, avatar, role. What the web's `useMe()` polls, so a role change reaches the sidebar badge and the Team page without a new sign-in |
 | `GET /api/account/sessions` · `DELETE …/:id` · `DELETE …` | — | Your live sessions · sign out one device · sign out everywhere |
 | `GET /health` | — | Liveness — `{ health: "ok" }` |
 | `GET /health/ready` | — | Readiness — runs `vector(1)` against the store (not `-/ready`, which Mimir and a query-only proxy don't serve) with the configured credential; 503 + `components.prometheus:"ping_failed"` on failure, including a 401 |
@@ -577,7 +578,7 @@ Auth (only read when `AUTH_MODE=enabled`; the metrics path never touches the DB)
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | (unset) | idempotent admin seed on first boot, **development only** — refused under `NODE_ENV=production`, where first-run setup with the installer's `SETUP_TOKEN` is the only way an account comes into existence |
 | `GOOGLE_CLIENT_ID` | (unset) | validates the `aud` claim of Google ID tokens server-side |
 | `INTERNAL_AUTH_SECRET` | (unset) | shared with the web; gates whether forwarded browser IP / User-Agent are trusted on `/auth/sign-in`. Unset ⇒ the api records what it observes |
-| `DEPLOYMENT_MODE` | `onprem` | `managed` (we host, email works) / `onprem` (customer hosts, no mail server). Forks invite + reset delivery; read by the web at runtime via `/api/config` |
+| `DEPLOYMENT_MODE` | `onprem` | `managed` (we host) / `onprem` (customer hosts, no mail server). Sets invitation and reset link lifetimes and marks the first account as Magma's on managed; nothing is emailed on either until MAG-2870. Read by the web at runtime via `/api/config` |
 | `SETUP_TOKEN` | (generated) | First-run token, required to create the first admin. Must be ≥ 16 characters; unset (or shorter) ⇒ generated once at boot, on an install that still needs setting up, and logged at `warn` |
 | `SETUP_TOKEN_FILE` | (unset) | Path to write a generated token to (mode 0600), so an init container or mounted volume can surface it |
 | `PASSWORD_BREACH_CHECK` | `hibp` | `off` disables the HaveIBeenPwned check — the honest setting for an air-gapped install, rather than relying on a silent timeout |

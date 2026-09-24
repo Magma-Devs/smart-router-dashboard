@@ -64,10 +64,10 @@ Seven pull requests, stacked. `#115` is MAG-2770's writer, merged in because sli
 
 | Requirement | | Notes |
 |---|---|---|
-| Email and password — "the only way in" | ✅ | Social sign-in removed outright, not left configurable |
+| Email and password — "the only way in" | ⚠️ | Decided otherwise on 2026-09-24: Google and GitHub stay as ways in, Discord is removed. Removing a person still ends every session they hold, whatever they signed in with |
 | On-prem first admin: email, password, repeat; nothing else opens | ✅ | `/` → `/login` → `/setup` |
 | First-run requires the installer's setup token | ✅ | Constant-time compare. The gate is `count(active users) == 0`, never a flag, so a backup restored with no users is covered — which the ticket calls out |
-| Managed first admin: we create it and send a join link | ⚠️ | No route for that flow. `/setup` is not mode-gated, so a first admin is still creatable in managed |
+| Managed first admin: we create it and send a join link | ◐ | `/setup` on a managed deployment creates the Magma operator's account — marked, and shown as ours in the member list — who invites the customer's named admin. The join link is handed over until email exists (MAG-2870) |
 | Never a shared account; we never set a password for anyone | ✅ | True only after the `ADMIN_EMAIL` fix — see [§6](#6-mismatches-found-and-fixed) |
 | No standing admin account inside a customer's deployment | ✅ | Same fix |
 
@@ -85,7 +85,7 @@ Seven pull requests, stacked. `#115` is MAG-2770's writer, merged in because sli
 
 | Requirement | | Notes |
 |---|---|---|
-| Managed: user-initiated, emailed link, 1 hour | ⚠️ | TTL correct; no transport. Creates the reset, logs the link, returns 202 |
+| Managed: user-initiated, emailed link, 1 hour | ⚠️ | No transport (MAG-2870), so it fails closed: `POST /auth/password/forgot` answers 404 on every deployment and writes nothing |
 | On-prem: admin generates a single-use link, 24 hours | ✅ | **Reset link** on the member row → shown once, copied by hand. The admin never sees or chooses the value |
 | A reset link sets a password; it does not sign anyone in | ✅ | |
 | Resetting kills every session for that user | ✅ | |
@@ -108,7 +108,7 @@ Seven pull requests, stacked. `#115` is MAG-2770's writer, merged in because sli
 | Admin is transferable | ✅ | Promote a replacement, then they demote you — the last move is never your own |
 | Nobody can demote or remove themselves | ✅ | Enforced in `services/members.ts`, not merely hidden in the UI |
 | Invite by email address and role | ✅ | |
-| Managed: invitation email with a join link | ⚠️ | Returns `delivery: "email"` and withholds the link; nothing sends it |
+| Managed: invitation email with a join link | ⚠️ | No transport (MAG-2870). Every deployment returns the link to the admin, who hands it over |
 | On-prem: link shown to the admin. No mail server ever required | ✅ | Shown once, not readable back |
 | Redeemable only by the address it was sent to | ✅ | **Structural**: the account is created with the invitation's address and the redeemer supplies none |
 | Single-use; 7 days managed, 24 hours on-prem | ✅ | Exactly as specified |
@@ -182,8 +182,8 @@ bugs.
 
 | | What happens today |
 |---|---|
-| **Managed invitation** | The row is created correctly with the right 7-day TTL, and the response deliberately *withholds* the link because managed is meant to email it. Nothing emails it. The invitation exists and is unreachable by anyone — the worst of the three, because it looks like it worked |
-| **Managed forgot-password** | Creates the reset with the correct 1-hour TTL, writes `password.reset_requested`, logs the link at `warn`, returns 202. An operator with log access can retrieve it; the user gets nothing. A `TODO(slice: email adapter)` sits on it, so it was known rather than missed |
+| **Managed invitation** | The row is created with the right 7-day TTL, and — like on-prem — the response hands the admin the link to pass on, because nothing can email it yet. The earlier behaviour withheld it on managed, which left an invitation nobody could reach |
+| **Managed forgot-password** | Fails closed: `POST /auth/password/forgot` answers 404 on every deployment and writes nothing, so it never issues a link nobody receives or kills one a member already holds |
 | **Managed first admin** | No route for the flow the ticket describes. It does not *block* a managed deployment: `/setup` is not gated on `DEPLOYMENT_MODE`, so a first admin is still creatable with the setup token |
 
 **Who owns it:** [MAG-2870](https://magmadevs.atlassian.net/browse/MAG-2870), which scopes exactly

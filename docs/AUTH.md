@@ -531,26 +531,9 @@ everywhere" — which signs out the tab you are in too, deliberately.
 
 **6. Password reset, on-prem.** **An admin never sets someone else's
 password** — they generate a link, and only the holder chooses the value.
-The route exists and is audited; the members-table button that should
-trigger it does not (see "What has no screen yet" below), so drive it
-directly.
-
-Get the same Bearer the browser uses: DevTools → Network → any
-`/api/team/…` request → copy its `Authorization` header value, minus the
-word `Bearer`. (Signed in already? `curl -b <cookies> localhost:3000/api/auth/session`
-returns it as `accessToken` — the web re-signs it there on every session
-read, carrying the `sid` through.)
-
-```bash
-TOKEN='eyJ…'
-
-curl -s localhost:8000/api/team/members -H "authorization: Bearer $TOKEN"
-#   → find the member's id in the response
-
-curl -s -X POST localhost:8000/api/team/members/<id>/reset-link \
-     -H "authorization: Bearer $TOKEN"
-#   → { "url": "http://localhost:3000/reset/…", "expiresAt": … }
-```
+Team → **Reset link** on a member's row. It asks first — a new link also
+kills any the member already holds — then shows the link once, with a copy
+button.
 
 Twenty-four hours on-prem against a managed deployment's one, because the
 link travels over a channel we don't control. Open it, set a password —
@@ -588,25 +571,17 @@ docker exec smart-router-dashboard-dev-postgres-1 \
 ```
 
 Note what is and isn't there: sign-ins carry an address and a device,
-people-events don't, and no token, link or password appears anywhere.
+people-events don't — except `invite.redeemed`, which the ticket asks to
+carry the address it was redeemed from — and no token, link or password
+appears anywhere.
 
 ### What has no screen yet
 
-Two designed surfaces are reachable only over the api, so a walkthrough
-that stays in the browser will not find them. Both are missing UI, not
-missing behaviour — the routes work and are tested.
-
-Both are named in `docs/ACCOUNTS-DESIGN.md` §6.3 — which lands with
-MAG-2729's design PR, on `docs/MAG-2729-accounts-design`.
-
-| Design says | Route | Missing |
-|---|---|---|
-| on-prem reset, "initiated by an admin, from the members table" | `POST /api/team/members/:id/reset-link` | no control on the member row |
-| managed reset, "initiated by the user, from `/login`" | `POST /auth/password/forgot` | no "Forgot password?" link |
-
-The second is not exercisable in this stack anyway: `DEPLOYMENT_MODE=onprem`
-makes `/auth/password/forgot` answer 404 by design, because there is
-nowhere to send an email.
+One designed surface, named in `docs/ACCOUNTS-DESIGN.md` §6.3: the managed
+reset "initiated by the user, from `/login`" has no "Forgot password?" link.
+It is not missing UI alone — `POST /auth/password/forgot` answers 404 on
+every deployment, because there is no way to deliver the link until email
+exists (MAG-2870).
 
 ## Roles
 
@@ -701,13 +676,14 @@ Two consequences:
   and the one that ends up with the lower `when` is invisible to anybody
   who already ran the other.
 
-It happened here. `0002_audit` (MAG-2770) carries `when` 1786953600000;
-`0004_password_lifecycle` (MAG-2729) carries 1787040000000. A developer
-who ran the auth profile before the audit work merged has a high-water
-mark of 1787040000000, so `0002_audit` is **skipped on their machine** —
-migrations report success and the `audit_events` tables simply are not
-there. The first symptom is `relation "audit_events" does not exist` from
-a route that is perfectly fine in CI.
+The account and audit work met it on the way to main. The audit migration
+is `0004_audit` (`when` 1787126400000), after main's
+`0003_password_lifecycle` (1787040000000) and before `0005_magma_account`
+(1788048000000). On the stack branches it was `0002_audit`, with the same
+`when` as the invitations migration — so a database built from those
+branches holds a history main's journal does not describe. Depending on how
+far it got, `0004_audit` either re-runs there (`CREATE TYPE` against a type
+that exists, and boot fails) or is silently skipped.
 
 ```bash
 # The fix, and the only one — re-migrate from empty:
@@ -720,18 +696,17 @@ migration history. CI is unaffected too — every suite builds its database
 from empty, where the high-water mark does not exist and entries apply in
 array order regardless of their timestamps.
 
-> **Do not fix this by bumping the `when`.** It is the obvious repair and it
-> trades a silent skip for a hard failure. Raising `0002_audit`'s stamp above
-> `0004`'s does let it apply on a database sitting at `0004` — but on a
-> database sitting at `0002` the same change makes it *greater than the mark
-> again*, so the migration **re-runs**: `CREATE TYPE` against a type that
-> already exists, and boot fails. Tested, not reasoned: applying `0000`–`0002`,
+> **Never change the `when` of a migration a database may already hold.** It
+> is the obvious repair and it trades a silent skip for a hard failure: on a
+> database that ran the migration, a raised stamp is *greater than the mark
+> again*, so it **re-runs** — `CREATE TYPE` against a type that already
+> exists, and boot fails. Tested, not reasoned: applying `0000`–`0002`,
 > bumping the entry, and re-migrating throws.
 >
-> Both populations exist as soon as the two tickets merge in sequence, so
-> either choice strands somebody. A skip is recoverable by a developer who
-> reads this section; a failed migration blocks boot for people who never
-> touched this work. Leave the timestamps alone and wipe the database.
+> A stamp is safe to set only before anything outside a branch has run it —
+> which is why the audit migration could be renumbered while it existed on
+> the stack branches alone, and why, once a migration is on `main`, the
+> answer is always a new migration and never a new timestamp.
 
 **The general form, worth asking of anything before calling it verified:**
 *what does this look like on a machine that already has state?* Every suite
