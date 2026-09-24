@@ -635,7 +635,7 @@ some people can see is not one; only an admin changes it.
   page, and line endings are CRLF (RFC 4180).
 - **2FA shows an em dash, not "No",** until MAG-2730 ships.
 
-<img src="./assets/team-members.png" alt="The Team page's Members tab: a table of five people with columns for member, role, 2FA, last active and joined. Two admins are listed first, then an approver, a requester and a read-only member, sorted by address within each role. The 2FA column shows an em dash for everyone; one member who has never signed in shows an em dash for last active. Every row except the signed-in admin's own has Change role, Reset password and Remove buttons. Under the table, a panel shows a password reset link for one member, with a note to hand it over, that it works once until a stated time, and that any earlier link no longer works." width="100%">
+<img src="./assets/team-members.png" alt="The Team page's Members tab: a table of five people with columns for member, role, 2FA, last active and joined. Two admins are listed first, then an approver, a requester and a read-only member. The 2FA column shows an em dash for everyone, and the two members who have never signed in show an em dash for last active. Every row except the signed-in admin's own has Change role, Reset link and Remove buttons; Reset link opens a dialog that confirms first and then shows the link once." width="100%">
 
 ## JWT shape
 
@@ -753,7 +753,7 @@ current password), a role `403 FORBIDDEN`, and a `503` never sign anyone out.
 - `sessions.revoked_at` — kills one device. What makes the sessions list
   and "sign out this device" possible.
 
-<img src="./assets/account-sessions.png" alt="The Account page: a Change password card with current, new and repeat fields and a note that other devices will be signed out while this one stays; an Active sessions card listing this device as Chrome on Linux, highlighted, and a second unrecognised device with its own Sign out button, plus a Sign out everywhere button; and a Delete account card whose notice says to ask an administrator to remove you, because removal is a state change and your name stays in the audit log." width="560">
+<img src="./assets/account-sessions.png" alt="The Account page, scrolled down: the end of a Connected accounts card saying that a Google or GitHub sign-in whose verified address matches links to this account the first time it is used; a Change password card with current, new and repeat fields and a note that other devices will be signed out while this one stays; an Active sessions card listing this device as Chrome on Linux, highlighted, and a second unrecognised device with its own Sign out button, plus a Sign out everywhere button; and a Leaving? card saying accounts are never deleted and nobody removes their own, so ask another administrator, and that your name stays in the audit log." width="560">
 
 Session rows are **never deleted on revoke** — a revoked session is
 evidence, and the audit log's access events reference it. Expired rows
