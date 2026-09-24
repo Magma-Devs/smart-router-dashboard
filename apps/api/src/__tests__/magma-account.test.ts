@@ -132,10 +132,9 @@ describe("who gets marked", () => {
     app = await buildFor("managed");
     const magma = await firstRun();
 
-    // The invitation is created through the service rather than the route: on
-    // managed the route withholds the link (it is emailed), so there would be
-    // no token to redeem here. Redemption itself is the same code either way,
-    // and that is the half this test is about.
+    // The invitation is created through the service rather than the route:
+    // this test is about the label, and redemption is the same code on every
+    // deployment.
     const invite = await createInvitation(t.db, {
       email: "dana@customer.example",
       role: "admin",
