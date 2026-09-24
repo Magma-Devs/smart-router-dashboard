@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { createTestDb, type TestDb } from "@sr/db/testing";
 import { sessions, users, type User } from "@sr/db";
 import { buildApp } from "../app.js";
@@ -20,6 +20,9 @@ const SECRET = "test-secret-for-auth-tests-32-chars!";
 const DEAD_DB = "postgres://sr:x@192.0.2.1:5432/na";
 const GOOGLE_CLIENT_ID = "test-client-id.apps.googleusercontent.com";
 const GOOD_PASSWORD = "correct horse battery staple";
+const INTERNAL = "internal-secret-for-invite-tests";
+const FIREFOX =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:131.0) Gecko/20100101 Firefox/131.0";
 
 let app: FastifyInstance | null = null;
 let t: TestDb;
@@ -72,6 +75,7 @@ beforeEach(async () => {
     DATABASE_URL: DEAD_DB,
     GOOGLE_CLIENT_ID,
     PASSWORD_BREACH_CHECK: "off",
+    INTERNAL_AUTH_SECRET: INTERNAL,
   });
   app = await buildApp();
   app.db = t.db;
@@ -198,6 +202,40 @@ describe("POST /auth/invite/accept — social", () => {
     // And the provider is linked, so the next plain Google sign-in resolves.
     const [account] = await t.db.select().from(users).where(eq(users.email, "dana@example.com"));
     expect(account?.googleId).toBe("google-subject-123");
+  });
+
+  it("records the person's device, not the web server's, and logs the sign-in", async () => {
+    // Auth.js makes this call from the web tier, so the api itself sees the
+    // web pod and undici. The web forwards what the browser sent, as it does
+    // for a plain sign-in, and the session opened here is a sign-in.
+    const token = await freshInvite();
+    stubOAuth("dana@example.com");
+
+    const res = await app!.inject({
+      method: "POST",
+      url: "/auth/invite/accept",
+      remoteAddress: "10.0.0.9",
+      headers: { "user-agent": "undici", "x-internal-auth": INTERNAL },
+      payload: {
+        token,
+        oauthProvider: "google",
+        oauthToken: "an-id-token",
+        clientContext: { ip: "84.229.11.6", userAgent: FIREFOX },
+      },
+    });
+    expect(res.statusCode).toBe(201);
+
+    const sessionId = res.json().sessionId as string;
+    const [session] = await t.db.select().from(sessions);
+    expect(session?.client).toBe("Firefox 131 / Windows");
+    const rows = await t.db.execute<{ action: string; ip: string; client: string; session_id: string }>(
+      sql`select action, host(ip) as ip, client, session_id from audit_events order by seq`,
+    );
+    const context = { ip: "84.229.11.6", client: "Firefox 131 / Windows", session_id: sessionId };
+    expect(rows.rows).toEqual([
+      { action: "invite.redeemed", ...context },
+      { action: "signin.succeeded", ...context },
+    ]);
   });
 
   it("refuses a Google account that is not the invited address", async () => {
