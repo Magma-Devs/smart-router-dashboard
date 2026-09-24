@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, lte, sql } from "drizzle-orm";
 import {
   invitations,
   users,
@@ -121,6 +121,27 @@ export async function findPendingByEmail(
 
 /** Everything not yet redeemed — including expired and revoked, so the admin
  *  screen can show what happened rather than silently dropping rows. */
+/**
+ * Stamp `expired_noted_at` on every invitation that has run out unused and not
+ * been noted yet, and return them, so the caller writes `invite.expired` for
+ * each exactly once. The admin's Invites list calls this: an invitation nobody
+ * opens after it expires would otherwise never be recorded as expired.
+ */
+export async function noteExpiredInvitations(db: Database): Promise<Invitation[]> {
+  return db
+    .update(invitations)
+    .set({ expiredNotedAt: new Date() })
+    .where(
+      and(
+        lte(invitations.expiresAt, new Date()),
+        isNull(invitations.expiredNotedAt),
+        isNull(invitations.redeemedAt),
+        isNull(invitations.revokedAt),
+      ),
+    )
+    .returning();
+}
+
 export async function listInvitations(db: Database): Promise<Invitation[]> {
   return db
     .select()
@@ -178,7 +199,14 @@ export async function lookupInvitation(db: Database, rawToken: string): Promise<
 
 export type RedeemResult =
   | { ok: true; user: User; invitation: Invitation }
-  | { ok: false; reason: InviteRejection | "email_mismatch" };
+  | {
+      ok: false;
+      reason: InviteRejection | "email_mismatch";
+      /** Set only on the read that first observed an expiry, so the route
+       *  that made it records `invite.expired`. */
+      invitation?: Invitation;
+      justExpired?: boolean;
+    };
 
 export interface RedeemInput {
   rawToken: string;
@@ -204,7 +232,11 @@ export async function redeemInvitation(
   input: RedeemInput,
 ): Promise<RedeemResult> {
   const lookup = await lookupInvitation(db, input.rawToken);
-  if (!lookup.ok) return { ok: false, reason: lookup.reason };
+  if (!lookup.ok) {
+    return lookup.justExpired
+      ? { ok: false, reason: lookup.reason, invitation: lookup.invitation, justExpired: true }
+      : { ok: false, reason: lookup.reason };
+  }
   const invitation = lookup.invitation;
 
   // The OAuth path must prove it owns the invited address. Compared here rather
