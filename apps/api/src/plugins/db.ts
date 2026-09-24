@@ -2,7 +2,6 @@ import fp from "fastify-plugin";
 import type { FastifyInstance } from "fastify";
 import { createDb, migrate, seedAdmin, type Database, type DbHandle } from "@sr/db";
 import { config } from "../config.js";
-import { needsSetup, resolveSetupToken } from "../services/setup.js";
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -13,11 +12,6 @@ declare module "fastify" {
   }
 }
 
-/** Compose has no hard depends_on between api and postgres (AUTH_MODE=
- *  disabled must boot without a DB), so the api absorbs postgres's startup
- *  window by retrying forever: 2s between early attempts, backing off to
- *  30s so a DB that appears hours later still gets picked up without a
- *  restart. /auth/* answers 503 the whole time; nothing else blocks. */
 /**
  * The `ADMIN_EMAIL` / `ADMIN_PASSWORD` seed — **development only, and refused
  * outright in production.**
@@ -58,15 +52,21 @@ export async function maybeSeedAdmin(app: FastifyInstance, db: Database): Promis
   app.log.warn({ result, email }, "development-only admin seed applied (ignored in production)");
 }
 
+/** Compose has no hard depends_on between api and postgres (AUTH_MODE=
+ *  disabled must boot without a DB), so the api absorbs postgres's startup
+ *  window by retrying forever: 2s between early attempts, backing off to
+ *  30s so a DB that appears hours later still gets picked up without a
+ *  restart. /auth/* answers 503 the whole time; nothing else blocks. */
 const RETRY_DELAY_MS = 2_000;
 const RETRY_DELAY_MAX_MS = 30_000;
 
 /**
  * Registered ONLY when AUTH_MODE=enabled. Opens Postgres in the background
- * (retry loop), runs migrations, seeds the bootstrap admin, then flips
- * `app.db` from null to the live handle. Routes that need the DB check
+ * (retry loop), runs migrations and the development-only admin seed, then
+ * flips `app.db` from null to the live handle. Routes that need the DB check
  * `app.db` and 503 while it's still null — the rest of the api (metrics,
- * health) never blocks on the database.
+ * health) never blocks on the database. The setup token is announced once
+ * this settles, by `announceSetupToken` in `app.ts`.
  */
 export const dbPlugin = fp(async (app: FastifyInstance) => {
   // Live env first (config snapshots at module load, before tests set it).
@@ -85,13 +85,6 @@ export const dbPlugin = fp(async (app: FastifyInstance) => {
         const candidate = createDb(url);
         await migrate(candidate.db);
         await maybeSeedAdmin(app, candidate.db);
-        // Resolve (and, when unconfigured, generate + log + write) the setup
-        // token now rather than on the first attempt to use it. With the seed
-        // refused in production this is the only way into a fresh install, and
-        // a token that materialises only after somebody has already guessed
-        // wrong is not a token anybody can find. SETUP_TOKEN_FILE especially:
-        // an init container reads it before the api has served a request.
-        if (await needsSetup(candidate.db)) resolveSetupToken(app.log);
         handle = candidate;
         app.db = candidate.db;
         app.log.info({ attempt }, "database connected, migrations applied");
