@@ -1,3 +1,4 @@
+import { isIP } from "node:net";
 import { eq } from "drizzle-orm";
 import {
   AUDIT_GROUP_FALLBACK,
@@ -102,7 +103,12 @@ export interface AuditWriter {
  */
 export interface AuditViolation {
   action: string;
-  reason: "unknown-action" | "context-not-allowed" | "changes-not-expected" | "write-failed";
+  reason:
+    | "unknown-action"
+    | "context-not-allowed"
+    | "context-malformed"
+    | "changes-not-expected"
+    | "write-failed";
   detail?: unknown;
 }
 
@@ -112,6 +118,37 @@ export interface AuditWriterOptions {
    * api passes `(v) => log.warn({ audit: v }, "audit")`.
    */
   onViolation?: (violation: AuditViolation) => void;
+}
+
+/** The width of `audit_events.client`, in characters. */
+const CLIENT_MAX = 128;
+
+/**
+ * Access context the columns will take, and the names of the fields that had to
+ * change to get there.
+ *
+ * The context is built from headers the caller's caller wrote, so it is the one
+ * part of a row an outsider controls. A value `inet` or varchar(128) refuses
+ * would fail the insert: standalone, the row is silently lost; inside a
+ * transaction, the mutation it records is aborted. An address missing from a
+ * row, or a shortened device string, is the smaller failure.
+ *
+ * `isIP` accepts an IPv6 zone (`fe80::1%eth0`) and `inet` does not.
+ */
+function storable(access: AuditAccessContext): { access: AuditAccessContext; changed: string[] } {
+  const changed: string[] = [];
+  let { ip, client } = access;
+  if (ip !== null && (isIP(ip) === 0 || ip.includes("%"))) {
+    changed.push("ip");
+    ip = null;
+  }
+  // By code point, as Postgres counts: slicing UTF-16 units could split a pair.
+  const chars = client === null ? [] : [...client];
+  if (chars.length > CLIENT_MAX) {
+    changed.push("client");
+    client = chars.slice(0, CLIENT_MAX).join("");
+  }
+  return { access: { ...access, ip, client }, changed };
 }
 
 /** `dashboard` for a person acting in the UI, otherwise the actor's own kind. */
@@ -142,6 +179,13 @@ export function createAuditWriter(db: Database, opts: AuditWriterOptions = {}): 
     if (access && known && !carriesAccessContext(action)) {
       report({ action, reason: "context-not-allowed" });
       access = undefined;
+    }
+    if (access) {
+      const cleaned = storable(access);
+      if (cleaned.changed.length > 0) {
+        report({ action, reason: "context-malformed", detail: cleaned.changed });
+      }
+      access = cleaned.access;
     }
     const changes = event.changes ?? [];
     if (changes.length > 0 && known && !carriesChanges(action)) {

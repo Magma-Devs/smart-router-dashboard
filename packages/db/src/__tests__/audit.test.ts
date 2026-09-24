@@ -398,6 +398,38 @@ describe("createAuditWriter", () => {
     expect(violations).toEqual([{ action: "provider.edited", reason: "context-not-allowed" }]);
   });
 
+  it("keeps the row when its access context would not fit the columns, and says so", async () => {
+    // The context comes from headers an outsider writes. A value `inet` or
+    // varchar(128) refuses would fail the insert, and a standalone write that
+    // fails is swallowed — so the row would vanish from a log that looks fine.
+    await writer().write({
+      action: "signin.failed",
+      actor: { id: null, kind: "user", label: "ghost@example.com" },
+      access: { ip: "1:2:3:4:5:6:7:8:9", client: "😀".repeat(200), sessionId: null },
+    });
+
+    const [row] = await t.db.select().from(auditEvents);
+    expect(row?.ip).toBeNull();
+    // Counted as Postgres counts, by character: cutting UTF-16 units would
+    // keep 64 of these, or split one in half.
+    expect(row?.client).toBe("😀".repeat(128));
+    expect(violations).toEqual([
+      { action: "signin.failed", reason: "context-malformed", detail: ["ip", "client"] },
+    ]);
+  });
+
+  it("drops an IPv6 zone, which Node calls an address and `inet` refuses", async () => {
+    await writer().write({
+      action: "signin.failed",
+      actor: { id: null, kind: "user", label: "ghost@example.com" },
+      access: { ip: "fe80::1%eth0", client: null, sessionId: null },
+    });
+
+    const [row] = await t.db.select().from(auditEvents);
+    expect(row?.ip).toBeNull();
+    expect(violations[0]?.detail).toEqual(["ip"]);
+  });
+
   it("keeps changes on an event that did not expect them, and reports it", async () => {
     // The database accepts these; silently discarding data a caller meant to
     // record is the worse outcome, so this one is reported and kept.
@@ -459,15 +491,19 @@ describe("createAuditWriter", () => {
 });
 
 describe("createAuditWriter failure behaviour", () => {
-  /** `client` is varchar(128); this overflows it and fails the insert. */
-  const tooLong = { ip: null, client: "x".repeat(200), sessionId: null };
+  /**
+   * `session_id` is a uuid and this is not one, so the insert fails. The
+   * writer repairs `ip` and `client` itself — they come from headers — but a
+   * session id comes from our own row, so a bad one is a bug worth failing on.
+   */
+  const badSession = { ip: null, client: null, sessionId: "not-a-uuid" };
 
   it("swallows a standalone failure and reports it", async () => {
     await expect(
       writer().write({
         action: "signin.succeeded",
         actor: { id: null, kind: "system" },
-        access: tooLong,
+        access: badSession,
       }),
     ).resolves.toBeUndefined();
 
@@ -489,7 +525,7 @@ describe("createAuditWriter failure behaviour", () => {
           {
             action: "signin.succeeded",
             actor: { id: null, kind: "system" },
-            access: tooLong,
+            access: badSession,
           },
           tx,
         );

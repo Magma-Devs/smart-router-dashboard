@@ -121,6 +121,10 @@ describe("events reach the log", () => {
     const res = await app!.inject({
       method: "POST",
       url: "/auth/setup",
+      remoteAddress: "84.229.11.6",
+      headers: {
+        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:131.0) Gecko/20100101 Firefox/131.0",
+      },
       payload: { token: "installer-token-for-tests", email: "first@example.com", password: PASSWORD },
     });
     expect(res.statusCode).toBe(201);
@@ -130,7 +134,7 @@ describe("events reach the log", () => {
     const rows = await t.db.execute<{ ip: string | null; client: string | null }>(
       sql`select ip::text, client from audit_events where action = 'setup.completed'`,
     );
-    expect(rows.rows).toHaveLength(1);
+    expect(rows.rows).toEqual([{ ip: "84.229.11.6/32", client: "Firefox 131 / Windows" }]);
   });
 
   it("records a successful and a failed sign-in differently", async () => {
@@ -275,15 +279,23 @@ describe("events reach the log", () => {
     expect(rows.rows[0]?.actor_email).toBe("target@example.com");
   });
 
-  it("keeps writing when one event is malformed — the log is not all-or-nothing", async () => {
-    // A caller bug must not take down the surface it rides on. The writer
-    // reports and stores; it does not refuse.
-    const { token } = await adminToken();
+  it("keeps the row when the caller's headers would not fit its columns", async () => {
+    // Both are the caller's to write. Before either reaches an insert it is cut
+    // to something the column takes: a made-up version is dropped rather than
+    // repeated, and an address `inet` would refuse is not recorded. Otherwise
+    // the insert fails, the standalone write swallows it, and whoever is
+    // guessing passwords chooses whether their attempts are logged.
     await app!.inject({
       method: "POST",
-      url: "/auth/sign-out",
-      headers: { authorization: `Bearer ${token}` },
+      url: "/auth/sign-in",
+      remoteAddress: "1:2:3:4:5:6:7:8:9",
+      headers: { "user-agent": `Mozilla/5.0 (Macintosh) Chrome/${"9".repeat(300)}.0` },
+      payload: { email: "ghost@example.com", password: "wrong" },
     });
-    expect(await actions()).toContain("signout");
+
+    const rows = await t.db.execute<{ ip: string | null; client: string | null }>(
+      sql`select ip::text, client from audit_events where action = 'signin.failed'`,
+    );
+    expect(rows.rows).toEqual([{ ip: null, client: "Chrome / macOS" }]);
   });
 });
