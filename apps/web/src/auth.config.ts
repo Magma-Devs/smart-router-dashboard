@@ -140,6 +140,20 @@ function secretKey(): Uint8Array {
   return new TextEncoder().encode(secret);
 }
 
+/** The Bearer the api accepts for one session: the base claims, re-signed. */
+async function signApiBearer(claims: { sub: string; email: string; role: UserRole; sid: string }) {
+  return await new SignJWT(claims)
+    .setProtectedHeader({ alg: "HS256", typ: "JWT" })
+    .setIssuer(SESSION_JWT_ISSUER)
+    .setAudience(SESSION_JWT_AUDIENCE)
+    .setIssuedAt()
+    .setExpirationTime("30d")
+    .sign(secretKey());
+}
+
+/** How long a sign-out waits on the api before letting the browser go anyway. */
+const SIGN_OUT_API_TIMEOUT_MS = 3_000;
+
 /** A lockout, told apart from a wrong password so the form can say which. The
  *  code rides in the URL, and is safe there: addresses with no account lock too. */
 class AccountLocked extends CredentialsSignin {
@@ -385,18 +399,12 @@ export const authConfig = {
       // `sid` is carried through, never generated: the api refuses a token
       // whose session id doesn't resolve, so a fabricated one would 401 the
       // whole surface rather than fail open.
-      session.accessToken = await new SignJWT({
+      session.accessToken = await signApiBearer({
         sub: session.user.id,
         email: session.user.email,
         role: session.user.role,
         sid: (token.sid as string | undefined) ?? "",
-      })
-        .setProtectedHeader({ alg: "HS256", typ: "JWT" })
-        .setIssuer(SESSION_JWT_ISSUER)
-        .setAudience(SESSION_JWT_AUDIENCE)
-        .setIssuedAt()
-        .setExpirationTime("30d")
-        .sign(secretKey());
+      });
       return session;
     },
     authorized({ auth, request }) {
@@ -441,6 +449,39 @@ export const authConfig = {
 
       // Everything else requires a session.
       return signedIn;
+    },
+  },
+  events: {
+    /**
+     * Signing out of the browser closes the api's session too. Clearing the
+     * cookie alone leaves the session live on the api: its token keeps working
+     * until it expires, the sessions list goes on showing the device, and the
+     * audit log gets no `signout` row.
+     *
+     * Best effort. Auth.js clears the cookie whatever happens here, and an api
+     * that is down or slow must not keep anybody signed in — hence the timeout,
+     * and no throw.
+     */
+    async signOut(message) {
+      const token = "token" in message ? message.token : null;
+      const sid = token?.sid as string | undefined;
+      const sub = (token?.id ?? token?.sub) as string | undefined;
+      if (!token || !sid || !sub) return;
+      try {
+        const bearer = await signApiBearer({
+          sub,
+          email: (token.email as string) ?? "",
+          role: (token.role as UserRole) ?? DEFAULT_ROLE,
+          sid,
+        });
+        await fetch(`${apiBase}/auth/sign-out`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${bearer}` },
+          signal: AbortSignal.timeout(SIGN_OUT_API_TIMEOUT_MS),
+        });
+      } catch {
+        // Already signed out in the browser; the api session ends at expiry.
+      }
     },
   },
 } satisfies NextAuthConfig;
