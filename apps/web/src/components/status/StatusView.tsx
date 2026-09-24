@@ -29,6 +29,7 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { WINDOWS, type MetricWindow } from "@sr/shared";
 import type {
+  RouterTopology,
   StatusFinding,
   StatusInsight,
   StatusReport,
@@ -43,6 +44,7 @@ import { ProvidersTab } from "./ProvidersTab";
 import { IncidentsTab } from "./IncidentsTab";
 import { useFilters } from "@/components/gateway/FiltersProvider";
 import { BriefPanel } from "./BriefPanel";
+import { ByChain, groupByChain } from "./ByChain";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { WindowSelect } from "@/components/gateway/WindowSelect";
 
@@ -391,6 +393,11 @@ export function StatusView() {
   }, [mutate]);
   const [nfOpen, setNfOpen] = useState(false);
   const [tab, setTab] = useState<Tab>("issues");
+  // By chain is the default: the question the page is usually opened with is
+  // "what is happening with MY chain", not "what is worst across the fleet".
+  const [groupBy, setGroupBy] = useState<"chain" | "severity">("chain");
+  // The config half of a chain container — roles, interfaces and addons.
+  const { data: routers } = useApi<{ routers: RouterTopology[] }>(`/api/config/routers`);
   // "Checked at" is the page proving it is alive. With keepPreviousData a
   // dead api would otherwise leave a frozen report on screen indefinitely -
   // false calm is the one failure an incident page cannot afford.
@@ -462,6 +469,25 @@ export function StatusView() {
 
       {tab === "issues" && (<>
         <BriefPanel />
+        <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+          {([["chain", "By chain"], ["severity", "By severity"]] as const).map(([k, label]) => (
+            <button key={k} onClick={() => setGroupBy(k)} style={{
+              fontSize: 11, padding: "3px 10px", borderRadius: 4, cursor: "pointer",
+              background: groupBy === k ? "var(--brand)" : "transparent",
+              color: groupBy === k ? "#fff" : "var(--text-3)",
+              border: `1px solid ${groupBy === k ? "var(--brand)" : "var(--border, #333)"}`,
+            }}>{label}</button>
+          ))}
+        </div>
+      {groupBy === "chain" && !apiDown && data && (
+        <ByChain groups={groupByChain(findings, routers?.routers ?? [])} />
+      )}
+
+      {groupBy === "chain" && (isLoading && !data) && (
+        <div style={{ padding: "14px 18px", fontSize: 12.5, color: "var(--text-4)" }}>Checking…</div>
+      )}
+
+      {groupBy === "severity" && (<>
       <Section title="Critical"
         color={apiDown ? "var(--err)" : critical.length ? "var(--err)" : isLoading && !data ? "var(--text-4)" : "var(--text-3)"}
         count={critical.length}>
@@ -497,6 +523,7 @@ export function StatusView() {
           </Section>
         );
       })}
+      </>)}
       </>)}
 
       {/* PROVIDERS - one row per provider, verdict from the same findings. */}

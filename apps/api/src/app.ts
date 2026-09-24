@@ -16,6 +16,7 @@ import { configRoutes } from "./routes/config.js";
 import { upstreamRoutes } from "./routes/upstreams.js";
 import { authRoutes } from "./routes/auth.js";
 import { aiRoutes } from "./routes/ai.js";
+import { incidentFeedPlugin } from "./plugins/incident-feed.js";
 import { announceSetupToken } from "./services/setup.js";
 
 /**
@@ -94,6 +95,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(metricRoutes);
   await app.register(configRoutes);
   await app.register(upstreamRoutes);
+  await app.register(incidentFeedPlugin);
   await app.register(aiRoutes);
 
   return app;

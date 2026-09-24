@@ -593,4 +593,34 @@ export async function aiRoutes(app: FastifyInstance) {
       };
     },
   );
+
+  app.get(
+    "/api/ai/incident-feed",
+    {
+      schema: {
+        tags: ["AI"],
+        summary: "The incident feed, from the warm cache — instant",
+        description:
+          "Served from the background loop, so the page opens on it rather than waiting ~35s " +
+          "for a recompute. Each item carries `isNew` (first time it appeared — what a " +
+          "notifier fires on) and `explainedAtUnix`. 503 with `reason: cold` before the " +
+          "first cycle finishes; POST the same path to force one.",
+      },
+    },
+    async (_request, reply) => {
+      const g = gate();
+      if (!g.ok) {
+        reply.status(503);
+        return { ...g, ...target() };
+      }
+      const feed = app.incidentFeed.current;
+      if (!feed) {
+        // Distinct from "AI is off": the loop is running and has not finished
+        // its first cycle, which is a wait, not a misconfiguration.
+        reply.status(503);
+        return { ok: false, reason: "cold", detail: "the first feed cycle has not finished yet" };
+      }
+      return { ok: true, ...feed };
+    },
+  );
 }
