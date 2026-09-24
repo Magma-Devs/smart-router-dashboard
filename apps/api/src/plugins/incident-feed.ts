@@ -28,7 +28,7 @@ declare module "fastify" {
 export const incidentFeedPlugin = fp(async (app: FastifyInstance) => {
   const feed = new IncidentFeedService(app.prom, app.routerConfig, app.log);
   app.decorate("incidentFeed", feed);
-  const issues = new IssuesFeedService(app.metricsDetail, app.routerConfig, app.log);
+  const issues = new IssuesFeedService(app.metricsDetail, app.routerConfig, app.log, app.prom);
   app.decorate("issuesFeed", issues);
 
   // Tests assert against per-test fetch stubs; a loop would fire a model call

@@ -25,6 +25,26 @@ import { BedrockService, parseModelJson, type BedrockLogger } from "./bedrock.js
 
 export type IssueSeverity = "critical" | "degraded" | "config";
 
+/**
+ * What happened to the requests that failed on a provider, chain-wide.
+ *
+ * A provider failing and a CALLER failing are different facts. The router
+ * retries a request that got no answer on another provider, so "blockdaemon
+ * gave no reply to 75%" can end in nothing reaching the caller at all, or in
+ * every one of them failing. Only these two counters say which, and before
+ * them the card could only write "we weren't told whether the router
+ * retried" — which is the line the reader acts on, left blank.
+ *
+ * Null is "not measured on this deployment" (the family has never fired),
+ * never zero.
+ */
+export interface ChainOutcome {
+  /** Failed on one provider, succeeded when the router retried it on another. */
+  recovered: number | null;
+  /** Failed for the caller after every attempt. */
+  failures: number | null;
+}
+
 export interface FormulatedIssue {
   severity: IssueSeverity;
   spec: string;
@@ -57,6 +77,8 @@ export interface FormulatedIssue {
   findingIds: string[];
   /** Newest activity across those findings — what the by-time order reads. */
   lastSeenUnix: number | null;
+  /** Measured, not written — the numbers the severity was decided on. */
+  outcome: ChainOutcome;
 }
 
 /**
@@ -133,9 +155,22 @@ function mostlyCallerSide(f: StatusFinding): boolean {
   return f.codes.length > 0 && f.codes.every((c) => CALLER_SIDE.test(c));
 }
 
-export function severityOf(findings: StatusFinding[]): IssueSeverity {
+export function severityOf(
+  findings: StatusFinding[],
+  outcome?: Pick<ChainOutcome, "failures">,
+): IssueSeverity {
   const ours = findings.filter((f) => !mostlyCallerSide(f));
-  if (ours.some((f) => REACHED_THE_CALLER.includes(f.kind))) return "critical";
+  // `dead` is named for the PROVIDER: it gave no answer. Whether the REQUEST
+  // died is a second fact, because the router retries a no-answer on another
+  // provider. When the chain's final failure count is zero, every one was
+  // rescued and nothing reached the caller — a red badge there sat over
+  // "your requests are still landing" on every such chain. An error BODY
+  // (`answered-error`) is not retried, so it reaches the caller either way.
+  // Unknown (null) keeps the old reading: silence is not proof of a rescue.
+  const rescued = outcome?.failures === 0;
+  const reached = (f: StatusFinding): boolean =>
+    REACHED_THE_CALLER.includes(f.kind) && !(f.kind === "dead" && rescued);
+  if (ours.some(reached)) return "critical";
   if (ours.some((f) => f.kind !== "config")) return "degraded";
   return "config";
 }
@@ -212,9 +247,9 @@ short words.
 
 ## What the points must walk, in this order
 
-  1. What is failing, with the number.
+  1. What is failing, with the number — and WHICH provider, by name.
   2. Why — the cause.
-  3. What the router did: did it retry, did it have somewhere to go.
+  3. What happened to those requests: saved by a retry, or reached the caller.
   4. Why the failover did or did not save it. This is the one people act on.
 
 Not every issue needs all four. Stop when the chain is told — three points
@@ -234,6 +269,25 @@ useful point you can write. Say it in one line:
 
   "lava is the only provider here that serves debug, so those calls had no
    second option."
+
+## What happened to the failed requests
+
+When you are given \`outcome\`, it is the most useful fact you have. It says how
+many requests the router saved by retrying them on another provider
+(savedByRetry) and how many still failed for the caller (reachedCaller).
+
+  - reachedCaller is 0: the provider failed and the caller never saw it. Say
+    so plainly: "The router retried every one on another provider; none
+    reached you."
+  - reachedCaller above 0: say how many still failed, and why the retry could
+    not save them when the input shows why.
+
+Name the provider that took the retries only when exactly one other provider
+is configured on the chain; otherwise write "another provider".
+
+When there is no \`outcome\`, you were not told what the retries did. Say
+nothing about it — not "we weren't told", not "it is unclear". A line about
+what you do not know is a line the reader has to read for nothing.
 
 ## The bottom line
 
@@ -286,6 +340,9 @@ should say what DID reach them instead.
 Plain language, addressed to them: "your requests", "your chain". No error
 codes, no metric names, no internal vocabulary in the sentences.
 
+Name the provider that is failing, every time. They hold the contract with it,
+so "one of your providers" is a sentence they cannot act on.
+
 Use the real error TEXT to understand what happened, then say it plainly. An
 "UNKNOWN_ERROR" reading "Request timeout on the free plan, please upgrade" is
 a provider account limit — write "tatum is rate-limiting you on its current
@@ -309,8 +366,7 @@ were not told something. In particular:
     exists in another is the card contradicting itself.
   - Never spend the bottom line on what you could not check. It is the one
     line that has to say whether they can work.
-  - Say "we were not told whether a retry had anywhere to go" AT MOST ONCE,
-    and only when it changes what they would do about it.
+  - Never write that you were not told something. Leave it out.
 
 ## Your answer
 
@@ -321,6 +377,21 @@ Reply with ONLY a JSON object, no prose around it, no markdown fence:
   "points": ["one fact", "one fact", "one fact"],
   "bottomLine": "One sentence: can they work."
 }`;
+
+/**
+ * What each finding kind means, in the model's terms. The kind decides the
+ * severity, so a model that cannot see it writes a bottom line that argues
+ * with the badge above it.
+ */
+const KIND_MEANING: Record<StatusFinding["kind"], string> = {
+  dead: "this provider gave no answer (timeout or dropped connection); whether the caller felt it is in `outcome`",
+  "answered-error": "this provider answered with an error, and that error went back to the caller",
+  "answered-stale": "this provider answered from a block behind the chain's head; the headline says whether the router caught it",
+  "answered-late": "this provider's answers arrived, but slowly",
+  "answered-unchecked": "nothing verified that these answers were current",
+  "no-backup": "serving fine, with nothing to fail over to if it stops",
+  config: "a request for something no provider here serves, or the caller's own request rejected by the chain",
+};
 
 export function digestForIssue(i: FormulatedInputs): string {
   return JSON.stringify(
@@ -345,6 +416,7 @@ export function digestForIssue(i: FormulatedInputs): string {
       ...(i.configured.length ? { providersConfigured: i.configured } : {}),
       whatWeMeasured: i.findings.map((f) => ({
         upstream: f.upstream,
+        whatItMeans: KIND_MEANING[f.kind],
         headline: f.headline,
         metric: `${f.metric.value} ${f.metric.label}`,
         ongoing: f.ongoing,
@@ -355,8 +427,17 @@ export function digestForIssue(i: FormulatedInputs): string {
         now: x.value,
         weekEarlier: x.baseline,
       })),
-      routerRecoveredByRetry: i.recovered,
-      finalCustomerFailures: i.failures,
+      // Omitted, not null, when unmeasured — the same reason as the provider
+      // list: a null the model can see is a null it writes a sentence about.
+      ...(i.recovered == null && i.failures == null
+        ? {}
+        : {
+            outcome: {
+              note: "Chain-wide, this window. savedByRetry failed on one provider and went through on another. reachedCaller failed after every attempt. null = not measured.",
+              savedByRetry: i.recovered,
+              reachedCaller: i.failures,
+            },
+          }),
       errorsFromLogs: {
         note: "A SAMPLE of recent error lines, not every failure. Read them for WHICH errors and their mix; take totals from the numbers above.",
         groups: i.errorGroups.map((g) => ({
@@ -393,7 +474,7 @@ export class FormulatedIssueService {
     return {
       // From the findings, never from the model — the page already owns this
       // vocabulary and a second scale would disagree with the rows beneath.
-      severity: severityOf(inputs.findings),
+      severity: severityOf(inputs.findings, { failures: inputs.failures }),
       spec: inputs.spec,
       chain: inputs.chain,
       specs: [inputs.spec, ...(inputs.alsoOnChains ?? []).map((c) => c.spec)],
@@ -409,6 +490,7 @@ export class FormulatedIssueService {
         .slice(0, 4),
       bottomLine: str("bottomLine"),
       findingIds: inputs.findings.map((f) => f.id),
+      outcome: { recovered: inputs.recovered, failures: inputs.failures },
       lastSeenUnix:
         inputs.findings.reduce<number | null>(
           (newest, f) => (f.lastSeenUnix && (!newest || f.lastSeenUnix > newest) ? f.lastSeenUnix : newest),

@@ -26,11 +26,18 @@
  * ask and served warm afterwards, the same serve-last shape `metrics-cache`
  * already uses for every metrics read.
  */
-import { DEFAULT_WINDOW, type MetricWindow, type StatusFinding, type StatusInsight } from "@sr/shared";
+import {
+  DEFAULT_WINDOW,
+  OPTIONAL_METRICS,
+  WINDOWS,
+  type MetricWindow,
+  type StatusFinding,
+  type StatusInsight,
+} from "@sr/shared";
 import type { PrometheusClient } from "./prometheus-client.js";
 import type { ConfigurationService } from "./configuration.js";
 import type { MetricsDetailService } from "./metrics-detail.js";
-import { FormulatedIssueService, severityOf, type FormulatedIssue } from "./formulated-issues.js";
+import { FormulatedIssueService, severityOf, type ChainOutcome, type FormulatedIssue } from "./formulated-issues.js";
 import { LokiService, groupErrors } from "./loki.js";
 import { BedrockService, bedrockGate, type BedrockLogger } from "./bedrock.js";
 import { config } from "../config.js";
@@ -43,12 +50,29 @@ export interface IssuesSnapshot {
   issues: FormulatedIssue[];
 }
 
+/** Order of magnitude — "?" unmeasured, "0" none, then 1e0 for 1-9, 1e1 for 10-99… */
+function scale(n: number | null): string {
+  if (n == null) return "?";
+  // Zero gets its own token. A bare magnitude would give 1-9 "0" as well, and
+  // none-to-some — the change that flips the badge — would not rewrite.
+  return n <= 0 ? "0" : `1e${Math.floor(Math.log10(n))}`;
+}
+
 /**
  * What makes an issue worth rewriting. Headlines carry the numbers, so a rate
  * moving from 4% to 38% changes this and a quiet chain does not.
+ *
+ * The outcome goes in by SCALE, not by count. The counts tick every cycle, and
+ * keying on them would re-word an unchanged story each time; zero-to-some is
+ * the line that flips the badge, and a tenfold jump is news.
  */
-export function fingerprint(findings: StatusFinding[], insights: StatusInsight[] = []): string {
+export function fingerprint(
+  findings: StatusFinding[],
+  insights: StatusInsight[] = [],
+  outcome?: ChainOutcome,
+): string {
   return [
+    ...(outcome ? [`o:${scale(outcome.failures)}:${scale(outcome.recovered)}`] : []),
     ...findings.map((f) => `${f.id}|${f.tier}|${f.headline}`),
     // Drift is part of the story, so it is part of what makes the story
     // stale — otherwise a chain quietly getting slower keeps last week's
@@ -57,6 +81,41 @@ export function fingerprint(findings: StatusFinding[], insights: StatusInsight[]
   ]
     .sort()
     .join("~");
+}
+
+/**
+ * Each chain's outcome for the window, read once for every chain.
+ *
+ * Both counters register lazily, on the first failure or the first saved
+ * retry. So no series ANYWHERE is "not measured" (null); a family that has
+ * series for other chains but none for this one is a real zero — the counter
+ * exists and was never moved for this chain. A failed read is [] from the
+ * client, which lands on null: unknown, never an invented zero.
+ */
+export async function outcomesBySpec(
+  prom: Pick<PrometheusClient, "query">,
+  window: MetricWindow,
+): Promise<(spec: string) => ChainOutcome> {
+  const range = `${WINDOWS[window].rangeSeconds}s`;
+  const [failed, saved] = await Promise.all([
+    prom.query(`sum by (spec) (increase(${OPTIONAL_METRICS.requestsFailedTotal}[${range}]))`),
+    prom.query(`sum by (spec) (increase(${OPTIONAL_METRICS.retriesSuccessTotal}[${range}]))`),
+  ]);
+  const read = (rows: typeof failed) => {
+    if (rows.length === 0) return (): number | null => null;
+    const by = new Map(rows.map((r) => [r.metric.spec ?? "", Math.round(Number(r.value[1]) || 0)]));
+    return (spec: string): number | null => by.get(spec) ?? 0;
+  };
+  const failures = read(failed);
+  const recovered = read(saved);
+  return (spec) => ({ recovered: recovered(spec), failures: failures(spec) });
+}
+
+/** Several chains folded into one issue: the sum, or unknown if any is. */
+function sumOutcomes(list: ChainOutcome[]): ChainOutcome {
+  const add = (k: keyof ChainOutcome): number | null =>
+    list.some((o) => o[k] == null) ? null : list.reduce((s, o) => s + (o[k] ?? 0), 0);
+  return { recovered: add("recovered"), failures: add("failures") };
 }
 
 export class IssuesFeedService {
@@ -69,6 +128,8 @@ export class IssuesFeedService {
     private readonly detail: MetricsDetailService,
     private readonly configSvc?: ConfigurationService,
     private readonly logger?: BedrockLogger,
+    /** Optional so a deployment without it still writes issues, minus outcomes. */
+    private readonly prom?: Pick<PrometheusClient, "query">,
     private readonly loki: LokiService = new LokiService(),
   ) {}
 
@@ -92,6 +153,18 @@ export class IssuesFeedService {
     this.running.add(window);
     try {
       const report = await this.detail.status(window);
+      // Read once for every chain. A failure here costs the outcome sentence,
+      // never the issues themselves.
+      const unmeasured: ChainOutcome = { recovered: null, failures: null };
+      const outcomeOf = this.prom
+        ? await outcomesBySpec(this.prom, window).catch((err) => {
+            this.logger?.warn(
+              { window, error: err instanceof Error ? err.message : String(err) },
+              "could not read the retry outcome",
+            );
+            return () => unmeasured;
+          })
+        : () => unmeasured;
 
       const bySpec = new Map<string, StatusFinding[]>();
       for (const f of report.findings) {
@@ -101,16 +174,19 @@ export class IssuesFeedService {
       }
 
       const rank = { critical: 0, degraded: 1, config: 2 } as const;
+      // Severity reads the outcome everywhere it is decided — the ranking, the
+      // caller-side fold and the card — or the three could disagree.
+      const sev = (spec: string, f: StatusFinding[]) => severityOf(f, outcomeOf(spec));
       const ranked = [...bySpec.entries()].sort(
-        (a, b) => rank[severityOf(a[1])] - rank[severityOf(b[1])] || b[1].length - a[1].length,
+        (a, b) => rank[sev(a[0], a[1])] - rank[sev(b[0], b[1])] || b[1].length - a[1].length,
       );
 
       // Caller-side chains fold into ONE issue. Nonce and funds rejections are
       // the client's own doing, so they recur identically wherever that client
       // sends transactions — three cards saying "your nonces are stale" about
       // three chains is one problem rendered three times.
-      const callerSide = ranked.filter(([, f]) => severityOf(f) === "config");
-      const rest = ranked.filter(([, f]) => severityOf(f) !== "config");
+      const callerSide = ranked.filter(([spec, f]) => sev(spec, f) === "config");
+      const rest = ranked.filter(([spec, f]) => sev(spec, f) !== "config");
       const chains: [string, StatusFinding[], { spec: string; chain: string; findings: StatusFinding[] }[]][] = [
         ...rest.slice(0, limit).map(([spec, f]) => [spec, f, []] as [string, StatusFinding[], never[]]),
       ];
@@ -133,9 +209,13 @@ export class IssuesFeedService {
       const issues: FormulatedIssue[] = [];
       for (const [spec, findings, alsoOnChains] of chains) {
         const chainInsights = report.insights.filter((x) => x.spec === spec);
+        const outcome = alsoOnChains.length
+          ? sumOutcomes([outcomeOf(spec), ...alsoOnChains.map((c) => outcomeOf(c.spec))])
+          : outcomeOf(spec);
         const print = fingerprint(
           [...findings, ...alsoOnChains.flatMap((c) => c.findings)],
           chainInsights,
+          outcome,
         );
         const hit = this.memo.get(spec);
         if (hit && hit.print === print) {
@@ -167,8 +247,8 @@ export class IssuesFeedService {
             configured,
             insights: chainInsights,
             alsoOnChains,
-            recovered: null,
-            failures: null,
+            recovered: outcome.recovered,
+            failures: outcome.failures,
           });
           this.memo.set(spec, { print, issue });
           issues.push(issue);
