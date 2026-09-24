@@ -34,6 +34,15 @@ export function InviteModal({
     setEmail(""); setRole("read_only"); setError(null); setResult(null); setCopied("idle");
   }
 
+  function close() {
+    // The request in flight returns a link that is shown once. Closing now
+    // would drop it, and the invitation would sit pending with no link anyone
+    // holds.
+    if (busy) return;
+    reset();
+    onClose();
+  }
+
   // The link is shown once, so "Copied" has to be true: an admin who closes the
   // dialog on a copy that failed has lost the link. `navigator.clipboard` is
   // undefined outside a secure context — an on-prem dashboard on plain http.
@@ -65,14 +74,15 @@ export function InviteModal({
   return (
     <Modal
       open={open}
-      onClose={() => { reset(); onClose(); }}
+      onClose={close}
+      closeOnBackdrop={!result}
       title={result ? "Invitation created" : "Invite teammate"}
       footer={
         result ? (
-          <button className="gw-btn gw-btn--primary" onClick={() => { reset(); onClose(); }}>Done</button>
+          <button className="gw-btn gw-btn--primary" onClick={close}>Done</button>
         ) : (
           <>
-            <button className="gw-btn" onClick={() => { reset(); onClose(); }}>Cancel</button>
+            <button className="gw-btn" disabled={busy} onClick={close}>Cancel</button>
             <button
               className="gw-btn gw-btn--primary"
               disabled={busy || !email}

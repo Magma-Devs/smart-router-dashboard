@@ -63,6 +63,9 @@ export function ResetLinkModal({
   }
 
   function close() {
+    // The request in flight returns a link that is shown once. Closing now
+    // would drop it and leave a live link that nobody holds.
+    if (busy) return;
     reset();
     onClose();
   }
@@ -90,6 +93,7 @@ export function ResetLinkModal({
     <Modal
       open={open}
       onClose={close}
+      closeOnBackdrop={!result}
       title={result ? "Reset link created" : "Generate a reset link"}
       footer={
         result ? (
@@ -98,7 +102,7 @@ export function ResetLinkModal({
           </button>
         ) : (
           <>
-            <button className="gw-btn" onClick={close}>
+            <button className="gw-btn" disabled={busy} onClick={close}>
               Cancel
             </button>
             <button
