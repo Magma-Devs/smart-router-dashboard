@@ -84,7 +84,7 @@ export async function createPasswordReset(
 export type ResetRejection = "not_found" | "used" | "expired" | "user_inactive";
 
 export type ResetOutcome =
-  | { ok: true; user: User; createdBy: string | null }
+  | { ok: true; user: User; createdBy: string | null; revokedSessionIds: string[] }
   | { ok: false; reason: ResetRejection };
 
 /**
@@ -144,26 +144,32 @@ export async function consumePasswordReset(
       .set({ passwordHash, passwordUpdatedAt: new Date() })
       .where(eq(users.id, row.user.id));
 
-    await signOutEverywhere(txDb, row.user.id, { reason: "password_change" });
+    const revokedSessionIds = await signOutEverywhere(txDb, row.user.id, { reason: "password_change" });
     await clearFailures(txDb, row.user.email);
 
-    return { ok: true, user: { ...row.user, passwordHash }, createdBy: row.reset.createdBy } as const;
+    return {
+      ok: true,
+      user: { ...row.user, passwordHash },
+      createdBy: row.reset.createdBy,
+      revokedSessionIds,
+    } as const;
   });
 }
 
 /** Set a password for someone who is signed in and knows their current one.
  *  Revokes every *other* session — they keep the one they're using, because
- *  being logged out of the tab you just changed your password in is hostile. */
+ *  being logged out of the tab you just changed your password in is hostile.
+ *  Returns the ids of the sessions it ended. */
 export async function changeOwnPassword(
   db: Database,
   userId: string,
   newPassword: string,
   keepSessionId: string,
-): Promise<void> {
+): Promise<string[]> {
   const passwordHash = await hashPassword(newPassword);
   // One transaction, for the same reason as a reset: a new password with the
   // old devices still signed in is the state this exists to prevent.
-  await db.transaction(async (tx) => {
+  return db.transaction(async (tx) => {
     await tx
       .update(users)
       .set({ passwordHash, passwordUpdatedAt: new Date() })
@@ -173,7 +179,7 @@ export async function changeOwnPassword(
     // token's `iat` and would kill the surviving session too. Being logged out of
     // the tab you just changed your password in is hostile, so the other devices
     // go and this one stays.
-    await revokeAllForUser(tx as unknown as Database, userId, {
+    return revokeAllForUser(tx as unknown as Database, userId, {
       reason: "password_change",
       except: keepSessionId,
     });

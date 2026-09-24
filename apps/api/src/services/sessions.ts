@@ -173,7 +173,9 @@ export async function revokeSession(
 }
 
 /**
- * Revoke every live session for one account and return how many were closed.
+ * Revoke every live session for one account and return the ids of the ones it
+ * closed — each gets its own `session.revoked` row, so a reader can follow a
+ * session id from its sign-in to its end.
  *
  * Callers that need *every* outstanding token gone — a reset, a removal — also
  * stamp `users.signed_out_all_at`; see `signOutEverywhere`. Changing your own
@@ -183,7 +185,7 @@ export async function revokeAllForUser(
   db: Database,
   userId: string,
   opts: { reason: RevokeReason; by?: string | null; except?: string },
-): Promise<number> {
+): Promise<string[]> {
   const where = [eq(sessions.userId, userId), isNull(sessions.revokedAt)];
   if (opts.except) where.push(sql`${sessions.id} <> ${opts.except}`);
 
@@ -192,7 +194,7 @@ export async function revokeAllForUser(
     .set({ revokedAt: new Date(), revokedReason: opts.reason, revokedBy: opts.by ?? null })
     .where(and(...where))
     .returning({ id: sessions.id });
-  return revoked.length;
+  return revoked.map((r) => r.id);
 }
 
 /**
@@ -203,10 +205,10 @@ export async function signOutEverywhere(
   db: Database,
   userId: string,
   opts: { reason: RevokeReason; by?: string | null },
-): Promise<number> {
-  const count = await revokeAllForUser(db, userId, opts);
+): Promise<string[]> {
+  const revoked = await revokeAllForUser(db, userId, opts);
   await db.update(users).set({ signedOutAllAt: new Date() }).where(eq(users.id, userId));
-  return count;
+  return revoked;
 }
 
 /** Live sessions for one account, newest first. Powers the account page. */
