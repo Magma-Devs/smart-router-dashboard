@@ -7,6 +7,17 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ### Changed
 
+- **Discord is no longer a way to sign in** (`AUTH_MODE=enabled`). Google and
+  GitHub stay, each shown only when its client id and secret are set.
+  `/auth/oauth/discord` and a Discord invitation redemption answer 400. The
+  `discord_id` column stays, so nothing is dropped, but nothing links it any
+  more. An account that used only Discord signs in with Google or GitHub under
+  the same verified address, which links on first use.
+- **The `ADMIN_EMAIL` / `ADMIN_PASSWORD` seed is development-only.** Under
+  `NODE_ENV=production`, which the published images set, the api ignores it
+  and logs a warning. The first admin is created at `/setup` with the
+  installer's setup token. `make dev-auth` still seeds. `make up-auth` and the
+  README's quick start go through `/setup`.
 - **Invitations hand the link over on every deployment.** A managed
   deployment answered with `delivery: "email"` and no link, though nothing
   sends email until MAG-2870 — an invitation nobody received. The admin now
@@ -47,16 +58,17 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   - **change their role**, which applies to the session they have open without
     signing them out;
   - **remove them**, which in one transaction revokes their sessions, stamps the
-    sign-out cutoff, clears their linked Google/GitHub/Discord ids and revokes
-    any pending invitation to their address. The row stays, so the audit log
+    sign-out cutoff, clears their linked Google and GitHub ids and revokes any
+    pending invitation to their address. The row stays, so the audit log
     keeps their name, and the same person can be invited back later;
   - **generate a password-reset link** to hand over.
 
   Each change re-checks under a row lock that the caller is still an admin, so
   two admins acting on each other at once can't leave the team with none, and
-  writes its audit row in the same transaction. The page's admin controls
-  follow the caller's live role, so a role change shows up within 30 seconds
-  rather than at the next sign-in. Invitations are created, re-sent and
+  writes its audit row in the same transaction. The page's admin controls and
+  the sidebar's role badge follow the caller's live role
+  (`GET /api/account/me`), so a role change shows up within 15 seconds rather
+  than at the next sign-in. Invitations are created, re-sent and
   revoked from the same page. On the Account page, changing your password and
   the list of active sessions (sign out one device, or all of them) now work.
 
@@ -69,6 +81,27 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   correctly. With `AUTH_MODE=disabled` — the default — none of this appears:
   Team leaves the sidebar and `/team` redirects, and Account shows only the
   build details.
+
+- **The audit log records the account system** (migration `0004_audit`,
+  MAG-2770's tables and writer). Every event the accounts work emits lands in
+  `audit_events`: first-run setup, sign-ins (including failed and blocked
+  ones), sign-outs, revoked sessions, invitations, role changes, removals,
+  password changes and reset links. Triggers refuse UPDATE and DELETE; the
+  only way past them is a retention sweep's own transaction. Each row keeps the actor's name and email as they were, so a removed
+  person's name survives. Sign-in and session rows carry the browser's
+  address and a device string ("Chrome 141 / macOS"). Both come from request
+  headers, so they are cut to fit their columns; a crafted header can't make
+  the insert fail and lose the row. A change of role is stored with its
+  before and after. There is no viewer yet (MAG-2770); `docs/AUTH.md` has
+  the query.
+- **On a managed deployment, the Magma account says it is ours** (migration
+  `0005_magma_account`). The account `/setup` creates there stays after
+  handover, and is labelled as Magma's in the member list and in the CSV
+  export's `magma_account` column. On-prem never has one.
+- **An invitation opened in a signed-in browser says so**, instead of
+  bouncing to the dashboard, and offers to sign out and come straight back
+  to accept. If the browser still holds the sign-in of the invited address's
+  removed account, that is the only offer.
 
 - **Five chains arrived upstream.** **Arc** (`ARC` / `ARCT`) and **Robinhood
   Chain** (`ROBINHOOD` / `ROBINHOODT`) are EVM chains importing `ETH1`, so they
