@@ -41,6 +41,18 @@ export const STRICT_AUTH_RATE_LIMIT = { max: 10, timeWindow: "1 minute" } as con
  *  here rather than a failed INSERT — sign-in's lockout records any address. */
 export const EMAIL_FIELD = { type: "string" as const, format: "email", maxLength: 254 };
 
+/** On every route that opens a session. Auth.js makes those calls from the web
+ *  tier, so without this the api would record the web pod as the device. */
+const CLIENT_CONTEXT_FIELD = {
+  type: "object" as const,
+  description:
+    "The browser's own IP and User-Agent, forwarded by the web tier. Honoured only with a valid X-Internal-Auth header.",
+  properties: {
+    ip: { type: "string" as const },
+    userAgent: { type: "string" as const },
+  },
+};
+
 interface ForwardedClientContext {
   ip?: unknown;
   userAgent?: unknown;
@@ -66,6 +78,7 @@ interface InviteAcceptBody {
   oauthProvider?: OAuthProvider;
   oauthToken?: string;
   name?: string;
+  clientContext?: ForwardedClientContext;
 }
 
 const OAUTH_PROVIDERS = ["google", "github"] as const;
@@ -102,20 +115,6 @@ function secretsMatch(supplied: string, expected: string): boolean {
 }
 
 /**
- * Decide what to record as the caller's device.
- *
- * The browser never reaches `/auth/sign-in` directly — Auth.js calls it from
- * the web tier — so `request.ip` here is the web pod and the User-Agent is
- * undici's. The web therefore forwards what *it* saw, and this is where we
- * decide whether to believe it.
- *
- * The route is publicly reachable, so an unauthenticated caller could otherwise
- * put any address on their own sign-in attempts, which is a way to write a false
- * audit trail. Forwarded context is honoured only alongside the shared internal
- * secret; otherwise we fall back to what we observed ourselves — which for a
- * direct caller is their own real address.
- */
-/**
  * What the caller looks like, in the two shapes that need it.
  *
  * `raw` goes to `createSession`, which parses and normalises on the way in.
@@ -134,6 +133,20 @@ export interface ResolvedClient extends ClientContext {
   access: { ip: string | null; client: string | null };
 }
 
+/**
+ * Decide what to record as the caller's device.
+ *
+ * The browser never reaches `/auth/sign-in` directly — Auth.js calls it from
+ * the web tier — so `request.ip` here is the web pod and the User-Agent is
+ * undici's. The web therefore forwards what *it* saw, and this is where we
+ * decide whether to believe it.
+ *
+ * The route is publicly reachable, so an unauthenticated caller could otherwise
+ * put any address on their own sign-in attempts, which is a way to write a false
+ * audit trail. Forwarded context is honoured only alongside the shared internal
+ * secret; otherwise we fall back to what we observed ourselves — which for a
+ * direct caller is their own real address.
+ */
 export function resolveClientContext(
   request: FastifyRequest,
   forwarded: ForwardedClientContext | undefined,
@@ -398,6 +411,7 @@ export async function authRoutes(app: FastifyInstance) {
             oauthProvider: { type: "string" as const, enum: [...OAUTH_PROVIDERS] },
             oauthToken: { type: "string" as const, minLength: 1 },
             name: { type: "string" as const },
+            clientContext: CLIENT_CONTEXT_FIELD,
           },
         },
       },
@@ -406,7 +420,7 @@ export async function authRoutes(app: FastifyInstance) {
       const db = dbOr503(reply);
       if (!db) return reply;
       const body = request.body as InviteAcceptBody;
-      const client = resolveClientContext(request, undefined, internalSecret);
+      const client = resolveClientContext(request, body.clientContext, internalSecret);
 
       let verifiedEmail: string | undefined;
       let provider: { column: ReturnType<typeof providerKey>; id: string } | undefined;
@@ -497,6 +511,15 @@ export async function authRoutes(app: FastifyInstance) {
         target: { type: "invite", id: result.invitation.id, name: result.invitation.email },
         access: { ...client.access, sessionId: session?.id ?? null },
       });
+      // The session is a sign-in like any other, and the sessions list shows
+      // it. Without this row the log has a session nobody signed in to.
+      if (session) {
+        await audit.write({
+          action: "signin.succeeded",
+          actor: { id: result.user.id, kind: "user" },
+          access: { ...client.access, sessionId: session.id },
+        });
+      }
 
       return reply.code(201).send({
         user: toPublicUser(result.user),
@@ -602,15 +625,7 @@ export async function authRoutes(app: FastifyInstance) {
           properties: {
             email: EMAIL_FIELD,
             password: { type: "string" as const, minLength: 1 },
-            clientContext: {
-              type: "object" as const,
-              description:
-                "The browser's own IP and User-Agent, forwarded by the web tier. Honoured only with a valid X-Internal-Auth header.",
-              properties: {
-                ip: { type: "string" as const },
-                userAgent: { type: "string" as const },
-              },
-            },
+            clientContext: CLIENT_CONTEXT_FIELD,
           },
         },
       },
@@ -698,13 +713,7 @@ export async function authRoutes(app: FastifyInstance) {
           required: ["token"],
           properties: {
             token: { type: "string" as const, minLength: 1 },
-            clientContext: {
-              type: "object" as const,
-              properties: {
-                ip: { type: "string" as const },
-                userAgent: { type: "string" as const },
-              },
-            },
+            clientContext: CLIENT_CONTEXT_FIELD,
           },
         },
       },
