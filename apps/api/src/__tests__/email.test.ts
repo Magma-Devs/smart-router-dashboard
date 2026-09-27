@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { EMAIL_DELIVERY_NOTES, EMAIL_SUBJECTS } from "@sr/shared";
 import { sendEmail, resetEmailClientForTests } from "../services/email.js";
+import { fakeSesEnv, startFakeSes } from "./fake-ses.js";
 import { sendInvitationEmail, sendPasswordResetEmail } from "../services/email-templates.js";
 
 /**
@@ -13,7 +14,14 @@ import { sendInvitationEmail, sendPasswordResetEmail } from "../services/email-t
  */
 
 const saved: Record<string, string | undefined> = {};
-const ENV = ["AWS_REGION", "EMAIL_FROM", "CUSTOMER_NAME", "SES_ENDPOINT"];
+const ENV = [
+  "AWS_REGION",
+  "AWS_ACCESS_KEY_ID",
+  "AWS_SECRET_ACCESS_KEY",
+  "EMAIL_FROM",
+  "CUSTOMER_NAME",
+  "SES_ENDPOINT",
+];
 
 beforeEach(() => {
   for (const k of ENV) saved[k] = process.env[k];
@@ -67,6 +75,24 @@ describe("transport", () => {
       process.env.NODE_ENV = saved;
     }
   });
+
+  it("gives up on an SES that never answers, instead of holding the caller", async () => {
+    // The invite route awaits this after committing the row. A hung send
+    // hangs the admin's request, and their retry meets a 409.
+    const ses = await startFakeSes();
+    ses.mode = "hold";
+    try {
+      Object.assign(process.env, fakeSesEnv(ses));
+      resetEmailClientForTests();
+
+      const started = Date.now();
+      const res = await sendEmail({ to: "a@example.com", subject: "s", text: "t" }, () => {});
+      expect(res.status).toBe("failed");
+      expect(Date.now() - started).toBeLessThan(20_000);
+    } finally {
+      await ses.close();
+    }
+  }, 40_000);
 
   it("never throws — a send that cannot happen is a value, not an exception", async () => {
     process.env.AWS_REGION = "us-east-1";
