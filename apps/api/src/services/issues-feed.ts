@@ -26,6 +26,7 @@
  * forgets what was already resolved.
  */
 import {
+  buildChainMetaByIndex,
   DEFAULT_WINDOW,
   OPTIONAL_METRICS,
   ROUTER_METRICS,
@@ -172,14 +173,78 @@ export function failedBySpec(
 }
 
 /**
+ * A burst: the most failed customer requests on one chain inside any five
+ * minutes of the window. The team's alert fires on MORE THAN FIVE distinct
+ * failed requests in five minutes on a chain; the page uses the same test, so
+ * whenever the alert fires there is an issue for it on the page.
+ */
+export const BURST_WINDOW_SEC = 300;
+export const BURST_MIN = 6;
+
+export interface Burst {
+  count: number;
+  fromUnix: number;
+  toUnix: number;
+  /** The newest failure in the window, burst or not — "still happening?" */
+  lastUnix: number;
+}
+
+/** The densest five minutes in a list of failure times. */
+export function peakBurst(times: number[], windowSec = BURST_WINDOW_SEC): Burst | null {
+  if (times.length === 0) return null;
+  const t = [...times].sort((a, b) => a - b);
+  let best = { count: 0, from: t[0]!, to: t[0]! };
+  let i = 0;
+  for (let j = 0; j < t.length; j++) {
+    while (t[j]! - t[i]! > windowSec) i++;
+    if (j - i + 1 > best.count) best = { count: j - i + 1, from: t[i]!, to: t[j]! };
+  }
+  return { count: best.count, fromUnix: best.from, toUnix: best.to, lastUnix: t[t.length - 1]! };
+}
+
+/**
+ * A burst as a finding, so it takes the same road as every other problem:
+ * it opens the chain's issue or joins the one already open. Severity is not
+ * set here — six failed requests out of thousands is a working chain, and
+ * `severityOf` decides that from the outcome like it does for everything.
+ */
+export function burstFinding(spec: string, chainName: string, b: Burst, now: number): StatusFinding {
+  return {
+    kind: "dead",
+    tier: "critical",
+    id: `${spec}:burst`,
+    spec,
+    chainName,
+    upstream: null,
+    role: null,
+    headline: `${b.count} customer requests failed within five minutes`,
+    metric: { value: String(b.count), label: "failed in 5 min" },
+    codes: [],
+    evidence: [
+      { k: "failed", v: `${b.count} requests` },
+      { k: "within", v: "5 min" },
+    ],
+    remedy: "",
+    sinceSec: null,
+    firstSeenUnix: b.fromUnix,
+    lastSeenUnix: b.lastUnix,
+    ongoing: now - b.lastUnix < BURST_WINDOW_SEC,
+    // No per-provider selection behind a chain-wide count.
+    decision: [],
+  };
+}
+
+/**
  * What the router's own logs say, once per customer request: how many failed
- * per chain, and which methods the failed requests had called.
+ * per chain, which methods the failed requests had called, and the bursts.
  */
 export interface LogOutcome {
   /** Failed customer requests per chain; a chain is absent when its logs are. */
   failed: Map<string, number>;
   /** Failed requests by method, per chain — scaled up from a sample in a bad hour. */
   failedMethods: Map<string, Map<string, number>>;
+  /** Chains whose failures crossed the alert's test, with the densest five minutes. */
+  bursts: Map<string, Burst>;
 }
 
 /**
@@ -226,6 +291,19 @@ export async function readLogs(
     sampledCount.set(spec, (sampledCount.get(spec) ?? 0) + list.length);
   }
   const failed = failedBySpec(counts, routers, withLogs);
+
+  // Bursts per chain, routers on one chain together — the alert counts by chain.
+  const timesBySpec = new Map<string, number[]>();
+  for (const [router, list] of byRouter) {
+    const spec = specOf.get(router);
+    if (!spec) continue;
+    timesBySpec.set(spec, [...(timesBySpec.get(spec) ?? []), ...list.map((f) => f.atUnix)]);
+  }
+  const bursts = new Map<string, Burst>();
+  for (const [spec, times] of timesBySpec) {
+    const b = peakBurst(times);
+    if (b && b.count >= BURST_MIN) bursts.set(spec, b);
+  }
   const failedMethods = new Map<string, Map<string, number>>();
   for (const [spec, m] of sampled) {
     const seen = sampledCount.get(spec) ?? 0;
@@ -233,7 +311,7 @@ export async function readLogs(
     const k = seen > 0 && real > seen ? real / seen : 1;
     failedMethods.set(spec, new Map([...m].map(([method, n]) => [method, Math.round(n * k)])));
   }
-  return { failed, failedMethods };
+  return { failed, failedMethods, bursts };
 }
 
 export async function outcomesBySpec(
@@ -588,6 +666,16 @@ export class IssuesFeedService {
         const list = bySpec.get(f.spec) ?? [];
         list.push(f);
         bySpec.set(f.spec, list);
+      }
+      // A burst of failed customer requests is a problem whether or not a
+      // 30-minute rule noticed it: a six-minute spike on eleven chains can
+      // stay under every rate threshold. It opens the chain's issue, or joins
+      // the one already there — this is what the Live incidents tab was for.
+      const cycleNow = Math.floor(Date.now() / 1000);
+      for (const [spec, b] of logs?.bursts ?? []) {
+        const list = bySpec.get(spec) ?? [];
+        list.push(burstFinding(spec, list[0]?.chainName ?? buildChainMetaByIndex(spec).name, b, cycleNow));
+        bySpec.set(spec, list);
       }
 
       const rank = { critical: 0, degraded: 1, config: 2 } as const;

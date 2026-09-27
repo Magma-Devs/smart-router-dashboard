@@ -2,9 +2,8 @@
  * Read the whole Status report at once and say what is actually going on.
  *
  * The page already explains each row well. What no row can do is look across
- * all four tabs: the same provider surfaces as an Issue on one chain, an
- * Insight on another and the blamed party inside an Incident, and nothing
- * joins them. That join is the job here — group, rank, and say the one thing
+ * all of them: the same provider surfaces as a finding on one chain and an
+ * insight on another, and nothing joins them. That join is the job here — group, rank, and say the one thing
  * an operator should take away. It is a correlation problem, not a writing
  * problem, so the model is given findings that are ALREADY worded and asked
  * to relate them, never to describe them again.
@@ -22,7 +21,7 @@
  * with a plausible guess. Nothing renders it; it exists to absorb the pressure
  * to sound complete.
  */
-import type { Incident, StatusReport } from "@sr/shared";
+import type { StatusReport } from "@sr/shared";
 import { BedrockService, type BedrockLogger } from "./bedrock.js";
 
 /**
@@ -77,19 +76,18 @@ the node the router relays TO.
 ## What you are given
 
 A Status report that has ALREADY been computed and worded from Prometheus
-counters, the router's logs and the mounted config. Findings, insights,
-incidents and per-chain rows, each with a stable id.
+counters, the router's logs and the mounted config. Findings, insights and
+per-chain rows, each with a stable id.
 
 Every one of those rows is already explained on the page. Do not restate them.
 
 ## Your job
 
-Relate them. One provider can appear as an Issue on one chain, an Insight on
-another and the blamed party inside an Incident, and nothing on the page joins
-those up. That join is what you add:
+Relate them. One provider can appear as a finding on one chain and an insight
+on another, and nothing on the page joins those up. That join is what you add:
 
 - Group findings that share a cause — the same provider across chains, the same
-  error code across findings, one incident explained by a config fact.
+  error code across findings, one finding explained by a config fact.
 - Rank by what an operator should deal with first.
 - Say whose problem each theme is: the provider's, the setup's, the caller's,
   or the chain's. The page's own vocabulary.
@@ -156,7 +154,7 @@ answered is not a reporting gap.`;
  * rows and the evidence pairs are the page's detail view, and feeding them
  * costs tokens while inviting the model to restate rather than relate.
  */
-function digest(report: StatusReport, incidents: Incident[]): string {
+function digest(report: StatusReport): string {
   return JSON.stringify(
     {
       window: { computedAtUnix: report.computedAtUnix },
@@ -187,17 +185,6 @@ function digest(report: StatusReport, incidents: Incident[]): string {
         value: i.value,
         baseline: i.baseline,
       })),
-      incidents: incidents.map((i) => ({
-        id: i.id,
-        spec: i.spec,
-        chain: i.chainName,
-        ongoing: i.ongoing,
-        failures: i.failures,
-        retriesRecovered: i.retriesRecovered,
-        blamed: i.blamed.map((b) => ({ upstream: b.upstream, role: b.role, failRate: b.failRate })),
-        capabilityGap: i.capabilityGap,
-        story: i.story,
-      })),
       // Citable, like everything else. Sent as bare spec strings these were a
       // fact the model could read and had no way to ground a claim on, so a
       // theme about single-upstream chains — a structural risk worth raising —
@@ -218,11 +205,10 @@ function digest(report: StatusReport, incidents: Incident[]): string {
 }
 
 /** Every id the model is allowed to cite. */
-function citableIds(report: StatusReport, incidents: Incident[]): Set<string> {
+function citableIds(report: StatusReport): Set<string> {
   const ids = new Set<string>();
   for (const f of report.findings) ids.add(f.id);
   for (const i of report.insights) ids.add(`insight:${i.kind}:${i.spec}:${i.upstream ?? ""}`);
-  for (const i of incidents) ids.add(i.id);
   for (const c of report.noFailover) ids.add(`nofailover:${c.spec}`);
   return ids;
 }
@@ -277,10 +263,10 @@ export class StatusAiService {
    * One brief over the whole report. Throws `BedrockError` when the model
    * cannot be reached — a half-read report must not become a confident brief.
    */
-  async analyse(report: StatusReport, incidents: Incident[]): Promise<StatusAnalysis> {
+  async analyse(report: StatusReport): Promise<StatusAnalysis> {
     const answer = await this.bedrock.complete({
       system: SYSTEM_PROMPT,
-      messages: [{ role: "user", content: digest(report, incidents) }],
+      messages: [{ role: "user", content: digest(report) }],
       // Headroom over the SIX-theme cap the prompt sets, not over an
       // unbounded answer: measured in production, four themes over 12 findings ran
       // ~5.5k tokens, and an uncapped answer over a 34-finding report blew
@@ -308,7 +294,7 @@ export class StatusAiService {
     const rawThemes: StatusTheme[] = Array.isArray(parsed.themes)
       ? (parsed.themes as StatusTheme[]).filter((t) => t && typeof t.title === "string")
       : [];
-    const { kept, dropped } = dropUncited(rawThemes, citableIds(report, incidents));
+    const { kept, dropped } = dropUncited(rawThemes, citableIds(report));
     if (dropped > 0) {
       // Worth a log line: a model inventing themes is a prompt problem, and
       // this is the only place it is visible.

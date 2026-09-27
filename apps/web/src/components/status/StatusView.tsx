@@ -32,14 +32,12 @@ import type {
 } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { ApiError } from "@/lib/api-client";
-import { IncidentsTab } from "./IncidentsTab";
 import { useFilters } from "@/components/gateway/FiltersProvider";
 import { IssueCards } from "./IssueCards";
 import { WindowSelect } from "@/components/gateway/WindowSelect";
 
 /** The three sections of the Issues tab - one tier each, in display order. */
 
-type Tab = "issues" | "incidents";
 
 /** Page visibility as an external store - SWR does not poll a hidden tab, and
  *  the freshness chip must know that. `resumedAt` is stamped each time the
@@ -106,7 +104,6 @@ export function StatusView() {
     window.addEventListener("focus", onVis);
     return () => { document.removeEventListener("visibilitychange", onVis); window.removeEventListener("focus", onVis); };
   }, [mutate]);
-  const [tab, setTab] = useState<Tab>("issues");
   // "Checked at" is the page proving it is alive. With keepPreviousData a
   // dead api would otherwise leave a frozen report on screen indefinitely -
   // false calm is the one failure an incident page cannot afford.
@@ -145,15 +142,6 @@ export function StatusView() {
     ? (issuesData.issues?.filter((i) => i.status !== "resolved").length ?? null)
     : null;
 
-  const tabs: [Tab, string, number | null][] = [
-    // The count is the ISSUES on screen, not the raw findings behind them.
-    // It read 22 while the page showed 8, because one chain crossing four
-    // rules is one thing happening — and a badge that disagrees with what is
-    // under it is the page arguing with itself.
-    ["issues", "Issues", issueCount],
-    ["incidents", "Live incidents", null],
-  ];
-
   return (
     <div className="gw-page gw-metrics-inter" style={{ paddingBottom: 60 }}>
       <div className="gw-row" style={{ justifyContent: "space-between", marginBottom: 18, alignItems: "flex-start" }}>
@@ -165,35 +153,21 @@ export function StatusView() {
         </div>
       </div>
 
-      <div role="tablist" aria-label="Status sections" style={{ display: "flex", borderBottom: "1px solid var(--line)", marginBottom: 16 }}>
-        {tabs.map(([k, l, n]) => (
-          <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)} style={{
-            display: "inline-flex", alignItems: "center", gap: 7,
-            padding: "8px 16px", border: "none", background: "transparent",
-            fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
-            color: tab === k ? "var(--text)" : "var(--text-3)",
-            borderBottom: tab === k ? "2px solid var(--brand)" : "2px solid transparent",
-            marginBottom: -1, transition: "color 0.15s",
-          }}>
-            {l}
-            {data && n != null && (
-              <span className="gw-mono" style={{ fontSize: 11, fontWeight: 700, color: "var(--text-3)",
-                border: "1px solid var(--line-2)", borderRadius: 9, padding: "1px 6px" }}>{n}</span>
-            )}
-          </button>
-        ))}
+      {/* One section. Live incidents was folded in: a burst of failed
+          customer requests — the alert's own test — opens or updates that
+          chain's issue, so whenever the alert fires, there is an issue here.
+          The count is the OPEN issues on screen, not the findings behind
+          them: a badge that disagrees with what is under it is the page
+          arguing with itself. */}
+      <div style={{ display: "flex", alignItems: "center", gap: 7, borderBottom: "1px solid var(--line)", paddingBottom: 8, marginBottom: 16 }}>
+        <span style={{ fontSize: 12.5, fontWeight: 600 }}>Issues</span>
+        {data && issueCount != null && (
+          <span className="gw-mono" style={{ fontSize: 11, fontWeight: 700, color: "var(--text-3)",
+            border: "1px solid var(--line-2)", borderRadius: 9, padding: "1px 6px" }}>{issueCount}</span>
+        )}
       </div>
 
-      {/* ISSUES - one written issue per affected chain, in severity sections.
-          The metric rows are gone: "38.9% errors - line 5%" is the
-          measurement, and the gist is what the reader came for. The numbers
-          live on the finding rows the issue cites. */}
-      {tab === "issues" && (
-        <IssueCards chainsAffected={data ? [...new Set(findings.map((f) => f.chainName))] : null} />
-      )}
-
-      {/* INCIDENTS - failure bursts of the last 24h, customer-ready. */}
-      {tab === "incidents" && <IncidentsTab />}
+      <IssueCards chainsAffected={data ? [...new Set(findings.map((f) => f.chainName))] : null} />
 
       {data && !data.emitted && (
         <p style={{ fontSize: 12.5, color: "var(--text-3)", marginTop: 14, lineHeight: 1.5 }}>

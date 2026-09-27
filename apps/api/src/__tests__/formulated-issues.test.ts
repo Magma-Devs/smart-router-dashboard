@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { StatusFinding } from "@sr/shared";
 import { severityOf, shareFailed, digestForIssue, type FormulatedInputs } from "../services/formulated-issues.js";
-import { failedBySpec, fingerprint, outcomesBySpec, readLogs } from "../services/issues-feed.js";
+import { burstFinding, failedBySpec, fingerprint, outcomesBySpec, peakBurst, readLogs } from "../services/issues-feed.js";
 
 function finding(over: Partial<StatusFinding>): StatusFinding {
   return {
@@ -316,3 +316,40 @@ describe("readLogs", () => {
     expect(out?.failedMethods.get("POLYGON")).toEqual(new Map([["eth_sendRawTransaction", 200], ["eth_call", 100]]));
   });
 });
+
+describe("bursts — the alert's own test", () => {
+  const T = 1_790_000_000;
+
+  it("finds the densest five minutes", () => {
+    // Six inside 4 minutes, then two stragglers half an hour of window later.
+    const times = [T, T + 30, T + 60, T + 90, T + 200, T + 240, T + 1200, T + 1500];
+    expect(peakBurst(times)).toEqual({ count: 6, fromUnix: T, toUnix: T + 240, lastUnix: T + 1500 });
+    expect(peakBurst([])).toBeNull();
+  });
+
+  it("readLogs reports a burst only past five failures in five minutes", async () => {
+    const f = (id: string, at: number) => ({ id, pod: "solana-mainnet-router-aa11-bb22", atUnix: at });
+    const loki = (list: ReturnType<typeof f>[]) => ({
+      routersWithLogs: async () => new Set(["solana-mainnet"]),
+      failedRequests: async () => ({ byRouter: new Map([["solana-mainnet", list]]), capped: false }),
+      countFailed: async () => new Map(),
+      methodsOf: async () => new Map(),
+    });
+    const routers = [{ id: "solana-mainnet", spec: "SOLANA" }];
+    const six = [0, 20, 40, 60, 80, 100].map((d, i) => f(String(i), T + d));
+    expect((await readLogs(loki(six), 1800, routers, T + 200))?.bursts.get("SOLANA")?.count).toBe(6);
+    const spread = [0, 400, 800, 1200, 1600, 1700].map((d, i) => f(String(i), T + d));
+    expect((await readLogs(loki(spread), 1800, routers, T + 1800))?.bursts.size).toBe(0);
+  });
+
+  it("a burst opens an issue, and a working chain stays degraded", () => {
+    const b = peakBurst([T, T + 10, T + 20, T + 30, T + 40, T + 50])!;
+    const burst = burstFinding("SOLANA", "Solana", b, T + 60);
+    expect(burst).toMatchObject({ id: "SOLANA:burst", ongoing: true, firstSeenUnix: T });
+    // 6 of 24,000 failed: the router kept the chain usable.
+    expect(severityOf([burst], { failures: 6, requests: 24_000 })).toBe("degraded");
+    // It is not the chain-down finding, whatever its kind.
+    expect(burst.id.endsWith(":chain:down")).toBe(false);
+  });
+});
+

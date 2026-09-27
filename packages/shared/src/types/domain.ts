@@ -571,43 +571,6 @@ export interface StatusInsight {
   evidence: { k: string; v: string }[];
 }
 
-/**
- * One detected incident: a burst of FINAL customer failures on a chain,
- * explained. Detection is episodes on `smartrouter_requests_failed_total`
- * (contiguous 5-minute buckets over the floor); the explanation joins what
- * the router saved (retries), who was failing (relay counters + config
- * role), and what the failures were (log lines by method). `summary` is the
- * customer-ready text, composed server-side so every surface words it the
- * same way.
- */
-export interface Incident {
-  id: string;
-  spec: string;
-  chainName: string;
-  startUnix: number;
-  endUnix: number;
-  ongoing: boolean;
-  /** Final customer failures inside the episode. */
-  failures: number;
-  /** Requests the router recovered by retrying, same span. */
-  retriesRecovered: number | null;
-  /** Providers failing during the episode, worst first. */
-  blamed: { upstream: string; role: "primary" | "backup" | null; failRate: number; failed: number }[];
-  /** Failed calls grouped by method, from the logs. Empty without Loki. */
-  failedMethods: { method: string | null; count: number; errorName: string | null; example: string }[];
-  /** The addon gap, when the config proves one ("only X serves DEBUG here"). */
-  capabilityGap: string | null;
-  /** Customer-ready bullets — forwardable as-is. */
-  story: string[];
-}
-
-export interface IncidentsReport {
-  incidents: Incident[];
-  /** Hours scanned back from now. */
-  lookbackHours: number;
-  computedAtUnix: number;
-}
-
 /** One row of the CHAINS table — every chain, its numbers, no praise. */
 export interface ChainStatusRow {
   spec: string;

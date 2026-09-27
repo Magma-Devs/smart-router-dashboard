@@ -1,33 +1,30 @@
 import fp from "fastify-plugin";
 import type { FastifyInstance } from "fastify";
-import { IncidentFeedService } from "../services/incident-feed.js";
 import { IssuesFeedService } from "../services/issues-feed.js";
 import { config } from "../config.js";
 
 /**
- * Keep the incident feed AND the written issues warm, so the page opens on
- * them rather than on a button that starts a 68-second wait.
+ * Keep the issue log current, so the page opens on it rather than on a
+ * button that starts a minute-long wait.
  *
- * A cycle explains only incidents it has not seen (see `IncidentFeedService`),
- * so a quiet interval costs nothing and an unchanged item never gets re-worded.
- * The interval is five minutes because that is the incident bucket: checking
- * faster cannot find anything new.
+ * One cycle every five minutes: the log's live window is read, each problem
+ * is opened, updated or resolved, and the model runs only for an issue whose
+ * facts changed. Five minutes because that is the resolution the checks
+ * themselves have — a burst of failures is judged over five minutes, the same
+ * as the team's alert — so checking faster finds nothing new.
  *
- * Unref'd — a warm cache must never hold the process open, in tests or on a
+ * Unref'd — the loop must never hold the process open, in tests or on a
  * shutdown that is waiting for the event loop to drain.
  */
 const INTERVAL_MS = 5 * 60_000;
 
 declare module "fastify" {
   interface FastifyInstance {
-    incidentFeed: IncidentFeedService;
     issuesFeed: IssuesFeedService;
   }
 }
 
-export const incidentFeedPlugin = fp(async (app: FastifyInstance) => {
-  const feed = new IncidentFeedService(app.prom, app.routerConfig, app.log);
-  app.decorate("incidentFeed", feed);
+export const issuesFeedPlugin = fp(async (app: FastifyInstance) => {
   const issues = new IssuesFeedService(app.metricsDetail, app.routerConfig, app.log, {
     prom: app.prom,
     stateFile: config.issues.stateFile,
@@ -40,18 +37,13 @@ export const incidentFeedPlugin = fp(async (app: FastifyInstance) => {
   if (!config.bedrock.enabled) return;
 
   const tick = (): void => {
-    void feed.refresh().catch((err) => {
-      app.log.warn({ err: err instanceof Error ? err.message : String(err) }, "incident feed cycle failed");
-    });
-    // The written issues for the window the page opens on. Sequential with
-    // the above only by virtue of both being fire-and-forget; each guards its
-    // own overlap, so a slow cycle cannot stack.
+    // Guards its own overlap, so a slow cycle cannot stack.
     void issues.refresh().catch((err) => {
       app.log.warn({ err: err instanceof Error ? err.message : String(err) }, "issues feed cycle failed");
     });
   };
 
-  // One cycle at boot so the first visitor does not wait 35s for a cold feed,
+  // One cycle at boot so the first visitor does not wait on a cold log,
   // deferred a little so it does not contend with everything else starting.
   const first = setTimeout(tick, 10_000);
   const timer = setInterval(tick, INTERVAL_MS);

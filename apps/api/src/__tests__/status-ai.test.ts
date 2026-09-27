@@ -10,7 +10,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { StatusAiService, dropUncited, parseAnswer, type StatusTheme } from "../services/status-ai.js";
 import type { BedrockService } from "../services/bedrock.js";
-import type { Incident, StatusReport } from "@sr/shared";
+import type { StatusReport } from "@sr/shared";
 
 const theme = (title: string, findingIds: string[]): StatusTheme => ({
   title,
@@ -100,7 +100,7 @@ describe("StatusAiService.analyse", () => {
       }),
     );
 
-    const out = await new StatusAiService(bedrock).analyse(report, []);
+    const out = await new StatusAiService(bedrock).analyse(report);
     expect(out.themes.map((t) => t.title)).toEqual(["tatum"]);
     expect(out.droppedUncited).toBe(1);
     expect(out.customerMessage).toBe("msg");
@@ -108,7 +108,7 @@ describe("StatusAiService.analyse", () => {
 
   it("sends findings but not the page's detail view", async () => {
     const bedrock = fakeBedrock('{"headline":"h","themes":[]}');
-    await new StatusAiService(bedrock).analyse(report, []);
+    await new StatusAiService(bedrock).analyse(report);
 
     const sent = (bedrock.complete as unknown as { mock: { calls: [{ messages: { content: string }[] }][] } })
       .mock.calls[0]![0];
@@ -123,19 +123,9 @@ describe("StatusAiService.analyse", () => {
   it("throws rather than returning an empty brief when the model returns junk", async () => {
     // "we could not ask" and "there was nothing to say" are different facts.
     const bedrock = fakeBedrock("I'm afraid I can't do that");
-    await expect(new StatusAiService(bedrock).analyse(report, [])).rejects.toThrow(/JSON/);
+    await expect(new StatusAiService(bedrock).analyse(report)).rejects.toThrow(/JSON/);
   });
 
-  it("carries incident ids into the citable set", async () => {
-    const incident = { id: "inc-1", spec: "ETH1", chainName: "Ethereum", ongoing: false, failures: 5, retriesRecovered: 1, blamed: [], failedMethods: [], capabilityGap: null, story: [] } as unknown as Incident;
-    const bedrock = fakeBedrock(
-      JSON.stringify({ headline: "h", themes: [{ title: "t", detail: "d", severity: "critical", findingIds: ["inc-1"] }] }),
-    );
-
-    const out = await new StatusAiService(bedrock).analyse(report, [incident]);
-    expect(out.themes).toHaveLength(1);
-    expect(out.droppedUncited).toBe(0);
-  });
 });
 
 describe("structural facts are citable, not just readable", () => {
@@ -171,7 +161,7 @@ describe("structural facts are citable, not just readable", () => {
       })),
     } as unknown as BedrockService;
 
-    const out = await new StatusAiService(bedrock).analyse(withNoFailover, []);
+    const out = await new StatusAiService(bedrock).analyse(withNoFailover);
     expect(out.themes).toHaveLength(1);
     expect(out.droppedUncited).toBe(0);
 

@@ -18,6 +18,13 @@ caller sends still be served?**
 | **Degraded** | A provider is failing, slow or wrong, but the router can still send traffic to another one — even if some requests reached callers as errors. |
 | **Config** | Nothing is failing because of us or a provider. The setup, or the caller's own requests, need to change. |
 
+**A burst of failed customer requests opens an issue too**, whatever the rules
+below say: more than five failed requests on a chain within five minutes —
+the same line in the router's logs and the same test as the team's customer-
+failure alert, so whenever that alert fires the page has an issue for it. The
+burst joins the chain's issue if one is open. (This replaced the Live
+incidents tab.)
+
 The rules below find the problems. The heading each rule sits under is its
 own level, for one provider or one rule. It does not set the badge: a rule can
 be Critical for one provider while the chain stays Degraded. Code:

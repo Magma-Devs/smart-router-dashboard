@@ -17,9 +17,7 @@ import type { FastifyInstance } from "fastify";
 import { config } from "../config.js";
 import { BedrockError, BedrockService, bedrockGate } from "../services/bedrock.js";
 import { StatusAiService } from "../services/status-ai.js";
-import { IncidentsService } from "../services/incidents.js";
 import { FailureAnalysisService } from "../services/failure-analysis.js";
-import { IncidentExplainService } from "../services/incident-explain.js";
 import { ChainAnalysisService } from "../services/chain-analysis.js";
 import { WINDOWS } from "@sr/shared";
 import { FormulatedIssueService, severityOf } from "../services/formulated-issues.js";
@@ -126,10 +124,9 @@ export async function aiRoutes(app: FastifyInstance) {
         tags: ["AI"],
         summary: "Relate the Status page's findings to each other",
         description:
-          "Reads the whole Status report plus 24h of incidents and returns " +
-          "correlated themes — the join the page cannot make, since one provider can appear " +
-          "as an Issue, an Insight and the blamed party in an Incident with nothing linking " +
-          "them. Every theme cites the finding ids it rests on; any that cites nothing real " +
+          "Reads the whole Status report and returns correlated themes — the join the page " +
+          "cannot make, since one provider can appear as a finding on one chain and an " +
+          "insight on another with nothing linking them. Every theme cites the finding ids it rests on; any that cites nothing real " +
           "is dropped server-side before it renders, and `droppedUncited` counts them.",
       },
     },
@@ -141,12 +138,9 @@ export async function aiRoutes(app: FastifyInstance) {
       }
 
       const scoped = app.scoped(request.query.router);
-      // Both reads happen regardless of the model — a brief over a half-read
-      // report would be worse than no brief.
-      const [report, incidentsReport] = await Promise.all([
-        scoped.metricsDetail.status(parseWindow(request.query.window)),
-        new IncidentsService(app.prom, app.routerConfig).incidents(24),
-      ]);
+      // Read regardless of the model — a brief over a half-read report would
+      // be worse than no brief.
+      const report = await scoped.metricsDetail.status(parseWindow(request.query.window));
 
       const startedAt = Date.now();
       try {
@@ -154,7 +148,7 @@ export async function aiRoutes(app: FastifyInstance) {
           new BedrockService(config.bedrock.model, app.log),
           app.log,
         );
-        const analysis = await svc.analyse(report, incidentsReport.incidents);
+        const analysis = await svc.analyse(report);
         return {
           ok: true,
           ...target(),
@@ -165,7 +159,6 @@ export async function aiRoutes(app: FastifyInstance) {
           input: {
             findings: report.findings.length,
             insights: report.insights.length,
-            incidents: incidentsReport.incidents.length,
           },
         };
       } catch (err) {
@@ -318,105 +311,6 @@ export async function aiRoutes(app: FastifyInstance) {
     },
   );
 
-  app.post<{ Querystring: { id?: string; router?: string } }>(
-    "/api/ai/incident-explain",
-    {
-      config: { rateLimit: { max: config.bedrock.rateLimitMax, timeWindow: "1 minute" } },
-      schema: {
-        tags: ["AI"],
-        summary: "Explain one incident as numbered steps, in the team's own style",
-        description:
-          "Takes an incident `id` from GET /api/metrics/incidents. Joins the episode's real " +
-          "error lines and the chain's configured providers, and returns the causal chain as " +
-          "ordered steps plus a conclusion — the shape this team already writes in Slack. " +
-          "The step that matters is why failover did not save it, which the config answers " +
-          "and the metrics cannot.",
-      },
-    },
-    async (request, reply) => {
-      const id = request.query.id;
-      if (!id) {
-        reply.status(400);
-        return { error: "id is required — take it from GET /api/metrics/incidents" };
-      }
-
-      const g = gate();
-      if (!g.ok) {
-        reply.status(503);
-        return { ...g, ...target() };
-      }
-
-      const report = await new IncidentsService(app.prom, app.routerConfig).incidents(24);
-
-      // An incident id is `<spec>:<startUnix>`, and it is a handle into a set
-      // that is RE-DERIVED on every call: episodes come from a range query
-      // whose buckets align to `now`, so the boundaries move between the read
-      // that produced the id and this one. An exact match 404s a caller who
-      // did nothing wrong, seconds after the list was on their screen.
-      //
-      // So: exact match first, then the episode on that chain whose window
-      // contains the timestamp — the same incident, re-bucketed.
-      const [idSpec, idStartRaw] = id.split(":");
-      const idStart = Number(idStartRaw);
-      const incident =
-        report.incidents.find((i) => i.id === id) ??
-        (idSpec && Number.isFinite(idStart)
-          ? report.incidents.find(
-              (i) => i.spec === idSpec && idStart >= i.startUnix - 600 && idStart <= i.endUnix + 600,
-            )
-          : undefined);
-
-      if (!incident) {
-        reply.status(404);
-        return { error: "no incident with that id in the last 24h" };
-      }
-
-      // The episode's own window, with a minute of slack for clock skew between
-      // the counter scrape and the log line.
-      const loki = new LokiService();
-      const lines = loki.available
-        ? await loki
-            .recentErrors(incident.spec, undefined, 200, incident.startUnix - 60, incident.endUnix + 60)
-            .catch(() => [])
-        : [];
-
-      // What COULD have taken over. This is what turns "the provider was slow"
-      // into "and nothing else was eligible", which is the actionable half.
-      const configured = (app.routerConfig?.getRouters() ?? [])
-        .filter((r) => r.spec === incident.spec)
-        .flatMap((r) =>
-          r.nodes.map((n) => ({
-            upstream: n.name,
-            role: (n.isBackup ? "backup" : "primary") as "primary" | "backup",
-            addons: [...new Set(n.endpoints.flatMap((e) => e.addons ?? []))],
-          })),
-        );
-
-      try {
-        const svc = new IncidentExplainService(new BedrockService(config.bedrock.model, app.log), app.log);
-        const explanation = await svc.explain({
-          incident,
-          errorGroups: groupErrors(lines, 6),
-          configured,
-        });
-        return {
-          ok: true,
-          ...explanation,
-          chain: incident.chainName,
-          read: { errorGroups: groupErrors(lines, 6).length, configuredProviders: configured.length },
-        };
-      } catch (err) {
-        reply.status(502);
-        return {
-          ok: false,
-          reason: "model_call_failed",
-          awsErrorName: err instanceof BedrockError ? err.awsErrorName : null,
-          detail: err instanceof Error ? err.message : String(err),
-        };
-      }
-    },
-  );
-
   app.post<{ Querystring: { spec?: string; window?: string; router?: string } }>(
     "/api/ai/chain-analysis",
     {
@@ -497,133 +391,6 @@ export async function aiRoutes(app: FastifyInstance) {
           detail: err instanceof Error ? err.message : String(err),
         };
       }
-    },
-  );
-
-  app.post<{ Querystring: { hours?: string; limit?: string; router?: string } }>(
-    "/api/ai/incident-feed",
-    {
-      config: { rateLimit: { max: config.bedrock.rateLimitMax, timeWindow: "1 minute" } },
-      schema: {
-        tags: ["AI"],
-        summary: "The incident feed — every recent incident, explained",
-        description:
-          "Detects incidents once and explains each in the same pass, so nothing is looked " +
-          "up by an id that a later re-detection has already moved. Each item is the causal " +
-          "chain in the team's own style, built from the episode's own error lines and the " +
-          "chain's configured providers. `hours` (default 24), `limit` (default 5).",
-      },
-    },
-    async (request, reply) => {
-      const g = gate();
-      if (!g.ok) {
-        reply.status(503);
-        return { ...g, ...target() };
-      }
-
-      const hours = Math.min(Math.max(Number(request.query.hours) || 24, 1), 72);
-      const limit = Math.min(Math.max(Number(request.query.limit) || 5, 1), 10);
-
-      // ONE detection for the whole feed. Looking each incident up by id
-      // afterwards is what produced 404s on a list that was correct when it
-      // was read: episodes are re-derived per call and the ranking moves.
-      const report = await new IncidentsService(app.prom, app.routerConfig).incidents(hours);
-      const incidents = report.incidents.slice(0, limit);
-      if (incidents.length === 0) {
-        return { ok: true, hours, incidents: [], note: "no incident crossed the floor in this window" };
-      }
-
-      const loki = new LokiService();
-      const routers = app.routerConfig?.getRouters() ?? [];
-      const svc = new IncidentExplainService(new BedrockService(config.bedrock.model, app.log), app.log);
-
-      const items = await Promise.all(
-        incidents.map(async (incident) => {
-          const lines = loki.available
-            ? await loki
-                .recentErrors(incident.spec, undefined, 200, incident.startUnix - 60, incident.endUnix + 60)
-                .catch(() => [])
-            : [];
-          const configured = routers
-            .filter((r) => r.spec === incident.spec)
-            .flatMap((r) =>
-              r.nodes.map((n) => ({
-                upstream: n.name,
-                role: (n.isBackup ? "backup" : "primary") as "primary" | "backup",
-                addons: [...new Set(n.endpoints.flatMap((e) => e.addons ?? []))],
-              })),
-            );
-
-          const base = {
-            id: incident.id,
-            spec: incident.spec,
-            chain: incident.chainName,
-            startUnix: incident.startUnix,
-            endUnix: incident.endUnix,
-            ongoing: incident.ongoing,
-            failures: incident.failures,
-            recovered: incident.retriesRecovered,
-          };
-
-          try {
-            const explanation = await svc.explain({ incident, errorGroups: groupErrors(lines, 6), configured });
-            return { ...base, ...explanation, explained: true as const };
-          } catch (err) {
-            // One item failing must not empty the feed: the others are still
-            // worth reading, and a row that says why it has no explanation is
-            // more use than a row silently missing.
-            return {
-              ...base,
-              explained: false as const,
-              error: err instanceof Error ? err.message : String(err),
-              // The deterministic story the page already computes, so the row
-              // is never blank.
-              steps: incident.story,
-              conclusion: "",
-              owner: "undetermined" as const,
-            };
-          }
-        }),
-      );
-
-      return {
-        ok: true,
-        hours,
-        computedAtUnix: report.computedAtUnix,
-        logsAvailable: loki.available,
-        configAvailable: routers.length > 0,
-        incidents: items,
-      };
-    },
-  );
-
-  app.get(
-    "/api/ai/incident-feed",
-    {
-      schema: {
-        tags: ["AI"],
-        summary: "The incident feed, from the warm cache — instant",
-        description:
-          "Served from the background loop, so the page opens on it rather than waiting ~35s " +
-          "for a recompute. Each item carries `isNew` (first time it appeared — what a " +
-          "notifier fires on) and `explainedAtUnix`. 503 with `reason: cold` before the " +
-          "first cycle finishes; POST the same path to force one.",
-      },
-    },
-    async (_request, reply) => {
-      const g = gate();
-      if (!g.ok) {
-        reply.status(503);
-        return { ...g, ...target() };
-      }
-      const feed = app.incidentFeed.current;
-      if (!feed) {
-        // Distinct from "AI is off": the loop is running and has not finished
-        // its first cycle, which is a wait, not a misconfiguration.
-        reply.status(503);
-        return { ok: false, reason: "cold", detail: "the first feed cycle has not finished yet" };
-      }
-      return { ok: true, ...feed };
     },
   );
 
