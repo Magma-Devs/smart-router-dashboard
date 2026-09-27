@@ -17,7 +17,8 @@ export interface FakeSes {
   /** Every message handed over, in order, as the JSON body SES received. */
   sent: SesMessage[];
   mode: "accept" | "refuse" | "hold";
-  /** Answer every held request (as `accept`). */
+  /** Answer every held request as `accept`, and accept from now on — a send
+   *  still on its way when this is called is not left hanging. */
   release(): void;
   close(): Promise<void>;
 }
@@ -54,6 +55,7 @@ export async function startFakeSes(): Promise<FakeSes> {
     sent: [],
     mode: "accept",
     release() {
+      fake.mode = "accept";
       for (const res of held.splice(0)) accept(res);
     },
     close: () =>

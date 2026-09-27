@@ -1,5 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type { FastifyBaseLogger, FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { Database } from "@sr/db";
 import {
   findUserByEmail,
@@ -26,12 +26,13 @@ import {
   lookupPasswordReset,
   resetUrl,
   RESET_TTL_MS,
+  selfServeResetIsCoolingDown,
 } from "../services/password-reset.js";
 import { clearFailures, lockedReply, recordAttempt } from "../services/lockout.js";
 import { lazyAuditWriter, type AuditWriter } from "../services/audit.js";
 import { sendPasswordResetEmail } from "../services/email-templates.js";
 import { emailTransportConfigured } from "../services/email.js";
-import { RESET_REQUEST_NOTES } from "@sr/shared";
+import { RESET_REQUEST_COOLING_DOWN_NOTE, RESET_REQUEST_NOTES } from "@sr/shared";
 import {
   completeSetup,
   needsSetup,
@@ -593,37 +594,73 @@ export async function authRoutes(app: FastifyInstance) {
       const { email } = request.body as { email: string };
       const client = resolveClientContext(request, undefined, internalSecret);
 
-      const user = await findUserByEmail(db, email);
-      if (user?.passwordHash) {
-        const created = await createPasswordReset(db, { userId: user.id, mode: "managed" });
-        const hours = Math.max(1, Math.round(RESET_TTL_MS.managed / 3_600_000));
-        const { delivery } = await sendPasswordResetEmail(
-          {
-            to: user.email,
-            resetUrl: resetUrl(origin, created.rawToken),
-            expiresInHours: hours,
-          },
-          (msg, ctx) => request.log.warn(ctx ?? {}, msg),
-        );
-        // Unlike an invitation, a failed reset has nowhere to fall back to:
-        // there is no admin in this flow to hand the link to, and returning it
-        // in the response would let anybody mint a reset for any address. The
-        // note is the only record, which is exactly why it is a note — and why
-        // it has its own wording rather than the invitation's.
-        await audit.write({
-          action: "password.reset_requested",
-          actor: { id: user.id, kind: "user" },
-          access: { ...client.access, sessionId: null },
-          note: RESET_REQUEST_NOTES[delivery],
-        });
-      }
-
       // Always 202, whether or not the address exists, and whether or not the
-      // account has a password at all. Anything else turns this into a way to
-      // ask "is this person a member?".
-      return reply.code(202).send({ ok: true });
+      // account has a password at all — anything else turns this into a way to
+      // ask "is this person a member?". And the answer leaves BEFORE the address
+      // is looked up: an account costs a lookup, two writes and an SES round
+      // trip, an unknown address one SELECT, so answering afterwards would say
+      // the same thing through how long it took.
+      await reply.code(202).send({ ok: true });
+
+      try {
+        await issueSelfServeReset(email, origin, client.access, request.log);
+      } catch (err) {
+        // Nobody is waiting on the response any more, so this is the only
+        // place the failure can go.
+        request.log.error({ err }, "self-serve password reset failed after answering 202");
+      }
+      return reply;
     },
   );
+
+  /** The work behind `/auth/password/forgot`, done after it has answered. */
+  async function issueSelfServeReset(
+    email: string,
+    origin: string,
+    access: ResolvedClient["access"],
+    log: FastifyBaseLogger,
+  ): Promise<void> {
+    const db = app.db;
+    if (!db) return;
+    const user = await findUserByEmail(db, email);
+    if (!user?.passwordHash) return;
+
+    // One link per account per cooldown. The route is public and each new link
+    // kills the last, so without this anybody who knows an address can keep
+    // the inbox full and every link in it dead. The link already sent stays
+    // live, so somebody who asks twice loses nothing.
+    if (await selfServeResetIsCoolingDown(db, user.id)) {
+      await audit.write({
+        action: "password.reset_requested",
+        actor: { id: user.id, kind: "user" },
+        access: { ...access, sessionId: null },
+        note: RESET_REQUEST_COOLING_DOWN_NOTE,
+      });
+      return;
+    }
+
+    const created = await createPasswordReset(db, { userId: user.id, mode: "managed" });
+    const hours = Math.max(1, Math.round(RESET_TTL_MS.managed / 3_600_000));
+    const { delivery } = await sendPasswordResetEmail(
+      {
+        to: user.email,
+        resetUrl: resetUrl(origin, created.rawToken),
+        expiresInHours: hours,
+      },
+      (msg, ctx) => log.warn(ctx ?? {}, msg),
+    );
+    // Unlike an invitation, a failed reset has nowhere to fall back to: there
+    // is no admin in this flow to hand the link to, and returning it in the
+    // response would let anybody mint a reset for any address. The note is the
+    // only record, which is exactly why it is a note — and why it has its own
+    // wording rather than the invitation's.
+    await audit.write({
+      action: "password.reset_requested",
+      actor: { id: user.id, kind: "user" },
+      access: { ...access, sessionId: null },
+      note: RESET_REQUEST_NOTES[delivery],
+    });
+  }
 
   app.post(
     "/auth/password/reset/preview",

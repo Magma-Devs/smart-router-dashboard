@@ -68,3 +68,8 @@ export const RESET_REQUEST_NOTES = {
   failed: "email failed, no link delivered",
 } as const satisfies Record<EmailDelivery, string>;
 
+/** `password.reset_requested` when the holder already has an unused link from
+ *  inside the cooldown, so nothing new was issued or sent. Recorded rather than
+ *  dropped: a run of these against one account is what a flood looks like. */
+export const RESET_REQUEST_COOLING_DOWN_NOTE = "not re-sent, a recent link is still unused";
+
