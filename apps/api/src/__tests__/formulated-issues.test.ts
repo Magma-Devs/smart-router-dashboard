@@ -331,7 +331,7 @@ describe("transactions", () => {
 
 describe("readLogs", () => {
   const routers = [{ id: "polygon-mainnet", spec: "POLYGON" }];
-  const f = (id: string) => ({ id, pod: "polygon-mainnet-router-aa11-bb22", atUnix: 1_700_000_000 });
+  const f = (id: string) => ({ id, stream: "polygon-mainnet-router-aa11-bb22", atUnix: 1_700_000_000 });
   const loki = (ids: string[], methods: Map<string, string>, opts: { capped?: boolean; count?: number } = {}) => ({
     routersWithLogs: async () => new Set(["polygon-mainnet"]),
     failedRequests: async () => ({ byRouter: new Map([["polygon-mainnet", ids.map(f)]]), capped: opts.capped ?? false }),
@@ -439,7 +439,8 @@ describe("failover paths", () => {
       threeBackups("3", ["quicknode", "blockdaemon", "lava"]),
     ]);
     expect(p?.groups).toHaveLength(1);
-    expect(p?.groups[0]).toMatchObject({ count: 3, flow: "Tatum ✕ timed out → +7s 3 backups (Blockdaemon, Lava, QuickNode) ✕ none worked → failed" });
+    // Every backup failing the same way says how.
+    expect(p?.groups[0]).toMatchObject({ count: 3, flow: "Tatum ✕ timed out → +7s 3 backups (Blockdaemon, Lava, QuickNode) ✕ no answer → failed" });
   });
 
   it("leaves out a request whose path was not read — a gap would state something false", () => {
@@ -645,7 +646,7 @@ describe("bursts — the alert's own test", () => {
   });
 
   it("readLogs reports a burst only past five failures in five minutes", async () => {
-    const f = (id: string, at: number) => ({ id, pod: "solana-mainnet-router-aa11-bb22", atUnix: at });
+    const f = (id: string, at: number) => ({ id, stream: "solana-mainnet-router-aa11-bb22", atUnix: at });
     const loki = (list: ReturnType<typeof f>[]) => ({
       routersWithLogs: async () => new Set(["solana-mainnet"]),
       failedRequests: async () => ({ byRouter: new Map([["solana-mainnet", list]]), capped: false }),

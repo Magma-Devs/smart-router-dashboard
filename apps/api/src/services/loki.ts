@@ -8,7 +8,7 @@
  * which method, which code, and the raw message. Where Loki is absent the
  * endpoint says so; it never guesses.
  */
-import { config } from "../config.js";
+import { config, type LokiLayout } from "../config.js";
 import { providerName } from "./provider-names.js";
 
 export interface RecentError {
@@ -95,12 +95,14 @@ interface LokiStream {
 
 /**
  * The router writes one of these per customer request, after every retry and
- * failover has run — the request's final answer.
+ * failover has run — the request's final answer. Its wording changed across
+ * router versions ("relay finished" on newer ones), and a store can hold both.
  */
-const FINAL_RESULT = '|= `"message":"ProcessingResult RETURNED"`';
+const FINAL_MESSAGES = ["ProcessingResult RETURNED", "relay finished", "failed getting responses from RPC endpoints"];
+const FINAL_RESULT = `|~ \`"message":"(${FINAL_MESSAGES.join("|")})"\``;
 /**
  * A final answer that failed the caller: an error, no result, or no reply.
- * The same line and the same test as the team's customer-failure alert, so
+ * The same lines and the same test as the team's customer-failure alert, so
  * the page and the alert count the same thing.
  */
 const FAILED_RESULT = '|~ `"error":"[^"]+"|"has_result":"false"|"has_reply":"false"`';
@@ -117,7 +119,8 @@ const BACKGROUND_TIMEOUT_MS = Math.max(config.loki.timeoutMs, 30_000);
 /** A request the chain refused, from a provider's reply in the router's log. */
 export interface Rejection {
   id: string;
-  pod: string;
+  /** The router label's value on its stream — a pod name on a per-pod store. */
+  stream: string;
   atUnix: number;
   /** The chain's reason: CHAIN_NONCE_TOO_LOW, CHAIN_INSUFFICIENT_FUNDS, … */
   code: string;
@@ -126,10 +129,11 @@ export interface Rejection {
 /** Codes meaning the chain refused the caller's own request — every provider gets the same answer. */
 const REFUSED_CODES = "CHAIN_NONCE_TOO_LOW|CHAIN_NONCE_TOO_HIGH|CHAIN_INSUFFICIENT_FUNDS|USER_[A-Z_]+";
 
-/** One customer request that failed: its id, the pod that served it, and when. */
+/** One customer request that failed: its id, the stream that logged it, and when. */
 export interface FailedRequest {
   id: string;
-  pod: string;
+  /** The router label's value on its stream — a pod name on a per-pod store. */
+  stream: string;
   atUnix: number;
 }
 
@@ -263,7 +267,7 @@ export function traceFromLines(id: string, lines: { atNs: bigint; line: Record<s
       }
       a.outcome = outcomeWord(str(line.error_name), str(line.statusCode));
       a.endSec = sec(atNs);
-    } else if (message === "ProcessingResult RETURNED") {
+    } else if (FINAL_MESSAGES.includes(message)) {
       failed = str(line.error) !== "" || line.has_reply === "false" || line.has_result === "false";
       reply = line.has_reply === "false" ? false : line.has_reply === "true" ? true : null;
       end = atNs;
@@ -322,8 +326,11 @@ export function flowOf(t: RequestTrace, { times = true }: { times?: boolean } = 
     }
     const names = [...new Set(tried.map((a) => providerName(a.provider)))].sort((a, b) => a.localeCompare(b));
     const worked = tried.find((a) => a.outcome === "answered");
+    // All failing the same way says how; a mix says only that none worked.
+    const words = new Set(tried.map((a) => a.outcome));
+    const failure = words.size === 1 ? how(tried[0]!.outcome) : "✕ none worked";
     steps.push(
-      `${when}${names.length} ${role === "backup" ? "backups" : "providers"} (${names.join(", ")}) ${worked ? `✓ ${providerName(worked.provider)} answered` : "✕ none worked"}`,
+      `${when}${names.length} ${role === "backup" ? "backups" : "providers"} (${names.join(", ")}) ${worked ? `✓ ${providerName(worked.provider)} answered` : failure}`,
     );
   }
   return [...steps, t.failed ? "failed" : "answered"].join(" → ");
@@ -337,11 +344,72 @@ export function routerOfPod(pod: string): string {
 /** `{ProviderAddress:tatum ProviderReputationSummary:0 …}` → `tatum` */
 const PROVIDER_RE = /ProviderAddress:([^\s}]+)/;
 
+/** Basic auth and tenant header for a shared store's read path. */
+export interface LokiAccess {
+  username?: string;
+  password?: string;
+  orgId?: string;
+}
+
+/** A label value that can sit in a matcher as it is. */
+const SAFE_VALUE = /^[A-Za-z0-9._-]+$/;
+
 export class LokiService {
-  constructor(private readonly baseUrl: string | undefined = config.loki.url) {}
+  /** The configured router ids — what a stream's label value is matched to. */
+  private routerIds: string[] = [];
+
+  constructor(
+    private readonly baseUrl: string | undefined = config.loki.url,
+    private readonly layout: LokiLayout = config.loki.layout,
+    private readonly access: LokiAccess = config.loki,
+  ) {}
 
   get available(): boolean {
     return Boolean(this.baseUrl);
+  }
+
+  /** Tell the service which routers the config declares, so it can name a stream's router. */
+  knowRouters(ids: string[]): void {
+    this.routerIds = [...new Set(ids.map((id) => id.toLowerCase()).filter(Boolean))];
+  }
+
+  /**
+   * The router a stream belongs to. Its label value names it: the whole value,
+   * its start on a per-pod store (`eth-mainnet-router-6b4d…`), or its end on a
+   * shared one (`<cluster>-eth-mainnet`). The longest configured id wins, so
+   * `eth-mainnet-archive` is not read as `eth-mainnet`. Without a config, the
+   * pod-name rule.
+   */
+  routerOf(value: string): string {
+    const v = value.toLowerCase();
+    let best = "";
+    for (const id of this.routerIds) {
+      if ((v === id || v.startsWith(`${id}-`) || v.endsWith(`-${id}`)) && id.length > best.length) best = id;
+    }
+    return best || routerOfPod(value);
+  }
+
+  /** The layout's selector with one more matcher: `{service_name="router", pod="…"}`. */
+  private selector(label?: string, op = "=", value = ""): string {
+    return label ? this.layout.selector.replace(/\}\s*$/, `, ${label}${op}"${value}"}`) : this.layout.selector;
+  }
+
+  /** One router's streams. */
+  private stream(value: string): string {
+    return this.selector(this.layout.routerLabel, "=", value);
+  }
+
+  private headers(): Record<string, string> {
+    const h: Record<string, string> = {};
+    if (this.access.username && this.access.password) {
+      h.authorization = `Basic ${Buffer.from(`${this.access.username}:${this.access.password}`).toString("base64")}`;
+    }
+    if (this.access.orgId) h["x-scope-orgid"] = this.access.orgId;
+    return h;
+  }
+
+  private url(path: string): URL {
+    return new URL(path, this.baseUrl!.endsWith("/") ? this.baseUrl! : `${this.baseUrl}/`);
   }
 
   /**
@@ -351,31 +419,33 @@ export class LokiService {
    */
   async routersWithLogs(rangeSec: number, atUnix = Math.floor(Date.now() / 1000)): Promise<Set<string> | null> {
     if (!this.baseUrl) return null;
-    const url = new URL("loki/api/v1/series", this.baseUrl.endsWith("/") ? this.baseUrl : `${this.baseUrl}/`);
-    url.searchParams.set("match[]", '{service_name="router"}');
+    const url = this.url("loki/api/v1/series");
+    url.searchParams.set("match[]", this.layout.selector);
     url.searchParams.set("start", String(BigInt(atUnix - Math.round(rangeSec)) * 1_000_000_000n));
     url.searchParams.set("end", String(BigInt(atUnix) * 1_000_000_000n));
-    const res = await fetch(url, { signal: AbortSignal.timeout(BACKGROUND_TIMEOUT_MS) });
+    const res = await fetch(url, { headers: this.headers(), signal: AbortSignal.timeout(BACKGROUND_TIMEOUT_MS) });
     if (!res.ok) throw Object.assign(new Error(`loki ${res.status}`), { statusCode: 503 });
     const body = (await res.json()) as { data?: Record<string, string>[] };
-    return new Set((body.data ?? []).map((l) => routerOfPod(l.pod ?? "")).filter(Boolean));
+    return new Set((body.data ?? []).map((l) => this.routerOf(l[this.layout.routerLabel] ?? "")).filter(Boolean));
   }
 
   /**
    * Failed customer requests per router, counted rather than read — only for
    * routers whose failed lines overflowed the read below, which is a bad hour
-   * on that router, scoped to its own pods so the scan stays small.
+   * on that router, scoped to its own streams so the scan stays small.
    */
   async countFailed(routers: string[], rangeSec: number, atUnix = Math.floor(Date.now() / 1000)): Promise<Map<string, number>> {
     const out = new Map<string, number>();
     if (!this.baseUrl || routers.length === 0) return out;
-    const pods = routers.map((r) => r.replace(/[^a-z0-9-]/g, "")).join("|");
-    const rows = await this.byPod(
-      `sum by (pod) (count_over_time({service_name="router", pod=~"(${pods})-router-.*"} ${FINAL_RESULT} ${FAILED_RESULT} [${Math.max(60, Math.round(rangeSec))}s]))`,
+    // The same rule as routerOf, as a regex: the id, the id and more, or more and the id.
+    const ids = routers.map((r) => r.toLowerCase().replace(/[^a-z0-9-]/g, "")).join("|");
+    const label = this.layout.routerLabel;
+    const rows = await this.byLabel(
+      `sum by (${label}) (count_over_time(${this.selector(label, "=~", `(?:${ids})(?:-.*)?|.*-(?:${ids})`)} ${FINAL_RESULT} ${FAILED_RESULT} [${Math.max(60, Math.round(rangeSec))}s]))`,
       atUnix,
     );
-    for (const [pod, v] of rows) {
-      const router = routerOfPod(pod);
+    for (const [value, v] of rows) {
+      const router = this.routerOf(value);
       out.set(router, (out.get(router) ?? 0) + Math.round(v));
     }
     return out;
@@ -383,7 +453,7 @@ export class LokiService {
 
   /**
    * Customer requests that failed in the last `rangeSec`, by router: their ids,
-   * the pod that served them and when. One read of the final-result lines,
+   * the stream that logged them and when. One read of the final-result lines,
    * filtered to failures — failures are rare (a handful an hour across a
    * fleet on a normal day), so the read is small; `capped` says a bad hour
    * overflowed it, and then the ids are a sample and `countFailed` counts.
@@ -395,22 +465,17 @@ export class LokiService {
   ): Promise<{ byRouter: Map<string, FailedRequest[]>; capped: boolean }> {
     const byRouter = new Map<string, FailedRequest[]>();
     if (!this.baseUrl) return { byRouter, capped: false };
-    const streams = await this.range(
-      `{service_name="router"} ${FINAL_RESULT} ${FAILED_RESULT}`,
-      atUnix - Math.round(rangeSec),
-      atUnix,
-      limit,
-    );
+    const streams = await this.range(`${this.layout.selector} ${FINAL_RESULT} ${FAILED_RESULT}`, atUnix - Math.round(rangeSec), atUnix, limit);
     let lines = 0;
     for (const { labels, lines: ls, times } of streams) {
-      const pod = labels.pod ?? "";
-      const router = routerOfPod(pod);
+      const stream = labels[this.layout.routerLabel] ?? "";
+      const router = this.routerOf(stream);
       ls.forEach((line, i) => {
         lines++;
         const id = (safeJson(line).GUID as string | undefined) ?? "";
         if (!/^[0-9]+$/.test(id)) return;
         const list = byRouter.get(router) ?? [];
-        if (!list.some((f) => f.id === id)) list.push({ id, pod, atUnix: Number(BigInt(times[i] ?? "0") / 1_000_000_000n) });
+        if (!list.some((f) => f.id === id)) list.push({ id, stream, atUnix: Number(BigInt(times[i] ?? "0") / 1_000_000_000n) });
         byRouter.set(router, list);
       });
     }
@@ -433,15 +498,15 @@ export class LokiService {
     const byRouter = new Map<string, Rejection[]>();
     if (!this.baseUrl) return { byRouter, capped: false };
     const streams = await this.range(
-      `{service_name="router"} |= "received node error reply from provider" |~ \`"error_name":"(${REFUSED_CODES})"\``,
+      `${this.layout.selector} |= "received node error reply from provider" |~ \`"error_name":"(${REFUSED_CODES})"\``,
       atUnix - Math.round(rangeSec),
       atUnix,
       limit,
     );
     let lines = 0;
     for (const { labels, lines: ls, times } of streams) {
-      const pod = labels.pod ?? "";
-      const router = routerOfPod(pod);
+      const stream = labels[this.layout.routerLabel] ?? "";
+      const router = this.routerOf(stream);
       ls.forEach((raw, i) => {
         lines++;
         const line = safeJson(raw);
@@ -449,7 +514,7 @@ export class LokiService {
         const code = typeof line.error_name === "string" ? line.error_name : "";
         if (!/^[0-9]+$/.test(id) || !code) return;
         const list = byRouter.get(router) ?? [];
-        if (!list.some((r) => r.id === id)) list.push({ id, pod, atUnix: Number(BigInt(times[i] ?? "0") / 1_000_000_000n), code });
+        if (!list.some((r) => r.id === id)) list.push({ id, stream, atUnix: Number(BigInt(times[i] ?? "0") / 1_000_000_000n), code });
         byRouter.set(router, list);
       });
     }
@@ -476,29 +541,19 @@ export class LokiService {
    */
   async resentTransactions(
     refused: Rejection[],
-    perPod = 3,
+    perStream = 3,
   ): Promise<{ checked: number; resent: number; mostSends: number }> {
     const out = { checked: 0, resent: 0, mostSends: 0 };
     if (!this.baseUrl) return out;
-    const byPod = new Map<string, Rejection[]>();
-    for (const r of refused) {
-      if (!/^[0-9]+$/.test(r.id) || !/^[a-z0-9-]+$/.test(r.pod)) continue;
-      byPod.set(r.pod, [...(byPod.get(r.pod) ?? []), r]);
-    }
-    for (const [pod, list] of byPod) {
-      for (const r of [...list].sort((a, b) => b.atUnix - a.atUnix).slice(0, perPod)) {
-        const [received] = await this.range(
-          `{service_name="router", pod="${pod}"} |= "${r.id}" |= "Consumer received"`,
-          r.atUnix - 60,
-          r.atUnix + 2,
-          5,
-        );
+    for (const [stream, list] of byStream(refused)) {
+      for (const r of [...list].sort((a, b) => b.atUnix - a.atUnix).slice(0, perStream)) {
+        const [received] = await this.range(`${this.stream(stream)} |= "${r.id}" |= "Consumer received"`, r.atUnix - 60, r.atUnix + 2, 5);
         const body = safeJson(received?.lines[0] ?? "").body;
         const tx = typeof body === "string" ? /"params"\s*:\s*\[\s*"(0x[0-9a-fA-F]{60,})/.exec(body)?.[1] : undefined;
         if (!tx) continue;
         out.checked++;
         const before = await this.range(
-          `{service_name="router", pod="${pod}"} |= "Consumer received" |= "${tx.slice(0, 120)}"`,
+          `${this.stream(stream)} |= "Consumer received" |= "${tx.slice(0, 120)}"`,
           r.atUnix - 1800,
           r.atUnix - 1,
           100,
@@ -520,28 +575,16 @@ export class LokiService {
   async methodsOf(failures: FailedRequest[]): Promise<Map<string, string>> {
     const out = new Map<string, string>();
     if (!this.baseUrl || failures.length === 0) return out;
-    // One pod, and only the minutes around its failures: the received line is
-    // written seconds before the result, and scanning a whole fleet's window
-    // for a few ids is what the store's gateway refused with a 504.
-    const byPod = new Map<string, FailedRequest[]>();
-    for (const f of failures) {
-      if (!/^[0-9]+$/.test(f.id) || !/^[a-z0-9-]+$/.test(f.pod)) continue;
-      const list = byPod.get(f.pod) ?? [];
-      list.push(f);
-      byPod.set(f.pod, list);
-    }
-    for (const [pod, list] of byPod) {
+    // One stream, and only the minutes around its failures: the received line
+    // is written seconds before the result, and scanning a whole fleet's
+    // window for a few ids is what the store's gateway refused with a 504.
+    for (const [stream, list] of byStream(failures)) {
       for (let i = 0; i < list.length; i += 100) {
         const chunk = list.slice(i, i + 100);
         const ids = chunk.map((f) => f.id);
         const from = Math.min(...chunk.map((f) => f.atUnix)) - 120;
         const to = Math.max(...chunk.map((f) => f.atUnix)) + 5;
-        const streams = await this.range(
-          `{service_name="router", pod="${pod}"} |= "Consumer received a new" |~ "${ids.join("|")}"`,
-          from,
-          to,
-          chunk.length * 2,
-        );
+        const streams = await this.range(`${this.stream(stream)} |= "Consumer received a new" |~ "${ids.join("|")}"`, from, to, chunk.length * 2);
         for (const { lines } of streams) {
           for (const line of lines) {
             const j = safeJson(line);
@@ -556,24 +599,19 @@ export class LokiService {
   }
 
   /**
-   * Trace failed requests: every line each one wrote, on its own pod, in the
-   * minute before its final answer. Failures are rare, so this is a handful
-   * of lines — but a bad hour is not, so at most `perPod` are traced per pod,
-   * newest first, and the caller says it is a sample.
+   * Trace failed requests: every line each one wrote, on its own stream, in
+   * the minute before its final answer. Failures are rare, so this is a
+   * handful of lines — but a bad hour is not, so at most `perStream` are
+   * traced per stream, newest first, and the caller says it is a sample.
    */
-  async traceRequests(failures: FailedRequest[], perPod = 20): Promise<Map<string, RequestTrace>> {
+  async traceRequests(failures: FailedRequest[], perStream = 20): Promise<Map<string, RequestTrace>> {
     const out = new Map<string, RequestTrace>();
     if (!this.baseUrl) return out;
-    const byPod = new Map<string, FailedRequest[]>();
-    for (const f of failures) {
-      if (!/^[0-9]+$/.test(f.id) || !/^[a-z0-9-]+$/.test(f.pod)) continue;
-      byPod.set(f.pod, [...(byPod.get(f.pod) ?? []), f]);
-    }
-    for (const [pod, list] of byPod) {
-      const chunk = [...list].sort((a, b) => b.atUnix - a.atUnix).slice(0, perPod);
+    for (const [stream, list] of byStream(failures)) {
+      const chunk = [...list].sort((a, b) => b.atUnix - a.atUnix).slice(0, perStream);
       const ids = chunk.map((f) => f.id);
       const streams = await this.range(
-        `{service_name="router", pod="${pod}"} |~ "${ids.join("|")}"`,
+        `${this.stream(stream)} |~ "${ids.join("|")}"`,
         Math.min(...chunk.map((f) => f.atUnix)) - 60,
         Math.max(...chunk.map((f) => f.atUnix)) + 2,
         5000,
@@ -598,13 +636,13 @@ export class LokiService {
     endUnix: number,
     limit: number,
   ): Promise<{ labels: Record<string, string>; lines: string[]; times: string[] }[]> {
-    const url = new URL("loki/api/v1/query_range", this.baseUrl!.endsWith("/") ? this.baseUrl! : `${this.baseUrl}/`);
+    const url = this.url("loki/api/v1/query_range");
     url.searchParams.set("query", query);
     url.searchParams.set("start", String(BigInt(Math.floor(startUnix)) * 1_000_000_000n));
     url.searchParams.set("end", String(BigInt(Math.floor(endUnix)) * 1_000_000_000n));
     url.searchParams.set("limit", String(Math.min(Math.max(limit, 1), 5000)));
     url.searchParams.set("direction", "backward");
-    const res = await fetch(url, { signal: AbortSignal.timeout(BACKGROUND_TIMEOUT_MS) });
+    const res = await fetch(url, { headers: this.headers(), signal: AbortSignal.timeout(BACKGROUND_TIMEOUT_MS) });
     if (!res.ok) throw Object.assign(new Error(`loki ${res.status}`), { statusCode: 503 });
     const body = (await res.json()) as { data?: { result?: { stream?: Record<string, string>; values: [string, string][] }[] } };
     return (body.data?.result ?? []).map((r) => ({
@@ -614,14 +652,15 @@ export class LokiService {
     }));
   }
 
-  private async byPod(query: string, atUnix: number): Promise<[string, number][]> {
-    const url = new URL("loki/api/v1/query", this.baseUrl!.endsWith("/") ? this.baseUrl! : `${this.baseUrl}/`);
+  /** An instant metric query, one number per value of the router label. */
+  private async byLabel(query: string, atUnix: number): Promise<[string, number][]> {
+    const url = this.url("loki/api/v1/query");
     url.searchParams.set("query", query);
     url.searchParams.set("time", String(BigInt(atUnix) * 1_000_000_000n));
-    const res = await fetch(url, { signal: AbortSignal.timeout(BACKGROUND_TIMEOUT_MS) });
+    const res = await fetch(url, { headers: this.headers(), signal: AbortSignal.timeout(BACKGROUND_TIMEOUT_MS) });
     if (!res.ok) throw Object.assign(new Error(`loki ${res.status}`), { statusCode: 503 });
     const body = (await res.json()) as { data?: { result?: { metric: Record<string, string>; value: [number, string] }[] } };
-    return (body.data?.result ?? []).map((r) => [r.metric.pod ?? "", Number(r.value[1]) || 0]);
+    return (body.data?.result ?? []).map((r) => [r.metric[this.layout.routerLabel] ?? "", Number(r.value[1]) || 0]);
   }
 
   /** Latest error lines, newest first. `spec`/`provider` narrow by line
@@ -629,7 +668,9 @@ export class LokiService {
   async recentErrors(spec?: string, provider?: string, limit = 200, startUnix?: number, endUnix?: number, errorName?: string): Promise<RecentError[]> {
     if (!this.baseUrl) return [];
     const filters = [
-      `{level="error", service_name="router"}`,
+      // The level is read from the line, not a label: a per-pod store promotes
+      // it to a label, a shared one does not, and every router line has it.
+      `${this.layout.selector} |= \`"level":"error"\``,
       spec ? `|= \`"chain_id":"${spec.replace(/[^A-Za-z0-9_-]/g, "")}"\`` : "",
       provider ? `|= \`ProviderAddress:${provider.replace(/[^A-Za-z0-9._-]/g, "")}\`` : "",
       // A single-code finding shows its own error only - the chain-wide mix
@@ -638,14 +679,14 @@ export class LokiService {
     ].filter(Boolean);
     const nowNs = (endUnix ? BigInt(endUnix) * 1_000n : BigInt(Date.now())) * 1_000_000n;
     const startNs = startUnix ? BigInt(startUnix) * 1_000_000_000n : nowNs - BigInt(24 * 3600) * 1_000_000_000n;
-    const url = new URL("loki/api/v1/query_range", this.baseUrl.endsWith("/") ? this.baseUrl : `${this.baseUrl}/`);
+    const url = this.url("loki/api/v1/query_range");
     url.searchParams.set("query", filters.join(" "));
     url.searchParams.set("start", String(startNs));
     url.searchParams.set("end", String(nowNs));
     url.searchParams.set("limit", String(Math.min(Math.max(limit, 1), 500)));
     url.searchParams.set("direction", "backward");
 
-    const res = await fetch(url, { signal: AbortSignal.timeout(config.loki.timeoutMs) });
+    const res = await fetch(url, { headers: this.headers(), signal: AbortSignal.timeout(config.loki.timeoutMs) });
     if (!res.ok) throw Object.assign(new Error(`loki ${res.status}`), { statusCode: 503 });
     const body = (await res.json()) as { data?: { result?: LokiStream[] } };
 
@@ -672,4 +713,14 @@ export class LokiService {
     }
     return out.sort((a, b) => b.atUnix - a.atUnix).slice(0, limit);
   }
+}
+
+/** Requests grouped by the stream that logged them — only values safe to put in a matcher. */
+function byStream<T extends { id: string; stream: string }>(items: T[]): Map<string, T[]> {
+  const out = new Map<string, T[]>();
+  for (const x of items) {
+    if (!/^[0-9]+$/.test(x.id) || !SAFE_VALUE.test(x.stream)) continue;
+    out.set(x.stream, [...(out.get(x.stream) ?? []), x]);
+  }
+  return out;
 }

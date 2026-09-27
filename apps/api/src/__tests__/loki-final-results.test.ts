@@ -167,7 +167,8 @@ describe("LokiService log reads", () => {
       return ok({ resultType: "vector", result: [{ metric: { pod: "solana-testnet-router-aa11-bb22" }, value: [0, "25046"] }] });
     });
     expect(await new LokiService("http://loki.test").countFailed(["solana-testnet"], 1800)).toEqual(new Map([["solana-testnet", 25_046]]));
-    expect(q).toContain('pod=~"(solana-testnet)-router-.*"');
+    // The router's own streams: its id, alone or with a suffix or a prefix.
+    expect(q).toContain('pod=~"(?:solana-testnet)(?:-.*)?|.*-(?:solana-testnet)"');
   });
 
   it("traces each failed request on its own pod, by its id", async () => {
@@ -183,7 +184,7 @@ describe("LokiService log reads", () => {
       ] }] });
     });
     const traces = await new LokiService("http://loki.test").traceRequests([
-      { id: "111", pod: "starknet-mainnet-router-aa11-bb22", atUnix: 1_700_000_014 },
+      { id: "111", stream: "starknet-mainnet-router-aa11-bb22", atUnix: 1_700_000_014 },
     ]);
     expect([...traces.keys()]).toEqual(["111"]);
     expect(flowOf(traces.get("111")!)).toBe("Alchemy ✕ timed out → failed");
@@ -224,12 +225,65 @@ describe("LokiService log reads", () => {
       return ok({ resultType: "streams", result: [{ stream: {}, values }] });
     });
     const out = await new LokiService("http://loki.test").resentTransactions([
-      { id: "111", pod: "polygon-mainnet-router-aa11-bb22", atUnix: 1_700_000_010, code: "CHAIN_NONCE_TOO_LOW" },
+      { id: "111", stream: "polygon-mainnet-router-aa11-bb22", atUnix: 1_700_000_010, code: "CHAIN_NONCE_TOO_LOW" },
     ]);
     expect(out).toEqual({ checked: 1, resent: 1, mostSends: 2 });
     // The earlier sends are looked for on the same pod, before the refusal.
     expect(queries[1]).toContain('pod="polygon-mainnet-router-aa11-bb22"');
     expect(JSON.stringify(out)).not.toContain("0x02f8");
+  });
+
+  it("reads a shared store: its selector, its router label, its auth — and the newer final line", async () => {
+    // A store several deployments share: tenants by `cluster`, the router in
+    // `service_name` as `<cluster>-<router id>`, no pod label. Newer routers
+    // end a request with "relay finished" instead of "ProcessingResult RETURNED".
+    const seen: { query: string; auth: string | null }[] = [];
+    vi.stubGlobal("fetch", async (url: URL, init?: { headers?: Record<string, string> }) => {
+      seen.push({ query: url.searchParams.get("query") ?? url.searchParams.get("match[]") ?? "", auth: init?.headers?.authorization ?? null });
+      return ok({ resultType: "streams", result: [{ stream: { service_name: "t1-base-sepolia-testnet", chain: "bases" }, values: [
+        ["1700000100000000000", JSON.stringify({ GUID: "111", message: "relay finished", error: "", has_reply: "false", stop_reason: "Stateful", status: "0" })],
+      ] }] });
+    });
+    const loki = new LokiService(
+      "http://loki.test",
+      { selector: '{cluster="t1", component="router"}', routerLabel: "service_name" },
+      { username: "reader", password: "s3cret" },
+    );
+    loki.knowRouters(["sepolia-testnet", "base-sepolia-testnet"]);
+    const { byRouter } = await loki.failedRequests(1800, 5000, 1_700_000_200);
+    // The longest configured id the value ends with — not "sepolia-testnet".
+    expect([...byRouter.keys()]).toEqual(["base-sepolia-testnet"]);
+    expect(byRouter.get("base-sepolia-testnet")?.[0]).toMatchObject({ id: "111", stream: "t1-base-sepolia-testnet" });
+    expect(seen[0]!.query).toMatch(/^\{cluster="t1", component="router"\} \|~ `"message":"\(ProcessingResult RETURNED\|relay finished\|/);
+    expect(seen[0]!.auth).toBe(`Basic ${Buffer.from("reader:s3cret").toString("base64")}`);
+
+    // One router's streams, narrowed by its own label.
+    await loki.traceRequests([{ id: "111", stream: "t1-base-sepolia-testnet", atUnix: 1_700_000_100 }]);
+    expect(seen.at(-1)!.query).toBe('{cluster="t1", component="router", service_name="t1-base-sepolia-testnet"} |~ "111"');
+  });
+
+  it("traces a request that ended on the newer final line", () => {
+    const t = traceFromLines("9", [
+      { atNs: 1_700_000_000_000_000_000n, line: { message: "Choosing providers", chosenProviders: "tatum" } },
+      { atNs: 1_700_000_007_000_000_000n, line: { message: "relay finished", error: "", has_reply: "false", stop_reason: "Stateful" } },
+    ]);
+    expect(t).toMatchObject({ failed: true, seconds: 7 });
+    expect(flowOf(t)).toBe("Tatum ✕ no answer → failed");
+  });
+
+  it("a transaction sent to both main providers at once, both failing the same way, says how", () => {
+    // From a shared store: a transaction goes to every primary at once, and
+    // both answered with an internal error inside 150ms.
+    const ms = (x: number) => 1_790_545_831_000_000_000n + BigInt(x) * 1_000_000n;
+    const t = traceFromLines("7", [
+      { atNs: ms(0), line: { message: "Choosing providers", chosenProviders: "chainstack,tatum" } },
+      { atNs: ms(22), line: { message: "could not send relay to provider", provider: "chainstack", error_name: "NODE_INTERNAL_ERROR" } },
+      { atNs: ms(153), line: { message: "could not send relay to provider", provider: "tatum", error_name: "NODE_INTERNAL_ERROR" } },
+      { atNs: ms(169), line: { message: "failed relay, insufficient results", error_name: "NODE_INTERNAL_ERROR" } },
+      { atNs: ms(169), line: { message: "relay finished", error: "x", has_reply: "false", stop_reason: "Stateful" } },
+    ]);
+    expect(t.error).toBe("NODE_INTERNAL_ERROR");
+    expect(flowOf(t)).toBe("2 providers (Chainstack, Tatum) ✕ internal error → failed");
   });
 
   it("returns nothing without a log store", async () => {

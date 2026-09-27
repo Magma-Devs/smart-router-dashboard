@@ -201,6 +201,13 @@ export const config = {
   loki: {
     url: env("LOKI_URL"),
     timeoutMs: envInt("LOKI_TIMEOUT_MS", 10000),
+    /** Where the routers' lines are in the store, and how one router's are told apart. */
+    layout: readLokiLayout(),
+    /** Basic auth on every Loki call — a shared store's read path. Both or neither. */
+    username: env("LOKI_USERNAME"),
+    password: env("LOKI_PASSWORD"),
+    /** Sent as `X-Scope-OrgID`, for a multi-tenant store that takes the tenant from the client. */
+    orgId: env("LOKI_ORG_ID"),
   },
 
   /** Optional: where the Status page's issue log is kept between restarts.
@@ -311,6 +318,44 @@ export const config = {
  * dashboard showing another deployment's numbers with nothing on screen to
  * say so. A refused boot is visible; a wrong scope is not.
  */
+/** How the routers' logs are laid out in the store — see `readLokiLayout`. */
+export interface LokiLayout {
+  /** The stream selector every read starts from. */
+  selector: string;
+  /** The label that tells one router's streams apart; its value names the router. */
+  routerLabel: string;
+}
+
+/**
+ * The stream selector and the router label, from `LOKI_SELECTOR` and
+ * `LOKI_ROUTER_LABEL`.
+ *
+ * The default is a per-pod store: `{service_name="router"}`, one stream per
+ * pod, the pod named after its router (`eth-mainnet-router-6b4d…`). A store
+ * several deployments share labels them differently — by `cluster`, with the
+ * router in `service_name` as `<cluster>-<router id>` — and is read with
+ * `LOKI_SELECTOR={cluster="…",component="router"}` and
+ * `LOKI_ROUTER_LABEL=service_name`.
+ *
+ * A selector that matches nothing reads as "no failures", never as an error,
+ * so a malformed one refuses the boot instead of quietly showing a clean page.
+ */
+export function readLokiLayout(source: NodeJS.ProcessEnv = process.env): LokiLayout {
+  const selector = (source.LOKI_SELECTOR ?? "").trim() || '{service_name="router"}';
+  const routerLabel = (source.LOKI_ROUTER_LABEL ?? "").trim() || "pod";
+  const inner = /^\{(.*)\}$/.exec(selector)?.[1];
+  const matcher = /^\s*[a-zA-Z_][a-zA-Z0-9_]*\s*(=|!=|=~|!~)\s*"[^"\\`\n\r{}]*"\s*$/;
+  if (inner == null || inner.split(",").some((m) => !matcher.test(m))) {
+    throw new Error(
+      `LOKI_SELECTOR ${JSON.stringify(selector)} is not a stream selector: {label="value", …} — no quotes, backslashes, braces or commas inside a value`,
+    );
+  }
+  if (!isValidScopeLabel(routerLabel)) {
+    throw new Error(`LOKI_ROUTER_LABEL ${JSON.stringify(routerLabel)} is not a label name ([a-zA-Z_][a-zA-Z0-9_]*)`);
+  }
+  return { selector, routerLabel };
+}
+
 export function readMetricsScope(source: NodeJS.ProcessEnv = process.env): MetricScope | null {
   const label = source.METRICS_SCOPE_LABEL ?? "";
   const value = source.METRICS_SCOPE_VALUE ?? "";

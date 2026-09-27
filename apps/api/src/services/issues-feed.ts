@@ -463,11 +463,15 @@ export async function readLogs(
   loki: Pick<
     LokiService,
     "routersWithLogs" | "failedRequests" | "countFailed" | "methodsOf" | "traceRequests" | "rejectedRequests" | "resentTransactions"
-  >,
+  > &
+    Partial<Pick<LokiService, "knowRouters">>,
   rangeSec: number,
   routers: { id: string; spec: string }[],
   now = Math.floor(Date.now() / 1000),
 ): Promise<LogOutcome | null> {
+  // So a stream's label value — a pod, or `<cluster>-<router id>` on a shared
+  // store — is read as the router the config declares.
+  loki.knowRouters?.(routers.map((r) => r.id));
   const withLogs = await loki.routersWithLogs(rangeSec, now);
   if (!withLogs) return null;
   const { byRouter, capped } = await loki.failedRequests(rangeSec, 5000, now);

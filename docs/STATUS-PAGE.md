@@ -140,6 +140,24 @@ silent, **result unknown** otherwise. A bad hour traces a sample — the newest
 whose provider lines were not all read is left out rather than shown with a
 gap.
 
+**Where the failures come from.** Failed and refused requests are counted
+from the routers' log store (`LOKI_URL`), once per request. A failure is the
+request's final line — `ProcessingResult RETURNED` on older routers, `relay
+finished` on newer ones, or `failed getting responses from RPC endpoints` —
+with an `error`, `has_result: false` or `has_reply: false`: the same lines and
+the same test as the team's customer-failure alert. Two store layouts are read:
+
+| | Per-pod store (the default) | Shared store |
+|---|---|---|
+| `LOKI_SELECTOR` | `{service_name="router"}` | `{cluster="<cluster>",namespace="smart-router",component="router"}` |
+| `LOKI_ROUTER_LABEL` | `pod` — `eth-mainnet-router-6b4d…` | `service_name` — `<cluster>-eth-mainnet` |
+| The level | a label | only in the line (read from the line on both) |
+
+The router label's value is matched to the values file's router ids: the
+whole value, its start or its end, longest id first. A shared store's read
+path takes `LOKI_USERNAME` / `LOKI_PASSWORD` (basic auth) and, where it asks
+for one, `LOKI_ORG_ID`.
+
 **Every failing chain gets a card.** The model writes at most 20 issues per
 cycle. Past that, and whenever the model fails, an open issue keeps its words
 with fresh numbers, and a new one gets a card written from its findings
