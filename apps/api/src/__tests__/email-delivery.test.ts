@@ -377,16 +377,107 @@ describe("the reset-link preview", () => {
   });
 
   it("answers one way for every dead link", async () => {
-    await boot("onprem");
+    // Used, expired, never issued and belonging to a removed account are
+    // indistinguishable on purpose: telling them apart tells a stranger which
+    // of them a guessed token hit. Each is made for real, then compared.
+    const admin = await boot("onprem");
+    const mint = async (email: string): Promise<{ id: string; token: string }> => {
+      const [u] = await t.db
+        .insert(users)
+        .values({ email, passwordHash: await hashPassword("a-passphrase-1") })
+        .returning();
+      const link = await app!.inject({
+        method: "POST",
+        url: `/api/team/members/${u!.id}/reset-link`,
+        headers: { authorization: `Bearer ${admin}` },
+      });
+      return { id: u!.id, token: (link.json().url as string).split("/reset/")[1]! };
+    };
+    const preview = (token: string) =>
+      app!.inject({ method: "POST", url: "/auth/password/reset/preview", payload: { token } });
+
+    const used = await mint("used@example.com");
+    expect(
+      (
+        await app!.inject({
+          method: "POST",
+          url: "/auth/password/reset",
+          payload: { token: used.token, password: "a-brand-new-passphrase" },
+        })
+      ).statusCode,
+    ).toBe(200);
+
+    const expired = await mint("expired@example.com");
+    await t.db
+      .update(passwordResets)
+      .set({ expiresAt: new Date(Date.now() - 1000) })
+      .where(eq(passwordResets.userId, expired.id));
+
+    const removed = await mint("removed@example.com");
+    await t.db.update(users).set({ status: "removed" }).where(eq(users.id, removed.id));
+
+    const answers = await Promise.all(
+      [used.token, expired.token, removed.token, "not-a-real-token"].map(async (tok) => {
+        const res = await preview(tok);
+        return { status: res.statusCode, body: res.json() };
+      }),
+    );
+    for (const answer of answers) {
+      expect(answer).toEqual({
+        status: 410,
+        body: { statusCode: 410, error: "Gone", message: "This link has expired." },
+      });
+    }
+  });
+});
+
+describe("inviting on managed, with a transport", () => {
+  let ses: FakeSes;
+  beforeEach(async () => {
+    ses = await startFakeSes();
+  });
+  afterEach(async () => {
+    await ses.close();
+  });
+
+  async function invite(): Promise<{ statusCode: number; body: Record<string, unknown> }> {
+    const token = await boot("managed");
+    setEnv({ ...fakeSesEnv(ses), CUSTOMER_NAME: "Example Co" });
+    resetEmailClientForTests();
     const res = await app!.inject({
       method: "POST",
-      url: "/auth/password/reset/preview",
-      payload: { token: "not-a-real-token" },
+      url: "/api/team/invites",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { email: "dana@example.com", role: "approver" },
     });
+    return { statusCode: res.statusCode, body: res.json() };
+  }
 
-    // Used, expired and never-issued are indistinguishable on purpose: telling
-    // them apart tells a stranger which of them a guessed token hit.
-    expect(res.statusCode).toBe(410);
-    expect(res.json().message).toBe("This link has expired.");
+  it("emails the link and does not hand it to the admin", async () => {
+    const { statusCode, body } = await invite();
+
+    expect(statusCode).toBe(201);
+    expect(body.delivery).toBe("email");
+    expect(body.deliveryFallback).toBe(false);
+    // In the recipient's inbox and nowhere else — the point of a transport.
+    expect(body).not.toHaveProperty("url");
+    expect(ses.sent).toHaveLength(1);
+    expect(ses.sent[0]!.to).toEqual(["dana@example.com"]);
+    expect(ses.sent[0]!.subject).toBe("You've been added to Example Co on Smart Router");
+    expect(ses.sent[0]!.text).toMatch(/https:\/\/dash\.example\.com\/invite\/[A-Za-z0-9_-]+/);
+    expect(await lastNote("member.invited")).toMatch(/^as approver, expires \S+; emailed$/);
+  });
+
+  it("hands the admin the link when SES refuses, and says the email failed", async () => {
+    ses.mode = "refuse";
+    const { statusCode, body } = await invite();
+
+    expect(statusCode).toBe(201);
+    expect(body.delivery).toBe("link");
+    expect(body.deliveryFallback).toBe(true);
+    expect(String(body.url)).toContain("https://dash.example.com/invite/");
+    expect(await lastNote("member.invited")).toMatch(
+      /^as approver, expires \S+; email failed, link shown to the admin$/,
+    );
   });
 });
