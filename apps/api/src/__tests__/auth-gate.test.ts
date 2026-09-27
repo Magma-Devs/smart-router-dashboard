@@ -287,6 +287,30 @@ describe("POST /auth/sign-in", () => {
       const [row] = await t.db.query.sessions.findMany({ limit: 1 });
       expect(row?.ip).not.toBe("203.0.113.7");
     });
+
+    it("records the device when no address is forwarded, as with no proxy in front", async () => {
+      // TRUST_PROXY_HOPS=0: the web forwards the browser's device and no
+      // address. The address falls back to the observed one; the device must not.
+      const res = await signIn(credentials, {
+        "x-forwarded-client-ua": forwarded["x-forwarded-client-ua"],
+        "x-internal-auth": INTERNAL,
+      });
+      expect(res.statusCode).toBe(200);
+
+      const [row] = await t.db.query.sessions.findMany({ limit: 1 });
+      expect(row?.client).toBe("Firefox 131 / Windows");
+      expect(row?.ip).not.toBe("203.0.113.7");
+    });
+
+    it("ignores a forwarded device without the secret, too", async () => {
+      const res = await signIn(credentials, {
+        "x-forwarded-client-ua": forwarded["x-forwarded-client-ua"],
+      });
+      expect(res.statusCode).toBe(200);
+
+      const [row] = await t.db.query.sessions.findMany({ limit: 1 });
+      expect(row?.client).not.toBe("Firefox 131 / Windows");
+    });
   });
 });
 
