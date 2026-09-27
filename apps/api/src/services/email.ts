@@ -35,6 +35,19 @@ import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
  * recipients bounce silently.
  */
 
+/**
+ * How long one send may take, at most. The invitation row is committed before
+ * the send is attempted and the admin is waiting on the response, so a stalled
+ * connection must fail — into the link fallback — rather than hang: an admin
+ * who gives up and retries gets 409 "already has a pending invitation", and
+ * never sees a link at all. The SDK sets no timeout of its own.
+ *
+ * Two attempts of at most five seconds each: SES answers in well under one.
+ */
+export const SES_CONNECT_TIMEOUT_MS = 3_000;
+export const SES_REQUEST_TIMEOUT_MS = 5_000;
+const SES_MAX_ATTEMPTS = 2;
+
 let cachedClient: SESv2Client | null = null;
 let cachedClientRegion: string | null = null;
 
@@ -52,6 +65,14 @@ function getClient(): SESv2Client | null {
   const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
   cachedClient = new SESv2Client({
     region,
+    maxAttempts: SES_MAX_ATTEMPTS,
+    requestHandler: {
+      connectionTimeout: SES_CONNECT_TIMEOUT_MS,
+      requestTimeout: SES_REQUEST_TIMEOUT_MS,
+      // Without this the handler only logs a warning when the request timeout
+      // passes, and keeps waiting.
+      throwOnRequestTimeout: true,
+    },
     ...(process.env.SES_ENDPOINT ? { endpoint: process.env.SES_ENDPOINT } : {}),
     ...(accessKeyId && secretAccessKey ? { credentials: { accessKeyId, secretAccessKey } } : {}),
   });
