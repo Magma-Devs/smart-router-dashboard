@@ -451,7 +451,7 @@ From the ticket, and each has a test:
 
 ### The reset password page
 
-<img src="./assets/reset-password-states.png" alt="The three states of the reset password page, captured against a running stack. Setting a password: heading &quot;Choose a new password&quot; with the address dana.okonkwo@example.com underneath, New password and Repeat password fields, the rule &quot;At least 8 characters. Any characters, including spaces.&quot; shown beneath the first field before typing, and a Save password button. Done: &quot;Your password has been changed. You have been signed out everywhere else.&quot; and a Sign in button. Dead link: &quot;This link has expired&quot;, with on-prem wording asking an administrator to generate a new one, and a Go to sign in button." width="900">
+<img src="./assets/reset-password-states.png" alt="The three states of the reset password page, captured against a running stack. Setting a password: heading &quot;Choose a new password&quot; with the address dana.okonkwo@example.com underneath, New password and Repeat password fields, the rule &quot;8 to 64 characters. Any characters, including spaces.&quot; shown beneath the first field before typing, and a Save password button. Done: &quot;Your password has been changed. You have been signed out everywhere else.&quot; and a Sign in button. Dead link: &quot;This link has expired&quot;, with on-prem wording asking an administrator to generate a new one, and a Go to sign in button." width="900">
 
 ### Checking the whole thing
 
