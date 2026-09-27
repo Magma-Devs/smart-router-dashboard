@@ -331,6 +331,9 @@ export const twoFactorChallenges = pgTable(
       .references(() => users.id, { onDelete: "cascade" }),
     /** SHA-256 of the raw token; the raw value exists only in the response. */
     tokenHash: text("token_hash").notNull(),
+    /** What was proved before the code: `password`, `google` or `github`. The
+     *  session the code opens records it as `<first>+totp`. */
+    firstFactor: varchar("first_factor", { length: 16 }).notNull().default("password"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     /** Minutes, not hours. This is the gap between typing a password and typing
      *  a code with a phone already in hand — see `CHALLENGE_TTL_MS`. */
