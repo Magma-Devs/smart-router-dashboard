@@ -130,16 +130,17 @@ describe("POST /api/team/invites", () => {
     expect(res.statusCode).toBe(401);
   });
 
-  it("hands the link over on a managed deployment too, since nothing can email it yet", async () => {
-    // Answering "emailed" with no link would issue an invitation nobody
-    // receives. Email is MAG-2870; until then every deployment gets the link.
-    setEnv({ DEPLOYMENT_MODE: "managed" });
+  it("hands the link over on a managed deployment whose mail transport is not configured", async () => {
+    // No AWS_REGION, so nothing is sent. Answering "emailed" with no link would
+    // issue an invitation nobody receives.
+    setEnv({ DEPLOYMENT_MODE: "managed", AWS_REGION: undefined });
     const admin = await member("admin@example.com", "admin");
     const token = await bearer(admin);
 
     const created = await invite(token, { email: "dana@example.com", role: "approver" });
     expect(created.statusCode).toBe(201);
     expect(created.json().delivery).toBe("link");
+    expect(created.json().deliveryFallback).toBe(true);
     expect(created.json().url.startsWith(`${WEB_ORIGIN}/invite/`)).toBe(true);
 
     const resent = await app!.inject({

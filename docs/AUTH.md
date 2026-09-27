@@ -73,7 +73,7 @@ is "an admin copies a link", not "an invitation silently never arrives".
 |---|---|---|
 | First admin | a Magma operator runs the first-run page, then invites the customer's named admin | first-run page + the installer's setup token |
 | Magma Devs account | the first-run account is ours, stays, and is labelled | never — the first-run account is the customer's own |
-| Invite / reset delivery | link shown to an admin, handed over — until email exists ([MAG-2870](https://magmadevs.atlassian.net/browse/MAG-2870)), when it is emailed | link shown to an admin, handed over |
+| Invite / reset delivery | emailed — see [Email](#email-mag-2870) | link shown to an admin, handed over |
 | Invite TTL | 7 days | 24 hours |
 | Reset TTL | 1 hour | 24 hours |
 
@@ -189,7 +189,7 @@ crash can't leave a redeemed invite with no account.
 
 | | Managed | On-prem |
 |---|---|---|
-| Delivery | link returned to the admin, once, and handed over — email is MAG-2870 | link returned to the admin, once, and handed over |
+| Delivery | emailed; the link comes back to the admin only when the send did not happen ([Email](#email-mag-2870)) | link returned to the admin, once, and handed over |
 | TTL | 7 days | 24 hours |
 
 **Resending mints a new token and kills the old link**, so it replaces the
@@ -298,18 +298,21 @@ body, which leaves nothing to see.)
 
 | | Managed | On-prem |
 |---|---|---|
-| Started by | the holder — **not available**: see below | an admin |
+| Started by | the holder, from **Forgot password?** on the sign-in page | an admin |
 | Endpoint | `POST /auth/password/forgot` | `POST /api/team/members/:id/reset-link` |
-| Delivery | — | link returned once, handed over |
+| Delivery | emailed | link returned once, handed over |
 | TTL | 1 hour | 24 hours |
 | `created_by` | null | the admin's id |
 
-**Self-serve reset fails closed.** `POST /auth/password/forgot` answers `404`
-on every deployment, for every address, and writes nothing, because there is
-no way to deliver a link — email is MAG-2870. Issuing one would look delivered
-while reaching nobody, and would invalidate any live link the member holds.
+**Self-serve reset is managed-only.** `POST /auth/password/forgot` answers
+`202` for every address on a managed deployment, and emails a link only when the
+address belongs to an account with a password — anything else would say who is a
+member. On-prem it answers `404`: there is nowhere to send a link. So does a
+managed deployment with no mail transport (`AWS_REGION` unset), for every
+address and writing nothing, because a link nobody receives would still kill any
+live one the member holds.
 
-An admin starts one from the member's row on the Team page, which shows the
+On-prem, an admin starts one from the member's row on the Team page, which shows the
 link once; it lands on `/reset/<token>`. A new link kills any earlier one.
 
 `POST /auth/password/reset`, in **one transaction**, claims the token with a
@@ -395,8 +398,9 @@ So the three outcomes collapse into two shapes, and the response says which:
   shape for an operational fault.
 
 Password reset has no such fallback: there is no admin in that flow to hand a
-link to, and returning one would let anybody mint a reset for any address. The
-audit note is the only record it went nowhere.
+link to, and returning one would let anybody mint a reset for any address. With
+no transport configured it fails closed instead (`404`, nothing issued); when SES
+refuses a send, the audit note is the only record it went nowhere.
 
 ### Why there is no email-log table
 
@@ -407,9 +411,11 @@ reads is schema to migrate around later.
 
 The one fact worth keeping — did it go, or is the admin holding the link — goes
 on the audit row that already describes the event: `member.invited`,
-`invite.resent`, `password.reset_requested` each carry a `note` of `emailed`,
-`link shown to the admin`, or `email failed, link shown to the admin`. That is
-where somebody investigating already looks.
+`invite.resent`, `password.reset_requested` each record `emailed`,
+`link shown to the admin`, or `email failed, link shown to the admin` in their
+`note` — on `member.invited`, after the role and expiry the row already carries
+(`as approver, expires …; emailed`). That is where somebody investigating
+already looks.
 
 **The body is never persisted**, in either design. A rendered invitation
 contains a live token.
@@ -697,14 +703,6 @@ Note what is and isn't there: sign-ins carry an address and a device,
 people-events don't — except `invite.redeemed`, which the ticket asks to
 carry the address it was redeemed from — and no token, link or password
 appears anywhere.
-
-### What has no screen yet
-
-One designed surface, named in `docs/ACCOUNTS-DESIGN.md` §6.3: the managed
-reset "initiated by the user, from `/login`" has no "Forgot password?" link.
-It is not missing UI alone — `POST /auth/password/forgot` answers 404 on
-every deployment, because there is no way to deliver the link until email
-exists (MAG-2870).
 
 ## Roles
 

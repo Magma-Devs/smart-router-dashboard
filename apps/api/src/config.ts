@@ -162,9 +162,9 @@ export const config = {
    * Which shape of deployment this is. It forks every credential-delivery path,
    * because on-prem has no mail server and never will:
    *
-   *  - `managed`  — we host. Invitations and password resets are meant to be
-   *                 emailed; until MAG-2870 adds the transport, their links are
-   *                 handed over by an admin, as on-prem.
+   *  - `managed`  — we host. Invitations and self-serve password resets are
+   *                 emailed once `AWS_REGION` is set; an invitation that could
+   *                 not be sent comes back to the admin to hand over.
    *  - `onprem`   — the customer hosts. Links are shown to an admin and handed
    *                 over directly; the first admin is created through the
    *                 first-run page using the installer's setup token.
