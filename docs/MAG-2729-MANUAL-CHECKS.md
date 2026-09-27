@@ -452,8 +452,8 @@ herself.
    Smart Router password"*, the link as text as well as a button, *"This link
    expires in 1 hour"*, and a last line saying what to do if it wasn't her.
 7. Click the link. The page shows **her address** under the heading, so somebody
-   with two accounts knows which one they are changing, and the rule *"At least
-   8 characters. Any characters, including spaces."* is shown **before** the
+   with two accounts knows which one they are changing, and the rule *"8 to 64
+   characters. Any characters, including spaces."* is shown **before** the
    field rather than after a failure.
 8. Set a new password (`dana-picked-a-new-one-2231`) → **Save password**.
 9. It says *"Your password has been changed. You have been signed out everywhere
