@@ -65,8 +65,8 @@
 
   <!-- 3. web -> api -->
   <path d="M420 262 H754" stroke="#131922" stroke-width="1.4" marker-end="url(#a)"/>
-  <text class="m" x="430" y="256">POST /auth/sign-in { …, clientContext }</text>
-  <text class="ms" x="430" y="278">X-Internal-Auth — without it the api ignores clientContext</text>
+  <text class="m" x="430" y="256">POST /auth/sign-in + X-Forwarded-Client-Ip / -Ua</text>
+  <text class="ms" x="430" y="278">X-Internal-Auth — without it the api ignores them</text>
 
   <!-- 4. api -> postgres -->
   <path d="M760 308 H1054" stroke="#131922" stroke-width="1.4" marker-end="url(#a)"/>

@@ -6,17 +6,17 @@ so the ticket can be checked off rather than taken on trust.
 
 | | |
 |---|---|
-| As of | `feat/MAG-2730-two-factor`, based on `feat/MAG-2870-account-emails` (#147) — the top of the accounts stack |
+| As of | `feat/MAG-2730-two-factor` (#172), the top of the 2FA stack (#174 → #172), rebased onto `main` after #147 and #173 merged |
 | Parent epic | [MAG-2686](https://magmadevs.atlassian.net/browse/MAG-2686) — Dashboard v2, config change + SOC 2 |
 | Depends on | [MAG-2729](https://magmadevs.atlassian.net/browse/MAG-2729) (accounts) · [MAG-2770](https://magmadevs.atlassian.net/browse/MAG-2770) (the audit log this emits into) |
 | Reference | [`TWO-FACTOR.md`](./TWO-FACTOR.md) |
-| Tests | 446 api · 774 shared · 157 web · 48 db, all green |
+| Tests | `pnpm -r test` green on this branch — the numbers are in the PR |
 | Acceptance | **11/11** against a live deployment — [§2](#2-the-acceptance-checks) |
-| Version | **Not bumped.** `VERSION` on this stack is `0.16.1` because the accounts branches predate `main`'s `0.20.3`; the whole stack needs one rebase and one version decision when it lands, and bumping here would only add a conflict. The changelog entry sits under `[Unreleased]` |
+| Version | `0.26.0`, cut once at the end of the stack (the last commit of #172), over `main`'s `0.25.0` |
 
 ## Verdict
 
-Everything the ticket asks for is implemented and nothing is open for decision.
+Everything the ticket asks for is implemented and nothing is open for decision, with one partial row: somebody whose 2FA an admin resets finds out at their next sign-in rather than by email, because that email is MAG-2869's.
 
 **Nothing was taken from lava-connect.** It was checked first, since it is this
 repo's shape reference and carries a mature account system: it has **no TOTP
@@ -71,6 +71,7 @@ Two defects were found while building and are fixed on the branch —
 | Requirement | Status | Where |
 |---|---|---|
 | The code is asked for on a second screen after the password | ✅ | `LoginForm` stage machine · `/auth/2fa/verify` |
+| …and after Google or GitHub, which stay as ways in (decided 24 Sep) | ✅ | `/auth/oauth/:provider` answers an enrolled account with a challenge; the `sr_2fa` handoff cookie carries it to the code screen |
 | A wrong code gives a generic error with no hint which factor failed | ✅ | one message for wrong code, dead challenge and unknown challenge alike |
 | Five failed codes lock the account for fifteen minutes | ✅ | the **same** `login_attempts` row as passwords |
 | A used code cannot be reused, even within its 30-second window | ✅ | `users.totp_last_step`, advanced in the accepting UPDATE's WHERE |
@@ -84,7 +85,7 @@ Two defects were found while building and are fixed on the branch —
 | The old secret is destroyed | ✅ | `clearEnrolment` nulls all three columns |
 | The user sets it up again on their next sign-in | ✅ | the gate does this — no separate flow |
 | The admin never sees or sets the user's code | ✅ | no endpoint returns or accepts one for another account |
-| The user is told it happened | ✅ | managed: MAG-2870's transport. On-prem: the enrolment screen, since their sessions just ended |
+| The user is told it happened | ◐ | At their next sign-in, on both deployments: their sessions just ended and the enrolment screen says an administrator reset it. An email is MAG-2869's — MAG-2870's transport sends only the invitation and the password reset |
 | Logs `2fa.reset`, naming both people | ✅ | actor + target on the row |
 
 ### When nobody can get in
@@ -118,11 +119,11 @@ that way:
 
 - **The api would not have booted.** `TOTP_ENCRYPTION_KEY` was in no compose
   file, and the boot check added in slice 3 does exactly what it says.
-- **From one address the per-IP limiter answers before the account lockout.**
-  10/min on `/auth/*` fires long before five failures accumulate, so a `423` is
-  not reachable from a single IP at all. The account counter is still the
-  control that matters — it is what an attacker rotating addresses meets — so
-  check 7 asserts it on `login_attempts` directly and says why.
+- **The lockout trips inside the per-IP limit.** Five failures in a window
+  lock the account, and the sixth attempt is refused with `423` — well under
+  the 10/min per-IP limit, which the runner sleeps off when it does answer
+  first. Check 7 asserts both: the shared counter on `login_attempts`, then the
+  sixth attempt, with the right password, refused.
 - **The ±1 window and the replay guard are two rules, and they collide.** After
   a sign-in at step *S* a code from *S−1* is refused — not because the window is
   wrong but because that step is spent. Check 8 now asks each question

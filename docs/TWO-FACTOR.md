@@ -28,7 +28,24 @@ POST /auth/sign-in     { email, password }                ← Auth.js signs in
 
 POST /auth/2fa/verify  { challenge, code }                ← Auth.js signs in
                      →  { user, sessionId }                ← signed in
+
+POST /auth/oauth/:provider  { token }                     ← Auth.js, after Google/GitHub
+  ├─ not enrolled  →  { user, sessionId }                  ← signed in
+  └─ enrolled      →  { twoFactorRequired: true, challenge, expiresAt, email }
+                                                           ← NO session
 ```
+
+**Google and GitHub ask for the code too.** The provider proves who holds the
+Google or GitHub account — one factor — and the rule is two for everybody. So
+an enrolled account is answered with a challenge, exactly as after a password.
+Nobody in the browser made that call, though: Auth.js's `signIn` callback made
+it server-side. It parks the challenge in the `sr_2fa` cookie (httpOnly, five
+minutes — the challenge's own life) and sends the browser to `/login?step=code`;
+the code goes through Auth.js credentials with `handoff: "1"`, and `authorize`
+reads the challenge back from the cookie and burns it. The challenge never
+reaches a page script or a URL. The session the code opens records what came
+first — `google+totp`, not `password+totp` — which the account's own sessions
+list shows.
 
 **`probe` is why the form's question costs nothing.** The browser has to know
 which screen comes next before Auth.js can sign anybody in, and Auth.js reaches
@@ -68,6 +85,19 @@ same moment; with two factors they are not, and clearing on a correct password
 means an attacker holding one resets the counter on every attempt — so five
 wrong codes never accumulate, against exactly the person the wall is for.
 
+A correct password **refunds its own attempt** instead (`refundAttempt`): the
+lockout counts each attempt before it is checked, so without the refund every
+sign-in with a code would cost two, and somebody who mistyped their password
+four times would be locked out at the code screen with the right code in hand.
+Each wrong factor costs one attempt; a right one costs nothing; the window
+clears only when both have passed. The `probe` step refunds the same way.
+
+**A second sign-in does not retire the first one's challenge.** Challenges stay
+live until spent or expired. Retiring them would hand anybody holding the
+password a quiet way to lock its owner out — sign in every few seconds, and each
+real challenge dies between the owner's password and their code. A spare live
+challenge is worth nothing without a code, and every code attempt is counted.
+
 ### Replay
 
 `users.totp_last_step` holds the TOTP counter (`unix seconds / 30`) of the last
@@ -92,11 +122,14 @@ of them wins.
 The grace period ends at whichever comes first:
 
 1. **They invite someone.** `POST /api/team/invites` (and resend) refuses while
-   the caller is unenrolled. There is no flag to write — the countdown "ending"
-   *is* that refusal, and a stored "grace revoked" bit would be a second source
-   of truth for a question the account row already answers.
+   the caller is unenrolled, so inviting means enrolling first.
 2. **30 days from their first sign-in.** `users.first_signin_at`, stamped once
    by `recordSignIn` with `coalesce` in SQL so it survives every later sign-in.
+
+**It is a one-time right.** Confirming an enrolment clears `created_by_setup`
+in the same write, so the grace is spent by enrolling: if that account's 2FA is
+reset later, it re-enrols at its next sign-in like everyone else, rather than
+getting the rest of thirty days on a password alone.
 
 **Why both, not just the invite.** A one-person deployment never invites anyone,
 so an invite-only trigger leaves the highest-privilege account in the system
@@ -166,6 +199,13 @@ enrolment needs this key — so a missing key locks out every account at once wi
 no route back in. Failing at boot turns "the dashboard stopped working for
 everybody overnight" into a startup error naming the variable.
 
+The boot check can only see the length. A key that decodes to 32 bytes but is
+not the one the secrets were sealed with (rotated, or pasted with a character
+lost) opens nothing: those sign-ins are refused, the api logs it as a key
+mismatch at `error`, the audit row says `two-factor secret could not be
+decrypted (TOTP_ENCRYPTION_KEY)`, and the attempt is refunded — rather than
+every enrolled person reading as a run of wrong guesses.
+
 The secret leaves the server exactly once, in the body of the response that
 created it. Never in a URL, never in a log line, never returned by any read
 surface afterwards — not `/api/account/me`, not the member list, not the CSV
@@ -182,16 +222,28 @@ button on `/team`. Three writes, each load-bearing:
    nothing an admin could read back;
 2. any challenge in flight is retired, so a second step against the old secret
    cannot still be completed;
-3. their sessions end, because this is done precisely when nobody is sure who is
-   holding them.
+3. they are signed out everywhere — every session row and the sign-out cutoff,
+   with a `session.revoked` row per session — because this is done precisely
+   when nobody is sure who is holding the account.
+
+All three commit in one transaction with their audit rows.
 
 The admin never sees or sets the replacement. The member enrols again at their
 next sign-in, from a secret only they will ever hold — the same rule as
 passwords, and for the same reason: an admin who could set someone's second
 factor could sign in as them.
 
-Logged as `2fa.reset`, naming both people. The member is told: an email on
-managed, and on-prem the enrolment screen they meet at their next sign-in.
+Logged as `2fa.reset`, naming both people. **Nothing is emailed**, on either
+deployment — the transactional emails are the invitation and the password
+reset, and the 2FA-reset notice is MAG-2869's. The member finds out at their
+next sign-in: their sessions just ended, and the enrolment screen says an
+administrator reset it. The route answers `notified: "on_next_signin"`.
+
+**Not your own.** An admin cannot reset their own second factor, or mint their
+own password-reset link (409 for both). Together those were a takeover from one
+stolen admin session: clear the owner's 2FA, take the password with a link,
+enrol a phone — every row naming the owner acting on themselves. Your own
+password changes on the Account page, which asks for the current one.
 
 **Self re-enrolment is refused** (409). The ticket gives exactly one route back
 from a lost phone, and a self-service one would be a second that names nobody:
@@ -210,13 +262,23 @@ make recover CMD="reset-password  --email x@y.com"   # print a one-time link
 make recover CMD="promote-admin   --email x@y.com"   # no admin is left at all
 
 # or directly, inside the api container
-node dist/recover.js reset-2fa --email x@y.com --by victoria    # published image
-pnpm --filter @sr/api exec tsx src/recover.ts reset-2fa --email x@y.com   # dev stack
+node apps/api/dist/recover.js reset-2fa --email x@y.com --by victoria   # published image
+pnpm --filter @sr/api exec tsx src/recover.ts reset-2fa --email x@y.com  # dev stack
 ```
 
-> The dev stack runs `tsx watch src/main.ts`, so it has no `dist/`. `make
-> recover` uses the `tsx` form; a real deployment runs the published image and
-> uses the first.
+> The published image's working directory is `/app`, hence `apps/api/dist/`;
+> on Kubernetes that is `kubectl exec deploy/<api> -- node apps/api/dist/recover.js …`.
+> The dev stack runs `tsx watch src/main.ts`, so it has no `dist/`; `make
+> recover` uses the `tsx` form, reaches the dev compose project only, and passes
+> your host user as `--by` unless the command names one — inside the container
+> the shell user is the container's, not yours.
+
+Before acting it prints which database (host and name, never the credentials)
+and which deployment shape it will record — `DATABASE_URL` and
+`DEPLOYMENT_MODE` come from the shell it runs in, which is not always the api's.
+The change and its `host.recovery` row commit in one transaction: a recovery
+with no row is exactly what this tool exists to rule out, so if the row cannot
+be written the recovery does not happen.
 
 **Shell access on the host is the authorisation.** Somebody with root there
 already controls the deployment — they can read the database, change the image,
@@ -235,7 +297,7 @@ still chooses the value. `promote-admin` reactivates as well as promotes,
 because the commonest way to reach "no admin is left" is the last one being
 suspended.
 
-> The operator's name is `SUDO_USER`, then the shell user, then `--by`, and
+> The operator's name is `--by`, then `SUDO_USER`, then the shell user, and
 > **none of them authenticates anybody**. The row says so: it reads *reported
 > by*, not *performed by*. Recording an unproven name still beats an anonymous
 > row — "somebody with root did this at 03:12" is materially less useful than a

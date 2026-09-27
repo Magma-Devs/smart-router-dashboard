@@ -849,7 +849,10 @@ some people can see is not one; only an admin changes it.
   by the people in the list, and the file opens in a spreadsheet. It starts
   with a UTF-8 byte-order mark, without which Excel reads it in the system code
   page, and line endings are CRLF (RFC 4180).
-- **2FA shows an em dash, not "No",** until MAG-2730 ships.
+- **2FA reads Yes or No**, and a No is red: under the enforcement rule only the
+  first admin, inside their grace period, can have one — so a second No is the
+  thing a reviewer should stop on. (The screenshot below predates MAG-2730 and
+  still shows the column's old em dash.)
 
 <img src="./assets/team-members.png" alt="The Team page's Members tab: a table of five people with columns for member, role, 2FA, last active and joined. Two admins are listed first, then an approver, a requester and a read-only member. The 2FA column shows an em dash for everyone, and the two members who have never signed in show an em dash for last active. Every row except the signed-in admin's own has Change role, Reset link and Remove buttons; Reset link opens a dialog that confirms first and then shows the link once." width="100%">
 
