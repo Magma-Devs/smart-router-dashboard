@@ -683,6 +683,33 @@ describe("enrolment and reset over HTTP", () => {
     expect(isEnrolled(await reload(user.id))).toBe(true);
   });
 
+  it("records the enrolment from where it happened, not where the session began", async () => {
+    // The session was opened from 84.229.11.6 (see tokenFor). Enrolling from
+    // somewhere else is exactly the case an investigation needs to see.
+    app = await buildAuthApp();
+    const user = await seedUser();
+    const auth = { authorization: `Bearer ${await tokenFor(user)}` };
+    const begin = await app.inject({
+      method: "POST",
+      url: "/api/account/2fa/begin",
+      headers: auth,
+      remoteAddress: "198.51.100.23",
+    });
+    await app.inject({
+      method: "POST",
+      url: "/api/account/2fa/confirm",
+      headers: auth,
+      remoteAddress: "198.51.100.23",
+      payload: { code: totpCodeAtStep(begin.json().secret, totpStepAt())! },
+    });
+
+    const [row] = await t.db
+      .select()
+      .from(auditEvents)
+      .where(eq(auditEvents.action, "2fa.enrolled"));
+    expect(row?.ip).toBe("198.51.100.23");
+  });
+
   it("never hands the secret back afterwards", async () => {
     app = await buildAuthApp();
     const user = await seedUser();
