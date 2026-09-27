@@ -453,7 +453,7 @@ export async function aiRoutes(app: FastifyInstance) {
         ? await readLogs(loki, WINDOWS[window].rangeSeconds, app.routerConfig?.getRouters() ?? []).catch(() => null)
         : null;
       const outcomeOf = await outcomesBySpec(app.prom, window, logs).catch(
-        () => () => ({ recovered: null, failures: null, requests: null, addonCalls: [], writes: null }),
+        () => () => ({ recovered: null, failures: null, requests: null, addonCalls: [], writes: null, paths: null }),
       );
 
       // Worst chains first, so a truncated list never drops a critical one.

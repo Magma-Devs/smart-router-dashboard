@@ -56,6 +56,32 @@ export interface ChainOutcome {
    * none or nothing says which methods are writes.
    */
   writes: WriteCalls | null;
+  /**
+   * How the failed requests went through the router, traced from its log:
+   * the provider each one tried first, the backup it moved to, how each
+   * attempt ended. Grouped by path — six requests that all went "alchemy
+   * timed out → quicknode timed out" are one row of six, not "3 on one
+   * provider and 2 others". Null without the logs or without failures.
+   */
+  paths: FailurePaths | null;
+}
+
+export interface FailurePaths {
+  /** Requests traced — a sample in a bad hour, when fewer than failed. */
+  traced: number;
+  /** Most common first. */
+  groups: FailurePath[];
+}
+
+/** Every traced request that went one way through the router. */
+export interface FailurePath {
+  count: number;
+  /** `alchemy ✕ timed out → quicknode (backup) ✕ timed out → failed` */
+  flow: string;
+  /** The methods that went this way, most common first. */
+  methods: string[];
+  /** Fastest and slowest, from the request arriving to its final answer. */
+  seconds: [number, number];
 }
 
 export interface WriteCalls {
@@ -263,6 +289,8 @@ export interface FormulatedInputs {
   addonCalls?: AddonCalls[];
   /** Transactions on this chain, when any were sent. */
   writes?: WriteCalls | null;
+  /** The failed requests' paths through the router, when traced. */
+  paths?: FailurePaths | null;
   /**
    * The version already on the customer's screen, when this issue is still
    * open. Given so a rewrite UPDATES the issue rather than writing a new one
@@ -323,6 +351,13 @@ short words.
 Not every issue needs all four. Stop when the chain is told — three points
 that finish the story beat four padded to look thorough.
 
+When you are given \`howTheFailedRequestsWent\`, the card prints those paths
+under your points: which provider each failed request tried, the backup it
+moved to, how each attempt ended. For those requests, points 1, 3 and 4 are
+already on screen — write none of them. Write only what a path cannot show:
+the cause, and why failover had nothing left (one backup, and it failed the
+same way).
+
 **Never write the title again as a point.** The title is on screen directly
 above them. If the title already names what is failing and the number, start
 at the cause.
@@ -354,6 +389,16 @@ many requests the router saved by retrying them on another provider
     replaced — "the method does not exist" is how a provider that cannot
     serve debug usually says so. When most of one kind got no usable answer,
     that is the point to lead with.
+  - howTheFailedRequestsWent, when given, is each failed request traced
+    through the router: the provider it tried first, the backup it moved to,
+    how each attempt ended. One path is ONE request going through every
+    provider on it, in order. The card prints every path under your points,
+    word for word (see "What the points must walk"). Never split one path
+    into per-provider counts ("alchemy on 3, quicknode on 2 others") — that
+    reads as different requests. wholePathSeconds runs from the request
+    arriving to the caller's error — every attempt together, never one
+    provider's time. When traced is below ofFailed, it is a sample; do not
+    present its counts as the total.
   - transactions, when given, are the calls that change the chain (sending a
     transaction). When most failed the caller, lead with it: they cannot
     transact on this chain right now, whatever the reads look like.
@@ -383,6 +428,9 @@ and is still happening. Write the SAME issue, updated:
 
   - Keep the title unless the facts now describe a different problem.
   - Keep the points in the same order; change the numbers to the new ones.
+  - Except a point that breaks a rule above — a failover path walked step by
+    step, or split into per-provider counts. Rewrite that one, even though
+    it was on screen.
   - Say what changed only when it matters: it got worse, it spread to another
     provider, or the router could no longer route around it.
 
@@ -546,6 +594,20 @@ export function digestForIssue(i: FormulatedInputs): string {
               savedByRetry: i.recovered,
               reachedCaller: i.failures,
               ...(i.writes ? { transactions: { sent: i.writes.sent, failedForTheCaller: i.writes.failed } } : {}),
+              ...(i.paths?.groups.length
+                ? {
+                    howTheFailedRequestsWent: {
+                      traced: i.paths.traced,
+                      ofFailed: i.failures,
+                      paths: i.paths.groups.map((g) => ({
+                        requests: g.count,
+                        methods: g.methods,
+                        path: g.flow,
+                        wholePathSeconds: g.seconds[0] === g.seconds[1] ? g.seconds[0] : g.seconds,
+                      })),
+                    },
+                  }
+                : {}),
               ...(i.addonCalls?.length
                 ? {
                     callsNeedingAnAddon: i.addonCalls.map((a) => ({
@@ -604,6 +666,7 @@ export function measuredFields(
       requests: inputs.requests,
       addonCalls: inputs.addonCalls ?? [],
       writes: inputs.writes ?? null,
+      paths: inputs.paths ?? null,
     },
     lastSeenUnix: all.reduce<number | null>(
       (newest, f) => (f.lastSeenUnix && (!newest || f.lastSeenUnix > newest) ? f.lastSeenUnix : newest),
@@ -624,7 +687,11 @@ export class FormulatedIssueService {
       // single-chain issue is never told about a shape it cannot produce.
       system: inputs.alsoOnChains?.length ? SYSTEM_PROMPT + CROSS_CHAIN_NOTE : SYSTEM_PROMPT,
       messages: [{ role: "user", content: digestForIssue(inputs) }],
-      maxTokens: 2000,
+      // The answer is ~150 tokens, but the model reasons before it writes and
+      // the reasoning counts against this ceiling: 400 to 2,000+ tokens on
+      // one issue, measured. At 2,000, about one call in six ended with the
+      // answer cut off or empty, and a new issue missed its cycle.
+      maxTokens: 8000,
     });
     const parsed = parseModelJson(answer, "issue statement", this.logger);
     const str = (k: string): string => (typeof parsed[k] === "string" ? (parsed[k] as string) : "");

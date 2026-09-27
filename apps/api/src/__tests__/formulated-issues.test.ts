@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import type { StatusFinding } from "@sr/shared";
 import { severityOf, shareFailed, digestForIssue, type FormulatedInputs } from "../services/formulated-issues.js";
-import { burstFinding, failedBySpec, fingerprint, outcomesBySpec, peakBurst, readLogs } from "../services/issues-feed.js";
+import { burstFinding, failedBySpec, fingerprint, groupTraces, mergePaths, outcomesBySpec, peakBurst, readLogs } from "../services/issues-feed.js";
+import type { RequestTrace } from "../services/loki.js";
 
 function finding(over: Partial<StatusFinding>): StatusFinding {
   return {
@@ -171,8 +172,9 @@ describe("outcomesBySpec", () => {
     const of = await outcomesBySpec(prom([row("SOLANAT", 652)], [row("SOLANAT", 653)], [row("SOLANAT", 22_336)]), "30m", {
       failed: new Map([["SOLANAT", 0]]),
       failedMethods: new Map(),
+      paths: new Map(),
     });
-    expect(of("SOLANAT")).toEqual({ recovered: 653, failures: 0, requests: 22_336, addonCalls: [], writes: null });
+    expect(of("SOLANAT")).toEqual({ recovered: 653, failures: 0, requests: 22_336, addonCalls: [], writes: null, paths: null });
   });
 
   it("never falls back to the per-attempt counter without the log", async () => {
@@ -184,15 +186,16 @@ describe("outcomesBySpec", () => {
     const of = await outcomesBySpec(prom([row("ETH1", 5)], [row("ETH1", 9)], [row("ETH1", 90)]), "30m", {
       failed: new Map(),
       failedMethods: new Map(),
+      paths: new Map(),
     });
     // Recovered and requests are counters with series elsewhere: a real zero.
     // Failures for a chain the log never mentioned stay unmeasured.
-    expect(of("SOLANAT")).toEqual({ recovered: 0, failures: null, requests: 0, addonCalls: [], writes: null });
+    expect(of("SOLANAT")).toEqual({ recovered: 0, failures: null, requests: 0, addonCalls: [], writes: null, paths: null });
   });
 
   it("no series anywhere is unmeasured, never an invented zero", async () => {
     const of = await outcomesBySpec(prom([], []), "30m");
-    expect(of("SOLANAT")).toEqual({ recovered: null, failures: null, requests: null, addonCalls: [], writes: null });
+    expect(of("SOLANAT")).toEqual({ recovered: null, failures: null, requests: null, addonCalls: [], writes: null, paths: null });
   });
 
   it("splits debug and trace calls per chain, zero where the counter has none", async () => {
@@ -275,6 +278,7 @@ describe("transactions", () => {
     const logs = {
       failed: new Map([["POLYGON", 90]]),
       failedMethods: new Map([["POLYGON", new Map([["eth_sendRawTransaction", 80], ["eth_call", 10]])]]),
+      paths: new Map(),
     };
     const of = await outcomesBySpec(prom, "30m", logs);
     expect(of("POLYGON").writes).toEqual({ sent: 152, failed: 80 });
@@ -301,6 +305,8 @@ describe("readLogs", () => {
     failedRequests: async () => ({ byRouter: new Map([["polygon-mainnet", ids.map(f)]]), capped: opts.capped ?? false }),
     countFailed: async () => new Map([["polygon-mainnet", opts.count ?? ids.length]]),
     methodsOf: async () => methods,
+    traceRequests: async () =>
+      new Map(ids.map((id) => [id, trace(id, methods.get(id) ?? "unknown", [["alchemy", "primary", "timed out"]])])),
   });
   const m = new Map([["1", "eth_sendRawTransaction"], ["2", "eth_sendRawTransaction"], ["3", "eth_call"]]);
 
@@ -314,6 +320,77 @@ describe("readLogs", () => {
     const out = await readLogs(loki(["1", "2", "3"], m, { capped: true, count: 300 }), 1800, routers);
     expect(out?.failed).toEqual(new Map([["POLYGON", 300]]));
     expect(out?.failedMethods.get("POLYGON")).toEqual(new Map([["eth_sendRawTransaction", 200], ["eth_call", 100]]));
+  });
+
+  it("groups the chain's traced requests by the way they went", async () => {
+    const out = await readLogs(loki(["1", "2", "3"], m), 1800, routers);
+    expect(out?.paths.get("POLYGON")).toEqual({
+      traced: 3,
+      groups: [{ count: 3, flow: "alchemy ✕ timed out → failed", methods: ["eth_sendRawTransaction", "eth_call"], seconds: [14, 14] }],
+    });
+  });
+});
+
+/** A traced request: each attempt is [provider, role, outcome]. */
+function trace(id: string, method: string, attempts: [string, "primary" | "backup", string][], seconds = 14): RequestTrace {
+  return { id, method, failed: true, seconds, attempts: attempts.map(([provider, role, outcome]) => ({ provider, role, outcome, atSec: null })) };
+}
+
+describe("failover paths", () => {
+  const both: [string, "primary" | "backup", string][] = [["alchemy", "primary", "timed out"], ["quicknode", "backup", "timed out"]];
+
+  it("six requests down one path are one path of six — not per-provider counts", () => {
+    const p = groupTraces([
+      ...[1, 2, 3, 4].map((i) => trace(String(i), "starknet_getEvents", both, 13 + (i % 2))),
+      trace("5", "starknet_call", both, 10),
+      trace("6", "starknet_getEvents", [["alchemy", "primary", "rate-limited"]], 1),
+    ]);
+    expect(p).toEqual({
+      traced: 6,
+      groups: [
+        { count: 5, flow: "alchemy ✕ timed out → quicknode (backup) ✕ timed out → failed", methods: ["starknet_getEvents", "starknet_call"], seconds: [10, 14] },
+        { count: 1, flow: "alchemy ✕ rate-limited → failed", methods: ["starknet_getEvents"], seconds: [1, 1] },
+      ],
+    });
+  });
+
+  it("leaves out a request whose path was not read — a gap would state something false", () => {
+    expect(groupTraces([trace("1", "eth_call", [])])).toBeNull();
+  });
+
+  it("merges several chains' paths for an issue that covers them", () => {
+    const a = groupTraces([trace("1", "eth_call", both, 12)]);
+    const b = groupTraces([trace("2", "eth_getLogs", both, 16), trace("3", "eth_getLogs", [["tatum", "primary", "server error"]])]);
+    expect(mergePaths([a, null, b])).toEqual({
+      traced: 3,
+      groups: [
+        { count: 2, flow: "alchemy ✕ timed out → quicknode (backup) ✕ timed out → failed", methods: ["eth_call", "eth_getLogs"], seconds: [12, 16] },
+        { count: 1, flow: "tatum ✕ server error → failed", methods: ["eth_getLogs"], seconds: [14, 14] },
+      ],
+    });
+    expect(mergePaths([null])).toBeNull();
+  });
+
+  it("hands the model the paths, and tells it not to split them per provider", () => {
+    const paths = groupTraces([trace("1", "starknet_getEvents", both), trace("2", "starknet_getEvents", both)]);
+    const d = JSON.parse(
+      digestForIssue({ spec: "STRK", chain: "Starknet", findings: [finding({})], errorGroups: [], configured: [], insights: [], failures: 6, paths }),
+    );
+    expect(d.outcome.howTheFailedRequestsWent).toEqual({
+      traced: 2,
+      ofFailed: 6,
+      paths: [{ requests: 2, methods: ["starknet_getEvents"], path: "alchemy ✕ timed out → quicknode (backup) ✕ timed out → failed", wholePathSeconds: 14 }],
+    });
+  });
+
+  it("rewrites when the main path changes, not when one more request takes it", () => {
+    const f = [finding({})];
+    const o = (paths: ReturnType<typeof groupTraces>) => ({ recovered: 0, failures: 6, requests: 9_000, paths });
+    const one = groupTraces([trace("1", "x", [["alchemy", "primary", "timed out"]])]);
+    const two = groupTraces([1, 2].map((i) => trace(String(i), "x", [["alchemy", "primary", "timed out"]])));
+    const backupToo = groupTraces([trace("1", "x", both)]);
+    expect(fingerprint(f, [], o(one))).toBe(fingerprint(f, [], o(two)));
+    expect(fingerprint(f, [], o(one))).not.toBe(fingerprint(f, [], o(backupToo)));
   });
 });
 
@@ -334,6 +411,7 @@ describe("bursts — the alert's own test", () => {
       failedRequests: async () => ({ byRouter: new Map([["solana-mainnet", list]]), capped: false }),
       countFailed: async () => new Map(),
       methodsOf: async () => new Map(),
+      traceRequests: async () => new Map(),
     });
     const routers = [{ id: "solana-mainnet", spec: "SOLANA" }];
     const six = [0, 20, 40, 60, 80, 100].map((d, i) => f(String(i), T + d));

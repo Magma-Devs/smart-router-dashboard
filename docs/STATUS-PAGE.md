@@ -25,6 +25,23 @@ failure alert, so whenever that alert fires the page has an issue for it. The
 burst joins the chain's issue if one is open. (This replaced the Live
 incidents tab.)
 
+**How the failed requests went.** An issue with failed requests lists each
+one's path through the router, one plain line per path:
+
+```
+3× starknet_getEvents · alchemy ✕ timed out → quicknode (backup) ✕ timed out → failed after 14s
+```
+
+That line is ONE request going through every provider on it — it answers
+"was that the same request?", which "alchemy timed out on 3, quicknode on 2"
+cannot. Requests that went the same way are one line with a count. It is
+rebuilt from the router's log by request id (`traceRequests` in
+`apps/api/src/services/loki.ts`), from the lines that name a provider in a
+field of their own; never from the error text, which carries the provider's
+URL and key. A bad hour traces a sample — the newest 20 failed requests per
+pod — and the line says "N of M traced". A request whose provider lines were
+not all read is left out rather than shown with a gap.
+
 The rules below find the problems. The heading each rule sits under is its
 own level, for one provider or one rule. It does not set the badge: a rule can
 be Critical for one provider while the chain stays Degraded. Code:

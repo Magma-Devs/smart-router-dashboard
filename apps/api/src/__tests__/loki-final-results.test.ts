@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { LokiService, methodOfRequest, routerOfPod } from "../services/loki.js";
+import { LokiService, flowOf, methodOfRequest, outcomeWord, routerOfPod, traceFromLines } from "../services/loki.js";
 
 const ok = (data: unknown) => new Response(JSON.stringify({ status: "success", data }));
 
@@ -17,6 +17,59 @@ describe("methodOfRequest", () => {
     expect(methodOfRequest({ message: "Consumer received a new JSON-RPC request", body: '[{"method":"eth_call"}]' })).toBe("batch");
     expect(methodOfRequest({ message: "Consumer received a new REST POST request", path: "/transactions" })).toBe("/transactions");
     expect(methodOfRequest({ message: "something else" })).toBe("unknown");
+  });
+
+  it("reads the method from a body the log cut short", () => {
+    // A large request is logged truncated, and a cut body is not JSON.
+    const cut = { message: "Consumer received a new JSON-RPC request", body: '{"id":7,"jsonrpc":"2.0","method":"debug_traceBlockByHash","params":["0x4f1a' };
+    expect(methodOfRequest(cut)).toBe("debug_traceBlockByHash");
+  });
+});
+
+describe("request traces — was it the same request?", () => {
+  // One request, as the router logs it: the first provider times out, the
+  // router moves to a backup, the backup times out too, the caller gets an
+  // error. Timestamps in nanoseconds, the way Loki returns them.
+  const s = (sec: number) => BigInt(1_700_000_000 + sec) * 1_000_000_000n;
+  const lines = [
+    { atNs: s(0), line: { message: "Consumer received a new JSON-RPC request", body: '{"method":"starknet_getEvents","params":[]}' } },
+    { atNs: s(0), line: { message: "Choosing providers", chosenProviders: "alchemy" } },
+    // The router re-validates and logs the same choice again — not a new step.
+    { atNs: s(1), line: { message: "Choosing providers", chosenProviders: "alchemy" } },
+    { atNs: s(7), line: { message: "could not send relay to provider", provider: "alchemy", error_name: "PROTOCOL_CONTEXT_DEADLINE",
+      error: "Post \"https://starknet-mainnet.g.alchemy.com/v2/SECRETKEY\": context deadline exceeded" } },
+    { atNs: s(7), line: { message: "Optimizer selected backup provider", selected: "quicknode" } },
+    { atNs: s(14), line: { message: "could not send relay to provider", provider: "quicknode", error_name: "PROTOCOL_CONTEXT_DEADLINE" } },
+    { atNs: s(14), line: { message: "ProcessingResult RETURNED", error: "failed relay", has_reply: "false" } },
+  ];
+
+  it("rebuilds one request's path through the router, in order", () => {
+    // Shuffled on purpose: Loki returns streams newest-first.
+    const t = traceFromLines("42", [...lines].reverse());
+    expect(t).toMatchObject({ id: "42", method: "starknet_getEvents", failed: true, seconds: 14 });
+    expect(t.attempts.map((a) => [a.provider, a.role, a.outcome])).toEqual([
+      ["alchemy", "primary", "timed out"],
+      ["quicknode", "backup", "timed out"],
+    ]);
+    expect(flowOf(t)).toBe("alchemy ✕ timed out → quicknode (backup) ✕ timed out → failed");
+  });
+
+  it("never carries the error text — it holds the provider's url, key included", () => {
+    expect(JSON.stringify(traceFromLines("42", lines))).not.toMatch(/SECRETKEY|alchemy\.com/);
+  });
+
+  it("a provider with no failure logged 'replied' — the reply was the error the caller got", () => {
+    const t = traceFromLines("43", [lines[0]!, lines[1]!, { atNs: s(2), line: { message: "ProcessingResult RETURNED", has_result: "false" } }]);
+    expect(flowOf(t)).toBe("alchemy replied → failed");
+  });
+
+  it("names a failure in words a customer reads", () => {
+    expect(outcomeWord("PROTOCOL_CONTEXT_DEADLINE")).toBe("timed out");
+    expect(outcomeWord("PROTOCOL_CONNECTION_RESET")).toBe("connection dropped");
+    expect(outcomeWord("", "429")).toBe("rate-limited");
+    expect(outcomeWord("", "503")).toBe("server error");
+    expect(outcomeWord("CHAIN_NONCE_TOO_LOW")).toBe("nonce too low");
+    expect(outcomeWord("")).toBe("failed");
   });
 });
 
@@ -70,6 +123,26 @@ describe("LokiService log reads", () => {
     });
     expect(await new LokiService("http://loki.test").countFailed(["solana-testnet"], 1800)).toEqual(new Map([["solana-testnet", 25_046]]));
     expect(q).toContain('pod=~"(solana-testnet)-router-.*"');
+  });
+
+  it("traces each failed request on its own pod, by its id", async () => {
+    const queries: string[] = [];
+    vi.stubGlobal("fetch", async (url: URL) => {
+      queries.push(url.searchParams.get("query") ?? "");
+      return ok({ resultType: "streams", result: [{ stream: {}, values: [
+        ["1700000014000000000", JSON.stringify({ GUID: "111", message: "ProcessingResult RETURNED", error: "failed relay" })],
+        ["1700000007000000000", JSON.stringify({ GUID: "111", message: "could not send relay to provider", provider: "alchemy", error_name: "PROTOCOL_CONTEXT_DEADLINE" })],
+        ["1700000000000000000", JSON.stringify({ GUID: "111", message: "Choosing providers", chosenProviders: "alchemy" })],
+        // Another request on the same pod that happens to match the filter.
+        ["1700000001000000000", JSON.stringify({ GUID: "999", message: "Choosing providers", chosenProviders: "tatum" })],
+      ] }] });
+    });
+    const traces = await new LokiService("http://loki.test").traceRequests([
+      { id: "111", pod: "starknet-mainnet-router-aa11-bb22", atUnix: 1_700_000_014 },
+    ]);
+    expect([...traces.keys()]).toEqual(["111"]);
+    expect(flowOf(traces.get("111")!)).toBe("alchemy ✕ timed out → failed");
+    expect(queries).toEqual(['{service_name="router", pod="starknet-mainnet-router-aa11-bb22"} |~ "111"']);
   });
 
   it("returns nothing without a log store", async () => {

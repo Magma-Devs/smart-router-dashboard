@@ -57,6 +57,20 @@ interface Issue {
   updatedAtUnix: number;
   resolvedAtUnix: number | null;
   severitySinceUnix: number;
+  /** Measured, not written. Only the traced paths are read here. */
+  outcome?: { failures: number | null; paths: FailurePaths | null };
+}
+
+/** Every traced request that went one way through the router. */
+interface FailurePath {
+  count: number;
+  flow: string;
+  methods: string[];
+  seconds: [number, number];
+}
+interface FailurePaths {
+  traced: number;
+  groups: FailurePath[];
 }
 
 interface Answer {
@@ -103,6 +117,51 @@ function lifeLine(i: Issue): string {
 
 function specLabel(specs: string[]): string {
   return specs.length <= 3 ? specs.join(" · ") : `${specs.slice(0, 3).join(" · ")} +${specs.length - 3}`;
+}
+
+/** The paths a card lists; the rest are summed into one line under them. */
+const MAX_PATHS = 3;
+
+function methodsLabel(m: string[]): string {
+  return m.length <= 2 ? m.join(", ") : `${m.slice(0, 2).join(", ")} +${m.length - 2}`;
+}
+
+/** `failed` → `failed after 14s`, or `after 10–14s` when the requests differed. */
+function flowLine(g: FailurePath): string {
+  const [lo, hi] = g.seconds.map(Math.round) as [number, number];
+  return `${g.flow} after ${lo === hi ? lo : `${lo}–${hi}`}s`;
+}
+
+/**
+ * How the failed requests went, one plain line per path: the provider each
+ * tried, the backup it moved to, how each attempt ended. It answers "was that
+ * the same request?" — "alchemy timed out on 3, quicknode on 2" cannot, and
+ * this is the router's own log, not the model's reading of it.
+ */
+function Paths({ paths, failures }: { paths: FailurePaths; failures: number | null }) {
+  const shown = paths.groups.slice(0, MAX_PATHS);
+  const rest = paths.groups.slice(MAX_PATHS);
+  const restCount = rest.reduce((a, g) => a + g.count, 0);
+  return (
+    <div style={{ marginTop: 9 }}>
+      <div style={{ fontSize: 11, color: "var(--text-3)", marginBottom: 3 }}>
+        How the failed requests went
+        {failures != null && failures > paths.traced ? ` · ${paths.traced} of ${failures} traced` : ""}
+      </div>
+      {shown.map((g) => (
+        <div key={g.flow} className="gw-mono" style={{ fontSize: 11, lineHeight: 1.55, color: "var(--text-2)" }}>
+          <span style={{ color: "var(--text)" }}>{g.count}×</span> {methodsLabel(g.methods)}
+          <span style={{ color: "var(--text-3)" }}> · </span>
+          {flowLine(g)}
+        </div>
+      ))}
+      {restCount > 0 && (
+        <div className="gw-mono" style={{ fontSize: 11, lineHeight: 1.55, color: "var(--text-3)" }}>
+          {restCount}× on {rest.length} other {rest.length === 1 ? "path" : "paths"}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function refusalText(r: Refusal): string {
@@ -178,6 +237,10 @@ function Card({ issue, color }: { issue: Issue; color: string }) {
           </li>
         ))}
       </ol>
+
+      {issue.outcome?.paths && issue.outcome.paths.groups.length > 0 && (
+        <Paths paths={issue.outcome.paths} failures={issue.outcome.failures} />
+      )}
 
       {issue.bottomLine && (
         <div

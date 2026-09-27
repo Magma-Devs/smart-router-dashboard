@@ -135,11 +135,113 @@ export function methodOfRequest(line: Record<string, unknown>): string {
   const path = typeof line.path === "string" ? line.path : "";
   if (message.includes("REST")) return path || "unknown";
   if (typeof line.body === "string") {
+    if (line.body.trim().startsWith("[")) return "batch";
     const body = safeJson(line.body);
     if (typeof body.method === "string") return body.method;
-    if (line.body.trim().startsWith("[")) return "batch";
+    // A large request is logged cut short, and a cut body is not JSON — but
+    // the method is near the front, so read it straight from the text.
+    const m = /"method"\s*:\s*"([^"]{1,100})"/.exec(line.body);
+    if (m?.[1]) return m[1];
   }
   return "unknown";
+}
+
+/** One provider the router sent a request to, and how that attempt ended. */
+export interface Attempt {
+  provider: string;
+  role: "primary" | "backup";
+  /** In plain words: "timed out", "rate-limited", … — "answered" when no failure was logged for it. */
+  outcome: string;
+  /** Seconds after the request arrived that this attempt ended, when known. */
+  atSec: number | null;
+}
+
+/** How one customer request went, rebuilt from its lines in the router's log. */
+export interface RequestTrace {
+  id: string;
+  method: string;
+  attempts: Attempt[];
+  failed: boolean;
+  /** From the request arriving to its final answer. */
+  seconds: number;
+}
+
+/** A failure reason in words a customer reads, from the router's own error name. */
+export function outcomeWord(errorName: string, statusCode?: string): string {
+  const e = errorName.toUpperCase();
+  if (statusCode === "429" || e.includes("RATE_LIMIT")) return "rate-limited";
+  if (e.includes("DEADLINE") || e.includes("TIMEOUT")) return "timed out";
+  if (e.includes("CONNECTION") || e.includes("RESET") || e.includes("EOF")) return "connection dropped";
+  if (e.includes("METHOD_NOT") || e.includes("UNIMPLEMENTED") || e.includes("UNSUPPORTED")) return "method not supported";
+  if (/^5\d\d$/.test(statusCode ?? "") || e.includes("SERVER_ERROR") || e.includes("UNAVAILABLE")) return "server error";
+  if (e.includes("CONSISTENCY") || e.includes("BLOCK")) return "behind the chain";
+  return e ? e.replace(/^(NODE|PROTOCOL|CHAIN|USER)_/, "").toLowerCase().replace(/_/g, " ") : "failed";
+}
+
+/**
+ * Rebuild one request's path from its log lines: which provider was chosen,
+ * which backup the router moved to, how each attempt ended, and the result.
+ *
+ * Read from the lines that name a provider in a field of its own —
+ * "Choosing providers", "Optimizer selected backup provider", and "could not
+ * send relay to provider" with its `provider`. Never from the error text:
+ * that carries the provider's full URL, key included.
+ */
+export function traceFromLines(id: string, lines: { atNs: bigint; line: Record<string, unknown> }[]): RequestTrace {
+  const sorted = [...lines].sort((a, b) => (a.atNs < b.atNs ? -1 : a.atNs > b.atNs ? 1 : 0));
+  const t0 = sorted[0]?.atNs ?? 0n;
+  const sec = (ns: bigint) => Math.round(Number(ns - t0) / 1e8) / 10;
+  const str = (v: unknown) => (typeof v === "string" ? v : "");
+  const attempts: Attempt[] = [];
+  const start = (provider: string, role: Attempt["role"]) => {
+    const last = attempts[attempts.length - 1];
+    // The router re-validates in a loop and logs the same choice again; only
+    // a change of provider, or a new try after the last one ended, is a step.
+    if (last && last.provider === provider && last.outcome === "answered") return;
+    attempts.push({ provider, role, outcome: "answered", atSec: null });
+  };
+  let method = "unknown";
+  let failed = false;
+  let end = t0;
+  for (const { atNs, line } of sorted) {
+    const message = str(line.message);
+    if (message.startsWith("Consumer received a new")) method = methodOfRequest(line);
+    else if (message === "Choosing providers") {
+      for (const p of str(line.chosenProviders).split(/[\s,]+/).filter(Boolean)) start(p, "primary");
+    } else if (message.includes("Optimizer selected backup provider")) {
+      const p = str(line.selected);
+      if (p) start(p, "backup");
+    } else if (message === "could not send relay to provider") {
+      const p = str(line.provider);
+      if (!p) continue;
+      let a = [...attempts].reverse().find((x) => x.provider === p && x.outcome === "answered");
+      if (!a) {
+        a = { provider: p, role: "primary", outcome: "answered", atSec: null };
+        attempts.push(a);
+      }
+      a.outcome = outcomeWord(str(line.error_name), str(line.statusCode));
+      a.atSec = sec(atNs);
+    } else if (message === "ProcessingResult RETURNED") {
+      failed = str(line.error) !== "" || line.has_reply === "false" || line.has_result === "false";
+      end = atNs;
+    }
+  }
+  return { id, method, attempts, failed, seconds: sec(end) };
+}
+
+/**
+ * The path as one line: `alchemy ✕ timed out → quicknode (backup) ✕ timed out
+ * → failed`. Requests that went the same way share this string, so it is what
+ * they are grouped by; the seconds differ per request and travel beside it.
+ *
+ * An attempt with no failure logged "replied" — not "answered": when the
+ * request still failed, that reply was the error the caller got.
+ */
+export function flowOf(t: RequestTrace): string {
+  const steps = t.attempts.map(
+    (a) => `${a.provider}${a.role === "backup" ? " (backup)" : ""} ${a.outcome === "answered" ? "replied" : `✕ ${a.outcome}`}`,
+  );
+  return [...steps, t.failed ? "failed" : "answered"].join(" → ");
 }
 
 /** `arbitrum-mainnet-router-6fdddbb79c-fj4kh` → `arbitrum-mainnet`, the router's id. */
@@ -270,6 +372,43 @@ export class LokiService {
           }
         }
       }
+    }
+    return out;
+  }
+
+  /**
+   * Trace failed requests: every line each one wrote, on its own pod, in the
+   * minute before its final answer. Failures are rare, so this is a handful
+   * of lines — but a bad hour is not, so at most `perPod` are traced per pod,
+   * newest first, and the caller says it is a sample.
+   */
+  async traceRequests(failures: FailedRequest[], perPod = 20): Promise<Map<string, RequestTrace>> {
+    const out = new Map<string, RequestTrace>();
+    if (!this.baseUrl) return out;
+    const byPod = new Map<string, FailedRequest[]>();
+    for (const f of failures) {
+      if (!/^[0-9]+$/.test(f.id) || !/^[a-z0-9-]+$/.test(f.pod)) continue;
+      byPod.set(f.pod, [...(byPod.get(f.pod) ?? []), f]);
+    }
+    for (const [pod, list] of byPod) {
+      const chunk = [...list].sort((a, b) => b.atUnix - a.atUnix).slice(0, perPod);
+      const ids = chunk.map((f) => f.id);
+      const streams = await this.range(
+        `{service_name="router", pod="${pod}"} |~ "${ids.join("|")}"`,
+        Math.min(...chunk.map((f) => f.atUnix)) - 60,
+        Math.max(...chunk.map((f) => f.atUnix)) + 2,
+        5000,
+      );
+      const linesById = new Map<string, { atNs: bigint; line: Record<string, unknown> }[]>();
+      for (const { lines, times } of streams) {
+        lines.forEach((raw, i) => {
+          const line = safeJson(raw);
+          const id = typeof line.GUID === "string" ? line.GUID : "";
+          if (!ids.includes(id)) return;
+          linesById.set(id, [...(linesById.get(id) ?? []), { atNs: BigInt(times[i] ?? "0"), line }]);
+        });
+      }
+      for (const [id, lines] of linesById) out.set(id, traceFromLines(id, lines));
     }
     return out;
   }

@@ -47,11 +47,13 @@ import {
   measuredFields,
   type AddonCalls,
   type ChainOutcome,
+  type FailurePath,
+  type FailurePaths,
   type WriteCalls,
   type FormulatedIssue,
   type IssueSeverity,
 } from "./formulated-issues.js";
-import { LokiService, groupErrors, type FailedRequest } from "./loki.js";
+import { LokiService, flowOf, groupErrors, type FailedRequest, type RequestTrace } from "./loki.js";
 import { BedrockService, bedrockGate, type BedrockLogger } from "./bedrock.js";
 import { config } from "../config.js";
 
@@ -123,6 +125,11 @@ export function fingerprint(
   return [
     `v${PRINT_VERSION}`,
     ...(outcome ? [`o:${scale(outcome.failures)}:${scale(outcome.recovered)}`] : []),
+    // The MAIN way requests fail, without its count: the backup starting to
+    // fail too is news, one more request down the same path is not. Only the
+    // first path — the traced sample is the newest few, so the rare paths
+    // behind it come and go each cycle and would re-word an unchanged story.
+    ...(outcome?.paths?.groups[0] ? [`p:${outcome.paths.groups[0].flow}`] : []),
     ...(severity ? [`s:${severity}`] : []),
     ...findings.map((f) => `${f.id}|${f.tier}|${f.headline}`),
     // Drift is part of the story, so it is part of what makes the story
@@ -245,6 +252,8 @@ export interface LogOutcome {
   failedMethods: Map<string, Map<string, number>>;
   /** Chains whose failures crossed the alert's test, with the densest five minutes. */
   bursts: Map<string, Burst>;
+  /** The failed requests' paths through the router, grouped, per chain. */
+  paths: Map<string, FailurePaths>;
 }
 
 /**
@@ -256,7 +265,7 @@ export interface LogOutcome {
  * gateway answered with a 504.
  */
 export async function readLogs(
-  loki: Pick<LokiService, "routersWithLogs" | "failedRequests" | "countFailed" | "methodsOf">,
+  loki: Pick<LokiService, "routersWithLogs" | "failedRequests" | "countFailed" | "methodsOf" | "traceRequests">,
   rangeSec: number,
   routers: { id: string; spec: string }[],
   now = Math.floor(Date.now() / 1000),
@@ -275,6 +284,9 @@ export async function readLogs(
   }
   const failures: FailedRequest[] = [...byRouter.values()].flat();
   const methods = await loki.methodsOf(failures);
+  // Each failed request's path — up to 20 per pod, newest first. Failures are
+  // rare, so on a normal day this is every one of them.
+  const traces = await loki.traceRequests(failures, 20);
 
   const specOf = new Map(routers.map((r) => [r.id.toLowerCase(), r.spec]));
   const sampled = new Map<string, Map<string, number>>();
@@ -311,7 +323,76 @@ export async function readLogs(
     const k = seen > 0 && real > seen ? real / seen : 1;
     failedMethods.set(spec, new Map([...m].map(([method, n]) => [method, Math.round(n * k)])));
   }
-  return { failed, failedMethods, bursts };
+  const tracesBySpec = new Map<string, RequestTrace[]>();
+  for (const [router, list] of byRouter) {
+    const spec = specOf.get(router);
+    if (!spec) continue;
+    const found = list.map((f) => traces.get(f.id)).filter((t): t is RequestTrace => t != null);
+    tracesBySpec.set(spec, [...(tracesBySpec.get(spec) ?? []), ...found]);
+  }
+  const paths = new Map<string, FailurePaths>();
+  for (const [spec, list] of tracesBySpec) {
+    const p = groupTraces(list);
+    if (p) paths.set(spec, p);
+  }
+  return { failed, failedMethods, bursts, paths };
+}
+
+/**
+ * Traced requests grouped by the way they went, most common first. Six that
+ * each went "alchemy ✕ timed out → quicknode (backup) ✕ timed out → failed"
+ * are one path of six — not "3 on one provider and 2 on another", which
+ * reads as different requests.
+ *
+ * A trace with no provider on it is left out: its lines were not all read,
+ * and a path with a gap in it would state something false.
+ */
+export function groupTraces(traces: RequestTrace[]): FailurePaths | null {
+  const byFlow = new Map<string, { path: FailurePath; methods: Map<string, number> }>();
+  let traced = 0;
+  for (const t of traces) {
+    if (t.attempts.length === 0) continue;
+    traced++;
+    const flow = flowOf(t);
+    const g = byFlow.get(flow) ?? { path: { count: 0, flow, methods: [], seconds: [t.seconds, t.seconds] }, methods: new Map() };
+    g.path.count++;
+    g.path.seconds = [Math.min(g.path.seconds[0], t.seconds), Math.max(g.path.seconds[1], t.seconds)];
+    g.methods.set(t.method, (g.methods.get(t.method) ?? 0) + 1);
+    byFlow.set(flow, g);
+  }
+  if (traced === 0) return null;
+  const groups = [...byFlow.values()].map(({ path, methods }) => ({
+    ...path,
+    methods: [...methods].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([m]) => m),
+  }));
+  return { traced, groups: sortPaths(groups) };
+}
+
+/** Most requests first; the flow breaks a tie, so the order — and the fingerprint — is stable. */
+function sortPaths(groups: FailurePath[]): FailurePath[] {
+  return groups.sort((a, b) => b.count - a.count || a.flow.localeCompare(b.flow));
+}
+
+/** Several chains' paths as one — for an issue that covers more than one chain. */
+export function mergePaths(list: (FailurePaths | null)[]): FailurePaths | null {
+  const all = list.filter((p): p is FailurePaths => p != null);
+  if (all.length === 0) return null;
+  const byFlow = new Map<string, FailurePath>();
+  for (const g of all.flatMap((p) => p.groups)) {
+    const same = byFlow.get(g.flow);
+    byFlow.set(
+      g.flow,
+      same
+        ? {
+            flow: g.flow,
+            count: same.count + g.count,
+            methods: [...new Set([...same.methods, ...g.methods])],
+            seconds: [Math.min(same.seconds[0], g.seconds[0]), Math.max(same.seconds[1], g.seconds[1])],
+          }
+        : { ...g, methods: [...g.methods] },
+    );
+  }
+  return { traced: all.reduce((a, p) => a + p.traced, 0), groups: sortPaths([...byFlow.values()]) };
 }
 
 export async function outcomesBySpec(
@@ -432,6 +513,7 @@ export async function outcomesBySpec(
       requests: requests(spec),
       addonCalls: addonCalls(spec),
       writes: writesOf(spec),
+      paths: logs?.paths.get(spec) ?? null,
     };
   };
 }
@@ -461,6 +543,7 @@ function sumOutcomes(list: ChainOutcome[]): ChainOutcome {
     failures: add("failures"),
     requests: add("requests"),
     addonCalls: [...byAddon.values()],
+    paths: mergePaths(list.map((o) => o.paths)),
     writes: writes.length
       ? {
           sent: writes.reduce((a, w) => a + w.sent, 0),
@@ -650,7 +733,7 @@ export class IssuesFeedService {
         : null;
       // Read once for every chain. A failure here costs the outcome sentence,
       // never the issues themselves.
-      const unmeasured: ChainOutcome = { recovered: null, failures: null, requests: null, addonCalls: [], writes: null };
+      const unmeasured: ChainOutcome = { recovered: null, failures: null, requests: null, addonCalls: [], writes: null, paths: null };
       const outcomeOf = this.prom
         ? await outcomesBySpec(this.prom, window, logs).catch((err) => {
             this.logger?.warn(
