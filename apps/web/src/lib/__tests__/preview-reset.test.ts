@@ -2,6 +2,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
+// Loaded once, at module load, not inside the first test: the web suite keeps
+// vitest's 5-second test timeout on purpose, and a cold import of the module
+// graph under a busy `pnpm -r test` can take longer than that on its own.
+const { previewReset } = await import("../bootstrap");
+
 /**
  * The reset page's server-side preview, and the one distinction it must keep:
  * a dead link and an unanswered question are different things.
@@ -19,7 +24,6 @@ afterEach(() => {
 });
 
 async function preview(token = "tok3n") {
-  const { previewReset } = await import("../bootstrap");
   return previewReset(token);
 }
 
