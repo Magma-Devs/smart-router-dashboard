@@ -287,13 +287,20 @@ export interface IssuedChallenge {
   expiresAt: Date;
 }
 
+/** What a challenge can follow: a password, or a Google or GitHub sign-in. */
+export type FirstFactor = "password" | "google" | "github";
+
 /**
- * Issue the ticket that carries a verified password to the code screen.
+ * Issue the ticket that carries a verified first factor to the code screen.
  *
- * Any earlier unspent challenge for the account is retired first, so a password
- * verified twice does not leave two live ways to reach the second step.
+ * Any earlier unspent challenge for the account is retired first, so a first
+ * factor proved twice does not leave two live ways to reach the second step.
  */
-export async function issueChallenge(db: Database, userId: string): Promise<IssuedChallenge> {
+export async function issueChallenge(
+  db: Database,
+  userId: string,
+  firstFactor: FirstFactor = "password",
+): Promise<IssuedChallenge> {
   await db
     .update(twoFactorChallenges)
     .set({ usedAt: new Date() })
@@ -303,13 +310,13 @@ export async function issueChallenge(db: Database, userId: string): Promise<Issu
   const expiresAt = new Date(Date.now() + CHALLENGE_TTL_MS);
   await db
     .insert(twoFactorChallenges)
-    .values({ userId, tokenHash: hashToken(token), expiresAt });
+    .values({ userId, tokenHash: hashToken(token), expiresAt, firstFactor });
 
   return { token, expiresAt };
 }
 
 export type ChallengeOutcome =
-  | { ok: true; user: User }
+  | { ok: true; user: User; firstFactor: FirstFactor }
   | { ok: false; reason: "not_found" | "used" | "expired" | "user_inactive" };
 
 /**
@@ -344,7 +351,7 @@ export async function consumeChallenge(db: Database, token: string): Promise<Cha
     .returning({ id: twoFactorChallenges.id });
   if (claimed.length === 0) return { ok: false, reason: "used" };
 
-  return { ok: true, user: row.user };
+  return { ok: true, user: row.user, firstFactor: row.challenge.firstFactor as FirstFactor };
 }
 
 /** Retire every unspent challenge for an account. Called when 2FA is reset — a

@@ -39,6 +39,7 @@ import {
   consumeCode,
   isEnrolled,
   issueChallenge,
+  type FirstFactor,
 } from "../services/two-factor.js";
 import { lazyAuditWriter, type AuditWriter } from "../services/audit.js";
 import { sendPasswordResetEmail } from "../services/email-templates.js";
@@ -253,7 +254,7 @@ export async function authRoutes(app: FastifyInstance) {
     db: Database,
     user: User,
     client: ResolvedClient,
-    authMethod: "password" | "password+totp",
+    authMethod: "password" | `${FirstFactor}+totp`,
   ) {
     // Cleared HERE and nowhere else, and that placement is the whole point.
     //
@@ -987,7 +988,7 @@ export async function authRoutes(app: FastifyInstance) {
         return refuse();
       }
 
-      return completeSignIn(db, claimed.user, client, "password+totp");
+      return completeSignIn(db, claimed.user, client, `${claimed.firstFactor}+totp`);
     },
   );
 
@@ -997,7 +998,7 @@ export async function authRoutes(app: FastifyInstance) {
       config: { rateLimit: STRICT_AUTH_RATE_LIMIT },
       schema: {
         tags: ["Auth"],
-        summary: "Verify a Google or GitHub token server-side, upsert the user, open a session",
+        summary: "Verify a Google or GitHub token server-side and open a session — or, for an account with an authenticator, return a challenge for its code",
         params: {
           type: "object" as const,
           required: ["provider"],
@@ -1052,6 +1053,23 @@ export async function authRoutes(app: FastifyInstance) {
         return reply
           .code(403)
           .send({ statusCode: 403, error: "Forbidden", message: "This account is no longer active" });
+      }
+
+      // An account with an authenticator is asked for its code here too, as it
+      // is after a password: the provider proved who holds the Google or GitHub
+      // account, which is one factor, and MAG-2730's rule is two for everyone.
+      // Same shape as the password path — a challenge and **no session** — so
+      // there is still nothing a half-authenticated caller can hold; the code
+      // step at `/auth/2fa/verify` opens the session and records it as
+      // `<provider>+totp`.
+      if (isEnrolled(user)) {
+        const challenge = await issueChallenge(db, user.id, provider);
+        return {
+          twoFactorRequired: true,
+          challenge: challenge.token,
+          expiresAt: challenge.expiresAt.toISOString(),
+          email: user.email,
+        };
       }
 
       const session = await createSession(db, {
