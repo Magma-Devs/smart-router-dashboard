@@ -128,7 +128,10 @@ accounts:
 
 ## accounts-managed: the same stack in MANAGED mode — invitations and resets are emailed
 accounts-managed:
-	AUTH_MODE=enabled docker compose -f docker-compose.dev.yml -f docker-compose.accounts.yml \
+	AUTH_MODE=enabled \
+	AUTH_SECRET=$${AUTH_SECRET:-dev-secret-change-me-please-32chars!} \
+	DATABASE_URL=$${DATABASE_URL:-postgres://sr:$${POSTGRES_PASSWORD:-dev}@postgres:5432/sr_dashboard} \
+	docker compose -f docker-compose.dev.yml -f docker-compose.accounts.yml \
 		-f docker-compose.managed.yml --profile auth up -d --build postgres builder ses api web
 	@echo ""
 	@echo "  ✉️  Managed mode — invitations and resets are emailed."
