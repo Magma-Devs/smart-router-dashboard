@@ -57,6 +57,12 @@ function getClient(): SESv2Client | null {
   return cachedClient;
 }
 
+/** Whether a send would reach anybody. False means `sendEmail` logs the body
+ *  instead, so a flow with nobody to hand the link to must not start. */
+export function emailTransportConfigured(): boolean {
+  return Boolean(process.env.AWS_REGION);
+}
+
 /** Tests only — a process never re-resolves the client. */
 export function resetEmailClientForTests(): void {
   cachedClient = null;

@@ -288,24 +288,28 @@ describe("POST /api/team/members/:id/reset-link", () => {
 });
 
 describe("POST /auth/password/forgot", () => {
-  // There is no way to deliver a link (email is MAG-2870), so it fails closed:
-  // the same answer on every deployment and for every address, and nothing
-  // written — issuing a link nobody receives would also kill any live one.
+  // Wherever nothing can deliver a link it fails closed: the same answer for
+  // every address, and nothing written — issuing a link nobody receives would
+  // also kill any live one. AWS_REGION is unset here, so managed has no
+  // transport; the emailed path is covered in email-delivery.test.ts.
   const forgot = (email: string) =>
     app!.inject({ method: "POST", url: "/auth/password/forgot", payload: { email } });
 
-  it.each(["onprem", "managed"])("answers 404 on %s, member or stranger alike", async (mode) => {
-    setEnv({ DEPLOYMENT_MODE: mode });
-    await member("dana@example.com");
-    const known = await forgot("dana@example.com");
-    const unknown = await forgot("nobody@example.com");
-    expect(known.statusCode).toBe(404);
-    expect(known.json()).toEqual(unknown.json());
-    expect(await t.db.select().from(passwordResets)).toHaveLength(0);
-  });
+  it.each(["onprem", "managed"])(
+    "answers 404 on %s with no mail transport, member or stranger alike",
+    async (mode) => {
+      setEnv({ DEPLOYMENT_MODE: mode, AWS_REGION: undefined });
+      await member("dana@example.com");
+      const known = await forgot("dana@example.com");
+      const unknown = await forgot("nobody@example.com");
+      expect(known.statusCode).toBe(404);
+      expect(known.json()).toEqual(unknown.json());
+      expect(await t.db.select().from(passwordResets)).toHaveLength(0);
+    },
+  );
 
-  it("leaves a member's live admin-issued link working", async () => {
-    setEnv({ DEPLOYMENT_MODE: "managed" });
+  it("leaves a member's live admin-issued link working when nothing can send a new one", async () => {
+    setEnv({ DEPLOYMENT_MODE: "managed", AWS_REGION: undefined });
     const admin = await member("admin@example.com", { role: "admin" });
     const dana = await member("dana@example.com");
     const link = await app!.inject({
