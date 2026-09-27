@@ -410,11 +410,12 @@ correlation to build on. None of that is in scope here, and a table nothing
 reads is schema to migrate around later.
 
 The one fact worth keeping — did it go, or is the admin holding the link — goes
-on the audit row that already describes the event: `member.invited`,
-`invite.resent`, `password.reset_requested` each record `emailed`,
-`link shown to the admin`, or `email failed, link shown to the admin` in their
-`note` — on `member.invited`, after the role and expiry the row already carries
-(`as approver, expires …; emailed`). That is where somebody investigating
+on the audit row that already describes the event. `member.invited` and
+`invite.resent` record `emailed`, `link shown to the admin`, or `email failed,
+link shown to the admin` in their `note` — on `member.invited`, after the role
+and expiry the row already carries (`as approver, expires …; emailed`).
+`password.reset_requested` has no admin to hold a link, so it records `emailed`
+or `email failed, no link delivered`. That is where somebody investigating
 already looks.
 
 **The body is never persisted**, in either design. A rendered invitation

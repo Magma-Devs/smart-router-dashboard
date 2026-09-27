@@ -29,8 +29,8 @@ export const EMAIL_SUBJECTS: Record<EmailType, (customer: string) => string> = {
 };
 
 /**
- * How an email's delivery is recorded on the audit row that already describes
- * the thing that happened (`member.invited`, `password.reset_requested`).
+ * How an invitation's delivery is recorded on the audit row that already
+ * describes it (`member.invited`, `invite.resent`).
  *
  * There is deliberately **no email-log table**. lava-connect has one because it
  * has sixteen types, an admin console that answers "did this person already get
@@ -49,3 +49,22 @@ export const EMAIL_DELIVERY_NOTES = {
 } as const;
 
 export type EmailDelivery = keyof typeof EMAIL_DELIVERY_NOTES;
+
+/**
+ * How a self-serve reset is recorded on `password.reset_requested`.
+ *
+ * Not {@link EMAIL_DELIVERY_NOTES}: that describes an admin holding the link,
+ * and this flow has no admin — the link goes to the inbox or nowhere, and is
+ * never returned. "link shown to the admin" on this row would send somebody
+ * investigating a takeover to look for an admin who does not exist.
+ */
+export const RESET_REQUEST_NOTES = {
+  /** Handed to SES. */
+  sent: "emailed",
+  /** No transport. Unreachable while the route fails closed without one, and
+   *  kept so the record would still be true if that ever changed. */
+  link: "not sent, no mail transport",
+  /** SES refused it. Nothing reached anybody. */
+  failed: "email failed, no link delivered",
+} as const satisfies Record<EmailDelivery, string>;
+
