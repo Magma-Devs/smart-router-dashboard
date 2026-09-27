@@ -19,7 +19,9 @@
  * against a deployment that has already been set up. That is the check.
  *
  * Env: API (default http://localhost:8000), WEB (http://localhost:3000),
- * AUTH_SECRET (must match the api's), SETUP_TOKEN.
+ * AUTH_SECRET (must match the api's), SETUP_TOKEN, SES_UI (the local SES
+ * server's inbox, http://localhost:8005). A managed run reads every link from
+ * that inbox and fails if a message the api reports sending never arrives.
  */
 
 import { createHmac } from "node:crypto";
@@ -38,6 +40,17 @@ const RESET_PW = "dana-picked-a-new-one-2231";
  *  ever appears as a value in the audit log. */
 const SECRETS = [ADMIN.password, MEMBER.password, RESET_PW, SETUP_TOKEN];
 const TOKENS_SEEN = [];
+/** Every raw invitation and reset token the run held — bare, not as a link,
+ *  since a token leaked into a note would not look like a URL. */
+const LINK_TOKENS = [];
+/** Links already read from the inbox, so a resend never hands back the
+ *  previous message's link. Up here because the checks run at top level. */
+const linksUsed = new Set();
+const tokenOf = (url) => {
+  const token = String(url).split("/").pop();
+  if (token) LINK_TOKENS.push(token);
+  return token;
+};
 
 // ── tiny harness ────────────────────────────────────────────────────────────
 
@@ -237,35 +250,31 @@ check("Create an account on managed — the person sets their own password");
       !JSON.stringify(inv.body ?? {}).includes("password"),
     );
 
-    const inbox = await mailbox();
-    if (inbox.length) {
-      // A transport is running, so managed behaves the way it will in
-      // production: the link goes to the recipient and to nobody else.
-      const mail = inbox[inbox.length - 1];
-      ok("the invitation was emailed", inv.body?.delivery === "email");
-      ok("and the link is NOT returned to the admin", !inv.body?.url);
-      ok(
-        "it reached the invited address",
-        mail.destination?.to?.[0] === MEMBER.email,
-        JSON.stringify(mail.destination),
-      );
-      ok(
-        "with the customer named in the subject",
-        /You've been added to .+ on Smart Router/.test(mail.subject ?? ""),
-        mail.subject,
-      );
-      ok("as text as well as HTML", !!mail.body?.text && !!mail.body?.html);
-      ok("with a reply-to that somebody reads", (mail.replyTo ?? []).length > 0);
-    } else {
-      note("no transport configured — the link falls back to the admin");
-      ok("the fallback is declared rather than silent", inv.body?.deliveryFallback === true);
-      ok("and the link is handed over", !!inv.body?.url);
-    }
+    // The api's own answer decides what this check expects, never the state
+    // of the inbox: a managed deployment is meant to email, so a fallback here
+    // is a failure to report, not a second way to pass.
+    ok(
+      "the invitation was emailed",
+      inv.body?.delivery === "email",
+      inv.body?.deliveryFallback
+        ? "the api fell back to handing the admin the link — is the SES server up?"
+        : JSON.stringify(inv.body),
+    );
+    ok("and the link is NOT returned to the admin", !inv.body?.url);
 
-    // Whether emailed or fallen back, the holder chooses the value.
-    const url = inv.body?.url ?? (await linkFor("invite"));
+    const mail = await awaitMail("invite", MEMBER.email);
+    ok("it reached the invited address", !!mail, `nothing arrived for ${MEMBER.email}`);
+    ok(
+      "with the customer named in the subject",
+      /You've been added to .+ on Smart Router/.test(mail?.subject ?? ""),
+      mail?.subject,
+    );
+    ok("as text as well as HTML", !!mail?.body?.text && !!mail?.body?.html);
+    ok("with a reply-to that somebody reads", (mail?.replyTo ?? []).length > 0);
+
+    // The holder chooses the value.
     const redeemed = await call("POST", "/auth/invite/accept", {
-      body: { token: url.split("/").pop(), password: MEMBER.password, name: "Dana Okonkwo" },
+      body: { token: tokenOf(mail?.link ?? ""), password: MEMBER.password, name: "Dana Okonkwo" },
     });
     ok("the invited person sets their own password", redeemed.status === 201);
     ok("the account is theirs", redeemed.body?.user?.email === MEMBER.email);
@@ -292,43 +301,47 @@ check("Create an account on managed — the person sets their own password");
 }
 
 /**
- * The most recent link that reached the recipient, by whichever route managed
- * mode is using.
+ * The newest message to `to` carrying a `kind` link this run has not used yet,
+ * waited for — a send can land after the api answers (forgot-password answers
+ * first, on purpose). Null if none arrives.
  *
- * Preference matters. If a SES mock is running the message genuinely went
- * through the transport, so reading it from the inbox proves delivery rather
- * than proving a link was generated. The api log is the fallback for a managed
- * deployment with no transport wired up, where the body is logged instead.
+ * Links come from the inbox and nowhere else. Reading them from the api log
+ * instead would let a broken mail path pass: the api says "emailed", nothing
+ * arrives, and the logged link gets used anyway.
  */
-async function linkFor(kind) {
-  const inbox = await mailbox();
-  if (inbox.length) {
-    const latest = inbox[inbox.length - 1];
-    const found = String(latest.body?.text ?? "").match(
-      new RegExp(`https?://\\S*?/${kind}/[A-Za-z0-9_-]+`),
-    );
-    if (found) return found[0];
+async function awaitMail(kind, to, { timeoutMs = 15_000 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  const pattern = new RegExp(`https?://\\S*?/${kind}/[A-Za-z0-9_-]+`);
+  while (Date.now() < deadline) {
+    const inbox = await mailbox();
+    for (const mail of [...inbox].reverse()) {
+      if (!(mail.destination?.to ?? []).some((a) => a.toLowerCase() === to.toLowerCase())) {
+        continue;
+      }
+      const link = String(mail.body?.text ?? "").match(pattern)?.[0];
+      if (link && !linksUsed.has(link)) {
+        linksUsed.add(link);
+        return { ...mail, link };
+      }
+    }
+    await new Promise((r) => setTimeout(r, 250));
   }
-  const { stdout } = await exec("docker", [
-    "logs",
-    "--since",
-    "2m",
-    process.env.API_CONTAINER ?? "smart-router-dashboard-dev-api-1",
-  ]);
-  const all = stdout.match(new RegExp(`https?://[^\\s"']*/${kind}/[A-Za-z0-9_-]+`, "g")) ?? [];
-  return all[all.length - 1] ?? "";
+  return null;
 }
 
-/** Everything the SES mock has been handed, oldest first. Empty when no mock
- *  is running, which is how `linkFor` decides which route to read. */
+/** The link for an invitation: from the response when the admin was handed
+ *  one (on-prem), otherwise from the invitee's inbox. */
+async function inviteLink(inv, to) {
+  if (inv.body?.url) return inv.body.url;
+  return (await awaitMail("invite", to))?.link ?? "";
+}
+
+/** Everything the local SES server has been handed, oldest first. Throws when
+ *  the inbox cannot be read: an empty list would read as "nothing sent". */
 async function mailbox() {
-  try {
-    const res = await fetch(`${SES_UI}/store`, { signal: AbortSignal.timeout(2000) });
-    if (!res.ok) return [];
-    return (await res.json()).emails ?? [];
-  } catch {
-    return [];
-  }
+  const res = await fetch(`${SES_UI}/store`, { signal: AbortSignal.timeout(2000) });
+  if (!res.ok) throw new Error(`the SES inbox at ${SES_UI} answered ${res.status}`);
+  return (await res.json()).emails ?? [];
 }
 
 // 3 ──────────────────────────────────────────────────────────────────────────
@@ -344,8 +357,7 @@ check("An admin invites someone and they join with exactly the role picked");
     ok("on-prem it returns a link and sends no email", inv.body?.delivery === "link");
     ok("the link is shown once, not stored for re-reading", !!inv.body?.url);
   }
-  const url = inv.body?.url ?? (await linkFor("invite"));
-  const token = url.split("/").pop();
+  const token = tokenOf(await inviteLink(inv, email));
 
   const preview = await call("POST", "/auth/invite/preview", { body: { token } });
   ok("the link says who it is for and what it grants", preview.body?.role === "approver");
@@ -384,7 +396,7 @@ check("An invite already used is refused — and one cannot be redirected to ano
     token: adminToken,
     body: { email: "Mixed.Case@example.com", role: "read_only" },
   });
-  const t = (fresh.body?.url ?? (await linkFor("invite"))).split("/").pop();
+  const t = tokenOf(await inviteLink(fresh, "mixed.case@example.com"));
   const claimed = await call("POST", "/auth/invite/accept", {
     body: { token: t, password: "mixed-case-passphrase-31", email: "attacker@evil.co" },
   });
@@ -534,7 +546,9 @@ check("Forgot password — sets a new password, does not sign in, ends other ses
       body: { email: "nobody@nowhere.co" },
     });
     ok("and answers identically for an address with no account", unknown.status === 202);
-    resetUrl = await linkFor("reset");
+    const mail = await awaitMail("reset", globalThis.__memberEmail);
+    ok("the link reached their inbox", !!mail, `nothing arrived for ${globalThis.__memberEmail}`);
+    resetUrl = mail?.link ?? "";
   } else {
     const link = await call("POST", `/api/team/members/${globalThis.__memberId}/reset-link`, {
       token: adminToken,
@@ -544,7 +558,7 @@ check("Forgot password — sets a new password, does not sign in, ends other ses
     resetUrl = link.body?.url ?? "";
   }
   ok("a reset link exists", !!resetUrl, resetUrl);
-  const resetToken = resetUrl.split("/").pop();
+  const resetToken = tokenOf(resetUrl);
   globalThis.__usedResetToken = resetToken;
 
   const done = await call("POST", "/auth/password/reset", {
@@ -577,37 +591,45 @@ check("Forgot password — sets a new password, does not sign in, ends other ses
 // 9 ──────────────────────────────────────────────────────────────────────────
 check("An expired reset link and an already-used one give the same message");
 {
-  const used = await call("POST", "/auth/password/reset/preview", {
-    body: { token: globalThis.__usedResetToken },
+  // A genuinely expired link: minted for the spare account, then aged past its
+  // expiry in the database — waiting out an hour is not a test.
+  const minted = await call("POST", `/api/team/members/${globalThis.__spare.user.id}/reset-link`, {
+    token: adminToken,
   });
-  const never = await call("POST", "/auth/password/reset/preview", {
-    body: { token: "a-token-that-was-never-issued" },
-  });
-  ok(
-    "both are refused",
-    used.status >= 400 && never.status >= 400,
-    `${used.status} / ${never.status}`,
+  ok("a link is minted to expire", minted.status === 200, `${minted.status}`);
+  const expiredToken = tokenOf(minted.body?.url ?? "");
+  await sql(
+    "update password_resets set expires_at = now() - interval '1 minute' " +
+      `where user_id = '${globalThis.__spare.user.id}' and used_at is null`,
   );
-  ok("with the same status", used.status === never.status, `${used.status} vs ${never.status}`);
-  ok(
-    "and the same message",
-    used.body?.message === never.body?.message,
-    `"${used.body?.message}" vs "${never.body?.message}"`,
-  );
-  note(`both say: "${used.body?.message}"`);
 
-  const usedSubmit = await call("POST", "/auth/password/reset", {
-    body: { token: globalThis.__usedResetToken, password: "yet-another-passphrase-7" },
-  });
-  const neverSubmit = await call("POST", "/auth/password/reset", {
-    body: { token: "a-token-that-was-never-issued", password: "yet-another-passphrase-7" },
-  });
-  ok(
-    "submitting either is refused the same way",
-    usedSubmit.status === neverSubmit.status &&
-      usedSubmit.body?.message === neverSubmit.body?.message,
-    `${usedSubmit.status} / ${neverSubmit.status}`,
-  );
+  const tokens = {
+    expired: expiredToken,
+    used: globalThis.__usedResetToken,
+    "never issued": "a-token-that-was-never-issued",
+  };
+  const previews = {};
+  const submits = {};
+  for (const [kind, token] of Object.entries(tokens)) {
+    previews[kind] = await call("POST", "/auth/password/reset/preview", { body: { token } });
+    submits[kind] = await call("POST", "/auth/password/reset", {
+      body: { token, password: "yet-another-passphrase-7" },
+    });
+  }
+  const same = (answers) => {
+    const [first, ...rest] = Object.values(answers);
+    return (
+      first.status >= 400 &&
+      rest.every((a) => a.status === first.status && a.body?.message === first.body?.message)
+    );
+  };
+  const show = (answers) =>
+    Object.entries(answers)
+      .map(([k, a]) => `${k}: ${a.status} "${a.body?.message}"`)
+      .join(" · ");
+  ok("expired, used and never issued preview identically", same(previews), show(previews));
+  ok("and submitting any of them is refused identically", same(submits), show(submits));
+  note(`all three say: "${previews.expired.body?.message}"`);
 }
 
 // 10 ─────────────────────────────────────────────────────────────────────────
@@ -622,8 +644,14 @@ check("Remove a person — session ends, history stays, the email can be invited
   });
   ok("the admin removes them", removed.status === 200, `${removed.status}`);
 
+  // 403 ACCOUNT_INACTIVE, not 401: signing in again cannot help a removed
+  // person, and the web keys on the code to stop sending them back to /login.
   const next = await call("GET", "/api/team/members", { token });
-  ok("their very next request is refused", next.status === 401, `got ${next.status}`);
+  ok(
+    "their very next request is refused",
+    next.status === 403 && next.body?.code === "ACCOUNT_INACTIVE",
+    `got ${next.status} ${next.body?.code ?? ""}`,
+  );
 
   const list = await call("GET", "/api/team/members", { token: adminToken });
   ok(
@@ -694,6 +722,12 @@ check("The log has a row for each of the above, and no secret appears as a value
   }
   const leakedJwt = TOKENS_SEEN.find((t) => haystack.includes(t));
   ok("no session token in the log", !leakedJwt);
+  const leakedLinkToken = LINK_TOKENS.find((t) => t.length >= 16 && haystack.includes(t));
+  ok(
+    `no raw invitation or reset token in the log (${LINK_TOKENS.length} checked)`,
+    !leakedLinkToken,
+    leakedLinkToken,
+  );
   const linkish = haystack.match(/https?:\/\/[^\s]*\/(invite|reset)\/[A-Za-z0-9_-]{16,}/);
   ok("no invitation or reset link in the log", !linkish, linkish?.[0]);
 }
