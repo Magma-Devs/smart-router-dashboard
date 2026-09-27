@@ -3,7 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { SignJWT } from "jose";
 import { desc, eq } from "drizzle-orm";
 import { createTestDb, type TestDb } from "@sr/db/testing";
-import { auditEvents, users } from "@sr/db";
+import { auditEvents, passwordResets, users } from "@sr/db";
 import { buildApp } from "../app.js";
 import { SESSION_JWT_AUDIENCE, SESSION_JWT_ISSUER } from "../plugins/auth.js";
 import { createSession } from "../services/sessions.js";
@@ -182,8 +182,8 @@ describe("inviting on managed, with no transport configured", () => {
   });
 });
 
-describe("forgot-password on managed", () => {
-  it("answers 202 whether or not the address exists, and records the outcome", async () => {
+describe("forgot-password on managed, with no transport configured", () => {
+  it("fails closed, the same for every address, and issues nothing", async () => {
     const token = await boot("managed");
     await t.db.insert(users).values({
       email: "dana@example.com",
@@ -204,13 +204,14 @@ describe("forgot-password on managed", () => {
     // Identical answers: anything else turns this into a way to ask who is a
     // member. Unused, but the admin token proves the app booted managed.
     expect(token).toBeTruthy();
-    expect(known.statusCode).toBe(202);
-    expect(unknown.statusCode).toBe(202);
+    expect(known.statusCode).toBe(404);
+    expect(known.json()).toEqual(unknown.json());
 
-    // The link is never in the response — there is no admin in this flow to
-    // hand it to, so the note is the only record that it went nowhere.
-    expect(known.json()).toEqual({ ok: true });
-    expect(await lastNote("password.reset_requested")).toBe("link shown to the admin");
+    // Unlike an invitation there is no admin to hand the link to, so a link
+    // nobody receives is not issued at all — it would only be logged, and it
+    // would kill any live link the member already holds.
+    expect(await t.db.select().from(passwordResets)).toHaveLength(0);
+    expect(await lastNote("password.reset_requested")).toBeNull();
   });
 });
 

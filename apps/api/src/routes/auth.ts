@@ -30,6 +30,7 @@ import {
 import { clearFailures, lockedReply, recordAttempt } from "../services/lockout.js";
 import { lazyAuditWriter, type AuditWriter } from "../services/audit.js";
 import { sendPasswordResetEmail } from "../services/email-templates.js";
+import { emailTransportConfigured } from "../services/email.js";
 import { EMAIL_DELIVERY_NOTES } from "@sr/shared";
 import {
   completeSetup,
@@ -553,7 +554,7 @@ export async function authRoutes(app: FastifyInstance) {
       config: { rateLimit: STRICT_AUTH_RATE_LIMIT },
       schema: {
         tags: ["Auth"],
-        summary: "Request a reset link by email (managed only — on-prem has no mail server)",
+        summary: "Request a reset link by email — managed deployments with a mail transport only",
         body: {
           type: "object" as const,
           required: ["email"],
@@ -562,9 +563,12 @@ export async function authRoutes(app: FastifyInstance) {
       },
     },
     async (request, reply) => {
-      if (deploymentMode() !== "managed") {
-        // On-prem has nowhere to send it. Saying so is better than accepting
-        // the request and silently doing nothing.
+      if (deploymentMode() !== "managed" || !emailTransportConfigured()) {
+        // Fails closed wherever nothing can deliver the link: on-prem never has
+        // mail, and a managed deployment whose transport is not wired up would
+        // issue a link that reaches nobody — logging it instead — and invalidate
+        // any live link the member already holds. Saying so beats accepting
+        // silently.
         return reply.code(404).send({
           statusCode: 404,
           error: "Not Found",
