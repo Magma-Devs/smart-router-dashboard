@@ -376,20 +376,18 @@ check("A wrong code, a reused code, and a sixth attempt each behave as described
     body: { challenge: fifth.body?.challenge, code: "000000" },
   });
 
-  // Asserted on the counter rather than on a 423, because from ONE address the
-  // per-IP limiter answers first — 429 before the account is ever consulted.
-  // The account wall is the one that matters against an attacker rotating
-  // addresses, and this is where it is visible.
+  // The counter first — the wall that matters against an attacker rotating
+  // addresses — then the sixth attempt itself.
   const [[count, locked]] = await sql(
     `select failed_count, locked_until is not null
        from login_attempts where email = lower('${MEMBER.email}')`,
   );
   ok("a wrong CODE lands in the same counter as the wrong passwords", count === "5", count);
   ok("and the fifth failure locks the account", locked === "t", locked);
+  // `call` sleeps off a per-IP 429 and retries, so this reaches the account.
+  const sixth = await call("POST", "/auth/sign-in", { body: MEMBER });
+  ok("a sixth attempt is refused, with the right password", sixth.status === 423, `${sixth.status}`);
   note("failed codes and failed passwords share one counter — five total, not five each");
-  note(
-    "asserted on login_attempts: from one IP the per-IP limiter answers before the account wall",
-  );
   await sql(`delete from login_attempts where email = lower('${MEMBER.email}')`);
 }
 
@@ -447,6 +445,8 @@ check("An admin can see who has 2FA, and reset it for someone who lost their pho
 {
   const members = await call("GET", "/api/team/members", { token: adminToken });
   const rows = members.body?.members ?? [];
+  // Both, or "every row" below would pass on an empty list — a failed read.
+  ok("the member list is readable", members.status === 200 && rows.length >= 2, `${members.status}`);
   ok(
     "the member list carries a real 2FA value, not a dash",
     rows.every((m) => typeof m.twoFactorEnabled === "boolean"),
@@ -569,7 +569,15 @@ check("The secret cannot be read back out by anyone, including us");
   const backIn = await call("POST", "/auth/sign-in", { body: MEMBER });
   const freshToken = tokenFor(backIn.body);
   const fresh = (await enrol(freshToken)).secret;
-  const secrets = [adminEnrolment.secret, memberEnrolment.secret, fresh];
+  // Check 10's reset-2fa cleared the admin's authenticator and ended every
+  // session they held, adminToken's included — so reading as the admin needs
+  // a new sign-in and a new enrolment. Waiting past the second the reset
+  // stamped as its sign-out cutoff, which a same-second token would not clear.
+  await new Promise((r) => setTimeout(r, 1100 - (Date.now() % 1000)));
+  const adminBack = await call("POST", "/auth/sign-in", { body: ADMIN });
+  const adminNow = tokenFor(adminBack.body);
+  const adminAgain = (await enrol(adminNow)).secret;
+  const secrets = [adminEnrolment.secret, memberEnrolment.secret, fresh, adminAgain];
 
   const [[stored]] = await sql(
     `select coalesce(totp_secret, '(null)') from users where email = lower('${MEMBER.email}')`,
@@ -582,9 +590,16 @@ check("The secret cannot be read back out by anyone, including us");
 
   const surfaces = await Promise.all([
     call("GET", "/api/account/me", { token: freshToken }),
-    call("GET", "/api/team/members", { token: adminToken }),
-    call("GET", "/api/team/members.csv", { token: adminToken }),
+    call("GET", "/api/team/members", { token: adminNow }),
+    call("GET", "/api/team/members.csv", { token: adminNow }),
   ]);
+  // A 401 body contains no secret either — so the reads have to have worked
+  // before "none of them returns it" means anything.
+  ok(
+    "every read surface answered",
+    surfaces.every((r) => r.status === 200),
+    surfaces.map((r) => r.status).join(", "),
+  );
   ok(
     "no read surface returns it",
     surfaces.every((r) => secrets.every((x) => !r.text.includes(x))),

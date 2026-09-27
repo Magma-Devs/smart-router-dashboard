@@ -345,7 +345,7 @@ const adminToken = tokenFor(adminSignIn);
 // The first admin may defer 2FA — but not past inviting anyone, which is the
 // next thing this runner does. So it enrols here, which is also the shape a
 // real first admin's day takes.
-const ADMIN_SECRET = await enrol(adminToken);
+await enrol(adminToken);
 note("the first admin enrolled an authenticator (MAG-2730: required before inviting)");
 
 // 2 ──────────────────────────────────────────────────────────────────────────
