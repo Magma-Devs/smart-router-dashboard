@@ -527,7 +527,7 @@ Setup for both, including Roles Anywhere on non-AWS hardware:
 | Variable | Default | Notes |
 |---|---|---|
 | `BEDROCK_ENABLED` | `false` | Explicit opt-in — model calls cost money, so ambient AWS credentials must not quietly start billing |
-| `BEDROCK_ALLOW_UNAUTHENTICATED` | `false` | Serve AI while `AUTH_MODE=disabled`, which installs no `/api/*` gate. Needed on a fresh clone (the zero-dependency boot is the default); **not** for anything reachable from outside — same trade `UPSTREAM_RELAY_ENABLED` makes |
+| `BEDROCK_ALLOW_UNAUTHENTICATED` | `false` | Serve AI while `AUTH_MODE=disabled`, which installs no `/api/*` gate — **honoured only while the api listens on loopback** (`API_HOST=127.0.0.1`). For a fresh clone on a laptop. On any other bind (the `0.0.0.0` default, every container) it is ignored, AI answers `auth_required`, and the api warns at boot: anything reachable needs `AUTH_MODE=enabled` |
 | `AWS_BEARER_TOKEN_BEDROCK` | (unset) | A Bedrock API key (MAG-3702). Read by the **SDK**, not by our code — set it and SigV4 is skipped entirely. The simplest way to give a deployment an identity; a role is the safer one |
 | `BEDROCK_REGION` | `us-east-1` | |
 | `BEDROCK_MODEL` | `global.anthropic.claude-sonnet-5` | A cross-region **inference profile**, not a bare model id — `global.` routes to whichever region has capacity. Verify with `aws bedrock list-inference-profiles` |

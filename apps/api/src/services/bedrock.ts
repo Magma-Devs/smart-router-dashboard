@@ -25,7 +25,13 @@ export type BedrockUnavailable =
   /** `AUTH_MODE=disabled`: nobody is identified, so nobody may spend the budget. */
   | "auth_required";
 
-export type BedrockAvailability = { ok: true } | { ok: false; reason: BedrockUnavailable };
+export type BedrockAvailability = { ok: true } | { ok: false; reason: BedrockUnavailable; detail?: string };
+
+/** A bind address nothing but this machine can reach. */
+export function isLoopback(host: string): boolean {
+  const h = host.trim().toLowerCase().replace(/^\[|\]$/g, "");
+  return h === "localhost" || h === "::1" || /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(h);
+}
 
 /** A model call that failed. Carries a 502: our hop broke, not the caller's request. */
 export class BedrockError extends Error {
@@ -65,15 +71,24 @@ export function bedrockGate(
   authMode: string = config.auth.mode,
   enabled: boolean = config.bedrock.enabled,
   allowUnauthenticated: boolean = config.bedrock.allowUnauthenticated,
+  host: string = config.server.host,
 ): BedrockAvailability {
   if (!enabled) return { ok: false, reason: "disabled" };
+  if (authMode === "enabled") return { ok: true };
   // AUTH_MODE=disabled installs no /api/* gate at all, so anyone who can reach
-  // the api could spend the model budget. Refused unless the deployment says
-  // otherwise — which a laptop legitimately does, and an exposed one must not.
-  if (authMode !== "enabled" && !allowUnauthenticated) {
-    return { ok: false, reason: "auth_required" };
-  }
-  return { ok: true };
+  // the api could spend the model budget under this identity. The opt-out is
+  // for a laptop, and it is honoured only while the api listens on loopback.
+  // Bound anywhere else — the 0.0.0.0 default, and every container, which has
+  // to bind 0.0.0.0 for its port to be published — "anyone who can reach port
+  // 8000" is a real set of people, so the flag is refused whatever it says.
+  if (allowUnauthenticated && isLoopback(host)) return { ok: true };
+  return allowUnauthenticated
+    ? {
+        ok: false,
+        reason: "auth_required",
+        detail: `BEDROCK_ALLOW_UNAUTHENTICATED is only honoured with API_HOST=127.0.0.1; this api listens on ${host}. Set AUTH_MODE=enabled.`,
+      }
+    : { ok: false, reason: "auth_required" };
 }
 
 /**
