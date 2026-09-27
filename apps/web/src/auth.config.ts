@@ -6,6 +6,13 @@ import { jwtVerify, SignJWT } from "jose";
 import type { Role } from "@sr/shared";
 import { INTERNAL_API_BASE_URL } from "@/lib/internal-api";
 import { INVITE_HANDOFF_COOKIE } from "@/lib/invite-handoff";
+import {
+  TWO_FACTOR_HANDOFF_COOKIE,
+  TWO_FACTOR_HANDOFF_MAX_AGE_SECONDS,
+  decodeHandoff,
+  encodeHandoff,
+  type HandoffProvider,
+} from "@/lib/two-factor-handoff";
 
 /**
  * Auth.js v5 configuration (ported from lava-connect's auth.config.ts,
@@ -56,6 +63,12 @@ interface SignInUserPayload {
  *  request. A token without one is refused, so this is not optional. */
 interface SignInResponse {
   user: SignInUserPayload;
+  /** Set, with `challenge`, when the account has an authenticator: the first
+   *  factor held, and the code is still to come. */
+  twoFactorRequired?: boolean;
+  challenge?: string;
+  /** The account's address, with a challenge — for the code screen. */
+  email?: string;
   /** Absent when the api answered `twoFactorRequired` — a verified password
    *  opens no session, so there is nothing to address. */
   sessionId?: string;
@@ -102,6 +115,47 @@ async function readInviteHandoff(): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+/** Park a provider sign-in's two-factor challenge for the code screen. */
+async function parkTwoFactorHandoff(
+  challenge: string,
+  email: string,
+  provider: HandoffProvider,
+): Promise<boolean> {
+  try {
+    const { cookies } = await import("next/headers");
+    (await cookies()).set(TWO_FACTOR_HANDOFF_COOKIE, encodeHandoff({ challenge, email, provider }), {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: TWO_FACTOR_HANDOFF_MAX_AGE_SECONDS,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** The parked challenge, read once and burnt: spent right or wrong, a challenge
+ *  is dead, and a cookie still holding it would only mislead the next screen. */
+async function takeTwoFactorHandoff() {
+  try {
+    const { cookies } = await import("next/headers");
+    const jar = await cookies();
+    const handoff = decodeHandoff(jar.get(TWO_FACTOR_HANDOFF_COOKIE)?.value);
+    jar.delete(TWO_FACTOR_HANDOFF_COOKIE);
+    return handoff;
+  } catch {
+    return null;
+  }
+}
+
+/** A code step the api rate-limited: not a wrong code, and the challenge was
+ *  never spent — so the form keeps the code screen rather than starting over. */
+class RateLimited extends CredentialsSignin {
+  code = "rate_limited";
 }
 
 /** Burn the handoff cookie the moment it has been spent, successfully or not —
@@ -197,6 +251,9 @@ providers.push(
       /** Second step. Present together or not at all — see `authorize`. */
       challenge: { label: "Challenge", type: "text" },
       code: { label: "Authenticator code", type: "text" },
+      /** "1" when the challenge is the one a Google or GitHub sign-in parked in
+       *  the handoff cookie, rather than one the form holds. */
+      handoff: { label: "Handoff", type: "text" },
     },
     // The second argument is the browser's own request to
     // /api/auth/callback/credentials — the only place in this flow that can see
@@ -219,10 +276,16 @@ providers.push(
      * marked "half" — is exactly the shape the api refuses on purpose.
      */
     async authorize(credentials, request) {
-      const email = credentials?.email;
+      // After a Google or GitHub sign-in the challenge never reached the
+      // browser: it is read here, server-side, from the cookie the provider
+      // callback parked it in.
+      const parked = credentials?.handoff === "1" ? await takeTwoFactorHandoff() : null;
+      if (credentials?.handoff === "1" && !parked) return null;
+
+      const email = parked?.email ?? credentials?.email;
       if (typeof email !== "string") return null;
 
-      const challenge = credentials?.challenge;
+      const challenge = parked?.challenge ?? credentials?.challenge;
       const code = credentials?.code;
       const secondStep = typeof challenge === "string" && typeof code === "string" && !!challenge;
 
@@ -242,6 +305,7 @@ providers.push(
           body: JSON.stringify(payload),
         });
         if (res.status === 423) throw new AccountLocked();
+        if (res.status === 429) throw new RateLimited();
         if (!res.ok) return null;
         const body = (await res.json()) as SignInResponse;
         // No session id ⇒ the api answered `twoFactorRequired`. Nothing to mint.
@@ -255,7 +319,7 @@ providers.push(
           sessionId: body.sessionId,
         };
       } catch (err) {
-        if (err instanceof AccountLocked) throw err;
+        if (err instanceof AccountLocked || err instanceof RateLimited) throw err;
         return null;
       }
     },
@@ -391,6 +455,20 @@ export const authConfig = {
 
         if (!res.ok) return false;
         const body = (await res.json()) as SignInResponse;
+
+        // An account with an authenticator: the provider was one factor, and
+        // the api answered with a challenge for the second, no session. Park it
+        // and send the browser to the code screen. Returning a path denies this
+        // sign-in, which is right — nothing is signed in until the code is.
+        if (body.twoFactorRequired && body.challenge) {
+          const parked = await parkTwoFactorHandoff(
+            body.challenge,
+            body.email ?? user.email ?? "",
+            provider,
+          );
+          return parked ? "/login?step=code" : false;
+        }
+
         user.id = body.user.id;
         user.email = body.user.email;
         user.name = body.user.name ?? null;

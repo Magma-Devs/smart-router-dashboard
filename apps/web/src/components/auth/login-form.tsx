@@ -27,7 +27,9 @@ import { enabledProviders, type ProviderFlags } from "./oauth-providers";
 
 type Stage =
   | { name: "credentials" }
-  | { name: "code"; challenge: string };
+  /** `challenge` is held here after a password; after Google or GitHub it is in
+   *  the httpOnly handoff cookie and `handoff` names the provider instead. */
+  | { name: "code"; challenge: string | null; handoff?: "google" | "github" };
 
 interface SignInPhaseOne {
   twoFactorRequired?: boolean;
@@ -35,11 +37,22 @@ interface SignInPhaseOne {
   sessionId?: string;
 }
 
-export function LoginForm({ providers }: { providers: ProviderFlags }) {
-  const [email, setEmail] = useState("");
+export function LoginForm({
+  providers,
+  pendingCode,
+}: {
+  providers: ProviderFlags;
+  /** Back from a Google or GitHub sign-in whose account has an authenticator. */
+  pendingCode?: { email: string; provider: "google" | "github" };
+}) {
+  const [email, setEmail] = useState(pendingCode?.email ?? "");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
-  const [stage, setStage] = useState<Stage>({ name: "credentials" });
+  const [stage, setStage] = useState<Stage>(
+    pendingCode
+      ? { name: "code", challenge: null, handoff: pendingCode.provider }
+      : { name: "credentials" },
+  );
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const codeRef = useRef<HTMLInputElement>(null);
@@ -53,6 +66,20 @@ export function LoginForm({ providers }: { providers: ProviderFlags }) {
    *  right one sends them to try again, which keeps them locked. */
   const LOCKED =
     "Too many failed attempts on this account. It unlocks within 15 minutes — or ask an administrator for a reset link.";
+  /** The per-network limit, not the account's lockout — and not a wrong
+   *  password, which is what "invalid" would tell somebody who typed it right. */
+  const THROTTLED = "Too many sign-in attempts from this network. Wait a minute and try again.";
+  const UNAVAILABLE = "The dashboard could not check that just now. Try again in a moment.";
+
+  /** Back to the password step, and off the `?step=code` URL, so a reload does
+   *  not reopen a code screen whose challenge is gone. */
+  function restart(message: string | null) {
+    setStage({ name: "credentials" });
+    setCode("");
+    setPassword("");
+    setError(message);
+    if (window.location.search) window.history.replaceState(null, "", "/login");
+  }
 
   async function submitCredentials(e: FormEvent) {
     e.preventDefault();
@@ -71,7 +98,7 @@ export function LoginForm({ providers }: { providers: ProviderFlags }) {
         return;
       }
       if (!res.ok) {
-        setError(GENERIC);
+        setError(res.status === 429 ? THROTTLED : res.status >= 500 ? UNAVAILABLE : GENERIC);
         setBusy(false);
         return;
       }
@@ -106,20 +133,24 @@ export function LoginForm({ providers }: { providers: ProviderFlags }) {
     setBusy(true);
     setError(null);
 
-    const res = await signIn("credentials", {
-      email,
-      challenge: stage.challenge,
-      code,
-      redirect: false,
-    });
+    const res = await signIn(
+      "credentials",
+      stage.handoff
+        ? { handoff: "1", code, redirect: false }
+        : { email, challenge: stage.challenge ?? "", code, redirect: false },
+    );
     if (res?.error) {
-      // The challenge is spent whether or not the code was right — a challenge
-      // that survived a wrong code would let someone try code after code
-      // against one password check. So this goes back to the start, and says so.
-      setStage({ name: "credentials" });
-      setCode("");
-      setPassword("");
-      setError(res.code === "locked" ? LOCKED : GENERIC);
+      // Throttled before the code was looked at: the challenge is still good,
+      // so stay here rather than send them back through their password.
+      if (res.code === "rate_limited") {
+        setError(THROTTLED);
+        setBusy(false);
+        return;
+      }
+      // Otherwise the challenge is spent whether or not the code was right — a
+      // challenge that survived a wrong code would let someone try code after
+      // code against one password check. So this goes back to the start.
+      restart(res.code === "locked" ? LOCKED : GENERIC);
       setBusy(false);
       return;
     }
@@ -260,12 +291,7 @@ export function LoginForm({ providers }: { providers: ProviderFlags }) {
             <button
               type="button"
               className="gw-btn gw-btn--ghost"
-              onClick={() => {
-                setStage({ name: "credentials" });
-                setCode("");
-                setPassword("");
-                setError(null);
-              }}
+              onClick={() => restart(null)}
               style={{ fontSize: 12 }}
             >
               Back
