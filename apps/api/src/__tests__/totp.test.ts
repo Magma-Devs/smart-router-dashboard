@@ -173,8 +173,25 @@ describe("otpauthUri", () => {
     });
     // Google Authenticator reads the label prefix; most others read the param.
     expect(uri).toContain("otpauth://totp/Smart%20Router:dana%40example.com?");
-    expect(uri).toContain("issuer=Smart+Router");
+    expect(uri).toContain("issuer=Smart%20Router");
     expect(uri).toContain(`secret=${RFC_SECRET}`);
+  });
+
+  it("percent-encodes the query, so a strict decoder reads the issuer the label names", () => {
+    // Form encoding would write `issuer=Example+Co`, which RFC 3986 decoders —
+    // iOS's among them — read as "Example+Co": a different name from the label
+    // prefix, shown to the person as-is.
+    const uri = otpauthUri({ secret: RFC_SECRET, account: "a@b.c", issuer: "Example Co & Sons" });
+    expect(uri).not.toContain("+");
+    const query = uri.split("?")[1]!;
+    const issuer = query
+      .split("&")
+      .map((pair) => pair.split("="))
+      .find(([key]) => key === "issuer")![1]!;
+    expect(decodeURIComponent(issuer)).toBe("Example Co & Sons");
+    expect(decodeURIComponent(uri.split("?")[0]!.split("/").pop()!.split(":")[0]!)).toBe(
+      "Example Co & Sons",
+    );
   });
 
   it("pins the three parameters we build against", () => {

@@ -166,7 +166,9 @@ export function verifyTotp(
   options: VerifyTotpOptions = {},
 ): VerifyTotpResult {
   const submitted = code.replace(/[\s-]/g, "");
-  if (!/^\d{6}$/.test(submitted)) return { ok: false, reason: "malformed" };
+  if (submitted.length !== TOTP_DIGITS || !/^\d+$/.test(submitted)) {
+    return { ok: false, reason: "malformed" };
+  }
 
   const current = totpStepAt(options.now ?? Date.now());
   const lastStep = options.lastStep ?? null;
@@ -206,7 +208,11 @@ export interface OtpauthUriInput {
  * omitting either produces an entry labelled with a bare email address.
  *
  * Every component is percent-encoded, including the colon-separated label parts:
- * an unescaped `:` or `/` in an address silently truncates the label.
+ * an unescaped `:` or `/` in an address silently truncates the label. And the
+ * query is RFC 3986 percent-encoding, as the key-URI format specifies — not
+ * `URLSearchParams`, whose form encoding turns a space into `+`. A strict decoder
+ * (iOS's URL components among them) reads that `+` literally: the entry says
+ * "Example+Co", and the `issuer` parameter no longer matches the label prefix.
  *
  * **This value never reaches a log or an address bar.** It carries the secret,
  * so it is built server-side, rendered straight into a QR image, and returned
@@ -215,12 +221,14 @@ export interface OtpauthUriInput {
  */
 export function otpauthUri(input: OtpauthUriInput): string {
   const label = `${encodeURIComponent(input.issuer)}:${encodeURIComponent(input.account)}`;
-  const params = new URLSearchParams({
+  const query = Object.entries({
     secret: input.secret,
     issuer: input.issuer,
     algorithm: "SHA1",
     digits: String(TOTP_DIGITS),
     period: String(TOTP_STEP_SECONDS),
-  });
-  return `otpauth://totp/${label}?${params.toString()}`;
+  })
+    .map(([key, value]) => `${key}=${encodeURIComponent(value)}`)
+    .join("&");
+  return `otpauth://totp/${label}?${query}`;
 }
