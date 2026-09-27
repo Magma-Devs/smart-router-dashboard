@@ -222,10 +222,12 @@ export default function TeamPage() {
                     </td>
                     <td><RoleBadge role={m.role} /></td>
                     <td>
-                      {/* Under the enforcement rule only the first admin can
-                          read "No", and only during their grace period — so a
-                          second "No" here means something is wrong, and it is
-                          coloured to be noticed rather than skimmed past. */}
+                      {/* A "No" is someone the dashboard is shut to until they
+                          set up an authenticator — they joined and have not
+                          enrolled, or an admin reset theirs — or the first
+                          admin inside their grace period. One that stays "No"
+                          is worth a look, so it is coloured to be noticed
+                          rather than skimmed past. */}
                       <span
                         style={{
                           fontSize: 12,

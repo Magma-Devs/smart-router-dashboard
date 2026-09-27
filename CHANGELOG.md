@@ -112,8 +112,9 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   `reset-password` prints a link and never sets a password.
 
 - **The member list's 2FA column is real** — it was pinned to `—` while 2FA did
-  not exist. Under the enforcement rule only the first admin can read "No", and
-  only during their grace period, so a second one is marked to be noticed.
+  not exist. A "No" is someone the dashboard is shut to until they set one up —
+  they joined and have not enrolled, or an admin reset theirs — or the first
+  admin inside their grace period, and it is marked to be noticed.
 
 - **The Team page manages people** (`AUTH_MODE=enabled`). The member list is
   readable by every role and exports as CSV, with spreadsheet formula leads
