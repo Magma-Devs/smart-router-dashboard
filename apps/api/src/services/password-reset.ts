@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { and, eq, gt, isNull } from "drizzle-orm";
 import { passwordResets, users, type Database, type User } from "@sr/db";
+import { RESET_TTL_MS } from "@sr/shared";
 import { hashPassword } from "./password.js";
 import { revokeAllForUser, signOutEverywhere } from "./sessions.js";
 import { clearFailures } from "./lockout.js";
@@ -22,12 +23,8 @@ import { clearFailures } from "./lockout.js";
 
 const TOKEN_BYTES = 32;
 
-/** Managed can re-send cheaply and the user is at their keyboard; an on-prem
- *  link is handed over by a person and may wait until tomorrow. */
-export const RESET_TTL_MS = {
-  managed: 60 * 60 * 1000,
-  onprem: 24 * 60 * 60 * 1000,
-} as const;
+/** Defined in `@sr/shared`, where the web reads it for its copy. */
+export { RESET_TTL_MS };
 
 export type DeploymentMode = keyof typeof RESET_TTL_MS;
 
