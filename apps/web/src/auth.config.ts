@@ -5,6 +5,10 @@ import Credentials from "next-auth/providers/credentials";
 import { jwtVerify, SignJWT } from "jose";
 import type { Role } from "@sr/shared";
 import { INTERNAL_API_BASE_URL } from "@/lib/internal-api";
+import { forwardedClientHeaders } from "@/lib/forwarded-client";
+
+/** Re-exported: tests pin the address arithmetic through this module. */
+export { clientIpFrom } from "@/lib/forwarded-client";
 import { INVITE_HANDOFF_COOKIE } from "@/lib/invite-handoff";
 import {
   TWO_FACTOR_HANDOFF_COOKIE,
@@ -74,80 +78,6 @@ interface SignInResponse {
   sessionId?: string;
 }
 
-/**
- * How many proxies sit between the browser and this container. Each one appends
- * the address it received from, so the client is that many entries from the
- * right of `X-Forwarded-For`. Must match the ingress topology, and the api's
- * own `TRUST_PROXY`.
- */
-function trustedHops(): number {
-  const raw = Number.parseInt(process.env.TRUST_PROXY_HOPS ?? "", 10);
-  return Number.isInteger(raw) && raw > 0 ? raw : 1;
-}
-
-/**
- * The browser's own address, picked out of `X-Forwarded-For` by hop count.
- *
- * **Never the left-most entry.** Most ingresses append rather than replace, so
- * the left of that header is whatever the caller sent — meaning a client could
- * choose the address written to its own session row and audit trail, which is
- * the forgery the internal secret exists to prevent. Counting from the right
- * lands on an entry a proxy wrote.
- *
- * Returns undefined when the header is shorter than the configured hop count:
- * that is a misconfiguration or a manipulated header, and recording this
- * container's address is the honest answer to it.
- *
- * Exported for tests — the arithmetic is the whole security property.
- */
-export function clientIpFrom(headers: Headers | null, hops = trustedHops()): string | undefined {
-  if (!headers) return undefined;
-  const chain =
-    headers
-      .get("x-forwarded-for")
-      ?.split(",")
-      .map((entry) => entry.trim())
-      .filter(Boolean) ?? [];
-  if (chain.length === 0) return headers.get("x-real-ip") || undefined;
-  return chain[chain.length - hops] ?? undefined;
-}
-
-/**
- * What the browser told *us*, forwarded to the api so the session row and the
- * audit log record the person's own address rather than this container's.
- *
- * The api only believes it alongside `INTERNAL_AUTH_SECRET`; without that it
- * falls back to what it observes, so an attacker calling the public sign-in
- * endpoint directly cannot choose the address recorded against their attempts.
- *
- * Headers rather than a body field: the api's rate limiter runs before a body
- * exists and keys on this same address, so a deployment's sign-ins do not all
- * share one bucket.
- */
-function forwardedClientHeaders(headers: Headers | null): Record<string, string> {
-  const secret = process.env.INTERNAL_AUTH_SECRET;
-  if (!secret) {
-    // The api refuses to boot without this, so a deployment that reaches here
-    // has the web and the api configured differently — which is silent by
-    // nature: sign-in works, and every session and access event just records
-    // the api's own address.
-    console.error(
-      "INTERNAL_AUTH_SECRET is not set on the web tier. The browser's address and device cannot be forwarded, so the api will record its own on every sign-in. It must match the api's value.",
-    );
-    return {};
-  }
-  if (!headers) return {};
-
-  const ip = clientIpFrom(headers);
-  const userAgent = headers.get("user-agent") ?? undefined;
-  if (!ip && !userAgent) return {};
-
-  return {
-    "X-Internal-Auth": secret,
-    ...(ip ? { "X-Forwarded-Client-Ip": ip } : {}),
-    ...(userAgent ? { "X-Forwarded-Client-Ua": userAgent } : {}),
-  };
-}
 
 /**
  * The invitation token parked by `/api/invite/handoff`, if this Google flow

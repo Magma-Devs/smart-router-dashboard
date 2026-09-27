@@ -611,7 +611,7 @@ Web — build-time vs. **runtime**:
 | `AUTH_MODE` / `AUTH_SECRET` | `disabled` / (unset) | must match the api; `enabled` renders the login page + edge gate |
 | `DEPLOYMENT_MODE` | `onprem` | must match the api. Surfaced to the browser by `GET /api/config`, so one image serves both shapes |
 | `INTERNAL_AUTH_SECRET` | (unset) | must match the api; lets the web forward the browser's real IP / User-Agent on sign-in |
-| `TRUST_PROXY_HOPS` | `1` | how many proxies sit in front of the web. The browser's entry is that many back from the right of `X-Forwarded-For`; the left-most is caller-supplied and never used |
+| `TRUST_PROXY_HOPS` | `1` (compose: `0`) | how many proxies sit in front of the web; `0` when it is published directly, which forwards no address (Next leaves a browser's own `X-Forwarded-For` intact, so nothing in it can be believed). The browser's entry is that many back from the right of `X-Forwarded-For`; the left-most is caller-supplied and never used |
 | `INTERNAL_API_BASE_URL` | (falls back to api url) | server-side api URL for Auth.js callbacks (compose sets `http://api:8000`) |
 | `{GOOGLE,GITHUB}_CLIENT_{ID,SECRET}` | (unset) | each provider's button appears only when its id+secret pair is set |
 

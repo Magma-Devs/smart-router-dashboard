@@ -1,6 +1,25 @@
 import "server-only";
 import { isRole, type Role } from "@sr/shared";
 import { INTERNAL_API_BASE_URL } from "@/lib/internal-api";
+import { forwardedClientHeaders } from "@/lib/forwarded-client";
+
+/**
+ * The visitor's address and device, vouched for with INTERNAL_AUTH_SECRET.
+ *
+ * The previews below are fetched from this container, so without these the
+ * api's per-IP limit on them keys on the web pod — one bucket of ten a minute
+ * for everybody it serves, which anybody can fill by loading a link page ten
+ * times. Empty outside a request (a build, a test), where there is nobody to
+ * forward.
+ */
+async function forwarded(): Promise<Record<string, string>> {
+  try {
+    const { headers } = await import("next/headers");
+    return forwardedClientHeaders(await headers());
+  } catch {
+    return {};
+  }
+}
 
 /**
  * First-run state, read server-side.
@@ -58,7 +77,7 @@ export async function previewInvitation(token: string): Promise<InvitePreview | 
   try {
     const res = await fetch(`${INTERNAL_API_BASE_URL}/auth/invite/preview`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...(await forwarded()) },
       body: JSON.stringify({ token }),
       cache: "no-store",
       signal: AbortSignal.timeout(3000),
@@ -104,7 +123,7 @@ export async function previewReset(token: string): Promise<ResetPreview> {
   try {
     const res = await fetch(`${INTERNAL_API_BASE_URL}/auth/password/reset/preview`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...(await forwarded()) },
       body: JSON.stringify({ token }),
       cache: "no-store",
       signal: AbortSignal.timeout(3000),

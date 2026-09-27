@@ -24,6 +24,13 @@ function headers(values: Record<string, string>): Headers {
 }
 
 describe("clientIpFrom", () => {
+  it("forwards no address when nothing sits in front of the web", () => {
+    // TRUST_PROXY_HOPS=0: Next leaves a browser's own X-Forwarded-For intact,
+    // so every entry is the browser's choice and none of them can be believed.
+    expect(clientIpFrom(headers({ "x-forwarded-for": "6.6.6.6" }), 0)).toBeUndefined();
+    expect(clientIpFrom(headers({ "x-real-ip": "6.6.6.6" }), 0)).toBeUndefined();
+  });
+
   it("takes the entry the single trusted proxy wrote", () => {
     expect(clientIpFrom(headers({ "x-forwarded-for": "198.51.100.9" }), 1)).toBe("198.51.100.9");
   });
