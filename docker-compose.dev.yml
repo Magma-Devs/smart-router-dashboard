@@ -318,6 +318,9 @@ services:
       # browser context; without it the web doesn't claim one and the api
       # wouldn't believe it anyway.
       - INTERNAL_AUTH_SECRET=${INTERNAL_AUTH_SECRET:-}
+      # Published directly, so no proxy writes X-Forwarded-For: 0 forwards no
+      # address rather than one the browser chose (docs/AUTH.md).
+      - TRUST_PROXY_HOPS=${TRUST_PROXY_HOPS:-0}
       # OAuth providers — the login page shows a provider's button only
       # when its id+secret pair is set.
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}

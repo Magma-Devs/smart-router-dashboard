@@ -315,7 +315,10 @@ services:
       # Must match the api's. Proves to it that a forwarded browser address is
       # ours to report; TRUST_PROXY_HOPS says which X-Forwarded-For entry.
       - INTERNAL_AUTH_SECRET=${INTERNAL_AUTH_SECRET:-}
-      - TRUST_PROXY_HOPS=${TRUST_PROXY_HOPS:-1}
+      # 0 here: this file publishes the web directly, so no proxy writes
+      # X-Forwarded-For and any value in it is the browser's own. Set it to the
+      # number of proxies in front of the web when there are some.
+      - TRUST_PROXY_HOPS=${TRUST_PROXY_HOPS:-0}
       # OAuth providers — the login page shows a provider's button only
       # when its id+secret pair is set.
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}

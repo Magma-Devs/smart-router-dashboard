@@ -587,7 +587,7 @@ exercising the real flow.
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | api | **development-only** admin seed; ignored (with a warning) when `NODE_ENV=production` |
 | `INTERNAL_AUTH_SECRET` | api + web | Proves a caller is our own web tier, so the forwarded browser IP / User-Agent are honoured and the per-IP limit keys on the person. **Required under `AUTH_MODE=enabled`** — the api refuses to boot without it, because unset it fails silently: every session and access event records the api's own address |
 | `TRUST_PROXY` | api | How far to believe `X-Forwarded-For`. Hop count (default `1`), a comma list of proxy IPs/CIDRs, or `false` |
-| `TRUST_PROXY_HOPS` | web | How many proxies sit in front of the web (default `1`). Picks the browser's entry out of `X-Forwarded-For`, counting from the right |
+| `TRUST_PROXY_HOPS` | web | How many proxies sit in front of the web (default `1`; the compose files, which publish the web directly, set `0`). Picks the browser's entry out of `X-Forwarded-For`, counting from the right. `0` forwards no address at all |
 | `DEPLOYMENT_MODE` | api + web | `onprem` (default) / `managed` — forks invite and reset delivery |
 | `SETUP_TOKEN` | api | First-run token. Unset ⇒ generated once at boot and logged |
 | `SETUP_TOKEN_FILE` | api | Where to write a generated token (mode 0600) so an init container can surface it |
@@ -1038,6 +1038,16 @@ address to the person being recorded. Set it to the number of proxies in
 front of the web, and keep it consistent with the api's `TRUST_PROXY`. A
 chain shorter than the hop count reports nothing, and the api falls back
 to what it observes.
+
+**`0` when nothing sits in front of the web** — the compose files publish
+it directly and set `0`. Next writes `X-Forwarded-For` from the socket only
+when the request did not carry one, so with no proxy every entry is the
+browser's own, and `0` forwards no address at all rather than one the
+browser chose. Behind an ingress, set it to the number of proxies.
+
+The server-rendered previews (`/invite/<token>`, `/reset/<token>`) forward
+the same headers, so their per-IP limit counts visitors rather than the web
+pod.
 
 Both values are the caller's to write, so both are cut to what their
 columns take before any insert: a browser version longer than four
