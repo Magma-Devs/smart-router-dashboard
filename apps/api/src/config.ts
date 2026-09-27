@@ -203,6 +203,13 @@ export const config = {
     timeoutMs: envInt("LOKI_TIMEOUT_MS", 10000),
   },
 
+  /** Optional: where the Status page's issue log is kept between restarts.
+   *  Unset, the log lives in memory and a restart starts it empty — every
+   *  open issue is found again on the first cycle, but the history is gone. */
+  issues: {
+    stateFile: env("ISSUES_STATE_FILE"),
+  },
+
   /** Helm-values / router config the dashboard reflects (read-only). */
   config: {
     valuesDir: env("HELM_VALUES_DIR") ?? "/app/helm-values",

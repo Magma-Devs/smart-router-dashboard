@@ -28,10 +28,10 @@
  * the page's own vocabulary. The toggle is a secondary ORDER — Recent, which
  * answers "what just started", or by chain.
  *
- * There is no analyse button. The api computes these on a loop and the page
- * reads the warm cache, because the page already knows which chains have
- * issues the moment it loads — a button would only ask the reader to start
- * the wait themselves.
+ * There is no analyse button. The api keeps an issue log, updated on a loop,
+ * and the page reads it — so changing the time window is a filter over that
+ * log and returns instantly. Each problem is ONE issue for as long as it
+ * lasts: same card, same id, numbers updated in place, then resolved.
  */
 import { useState } from "react";
 import { useApi } from "@/hooks/use-api";
@@ -50,6 +50,13 @@ interface Issue {
   specs?: string[];
   /** Newest activity across the findings behind it. Drives the by-time order. */
   lastSeenUnix?: number | null;
+  /** The same for as long as the problem keeps failing — the card's identity. */
+  id: string;
+  status: "open" | "resolved";
+  openedAtUnix: number;
+  updatedAtUnix: number;
+  resolvedAtUnix: number | null;
+  severitySinceUnix: number;
 }
 
 interface Answer {
@@ -70,13 +77,28 @@ const SECTIONS = [
   { key: "config", label: "Config & callers", color: "var(--text-3, #64748b)" },
 ] as const;
 
-function ago(unix?: number | null): string | null {
-  if (!unix) return null;
-  const s = Math.max(0, Math.floor(Date.now() / 1000) - unix);
-  if (s < 90) return "just now";
-  if (s < 3600) return `${Math.round(s / 60)}m ago`;
-  if (s < 86400) return `${Math.round(s / 3600)}h ago`;
-  return `${Math.round(s / 86400)}d ago`;
+const RESOLVED_COLOR = "var(--text-4, #94a3b8)";
+
+/** 14:05 today, "Sep 26 14:05" otherwise — an issue can outlive a day. */
+function clock(unix: number): string {
+  const d = new Date(unix * 1000);
+  const t = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+  return d.toDateString() === new Date().toDateString()
+    ? t
+    : `${d.toLocaleDateString([], { month: "short", day: "numeric" })} ${t}`;
+}
+
+/**
+ * The issue's life in one short line. Open: when it started, and when the
+ * badge last moved if it has. Resolved: start to end. This is what makes a
+ * card read as one problem being followed, not a new card every refresh.
+ */
+function lifeLine(i: Issue): string {
+  if (i.status === "resolved" && i.resolvedAtUnix != null) {
+    return `${clock(i.openedAtUnix)}–${clock(i.resolvedAtUnix)}`;
+  }
+  const moved = i.severitySinceUnix > i.openedAtUnix + 60;
+  return `since ${clock(i.openedAtUnix)}${moved ? ` · ${i.severity} since ${clock(i.severitySinceUnix)}` : ""}`;
 }
 
 function specLabel(specs: string[]): string {
@@ -90,6 +112,7 @@ function refusalText(r: Refusal): string {
 }
 
 function Card({ issue, color }: { issue: Issue; color: string }) {
+  const resolved = issue.status === "resolved";
   // No disclosure. A "View more · 2 more" is the card admitting it wrote more
   // than it should have and then making the reader work for the rest — and
   // the hidden points were as often the cause as the padding. The fix is
@@ -98,7 +121,15 @@ function Card({ issue, color }: { issue: Issue; color: string }) {
   return (
     <div
       className="gw-card"
-      style={{ borderLeft: `3px solid ${color}`, marginBottom: 8, padding: "12px 14px", position: "relative" }}
+      style={{
+        borderLeft: `3px solid ${color}`,
+        marginBottom: 8,
+        padding: "12px 14px",
+        position: "relative",
+        // Kept on the page for the window it was active in, but quieter than
+        // anything still happening.
+        opacity: resolved ? 0.6 : 1,
+      }}
     >
       {issue.ongoing && (
         // A bookmark down the right edge rather than a chip in the header: it
@@ -134,10 +165,7 @@ function Card({ issue, color }: { issue: Issue; color: string }) {
             it stays — but a merged issue printing twelve of them is a line of
             noise above the sentence that matters. */}
         <span className="gw-mono" style={{ fontSize: 9.5, color: "var(--text-4)" }}>
-          {specLabel(issue.specs ?? [issue.spec])}
-          {/* Recent is the default order, and nothing else on the card said
-              when — a list sorted by an invisible key reads as arbitrary. */}
-          {ago(issue.lastSeenUnix) ? ` · ${ago(issue.lastSeenUnix)}` : ""}
+          {specLabel(issue.specs ?? [issue.spec])} · {lifeLine(issue)}
         </span>
       </div>
 
@@ -187,9 +215,13 @@ export function IssueCards({ chainsAffected }: { chainsAffected: string[] | null
   const sorted = (list: Issue[]): Issue[] =>
     [...list].sort((a, b) =>
       order === "recent"
-        ? (b.lastSeenUnix ?? 0) - (a.lastSeenUnix ?? 0)
+        ? (b.lastSeenUnix ?? b.updatedAtUnix) - (a.lastSeenUnix ?? a.updatedAtUnix)
         : a.chain.localeCompare(b.chain),
     );
+  const open = issues?.filter((i) => i.status !== "resolved") ?? [];
+  const resolved = (issues ?? [])
+    .filter((i) => i.status === "resolved")
+    .sort((a, b) => (b.resolvedAtUnix ?? 0) - (a.resolvedAtUnix ?? 0));
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -258,7 +290,7 @@ export function IssueCards({ chainsAffected }: { chainsAffected: string[] | null
 
       {issues &&
         SECTIONS.map(({ key, label, color }) => {
-          const rows = sorted(issues.filter((i) => i.severity === key));
+          const rows = sorted(open.filter((i) => i.severity === key));
           // An empty section is wallpaper — the page's own rule.
           if (rows.length === 0) return null;
           return (
@@ -269,11 +301,24 @@ export function IssueCards({ chainsAffected }: { chainsAffected: string[] | null
                 <span style={{ fontSize: 11, color: "var(--text-4)" }}>{rows.length}</span>
               </div>
               {rows.map((i) => (
-                <Card key={i.spec} issue={i} color={color} />
+                <Card key={i.id} issue={i} color={color} />
               ))}
             </div>
           );
         })}
+
+      {resolved.length > 0 && (
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 7 }}>
+            <span style={{ width: 7, height: 7, borderRadius: 99, background: RESOLVED_COLOR }} />
+            <span style={{ fontSize: 12, fontWeight: 700 }}>Resolved</span>
+            <span style={{ fontSize: 11, color: "var(--text-4)" }}>{resolved.length}</span>
+          </div>
+          {resolved.map((i) => (
+            <Card key={i.id} issue={i} color={RESOLVED_COLOR} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

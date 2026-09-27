@@ -230,6 +230,12 @@ export interface FormulatedInputs {
   requests: number | null;
   /** Debug / trace calls on this chain, when any were sent. */
   addonCalls?: AddonCalls[];
+  /**
+   * The version already on the customer's screen, when this issue is still
+   * open. Given so a rewrite UPDATES the issue rather than writing a new one
+   * with a new title for the same problem.
+   */
+  previous?: Pick<FormulatedIssue, "title" | "points" | "bottomLine">;
 }
 
 const CROSS_CHAIN_NOTE = `
@@ -330,6 +336,19 @@ failure, and savedByRetry of 0 does not mean a retry was even attempted:
 When there is no \`outcome\`, you were not told what the retries did. Say
 nothing about it — not "we weren't told", not "it is unclear". A line about
 what you do not know is a line the reader has to read for nothing.
+
+## An update to an open issue
+
+When you are given \`previousVersion\`, this issue is already on their screen
+and is still happening. Write the SAME issue, updated:
+
+  - Keep the title unless the facts now describe a different problem.
+  - Keep the points in the same order; change the numbers to the new ones.
+  - Say what changed only when it matters: it got worse, it spread to another
+    provider, or the router could no longer route around it.
+
+The reader has been watching this card. A new title for the same problem reads
+as a second problem.
 
 ## The bottom line
 
@@ -452,6 +471,7 @@ export function digestForIssue(i: FormulatedInputs): string {
             })),
           }
         : {}),
+      ...(i.previous ? { previousVersion: i.previous } : {}),
       // Roles and addons: an addon only one provider declares is why a failure
       // there has nowhere to go, which is the answer to question three.
       //
@@ -511,6 +531,42 @@ export function digestForIssue(i: FormulatedInputs): string {
   );
 }
 
+/**
+ * Everything on an issue that is MEASURED rather than written: the badge, the
+ * chains, whether it is still happening, the numbers. Split out so an issue
+ * whose facts have not moved keeps its wording while these stay current —
+ * a card that says "ongoing" must not be quoting last hour's numbers.
+ */
+export function measuredFields(
+  inputs: FormulatedInputs,
+): Omit<FormulatedIssue, "title" | "points" | "bottomLine"> {
+  const all = [...inputs.findings, ...(inputs.alsoOnChains ?? []).flatMap((c) => c.findings)];
+  return {
+    // From the findings and the outcome, never from the model — a model
+    // re-deriving the badge would produce a second scale that disagrees.
+    severity: severityOf(inputs.findings, {
+      failures: inputs.failures,
+      requests: inputs.requests,
+      addonCalls: inputs.addonCalls ?? [],
+    }),
+    spec: inputs.spec,
+    chain: inputs.chain,
+    specs: [inputs.spec, ...(inputs.alsoOnChains ?? []).map((c) => c.spec)],
+    ongoing: all.some((f) => f.ongoing === true),
+    findingIds: inputs.findings.map((f) => f.id),
+    outcome: {
+      recovered: inputs.recovered,
+      failures: inputs.failures,
+      requests: inputs.requests,
+      addonCalls: inputs.addonCalls ?? [],
+    },
+    lastSeenUnix: all.reduce<number | null>(
+      (newest, f) => (f.lastSeenUnix && (!newest || f.lastSeenUnix > newest) ? f.lastSeenUnix : newest),
+      null,
+    ),
+  };
+}
+
 export class FormulatedIssueService {
   constructor(
     private readonly bedrock: BedrockService,
@@ -529,19 +585,7 @@ export class FormulatedIssueService {
     const str = (k: string): string => (typeof parsed[k] === "string" ? (parsed[k] as string) : "");
 
     return {
-      // From the findings, never from the model — the page already owns this
-      // vocabulary and a second scale would disagree with the rows beneath.
-      severity: severityOf(inputs.findings, {
-        failures: inputs.failures,
-        requests: inputs.requests,
-        addonCalls: inputs.addonCalls ?? [],
-      }),
-      spec: inputs.spec,
-      chain: inputs.chain,
-      specs: [inputs.spec, ...(inputs.alsoOnChains ?? []).map((c) => c.spec)],
-      ongoing: [...inputs.findings, ...(inputs.alsoOnChains ?? []).flatMap((c) => c.findings)].some(
-        (f) => f.ongoing === true,
-      ),
+      ...measuredFields(inputs),
       title: str("title"),
       // Capped here as well as in the prompt: a model that ignores "two to
       // four" must not turn the card back into the essay this replaced. Four,
@@ -550,18 +594,6 @@ export class FormulatedIssueService {
         .filter((x): x is string => typeof x === "string" && x.trim() !== "")
         .slice(0, 4),
       bottomLine: str("bottomLine"),
-      findingIds: inputs.findings.map((f) => f.id),
-      outcome: {
-        recovered: inputs.recovered,
-        failures: inputs.failures,
-        requests: inputs.requests,
-        addonCalls: inputs.addonCalls ?? [],
-      },
-      lastSeenUnix:
-        inputs.findings.reduce<number | null>(
-          (newest, f) => (f.lastSeenUnix && (!newest || f.lastSeenUnix > newest) ? f.lastSeenUnix : newest),
-          null,
-        ),
     };
   }
 }

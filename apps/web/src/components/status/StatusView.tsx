@@ -136,10 +136,14 @@ export function StatusView() {
   // Deriving it from findings drifted twice — once when cards became
   // per-chain, again when caller-side chains merged into one — because a
   // second derivation of the same number is a second thing to keep in sync.
-  const { data: issuesData } = useApi<{ ok: boolean; issues?: unknown[] }>(
+  const { data: issuesData } = useApi<{ ok: boolean; issues?: { status?: string }[] }>(
     `/api/ai/issues?window=${timeWindow}${scopeQ}`,
   );
-  const issueCount = issuesData?.ok ? (issuesData.issues?.length ?? null) : null;
+  // Open issues only. Resolved ones stay on the page for the window they
+  // were active in, under their own heading with their own count.
+  const issueCount = issuesData?.ok
+    ? (issuesData.issues?.filter((i) => i.status !== "resolved").length ?? null)
+    : null;
 
   const tabs: [Tab, string, number | null][] = [
     // The count is the ISSUES on screen, not the raw findings behind them.

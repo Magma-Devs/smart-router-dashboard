@@ -726,12 +726,13 @@ export async function aiRoutes(app: FastifyInstance) {
     {
       schema: {
         tags: ["AI"],
-        summary: "The written issues, from the warm cache — instant",
+        summary: "The issue log, filtered to the window — instant",
         description:
-          "Served from the background loop. Each chain's issue is memoised on a fingerprint " +
-          "of its findings, so unchanged findings keep the sentence already written rather " +
-          "than being re-worded every cycle. `warming: true` means this window is being " +
-          "computed now — the loop warms the default window, another is computed on first ask.",
+          "One issue per problem for as long as it lasts: a stable `id`, `status` open or " +
+          "resolved, `openedAtUnix`, `updatedAtUnix`, `resolvedAtUnix`, `severitySinceUnix`. " +
+          "A background cycle updates the log every 5 minutes; `window` filters it to the " +
+          "issues active at any point inside it, with no model call. `warming: true` only " +
+          "before the first cycle has finished.",
       },
     },
     async (request, reply) => {
@@ -741,28 +742,25 @@ export async function aiRoutes(app: FastifyInstance) {
         return { ...g, ...target() };
       }
       const window = parseWindow(request.query.window);
-      const snapshot = app.issuesFeed.current(window);
-      if (snapshot) return { ok: true, warming: false, ...snapshot };
+      // A filter over the issue log, never a new analysis: changing the
+      // window is instant because the model only runs in the background.
+      const view = app.issuesFeed.view(window);
+      if (view) return { ok: true, warming: false, ...view };
 
-      // Nothing for this window yet. Start it and say so — "working on it" and
-      // "not configured" must not look the same to the page.
+      // No cycle has finished yet — the first minute after a boot. Start one
+      // and say so: "working on it" and "not configured" must not look the
+      // same to the page.
       //
       // 200, NOT 503: the web's apiGet throws on a non-2xx, and SWR then keeps
-      // the PREVIOUS data while it retries. Changing the window therefore left
-      // the last window's issues on screen with nothing saying they were
-      // stale. Warming is a state, not a failure, so it comes back as one.
-      if (!app.issuesFeed.isRunning(window)) {
-        // Logged, never swallowed: an empty catch here means a compute that
-        // fails on every attempt looks identical to one still running, and
-        // the page polls a 503 forever with nothing in the log to explain it.
-        void app.issuesFeed.refresh(window).catch((err) => {
-          app.log.warn(
-            { window, err: err instanceof Error ? err.message : String(err) },
-            "issues feed could not compute this window",
-          );
+      // the PREVIOUS data while it retries. Warming is a state, not a failure.
+      if (!app.issuesFeed.isRunning()) {
+        // Logged, never swallowed: an empty catch here means a cycle that
+        // fails every time looks identical to one still running.
+        void app.issuesFeed.refresh().catch((err) => {
+          app.log.warn({ err: err instanceof Error ? err.message : String(err) }, "issues feed cycle failed");
         });
       }
-      return { ok: false, warming: true, reason: "warming", detail: "computing this window now" };
+      return { ok: false, warming: true, reason: "warming", detail: "reading the first cycle" };
     },
   );
 }
