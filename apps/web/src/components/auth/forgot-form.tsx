@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { RESET_TTL_MS } from "@sr/shared";
 import { apiUrl } from "@/lib/api-client";
 
 /**
@@ -16,6 +17,10 @@ import { apiUrl } from "@/lib/api-client";
  * of attempts. The api answers before it looks the address up, so how long it
  * takes says nothing either.
  */
+/** Self-serve reset only exists on managed, so its lifetime is managed's. */
+const RESET_HOURS = Math.round(RESET_TTL_MS.managed / 3_600_000);
+const RESET_EXPIRY = RESET_HOURS === 1 ? "an hour" : `${RESET_HOURS} hours`;
+
 export function ForgotForm() {
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
@@ -74,7 +79,7 @@ export function ForgotForm() {
           <>
             <p style={{ fontSize: 13, color: "var(--text-2)", lineHeight: 1.6, margin: "0 0 8px" }}>
               If <strong style={{ color: "var(--text)" }}>{email}</strong> has an account, a link is
-              on its way. It expires in an hour and works once.
+              on its way. It expires in {RESET_EXPIRY} and works once.
             </p>
             <p
               style={{

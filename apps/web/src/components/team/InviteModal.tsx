@@ -144,7 +144,8 @@ export function InviteModal({
             </>
           ) : (
             <div style={{ fontSize: 12.5, color: "var(--text-2)" }}>
-              We&apos;ve emailed them a join link. It expires in seven days.
+              We&apos;ve emailed them a join link. It expires in{" "}
+              {daysUntil(result.invite.expiresAt)}.
             </div>
           )}
         </div>
@@ -202,4 +203,11 @@ export function InviteModal({
       )}
     </Modal>
   );
+}
+
+/** "7 days" / "1 day" — read off the invitation, whose lifetime differs by
+ *  deployment shape, rather than written into the copy. */
+function daysUntil(iso: string): string {
+  const days = Math.max(1, Math.round((new Date(iso).getTime() - Date.now()) / 86_400_000));
+  return days === 1 ? "1 day" : `${days} days`;
 }

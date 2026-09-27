@@ -7,7 +7,7 @@ import {
   type Invitation,
   type User,
 } from "@sr/db";
-import type { Role } from "@sr/shared";
+import { INVITE_TTL_MS, type Role } from "@sr/shared";
 import { hashPassword } from "./password.js";
 
 /**
@@ -30,12 +30,8 @@ import { hashPassword } from "./password.js";
 
 const TOKEN_BYTES = 32;
 
-/** Managed can resend an email cheaply; an on-prem link travels over a channel
- *  we don't control, so it gets the shorter life. */
-export const INVITE_TTL_MS = {
-  managed: 7 * 24 * 60 * 60 * 1000,
-  onprem: 24 * 60 * 60 * 1000,
-} as const;
+/** Defined in `@sr/shared`, where the web reads it for its copy. */
+export { INVITE_TTL_MS };
 
 export type DeploymentMode = keyof typeof INVITE_TTL_MS;
 

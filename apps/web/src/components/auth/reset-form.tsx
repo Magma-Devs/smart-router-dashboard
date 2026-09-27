@@ -117,7 +117,7 @@ export function ResetForm({ token, email }: { token: string; email: string | nul
                 lineHeight: 1.5,
               }}
             >
-              At least 8 characters. Any characters, including spaces.
+              8 to 64 characters. Any characters, including spaces.
             </p>
             <label style={labelStyle}>
               Repeat password
