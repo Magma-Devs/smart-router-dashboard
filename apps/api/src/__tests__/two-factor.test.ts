@@ -3,7 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { SignJWT } from "jose";
 import { eq } from "drizzle-orm";
 import { createTestDb, type TestDb } from "@sr/db/testing";
-import { loginAttempts, twoFactorChallenges, users, type User } from "@sr/db";
+import { auditEvents, loginAttempts, twoFactorChallenges, users, type User } from "@sr/db";
 import type { Role } from "@sr/shared";
 import { buildApp } from "../app.js";
 import { SESSION_JWT_AUDIENCE, SESSION_JWT_ISSUER } from "../plugins/auth.js";
@@ -745,6 +745,54 @@ describe("enrolment and reset over HTTP", () => {
       headers: { authorization: `Bearer ${await mint({ sub: member.id, sid: memberSession.id })}` },
     });
     expect(probe.statusCode).toBe(401);
+  });
+
+  it("records the reset and every session it ended, and claims no email it did not send", async () => {
+    // Nothing emails a 2FA reset on either deployment (the notice is MAG-2869),
+    // so the response must not say one went — managed included.
+    setEnv({ DEPLOYMENT_MODE: "managed" });
+    app = await buildAuthApp();
+    const admin = await seedUser({ role: "admin", email: `admin+${++seq}@example.com` });
+    const member = await seedUser();
+    await enrol(member);
+    const ended = await createSession(t.db, {
+      userId: member.id,
+      authMethod: "password+totp",
+      client: { ip: "84.229.11.6", userAgent: "Chrome/141" },
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/team/members/${member.id}/2fa/reset`,
+      headers: { authorization: `Bearer ${await tokenFor(admin)}` },
+    });
+    expect(res.json()).toEqual({ ok: true, notified: "on_next_signin" });
+
+    // Signed out everywhere: the cutoff too, so a token with no row dies as well.
+    expect((await reload(member.id)).signedOutAllAt).not.toBeNull();
+
+    const rows = await t.db.select().from(auditEvents);
+    const reset = rows.find((r) => r.action === "2fa.reset");
+    expect(reset?.targetId).toBe(member.id);
+    expect(reset?.actorUserId).toBe(admin.id);
+    const revoked = rows.filter((r) => r.action === "session.revoked");
+    expect(revoked.map((r) => r.targetId)).toEqual([ended.id]);
+    expect(revoked[0]?.note).toBe("two-factor reset");
+  });
+
+  it("refuses an id that is not a plain uuid with 400, not a 500", async () => {
+    // `format: "uuid"` admits `urn:uuid:…`, which Postgres refuses as a uuid.
+    app = await buildAuthApp();
+    const admin = await seedUser({ role: "admin", email: `admin+${++seq}@example.com` });
+    const member = await seedUser();
+    await enrol(member);
+
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/team/members/urn:uuid:${member.id}/2fa/reset`,
+      headers: { authorization: `Bearer ${await tokenFor(admin)}` },
+    });
+    expect(res.statusCode).toBe(400);
   });
 
   it("refuses a non-admin the reset", async () => {

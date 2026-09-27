@@ -22,7 +22,7 @@ import { findUserById, linkedProviderNames } from "../services/users.js";
 import { deploymentMode, publicWebOrigin } from "../config.js";
 import { EMAIL_FIELD, resolveClientContext } from "./auth.js";
 import { clearEnrolment, isEnrolled, revokeChallenges } from "../services/two-factor.js";
-import { revokeAllForUser } from "../services/sessions.js";
+import { signOutEverywhere } from "../services/sessions.js";
 import { sendInvitationEmail } from "../services/email-templates.js";
 
 /**
@@ -311,11 +311,7 @@ export async function teamRoutes(app: FastifyInstance) {
       schema: {
         tags: ["Team"],
         summary: "Clear someone's authenticator — the lost-phone path",
-        params: {
-          type: "object" as const,
-          required: ["id"],
-          properties: { id: { type: "string" as const, format: "uuid" } },
-        },
+        params: ID_PARAMS,
       },
     },
     async (request, reply) => {
@@ -324,7 +320,7 @@ export async function teamRoutes(app: FastifyInstance) {
       const db = dbOr503(reply);
       if (!db) return reply;
 
-      const { id } = request.params as { id: string };
+      const id = (request.params as { id: string }).id.toLowerCase();
       const target = await findUserById(db, id);
       if (!target || target.status !== "active") {
         return reply
@@ -343,39 +339,62 @@ export async function teamRoutes(app: FastifyInstance) {
         });
       }
 
-      // Three writes, and each one is load-bearing:
+      const { access } = resolveClientContext(request, undefined, undefined);
+
+      // Three writes, each load-bearing, in one transaction with their audit
+      // rows — a reset that half happened would be worse than none:
       //
       //  1. the secret is destroyed, not disabled — there is nothing left to
       //     restore, and nothing an admin could ever read back;
       //  2. any live challenge is retired, so a second step already in flight
       //     against the old secret cannot still be completed;
-      //  3. their sessions end, because the account is being reset precisely
-      //     when nobody is sure who is holding it.
+      //  3. they are signed out everywhere, every session row and the cutoff,
+      //     because the account is being reset precisely when nobody is sure
+      //     who is holding it.
       //
       // The admin never sees or sets the replacement. The member enrols again
       // on their next sign-in, from a secret only they will ever hold — which
       // is the same rule as passwords, and for the same reason: an admin who
       // could set someone's second factor could sign in as them.
-      await clearEnrolment(db, target.id);
-      await revokeChallenges(db, target.id);
-      await revokeAllForUser(db, target.id, { reason: "admin", by: me.id });
+      await db.transaction(async (tx) => {
+        await clearEnrolment(tx, target.id);
+        await revokeChallenges(tx, target.id);
+        const ended = await signOutEverywhere(tx, target.id, { reason: "admin", by: me.id });
 
-      await audit.write({
-        action: "2fa.reset",
-        actor: { id: me.id, kind: "user" },
-        // Both people named, as the ticket requires: the row has to answer
-        // "who cleared whose" without a join.
-        target: { type: "member", id: target.id, name: target.email },
-        access: { ip: me.session.ip, client: me.session.client, sessionId: me.sessionId },
-        note: `two-factor reset for ${target.email}`,
+        await audit.write(
+          {
+            action: "2fa.reset",
+            actor: { id: me.id, kind: "user" },
+            // Both people named, as the ticket requires: the row has to answer
+            // "who cleared whose" without a join.
+            target: { type: "member", id: target.id, name: target.email },
+            access: { ...access, sessionId: me.sessionId },
+            note: `two-factor reset for ${target.email}`,
+          },
+          tx,
+        );
+        // One row per session the reset ended, as for a removal or a password
+        // reset, so a reader following a session id finds how it ended.
+        for (const sessionId of ended) {
+          await audit.write(
+            {
+              action: "session.revoked",
+              actor: { id: me.id, kind: "user" },
+              target: { type: "session", id: sessionId, name: target.email },
+              access: { ...access, sessionId: me.sessionId },
+              note: "two-factor reset",
+            },
+            tx,
+          );
+        }
       });
 
-      // The member is told. On managed that is an email (MAG-2870's transport);
-      // on-prem there is no mail server and never will be, so it is the
-      // enrolment screen they meet at their next sign-in, which says an
-      // administrator reset it. Either way they cannot miss it: their sessions
-      // just ended and the next screen explains why.
-      return { ok: true, notified: deploymentMode() === "managed" ? "email" : "on_next_signin" };
+      // Nothing is emailed, on either deployment: the transactional emails are
+      // exactly the invitation and the password reset (MAG-2870), and the
+      // 2FA-reset notice is parked in MAG-2869. The member finds out at their
+      // next sign-in — their sessions just ended, and the enrolment screen they
+      // meet says an administrator reset it.
+      return { ok: true, notified: "on_next_signin" as const };
     },
   );
 }
