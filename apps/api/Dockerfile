@@ -18,7 +18,11 @@ RUN pnpm --filter @sr/shared build && \
     pnpm --filter @sr/api build
 
 FROM node:24-alpine
-RUN corepack enable
+# gcompat: the IAM Roles Anywhere signing helper AWS ships for Linux is built
+# against glibc, and Alpine is musl — without the shim the mounted helper fails
+# to start ("not found") and the api never gets a credential. Only matters for
+# the certificate path (docker-compose.bedrock-cert.yml); a few hundred KB.
+RUN apk add --no-cache gcompat && corepack enable
 WORKDIR /app
 
 ARG GIT_COMMIT=unknown

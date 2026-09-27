@@ -27,6 +27,23 @@ export type BedrockUnavailable =
 
 export type BedrockAvailability = { ok: true } | { ok: false; reason: BedrockUnavailable; detail?: string };
 
+/**
+ * An EMPTY `AWS_BEARER_TOKEN_BEDROCK` is not a key — drop it.
+ *
+ * The SDK picks API-key auth as soon as the variable exists, then fails every
+ * call with "the `token` is not defined" when it is empty. Compose files and
+ * helm charts pass unset secrets through as empty strings, so a deployment on
+ * a role or a certificate — no key at all — could never sign a request.
+ * Measured in the api container on the certificate path: failing with the
+ * empty variable, answering once it was gone. Run before any client exists.
+ */
+export function dropEmptyBearerToken(env: NodeJS.ProcessEnv = process.env): void {
+  if (env.AWS_BEARER_TOKEN_BEDROCK !== undefined && env.AWS_BEARER_TOKEN_BEDROCK.trim() === "") {
+    delete env.AWS_BEARER_TOKEN_BEDROCK;
+  }
+}
+dropEmptyBearerToken();
+
 /** A bind address nothing but this machine can reach. */
 export function isLoopback(host: string): boolean {
   const h = host.trim().toLowerCase().replace(/^\[|\]$/g, "");
