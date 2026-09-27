@@ -62,7 +62,11 @@ export default function TeamPage() {
   const [changing, setChanging] = useState<MemberSummary | null>(null);
   const [removing, setRemoving] = useState<MemberSummary | null>(null);
   const [busyInvite, setBusyInvite] = useState<string | null>(null);
-  const [freshLink, setFreshLink] = useState<{ id: string; email: string; url: string } | null>(null);
+  /** The outcome of the last resend: the link itself when the admin has to
+   *  carry it, or just the address when it was emailed. */
+  const [freshLink, setFreshLink] = useState<
+    { id: string; email: string; url?: string; fallback: boolean } | null
+  >(null);
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
   const [resetting, setResetting] = useState<MemberSummary | null>(null);
@@ -85,8 +89,16 @@ export default function TeamPage() {
     setFreshLink(null);
     try {
       if (action === "resend") {
-        const res = await apiSend<{ url: string }>("POST", `/api/team/invites/${invite.id}/resend`);
-        setFreshLink({ id: invite.id, email: invite.email, url: res.url });
+        const res = await apiSend<{ url?: string; deliveryFallback?: boolean }>(
+          "POST",
+          `/api/team/invites/${invite.id}/resend`,
+        );
+        setFreshLink({
+          id: invite.id,
+          email: invite.email,
+          url: res.url,
+          fallback: res.deliveryFallback === true,
+        });
       } else {
         await apiSend("DELETE", `/api/team/invites/${invite.id}`);
       }
@@ -316,13 +328,31 @@ export default function TeamPage() {
             </table>
             {freshLink && (
               <div style={{ padding: "12px 14px", borderTop: "1px solid var(--line)", fontSize: 12 }}>
-                <div style={{ marginBottom: 6, color: "var(--text-2)" }}>
-                  New link for <strong>{freshLink.email}</strong> — the previous one no longer works.
-                  Shown once.
-                </div>
-                <div className="gw-mono" style={{ fontSize: 11, wordBreak: "break-all", userSelect: "all" }}>
-                  {freshLink.url}
-                </div>
+                {freshLink.url ? (
+                  <>
+                    <div style={{ marginBottom: 6, color: "var(--text-2)" }}>
+                      {freshLink.fallback && (
+                        <>
+                          <strong>The email could not be sent</strong> — tell an operator that mail
+                          is not working.{" "}
+                        </>
+                      )}
+                      New link for <strong>{freshLink.email}</strong> — the previous one no longer
+                      works. Shown once.
+                    </div>
+                    <div
+                      className="gw-mono"
+                      style={{ fontSize: 11, wordBreak: "break-all", userSelect: "all" }}
+                    >
+                      {freshLink.url}
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ color: "var(--text-2)" }}>
+                    Emailed a new link to <strong>{freshLink.email}</strong> — the previous one no
+                    longer works.
+                  </div>
+                )}
               </div>
             )}
           </div>
