@@ -31,7 +31,11 @@ export default async function ResetPage({ params }: { params: Promise<{ token: s
 
   // On-prem there is no self-service way to ask for another link — an admin
   // generates them — so the dead state has to point at a person, not a form.
-  if (!preview) return <ResetDead managed={process.env.DEPLOYMENT_MODE === "managed"} />;
+  if (preview.state === "dead") {
+    return <ResetDead managed={process.env.DEPLOYMENT_MODE === "managed"} />;
+  }
 
-  return <ResetForm token={token} email={preview.email} />;
+  // An unanswered preview is not a dead link (see `ResetPreview`): show the
+  // form without the address, and let the submit say whether the link works.
+  return <ResetForm token={token} email={preview.state === "live" ? preview.email : null} />;
 }

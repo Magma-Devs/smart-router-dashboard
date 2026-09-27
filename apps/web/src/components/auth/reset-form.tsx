@@ -10,7 +10,7 @@ import { apiUrl } from "@/lib/api-client";
  * A reset link that signs you in is a reset link worth stealing — and proving
  * the new password works by using it is the point of the exercise.
  */
-export function ResetForm({ token, email }: { token: string; email: string }) {
+export function ResetForm({ token, email }: { token: string; email: string | null }) {
   const [password, setPassword] = useState("");
   const [repeat, setRepeat] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -69,7 +69,7 @@ export function ResetForm({ token, email }: { token: string; email: string }) {
             {/* Which account this changes. Somebody with two of them cannot
                 tell from the link alone, and finding out by resetting the
                 wrong one is an expensive way to learn. */}
-            <div style={{ fontSize: 12, color: "var(--text-3)" }}>{email}</div>
+            {email && <div style={{ fontSize: 12, color: "var(--text-3)" }}>{email}</div>}
           </div>
         </div>
 
