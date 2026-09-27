@@ -59,12 +59,20 @@ interface Issue {
   severitySinceUnix: number;
   /** Measured, not written. Only the traced paths are read here. */
   outcome?: { failures: number | null; paths: FailurePaths | null };
+  /** The chain's numbers in one line, written by the api from the measurements. */
+  impact?: string | null;
+  /** The time those numbers cover. */
+  measured?: { fromUnix: number; toUnix: number } | null;
+  /** Written from the measurements alone; the model writes it next cycle. */
+  plain?: boolean;
 }
 
 /** Every traced request that went one way through the router. */
 interface FailurePath {
   count: number;
   flow: string;
+  /** The path without its times — stable across cycles, so the row's key. */
+  route?: string;
   methods: string[];
   seconds: [number, number];
 }
@@ -126,10 +134,36 @@ function methodsLabel(m: string[]): string {
   return m.length <= 2 ? m.join(", ") : `${m.slice(0, 2).join(", ")} +${m.length - 2}`;
 }
 
-/** `failed` → `failed after 14s`, or `after 10–14s` when the requests differed. */
+/** `failed` → `failed at 30s`, or `at 28–30s` when the requests differed — the same clock as the "+7s" steps. */
 function flowLine(g: FailurePath): string {
   const [lo, hi] = g.seconds.map(Math.round) as [number, number];
-  return `${g.flow} after ${lo === hi ? lo : `${lo}–${hi}`}s`;
+  return `${g.flow} at ${lo === hi ? lo : `${lo}–${hi}`}s`;
+}
+
+/**
+ * The chain's numbers, with the time they cover. Written by the api from the
+ * measurements — never by the model — in words that mean one thing each.
+ *
+ * The time is the point. The page's window picks WHICH issues show; the
+ * numbers are always the last half hour the api read. Without the time, a
+ * reader who chose "6 hours" read 30-minute counts as six hours of them.
+ * Resolved issues show the half hour they were last seen in.
+ */
+function Impact({ issue }: { issue: Issue }) {
+  if (!issue.impact) return null;
+  const m = issue.measured;
+  const range = m ? `${clock(m.fromUnix)}–${clock(m.toUnix)}` : null;
+  const when = !m
+    ? null
+    : issue.status === "resolved"
+      ? range
+      : `Last ${Math.round((m.toUnix - m.fromUnix) / 60)} min (${range})`;
+  return (
+    <div style={{ fontSize: 12.5, lineHeight: 1.5, margin: "0 0 8px", color: "var(--text)" }}>
+      {when && <span style={{ color: "var(--text-3)" }}>{when}: </span>}
+      {issue.impact}
+    </div>
+  );
 }
 
 /**
@@ -145,11 +179,18 @@ function Paths({ paths, failures }: { paths: FailurePaths; failures: number | nu
   return (
     <div style={{ marginTop: 9 }}>
       <div style={{ fontSize: 11, color: "var(--text-3)", marginBottom: 3 }}>
-        How the failed requests went
+        What happened to the failed requests
         {failures != null && failures > paths.traced ? ` · ${paths.traced} of ${failures} traced` : ""}
+        {/* "+8s" is the one piece of notation on the card, so it is
+            explained where it is read — with a number that is actually on
+            screen, not an example the reader has to look for. */}
+        {(() => {
+          const n = shown.map((g) => /\+(\d+)s /.exec(g.flow)?.[1]).find(Boolean);
+          return n ? ` · +${n}s = ${n} seconds after the request arrived` : "";
+        })()}
       </div>
       {shown.map((g) => (
-        <div key={g.flow} className="gw-mono" style={{ fontSize: 11, lineHeight: 1.55, color: "var(--text-2)" }}>
+        <div key={g.route ?? g.flow} className="gw-mono" style={{ fontSize: 11, lineHeight: 1.55, color: "var(--text-2)" }}>
           <span style={{ color: "var(--text)" }}>{g.count}×</span> {methodsLabel(g.methods)}
           <span style={{ color: "var(--text-3)" }}> · </span>
           {flowLine(g)}
@@ -230,6 +271,8 @@ function Card({ issue, color }: { issue: Issue; color: string }) {
 
       <div style={{ fontSize: 13, fontWeight: 600, margin: "7px 0 8px" }}>{issue.title}</div>
 
+      <Impact issue={issue} />
+
       <ol style={{ margin: 0, paddingLeft: 18, display: "flex", flexDirection: "column", gap: 3 }}>
         {issue.points.map((p, i) => (
           <li key={i} style={{ fontSize: 12.5, lineHeight: 1.5, color: "var(--text-2)" }}>
@@ -237,6 +280,14 @@ function Card({ issue, color }: { issue: Issue; color: string }) {
           </li>
         ))}
       </ol>
+
+      {issue.plain && (
+        // Said, not hidden: a card in the findings' own shorthand next to
+        // written ones would otherwise read as a worse writer.
+        <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 6 }}>
+          From the measurements only — the written summary comes with the next update.
+        </div>
+      )}
 
       {issue.outcome?.paths && issue.outcome.paths.groups.length > 0 && (
         <Paths paths={issue.outcome.paths} failures={issue.outcome.failures} />

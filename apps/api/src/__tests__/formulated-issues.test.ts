@@ -1,8 +1,21 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import type { StatusFinding } from "@sr/shared";
-import { severityOf, shareFailed, digestForIssue, type FormulatedInputs } from "../services/formulated-issues.js";
+import {
+  severityOf,
+  shareFailed,
+  digestForIssue,
+  impactOf,
+  measuredFields,
+  plainIssue,
+  shareText,
+  titleContradicts,
+  FormulatedIssueService,
+  type ChainOutcome,
+  type FormulatedInputs,
+} from "../services/formulated-issues.js";
 import { burstFinding, failedBySpec, fingerprint, groupTraces, mergePaths, outcomesBySpec, peakBurst, readLogs } from "../services/issues-feed.js";
 import type { RequestTrace } from "../services/loki.js";
+import type { BedrockService } from "../services/bedrock.js";
 
 function finding(over: Partial<StatusFinding>): StatusFinding {
   return {
@@ -326,14 +339,28 @@ describe("readLogs", () => {
     const out = await readLogs(loki(["1", "2", "3"], m), 1800, routers);
     expect(out?.paths.get("POLYGON")).toEqual({
       traced: 3,
-      groups: [{ count: 3, flow: "alchemy ✕ timed out → failed", methods: ["eth_sendRawTransaction", "eth_call"], seconds: [14, 14] }],
+      groups: [
+        {
+          count: 3,
+          flow: "alchemy ✕ timed out → failed",
+          route: "alchemy ✕ timed out → failed",
+          methods: ["eth_sendRawTransaction", "eth_call"],
+          seconds: [14, 14],
+        },
+      ],
     });
   });
 });
 
-/** A traced request: each attempt is [provider, role, outcome]. */
-function trace(id: string, method: string, attempts: [string, "primary" | "backup", string][], seconds = 14): RequestTrace {
-  return { id, method, failed: true, seconds, attempts: attempts.map(([provider, role, outcome]) => ({ provider, role, outcome, atSec: null })) };
+/** A traced request: each attempt is [provider, role, outcome, when it started]. */
+function trace(id: string, method: string, attempts: [string, "primary" | "backup", string, number?][], seconds = 14): RequestTrace {
+  return {
+    id,
+    method,
+    failed: true,
+    seconds,
+    attempts: attempts.map(([provider, role, outcome, startSec]) => ({ provider, role, outcome, startSec: startSec ?? null, endSec: null })),
+  };
 }
 
 describe("failover paths", () => {
@@ -348,10 +375,48 @@ describe("failover paths", () => {
     expect(p).toEqual({
       traced: 6,
       groups: [
-        { count: 5, flow: "alchemy ✕ timed out → quicknode (backup) ✕ timed out → failed", methods: ["starknet_getEvents", "starknet_call"], seconds: [10, 14] },
-        { count: 1, flow: "alchemy ✕ rate-limited → failed", methods: ["starknet_getEvents"], seconds: [1, 1] },
+        {
+          count: 5,
+          flow: "alchemy ✕ timed out → quicknode (backup) ✕ timed out → failed",
+          route: "alchemy ✕ timed out → quicknode (backup) ✕ timed out → failed",
+          methods: ["starknet_getEvents", "starknet_call"],
+          seconds: [10, 14],
+        },
+        {
+          count: 1,
+          flow: "alchemy ✕ rate-limited → failed",
+          route: "alchemy ✕ rate-limited → failed",
+          methods: ["starknet_getEvents"],
+          seconds: [1, 1],
+        },
       ],
     });
+  });
+
+  it("groups on the path without its times, and shows each step at its typical time", () => {
+    // One request's "+7s" is another's "+8s" — the same path.
+    const timed = (id: string, backupAt: number) =>
+      trace(id, "getBlock", [["tatum", "primary", "no answer", 0], ["lava", "backup", "no answer", backupAt]], 30);
+    const p = groupTraces([timed("1", 7), timed("2", 8), timed("3", 7)]);
+    expect(p?.groups).toHaveLength(1);
+    expect(p?.groups[0]).toMatchObject({
+      count: 3,
+      flow: "tatum ✕ no answer → +7s lava (backup) ✕ no answer → failed",
+      route: "tatum ✕ no answer → lava (backup) ✕ no answer → failed",
+    });
+  });
+
+  it("backups tried in a different order are the same path", () => {
+    // Measured in production: one card split into seventeen lines this way.
+    const threeBackups = (id: string, order: string[]) =>
+      trace(id, "getBlock", [["tatum", "primary", "timed out", 0], ...order.map((b, i): [string, "backup", string, number] => [b, "backup", "no answer", 7 * (i + 1)])], 30);
+    const p = groupTraces([
+      threeBackups("1", ["lava", "quicknode", "blockdaemon"]),
+      threeBackups("2", ["blockdaemon", "lava", "quicknode"]),
+      threeBackups("3", ["quicknode", "blockdaemon", "lava"]),
+    ]);
+    expect(p?.groups).toHaveLength(1);
+    expect(p?.groups[0]).toMatchObject({ count: 3, flow: "tatum ✕ timed out → +7s 3 backups (blockdaemon, lava, quicknode) ✕ none worked → failed" });
   });
 
   it("leaves out a request whose path was not read — a gap would state something false", () => {
@@ -364,8 +429,14 @@ describe("failover paths", () => {
     expect(mergePaths([a, null, b])).toEqual({
       traced: 3,
       groups: [
-        { count: 2, flow: "alchemy ✕ timed out → quicknode (backup) ✕ timed out → failed", methods: ["eth_call", "eth_getLogs"], seconds: [12, 16] },
-        { count: 1, flow: "tatum ✕ server error → failed", methods: ["eth_getLogs"], seconds: [14, 14] },
+        {
+          count: 2,
+          flow: "alchemy ✕ timed out → quicknode (backup) ✕ timed out → failed",
+          route: "alchemy ✕ timed out → quicknode (backup) ✕ timed out → failed",
+          methods: ["eth_call", "eth_getLogs"],
+          seconds: [12, 16],
+        },
+        { count: 1, flow: "tatum ✕ server error → failed", route: "tatum ✕ server error → failed", methods: ["eth_getLogs"], seconds: [14, 14] },
       ],
     });
     expect(mergePaths([null])).toBeNull();
@@ -391,6 +462,137 @@ describe("failover paths", () => {
     const backupToo = groupTraces([trace("1", "x", both)]);
     expect(fingerprint(f, [], o(one))).toBe(fingerprint(f, [], o(two)));
     expect(fingerprint(f, [], o(one))).not.toBe(fingerprint(f, [], o(backupToo)));
+    // A backup added at +8s instead of +7s is the same story.
+    const at = (sec: number) => groupTraces([trace("1", "x", [["alchemy", "primary", "timed out", 0], ["quicknode", "backup", "timed out", sec]])]);
+    expect(fingerprint(f, [], o(at(7)))).toBe(fingerprint(f, [], o(at(8))));
+  });
+});
+
+describe("the numbers line — written by code, never by the model", () => {
+  const outcome = (over: Partial<ChainOutcome> = {}): ChainOutcome => ({
+    recovered: 0,
+    failures: 0,
+    requests: 1_000,
+    addonCalls: [],
+    writes: null,
+    paths: null,
+    ...over,
+  });
+
+  it("gives every count its 'of what'", () => {
+    expect(impactOf(outcome({ failures: 3, requests: 23_096, recovered: 135 }), [], "degraded")).toBe(
+      "3 of 23,096 requests (0.01%) failed: no provider answered them. The router saved 135 others by trying another provider.",
+    );
+  });
+
+  it("says nothing failed when nothing did — and what the router did to keep it so", () => {
+    expect(impactOf(outcome({ failures: 0, requests: 22_185, recovered: 223 }), [], "degraded")).toBe(
+      "All 22,185 requests got a reply. The router saved 223 of them by trying another provider.",
+    );
+  });
+
+  it("never lets 'got a reply' read as 'worked' beside a provider sending errors back", () => {
+    const erring = finding({ kind: "answered-error", upstream: "tatum", metric: { value: "1.9%", label: "of answers" } });
+    expect(impactOf(outcome({ failures: 0, requests: 4_793 }), [erring], "degraded")).toBe(
+      "All 4,793 requests got a reply. Some replies were errors from Tatum.",
+    );
+    expect(impactOf(outcome({ failures: 3, requests: 7_845 }), [erring], "degraded")).toBe(
+      "3 of 7,845 requests (0.04%) failed: no provider answered them. Some other replies were errors from Tatum.",
+    );
+  });
+
+  it("says when failures are not counted, rather than implying none", () => {
+    expect(impactOf(outcome({ failures: null, requests: 7_888, recovered: null }), [], "degraded")).toBe(
+      "7,888 requests. Failed requests are not counted: this deployment has no router logs.",
+    );
+    expect(impactOf(outcome({ failures: null, requests: null, recovered: null }), [], "degraded")).toBeNull();
+  });
+
+  it("adds debug calls and transactions that did not work", () => {
+    const line = impactOf(
+      outcome({
+        requests: 50_000,
+        addonCalls: [{ addon: "debug", sent: 1_102, failed: 132, errorReplies: 132 }],
+        writes: { sent: 152, failed: 4 },
+      }),
+      [],
+      "critical",
+    );
+    expect(line).toBe(
+      "All 50,000 requests got a reply. 132 of 1,102 debug calls did not work. 4 of 152 transactions failed: no provider answered them.",
+    );
+  });
+
+  it("on the caller-side card, counts what the chains rejected, by reason", () => {
+    const rejected = (spec: string, code: string, n: number) =>
+      finding({ spec, kind: "config", tier: "config", upstream: null, metric: { value: String(n), label: "rejected by the chain" }, codes: [code], codeCounts: { [code]: n } });
+    const findings = [
+      rejected("ETH1", "CHAIN_NONCE_TOO_LOW", 617),
+      rejected("ETH1", "CHAIN_INSUFFICIENT_FUNDS", 20),
+      rejected("POLYGON", "CHAIN_NONCE_TOO_LOW", 344),
+      rejected("BASE", "CHAIN_NONCE_TOO_LOW", 70),
+    ];
+    // "All 187,702 requests got a reply" over rejections would read as a contradiction.
+    expect(impactOf(outcome({ requests: 187_702 }), findings, "config", 3)).toBe(
+      "The 3 chains rejected 1,051 requests: 1,031 had a nonce (transaction number) that was already used, 20 came from an account without enough funds.",
+    );
+    expect(impactOf(outcome(), [rejected("BASE", "CHAIN_NONCE_TOO_LOW", 70)], "config")).toBe(
+      "The chain rejected 70 requests: each had a nonce (transaction number) that was already used.",
+    );
+  });
+
+  it("prints a share the way it reads — never 0% for something that happened", () => {
+    expect(shareText(3, 23_096)).toBe("0.01%");
+    expect(shareText(3, 7_888)).toBe("0.04%");
+    expect(shareText(1, 1_000_000)).toBe("under 0.01%");
+    expect(shareText(17, 1_000)).toBe("1.7%");
+    expect(shareText(389, 1_000)).toBe("39%");
+  });
+
+  it("the card carries the line and the time it covers; the model is told they are on screen", () => {
+    const inputs: FormulatedInputs = {
+      spec: "SOLANA",
+      chain: "Solana",
+      findings: [finding({ spec: "SOLANA" })],
+      errorGroups: [],
+      configured: [],
+      insights: [],
+      recovered: 135,
+      failures: 3,
+      requests: 23_096,
+      measured: { fromUnix: 1_790_000_000, toUnix: 1_790_001_800 },
+    };
+    expect(measuredFields(inputs)).toMatchObject({
+      impact: "3 of 23,096 requests (0.01%) failed: no provider answered them. The router saved 135 others by trying another provider.",
+      measured: { fromUnix: 1_790_000_000, toUnix: 1_790_001_800 },
+    });
+    expect(JSON.parse(digestForIssue(inputs)).shownAboveYourPoints).toMatch(/^3 of 23,096 requests/);
+  });
+});
+
+describe("an issue the model did not write", () => {
+  it("is written from its findings, under the same numbers line — never left off the page", () => {
+    const i = plainIssue({
+      spec: "SOLANA",
+      chain: "Solana",
+      findings: [
+        finding({ spec: "SOLANA", upstream: "lava", headline: "24.4% errors - mostly no reply" }),
+        finding({ spec: "SOLANA", upstream: "blockdaemon", headline: "2.1% errors - mostly no reply" }),
+      ],
+      errorGroups: [],
+      configured: [],
+      insights: [],
+      recovered: 135,
+      failures: 3,
+      requests: 23_096,
+    });
+    expect(i).toMatchObject({
+      title: "Lava on Solana: 24.4% errors - mostly no reply",
+      points: ["Blockdaemon: 2.1% errors - mostly no reply"],
+      bottomLine: "",
+      plain: true,
+      impact: expect.stringMatching(/^3 of 23,096 requests/),
+    });
   });
 });
 
@@ -431,3 +633,57 @@ describe("bursts — the alert's own test", () => {
   });
 });
 
+describe("a title may not contradict the numbers line", () => {
+  const none: ChainOutcome = { recovered: 1_342, failures: 0, requests: 22_055, addonCalls: [], writes: null, paths: null };
+  const some: ChainOutcome = { ...none, failures: 3 };
+
+  it("flags 'requests fail' where every request got a reply", () => {
+    // Written by the model in production, over "All 22,055 requests got a reply".
+    expect(titleContradicts("Blockdaemon rate-limiting is causing some Solana Testnet requests to fail", none)).toBe(true);
+    expect(titleContradicts("Lava is failing to answer requests on Solana", none)).toBe(true);
+    // Says what the provider does — fine.
+    expect(titleContradicts("Blockdaemon is refusing some requests; the router moves them to lava", none)).toBe(false);
+    expect(titleContradicts("Tatum errors reach 1.8% of its answers on Tron Shasta", none)).toBe(false);
+    // Where requests DID fail, saying so is the point.
+    expect(titleContradicts("starknet_getEvents calls failed on both alchemy and quicknode", some)).toBe(false);
+  });
+
+  const inputs: FormulatedInputs = {
+    spec: "SOLANAT",
+    chain: "Solana Testnet",
+    findings: [finding({ upstream: "blockdaemon", headline: "9.4% rate-limited" })],
+    errorGroups: [],
+    configured: [],
+    insights: [],
+    recovered: 1_342,
+    failures: 0,
+    requests: 22_055,
+  };
+  const model = (...titles: string[]) => {
+    const complete = vi.fn();
+    for (const t of titles) {
+      complete.mockResolvedValueOnce({
+        text: JSON.stringify({ title: t, points: ["p"], bottomLine: "b" }),
+        stopReason: "end_turn",
+        inputTokens: 1,
+        outputTokens: 1,
+      });
+    }
+    return { complete } as unknown as BedrockService & { complete: typeof complete };
+  };
+
+  it("asks the model once more, with the reason", async () => {
+    const bedrock = model("Blockdaemon is causing some requests to fail", "Blockdaemon is refusing some requests; lava takes them");
+    const issue = await new FormulatedIssueService(bedrock).formulate(inputs);
+    expect(issue.title).toBe("Blockdaemon is refusing some requests; lava takes them");
+    expect(bedrock.complete).toHaveBeenCalledTimes(2);
+    const second = bedrock.complete.mock.calls[1]![0] as { messages: { role: string; content: string }[] };
+    expect(second.messages.at(-1)?.content).toMatch(/every request got a reply/);
+  });
+
+  it("falls back to the finding's own words rather than print a contradiction", async () => {
+    const bedrock = model("Requests are failing on Solana Testnet", "Some requests fail because of blockdaemon");
+    const issue = await new FormulatedIssueService(bedrock).formulate(inputs);
+    expect(issue.title).toBe("Blockdaemon on Solana Testnet: 9.4% rate-limited");
+  });
+});

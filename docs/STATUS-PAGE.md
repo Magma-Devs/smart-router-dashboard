@@ -25,22 +25,69 @@ failure alert, so whenever that alert fires the page has an issue for it. The
 burst joins the chain's issue if one is open. (This replaced the Live
 incidents tab.)
 
-**How the failed requests went.** An issue with failed requests lists each
-one's path through the router, one plain line per path:
+**The numbers line.** Under each title, one line gives the chain's numbers
+and the time they cover:
 
 ```
-3× starknet_getEvents · alchemy ✕ timed out → quicknode (backup) ✕ timed out → failed after 14s
+Last 30 min (22:21–22:51): 3 of 23,096 requests (0.01%) failed: no provider answered them. The router saved 135 others by trying another provider.
+```
+
+Code writes it from the measurements (`impactOf` in
+`apps/api/src/services/formulated-issues.ts`), never the model, and each word
+means one thing:
+
+| Words | Meaning |
+|---|---|
+| **failed: no provider answered them** | The router gave up — the final-result line in its log |
+| **got a reply** | Something came back — an error reply included. When a provider is sending errors back, the line says so and names it |
+| **saved** | Failed on one provider, answered by another |
+| **did not work** | Debug or trace calls with no usable answer: none, or an error |
+| **rejected** | The chain refused the request itself (the caller-side card) |
+
+The time is part of the line on purpose. The page's window picks WHICH issues
+show; the numbers always cover the last 30 minutes the api read (a resolved
+issue shows the half hour it was last seen in). The model is told the line is
+on screen, so it does not repeat the numbers and never writes a time word of
+its own ("this week", "last time").
+
+**What happened to the failed requests.** An issue with failed requests
+lists each one's path through the router, one plain line per path:
+
+```
+40× getBlock · tatum ✕ timed out → +8s 3 backups (blockdaemon, lava, quicknode) ✕ none worked → failed at 30s
+3× starknet_getEvents · alchemy ✕ timed out → +7s quicknode (backup) ✕ timed out → failed at 14s
 ```
 
 That line is ONE request going through every provider on it — it answers
 "was that the same request?", which "alchemy timed out on 3, quicknode on 2"
-cannot. Requests that went the same way are one line with a count. It is
-rebuilt from the router's log by request id (`traceRequests` in
+cannot. "+7s" is when the router sent the request to that provider, counted
+from its arrival: the router adds a backup every few seconds without
+cancelling the earlier attempts, so the steps overlap. Several backups tried
+on one request are one step, named in a fixed order: which one the router
+picks first changes from request to request, and grouping on the exact order
+split one story into seventeen lines. Requests that went the same way are one
+line with a count, grouped on the path without its times and shown at each
+step's typical time.
+
+It is rebuilt from the router's log by request id (`traceRequests` in
 `apps/api/src/services/loki.ts`), from the lines that name a provider in a
 field of their own; never from the error text, which carries the provider's
-URL and key. A bad hour traces a sample — the newest 20 failed requests per
-pod — and the line says "N of M traced". A request whose provider lines were
-not all read is left out rather than shown with a gap.
+URL and key. Most attempts on a failed request log nothing of their own — the
+provider was still working on it when the router gave up — so their word
+comes from how the request ended: **no answer** when nothing came back to the
+caller, **answered with an error** when a reply did and only one attempt was
+silent, **result unknown** otherwise. A bad hour traces a sample — the newest
+20 failed requests per pod — and the line says "N of M traced". A request
+whose provider lines were not all read is left out rather than shown with a
+gap.
+
+**Every failing chain gets a card.** The model writes at most 20 issues per
+cycle. Past that, and whenever the model fails, an open issue keeps its words
+with fresh numbers, and a new one gets a card written from its findings
+("From the measurements only"), which the next cycle writes properly. The cap
+used to limit detection itself, and an open issue that a cycle does not find
+is resolved — so an outage wider than 20 chains showed chains that were still
+down as resolved.
 
 The rules below find the problems. The heading each rule sits under is its
 own level, for one provider or one rule. It does not set the badge: a rule can

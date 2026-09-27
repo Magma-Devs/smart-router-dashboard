@@ -43,24 +43,67 @@ describe("request traces — was it the same request?", () => {
     { atNs: s(14), line: { message: "ProcessingResult RETURNED", error: "failed relay", has_reply: "false" } },
   ];
 
-  it("rebuilds one request's path through the router, in order", () => {
+  it("rebuilds one request's path through the router, in order, with when each step started", () => {
     // Shuffled on purpose: Loki returns streams newest-first.
     const t = traceFromLines("42", [...lines].reverse());
     expect(t).toMatchObject({ id: "42", method: "starknet_getEvents", failed: true, seconds: 14 });
-    expect(t.attempts.map((a) => [a.provider, a.role, a.outcome])).toEqual([
-      ["alchemy", "primary", "timed out"],
-      ["quicknode", "backup", "timed out"],
+    expect(t.attempts.map((a) => [a.provider, a.role, a.outcome, a.startSec, a.endSec])).toEqual([
+      ["alchemy", "primary", "timed out", 0, 7],
+      ["quicknode", "backup", "timed out", 7, 14],
     ]);
-    expect(flowOf(t)).toBe("alchemy ✕ timed out → quicknode (backup) ✕ timed out → failed");
+    expect(flowOf(t)).toBe("alchemy ✕ timed out → +7s quicknode (backup) ✕ timed out → failed");
+    // Without the times: what requests that went the same way share.
+    expect(flowOf(t, { times: false })).toBe("alchemy ✕ timed out → quicknode (backup) ✕ timed out → failed");
   });
 
   it("never carries the error text — it holds the provider's url, key included", () => {
     expect(JSON.stringify(traceFromLines("42", lines))).not.toMatch(/SECRETKEY|alchemy\.com/);
   });
 
-  it("a provider with no failure logged 'replied' — the reply was the error the caller got", () => {
-    const t = traceFromLines("43", [lines[0]!, lines[1]!, { atNs: s(2), line: { message: "ProcessingResult RETURNED", has_result: "false" } }]);
-    expect(flowOf(t)).toBe("alchemy replied → failed");
+  it("a provider the router gave up on said nothing — 'no answer', never 'replied'", () => {
+    // Taken from a production request. The router adds a backup every 7s
+    // WITHOUT cancelling the earlier attempts, and gives up at 30s. Only
+    // blockdaemon logged a failure; the others were still working on it. The
+    // first version of this line printed "lava replied → quicknode replied"
+    // — which reads as "they answered, so why did it fail?". Nobody answered.
+    const t = traceFromLines("44", [
+      { atNs: s(0), line: { message: "Consumer received a new JSON-RPC request", body: '{"method":"getBlock"}' } },
+      { atNs: s(0), line: { message: "Choosing providers", chosenProviders: "tatum" } },
+      { atNs: s(7), line: { message: "Optimizer selected backup provider", selected: "blockdaemon" } },
+      { atNs: s(14), line: { message: "Optimizer selected backup provider", selected: "lava" } },
+      { atNs: s(21), line: { message: "Optimizer selected backup provider", selected: "quicknode" } },
+      { atNs: s(24), line: { message: "could not send relay to provider", provider: "blockdaemon", error_name: "PROTOCOL_CONTEXT_DEADLINE" } },
+      { atNs: s(30), line: { message: "ProcessingResult RETURNED", error: "failed relay", has_reply: "false", has_result: "true" } },
+    ]);
+    expect(t.attempts.map((a) => `${a.provider}:${a.outcome}`)).toEqual([
+      "tatum:no answer",
+      "blockdaemon:timed out",
+      "lava:no answer",
+      "quicknode:no answer",
+    ]);
+    // Three backups are one step: which one the router picks first changes
+    // from request to request, and the story does not.
+    expect(flowOf(t)).toBe("tatum ✕ no answer → +7s 3 backups (blockdaemon, lava, quicknode) ✕ none worked → failed");
+    expect(flowOf(t)).not.toMatch(/replied|answered/);
+  });
+
+  it("when a reply did come back, the one provider with no failure logged sent it", () => {
+    const t = traceFromLines("45", [
+      lines[0]!,
+      lines[1]!,
+      { atNs: s(2), line: { message: "ProcessingResult RETURNED", has_reply: "true", has_result: "false" } },
+    ]);
+    expect(flowOf(t)).toBe("alchemy ✕ answered with an error → failed");
+  });
+
+  it("with two such providers, which one sent it is not known — and the line says so", () => {
+    const t = traceFromLines("46", [
+      lines[0]!,
+      lines[1]!,
+      { atNs: s(7), line: { message: "Optimizer selected backup provider", selected: "quicknode" } },
+      { atNs: s(9), line: { message: "ProcessingResult RETURNED", has_reply: "true", error: "failed relay" } },
+    ]);
+    expect(flowOf(t)).toBe("alchemy ? result unknown → +7s quicknode (backup) ? result unknown → failed");
   });
 
   it("names a failure in words a customer reads", () => {

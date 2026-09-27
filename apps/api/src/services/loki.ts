@@ -150,10 +150,17 @@ export function methodOfRequest(line: Record<string, unknown>): string {
 export interface Attempt {
   provider: string;
   role: "primary" | "backup";
-  /** In plain words: "timed out", "rate-limited", … — "answered" when no failure was logged for it. */
+  /**
+   * In plain words. From the router's own failure line when it logged one:
+   * "timed out", "rate-limited", … Otherwise from how the request ended —
+   * see `traceFromLines`: "no answer", "answered with an error", "result
+   * unknown", or "answered" on a request that worked.
+   */
   outcome: string;
-  /** Seconds after the request arrived that this attempt ended, when known. */
-  atSec: number | null;
+  /** Seconds after the request arrived that the router sent it here. */
+  startSec: number | null;
+  /** Seconds after the request arrived that this attempt failed, when logged. */
+  endSec: number | null;
 }
 
 /** How one customer request went, rebuilt from its lines in the router's log. */
@@ -180,67 +187,120 @@ export function outcomeWord(errorName: string, statusCode?: string): string {
 
 /**
  * Rebuild one request's path from its log lines: which provider was chosen,
- * which backup the router moved to, how each attempt ended, and the result.
+ * which backups the router added and when, how each attempt ended, and the
+ * result.
  *
  * Read from the lines that name a provider in a field of its own —
  * "Choosing providers", "Optimizer selected backup provider", and "could not
  * send relay to provider" with its `provider`. Never from the error text:
  * that carries the provider's full URL, key included.
+ *
+ * Most attempts on a failed request log nothing of their own. The router
+ * adds a backup every few seconds WITHOUT cancelling the earlier attempts,
+ * then gives up at its deadline, so a provider still working on it when that
+ * happens leaves no line. What such an attempt did is read from how the
+ * request ended: nothing came back to the caller → "no answer"; a reply came
+ * back and this was the only attempt without a line → it sent that reply,
+ * an error; anything else → "result unknown". Never "replied" on a guess —
+ * it was once, and read as "QuickNode answered, so why did it fail?".
  */
 export function traceFromLines(id: string, lines: { atNs: bigint; line: Record<string, unknown> }[]): RequestTrace {
   const sorted = [...lines].sort((a, b) => (a.atNs < b.atNs ? -1 : a.atNs > b.atNs ? 1 : 0));
   const t0 = sorted[0]?.atNs ?? 0n;
   const sec = (ns: bigint) => Math.round(Number(ns - t0) / 1e8) / 10;
   const str = (v: unknown) => (typeof v === "string" ? v : "");
-  const attempts: Attempt[] = [];
-  const start = (provider: string, role: Attempt["role"]) => {
+  // `outcome` null = nothing logged for it yet.
+  const attempts: (Omit<Attempt, "outcome"> & { outcome: string | null })[] = [];
+  const start = (provider: string, role: Attempt["role"], atNs: bigint) => {
     const last = attempts[attempts.length - 1];
     // The router re-validates in a loop and logs the same choice again; only
     // a change of provider, or a new try after the last one ended, is a step.
-    if (last && last.provider === provider && last.outcome === "answered") return;
-    attempts.push({ provider, role, outcome: "answered", atSec: null });
+    if (last && last.provider === provider && last.outcome === null) return;
+    attempts.push({ provider, role, outcome: null, startSec: sec(atNs), endSec: null });
   };
   let method = "unknown";
   let failed = false;
+  let reply: boolean | null = null;
   let end = t0;
   for (const { atNs, line } of sorted) {
     const message = str(line.message);
     if (message.startsWith("Consumer received a new")) method = methodOfRequest(line);
     else if (message === "Choosing providers") {
-      for (const p of str(line.chosenProviders).split(/[\s,]+/).filter(Boolean)) start(p, "primary");
+      for (const p of str(line.chosenProviders).split(/[\s,]+/).filter(Boolean)) start(p, "primary", atNs);
     } else if (message.includes("Optimizer selected backup provider")) {
       const p = str(line.selected);
-      if (p) start(p, "backup");
+      if (p) start(p, "backup", atNs);
     } else if (message === "could not send relay to provider") {
       const p = str(line.provider);
       if (!p) continue;
-      let a = [...attempts].reverse().find((x) => x.provider === p && x.outcome === "answered");
+      let a = [...attempts].reverse().find((x) => x.provider === p && x.outcome === null);
       if (!a) {
-        a = { provider: p, role: "primary", outcome: "answered", atSec: null };
+        a = { provider: p, role: "primary", outcome: null, startSec: null, endSec: null };
         attempts.push(a);
       }
       a.outcome = outcomeWord(str(line.error_name), str(line.statusCode));
-      a.atSec = sec(atNs);
+      a.endSec = sec(atNs);
     } else if (message === "ProcessingResult RETURNED") {
       failed = str(line.error) !== "" || line.has_reply === "false" || line.has_result === "false";
+      reply = line.has_reply === "false" ? false : line.has_reply === "true" ? true : null;
       end = atNs;
     }
   }
-  return { id, method, attempts, failed, seconds: sec(end) };
+  const silent = attempts.filter((a) => a.outcome === null).length;
+  const settled = !failed
+    ? "answered"
+    : reply === false
+      ? "no answer"
+      : reply === true && silent === 1
+        ? "answered with an error"
+        : "result unknown";
+  return {
+    id,
+    method,
+    attempts: attempts.map((a) => ({ ...a, outcome: a.outcome ?? settled })),
+    failed,
+    seconds: sec(end),
+  };
 }
 
 /**
- * The path as one line: `alchemy ✕ timed out → quicknode (backup) ✕ timed out
- * → failed`. Requests that went the same way share this string, so it is what
- * they are grouped by; the seconds differ per request and travel beside it.
+ * The path as one line:
  *
- * An attempt with no failure logged "replied" — not "answered": when the
- * request still failed, that reply was the error the caller got.
+ *   alchemy ✕ timed out → +7s quicknode (backup) ✕ timed out → failed
+ *   tatum ✕ timed out → +8s 3 backups (blockdaemon, lava, quicknode) ✕ none worked → failed
+ *
+ * "+7s" is when the router sent the request there, counted from its arrival.
+ * The router adds a backup without cancelling the earlier attempts, so the
+ * steps overlap; without the times an arrow reads as "failed, then the next".
+ *
+ * Several providers of one kind are one step. Which backup the router picks
+ * first changes from request to request, so the exact order split one story
+ * — "tatum timed out, all three backups were tried, none worked" — into
+ * seventeen lines on one card. The names are sorted, so requests that went
+ * that way share the line.
+ *
+ * `times: false` drops the times: what requests are grouped by.
  */
-export function flowOf(t: RequestTrace): string {
-  const steps = t.attempts.map(
-    (a) => `${a.provider}${a.role === "backup" ? " (backup)" : ""} ${a.outcome === "answered" ? "replied" : `✕ ${a.outcome}`}`,
-  );
+export function flowOf(t: RequestTrace, { times = true }: { times?: boolean } = {}): string {
+  const at = (sec: number | null) => (times && sec != null ? `+${Math.round(sec)}s ` : "");
+  const how = (o: string) => (o === "answered" ? "✓ answered" : o === "result unknown" ? "? result unknown" : `✕ ${o}`);
+  const steps: string[] = [];
+  for (const role of ["primary", "backup"] as const) {
+    const tried = t.attempts.filter((a) => a.role === role);
+    const first = tried[0];
+    if (!first) continue;
+    // The first step is the request arriving; every later one says when.
+    const when = steps.length > 0 ? at(first.startSec) : "";
+    if (tried.length === 1) {
+      steps.push(`${when}${first.provider}${role === "backup" ? " (backup)" : ""} ${how(first.outcome)}`);
+      continue;
+    }
+    const names = [...new Set(tried.map((a) => a.provider))].sort();
+    const worked = tried.find((a) => a.outcome === "answered");
+    steps.push(
+      `${when}${names.length} ${role === "backup" ? "backups" : "providers"} (${names.join(", ")}) ${worked ? `✓ ${worked.provider} answered` : "✕ none worked"}`,
+    );
+  }
   return [...steps, t.failed ? "failed" : "answered"].join(" → ");
 }
 

@@ -76,8 +76,13 @@ export interface FailurePaths {
 /** Every traced request that went one way through the router. */
 export interface FailurePath {
   count: number;
-  /** `alchemy ✕ timed out → quicknode (backup) ✕ timed out → failed` */
+  /**
+   * `tatum ✕ no answer → +7s blockdaemon (backup) ✕ timed out → failed` —
+   * each step at its typical time across these requests.
+   */
   flow: string;
+  /** The same path without its times: what requests are grouped by, and what the fingerprint keys on. */
+  route: string;
   /** The methods that went this way, most common first. */
   methods: string[];
   /** Fastest and slowest, from the request arriving to its final answer. */
@@ -149,6 +154,18 @@ export interface FormulatedIssue {
   lastSeenUnix: number | null;
   /** Measured, not written — the numbers the severity was decided on. */
   outcome: ChainOutcome;
+  /**
+   * The chain's numbers as one line, written by code — `impactOf`. Printed
+   * above the points with the time it covers. Null when nothing was measured.
+   */
+  impact: string | null;
+  /** The time the numbers cover: the window of the cycle that last read them. */
+  measured: { fromUnix: number; toUnix: number } | null;
+  /**
+   * Written from the measurements alone, without the model — it failed, or a
+   * cycle's writing budget ran out. The next cycle writes it properly.
+   */
+  plain?: true;
 }
 
 /**
@@ -291,6 +308,8 @@ export interface FormulatedInputs {
   writes?: WriteCalls | null;
   /** The failed requests' paths through the router, when traced. */
   paths?: FailurePaths | null;
+  /** The time the numbers above cover. */
+  measured?: { fromUnix: number; toUnix: number } | null;
   /**
    * The version already on the customer's screen, when this issue is still
    * open. Given so a rewrite UPDATES the issue rather than writing a new one
@@ -307,9 +326,9 @@ You are given more than one chain because the SAME problem is happening on all
 of them, and it is the caller's own requests that are being rejected — not any
 provider. Write ONE issue about that, not one per chain.
 
-Name the chains and give the total. "Your signing code is reusing nonces: 1,399
-transactions rejected across Ethereum, Base and Polygon" is the issue. Three
-cards each saying the same thing about one chain is the thing this replaces.`;
+Name the chains; the total is printed above your points. "Your signing code
+is reusing nonces on Ethereum, Base and Polygon" is the issue. Three cards
+each saying the same thing about one chain is the thing this replaces.`;
 
 const SYSTEM_PROMPT = `You write the one-screen issue a customer reads about their own chain.
 
@@ -322,13 +341,14 @@ can serve.
 
 ## How this team writes
 
-Short numbered facts, then a bottom line. Real example of theirs:
+Short numbered facts, then a bottom line. Real example of theirs — its first
+line, the chain's numbers, is one the card now prints for you (below):
 
-  1. There were 6 failures out of 3,310 requests, which is 0.18%.
-  2. All 6 were POST /transactions.
-  3. Tatum was the only eligible provider.
-  4. Tatum did not answer within 7 seconds.
-  5. No backup was available, so all 6 failed completely.
+  Printed: 6 of 3,310 requests (0.18%) failed: no provider answered them.
+  1. All 6 were POST /transactions.
+  2. Tatum was the only eligible provider.
+  3. Tatum did not answer within 7 seconds.
+  4. No backup was available for these calls.
   Bottom line: Tatum was slow again, and with one eligible provider and no
   retry for stateful calls, that keeps reaching customers.
 
@@ -341,22 +361,47 @@ Do NOT write paragraphs. Do not stack three clauses into one point. Do not
 quote raw error strings in parentheses; say what the error MEANS in your own
 short words.
 
+## The line above your points
+
+The card prints the chain's numbers itself, in one line above your points,
+with the time they cover. \`shownAboveYourPoints\` is that line: how many
+requests failed, how many the router saved — and, when they apply, how many
+debug calls or transactions did not work, or how many requests the chain
+rejected.
+
+  - Do not repeat those numbers: not in the title, not in a point, not in the
+    bottom line. Say what they MEAN.
+  - Never name a time: no "this week", "today", "last time", "again",
+    "recently". Every number on the card covers the time the card prints.
+    The one comparison you may make is the drift you are given, and you call
+    that "last week".
+  - The title must agree with that line. When it says every request got a
+    reply, the title may not say requests fail: say what the provider is
+    doing, and that the router covered it. When it says the router saved
+    some, the title may not say nothing caught them: "no backup is catching
+    it" over "the router saved 575 others" is two claims that disagree —
+    name what the backups could NOT save.
+  - A provider's OWN numbers are yours to use — its share of errors, its
+    speed — because the line does not carry them. Say whose number it is:
+    "8% of lava's answers", never "8% of requests".
+
 ## What the points must walk, in this order
 
-  1. What is failing, with the number — and WHICH provider, by name.
+  1. What is failing — WHICH provider, by name, with its own number.
   2. Why — the cause.
-  3. What happened to those requests: saved by a retry, or reached the caller.
-  4. Why the failover did or did not save it. This is the one people act on.
+  3. Why the failover did or did not save the requests. This is the one
+     people act on.
 
-Not every issue needs all four. Stop when the chain is told — three points
-that finish the story beat four padded to look thorough.
+What happened to the requests — how many failed, how many a retry saved — is
+already printed above you. Not every issue needs all three points. Stop when
+the chain is told.
 
 When you are given \`howTheFailedRequestsWent\`, the card prints those paths
-under your points: which provider each failed request tried, the backup it
-moved to, how each attempt ended. For those requests, points 1, 3 and 4 are
-already on screen — write none of them. Write only what a path cannot show:
-the cause, and why failover had nothing left (one backup, and it failed the
-same way).
+under your points: which provider each failed request tried, the backups the
+router added, how each attempt ended. For those requests, points 1 and 3 are
+already on screen — write neither. Write only what a path cannot show: the
+cause, and why failover had nothing left (one backup, and it failed the same
+way).
 
 **Never write the title again as a point.** The title is on screen directly
 above them. If the title already names what is failing and the number, start
@@ -375,27 +420,31 @@ useful point you can write. Say it in one line:
 
 ## What happened to the failed requests
 
-When you are given \`outcome\`, it is the most useful fact you have. It says how
-many requests the router saved by retrying them on another provider
-(savedByRetry) and how many still failed for the caller (reachedCaller).
+\`outcome\` is what the printed line is made from: how many requests the router
+saved by retrying them on another provider (savedByRetry) and how many still
+failed for the caller (reachedCaller). The counts are on screen; use them to
+understand what the router did.
 
   - reachedCaller is 0: the provider failed and the caller never saw it. Say
-    so plainly: "The router retried every one on another provider; none
-    reached you."
-  - reachedCaller above 0: say how many still failed, out of totalRequests,
-    and why the retry could not save them when the input shows why.
+    what covered it — "the router moved them to lava" — not the count.
+  - reachedCaller above 0: say WHY the retry could not save them, when the
+    input shows why.
   - callsNeedingAnAddon, when given, splits out debug and trace calls.
     gotNoUsableAnswer counts no answer at all AND error replies no retry
     replaced — "the method does not exist" is how a provider that cannot
     serve debug usually says so. When most of one kind got no usable answer,
-    that is the point to lead with.
+    lead with why.
   - howTheFailedRequestsWent, when given, is each failed request traced
     through the router: the provider it tried first, the backup it moved to,
     how each attempt ended. One path is ONE request going through every
-    provider on it, in order. The card prints every path under your points,
-    word for word (see "What the points must walk"). Never split one path
-    into per-provider counts ("alchemy on 3, quicknode on 2 others") — that
-    reads as different requests. wholePathSeconds runs from the request
+    provider on it, in order. "+7s" is when the router sent it to that
+    provider, counted from the request's arrival: the router adds a backup
+    every few seconds WITHOUT cancelling the earlier attempts, so they
+    overlap. "no answer" means nothing came back from that provider before
+    the router gave up. The card prints every path under your points, word
+    for word (see "What the points must walk"). Never split one path into
+    per-provider counts ("alchemy on 3, quicknode on 2 others") — that reads
+    as different requests. wholePathSeconds runs from the request
     arriving to the caller's error — every attempt together, never one
     provider's time. When traced is below ofFailed, it is a sample; do not
     present its counts as the total.
@@ -426,12 +475,16 @@ what you do not know is a line the reader has to read for nothing.
 When you are given \`previousVersion\`, this issue is already on their screen
 and is still happening. Write the SAME issue, updated:
 
-  - Keep the title unless the facts now describe a different problem.
+  - Keep the title unless the facts now describe a different problem — or it
+    disagrees with the printed line. "Requests fail" means the CALLER got an
+    error. When the line says every request got a reply, none did: the
+    provider refused them and the router saved them. Say that instead.
   - Keep the points in the same order; change the numbers to the new ones.
   - Except a point the input contradicts or a rule above forbids — a
-    failover path walked step by step, split into per-provider counts, or
-    one provider given the whole path's time. Rewrite that one, even though
-    it was on screen: a wrong fact kept for continuity is still wrong.
+    failover path walked step by step, split into per-provider counts, one
+    provider given the whole path's time, a chain-wide count the card now
+    prints, or a time word ("this week", "last time"). Rewrite that one, even
+    though it was on screen: a wrong fact kept for continuity is still wrong.
   - Say what changed only when it matters: it got worse, it spread to another
     provider, or the router could no longer route around it.
 
@@ -444,15 +497,16 @@ One sentence: can they work, AND why it is as bad as its severity says. A
 bottom line that only restates the symptom has not earned its place — the
 severity is already on screen, so say what makes it that severity.
 
-  - "About 3 in 10 requests fail outright: the router does try the backups,
-     but both are down, so there is nowhere for a retry to go."
+  - "Requests are failing outright: the router does try the backups, but
+     both are down, so there is nowhere for a retry to go."
   - "Read calls are fine; only debug traces fail, and only because lava is the
      one provider that serves them."
   - "Nothing is failing — the router is absorbing it, but it is retrying more
      than usual to do so."
 
-The pattern in each: the impact, then the ONE fact that explains why it is not
-merely annoying. Usually that fact is about failover.
+The pattern in each: the impact in words — the numbers are printed above —
+then the ONE fact that explains why it is not merely annoying. Usually that
+fact is about failover.
 
 Say it in different words from the point it came from. A bottom line that
 repeats point four verbatim has made the card longer without making it
@@ -490,8 +544,8 @@ means nothing is failing because of us or a provider.
 
 Write a bottom line that agrees with that. On a critical issue, say plainly
 that the chain is not usable right now, and why failover could not help. On a
-degraded issue, say that it still works, and what did reach them, with the
-number.
+degraded issue, say that it still works, and what did reach them — in words,
+since the numbers are printed above.
 
 Plain language, addressed to them: "your requests", "your chain". No error
 codes, no metric names, no internal vocabulary in the sentences.
@@ -553,6 +607,12 @@ export function digestForIssue(i: FormulatedInputs): string {
   return JSON.stringify(
     {
       chain: { spec: i.spec, name: i.chain },
+      // The line the card prints above the points — so the model knows those
+      // numbers are on screen, and does not restate them in its own words.
+      ...(() => {
+        const line = measuredFields(i).impact;
+        return line ? { shownAboveYourPoints: line } : {};
+      })(),
       ...(i.alsoOnChains?.length
         ? {
             sameProblemOnTheseChainsToo: i.alsoOnChains.map((c) => ({
@@ -643,32 +703,174 @@ export function digestForIssue(i: FormulatedInputs): string {
  * whose facts have not moved keeps its wording while these stay current —
  * a card that says "ongoing" must not be quoting last hour's numbers.
  */
+/**
+ * What the chain said about a rejected request, as the end of a sentence:
+ * "…617 had a nonce (transaction number) that was already used". The chain's
+ * own reason, not a verdict on whose fault it is.
+ */
+/**
+ * A title that says requests fail, on a chain where none did.
+ *
+ * The model writes it meaning the PROVIDER failed them — "blockdaemon
+ * rate-limiting is causing some requests to fail" — while the router saved
+ * every one, and the line under it says "all 22,055 requests got a reply".
+ * The reader sees two claims that disagree; the title is the one they read.
+ */
+export function titleContradicts(title: string, outcome: ChainOutcome): boolean {
+  const nothingFailed =
+    outcome.failures === 0 &&
+    !outcome.addonCalls.some((a) => (a.failed ?? 0) > 0) &&
+    !outcome.writes?.failed;
+  if (!nothingFailed) return false;
+  return (
+    /\b(requests?|calls?|transactions?)\b[^.]{0,40}\bfail/i.test(title) ||
+    /\bfail\w*\b[^.]{0,30}\b(requests?|calls?|transactions?)\b/i.test(title)
+  );
+}
+
+const REJECTED_BECAUSE: Record<string, string> = {
+  CHAIN_NONCE_TOO_LOW: "had a nonce (transaction number) that was already used",
+  CHAIN_NONCE_TOO_HIGH: "had a nonce (transaction number) too far ahead",
+  CHAIN_INSUFFICIENT_FUNDS: "came from an account without enough funds",
+  USER_INVALID_PARAMS: "had malformed parameters",
+};
+
+const num = (n: number) => n.toLocaleString("en-US");
+const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+/** A share as the card prints it — "0.04%", "1.7%", "39%" — and never "0%" for something that happened. */
+export function shareText(part: number, whole: number): string {
+  const pct = (part / whole) * 100;
+  if (pct > 0 && pct < 0.01) return "under 0.01%";
+  return `${pct < 1 ? pct.toFixed(2) : pct < 10 ? pct.toFixed(1) : Math.round(pct)}%`;
+}
+
+/**
+ * The chain's numbers as one line, written by code rather than the model.
+ *
+ * It answers the reader's first question — is anyone affected, and how much —
+ * the same way on every card, with words that mean one thing each:
+ *
+ *   failed: no provider answered them   the router gave up (its final-result log)
+ *   got a reply                          something came back — an error reply included
+ *   saved                                failed on one provider, answered by another
+ *   did not work                         debug or trace calls with no usable answer
+ *   rejected                             the chain refused the request itself
+ *
+ * Every number carries its "of what". The time it covers is printed beside
+ * it by the page, from `measured`. When the model wrote these, it put "this
+ * week" and "last time" over 30-minute counts, and counts with no "of what".
+ */
+export function impactOf(
+  outcome: ChainOutcome,
+  findings: StatusFinding[],
+  severity: IssueSeverity,
+  chains = 1,
+): string | null {
+  if (severity === "config") {
+    // The caller-side card is about what the chain refused, not about
+    // answers: "all 187,702 requests were answered" over 1,313 rejections
+    // would read as a contradiction.
+    const byCode = new Map<string, number>();
+    for (const f of findings) {
+      if (f.metric.label !== "rejected by the chain") continue;
+      for (const [code, n] of Object.entries(f.codeCounts ?? {})) byCode.set(code, (byCode.get(code) ?? 0) + n);
+    }
+    const total = [...byCode.values()].reduce((a, n) => a + n, 0);
+    if (total === 0) return null;
+    const why = [...byCode]
+      .sort((a, b) => b[1] - a[1])
+      .map(([code, n]) => {
+        const reason =
+          REJECTED_BECAUSE[code] ?? `were refused as "${code.replace(/^(CHAIN|USER)_/, "").toLowerCase().replace(/_/g, " ")}"`;
+        return `${byCode.size === 1 ? "each" : num(n)} ${reason}`;
+      });
+    return `${chains > 1 ? `The ${chains} chains` : "The chain"} rejected ${num(total)} requests: ${why.join(", ")}.`;
+  }
+
+  const parts: string[] = [];
+  const { failures, requests, recovered } = outcome;
+  if (failures == null) {
+    if (requests != null) {
+      parts.push(`${num(requests)} requests. Failed requests are not counted: this deployment has no router logs.`);
+    }
+  } else if (failures === 0) {
+    parts.push(requests === 0 ? "No requests were sent." : requests != null ? `All ${num(requests)} requests got a reply.` : "Every request got a reply.");
+  } else {
+    parts.push(
+      requests != null && requests >= failures
+        ? `${num(failures)} of ${num(requests)} requests (${shareText(failures, requests)}) failed: no provider answered them.`
+        : `${num(failures)} requests failed: no provider answered them.`,
+    );
+  }
+  if (recovered != null && recovered > 0) {
+    parts.push(`The router saved ${num(recovered)} ${failures ? "others" : "of them"} by trying another provider.`);
+  }
+  // A reply is not a success. Beside a provider sending errors back, "all
+  // 4,793 requests got a reply" alone reads as "everything worked" — so the
+  // line names who is replying with errors. Its share stays in the points:
+  // the finding's number counts errors and no-answers together.
+  const erring = [...new Set(findings.filter((f) => f.kind === "answered-error" && f.upstream).map((f) => capital(f.upstream!)))];
+  if (erring.length > 0) {
+    parts.push(`Some ${failures ? "other " : ""}replies were errors from ${erring.join(" and ")}.`);
+  }
+  for (const a of outcome.addonCalls) {
+    if (a.failed != null && a.failed > 0) parts.push(`${num(a.failed)} of ${num(a.sent)} ${a.addon} calls did not work.`);
+  }
+  if (outcome.writes?.failed) {
+    parts.push(`${num(outcome.writes.failed)} of ${num(outcome.writes.sent)} transactions failed: no provider answered them.`);
+  }
+  return parts.length ? parts.join(" ") : null;
+}
+
+/**
+ * An issue written from its measurements alone: the findings as they are,
+ * under the same numbers line. For a chain the model could not write this
+ * cycle — the call failed, or the cycle's writing budget ran out.
+ *
+ * Finding a problem must not depend on the model. Before this, a new issue
+ * whose words failed was left off the page, and a failing chain with no card
+ * reads as a working one.
+ */
+export function plainIssue(inputs: FormulatedInputs): FormulatedIssue {
+  const all = [...inputs.findings, ...(inputs.alsoOnChains ?? []).flatMap((c) => c.findings)];
+  const merged = (inputs.alsoOnChains?.length ?? 0) > 0;
+  const where = merged ? `${1 + inputs.alsoOnChains!.length} chains` : inputs.chain;
+  const [first, ...rest] = all;
+  return {
+    ...measuredFields(inputs),
+    title: !first ? where : first.upstream ? `${capital(first.upstream)} on ${where}: ${first.headline}` : `${where}: ${first.headline}`,
+    points: rest.slice(0, 3).map((f) => `${f.upstream ? capital(f.upstream) : f.chainName}: ${f.headline}`),
+    bottomLine: "",
+    plain: true,
+  };
+}
+
 export function measuredFields(
   inputs: FormulatedInputs,
 ): Omit<FormulatedIssue, "title" | "points" | "bottomLine"> {
   const all = [...inputs.findings, ...(inputs.alsoOnChains ?? []).flatMap((c) => c.findings)];
+  const outcome: ChainOutcome = {
+    recovered: inputs.recovered,
+    failures: inputs.failures,
+    requests: inputs.requests,
+    addonCalls: inputs.addonCalls ?? [],
+    writes: inputs.writes ?? null,
+    paths: inputs.paths ?? null,
+  };
+  // From the findings and the outcome, never from the model — a model
+  // re-deriving the badge would produce a second scale that disagrees.
+  const severity = severityOf(inputs.findings, outcome);
   return {
-    // From the findings and the outcome, never from the model — a model
-    // re-deriving the badge would produce a second scale that disagrees.
-    severity: severityOf(inputs.findings, {
-      failures: inputs.failures,
-      requests: inputs.requests,
-      addonCalls: inputs.addonCalls ?? [],
-      writes: inputs.writes ?? null,
-    }),
+    severity,
     spec: inputs.spec,
     chain: inputs.chain,
     specs: [inputs.spec, ...(inputs.alsoOnChains ?? []).map((c) => c.spec)],
     ongoing: all.some((f) => f.ongoing === true),
     findingIds: inputs.findings.map((f) => f.id),
-    outcome: {
-      recovered: inputs.recovered,
-      failures: inputs.failures,
-      requests: inputs.requests,
-      addonCalls: inputs.addonCalls ?? [],
-      writes: inputs.writes ?? null,
-      paths: inputs.paths ?? null,
-    },
+    outcome,
+    impact: impactOf(outcome, all, severity, 1 + (inputs.alsoOnChains?.length ?? 0)),
+    measured: inputs.measured ?? null,
     lastSeenUnix: all.reduce<number | null>(
       (newest, f) => (f.lastSeenUnix && (!newest || f.lastSeenUnix > newest) ? f.lastSeenUnix : newest),
       null,
@@ -683,23 +885,41 @@ export class FormulatedIssueService {
   ) {}
 
   async formulate(inputs: FormulatedInputs): Promise<FormulatedIssue> {
-    const answer = await this.bedrock.complete({
-      // The cross-chain instruction is appended only when it applies, so a
-      // single-chain issue is never told about a shape it cannot produce.
-      system: inputs.alsoOnChains?.length ? SYSTEM_PROMPT + CROSS_CHAIN_NOTE : SYSTEM_PROMPT,
-      messages: [{ role: "user", content: digestForIssue(inputs) }],
-      // The answer is ~150 tokens, but the model reasons before it writes and
-      // the reasoning counts against this ceiling: 400 to 2,000+ tokens on
-      // one issue, measured. At 2,000, about one call in six ended with the
-      // answer cut off or empty, and a new issue missed its cycle.
-      maxTokens: 8000,
-    });
-    const parsed = parseModelJson(answer, "issue statement", this.logger);
+    const measured = measuredFields(inputs);
+    // The cross-chain instruction is appended only when it applies, so a
+    // single-chain issue is never told about a shape it cannot produce.
+    const system = inputs.alsoOnChains?.length ? SYSTEM_PROMPT + CROSS_CHAIN_NOTE : SYSTEM_PROMPT;
+    const messages: { role: "user" | "assistant"; content: string }[] = [{ role: "user", content: digestForIssue(inputs) }];
+    // The answer is ~150 tokens, but the model reasons before it writes and
+    // the reasoning counts against this ceiling: 400 to 2,000+ tokens on one
+    // issue, measured. At 2,000, about one call in six ended with the answer
+    // cut off or empty, and a new issue missed its cycle.
+    const ask = () => this.bedrock.complete({ system, messages, maxTokens: 8000 });
+
+    let answer = await ask();
+    let parsed = parseModelJson(answer, "issue statement", this.logger);
+    const titleOf = (x: Record<string, unknown>) => (typeof x.title === "string" ? x.title : "");
+    // Asked once to agree with the numbers line, in words: the prompt already
+    // says it, and on an update the model keeps the title on screen anyway.
+    if (titleContradicts(titleOf(parsed), measured.outcome)) {
+      messages.push(
+        { role: "assistant", content: answer.text },
+        {
+          role: "user",
+          content:
+            "Your title says requests fail, but none did: every request got a reply — the router saved the ones the provider failed. " +
+            "Rewrite it to say what the provider is doing. Same JSON, nothing else.",
+        },
+      );
+      answer = await ask();
+      parsed = parseModelJson(answer, "issue statement", this.logger);
+    }
     const str = (k: string): string => (typeof parsed[k] === "string" ? (parsed[k] as string) : "");
+    const title = titleContradicts(str("title"), measured.outcome) ? plainIssue(inputs).title : str("title");
 
     return {
-      ...measuredFields(inputs),
-      title: str("title"),
+      ...measured,
+      title,
       // Capped here as well as in the prompt: a model that ignores "two to
       // four" must not turn the card back into the essay this replaced. Four,
       // not five — every point renders, so the cap IS what the reader sees.

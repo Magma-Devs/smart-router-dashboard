@@ -45,6 +45,7 @@ import {
   FormulatedIssueService,
   severityOf,
   measuredFields,
+  plainIssue,
   type AddonCalls,
   type ChainOutcome,
   type FailurePath,
@@ -97,11 +98,17 @@ function scale(n: number | null): string {
 }
 
 /**
- * Bumped when what the numbers MEAN changes, so every saved issue is rewritten
- * once. 2: failures come from the final-result log, once per customer request —
+ * Bumped when the words must change, so every saved issue is rewritten once.
+ * 2: failures come from the final-result log, once per customer request —
  * words written from the old per-attempt counter overstated them.
+ * 3: the card prints the chain's numbers itself, with their time; words
+ * written before repeat them, and carry time words ("this week", "last time")
+ * that were never true of a 30-minute count.
  */
-const PRINT_VERSION = 2;
+const PRINT_VERSION = 3;
+
+/** The print of an issue written without the model: never a real fingerprint, so the next cycle writes it. */
+const UNWRITTEN = "unwritten";
 
 /**
  * What makes an issue worth rewriting. Headlines carry the numbers, so a rate
@@ -125,11 +132,12 @@ export function fingerprint(
   return [
     `v${PRINT_VERSION}`,
     ...(outcome ? [`o:${scale(outcome.failures)}:${scale(outcome.recovered)}`] : []),
-    // The MAIN way requests fail, without its count: the backup starting to
-    // fail too is news, one more request down the same path is not. Only the
-    // first path — the traced sample is the newest few, so the rare paths
-    // behind it come and go each cycle and would re-word an unchanged story.
-    ...(outcome?.paths?.groups[0] ? [`p:${outcome.paths.groups[0].flow}`] : []),
+    // The MAIN way requests fail, without its count or its times: the backup
+    // starting to fail too is news, one more request down the same path is
+    // not. Only the first path — the traced sample is the newest few, so the
+    // rare paths behind it come and go each cycle and would re-word an
+    // unchanged story.
+    ...(outcome?.paths?.groups[0] ? [`p:${outcome.paths.groups[0].route}`] : []),
     ...(severity ? [`s:${severity}`] : []),
     ...findings.map((f) => `${f.id}|${f.tier}|${f.headline}`),
     // Drift is part of the story, so it is part of what makes the story
@@ -344,47 +352,68 @@ export async function readLogs(
  * are one path of six — not "3 on one provider and 2 on another", which
  * reads as different requests.
  *
+ * Grouped on the route WITHOUT its times: the router adds backups on a fixed
+ * step, but one request's "+7s" is another's "+8s", and those are the same
+ * path. The line shown carries each step's median time across the group.
+ *
  * A trace with no provider on it is left out: its lines were not all read,
  * and a path with a gap in it would state something false.
  */
 export function groupTraces(traces: RequestTrace[]): FailurePaths | null {
-  const byFlow = new Map<string, { path: FailurePath; methods: Map<string, number> }>();
-  let traced = 0;
+  const byRoute = new Map<string, RequestTrace[]>();
   for (const t of traces) {
     if (t.attempts.length === 0) continue;
-    traced++;
-    const flow = flowOf(t);
-    const g = byFlow.get(flow) ?? { path: { count: 0, flow, methods: [], seconds: [t.seconds, t.seconds] }, methods: new Map() };
-    g.path.count++;
-    g.path.seconds = [Math.min(g.path.seconds[0], t.seconds), Math.max(g.path.seconds[1], t.seconds)];
-    g.methods.set(t.method, (g.methods.get(t.method) ?? 0) + 1);
-    byFlow.set(flow, g);
+    const route = flowOf(t, { times: false });
+    byRoute.set(route, [...(byRoute.get(route) ?? []), t]);
   }
-  if (traced === 0) return null;
-  const groups = [...byFlow.values()].map(({ path, methods }) => ({
-    ...path,
-    methods: [...methods].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([m]) => m),
-  }));
-  return { traced, groups: sortPaths(groups) };
+  if (byRoute.size === 0) return null;
+  const groups = [...byRoute].map(([route, list]): FailurePath => {
+    // Same route means the same steps, so step i lines up across the list.
+    const typical: RequestTrace = {
+      ...list[0]!,
+      attempts: list[0]!.attempts.map((a, i) => ({
+        ...a,
+        startSec: median(list.map((t) => t.attempts[i]?.startSec).filter((n): n is number => n != null)),
+      })),
+    };
+    const methods = new Map<string, number>();
+    for (const t of list) methods.set(t.method, (methods.get(t.method) ?? 0) + 1);
+    const secs = list.map((t) => t.seconds);
+    return {
+      count: list.length,
+      flow: flowOf(typical),
+      route,
+      methods: [...methods].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([m]) => m),
+      seconds: [Math.min(...secs), Math.max(...secs)],
+    };
+  });
+  return { traced: groups.reduce((a, g) => a + g.count, 0), groups: sortPaths(groups) };
 }
 
-/** Most requests first; the flow breaks a tie, so the order — and the fingerprint — is stable. */
+/** The middle value — the lower one of two — or null for none. */
+function median(xs: number[]): number | null {
+  if (xs.length === 0) return null;
+  const sorted = [...xs].sort((a, b) => a - b);
+  return sorted[Math.floor((sorted.length - 1) / 2)]!;
+}
+
+/** Most requests first; the route breaks a tie, so the order — and the fingerprint — is stable. */
 function sortPaths(groups: FailurePath[]): FailurePath[] {
-  return groups.sort((a, b) => b.count - a.count || a.flow.localeCompare(b.flow));
+  return groups.sort((a, b) => b.count - a.count || a.route.localeCompare(b.route));
 }
 
 /** Several chains' paths as one — for an issue that covers more than one chain. */
 export function mergePaths(list: (FailurePaths | null)[]): FailurePaths | null {
   const all = list.filter((p): p is FailurePaths => p != null);
   if (all.length === 0) return null;
-  const byFlow = new Map<string, FailurePath>();
+  const byRoute = new Map<string, FailurePath>();
   for (const g of all.flatMap((p) => p.groups)) {
-    const same = byFlow.get(g.flow);
-    byFlow.set(
-      g.flow,
+    const same = byRoute.get(g.route);
+    byRoute.set(
+      g.route,
       same
         ? {
-            flow: g.flow,
+            ...same,
             count: same.count + g.count,
             methods: [...new Set([...same.methods, ...g.methods])],
             seconds: [Math.min(same.seconds[0], g.seconds[0]), Math.max(same.seconds[1], g.seconds[1])],
@@ -392,7 +421,7 @@ export function mergePaths(list: (FailurePaths | null)[]): FailurePaths | null {
         : { ...g, methods: [...g.methods] },
     );
   }
-  return { traced: all.reduce((a, p) => a + p.traced, 0), groups: sortPaths([...byFlow.values()]) };
+  return { traced: all.reduce((a, p) => a + p.traced, 0), groups: sortPaths([...byRoute.values()]) };
 }
 
 export async function outcomesBySpec(
@@ -670,6 +699,11 @@ export interface IssuesFeedOptions {
   loki?: LokiService;
   /** Where to keep the log between restarts; unset = memory only. */
   stateFile?: string;
+  /**
+   * Writes an issue's words. Unset = the model, and only where the model is
+   * allowed to run; tests pass their own.
+   */
+  writer?: Pick<FormulatedIssueService, "formulate">;
 }
 
 export class IssuesFeedService {
@@ -679,6 +713,7 @@ export class IssuesFeedService {
   private readonly prom?: Pick<PrometheusClient, "query">;
   private readonly loki: LokiService;
   private readonly stateFile?: string;
+  private readonly writer?: Pick<FormulatedIssueService, "formulate">;
 
   constructor(
     private readonly detail: MetricsDetailService,
@@ -689,6 +724,7 @@ export class IssuesFeedService {
     this.prom = opts.prom;
     this.loki = opts.loki ?? new LokiService();
     this.stateFile = opts.stateFile;
+    this.writer = opts.writer;
     this.log = this.load();
   }
 
@@ -709,15 +745,20 @@ export class IssuesFeedService {
   /**
    * One detection cycle on the live window. Updates the log; never called
    * because someone changed the page's window.
+   *
+   * `limit` caps the MODEL — how many issues it writes in one cycle — and
+   * nothing else. Every chain with a problem is on the page: past the cap an
+   * open issue keeps its words with fresh numbers, and a new one gets a card
+   * written from its numbers until a later cycle writes it. The cap used to
+   * cut detection itself at 20 chains, and an open issue that goes unseen is
+   * RESOLVED — so in an outage past 20 failing chains, the page said
+   * "resolved" about chains that were still down.
    */
-  // 20, not 8: eleven chains had findings and only eight were written, so
-  // three were missing from the page with nothing saying so. A cap exists to
-  // stop a pathological deployment, not to quietly truncate a normal one.
   async refresh(limit = 20): Promise<void> {
     if (this.running) return;
     // Checked here, not at the route: an unconfigured deployment must not run
     // a model loop it was never allowed to run.
-    if (!bedrockGate(process.env.AUTH_MODE ?? config.auth.mode).ok) return;
+    if (!this.writer && !bedrockGate(process.env.AUTH_MODE ?? config.auth.mode).ok) return;
     this.running = true;
     try {
       const window = DEFAULT_WINDOW;
@@ -778,7 +819,6 @@ export class IssuesFeedService {
       const callerSide = ranked.filter(([spec, f]) => sev(spec, f) === "config");
       const groups: Group[] = ranked
         .filter(([spec, f]) => sev(spec, f) !== "config")
-        .slice(0, limit)
         .map(([spec, findings]) => ({ key: spec, spec, findings, alsoOnChains: [] }));
       if (callerSide.length > 0) {
         const [leadSpec, leadFindings] = callerSide[0]!;
@@ -794,9 +834,12 @@ export class IssuesFeedService {
         });
       }
 
-      const svc = new FormulatedIssueService(new BedrockService(config.bedrock.model, this.logger), this.logger);
+      const svc = this.writer ?? new FormulatedIssueService(new BedrockService(config.bedrock.model, this.logger), this.logger);
+      // The time every number below covers — printed on each card beside them.
+      const measured = { fromUnix: report.computedAtUnix - WINDOWS[window].rangeSeconds, toUnix: report.computedAtUnix };
 
       const seen: Sighting[] = [];
+      let written = 0;
       for (const g of groups) {
         const all = [...g.findings, ...g.alsoOnChains.flatMap((c) => c.findings)];
         const chainInsights = report.insights.filter((x) => x.spec === g.spec);
@@ -822,6 +865,7 @@ export class IssuesFeedService {
           insights: chainInsights,
           alsoOnChains: g.alsoOnChains,
           ...outcome,
+          measured,
         };
         const firstSeenUnix = all.reduce<number | null>(
           (min, f) => (f.firstSeenUnix != null && (min == null || f.firstSeenUnix < min) ? f.firstSeenUnix : min),
@@ -835,14 +879,32 @@ export class IssuesFeedService {
           seen.push({ key: g.key, print, firstSeenUnix, issue: { ...rec.issue, ...measuredFields(inputs) } });
           continue;
         }
+        // Not written this cycle — the budget ran out, or the model failed.
+        // The chain is still failing, so it stays on the page: an open issue
+        // keeps its words with fresh numbers, a new one is written from its
+        // numbers. Either keeps a print that cannot match, so the next cycle
+        // writes it properly.
+        const unwritten = (): Sighting =>
+          rec
+            ? { key: g.key, print: rec.print, firstSeenUnix, issue: { ...rec.issue, ...measuredFields(inputs) } }
+            : { key: g.key, print: UNWRITTEN, firstSeenUnix, issue: plainIssue(inputs) };
+        if (written >= limit) {
+          seen.push(unwritten());
+          continue;
+        }
+        written++;
 
         const lines = this.loki.available ? await this.loki.recentErrors(g.spec, undefined, 150).catch(() => []) : [];
+        // Words from before a rules change are not a version to update: the
+        // model keeps an on-screen title for continuity, even one the new
+        // rules forbid. Written under these rules → update; older → fresh.
+        const sameRules = rec?.print.split("~").includes(`v${PRINT_VERSION}`) ?? false;
         try {
           const issue = await svc.formulate({
             ...inputs,
             errorGroups: groupErrors(lines, 6),
             // The version on screen, so the rewrite is an update of it.
-            ...(rec ? { previous: { title: rec.issue.title, points: rec.issue.points, bottomLine: rec.issue.bottomLine } } : {}),
+            ...(rec && sameRules ? { previous: { title: rec.issue.title, points: rec.issue.points, bottomLine: rec.issue.bottomLine } } : {}),
           });
           seen.push({ key: g.key, print, firstSeenUnix, issue });
         } catch (err) {
@@ -850,10 +912,9 @@ export class IssuesFeedService {
             { spec: g.spec, error: err instanceof Error ? err.message : String(err) },
             "could not formulate an issue",
           );
-          // An open issue the model could not rewrite is still open: keep its
-          // words, refresh its numbers, and try the words again next cycle.
-          // Dropping it would mark a still-failing problem resolved.
-          if (rec) seen.push({ key: g.key, print: rec.print, firstSeenUnix, issue: { ...rec.issue, ...measuredFields(inputs) } });
+          // Dropping it would mark a still-failing problem resolved — or, for
+          // a new one, leave a failing chain off the page.
+          seen.push(unwritten());
         }
       }
 

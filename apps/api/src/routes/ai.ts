@@ -489,6 +489,7 @@ export async function aiRoutes(app: FastifyInstance) {
               configured,
               insights: report.insights.filter((x) => x.spec === spec),
               ...outcomeOf(spec),
+              measured: { fromUnix: report.computedAtUnix - WINDOWS[window].rangeSeconds, toUnix: report.computedAtUnix },
             });
           } catch (err) {
             app.log.warn({ spec, err: String(err) }, "could not formulate an issue");
