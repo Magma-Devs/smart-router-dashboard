@@ -14,7 +14,7 @@ caller sends still be served?**
 
 | Badge | When |
 |---|---|
-| **Critical** | The chain cannot be used: every provider on it is failing, or at least half of its requests got no answer after every retry. **Or one kind of request cannot be served:** at least half of the debug (or trace) calls got no answer — reads may work, but those calls have no provider that answers them (3 calls or more in the window). |
+| **Critical** | The chain cannot be used: every provider on it is failing, or at least half of its customer requests failed after every retry (counted once per request, from the router's own final-result log). **Or one kind of request cannot be served:** at least half of the debug (or trace) calls got no usable answer — none at all, or an error reply like "the method does not exist" that no retry replaced. Reads may work, but those calls have no provider that serves them (3 calls or more in the window). |
 | **Degraded** | A provider is failing, slow or wrong, but the router can still send traffic to another one — even if some requests reached callers as errors. |
 | **Config** | Nothing is failing because of us or a provider. The setup, or the caller's own requests, need to change. |
 

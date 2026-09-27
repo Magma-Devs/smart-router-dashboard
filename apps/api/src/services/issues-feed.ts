@@ -182,7 +182,7 @@ export async function outcomesBySpec(
   finals: Map<string, FinalResults> | null = null,
 ): Promise<(spec: string) => ChainOutcome> {
   const range = `${WINDOWS[window].rangeSeconds}s`;
-  const [failed, saved, requested, addonSent, addonFailed] = await Promise.all([
+  const [failed, saved, requested, addonSent, addonFailed, addonErrors, addonSaved] = await Promise.all([
     prom.query(`sum by (spec) (increase(${OPTIONAL_METRICS.requestsFailedTotal}[${range}]))`),
     prom.query(`sum by (spec) (increase(${OPTIONAL_METRICS.retriesSuccessTotal}[${range}]))`),
     // The client-side count the rest of the dashboard uses: one per customer
@@ -192,6 +192,10 @@ export async function outcomesBySpec(
     // whose `method` label names the same call the histogram calls `function`.
     prom.query(addonQuery(ROUTER_METRICS.latencyCount, "function", range)),
     prom.query(addonQuery(OPTIONAL_METRICS.requestsFailedTotal, "method", range)),
+    // Error replies ("the method does not exist") — answers, so the final
+    // result calls them a success — and what a retry saved, per add-on.
+    prom.query(addonQuery(OPTIONAL_METRICS.nodeErrorsTotal, "method", range)),
+    prom.query(addonQuery(OPTIONAL_METRICS.retriesSuccessTotal, "method", range)),
   ]);
   const read = (rows: typeof failed) => {
     if (rows.length === 0) return (): number | null => null;
@@ -203,18 +207,32 @@ export async function outcomesBySpec(
   const requests = read(requested);
 
   const key = (r: (typeof failed)[number]) => `${r.metric.spec ?? ""}|${r.metric.addon ?? ""}`;
-  const failedBy = new Map(addonFailed.map((r) => [key(r), Math.round(Number(r.value[1]) || 0)]));
-  // Without the failure counter there is no verdict on these calls — the
-  // counter being absent is not the same as nothing failing.
-  const failuresMeasured = failed.length > 0;
+  const byKey = (rows: typeof failed) => new Map(rows.map((r) => [key(r), Math.round(Number(r.value[1]) || 0)]));
+  const noAnswer = byKey(addonFailed);
+  const errorReplies = byKey(addonErrors);
+  const rescued = byKey(addonSaved);
+  // With no error family firing anywhere there is no verdict on these calls —
+  // absent is not the same as nothing failing.
+  const measured = failed.length > 0 || addonErrors.length > 0;
   const addonCalls = (spec: string): AddonCalls[] =>
     addonSent
       .filter((r) => r.metric.spec === spec && (r.metric.addon === "debug" || r.metric.addon === "trace"))
-      .map((r) => ({
-        addon: r.metric.addon as AddonCalls["addon"],
-        sent: Math.round(Number(r.value[1]) || 0),
-        failed: failuresMeasured ? (failedBy.get(key(r)) ?? 0) : null,
-      }))
+      .map((r) => {
+        const k = key(r);
+        const sent = Math.round(Number(r.value[1]) || 0);
+        const errs = errorReplies.get(k) ?? 0;
+        // Both failure counters are per ATTEMPT; subtracting what a retry
+        // saved turns them into calls the caller was left without. An error
+        // reply is not retried, so for "no provider can serve this" — the
+        // case this exists for — the two are the same number.
+        const unserved = Math.max(0, errs + (noAnswer.get(k) ?? 0) - (rescued.get(k) ?? 0));
+        return {
+          addon: r.metric.addon as AddonCalls["addon"],
+          sent,
+          failed: measured ? Math.min(sent, unserved) : null,
+          errorReplies: measured ? errs : null,
+        };
+      })
       .filter((a) => a.sent > 0);
 
   return (spec) => {
@@ -241,7 +259,12 @@ function sumOutcomes(list: ChainOutcome[]): ChainOutcome {
     byAddon.set(
       a.addon,
       cur
-        ? { addon: a.addon, sent: cur.sent + a.sent, failed: cur.failed == null || a.failed == null ? null : cur.failed + a.failed }
+        ? {
+            addon: a.addon,
+            sent: cur.sent + a.sent,
+            failed: cur.failed == null || a.failed == null ? null : cur.failed + a.failed,
+            errorReplies: cur.errorReplies == null || a.errorReplies == null ? null : cur.errorReplies + a.errorReplies,
+          }
         : { ...a },
     );
   }

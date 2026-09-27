@@ -56,8 +56,19 @@ export interface ChainOutcome {
 export interface AddonCalls {
   addon: "debug" | "trace";
   sent: number;
-  /** Got no answer from any provider after every attempt; null when unmeasured. */
+  /**
+   * Calls the caller got no usable answer to: error replies plus no-answer
+   * attempts, minus the ones a retry saved. Null when unmeasured.
+   *
+   * Error replies count because they are how "no provider can serve this"
+   * actually arrives — "the method does not exist" comes back as an answer,
+   * so the final-result log calls it a success. Measured in production: one
+   * chain's nodes returned 40,580 errors to 82,469 debug calls in a day, and
+   * the router saved none of them.
+   */
   failed: number | null;
+  /** Of `failed`, the error replies. */
+  errorReplies: number | null;
 }
 
 /**
@@ -111,8 +122,9 @@ export interface FormulatedIssue {
  *   critical  the chain cannot be served: every provider on it is failing, or
  *             at least half its requests got no answer after every retry. Or
  *             one KIND of request cannot be: at least half the debug (or
- *             trace) calls got no answer — reads may be fine, but a caller
- *             sending those calls has nothing that works.
+ *             trace) calls got no usable answer — none, or an error reply no
+ *             retry replaced. Reads may be fine, but a caller sending those
+ *             calls has nothing that works.
  *   degraded  a provider is failing, slow or wrong, and the router still has
  *             somewhere to send traffic — even when some requests reached the
  *             caller as errors on the way.
@@ -316,8 +328,11 @@ many requests the router saved by retrying them on another provider
     reached you."
   - reachedCaller above 0: say how many still failed, out of totalRequests,
     and why the retry could not save them when the input shows why.
-  - callsNeedingAnAddon, when given, splits out debug and trace calls. When
-    most of one kind got no answer, that is the point to lead with.
+  - callsNeedingAnAddon, when given, splits out debug and trace calls.
+    gotNoUsableAnswer counts no answer at all AND error replies no retry
+    replaced — "the method does not exist" is how a provider that cannot
+    serve debug usually says so. When most of one kind got no usable answer,
+    that is the point to lead with.
 
 reachedCaller counts requests that got NO answer. An error answer is not in
 it — that went back to the caller as an error. So when a provider is answering
@@ -391,7 +406,8 @@ finished.
 The severity you are given follows ONE rule: can what they send still be
 served. Critical means it cannot — every provider is failing, or at least half
 the requests got no answer even after retries, or one kind of request cannot be
-served at all: at least half of their debug (or trace) calls got no answer.
+served at all: at least half of their debug (or trace) calls got no usable
+answer, either none or an error reply.
 When it is that last one, say so by name: reads may work, but their debug calls
 have no provider that can answer them. Degraded means the chain still
 works: a provider is failing, slow or wrong, and the router has somewhere else
@@ -509,7 +525,8 @@ export function digestForIssue(i: FormulatedInputs): string {
                     callsNeedingAnAddon: i.addonCalls.map((a) => ({
                       kind: `${a.addon}_* calls`,
                       sent: a.sent,
-                      gotNoAnswer: a.failed,
+                      gotNoUsableAnswer: a.failed,
+                      ofWhichErrorReplies: a.errorReplies,
                     })),
                   }
                 : {}),

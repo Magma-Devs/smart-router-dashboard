@@ -70,22 +70,22 @@ describe("severityOf: can the chain still be used", () => {
   it("is critical when a kind of request cannot be served, even if reads are fine", () => {
     // Omer: "if there is a debug call and no provider can serve it, it's
     // critical, because the transaction can't be fulfilled."
-    const debugDead = { failures: 1_306, requests: 40_000, addonCalls: [{ addon: "debug" as const, sent: 1_306, failed: 1_306 }] };
+    const debugDead = { failures: 1_306, requests: 40_000, addonCalls: [{ addon: "debug" as const, sent: 1_306, failed: 1_306, errorReplies: 0 }] };
     expect(severityOf([finding({})], debugDead)).toBe("critical");
   });
 
   it("debug calls the router mostly answers leave it degraded", () => {
-    const o = { failures: 12, requests: 40_000, addonCalls: [{ addon: "debug" as const, sent: 1_306, failed: 12 }] };
+    const o = { failures: 12, requests: 40_000, addonCalls: [{ addon: "debug" as const, sent: 1_306, failed: 12, errorReplies: 0 }] };
     expect(severityOf([finding({})], o)).toBe("degraded");
   });
 
   it("two failed calls of two sent is a blip, not a verdict", () => {
-    const o = { failures: 2, requests: 40_000, addonCalls: [{ addon: "trace" as const, sent: 2, failed: 2 }] };
+    const o = { failures: 2, requests: 40_000, addonCalls: [{ addon: "trace" as const, sent: 2, failed: 2, errorReplies: 0 }] };
     expect(severityOf([finding({})], o)).toBe("degraded");
   });
 
   it("unmeasured add-on failures never make it critical", () => {
-    const o = { failures: null, requests: null, addonCalls: [{ addon: "debug" as const, sent: 900, failed: null }] };
+    const o = { failures: null, requests: null, addonCalls: [{ addon: "debug" as const, sent: 900, failed: null, errorReplies: null }] };
     expect(severityOf([finding({})], o)).toBe("degraded");
   });
 
@@ -150,10 +150,16 @@ describe("fingerprint", () => {
 describe("outcomesBySpec", () => {
   const row = (spec: string, v: number) => ({ metric: { spec }, value: [0, String(v)] as [number, string] });
   type Row = { metric: Record<string, string>; value: [number, string] };
-  const prom = (failed: Row[], saved: Row[], requested: Row[] = [], addonSent: Row[] = [], addonFailed: Row[] = []) => ({
+  const prom = (
+    failed: Row[], saved: Row[], requested: Row[] = [], addonSent: Row[] = [], addonFailed: Row[] = [],
+    addonErrors: Row[] = [], addonSaved: Row[] = [],
+  ) => ({
     query: async (q: string) =>
       q.includes("label_replace")
-        ? q.includes("requests_failed") ? addonFailed : addonSent
+        ? q.includes("requests_failed") ? addonFailed
+          : q.includes("node_errors") ? addonErrors
+          : q.includes("retries_success") ? addonSaved
+          : addonSent
         : q.includes("requests_failed") ? failed : q.includes("retries_success") ? saved : requested,
   });
   const addonRow = (spec: string, addon: string, v: number): Row => ({ metric: { spec, addon }, value: [0, String(v)] });
@@ -192,14 +198,37 @@ describe("outcomesBySpec", () => {
       "30m",
     );
     expect(of("AVALANCHECT").addonCalls).toEqual([
-      { addon: "debug", sent: 1_306, failed: 1_290 },
-      { addon: "trace", sent: 40, failed: 0 },
+      { addon: "debug", sent: 1_306, failed: 1_290, errorReplies: 0 },
+      { addon: "trace", sent: 40, failed: 0, errorReplies: 0 },
     ]);
   });
 
   it("with no failure counter at all, add-on failures are unmeasured, not zero", async () => {
     const of = await outcomesBySpec(prom([], [], [], [addonRow("ETH1", "debug", 5)], []), "30m");
-    expect(of("ETH1").addonCalls).toEqual([{ addon: "debug", sent: 5, failed: null }]);
+    expect(of("ETH1").addonCalls).toEqual([{ addon: "debug", sent: 5, failed: null, errorReplies: null }]);
+  });
+
+  it("counts error replies as unserved, and takes off what a retry saved", async () => {
+    // Measured shape: nodes answer "the method does not exist" to debug calls,
+    // no retry replaces it; no-answer attempts elsewhere are all saved.
+    const of = await outcomesBySpec(
+      prom(
+        [row("ARBITRUM", 10)], [], [],
+        [addonRow("FTM250", "debug", 2_839), addonRow("ARBITRUM", "debug", 13_522)],
+        [addonRow("ARBITRUM", "debug", 10)],
+        [addonRow("FTM250", "debug", 759)],
+        [addonRow("ARBITRUM", "debug", 10)],
+      ),
+      "30m",
+    );
+    expect(of("FTM250").addonCalls).toEqual([{ addon: "debug", sent: 2_839, failed: 759, errorReplies: 759 }]);
+    expect(of("ARBITRUM").addonCalls).toEqual([{ addon: "debug", sent: 13_522, failed: 0, errorReplies: 0 }]);
+    // 27% unserved: a provider still answers most of them — degraded, not critical.
+    const tatumErrors = finding({ kind: "answered-error", spec: "FTM250", upstream: "tatum" });
+    expect(severityOf([tatumErrors], { addonCalls: of("FTM250").addonCalls })).toBe("degraded");
+    // Past half, nothing is serving them.
+    const most = [{ addon: "debug" as const, sent: 2_839, failed: 1_500, errorReplies: 1_500 }];
+    expect(severityOf([tatumErrors], { addonCalls: most })).toBe("critical");
   });
 });
 
