@@ -9,6 +9,7 @@ import { SESSION_JWT_AUDIENCE, SESSION_JWT_ISSUER } from "../plugins/auth.js";
 import { createSession } from "../services/sessions.js";
 import { hashPassword } from "../services/password.js";
 import { resetEmailClientForTests } from "../services/email.js";
+import { fakeSesEnv, startFakeSes, type FakeSes } from "./fake-ses.js";
 
 /**
  * What the routes do with a send, in both deployment shapes.
@@ -212,6 +213,65 @@ describe("forgot-password on managed, with no transport configured", () => {
     // would kill any live link the member already holds.
     expect(await t.db.select().from(passwordResets)).toHaveLength(0);
     expect(await lastNote("password.reset_requested")).toBeNull();
+  });
+});
+
+/** The note of the newest row for `action`, once one exists. Self-serve work
+ *  can finish after the response, so a read straight after it may be early. */
+async function waitForNote(action: string): Promise<string | null> {
+  for (let i = 0; i < 100; i++) {
+    const note = await lastNote(action);
+    if (note !== null) return note;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  return null;
+}
+
+describe("forgot-password on managed, with a transport", () => {
+  let ses: FakeSes;
+  beforeEach(async () => {
+    ses = await startFakeSes();
+  });
+  afterEach(async () => {
+    await ses.close();
+  });
+
+  async function managedWithDana(): Promise<void> {
+    await boot("managed");
+    setEnv(fakeSesEnv(ses));
+    resetEmailClientForTests();
+    await t.db.insert(users).values({
+      email: "dana@example.com",
+      passwordHash: await hashPassword("dana-passphrase-1"),
+    });
+  }
+
+  const forgot = (email: string) =>
+    app!.inject({ method: "POST", url: "/auth/password/forgot", payload: { email } });
+
+  it("emails the link, answers 202 for every address, and never returns the link", async () => {
+    await managedWithDana();
+
+    const known = await forgot("dana@example.com");
+    const unknown = await forgot("nobody@example.com");
+
+    expect(known.statusCode).toBe(202);
+    expect(known.json()).toEqual({ ok: true });
+    expect(unknown.json()).toEqual(known.json());
+    expect(await waitForNote("password.reset_requested")).toBe("emailed");
+    expect(ses.sent.map((m) => m.to)).toEqual([["dana@example.com"]]);
+    expect(ses.sent[0]!.text).toMatch(/https:\/\/dash\.example\.com\/reset\/[A-Za-z0-9_-]+/);
+  });
+
+  it("says no link was delivered when SES refuses — not that an admin holds one", async () => {
+    await managedWithDana();
+    ses.mode = "refuse";
+
+    expect((await forgot("dana@example.com")).statusCode).toBe(202);
+
+    // There is no admin in this flow. "link shown to the admin" here would send
+    // somebody investigating a takeover looking for one.
+    expect(await waitForNote("password.reset_requested")).toBe("email failed, no link delivered");
   });
 });
 

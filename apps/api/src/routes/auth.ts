@@ -31,7 +31,7 @@ import { clearFailures, lockedReply, recordAttempt } from "../services/lockout.j
 import { lazyAuditWriter, type AuditWriter } from "../services/audit.js";
 import { sendPasswordResetEmail } from "../services/email-templates.js";
 import { emailTransportConfigured } from "../services/email.js";
-import { EMAIL_DELIVERY_NOTES } from "@sr/shared";
+import { RESET_REQUEST_NOTES } from "@sr/shared";
 import {
   completeSetup,
   needsSetup,
@@ -608,12 +608,13 @@ export async function authRoutes(app: FastifyInstance) {
         // Unlike an invitation, a failed reset has nowhere to fall back to:
         // there is no admin in this flow to hand the link to, and returning it
         // in the response would let anybody mint a reset for any address. The
-        // note is the only record, which is exactly why it is a note.
+        // note is the only record, which is exactly why it is a note — and why
+        // it has its own wording rather than the invitation's.
         await audit.write({
           action: "password.reset_requested",
           actor: { id: user.id, kind: "user" },
           access: { ...client.access, sessionId: null },
-          note: EMAIL_DELIVERY_NOTES[delivery],
+          note: RESET_REQUEST_NOTES[delivery],
         });
       }
 
