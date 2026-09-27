@@ -678,9 +678,10 @@ export async function teamMemberRoutes(app: FastifyInstance) {
           m.email,
           m.role,
           // Real since MAG-2730 — it was blank while 2FA did not exist, because
-          // "no" would have been true then and wrong the day it shipped. Under
-          // the enforcement rule only the first admin can read "no", and only
-          // during their grace period, so a second "no" in this column is the
+          // "no" would have been true then and wrong the day it shipped. A "no"
+          // is someone the dashboard is shut to until they set one up — they
+          // joined and have not enrolled, or an admin reset theirs — or the
+          // first admin inside their grace period. One that stays "no" is the
           // thing a reviewer should stop on.
           m.twoFactorEnabled ? "yes" : "no",
           m.lastActiveAt?.toISOString() ?? "",

@@ -697,9 +697,11 @@ each says what it can do.
   an invited person gets no grace period, and the only thing their session
   opens is enrolment. Set it up and the dashboard appears underneath,
   without another sign-in.
-- That person is now in the members table, with **Yes** under 2FA. Under
-  the enforcement rule only the first admin can read **No** there, and only
-  during their grace period — so a second "No" is the thing to stop on.
+- That person is now in the members table, with **Yes** under 2FA. A **No**
+  there is someone the dashboard is shut to until they set one up — they
+  joined and have not enrolled, or an admin reset theirs — or the first
+  admin inside their grace period. One that stays "No" is the thing to stop
+  on.
 - Open the same link again: dead. Single-use.
 
 **4. Change a role.** Team → Change role. It takes effect on whatever that
@@ -849,12 +851,12 @@ some people can see is not one; only an admin changes it.
   by the people in the list, and the file opens in a spreadsheet. It starts
   with a UTF-8 byte-order mark, without which Excel reads it in the system code
   page, and line endings are CRLF (RFC 4180).
-- **2FA reads Yes or No**, and a No is red: under the enforcement rule only the
-  first admin, inside their grace period, can have one — so a second No is the
-  thing a reviewer should stop on. (The screenshot below predates MAG-2730 and
-  still shows the column's old em dash.)
+- **2FA reads Yes or No**, and a No is red. A No is someone the dashboard is
+  shut to until they set up an authenticator — they joined and have not
+  enrolled, or an admin reset theirs — or the first admin inside their grace
+  period. One that stays No is the thing a reviewer should stop on.
 
-<img src="./assets/team-members.png" alt="The Team page's Members tab: a table of five people with columns for member, role, 2FA, last active and joined. Two admins are listed first, then an approver, a requester and a read-only member. The 2FA column shows an em dash for everyone, and the two members who have never signed in show an em dash for last active. Every row except the signed-in admin's own has Change role, Reset link and Remove buttons; Reset link opens a dialog that confirms first and then shows the link once." width="100%">
+<img src="./assets/team-members.png" alt="The Team page's Members tab: a table of five people with columns for member, role, 2FA, last active and joined. Two admins are listed first, then an approver, a requester and a read-only member. The 2FA column reads Yes for four of them and a red No for the read-only member, whose authenticator an administrator has reset, so she sets up a new one at her next sign-in. Every row except the signed-in admin's own has Change role, Reset link and Remove buttons, and each member with an authenticator also has Reset 2FA; Reset link opens a dialog that confirms first and then shows the link once." width="100%">
 
 ## JWT shape
 
@@ -993,7 +995,7 @@ Anything else is one `session.revoked` per session, naming why: revoked
 from the sessions list, a removal, a password reset, or a password change
 (for the other devices).
 
-<img src="./assets/account-sessions.png" alt="The Account page, scrolled down: the end of a Connected accounts card saying that a Google or GitHub sign-in whose verified address matches links to this account the first time it is used; a Change password card with current, new and repeat fields and a note that other devices will be signed out while this one stays; an Active sessions card listing this device as Chrome on Linux, highlighted, and a second unrecognised device with its own Sign out button, plus a Sign out everywhere button; and a Leaving? card saying accounts are never deleted and nobody removes their own, so ask another administrator, and that your name stays in the audit log." width="560">
+<img src="./assets/account-sessions.png" alt="The Account page, scrolled down: a Two-factor authentication card marked On, saying you are asked for a code from your authenticator app at each sign-in and that only an administrator can reset it if you lose your phone, because nobody can read your key back; a Change password card with current, new and repeat fields and a note that other devices will be signed out while this one stays; an Active sessions card listing this device as Chrome on Linux, highlighted, and a second unrecognised device with its own Sign out button, plus a Sign out everywhere button; and a Leaving? card saying accounts are never deleted and nobody removes their own, so ask another administrator, and that your name stays in the audit log." width="560">
 
 Session rows are **never deleted on revoke** — a revoked session is
 evidence, and the audit log's access events reference it. Nor are they
