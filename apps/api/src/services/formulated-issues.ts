@@ -428,9 +428,10 @@ and is still happening. Write the SAME issue, updated:
 
   - Keep the title unless the facts now describe a different problem.
   - Keep the points in the same order; change the numbers to the new ones.
-  - Except a point that breaks a rule above — a failover path walked step by
-    step, or split into per-provider counts. Rewrite that one, even though
-    it was on screen.
+  - Except a point the input contradicts or a rule above forbids — a
+    failover path walked step by step, split into per-provider counts, or
+    one provider given the whole path's time. Rewrite that one, even though
+    it was on screen: a wrong fact kept for continuity is still wrong.
   - Say what changed only when it matters: it got worse, it spread to another
     provider, or the router could no longer route around it.
 
