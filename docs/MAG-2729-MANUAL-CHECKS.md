@@ -110,6 +110,7 @@ Use whatever you like, but the document refers to:
 |---|---|
 | Administrator | `ops.admin@magmadevs.com` / `an-admin-passphrase-4417` |
 | Invited person | `dana.okonkwo@example.com` / `dana-chose-this-one-8890` |
+| Dana's new password, in check 8 | `dana-picked-a-new-one-2231` |
 
 ---
 
@@ -454,7 +455,7 @@ herself.
    with two accounts knows which one they are changing, and the rule *"At least
    8 characters. Any characters, including spaces."* is shown **before** the
    field rather than after a failure.
-8. Set a new password → **Save password**.
+8. Set a new password (`dana-picked-a-new-one-2231`) → **Save password**.
 9. It says *"Your password has been changed. You have been signed out everywhere
    else."* and offers **Sign in** — it does **not** drop her into the dashboard.
    A reset link that signs you in is a reset link worth stealing.
@@ -564,16 +565,20 @@ docker exec smart-router-dashboard-dev-postgres-1 psql -U sr -d sr_dashboard \
        order by c.event_seq"
 ```
 
-**Now the part that matters most.** Search the whole log for the secrets you
-used — every password you typed, the setup token, and any link:
+**Now the part that matters most.** Search the whole log — both tables — for
+the secrets you used: every password you typed, the setup token, and any link:
 
 ```bash
 docker exec smart-router-dashboard-dev-postgres-1 psql -U sr -d sr_dashboard -c "
-select count(*) as leaks from audit_events
- where coalesce(action,'') || coalesce(actor_name,'') || coalesce(actor_email,'')
-    || coalesce(target_name,'') || coalesce(target_id,'') || coalesce(note,'')
-    || coalesce(client,'')
-       ~* 'passphrase|installer-printed|/invite/|/reset/'"
+select count(*) as leaks from (
+  select coalesce(action,'') || coalesce(actor_name,'') || coalesce(actor_email,'')
+      || coalesce(target_name,'') || coalesce(target_id,'') || coalesce(note,'')
+      || coalesce(client,'') as v from audit_events
+  union all
+  select coalesce(field,'') || coalesce(from_value,'') || coalesce(to_value,'')
+    from audit_event_changes
+) log
+ where v ~* 'passphrase|dana-chose|dana-picked|installer-printed|/invite/|/reset/'"
 ```
 
 **`0` is the pass.** It is also what a broken query returns, so prove the query
@@ -581,11 +586,15 @@ works by pointing it at something you know is there:
 
 ```bash
 docker exec smart-router-dashboard-dev-postgres-1 psql -U sr -d sr_dashboard -c "
-select count(*) as hits from audit_events
- where coalesce(action,'') || coalesce(actor_name,'') || coalesce(actor_email,'')
-    || coalesce(target_name,'') || coalesce(target_id,'') || coalesce(note,'')
-    || coalesce(client,'')
-       ~* 'dana|passphrase|installer-printed'"
+select count(*) as hits from (
+  select coalesce(action,'') || coalesce(actor_name,'') || coalesce(actor_email,'')
+      || coalesce(target_name,'') || coalesce(target_id,'') || coalesce(note,'')
+      || coalesce(client,'') as v from audit_events
+  union all
+  select coalesce(field,'') || coalesce(from_value,'') || coalesce(to_value,'')
+    from audit_event_changes
+) log
+ where v ~* 'dana|passphrase|dana-chose|dana-picked|installer-printed|/invite/|/reset/'"
 ```
 
 Same query, one word added. It should return a healthy count — every row
