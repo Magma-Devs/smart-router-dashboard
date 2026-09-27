@@ -73,8 +73,24 @@ export async function previewInvitation(token: string): Promise<InvitePreview | 
 }
 
 /**
- * Which account a reset link changes, without spending it. Null for every dead
- * reason, for the same purpose as `previewInvitation` above.
+ * What a reset link is, as far as the page can tell without spending it.
+ *
+ *  - `live` — the api named the account it changes.
+ *  - `dead` — used, expired or never issued; one answer for all of them.
+ *  - `unknown` — the question went unanswered: rate-limited, the api down, a
+ *    timeout. **Not the same as dead.** The preview is a server-side fetch, so
+ *    its per-IP limit is shared by everyone this web pod serves; reporting that
+ *    as "expired" would let anybody who loads `/reset/x` a few times a minute
+ *    make every live link look dead. The page shows the form instead, and the
+ *    submit — which goes from the browser — gets the real answer.
+ */
+export type ResetPreview =
+  | { state: "live"; email: string }
+  | { state: "dead" }
+  | { state: "unknown" };
+
+/**
+ * Which account a reset link changes, without spending it.
  *
  * This page used to refuse to preview at all, on the argument that revealing
  * whose account a token belongs to turns a guessed token into a way to ask who
@@ -84,7 +100,7 @@ export async function previewInvitation(token: string): Promise<InvitePreview | 
  * MAG-2870 asks for the address on screen for a good reason — somebody with two
  * accounts needs to know which one they are changing.
  */
-export async function previewReset(token: string): Promise<{ email: string } | null> {
+export async function previewReset(token: string): Promise<ResetPreview> {
   try {
     const res = await fetch(`${INTERNAL_API_BASE_URL}/auth/password/reset/preview`, {
       method: "POST",
@@ -93,10 +109,15 @@ export async function previewReset(token: string): Promise<{ email: string } | n
       cache: "no-store",
       signal: AbortSignal.timeout(3000),
     });
-    if (!res.ok) return null;
+    // 410 is the api's one answer for every dead reason. Anything else that is
+    // not a 200 says nothing about the link.
+    if (res.status === 410) return { state: "dead" };
+    if (!res.ok) return { state: "unknown" };
     const body = (await res.json()) as { email?: unknown };
-    return typeof body.email === "string" ? { email: body.email } : null;
+    return typeof body.email === "string"
+      ? { state: "live", email: body.email }
+      : { state: "unknown" };
   } catch {
-    return null;
+    return { state: "unknown" };
   }
 }
