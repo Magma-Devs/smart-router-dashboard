@@ -519,6 +519,9 @@ chain. One build serves both deployments:
   as. The box proves who it is once (an IAM Roles Anywhere certificate, an
   instance profile, a key) and the SDK assumes that role on top, refreshing the
   short-lived credentials itself. **No long-lived secret in the deployment.**
+  With the certificate in compose, layer `docker-compose.bedrock-cert.yml`: it
+  mounts the certificate, key, AWS config and signing helper read-only (tested
+  end to end, revocation included — see the doc).
 
 Setup for both, including Roles Anywhere on non-AWS hardware:
 [`docs/BEDROCK-IAM.md`](docs/BEDROCK-IAM.md).

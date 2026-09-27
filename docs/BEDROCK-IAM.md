@@ -124,10 +124,17 @@ openssl x509 -req -in ${HOST}.csr -CA ca.crt -CAkey ca.key -CAcreateserial \
 The extensions are not optional — Roles Anywhere rejects a client certificate
 without `digitalSignature`.
 
-### 2. Copy `${HOST}.crt` and `${HOST}.key` to the server
+### 2. Copy the certificate and key to the server
 
-`/etc/smart-router/`, mode `0600`, owned by the api's user. **Never copy
-`ca.key`** — that one signs new identities.
+As `/etc/smart-router/dash.crt` and `/etc/smart-router/dash.key`. The key must
+be readable by the user the api runs as — in the container that is `node`,
+uid 1000, not root:
+
+```bash
+sudo chown 1000:1000 /etc/smart-router/dash.key && sudo chmod 400 /etc/smart-router/dash.key
+```
+
+**Never copy `ca.key`** — that one signs new identities.
 
 ### 3. Install the signing helper there
 
@@ -141,7 +148,7 @@ sudo chmod +x /usr/local/bin/aws_signing_helper
 ### 4. Point the credential chain at it
 
 ```ini
-# ~/.aws/config for the api's user — one line after `credential_process =`
+# /etc/smart-router/aws-config — one line after `credential_process =`
 [default]
 region = us-east-1
 credential_process = /usr/local/bin/aws_signing_helper credential-process --certificate /etc/smart-router/dash.crt --private-key /etc/smart-router/dash.key --trust-anchor-arn arn:aws:rolesanywhere:us-east-1:811430801429:trust-anchor/587b3dfa-a58a-4fed-9121-72121a6cecbf --profile-arn arn:aws:rolesanywhere:us-east-1:811430801429:profile/2d5a53ad-ee1f-483c-83ae-c2c78653b542 --role-arn arn:aws:iam::811430801429:role/SmartRouterDashboardBedrock
@@ -153,15 +160,36 @@ the other case — a base identity that must act as some *other* role, such as
 one a customer owns in their own account. Then set `BEDROCK_ROLE_EXTERNAL_ID`
 too, or anyone that role trusts who learns its ARN can assume it.
 
-### 5. Turn it on and check
+### 5. Run the api container with it
 
 ```bash
-BEDROCK_ENABLED=true
-AUTH_MODE=enabled
+docker compose -f docker-compose.yml -f docker-compose.bedrock-cert.yml up -d
+```
+
+[`docker-compose.bedrock-cert.yml`](../docker-compose.bedrock-cert.yml) mounts
+the three files above and the signing helper into the api container, read-only,
+and points the SDK at `aws-config`. Different paths on the host:
+`SR_BEDROCK_DIR` (default `/etc/smart-router`) and `AWS_SIGNING_HELPER`
+(default `/usr/local/bin/aws_signing_helper`).
+
+**Tested** on 27 Sep 2026 in the api container, through this override: the
+api's own Bedrock call answered with credentials signed by the certificate, and
+the same call with a revoked certificate was refused. Two things had to change
+for that — the image carries `gcompat`, because AWS builds the helper against
+glibc and the image is Alpine (without it: `aws_signing_helper: not found`), and
+an empty `AWS_BEARER_TOKEN_BEDROCK` is no longer passed or honoured (it made the
+SDK try an API key that did not exist).
+
+### 6. Turn it on and check
+
+```bash
+BEDROCK_ENABLED=true     # the override sets this
+AUTH_MODE=enabled        # required: this api is reachable
 ```
 
 ```bash
-aws sts get-caller-identity     # expect assumed-role/SmartRouterDashboardBedrock/...
+AWS_CONFIG_FILE=/etc/smart-router/aws-config aws sts get-caller-identity
+# expect assumed-role/SmartRouterDashboardBedrock/...
 ```
 
 Then, signed in, `POST /api/ai/verify` — one real ~30-token call.
@@ -175,34 +203,50 @@ none.
 | `reason: auth_required` | `AUTH_MODE=enabled` missing (with `AUTH_SECRET` / `DATABASE_URL`) |
 | `awsErrorName: AccessDeniedException` | Credentials work; this identity may not invoke this model — the policy, the model access, or a role it cannot assume |
 | `awsErrorName: ThrottlingException` | Quota. Check `maxTokens` is set before asking for an increase |
+| `Could not load credentials from any providers` | The helper was refused. Run the `credential_process` line by hand on the host to see why — `Certificate revoked`, an expired certificate, or the wrong trust anchor |
+| `aws_signing_helper: not found` | The api image predates `gcompat` — rebuild it |
 | `ok: true` | Done |
 
-### Revoking
+### Revoking one server
 
-**Deleting a server's `.crt`/`.key` only helps if nobody copied them.** It stops
-that machine getting fresh credentials, and the ones it holds expire within the
-hour — but a certificate someone exfiltrated keeps working until it expires, up
-to a year. The files are not the identity; the certificate is.
+**Revocation is in place.** A revocation list (CRL) signed by our CA is on the
+trust anchor: `magma-bedrock-crl` (`f2980e7e-4088-4678-ab8a-d872f3c3c46a`). The
+CA keeps its record of what it revoked next to `ca.key` — `ca.cnf`,
+`index.txt` and `crlnumber` in `~/bedrock-ca` — and the four move to the vault
+together.
 
-Real revocation needs a CRL, and **none is imported today** (`aws rolesanywhere
-list-crls` returns `[]`). To revoke one certificate:
+To revoke one server's certificate:
 
 ```bash
-# Sign a CRL with the CA, then hand it to Roles Anywhere.
-aws rolesanywhere import-crl --region us-east-1 --name magma-bedrock-crl --enabled \
-  --trust-anchor-arn arn:aws:rolesanywhere:us-east-1:811430801429:trust-anchor/587b3dfa-a58a-4fed-9121-72121a6cecbf \
-  --crl-data fileb://crl.der
+cd ~/bedrock-ca
+openssl ca -config ca.cnf -revoke ${HOST}.crt -crl_reason keyCompromise
+openssl ca -config ca.cnf -gencrl -out crl.pem
+openssl crl -in crl.pem -outform DER -out crl.der
+aws rolesanywhere update-crl --region us-east-1 \
+  --crl-id f2980e7e-4088-4678-ab8a-d872f3c3c46a --crl-data fileb://crl.der
 ```
 
-Until that exists, the only certain revocation is the blunt one, which cuts
-**every** deployment at once:
+**It takes effect at once.** Tested on 27 Sep 2026: a certificate that was
+getting credentials was refused with `AccessDeniedException: Certificate
+revoked` within a second of the import, while another certificate from the same
+CA kept working. Only the listed certificates are affected — the list's first
+entry is the throwaway certificate that test used.
+
+Roles Anywhere never fetches a CRL; it uses the one imported. So re-sign and
+re-import after every revocation. The list is valid for ten years, so its own
+date is never why a sign-in fails.
+
+Deleting a server's `.crt`/`.key` is **not** revocation: it stops that machine
+getting fresh credentials, but a copy keeps working until the certificate
+expires.
+
+To cut **every** deployment at once — an emergency, such as `ca.key` itself
+being exposed:
 
 ```bash
 aws rolesanywhere disable-profile --region us-east-1 \
   --profile-id 2d5a53ad-ee1f-483c-83ae-c2c78653b542
 ```
-
-Worth setting up a CRL before this is on more than one or two servers.
 
 ## Rebuilding the one-time setup
 

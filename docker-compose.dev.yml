@@ -248,7 +248,9 @@ services:
       # No BEDROCK_ALLOW_UNAUTHENTICATED: a container binds 0.0.0.0 to publish
       # its port, and the api honours that opt-out only on loopback. AI here
       # needs AUTH_MODE=enabled.
-      - AWS_BEARER_TOKEN_BEDROCK=${AWS_BEARER_TOKEN_BEDROCK:-}
+      # Passed through only when set: an empty value makes the SDK pick
+      # API-key auth with no key, and no role or certificate could sign.
+      - AWS_BEARER_TOKEN_BEDROCK
       - BEDROCK_REGION=${BEDROCK_REGION:-us-east-1}
       - BEDROCK_MODEL=${BEDROCK_MODEL:-global.anthropic.claude-sonnet-5}
       - BEDROCK_ROLE_ARN=${BEDROCK_ROLE_ARN:-}

@@ -8,7 +8,7 @@
  */
 import { describe, it, expect, vi } from "vitest";
 import type { BedrockRuntimeClient } from "@aws-sdk/client-bedrock-runtime";
-import { BedrockService, BedrockError, bedrockGate } from "../services/bedrock.js";
+import { BedrockService, BedrockError, bedrockGate, dropEmptyBearerToken } from "../services/bedrock.js";
 
 /** A stand-in for BedrockRuntimeClient — only `send` is used. */
 function fakeClient(send?: () => unknown): BedrockRuntimeClient {
@@ -134,3 +134,25 @@ describe("BedrockService.complete", () => {
     expect(client.send).not.toHaveBeenCalled();
   });
 });
+
+describe("dropEmptyBearerToken", () => {
+  it("removes an empty key, so a role or certificate deployment can sign", () => {
+    // Compose passes an unset secret through as "". The SDK then chose API-key
+    // auth and failed every call with "the `token` is not defined".
+    for (const empty of ["", "  "]) {
+      const env: NodeJS.ProcessEnv = { AWS_BEARER_TOKEN_BEDROCK: empty };
+      dropEmptyBearerToken(env);
+      expect(env).not.toHaveProperty("AWS_BEARER_TOKEN_BEDROCK");
+    }
+  });
+
+  it("leaves a real key, and an absent one, alone", () => {
+    const env: NodeJS.ProcessEnv = { AWS_BEARER_TOKEN_BEDROCK: "ABSK-real" };
+    dropEmptyBearerToken(env);
+    expect(env.AWS_BEARER_TOKEN_BEDROCK).toBe("ABSK-real");
+    const none: NodeJS.ProcessEnv = {};
+    dropEmptyBearerToken(none);
+    expect(none).toEqual({});
+  });
+});
+
