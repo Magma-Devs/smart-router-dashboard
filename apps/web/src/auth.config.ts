@@ -433,6 +433,10 @@ export const authConfig = {
       // Reset links are usable while signed in — the usual reason someone
       // follows one is that they think somebody else is signed in as them.
       if (path.startsWith("/reset/")) return true;
+      // Asking for a reset link is for somebody who cannot sign in, by
+      // definition. Signed in, it still works: the reason to ask is often a
+      // suspicion that somebody else knows the password.
+      if (path === "/forgot-password") return true;
       // Auth.js's own endpoints + the runtime-config route stay public, and so
       // does the invite handoff: its whole job is to run before there is a
       // session. It only parks a token the api re-checks on every use.
