@@ -197,7 +197,7 @@ export async function accountRoutes(app: FastifyInstance) {
         action: "2fa.enrolled",
         actor: { id: me.id, kind: "user" },
         target: { type: "member", id: me.id, name: me.user.email },
-        access: { ip: me.session.ip, client: me.session.client, sessionId: me.sessionId },
+        access: accessFrom(request, me.sessionId),
       });
 
       // No session is revoked. The person is at their keyboard with the phone
