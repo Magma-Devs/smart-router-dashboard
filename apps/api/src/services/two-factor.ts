@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, lt, sql } from "drizzle-orm";
 import { toString as qrToString } from "qrcode";
 import {
   twoFactorChallenges,
@@ -145,14 +145,19 @@ export function totpIssuer(): string {
  * Re-offering is therefore safe and idempotent-ish: each call replaces the
  * pending secret, and only {@link confirmEnrolment} makes one live.
  */
-export async function beginEnrolment(db: Database, user: User): Promise<EnrolmentOffer> {
+export async function beginEnrolment(db: Database, user: User): Promise<EnrolmentOffer | null> {
   const secret = generateTotpSecret();
   const issuer = totpIssuer();
 
-  await db
+  // Only while not enrolled, checked by the database rather than by the caller's
+  // read: a second tab confirming a moment ago would otherwise have its fresh
+  // enrolment wiped by this offer. Null tells the route it lost that race.
+  const offered = await db
     .update(users)
     .set({ totpSecret: seal(secret), totpEnrolledAt: null, totpLastStep: null })
-    .where(eq(users.id, user.id));
+    .where(and(eq(users.id, user.id), isNull(users.totpEnrolledAt)))
+    .returning({ id: users.id });
+  if (offered.length === 0) return null;
 
   const qrSvg = await qrToString(otpauthUri({ secret, account: user.email, issuer }), {
     type: "svg",
@@ -189,11 +194,26 @@ export async function confirmEnrolment(
   const result = verifyTotp(secret, code, { lastStep: user.totpLastStep });
   if (!result.ok) return { ok: false, reason: "bad_code" };
 
+  // Only the secret this code was verified against, and only while still
+  // pending: an offer made in another tab since this row was read replaced the
+  // secret, and enrolling now would switch on a secret nobody proved.
+  //
+  // `created_by_setup` is cleared in the same write. The first-run account's
+  // grace period is a one-time right to defer enrolment, and enrolling spends
+  // it: after a later reset, that account re-enrols at its next sign-in like
+  // everyone else, rather than getting another thirty days on a password.
   const updated = await db
     .update(users)
-    .set({ totpEnrolledAt: new Date(), totpLastStep: result.step })
-    .where(eq(users.id, user.id))
+    .set({ totpEnrolledAt: new Date(), totpLastStep: result.step, createdBySetup: false })
+    .where(
+      and(
+        eq(users.id, user.id),
+        eq(users.totpSecret, user.totpSecret),
+        isNull(users.totpEnrolledAt),
+      ),
+    )
     .returning();
+  if (updated.length === 0) return { ok: false, reason: "no_pending" };
 
   return { ok: true, user: updated[0]! };
 }
@@ -222,7 +242,9 @@ export async function clearEnrolment(db: Database, userId: string): Promise<void
 
 // ── Verifying a code at sign-in ─────────────────────────────────────────────
 
-export type CodeOutcome = { ok: true } | { ok: false; reason: "not_enrolled" | "bad_code" };
+export type CodeOutcome =
+  | { ok: true }
+  | { ok: false; reason: "not_enrolled" | "bad_code" | "undecryptable" };
 
 /**
  * Check a code and spend it, in one conditional update.
@@ -240,8 +262,13 @@ export type CodeOutcome = { ok: true } | { ok: false; reason: "not_enrolled" | "
 export async function consumeCode(db: Database, user: User, code: string): Promise<CodeOutcome> {
   if (!isEnrolled(user)) return { ok: false, reason: "not_enrolled" };
 
+  // A secret that will not open is not a wrong code: the envelope was sealed
+  // under a different TOTP_ENCRYPTION_KEY (rotated, or pasted with a character
+  // lost — it still decodes to 32 bytes and passes the boot check). Reported
+  // apart so the route can say so, instead of every enrolled person reading as
+  // a run of wrong guesses.
   const secret = open(user.totpSecret!);
-  if (!secret) return { ok: false, reason: "bad_code" };
+  if (!secret) return { ok: false, reason: "undecryptable" };
 
   const result = verifyTotp(secret, code, { lastStep: user.totpLastStep });
   if (!result.ok) return { ok: false, reason: "bad_code" };
@@ -293,8 +320,14 @@ export type FirstFactor = "password" | "google" | "github";
 /**
  * Issue the ticket that carries a verified first factor to the code screen.
  *
- * Any earlier unspent challenge for the account is retired first, so a first
- * factor proved twice does not leave two live ways to reach the second step.
+ * Earlier challenges are **left live**. Retiring them looked tidier and handed
+ * anyone who holds the password a way to lock its owner out: sign in every few
+ * seconds and each real challenge dies between the owner's password and their
+ * code — invisibly, since a verified password writes no audit row and costs no
+ * lockout attempt. A spare live challenge gives nobody anything: it is useless
+ * without a code, and every code attempt is counted against the account.
+ *
+ * Expired rows for the account are pruned here instead, so they do not pile up.
  */
 export async function issueChallenge(
   db: Database,
@@ -302,9 +335,10 @@ export async function issueChallenge(
   firstFactor: FirstFactor = "password",
 ): Promise<IssuedChallenge> {
   await db
-    .update(twoFactorChallenges)
-    .set({ usedAt: new Date() })
-    .where(and(eq(twoFactorChallenges.userId, userId), isNull(twoFactorChallenges.usedAt)));
+    .delete(twoFactorChallenges)
+    .where(
+      and(eq(twoFactorChallenges.userId, userId), lt(twoFactorChallenges.expiresAt, sql`now()`)),
+    );
 
   const token = randomBytes(CHALLENGE_TOKEN_BYTES).toString("base64url");
   const expiresAt = new Date(Date.now() + CHALLENGE_TTL_MS);

@@ -136,6 +136,15 @@ export async function accountRoutes(app: FastifyInstance) {
       let offer;
       try {
         offer = await beginEnrolment(db, me.user);
+        if (!offer) {
+          // Enrolled between this request's read and its write — another tab.
+          return reply.code(409).send({
+            statusCode: 409,
+            error: "Conflict",
+            message:
+              "Two-factor authentication is already set up for this account. An administrator can reset it if you have lost your phone.",
+          });
+        }
       } catch (err) {
         // The one failure worth its own message: the deployment has no
         // TOTP_ENCRYPTION_KEY. A 500 here reads as "the dashboard is broken"
