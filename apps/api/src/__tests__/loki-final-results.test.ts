@@ -40,20 +40,22 @@ describe("request traces — was it the same request?", () => {
       error: "Post \"https://starknet-mainnet.g.alchemy.com/v2/SECRETKEY\": context deadline exceeded" } },
     { atNs: s(7), line: { message: "Optimizer selected backup provider", selected: "quicknode" } },
     { atNs: s(14), line: { message: "could not send relay to provider", provider: "quicknode", error_name: "PROTOCOL_CONTEXT_DEADLINE" } },
+    { atNs: s(14), line: { message: "failed relay, insufficient results", error_name: "PROTOCOL_CONTEXT_DEADLINE" } },
     { atNs: s(14), line: { message: "ProcessingResult RETURNED", error: "failed relay", has_reply: "false" } },
   ];
 
   it("rebuilds one request's path through the router, in order, with when each step started", () => {
     // Shuffled on purpose: Loki returns streams newest-first.
     const t = traceFromLines("42", [...lines].reverse());
-    expect(t).toMatchObject({ id: "42", method: "starknet_getEvents", failed: true, seconds: 14 });
+    // The error name and the second are what a caller's own log has.
+    expect(t).toMatchObject({ id: "42", method: "starknet_getEvents", failed: true, seconds: 14, atUnix: 1_700_000_014, error: "PROTOCOL_CONTEXT_DEADLINE" });
     expect(t.attempts.map((a) => [a.provider, a.role, a.outcome, a.startSec, a.endSec])).toEqual([
       ["alchemy", "primary", "timed out", 0, 7],
       ["quicknode", "backup", "timed out", 7, 14],
     ]);
-    expect(flowOf(t)).toBe("alchemy ✕ timed out → +7s quicknode (backup) ✕ timed out → failed");
+    expect(flowOf(t)).toBe("Alchemy ✕ timed out → +7s QuickNode (backup) ✕ timed out → failed");
     // Without the times: what requests that went the same way share.
-    expect(flowOf(t, { times: false })).toBe("alchemy ✕ timed out → quicknode (backup) ✕ timed out → failed");
+    expect(flowOf(t, { times: false })).toBe("Alchemy ✕ timed out → QuickNode (backup) ✕ timed out → failed");
   });
 
   it("never carries the error text — it holds the provider's url, key included", () => {
@@ -83,7 +85,7 @@ describe("request traces — was it the same request?", () => {
     ]);
     // Three backups are one step: which one the router picks first changes
     // from request to request, and the story does not.
-    expect(flowOf(t)).toBe("tatum ✕ no answer → +7s 3 backups (blockdaemon, lava, quicknode) ✕ none worked → failed");
+    expect(flowOf(t)).toBe("Tatum ✕ no answer → +7s 3 backups (Blockdaemon, Lava, QuickNode) ✕ none worked → failed");
     expect(flowOf(t)).not.toMatch(/replied|answered/);
   });
 
@@ -93,7 +95,7 @@ describe("request traces — was it the same request?", () => {
       lines[1]!,
       { atNs: s(2), line: { message: "ProcessingResult RETURNED", has_reply: "true", has_result: "false" } },
     ]);
-    expect(flowOf(t)).toBe("alchemy ✕ answered with an error → failed");
+    expect(flowOf(t)).toBe("Alchemy ✕ answered with an error → failed");
   });
 
   it("with two such providers, which one sent it is not known — and the line says so", () => {
@@ -103,7 +105,7 @@ describe("request traces — was it the same request?", () => {
       { atNs: s(7), line: { message: "Optimizer selected backup provider", selected: "quicknode" } },
       { atNs: s(9), line: { message: "ProcessingResult RETURNED", has_reply: "true", error: "failed relay" } },
     ]);
-    expect(flowOf(t)).toBe("alchemy ? result unknown → +7s quicknode (backup) ? result unknown → failed");
+    expect(flowOf(t)).toBe("Alchemy ? result unknown → +7s QuickNode (backup) ? result unknown → failed");
   });
 
   it("names a failure in words a customer reads", () => {
@@ -184,8 +186,50 @@ describe("LokiService log reads", () => {
       { id: "111", pod: "starknet-mainnet-router-aa11-bb22", atUnix: 1_700_000_014 },
     ]);
     expect([...traces.keys()]).toEqual(["111"]);
-    expect(flowOf(traces.get("111")!)).toBe("alchemy ✕ timed out → failed");
+    expect(flowOf(traces.get("111")!)).toBe("Alchemy ✕ timed out → failed");
     expect(queries).toEqual(['{service_name="router", pod="starknet-mainnet-router-aa11-bb22"} |~ "111"']);
+  });
+
+  it("counts what the chain refused once per request — not once per provider reply", async () => {
+    // A transaction goes to both primaries; both answer "nonce too low" and
+    // the log has two lines for one refused request.
+    const line = (guid: string, provider: string) =>
+      JSON.stringify({ GUID: guid, message: "received node error reply from provider", provider, error_name: "CHAIN_NONCE_TOO_LOW" });
+    let q = "";
+    vi.stubGlobal("fetch", async (url: URL) => {
+      q = url.searchParams.get("query") ?? "";
+      return ok({ resultType: "streams", result: [{ stream: { pod: "polygon-mainnet-router-aa11-bb22" }, values: [
+        ["1700000010000000000", line("111", "quicknode")],
+        ["1700000010000000000", line("111", "tatum")],
+        ["1700000005000000000", line("222", "quicknode")],
+      ] }] });
+    });
+    const { byRouter } = await new LokiService("http://loki.test").rejectedRequests(1800, 5000, 1_700_000_100);
+    expect(byRouter.get("polygon-mainnet")?.map((r) => [r.id, r.code])).toEqual([["111", "CHAIN_NONCE_TOO_LOW"], ["222", "CHAIN_NONCE_TOO_LOW"]]);
+    expect(q).toContain("received node error reply from provider");
+  });
+
+  it("finds a refused transaction that had been sent before — counts only, never the transaction", async () => {
+    const tx = `0x02f8${"ab".repeat(80)}`;
+    const queries: string[] = [];
+    vi.stubGlobal("fetch", async (url: URL) => {
+      const q = url.searchParams.get("query") ?? "";
+      queries.push(q);
+      const values = q.includes('|= "111"')
+        ? [["1700000010000000000", JSON.stringify({ GUID: "111", message: "Consumer received a new JSON-RPC request", body: `{"method":"eth_sendRawTransaction","params":["${tx}"]}` })]]
+        : [
+            ["1700000001000000000", JSON.stringify({ GUID: "101", message: "Consumer received a new JSON-RPC request" })],
+            ["1700000002000000000", JSON.stringify({ GUID: "102", message: "Consumer received a new JSON-RPC request" })],
+          ];
+      return ok({ resultType: "streams", result: [{ stream: {}, values }] });
+    });
+    const out = await new LokiService("http://loki.test").resentTransactions([
+      { id: "111", pod: "polygon-mainnet-router-aa11-bb22", atUnix: 1_700_000_010, code: "CHAIN_NONCE_TOO_LOW" },
+    ]);
+    expect(out).toEqual({ checked: 1, resent: 1, mostSends: 2 });
+    // The earlier sends are looked for on the same pod, before the refusal.
+    expect(queries[1]).toContain('pod="polygon-mainnet-router-aa11-bb22"');
+    expect(JSON.stringify(out)).not.toContain("0x02f8");
   });
 
   it("returns nothing without a log store", async () => {

@@ -9,11 +9,27 @@ import {
   plainIssue,
   shareText,
   titleContradicts,
+  claimsSuccess,
+  isHandled,
+  whoActs,
   FormulatedIssueService,
   type ChainOutcome,
   type FormulatedInputs,
 } from "../services/formulated-issues.js";
-import { burstFinding, failedBySpec, fingerprint, groupTraces, mergePaths, outcomesBySpec, peakBurst, readLogs } from "../services/issues-feed.js";
+import {
+  burstFinding,
+  failedBySpec,
+  failingTogether,
+  fingerprint,
+  groupTraces,
+  mergePaths,
+  mergeRefused,
+  outcomesBySpec,
+  peakBurst,
+  readLogs,
+  risksOf,
+  togetherIssue,
+} from "../services/issues-feed.js";
 import type { RequestTrace } from "../services/loki.js";
 import type { BedrockService } from "../services/bedrock.js";
 
@@ -186,8 +202,9 @@ describe("outcomesBySpec", () => {
       failed: new Map([["SOLANAT", 0]]),
       failedMethods: new Map(),
       paths: new Map(),
+      rejections: new Map(),
     });
-    expect(of("SOLANAT")).toEqual({ recovered: 653, failures: 0, requests: 22_336, addonCalls: [], writes: null, paths: null });
+    expect(of("SOLANAT")).toEqual({ recovered: 653, failures: 0, requests: 22_336, addonCalls: [], writes: null, paths: null, rejected: null });
   });
 
   it("never falls back to the per-attempt counter without the log", async () => {
@@ -200,15 +217,16 @@ describe("outcomesBySpec", () => {
       failed: new Map(),
       failedMethods: new Map(),
       paths: new Map(),
+      rejections: new Map(),
     });
     // Recovered and requests are counters with series elsewhere: a real zero.
     // Failures for a chain the log never mentioned stay unmeasured.
-    expect(of("SOLANAT")).toEqual({ recovered: 0, failures: null, requests: 0, addonCalls: [], writes: null, paths: null });
+    expect(of("SOLANAT")).toEqual({ recovered: 0, failures: null, requests: 0, addonCalls: [], writes: null, paths: null, rejected: null });
   });
 
   it("no series anywhere is unmeasured, never an invented zero", async () => {
     const of = await outcomesBySpec(prom([], []), "30m");
-    expect(of("SOLANAT")).toEqual({ recovered: null, failures: null, requests: null, addonCalls: [], writes: null, paths: null });
+    expect(of("SOLANAT")).toEqual({ recovered: null, failures: null, requests: null, addonCalls: [], writes: null, paths: null, rejected: null });
   });
 
   it("splits debug and trace calls per chain, zero where the counter has none", async () => {
@@ -292,6 +310,7 @@ describe("transactions", () => {
       failed: new Map([["POLYGON", 90]]),
       failedMethods: new Map([["POLYGON", new Map([["eth_sendRawTransaction", 80], ["eth_call", 10]])]]),
       paths: new Map(),
+      rejections: new Map(),
     };
     const of = await outcomesBySpec(prom, "30m", logs);
     expect(of("POLYGON").writes).toEqual({ sent: 152, failed: 80 });
@@ -320,6 +339,8 @@ describe("readLogs", () => {
     methodsOf: async () => methods,
     traceRequests: async () =>
       new Map(ids.map((id) => [id, trace(id, methods.get(id) ?? "unknown", [["alchemy", "primary", "timed out"]])])),
+    rejectedRequests: async () => ({ byRouter: new Map(), capped: false }),
+    resentTransactions: async () => ({ checked: 0, resent: 0, mostSends: 0 }),
   });
   const m = new Map([["1", "eth_sendRawTransaction"], ["2", "eth_sendRawTransaction"], ["3", "eth_call"]]);
 
@@ -337,13 +358,13 @@ describe("readLogs", () => {
 
   it("groups the chain's traced requests by the way they went", async () => {
     const out = await readLogs(loki(["1", "2", "3"], m), 1800, routers);
-    expect(out?.paths.get("POLYGON")).toEqual({
+    expect(out?.paths.get("POLYGON")).toMatchObject({
       traced: 3,
       groups: [
         {
           count: 3,
-          flow: "alchemy ✕ timed out → failed",
-          route: "alchemy ✕ timed out → failed",
+          flow: "Alchemy ✕ timed out → failed",
+          route: "Alchemy ✕ timed out → failed",
           methods: ["eth_sendRawTransaction", "eth_call"],
           seconds: [14, 14],
         },
@@ -359,6 +380,8 @@ function trace(id: string, method: string, attempts: [string, "primary" | "backu
     method,
     failed: true,
     seconds,
+    atUnix: 1_700_000_000 + Number(id.replace(/\D/g, "") || 0),
+    error: null,
     attempts: attempts.map(([provider, role, outcome, startSec]) => ({ provider, role, outcome, startSec: startSec ?? null, endSec: null })),
   };
 }
@@ -372,20 +395,20 @@ describe("failover paths", () => {
       trace("5", "starknet_call", both, 10),
       trace("6", "starknet_getEvents", [["alchemy", "primary", "rate-limited"]], 1),
     ]);
-    expect(p).toEqual({
+    expect(p).toMatchObject({
       traced: 6,
       groups: [
         {
           count: 5,
-          flow: "alchemy ✕ timed out → quicknode (backup) ✕ timed out → failed",
-          route: "alchemy ✕ timed out → quicknode (backup) ✕ timed out → failed",
+          flow: "Alchemy ✕ timed out → QuickNode (backup) ✕ timed out → failed",
+          route: "Alchemy ✕ timed out → QuickNode (backup) ✕ timed out → failed",
           methods: ["starknet_getEvents", "starknet_call"],
           seconds: [10, 14],
         },
         {
           count: 1,
-          flow: "alchemy ✕ rate-limited → failed",
-          route: "alchemy ✕ rate-limited → failed",
+          flow: "Alchemy ✕ rate-limited → failed",
+          route: "Alchemy ✕ rate-limited → failed",
           methods: ["starknet_getEvents"],
           seconds: [1, 1],
         },
@@ -401,8 +424,8 @@ describe("failover paths", () => {
     expect(p?.groups).toHaveLength(1);
     expect(p?.groups[0]).toMatchObject({
       count: 3,
-      flow: "tatum ✕ no answer → +7s lava (backup) ✕ no answer → failed",
-      route: "tatum ✕ no answer → lava (backup) ✕ no answer → failed",
+      flow: "Tatum ✕ no answer → +7s Lava (backup) ✕ no answer → failed",
+      route: "Tatum ✕ no answer → Lava (backup) ✕ no answer → failed",
     });
   });
 
@@ -416,7 +439,7 @@ describe("failover paths", () => {
       threeBackups("3", ["quicknode", "blockdaemon", "lava"]),
     ]);
     expect(p?.groups).toHaveLength(1);
-    expect(p?.groups[0]).toMatchObject({ count: 3, flow: "tatum ✕ timed out → +7s 3 backups (blockdaemon, lava, quicknode) ✕ none worked → failed" });
+    expect(p?.groups[0]).toMatchObject({ count: 3, flow: "Tatum ✕ timed out → +7s 3 backups (Blockdaemon, Lava, QuickNode) ✕ none worked → failed" });
   });
 
   it("leaves out a request whose path was not read — a gap would state something false", () => {
@@ -426,17 +449,17 @@ describe("failover paths", () => {
   it("merges several chains' paths for an issue that covers them", () => {
     const a = groupTraces([trace("1", "eth_call", both, 12)]);
     const b = groupTraces([trace("2", "eth_getLogs", both, 16), trace("3", "eth_getLogs", [["tatum", "primary", "server error"]])]);
-    expect(mergePaths([a, null, b])).toEqual({
+    expect(mergePaths([a, null, b])).toMatchObject({
       traced: 3,
       groups: [
         {
           count: 2,
-          flow: "alchemy ✕ timed out → quicknode (backup) ✕ timed out → failed",
-          route: "alchemy ✕ timed out → quicknode (backup) ✕ timed out → failed",
+          flow: "Alchemy ✕ timed out → QuickNode (backup) ✕ timed out → failed",
+          route: "Alchemy ✕ timed out → QuickNode (backup) ✕ timed out → failed",
           methods: ["eth_call", "eth_getLogs"],
           seconds: [12, 16],
         },
-        { count: 1, flow: "tatum ✕ server error → failed", route: "tatum ✕ server error → failed", methods: ["eth_getLogs"], seconds: [14, 14] },
+        { count: 1, flow: "Tatum ✕ server error → failed", route: "Tatum ✕ server error → failed", methods: ["eth_getLogs"], seconds: [14, 14] },
       ],
     });
     expect(mergePaths([null])).toBeNull();
@@ -450,7 +473,7 @@ describe("failover paths", () => {
     expect(d.outcome.howTheFailedRequestsWent).toEqual({
       traced: 2,
       ofFailed: 6,
-      paths: [{ requests: 2, methods: ["starknet_getEvents"], path: "alchemy ✕ timed out → quicknode (backup) ✕ timed out → failed", wholePathSeconds: 14 }],
+      paths: [{ requests: 2, methods: ["starknet_getEvents"], path: "Alchemy ✕ timed out → QuickNode (backup) ✕ timed out → failed", wholePathSeconds: 14 }],
     });
   });
 
@@ -462,6 +485,13 @@ describe("failover paths", () => {
     const backupToo = groupTraces([trace("1", "x", both)]);
     expect(fingerprint(f, [], o(one))).toBe(fingerprint(f, [], o(two)));
     expect(fingerprint(f, [], o(one))).not.toBe(fingerprint(f, [], o(backupToo)));
+    // The refused transactions turning out to be resends is a new story.
+    const refused = (resent: number) => ({
+      recovered: 0, failures: 0, requests: 9_000, addonCalls: [], writes: null, paths: null,
+      rejected: { requests: 154, byCode: {}, resent: { checked: 6, resent, mostSends: 9 }, latest: [] },
+    });
+    expect(fingerprint(f, [], refused(6))).not.toBe(fingerprint(f, [], refused(0)));
+    expect(fingerprint(f, [], refused(6))).toBe(fingerprint(f, [], refused(5)));
     // A backup added at +8s instead of +7s is the same story.
     const at = (sec: number) => groupTraces([trace("1", "x", [["alchemy", "primary", "timed out", 0], ["quicknode", "backup", "timed out", sec]])]);
     expect(fingerprint(f, [], o(at(7)))).toBe(fingerprint(f, [], o(at(8))));
@@ -523,21 +553,29 @@ describe("the numbers line — written by code, never by the model", () => {
     );
   });
 
-  it("on the caller-side card, counts what the chains rejected, by reason", () => {
-    const rejected = (spec: string, code: string, n: number) =>
-      finding({ spec, kind: "config", tier: "config", upstream: null, metric: { value: String(n), label: "rejected by the chain" }, codes: [code], codeCounts: { [code]: n } });
-    const findings = [
-      rejected("ETH1", "CHAIN_NONCE_TOO_LOW", 617),
-      rejected("ETH1", "CHAIN_INSUFFICIENT_FUNDS", 20),
-      rejected("POLYGON", "CHAIN_NONCE_TOO_LOW", 344),
-      rejected("BASE", "CHAIN_NONCE_TOO_LOW", 70),
-    ];
-    // "All 187,702 requests got a reply" over rejections would read as a contradiction.
-    expect(impactOf(outcome({ requests: 187_702 }), findings, "config", 3)).toBe(
-      "The 3 chains rejected 1,051 requests: 1,031 had a nonce (transaction number) that was already used, 20 came from an account without enough funds.",
+  it("on the caller-side card, counts what the chains refused — per request, with the resend check", () => {
+    // From the router's log, one per request. A transaction goes to every
+    // primary, so the counter's per-reply number doubles it (308 lines, 154
+    // requests, measured).
+    const rejected = {
+      requests: 792,
+      byCode: { CHAIN_NONCE_TOO_LOW: 772, CHAIN_INSUFFICIENT_FUNDS: 20 },
+      resent: { checked: 6, resent: 6, mostSends: 11 },
+      latest: [],
+    };
+    expect(impactOf(outcome({ rejected }), [], "config", 4)).toBe(
+      "The 4 chains refused 792 requests: 772 for a nonce (transaction number) that was already used, 20 for an account without enough funds. " +
+        "All 6 transactions checked had been sent before — the same transaction, up to 11 times.",
     );
-    expect(impactOf(outcome(), [rejected("BASE", "CHAIN_NONCE_TOO_LOW", 70)], "config")).toBe(
-      "The chain rejected 70 requests: each had a nonce (transaction number) that was already used.",
+    // "All 187,702 requests got a reply" over refusals would read as a contradiction.
+    expect(impactOf(outcome({ rejected, requests: 187_702 }), [], "config", 4)).not.toMatch(/got a reply/);
+  });
+
+  it("without the log, counts refusals as what they are — one per provider reply", () => {
+    const refusal = (spec: string, code: string, n: number) =>
+      finding({ spec, id: `${spec}:caller:${code}`, kind: "config", tier: "config", upstream: null, codes: [code], codeCounts: { [code]: n } });
+    expect(impactOf(outcome(), [refusal("BASE", "CHAIN_NONCE_TOO_LOW", 70)], "config")).toBe(
+      "Providers passed on 70 refusals from the chain — one per provider a request went to, each for a nonce (transaction number) that was already used.",
     );
   });
 
@@ -614,6 +652,8 @@ describe("bursts — the alert's own test", () => {
       countFailed: async () => new Map(),
       methodsOf: async () => new Map(),
       traceRequests: async () => new Map(),
+      rejectedRequests: async () => ({ byRouter: new Map(), capped: false }),
+      resentTransactions: async () => ({ checked: 0, resent: 0, mostSends: 0 }),
     });
     const routers = [{ id: "solana-mainnet", spec: "SOLANA" }];
     const six = [0, 20, 40, 60, 80, 100].map((d, i) => f(String(i), T + d));
@@ -685,5 +725,199 @@ describe("a title may not contradict the numbers line", () => {
     const bedrock = model("Requests are failing on Solana Testnet", "Some requests fail because of blockdaemon");
     const issue = await new FormulatedIssueService(bedrock).formulate(inputs);
     expect(issue.title).toBe("Blockdaemon on Solana Testnet: 9.4% rate-limited");
+  });
+});
+
+describe("the card's evidence, owner and section — written by code", () => {
+  const clean: ChainOutcome = { recovered: 1_342, failures: 0, requests: 22_055, addonCalls: [], writes: null, paths: null, rejected: null };
+  const rateLimited = finding({ kind: "dead", tier: "attention", upstream: "blockdaemon", headline: "9.4% rate-limited" });
+  const timingOut = finding({ kind: "dead", tier: "attention", upstream: "tatum", headline: "12% errors - mostly no reply" });
+
+  it("a provider refusing over its limit, covered completely, is handled — no amber for it", () => {
+    expect(isHandled([rateLimited], clean, "degraded")).toBe(true);
+    // Saved requests that first waited out a timeout are not "handled".
+    expect(isHandled([timingOut], clean, "degraded")).toBe(false);
+    // Anything that reached the caller is not handled.
+    expect(isHandled([rateLimited], { ...clean, failures: 3 }, "degraded")).toBe(false);
+    // Unmeasured is not "nothing failed".
+    expect(isHandled([rateLimited], { ...clean, failures: null }, "degraded")).toBe(false);
+  });
+
+  it("names who acts — never how to fix it", () => {
+    expect(whoActs([rateLimited], clean, "degraded", true)).toBe("No one right now — the router is covering it.");
+    expect(whoActs([timingOut], { ...clean, failures: 40 }, "degraded", false)).toBe("Tatum (the provider) — it is not answering in time.");
+    expect(
+      whoActs([], { ...clean, rejected: { requests: 154, byCode: {}, resent: { checked: 3, resent: 3, mostSends: 9 }, latest: [] } }, "config", false),
+    ).toBe("Whoever sends these transactions — the same transaction is being sent again after it went through.");
+    // The chain's own answers, passed on by the provider — not the provider's fault.
+    const chainErrors = finding({ kind: "answered-error", upstream: "alchemy", codes: ["CHAIN_STARKNET_INSUFFICIENT_FEE"] });
+    expect(whoActs([chainErrors], clean, "degraded", false)).toBe(
+      "Whoever sends these requests — the errors come from the chain itself, not from Alchemy.",
+    );
+    const lava = finding({ kind: "dead", upstream: "lava", headline: "25% errors - mostly no reply" });
+    expect(whoActs([timingOut, lava], { ...clean, failures: 40 }, "degraded", false)).toBe(
+      "Tatum and Lava (the providers) — each is failing on this chain.",
+    );
+    // A primary with no finding of its own, where every failed request started failing.
+    const paths = groupTraces([trace("1", "getBlock", [["tatum", "primary", "timed out"], ["lava", "backup", "no answer"]])]);
+    expect(whoActs([lava], { ...clean, failures: 40, paths }, "degraded", false)).toBe(
+      "Tatum and Lava (the providers) — each is failing on this chain.",
+    );
+  });
+
+  it("gives each failure path the ids, error names and failing providers a support engineer needs", () => {
+    const p = groupTraces([
+      { ...trace("7001", "getBlock", [["tatum", "primary", "timed out"], ["lava", "backup", "no answer"]]), error: "PROTOCOL_CONTEXT_DEADLINE" },
+      { ...trace("7002", "getBlock", [["tatum", "primary", "timed out"], ["lava", "backup", "no answer"]]), error: "PROTOCOL_CONTEXT_DEADLINE" },
+    ]);
+    expect(p?.groups[0]).toMatchObject({
+      // In the order they were tried.
+      failedOn: ["tatum", "lava"],
+      errors: ["PROTOCOL_CONTEXT_DEADLINE"],
+      ids: [{ id: "7002" }, { id: "7001" }],
+    });
+  });
+
+  it("merges several chains' refusals for the caller-side card", () => {
+    expect(
+      mergeRefused([
+        { requests: 154, byCode: { CHAIN_NONCE_TOO_LOW: 154 }, resent: { checked: 3, resent: 3, mostSends: 11 }, latest: [{ id: "1", atUnix: 5 }] },
+        null,
+        { requests: 20, byCode: { CHAIN_INSUFFICIENT_FUNDS: 20 }, resent: null, latest: [{ id: "2", atUnix: 9 }] },
+      ]),
+    ).toEqual({
+      requests: 174,
+      byCode: { CHAIN_NONCE_TOO_LOW: 154, CHAIN_INSUFFICIENT_FUNDS: 20 },
+      resent: { checked: 3, resent: 3, mostSends: 11 },
+      latest: [{ id: "2", atUnix: 9 }, { id: "1", atUnix: 5 }],
+    });
+  });
+
+  it("tells the model how each provider is written, and what the chain refused", () => {
+    const d = JSON.parse(
+      digestForIssue({
+        spec: "POLYGON",
+        chain: "Polygon",
+        findings: [finding({ spec: "POLYGON", upstream: "quicknode" })],
+        errorGroups: [],
+        configured: [{ upstream: "tatum", role: "primary", addons: [] }],
+        insights: [],
+        recovered: 0,
+        failures: 0,
+        requests: 50_000,
+        rejected: { requests: 154, byCode: { CHAIN_NONCE_TOO_LOW: 154 }, resent: { checked: 3, resent: 3, mostSends: 11 }, latest: [] },
+      }),
+    );
+    expect(d.providerNames).toEqual({ quicknode: "QuickNode", tatum: "Tatum" });
+    expect(d.outcome.rejectedByTheChain).toEqual({
+      requests: 154,
+      byReason: { CHAIN_NONCE_TOO_LOW: 154 },
+      resent: { checked: 3, sentBefore: 3, mostTimesSentBefore: 11 },
+    });
+  });
+});
+
+describe("a card may not claim success", () => {
+  it("knows success words when it sees them", () => {
+    expect(claimsSuccess("All 348 sent transactions succeeded normally.")).toBe(true);
+    expect(claimsSuccess("The retry went through on lava.")).toBe(true);
+    expect(claimsSuccess("Every request got a reply.")).toBe(false);
+  });
+
+  it("asks once, then drops a sentence that still claims it", async () => {
+    const answer = (points: string[]) => ({
+      text: JSON.stringify({ title: "Nonce errors on Polygon", points, bottomLine: "These transactions went through fine otherwise." }),
+      stopReason: "end_turn",
+      inputTokens: 1,
+      outputTokens: 1,
+    });
+    const complete = vi
+      .fn()
+      .mockResolvedValueOnce(answer(["All 348 sent transactions succeeded.", "The chain refused the rest."]))
+      .mockResolvedValueOnce(answer(["All 348 sent transactions succeeded.", "The chain refused the rest."]));
+    const issue = await new FormulatedIssueService({ complete } as unknown as BedrockService).formulate({
+      spec: "POLYGON",
+      chain: "Polygon",
+      findings: [finding({ spec: "POLYGON" })],
+      errorGroups: [],
+      configured: [],
+      insights: [],
+      recovered: 0,
+      failures: 0,
+      requests: 50_000,
+    });
+    expect(complete).toHaveBeenCalledTimes(2);
+    expect((complete.mock.calls[1]![0] as { messages: { content: string }[] }).messages.at(-1)?.content).toMatch(/an error is an answer too/);
+    expect(issue.points).toEqual(["The chain refused the rest."]);
+    expect(issue.bottomLine).toBe("");
+  });
+});
+
+describe("several chains failing at once", () => {
+  const T = 1_790_000_000;
+  const burst = (from: number, count = 8) => ({ count, fromUnix: from, toUnix: from + 240, lastUnix: from + 240 });
+  const pathsOn = (...providers: string[]) => ({
+    traced: 1,
+    groups: [{ count: 1, flow: "", route: "", methods: [], seconds: [30, 30] as [number, number], failedOn: providers, ids: [], errors: [] }],
+  });
+
+  it("names the provider they all failed on", () => {
+    const bursts = new Map([["SOLANA", burst(T)], ["BASE", burst(T + 60)], ["ETH1", burst(T + 120)]]);
+    const paths = new Map([["SOLANA", pathsOn("tatum", "lava")], ["BASE", pathsOn("tatum")], ["ETH1", pathsOn("alchemy", "tatum")]]);
+    const t = failingTogether(bursts, paths, new Map());
+    expect(t).toMatchObject({ specs: ["BASE", "ETH1", "SOLANA"], provider: "tatum" });
+    const issue = togetherIssue(t!, bursts, (spec) => spec, false, T + 300);
+    expect(issue.title).toBe("3 chains failed at the same time — all on Tatum");
+    expect(issue.whoActs).toMatch(/^Tatum \(the provider\)/);
+  });
+
+  it("points at the router when the chains share no provider", () => {
+    const bursts = new Map([["SOLANA", burst(T)], ["BASE", burst(T + 30)], ["ETH1", burst(T + 90)]]);
+    const configured = new Map([["SOLANA", new Set(["tatum"])], ["BASE", new Set(["alchemy"])], ["ETH1", new Set(["quicknode"])]]);
+    const t = failingTogether(bursts, new Map(), configured);
+    expect(t).toMatchObject({ provider: null, shareNone: true });
+    const issue = togetherIssue(t!, bursts, (spec) => spec, true, T + 300);
+    expect(issue).toMatchObject({ severity: "critical", title: "3 chains failed at the same time — likely the Smart Router", together: true });
+    expect(issue.whoActs).toMatch(/^Magma/);
+  });
+
+  it("needs three chains, failing in the same five minutes", () => {
+    expect(failingTogether(new Map([["A", burst(T)], ["B", burst(T)]]), new Map(), new Map())).toBeNull();
+    // Three bursts, but an hour apart: separate problems.
+    expect(failingTogether(new Map([["A", burst(T)], ["B", burst(T + 3600)], ["C", burst(T + 7200)]]), new Map(), new Map())).toBeNull();
+  });
+});
+
+describe("risks — before anything fails", () => {
+  const node = (name: string, addons: string[] = [], isBackup = false) => ({
+    name,
+    isBackup,
+    endpoints: [{ urlHost: "https://x", interface: "jsonrpc", addons, index: 0, directable: true, internalPath: null }],
+  });
+  const router = (spec: string, nodes: ReturnType<typeof node>[]) => ({ id: spec.toLowerCase(), spec, nodes }) as never;
+  const outcome = (over: Partial<ChainOutcome> = {}): ChainOutcome => ({
+    recovered: 0, failures: 0, requests: 5_000, addonCalls: [], writes: null, paths: null, rejected: null, ...over,
+  });
+
+  it("finds a chain with one provider, and debug calls only one provider serves", () => {
+    const risks = risksOf(
+      [
+        router("SOLANAD", [node("tatum")]),
+        router("FTM250", [node("tatum", ["debug"]), node("lava", [], true)]),
+        router("ETH1", [node("tatum", ["debug"]), node("alchemy", ["debug"])]),
+      ],
+      (spec) => outcome(spec === "FTM250" ? { addonCalls: [{ addon: "debug", sent: 1_102, failed: 0, errorReplies: 0 }] } : {}),
+      (spec) => spec,
+      new Set(),
+    );
+    expect(risks.map((r) => r.text)).toEqual([
+      "SOLANAD has one provider, Tatum. If it stops answering, the chain stops.",
+      "Only Tatum serves debug calls on FTM250. If it fails, those calls have nowhere to go.",
+    ]);
+  });
+
+  it("leaves out a chain with an open issue, and debug calls nobody makes", () => {
+    const routers = [router("SOLANAD", [node("tatum")]), router("FTM250", [node("tatum", ["debug"]), node("lava")])];
+    expect(risksOf(routers, () => outcome(), (spec) => spec, new Set(["SOLANAD"]))).toEqual([]);
   });
 });

@@ -239,7 +239,7 @@ describe("buildStatusReport", () => {
 });
 
 describe("caller-side blockchain errors — the 27 Aug nonce_too_low night", () => {
-  it("files repeating chain rejections as Config with the sender named at fault", () => {
+  it("files repeating chain refusals as Config — the chain refused them, not a provider", () => {
     // A client sent transactions with reused nonces; every provider
     // answered nonce_too_low and the page stayed green — a Slack thread and a
     // call did what this row now does.
@@ -249,9 +249,12 @@ describe("caller-side blockchain errors — the 27 Aug nonce_too_low night", () 
       [], 1800,
     );
     expect(f?.tier).toBe("config");
-    expect(f?.headline).toContain("Chain rejected 412 requests");
-    expect(f?.headline).toContain("nonce too low");
-    expect(f?.remedy).toContain("sender's problem");
+    // One per provider reply — the card counts requests from the log.
+    expect(f?.headline).toContain("412 refusals from the chain");
+    expect(f?.headline).toContain("nonce already used");
+    expect(f?.remedy).toContain("not a provider");
+    // The chain's reason, never a verdict on whose code is broken.
+    expect(`${f?.headline} ${f?.remedy}`).not.toMatch(/reuses|sender's problem/);
   });
 
   it("stays quiet under the event floor — one odd nonce is not a finding", () => {
@@ -260,7 +263,7 @@ describe("caller-side blockchain errors — the 27 Aug nonce_too_low night", () 
       [cell({ upstream: "tatum", spec: "ETH1", served: 50_000 })],
       [], 1800,
     );
-    expect(r.filter((f) => f.headline.includes("Chain rejected"))).toHaveLength(0);
+    expect(r.filter((f) => f.headline.includes("refusals from the chain"))).toHaveLength(0);
   });
 });
 

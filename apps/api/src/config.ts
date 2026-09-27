@@ -208,6 +208,10 @@ export const config = {
    *  open issue is found again on the first cycle, but the history is gone. */
   issues: {
     stateFile: env("ISSUES_STATE_FILE"),
+    /** Where a Critical issue is posted as it opens and resolves; unset = no alerts. Carries a secret — never logged. */
+    webhookUrl: env("ISSUES_WEBHOOK_URL"),
+    /** The page's own address, for the link in an alert. */
+    dashboardUrl: env("DASHBOARD_PUBLIC_URL"),
   },
 
   /** Helm-values / router config the dashboard reflects (read-only). */

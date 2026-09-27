@@ -500,6 +500,8 @@ API (`apps/api/src/config.ts` is the source of truth):
 | `TRUST_PROXY` | `1` | how far `X-Forwarded-For` is believed when deriving `request.ip` (hop count, proxy IP/CIDR list, or `false`). Not `true` — this api is public, and trusting every hop lets any caller choose their apparent address |
 | `HELM_VALUES_DIR` | `/app/helm-values` | reads `<dir>/core/values.yml` (either format) |
 | `ISSUES_STATE_FILE` | (unset) | Where the Status page's issue log is kept between restarts (JSON, rewritten after every 5-minute cycle). Unset = memory only: a restart finds every open issue again on its first cycle but forgets resolved ones. Point it at a mounted volume to keep history |
+| `ISSUES_WEBHOOK_URL` | (unset) | Posts a chain turning Critical, and that issue resolving, as `{ text }` (a Slack incoming webhook takes it as is). Unset = no alerts — who gets told is the operator's call. Carries a secret; never logged. Without `ISSUES_STATE_FILE`, a restart re-sends issues that were already Critical |
+| `DASHBOARD_PUBLIC_URL` | (unset) | The page's own address, for the link in an alert |
 | `UPSTREAM_RELAY_ENABLED` | `true` | `false` 404s `POST /api/upstreams/relay`. With `AUTH_MODE=disabled` anyone who can reach the api can spend the operator's upstream quota through it, using credentials only the api holds — turn it off where that isn't acceptable |
 | `UPSTREAM_RELAY_TIMEOUT_MS` | `10000` | deadline on the api→upstream call |
 | `UPSTREAM_RELAY_MAX_BODY_BYTES` | `262144` | upstream responses past this come back `truncated: true` |

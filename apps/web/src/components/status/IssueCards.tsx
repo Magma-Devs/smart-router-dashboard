@@ -24,16 +24,17 @@
  * read in about five seconds, and the measurements stay one level down on the
  * findings it cites.
  *
- * Severity sections are fixed (Critical · Degraded · Config) because that is
- * the page's own vocabulary. The toggle is a secondary ORDER — Recent, which
- * answers "what just started", or by chain.
+ * Four sections, each with its meaning on screen: Critical, Degraded,
+ * Handled by the router, Refused by the chain — then Risks, where nothing is
+ * failing yet. The toggle is a secondary ORDER — Recent, which answers "what
+ * just started", or by chain.
  *
  * There is no analyse button. The api keeps an issue log, updated on a loop,
  * and the page reads it — so changing the time window is a filter over that
  * log and returns instantly. Each problem is ONE issue for as long as it
  * lasts: same card, same id, numbers updated in place, then resolved.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useApi } from "@/hooks/use-api";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { useFilters } from "@/components/gateway/FiltersProvider";
@@ -57,14 +58,49 @@ interface Issue {
   updatedAtUnix: number;
   resolvedAtUnix: number | null;
   severitySinceUnix: number;
-  /** Measured, not written. Only the traced paths are read here. */
-  outcome?: { failures: number | null; paths: FailurePaths | null };
+  /** Measured, not written. Only what the card shows is read here. */
+  outcome?: {
+    failures: number | null;
+    paths: FailurePaths | null;
+    rejected?: { latest: RequestRef[] } | null;
+  };
   /** The chain's numbers in one line, written by the api from the measurements. */
   impact?: string | null;
   /** The time those numbers cover. */
   measured?: { fromUnix: number; toUnix: number } | null;
   /** Written from the measurements alone; the model writes it next cycle. */
   plain?: boolean;
+  /** A provider is failing and the router covered every request. */
+  handled?: boolean;
+  /** Who can act on it — written by the api, never by the model. */
+  whoActs?: string | null;
+  /** Error names a caller's own log would show. */
+  codes?: string[];
+  /** Several chains failing at once. */
+  together?: boolean;
+  /** One point per five-minute check, oldest first. */
+  timeline?: TimelinePoint[];
+}
+
+interface RequestRef {
+  id: string;
+  atUnix: number;
+}
+
+interface TimelinePoint {
+  t: number;
+  failed: number | null;
+  saved: number | null;
+  refused: number | null;
+}
+
+/** A chain that works now and has nothing to fall back on. */
+interface Risk {
+  spec: string;
+  chain: string;
+  text: string;
+  calls: number | null;
+  unit: string;
 }
 
 /** Every traced request that went one way through the router. */
@@ -75,6 +111,8 @@ interface FailurePath {
   route?: string;
   methods: string[];
   seconds: [number, number];
+  ids?: RequestRef[];
+  errors?: string[];
 }
 interface FailurePaths {
   traced: number;
@@ -84,6 +122,7 @@ interface FailurePaths {
 interface Answer {
   ok: true;
   issues: Issue[];
+  risks?: Risk[];
   logsAvailable: boolean;
   configAvailable: boolean;
 }
@@ -93,11 +132,39 @@ interface Refusal {
   detail?: string;
 }
 
+/**
+ * Four sections, each with what it means on screen — a badge word nobody
+ * explained was read as whatever the reader guessed. Only the first two have
+ * colour: amber on a chain the router is fully covering, every day, teaches
+ * people to ignore amber.
+ */
 const SECTIONS = [
-  { key: "critical", label: "Critical", color: "var(--err, #ef4444)" },
-  { key: "degraded", label: "Degraded", color: "var(--warn, #f59e0b)" },
-  { key: "config", label: "Config & callers", color: "var(--text-3, #64748b)" },
+  { key: "critical", label: "Critical", meaning: "The chain can't be used.", color: "var(--err, #ef4444)" },
+  {
+    key: "degraded",
+    label: "Degraded",
+    meaning: "The chain works, but some requests failed, got errors or waited.",
+    color: "var(--warn, #f59e0b)",
+  },
+  {
+    key: "handled",
+    label: "Handled by the router",
+    meaning: "A provider is failing, and the router covered every request.",
+    color: "var(--text-3, #64748b)",
+  },
+  {
+    key: "config",
+    label: "Refused by the chain",
+    meaning: "The chain refused the requests themselves. No provider failed.",
+    color: "var(--text-3, #64748b)",
+  },
 ] as const;
+
+const sectionOf = (i: Issue): (typeof SECTIONS)[number]["key"] =>
+  i.severity === "degraded" && i.handled ? "handled" : i.severity;
+
+/** Opened within the last hour: what just started, as opposed to what has been there all week. */
+const NEW_SEC = 3600;
 
 const RESOLVED_COLOR = "var(--text-4, #94a3b8)";
 
@@ -115,12 +182,22 @@ function clock(unix: number): string {
  * badge last moved if it has. Resolved: start to end. This is what makes a
  * card read as one problem being followed, not a new card every refresh.
  */
-function lifeLine(i: Issue): string {
+function lifeLine(i: Issue, now: number): string {
   if (i.status === "resolved" && i.resolvedAtUnix != null) {
     return `${clock(i.openedAtUnix)}–${clock(i.resolvedAtUnix)}`;
   }
   const moved = i.severitySinceUnix > i.openedAtUnix + 60;
-  return `since ${clock(i.openedAtUnix)}${moved ? ` · ${i.severity} since ${clock(i.severitySinceUnix)}` : ""}`;
+  // Past a day, the age is the news: "since Sep 24 14:48" makes the reader
+  // count; "3 days" does not.
+  const days = Math.floor((now - i.openedAtUnix) / 86_400);
+  return `since ${clock(i.openedAtUnix)}${days >= 1 ? ` (${days} ${days === 1 ? "day" : "days"})` : ""}${
+    moved ? ` · ${i.severity} since ${clock(i.severitySinceUnix)}` : ""
+  }`;
+}
+
+/** 23:21:05 — the precision a caller's log line has. */
+function clockSec(unix: number): string {
+  return new Date(unix * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
 }
 
 function specLabel(specs: string[]): string {
@@ -155,7 +232,7 @@ function Impact({ issue }: { issue: Issue }) {
   const range = m ? `${clock(m.fromUnix)}–${clock(m.toUnix)}` : null;
   const when = !m
     ? null
-    : issue.status === "resolved"
+    : issue.status === "resolved" || issue.together
       ? range
       : `Last ${Math.round((m.toUnix - m.fromUnix) / 60)} min (${range})`;
   return (
@@ -205,13 +282,102 @@ function Paths({ paths, failures }: { paths: FailurePaths; failures: number | nu
   );
 }
 
+/**
+ * The issue's life as bars, one per five-minute check: is it getting worse
+ * or better? The number each bar is depends on the card — failures, or what
+ * the router saved on a card where nothing failed, or what the chain refused.
+ * Grey, not the tier colour: one colour per card, carried by its border.
+ */
+function Timeline({ issue }: { issue: Issue }) {
+  const points = issue.timeline ?? [];
+  if (points.length < 2) return null;
+  const pick = (p: TimelinePoint) =>
+    issue.severity === "config" ? p.refused : issue.handled ? p.saved : p.failed;
+  const label = issue.severity === "config" ? "refused" : issue.handled ? "saved by the router" : "failed";
+  const shown = points.slice(-72);
+  // A row of empty bars under "requests failed" on a card about error
+  // replies says nothing, and reads as a chart that did not load.
+  if (shown.every((p) => !pick(p))) return null;
+  const top = Math.max(1, ...shown.map((p) => pick(p) ?? 0));
+  const W = 3;
+  const H = 18;
+  return (
+    <div style={{ display: "flex", alignItems: "flex-end", gap: 7, margin: "0 0 8px" }}>
+      <svg width={shown.length * W} height={H} role="img" aria-label={`Requests ${label} at each check`}>
+        {shown.map((p, i) => {
+          const v = pick(p);
+          const h = v == null ? 1 : Math.max(1, Math.round((v / top) * H));
+          return (
+            <rect key={p.t} x={i * W} y={H - h} width={W - 1} height={h} fill={i === shown.length - 1 ? "var(--text-2)" : "var(--text-4)"}>
+              <title>{`${clock(p.t)} · ${v == null ? "not measured" : `${v.toLocaleString("en-US")} ${label}`}`}</title>
+            </rect>
+          );
+        })}
+      </svg>
+      <span style={{ fontSize: 10.5, color: "var(--text-3)" }}>
+        Requests {label}, one bar per 5-minute check since {clock(shown[0]!.t)}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * The strings a caller's own log has, so support can match a complaint to
+ * this card: the newest request ids with their second, and the router's
+ * error names. Selectable text, in the log's own format.
+ */
+function Evidence({ issue }: { issue: Issue }) {
+  const fromPaths = (issue.outcome?.paths?.groups ?? []).flatMap((g) => g.ids ?? []);
+  const ids = (fromPaths.length > 0 ? fromPaths : (issue.outcome?.rejected?.latest ?? []))
+    .sort((a, b) => b.atUnix - a.atUnix)
+    .slice(0, 3);
+  const codes = issue.codes ?? [];
+  if (ids.length === 0 && codes.length === 0) return null;
+  return (
+    <div className="gw-mono" style={{ fontSize: 10.5, color: "var(--text-3)", marginTop: 7, lineHeight: 1.55, userSelect: "text" }}>
+      {ids.length > 0 && <div>Request IDs (newest): {ids.map((r) => `${r.id} at ${clockSec(r.atUnix)}`).join(", ")}</div>}
+      {codes.length > 0 && <div>Error codes: {codes.join(", ")}</div>}
+    </div>
+  );
+}
+
+/** Nothing is failing on these — one provider stands between them and failing. */
+function Risks({ risks }: { risks: Risk[] }) {
+  if (risks.length === 0) return null;
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 7, flexWrap: "wrap" }}>
+        <span style={{ width: 7, height: 7, borderRadius: 99, border: "1px solid var(--text-3)", alignSelf: "center" }} />
+        <span style={{ fontSize: 12, fontWeight: 700 }}>Risks</span>
+        <span style={{ fontSize: 11, color: "var(--text-4)" }}>{risks.length}</span>
+        <span style={{ fontSize: 11, color: "var(--text-3)" }}>Nothing is failing now. One provider stands between these and failing.</span>
+      </div>
+      {risks.map((r) => (
+        <div key={`${r.spec}:${r.text}`} className="gw-card" style={{ padding: "9px 14px", marginBottom: 6, display: "flex", alignItems: "center", gap: 9 }}>
+          <ChainBadge spec={r.spec} size={18} />
+          <span style={{ fontSize: 12.5, color: "var(--text-2)", lineHeight: 1.5 }}>
+            {r.text}
+            {r.calls != null && (
+              <span style={{ color: "var(--text-3)" }}>
+                {" "}
+                ({r.calls.toLocaleString("en-US")} {r.unit} in the last 30 min)
+              </span>
+            )}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function refusalText(r: Refusal): string {
   if (r.reason === "disabled") return "AI is not enabled on this deployment.";
   if (r.reason === "auth_required") return "AI needs sign-in on this deployment.";
   return `Could not reach the model. ${r.detail ?? ""}`.trim();
 }
 
-function Card({ issue, color }: { issue: Issue; color: string }) {
+/** `now` is unix seconds from the list's own clock — a render must not read the time itself. */
+function Card({ issue, color, now }: { issue: Issue; color: string; now: number }) {
   const resolved = issue.status === "resolved";
   // No disclosure. A "View more · 2 more" is the card admitting it wrote more
   // than it should have and then making the reader work for the rest — and
@@ -261,17 +427,24 @@ function Card({ issue, color }: { issue: Issue; color: string }) {
               be about one chain while its points name four. */}
           {(issue.specs?.length ?? 1) > 1 ? `${issue.specs!.length} chains` : issue.chain}
         </span>
+        {issue.status === "open" && now - issue.openedAtUnix < NEW_SEC && (
+          // What just started, apart from what has been there all week.
+          <span style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: "0.04em", color: "var(--text-2)", border: "1px solid var(--line-2, #333)", borderRadius: 4, padding: "0 5px" }}>
+            NEW
+          </span>
+        )}
         {/* The spec index is what appears in their own logs and queries, so
             it stays — but a merged issue printing twelve of them is a line of
             noise above the sentence that matters. */}
         <span className="gw-mono" style={{ fontSize: 9.5, color: "var(--text-4)" }}>
-          {specLabel(issue.specs ?? [issue.spec])} · {lifeLine(issue)}
+          {specLabel(issue.specs ?? [issue.spec])} · {lifeLine(issue, now)}
         </span>
       </div>
 
       <div style={{ fontSize: 13, fontWeight: 600, margin: "7px 0 8px" }}>{issue.title}</div>
 
       <Impact issue={issue} />
+      <Timeline issue={issue} />
 
       <ol style={{ margin: 0, paddingLeft: 18, display: "flex", flexDirection: "column", gap: 3 }}>
         {issue.points.map((p, i) => (
@@ -292,6 +465,7 @@ function Card({ issue, color }: { issue: Issue; color: string }) {
       {issue.outcome?.paths && issue.outcome.paths.groups.length > 0 && (
         <Paths paths={issue.outcome.paths} failures={issue.outcome.failures} />
       )}
+      <Evidence issue={issue} />
 
       {issue.bottomLine && (
         <div
@@ -308,6 +482,13 @@ function Card({ issue, color }: { issue: Issue; color: string }) {
           {issue.bottomLine}
         </div>
       )}
+
+      {issue.whoActs && (
+        <div style={{ fontSize: 12, lineHeight: 1.5, marginTop: issue.bottomLine ? 5 : 9, color: "var(--text-2)" }}>
+          <span style={{ fontWeight: 600, color: "var(--text)" }}>Who acts: </span>
+          {issue.whoActs}
+        </div>
+      )}
     </div>
   );
 }
@@ -318,6 +499,12 @@ export function IssueCards({ chainsAffected }: { chainsAffected: string[] | null
   // Recent first by default: opening the page, the question is what just
   // started, not which chain sorts first alphabetically.
   const [order, setOrder] = useState<"recent" | "chain">("recent");
+  // "New" and "3 days" age with the page left open: a minute is enough.
+  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
+  useEffect(() => {
+    const t = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 60_000);
+    return () => clearInterval(t);
+  }, []);
 
   // Polled, not pressed. `warming` comes back while a window is still being
   // computed, so the poll keeps asking until it lands.
@@ -327,10 +514,14 @@ export function IssueCards({ chainsAffected }: { chainsAffected: string[] | null
   const warming = refusal?.reason === "warming";
 
   const sorted = (list: Issue[]): Issue[] =>
-    [...list].sort((a, b) =>
-      order === "recent"
-        ? (b.lastSeenUnix ?? b.updatedAtUnix) - (a.lastSeenUnix ?? a.updatedAtUnix)
-        : a.chain.localeCompare(b.chain),
+    [...list].sort(
+      (a, b) =>
+        // Several chains failing at once leads its section: it explains the
+        // per-chain cards under it.
+        Number(!!b.together) - Number(!!a.together) ||
+        (order === "recent"
+          ? (b.lastSeenUnix ?? b.updatedAtUnix) - (a.lastSeenUnix ?? a.updatedAtUnix)
+          : a.chain.localeCompare(b.chain)),
     );
   const open = issues?.filter((i) => i.status !== "resolved") ?? [];
   const resolved = (issues ?? [])
@@ -403,23 +594,26 @@ export function IssueCards({ chainsAffected }: { chainsAffected: string[] | null
       )}
 
       {issues &&
-        SECTIONS.map(({ key, label, color }) => {
-          const rows = sorted(open.filter((i) => i.severity === key));
+        SECTIONS.map(({ key, label, meaning, color }) => {
+          const rows = sorted(open.filter((i) => sectionOf(i) === key));
           // An empty section is wallpaper — the page's own rule.
           if (rows.length === 0) return null;
           return (
             <div key={key}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 7 }}>
-                <span style={{ width: 7, height: 7, borderRadius: 99, background: color }} />
+              <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 7, flexWrap: "wrap" }}>
+                <span style={{ width: 7, height: 7, borderRadius: 99, background: color, alignSelf: "center" }} />
                 <span style={{ fontSize: 12, fontWeight: 700 }}>{label}</span>
                 <span style={{ fontSize: 11, color: "var(--text-4)" }}>{rows.length}</span>
+                <span style={{ fontSize: 11, color: "var(--text-3)" }}>{meaning}</span>
               </div>
               {rows.map((i) => (
-                <Card key={i.id} issue={i} color={color} />
+                <Card key={i.id} issue={i} color={color} now={now} />
               ))}
             </div>
           );
         })}
+
+      {data?.ok && <Risks risks={data.risks ?? []} />}
 
       {resolved.length > 0 && (
         <div>
@@ -429,7 +623,7 @@ export function IssueCards({ chainsAffected }: { chainsAffected: string[] | null
             <span style={{ fontSize: 11, color: "var(--text-4)" }}>{resolved.length}</span>
           </div>
           {resolved.map((i) => (
-            <Card key={i.id} issue={i} color={RESOLVED_COLOR} />
+            <Card key={i.id} issue={i} color={RESOLVED_COLOR} now={now} />
           ))}
         </div>
       )}

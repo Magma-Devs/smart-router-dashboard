@@ -9,6 +9,7 @@
  * endpoint says so; it never guesses.
  */
 import { config } from "../config.js";
+import { providerName } from "./provider-names.js";
 
 export interface RecentError {
   atUnix: number;
@@ -113,6 +114,18 @@ const FAILED_RESULT = '|~ `"error":"[^"]+"|"has_result":"false"|"has_reply":"fal
  */
 const BACKGROUND_TIMEOUT_MS = Math.max(config.loki.timeoutMs, 30_000);
 
+/** A request the chain refused, from a provider's reply in the router's log. */
+export interface Rejection {
+  id: string;
+  pod: string;
+  atUnix: number;
+  /** The chain's reason: CHAIN_NONCE_TOO_LOW, CHAIN_INSUFFICIENT_FUNDS, … */
+  code: string;
+}
+
+/** Codes meaning the chain refused the caller's own request — every provider gets the same answer. */
+const REFUSED_CODES = "CHAIN_NONCE_TOO_LOW|CHAIN_NONCE_TOO_HIGH|CHAIN_INSUFFICIENT_FUNDS|USER_[A-Z_]+";
+
 /** One customer request that failed: its id, the pod that served it, and when. */
 export interface FailedRequest {
   id: string;
@@ -171,6 +184,14 @@ export interface RequestTrace {
   failed: boolean;
   /** From the request arriving to its final answer. */
   seconds: number;
+  /** When it ended — what a caller's own log has next to the error. */
+  atUnix: number;
+  /**
+   * The router's own name for why it failed ("PROTOCOL_CONTEXT_DEADLINE"),
+   * from its "failed relay" line: the string a support engineer searches the
+   * caller's log for. Null when none was logged.
+   */
+  error: string | null;
 }
 
 /** A failure reason in words a customer reads, from the router's own error name. */
@@ -222,8 +243,10 @@ export function traceFromLines(id: string, lines: { atNs: bigint; line: Record<s
   let failed = false;
   let reply: boolean | null = null;
   let end = t0;
+  let error: string | null = null;
   for (const { atNs, line } of sorted) {
     const message = str(line.message);
+    if (message.startsWith("failed relay") && !error && /^[A-Z][A-Z0-9_]+$/.test(str(line.error_name))) error = str(line.error_name);
     if (message.startsWith("Consumer received a new")) method = methodOfRequest(line);
     else if (message === "Choosing providers") {
       for (const p of str(line.chosenProviders).split(/[\s,]+/).filter(Boolean)) start(p, "primary", atNs);
@@ -260,6 +283,8 @@ export function traceFromLines(id: string, lines: { atNs: bigint; line: Record<s
     attempts: attempts.map((a) => ({ ...a, outcome: a.outcome ?? settled })),
     failed,
     seconds: sec(end),
+    atUnix: Number(end / 1_000_000_000n),
+    error,
   };
 }
 
@@ -292,13 +317,13 @@ export function flowOf(t: RequestTrace, { times = true }: { times?: boolean } = 
     // The first step is the request arriving; every later one says when.
     const when = steps.length > 0 ? at(first.startSec) : "";
     if (tried.length === 1) {
-      steps.push(`${when}${first.provider}${role === "backup" ? " (backup)" : ""} ${how(first.outcome)}`);
+      steps.push(`${when}${providerName(first.provider)}${role === "backup" ? " (backup)" : ""} ${how(first.outcome)}`);
       continue;
     }
-    const names = [...new Set(tried.map((a) => a.provider))].sort();
+    const names = [...new Set(tried.map((a) => providerName(a.provider)))].sort((a, b) => a.localeCompare(b));
     const worked = tried.find((a) => a.outcome === "answered");
     steps.push(
-      `${when}${names.length} ${role === "backup" ? "backups" : "providers"} (${names.join(", ")}) ${worked ? `✓ ${worked.provider} answered` : "✕ none worked"}`,
+      `${when}${names.length} ${role === "backup" ? "backups" : "providers"} (${names.join(", ")}) ${worked ? `✓ ${providerName(worked.provider)} answered` : "✕ none worked"}`,
     );
   }
   return [...steps, t.failed ? "failed" : "answered"].join(" → ");
@@ -390,6 +415,100 @@ export class LokiService {
       });
     }
     return { byRouter, capped: lines >= limit };
+  }
+
+  /**
+   * Requests the chain refused, one per request.
+   *
+   * The log has one line per provider REPLY, and a transaction goes to every
+   * primary at once — measured in production, both primaries answered "nonce
+   * too low" within 30ms, so each refusal was logged twice and a count of
+   * lines doubled it: 308 lines, 154 requests. Deduplicated here by request id.
+   */
+  async rejectedRequests(
+    rangeSec: number,
+    limit = 5000,
+    atUnix = Math.floor(Date.now() / 1000),
+  ): Promise<{ byRouter: Map<string, Rejection[]>; capped: boolean }> {
+    const byRouter = new Map<string, Rejection[]>();
+    if (!this.baseUrl) return { byRouter, capped: false };
+    const streams = await this.range(
+      `{service_name="router"} |= "received node error reply from provider" |~ \`"error_name":"(${REFUSED_CODES})"\``,
+      atUnix - Math.round(rangeSec),
+      atUnix,
+      limit,
+    );
+    let lines = 0;
+    for (const { labels, lines: ls, times } of streams) {
+      const pod = labels.pod ?? "";
+      const router = routerOfPod(pod);
+      ls.forEach((raw, i) => {
+        lines++;
+        const line = safeJson(raw);
+        const id = typeof line.GUID === "string" ? line.GUID : "";
+        const code = typeof line.error_name === "string" ? line.error_name : "";
+        if (!/^[0-9]+$/.test(id) || !code) return;
+        const list = byRouter.get(router) ?? [];
+        if (!list.some((r) => r.id === id)) list.push({ id, pod, atUnix: Number(BigInt(times[i] ?? "0") / 1_000_000_000n), code });
+        byRouter.set(router, list);
+      });
+    }
+    return { byRouter, capped: lines >= limit };
+  }
+
+  /**
+   * Of these refused transactions, how many had been sent before: the SAME
+   * signed transaction, earlier, as a request of its own.
+   *
+   * Measured in production: every refused transaction checked had been sent 6
+   * to 11 times in the half hour before. "The chain refused it" was the app
+   * sending a transaction again after it had gone through — not a broken nonce,
+   * and not something to blame on the caller's signing code.
+   *
+   * Only a request whose first parameter is a signed transaction is checked,
+   * and only on the part the log keeps: the router cuts a request body at 215
+   * characters, which leaves the transaction's first 31 bytes — its chain,
+   * nonce, fees, gas limit and the start of its recipient. Another send with
+   * all of those the same is, in practice, the same transaction.
+   *
+   * The transaction goes out in the query, to the operator's own log store;
+   * it is never logged, kept or returned — only the counts are.
+   */
+  async resentTransactions(
+    refused: Rejection[],
+    perPod = 3,
+  ): Promise<{ checked: number; resent: number; mostSends: number }> {
+    const out = { checked: 0, resent: 0, mostSends: 0 };
+    if (!this.baseUrl) return out;
+    const byPod = new Map<string, Rejection[]>();
+    for (const r of refused) {
+      if (!/^[0-9]+$/.test(r.id) || !/^[a-z0-9-]+$/.test(r.pod)) continue;
+      byPod.set(r.pod, [...(byPod.get(r.pod) ?? []), r]);
+    }
+    for (const [pod, list] of byPod) {
+      for (const r of [...list].sort((a, b) => b.atUnix - a.atUnix).slice(0, perPod)) {
+        const [received] = await this.range(
+          `{service_name="router", pod="${pod}"} |= "${r.id}" |= "Consumer received"`,
+          r.atUnix - 60,
+          r.atUnix + 2,
+          5,
+        );
+        const body = safeJson(received?.lines[0] ?? "").body;
+        const tx = typeof body === "string" ? /"params"\s*:\s*\[\s*"(0x[0-9a-fA-F]{60,})/.exec(body)?.[1] : undefined;
+        if (!tx) continue;
+        out.checked++;
+        const before = await this.range(
+          `{service_name="router", pod="${pod}"} |= "Consumer received" |= "${tx.slice(0, 120)}"`,
+          r.atUnix - 1800,
+          r.atUnix - 1,
+          100,
+        );
+        const sends = before.reduce((n, s) => n + s.lines.filter((l) => safeJson(l).GUID !== r.id).length, 0);
+        if (sends > 0) out.resent++;
+        out.mostSends = Math.max(out.mostSends, sends);
+      }
+    }
+    return out;
   }
 
   /**

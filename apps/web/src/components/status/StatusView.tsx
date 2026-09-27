@@ -66,8 +66,9 @@ function Freshness({ lastOk, staleSec, refreshing, down, paused, promDown }: {
   const dot = down ? "var(--err)" : late ? "var(--warn)" : "var(--text-3)";
   const label = down
     ? <>{promDown ? "Prometheus is not answering" : "Can\u2019t reach the api"}{lastOk ? <span className="gw-mono" style={{ color: "var(--text-3)" }}> · last {hhmmss(lastOk)}</span> : null}</>
+    // "Paused" alone read as "monitoring stopped". It is this browser tab.
     : paused && lastOk
-      ? <>Paused <span className="gw-mono" style={{ color: "var(--text-3)" }}>· last {hhmmss(lastOk)}</span></>
+      ? <>Tab hidden, not refreshing <span className="gw-mono" style={{ color: "var(--text-3)" }}>· last {hhmmss(lastOk)}</span></>
       : lastOk
         ? <>Updated <span className="gw-mono">{hhmmss(lastOk)}</span>{late ? <span style={{ color: "var(--text-3)" }}> · {staleSec}s ago</span> : null}</>
         : "Checking…";

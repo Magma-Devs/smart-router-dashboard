@@ -22,6 +22,7 @@
 import type { StatusFinding, StatusInsight } from "@sr/shared";
 import type { ErrorGroup } from "./loki.js";
 import { BedrockService, parseModelJson, type BedrockLogger } from "./bedrock.js";
+import { providerName } from "./provider-names.js";
 
 export type IssueSeverity = "critical" | "degraded" | "config";
 
@@ -64,6 +65,26 @@ export interface ChainOutcome {
    * provider and 2 others". Null without the logs or without failures.
    */
   paths: FailurePaths | null;
+  /**
+   * Requests the chain itself refused (a nonce already used, an account
+   * without funds), one per request, from the router's log. Null without the
+   * logs, or when the chain refused nothing.
+   */
+  rejected: RefusedRequests | null;
+}
+
+export interface RefusedRequests {
+  /** Distinct requests — not provider replies, which count each one twice on a chain with two primaries. */
+  requests: number;
+  /** By the chain's own reason code. */
+  byCode: Record<string, number>;
+  /**
+   * Of the refused transactions checked, how many had been sent before — the
+   * same signed transaction, earlier — and the most times one had been.
+   */
+  resent: { checked: number; resent: number; mostSends: number } | null;
+  /** The newest few, for matching a caller's own log. */
+  latest: { id: string; atUnix: number }[];
 }
 
 export interface FailurePaths {
@@ -87,6 +108,12 @@ export interface FailurePath {
   methods: string[];
   /** Fastest and slowest, from the request arriving to its final answer. */
   seconds: [number, number];
+  /** The providers that failed on this path, in the order they were tried — who "Who acts" names, and what "many chains at once" looks for in common. */
+  failedOn: string[];
+  /** The newest few requests that went this way: what a caller's own log shows. */
+  ids: { id: string; atUnix: number }[];
+  /** The router's own error names for them ("PROTOCOL_CONTEXT_DEADLINE"). */
+  errors: string[];
 }
 
 export interface WriteCalls {
@@ -166,6 +193,19 @@ export interface FormulatedIssue {
    * cycle's writing budget ran out. The next cycle writes it properly.
    */
   plain?: true;
+  /**
+   * A provider is failing and the router covered every request: nothing
+   * failed, nothing came back as an error, no answer was left slow behind a
+   * timeout. Shown without colour — amber on a chain that works every day
+   * teaches people to ignore amber.
+   */
+  handled: boolean;
+  /** Who can act on it, in one line — never how to fix it. Written by code. */
+  whoActs: string | null;
+  /** Error names a caller's own log would show, for matching it to this card. */
+  codes: string[];
+  /** Several chains failing at once — written by code, not the model. */
+  together?: true;
 }
 
 /**
@@ -310,6 +350,8 @@ export interface FormulatedInputs {
   paths?: FailurePaths | null;
   /** The time the numbers above cover. */
   measured?: { fromUnix: number; toUnix: number } | null;
+  /** Requests the chain refused, per request, from the router's log. */
+  rejected?: RefusedRequests | null;
   /**
    * The version already on the customer's screen, when this issue is still
    * open. Given so a rewrite UPDATES the issue rather than writing a new one
@@ -323,12 +365,13 @@ const CROSS_CHAIN_NOTE = `
 ## This one spans several chains
 
 You are given more than one chain because the SAME problem is happening on all
-of them, and it is the caller's own requests that are being rejected — not any
-provider. Write ONE issue about that, not one per chain.
+of them: the chain refused the requests themselves, and every provider got
+the same answer. Write ONE issue about that, not one per chain.
 
-Name the chains; the total is printed above your points. "Your signing code
-is reusing nonces on Ethereum, Base and Polygon" is the issue. Three cards
-each saying the same thing about one chain is the thing this replaces.`;
+Name the chains; the total is printed above your points. "The same
+transactions are being sent again on Ethereum, Base and Polygon" is the
+issue, when the resend check says so. Three cards each saying the same thing
+about one chain is the thing this replaces.`;
 
 const SYSTEM_PROMPT = `You write the one-screen issue a customer reads about their own chain.
 
@@ -512,6 +555,23 @@ Say it in different words from the point it came from. A bottom line that
 repeats point four verbatim has made the card longer without making it
 clearer.
 
+## When the chain refused the requests
+
+The caller-side card is about requests the chain itself refused — every
+provider got the same answer, so no provider failed. Say what the chain's
+reason MEANS, and never whose fault it is for certain:
+
+  - "Nonce too low" means the transaction's nonce (its sequence number) was
+    already used: that transaction, or another from the same account, had
+    already gone through.
+  - \`rejectedByTheChain.resent\`, when given, says how many refused
+    transactions had been sent before — the SAME transaction, again, as a
+    request of its own. When that is most of them, it is the cause: "the
+    same transactions are being sent again after they went through".
+  - Never write that their code "reuses nonces" or is broken, and never
+    "your own transactions" as a verdict. A transaction sent again after a
+    slow answer is refused the same way. Write "these transactions".
+
 ## Never leave a phrase the reader has to decode
 
 Our own shorthand is not plain language. Write what it MEANS:
@@ -524,6 +584,11 @@ Our own shorthand is not plain language. Write what it MEANS:
                                   which the router threw away"
   - not "malformed responses" -> "replies with neither a result nor an error in
                                   them, which the router cannot use"
+  - not "HTTP 429", or any status code -> "refusing requests over its limit"
+  - not "primaries"           -> "main providers"
+  - not "you are over its plan's rate limit" -> "the account used with it is
+                                  over its request limit" — you do not know
+                                  whose account it is"
 
 If a point would make someone ask "what does that actually mean?", it is not
 finished.
@@ -560,6 +625,13 @@ plan", not the raw string.
 
 Never invent a number, provider, method or error that is not in the input.
 Do not recommend a fix. Do not set a severity — it is decided for you.
+
+Never write that requests succeeded, went through or were accepted. The
+router knows that an answer came back — an error is an answer too — never
+that it was a success. Write "got a reply", or leave it out.
+
+Write each provider's name the way \`providerNames\` gives it: "QuickNode",
+not "quicknode" in one line and "Quicknode" in the next.
 
 ## When the provider list is missing
 
@@ -600,13 +672,25 @@ const KIND_MEANING: Record<StatusFinding["kind"], string> = {
   "answered-late": "this provider's answers arrived, but slowly",
   "answered-unchecked": "nothing verified that these answers were current",
   "no-backup": "serving fine, with nothing to fail over to if it stops",
-  config: "a request for something no provider here serves, or the caller's own request rejected by the chain",
+  config: "the chain itself refused the request (a nonce already used, an account without funds) — every provider got the same answer; or a request for something no provider here serves",
 };
 
 export function digestForIssue(i: FormulatedInputs): string {
   return JSON.stringify(
     {
       chain: { spec: i.spec, name: i.chain },
+      // How each provider is written — the ids in the values file are
+      // whatever the operator typed.
+      ...(() => {
+        const ids = [
+          ...new Set([
+            ...[...i.findings, ...(i.alsoOnChains ?? []).flatMap((c) => c.findings)].flatMap((f) => (f.upstream ? [f.upstream] : [])),
+            ...i.configured.map((c) => c.upstream),
+          ]),
+        ];
+        const names = Object.fromEntries(ids.filter((id) => providerName(id) !== id).map((id) => [id, providerName(id)]));
+        return Object.keys(names).length ? { providerNames: names } : {};
+      })(),
       // The line the card prints above the points — so the model knows those
       // numbers are on screen, and does not restate them in its own words.
       ...(() => {
@@ -650,11 +734,28 @@ export function digestForIssue(i: FormulatedInputs): string {
         ? {}
         : {
             outcome: {
-              note: "Chain-wide, this window. totalRequests: customer requests. savedByRetry: failed on one provider and went through on another. reachedCaller: customer requests that failed after every retry — counted once per request from the router's own final-result log. An error ANSWER from a provider is not in reachedCaller — it went back to the caller as an error. null = not measured.",
+              note: "Chain-wide, this window. totalRequests: customer requests. savedByRetry: failed on one provider and got an answer from another. reachedCaller: customer requests that failed after every retry — counted once per request from the router's own final-result log. An error ANSWER from a provider is not in reachedCaller — it went back to the caller as an error. null = not measured.",
               totalRequests: i.requests,
               savedByRetry: i.recovered,
               reachedCaller: i.failures,
               ...(i.writes ? { transactions: { sent: i.writes.sent, failedForTheCaller: i.writes.failed } } : {}),
+              ...(i.rejected
+                ? {
+                    rejectedByTheChain: {
+                      requests: i.rejected.requests,
+                      byReason: i.rejected.byCode,
+                      ...(i.rejected.resent
+                        ? {
+                            resent: {
+                              checked: i.rejected.resent.checked,
+                              sentBefore: i.rejected.resent.resent,
+                              mostTimesSentBefore: i.rejected.resent.mostSends,
+                            },
+                          }
+                        : {}),
+                    },
+                  }
+                : {}),
               ...(i.paths?.groups.length
                 ? {
                     howTheFailedRequestsWent: {
@@ -728,15 +829,30 @@ export function titleContradicts(title: string, outcome: ChainOutcome): boolean 
   );
 }
 
-const REJECTED_BECAUSE: Record<string, string> = {
-  CHAIN_NONCE_TOO_LOW: "had a nonce (transaction number) that was already used",
-  CHAIN_NONCE_TOO_HIGH: "had a nonce (transaction number) too far ahead",
-  CHAIN_INSUFFICIENT_FUNDS: "came from an account without enough funds",
-  USER_INVALID_PARAMS: "had malformed parameters",
+/**
+ * A sentence claiming success. The router knows that an answer came back —
+ * an error is an answer too — never that a request succeeded: "all 348 sent
+ * transactions succeeded" was written beside 616 of them refused by the
+ * chain, because the input said none had gone unanswered.
+ */
+export function claimsSuccess(text: string): boolean {
+  return /\b(succeed(?:ed|s)?|successful(?:ly)?|went through|got through|(?:was|were) accepted)\b/i.test(text);
+}
+
+/**
+ * The chain's reason for refusing a request, as the end of "…each for …".
+ * The chain's own reason — not a verdict on whose fault it is.
+ */
+const REFUSED_FOR: Record<string, string> = {
+  CHAIN_NONCE_TOO_LOW: "a nonce (transaction number) that was already used",
+  CHAIN_NONCE_TOO_HIGH: "a nonce (transaction number) too far ahead",
+  CHAIN_INSUFFICIENT_FUNDS: "an account without enough funds",
+  USER_INVALID_PARAMS: "malformed parameters",
 };
+const refusedFor = (code: string) =>
+  REFUSED_FOR[code] ?? `"${code.replace(/^(CHAIN|USER)_/, "").toLowerCase().replace(/_/g, " ")}"`;
 
 const num = (n: number) => n.toLocaleString("en-US");
-const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 /** A share as the card prints it — "0.04%", "1.7%", "39%" — and never "0%" for something that happened. */
 export function shareText(part: number, whole: number): string {
@@ -755,7 +871,7 @@ export function shareText(part: number, whole: number): string {
  *   got a reply                          something came back — an error reply included
  *   saved                                failed on one provider, answered by another
  *   did not work                         debug or trace calls with no usable answer
- *   rejected                             the chain refused the request itself
+ *   refused                              the chain refused the request itself
  *
  * Every number carries its "of what". The time it covers is printed beside
  * it by the page, from `measured`. When the model wrote these, it put "this
@@ -767,26 +883,9 @@ export function impactOf(
   severity: IssueSeverity,
   chains = 1,
 ): string | null {
-  if (severity === "config") {
-    // The caller-side card is about what the chain refused, not about
-    // answers: "all 187,702 requests were answered" over 1,313 rejections
-    // would read as a contradiction.
-    const byCode = new Map<string, number>();
-    for (const f of findings) {
-      if (f.metric.label !== "rejected by the chain") continue;
-      for (const [code, n] of Object.entries(f.codeCounts ?? {})) byCode.set(code, (byCode.get(code) ?? 0) + n);
-    }
-    const total = [...byCode.values()].reduce((a, n) => a + n, 0);
-    if (total === 0) return null;
-    const why = [...byCode]
-      .sort((a, b) => b[1] - a[1])
-      .map(([code, n]) => {
-        const reason =
-          REJECTED_BECAUSE[code] ?? `were refused as "${code.replace(/^(CHAIN|USER)_/, "").toLowerCase().replace(/_/g, " ")}"`;
-        return `${byCode.size === 1 ? "each" : num(n)} ${reason}`;
-      });
-    return `${chains > 1 ? `The ${chains} chains` : "The chain"} rejected ${num(total)} requests: ${why.join(", ")}.`;
-  }
+  // The caller-side card is about what the chain refused, not about answers:
+  // "all 187,702 requests got a reply" over refusals reads as a contradiction.
+  if (severity === "config") return refusedLine(outcome, findings, chains);
 
   const parts: string[] = [];
   const { failures, requests, recovered } = outcome;
@@ -810,7 +909,7 @@ export function impactOf(
   // 4,793 requests got a reply" alone reads as "everything worked" — so the
   // line names who is replying with errors. Its share stays in the points:
   // the finding's number counts errors and no-answers together.
-  const erring = [...new Set(findings.filter((f) => f.kind === "answered-error" && f.upstream).map((f) => capital(f.upstream!)))];
+  const erring = [...new Set(findings.filter((f) => f.kind === "answered-error" && f.upstream).map((f) => providerName(f.upstream!)))];
   if (erring.length > 0) {
     parts.push(`Some ${failures ? "other " : ""}replies were errors from ${erring.join(" and ")}.`);
   }
@@ -821,6 +920,128 @@ export function impactOf(
     parts.push(`${num(outcome.writes.failed)} of ${num(outcome.writes.sent)} transactions failed: no provider answered them.`);
   }
   return parts.length ? parts.join(" ") : null;
+}
+
+/**
+ * The caller-side card's line: what the chain refused, and — for
+ * transactions — whether the same one had been sent before.
+ *
+ * Counted per request, from the router's log. Without the log the only count
+ * is the classified counter's, which counts each provider's REPLY: a
+ * transaction goes to every primary, so one refusal counts once per primary.
+ * The line then says "replies", which is what that number is.
+ */
+function refusedLine(outcome: ChainOutcome, findings: StatusFinding[], chains: number): string | null {
+  const where = chains > 1 ? `The ${chains} chains` : "The chain";
+  const r = outcome.rejected;
+  let byCode: [string, number][];
+  let perRequest: boolean;
+  if (r && r.requests > 0) {
+    byCode = Object.entries(r.byCode);
+    perRequest = true;
+  } else {
+    const m = new Map<string, number>();
+    for (const f of findings) {
+      if (!f.id.includes(":caller:")) continue;
+      for (const [code, n] of Object.entries(f.codeCounts ?? {})) m.set(code, (m.get(code) ?? 0) + n);
+    }
+    byCode = [...m];
+    perRequest = false;
+  }
+  const total = perRequest ? r!.requests : byCode.reduce((a, [, n]) => a + n, 0);
+  if (total === 0) return null;
+  byCode.sort((a, b) => b[1] - a[1]);
+  const why =
+    byCode.length === 1
+      ? `, each for ${refusedFor(byCode[0]![0])}`
+      : `: ${byCode.map(([code, n]) => `${num(n)} for ${refusedFor(code)}`).join(", ")}`;
+  const lead = perRequest
+    ? `${where} refused ${num(total)} requests${why}.`
+    : `Providers passed on ${num(total)} refusals from the chain — one per provider a request went to${why}.`;
+  const re = r?.resent;
+  const resent =
+    re && re.checked > 0 && re.resent > 0
+      ? ` ${re.resent === re.checked ? `All ${re.checked}` : `${re.resent} of ${re.checked}`} transactions checked had been sent before — the same transaction, up to ${num(re.mostSends)} ${re.mostSends === 1 ? "time" : "times"}.`
+      : "";
+  return lead + resent;
+}
+
+/**
+ * A provider is failing and the router covered it completely: nothing failed
+ * for the caller, no error reply reached them, and no saved request waited
+ * out a timeout first. A provider refusing over its rate limit answers at
+ * once, so the retry costs nothing; a provider that does not answer makes
+ * every saved request wait for its timeout — that is not "handled".
+ */
+export function isHandled(findings: StatusFinding[], outcome: ChainOutcome, severity: IssueSeverity): boolean {
+  if (severity !== "degraded" || findings.length === 0) return false;
+  // Null is "not measured", never "nothing failed".
+  if (outcome.failures !== 0) return false;
+  if (outcome.addonCalls.some((a) => (a.failed ?? 0) > 0) || outcome.writes?.failed) return false;
+  return findings.every(
+    (f) =>
+      (f.kind === "dead" && /rate-limited/i.test(f.headline)) ||
+      (f.kind === "answered-stale" && /caught/i.test(`${f.headline} ${f.metric.label}`)),
+  );
+}
+
+/**
+ * Who can act on it, in one line, written by code. Never how to fix it —
+ * that is the owner's call, and this page's next stage. Four answers: no one
+ * (the router covered it), the provider at fault, whoever sends the refused
+ * requests, or Magma (the router itself — see the several-chains card).
+ */
+export function whoActs(
+  findings: StatusFinding[],
+  outcome: ChainOutcome,
+  severity: IssueSeverity,
+  handled: boolean,
+): string | null {
+  if (severity === "config") {
+    return outcome.rejected?.resent?.resent
+      ? "Whoever sends these transactions — the same transaction is being sent again after it went through."
+      : "Whoever sends these requests — the chain refused them itself; no provider failed.";
+  }
+  if (handled) return "No one right now — the router is covering it.";
+  const doing = (f: StatusFinding): string =>
+    f.kind === "dead"
+      ? /rate-limited/i.test(f.headline)
+        ? "it is refusing requests over its account's request limit"
+        : "it is not answering in time"
+      : f.kind === "answered-error"
+        ? "it is answering with errors"
+        : f.kind === "answered-late"
+          ? "it is answering slowly"
+          : f.kind === "answered-stale"
+            ? "it is answering from behind the chain"
+            : "it is failing";
+  const byName = new Map<string, StatusFinding>();
+  for (const f of findings) if (f.upstream && !byName.has(f.upstream)) byName.set(f.upstream, f);
+  // Where requests actually failed comes first, in the order they were
+  // tried: a primary that times out on every failed request can have no
+  // finding of its own, and still be where each one started failing.
+  const tried = outcome.paths?.groups[0]?.failedOn ?? [];
+  const owners = [...new Set([...tried, ...byName.keys()])];
+  if (owners.length === 0) return null;
+  const lead = owners[0]!;
+  const leadFinding = byName.get(lead);
+  // Error replies that are the CHAIN's answers — "insufficient fee",
+  // "transaction not found" — are passed on by the provider, not made by it.
+  // Blaming the provider for them sends the reader to the wrong door. Only
+  // when nothing failed on the way: a timeout is the provider's own.
+  if (
+    tried.length === 0 &&
+    leadFinding?.kind === "answered-error" &&
+    leadFinding.codes.length > 0 &&
+    leadFinding.codes.every((c) => c.startsWith("CHAIN_"))
+  ) {
+    return `Whoever sends these requests — the errors come from the chain itself, not from ${providerName(lead)}.`;
+  }
+  if (owners.length === 1) {
+    return `${providerName(lead)} (the provider) — ${leadFinding ? doing(leadFinding) : "requests failed on it"}.`;
+  }
+  const names = owners.map(providerName);
+  return `${names.slice(0, -1).join(", ")} and ${names.at(-1)} (the providers) — each is failing on this chain.`;
 }
 
 /**
@@ -839,8 +1060,12 @@ export function plainIssue(inputs: FormulatedInputs): FormulatedIssue {
   const [first, ...rest] = all;
   return {
     ...measuredFields(inputs),
-    title: !first ? where : first.upstream ? `${capital(first.upstream)} on ${where}: ${first.headline}` : `${where}: ${first.headline}`,
-    points: rest.slice(0, 3).map((f) => `${f.upstream ? capital(f.upstream) : f.chainName}: ${f.headline}`),
+    title: !first
+      ? where
+      : first.upstream
+        ? `${providerName(first.upstream)} on ${where}: ${first.headline}`
+        : `${where}: ${first.headline}`,
+    points: rest.slice(0, 3).map((f) => `${f.upstream ? providerName(f.upstream) : f.chainName}: ${f.headline}`),
     bottomLine: "",
     plain: true,
   };
@@ -857,10 +1082,12 @@ export function measuredFields(
     addonCalls: inputs.addonCalls ?? [],
     writes: inputs.writes ?? null,
     paths: inputs.paths ?? null,
+    rejected: inputs.rejected ?? null,
   };
   // From the findings and the outcome, never from the model — a model
   // re-deriving the badge would produce a second scale that disagrees.
   const severity = severityOf(inputs.findings, outcome);
+  const handled = isHandled(all, outcome, severity);
   return {
     severity,
     spec: inputs.spec,
@@ -871,6 +1098,11 @@ export function measuredFields(
     outcome,
     impact: impactOf(outcome, all, severity, 1 + (inputs.alsoOnChains?.length ?? 0)),
     measured: inputs.measured ?? null,
+    handled,
+    whoActs: whoActs(all, outcome, severity, handled),
+    // The strings a caller's own log has: the router's error names, from the
+    // findings and from the failed requests themselves.
+    codes: [...new Set([...all.flatMap((f) => f.codes), ...(outcome.paths?.groups.flatMap((g) => g.errors) ?? [])])].slice(0, 4),
     lastSeenUnix: all.reduce<number | null>(
       (newest, f) => (f.lastSeenUnix && (!newest || f.lastSeenUnix > newest) ? f.lastSeenUnix : newest),
       null,
@@ -898,24 +1130,33 @@ export class FormulatedIssueService {
 
     let answer = await ask();
     let parsed = parseModelJson(answer, "issue statement", this.logger);
-    const titleOf = (x: Record<string, unknown>) => (typeof x.title === "string" ? x.title : "");
-    // Asked once to agree with the numbers line, in words: the prompt already
-    // says it, and on an update the model keeps the title on screen anyway.
-    if (titleContradicts(titleOf(parsed), measured.outcome)) {
+    const text = (x: Record<string, unknown>, k: string) => (typeof x[k] === "string" ? (x[k] as string) : "");
+    const pointsOf = (x: Record<string, unknown>) =>
+      (Array.isArray(x.points) ? x.points : []).filter((p): p is string => typeof p === "string" && p.trim() !== "");
+    // Checked in code, because the prompt already says both and the model
+    // still wrote them — on an update it keeps the title on screen. Asked
+    // once, with the reason; what is still wrong after that is replaced.
+    const problems = (x: Record<string, unknown>): string[] => [
+      ...(titleContradicts(text(x, "title"), measured.outcome)
+        ? ["Your title says requests fail, but none did: every request got a reply — the router saved the ones the provider failed. Say what the provider is doing."]
+        : []),
+      ...([text(x, "title"), ...pointsOf(x), text(x, "bottomLine")].some(claimsSuccess)
+        ? ["You wrote that requests succeeded or went through. The router only knows an answer came back — an error is an answer too. Say \"got a reply\", or leave it out."]
+        : []),
+    ];
+    const wrong = problems(parsed);
+    if (wrong.length > 0) {
       messages.push(
         { role: "assistant", content: answer.text },
-        {
-          role: "user",
-          content:
-            "Your title says requests fail, but none did: every request got a reply — the router saved the ones the provider failed. " +
-            "Rewrite it to say what the provider is doing. Same JSON, nothing else.",
-        },
+        { role: "user", content: `${wrong.join(" ")} Same JSON, nothing else.` },
       );
       answer = await ask();
       parsed = parseModelJson(answer, "issue statement", this.logger);
     }
-    const str = (k: string): string => (typeof parsed[k] === "string" ? (parsed[k] as string) : "");
-    const title = titleContradicts(str("title"), measured.outcome) ? plainIssue(inputs).title : str("title");
+    const str = (k: string): string => text(parsed, k);
+    const titleText = str("title");
+    const title =
+      titleContradicts(titleText, measured.outcome) || claimsSuccess(titleText) ? plainIssue(inputs).title : titleText;
 
     return {
       ...measured,
@@ -923,10 +1164,10 @@ export class FormulatedIssueService {
       // Capped here as well as in the prompt: a model that ignores "two to
       // four" must not turn the card back into the essay this replaced. Four,
       // not five — every point renders, so the cap IS what the reader sees.
-      points: (Array.isArray(parsed.points) ? parsed.points : [])
-        .filter((x): x is string => typeof x === "string" && x.trim() !== "")
+      points: pointsOf(parsed)
+        .filter((p) => !claimsSuccess(p))
         .slice(0, 4),
-      bottomLine: str("bottomLine"),
+      bottomLine: claimsSuccess(str("bottomLine")) ? "" : str("bottomLine"),
     };
   }
 }

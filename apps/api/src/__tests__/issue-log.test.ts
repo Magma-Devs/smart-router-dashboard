@@ -1,9 +1,10 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { plainIssue, type FormulatedInputs, type FormulatedIssue } from "../services/formulated-issues.js";
 import type { MetricsDetailService } from "../services/metrics-detail.js";
+import type { ConfigurationService } from "../services/configuration.js";
 import { LokiService } from "../services/loki.js";
 import { IssueLog, IssuesFeedService, REOPEN_GRACE_SEC, type Sighting } from "../services/issues-feed.js";
 
@@ -252,5 +253,81 @@ describe("IssuesFeedService: a rules change rewrites from scratch", () => {
     const { feed, previous } = run({ print: "v3~SOLANA:tatum:errors|critical|40% errors" });
     await feed.refresh();
     expect(previous).toEqual(["on screen"]);
+  });
+});
+
+describe("an issue's timeline", () => {
+  it("keeps one point per cycle that found it — failures, saves, refusals", () => {
+    const log = new IssueLog();
+    log.advance([saw()], T0);
+    log.advance([saw({ issue: issue({ outcome: { ...issue().outcome, failures: 900, recovered: 700 } }) })], T0 + 300);
+    expect(log.view(1800, T0 + 300)[0]!.timeline).toEqual([
+      { t: T0, failed: 652, saved: 653, refused: null },
+      { t: T0 + 300, failed: 900, saved: 700, refused: null },
+    ]);
+  });
+});
+
+describe("IssuesFeedService: alerts and risks from a real cycle", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const down = {
+    kind: "dead",
+    tier: "critical",
+    id: "SOLANA:chain:down",
+    spec: "SOLANA",
+    chainName: "Solana",
+    upstream: null,
+    role: null,
+    headline: "every provider is failing",
+    metric: { value: "100%", label: "of answers" },
+    codes: ["PROTOCOL_CONTEXT_DEADLINE"],
+    evidence: [],
+    remedy: "",
+    sinceSec: null,
+    firstSeenUnix: T0 - 600,
+    lastSeenUnix: T0,
+    ongoing: true,
+    decision: [],
+  };
+
+  it("posts a chain turning Critical once, and its resolution once", async () => {
+    const posted: string[] = [];
+    vi.stubGlobal("fetch", async (_url: string, init: { body: string }) => {
+      posted.push(JSON.parse(init.body).text);
+      return new Response("ok");
+    });
+    let findings = [down];
+    const feed = new IssuesFeedService(
+      { status: async () => ({ computedAtUnix: T0, insights: [], findings }) } as unknown as MetricsDetailService,
+      undefined,
+      undefined,
+      { loki: new LokiService(undefined), writer: { formulate: async (i) => plainIssue(i) }, alerts: { url: "https://hooks.example/x" } },
+    );
+    await feed.refresh();
+    await feed.refresh();
+    findings = [];
+    await feed.refresh();
+    expect(posted.map((t) => t.split(" — ")[0])).toEqual(["Critical", "Resolved"]);
+  });
+
+  it("lists the chains one provider stands between and failing, from the config", async () => {
+    const routers = [
+      { id: "solana-devnet", spec: "SOLANAD", nodes: [{ name: "tatum", isBackup: false, endpoints: [] }] },
+    ];
+    const feed = new IssuesFeedService(
+      { status: async () => ({ computedAtUnix: T0, insights: [], findings: [] }) } as unknown as MetricsDetailService,
+      { getRouters: () => routers } as unknown as ConfigurationService,
+      undefined,
+      {
+        loki: new LokiService(undefined),
+        writer: { formulate: async (i) => plainIssue(i) },
+        prom: { query: async (q: string) => (q.includes("latency_milliseconds_count") && !q.includes("function=~") ? [{ metric: { spec: "SOLANAD" }, value: [0, "5000"] }] : []) },
+      },
+    );
+    await feed.refresh();
+    expect(feed.view("30m", T0 + 60)?.risks.map((r) => r.text)).toEqual([
+      "Solana Devnet has one provider, Tatum. If it stops answering, the chain stops.",
+    ]);
   });
 });

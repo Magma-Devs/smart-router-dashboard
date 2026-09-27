@@ -18,6 +18,49 @@ caller sends still be served?**
 | **Degraded** | A provider is failing, slow or wrong, but the router can still send traffic to another one — even if some requests reached callers as errors. |
 | **Config** | Nothing is failing because of us or a provider. The setup, or the caller's own requests, need to change. |
 
+The page shows them in four sections, each with its meaning printed beside
+its name: **Critical** ("The chain can't be used"), **Degraded** ("The chain
+works, but some requests failed, got errors or waited"), **Handled by the
+router** and **Refused by the chain** (the Config badge). Handled is a Degraded
+issue the router covered completely — nothing failed for the caller, no error
+reply reached them, and no saved request waited out a timeout first (a
+provider refusing over its rate limit answers at once; one that does not
+answer makes every saved request wait for its timeout, and stays Degraded).
+It has no colour: amber on a chain the router covers every day teaches people
+to ignore amber. `isHandled` in `apps/api/src/services/formulated-issues.ts`.
+
+Under the four sections, **Risks** lists chains where nothing is failing yet
+and one provider stands between them and failing: a chain with one provider,
+or debug (or trace) calls only one provider serves — the router filters
+backups by add-on too, so those calls have nowhere else to go. Only chains
+with that traffic, and none with an open issue. `risksOf` in
+`apps/api/src/services/issues-feed.ts`.
+
+**Several chains failing at once** get their own card, on top of each chain's:
+three or more chains whose worst five minutes overlap. Its cause is read, not
+assumed — the provider every chain's traced requests failed on, when there is
+one ("all on Tatum"), or "likely the Smart Router" when the chains share no
+provider at all in the config. Written by code, not the model.
+
+**Every card also says, in code-written lines:**
+
+- **Who acts** — no one (the router is covering it), the provider at fault,
+  whoever sends the refused requests, or Magma (several chains at once). Never
+  how to fix it; that is the owner's call.
+- **Request IDs and error codes** — the newest three request ids with their
+  second, and the router's error names: what a caller's own log has, so
+  support can match a complaint to a card.
+- **A timeline** — one bar per five-minute check since the issue opened:
+  failures, or what the router saved on a handled card, or what the chain
+  refused on a caller card. A **NEW** tag marks issues opened in the last
+  hour; one open past a day says how long ("3 days").
+
+**Alerts.** Set `ISSUES_WEBHOOK_URL` and a chain turning Critical, and that
+Critical issue resolving, is posted there as `{ text }` — which a Slack
+incoming webhook posts as a message. Nothing else is sent, and nothing at all
+without the url: who gets told is the operator's decision. The url usually
+carries a secret and is never logged.
+
 **A burst of failed customer requests opens an issue too**, whatever the rules
 below say: more than five failed requests on a chain within five minutes —
 the same line in the router's logs and the same test as the team's customer-
@@ -31,6 +74,22 @@ and the time they cover:
 ```
 Last 30 min (22:21–22:51): 3 of 23,096 requests (0.01%) failed: no provider answered them. The router saved 135 others by trying another provider.
 ```
+
+On the caller-side card the line counts what the chain refused — **once per
+request**, from the router's log. The classified counter counts each
+provider's reply, and a transaction goes to every primary at once, so it
+counts one refusal once per primary (measured: 308 lines, 154 requests).
+For refused transactions it also checks whether the same signed transaction
+had been sent before, and says so ("All 6 transactions checked had been sent
+before — the same transaction, up to 11 times"). That is the usual cause,
+and the card states it instead of blaming the caller's code. Without the log,
+the line says "refusals, one per provider a request went to", which is what
+the counter's number is.
+
+A card may not claim success: "succeeded", "went through", "accepted" are
+checked in code (`claimsSuccess`), sent back to the model once, then dropped.
+The router knows an answer came back — an error is an answer too — never
+that a request succeeded.
 
 Code writes it from the measurements (`impactOf` in
 `apps/api/src/services/formulated-issues.ts`), never the model, and each word

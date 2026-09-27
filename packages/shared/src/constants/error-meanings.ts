@@ -19,7 +19,7 @@ const CODE_MEANING: Readonly<Record<string, string>> = {
   PROTOCOL_NO_PROVIDERS: "no provider was available to even try this request",
   PROTOCOL_ALL_ENDPOINTS_DISABLED: "every provider on the chain was benched at that moment",
   PROTOCOL_INSUFFICIENT_PROVIDERS: "fewer providers were available than the request's policy requires",
-  CHAIN_NONCE_TOO_LOW: "the chain rejected the transaction - the sender reuses or skips nonces",
+  CHAIN_NONCE_TOO_LOW: "the chain rejected the transaction - its nonce was already used, often because the same transaction was sent again",
   CHAIN_NONCE_TOO_HIGH: "the chain rejected the transaction - the sender skipped ahead of its own nonce",
   CHAIN_INSUFFICIENT_FUNDS: "the chain rejected the transaction - the sending account does not have enough funds",
   CHAIN_BLOCK_NOT_FOUND: "the block asked for does not exist on the node that answered - often a pruned or lagging node",

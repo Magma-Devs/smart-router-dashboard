@@ -106,10 +106,13 @@ const STALE_FLOOR_SEC = 120;
 /** Codes where the CHAIN correctly rejected a caller's request - transport
  *  successes, no provider at fault. `USER_*` is caller-side by definition. */
 const CALLER_CODES = new Set(["CHAIN_NONCE_TOO_LOW", "CHAIN_INSUFFICIENT_FUNDS", "CHAIN_NONCE_TOO_HIGH"]);
+// The chain's reason, never a verdict on who is at fault. Measured in
+// production, the refused transactions checked had all been sent before —
+// the same transaction again — which is not "the sender reuses nonces".
 const CALLER_CODE_WORDS: Record<string, string> = {
-  CHAIN_NONCE_TOO_LOW: "nonce too low: the sender reuses or skips nonces",
-  CHAIN_NONCE_TOO_HIGH: "nonce too high: the sender skipped ahead",
-  CHAIN_INSUFFICIENT_FUNDS: "insufficient funds on the sending account",
+  CHAIN_NONCE_TOO_LOW: "nonce already used: that transaction, or another from the same account, already went through",
+  CHAIN_NONCE_TOO_HIGH: "nonce too far ahead: an earlier one from the same account has not gone through",
+  CHAIN_INSUFFICIENT_FUNDS: "not enough funds on the sending account",
   USER_INVALID_PARAMS: "malformed request parameters",
 };
 
@@ -544,12 +547,15 @@ export function deriveChainFindings(
       chainName: meta.name,
       upstream: null,
       role: null,
-      headline: `Chain rejected ${num(count)} requests — ${word.split(":")[0]}`,
-      metric: { value: num(count), label: "rejected by the chain" },
+      // Counted per provider REPLY: a transaction goes to every primary, and
+      // each one's refusal counts — so this is refusals, not requests. The
+      // issue card counts requests from the router's log.
+      headline: `${num(count)} refusals from the chain — ${word.split(":")[0]}`,
+      metric: { value: num(count), label: "refusals, one per provider reply" },
       codes: [code],
       codeCounts: { [code]: count },
-      evidence: [{ k: "who is at fault", v: "the sending system — the providers answered correctly" }],
-      remedy: `**This is the sender's problem, not a provider's.** The chain itself rejected these requests - ${errorMeaning(code)}.`,
+      evidence: [{ k: "who refused", v: "the chain itself — every provider gave the same answer" }],
+      remedy: `**The chain refused these, not a provider.** ${errorMeaning(code)}.`,
       sinceSec: null, firstSeenUnix: null, lastSeenUnix: null, ongoing: null,
       decision,
     });

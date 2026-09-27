@@ -38,6 +38,7 @@ import {
 } from "@sr/shared";
 import { readFileSync } from "node:fs";
 import { rename, writeFile } from "node:fs/promises";
+import type { RouterNode, RouterTopology } from "@sr/shared";
 import type { PrometheusClient } from "./prometheus-client.js";
 import type { ConfigurationService } from "./configuration.js";
 import type { MetricsDetailService } from "./metrics-detail.js";
@@ -50,13 +51,16 @@ import {
   type ChainOutcome,
   type FailurePath,
   type FailurePaths,
+  type RefusedRequests,
   type WriteCalls,
   type FormulatedIssue,
   type IssueSeverity,
 } from "./formulated-issues.js";
-import { LokiService, flowOf, groupErrors, type FailedRequest, type RequestTrace } from "./loki.js";
+import { LokiService, flowOf, groupErrors, type FailedRequest, type Rejection, type RequestTrace } from "./loki.js";
 import { BedrockService, bedrockGate, type BedrockLogger } from "./bedrock.js";
 import { config } from "../config.js";
+import { providerName } from "./provider-names.js";
+import { criticalChanges, postAlerts } from "./issue-alerts.js";
 
 /** Where an issue is in its life. */
 export type IssueStatus = "open" | "resolved";
@@ -73,6 +77,30 @@ export interface ServedIssue extends FormulatedIssue {
   resolvedAtUnix: number | null;
   /** When the badge last changed; equal to `openedAtUnix` if it never has. */
   severitySinceUnix: number;
+  /** One point per cycle that found it, oldest first. */
+  timeline: TimelinePoint[];
+}
+
+/** An issue's numbers at one cycle: its failures, saves and refusals in that cycle's window. */
+export interface TimelinePoint {
+  t: number;
+  failed: number | null;
+  saved: number | null;
+  refused: number | null;
+}
+
+/** A day of five-minute cycles. */
+const MAX_TIMELINE = 288;
+
+/** A chain that works now and has nothing to fall back on — a card for before something fails. */
+export interface Risk {
+  spec: string;
+  chain: string;
+  /** One sentence, written by code. */
+  text: string;
+  /** Calls in the last window that depend on it, and what they are. */
+  calls: number | null;
+  unit: "requests" | "debug calls" | "trace calls";
 }
 
 export interface IssuesSnapshot {
@@ -82,6 +110,7 @@ export interface IssuesSnapshot {
   logsAvailable: boolean;
   configAvailable: boolean;
   issues: ServedIssue[];
+  risks: Risk[];
 }
 
 /**
@@ -138,6 +167,11 @@ export function fingerprint(
     // rare paths behind it come and go each cycle and would re-word an
     // unchanged story.
     ...(outcome?.paths?.groups[0] ? [`p:${outcome.paths.groups[0].route}`] : []),
+    // Whether the refused transactions are mostly the same ones sent again:
+    // the cause the caller card states, so a change of it is news.
+    ...(outcome?.rejected?.resent
+      ? [`r:${outcome.rejected.resent.resent * 2 >= outcome.rejected.resent.checked ? "resent" : "new"}`]
+      : []),
     ...(severity ? [`s:${severity}`] : []),
     ...findings.map((f) => `${f.id}|${f.tier}|${f.headline}`),
     // Drift is part of the story, so it is part of what makes the story
@@ -249,6 +283,157 @@ export function burstFinding(spec: string, chainName: string, b: Burst, now: num
   };
 }
 
+const num = (n: number) => n.toLocaleString("en-US");
+
+/** Several chains failing inside the same five minutes. */
+export interface Together {
+  specs: string[];
+  fromUnix: number;
+  toUnix: number;
+  /** The provider the traced requests failed on, on every one of these chains. */
+  provider: string | null;
+  /** The chains share no configured provider, so one provider failing cannot explain it. */
+  shareNone: boolean;
+}
+
+/** Fewer chains than this failing at once is ordinary bad luck, not a pattern. */
+export const TOGETHER_MIN = 3;
+
+/**
+ * Chains whose worst five minutes overlap. One provider failing takes down
+ * the chains it serves; chains that share NO provider failing at the same
+ * moment points at what they do share — the router. So the attribution is
+ * read, never assumed: the provider every chain's traced requests failed on,
+ * when there is one; "share no provider" only when the config says so.
+ */
+export function failingTogether(
+  bursts: Map<string, Burst>,
+  paths: Map<string, FailurePaths>,
+  configured: Map<string, Set<string>>,
+  min = TOGETHER_MIN,
+): Together | null {
+  const spans = [...bursts].map(([spec, b]) => ({ spec, from: b.fromUnix, to: b.toUnix }));
+  // The moment most bursts cover: every burst's start is a candidate.
+  let most: typeof spans = [];
+  for (const a of spans) {
+    const at = spans.filter((b) => b.from <= a.from && a.from <= b.to);
+    if (at.length > most.length) most = at;
+  }
+  if (most.length < min) return null;
+  const specs = most.map((b) => b.spec).sort();
+  const failedOn = specs.map((spec) => new Set((paths.get(spec)?.groups ?? []).flatMap((g) => g.failedOn)));
+  const common = failedOn.every((set) => set.size > 0) ? [...failedOn[0]!].filter((p) => failedOn.every((set) => set.has(p))) : [];
+  const sets = specs.map((spec) => configured.get(spec) ?? new Set<string>());
+  const shareNone = sets.every((set) => set.size > 0) && ![...sets[0]!].some((p) => sets.every((set) => set.has(p)));
+  return {
+    specs,
+    fromUnix: Math.min(...most.map((b) => b.from)),
+    toUnix: Math.max(...most.map((b) => b.to)),
+    provider: common.sort()[0] ?? null,
+    shareNone,
+  };
+}
+
+/** The several-chains card — written by code: a pattern this exact reads better as a fact than as prose. */
+export function togetherIssue(
+  t: Together,
+  bursts: Map<string, Burst>,
+  chainName: (spec: string) => string,
+  critical: boolean,
+  now: number,
+): FormulatedIssue {
+  const names = t.specs.map(chainName);
+  const total = t.specs.reduce((a, spec) => a + (bursts.get(spec)?.count ?? 0), 0);
+  const listed = names.length <= 4 ? names.join(", ") : `${names.slice(0, 4).join(", ")} and ${names.length - 4} more`;
+  const lastUnix = Math.max(...t.specs.map((spec) => bursts.get(spec)?.lastUnix ?? 0));
+  const cause = t.provider ? `all on ${providerName(t.provider)}` : t.shareNone ? "likely the Smart Router" : null;
+  return {
+    severity: critical ? "critical" : "degraded",
+    spec: t.specs[0]!,
+    chain: `${t.specs.length} chains`,
+    specs: t.specs,
+    title: `${t.specs.length} chains failed at the same time${cause ? ` — ${cause}` : ""}`,
+    points: [
+      t.provider
+        ? `On every one of these chains, the failed requests failed on ${providerName(t.provider)}.`
+        : t.shareNone
+          ? "These chains share no provider, so one provider failing cannot explain it."
+          : "They share a provider, but the failed requests did not all fail on it.",
+      ...t.specs.slice(0, 3).map((spec) => `${chainName(spec)}: ${num(bursts.get(spec)?.count ?? 0)} failed in its worst five minutes.`),
+    ],
+    bottomLine: "",
+    ongoing: now - lastUnix < BURST_WINDOW_SEC,
+    findingIds: t.specs.map((spec) => `${spec}:burst`),
+    lastSeenUnix: lastUnix,
+    outcome: { recovered: null, failures: total, requests: null, addonCalls: [], writes: null, paths: null, rejected: null },
+    impact: `${num(total)} requests failed on ${t.specs.length} chains within the same few minutes: ${listed}.`,
+    measured: { fromUnix: t.fromUnix, toUnix: t.toUnix },
+    handled: false,
+    whoActs: t.provider
+      ? `${providerName(t.provider)} (the provider) — requests failed on it on every one of these chains.`
+      : "Magma — chains failing together point at the router first.",
+    codes: [],
+    together: true,
+  };
+}
+
+/**
+ * Where one provider stands between a chain and failure: the chain has one
+ * provider at all, or only one serves the debug (or trace) calls it gets.
+ * Nothing is failing — this says so before something does.
+ *
+ * Only what the config and the router's own code settle: the router filters
+ * backups by add-on like everyone else, so a debug call can only go to a
+ * provider that declares debug. A chain with an open issue is left out; the
+ * issue says it.
+ */
+export function risksOf(
+  routers: RouterTopology[],
+  outcomeOf: (spec: string) => ChainOutcome,
+  chainName: (spec: string) => string,
+  skip: Set<string>,
+): Risk[] {
+  const nodesBySpec = new Map<string, Map<string, RouterNode>>();
+  for (const r of routers) {
+    const nodes = nodesBySpec.get(r.spec) ?? new Map<string, RouterNode>();
+    for (const n of r.nodes) if (!nodes.has(n.name)) nodes.set(n.name, n);
+    nodesBySpec.set(r.spec, nodes);
+  }
+  const out: Risk[] = [];
+  for (const [spec, byName] of nodesBySpec) {
+    if (skip.has(spec)) continue;
+    const nodes = [...byName.values()];
+    const o = outcomeOf(spec);
+    const chain = chainName(spec);
+    if (nodes.length === 1) {
+      if ((o.requests ?? 0) > 0) {
+        out.push({
+          spec,
+          chain,
+          calls: o.requests,
+          unit: "requests",
+          text: `${chain} has one provider, ${providerName(nodes[0]!.name)}. If it stops answering, the chain stops.`,
+        });
+      }
+      continue;
+    }
+    for (const addon of ["debug", "trace"] as const) {
+      const serving = nodes.filter((n) => n.endpoints.some((e) => e.addons.includes(addon)));
+      const sent = o.addonCalls.find((a) => a.addon === addon)?.sent ?? 0;
+      if (serving.length === 1 && sent > 0) {
+        out.push({
+          spec,
+          chain,
+          calls: sent,
+          unit: `${addon} calls`,
+          text: `Only ${providerName(serving[0]!.name)} serves ${addon} calls on ${chain}. If it fails, those calls have nowhere to go.`,
+        });
+      }
+    }
+  }
+  return out.sort((a, b) => (b.calls ?? 0) - (a.calls ?? 0));
+}
+
 /**
  * What the router's own logs say, once per customer request: how many failed
  * per chain, which methods the failed requests had called, and the bursts.
@@ -262,6 +447,8 @@ export interface LogOutcome {
   bursts: Map<string, Burst>;
   /** The failed requests' paths through the router, grouped, per chain. */
   paths: Map<string, FailurePaths>;
+  /** What the chain refused, per request, per chain. */
+  rejections: Map<string, RefusedRequests>;
 }
 
 /**
@@ -273,7 +460,10 @@ export interface LogOutcome {
  * gateway answered with a 504.
  */
 export async function readLogs(
-  loki: Pick<LokiService, "routersWithLogs" | "failedRequests" | "countFailed" | "methodsOf" | "traceRequests">,
+  loki: Pick<
+    LokiService,
+    "routersWithLogs" | "failedRequests" | "countFailed" | "methodsOf" | "traceRequests" | "rejectedRequests" | "resentTransactions"
+  >,
   rangeSec: number,
   routers: { id: string; spec: string }[],
   now = Math.floor(Date.now() / 1000),
@@ -343,7 +533,34 @@ export async function readLogs(
     const p = groupTraces(list);
     if (p) paths.set(spec, p);
   }
-  return { failed, failedMethods, bursts, paths };
+
+  // What the chain refused, once per request — and whether the refused
+  // transactions had been sent before. A failed read costs the caller card
+  // its per-request count (it falls back to the counter's), never the card.
+  const rejections = new Map<string, RefusedRequests>();
+  const refused = await loki.rejectedRequests(rangeSec, 5000, now).catch(() => null);
+  const refusedBySpec = new Map<string, Rejection[]>();
+  for (const [router, list] of refused?.byRouter ?? []) {
+    const spec = specOf.get(router);
+    if (spec) refusedBySpec.set(spec, [...(refusedBySpec.get(spec) ?? []), ...list]);
+  }
+  await Promise.all(
+    [...refusedBySpec].map(async ([spec, list]) => {
+      const byCode: Record<string, number> = {};
+      for (const r of list) byCode[r.code] = (byCode[r.code] ?? 0) + 1;
+      const resent = await loki.resentTransactions(list, 3).catch(() => null);
+      rejections.set(spec, {
+        requests: list.length,
+        byCode,
+        resent: resent && resent.checked > 0 ? resent : null,
+        latest: [...list]
+          .sort((a, b) => b.atUnix - a.atUnix)
+          .slice(0, 3)
+          .map((r) => ({ id: r.id, atUnix: r.atUnix })),
+      });
+    }),
+  );
+  return { failed, failedMethods, bursts, paths, rejections };
 }
 
 /**
@@ -385,9 +602,18 @@ export function groupTraces(traces: RequestTrace[]): FailurePaths | null {
       route,
       methods: [...methods].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([m]) => m),
       seconds: [Math.min(...secs), Math.max(...secs)],
+      // In the order they were tried: the first is where the request started failing.
+      failedOn: [...new Set(list.flatMap((t) => t.attempts.filter((a) => a.outcome !== "answered").map((a) => a.provider)))],
+      ids: newestIds(list.map((t) => ({ id: t.id, atUnix: t.atUnix }))),
+      errors: [...new Set(list.map((t) => t.error).filter((e): e is string => e != null))],
     };
   });
   return { traced: groups.reduce((a, g) => a + g.count, 0), groups: sortPaths(groups) };
+}
+
+/** The newest three — what a support engineer matches against a caller's own log. */
+function newestIds(ids: { id: string; atUnix: number }[]): { id: string; atUnix: number }[] {
+  return [...ids].sort((a, b) => b.atUnix - a.atUnix).slice(0, 3);
 }
 
 /** The middle value — the lower one of two — or null for none. */
@@ -417,6 +643,9 @@ export function mergePaths(list: (FailurePaths | null)[]): FailurePaths | null {
             count: same.count + g.count,
             methods: [...new Set([...same.methods, ...g.methods])],
             seconds: [Math.min(same.seconds[0], g.seconds[0]), Math.max(same.seconds[1], g.seconds[1])],
+            failedOn: [...new Set([...same.failedOn, ...g.failedOn])],
+            ids: newestIds([...same.ids, ...g.ids]),
+            errors: [...new Set([...same.errors, ...g.errors])],
           }
         : { ...g, methods: [...g.methods] },
     );
@@ -543,6 +772,7 @@ export async function outcomesBySpec(
       addonCalls: addonCalls(spec),
       writes: writesOf(spec),
       paths: logs?.paths.get(spec) ?? null,
+      rejected: logs?.rejections.get(spec) ?? null,
     };
   };
 }
@@ -573,6 +803,7 @@ function sumOutcomes(list: ChainOutcome[]): ChainOutcome {
     requests: add("requests"),
     addonCalls: [...byAddon.values()],
     paths: mergePaths(list.map((o) => o.paths)),
+    rejected: mergeRefused(list.map((o) => o.rejected)),
     writes: writes.length
       ? {
           sent: writes.reduce((a, w) => a + w.sent, 0),
@@ -582,10 +813,31 @@ function sumOutcomes(list: ChainOutcome[]): ChainOutcome {
   };
 }
 
+/** Several chains' refusals as one — for the caller-side card that covers them. */
+export function mergeRefused(list: (RefusedRequests | null)[]): RefusedRequests | null {
+  const all = list.filter((r): r is RefusedRequests => r != null);
+  if (all.length === 0) return null;
+  const byCode: Record<string, number> = {};
+  for (const r of all) for (const [code, n] of Object.entries(r.byCode)) byCode[code] = (byCode[code] ?? 0) + n;
+  const checks = all.map((r) => r.resent).filter((x): x is NonNullable<RefusedRequests["resent"]> => x != null);
+  return {
+    requests: all.reduce((a, r) => a + r.requests, 0),
+    byCode,
+    resent: checks.length
+      ? {
+          checked: checks.reduce((a, c) => a + c.checked, 0),
+          resent: checks.reduce((a, c) => a + c.resent, 0),
+          mostSends: Math.max(...checks.map((c) => c.mostSends)),
+        }
+      : null,
+    latest: newestIds(all.flatMap((r) => r.latest)),
+  };
+}
+
 /** One problem's record, kept across cycles. */
 export interface IssueRecord {
   id: string;
-  /** The chain's spec, or "callers" for the merged caller-side issue. */
+  /** The chain's spec, "callers" for the merged caller-side issue, "together" for several chains failing at once. */
   key: string;
   openedAtUnix: number;
   updatedAtUnix: number;
@@ -594,6 +846,11 @@ export interface IssueRecord {
   /** The fingerprint the words were written for. */
   print: string;
   issue: FormulatedIssue;
+  timeline?: TimelinePoint[];
+}
+
+function pointOf(issue: FormulatedIssue, t: number): TimelinePoint {
+  return { t, failed: issue.outcome.failures, saved: issue.outcome.recovered, refused: issue.outcome.rejected?.requests ?? null };
 }
 
 /** A resolved issue found again within this is the same issue, reopened. */
@@ -632,6 +889,7 @@ export class IssueLog {
         rec.print = s.print;
         rec.updatedAtUnix = now;
         rec.resolvedAtUnix = null;
+        rec.timeline = [...(rec.timeline ?? []), pointOf(s.issue, now)].slice(-MAX_TIMELINE);
       } else {
         const opened = Math.min(now, s.firstSeenUnix ?? now);
         this.current.set(s.key, {
@@ -643,6 +901,7 @@ export class IssueLog {
           severitySinceUnix: opened,
           print: s.print,
           issue: s.issue,
+          timeline: [pointOf(s.issue, now)],
         });
       }
     }
@@ -675,6 +934,7 @@ export class IssueLog {
         updatedAtUnix: r.updatedAtUnix,
         resolvedAtUnix: r.resolvedAtUnix,
         severitySinceUnix: r.severitySinceUnix,
+        timeline: r.timeline ?? [],
       }));
   }
 
@@ -704,6 +964,8 @@ export interface IssuesFeedOptions {
    * allowed to run; tests pass their own.
    */
   writer?: Pick<FormulatedIssueService, "formulate">;
+  /** Where Critical issues are posted. Unset = `ISSUES_WEBHOOK_URL`, and no alerts without it. */
+  alerts?: { url?: string; dashboardUrl?: string };
 }
 
 export class IssuesFeedService {
@@ -714,6 +976,7 @@ export class IssuesFeedService {
   private readonly loki: LokiService;
   private readonly stateFile?: string;
   private readonly writer?: Pick<FormulatedIssueService, "formulate">;
+  private readonly alerts: { url?: string; dashboardUrl?: string };
 
   constructor(
     private readonly detail: MetricsDetailService,
@@ -725,6 +988,7 @@ export class IssuesFeedService {
     this.loki = opts.loki ?? new LokiService();
     this.stateFile = opts.stateFile;
     this.writer = opts.writer;
+    this.alerts = opts.alerts ?? { url: config.issues.webhookUrl, dashboardUrl: config.issues.dashboardUrl };
     this.log = this.load();
   }
 
@@ -734,7 +998,8 @@ export class IssuesFeedService {
    */
   view(window: MetricWindow, now = Math.floor(Date.now() / 1000)): IssuesSnapshot | null {
     if (!this.lastCycle) return null;
-    return { window, ...this.lastCycle, issues: this.log.view(WINDOWS[window].rangeSeconds, now) };
+    // A log saved before risks existed has none — an empty list, not a crash.
+    return { window, ...this.lastCycle, risks: this.lastCycle.risks ?? [], issues: this.log.view(WINDOWS[window].rangeSeconds, now) };
   }
 
   /** True while a cycle is running, so a route can say "working" not "off". */
@@ -774,7 +1039,7 @@ export class IssuesFeedService {
         : null;
       // Read once for every chain. A failure here costs the outcome sentence,
       // never the issues themselves.
-      const unmeasured: ChainOutcome = { recovered: null, failures: null, requests: null, addonCalls: [], writes: null, paths: null };
+      const unmeasured: ChainOutcome = { recovered: null, failures: null, requests: null, addonCalls: [], writes: null, paths: null, rejected: null };
       const outcomeOf = this.prom
         ? await outcomesBySpec(this.prom, window, logs).catch((err) => {
             this.logger?.warn(
@@ -834,6 +1099,7 @@ export class IssuesFeedService {
         });
       }
 
+      const chainNameOf = (spec: string) => bySpec.get(spec)?.[0]?.chainName ?? buildChainMetaByIndex(spec).name;
       const svc = this.writer ?? new FormulatedIssueService(new BedrockService(config.bedrock.model, this.logger), this.logger);
       // The time every number below covers — printed on each card beside them.
       const measured = { fromUnix: report.computedAtUnix - WINDOWS[window].rangeSeconds, toUnix: report.computedAtUnix };
@@ -918,14 +1184,47 @@ export class IssuesFeedService {
         }
       }
 
+      // Several chains failing in the same five minutes is its own card, on
+      // top of each chain's own — written by code, whatever the budget.
+      const configured = new Map<string, Set<string>>();
+      for (const r of routers) configured.set(r.spec, new Set([...(configured.get(r.spec) ?? []), ...r.nodes.map((n) => n.name)]));
+      const together = logs ? failingTogether(logs.bursts, logs.paths, configured) : null;
+      if (together && logs) {
+        seen.push({
+          key: "together",
+          print: `together~${together.specs.join(",")}~${together.provider ?? (together.shareNone ? "none" : "shared")}`,
+          firstSeenUnix: together.fromUnix,
+          issue: togetherIssue(
+            together,
+            logs.bursts,
+            chainNameOf,
+            together.specs.some((spec) => sev(spec, bySpec.get(spec) ?? []) === "critical"),
+            cycleNow,
+          ),
+        });
+      }
+
       const now = Math.floor(Date.now() / 1000);
+      // Everything, resolved included — what an alert compares against.
+      const everything = 400 * 86_400;
+      const before = this.log.view(everything, now);
       this.log.advance(seen, now);
+      const alerts = this.alerts.url ? criticalChanges(before, this.log.view(everything, now)) : [];
       this.lastCycle = {
         computedAtUnix: report.computedAtUnix,
         logsAvailable: this.loki.available,
         configAvailable: routers.length > 0,
+        risks: risksOf(
+          routers,
+          outcomeOf,
+          chainNameOf,
+          new Set(groups.flatMap((g) => [g.spec, ...g.alsoOnChains.map((c) => c.spec)])),
+        ),
       };
       await this.save();
+      if (alerts.length > 0) {
+        await postAlerts(this.alerts.url!, alerts, { dashboardUrl: this.alerts.dashboardUrl, logger: this.logger });
+      }
     } finally {
       this.running = false;
     }
