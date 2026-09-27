@@ -15,7 +15,7 @@
  */
 import type { FastifyInstance } from "fastify";
 import { config } from "../config.js";
-import { BedrockError, BedrockService, bedrockGate } from "../services/bedrock.js";
+import { BedrockError, BedrockService, bedrockGate, isLoopback } from "../services/bedrock.js";
 
 /** Which model this deployment would call. Nothing here is secret — no credential exists to leak. */
 function target() {
@@ -35,6 +35,21 @@ function gate() {
 }
 
 export async function aiRoutes(app: FastifyInstance) {
+  // Said once, at boot: a flag that silently does nothing is a support ticket.
+  // The deployment asked for unauthenticated AI on an address others can
+  // reach, and the gate will refuse every call until it signs people in.
+  if (
+    config.bedrock.enabled &&
+    config.bedrock.allowUnauthenticated &&
+    config.auth.mode !== "enabled" &&
+    !isLoopback(config.server.host)
+  ) {
+    app.log.warn(
+      { host: config.server.host },
+      "BEDROCK_ALLOW_UNAUTHENTICATED is ignored: the api listens beyond loopback — set AUTH_MODE=enabled, or API_HOST=127.0.0.1 for a local run",
+    );
+  }
+
   app.get(
     "/api/ai/health",
     {

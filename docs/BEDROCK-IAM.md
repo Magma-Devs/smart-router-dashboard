@@ -19,9 +19,11 @@ Account `811430801429` · region `us-east-1` · model
 
 ## Just make it work
 
-On a fresh clone, with no Postgres and no AWS config:
+On a fresh clone, with no Postgres and no AWS config — **on your own machine
+only**:
 
 ```bash
+API_HOST=127.0.0.1 \
 BEDROCK_ENABLED=true \
 BEDROCK_ALLOW_UNAUTHENTICATED=true \
 AWS_BEARER_TOKEN_BEDROCK=<the key> \
@@ -30,15 +32,17 @@ pnpm --filter @sr/api dev
 curl -X POST localhost:8000/api/ai/verify
 ```
 
-`BEDROCK_ALLOW_UNAUTHENTICATED` is what lets AI run under the default
-`AUTH_MODE=disabled`, which installs no `/api/*` gate. Fine on a laptop, **not**
-on anything reachable from outside — there it means anyone who can reach the api
-can spend the model budget, the same trade `UPSTREAM_RELAY_ENABLED` already
-makes for the relay.
+`BEDROCK_ALLOW_UNAUTHENTICATED` lets AI run under the default
+`AUTH_MODE=disabled`, which installs no `/api/*` gate. It is honoured **only
+while the api listens on loopback** (`API_HOST=127.0.0.1`), so nothing but this
+machine can call it. On any other address — the `0.0.0.0` default, and every
+container — the flag is ignored, AI answers `auth_required`, and the api logs
+why at boot. Anywhere reachable, AI needs `AUTH_MODE=enabled`.
 
 Drop `AWS_BEARER_TOKEN_BEDROCK` and it uses your own `aws configure` identity
-instead; drop `BEDROCK_ALLOW_UNAUTHENTICATED` and add `AUTH_MODE=enabled` for
-the real thing.
+instead. For anything other than your own machine, drop both
+`API_HOST=127.0.0.1` and `BEDROCK_ALLOW_UNAUTHENTICATED`, and set
+`AUTH_MODE=enabled`.
 
 ## Per-deployment API key (the simple path)
 
@@ -51,7 +55,7 @@ Mint it **scoped and expiring**. `create-service-specific-credential` without
 MAG-3702's ended up permanent:
 
 ```bash
-CUST=gk8
+CUST=acme
 aws iam create-user --user-name sr-dash-${CUST}
 aws iam attach-user-policy --user-name sr-dash-${CUST} \
   --policy-arn arn:aws:iam::811430801429:policy/SmartRouterDashboardBedrockInvoke
@@ -71,9 +75,9 @@ BEDROCK_ENABLED=true
 AWS_BEARER_TOKEN_BEDROCK=<the value printed once>
 ```
 
-`docker-compose.yml` passes all of these through, so nothing else is needed. Set
-`BEDROCK_ALLOW_UNAUTHENTICATED=true` as well if that deployment runs with
-`AUTH_MODE=disabled`.
+`docker-compose.yml` passes these through. The deployment must also run with
+`AUTH_MODE=enabled`: the api is reachable through its published port, so AI
+without sign-in is refused there, and there is no flag that turns that off.
 
 To revoke one customer, or to rotate on expiry:
 

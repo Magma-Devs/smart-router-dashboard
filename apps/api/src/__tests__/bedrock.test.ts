@@ -43,14 +43,29 @@ describe("bedrockGate", () => {
     expect(bedrockGate("enabled", true)).toEqual({ ok: true });
   });
 
-  it("opens WITHOUT auth only when the deployment says so out loud", () => {
+  it("opens WITHOUT auth only on a laptop, and only when asked out loud", () => {
     // The zero-dependency boot is the default, so a fresh clone has no
     // Postgres and no AUTH_SECRET. Demanding both to try one feature means
-    // nobody tries it — but an exposed deployment has to opt in explicitly.
-    expect(bedrockGate("disabled", true, true)).toEqual({ ok: true });
-    expect(bedrockGate("disabled", true, false)).toEqual({ ok: false, reason: "auth_required" });
+    // nobody tries it — so a loopback-only api may opt out of sign-in.
+    for (const host of ["127.0.0.1", "localhost", "::1", "[::1]"]) {
+      expect(bedrockGate("disabled", true, true, host)).toEqual({ ok: true });
+    }
+    expect(bedrockGate("disabled", true, false, "127.0.0.1")).toEqual({ ok: false, reason: "auth_required" });
     // Still off when not enabled at all, whatever this says.
-    expect(bedrockGate("disabled", false, true)).toEqual({ ok: false, reason: "disabled" });
+    expect(bedrockGate("disabled", false, true, "127.0.0.1")).toEqual({ ok: false, reason: "disabled" });
+  });
+
+  it("REFUSES the opt-out on any address others can reach", () => {
+    // Review on the setup doc: the api binds 0.0.0.0 by default, so the
+    // copy-paste example on a reachable server let anyone on port 8000 call
+    // Bedrock on the account. Every container binds 0.0.0.0 too.
+    for (const host of ["0.0.0.0", "::", "10.0.0.4", "api.example.com"]) {
+      const res = bedrockGate("disabled", true, true, host);
+      expect(res).toMatchObject({ ok: false, reason: "auth_required" });
+      expect(res.ok ? "" : res.detail).toMatch(/API_HOST=127\.0\.0\.1/);
+    }
+    // Sign-in opens it anywhere.
+    expect(bedrockGate("enabled", true, false, "0.0.0.0")).toEqual({ ok: true });
   });
 });
 
