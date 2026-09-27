@@ -116,7 +116,12 @@ export function parseModelJson(
   logger?: BedrockLogger,
 ): Record<string, unknown> {
   if (answer.stopReason === "max_tokens") {
-    logger?.warn({ what, outputTokens: answer.outputTokens }, "model answer hit the token ceiling");
+    // The opening of the answer says why it ran long — a preamble before the
+    // JSON, or a JSON that never stopped — which the count alone cannot.
+    logger?.warn(
+      { what, outputTokens: answer.outputTokens, opening: answer.text.slice(0, 240) },
+      "model answer hit the token ceiling",
+    );
     throw new ModelAnswerTruncated(what, answer.outputTokens);
   }
   // Slice between the outermost braces: tolerates a fence, or a sentence the

@@ -50,6 +50,18 @@ export interface ChainOutcome {
    * Empty when none were sent or the counters are absent.
    */
   addonCalls: AddonCalls[];
+  /**
+   * Transactions: the methods the router itself flags as writes, sent, and
+   * how many failed the caller after every retry. Null when the chain sent
+   * none or nothing says which methods are writes.
+   */
+  writes: WriteCalls | null;
+}
+
+export interface WriteCalls {
+  sent: number;
+  /** Failed the caller, once per request, from the router's final-result log; null without it. */
+  failed: number | null;
 }
 
 /** One kind of add-on call on one chain — `debug_*` or `trace_*`. */
@@ -123,8 +135,9 @@ export interface FormulatedIssue {
  *             at least half its requests got no answer after every retry. Or
  *             one KIND of request cannot be: at least half the debug (or
  *             trace) calls got no usable answer — none, or an error reply no
- *             retry replaced. Reads may be fine, but a caller sending those
- *             calls has nothing that works.
+ *             retry replaced — or at least half the transactions failed.
+ *             Reads may be fine, but a caller sending those has nothing that
+ *             works: "can't transact" is critical.
  *   degraded  a provider is failing, slow or wrong, and the router still has
  *             somewhere to send traffic — even when some requests reached the
  *             caller as errors on the way.
@@ -187,6 +200,12 @@ export function shareFailed(outcome?: Partial<Pick<ChainOutcome, "failures" | "r
   return of > 0 ? outcome.failures / of : null;
 }
 
+/** Transactions that cannot be sent: at least half failed the caller. */
+export function writesBlocked(outcome?: Partial<Pick<ChainOutcome, "writes">>): boolean {
+  const w = outcome?.writes;
+  return w?.failed != null && w.sent >= MIN_ADDON_CALLS && w.failed / Math.max(w.sent, w.failed) >= INACCESSIBLE_SHARE;
+}
+
 /** The kinds of add-on call on this chain that cannot be served. */
 export function blockedAddons(outcome?: Partial<Pick<ChainOutcome, "addonCalls">>): AddonCalls[] {
   return (outcome?.addonCalls ?? []).filter(
@@ -207,7 +226,7 @@ export function severityOf(
   const everyProviderFailing = ours.some((f) => f.id.endsWith(":chain:down"));
   const share = shareFailed(outcome);
   if (everyProviderFailing || (share != null && share >= INACCESSIBLE_SHARE)) return "critical";
-  if (blockedAddons(outcome).length > 0) return "critical";
+  if (blockedAddons(outcome).length > 0 || writesBlocked(outcome)) return "critical";
   if (ours.some((f) => f.kind !== "config")) return "degraded";
   return "config";
 }
@@ -242,6 +261,8 @@ export interface FormulatedInputs {
   requests: number | null;
   /** Debug / trace calls on this chain, when any were sent. */
   addonCalls?: AddonCalls[];
+  /** Transactions on this chain, when any were sent. */
+  writes?: WriteCalls | null;
   /**
    * The version already on the customer's screen, when this issue is still
    * open. Given so a rewrite UPDATES the issue rather than writing a new one
@@ -333,6 +354,9 @@ many requests the router saved by retrying them on another provider
     replaced — "the method does not exist" is how a provider that cannot
     serve debug usually says so. When most of one kind got no usable answer,
     that is the point to lead with.
+  - transactions, when given, are the calls that change the chain (sending a
+    transaction). When most failed the caller, lead with it: they cannot
+    transact on this chain right now, whatever the reads look like.
 
 reachedCaller counts requests that got NO answer. An error answer is not in
 it — that went back to the caller as an error. So when a provider is answering
@@ -407,7 +431,8 @@ The severity you are given follows ONE rule: can what they send still be
 served. Critical means it cannot — every provider is failing, or at least half
 the requests got no answer even after retries, or one kind of request cannot be
 served at all: at least half of their debug (or trace) calls got no usable
-answer, either none or an error reply.
+answer, either none or an error reply — or at least half of their transactions
+failed. "Can't transact" is critical even when every read works.
 When it is that last one, say so by name: reads may work, but their debug calls
 have no provider that can answer them. Degraded means the chain still
 works: a provider is failing, slow or wrong, and the router has somewhere else
@@ -520,6 +545,7 @@ export function digestForIssue(i: FormulatedInputs): string {
               totalRequests: i.requests,
               savedByRetry: i.recovered,
               reachedCaller: i.failures,
+              ...(i.writes ? { transactions: { sent: i.writes.sent, failedForTheCaller: i.writes.failed } } : {}),
               ...(i.addonCalls?.length
                 ? {
                     callsNeedingAnAddon: i.addonCalls.map((a) => ({
@@ -565,6 +591,7 @@ export function measuredFields(
       failures: inputs.failures,
       requests: inputs.requests,
       addonCalls: inputs.addonCalls ?? [],
+      writes: inputs.writes ?? null,
     }),
     spec: inputs.spec,
     chain: inputs.chain,
@@ -576,6 +603,7 @@ export function measuredFields(
       failures: inputs.failures,
       requests: inputs.requests,
       addonCalls: inputs.addonCalls ?? [],
+      writes: inputs.writes ?? null,
     },
     lastSeenUnix: all.reduce<number | null>(
       (newest, f) => (f.lastSeenUnix && (!newest || f.lastSeenUnix > newest) ? f.lastSeenUnix : newest),

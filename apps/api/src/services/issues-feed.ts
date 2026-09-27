@@ -46,10 +46,11 @@ import {
   measuredFields,
   type AddonCalls,
   type ChainOutcome,
+  type WriteCalls,
   type FormulatedIssue,
   type IssueSeverity,
 } from "./formulated-issues.js";
-import { LokiService, groupErrors, type FinalResults } from "./loki.js";
+import { LokiService, groupErrors, type FailedRequest } from "./loki.js";
 import { BedrockService, bedrockGate, type BedrockLogger } from "./bedrock.js";
 import { config } from "../config.js";
 
@@ -151,38 +152,102 @@ const addonQuery = (metric: string, label: string, range: string): string =>
   `round(sum by (spec, addon) (label_replace(increase(${metric}{${label}=~"(debug|trace)_.*"}[${range}]), "addon", "$1", "${label}", "(debug|trace)_.*")))`;
 
 /**
- * Final results by router id → by chain, through the values file. A router
- * the config does not know is left out rather than guessed at.
+ * Failed requests per chain, through the values file's router ids. A chain
+ * gets a number only when at least one of its routers has logs in the
+ * window — "0 failed" is a claim, and a router whose logs never reach the
+ * store cannot back it. A router the config does not know is left out.
  */
-export function finalsBySpec(
-  byRouter: Map<string, FinalResults>,
+export function failedBySpec(
+  countsByRouter: Map<string, number>,
   routers: { id: string; spec: string }[],
-): Map<string, FinalResults> {
-  const specOf = new Map(routers.map((r) => [r.id.toLowerCase(), r.spec]));
-  const out = new Map<string, FinalResults>();
-  for (const [router, v] of byRouter) {
-    const spec = specOf.get(router);
-    if (!spec) continue;
-    const cur = out.get(spec) ?? { total: 0, failed: 0 };
-    cur.total += v.total;
-    cur.failed += v.failed;
-    out.set(spec, cur);
+  withLogs: Set<string>,
+): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const r of routers) {
+    const id = r.id.toLowerCase();
+    if (!withLogs.has(id)) continue;
+    out.set(r.spec, (out.get(r.spec) ?? 0) + (countsByRouter.get(id) ?? 0));
   }
   return out;
+}
+
+/**
+ * What the router's own logs say, once per customer request: how many failed
+ * per chain, and which methods the failed requests had called.
+ */
+export interface LogOutcome {
+  /** Failed customer requests per chain; a chain is absent when its logs are. */
+  failed: Map<string, number>;
+  /** Failed requests by method, per chain — scaled up from a sample in a bad hour. */
+  failedMethods: Map<string, Map<string, number>>;
+}
+
+/**
+ * Read the logs for one window, cheaply. The label index says which routers
+ * have logs; one filtered read returns the failed requests (rare); each
+ * one's method is looked up on its own pod in the minutes around it. The
+ * fleet-wide count of every request is NOT read here — Prometheus has it —
+ * because scanning ~600k lines three times per cycle is what the store's
+ * gateway answered with a 504.
+ */
+export async function readLogs(
+  loki: Pick<LokiService, "routersWithLogs" | "failedRequests" | "countFailed" | "methodsOf">,
+  rangeSec: number,
+  routers: { id: string; spec: string }[],
+  now = Math.floor(Date.now() / 1000),
+): Promise<LogOutcome | null> {
+  const withLogs = await loki.routersWithLogs(rangeSec, now);
+  if (!withLogs) return null;
+  const { byRouter, capped } = await loki.failedRequests(rangeSec, 5000, now);
+
+  const counts = new Map([...byRouter].map(([router, list]) => [router, list.length]));
+  if (capped) {
+    // A bad hour overflowed the read: count the routers that had failures,
+    // on their own pods, and keep the ids as a sample for the method split.
+    for (const [router, n] of await loki.countFailed([...byRouter.keys()], rangeSec, now)) {
+      counts.set(router, Math.max(n, counts.get(router) ?? 0));
+    }
+  }
+  const failures: FailedRequest[] = [...byRouter.values()].flat();
+  const methods = await loki.methodsOf(failures);
+
+  const specOf = new Map(routers.map((r) => [r.id.toLowerCase(), r.spec]));
+  const sampled = new Map<string, Map<string, number>>();
+  const sampledCount = new Map<string, number>();
+  for (const [router, list] of byRouter) {
+    const spec = specOf.get(router);
+    if (!spec) continue;
+    const m = sampled.get(spec) ?? new Map<string, number>();
+    for (const f of list) {
+      const method = methods.get(f.id) ?? "unknown";
+      m.set(method, (m.get(method) ?? 0) + 1);
+    }
+    sampled.set(spec, m);
+    sampledCount.set(spec, (sampledCount.get(spec) ?? 0) + list.length);
+  }
+  const failed = failedBySpec(counts, routers, withLogs);
+  const failedMethods = new Map<string, Map<string, number>>();
+  for (const [spec, m] of sampled) {
+    const seen = sampledCount.get(spec) ?? 0;
+    const real = failed.get(spec) ?? seen;
+    const k = seen > 0 && real > seen ? real / seen : 1;
+    failedMethods.set(spec, new Map([...m].map(([method, n]) => [method, Math.round(n * k)])));
+  }
+  return { failed, failedMethods };
 }
 
 export async function outcomesBySpec(
   prom: Pick<PrometheusClient, "query">,
   window: MetricWindow,
   /**
-   * Customer requests and failures per chain, from the router's final-result
-   * log. Without it, failures are unmeasured — never taken from the
-   * requests_failed counter, which counts relay attempts.
+   * The router's own per-request logs. Without them, failures are unmeasured
+   * — never taken from the requests_failed counter, which counts relay
+   * ATTEMPTS.
    */
-  finals: Map<string, FinalResults> | null = null,
+  logs: LogOutcome | null = null,
 ): Promise<(spec: string) => ChainOutcome> {
   const range = `${WINDOWS[window].rangeSeconds}s`;
-  const [failed, saved, requested, addonSent, addonFailed, addonErrors, addonSaved] = await Promise.all([
+  const [failed, saved, requested, addonSent, addonFailed, addonErrors, addonSaved, writeMethodRows] = await Promise.all([
     prom.query(`sum by (spec) (increase(${OPTIONAL_METRICS.requestsFailedTotal}[${range}]))`),
     prom.query(`sum by (spec) (increase(${OPTIONAL_METRICS.retriesSuccessTotal}[${range}]))`),
     // The client-side count the rest of the dashboard uses: one per customer
@@ -196,7 +261,49 @@ export async function outcomesBySpec(
     // result calls them a success — and what a retry saved, per add-on.
     prom.query(addonQuery(OPTIONAL_METRICS.nodeErrorsTotal, "method", range)),
     prom.query(addonQuery(OPTIONAL_METRICS.retriesSuccessTotal, "method", range)),
+    // Which methods are transactions is the router's call (stateful ≠ none),
+    // not a list of names kept here: its write counter labels every one.
+    prom.query(`count by (spec, method) (${OPTIONAL_METRICS.requestsWriteTotal})`),
   ]);
+
+  const writeMethods = new Map<string, Set<string>>();
+  for (const r of writeMethodRows) {
+    const spec = r.metric.spec ?? "";
+    const method = r.metric.method ?? "";
+    if (!spec || !method) continue;
+    const set = writeMethods.get(spec) ?? new Set<string>();
+    set.add(method);
+    writeMethods.set(spec, set);
+  }
+  const allWriteMethods = [...new Set([...writeMethods.values()].flatMap((m) => [...m]))];
+  // Sent is the client-side count, one per request — the write counter itself
+  // is per relay, and a transaction is broadcast to every primary.
+  const writesSentRows = allWriteMethods.length
+    ? await prom.query(
+        `round(sum by (spec, function) (increase(${ROUTER_METRICS.latencyCount}{function=~"${allWriteMethods
+          // Regex specials doubled-escaped: once for the regex, once for the
+          // PromQL string it sits in. "/" is not special and must NOT be
+          // escaped — PromQL rejects "\/", and one bad method would fail the
+          // whole query for every chain.
+          .map((m) => m.replace(/[.*+?^${}()|[\]\\]/g, "\\\\$&"))
+          .join("|")}"}[${range}])))`,
+      )
+    : [];
+  const writesSent = new Map<string, number>();
+  for (const r of writesSentRows) {
+    const spec = r.metric.spec ?? "";
+    if (!writeMethods.get(spec)?.has(r.metric.function ?? "")) continue;
+    writesSent.set(spec, (writesSent.get(spec) ?? 0) + Math.round(Number(r.value[1]) || 0));
+  }
+  const writesOf = (spec: string): WriteCalls | null => {
+    const sent = writesSent.get(spec) ?? 0;
+    if (sent === 0) return null;
+    if (!logs) return { sent, failed: null };
+    const methodsHere = writeMethods.get(spec) ?? new Set<string>();
+    let failedWrites = 0;
+    for (const [method, n] of logs.failedMethods.get(spec) ?? []) if (methodsHere.has(method)) failedWrites += n;
+    return { sent, failed: failedWrites };
+  };
   const read = (rows: typeof failed) => {
     if (rows.length === 0) return (): number | null => null;
     const by = new Map(rows.map((r) => [r.metric.spec ?? "", Math.round(Number(r.value[1]) || 0)]));
@@ -236,15 +343,17 @@ export async function outcomesBySpec(
       .filter((a) => a.sent > 0);
 
   return (spec) => {
-    const f = finals?.get(spec);
     return {
       recovered: recovered(spec),
-      // Once per customer request, after every retry. `failures(spec)` above
-      // is the per-ATTEMPT counter and stays out of this: a request that
-      // failed on one provider and was saved on another is not a failure.
-      failures: f ? f.failed : null,
-      requests: f ? f.total : requests(spec),
+      // Once per customer request, after every retry, from the router's own
+      // log. `failures(spec)` above is the per-ATTEMPT counter and stays out
+      // of this: a request that failed on one provider and was saved on
+      // another is not a failure.
+      failures: logs?.failed.get(spec) ?? null,
+      // Client requests, one per request — the count the share is taken of.
+      requests: requests(spec),
       addonCalls: addonCalls(spec),
+      writes: writesOf(spec),
     };
   };
 }
@@ -268,11 +377,18 @@ function sumOutcomes(list: ChainOutcome[]): ChainOutcome {
         : { ...a },
     );
   }
+  const writes = list.map((o) => o.writes).filter((w): w is WriteCalls => w != null);
   return {
     recovered: add("recovered"),
     failures: add("failures"),
     requests: add("requests"),
     addonCalls: [...byAddon.values()],
+    writes: writes.length
+      ? {
+          sent: writes.reduce((a, w) => a + w.sent, 0),
+          failed: writes.some((w) => w.failed == null) ? null : writes.reduce((a, w) => a + (w.failed ?? 0), 0),
+        }
+      : null,
   };
 }
 
@@ -448,20 +564,17 @@ export class IssuesFeedService {
       const routers = this.configSvc?.getRouters() ?? [];
       // Customer failures per chain, once per request, from the router's own
       // final-result log. Without the log store they stay unmeasured.
-      const finals = this.loki.available
-        ? await this.loki
-            .finalResults(WINDOWS[window].rangeSeconds)
-            .then((byRouter) => (byRouter ? finalsBySpec(byRouter, routers) : null))
-            .catch((err) => {
-              this.logger?.warn({ error: err instanceof Error ? err.message : String(err) }, "could not read final results");
-              return null;
-            })
+      const logs = this.loki.available
+        ? await readLogs(this.loki, WINDOWS[window].rangeSeconds, routers).catch((err) => {
+            this.logger?.warn({ error: err instanceof Error ? err.message : String(err) }, "could not read the router's logs");
+            return null;
+          })
         : null;
       // Read once for every chain. A failure here costs the outcome sentence,
       // never the issues themselves.
-      const unmeasured: ChainOutcome = { recovered: null, failures: null, requests: null, addonCalls: [] };
+      const unmeasured: ChainOutcome = { recovered: null, failures: null, requests: null, addonCalls: [], writes: null };
       const outcomeOf = this.prom
-        ? await outcomesBySpec(this.prom, window, finals).catch((err) => {
+        ? await outcomesBySpec(this.prom, window, logs).catch((err) => {
             this.logger?.warn(
               { window, error: err instanceof Error ? err.message : String(err) },
               "could not read the retry outcome",

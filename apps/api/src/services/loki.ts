@@ -104,10 +104,42 @@ const FINAL_RESULT = '|= `"message":"ProcessingResult RETURNED"`';
  */
 const FAILED_RESULT = '|~ `"error":"[^"]+"|"has_result":"false"|"has_reply":"false"`';
 
-/** Customer requests on one router, and how many failed. */
-export interface FinalResults {
-  total: number;
-  failed: number;
+/**
+ * The background cycle's log reads wait longer than a page does. They count
+ * a whole fleet's requests for a window — ~600k lines in 30 minutes on a
+ * production deployment, 3.4s alone — and share the store with everything
+ * else in the cycle; at the page's 10s they timed out and every card lost
+ * its failure count. Nobody is waiting on these.
+ */
+const BACKGROUND_TIMEOUT_MS = Math.max(config.loki.timeoutMs, 30_000);
+
+/** One customer request that failed: its id, the pod that served it, and when. */
+export interface FailedRequest {
+  id: string;
+  pod: string;
+  atUnix: number;
+}
+
+function safeJson(line: string): Record<string, unknown> {
+  try {
+    const j = JSON.parse(line) as unknown;
+    return j && typeof j === "object" ? (j as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
+/** The method a received request asked for: JSON-RPC `method`, "batch", or the REST path. */
+export function methodOfRequest(line: Record<string, unknown>): string {
+  const message = typeof line.message === "string" ? line.message : "";
+  const path = typeof line.path === "string" ? line.path : "";
+  if (message.includes("REST")) return path || "unknown";
+  if (typeof line.body === "string") {
+    const body = safeJson(line.body);
+    if (typeof body.method === "string") return body.method;
+    if (line.body.trim().startsWith("[")) return "batch";
+  }
+  return "unknown";
 }
 
 /** `arbitrum-mainnet-router-6fdddbb79c-fj4kh` → `arbitrum-mainnet`, the router's id. */
@@ -126,47 +158,149 @@ export class LokiService {
   }
 
   /**
-   * Customer requests per router over the last `rangeSec`, and how many failed
-   * — once per request, after every retry. Null when there is no log store.
-   *
-   * This is the count the metrics cannot give. `smartrouter_requests_failed_total`
-   * is recorded per relay ATTEMPT: a request that failed on one provider and
-   * was saved on another counts as failed. Measured on a production
-   * deployment over 30 minutes, the counter said 652 failed on one chain; this
-   * log said 0 of 22,336.
+   * The routers whose logs reach this store in the window — from the label
+   * index, no line read. A router with no logs here has no verdict: "0
+   * failed" is only true where the lines exist.
    */
-  async finalResults(rangeSec: number, atUnix = Math.floor(Date.now() / 1000)): Promise<Map<string, FinalResults> | null> {
+  async routersWithLogs(rangeSec: number, atUnix = Math.floor(Date.now() / 1000)): Promise<Set<string> | null> {
     if (!this.baseUrl) return null;
-    const range = `${Math.max(60, Math.round(rangeSec))}s`;
-    const lines = `{service_name="router"} ${FINAL_RESULT}`;
-    const [total, failed] = await Promise.all([
-      this.byPod(`sum by (pod) (count_over_time(${lines} [${range}]))`, atUnix),
-      // Distinct request ids, as the alert counts them — a request that
-      // logged its result twice is one failed request.
-      this.byPod(
-        `count by (pod) (sum by (pod, GUID) (count_over_time(${lines} ${FAILED_RESULT} | json GUID="GUID" [${range}])))`,
-        atUnix,
-      ),
-    ]);
-    const out = new Map<string, FinalResults>();
-    const add = (rows: [string, number][], k: keyof FinalResults) => {
-      for (const [pod, v] of rows) {
-        const router = routerOfPod(pod);
-        const cur = out.get(router) ?? { total: 0, failed: 0 };
-        cur[k] += Math.round(v);
-        out.set(router, cur);
-      }
-    };
-    add(total, "total");
-    add(failed, "failed");
+    const url = new URL("loki/api/v1/series", this.baseUrl.endsWith("/") ? this.baseUrl : `${this.baseUrl}/`);
+    url.searchParams.set("match[]", '{service_name="router"}');
+    url.searchParams.set("start", String(BigInt(atUnix - Math.round(rangeSec)) * 1_000_000_000n));
+    url.searchParams.set("end", String(BigInt(atUnix) * 1_000_000_000n));
+    const res = await fetch(url, { signal: AbortSignal.timeout(BACKGROUND_TIMEOUT_MS) });
+    if (!res.ok) throw Object.assign(new Error(`loki ${res.status}`), { statusCode: 503 });
+    const body = (await res.json()) as { data?: Record<string, string>[] };
+    return new Set((body.data ?? []).map((l) => routerOfPod(l.pod ?? "")).filter(Boolean));
+  }
+
+  /**
+   * Failed customer requests per router, counted rather than read — only for
+   * routers whose failed lines overflowed the read below, which is a bad hour
+   * on that router, scoped to its own pods so the scan stays small.
+   */
+  async countFailed(routers: string[], rangeSec: number, atUnix = Math.floor(Date.now() / 1000)): Promise<Map<string, number>> {
+    const out = new Map<string, number>();
+    if (!this.baseUrl || routers.length === 0) return out;
+    const pods = routers.map((r) => r.replace(/[^a-z0-9-]/g, "")).join("|");
+    const rows = await this.byPod(
+      `sum by (pod) (count_over_time({service_name="router", pod=~"(${pods})-router-.*"} ${FINAL_RESULT} ${FAILED_RESULT} [${Math.max(60, Math.round(rangeSec))}s]))`,
+      atUnix,
+    );
+    for (const [pod, v] of rows) {
+      const router = routerOfPod(pod);
+      out.set(router, (out.get(router) ?? 0) + Math.round(v));
+    }
     return out;
+  }
+
+  /**
+   * Customer requests that failed in the last `rangeSec`, by router: their ids,
+   * the pod that served them and when. One read of the final-result lines,
+   * filtered to failures — failures are rare (a handful an hour across a
+   * fleet on a normal day), so the read is small; `capped` says a bad hour
+   * overflowed it, and then the ids are a sample and `countFailed` counts.
+   */
+  async failedRequests(
+    rangeSec: number,
+    limit = 5000,
+    atUnix = Math.floor(Date.now() / 1000),
+  ): Promise<{ byRouter: Map<string, FailedRequest[]>; capped: boolean }> {
+    const byRouter = new Map<string, FailedRequest[]>();
+    if (!this.baseUrl) return { byRouter, capped: false };
+    const streams = await this.range(
+      `{service_name="router"} ${FINAL_RESULT} ${FAILED_RESULT}`,
+      atUnix - Math.round(rangeSec),
+      atUnix,
+      limit,
+    );
+    let lines = 0;
+    for (const { labels, lines: ls, times } of streams) {
+      const pod = labels.pod ?? "";
+      const router = routerOfPod(pod);
+      ls.forEach((line, i) => {
+        lines++;
+        const id = (safeJson(line).GUID as string | undefined) ?? "";
+        if (!/^[0-9]+$/.test(id)) return;
+        const list = byRouter.get(router) ?? [];
+        if (!list.some((f) => f.id === id)) list.push({ id, pod, atUnix: Number(BigInt(times[i] ?? "0") / 1_000_000_000n) });
+        byRouter.set(router, list);
+      });
+    }
+    return { byRouter, capped: lines >= limit };
+  }
+
+  /**
+   * What each request asked for, from the line the router writes when it
+   * receives it: the JSON-RPC `method`, a batch as "batch", or the REST path.
+   * Only the method is kept — the body carries the caller's parameters and the
+   * headers can carry credentials, and neither leaves this function.
+   */
+  async methodsOf(failures: FailedRequest[]): Promise<Map<string, string>> {
+    const out = new Map<string, string>();
+    if (!this.baseUrl || failures.length === 0) return out;
+    // One pod, and only the minutes around its failures: the received line is
+    // written seconds before the result, and scanning a whole fleet's window
+    // for a few ids is what the store's gateway refused with a 504.
+    const byPod = new Map<string, FailedRequest[]>();
+    for (const f of failures) {
+      if (!/^[0-9]+$/.test(f.id) || !/^[a-z0-9-]+$/.test(f.pod)) continue;
+      const list = byPod.get(f.pod) ?? [];
+      list.push(f);
+      byPod.set(f.pod, list);
+    }
+    for (const [pod, list] of byPod) {
+      for (let i = 0; i < list.length; i += 100) {
+        const chunk = list.slice(i, i + 100);
+        const ids = chunk.map((f) => f.id);
+        const from = Math.min(...chunk.map((f) => f.atUnix)) - 120;
+        const to = Math.max(...chunk.map((f) => f.atUnix)) + 5;
+        const streams = await this.range(
+          `{service_name="router", pod="${pod}"} |= "Consumer received a new" |~ "${ids.join("|")}"`,
+          from,
+          to,
+          chunk.length * 2,
+        );
+        for (const { lines } of streams) {
+          for (const line of lines) {
+            const j = safeJson(line);
+            const id = typeof j.GUID === "string" ? j.GUID : "";
+            if (!ids.includes(id) || out.has(id)) continue;
+            out.set(id, methodOfRequest(j));
+          }
+        }
+      }
+    }
+    return out;
+  }
+
+  private async range(
+    query: string,
+    startUnix: number,
+    endUnix: number,
+    limit: number,
+  ): Promise<{ labels: Record<string, string>; lines: string[]; times: string[] }[]> {
+    const url = new URL("loki/api/v1/query_range", this.baseUrl!.endsWith("/") ? this.baseUrl! : `${this.baseUrl}/`);
+    url.searchParams.set("query", query);
+    url.searchParams.set("start", String(BigInt(Math.floor(startUnix)) * 1_000_000_000n));
+    url.searchParams.set("end", String(BigInt(Math.floor(endUnix)) * 1_000_000_000n));
+    url.searchParams.set("limit", String(Math.min(Math.max(limit, 1), 5000)));
+    url.searchParams.set("direction", "backward");
+    const res = await fetch(url, { signal: AbortSignal.timeout(BACKGROUND_TIMEOUT_MS) });
+    if (!res.ok) throw Object.assign(new Error(`loki ${res.status}`), { statusCode: 503 });
+    const body = (await res.json()) as { data?: { result?: { stream?: Record<string, string>; values: [string, string][] }[] } };
+    return (body.data?.result ?? []).map((r) => ({
+      labels: r.stream ?? {},
+      lines: r.values.map(([, l]) => l),
+      times: r.values.map(([t]) => t),
+    }));
   }
 
   private async byPod(query: string, atUnix: number): Promise<[string, number][]> {
     const url = new URL("loki/api/v1/query", this.baseUrl!.endsWith("/") ? this.baseUrl! : `${this.baseUrl}/`);
     url.searchParams.set("query", query);
     url.searchParams.set("time", String(BigInt(atUnix) * 1_000_000_000n));
-    const res = await fetch(url, { signal: AbortSignal.timeout(config.loki.timeoutMs) });
+    const res = await fetch(url, { signal: AbortSignal.timeout(BACKGROUND_TIMEOUT_MS) });
     if (!res.ok) throw Object.assign(new Error(`loki ${res.status}`), { statusCode: 503 });
     const body = (await res.json()) as { data?: { result?: { metric: Record<string, string>; value: [number, string] }[] } };
     return (body.data?.result ?? []).map((r) => [r.metric.pod ?? "", Number(r.value[1]) || 0]);

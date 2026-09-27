@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { StatusFinding } from "@sr/shared";
 import { severityOf, shareFailed, digestForIssue, type FormulatedInputs } from "../services/formulated-issues.js";
-import { fingerprint, finalsBySpec, outcomesBySpec } from "../services/issues-feed.js";
+import { failedBySpec, fingerprint, outcomesBySpec, readLogs } from "../services/issues-feed.js";
 
 function finding(over: Partial<StatusFinding>): StatusFinding {
   return {
@@ -152,10 +152,12 @@ describe("outcomesBySpec", () => {
   type Row = { metric: Record<string, string>; value: [number, string] };
   const prom = (
     failed: Row[], saved: Row[], requested: Row[] = [], addonSent: Row[] = [], addonFailed: Row[] = [],
-    addonErrors: Row[] = [], addonSaved: Row[] = [],
+    addonErrors: Row[] = [], addonSaved: Row[] = [], writeMethods: Row[] = [], writesSent: Row[] = [],
   ) => ({
     query: async (q: string) =>
-      q.includes("label_replace")
+      q.includes("requests_write_total") ? writeMethods
+      : q.includes("sum by (spec, function)") ? writesSent
+      : q.includes("label_replace")
         ? q.includes("requests_failed") ? addonFailed
           : q.includes("node_errors") ? addonErrors
           : q.includes("retries_success") ? addonSaved
@@ -165,10 +167,12 @@ describe("outcomesBySpec", () => {
   const addonRow = (spec: string, addon: string, v: number): Row => ({ metric: { spec, addon }, value: [0, String(v)] });
 
   it("takes failures from the final-result log, once per request", async () => {
-    const finals = new Map([["SOLANAT", { total: 22_336, failed: 0 }]]);
-    // The attempt counter says 652 — every one saved by a retry.
-    const of = await outcomesBySpec(prom([row("SOLANAT", 652)], [row("SOLANAT", 653)], [row("SOLANAT", 22_000)]), "30m", finals);
-    expect(of("SOLANAT")).toEqual({ recovered: 653, failures: 0, requests: 22_336, addonCalls: [] });
+    // The attempt counter says 652 — every one saved by a retry. The log: 0.
+    const of = await outcomesBySpec(prom([row("SOLANAT", 652)], [row("SOLANAT", 653)], [row("SOLANAT", 22_336)]), "30m", {
+      failed: new Map([["SOLANAT", 0]]),
+      failedMethods: new Map(),
+    });
+    expect(of("SOLANAT")).toEqual({ recovered: 653, failures: 0, requests: 22_336, addonCalls: [], writes: null });
   });
 
   it("never falls back to the per-attempt counter without the log", async () => {
@@ -177,15 +181,18 @@ describe("outcomesBySpec", () => {
   });
 
   it("a family with series elsewhere but none for this chain is a real zero", async () => {
-    const of = await outcomesBySpec(prom([row("ETH1", 5)], [row("ETH1", 9)], [row("ETH1", 90)]), "30m", new Map());
+    const of = await outcomesBySpec(prom([row("ETH1", 5)], [row("ETH1", 9)], [row("ETH1", 90)]), "30m", {
+      failed: new Map(),
+      failedMethods: new Map(),
+    });
     // Recovered and requests are counters with series elsewhere: a real zero.
     // Failures for a chain the log never mentioned stay unmeasured.
-    expect(of("SOLANAT")).toEqual({ recovered: 0, failures: null, requests: 0, addonCalls: [] });
+    expect(of("SOLANAT")).toEqual({ recovered: 0, failures: null, requests: 0, addonCalls: [], writes: null });
   });
 
   it("no series anywhere is unmeasured, never an invented zero", async () => {
     const of = await outcomesBySpec(prom([], []), "30m");
-    expect(of("SOLANAT")).toEqual({ recovered: null, failures: null, requests: null, addonCalls: [] });
+    expect(of("SOLANAT")).toEqual({ recovered: null, failures: null, requests: null, addonCalls: [], writes: null });
   });
 
   it("splits debug and trace calls per chain, zero where the counter has none", async () => {
@@ -232,18 +239,80 @@ describe("outcomesBySpec", () => {
   });
 });
 
-describe("finalsBySpec", () => {
-  it("maps router ids to chains through the config, summing routers on one chain", () => {
-    const byRouter = new Map([
-      ["solana-mainnet", { total: 24_599, failed: 59 }],
-      ["solana-mainnet-staging", { total: 100, failed: 1 }],
-      ["unknown-router", { total: 5, failed: 5 }],
-    ]);
-    const routers = [
-      { id: "solana-mainnet", spec: "SOLANA" },
-      { id: "SOLANA-MAINNET-STAGING", spec: "SOLANA" },
-    ];
-    expect(finalsBySpec(byRouter, routers)).toEqual(new Map([["SOLANA", { total: 24_699, failed: 60 }]]));
+describe("failedBySpec", () => {
+  const routers = [
+    { id: "solana-mainnet", spec: "SOLANA" },
+    { id: "SOLANA-MAINNET-STAGING", spec: "SOLANA" },
+    { id: "near-mainnet", spec: "NEAR" },
+    { id: "tron-testnet", spec: "TRXT" },
+  ];
+  it("sums routers on one chain; 0 only where the logs exist; unknown routers dropped", () => {
+    const counts = new Map([["solana-mainnet", 59], ["solana-mainnet-staging", 1], ["unknown-router", 5]]);
+    const withLogs = new Set(["solana-mainnet", "solana-mainnet-staging", "near-mainnet"]);
+    expect(failedBySpec(counts, routers, withLogs)).toEqual(new Map([["SOLANA", 60], ["NEAR", 0]]));
+    // TRXT has no logs in the store: no number at all, never "0 failed".
   });
 });
 
+describe("transactions", () => {
+  type Row = { metric: Record<string, string>; value: [number, string] };
+  const r = (metric: Record<string, string>, v: number): Row => ({ metric, value: [0, String(v)] });
+  const promFor = (writeMethods: Row[], writesSent: Row[]) => ({
+    query: async (q: string) =>
+      q.includes("requests_write_total") ? writeMethods : q.includes("sum by (spec, function)") ? writesSent : [],
+  });
+
+  it("counts the router's own write methods, sent and failed per chain", async () => {
+    const prom = promFor(
+      [r({ spec: "POLYGON", method: "eth_sendRawTransaction" }, 1), r({ spec: "XLM", method: "/transactions" }, 1)],
+      [
+        r({ spec: "POLYGON", function: "eth_sendRawTransaction" }, 152),
+        r({ spec: "XLM", function: "/transactions" }, 4),
+        // A method this chain does not flag as a write is not a transaction here.
+        r({ spec: "XLM", function: "eth_sendRawTransaction" }, 99),
+      ],
+    );
+    const logs = {
+      failed: new Map([["POLYGON", 90]]),
+      failedMethods: new Map([["POLYGON", new Map([["eth_sendRawTransaction", 80], ["eth_call", 10]])]]),
+    };
+    const of = await outcomesBySpec(prom, "30m", logs);
+    expect(of("POLYGON").writes).toEqual({ sent: 152, failed: 80 });
+    expect(of("XLM").writes).toEqual({ sent: 4, failed: 0 });
+    // More than half of its transactions failed: they cannot transact.
+    expect(severityOf([finding({ spec: "POLYGON" })], of("POLYGON"))).toBe("critical");
+  });
+
+  it("a few failed transactions leave it degraded", async () => {
+    expect(severityOf([finding({})], { writes: { sent: 1_124, failed: 6 } })).toBe("degraded");
+  });
+
+  it("without the logs, transactions are sent but their failures unmeasured", async () => {
+    const prom = promFor([r({ spec: "ETH1", method: "eth_sendRawTransaction" }, 1)], [r({ spec: "ETH1", function: "eth_sendRawTransaction" }, 1_124)]);
+    expect((await outcomesBySpec(prom, "30m")).call(null, "ETH1").writes).toEqual({ sent: 1_124, failed: null });
+  });
+});
+
+describe("readLogs", () => {
+  const routers = [{ id: "polygon-mainnet", spec: "POLYGON" }];
+  const f = (id: string) => ({ id, pod: "polygon-mainnet-router-aa11-bb22", atUnix: 1_700_000_000 });
+  const loki = (ids: string[], methods: Map<string, string>, opts: { capped?: boolean; count?: number } = {}) => ({
+    routersWithLogs: async () => new Set(["polygon-mainnet"]),
+    failedRequests: async () => ({ byRouter: new Map([["polygon-mainnet", ids.map(f)]]), capped: opts.capped ?? false }),
+    countFailed: async () => new Map([["polygon-mainnet", opts.count ?? ids.length]]),
+    methodsOf: async () => methods,
+  });
+  const m = new Map([["1", "eth_sendRawTransaction"], ["2", "eth_sendRawTransaction"], ["3", "eth_call"]]);
+
+  it("counts a chain's failed requests and splits them by the method each had called", async () => {
+    const out = await readLogs(loki(["1", "2", "3"], m), 1800, routers);
+    expect(out?.failed).toEqual(new Map([["POLYGON", 3]]));
+    expect(out?.failedMethods.get("POLYGON")).toEqual(new Map([["eth_sendRawTransaction", 2], ["eth_call", 1]]));
+  });
+
+  it("when a bad hour overflows the read, counts, and scales the sampled split to it", async () => {
+    const out = await readLogs(loki(["1", "2", "3"], m, { capped: true, count: 300 }), 1800, routers);
+    expect(out?.failed).toEqual(new Map([["POLYGON", 300]]));
+    expect(out?.failedMethods.get("POLYGON")).toEqual(new Map([["eth_sendRawTransaction", 200], ["eth_call", 100]]));
+  });
+});
