@@ -1046,7 +1046,9 @@ to what it observes.
 it directly and set `0`. Next writes `X-Forwarded-For` from the socket only
 when the request did not carry one, so with no proxy every entry is the
 browser's own, and `0` forwards no address at all rather than one the
-browser chose. Behind an ingress, set it to the number of proxies.
+browser chose. The device is still forwarded: the api records the web's
+address beside the browser's own device. Behind an ingress, set it to the
+number of proxies.
 
 The server-rendered previews (`/invite/<token>`, `/reset/<token>`) forward
 the same headers, so their per-IP limit counts visitors rather than the web

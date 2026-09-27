@@ -179,17 +179,27 @@ export interface ResolvedClient extends ClientContext {
 export const FORWARDED_IP_HEADER = "x-forwarded-client-ip";
 export const FORWARDED_UA_HEADER = "x-forwarded-client-ua";
 
+/** Whether the caller proved it is our web tier. */
+function vouchedByWeb(request: FastifyRequest, expected: string | undefined): boolean {
+  if (!expected) return false;
+  const supplied = request.headers["x-internal-auth"];
+  return typeof supplied === "string" && secretsMatch(supplied, expected);
+}
+
+/** One forwarded header's value, or null when it is absent or empty. */
+function forwardedHeader(request: FastifyRequest, name: string): string | null {
+  const value = request.headers[name];
+  return typeof value === "string" && value ? value : null;
+}
+
 /** The forwarded address, or null when nothing vouches for one. Shared with the
  *  rate limiter so the two cannot disagree about who is calling. */
 export function forwardedClientIp(
   request: FastifyRequest,
   expected: string | undefined,
 ): string | null {
-  if (!expected) return null;
-  const supplied = request.headers["x-internal-auth"];
-  if (typeof supplied !== "string" || !secretsMatch(supplied, expected)) return null;
-  const ip = request.headers[FORWARDED_IP_HEADER];
-  return typeof ip === "string" && ip ? ip : null;
+  if (!vouchedByWeb(request, expected)) return null;
+  return forwardedHeader(request, FORWARDED_IP_HEADER);
 }
 
 /**
@@ -202,6 +212,12 @@ export function forwardedClientIp(
  * record what we observed, which for a direct caller is their own real address.
  * The routes are publicly reachable, so without that gate anyone could write a
  * false trail.
+ *
+ * The secret vouches for the request, and each forwarded field is then taken on
+ * its own. The web sends no address when nothing sits in front of it
+ * (`TRUST_PROXY_HOPS=0`), and the device still has to be recorded then — so a
+ * missing address falls back to the observed one without taking the device
+ * with it.
  */
 export function resolveClientContext(
   request: FastifyRequest,
@@ -217,22 +233,22 @@ export function resolveClientContext(
     userAgent: request.headers["user-agent"] ?? null,
   };
 
-  const forwardedIp = forwardedClientIp(request, expected);
-  if (!forwardedIp) {
+  const forwardedIp = forwardedHeader(request, FORWARDED_IP_HEADER);
+  const forwardedUa = forwardedHeader(request, FORWARDED_UA_HEADER);
+
+  if (!vouchedByWeb(request, expected)) {
     // Sent but not believed: either no secret is configured on this side, or
     // the caller could not produce it. Worth a line either way — the first is a
     // deployment recording its own address against every sign-in.
-    const suppliedIp = request.headers[FORWARDED_IP_HEADER];
-    if (typeof suppliedIp === "string" && suppliedIp) {
-      request.log.warn("forwarded client address supplied without a valid internal secret");
+    if (forwardedIp || forwardedUa) {
+      request.log.warn("forwarded client context supplied without a valid internal secret");
     }
     return withAccess(observed);
   }
 
-  const forwardedUa = request.headers[FORWARDED_UA_HEADER];
   return withAccess({
-    ip: forwardedIp,
-    userAgent: typeof forwardedUa === "string" && forwardedUa ? forwardedUa : observed.userAgent,
+    ip: forwardedIp ?? observed.ip,
+    userAgent: forwardedUa ?? observed.userAgent,
   });
 }
 
