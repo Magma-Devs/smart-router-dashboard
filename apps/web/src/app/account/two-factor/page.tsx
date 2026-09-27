@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { EnrolPanel } from "@/components/auth/enrol-panel";
+import { SignOutInstead } from "@/components/auth/two-factor-gate";
 import { useMe } from "@/hooks/use-me";
 
 /**
@@ -16,7 +17,12 @@ export default function TwoFactorSetupPage() {
   const router = useRouter();
   const { twoFactor, refresh } = useMe();
 
-  if (twoFactor?.enrolled) {
+  // Not until the account has been read. Offering a secret before knowing
+  // whether one is already enrolled sends `begin` to an enrolled account, which
+  // the api refuses — a flash of "could not start setup" on every visit.
+  if (!twoFactor) return <main style={wrap} />;
+
+  if (twoFactor.enrolled) {
     return (
       <main style={wrap}>
         <div className="gw-card" style={{ padding: 28, maxWidth: 520 }}>
@@ -43,6 +49,7 @@ export default function TwoFactorSetupPage() {
             router.push("/overview");
           }}
         />
+        <SignOutInstead />
       </div>
     </main>
   );

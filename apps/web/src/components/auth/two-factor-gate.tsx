@@ -1,7 +1,38 @@
 "use client";
 
+import { signOut } from "next-auth/react";
 import { useMe } from "@/hooks/use-me";
 import { EnrolPanel } from "./enrol-panel";
+
+/**
+ * The way out of a screen that otherwise has none. The gate replaces the whole
+ * Shell, sign-out control included, and a signed-in visit to /login bounces
+ * straight back here — so somebody without their phone, or signed into the
+ * wrong account on a shared machine, would be stuck for the session's thirty
+ * days. Through `signOut()`, not a link to /login: the edge gate would bounce a
+ * still-valid cookie straight back.
+ */
+export function SignOutInstead() {
+  return (
+    <p style={{ textAlign: "center", fontSize: 12, color: "var(--text-3)", margin: "14px 0 0" }}>
+      Not you, or no phone to hand?{" "}
+      <button
+        type="button"
+        onClick={() => void signOut({ redirectTo: "/login" })}
+        style={{
+          background: "none",
+          border: 0,
+          padding: 0,
+          color: "var(--brand)",
+          cursor: "pointer",
+          font: "inherit",
+        }}
+      >
+        Sign out
+      </button>
+    </p>
+  );
+}
 
 /**
  * The screen a person meets when the dashboard is shut until they enrol.
@@ -50,6 +81,7 @@ export function TwoFactorGate({ children }: { children: React.ReactNode }) {
               : "Everyone who uses this dashboard signs in with an authenticator app. Set one up to continue — it takes about a minute."
           }
         />
+        <SignOutInstead />
       </div>
     </main>
   );
