@@ -2,7 +2,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { EMAIL_DELIVERY_NOTES, EMAIL_SUBJECTS } from "@sr/shared";
 import { sendEmail, resetEmailClientForTests } from "../services/email.js";
 import { fakeSesEnv, startFakeSes } from "./fake-ses.js";
-import { sendInvitationEmail, sendPasswordResetEmail } from "../services/email-templates.js";
+import {
+  renderInvitationEmail,
+  renderPasswordResetEmail,
+  sendInvitationEmail,
+  sendPasswordResetEmail,
+} from "../services/email-templates.js";
 
 /**
  * The two emails MAG-2870 specifies, and the transport under them.
@@ -188,41 +193,59 @@ describe("the password-reset email", () => {
 });
 
 describe("the rules both emails follow", () => {
-  /** Rendering the HTML the same way the transport receives it. */
-  async function html(kind: "invitation" | "reset"): Promise<string> {
-    let captured = "";
-    const spy = (_m: string, ctx?: Record<string, unknown>) => {
-      captured = String(ctx?.body ?? "");
-    };
-    if (kind === "invitation") {
-      await sendInvitationEmail({ to: "d@e.co", inviteUrl: "https://x/y", expiresInDays: 7 }, spy);
-    } else {
-      await sendPasswordResetEmail(
-        { to: "d@e.co", resetUrl: "https://x/y", expiresInHours: 1 },
-        spy,
-      );
-    }
-    return captured;
+  /** The HTML part exactly as the transport receives it: the shipping
+   *  templates in the shipping shell, not a stand-in body. */
+  function rendered(kind: "invitation" | "reset") {
+    return kind === "invitation"
+      ? renderInvitationEmail({
+          to: "dana@example.com",
+          inviteUrl: "https://dash.example.com/invite/tok3n",
+          expiresInDays: 7,
+        })
+      : renderPasswordResetEmail({
+          to: "dana@example.com",
+          resetUrl: "https://dash.example.com/reset/tok3n",
+          expiresInHours: 1,
+        });
   }
 
   it.each(["invitation", "reset"] as const)(
-    "%s has no unsubscribe, no tracking pixel and no remote images",
-    async (kind) => {
-      // Asserted on the text part plus the rendered document; the shell has no
-      // <img> at all, which is what makes "no tracking" structural rather than
-      // a promise. A remote image in a security email reports when it was
-      // opened and from where, whether or not anybody meant it to.
-      const { renderEmailHtml } = await import("../services/email-layout.js");
-      const doc = renderEmailHtml({ subject: "s", body: "<p>body</p>" });
-      expect(doc).not.toContain("<img");
-      expect(doc.toLowerCase()).not.toContain("unsubscribe");
-      expect(doc.toLowerCase()).not.toContain("privacy policy");
-      expect(await html(kind)).not.toContain("unsubscribe");
+    "%s has no unsubscribe, no tracking pixel and nothing loaded from elsewhere",
+    (kind) => {
+      // A remote image in a security email reports when it was opened and from
+      // where, whether or not anybody meant it to. No <img> and no src= at all
+      // is what makes "no tracking" structural rather than a promise.
+      const { html, text } = rendered(kind);
+      for (const part of [html.toLowerCase(), text.toLowerCase()]) {
+        expect(part).not.toContain("unsubscribe");
+        expect(part).not.toContain("privacy policy");
+      }
+      expect(html).not.toMatch(/<img\b/i);
+      expect(html).not.toMatch(/\ssrc\s*=/i);
+      expect(html).not.toMatch(/<link\b|url\(/i);
     },
   );
 
-  it("escapes an address into the HTML rather than interpolating it raw", async () => {
-    const { escapeHtml } = await import("../services/email-layout.js");
-    expect(escapeHtml('a"<b>&c')).toBe("a&quot;&lt;b&gt;&amp;c");
+  it.each(["invitation", "reset"] as const)(
+    "%s carries its link as a button and again as text",
+    (kind) => {
+      const { html } = rendered(kind);
+      const url = `https://dash.example.com/${kind === "invitation" ? "invite" : "reset"}/tok3n`;
+      expect(html).toContain(`href="${url}"`);
+      // Once in the href, once as visible text beneath the button.
+      expect(html.split(url).length - 1).toBeGreaterThanOrEqual(3);
+    },
+  );
+
+  it("escapes what the deployment supplies before it reaches the HTML", () => {
+    process.env.CUSTOMER_NAME = 'Acme <b>&</b> "Co"';
+    const { html, subject } = renderInvitationEmail({
+      to: "dana@example.com",
+      inviteUrl: "https://dash.example.com/invite/tok3n",
+      expiresInDays: 7,
+    });
+    expect(subject).toBe('You\'ve been added to Acme <b>&</b> "Co" on Smart Router');
+    expect(html).not.toContain("<b>&</b>");
+    expect(html).toContain("Acme &lt;b&gt;&amp;&lt;/b&gt; &quot;Co&quot;");
   });
 });
