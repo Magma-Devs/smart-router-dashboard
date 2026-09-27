@@ -197,8 +197,8 @@ the refusal is the check.
 | 6 | Demote someone signed in; their next action is refused | Promote, use their **existing** token successfully, demote, reuse **the same token** → 403. No sign-out, no new token |
 | 7 | Nobody can demote or remove themselves | Both refused 409, with messages that say what to do instead |
 | 8 | Forgot password: sets a new password, does not sign in, ends other sessions | Two live sessions before, both dead after; the response carries no session; the old password stops working and the new one starts |
-| 9 | An expired reset link and an already-used one give the same message | Same status **and** same string, compared directly, on both preview and submit |
-| 10 | Remove a person | Their next request 401s, they leave the member list, their name survives in the audit log, and their address can be invited again |
+| 9 | An expired reset link and an already-used one give the same message | A link is aged past its expiry in the database, then it, a used one and one never issued are compared: same status **and** same string, on both preview and submit |
+| 10 | Remove a person | Their next request is refused with 403 `ACCOUNT_INACTIVE` — not 401, since signing in again cannot help them — they leave the member list, their name survives in the audit log, and their address can be invited again |
 | 11 | A row for each of the above including a failed sign-in, and no secret as a value | Ten distinct actions asserted present. Then every secret the run created — three passwords, the setup token, every minted JWT — is grepped across **both** audit tables, every column, plus a sweep for anything link-shaped |
 
 Two are worth reading closely, because they are the ones a code review cannot settle.

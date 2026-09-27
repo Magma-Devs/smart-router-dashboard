@@ -109,8 +109,9 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   with `deliveryFallback: true`, and the dialog says so rather than reporting
   it delivered. The sign-in page gains **Forgot your password?** (on-prem it
   points at an administrator), and the reset page names the address it
-  changes. Self-serve reset still answers 404 wherever no transport is
-  configured. On-prem sends nothing; admins hand the links over, as before.
+  changes. Self-serve reset sends at most one link per account every five
+  minutes, and still answers 404 wherever no transport is configured.
+  On-prem sends nothing; admins hand the links over, as before.
 
 - **Five chains arrived upstream.** **Arc** (`ARC` / `ARCT`) and **Robinhood
   Chain** (`ROBINHOOD` / `ROBINHOODT`) are EVM chains importing `ETH1`, so they
