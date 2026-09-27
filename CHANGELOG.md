@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.26.0]
+
 ### Changed
 
 - **Discord is no longer a way to sign in** (`AUTH_MODE=enabled`). Google and
