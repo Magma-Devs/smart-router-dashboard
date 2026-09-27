@@ -328,6 +328,20 @@ export async function teamRoutes(app: FastifyInstance) {
           .send({ statusCode: 404, error: "Not Found", message: "No such member." });
       }
 
+      // Not your own. A stolen admin session could otherwise clear its owner's
+      // second factor, mint itself a reset link, set a new password and enrol
+      // its own phone — and every row would name the owner acting on
+      // themselves. Self re-enrolment is refused for the same reason; the way
+      // back from a lost phone is another admin, or host recovery.
+      if (target.id === me.id) {
+        return reply.code(409).send({
+          statusCode: 409,
+          error: "Conflict",
+          message:
+            "You cannot reset your own two-factor authentication. Ask another administrator.",
+        });
+      }
+
       if (!isEnrolled(target)) {
         // Not an error worth failing on — the outcome the admin wanted is
         // already true — but 409 rather than a silent 200, because "I reset it
@@ -489,6 +503,16 @@ export async function teamPasswordRoutes(app: FastifyInstance) {
           statusCode: 409,
           error: "Conflict",
           message: `${target.email} signs in with ${linkedProviderNames(target)} and has no password to reset.`,
+        });
+      }
+      // Not your own either — your own password changes on the Account page,
+      // which asks for the current one. A link minted here asks for nothing, so
+      // a stolen admin session could use it to take the password over.
+      if (target.id === me.id) {
+        return reply.code(409).send({
+          statusCode: 409,
+          error: "Conflict",
+          message: "To change your own password, use Change password on your Account page.",
         });
       }
 

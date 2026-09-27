@@ -238,6 +238,29 @@ describe("enrolment", () => {
 
 // ── The replay guard ────────────────────────────────────────────────────────
 
+describe("enrolment races", () => {
+  it("will not enrol a secret that another tab has since replaced", async () => {
+    const user = await seedUser();
+    const offer = await beginEnrolment(t.db, user);
+    const read = await reload(user.id);
+    // A second tab asks for a new secret before this one confirms.
+    await beginEnrolment(t.db, read);
+
+    const outcome = await confirmEnrolment(t.db, read, totpCodeAtStep(offer!.secret, totpStepAt())!);
+    expect(outcome).toEqual({ ok: false, reason: "no_pending" });
+    expect(isEnrolled(await reload(user.id))).toBe(false);
+  });
+
+  it("will not offer a new secret over an enrolment that just landed", async () => {
+    const user = await seedUser();
+    const stale = await reload(user.id);
+    await enrol(user);
+
+    expect(await beginEnrolment(t.db, stale)).toBeNull();
+    expect(isEnrolled(await reload(user.id))).toBe(true);
+  });
+});
+
 describe("code replay", () => {
   it("accepts a code once and refuses the same code inside its own window", async () => {
     const user = await seedUser();
@@ -288,11 +311,29 @@ describe("challenges", () => {
     expect(await consumeChallenge(t.db, token)).toEqual({ ok: false, reason: "used" });
   });
 
-  it("retires an earlier unspent challenge, so one password leaves one way in", async () => {
+  it("leaves an earlier challenge live, so a second sign-in cannot kill the owner's", async () => {
+    // Retiring it let anybody holding the password lock its owner out: sign in
+    // every few seconds and each real challenge died between the owner's
+    // password and their code. A spare live challenge is useless without a code.
     const user = await seedUser();
     const first = await issueChallenge(t.db, user.id);
     await issueChallenge(t.db, user.id);
-    expect(await consumeChallenge(t.db, first.token)).toEqual({ ok: false, reason: "used" });
+    expect(await consumeChallenge(t.db, first.token)).toMatchObject({ ok: true });
+  });
+
+  it("prunes the account's expired challenges when it issues a new one", async () => {
+    const user = await seedUser();
+    await issueChallenge(t.db, user.id);
+    await t.db
+      .update(twoFactorChallenges)
+      .set({ expiresAt: new Date(Date.now() - 1000) })
+      .where(eq(twoFactorChallenges.userId, user.id));
+    await issueChallenge(t.db, user.id);
+    const rows = await t.db
+      .select()
+      .from(twoFactorChallenges)
+      .where(eq(twoFactorChallenges.userId, user.id));
+    expect(rows).toHaveLength(1);
   });
 
   it("expires", async () => {
@@ -340,6 +381,18 @@ describe("grace period", () => {
     expect(status.mayDefer).toBe(true);
     expect(status.enrolmentRequired).toBe(false);
     expect(status.daysLeft).toBe(12);
+  });
+
+  it("is spent at the first enrolment, so a later reset does not bring it back", async () => {
+    // Otherwise a first admin whose 2FA is reset inside the thirty days would
+    // be back on a password alone until day thirty.
+    const user = await seedUser({ createdBySetup: true, firstSignInAt: new Date() });
+    await enrol(user);
+    await clearEnrolment(t.db, user.id);
+
+    const status = twoFactorStatus(await reload(user.id));
+    expect(status.mayDefer).toBe(false);
+    expect(status.enrolmentRequired).toBe(true);
   });
 
   it("gives an invited person none at all", async () => {
@@ -597,6 +650,39 @@ describe("two-step sign-in", () => {
     expect(locked.statusCode).toBe(423);
   });
 
+  it("says a secret that will not open is a key problem, not a wrong code", async () => {
+    // A TOTP_ENCRYPTION_KEY that still decodes to 32 bytes but is not the one
+    // the secret was sealed with. Every enrolled person would otherwise read as
+    // a run of wrong guesses and lock themselves out.
+    app = await buildAuthApp();
+    const user = await seedUser();
+    await enrol(user);
+    await t.db
+      .update(users)
+      .set({ totpSecret: Buffer.alloc(64, 1).toString("base64") })
+      .where(eq(users.id, user.id));
+
+    const first = await app.inject({
+      method: "POST",
+      url: "/auth/sign-in",
+      payload: { email: user.email, password: PASSWORD },
+    });
+    const res = await app.inject({
+      method: "POST",
+      url: "/auth/2fa/verify",
+      payload: { challenge: first.json().challenge, code: "123456" },
+    });
+
+    expect(res.statusCode).toBe(401);
+    const rows = await t.db.select().from(auditEvents).where(eq(auditEvents.action, "signin.failed"));
+    expect(rows.map((r) => r.note)).toEqual([
+      "two-factor secret could not be decrypted (TOTP_ENCRYPTION_KEY)",
+    ]);
+    // Not charged against the person: they may well have typed the right code.
+    const attempts = await t.db.select().from(loginAttempts);
+    expect(attempts.reduce((n, r) => n + r.failedCount, 0)).toBe(0);
+  });
+
   it("clears the counter once both factors have passed", async () => {
     app = await buildAuthApp();
     const user = await seedUser();
@@ -820,6 +906,31 @@ describe("enrolment and reset over HTTP", () => {
       headers: { authorization: `Bearer ${await tokenFor(admin)}` },
     });
     expect(res.statusCode).toBe(400);
+  });
+
+  it("refuses an admin their own reset, and their own reset link", async () => {
+    // Together these were a takeover from one stolen admin session: clear the
+    // owner's second factor, mint a reset link, set a password, enrol a phone.
+    setEnv({ PUBLIC_WEB_ORIGIN: "https://dash.example.com" });
+    app = await buildAuthApp();
+    const admin = await seedUser({ role: "admin", email: `admin+${++seq}@example.com` });
+    await enrol(admin);
+    const auth = { authorization: `Bearer ${await tokenFor(admin)}` };
+
+    const reset = await app.inject({
+      method: "POST",
+      url: `/api/team/members/${admin.id}/2fa/reset`,
+      headers: auth,
+    });
+    expect(reset.statusCode).toBe(409);
+    expect(isEnrolled(await reload(admin.id))).toBe(true);
+
+    const link = await app.inject({
+      method: "POST",
+      url: `/api/team/members/${admin.id}/reset-link`,
+      headers: auth,
+    });
+    expect(link.statusCode).toBe(409);
   });
 
   it("refuses a non-admin the reset", async () => {

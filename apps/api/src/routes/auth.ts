@@ -975,6 +975,23 @@ export async function authRoutes(app: FastifyInstance) {
       }
 
       const outcome = await consumeCode(db, claimed.user, body.code);
+      if (!outcome.ok && outcome.reason === "undecryptable") {
+        // Not the person's fault and not an attack: the deployment's key does
+        // not open this secret. Loud in the log, named in the audit row, and
+        // not counted as a wrong code against someone who typed the right one.
+        request.log.error(
+          { userId: claimed.user.id },
+          "an enrolled two-factor secret could not be decrypted — TOTP_ENCRYPTION_KEY does not match the key it was sealed with",
+        );
+        await refundAttempt(db, email);
+        await audit.write({
+          action: "signin.failed",
+          actor: { id: claimed.user.id, kind: "user", label: email, email },
+          access: { ...client.access, sessionId: null },
+          note: "two-factor secret could not be decrypted (TOTP_ENCRYPTION_KEY)",
+        });
+        return refuse();
+      }
       if (!outcome.ok) {
         await audit.write({
           action: "signin.failed",
