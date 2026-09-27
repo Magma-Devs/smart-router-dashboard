@@ -23,10 +23,12 @@ import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
  *                             local dev (aws-ses-v2-local) so mail lands in its
  *                             inbox UI instead of a real inbox
  *
- * **No region ⇒ nothing is sent and the body is logged instead**, returning
- * `status: "logged"`. That is what makes the whole feature developable before
- * SES exists, and it is why every caller has to handle a send that did not
- * happen — see the delivery fallback in `email-templates.ts`.
+ * **No region ⇒ nothing is sent**, returning `status: "logged"`, and every
+ * caller has to handle a send that did not happen — see the delivery fallback
+ * in `email-templates.ts`. In development the body is logged instead, which is
+ * what makes the feature developable before SES exists. Anywhere else only the
+ * recipient and subject are: a body carries a live link, and logs travel
+ * further than inboxes.
  *
  * SES sandbox note: a new SES account may only send to verified addresses.
  * Verify the sender *and* the test recipient before testing, or unverified
@@ -61,6 +63,13 @@ function getClient(): SESv2Client | null {
  *  instead, so a flow with nobody to hand the link to must not start. */
 export function emailTransportConfigured(): boolean {
   return Boolean(process.env.AWS_REGION);
+}
+
+/** Development and tests only. Read live, and anything unset or unrecognised
+ *  counts as production — the same default `config.env` takes. */
+function bodiesMayBeLogged(): boolean {
+  const env = process.env.NODE_ENV;
+  return env === "development" || env === "test";
 }
 
 /** Tests only — a process never re-resolves the client. */
@@ -113,12 +122,24 @@ export async function sendEmail(
     // Deliberately at warn, not debug: on a managed deployment this means mail
     // is not configured and somebody is waiting for a link that will never
     // arrive. It should be visible without anybody raising the log level.
-    log("email not sent — AWS_REGION is unset, logging the body instead", {
-      to: input.to,
-      subject: input.subject,
-      from,
-      body: input.text,
-    });
+    //
+    // The body only in development. It carries a live invitation or reset
+    // link — a credential — and a production log is shipped, retained and read
+    // by people the recipient never chose.
+    if (bodiesMayBeLogged()) {
+      log("email not sent — AWS_REGION is unset, logging the body instead", {
+        to: input.to,
+        subject: input.subject,
+        from,
+        body: input.text,
+      });
+    } else {
+      log("email not sent — AWS_REGION is unset; the body is withheld, it carries a live link", {
+        to: input.to,
+        subject: input.subject,
+        from,
+      });
+    }
     return { status: "logged", messageId: null };
   }
 

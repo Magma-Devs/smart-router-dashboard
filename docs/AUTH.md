@@ -358,7 +358,7 @@ message instead.
 
 | Setting | Effect |
 |---|---|
-| `AWS_REGION` | **The switch.** Unset ⇒ nothing is sent, the body is logged at `warn`, and the caller is told |
+| `AWS_REGION` | **The switch.** Unset ⇒ nothing is sent and the caller is told. A `warn` line names the recipient and subject; the body, which carries a live link, is logged only under `NODE_ENV=development` |
 | `AWS_ACCESS_KEY_ID` / `SECRET` | Optional. Absent ⇒ resolved from the environment (IRSA, instance role), so production stores no static keys |
 | `EMAIL_FROM` | Sender; an unmonitored no-reply |
 | `EMAIL_REPLY_TO` | A monitored inbox, so a reply to a reset reaches somebody |
@@ -425,8 +425,9 @@ and expiry the row already carries (`as approver, expires …; emailed`).
 or `email failed, no link delivered`. That is where somebody investigating
 already looks.
 
-**The body is never persisted**, in either design. A rendered invitation
-contains a live token.
+**The body is never persisted**, in either design — not in a table, and outside
+development not in a log line either. A rendered invitation contains a live
+token.
 
 <img src="./assets/account-emails.png" alt="The two account emails side by side, rendered by the shipping templates. Left: the invitation, subject &quot;You've been added to Example Co on Smart Router&quot;, headed &quot;Set up your account&quot;, with a Set up your account button, the same link repeated as selectable text beneath it, and a line reading &quot;The link works once and expires in 7 days. It only works for dana.okonkwo@example.com.&quot; Right: the password reset, subject &quot;Reset your Smart Router password&quot;, with a Reset password button, the link again as text, and &quot;This link expires in 1 hour. If you didn't request this, you can ignore this email — your password won't change.&quot; Neither has a footer, an unsubscribe link, or any image." width="820">
 

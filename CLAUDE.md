@@ -585,7 +585,7 @@ Auth (only read when `AUTH_MODE=enabled`; the metrics path never touches the DB)
 | `PASSWORD_BREACH_CHECK` | `hibp` | `off` disables the HaveIBeenPwned check — the honest setting for an air-gapped install, rather than relying on a silent timeout |
 | `PUBLIC_WEB_ORIGIN` | (unset) | browser-facing origin of the web app, used to build invitation and password-reset links. Routes that need it fail loudly when it is unset rather than guessing a host — `POST /api/team/invites` 500s. Both compose files default it to the web's `AUTH_URL` |
 | `CUSTOMER_NAME` | `Smart Router` | Who the deployment belongs to, as it appears in the invitation subject ("You've been added to **{customer}** on Smart Router") |
-| `AWS_REGION` | (unset) | **Enables email.** Unset ⇒ nothing is sent and the body is logged at `warn`. On-prem that is correct. On managed it means the admin carries invitation links, and self-serve reset answers 404 rather than issue a link nobody receives |
+| `AWS_REGION` | (unset) | **Enables email.** Unset ⇒ nothing is sent; a `warn` line names the recipient, and only under `NODE_ENV=development` carries the body (it holds a live link). On-prem that is correct. On managed it means the admin carries invitation links, and self-serve reset answers 404 rather than issue a link nobody receives |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | (unset) | Optional. Absent ⇒ the SDK resolves credentials from the environment (IRSA / instance role), so production stores no static keys |
 | `EMAIL_FROM` | `Smart Router <noreply@smart-router.local>` | Sender. An unmonitored no-reply |
 | `EMAIL_REPLY_TO` | (unset) | Monitored inbox, so a reply to a reset email reaches somebody |

@@ -44,6 +44,30 @@ describe("transport", () => {
     expect(lines[0]?.ctx?.body).toBe("body");
   });
 
+  it("withholds the body outside development — it carries a live link", async () => {
+    const saved = process.env.NODE_ENV;
+    process.env.NODE_ENV = "production";
+    try {
+      const lines: Array<{ msg: string; ctx?: Record<string, unknown> }> = [];
+      const res = await sendEmail(
+        {
+          to: "someone@example.com",
+          subject: "Hi",
+          text: "Set up your account: https://dash.example.com/invite/tok3n",
+        },
+        (msg, ctx) => lines.push({ msg, ctx }),
+      );
+
+      expect(res.status).toBe("logged");
+      expect(lines).toHaveLength(1);
+      expect(lines[0]?.ctx?.to).toBe("someone@example.com");
+      expect(lines[0]?.ctx).not.toHaveProperty("body");
+      expect(JSON.stringify(lines)).not.toContain("tok3n");
+    } finally {
+      process.env.NODE_ENV = saved;
+    }
+  });
+
   it("never throws — a send that cannot happen is a value, not an exception", async () => {
     process.env.AWS_REGION = "us-east-1";
     process.env.SES_ENDPOINT = "http://127.0.0.1:1"; // nothing listening
