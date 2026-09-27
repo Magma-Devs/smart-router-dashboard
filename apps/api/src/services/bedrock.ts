@@ -216,10 +216,38 @@ export class BedrockService {
    * and silently reserves far more quota than the call needs, which is the
    * usual cause of a ThrottlingException nobody can explain.
    */
+  /**
+   * One model call — retried ONCE with twice the room when the answer was cut
+   * off at its ceiling.
+   *
+   * The model reasons before it writes, and the reasoning counts against the
+   * ceiling: a four-line issue card used 400 to 2,000+ tokens, measured, and
+   * at 2,000 about one call in six came back cut off or empty. A ceiling that
+   * must be sized for the worst case on every call reserves quota for it on
+   * every call; one retry covers the tail instead. A call that used most of
+   * its room is logged, so a ceiling going stale shows before it breaks.
+   */
   async complete(opts: {
     messages: { role: "user" | "assistant"; content: string }[];
     system?: string;
     maxTokens?: number;
+  }): Promise<BedrockAnswer> {
+    const ceiling = opts.maxTokens ?? config.bedrock.maxTokens;
+    const first = await this.once({ ...opts, maxTokens: ceiling });
+    if ((first.outputTokens ?? 0) >= ceiling * 0.6) {
+      this.logger?.warn(
+        { outputTokens: first.outputTokens, maxTokens: ceiling, stopReason: first.stopReason, model: this.model },
+        "model call used most of its token room",
+      );
+    }
+    if (first.stopReason !== "max_tokens") return first;
+    return this.once({ ...opts, maxTokens: Math.min(ceiling * 2, 64_000) });
+  }
+
+  private async once(opts: {
+    messages: { role: "user" | "assistant"; content: string }[];
+    system?: string;
+    maxTokens: number;
   }): Promise<BedrockAnswer> {
     if (opts.messages.length === 0) throw new BedrockError("no messages");
 
@@ -229,7 +257,7 @@ export class BedrockService {
           modelId: this.model,
           messages: opts.messages.map((m) => ({ role: m.role, content: [{ text: m.content }] })),
           ...(opts.system ? { system: [{ text: opts.system }] } : {}),
-          inferenceConfig: { maxTokens: opts.maxTokens ?? config.bedrock.maxTokens },
+          inferenceConfig: { maxTokens: opts.maxTokens },
         }),
       );
 

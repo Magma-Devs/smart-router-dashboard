@@ -126,6 +126,30 @@ describe("BedrockService.complete", () => {
     ).rejects.toMatchObject({ name: "BedrockError", statusCode: 502, awsErrorName: "AccessDeniedException" });
   });
 
+  it("retries an answer cut off at its ceiling once, with twice the room", async () => {
+    // The model reasons before it writes, and the reasoning counts against the
+    // ceiling: at 2,000 about one issue card in six came back cut off.
+    let n = 0;
+    const client = fakeClient(() =>
+      ++n === 1
+        ? { stopReason: "max_tokens", usage: { outputTokens: 2000 }, output: { message: { content: [] } } }
+        : { stopReason: "end_turn", usage: { outputTokens: 2400 }, output: { message: { content: [{ text: "{}" }] } } },
+    );
+    const warn = vi.fn();
+    const answer = await new BedrockService("m", { warn }, client).complete({ messages: [{ role: "user", content: "hi" }], maxTokens: 2000 });
+    expect(answer).toMatchObject({ text: "{}", stopReason: "end_turn" });
+    const calls = (client.send as unknown as { mock: { calls: [{ input: { inferenceConfig: { maxTokens: number } } }][] } }).mock.calls;
+    expect(calls.map((c) => c[0].input.inferenceConfig.maxTokens)).toEqual([2000, 4000]);
+    // Using most of the room is said, so a ceiling going stale shows before it breaks.
+    expect(warn).toHaveBeenCalledWith(expect.objectContaining({ outputTokens: 2000, maxTokens: 2000 }), "model call used most of its token room");
+  });
+
+  it("does not retry an answer that finished", async () => {
+    const client = fakeClient(() => ({ stopReason: "end_turn", usage: { outputTokens: 10 }, output: { message: { content: [{ text: "ok" }] } } }));
+    await new BedrockService("m", undefined, client).complete({ messages: [{ role: "user", content: "hi" }], maxTokens: 2000 });
+    expect(client.send).toHaveBeenCalledTimes(1);
+  });
+
   it("refuses an empty conversation instead of calling out", async () => {
     const client = fakeClient();
     await expect(
