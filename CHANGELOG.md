@@ -74,6 +74,17 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   "pending" flag off it, where every route's correctness would rest on
   remembering to read that flag.
 
+  **Google and GitHub sign-in ask for the code too.** For an enrolled account
+  `POST /auth/oauth/:provider` answers with a challenge and no session, and the
+  web carries it to the code screen in an httpOnly five-minute cookie
+  (`sr_2fa`) — never through a URL or a page script. The session the code
+  opens records what came first, `google+totp` rather than `password+totp`
+  (migration `0007_challenge_first_factor`).
+
+  The grace period is a **one-time right**: enrolling spends it, so if the
+  first admin's 2FA is reset later they re-enrol at their next sign-in like
+  everyone else.
+
   Failed codes count into the **same** per-account lockout as failed passwords —
   five failures in fifteen minutes, one counter keyed on the address. A separate
   counter would quietly hand out five password attempts and then five more.
@@ -83,15 +94,21 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   beside it, once; a desktop password manager cannot scan a screen.
 
 - **`POST /api/team/members/:id/2fa/reset`** — the lost-phone path, and the only
-  one. The secret is destroyed rather than disabled, the member's sessions end,
-  and they enrol again at their next sign-in from a secret only they will hold.
-  Logged as `2fa.reset`, naming both people. Self re-enrolment is refused.
+  one. The secret is destroyed rather than disabled, the member is signed out
+  everywhere, and they enrol again at their next sign-in from a secret only they
+  will hold — all in one transaction with its `2fa.reset` row (naming both
+  people) and a `session.revoked` per ended session. Nothing is emailed; the
+  member finds out at their next sign-in. Self re-enrolment is refused, and so
+  is an admin resetting their own 2FA or minting their own password-reset link:
+  together those were a takeover from one stolen admin session.
 
 - **Host recovery** — `reset-2fa`, `reset-password` and `promote-admin`, run on
   the machine the dashboard runs on (`make recover CMD="…"`). Shell access is
   the authorisation and these hand out nothing new; what they add is that each
   writes a `host.recovery` row naming the command and the operator, so a
-  recovery shows up in the customer's own audit log and cannot be done quietly.
+  recovery shows up in the customer's own audit log and cannot be done quietly
+  — the change and its row commit in one transaction, and the command says
+  which database and deployment shape it is about to act on first.
   `reset-password` prints a link and never sets a password.
 
 - **The member list's 2FA column is real** — it was pinned to `—` while 2FA did
@@ -245,7 +262,11 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   sent — so a client could choose the address written to its own session row and
   every access event for that sign-in, which is the forgery the internal secret
   exists to prevent. The web now counts back from the right by `TRUST_PROXY_HOPS`
-  (default `1`) and reports nothing when the chain is shorter than that.
+  (default `1`) and reports nothing when the chain is shorter than that. `0`
+  means nothing sits in front of the web — the compose files publish it
+  directly and set it — and forwards no address at all, since Next leaves a
+  browser's own `X-Forwarded-For` intact there. The server-rendered invite and
+  reset previews forward the same headers, so their limit counts visitors too.
 
 - **The code check shared one rate-limit bucket for the whole deployment.** The
   per-IP limit on `/auth/*` keyed on the connection, and Auth.js calls those
