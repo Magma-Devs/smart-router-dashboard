@@ -149,10 +149,15 @@ accounts-managed:
 ## writes a host.recovery row naming the command and the operator, so a recovery
 ## shows up in the dashboard afterwards and cannot be done quietly. Shell access
 ## on the host is the authorisation — see docs/TWO-FACTOR.md.
+## The host.recovery row names the operator. Inside the container the shell
+## user is the container's, so the host user is passed as --by unless CMD
+## already names one. The dev stack only: a deployed api runs the same file as
+## `node apps/api/dist/recover.js` (docs/TWO-FACTOR.md → Recovery).
 recover:
 	@test -n "$(CMD)" || (echo 'set CMD, e.g. make recover CMD="reset-2fa --email dana@example.com"'; exit 2)
 	docker compose -f docker-compose.dev.yml -f docker-compose.accounts.yml \
-		--profile auth exec api node dist/recover.js $(CMD)
+		--profile auth exec api node dist/recover.js $(CMD) \
+		$(if $(findstring --by,$(CMD)),,--by "$${SUDO_USER:-$$USER}")
 
 ## accounts-reset: wipe the accounts database and start over from first-run
 accounts-reset:

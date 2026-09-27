@@ -3,7 +3,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { createAuditWriter, createDb, users, type Database, type User } from "@sr/db";
 import { createPasswordReset, resetUrl } from "./services/password-reset.js";
 import { clearEnrolment, isEnrolled, revokeChallenges } from "./services/two-factor.js";
-import { revokeAllForUser } from "./services/sessions.js";
+import { signOutEverywhere } from "./services/sessions.js";
 import { config } from "./config.js";
 
 /**
@@ -168,7 +168,13 @@ export async function runRecovery(
     onViolation: (v) => console.error("audit:", JSON.stringify(v)),
   });
 
+  // One transaction: the recovery and the row that records it land together or
+  // not at all. A recovery with no `host.recovery` row is exactly the quiet one
+  // this command exists to rule out, and a failed audit write inside a
+  // transaction propagates rather than being swallowed.
+  return await db.transaction(async (tx) => {
   let result: RecoveryResult;
+  let endedSessions: string[] = [];
 
   switch (args.command) {
     case "reset-2fa": {
@@ -178,11 +184,11 @@ export async function runRecovery(
       // The same three writes the admin route makes, for the same three
       // reasons: the secret is destroyed rather than disabled, a challenge in
       // flight against the old secret cannot still be completed, and the
-      // sessions end because this is run precisely when nobody is sure who is
-      // holding them.
-      await clearEnrolment(db, user.id);
-      await revokeChallenges(db, user.id);
-      await revokeAllForUser(db, user.id, { reason: "admin" });
+      // account is signed out everywhere — every session row and the cutoff —
+      // because this is run precisely when nobody is sure who is holding it.
+      await clearEnrolment(tx, user.id);
+      await revokeChallenges(tx, user.id);
+      endedSessions = await signOutEverywhere(tx, user.id, { reason: "admin" });
       result = {
         message: `Cleared the authenticator for ${user.email}. They sign in with their password and set up a new one.`,
         note: `reset-2fa for ${user.email}`,
@@ -197,7 +203,7 @@ export async function runRecovery(
           "PUBLIC_WEB_ORIGIN is not set, so a reset link cannot be built. Set it and run this again.",
         );
       }
-      const created = await createPasswordReset(db, { userId: user.id, mode: deps.mode });
+      const created = await createPasswordReset(tx, { userId: user.id, mode: deps.mode });
       // Printed, never sent. This command does not set a password — the person
       // still chooses their own, which is the same rule the dashboard follows
       // and the reason an admin cannot take an account over silently.
@@ -222,7 +228,7 @@ export async function runRecovery(
       // is left at all", and the commonest way to arrive there is the last
       // admin being suspended — a promotion that left them unable to sign in
       // would fix the role and not the problem.
-      await db
+      await tx
         .update(users)
         .set({ role: "admin", status: "active", removedAt: null, removedBy: null })
         .where(and(eq(users.id, user.id)));
@@ -244,9 +250,34 @@ export async function runRecovery(
     // access context because there is no browser — the operator's name is the
     // whole of the attribution, and the writer would drop these anyway.
     note: `${result.note} — run on the host, reported by "${by}" (shell access, not an authenticated identity)`,
-  });
+  }, tx);
+  // One row per session a reset ended, as the admin route writes — so a reader
+  // following a session id from its sign-in finds how it ended.
+  for (const sessionId of endedSessions) {
+    await audit.write(
+      {
+        action: "session.revoked",
+        actor: { kind: "host", label: by },
+        target: { type: "session", id: sessionId, name: user.email },
+        note: "two-factor reset from the host",
+      },
+      tx,
+    );
+  }
 
   return result;
+  });
+}
+
+
+/** Host, port and database name — never the credentials in the URL. */
+export function describeDatabase(url: string): string {
+  try {
+    const u = new URL(url);
+    return `${u.hostname}${u.port ? `:${u.port}` : ""}${u.pathname}`;
+  } catch {
+    return "the configured database";
+  }
 }
 
 async function main(): Promise<void> {
@@ -261,6 +292,13 @@ async function main(): Promise<void> {
     console.error("DATABASE_URL is not set. Recovery talks to the accounts database directly.");
     process.exit(2);
   }
+
+  // Say where, before doing anything. Run from a host shell rather than inside
+  // the api container, DATABASE_URL and DEPLOYMENT_MODE come from whatever that
+  // shell has — so the operator sees which database, and which shape of
+  // deployment the audit row will be written as, instead of assuming it.
+  // stderr, so stdout stays only the result (which may be a link to copy).
+  console.error(`Acting on ${describeDatabase(url)} as a ${config.deploymentMode} deployment.`);
 
   const handle = createDb(url);
   try {
