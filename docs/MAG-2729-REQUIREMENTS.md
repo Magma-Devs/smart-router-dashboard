@@ -14,7 +14,7 @@ taken on trust.
 ## Verdict
 
 Everything the ticket asks for is implemented. Nothing is open for decision; what remains belongs to
-four sibling tickets.
+sibling tickets.
 
 **The eleven acceptance checks on the ticket all pass**, run against a live deployment in both
 deployment shapes — 11/11 managed, 10/10 on-prem, where the eleventh is managed-only. [§4](#4-the-acceptance-checks)
@@ -36,8 +36,7 @@ Three places where the code disagreed with the ticket were found and fixed on th
 [§7](#7-mismatches-found-and-fixed). The third arrived after the audit rather than during it:
 Omer's 26 Aug decision kept the Magma operator account on managed deployments and required it to be
 **visible as ours** in the member list, which nothing on that screen could say. **Every row below that is not ✅ is explained in
-[§6](#6-the-gaps-and-why-each-one-is-open)**, grouped by cause rather than listed one by one, since
-three of them are the same missing piece.
+[§6](#6-the-gaps-and-why-each-one-is-open)**, grouped by cause rather than listed one by one.
 
 ---
 

@@ -18,10 +18,10 @@ interface ResetLinkResponse {
  * the holder chooses the value — there is deliberately no password field here,
  * and the api has no endpoint that would accept one.
  *
- * The link is shown once and copied by hand. On-prem that is the design; in
- * managed it is also what happens for now, because no mail transport exists
- * yet — so the copy says "nothing is emailed" rather than "this deployment has
- * no mail server", which stays true either way.
+ * The link is shown once and copied by hand, on every deployment: only the
+ * holder's own request (Forgot password, managed) is emailed. So the copy says
+ * "nothing is emailed" rather than "this deployment has no mail server", which
+ * would be false on managed.
  *
  * It sits behind a confirmation rather than firing on click because generating
  * one is the first half of an account takeover if the wrong person asked for

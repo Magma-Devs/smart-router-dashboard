@@ -18,10 +18,6 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   and logs a warning. The first admin is created at `/setup` with the
   installer's setup token. `make dev-auth` still seeds. `make up-auth` and the
   README's quick start go through `/setup`.
-- **Invitations hand the link over on every deployment.** A managed
-  deployment answered with `delivery: "email"` and no link, though nothing
-  sends email until MAG-2870 — an invitation nobody received. The admin now
-  gets the link to pass on, as on-prem; the expiry still differs by mode.
 - **The web build no longer downloads its fonts.** `next/font/google` fetches
   them at build time, and in August gstatic 404'd the Inter file this Next
   version asks for, failing `next build` outright. Inter and JetBrains Mono are
@@ -106,6 +102,15 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   bouncing to the dashboard, and offers to sign out and come straight back
   to accept. If the browser still holds the sign-in of the invited address's
   removed account, that is the only offer.
+- **Managed deployments email invitations and password resets** (MAG-2870;
+  `AWS_REGION` switches the SES transport on). Two messages, each with the
+  link as text beside the button, the expiry stated, and no footer, tracking
+  or images. An invitation whose email was not sent comes back to the admin
+  with `deliveryFallback: true`, and the dialog says so rather than reporting
+  it delivered. The sign-in page gains **Forgot your password?** (on-prem it
+  points at an administrator), and the reset page names the address it
+  changes. Self-serve reset still answers 404 wherever no transport is
+  configured. On-prem sends nothing; admins hand the links over, as before.
 
 - **Five chains arrived upstream.** **Arc** (`ARC` / `ARCT`) and **Robinhood
   Chain** (`ROBINHOOD` / `ROBINHOODT`) are EVM chains importing `ETH1`, so they
