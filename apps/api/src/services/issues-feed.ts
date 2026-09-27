@@ -49,7 +49,7 @@ import {
   type FormulatedIssue,
   type IssueSeverity,
 } from "./formulated-issues.js";
-import { LokiService, groupErrors } from "./loki.js";
+import { LokiService, groupErrors, type FinalResults } from "./loki.js";
 import { BedrockService, bedrockGate, type BedrockLogger } from "./bedrock.js";
 import { config } from "../config.js";
 
@@ -79,13 +79,25 @@ export interface IssuesSnapshot {
   issues: ServedIssue[];
 }
 
-/** Order of magnitude — "?" unmeasured, "0" none, then 1e0 for 1-9, 1e1 for 10-99… */
+/**
+ * A count as the card's words would state it. Exact below 10 — "6 failed"
+ * against a real 3 is wrong by half — and the leading digit above, so the
+ * words stay within one step of the truth without being rewritten for every
+ * tick of a busy counter.
+ */
 function scale(n: number | null): string {
   if (n == null) return "?";
-  // Zero gets its own token. A bare magnitude would give 1-9 "0" as well, and
-  // none-to-some — the change that flips the badge — would not rewrite.
-  return n <= 0 ? "0" : `1e${Math.floor(Math.log10(n))}`;
+  if (n < 10) return String(Math.max(0, Math.round(n)));
+  const mag = Math.floor(Math.log10(n));
+  return `${Math.floor(n / 10 ** mag)}e${mag}`;
 }
+
+/**
+ * Bumped when what the numbers MEAN changes, so every saved issue is rewritten
+ * once. 2: failures come from the final-result log, once per customer request —
+ * words written from the old per-attempt counter overstated them.
+ */
+const PRINT_VERSION = 2;
 
 /**
  * What makes an issue worth rewriting. Headlines carry the numbers, so a rate
@@ -107,6 +119,7 @@ export function fingerprint(
   severity?: IssueSeverity,
 ): string {
   return [
+    `v${PRINT_VERSION}`,
     ...(outcome ? [`o:${scale(outcome.failures)}:${scale(outcome.recovered)}`] : []),
     ...(severity ? [`s:${severity}`] : []),
     ...findings.map((f) => `${f.id}|${f.tier}|${f.headline}`),
@@ -137,9 +150,36 @@ export function fingerprint(
 const addonQuery = (metric: string, label: string, range: string): string =>
   `round(sum by (spec, addon) (label_replace(increase(${metric}{${label}=~"(debug|trace)_.*"}[${range}]), "addon", "$1", "${label}", "(debug|trace)_.*")))`;
 
+/**
+ * Final results by router id → by chain, through the values file. A router
+ * the config does not know is left out rather than guessed at.
+ */
+export function finalsBySpec(
+  byRouter: Map<string, FinalResults>,
+  routers: { id: string; spec: string }[],
+): Map<string, FinalResults> {
+  const specOf = new Map(routers.map((r) => [r.id.toLowerCase(), r.spec]));
+  const out = new Map<string, FinalResults>();
+  for (const [router, v] of byRouter) {
+    const spec = specOf.get(router);
+    if (!spec) continue;
+    const cur = out.get(spec) ?? { total: 0, failed: 0 };
+    cur.total += v.total;
+    cur.failed += v.failed;
+    out.set(spec, cur);
+  }
+  return out;
+}
+
 export async function outcomesBySpec(
   prom: Pick<PrometheusClient, "query">,
   window: MetricWindow,
+  /**
+   * Customer requests and failures per chain, from the router's final-result
+   * log. Without it, failures are unmeasured — never taken from the
+   * requests_failed counter, which counts relay attempts.
+   */
+  finals: Map<string, FinalResults> | null = null,
 ): Promise<(spec: string) => ChainOutcome> {
   const range = `${WINDOWS[window].rangeSeconds}s`;
   const [failed, saved, requested, addonSent, addonFailed] = await Promise.all([
@@ -177,12 +217,18 @@ export async function outcomesBySpec(
       }))
       .filter((a) => a.sent > 0);
 
-  return (spec) => ({
-    recovered: recovered(spec),
-    failures: failures(spec),
-    requests: requests(spec),
-    addonCalls: addonCalls(spec),
-  });
+  return (spec) => {
+    const f = finals?.get(spec);
+    return {
+      recovered: recovered(spec),
+      // Once per customer request, after every retry. `failures(spec)` above
+      // is the per-ATTEMPT counter and stays out of this: a request that
+      // failed on one provider and was saved on another is not a failure.
+      failures: f ? f.failed : null,
+      requests: f ? f.total : requests(spec),
+      addonCalls: addonCalls(spec),
+    };
+  };
 }
 
 /** Several chains folded into one issue: the sum, or unknown if any is. */
@@ -376,11 +422,23 @@ export class IssuesFeedService {
     try {
       const window = DEFAULT_WINDOW;
       const report = await this.detail.status(window);
+      const routers = this.configSvc?.getRouters() ?? [];
+      // Customer failures per chain, once per request, from the router's own
+      // final-result log. Without the log store they stay unmeasured.
+      const finals = this.loki.available
+        ? await this.loki
+            .finalResults(WINDOWS[window].rangeSeconds)
+            .then((byRouter) => (byRouter ? finalsBySpec(byRouter, routers) : null))
+            .catch((err) => {
+              this.logger?.warn({ error: err instanceof Error ? err.message : String(err) }, "could not read final results");
+              return null;
+            })
+        : null;
       // Read once for every chain. A failure here costs the outcome sentence,
       // never the issues themselves.
       const unmeasured: ChainOutcome = { recovered: null, failures: null, requests: null, addonCalls: [] };
       const outcomeOf = this.prom
-        ? await outcomesBySpec(this.prom, window).catch((err) => {
+        ? await outcomesBySpec(this.prom, window, finals).catch((err) => {
             this.logger?.warn(
               { window, error: err instanceof Error ? err.message : String(err) },
               "could not read the retry outcome",
@@ -429,7 +487,6 @@ export class IssuesFeedService {
         });
       }
 
-      const routers = this.configSvc?.getRouters() ?? [];
       const svc = new FormulatedIssueService(new BedrockService(config.bedrock.model, this.logger), this.logger);
 
       const seen: Sighting[] = [];

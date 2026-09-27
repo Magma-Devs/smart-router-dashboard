@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { StatusFinding } from "@sr/shared";
 import { severityOf, shareFailed, digestForIssue, type FormulatedInputs } from "../services/formulated-issues.js";
-import { fingerprint, outcomesBySpec } from "../services/issues-feed.js";
+import { fingerprint, finalsBySpec, outcomesBySpec } from "../services/issues-feed.js";
 
 function finding(over: Partial<StatusFinding>): StatusFinding {
   return {
@@ -113,7 +113,7 @@ describe("digestForIssue", () => {
     expect(d.outcome).toMatchObject({ savedByRetry: 1200, reachedCaller: 0, totalRequests: 12_400 });
     // The misreading that wrote "none reached you" over a provider answering
     // with errors: error answers are not in reachedCaller.
-    expect(d.outcome.note).toMatch(/error ANSWER is not in reachedCaller/);
+    expect(d.outcome.note).toMatch(/error ANSWER from a provider is not in reachedCaller/);
     expect(d.whatWeMeasured[0].whatItMeans).toMatch(/no answer/);
   });
 
@@ -135,9 +135,14 @@ describe("fingerprint", () => {
     const o = { recovered: 0, failures: 600, requests: 1_000 };
     expect(fingerprint(f, [], o, "critical")).not.toBe(fingerprint(f, [], o, "degraded"));
   });
-  it("keeps the wording while counts tick within the same scale", () => {
-    expect(fingerprint(f, [], { recovered: 910, failures: 3, requests: 9_000 })).toBe(
-      fingerprint(f, [], { recovered: 960, failures: 7, requests: 9_000 }),
+  it("keeps the wording while a busy count ticks within its leading digit", () => {
+    expect(fingerprint(f, [], { recovered: 910, failures: 30, requests: 9_000 })).toBe(
+      fingerprint(f, [], { recovered: 960, failures: 34, requests: 9_000 }),
+    );
+  });
+  it("rewrites a small count on any change — 6 against a real 3 is wrong by half", () => {
+    expect(fingerprint(f, [], { recovered: 0, failures: 6, requests: 9_000 })).not.toBe(
+      fingerprint(f, [], { recovered: 0, failures: 3, requests: 9_000 }),
     );
   });
 });
@@ -153,17 +158,23 @@ describe("outcomesBySpec", () => {
   });
   const addonRow = (spec: string, addon: string, v: number): Row => ({ metric: { spec, addon }, value: [0, String(v)] });
 
-  it("reads both counters per chain, rounded", async () => {
-    const of = await outcomesBySpec(
-      prom([row("SOLANAT", 3.6)], [row("SOLANAT", 1199.8)], [row("SOLANAT", 12_400.2)]),
-      "30m",
-    );
-    expect(of("SOLANAT")).toEqual({ recovered: 1200, failures: 4, requests: 12_400, addonCalls: [] });
+  it("takes failures from the final-result log, once per request", async () => {
+    const finals = new Map([["SOLANAT", { total: 22_336, failed: 0 }]]);
+    // The attempt counter says 652 — every one saved by a retry.
+    const of = await outcomesBySpec(prom([row("SOLANAT", 652)], [row("SOLANAT", 653)], [row("SOLANAT", 22_000)]), "30m", finals);
+    expect(of("SOLANAT")).toEqual({ recovered: 653, failures: 0, requests: 22_336, addonCalls: [] });
+  });
+
+  it("never falls back to the per-attempt counter without the log", async () => {
+    const of = await outcomesBySpec(prom([row("SOLANAT", 652)], [row("SOLANAT", 653)], [row("SOLANAT", 22_000)]), "30m");
+    expect(of("SOLANAT")).toMatchObject({ failures: null, requests: 22_000 });
   });
 
   it("a family with series elsewhere but none for this chain is a real zero", async () => {
-    const of = await outcomesBySpec(prom([row("ETH1", 5)], [row("ETH1", 9)], [row("ETH1", 90)]), "30m");
-    expect(of("SOLANAT")).toEqual({ recovered: 0, failures: 0, requests: 0, addonCalls: [] });
+    const of = await outcomesBySpec(prom([row("ETH1", 5)], [row("ETH1", 9)], [row("ETH1", 90)]), "30m", new Map());
+    // Recovered and requests are counters with series elsewhere: a real zero.
+    // Failures for a chain the log never mentioned stay unmeasured.
+    expect(of("SOLANAT")).toEqual({ recovered: 0, failures: null, requests: 0, addonCalls: [] });
   });
 
   it("no series anywhere is unmeasured, never an invented zero", async () => {
@@ -191,3 +202,19 @@ describe("outcomesBySpec", () => {
     expect(of("ETH1").addonCalls).toEqual([{ addon: "debug", sent: 5, failed: null }]);
   });
 });
+
+describe("finalsBySpec", () => {
+  it("maps router ids to chains through the config, summing routers on one chain", () => {
+    const byRouter = new Map([
+      ["solana-mainnet", { total: 24_599, failed: 59 }],
+      ["solana-mainnet-staging", { total: 100, failed: 1 }],
+      ["unknown-router", { total: 5, failed: 5 }],
+    ]);
+    const routers = [
+      { id: "solana-mainnet", spec: "SOLANA" },
+      { id: "SOLANA-MAINNET-STAGING", spec: "SOLANA" },
+    ];
+    expect(finalsBySpec(byRouter, routers)).toEqual(new Map([["SOLANA", { total: 24_699, failed: 60 }]]));
+  });
+});
+

@@ -92,6 +92,29 @@ interface LokiStream {
   values: [string, string][];
 }
 
+/**
+ * The router writes one of these per customer request, after every retry and
+ * failover has run — the request's final answer.
+ */
+const FINAL_RESULT = '|= `"message":"ProcessingResult RETURNED"`';
+/**
+ * A final answer that failed the caller: an error, no result, or no reply.
+ * The same line and the same test as the team's customer-failure alert, so
+ * the page and the alert count the same thing.
+ */
+const FAILED_RESULT = '|~ `"error":"[^"]+"|"has_result":"false"|"has_reply":"false"`';
+
+/** Customer requests on one router, and how many failed. */
+export interface FinalResults {
+  total: number;
+  failed: number;
+}
+
+/** `arbitrum-mainnet-router-6fdddbb79c-fj4kh` → `arbitrum-mainnet`, the router's id. */
+export function routerOfPod(pod: string): string {
+  return pod.replace(/-router-[a-z0-9]+-[a-z0-9]+$/, "");
+}
+
 /** `{ProviderAddress:tatum ProviderReputationSummary:0 …}` → `tatum` */
 const PROVIDER_RE = /ProviderAddress:([^\s}]+)/;
 
@@ -100,6 +123,53 @@ export class LokiService {
 
   get available(): boolean {
     return Boolean(this.baseUrl);
+  }
+
+  /**
+   * Customer requests per router over the last `rangeSec`, and how many failed
+   * — once per request, after every retry. Null when there is no log store.
+   *
+   * This is the count the metrics cannot give. `smartrouter_requests_failed_total`
+   * is recorded per relay ATTEMPT: a request that failed on one provider and
+   * was saved on another counts as failed. Measured on a production
+   * deployment over 30 minutes, the counter said 652 failed on one chain; this
+   * log said 0 of 22,336.
+   */
+  async finalResults(rangeSec: number, atUnix = Math.floor(Date.now() / 1000)): Promise<Map<string, FinalResults> | null> {
+    if (!this.baseUrl) return null;
+    const range = `${Math.max(60, Math.round(rangeSec))}s`;
+    const lines = `{service_name="router"} ${FINAL_RESULT}`;
+    const [total, failed] = await Promise.all([
+      this.byPod(`sum by (pod) (count_over_time(${lines} [${range}]))`, atUnix),
+      // Distinct request ids, as the alert counts them — a request that
+      // logged its result twice is one failed request.
+      this.byPod(
+        `count by (pod) (sum by (pod, GUID) (count_over_time(${lines} ${FAILED_RESULT} | json GUID="GUID" [${range}])))`,
+        atUnix,
+      ),
+    ]);
+    const out = new Map<string, FinalResults>();
+    const add = (rows: [string, number][], k: keyof FinalResults) => {
+      for (const [pod, v] of rows) {
+        const router = routerOfPod(pod);
+        const cur = out.get(router) ?? { total: 0, failed: 0 };
+        cur[k] += Math.round(v);
+        out.set(router, cur);
+      }
+    };
+    add(total, "total");
+    add(failed, "failed");
+    return out;
+  }
+
+  private async byPod(query: string, atUnix: number): Promise<[string, number][]> {
+    const url = new URL("loki/api/v1/query", this.baseUrl!.endsWith("/") ? this.baseUrl! : `${this.baseUrl}/`);
+    url.searchParams.set("query", query);
+    url.searchParams.set("time", String(BigInt(atUnix) * 1_000_000_000n));
+    const res = await fetch(url, { signal: AbortSignal.timeout(config.loki.timeoutMs) });
+    if (!res.ok) throw Object.assign(new Error(`loki ${res.status}`), { statusCode: 503 });
+    const body = (await res.json()) as { data?: { result?: { metric: Record<string, string>; value: [number, string] }[] } };
+    return (body.data?.result ?? []).map((r) => [r.metric.pod ?? "", Number(r.value[1]) || 0]);
   }
 
   /** Latest error lines, newest first. `spec`/`provider` narrow by line

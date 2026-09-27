@@ -500,7 +500,7 @@ export function digestForIssue(i: FormulatedInputs): string {
         ? {}
         : {
             outcome: {
-              note: "Chain-wide, this window. totalRequests: client requests. savedByRetry: got no answer from one provider and went through on another. reachedCaller: got no answer from ANY provider after every attempt. An error ANSWER is not in reachedCaller — it went back to the caller as an error. null = not measured.",
+              note: "Chain-wide, this window. totalRequests: customer requests. savedByRetry: failed on one provider and went through on another. reachedCaller: customer requests that failed after every retry — counted once per request from the router's own final-result log. An error ANSWER from a provider is not in reachedCaller — it went back to the caller as an error. null = not measured.",
               totalRequests: i.requests,
               savedByRetry: i.recovered,
               reachedCaller: i.failures,

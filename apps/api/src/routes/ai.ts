@@ -21,8 +21,9 @@ import { IncidentsService } from "../services/incidents.js";
 import { FailureAnalysisService } from "../services/failure-analysis.js";
 import { IncidentExplainService } from "../services/incident-explain.js";
 import { ChainAnalysisService } from "../services/chain-analysis.js";
+import { WINDOWS } from "@sr/shared";
 import { FormulatedIssueService, severityOf } from "../services/formulated-issues.js";
-import { outcomesBySpec } from "../services/issues-feed.js";
+import { finalsBySpec, outcomesBySpec } from "../services/issues-feed.js";
 import { LokiService, groupErrors } from "../services/loki.js";
 import { OPTIONAL_METRICS } from "@sr/shared";
 import { parseWindow } from "./metrics.js";
@@ -666,7 +667,13 @@ export async function aiRoutes(app: FastifyInstance) {
       // The same outcome read the background feed uses, so a chain gets the
       // same badge whichever path wrote it. A failed read costs the outcome
       // sentence, never the issues.
-      const outcomeOf = await outcomesBySpec(app.prom, window).catch(
+      const finals = loki.available
+        ? await loki
+            .finalResults(WINDOWS[window].rangeSeconds)
+            .then((byRouter) => (byRouter ? finalsBySpec(byRouter, app.routerConfig?.getRouters() ?? []) : null))
+            .catch(() => null)
+        : null;
+      const outcomeOf = await outcomesBySpec(app.prom, window, finals).catch(
         () => () => ({ recovered: null, failures: null, requests: null, addonCalls: [] }),
       );
 
