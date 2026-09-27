@@ -307,10 +307,17 @@ body, which leaves nothing to see.)
 **Self-serve reset is managed-only.** `POST /auth/password/forgot` answers
 `202` for every address on a managed deployment, and emails a link only when the
 address belongs to an account with a password — anything else would say who is a
-member. On-prem it answers `404`: there is nowhere to send a link. So does a
-managed deployment with no mail transport (`AWS_REGION` unset), for every
-address and writing nothing, because a link nobody receives would still kill any
-live one the member holds.
+member. It answers **before** looking the address up, so the time it takes says
+nothing either. And it issues **one link per account per five minutes**: each new
+link kills the last, so without a wait anybody who knows an address could keep
+the inbox full and every link in it dead. Inside the window the link already
+sent stays live, and the request is still recorded (`not re-sent, a recent link
+is still unused`), so a flood shows up in the log.
+
+On-prem it answers `404`: there is nowhere to send a link. So does a managed
+deployment with no mail transport (`AWS_REGION` unset), for every address and
+writing nothing, because a link nobody receives would still kill any live one
+the member holds.
 
 On-prem, an admin starts one from the member's row on the Team page, which shows the
 link once; it lands on `/reset/<token>`. A new link kills any earlier one.

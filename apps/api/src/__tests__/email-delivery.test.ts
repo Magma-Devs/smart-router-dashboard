@@ -273,6 +273,78 @@ describe("forgot-password on managed, with a transport", () => {
     // somebody investigating a takeover looking for one.
     expect(await waitForNote("password.reset_requested")).toBe("email failed, no link delivered");
   });
+
+  it("answers before the account is looked up or the email sent", async () => {
+    // An account costs a lookup, two writes and an SES round trip; an unknown
+    // address one SELECT. Answering after that work would say which one it was
+    // through how long it took. With SES holding the send, a route that waited
+    // for it would never answer.
+    await managedWithDana();
+    ses.mode = "hold";
+
+    const answered = await Promise.race([
+      forgot("dana@example.com").then((r) => r.statusCode),
+      new Promise<string>((r) => setTimeout(() => r("still waiting"), 5_000)),
+    ]);
+    expect(answered).toBe(202);
+
+    ses.release();
+    expect(await waitForNote("password.reset_requested")).toBe("emailed");
+  });
+
+  it("sends one link per cooldown, and keeps the first one working", async () => {
+    await managedWithDana();
+
+    await forgot("dana@example.com");
+    expect(await waitForNote("password.reset_requested")).toBe("emailed");
+    const first = ses.sent[0]!.text.match(/\/reset\/([A-Za-z0-9_-]+)/)![1]!;
+
+    // A second ask inside the window — a person impatient for the email, or
+    // somebody trying to fill the inbox and kill every link in it.
+    const again = await forgot("dana@example.com");
+    expect(again.statusCode).toBe(202);
+    await expect
+      .poll(async () =>
+        (
+          await t.db
+            .select()
+            .from(auditEvents)
+            .where(eq(auditEvents.action, "password.reset_requested"))
+        ).length,
+      )
+      .toBe(2);
+
+    expect(ses.sent).toHaveLength(1);
+    expect(await lastNote("password.reset_requested")).toBe(
+      "not re-sent, a recent link is still unused",
+    );
+    const preview = await app!.inject({
+      method: "POST",
+      url: "/auth/password/reset/preview",
+      payload: { token: first },
+    });
+    expect(preview.statusCode).toBe(200);
+  });
+
+  it("does not let an admin-issued link hold back the holder's own request", async () => {
+    const adminToken = await boot("managed");
+    setEnv(fakeSesEnv(ses));
+    resetEmailClientForTests();
+    const [dana] = await t.db
+      .insert(users)
+      .values({ email: "dana@example.com", passwordHash: await hashPassword("dana-passphrase-1") })
+      .returning();
+    const issued = await app!.inject({
+      method: "POST",
+      url: `/api/team/members/${dana!.id}/reset-link`,
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(issued.statusCode).toBe(200);
+
+    await forgot("dana@example.com");
+    expect(await waitForNote("password.reset_requested")).toBe("emailed");
+    expect(ses.sent).toHaveLength(1);
+  });
 });
 
 describe("the reset-link preview", () => {

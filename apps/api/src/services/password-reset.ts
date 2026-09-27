@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, gt, isNull } from "drizzle-orm";
 import { passwordResets, users, type Database, type User } from "@sr/db";
 import { hashPassword } from "./password.js";
 import { revokeAllForUser, signOutEverywhere } from "./sessions.js";
@@ -79,6 +79,39 @@ export async function createPasswordReset(
   });
 
   return { rawToken, expiresAt };
+}
+
+/**
+ * How long a self-serve request waits before it may issue another link.
+ *
+ * `POST /auth/password/forgot` is public, and each link it issues invalidates
+ * the previous one. Without a wait, anybody who knows an address can keep a
+ * member's inbox full and every link in it dead — the per-IP limit does not
+ * help, since the target is the account, not the caller. Inside the window the
+ * link already sent stays live, so somebody who asks twice loses nothing.
+ */
+export const SELF_SERVE_RESET_COOLDOWN_MS = 5 * 60 * 1000;
+
+/** Whether the account holder asked for a link inside the cooldown and has not
+ *  used it yet. Admin-issued links do not count: they are not the holder's. */
+export async function selfServeResetIsCoolingDown(
+  db: Database,
+  userId: string,
+): Promise<boolean> {
+  const since = new Date(Date.now() - SELF_SERVE_RESET_COOLDOWN_MS);
+  const rows = await db
+    .select({ id: passwordResets.id })
+    .from(passwordResets)
+    .where(
+      and(
+        eq(passwordResets.userId, userId),
+        isNull(passwordResets.createdBy),
+        isNull(passwordResets.usedAt),
+        gt(passwordResets.createdAt, since),
+      ),
+    )
+    .limit(1);
+  return rows.length > 0;
 }
 
 export type ResetRejection = "not_found" | "used" | "expired" | "user_inactive";

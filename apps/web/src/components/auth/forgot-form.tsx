@@ -12,8 +12,9 @@ import { apiUrl } from "@/lib/api-client";
  * their address is unknown turns this form into a way to ask who is a member,
  * which is the one question a public page must not answer.
  *
- * That is also why there is no "check your spam folder" flourish, no count of
- * attempts, and no difference in how long it takes to answer.
+ * That is also why there is no "check your spam folder" flourish and no count
+ * of attempts. The api answers before it looks the address up, so how long it
+ * takes says nothing either.
  */
 export function ForgotForm() {
   const [email, setEmail] = useState("");
