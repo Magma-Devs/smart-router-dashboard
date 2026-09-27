@@ -185,7 +185,7 @@ export function StatusView() {
           measurement, and the gist is what the reader came for. The numbers
           live on the finding rows the issue cites. */}
       {tab === "issues" && (
-        <IssueCards chainsAffected={[...new Set(findings.map((f) => f.chainName))]} />
+        <IssueCards chainsAffected={data ? [...new Set(findings.map((f) => f.chainName))] : null} />
       )}
 
       {/* INCIDENTS - failure bursts of the last 24h, customer-ready. */}

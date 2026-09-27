@@ -45,7 +45,26 @@ export interface ChainOutcome {
   failures: number | null;
   /** Client requests on the chain in the window — what `failures` is a share of. */
   requests: number | null;
+  /**
+   * Calls that need an add-on, by add-on: sent, and how many got no answer.
+   * Empty when none were sent or the counters are absent.
+   */
+  addonCalls: AddonCalls[];
 }
+
+/** One kind of add-on call on one chain — `debug_*` or `trace_*`. */
+export interface AddonCalls {
+  addon: "debug" | "trace";
+  sent: number;
+  /** Got no answer from any provider after every attempt; null when unmeasured. */
+  failed: number | null;
+}
+
+/**
+ * A kind of request that cannot be served. Fewer than this many calls in the
+ * window is a blip, not a verdict — one failed call of one sent says little.
+ */
+export const MIN_ADDON_CALLS = 3;
 
 export interface FormulatedIssue {
   severity: IssueSeverity;
@@ -84,12 +103,16 @@ export interface FormulatedIssue {
 }
 
 /**
- * Severity by whether the CHAIN can still be used. Omer, 27 Sep: "does it
- * make the chain inaccessible? If the system can fail over, then it's not
- * critical."
+ * Severity by whether what the caller sends can still be served. Omer,
+ * 27 Sep: "does it make the chain inaccessible? If the system can fail over,
+ * then it's not critical" — and "if there is a debug call and no provider can
+ * serve it, it's critical, because the transaction can't be fulfilled."
  *
  *   critical  the chain cannot be served: every provider on it is failing, or
- *             at least half its requests got no answer after every retry.
+ *             at least half its requests got no answer after every retry. Or
+ *             one KIND of request cannot be: at least half the debug (or
+ *             trace) calls got no answer — reads may be fine, but a caller
+ *             sending those calls has nothing that works.
  *   degraded  a provider is failing, slow or wrong, and the router still has
  *             somewhere to send traffic — even when some requests reached the
  *             caller as errors on the way.
@@ -145,23 +168,34 @@ function mostlyCallerSide(f: StatusFinding): boolean {
 }
 
 /** Share of the chain's requests that got no answer at all, or null when unmeasured. */
-export function shareFailed(outcome?: Pick<ChainOutcome, "failures" | "requests">): number | null {
+export function shareFailed(outcome?: Partial<Pick<ChainOutcome, "failures" | "requests">>): number | null {
   if (outcome?.failures == null || outcome.requests == null) return null;
   // The two counters are scraped apart, so failures can edge past requests.
   const of = Math.max(outcome.requests, outcome.failures);
   return of > 0 ? outcome.failures / of : null;
 }
 
+/** The kinds of add-on call on this chain that cannot be served. */
+export function blockedAddons(outcome?: Partial<Pick<ChainOutcome, "addonCalls">>): AddonCalls[] {
+  return (outcome?.addonCalls ?? []).filter(
+    (a) => a.failed != null && a.sent >= MIN_ADDON_CALLS && a.failed / Math.max(a.sent, a.failed) >= INACCESSIBLE_SHARE,
+  );
+}
+
 export function severityOf(
   findings: StatusFinding[],
-  outcome?: Pick<ChainOutcome, "failures" | "requests">,
+  outcome?: Partial<ChainOutcome>,
 ): IssueSeverity {
   const ours = findings.filter((f) => !mostlyCallerSide(f));
   // The chain-down rule in status.ts: every configured provider was tried and
-  // none served. It carries no upstream because it is about all of them.
-  const everyProviderFailing = ours.some((f) => f.kind === "dead" && f.upstream === null);
+  // none served. Matched by its id, which status.ts keeps stable so the page
+  // can key rows — the other `dead` finding ("no provider could answer" for
+  // some requests) carries an upstream only when one dominates, so matching
+  // on a null upstream would catch it on quiet chains.
+  const everyProviderFailing = ours.some((f) => f.id.endsWith(":chain:down"));
   const share = shareFailed(outcome);
   if (everyProviderFailing || (share != null && share >= INACCESSIBLE_SHARE)) return "critical";
+  if (blockedAddons(outcome).length > 0) return "critical";
   if (ours.some((f) => f.kind !== "config")) return "degraded";
   return "config";
 }
@@ -194,6 +228,8 @@ export interface FormulatedInputs {
   failures: number | null;
   /** Client requests on this chain in the window, when known. */
   requests: number | null;
+  /** Debug / trace calls on this chain, when any were sent. */
+  addonCalls?: AddonCalls[];
 }
 
 const CROSS_CHAIN_NOTE = `
@@ -274,6 +310,8 @@ many requests the router saved by retrying them on another provider
     reached you."
   - reachedCaller above 0: say how many still failed, out of totalRequests,
     and why the retry could not save them when the input shows why.
+  - callsNeedingAnAddon, when given, splits out debug and trace calls. When
+    most of one kind got no answer, that is the point to lead with.
 
 reachedCaller counts requests that got NO answer. An error answer is not in
 it — that went back to the caller as an error. So when a provider is answering
@@ -331,9 +369,12 @@ finished.
 
 ## Rules
 
-The severity you are given follows ONE rule: can the chain still be used.
-Critical means it cannot — every provider is failing, or at least half the
-requests got no answer even after retries. Degraded means the chain still
+The severity you are given follows ONE rule: can what they send still be
+served. Critical means it cannot — every provider is failing, or at least half
+the requests got no answer even after retries, or one kind of request cannot be
+served at all: at least half of their debug (or trace) calls got no answer.
+When it is that last one, say so by name: reads may work, but their debug calls
+have no provider that can answer them. Degraded means the chain still
 works: a provider is failing, slow or wrong, and the router has somewhere else
 to send traffic, even if some requests reached the caller as errors. Config
 means nothing is failing because of us or a provider.
@@ -443,6 +484,15 @@ export function digestForIssue(i: FormulatedInputs): string {
               totalRequests: i.requests,
               savedByRetry: i.recovered,
               reachedCaller: i.failures,
+              ...(i.addonCalls?.length
+                ? {
+                    callsNeedingAnAddon: i.addonCalls.map((a) => ({
+                      kind: `${a.addon}_* calls`,
+                      sent: a.sent,
+                      gotNoAnswer: a.failed,
+                    })),
+                  }
+                : {}),
             },
           }),
       errorsFromLogs: {
@@ -481,7 +531,11 @@ export class FormulatedIssueService {
     return {
       // From the findings, never from the model — the page already owns this
       // vocabulary and a second scale would disagree with the rows beneath.
-      severity: severityOf(inputs.findings, { failures: inputs.failures, requests: inputs.requests }),
+      severity: severityOf(inputs.findings, {
+        failures: inputs.failures,
+        requests: inputs.requests,
+        addonCalls: inputs.addonCalls ?? [],
+      }),
       spec: inputs.spec,
       chain: inputs.chain,
       specs: [inputs.spec, ...(inputs.alsoOnChains ?? []).map((c) => c.spec)],
@@ -497,7 +551,12 @@ export class FormulatedIssueService {
         .slice(0, 4),
       bottomLine: str("bottomLine"),
       findingIds: inputs.findings.map((f) => f.id),
-      outcome: { recovered: inputs.recovered, failures: inputs.failures, requests: inputs.requests },
+      outcome: {
+        recovered: inputs.recovered,
+        failures: inputs.failures,
+        requests: inputs.requests,
+        addonCalls: inputs.addonCalls ?? [],
+      },
       lastSeenUnix:
         inputs.findings.reduce<number | null>(
           (newest, f) => (f.lastSeenUnix && (!newest || f.lastSeenUnix > newest) ? f.lastSeenUnix : newest),

@@ -170,7 +170,8 @@ function Card({ issue, color }: { issue: Issue; color: string }) {
   );
 }
 
-export function IssueCards({ chainsAffected }: { chainsAffected: string[] }) {
+/** `chainsAffected` is null until the status report has loaded — not "none". */
+export function IssueCards({ chainsAffected }: { chainsAffected: string[] | null }) {
   const { timeWindow, scopeQ } = useFilters();
   // Recent first by default: opening the page, the question is what just
   // started, not which chain sorts first alphabetically.
@@ -222,12 +223,19 @@ export function IssueCards({ chainsAffected }: { chainsAffected: string[] }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <div style={{ fontSize: 12, color: "var(--text-3)", display: "flex", alignItems: "center", gap: 7 }}>
             <span className="gw-live-dot gw-live-dot--busy" />
-            Reading errors and config for {chainsAffected.length}{" "}
-            {chainsAffected.length === 1 ? "chain" : "chains"}
-            {chainsAffected.length ? ` — ${chainsAffected.slice(0, 4).join(", ")}` : ""}
-            {chainsAffected.length > 4 ? "…" : ""}
+            {/* Before the report lands the count is unknown, and "for 0 chains"
+                read as "nothing to do" while the page was still working. */}
+            {chainsAffected?.length ? (
+              <>
+                Reading errors and config for {chainsAffected.length}{" "}
+                {chainsAffected.length === 1 ? "chain" : "chains"} — {chainsAffected.slice(0, 4).join(", ")}
+                {chainsAffected.length > 4 ? "…" : ""}
+              </>
+            ) : (
+              "Reading errors and config…"
+            )}
           </div>
-          {Array.from({ length: Math.min(Math.max(chainsAffected.length, 1), 3) }).map((_, i) => (
+          {Array.from({ length: Math.min(Math.max(chainsAffected?.length ?? 0, 1), 3) }).map((_, i) => (
             <div key={i} className="gw-card" style={{ padding: "12px 14px", opacity: 0.45 }}>
               <div style={{ height: 11, width: "34%", background: "var(--text-4)", borderRadius: 3, opacity: 0.25 }} />
               <div style={{ height: 9, width: "72%", background: "var(--text-4)", borderRadius: 3, opacity: 0.18, marginTop: 9 }} />

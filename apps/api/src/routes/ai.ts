@@ -667,7 +667,7 @@ export async function aiRoutes(app: FastifyInstance) {
       // same badge whichever path wrote it. A failed read costs the outcome
       // sentence, never the issues.
       const outcomeOf = await outcomesBySpec(app.prom, window).catch(
-        () => () => ({ recovered: null, failures: null, requests: null }),
+        () => () => ({ recovered: null, failures: null, requests: null, addonCalls: [] }),
       );
 
       // Worst chains first, so a truncated list never drops a critical one.

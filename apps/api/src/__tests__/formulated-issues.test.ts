@@ -67,6 +67,28 @@ describe("severityOf: can the chain still be used", () => {
     expect(severityOf([f], out(0, 9_000))).toBe("config");
   });
 
+  it("is critical when a kind of request cannot be served, even if reads are fine", () => {
+    // Omer: "if there is a debug call and no provider can serve it, it's
+    // critical, because the transaction can't be fulfilled."
+    const debugDead = { failures: 1_306, requests: 40_000, addonCalls: [{ addon: "debug" as const, sent: 1_306, failed: 1_306 }] };
+    expect(severityOf([finding({})], debugDead)).toBe("critical");
+  });
+
+  it("debug calls the router mostly answers leave it degraded", () => {
+    const o = { failures: 12, requests: 40_000, addonCalls: [{ addon: "debug" as const, sent: 1_306, failed: 12 }] };
+    expect(severityOf([finding({})], o)).toBe("degraded");
+  });
+
+  it("two failed calls of two sent is a blip, not a verdict", () => {
+    const o = { failures: 2, requests: 40_000, addonCalls: [{ addon: "trace" as const, sent: 2, failed: 2 }] };
+    expect(severityOf([finding({})], o)).toBe("degraded");
+  });
+
+  it("unmeasured add-on failures never make it critical", () => {
+    const o = { failures: null, requests: null, addonCalls: [{ addon: "debug" as const, sent: 900, failed: null }] };
+    expect(severityOf([finding({})], o)).toBe("degraded");
+  });
+
   it("the share survives counters scraped a moment apart", () => {
     expect(shareFailed(out(1_010, 1_000))).toBe(1);
     expect(shareFailed(out(3, null))).toBeNull();
@@ -122,26 +144,50 @@ describe("fingerprint", () => {
 
 describe("outcomesBySpec", () => {
   const row = (spec: string, v: number) => ({ metric: { spec }, value: [0, String(v)] as [number, string] });
-  const prom = (failed: ReturnType<typeof row>[], saved: ReturnType<typeof row>[], requested = [] as ReturnType<typeof row>[]) => ({
+  type Row = { metric: Record<string, string>; value: [number, string] };
+  const prom = (failed: Row[], saved: Row[], requested: Row[] = [], addonSent: Row[] = [], addonFailed: Row[] = []) => ({
     query: async (q: string) =>
-      q.includes("requests_failed") ? failed : q.includes("retries_success") ? saved : requested,
+      q.includes("label_replace")
+        ? q.includes("requests_failed") ? addonFailed : addonSent
+        : q.includes("requests_failed") ? failed : q.includes("retries_success") ? saved : requested,
   });
+  const addonRow = (spec: string, addon: string, v: number): Row => ({ metric: { spec, addon }, value: [0, String(v)] });
 
   it("reads both counters per chain, rounded", async () => {
     const of = await outcomesBySpec(
       prom([row("SOLANAT", 3.6)], [row("SOLANAT", 1199.8)], [row("SOLANAT", 12_400.2)]),
       "30m",
     );
-    expect(of("SOLANAT")).toEqual({ recovered: 1200, failures: 4, requests: 12_400 });
+    expect(of("SOLANAT")).toEqual({ recovered: 1200, failures: 4, requests: 12_400, addonCalls: [] });
   });
 
   it("a family with series elsewhere but none for this chain is a real zero", async () => {
     const of = await outcomesBySpec(prom([row("ETH1", 5)], [row("ETH1", 9)], [row("ETH1", 90)]), "30m");
-    expect(of("SOLANAT")).toEqual({ recovered: 0, failures: 0, requests: 0 });
+    expect(of("SOLANAT")).toEqual({ recovered: 0, failures: 0, requests: 0, addonCalls: [] });
   });
 
   it("no series anywhere is unmeasured, never an invented zero", async () => {
     const of = await outcomesBySpec(prom([], []), "30m");
-    expect(of("SOLANAT")).toEqual({ recovered: null, failures: null, requests: null });
+    expect(of("SOLANAT")).toEqual({ recovered: null, failures: null, requests: null, addonCalls: [] });
+  });
+
+  it("splits debug and trace calls per chain, zero where the counter has none", async () => {
+    const of = await outcomesBySpec(
+      prom(
+        [row("AVALANCHECT", 1_300)], [], [row("AVALANCHECT", 9_000)],
+        [addonRow("AVALANCHECT", "debug", 1_306.4), addonRow("AVALANCHECT", "trace", 40), addonRow("ETH1", "debug", 5)],
+        [addonRow("AVALANCHECT", "debug", 1_290.2)],
+      ),
+      "30m",
+    );
+    expect(of("AVALANCHECT").addonCalls).toEqual([
+      { addon: "debug", sent: 1_306, failed: 1_290 },
+      { addon: "trace", sent: 40, failed: 0 },
+    ]);
+  });
+
+  it("with no failure counter at all, add-on failures are unmeasured, not zero", async () => {
+    const of = await outcomesBySpec(prom([], [], [], [addonRow("ETH1", "debug", 5)], []), "30m");
+    expect(of("ETH1").addonCalls).toEqual([{ addon: "debug", sent: 5, failed: null }]);
   });
 });

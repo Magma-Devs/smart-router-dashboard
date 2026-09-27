@@ -29,6 +29,7 @@
 import {
   DEFAULT_WINDOW,
   OPTIONAL_METRICS,
+  ROUTER_METRICS,
   WINDOWS,
   qClientRequestsBy,
   type MetricWindow,
@@ -41,6 +42,7 @@ import type { MetricsDetailService } from "./metrics-detail.js";
 import {
   FormulatedIssueService,
   severityOf,
+  type AddonCalls,
   type ChainOutcome,
   type FormulatedIssue,
   type IssueSeverity,
@@ -107,17 +109,29 @@ export function fingerprint(
  * exists and was never moved for this chain. A failed read is [] from the
  * client, which lands on null: unknown, never an invented zero.
  */
+/**
+ * Debug and trace calls per chain, grouped by the add-on they need. The
+ * method name says which: the router routes `debug_*` only to providers
+ * declaring DEBUG, and `trace_*` to TRACE.
+ */
+const addonQuery = (metric: string, label: string, range: string): string =>
+  `round(sum by (spec, addon) (label_replace(increase(${metric}{${label}=~"(debug|trace)_.*"}[${range}]), "addon", "$1", "${label}", "(debug|trace)_.*")))`;
+
 export async function outcomesBySpec(
   prom: Pick<PrometheusClient, "query">,
   window: MetricWindow,
 ): Promise<(spec: string) => ChainOutcome> {
   const range = `${WINDOWS[window].rangeSeconds}s`;
-  const [failed, saved, requested] = await Promise.all([
+  const [failed, saved, requested, addonSent, addonFailed] = await Promise.all([
     prom.query(`sum by (spec) (increase(${OPTIONAL_METRICS.requestsFailedTotal}[${range}]))`),
     prom.query(`sum by (spec) (increase(${OPTIONAL_METRICS.retriesSuccessTotal}[${range}]))`),
     // The client-side count the rest of the dashboard uses: one per customer
     // request, never the router's own probes.
     prom.query(qClientRequestsBy("spec", window)),
+    // Sent from the client-side count; failed from the final-failure counter,
+    // whose `method` label names the same call the histogram calls `function`.
+    prom.query(addonQuery(ROUTER_METRICS.latencyCount, "function", range)),
+    prom.query(addonQuery(OPTIONAL_METRICS.requestsFailedTotal, "method", range)),
   ]);
   const read = (rows: typeof failed) => {
     if (rows.length === 0) return (): number | null => null;
@@ -127,14 +141,50 @@ export async function outcomesBySpec(
   const failures = read(failed);
   const recovered = read(saved);
   const requests = read(requested);
-  return (spec) => ({ recovered: recovered(spec), failures: failures(spec), requests: requests(spec) });
+
+  const key = (r: (typeof failed)[number]) => `${r.metric.spec ?? ""}|${r.metric.addon ?? ""}`;
+  const failedBy = new Map(addonFailed.map((r) => [key(r), Math.round(Number(r.value[1]) || 0)]));
+  // Without the failure counter there is no verdict on these calls — the
+  // counter being absent is not the same as nothing failing.
+  const failuresMeasured = failed.length > 0;
+  const addonCalls = (spec: string): AddonCalls[] =>
+    addonSent
+      .filter((r) => r.metric.spec === spec && (r.metric.addon === "debug" || r.metric.addon === "trace"))
+      .map((r) => ({
+        addon: r.metric.addon as AddonCalls["addon"],
+        sent: Math.round(Number(r.value[1]) || 0),
+        failed: failuresMeasured ? (failedBy.get(key(r)) ?? 0) : null,
+      }))
+      .filter((a) => a.sent > 0);
+
+  return (spec) => ({
+    recovered: recovered(spec),
+    failures: failures(spec),
+    requests: requests(spec),
+    addonCalls: addonCalls(spec),
+  });
 }
 
 /** Several chains folded into one issue: the sum, or unknown if any is. */
 function sumOutcomes(list: ChainOutcome[]): ChainOutcome {
-  const add = (k: keyof ChainOutcome): number | null =>
+  const add = (k: "recovered" | "failures" | "requests"): number | null =>
     list.some((o) => o[k] == null) ? null : list.reduce((s, o) => s + (o[k] ?? 0), 0);
-  return { recovered: add("recovered"), failures: add("failures"), requests: add("requests") };
+  const byAddon = new Map<AddonCalls["addon"], AddonCalls>();
+  for (const a of list.flatMap((o) => o.addonCalls)) {
+    const cur = byAddon.get(a.addon);
+    byAddon.set(
+      a.addon,
+      cur
+        ? { addon: a.addon, sent: cur.sent + a.sent, failed: cur.failed == null || a.failed == null ? null : cur.failed + a.failed }
+        : { ...a },
+    );
+  }
+  return {
+    recovered: add("recovered"),
+    failures: add("failures"),
+    requests: add("requests"),
+    addonCalls: [...byAddon.values()],
+  };
 }
 
 export class IssuesFeedService {
@@ -174,7 +224,7 @@ export class IssuesFeedService {
       const report = await this.detail.status(window);
       // Read once for every chain. A failure here costs the outcome sentence,
       // never the issues themselves.
-      const unmeasured: ChainOutcome = { recovered: null, failures: null, requests: null };
+      const unmeasured: ChainOutcome = { recovered: null, failures: null, requests: null, addonCalls: [] };
       const outcomeOf = this.prom
         ? await outcomesBySpec(this.prom, window).catch((err) => {
             this.logger?.warn(
@@ -270,6 +320,7 @@ export class IssuesFeedService {
             recovered: outcome.recovered,
             failures: outcome.failures,
             requests: outcome.requests,
+            addonCalls: outcome.addonCalls,
           });
           this.memo.set(spec, { print, issue });
           issues.push(issue);
