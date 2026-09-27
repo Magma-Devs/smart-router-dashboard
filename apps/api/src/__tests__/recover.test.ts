@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { eq, sql } from "drizzle-orm";
 import { createTestDb, enrolledTwoFactor, type TestDb } from "@sr/db/testing";
 import { sessions, users, type User } from "@sr/db";
-import { parseArgs, runRecovery } from "../recover.js";
+import { describeDatabase, parseArgs, runRecovery } from "../recover.js";
 import { createSession } from "../services/sessions.js";
 import { issueChallenge, consumeChallenge, resetTotpKeyForTests } from "../services/two-factor.js";
 
@@ -68,9 +68,10 @@ async function auditRows() {
     ip: string | null;
     client: string | null;
     session_id: string | null;
+    target_id: string | null;
   }>(
     sql`select action, action_group, source, actor_kind, actor_name, note,
-               ip::text, client, session_id::text
+               ip::text, client, session_id::text, target_id
           from audit_events order by occurred_at`,
   );
   return rows.rows;
@@ -130,6 +131,12 @@ describe("reset-2fa", () => {
 
     const live = (await t.db.select().from(sessions).where(eq(sessions.id, session.id)))[0]!;
     expect(live.revokedAt).not.toBeNull();
+    // Signed out everywhere, as the admin route does: the cutoff too, so a
+    // token with no session row dies as well.
+    expect(after.signedOutAllAt).not.toBeNull();
+    // And one row per ended session, beside the recovery row itself.
+    const revoked = (await auditRows()).filter((r) => r.action === "session.revoked");
+    expect(revoked.map((r) => r.target_id)).toEqual([session.id]);
   });
 
   it("says so rather than pretending, when there is nothing to reset", async () => {
@@ -247,6 +254,15 @@ describe("the audit row", () => {
       runRecovery(t.db, { command: "reset-2fa", email: user.email }, ONPREM),
     ).rejects.toThrow();
     expect(await auditRows()).toHaveLength(0);
+  });
+});
+
+describe("saying where it acts", () => {
+  it("names the database without the credentials in its URL", () => {
+    expect(describeDatabase("postgres://sr:s3cret@db.internal:5432/sr_dashboard")).toBe(
+      "db.internal:5432/sr_dashboard",
+    );
+    expect(describeDatabase("not a url")).toBe("the configured database");
   });
 });
 
