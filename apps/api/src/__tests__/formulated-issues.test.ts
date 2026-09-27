@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { StatusFinding } from "@sr/shared";
-import { severityOf, digestForIssue, type FormulatedInputs } from "../services/formulated-issues.js";
+import { severityOf, shareFailed, digestForIssue, type FormulatedInputs } from "../services/formulated-issues.js";
 import { fingerprint, outcomesBySpec } from "../services/issues-feed.js";
 
 function finding(over: Partial<StatusFinding>): StatusFinding {
@@ -26,26 +26,36 @@ function finding(over: Partial<StatusFinding>): StatusFinding {
   } as StatusFinding;
 }
 
-describe("severityOf reads the outcome", () => {
-  it("a provider that gave no answer is not critical when every request was rescued", () => {
-    // The contradiction this exists for: a red badge over "your requests are
-    // still landing", because `dead` names the provider, not the request.
-    expect(severityOf([finding({})], { failures: 0 })).toBe("degraded");
+describe("severityOf: can the chain still be used", () => {
+  // Omer's rule: critical only when the chain is inaccessible. If the router
+  // can fail over, it is not critical.
+  const out = (failures: number | null, requests: number | null) => ({ failures, requests });
+
+  it("a provider failing while the router saves the rest is degraded", () => {
+    // Measured: 485 of ~12,400 got no answer, the router saved 486 more.
+    expect(severityOf([finding({})], out(485, 12_400))).toBe("degraded");
   });
 
-  it("is critical once any of those requests reached the caller", () => {
-    expect(severityOf([finding({})], { failures: 12 })).toBe("critical");
+  it("is critical when at least half the chain's requests got no answer", () => {
+    expect(severityOf([finding({})], out(25_046, 31_000))).toBe("critical");
+    expect(severityOf([finding({})], out(500, 1_000))).toBe("critical");
+    expect(severityOf([finding({})], out(499, 1_000))).toBe("degraded");
   });
 
-  it("keeps the old reading when the outcome was never measured", () => {
-    expect(severityOf([finding({})], { failures: null })).toBe("critical");
-    expect(severityOf([finding({})])).toBe("critical");
+  it("is critical when every provider on the chain is failing", () => {
+    // The chain-down finding carries no upstream: it is about all of them.
+    const down = finding({ id: "SOLANAT:chain:down", upstream: null });
+    expect(severityOf([down], out(null, null))).toBe("critical");
   });
 
-  it("an error body reaches the caller whatever the retry count says", () => {
-    // Error answers are not retried, so a zero final-failure count cannot
-    // have rescued them.
-    expect(severityOf([finding({ kind: "answered-error" })], { failures: 0 })).toBe("critical");
+  it("error answers from one provider leave the chain usable", () => {
+    // The card that prompted the rule: a red badge over "nothing is failing
+    // for you right now".
+    expect(severityOf([finding({ kind: "answered-error" })], out(0, 9_000))).toBe("degraded");
+  });
+
+  it("without an outcome, only the chain-down test can call it critical", () => {
+    expect(severityOf([finding({})])).toBe("degraded");
   });
 
   it("caller-side rejections stay config", () => {
@@ -54,7 +64,12 @@ describe("severityOf reads the outcome", () => {
       codes: ["CHAIN_NONCE_TOO_LOW"],
       codeCounts: { CHAIN_NONCE_TOO_LOW: 700 },
     });
-    expect(severityOf([f], { failures: 0 })).toBe("config");
+    expect(severityOf([f], out(0, 9_000))).toBe("config");
+  });
+
+  it("the share survives counters scraped a moment apart", () => {
+    expect(shareFailed(out(1_010, 1_000))).toBe(1);
+    expect(shareFailed(out(3, null))).toBeNull();
   });
 });
 
@@ -68,16 +83,20 @@ describe("digestForIssue", () => {
     insights: [],
     recovered: 1200,
     failures: 0,
+    requests: 12_400,
   };
 
   it("hands the model the outcome, and what the finding kind means", () => {
     const d = JSON.parse(digestForIssue(inputs));
-    expect(d.outcome).toMatchObject({ savedByRetry: 1200, reachedCaller: 0 });
+    expect(d.outcome).toMatchObject({ savedByRetry: 1200, reachedCaller: 0, totalRequests: 12_400 });
+    // The misreading that wrote "none reached you" over a provider answering
+    // with errors: error answers are not in reachedCaller.
+    expect(d.outcome.note).toMatch(/error ANSWER is not in reachedCaller/);
     expect(d.whatWeMeasured[0].whatItMeans).toMatch(/no answer/);
   });
 
   it("omits what was not measured rather than sending nulls to write about", () => {
-    const d = JSON.parse(digestForIssue({ ...inputs, recovered: null, failures: null }));
+    const d = JSON.parse(digestForIssue({ ...inputs, recovered: null, failures: null, requests: null }));
     expect(d).not.toHaveProperty("outcome");
     expect(d).not.toHaveProperty("providersConfigured");
   });
@@ -86,35 +105,43 @@ describe("digestForIssue", () => {
 describe("fingerprint", () => {
   const f = [finding({})];
   it("rewrites when the outcome crosses zero — the line that flips the badge", () => {
-    expect(fingerprint(f, [], { recovered: 900, failures: 0 })).not.toBe(
-      fingerprint(f, [], { recovered: 900, failures: 3 }),
+    expect(fingerprint(f, [], { recovered: 900, failures: 0, requests: 9_000 })).not.toBe(
+      fingerprint(f, [], { recovered: 900, failures: 3, requests: 9_000 }),
     );
   });
+  it("rewrites when the badge moves, even if no count changed scale", () => {
+    const o = { recovered: 0, failures: 600, requests: 1_000 };
+    expect(fingerprint(f, [], o, "critical")).not.toBe(fingerprint(f, [], o, "degraded"));
+  });
   it("keeps the wording while counts tick within the same scale", () => {
-    expect(fingerprint(f, [], { recovered: 910, failures: 3 })).toBe(
-      fingerprint(f, [], { recovered: 960, failures: 7 }),
+    expect(fingerprint(f, [], { recovered: 910, failures: 3, requests: 9_000 })).toBe(
+      fingerprint(f, [], { recovered: 960, failures: 7, requests: 9_000 }),
     );
   });
 });
 
 describe("outcomesBySpec", () => {
   const row = (spec: string, v: number) => ({ metric: { spec }, value: [0, String(v)] as [number, string] });
-  const prom = (failed: ReturnType<typeof row>[], saved: ReturnType<typeof row>[]) => ({
-    query: async (q: string) => (q.includes("requests_failed") ? failed : saved),
+  const prom = (failed: ReturnType<typeof row>[], saved: ReturnType<typeof row>[], requested = [] as ReturnType<typeof row>[]) => ({
+    query: async (q: string) =>
+      q.includes("requests_failed") ? failed : q.includes("retries_success") ? saved : requested,
   });
 
   it("reads both counters per chain, rounded", async () => {
-    const of = await outcomesBySpec(prom([row("SOLANAT", 3.6)], [row("SOLANAT", 1199.8)]), "30m");
-    expect(of("SOLANAT")).toEqual({ recovered: 1200, failures: 4 });
+    const of = await outcomesBySpec(
+      prom([row("SOLANAT", 3.6)], [row("SOLANAT", 1199.8)], [row("SOLANAT", 12_400.2)]),
+      "30m",
+    );
+    expect(of("SOLANAT")).toEqual({ recovered: 1200, failures: 4, requests: 12_400 });
   });
 
   it("a family with series elsewhere but none for this chain is a real zero", async () => {
-    const of = await outcomesBySpec(prom([row("ETH1", 5)], [row("ETH1", 9)]), "30m");
-    expect(of("SOLANAT")).toEqual({ recovered: 0, failures: 0 });
+    const of = await outcomesBySpec(prom([row("ETH1", 5)], [row("ETH1", 9)], [row("ETH1", 90)]), "30m");
+    expect(of("SOLANAT")).toEqual({ recovered: 0, failures: 0, requests: 0 });
   });
 
   it("no series anywhere is unmeasured, never an invented zero", async () => {
     const of = await outcomesBySpec(prom([], []), "30m");
-    expect(of("SOLANAT")).toEqual({ recovered: null, failures: null });
+    expect(of("SOLANAT")).toEqual({ recovered: null, failures: null, requests: null });
   });
 });

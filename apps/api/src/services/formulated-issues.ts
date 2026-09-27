@@ -41,8 +41,10 @@ export type IssueSeverity = "critical" | "degraded" | "config";
 export interface ChainOutcome {
   /** Failed on one provider, succeeded when the router retried it on another. */
   recovered: number | null;
-  /** Failed for the caller after every attempt. */
+  /** Got no answer from any provider after every attempt. */
   failures: number | null;
+  /** Client requests on the chain in the window — what `failures` is a share of. */
+  requests: number | null;
 }
 
 export interface FormulatedIssue {
@@ -82,43 +84,30 @@ export interface FormulatedIssue {
 }
 
 /**
- * Severity by CUSTOMER IMPACT, not by a threshold being crossed.
+ * Severity by whether the CHAIN can still be used. Omer, 27 Sep: "does it
+ * make the chain inaccessible? If the system can fail over, then it's not
+ * critical."
  *
- * The tier on a finding says a rate went over a line — 5% errors is critical,
- * 1-5% degraded. That produced a red badge above "your requests are still
- * getting through" and an amber one above "your chain is fine", which is how
- * a status page teaches people to ignore its badges.
+ *   critical  the chain cannot be served: every provider on it is failing, or
+ *             at least half its requests got no answer after every retry.
+ *   degraded  a provider is failing, slow or wrong, and the router still has
+ *             somewhere to send traffic — even when some requests reached the
+ *             caller as errors on the way.
+ *   config    nothing is failing because of us or a provider; the setup or the
+ *             caller's own requests are what to change.
  *
- * The question that should decide the colour is whether the caller felt it:
+ * The line used to be "an error reached the caller". Measured in production
+ * that put Critical over a card reading "nothing is failing for you right
+ * now", and over a chain where the router saved half the failed requests.
+ * A red badge on a chain that works teaches people to ignore red badges.
  *
- *   critical  they got an error, a timeout, or bad data. The router did not
- *             save them. Worst case, nothing on this chain works at all.
- *   degraded  it still works, but worse — the router is absorbing something,
- *             or there is a risk it will not be able to next time.
- *   config    nothing is failing because of us or the provider. The setup or
- *             the caller's own requests are what to change.
- *
- * `FindingKind` already encodes exactly this, because the rules were written
- * around "what reached the caller" in the first place — `answered-error` IS
- * an error in the body the caller received, while `no-backup` is "serving
- * fine, nowhere to go if it stops". Reading the kind rather than the rate is
- * what lines the badge up with the sentence under it.
+ * No finding kind is critical by itself any more. Stale answers the router
+ * caught, slow answers, and error answers from one provider all leave the
+ * chain usable. Known gap: a chain where EVERY provider answers with an error
+ * body, rather than no answer, is caught by neither test below — error bodies
+ * count as transport successes. Rare; it would show as degraded.
  */
-const REACHED_THE_CALLER: ReadonlyArray<StatusFinding["kind"]> = [
-  "dead", // nothing served it — the request died
-  "answered-error", // an error in the body they got back
-];
-
-// `answered-late` is deliberately NOT here either. It is a latency percentile
-// crossing a line, not a proven failure — the answer arrived. Measured in
-// production it produced "Slow answers on Tezos, but no confirmed failures" under a red
-// badge, which is the contradiction this whole ladder exists to remove. Slow
-// is "works, but worse": degraded.
-
-// `answered-stale` is deliberately NOT here. Its own headline reads "3 stale
-// answers caught" — the consistency check REJECTED those answers, so nothing
-// wrong reached anybody. That is the system working, and colouring it critical
-// puts a red badge on the one mechanism that prevented harm.
+export const INACCESSIBLE_SHARE = 0.5;
 
 /**
  * An error the CHAIN produced answering correctly, not a failure of ours.
@@ -155,22 +144,24 @@ function mostlyCallerSide(f: StatusFinding): boolean {
   return f.codes.length > 0 && f.codes.every((c) => CALLER_SIDE.test(c));
 }
 
+/** Share of the chain's requests that got no answer at all, or null when unmeasured. */
+export function shareFailed(outcome?: Pick<ChainOutcome, "failures" | "requests">): number | null {
+  if (outcome?.failures == null || outcome.requests == null) return null;
+  // The two counters are scraped apart, so failures can edge past requests.
+  const of = Math.max(outcome.requests, outcome.failures);
+  return of > 0 ? outcome.failures / of : null;
+}
+
 export function severityOf(
   findings: StatusFinding[],
-  outcome?: Pick<ChainOutcome, "failures">,
+  outcome?: Pick<ChainOutcome, "failures" | "requests">,
 ): IssueSeverity {
   const ours = findings.filter((f) => !mostlyCallerSide(f));
-  // `dead` is named for the PROVIDER: it gave no answer. Whether the REQUEST
-  // died is a second fact, because the router retries a no-answer on another
-  // provider. When the chain's final failure count is zero, every one was
-  // rescued and nothing reached the caller — a red badge there sat over
-  // "your requests are still landing" on every such chain. An error BODY
-  // (`answered-error`) is not retried, so it reaches the caller either way.
-  // Unknown (null) keeps the old reading: silence is not proof of a rescue.
-  const rescued = outcome?.failures === 0;
-  const reached = (f: StatusFinding): boolean =>
-    REACHED_THE_CALLER.includes(f.kind) && !(f.kind === "dead" && rescued);
-  if (ours.some(reached)) return "critical";
+  // The chain-down rule in status.ts: every configured provider was tried and
+  // none served. It carries no upstream because it is about all of them.
+  const everyProviderFailing = ours.some((f) => f.kind === "dead" && f.upstream === null);
+  const share = shareFailed(outcome);
+  if (everyProviderFailing || (share != null && share >= INACCESSIBLE_SHARE)) return "critical";
   if (ours.some((f) => f.kind !== "config")) return "degraded";
   return "config";
 }
@@ -201,6 +192,8 @@ export interface FormulatedInputs {
   recovered: number | null;
   /** Final customer failures on this chain, when known. */
   failures: number | null;
+  /** Client requests on this chain in the window, when known. */
+  requests: number | null;
 }
 
 const CROSS_CHAIN_NOTE = `
@@ -279,8 +272,12 @@ many requests the router saved by retrying them on another provider
   - reachedCaller is 0: the provider failed and the caller never saw it. Say
     so plainly: "The router retried every one on another provider; none
     reached you."
-  - reachedCaller above 0: say how many still failed, and why the retry could
-    not save them when the input shows why.
+  - reachedCaller above 0: say how many still failed, out of totalRequests,
+    and why the retry could not save them when the input shows why.
+
+reachedCaller counts requests that got NO answer. An error answer is not in
+it — that went back to the caller as an error. So when a provider is answering
+with errors, reachedCaller of 0 never means "no errors reached you".
 
 Name the provider that took the retries only when exactly one other provider
 is configured on the chain; otherwise write "another provider".
@@ -334,15 +331,17 @@ finished.
 
 ## Rules
 
-The severity you are given follows ONE rule: critical means the caller felt it
-— they got an error, a timeout, or bad data, and the router did not save them.
-Degraded means it still works and the router is absorbing something. Config
-means nothing is failing because of us or the provider.
+The severity you are given follows ONE rule: can the chain still be used.
+Critical means it cannot — every provider is failing, or at least half the
+requests got no answer even after retries. Degraded means the chain still
+works: a provider is failing, slow or wrong, and the router has somewhere else
+to send traffic, even if some requests reached the caller as errors. Config
+means nothing is failing because of us or a provider.
 
-Write a bottom line that agrees with that. On a critical issue, name what the
-caller actually got. Never write "your requests are still getting through" on
-one — if that is genuinely true, the finding behind it is not critical and you
-should say what DID reach them instead.
+Write a bottom line that agrees with that. On a critical issue, say plainly
+that the chain is not usable right now, and why failover could not help. On a
+degraded issue, say that it still works, and what did reach them, with the
+number.
 
 Plain language, addressed to them: "your requests", "your chain". No error
 codes, no metric names, no internal vocabulary in the sentences.
@@ -440,7 +439,8 @@ export function digestForIssue(i: FormulatedInputs): string {
         ? {}
         : {
             outcome: {
-              note: "Chain-wide, this window. savedByRetry failed on one provider and went through on another. reachedCaller failed after every attempt. null = not measured.",
+              note: "Chain-wide, this window. totalRequests: client requests. savedByRetry: got no answer from one provider and went through on another. reachedCaller: got no answer from ANY provider after every attempt. An error ANSWER is not in reachedCaller — it went back to the caller as an error. null = not measured.",
+              totalRequests: i.requests,
               savedByRetry: i.recovered,
               reachedCaller: i.failures,
             },
@@ -481,7 +481,7 @@ export class FormulatedIssueService {
     return {
       // From the findings, never from the model — the page already owns this
       // vocabulary and a second scale would disagree with the rows beneath.
-      severity: severityOf(inputs.findings, { failures: inputs.failures }),
+      severity: severityOf(inputs.findings, { failures: inputs.failures, requests: inputs.requests }),
       spec: inputs.spec,
       chain: inputs.chain,
       specs: [inputs.spec, ...(inputs.alsoOnChains ?? []).map((c) => c.spec)],
@@ -497,7 +497,7 @@ export class FormulatedIssueService {
         .slice(0, 4),
       bottomLine: str("bottomLine"),
       findingIds: inputs.findings.map((f) => f.id),
-      outcome: { recovered: inputs.recovered, failures: inputs.failures },
+      outcome: { recovered: inputs.recovered, failures: inputs.failures, requests: inputs.requests },
       lastSeenUnix:
         inputs.findings.reduce<number | null>(
           (newest, f) => (f.lastSeenUnix && (!newest || f.lastSeenUnix > newest) ? f.lastSeenUnix : newest),

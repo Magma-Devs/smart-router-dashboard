@@ -30,6 +30,7 @@ import {
   DEFAULT_WINDOW,
   OPTIONAL_METRICS,
   WINDOWS,
+  qClientRequestsBy,
   type MetricWindow,
   type StatusFinding,
   type StatusInsight,
@@ -37,7 +38,13 @@ import {
 import type { PrometheusClient } from "./prometheus-client.js";
 import type { ConfigurationService } from "./configuration.js";
 import type { MetricsDetailService } from "./metrics-detail.js";
-import { FormulatedIssueService, severityOf, type ChainOutcome, type FormulatedIssue } from "./formulated-issues.js";
+import {
+  FormulatedIssueService,
+  severityOf,
+  type ChainOutcome,
+  type FormulatedIssue,
+  type IssueSeverity,
+} from "./formulated-issues.js";
 import { LokiService, groupErrors } from "./loki.js";
 import { BedrockService, bedrockGate, type BedrockLogger } from "./bedrock.js";
 import { config } from "../config.js";
@@ -63,16 +70,23 @@ function scale(n: number | null): string {
  * moving from 4% to 38% changes this and a quiet chain does not.
  *
  * The outcome goes in by SCALE, not by count. The counts tick every cycle, and
- * keying on them would re-word an unchanged story each time; zero-to-some is
- * the line that flips the badge, and a tenfold jump is news.
+ * keying on them would re-word an unchanged story each time; zero-to-some and
+ * a tenfold jump are news.
+ *
+ * The badge goes in as itself. It is decided by a SHARE of the chain's
+ * requests, which can cross the line while neither count changes scale — and
+ * a card whose badge moved must be rewritten, or it keeps saying "the chain is
+ * not usable" under an amber badge.
  */
 export function fingerprint(
   findings: StatusFinding[],
   insights: StatusInsight[] = [],
   outcome?: ChainOutcome,
+  severity?: IssueSeverity,
 ): string {
   return [
     ...(outcome ? [`o:${scale(outcome.failures)}:${scale(outcome.recovered)}`] : []),
+    ...(severity ? [`s:${severity}`] : []),
     ...findings.map((f) => `${f.id}|${f.tier}|${f.headline}`),
     // Drift is part of the story, so it is part of what makes the story
     // stale — otherwise a chain quietly getting slower keeps last week's
@@ -84,7 +98,8 @@ export function fingerprint(
 }
 
 /**
- * Each chain's outcome for the window, read once for every chain.
+ * Each chain's outcome for the window, read once for every chain: what the
+ * router saved, what still failed, and the requests both are a share of.
  *
  * Both counters register lazily, on the first failure or the first saved
  * retry. So no series ANYWHERE is "not measured" (null); a family that has
@@ -97,9 +112,12 @@ export async function outcomesBySpec(
   window: MetricWindow,
 ): Promise<(spec: string) => ChainOutcome> {
   const range = `${WINDOWS[window].rangeSeconds}s`;
-  const [failed, saved] = await Promise.all([
+  const [failed, saved, requested] = await Promise.all([
     prom.query(`sum by (spec) (increase(${OPTIONAL_METRICS.requestsFailedTotal}[${range}]))`),
     prom.query(`sum by (spec) (increase(${OPTIONAL_METRICS.retriesSuccessTotal}[${range}]))`),
+    // The client-side count the rest of the dashboard uses: one per customer
+    // request, never the router's own probes.
+    prom.query(qClientRequestsBy("spec", window)),
   ]);
   const read = (rows: typeof failed) => {
     if (rows.length === 0) return (): number | null => null;
@@ -108,14 +126,15 @@ export async function outcomesBySpec(
   };
   const failures = read(failed);
   const recovered = read(saved);
-  return (spec) => ({ recovered: recovered(spec), failures: failures(spec) });
+  const requests = read(requested);
+  return (spec) => ({ recovered: recovered(spec), failures: failures(spec), requests: requests(spec) });
 }
 
 /** Several chains folded into one issue: the sum, or unknown if any is. */
 function sumOutcomes(list: ChainOutcome[]): ChainOutcome {
   const add = (k: keyof ChainOutcome): number | null =>
     list.some((o) => o[k] == null) ? null : list.reduce((s, o) => s + (o[k] ?? 0), 0);
-  return { recovered: add("recovered"), failures: add("failures") };
+  return { recovered: add("recovered"), failures: add("failures"), requests: add("requests") };
 }
 
 export class IssuesFeedService {
@@ -155,7 +174,7 @@ export class IssuesFeedService {
       const report = await this.detail.status(window);
       // Read once for every chain. A failure here costs the outcome sentence,
       // never the issues themselves.
-      const unmeasured: ChainOutcome = { recovered: null, failures: null };
+      const unmeasured: ChainOutcome = { recovered: null, failures: null, requests: null };
       const outcomeOf = this.prom
         ? await outcomesBySpec(this.prom, window).catch((err) => {
             this.logger?.warn(
@@ -216,6 +235,7 @@ export class IssuesFeedService {
           [...findings, ...alsoOnChains.flatMap((c) => c.findings)],
           chainInsights,
           outcome,
+          severityOf(findings, outcome),
         );
         const hit = this.memo.get(spec);
         if (hit && hit.print === print) {
@@ -249,6 +269,7 @@ export class IssuesFeedService {
             alsoOnChains,
             recovered: outcome.recovered,
             failures: outcome.failures,
+            requests: outcome.requests,
           });
           this.memo.set(spec, { print, issue });
           issues.push(issue);

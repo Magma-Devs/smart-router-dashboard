@@ -22,6 +22,7 @@ import { FailureAnalysisService } from "../services/failure-analysis.js";
 import { IncidentExplainService } from "../services/incident-explain.js";
 import { ChainAnalysisService } from "../services/chain-analysis.js";
 import { FormulatedIssueService, severityOf } from "../services/formulated-issues.js";
+import { outcomesBySpec } from "../services/issues-feed.js";
 import { LokiService, groupErrors } from "../services/loki.js";
 import { OPTIONAL_METRICS } from "@sr/shared";
 import { parseWindow } from "./metrics.js";
@@ -662,10 +663,18 @@ export async function aiRoutes(app: FastifyInstance) {
         bySpec.set(f.spec, list);
       }
 
+      // The same outcome read the background feed uses, so a chain gets the
+      // same badge whichever path wrote it. A failed read costs the outcome
+      // sentence, never the issues.
+      const outcomeOf = await outcomesBySpec(app.prom, window).catch(
+        () => () => ({ recovered: null, failures: null, requests: null }),
+      );
+
       // Worst chains first, so a truncated list never drops a critical one.
       const rank = { critical: 0, degraded: 1, config: 2 } as const;
+      const sev = (spec: string, f: typeof report.findings) => severityOf(f, outcomeOf(spec));
       const chains = [...bySpec.entries()]
-        .sort((a, b) => rank[severityOf(a[1])] - rank[severityOf(b[1])] || b[1].length - a[1].length)
+        .sort((a, b) => rank[sev(a[0], a[1])] - rank[sev(b[0], b[1])] || b[1].length - a[1].length)
         .slice(0, limit);
 
       const routers = app.routerConfig?.getRouters() ?? [];
@@ -693,8 +702,7 @@ export async function aiRoutes(app: FastifyInstance) {
               errorGroups: groupErrors(lines, 6),
               configured,
               insights: report.insights.filter((x) => x.spec === spec),
-              recovered: null,
-              failures: null,
+              ...outcomeOf(spec),
             });
           } catch (err) {
             app.log.warn({ spec, err: String(err) }, "could not formulate an issue");

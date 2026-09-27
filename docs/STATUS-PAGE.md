@@ -7,6 +7,22 @@ window (default 30 minutes) unless a row says otherwise. Derivations live in
 `apps/api/src/services/status.ts`; every threshold below is asserted by
 `apps/api/src/__tests__/status.test.ts`.
 
+## The badge on an issue
+
+Each chain's issue gets one badge. It answers one question: **can the chain
+still be used?**
+
+| Badge | When |
+|---|---|
+| **Critical** | The chain cannot be used: every provider on it is failing, or at least half of its requests got no answer after every retry. |
+| **Degraded** | A provider is failing, slow or wrong, but the router can still send traffic to another one — even if some requests reached callers as errors. |
+| **Config** | Nothing is failing because of us or a provider. The setup, or the caller's own requests, need to change. |
+
+The rules below find the problems. The heading each rule sits under is its
+own level, for one provider or one rule. It does not set the badge: a rule can
+be Critical for one provider while the chain stays Degraded. Code:
+`severityOf` in `apps/api/src/services/formulated-issues.ts`.
+
 ## Critical
 
 | What | Meaning | How it is counted |
