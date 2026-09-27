@@ -31,8 +31,11 @@ to ignore amber. `isHandled` in `apps/api/src/services/formulated-issues.ts`.
 
 Under the four sections, **Risks** lists chains where nothing is failing yet
 and one provider stands between them and failing: a chain with one provider,
-or debug (or trace) calls only one provider serves — the router filters
-backups by add-on too, so those calls have nowhere else to go. Only chains
+debug (or trace) calls only one provider serves — the router filters
+backups by add-on too, so those calls have nowhere else to go — or
+transactions with one main provider: a transaction goes to every main
+provider at once and one that fails is not retried elsewhere (the router's
+retry policy stops a stateful request, since a write must not run twice). Only chains
 with that traffic, and none with an open issue. `risksOf` in
 `apps/api/src/services/issues-feed.ts`.
 

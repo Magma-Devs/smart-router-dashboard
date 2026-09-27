@@ -917,6 +917,18 @@ describe("risks — before anything fails", () => {
     ]);
   });
 
+  it("finds transactions with one main provider — the router does not retry a write elsewhere", () => {
+    const risks = risksOf(
+      [router("POLYGON", [node("tatum"), node("lava", [], true)]), router("ETH1", [node("tatum"), node("alchemy")])],
+      () => outcome({ writes: { sent: 348, failed: 0 } }),
+      (spec) => spec,
+      new Set(),
+    );
+    expect(risks.map((r) => [r.text, r.calls, r.unit])).toEqual([
+      ["POLYGON sends transactions to one main provider, Tatum. A transaction it fails is not retried on another provider.", 348, "transactions"],
+    ]);
+  });
+
   it("leaves out a chain with an open issue, and debug calls nobody makes", () => {
     const routers = [router("SOLANAD", [node("tatum")]), router("FTM250", [node("tatum", ["debug"]), node("lava")])];
     expect(risksOf(routers, () => outcome(), (spec) => spec, new Set(["SOLANAD"]))).toEqual([]);

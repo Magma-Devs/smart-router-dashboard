@@ -100,7 +100,7 @@ export interface Risk {
   text: string;
   /** Calls in the last window that depend on it, and what they are. */
   calls: number | null;
-  unit: "requests" | "debug calls" | "trace calls";
+  unit: "requests" | "debug calls" | "trace calls" | "transactions";
 }
 
 export interface IssuesSnapshot {
@@ -379,13 +379,20 @@ export function togetherIssue(
 
 /**
  * Where one provider stands between a chain and failure: the chain has one
- * provider at all, or only one serves the debug (or trace) calls it gets.
- * Nothing is failing — this says so before something does.
+ * provider at all, only one serves the debug (or trace) calls it gets, or its
+ * transactions have one main provider. Nothing is failing — this says so
+ * before something does.
  *
- * Only what the config and the router's own code settle: the router filters
- * backups by add-on like everyone else, so a debug call can only go to a
- * provider that declares debug. A chain with an open issue is left out; the
- * issue says it.
+ * Only what the config and the router's own code settle:
+ * - The router filters backups by add-on like everyone else, so a debug call
+ *   can only go to a provider that declares debug.
+ * - A transaction goes to every main provider at once, and one that fails is
+ *   not retried elsewhere: its retry policy stops a stateful request, "a
+ *   possibly-executed write must not run twice" (only a rate-limit refusal,
+ *   which executed nothing, is retried). With one main provider, a
+ *   transaction it fails is failed for the caller.
+ *
+ * A chain with an open issue is left out; the issue says it.
  */
 export function risksOf(
   routers: RouterTopology[],
@@ -416,6 +423,16 @@ export function risksOf(
         });
       }
       continue;
+    }
+    const primaries = nodes.filter((n) => !n.isBackup);
+    if (primaries.length === 1 && (o.writes?.sent ?? 0) > 0) {
+      out.push({
+        spec,
+        chain,
+        calls: o.writes!.sent,
+        unit: "transactions",
+        text: `${chain} sends transactions to one main provider, ${providerName(primaries[0]!.name)}. A transaction it fails is not retried on another provider.`,
+      });
     }
     for (const addon of ["debug", "trace"] as const) {
       const serving = nodes.filter((n) => n.endpoints.some((e) => e.addons.includes(addon)));
