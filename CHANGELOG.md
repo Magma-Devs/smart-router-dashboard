@@ -5,6 +5,19 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.27.2]
+
+### Fixed
+
+- **An upstream's deep-dive shows its own chain** — Metrics → Upstreams looked
+  every series up by the upstream's name alone, so a vendor serving many
+  chains under one name (one node name on ~25 specs in production) had every
+  panel summed across all of them, and the chain label was whichever series
+  Prometheus returned first. An upstream is now a name on a chain end to end:
+  `/api/metrics/upstream-detail` requires `spec` (400 without it), the PromQL
+  builders take an `UpstreamRef`, and the roster selects and highlights by
+  name × chain. The api and web must ship together.
+
 ## [0.27.1]
 
 ### Fixed
