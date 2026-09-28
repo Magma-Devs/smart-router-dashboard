@@ -836,7 +836,14 @@ export function titleContradicts(title: string, outcome: ChainOutcome): boolean 
  * chain, because the input said none had gone unanswered.
  */
 export function claimsSuccess(text: string): boolean {
-  return /\b(succeed(?:ed|s)?|successful(?:ly)?|went through|got through|(?:was|were) accepted)\b/i.test(text);
+  const claim = /\b(succeed(?:ed|s|ing)?|successful(?:ly)?|(?:go|goes|going|gone|went|get|gets|getting|got) through|(?:is|are|was|were|being) accepted)\b/i;
+  // "None of them got through" is a failure, said plainly — a negation
+  // before the phrase in the same sentence is not a claim.
+  const negated = /\b(not|no|never|none|nothing|cannot|can't|couldn't|didn't|don't|doesn't|won't|fail(?:s|ed|ing)? to)\b/i;
+  return text.split(/[.;!?]/).some((sentence) => {
+    const m = claim.exec(sentence);
+    return m != null && !negated.test(sentence.slice(0, m.index));
+  });
 }
 
 /**

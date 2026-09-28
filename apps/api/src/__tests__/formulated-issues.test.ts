@@ -822,6 +822,14 @@ describe("a card may not claim success", () => {
   it("knows success words when it sees them", () => {
     expect(claimsSuccess("All 348 sent transactions succeeded normally.")).toBe(true);
     expect(claimsSuccess("The retry went through on lava.")).toBe(true);
+    // Every tense: this one reached a card, under a check that knew only "went".
+    expect(claimsSuccess("Your chain still works and transactions are going through.")).toBe(true);
+    expect(claimsSuccess("Requests get through on QuickNode.")).toBe(true);
+    expect(claimsSuccess("Transactions are accepted by the chain.")).toBe(true);
+    // A failure said plainly is not a claim — and must not be dropped.
+    expect(claimsSuccess("None of the 3 requests got through.")).toBe(false);
+    expect(claimsSuccess("These calls fail to go through on QuickNode.")).toBe(false);
+    expect(claimsSuccess("Most retries succeeded. None of the rest got through.")).toBe(true);
     expect(claimsSuccess("Every request got a reply.")).toBe(false);
   });
 
