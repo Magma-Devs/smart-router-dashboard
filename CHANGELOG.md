@@ -5,6 +5,15 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.26.1]
+
+### Changed
+
+- **Chain catalogs resynced with lava-specs.** Bitcoin Cash no longer lists
+  `finalizeblock`, `parkblock` or `unparkblock`: lava-specs #152 stopped
+  serving these BCHN node-admin RPCs as priced relays. No chain was added or
+  removed, and no explorer, icon or runnable default changed.
+
 ## [0.26.0]
 
 ### Changed
