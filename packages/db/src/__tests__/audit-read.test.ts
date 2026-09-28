@@ -42,7 +42,7 @@ async function seedUser(email: string, name: string): Promise<string> {
 }
 
 describe("cursor codec", () => {
-  const cursor: AuditCursor = { seq: 42, horizon: "1234", order: "asc", fingerprint: "abc" };
+  const cursor: AuditCursor = { seq: 42, xact: "1234", order: "asc", fingerprint: "abc" };
 
   it("round-trips", () => {
     expect(decodeAuditCursor(encodeAuditCursor(cursor))).toEqual(cursor);
@@ -61,7 +61,7 @@ describe("cursor codec", () => {
     // Shape-valid JSON with the wrong field types is still a rejection, not a
     // coercion — a cursor with seq "12" would silently compare as a string.
     const wrong = Buffer.from(
-      JSON.stringify({ seq: "12", horizon: "1", order: "asc", fingerprint: "x" }),
+      JSON.stringify({ seq: "12", xact: "1", order: "asc", fingerprint: "x" }),
     ).toString("base64url");
     expect(decodeAuditCursor(wrong)).toBeNull();
   });
@@ -90,7 +90,7 @@ describe("cursor codec", () => {
     const query = { actions: ["signin.failed"] };
     const good: AuditCursor = {
       seq: 1,
-      horizon: "1",
+      xact: "1",
       order: "asc",
       fingerprint: auditFilterFingerprint(query),
     };
@@ -321,15 +321,55 @@ describe("a transaction that commits out of sequence order", () => {
     expect(delivered).toEqual(["fast", "slow"]);
   });
 
-  it("keeps the position monotonic when a straggler arrives", async () => {
-    const { fastSeq } = await twoRowsCommittedOutOfOrder();
+  it("a straggler does not drag the position back", async () => {
+    await twoRowsCommittedOutOfOrder();
     const first = await listAuditEvents(t.db, { horizonOverride: "1000" });
     const second = await listAuditEvents(t.db, {
       horizonOverride: "9000",
       cursor: first.cursor!,
     });
-    // The straggler's sequence is lower; letting it drag the cursor back would
-    // re-deliver everything after it on the next read.
-    expect(second.cursor!.seq).toBe(fastSeq);
+    // The position is the (xact, seq) pair, and the straggler's pair is higher
+    // even though its sequence is lower — so nothing already served compares
+    // ahead of it, and a further read from here delivers nothing again.
+    const third = await listAuditEvents(t.db, {
+      horizonOverride: "9000",
+      cursor: second.cursor!,
+    });
+    expect(third.items).toEqual([]);
+    expect(third.cursor).toBeNull();
+  });
+
+  it("delivers a whole batch of stragglers even when they outnumber the page", async () => {
+    // The regression this design exists for: one long transaction writes MORE
+    // rows than a page holds, all with sequences behind the puller's position,
+    // and settles between two reads. A seq-ordered feed that re-admitted
+    // stragglers by horizon served one page of them and then moved the stored
+    // horizon past the rest — losing them for good. The (xact, seq) order has
+    // no such cliff: the batch sorts after everything served, wherever its
+    // sequences landed, and pages through like any other ground.
+    const w = writer();
+    for (let i = 0; i < 5; i++) {
+      await w.write({ action: "signout", actor: { id: null, kind: "system" }, note: `slow-${i}` });
+    }
+    await w.write({ action: "signout", actor: { id: null, kind: "system" }, note: "fast" });
+    const rows = await t.db.select().from(auditEvents).orderBy(auditEvents.seq);
+    for (const row of rows.slice(0, 5)) await setXactId(row.seq, "5000");
+    await setXactId(rows[5]!.seq, "100");
+
+    // Read 1: only the settled row; the batch's transaction is still open.
+    const first = await listAuditEvents(t.db, { horizonOverride: "1000", limit: 2 });
+    expect(first.items.map((i) => i.note)).toEqual(["fast"]);
+
+    // The batch settles. Page size 2 — it cannot fit; nothing may be lost.
+    const delivered: string[] = [];
+    let cursor = first.cursor!;
+    for (let reads = 0; reads < 5; reads++) {
+      const page = await listAuditEvents(t.db, { horizonOverride: "9000", limit: 2, cursor });
+      delivered.push(...page.items.map((i) => i.note ?? ""));
+      if (!page.cursor) break;
+      cursor = page.cursor;
+      if (!page.hasMore && page.items.length === 0) break;
+    }
+    expect(delivered).toEqual(["slow-0", "slow-1", "slow-2", "slow-3", "slow-4"]);
   });
 });
