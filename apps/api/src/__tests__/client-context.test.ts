@@ -47,6 +47,15 @@ describe("parseClient", () => {
     expect(parseClient("Something (Windows NT 10.0)")).toBe("Windows");
   });
 
+  it("keeps the device string short whatever the header claims", () => {
+    // The header is the caller's to write, and `client` is varchar(128) in
+    // both the session row and the audit row. A version with hundreds of
+    // digits would fail the session insert and silently lose the audit row.
+    const forged = `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/${"9".repeat(300)}.0`;
+    expect(parseClient(forged)).toBe("Chrome / macOS");
+    expect(parseClient("Mozilla/5.0 (Windows NT 10.0) Firefox/9999.0")).toBe("Firefox 9999 / Windows");
+  });
+
   it("is null for nothing at all — callers render an em dash, not a guess", () => {
     expect(parseClient(null)).toBeNull();
     expect(parseClient(undefined)).toBeNull();
@@ -58,6 +67,7 @@ describe("normalizeIp", () => {
   it("keeps ordinary addresses", () => {
     expect(normalizeIp("84.229.11.6")).toBe("84.229.11.6");
     expect(normalizeIp("2001:db8::1")).toBe("2001:db8::1");
+    expect(normalizeIp("::1")).toBe("::1");
     expect(normalizeIp(" 10.0.0.1 ")).toBe("10.0.0.1");
   });
 
@@ -67,8 +77,24 @@ describe("normalizeIp", () => {
   });
 
   it("rejects anything Postgres `inet` would throw on", () => {
-    // A malformed proxy header must not be able to fail a sign-in.
-    for (const value of ["", "  ", "not-an-ip", "999.1.1.1", "10.0.0", "localhost", null, undefined]) {
+    // A malformed proxy header must not be able to fail a sign-in, or lose the
+    // audit row that records it. Each IPv6 value here has the right characters
+    // and the wrong shape, and `inet` refuses every one.
+    for (const value of [
+      "",
+      "  ",
+      "not-an-ip",
+      "999.1.1.1",
+      "10.0.0",
+      "localhost",
+      ":::",
+      "1:2:3:4:5:6:7:8:9",
+      "12345::",
+      "::g",
+      "fe80::1%eth0",
+      null,
+      undefined,
+    ]) {
       expect(normalizeIp(value), `should reject ${String(value)}`).toBeNull();
     }
   });

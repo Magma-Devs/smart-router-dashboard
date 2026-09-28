@@ -1,11 +1,22 @@
-import type { NextAuthConfig } from "next-auth";
+import { CredentialsSignin, type NextAuthConfig } from "next-auth";
 import Google from "next-auth/providers/google";
 import GitHub from "next-auth/providers/github";
-import Discord from "next-auth/providers/discord";
 import Credentials from "next-auth/providers/credentials";
 import { jwtVerify, SignJWT } from "jose";
 import type { Role } from "@sr/shared";
 import { INTERNAL_API_BASE_URL } from "@/lib/internal-api";
+import { forwardedClientHeaders } from "@/lib/forwarded-client";
+
+/** Re-exported: tests pin the address arithmetic through this module. */
+export { clientIpFrom } from "@/lib/forwarded-client";
+import { INVITE_HANDOFF_COOKIE } from "@/lib/invite-handoff";
+import {
+  TWO_FACTOR_HANDOFF_COOKIE,
+  TWO_FACTOR_HANDOFF_MAX_AGE_SECONDS,
+  decodeHandoff,
+  encodeHandoff,
+  type HandoffProvider,
+} from "@/lib/two-factor-handoff";
 
 /**
  * Auth.js v5 configuration (ported from lava-connect's auth.config.ts,
@@ -56,35 +67,83 @@ interface SignInUserPayload {
  *  request. A token without one is refused, so this is not optional. */
 interface SignInResponse {
   user: SignInUserPayload;
-  sessionId: string;
+  /** Set, with `challenge`, when the account has an authenticator: the first
+   *  factor held, and the code is still to come. */
+  twoFactorRequired?: boolean;
+  challenge?: string;
+  /** The account's address, with a challenge — for the code screen. */
+  email?: string;
+  /** Absent when the api answered `twoFactorRequired` — a verified password
+   *  opens no session, so there is nothing to address. */
+  sessionId?: string;
 }
 
+
 /**
- * What the browser told *us*, forwarded to the api so the session row and the
- * audit log record the person's own address rather than this container's.
- *
- * The api only believes it alongside `INTERNAL_AUTH_SECRET`; without that it
- * falls back to what it observes, so an attacker calling the public sign-in
- * endpoint directly cannot choose the address recorded against their attempts.
+ * The invitation token parked by `/api/invite/handoff`, if this Google flow
+ * started on an invite page. `next/headers` is imported dynamically for the
+ * same reason the `signIn` callback does it: `proxy.ts` pulls this module into
+ * the edge bundle, where the module does not exist and this never runs.
  */
-function clientContextFrom(headers: Headers | null): {
-  clientContext?: { ip?: string; userAgent?: string };
-  internalHeaders: Record<string, string>;
-} {
-  const secret = process.env.INTERNAL_AUTH_SECRET;
-  if (!headers || !secret) return { internalHeaders: {} };
+async function readInviteHandoff(): Promise<string | null> {
+  try {
+    const { cookies } = await import("next/headers");
+    return (await cookies()).get(INVITE_HANDOFF_COOKIE)?.value ?? null;
+  } catch {
+    return null;
+  }
+}
 
-  // The ingress appends the real client; take the left-most entry, which is the
-  // originating address in the standard X-Forwarded-For ordering.
-  const forwardedFor = headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-  const ip = forwardedFor || headers.get("x-real-ip") || undefined;
-  const userAgent = headers.get("user-agent") ?? undefined;
-  if (!ip && !userAgent) return { internalHeaders: {} };
+/** Park a provider sign-in's two-factor challenge for the code screen. */
+async function parkTwoFactorHandoff(
+  challenge: string,
+  email: string,
+  provider: HandoffProvider,
+): Promise<boolean> {
+  try {
+    const { cookies } = await import("next/headers");
+    (await cookies()).set(TWO_FACTOR_HANDOFF_COOKIE, encodeHandoff({ challenge, email, provider }), {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: TWO_FACTOR_HANDOFF_MAX_AGE_SECONDS,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
-  return {
-    clientContext: { ...(ip ? { ip } : {}), ...(userAgent ? { userAgent } : {}) },
-    internalHeaders: { "X-Internal-Auth": secret },
-  };
+/** The parked challenge, read once and burnt: spent right or wrong, a challenge
+ *  is dead, and a cookie still holding it would only mislead the next screen. */
+async function takeTwoFactorHandoff() {
+  try {
+    const { cookies } = await import("next/headers");
+    const jar = await cookies();
+    const handoff = decodeHandoff(jar.get(TWO_FACTOR_HANDOFF_COOKIE)?.value);
+    jar.delete(TWO_FACTOR_HANDOFF_COOKIE);
+    return handoff;
+  } catch {
+    return null;
+  }
+}
+
+/** A code step the api rate-limited: not a wrong code, and the challenge was
+ *  never spent — so the form keeps the code screen rather than starting over. */
+class RateLimited extends CredentialsSignin {
+  code = "rate_limited";
+}
+
+/** Burn the handoff cookie the moment it has been spent, successfully or not —
+ *  a token that survived a failed attempt would be replayed by the next one. */
+async function clearInviteHandoff(): Promise<void> {
+  try {
+    const { cookies } = await import("next/headers");
+    (await cookies()).delete(INVITE_HANDOFF_COOKIE);
+  } catch {
+    // Not in a mutable request scope; the cookie's short max-age bounds it.
+  }
 }
 
 declare module "next-auth" {
@@ -114,13 +173,55 @@ function secretKey(): Uint8Array {
   return new TextEncoder().encode(secret);
 }
 
+/**
+ * The Bearer the api accepts for one session: the base claims, re-signed.
+ *
+ * With the session's ORIGINAL issue time (see \`issuedAt\`), never now: this is
+ * the token the api actually reads and compares to \`users.signed_out_all_at\`,
+ * so re-stamping it here would leave the cutoff unenforceable no matter what the
+ * cookie says.
+ */
+async function signApiBearer(
+  claims: { sub: string; email: string; role: UserRole; sid: string },
+  iat: number,
+) {
+  return await new SignJWT(claims)
+    .setProtectedHeader({ alg: "HS256", typ: "JWT" })
+    .setIssuer(SESSION_JWT_ISSUER)
+    .setAudience(SESSION_JWT_AUDIENCE)
+    .setIssuedAt(iat)
+    .setExpirationTime("30d")
+    .sign(secretKey());
+}
+
+/** How long a sign-out waits on the api before letting the browser go anyway. */
+const SIGN_OUT_API_TIMEOUT_MS = 3_000;
+
+/** A lockout, told apart from a wrong password so the form can say which. The
+ *  code rides in the URL, and is safe there: addresses with no account lock too. */
+class AccountLocked extends CredentialsSignin {
+  code = "locked";
+}
+
 /** A provider is offered only when BOTH halves of its credential pair are
  *  set — this is what makes the login page's badges conditional. */
 export const oauthProviderFlags = {
   google: !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET),
   github: !!(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET),
-  discord: !!(process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET),
 } as const;
+
+
+/**
+ * When this session was signed in, in seconds — the value the api compares to
+ * `users.signed_out_all_at`. Preserved across every re-encode; absent only on
+ * the sign-in itself, where "now" is the right answer.
+ *
+ * Exported for tests: that the number does not move is the whole property.
+ */
+export function issuedAt(token: { iat?: unknown } | null | undefined): number {
+  const iat = token?.iat;
+  return typeof iat === "number" && Number.isFinite(iat) ? iat : Math.floor(Date.now() / 1000);
+}
 
 const providers: NextAuthConfig["providers"] = [];
 if (oauthProviderFlags.google) {
@@ -141,40 +242,72 @@ if (oauthProviderFlags.github) {
     }),
   );
 }
-if (oauthProviderFlags.discord) {
-  providers.push(
-    Discord({
-      clientId: process.env.DISCORD_CLIENT_ID,
-      clientSecret: process.env.DISCORD_CLIENT_SECRET,
-    }),
-  );
-}
 providers.push(
   Credentials({
     name: "Credentials",
     credentials: {
       email: { label: "Email", type: "email" },
       password: { label: "Password", type: "password" },
+      /** Second step. Present together or not at all — see `authorize`. */
+      challenge: { label: "Challenge", type: "text" },
+      code: { label: "Authenticator code", type: "text" },
+      /** "1" when the challenge is the one a Google or GitHub sign-in parked in
+       *  the handoff cookie, rather than one the form holds. */
+      handoff: { label: "Handoff", type: "text" },
     },
     // The second argument is the browser's own request to
     // /api/auth/callback/credentials — the only place in this flow that can see
     // the client. Auth.js v5 passes it; omitting it (as this once did) leaves
     // the api recording the web container's address for every sign-in, and
     // every access event in the audit log inherits that.
+    /**
+     * Two shapes reach here, and they are two different api calls.
+     *
+     *  - `{ email, password }` — an account with no authenticator. The api opens
+     *    a session and this mints the token from it.
+     *  - `{ email, challenge, code }` — the second step. The password was
+     *    already checked by `/auth/sign-in`, which returned a challenge and
+     *    **no session**; `/auth/2fa/verify` is what opens one.
+     *
+     * The password path can also come back saying two-factor is required, and
+     * that returns null: there is no session to mint a token from, and the form
+     * is the thing that knows what to do next (show the code screen). Auth.js
+     * has no notion of a partial sign-in, and inventing one here — a token
+     * marked "half" — is exactly the shape the api refuses on purpose.
+     */
     async authorize(credentials, request) {
-      const email = credentials?.email;
-      const password = credentials?.password;
-      if (typeof email !== "string" || typeof password !== "string") return null;
+      // After a Google or GitHub sign-in the challenge never reached the
+      // browser: it is read here, server-side, from the cookie the provider
+      // callback parked it in.
+      const parked = credentials?.handoff === "1" ? await takeTwoFactorHandoff() : null;
+      if (credentials?.handoff === "1" && !parked) return null;
 
-      const { clientContext, internalHeaders } = clientContextFrom(request?.headers ?? null);
+      const email = parked?.email ?? credentials?.email;
+      if (typeof email !== "string") return null;
+
+      const challenge = parked?.challenge ?? credentials?.challenge;
+      const code = credentials?.code;
+      const secondStep = typeof challenge === "string" && typeof code === "string" && !!challenge;
+
+      const password = credentials?.password;
+      if (!secondStep && typeof password !== "string") return null;
+
+      const forwarded = forwardedClientHeaders(request?.headers ?? null);
+      const url = secondStep ? `${apiBase}/auth/2fa/verify` : `${apiBase}/auth/sign-in`;
+      const payload = secondStep ? { challenge, code } : { email, password };
+
       try {
-        const res = await fetch(`${apiBase}/auth/sign-in`, {
+        const res = await fetch(url, {
           method: "POST",
-          headers: { "Content-Type": "application/json", ...internalHeaders },
-          body: JSON.stringify({ email, password, ...(clientContext ? { clientContext } : {}) }),
+          headers: { "Content-Type": "application/json", ...forwarded },
+          body: JSON.stringify(payload),
         });
+        if (res.status === 423) throw new AccountLocked();
+        if (res.status === 429) throw new RateLimited();
         if (!res.ok) return null;
         const body = (await res.json()) as SignInResponse;
+        // No session id ⇒ the api answered `twoFactorRequired`. Nothing to mint.
+        if (!body.sessionId) return null;
         return {
           id: body.user.id,
           email: body.user.email,
@@ -183,7 +316,8 @@ providers.push(
           role: body.user.role,
           sessionId: body.sessionId,
         };
-      } catch {
+      } catch (err) {
+        if (err instanceof AccountLocked || err instanceof RateLimited) throw err;
         return null;
       }
     },
@@ -217,7 +351,12 @@ export const authConfig = {
         .setProtectedHeader({ alg: "HS256", typ: "JWT" })
         .setIssuer(SESSION_JWT_ISSUER)
         .setAudience(SESSION_JWT_AUDIENCE)
-        .setIssuedAt()
+        // The ORIGINAL issue time, not now. `users.signed_out_all_at` is a
+        // cutoff the api compares this against, so re-stamping it on every
+        // refresh would let a tab that reloads walk its own token past the
+        // moment the account was signed out everywhere — the one lever that
+        // kills tokens no session row is held for. Fixed at sign-in, it cannot.
+        .setIssuedAt(issuedAt(token))
         .setExpirationTime("30d")
         .sign(secretKey());
     },
@@ -237,6 +376,9 @@ export const authConfig = {
           avatarUrl: (payload.avatarUrl as string | null | undefined) ?? null,
           role: (payload.role as UserRole) ?? DEFAULT_ROLE,
           sid: (payload.sid as string | undefined) ?? undefined,
+          // Carried so the next encode can re-stamp the same value. Dropped
+          // here, every refresh would mint a token issued "now".
+          iat: payload.iat,
         };
       } catch {
         return null;
@@ -251,7 +393,7 @@ export const authConfig = {
       // a session not backed by a DB row.
       if (!account) return true;
       const provider = account.provider;
-      if (provider !== "google" && provider !== "github" && provider !== "discord") return true;
+      if (provider !== "google" && provider !== "github") return true;
 
       const token = provider === "google" ? account.id_token : account.access_token;
       if (!token) return false;
@@ -264,19 +406,75 @@ export const authConfig = {
         const { headers } = await import("next/headers");
         requestHeaders = await headers();
       } catch {
-        // No ambient request scope: fall through with no client context. The
-        // api then records what it observes rather than nothing.
+        // No ambient request scope: fall through with no forwarded address.
+        // The api then records what it observes rather than nothing.
       }
-      const { clientContext, internalHeaders } = clientContextFrom(requestHeaders);
+      const internalHeaders = forwardedClientHeaders(requestHeaders);
 
-      try {
-        const res = await fetch(`${apiBase}/auth/oauth/${provider}`, {
+      // Redeeming an invitation with Google, rather than signing in with it.
+      //
+      // `upsertOAuthUser` links only — it never creates — so on a fresh
+      // invitee `/auth/oauth/google` can only ever answer 403. The account has
+      // to come from `/auth/invite/accept`, which is the one place besides
+      // first-run setup that is allowed to create one. The token got here in a
+      // cookie the invite page set just before starting this round-trip.
+      // Every provider, not just Google: `upsertOAuthUser` links and never
+      // creates, so redemption is the only way a social account comes to
+      // exist. A provider that skipped this branch would be one nobody could
+      // ever sign in with on an invite-only deployment.
+      const inviteToken = await readInviteHandoff();
+
+      async function post(url: string, payload: Record<string, unknown>) {
+        return fetch(url, {
           method: "POST",
           headers: { "Content-Type": "application/json", ...internalHeaders },
-          body: JSON.stringify({ token, ...(clientContext ? { clientContext } : {}) }),
+          body: JSON.stringify(payload),
         });
+      }
+
+      try {
+        let res: Response;
+        if (inviteToken) {
+          await clearInviteHandoff();
+          res = await post(`${apiBase}/auth/invite/accept`, {
+            token: inviteToken,
+            oauthProvider: provider,
+            oauthToken: token,
+            name: user.name ?? undefined,
+          });
+
+          // A handoff cookie outlives an abandoned attempt by up to its
+          // max-age, so an ordinary sign-in started inside that window would
+          // otherwise be dragged through a redemption that cannot succeed.
+          // A dead invitation is exactly that case: fall through to signing
+          // in, which is what this person actually asked for. Only a mismatch
+          // (403) is worth interrupting them over — they chose the wrong
+          // account and can fix it.
+          if (!res.ok && res.status !== 403) {
+            res = await post(`${apiBase}/auth/oauth/${provider}`, { token });
+          } else if (res.status === 403) {
+            return `/invite/${encodeURIComponent(inviteToken)}?error=email_mismatch`;
+          }
+        } else {
+          res = await post(`${apiBase}/auth/oauth/${provider}`, { token });
+        }
+
         if (!res.ok) return false;
         const body = (await res.json()) as SignInResponse;
+
+        // An account with an authenticator: the provider was one factor, and
+        // the api answered with a challenge for the second, no session. Park it
+        // and send the browser to the code screen. Returning a path denies this
+        // sign-in, which is right — nothing is signed in until the code is.
+        if (body.twoFactorRequired && body.challenge) {
+          const parked = await parkTwoFactorHandoff(
+            body.challenge,
+            body.email ?? user.email ?? "",
+            provider,
+          );
+          return parked ? "/login?step=code" : false;
+        }
+
         user.id = body.user.id;
         user.email = body.user.email;
         user.name = body.user.name ?? null;
@@ -318,18 +516,12 @@ export const authConfig = {
       // `sid` is carried through, never generated: the api refuses a token
       // whose session id doesn't resolve, so a fabricated one would 401 the
       // whole surface rather than fail open.
-      session.accessToken = await new SignJWT({
+      session.accessToken = await signApiBearer({
         sub: session.user.id,
         email: session.user.email,
         role: session.user.role,
         sid: (token.sid as string | undefined) ?? "",
-      })
-        .setProtectedHeader({ alg: "HS256", typ: "JWT" })
-        .setIssuer(SESSION_JWT_ISSUER)
-        .setAudience(SESSION_JWT_AUDIENCE)
-        .setIssuedAt()
-        .setExpirationTime("30d")
-        .sign(secretKey());
+      }, issuedAt(token));
       return session;
     },
     authorized({ auth, request }) {
@@ -348,14 +540,74 @@ export const authConfig = {
       if (path === "/setup") {
         return signedIn ? Response.redirect(new URL("/overview", url)) : true;
       }
-      // Auth.js's own endpoints + the runtime-config route stay public.
-      if (path.startsWith("/api/auth") || path === "/api/config") return true;
+      // Invitation redemption is public, signed in or not. An invitation creates
+      // an account for somebody who has none, but a silent redirect would read
+      // as a broken link to the person it strands — somebody with an account
+      // clicking an invitation for a second address. The page explains it and
+      // offers a sign-out that comes back here; the gate can't, because it
+      // cannot see who the invitation is for.
+      if (path.startsWith("/invite/")) return true;
+      // Reset links are usable while signed in — the usual reason someone
+      // follows one is that they think somebody else is signed in as them.
+      if (path.startsWith("/reset/")) return true;
+      // Asking for a reset link is for somebody who cannot sign in, by
+      // definition. Signed in, it still works: the reason to ask is often a
+      // suspicion that somebody else knows the password.
+      if (path === "/forgot-password") return true;
+      // Enrolment needs a session and is reachable with one. Whether it is
+      // *required* is the api's call — the edge cannot see the database, and a
+      // gate that guessed would either strand somebody who has enrolled or wave
+      // through somebody who has not. `TwoFactorGate` renders the block.
+      if (path === "/account/two-factor") return signedIn;
+      // Auth.js's own endpoints + the runtime-config route stay public, and so
+      // does the invite handoff: its whole job is to run before there is a
+      // session. It only parks a token the api re-checks on every use.
+      if (
+        path.startsWith("/api/auth") ||
+        path === "/api/config" ||
+        path === "/api/invite/handoff"
+      ) {
+        return true;
+      }
       // Static assets.
       if (path.startsWith("/_next/") || path === "/favicon.ico") return true;
       if (/\.[a-zA-Z0-9]+$/.test(path)) return true;
 
       // Everything else requires a session.
       return signedIn;
+    },
+  },
+  events: {
+    /**
+     * Signing out of the browser closes the api's session too. Clearing the
+     * cookie alone leaves the session live on the api: its token keeps working
+     * until it expires, the sessions list goes on showing the device, and the
+     * audit log gets no `signout` row.
+     *
+     * Best effort. Auth.js clears the cookie whatever happens here, and an api
+     * that is down or slow must not keep anybody signed in — hence the timeout,
+     * and no throw.
+     */
+    async signOut(message) {
+      const token = "token" in message ? message.token : null;
+      const sid = token?.sid as string | undefined;
+      const sub = (token?.id ?? token?.sub) as string | undefined;
+      if (!token || !sid || !sub) return;
+      try {
+        const bearer = await signApiBearer({
+          sub,
+          email: (token.email as string) ?? "",
+          role: (token.role as UserRole) ?? DEFAULT_ROLE,
+          sid,
+        }, issuedAt(token));
+        await fetch(`${apiBase}/auth/sign-out`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${bearer}` },
+          signal: AbortSignal.timeout(SIGN_OUT_API_TIMEOUT_MS),
+        });
+      } catch {
+        // Already signed out in the browser; the api session ends at expiry.
+      }
     },
   },
 } satisfies NextAuthConfig;

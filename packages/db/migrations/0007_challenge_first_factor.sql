@@ -1,0 +1,11 @@
+-- MAG-2730 — which first factor a two-factor challenge followed.
+--
+-- Google and GitHub sign-ins ask an enrolled account for its code too, so a
+-- challenge can follow a password, a Google sign-in or a GitHub one. The
+-- session the code opens records which (`google+totp`), and that is what the
+-- account's own sessions list and the audit trail show: "password+totp" on a
+-- Google sign-in would describe a password nobody typed.
+--
+-- BACKFILL: 'password'. Before this, a password was the only first factor, and
+-- an unspent challenge dies within five minutes regardless.
+ALTER TABLE "two_factor_challenges" ADD COLUMN "first_factor" varchar(16) DEFAULT 'password' NOT NULL;

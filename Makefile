@@ -38,9 +38,10 @@ API_IMAGE  ?= ghcr.io/magma-devs/smart-router-dashboard/backend:local
 WEB_IMAGE  ?= ghcr.io/magma-devs/smart-router-dashboard/frontend:local
 API_PORT   ?= 8000
 WEB_PORT   ?= 3000
+SES_UI_PORT ?= 8005
 API_URL    ?= http://localhost:$(API_PORT)
 
-.PHONY: up down dev dev-down up-auth dev-auth router ps clean builder build build-api build-web typecheck test
+.PHONY: up down dev dev-down up-auth dev-auth accounts accounts-managed accounts-reset router ps clean builder build build-api build-web typecheck test
 
 ## up: SELF-CONTAINED stack — router + Prometheus + api + web + logs (Loki/Grafana)
 up:
@@ -78,7 +79,11 @@ dev-down:
 	docker compose -f docker-compose.dev.yml --profile router --profile auth --profile logs down
 
 ## up-auth: prod-style stack WITH authentication (postgres + login) — see docs/AUTH.md.
-## Requires AUTH_SECRET + ADMIN_EMAIL + ADMIN_PASSWORD in the environment.
+## Requires AUTH_SECRET, TOTP_ENCRYPTION_KEY and INTERNAL_AUTH_SECRET (each
+## `openssl rand -base64 32`) in the environment — the api refuses to boot
+## without the last two. The first admin is created at
+## /setup with the setup token: this is a production build, and it ignores
+## ADMIN_EMAIL / ADMIN_PASSWORD.
 ## (logs profile is on by default here too — Grafana → :3001.)
 ##
 ## DATABASE_URL is supplied HERE rather than as a compose default: the compose
@@ -90,12 +95,14 @@ up-auth:
 	DATABASE_URL=$${DATABASE_URL:-postgres://sr:$${POSTGRES_PASSWORD:-dev}@postgres:5432/sr_dashboard} \
 	docker compose --profile router --profile auth --profile logs up -d --build
 	@echo ""
-	@echo "  🔐 Auth enabled — sign in at http://localhost:$(WEB_PORT)/login"
+	@echo "  🔐 Auth enabled — open http://localhost:$(WEB_PORT); a fresh install goes to /setup"
+	@echo "     Setup token: the SETUP_TOKEN you set, or: docker compose logs api | grep -iE 'setup_?token'"
 	@echo "     Grafana → http://localhost:3001  (admin / admin)"
 
 ## dev-auth: hot-reload stack WITH authentication (dev-default admin@example.com / admin1234)
 ##
-## The dev secret and the dev admin live here, not in docker-compose.dev.yml:
+## The dev secret, the dev 2FA key and the dev admin live here, not in
+## docker-compose.dev.yml (the key is a fixed development value, never real):
 ## a stack running with auth OFF should not carry a password for an
 ## administrator it is never going to create. Every value is overridable.
 dev-auth:
@@ -103,9 +110,67 @@ dev-auth:
 	AUTH_MODE=enabled \
 	AUTH_SECRET=$${AUTH_SECRET:-dev-secret-change-me-please-32chars!} \
 	DATABASE_URL=$${DATABASE_URL:-postgres://sr:$${POSTGRES_PASSWORD:-dev}@postgres:5432/sr_dashboard} \
+	TOTP_ENCRYPTION_KEY=$${TOTP_ENCRYPTION_KEY:-ZGV2LW9ubHkta2V5LW5vdC1mb3ItcHJvZHVjdGlvbiE=} \
 	ADMIN_EMAIL=$${ADMIN_EMAIL:-admin@example.com} \
 	ADMIN_PASSWORD=$${ADMIN_PASSWORD:-admin1234} \
+	INTERNAL_AUTH_SECRET=$${INTERNAL_AUTH_SECRET:-dev-internal-secret} \
 	docker compose -f docker-compose.dev.yml --profile router --profile auth --profile logs up --build
+
+## accounts: stack for exercising the MAG-2729 account system by hand (no seeded admin)
+accounts:
+	AUTH_MODE=enabled \
+	AUTH_SECRET=$${AUTH_SECRET:-dev-secret-change-me-please-32chars!} \
+	DATABASE_URL=$${DATABASE_URL:-postgres://sr:$${POSTGRES_PASSWORD:-dev}@postgres:5432/sr_dashboard} \
+	TOTP_ENCRYPTION_KEY=$${TOTP_ENCRYPTION_KEY:-ZGV2LW9ubHkta2V5LW5vdC1mb3ItcHJvZHVjdGlvbiE=} \
+	docker compose -f docker-compose.dev.yml -f docker-compose.accounts.yml \
+		--profile auth up -d --build postgres builder api web
+	@echo ""
+	@echo "  🔐 Fresh install — no accounts yet."
+	@echo "     Open http://localhost:$(WEB_PORT)  →  it redirects to /setup"
+	@echo "     Setup token:  installer-printed-this-token"
+	@echo ""
+	@echo "     Walkthrough: docs/AUTH.md → \"Trying the account system by hand\""
+	@echo "     Reset to a fresh install:  make accounts-reset"
+
+## accounts-managed: the same stack in MANAGED mode — invitations and resets are emailed
+accounts-managed:
+	AUTH_MODE=enabled \
+	AUTH_SECRET=$${AUTH_SECRET:-dev-secret-change-me-please-32chars!} \
+	DATABASE_URL=$${DATABASE_URL:-postgres://sr:$${POSTGRES_PASSWORD:-dev}@postgres:5432/sr_dashboard} \
+	TOTP_ENCRYPTION_KEY=$${TOTP_ENCRYPTION_KEY:-ZGV2LW9ubHkta2V5LW5vdC1mb3ItcHJvZHVjdGlvbiE=} \
+	docker compose -f docker-compose.dev.yml -f docker-compose.accounts.yml \
+		-f docker-compose.managed.yml --profile auth up -d --build postgres builder ses api web
+	@echo ""
+	@echo "  ✉️  Managed mode — invitations and resets are emailed."
+	@echo "     Mail goes to a local SES mock, so nothing leaves this machine."
+	@echo ""
+	@echo "     Inbox:  http://localhost:$(SES_UI_PORT)"
+	@echo "     App:    http://localhost:$(WEB_PORT)  →  /setup"
+	@echo ""
+	@echo "     Reset to a fresh install:  make accounts-reset"
+
+## recover: run a host recovery command against the running accounts database
+##   make recover CMD="reset-2fa --email dana@example.com"
+##
+## The three commands are reset-2fa, reset-password and promote-admin. Each
+## writes a host.recovery row naming the command and the operator, so a recovery
+## shows up in the dashboard afterwards and cannot be done quietly. Shell access
+## on the host is the authorisation — see docs/TWO-FACTOR.md.
+## The host.recovery row names the operator. Inside the container the shell
+## user is the container's, so the host user is passed as --by unless CMD
+## already names one. The dev stack only: a deployed api runs the same file as
+## `node apps/api/dist/recover.js` (docs/TWO-FACTOR.md → Recovery).
+recover:
+	@test -n "$(CMD)" || (echo 'set CMD, e.g. make recover CMD="reset-2fa --email dana@example.com"'; exit 2)
+	docker compose -f docker-compose.dev.yml -f docker-compose.accounts.yml \
+		--profile auth exec api pnpm --filter @sr/api exec tsx src/recover.ts $(CMD) \
+		$(if $(findstring --by,$(CMD)),,--by "$${SUDO_USER:-$$USER}")
+
+## accounts-reset: wipe the accounts database and start over from first-run
+accounts-reset:
+	docker compose -f docker-compose.dev.yml -f docker-compose.accounts.yml \
+		-f docker-compose.managed.yml --profile auth down -v
+	@echo '▶ wiped — run make accounts for a fresh first-run'
 
 ## router: bring up ONLY the router + Prometheus from this compose
 router:

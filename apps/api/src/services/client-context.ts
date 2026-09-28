@@ -1,3 +1,5 @@
+import { isIP } from "node:net";
+
 /**
  * Turning a raw request into the two fields a session row and an audit access
  * event carry: the caller's address, and a human-readable device string.
@@ -5,9 +7,13 @@
  * Deliberately small and deliberately lossy. `client` exists so a person
  * scanning their own sessions list recognises a device, and so an investigator
  * reading `signin.failed` rows can tell "one person mistyping" from "a run of
- * attempts from somewhere else". Neither needs a full UA taxonomy, and the raw
- * User-Agent is stored alongside it regardless — so when this returns null,
- * nothing is lost that wasn't already recorded.
+ * attempts from somewhere else". Neither needs a full UA taxonomy. A session
+ * row keeps the raw User-Agent next to it; an audit row keeps only this.
+ *
+ * Both inputs are headers the caller writes, and both land in columns that
+ * refuse a bad value — `client` is varchar(128), `ip` is `inet`. A refused
+ * value fails a session insert, and it silently loses a standalone audit row.
+ * So both functions return something the column accepts, or null.
  */
 
 /** Ordered most- to least-specific: Edge and Opera also claim "Chrome", and
@@ -30,8 +36,13 @@ const PLATFORMS: ReadonlyArray<[name: string, pattern: RegExp]> = [
   ["Linux", /Linux|X11/],
 ];
 
+/** No browser has shipped a five-digit major version. A longer one is made up,
+ *  and repeating it would let the header decide how long `client` is. */
+const MAX_VERSION_DIGITS = 4;
+
 /**
- * `"Chrome 141 / macOS"`, or the best partial we can manage, or null.
+ * `"Chrome 141 / macOS"`, or the best partial we can manage, or null. Never
+ * longer than a name, four digits and a platform, whatever the header says.
  *
  * Null is a normal outcome — a curl, a health checker, or a browser we don't
  * pattern-match. Callers render "—" rather than guessing.
@@ -43,7 +54,8 @@ export function parseClient(userAgent: string | null | undefined): string | null
   for (const [name, pattern] of BROWSERS) {
     const match = pattern.exec(userAgent);
     if (match) {
-      browser = match[1] ? `${name} ${match[1]}` : name;
+      const version = match[1];
+      browser = version && version.length <= MAX_VERSION_DIGITS ? `${name} ${version}` : name;
       break;
     }
   }
@@ -60,16 +72,14 @@ export function parseClient(userAgent: string | null | undefined): string | null
   return browser ?? platform;
 }
 
-/** Loose IPv4 / IPv6 shapes. Postgres `inet` rejects anything malformed with an
- *  error, and a sign-in must never fail because a proxy sent a odd header — so
- *  we screen here and store null rather than letting the insert throw. */
-const IPV4 = /^(?:\d{1,3}\.){3}\d{1,3}$/;
-const IPV6 = /^[0-9a-fA-F:]+$/;
-
 /**
  * Normalise an address for the `inet` column, or null when it isn't one.
  * Strips IPv4-mapped IPv6 (`::ffff:10.0.0.1`), which is what a dual-stack
  * listener reports for a plain IPv4 client and reads as noise in an audit row.
+ *
+ * `isIP` rather than a pattern: a shape check let `:::` and nine-group
+ * addresses through to an insert that refused them. `isIP` accepts one thing
+ * `inet` refuses, an IPv6 zone (`fe80::1%eth0`), so that is refused here too.
  */
 export function normalizeIp(ip: string | null | undefined): string | null {
   if (!ip) return null;
@@ -79,10 +89,5 @@ export function normalizeIp(ip: string | null | undefined): string | null {
   const mapped = /^::ffff:((?:\d{1,3}\.){3}\d{1,3})$/i.exec(trimmed);
   const candidate = mapped?.[1] ?? trimmed;
 
-  if (IPV4.test(candidate)) {
-    return candidate.split(".").every((o) => Number(o) <= 255) ? candidate : null;
-  }
-  // Require a colon so a bare hostname can't pass the hex test.
-  if (candidate.includes(":") && IPV6.test(candidate)) return candidate;
-  return null;
+  return isIP(candidate) !== 0 && !candidate.includes("%") ? candidate : null;
 }

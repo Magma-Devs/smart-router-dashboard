@@ -1,5 +1,5 @@
 import bcrypt from "bcryptjs";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 
 /** bcrypt cost 12 — same as lava-connect (industry default). */
 export async function hashPassword(plain: string): Promise<string> {
@@ -8,6 +8,21 @@ export async function hashPassword(plain: string): Promise<string> {
 
 export async function verifyPassword(plain: string, hash: string): Promise<boolean> {
   return bcrypt.compare(plain, hash);
+}
+
+let decoy: Promise<string> | null = null;
+
+/** Verify against `hash`, or against a decoy when there is none, so the call
+ *  costs one bcrypt either way — an address with no account then takes as long
+ *  as a wrong password. The decoy hashes a value nobody holds, once. */
+export async function verifyPasswordOrDecoy(
+  plain: string,
+  hash: string | null | undefined,
+): Promise<boolean> {
+  if (hash) return verifyPassword(plain, hash);
+  decoy ??= hashPassword(randomBytes(32).toString("base64url"));
+  await verifyPassword(plain, await decoy);
+  return false;
 }
 
 /**

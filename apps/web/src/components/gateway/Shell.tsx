@@ -5,12 +5,15 @@ import Link from "next/link";
 import { useEffect, useState, useSyncExternalStore, type ComponentType } from "react";
 import { signOut } from "next-auth/react";
 import type { OverviewData } from "@sr/shared";
-import { NAV_SECTIONS } from "./nav";
+import { NAV_SECTIONS, visibleNavSections } from "./nav";
+import { useAuthMode } from "./auth-mode";
 import { IconMoon, IconSun, type IconProps } from "./icons";
 import { useApi } from "@/hooks/use-api";
 import { useFilters } from "@/components/gateway/FiltersProvider";
 import { fmtNum } from "@/lib/format";
-import { getAuthState, getAuthVersion, subscribeAuth } from "@/lib/auth-store";
+import { getAuthVersion, subscribeAuth } from "@/lib/auth-store";
+import { useMe } from "@/hooks/use-me";
+import { TwoFactorCountdown, TwoFactorGate } from "@/components/auth/two-factor-gate";
 
 export function ThemeToggle() {
   const [theme, setTheme] = useState<"dark" | "light">("dark");
@@ -26,7 +29,12 @@ export function ThemeToggle() {
     document.documentElement.setAttribute("data-theme", next);
   };
   return (
-    <button className="gw-btn gw-btn--ghost" style={{ padding: 6 }} onClick={toggle} aria-label="Toggle theme">
+    <button
+      className="gw-btn gw-btn--ghost"
+      style={{ padding: 6 }}
+      onClick={toggle}
+      aria-label="Toggle theme"
+    >
       {theme === "dark" ? <IconSun size={14} /> : <IconMoon size={14} />}
     </button>
   );
@@ -34,29 +42,49 @@ export function ThemeToggle() {
 
 function Sidebar() {
   const pathname = usePathname();
+  const sections = visibleNavSections(useAuthMode());
   return (
     <aside className="gw-side">
       {/* The brand is the way home, as it is on every product: `/` redirects to
           whatever the default surface is (Metrics), so home stays defined in one
           place rather than being restated here. */}
-      <Link href="/" className="gw-side__brand" style={{ textDecoration: "none", color: "inherit" }}>
+      <Link
+        href="/"
+        className="gw-side__brand"
+        style={{ textDecoration: "none", color: "inherit" }}
+      >
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/magma-logo.png" width={26} height={26} style={{ flexShrink: 0, display: "block", objectFit: "contain" }} alt="Magma" />
+        <img
+          src="/magma-logo.png"
+          width={26}
+          height={26}
+          style={{ flexShrink: 0, display: "block", objectFit: "contain" }}
+          alt="Magma"
+        />
         <div>
           <div className="name">Smart Router</div>
           <div className="sub">by Magma Devs</div>
         </div>
       </Link>
       <nav className="gw-side__nav">
-        {NAV_SECTIONS.map((section, i) => (
+        {sections.map((section, i) => (
           <div key={i}>
             {section.label && <div className="gw-side__section-label">{section.label}</div>}
             {section.items.map((item) => {
               const Icon: ComponentType<IconProps> = item.icon;
               const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
               return (
-                <Link key={item.href} href={item.href} className={`gw-nav-item${active ? " active" : ""}`}>
-                  <Icon size={16} className="ic" strokeWidth={1.75} style={{ color: active ? "var(--brand)" : undefined }} />
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`gw-nav-item${active ? " active" : ""}`}
+                >
+                  <Icon
+                    size={16}
+                    className="ic"
+                    strokeWidth={1.75}
+                    style={{ color: active ? "var(--brand)" : undefined }}
+                  />
                   <span>{item.label}</span>
                 </Link>
               );
@@ -75,11 +103,27 @@ function Sidebar() {
  * AUTH_MODE=disabled (store stays empty) → the self-hosted placeholder.
  */
 function SidebarUser() {
+  // Subscribed to the store for the sign-in/sign-out transition, but the role
+  // itself comes from `useMe` — the session's copy is frozen at sign-in, so the
+  // badge would keep claiming ADMIN after a demotion. See `useMe`.
   useSyncExternalStore(subscribeAuth, getAuthVersion, () => 0);
-  const { user } = getAuthState();
+  const { me: user } = useMe();
 
   const logoutIcon = (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <polyline points="16 17 21 12 16 7" />
+      <line x1="21" y1="12" x2="9" y2="12" />
+    </svg>
   );
 
   return (
@@ -118,7 +162,12 @@ function SidebarUser() {
             {logoutIcon}
           </button>
         ) : (
-          <button className="gw-btn gw-btn--ghost" style={{ padding: 6 }} title="No auth on self-hosted deployments" disabled>
+          <button
+            className="gw-btn gw-btn--ghost"
+            style={{ padding: 6 }}
+            title="No auth on self-hosted deployments"
+            disabled
+          >
             {logoutIcon}
           </button>
         )}
@@ -139,7 +188,16 @@ function Topbar({ here }: { here: string }) {
     <header className="gw-top">
       <div className="gw-top__crumbs">
         <span style={{ color: "var(--text-3)" }}>Smart Router</span>
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-4)" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="var(--text-4)"
+          strokeWidth="2"
+        >
+          <polyline points="9 18 15 12 9 6" />
+        </svg>
         <span className="here">{here}</span>
       </div>
       <div className="gw-top__right">
@@ -156,6 +214,9 @@ function Topbar({ here }: { here: string }) {
         {/* The router filter lives in the page header next to the chain one
             (RouterFilterSelect) — it sets the label scope this control used to
             own, plus the config-router filter, so one control does both. */}
+        {/* Shows only for the one account that may still defer 2FA. Not
+            dismissible: what it counts down to is the dashboard closing. */}
+        <TwoFactorCountdown />
         <ThemeToggle />
       </div>
     </header>
@@ -171,14 +232,20 @@ export function Shell({ children }: { children: React.ReactNode }) {
     )?.label ?? "Overview";
 
   return (
-    <div className="gw-app">
-      <Sidebar />
-      <div className="gw-main">
-        <Topbar here={here} />
-        <div className="fade-in" key={pathname}>
-          {children}
+    // Outside the chrome, not inside it: a blocked dashboard should not render a
+    // sidebar full of links that 403. The api refuses every request from an
+    // unenrolled session regardless — this is what the person sees instead of
+    // watching forty panels fail one by one.
+    <TwoFactorGate>
+      <div className="gw-app">
+        <Sidebar />
+        <div className="gw-main">
+          <Topbar here={here} />
+          <div className="fade-in" key={pathname}>
+            {children}
+          </div>
         </div>
       </div>
-    </div>
+    </TwoFactorGate>
   );
 }

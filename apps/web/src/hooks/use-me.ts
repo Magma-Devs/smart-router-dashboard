@@ -1,0 +1,105 @@
+"use client";
+
+import { useSyncExternalStore } from "react";
+import { useApi } from "@/hooks/use-api";
+import { getAuthState, getAuthVersion, subscribeAuth } from "@/lib/auth-store";
+import { roleAtLeast, type Role } from "@sr/shared";
+
+export interface MeTwoFactor {
+  enrolled: boolean;
+  /** The dashboard stays shut until they enrol. */
+  enrolmentRequired: boolean;
+  /** When deferring stops working — the first admin only, and only during their
+   *  grace period. Null for everybody else, in both directions. */
+  graceEndsAt: string | null;
+  daysLeft: number | null;
+}
+
+export interface Me {
+  id: string;
+  email: string;
+  name: string | null;
+  avatarUrl: string | null;
+  role: Role;
+  /** Absent until the first read lands, and in AUTH_MODE=disabled where these
+   *  routes are not registered at all. */
+  twoFactor?: MeTwoFactor;
+}
+
+/**
+ * Who the signed-in person is **right now**, from the account row rather than
+ * from the session.
+ *
+ * The session's `role` is stamped once at sign-in and never refreshed —
+ * `auth.config.ts`'s `jwt()` callback only sets `token.role` when `user` is
+ * present, which is the sign-in call. Read from the session, a demoted person
+ * would keep seeing admin buttons that 403, and a promoted one none of their
+ * new ones, for up to the session's thirty days.
+ *
+ * The api authorises from this same row on every request, which is what "a
+ * role change takes effect straight away" means. This is what lets the UI say
+ * the same thing.
+ *
+ * Polling rather than an event, because a role change originates on somebody
+ * else's screen and there is no channel to push it down. Fifteen seconds is the
+ * house default and is fast enough: the api refuses the moment the row changes,
+ * so the window is one of *looking* wrong, never of *being* permissive.
+ */
+export function useMe(): {
+  me: Me | null;
+  isAdmin: boolean;
+  loading: boolean;
+  twoFactor: MeTwoFactor | null;
+  /** Re-read after enrolling, so the gate lifts without a page reload. */
+  refresh: () => void;
+} {
+  // Subscribe to the store, don't merely read it.
+  //
+  // `getAuthState()` is a module-level snapshot that `ApiTokenBridge` fills in
+  // an effect, so it is null on the first render of every cold page load. A
+  // component that only reads it renders once with null and is never told when
+  // it changes — which meant `/api/account/me` was never asked for, and
+  // `TwoFactorGate` therefore never knew the dashboard was supposed to be shut.
+  // Somebody who had not enrolled saw the full chrome with every panel 403ing,
+  // instead of the screen telling them what to do about it. The Sidebar had
+  // subscribed for itself and so looked fine, which is what hid this.
+  useSyncExternalStore(subscribeAuth, getAuthVersion, () => 0);
+
+  // The store is empty in AUTH_MODE=disabled, where these routes are not even
+  // registered — asking would 404 on every page. It is also empty before the
+  // session bridge has run, and asking then would race it.
+  const bridged = getAuthState().user;
+  const { data: live, isLoading, mutate } = useApi<Me>(bridged ? "/api/account/me" : null);
+  // `useApi` keeps the previous key's data across a key change, including a
+  // change to no key. Without this, a screen with nobody signed in would go on
+  // answering for whoever was signed in last.
+  const data = bridged ? live : undefined;
+
+  // Fall back to the session while the first read is in flight, so the sidebar
+  // does not flicker from a name to a placeholder and back on every navigation.
+  const me: Me | null =
+    data ??
+    (bridged
+      ? {
+          id: "",
+          email: bridged.email,
+          name: bridged.name,
+          avatarUrl: bridged.avatarUrl ?? null,
+          role: bridged.role,
+        }
+      : null);
+
+  return {
+    me,
+    // Only ever from the live row. A stale `true` here would draw controls that
+    // cannot work, which is the defect this hook exists to remove.
+    isAdmin: roleAtLeast(data?.role, "admin"),
+    loading: isLoading && !data,
+    // Only from the live read, never from the session fallback: the gate is a
+    // "shut the dashboard" decision, and guessing at it from a stale token
+    // would either strand somebody who has enrolled or wave through somebody
+    // who has not.
+    twoFactor: data?.twoFactor ?? null,
+    refresh: () => void mutate(),
+  };
+}

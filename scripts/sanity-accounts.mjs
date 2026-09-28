@@ -1,0 +1,888 @@
+#!/usr/bin/env node
+/**
+ * MAG-2729 acceptance checks — the eleven Omer listed on the ticket, run against
+ * a live deployment rather than asserted in unit tests.
+ *
+ *   make accounts-reset && make accounts      # a genuinely fresh install
+ *   node scripts/sanity-accounts.mjs
+ *
+ * Why a live run and not vitest: several of these are only meaningful against a
+ * real deployment. "A lower role is refused the action when it's attempted
+ * directly, not just when the button is hidden" is a statement about the api
+ * with a real token in hand. "Their next action is refused without them signing
+ * out" is a statement about a session that already exists. And this ticket has
+ * a documented history of defects that a green suite could not see — the CORS
+ * preflight that blocked every mutation is the clearest one, invisible to
+ * `app.inject()` because it never crosses an origin.
+ *
+ * Check 1 needs an install with no accounts, so the script refuses to run
+ * against a deployment that has already been set up. That is the check.
+ *
+ * Env: API (default http://localhost:8000), WEB (http://localhost:3000),
+ * AUTH_SECRET (must match the api's), SETUP_TOKEN, SES_UI (the local SES
+ * server's inbox, http://localhost:8005). A managed run reads every link from
+ * that inbox and fails if a message the api reports sending never arrives.
+ */
+
+import { createHmac } from "node:crypto";
+
+const API = process.env.API ?? "http://localhost:8000";
+const WEB = process.env.WEB ?? "http://localhost:3000";
+const SECRET = process.env.AUTH_SECRET ?? "dev-secret-change-me-please-32chars!";
+const SETUP_TOKEN = process.env.SETUP_TOKEN ?? "installer-printed-this-token";
+const SES_UI = process.env.SES_UI ?? "http://localhost:8005";
+
+const ADMIN = { email: "ops.admin@magmadevs.com", password: "an-admin-passphrase-4417" };
+const MEMBER = { email: "dana.okonkwo@example.com", password: "dana-chose-this-one-8890" };
+const RESET_PW = "dana-picked-a-new-one-2231";
+
+/** Every secret this run puts into the system. Check 11 asserts none of them
+ *  ever appears as a value in the audit log. */
+const SECRETS = [ADMIN.password, MEMBER.password, RESET_PW, SETUP_TOKEN];
+const TOKENS_SEEN = [];
+/** Every raw invitation and reset token the run held — bare, not as a link,
+ *  since a token leaked into a note would not look like a URL. */
+const LINK_TOKENS = [];
+/** Links already read from the inbox, so a resend never hands back the
+ *  previous message's link. Up here because the checks run at top level. */
+const linksUsed = new Set();
+const tokenOf = (url) => {
+  const token = String(url).split("/").pop();
+  if (token) LINK_TOKENS.push(token);
+  return token;
+};
+
+// ── tiny harness ────────────────────────────────────────────────────────────
+
+let checkNo = 0;
+const results = [];
+let current = null;
+
+function check(title) {
+  current = { no: ++checkNo, title, asserts: [], ok: true };
+  results.push(current);
+  process.stdout.write(`\n\x1b[1m${current.no}. ${title}\x1b[0m\n`);
+}
+
+function ok(label, cond, detail = "") {
+  const pass = !!cond;
+  current.asserts.push({ label, pass });
+  if (!pass) current.ok = false;
+  const mark = pass ? "\x1b[32m✓\x1b[0m" : "\x1b[31m✗\x1b[0m";
+  process.stdout.write(`   ${mark} ${label}${pass || !detail ? "" : `\n       ${detail}`}\n`);
+}
+
+function note(text) {
+  process.stdout.write(`   \x1b[90m·\x1b[0m \x1b[90m${text}\x1b[0m\n`);
+}
+
+// ── http ────────────────────────────────────────────────────────────────────
+
+async function call(method, path, { body, token, base = API, origin, _retried } = {}) {
+  const headers = {};
+  if (token) headers.authorization = `Bearer ${token}`;
+  if (origin) headers.origin = origin;
+  if (body !== undefined) headers["content-type"] = "application/json";
+  const res = await fetch(base + path, {
+    method,
+    headers,
+    body: body === undefined ? undefined : JSON.stringify(body),
+    redirect: "manual",
+  });
+  const text = await res.text();
+  let json = null;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    /* not json */
+  }
+
+  // `/auth/*` allows 10 a minute per address, and two-factor doubled the number
+  // of calls a sign-in costs — so this run now crosses it where it used to sit
+  // just under. Slept off rather than raised for the run: raising it would stop
+  // exercising the configuration that ships, and the wait is the honest price.
+  if (res.status === 429 && !_retried) {
+    const secs = Number(/retry in (\d+)/.exec(text)?.[1] ?? 60) + 2;
+    note(`per-IP rate limit hit — waiting ${secs}s (10/min on /auth/*)`);
+    await new Promise((r) => setTimeout(r, secs * 1000));
+    return call(method, path, { body, token, base, origin, _retried: true });
+  }
+
+  return { status: res.status, body: json, text, headers: res.headers };
+}
+
+// ── jwt, minted exactly as apps/web/src/auth.config.ts does ─────────────────
+
+const b64 = (buf) => Buffer.from(buf).toString("base64url");
+
+function mintToken({ userId, email, sessionId, role = "admin" }) {
+  const now = Math.floor(Date.now() / 1000);
+  const header = b64(JSON.stringify({ alg: "HS256", typ: "JWT" }));
+  const payload = b64(
+    JSON.stringify({
+      sub: userId,
+      email,
+      role,
+      sid: sessionId,
+      iss: "smart-router-dashboard-web",
+      aud: "smart-router-dashboard-api",
+      iat: now,
+      exp: now + 3600,
+    }),
+  );
+  const sig = createHmac("sha256", SECRET).update(`${header}.${payload}`).digest("base64url");
+  const jwt = `${header}.${payload}.${sig}`;
+  TOKENS_SEEN.push(jwt);
+  return jwt;
+}
+
+const tokenFor = (signIn) => {
+  // A sign-in that did not sign in is the commonest way this runner goes wrong,
+  // and `undefined is not an object` three frames away says nothing about which
+  // call failed or why. Fail here, with the response.
+  if (!signIn?.user?.id || !signIn?.sessionId) {
+    throw new Error(`expected a completed sign-in, got: ${JSON.stringify(signIn)}`);
+  }
+  return mintToken({
+    userId: signIn.user.id,
+    email: signIn.user.email,
+    sessionId: signIn.sessionId,
+  });
+};
+
+// ── two-factor ──────────────────────────────────────────────────────────────
+//
+// MAG-2730 made an authenticator mandatory, so this runner has to hold one. The
+// alternative — turning enforcement off for the run — would test a deployment
+// nobody ships. Twenty lines of RFC 4226 rather than a dependency, matching
+// `apps/api/src/services/totp.ts`, which is what these codes are checked against.
+
+const B32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+
+function b32decode(text) {
+  let bits = 0;
+  let value = 0;
+  const out = [];
+  for (const c of text.replace(/[\s=-]/g, "").toUpperCase()) {
+    value = (value << 5) | B32.indexOf(c);
+    bits += 5;
+    if (bits >= 8) {
+      out.push((value >>> (bits - 8)) & 0xff);
+      bits -= 8;
+    }
+  }
+  return Buffer.from(out);
+}
+
+/** The six-digit code for a step, default "now". */
+function totpCode(secret, step = Math.floor(Date.now() / 30000)) {
+  const counter = Buffer.alloc(8);
+  counter.writeBigUInt64BE(BigInt(step));
+  const d = createHmac("sha1", b32decode(secret)).update(counter).digest();
+  const o = d[d.length - 1] & 0x0f;
+  const n =
+    ((d[o] & 0x7f) << 24) |
+    ((d[o + 1] & 0xff) << 16) |
+    ((d[o + 2] & 0xff) << 8) |
+    (d[o + 3] & 0xff);
+  return String(n % 1000000).padStart(6, "0");
+}
+
+/** Enrol the account this token belongs to, and return its secret. */
+async function enrol(token) {
+  const begun = await call("POST", "/api/account/2fa/begin", { token, body: {} });
+  if (begun.status !== 200) {
+    throw new Error(`2FA enrolment could not start: ${begun.status} ${begun.text}`);
+  }
+  const secret = begun.body.secret;
+  const done = await call("POST", "/api/account/2fa/confirm", {
+    token,
+    body: { code: totpCode(secret) },
+  });
+  if (done.status !== 200) throw new Error(`2FA confirm failed: ${done.status} ${done.text}`);
+  return secret;
+}
+
+/**
+ * Sign in all the way, both factors.
+ *
+ * Returns the same `{ user, sessionId }` shape a one-step sign-in used to, so
+ * every call site below reads as it did. Without a secret it is the one-step
+ * flow, which is still what an un-enrolled account gets.
+ *
+ * The code is taken from the NEXT step, not the current one: enrolment and the
+ * sign-in that follows it land inside the same 30 seconds, and the api spends
+ * the step it accepts — so reusing the current one is refused as a replay,
+ * correctly. A person is never this fast.
+ */
+async function signInFully(creds, secret) {
+  const first = await call("POST", "/auth/sign-in", { body: creds });
+  if (!secret || !first.body?.twoFactorRequired) return first;
+  // The CURRENT step, not the next one. `+1` was the right choice immediately
+  // after enrolling — which spends the current step — and the wrong one here,
+  // where minutes have passed: it hands the api a code from the future edge of
+  // its window and, once that step is spent, the next sign-in in the same
+  // 30 seconds is refused as a replay. Now spends the step the phone is on.
+  const second = await call("POST", "/auth/2fa/verify", {
+    body: { challenge: first.body.challenge, code: totpCode(secret) },
+  });
+  if (second.status !== 200) {
+    // Same code, one step on: the current step was already spent by an earlier
+    // sign-in inside this same 30 seconds. A person cannot be this fast.
+    await new Promise((r) => setTimeout(r, 30_000 - (Date.now() % 30_000) + 500));
+    const retry = await call("POST", "/auth/sign-in", { body: creds });
+    return call("POST", "/auth/2fa/verify", {
+      body: { challenge: retry.body?.challenge, code: totpCode(secret) },
+    });
+  }
+  return second;
+}
+
+/**
+ * Wait past the current second before minting a token after a bulk revocation.
+ *
+ * `signed_out_all_at` and a JWT's `iat` both have one-second resolution, and
+ * `checkSession` refuses a token whose `iat` is at or before the cutoff — the
+ * comparison is `<=` on purpose, so somebody racing a sign-out cannot keep
+ * their session. A script that resets a password and signs back in within the
+ * same second therefore gets a token that is correctly refused. A human cannot
+ * reach that window — the reset page does not sign you in, so they have to get
+ * to /login and type — but this runner can, so it waits.
+ */
+const pastCutoff = () => new Promise((r) => setTimeout(r, 1100 - (Date.now() % 1000)));
+
+// ── audit access ────────────────────────────────────────────────────────────
+
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+const exec = promisify(execFile);
+
+const PG = process.env.PG_CONTAINER ?? "smart-router-dashboard-dev-postgres-1";
+
+async function sql(query) {
+  const { stdout } = await exec("docker", [
+    "exec",
+    PG,
+    "psql",
+    "-U",
+    "sr",
+    "-d",
+    "sr_dashboard",
+    "-tAF|",
+    "-c",
+    query,
+  ]);
+  return stdout
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((l) => l.split("|"));
+}
+
+// ── the run ─────────────────────────────────────────────────────────────────
+
+const mode = (await call("GET", "/auth/bootstrap")).body?.mode ?? "unknown";
+process.stdout.write(
+  `\x1b[1mMAG-2729 acceptance checks\x1b[0m  ·  ${API}  ·  DEPLOYMENT_MODE=${mode}\n`,
+);
+
+// 1 ──────────────────────────────────────────────────────────────────────────
+check("Create an account through the install");
+{
+  const boot = await call("GET", "/auth/bootstrap");
+  if (boot.body?.needsSetup !== true) {
+    process.stdout.write(
+      "\n\x1b[31mThis deployment already has accounts.\x1b[0m Check 1 is about a fresh install:\n" +
+        "  make accounts-reset && make accounts\n",
+    );
+    process.exit(2);
+  }
+  ok("a fresh install reports that it needs setting up", boot.body.needsSetup === true);
+
+  // "nothing else in the dashboard is reachable until it exists"
+  const guarded = await Promise.all([
+    call("GET", "/api/team/members"),
+    call("GET", "/api/metrics/overview"),
+    call("GET", "/api/account/sessions"),
+  ]);
+  ok(
+    "every /api/* route refuses an unauthenticated caller",
+    guarded.every((r) => r.status === 401),
+    guarded.map((r) => r.status).join(", "),
+  );
+
+  const home = await call("GET", "/", { base: WEB });
+  const login = await call("GET", "/login?callbackUrl=%2F", { base: WEB });
+  ok("the web sends an anonymous visitor to sign in", home.status === 307);
+  ok(
+    "and sign-in sends them on to first-run setup",
+    login.status === 307 && String(login.headers.get("location")).includes("/setup"),
+    String(login.headers.get("location")),
+  );
+
+  const wrongToken = await call("POST", "/auth/setup", {
+    body: { token: "not-the-installers-token", email: ADMIN.email, password: ADMIN.password },
+  });
+  ok("setup without the installer's token is refused", wrongToken.status === 403);
+
+  const created = await call("POST", "/auth/setup", {
+    body: { token: SETUP_TOKEN, ...ADMIN, name: "Ops Admin" },
+  });
+  ok("the first account is created", created.status === 201, `${created.status} ${created.text}`);
+  ok("and it is an admin", created.body?.user?.role === "admin", created.body?.user?.role);
+
+  const after = await call("GET", "/auth/bootstrap");
+  ok("the install no longer needs setting up", after.body?.needsSetup === false);
+  const claimed = await call("POST", "/auth/setup", {
+    body: { token: SETUP_TOKEN, email: "someone@else.co", password: "another-passphrase-99" },
+  });
+  ok("and setup cannot be claimed twice", claimed.status === 409);
+}
+
+const adminSignIn = (await call("POST", "/auth/sign-in", { body: ADMIN })).body;
+const adminToken = tokenFor(adminSignIn);
+
+// The first admin may defer 2FA — but not past inviting anyone, which is the
+// next thing this runner does. So it enrols here, which is also the shape a
+// real first admin's day takes.
+await enrol(adminToken);
+note("the first admin enrolled an authenticator (MAG-2730: required before inviting)");
+
+// 2 ──────────────────────────────────────────────────────────────────────────
+check("Create an account on managed — the person sets their own password");
+{
+  if (mode !== "managed") {
+    note(`skipped: this deployment is ${mode}. Re-run with DEPLOYMENT_MODE=managed.`);
+    note("On-prem is covered by check 3, which is the same flow without the email.");
+    results.pop();
+    checkNo--;
+  } else {
+    const inv = await call("POST", "/api/team/invites", {
+      token: adminToken,
+      body: { email: MEMBER.email, role: "read_only" },
+    });
+    ok("an invitation is created", inv.status === 201);
+    ok(
+      "the response carries no password anywhere",
+      !JSON.stringify(inv.body ?? {}).includes("password"),
+    );
+
+    // The api's own answer decides what this check expects, never the state
+    // of the inbox: a managed deployment is meant to email, so a fallback here
+    // is a failure to report, not a second way to pass.
+    ok(
+      "the invitation was emailed",
+      inv.body?.delivery === "email",
+      inv.body?.deliveryFallback
+        ? "the api fell back to handing the admin the link — is the SES server up?"
+        : JSON.stringify(inv.body),
+    );
+    ok("and the link is NOT returned to the admin", !inv.body?.url);
+
+    const mail = await awaitMail("invite", MEMBER.email);
+    ok("it reached the invited address", !!mail, `nothing arrived for ${MEMBER.email}`);
+    ok(
+      "with the customer named in the subject",
+      /You've been added to .+ on Smart Router/.test(mail?.subject ?? ""),
+      mail?.subject,
+    );
+    ok("as text as well as HTML", !!mail?.body?.text && !!mail?.body?.html);
+    ok("with a reply-to that somebody reads", (mail?.replyTo ?? []).length > 0);
+
+    // The holder chooses the value.
+    const redeemed = await call("POST", "/auth/invite/accept", {
+      body: { token: tokenOf(mail?.link ?? ""), password: MEMBER.password, name: "Dana Okonkwo" },
+    });
+    ok("the invited person sets their own password", redeemed.status === 201);
+    ok("the account is theirs", redeemed.body?.user?.email === MEMBER.email);
+
+    // MAG-2729, decided 26 Aug 2026. The two-step managed flow leaves a Magma
+    // operator account on the deployment permanently, and the rule it answers
+    // to is now visibility rather than absence: "no hidden Magma account, and
+    // none the customer can't see in their member list."
+    const roster = await call("GET", "/api/team/members", { token: adminToken });
+    const rows = roster.body?.members ?? [];
+    const ours = rows.find((m) => m.email === ADMIN.email);
+    const theirs = rows.find((m) => m.email === MEMBER.email);
+    ok("the Magma operator account is labelled as ours", ours?.isMagmaAccount === true);
+    ok("the customer's own person is not", theirs?.isMagmaAccount === false);
+    ok("and neither is hidden from the list", !!ours && !!theirs);
+
+    const csv = await call("GET", "/api/team/members.csv", { token: adminToken });
+    ok(
+      "the export carries the same label, unfiltered",
+      /\bmagma_account\b/.test(csv.text ?? "") &&
+        (csv.text ?? "").split("\n").some((r) => r.includes(ADMIN.email) && /,yes\s*$/.test(r)),
+    );
+  }
+}
+
+/**
+ * The newest message to `to` carrying a `kind` link this run has not used yet,
+ * waited for — a send can land after the api answers (forgot-password answers
+ * first, on purpose). Null if none arrives.
+ *
+ * Links come from the inbox and nowhere else. Reading them from the api log
+ * instead would let a broken mail path pass: the api says "emailed", nothing
+ * arrives, and the logged link gets used anyway.
+ */
+async function awaitMail(kind, to, { timeoutMs = 15_000 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  const pattern = new RegExp(`https?://\\S*?/${kind}/[A-Za-z0-9_-]+`);
+  while (Date.now() < deadline) {
+    const inbox = await mailbox();
+    for (const mail of [...inbox].reverse()) {
+      if (!(mail.destination?.to ?? []).some((a) => a.toLowerCase() === to.toLowerCase())) {
+        continue;
+      }
+      const link = String(mail.body?.text ?? "").match(pattern)?.[0];
+      if (link && !linksUsed.has(link)) {
+        linksUsed.add(link);
+        return { ...mail, link };
+      }
+    }
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  return null;
+}
+
+/** The link for an invitation: from the response when the admin was handed
+ *  one (on-prem), otherwise from the invitee's inbox. */
+async function inviteLink(inv, to) {
+  if (inv.body?.url) return inv.body.url;
+  return (await awaitMail("invite", to))?.link ?? "";
+}
+
+/** Everything the local SES server has been handed, oldest first. Throws when
+ *  the inbox cannot be read: an empty list would read as "nothing sent". */
+async function mailbox() {
+  const res = await fetch(`${SES_UI}/store`, { signal: AbortSignal.timeout(2000) });
+  if (!res.ok) throw new Error(`the SES inbox at ${SES_UI} answered ${res.status}`);
+  return (await res.json()).emails ?? [];
+}
+
+// 3 ──────────────────────────────────────────────────────────────────────────
+check("An admin invites someone and they join with exactly the role picked");
+{
+  const email = mode === "managed" ? "second.member@example.com" : MEMBER.email;
+  const inv = await call("POST", "/api/team/invites", {
+    token: adminToken,
+    body: { email, role: "approver" },
+  });
+  ok("the invitation is created", inv.status === 201, `${inv.status} ${inv.text}`);
+  if (mode !== "managed") {
+    ok("on-prem it returns a link and sends no email", inv.body?.delivery === "link");
+    ok("the link is shown once, not stored for re-reading", !!inv.body?.url);
+  }
+  const token = tokenOf(await inviteLink(inv, email));
+
+  const preview = await call("POST", "/auth/invite/preview", { body: { token } });
+  ok("the link says who it is for and what it grants", preview.body?.role === "approver");
+
+  const redeemed = await call("POST", "/auth/invite/accept", {
+    body: { token, password: MEMBER.password, name: "Dana Okonkwo" },
+  });
+  ok("they join", redeemed.status === 201, `${redeemed.status} ${redeemed.text}`);
+
+  // An invited person gets no grace period. Redemption opens no session — the
+  // page signs in with the password just chosen — so that sign-in is what they
+  // hold, and the only thing it opens is enrolment. "Before the dashboard
+  // opens", stated as a route rather than as a screen.
+  const joinedIn = await call("POST", "/auth/sign-in", {
+    body: { email, password: MEMBER.password },
+  });
+  const joinedToken = tokenFor(joinedIn.body);
+  ok(
+    "and the dashboard stays shut until they set up an authenticator",
+    (await call("GET", "/api/team/members", { token: joinedToken })).status === 403,
+  );
+  globalThis.__memberSecret = await enrol(joinedToken);
+  ok(
+    "which opens it",
+    (await call("GET", "/api/team/members", { token: joinedToken })).status === 200,
+  );
+  ok(
+    "with exactly the role that was picked",
+    redeemed.body?.user?.role === "approver",
+    redeemed.body?.user?.role,
+  );
+  globalThis.__member = redeemed.body;
+  globalThis.__memberEmail = email;
+  globalThis.__usedInviteToken = token;
+}
+
+// 4 ──────────────────────────────────────────────────────────────────────────
+check("An invite already used is refused — and one cannot be redirected to another address");
+{
+  const again = await call("POST", "/auth/invite/accept", {
+    body: { token: globalThis.__usedInviteToken, password: "a-different-passphrase-55" },
+  });
+  ok("a second redemption is refused", [400, 404, 410].includes(again.status), `${again.status}`);
+
+  const preview = await call("POST", "/auth/invite/preview", {
+    body: { token: globalThis.__usedInviteToken },
+  });
+  ok("and the link no longer previews", preview.status >= 400);
+
+  // "opened by a different address": the redeemer supplies no address at all —
+  // the account is created from the invitation row — so a mismatch cannot be
+  // expressed. Asserted as the property that replaced the check.
+  const fresh = await call("POST", "/api/team/invites", {
+    token: adminToken,
+    body: { email: "Mixed.Case@example.com", role: "read_only" },
+  });
+  const t = tokenOf(await inviteLink(fresh, "mixed.case@example.com"));
+  const claimed = await call("POST", "/auth/invite/accept", {
+    body: { token: t, password: "mixed-case-passphrase-31", email: "attacker@evil.co" },
+  });
+  ok(
+    "an address submitted alongside the token is ignored",
+    claimed.body?.user?.email === "mixed.case@example.com",
+    claimed.body?.user?.email,
+  );
+  note("the account is built from the invitation row, so there is no address to disagree with");
+  globalThis.__spare = claimed.body;
+}
+
+// 5 ──────────────────────────────────────────────────────────────────────────
+check("A lower role is refused the action when it is attempted directly");
+{
+  const memberSignIn = (
+    await signInFully(
+      { email: globalThis.__memberEmail, password: MEMBER.password },
+      globalThis.__memberSecret,
+    )
+  ).body;
+  const approverToken = tokenFor(memberSignIn);
+  globalThis.__memberId = memberSignIn.user.id;
+  globalThis.__approverToken = approverToken;
+
+  const reads = await call("GET", "/api/team/members", { token: approverToken });
+  ok("an approver may read the member list", reads.status === 200);
+
+  const attempts = [
+    [
+      "invite somebody",
+      await call("POST", "/api/team/invites", {
+        token: approverToken,
+        body: { email: "x@y.co", role: "admin" },
+      }),
+    ],
+    [
+      "change a role",
+      await call("PATCH", `/api/team/members/${globalThis.__spare.user.id}`, {
+        token: approverToken,
+        body: { role: "admin" },
+      }),
+    ],
+    [
+      "remove a member",
+      await call("DELETE", `/api/team/members/${globalThis.__spare.user.id}`, {
+        token: approverToken,
+      }),
+    ],
+    [
+      "mint a reset link",
+      await call("POST", `/api/team/members/${globalThis.__spare.user.id}/reset-link`, {
+        token: approverToken,
+      }),
+    ],
+  ];
+  for (const [what, res] of attempts) {
+    ok(`refused directly at the api: ${what}`, res.status === 403, `got ${res.status}`);
+  }
+  note("no UI involved — these are raw calls with a valid approver token");
+}
+
+// 6 ──────────────────────────────────────────────────────────────────────────
+check("Demote someone who is signed in — their next action is refused");
+{
+  const token = globalThis.__approverToken;
+  const promoted = await call("PATCH", `/api/team/members/${globalThis.__memberId}`, {
+    token: adminToken,
+    body: { role: "admin" },
+  });
+  ok("the admin promotes them", promoted.status === 200);
+
+  const allowed = await call("POST", "/api/team/invites", {
+    token,
+    body: { email: "promoted.probe@example.com", role: "read_only" },
+  });
+  ok(
+    "their EXISTING token can now invite — no new sign-in",
+    allowed.status === 201,
+    `${allowed.status}`,
+  );
+  if (allowed.status === 201) {
+    await call("DELETE", `/api/team/invites/${allowed.body.invite.id}`, { token: adminToken });
+  }
+
+  const demoted = await call("PATCH", `/api/team/members/${globalThis.__memberId}`, {
+    token: adminToken,
+    body: { role: "read_only" },
+  });
+  ok("the admin demotes them", demoted.status === 200);
+
+  const refused = await call("POST", "/api/team/invites", {
+    token,
+    body: { email: "after.demotion@example.com", role: "read_only" },
+  });
+  ok(
+    "the same token is refused on the very next request",
+    refused.status === 403,
+    `got ${refused.status}`,
+  );
+  note("the role is read from the row per request, not from the token");
+}
+
+// 7 ──────────────────────────────────────────────────────────────────────────
+check("Nobody can demote or remove themselves");
+{
+  const meId = adminSignIn.user.id;
+  const demote = await call("PATCH", `/api/team/members/${meId}`, {
+    token: adminToken,
+    body: { role: "read_only" },
+  });
+  ok("an admin cannot change their own role", demote.status === 409, `${demote.status}`);
+  note(String(demote.body?.message ?? ""));
+
+  const remove = await call("DELETE", `/api/team/members/${meId}`, { token: adminToken });
+  ok("an admin cannot remove themselves", remove.status === 409, `${remove.status}`);
+  note(String(remove.body?.message ?? ""));
+}
+
+// 8 ──────────────────────────────────────────────────────────────────────────
+check("Forgot password — sets a new password, does not sign in, ends other sessions");
+{
+  // Two live sessions for the target, so "ends their other sessions" is visible.
+  const s1 = (
+    await signInFully(
+      { email: globalThis.__memberEmail, password: MEMBER.password },
+      globalThis.__memberSecret,
+    )
+  ).body;
+  // signInFully waits out the step when it has to — the api spends every code
+  // it accepts, so two sign-ins inside one 30-second window need two steps.
+  const s2 = (
+    await signInFully(
+      { email: globalThis.__memberEmail, password: MEMBER.password },
+      globalThis.__memberSecret,
+    )
+  ).body;
+  const t1 = tokenFor(s1);
+  const t2 = tokenFor(s2);
+  ok(
+    "they are signed in on two devices",
+    (await call("GET", "/api/account/sessions", { token: t1 })).status === 200,
+  );
+
+  let resetUrl;
+  if (mode === "managed") {
+    const forgot = await call("POST", "/auth/password/forgot", {
+      body: { email: globalThis.__memberEmail },
+    });
+    ok("forgot-password answers 202", forgot.status === 202);
+    const unknown = await call("POST", "/auth/password/forgot", {
+      body: { email: "nobody@nowhere.co" },
+    });
+    ok("and answers identically for an address with no account", unknown.status === 202);
+    const mail = await awaitMail("reset", globalThis.__memberEmail);
+    ok("the link reached their inbox", !!mail, `nothing arrived for ${globalThis.__memberEmail}`);
+    resetUrl = mail?.link ?? "";
+  } else {
+    const link = await call("POST", `/api/team/members/${globalThis.__memberId}/reset-link`, {
+      token: adminToken,
+    });
+    ok("on-prem an admin generates the link", link.status === 200);
+    ok("the response contains no password field", !JSON.stringify(link.body).includes("password"));
+    resetUrl = link.body?.url ?? "";
+  }
+  ok("a reset link exists", !!resetUrl, resetUrl);
+  const resetToken = tokenOf(resetUrl);
+  globalThis.__usedResetToken = resetToken;
+
+  const done = await call("POST", "/auth/password/reset", {
+    body: { token: resetToken, password: RESET_PW },
+  });
+  ok("the holder sets the new password", done.status === 200, `${done.status} ${done.text}`);
+  ok("it does NOT sign them in", !done.body?.sessionId, JSON.stringify(done.body));
+
+  ok(
+    "their first session is dead",
+    (await call("GET", "/api/account/sessions", { token: t1 })).status === 401,
+  );
+  ok(
+    "their second session is dead",
+    (await call("GET", "/api/account/sessions", { token: t2 })).status === 401,
+  );
+
+  await pastCutoff();
+  const signedIn = await signInFully(
+    { email: globalThis.__memberEmail, password: RESET_PW },
+    globalThis.__memberSecret,
+  );
+  ok("the new password works", signedIn.status === 200, `${signedIn.status}`);
+  const old = await call("POST", "/auth/sign-in", {
+    body: { email: globalThis.__memberEmail, password: MEMBER.password },
+  });
+  ok("the old one does not", old.status === 401);
+  globalThis.__memberToken = tokenFor(signedIn.body);
+}
+
+// 9 ──────────────────────────────────────────────────────────────────────────
+check("An expired reset link and an already-used one give the same message");
+{
+  // A genuinely expired link: minted for the spare account, then aged past its
+  // expiry in the database — waiting out an hour is not a test.
+  const minted = await call("POST", `/api/team/members/${globalThis.__spare.user.id}/reset-link`, {
+    token: adminToken,
+  });
+  ok("a link is minted to expire", minted.status === 200, `${minted.status}`);
+  const expiredToken = tokenOf(minted.body?.url ?? "");
+  await sql(
+    "update password_resets set expires_at = now() - interval '1 minute' " +
+      `where user_id = '${globalThis.__spare.user.id}' and used_at is null`,
+  );
+
+  const tokens = {
+    expired: expiredToken,
+    used: globalThis.__usedResetToken,
+    "never issued": "a-token-that-was-never-issued",
+  };
+  const previews = {};
+  const submits = {};
+  for (const [kind, token] of Object.entries(tokens)) {
+    previews[kind] = await call("POST", "/auth/password/reset/preview", { body: { token } });
+    submits[kind] = await call("POST", "/auth/password/reset", {
+      body: { token, password: "yet-another-passphrase-7" },
+    });
+  }
+  const same = (answers) => {
+    const [first, ...rest] = Object.values(answers);
+    return (
+      first.status >= 400 &&
+      rest.every((a) => a.status === first.status && a.body?.message === first.body?.message)
+    );
+  };
+  const show = (answers) =>
+    Object.entries(answers)
+      .map(([k, a]) => `${k}: ${a.status} "${a.body?.message}"`)
+      .join(" · ");
+  ok("expired, used and never issued preview identically", same(previews), show(previews));
+  ok("and submitting any of them is refused identically", same(submits), show(submits));
+  note(`all three say: "${previews.expired.body?.message}"`);
+}
+
+// 10 ─────────────────────────────────────────────────────────────────────────
+check("Remove a person — session ends, history stays, the email can be invited again");
+{
+  const token = globalThis.__memberToken;
+  const alive = await call("GET", "/api/team/members", { token });
+  ok("they are signed in right now", alive.status === 200, `got ${alive.status} ${alive.text}`);
+
+  const removed = await call("DELETE", `/api/team/members/${globalThis.__memberId}`, {
+    token: adminToken,
+  });
+  ok("the admin removes them", removed.status === 200, `${removed.status}`);
+
+  // 403 ACCOUNT_INACTIVE, not 401: signing in again cannot help a removed
+  // person, and the web keys on the code to stop sending them back to /login.
+  const next = await call("GET", "/api/team/members", { token });
+  ok(
+    "their very next request is refused",
+    next.status === 403 && next.body?.code === "ACCOUNT_INACTIVE",
+    `got ${next.status} ${next.body?.code ?? ""}`,
+  );
+
+  const list = await call("GET", "/api/team/members", { token: adminToken });
+  ok(
+    "they are gone from the member list",
+    !list.body.members.some((m) => m.email === globalThis.__memberEmail),
+  );
+
+  const rows = await sql(
+    `select count(*) from audit_events where target_name = '${globalThis.__memberEmail}'`,
+  );
+  ok("their name survives in the audit log", Number(rows[0][0]) > 0, `${rows[0][0]} rows`);
+
+  const reinvite = await call("POST", "/api/team/invites", {
+    token: adminToken,
+    body: { email: globalThis.__memberEmail, role: "requester" },
+  });
+  ok("their address can be invited again", reinvite.status === 201, `${reinvite.status}`);
+}
+
+// 11 ─────────────────────────────────────────────────────────────────────────
+check("The log has a row for each of the above, and no secret appears as a value");
+{
+  // A failed sign-in, explicitly called out in the list.
+  await call("POST", "/auth/sign-in", {
+    body: { email: ADMIN.email, password: "definitely-wrong" },
+  });
+
+  const rows = await sql(
+    "select action, count(*) from audit_events group by action order by action",
+  );
+  const seen = new Set(rows.map((r) => r[0]));
+  const expected = [
+    "setup.completed",
+    "signin.succeeded",
+    "signin.failed",
+    "member.invited",
+    "invite.redeemed",
+    "invite.revoked",
+    "member.role_changed",
+    "member.removed",
+    "password.reset_link_generated",
+    "password.reset_completed",
+  ];
+  for (const action of expected) {
+    if (action === "password.reset_link_generated" && mode === "managed") continue;
+    ok(`logged: ${action}`, seen.has(action));
+  }
+  if (mode === "managed")
+    ok("logged: password.reset_requested", seen.has("password.reset_requested"));
+  note(`${rows.length} distinct actions, ${rows.reduce((n, r) => n + Number(r[1]), 0)} rows total`);
+
+  // Every value the log holds, scanned for anything secret this run created.
+  const dump = await sql(
+    "select coalesce(action,'')||' '||coalesce(actor_name,'')||' '||coalesce(actor_email,'')||" +
+      "' '||coalesce(target_name,'')||' '||coalesce(target_id,'')||' '||coalesce(note,'')||" +
+      "' '||coalesce(client,'')||' '||coalesce(ip::text,'') from audit_events",
+  );
+  const changes = await sql(
+    "select field||' '||from_value||' '||to_value from audit_event_changes",
+  );
+  const haystack = [...dump, ...changes].flat().join("\n");
+
+  for (const secret of SECRETS) {
+    ok(
+      `no password or setup token in the log: ${secret.slice(0, 12)}…`,
+      !haystack.includes(secret),
+    );
+  }
+  const leakedJwt = TOKENS_SEEN.find((t) => haystack.includes(t));
+  ok("no session token in the log", !leakedJwt);
+  const leakedLinkToken = LINK_TOKENS.find((t) => t.length >= 16 && haystack.includes(t));
+  ok(
+    `no raw invitation or reset token in the log (${LINK_TOKENS.length} checked)`,
+    !leakedLinkToken,
+    leakedLinkToken,
+  );
+  const linkish = haystack.match(/https?:\/\/[^\s]*\/(invite|reset)\/[A-Za-z0-9_-]{16,}/);
+  ok("no invitation or reset link in the log", !linkish, linkish?.[0]);
+}
+
+// ── report ──────────────────────────────────────────────────────────────────
+
+const failed = results.filter((r) => !r.ok);
+const passed = results.length - failed.length;
+process.stdout.write(
+  `\n\x1b[1m${passed}/${results.length} checks pass\x1b[0m  (DEPLOYMENT_MODE=${mode})\n`,
+);
+for (const r of failed) {
+  process.stdout.write(`  \x1b[31mfailed\x1b[0m ${r.no}. ${r.title}\n`);
+  for (const a of r.asserts.filter((a) => !a.pass)) process.stdout.write(`         ${a.label}\n`);
+}
+process.stdout.write("\n");
+process.exit(failed.length ? 1 : 0);

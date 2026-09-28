@@ -1,5 +1,25 @@
 import "server-only";
+import { isRole, type Role } from "@sr/shared";
 import { INTERNAL_API_BASE_URL } from "@/lib/internal-api";
+import { forwardedClientHeaders } from "@/lib/forwarded-client";
+
+/**
+ * The visitor's address and device, vouched for with INTERNAL_AUTH_SECRET.
+ *
+ * The previews below are fetched from this container, so without these the
+ * api's per-IP limit on them keys on the web pod — one bucket of ten a minute
+ * for everybody it serves, which anybody can fill by loading a link page ten
+ * times. Empty outside a request (a build, a test), where there is nobody to
+ * forward.
+ */
+async function forwarded(): Promise<Record<string, string>> {
+  try {
+    const { headers } = await import("next/headers");
+    return forwardedClientHeaders(await headers());
+  } catch {
+    return {};
+  }
+}
 
 /**
  * First-run state, read server-side.
@@ -34,5 +54,89 @@ export async function fetchBootstrap(): Promise<BootstrapState | null> {
     return { needsSetup: body.needsSetup, mode: body.mode === "managed" ? "managed" : "onprem" };
   } catch {
     return null;
+  }
+}
+
+export interface InvitePreview {
+  email: string;
+  role: Role;
+  expiresAt: string;
+}
+
+/**
+ * What an invitation link is for, resolved server-side so the token never
+ * reaches the client bundle as a fetch the browser has to make before the page
+ * can render.
+ *
+ * Null covers every dead-link reason — used, revoked, expired, never issued.
+ * They are deliberately not distinguished: the holder can't act on the
+ * difference, and telling them apart would say which of them a guessed token
+ * hit.
+ */
+export async function previewInvitation(token: string): Promise<InvitePreview | null> {
+  try {
+    const res = await fetch(`${INTERNAL_API_BASE_URL}/auth/invite/preview`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(await forwarded()) },
+      body: JSON.stringify({ token }),
+      cache: "no-store",
+      signal: AbortSignal.timeout(3000),
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as Partial<InvitePreview>;
+    if (typeof body.email !== "string" || !isRole(body.role)) return null;
+    return { email: body.email, role: body.role, expiresAt: body.expiresAt ?? "" };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * What a reset link is, as far as the page can tell without spending it.
+ *
+ *  - `live` — the api named the account it changes.
+ *  - `dead` — used, expired or never issued; one answer for all of them.
+ *  - `unknown` — the question went unanswered: rate-limited, the api down, a
+ *    timeout. **Not the same as dead.** The preview is a server-side fetch, so
+ *    its per-IP limit is shared by everyone this web pod serves; reporting that
+ *    as "expired" would let anybody who loads `/reset/x` a few times a minute
+ *    make every live link look dead. The page shows the form instead, and the
+ *    submit — which goes from the browser — gets the real answer.
+ */
+export type ResetPreview =
+  | { state: "live"; email: string }
+  | { state: "dead" }
+  | { state: "unknown" };
+
+/**
+ * Which account a reset link changes, without spending it.
+ *
+ * This page used to refuse to preview at all, on the argument that revealing
+ * whose account a token belongs to turns a guessed token into a way to ask who
+ * has an account. That argument does not hold: the token is 32 random bytes, so
+ * anybody who can present a valid one can already set the password and read the
+ * address from the inside. It gives away nothing the holder cannot take. And
+ * MAG-2870 asks for the address on screen for a good reason — somebody with two
+ * accounts needs to know which one they are changing.
+ */
+export async function previewReset(token: string): Promise<ResetPreview> {
+  try {
+    const res = await fetch(`${INTERNAL_API_BASE_URL}/auth/password/reset/preview`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(await forwarded()) },
+      body: JSON.stringify({ token }),
+      cache: "no-store",
+      signal: AbortSignal.timeout(3000),
+    });
+    // 410 is the api's one answer for every dead reason. Anything else that is
+    // not a 200 says nothing about the link.
+    if (res.status === 410) return { state: "dead" };
+    if (!res.ok) return { state: "unknown" };
+    const body = (await res.json()) as { email?: unknown };
+    return typeof body.email === "string"
+      ? { state: "live", email: body.email }
+      : { state: "unknown" };
+  } catch {
+    return { state: "unknown" };
   }
 }

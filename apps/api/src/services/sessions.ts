@@ -43,7 +43,7 @@ export interface ClientContext {
 
 export interface CreateSessionInput {
   userId: string;
-  /** `password` · `google` · `github` · `discord` · `invite`. */
+  /** `password` · `google` · `github` · `invite`. */
   authMethod: string;
   client: ClientContext;
 }
@@ -83,6 +83,12 @@ export async function createSession(
 
   const created = rows[0];
   if (!created) throw new Error("session insert returned no row");
+
+  // Signing in is activity. Without this the member list shows "last active: —"
+  // for somebody who arrived ten seconds ago, because `touchSession` is
+  // throttled to once a minute and has therefore never run for a new session.
+  await db.update(users).set({ lastActiveAt: created.createdAt }).where(eq(users.id, input.userId));
+
   return created;
 }
 
@@ -90,9 +96,13 @@ export async function createSession(
  * Resolve a session id to its live session and account, applying every reason a
  * token may no longer be honoured:
  *
- *  1. the session row is gone, revoked, or past its expiry;
- *  2. the account is suspended or removed;
+ *  1. the account is suspended or removed;
+ *  2. the session row is gone, revoked, or past its expiry;
  *  3. the token predates the account's bulk revocation cutoff.
+ *
+ * The account comes first because removal also revokes every session: checked
+ * the other way round, a removed person would only ever hear "sign in again",
+ * which cannot help them, instead of "this account is no longer active".
  *
  * (3) is the second half of the revocation story: `signed_out_all_at` kills
  * every outstanding token in one write without enumerating rows, while
@@ -119,9 +129,9 @@ export async function checkSession(
   if (!row) return { ok: false, reason: "not_found" };
 
   const { session, user } = row;
+  if (user.status !== "active") return { ok: false, reason: "user_inactive" };
   if (session.revokedAt) return { ok: false, reason: "revoked" };
   if (session.expiresAt.getTime() <= Date.now()) return { ok: false, reason: "expired" };
-  if (user.status !== "active") return { ok: false, reason: "user_inactive" };
 
   if (user.signedOutAllAt) {
     const cutoffSec = Math.floor(user.signedOutAllAt.getTime() / 1000);
@@ -163,16 +173,19 @@ export async function revokeSession(
 }
 
 /**
- * Revoke every live session for one account and return how many were closed.
+ * Revoke every live session for one account and return the ids of the ones it
+ * closed — each gets its own `session.revoked` row, so a reader can follow a
+ * session id from its sign-in to its end.
  *
- * Callers that need *every* outstanding token gone — password change, removal —
- * must also stamp `users.signed_out_all_at`; see `signOutEverywhere`.
+ * Callers that need *every* outstanding token gone — a reset, a removal — also
+ * stamp `users.signed_out_all_at`; see `signOutEverywhere`. Changing your own
+ * password does not, so the session it was changed from survives.
  */
 export async function revokeAllForUser(
   db: Database,
   userId: string,
   opts: { reason: RevokeReason; by?: string | null; except?: string },
-): Promise<number> {
+): Promise<string[]> {
   const where = [eq(sessions.userId, userId), isNull(sessions.revokedAt)];
   if (opts.except) where.push(sql`${sessions.id} <> ${opts.except}`);
 
@@ -181,7 +194,7 @@ export async function revokeAllForUser(
     .set({ revokedAt: new Date(), revokedReason: opts.reason, revokedBy: opts.by ?? null })
     .where(and(...where))
     .returning({ id: sessions.id });
-  return revoked.length;
+  return revoked.map((r) => r.id);
 }
 
 /**
@@ -192,10 +205,10 @@ export async function signOutEverywhere(
   db: Database,
   userId: string,
   opts: { reason: RevokeReason; by?: string | null },
-): Promise<number> {
-  const count = await revokeAllForUser(db, userId, opts);
+): Promise<string[]> {
+  const revoked = await revokeAllForUser(db, userId, opts);
   await db.update(users).set({ signedOutAllAt: new Date() }).where(eq(users.id, userId));
-  return count;
+  return revoked;
 }
 
 /** Live sessions for one account, newest first. Powers the account page. */

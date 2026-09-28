@@ -37,16 +37,36 @@ export async function findUserById(db: Database, id: string): Promise<User | nul
   return rows[0] ?? null;
 }
 
+/**
+ * Stamp a successful sign-in.
+ *
+ * `first_signin_at` is set once and never again — it is when the first admin's
+ * 2FA grace period starts counting, so it must survive every later sign-in.
+ * `coalesce` in SQL rather than a read-then-write: two concurrent sign-ins would
+ * otherwise race, and the database's own clock is the right one for a security
+ * window (same reasoning as the lockout's window boundary).
+ *
+ * `now()` rather than an interpolated `Date`: pglite accepts a JS Date in a
+ * `sql` template and postgres-js throws `ERR_INVALID_ARG_TYPE`, so a test-only
+ * suite would not catch it.
+ */
 export async function recordSignIn(db: Database, id: string): Promise<void> {
-  await db.update(users).set({ lastSignInAt: new Date() }).where(eq(users.id, id));
+  await db
+    .update(users)
+    .set({
+      lastSignInAt: new Date(),
+      firstSignInAt: sql`coalesce(${users.firstSignInAt}, now())`,
+    })
+    .where(eq(users.id, id));
 }
 
-export type OAuthProvider = "google" | "github" | "discord";
+/** The social ways in, beside email and password. `discord_id` exists as a
+ *  column and nothing writes it. */
+export type OAuthProvider = "google" | "github";
 
 const PROVIDER_ID_COLUMN = {
   google: users.googleId,
   github: users.githubId,
-  discord: users.discordId,
 } as const;
 
 export interface OAuthProfile {
@@ -57,10 +77,11 @@ export interface OAuthProfile {
 }
 
 /**
- * OAuth upsert (lava-connect's pattern, condensed): find by provider id →
- * fall back to email match (links the provider to the existing account) →
- * create. Avatar is backfill-only — written when null, never overwritten,
- * so the first linked provider with a picture wins.
+ * Resolve an OAuth profile to an existing account: find by provider id → fall
+ * back to email match, which links the provider to that account. **Never
+ * creates** — see the throw at the end for why. Avatar is backfill-only,
+ * written when null and never overwritten, so the first linked provider with a
+ * picture wins.
  */
 export async function upsertOAuthUser(
   db: Database,
@@ -103,24 +124,51 @@ export async function upsertOAuthUser(
     }
   }
 
-  if (!profile.email) {
-    throw new Error(`${provider} profile has no email — cannot create an account`);
-  }
-
-  const inserted = await db
-    .insert(users)
-    .values({
-      email: profile.email,
-      name: profile.name,
-      avatarUrl: profile.avatarUrl,
-      [providerKey(provider)]: profile.providerId,
-    })
-    .returning();
-  const created = inserted[0];
-  if (!created) throw new Error("insert returned no row");
-  return created;
+  // LINK ONLY — never create.
+  //
+  // This used to fall through to an insert, which was correct while accounts
+  // came only from a seed: there was nothing to bypass. The moment invitations
+  // exist it is a hole big enough to walk through — anyone with a Google
+  // account reaches POST /auth/oauth/google and provisions themselves, which
+  // defeats both "redeemable only by the address it was sent to" and the
+  // done-when "an invite redeemed from a different email address is refused".
+  //
+  // Account creation now lives in exactly two places, and both are deliberate:
+  // first-run setup, and invite redemption. Redeeming *with* Google goes
+  // through `redeemInvitation`, which links the provider id as it inserts.
+  throw new OAuthAccountNotFoundError(
+    profile.email
+      ? `No account for ${profile.email}. Ask an administrator for an invitation.`
+      : `That ${provider} account has no verified email address.`,
+  );
 }
 
-function providerKey(provider: OAuthProvider): "googleId" | "githubId" | "discordId" {
-  return provider === "google" ? "googleId" : provider === "github" ? "githubId" : "discordId";
+/** Raised when an OAuth sign-in matches no existing account. Distinct from a
+ *  bad token so the route can answer 403-with-a-reason rather than 401. */
+export class OAuthAccountNotFoundError extends Error {}
+
+const PROVIDER_NAME: Record<OAuthProvider, string> = {
+  google: "Google",
+  github: "GitHub",
+};
+
+/**
+ * How this account signs in when it has no password — "Google", "Google and
+ * GitHub". For copy that tells someone why a password action doesn't apply;
+ * saying "Google" to a GitHub-only member is the kind of thing that makes
+ * people think their account is broken.
+ */
+export function linkedProviderNames(user: User): string {
+  const linked = (Object.keys(PROVIDER_NAME) as OAuthProvider[])
+    .filter((p) => user[providerKey(p)])
+    .map((p) => PROVIDER_NAME[p]);
+  if (linked.length === 0) return "a linked account";
+  if (linked.length === 1) return linked[0]!;
+  return `${linked.slice(0, -1).join(", ")} and ${linked[linked.length - 1]}`;
+}
+
+/** The `users` column holding a provider's subject id. Exported because invite
+ *  redemption links the provider as it inserts the row. */
+export function providerKey(provider: OAuthProvider): "googleId" | "githubId" {
+  return provider === "google" ? "googleId" : "githubId";
 }

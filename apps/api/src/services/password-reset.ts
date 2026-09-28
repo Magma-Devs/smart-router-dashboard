@@ -1,0 +1,247 @@
+import { createHash, randomBytes } from "node:crypto";
+import { and, eq, gt, isNull } from "drizzle-orm";
+import { passwordResets, users, type Database, type User } from "@sr/db";
+import { RESET_TTL_MS } from "@sr/shared";
+import { hashPassword } from "./password.js";
+import { revokeAllForUser, signOutEverywhere } from "./sessions.js";
+import { clearFailures } from "./lockout.js";
+
+/**
+ * Password reset — a single-use link that lets someone set **their own**
+ * password.
+ *
+ * The shape is the same in both deployment modes; only who starts it and how it
+ * travels differ. What is identical, and is the point, is that **nobody ever
+ * sets somebody else's password**. An admin on-prem generates a *link*; the
+ * account holder chooses the value. lava-connect's equivalent endpoint takes a
+ * password in the body, and that is precisely the design this rejects: it lets
+ * an admin take an account over and sign in as them, which is exactly the
+ * takeover the audit log exists to make visible.
+ *
+ * See `docs/ACCOUNTS-DESIGN.md` §6.3.
+ */
+
+const TOKEN_BYTES = 32;
+
+/** Defined in `@sr/shared`, where the web reads it for its copy. */
+export { RESET_TTL_MS };
+
+export type DeploymentMode = keyof typeof RESET_TTL_MS;
+
+/**
+ * SHA-256, not bcrypt, on purpose. The input is 32 random bytes, not a chosen
+ * password, so there is nothing to slow a guesser down against — and the hash
+ * is the lookup key behind a unique index, which a salted hash cannot be.
+ * CodeQL flags this by name; the alert is dismissed as a false positive.
+ */
+function hashToken(raw: string): string {
+  return createHash("sha256").update(raw, "utf8").digest("hex");
+}
+
+export function resetUrl(webOrigin: string, rawToken: string): string {
+  return `${webOrigin.replace(/\/+$/, "")}/reset/${rawToken}`;
+}
+
+export interface CreatedReset {
+  rawToken: string;
+  expiresAt: Date;
+}
+
+/**
+ * Issue a reset link for an account.
+ *
+ * `createdBy` is null when the holder asked for it and set when an admin did —
+ * the column an auditor reads to tell "I forgot my password" from "someone else
+ * started this".
+ *
+ * Any earlier unused link for the account is invalidated, so asking twice
+ * doesn't leave two live ways in.
+ */
+export async function createPasswordReset(
+  db: Database,
+  input: { userId: string; mode: DeploymentMode; createdBy?: string | null },
+): Promise<CreatedReset> {
+  await db
+    .update(passwordResets)
+    .set({ usedAt: new Date() })
+    .where(and(eq(passwordResets.userId, input.userId), isNull(passwordResets.usedAt)));
+
+  const rawToken = randomBytes(TOKEN_BYTES).toString("base64url");
+  const expiresAt = new Date(Date.now() + RESET_TTL_MS[input.mode]);
+  await db.insert(passwordResets).values({
+    userId: input.userId,
+    tokenHash: hashToken(rawToken),
+    createdBy: input.createdBy ?? null,
+    expiresAt,
+  });
+
+  return { rawToken, expiresAt };
+}
+
+/**
+ * How long a self-serve request waits before it may issue another link.
+ *
+ * `POST /auth/password/forgot` is public, and each link it issues invalidates
+ * the previous one. Without a wait, anybody who knows an address can keep a
+ * member's inbox full and every link in it dead — the per-IP limit does not
+ * help, since the target is the account, not the caller. Inside the window the
+ * link already sent stays live, so somebody who asks twice loses nothing.
+ */
+export const SELF_SERVE_RESET_COOLDOWN_MS = 5 * 60 * 1000;
+
+/** Whether the account holder asked for a link inside the cooldown and has not
+ *  used it yet. Admin-issued links do not count: they are not the holder's. */
+export async function selfServeResetIsCoolingDown(
+  db: Database,
+  userId: string,
+): Promise<boolean> {
+  const since = new Date(Date.now() - SELF_SERVE_RESET_COOLDOWN_MS);
+  const rows = await db
+    .select({ id: passwordResets.id })
+    .from(passwordResets)
+    .where(
+      and(
+        eq(passwordResets.userId, userId),
+        isNull(passwordResets.createdBy),
+        isNull(passwordResets.usedAt),
+        gt(passwordResets.createdAt, since),
+      ),
+    )
+    .limit(1);
+  return rows.length > 0;
+}
+
+export type ResetRejection = "not_found" | "used" | "expired" | "user_inactive";
+
+export type ResetOutcome =
+  | { ok: true; user: User; createdBy: string | null; revokedSessionIds: string[] }
+  | { ok: false; reason: ResetRejection };
+
+export type ResetLookup = { ok: true; user: User } | { ok: false; reason: ResetRejection };
+
+/**
+ * What a reset link is for, without spending it.
+ *
+ * MAG-2870 requires the page to show the address being changed, so somebody
+ * who holds two accounts knows which one this is. That needs a read that does
+ * not claim the token — hence a lookup separate from {@link consumePasswordReset}.
+ *
+ * Every rejection collapses to one reason on the way out (see the route): used,
+ * expired and never-issued are indistinguishable to the holder, and telling
+ * them apart tells a stranger which of them a guessed token hit.
+ */
+export async function lookupPasswordReset(db: Database, rawToken: string): Promise<ResetLookup> {
+  const tokenHash = hashToken(rawToken);
+  const rows = await db
+    .select({ reset: passwordResets, user: users })
+    .from(passwordResets)
+    .innerJoin(users, eq(users.id, passwordResets.userId))
+    .where(eq(passwordResets.tokenHash, tokenHash))
+    .limit(1);
+
+  const row = rows[0];
+  if (!row) return { ok: false, reason: "not_found" };
+  if (row.reset.usedAt) return { ok: false, reason: "used" };
+  if (row.reset.expiresAt.getTime() <= Date.now()) return { ok: false, reason: "expired" };
+  if (row.user.status !== "active") return { ok: false, reason: "user_inactive" };
+  return { ok: true, user: row.user };
+}
+
+/**
+ * Consume a reset link and set the new password.
+ *
+ * Four things happen, in **one transaction**, and all of them matter:
+ *
+ *  1. the token is claimed with a conditional update, so it is single-use even
+ *     if two tabs submit at once;
+ *  2. the password is written;
+ *  3. **every session for that account is revoked** — both the per-device rows
+ *     and the `signed_out_all_at` cutoff. A reset is what someone does when
+ *     they think their account is compromised, so leaving the attacker's
+ *     session alive would defeat the entire point;
+ *  4. **the account's lockout is cleared**, so the owner can use the new
+ *     password at once. It does not stop anyone re-tripping the lock after.
+ *
+ * One transaction, so a failure part-way cannot leave the old sessions alive
+ * under the new password — the outcome (3) exists to prevent.
+ *
+ * It deliberately does **not** sign anyone in: the person proves the new
+ * password works by using it.
+ */
+export async function consumePasswordReset(
+  db: Database,
+  rawToken: string,
+  newPassword: string,
+): Promise<ResetOutcome> {
+  const rows = await db
+    .select({ reset: passwordResets, user: users })
+    .from(passwordResets)
+    .innerJoin(users, eq(users.id, passwordResets.userId))
+    .where(eq(passwordResets.tokenHash, hashToken(rawToken)))
+    .limit(1);
+
+  const row = rows[0];
+  if (!row) return { ok: false, reason: "not_found" };
+  if (row.reset.usedAt) return { ok: false, reason: "used" };
+  if (row.reset.expiresAt.getTime() <= Date.now()) return { ok: false, reason: "expired" };
+  if (row.user.status !== "active") return { ok: false, reason: "user_inactive" };
+
+  // Hashed before the transaction opens: bcrypt at cost 12 is the slow part,
+  // and there is no reason to hold row locks across it.
+  const passwordHash = await hashPassword(newPassword);
+
+  return db.transaction(async (tx) => {
+    const txDb = tx as unknown as Database;
+    const claimed = await tx
+      .update(passwordResets)
+      .set({ usedAt: new Date() })
+      .where(and(eq(passwordResets.id, row.reset.id), isNull(passwordResets.usedAt)))
+      .returning({ id: passwordResets.id });
+    if (claimed.length === 0) return { ok: false, reason: "used" } as const;
+
+    await tx
+      .update(users)
+      .set({ passwordHash, passwordUpdatedAt: new Date() })
+      .where(eq(users.id, row.user.id));
+
+    const revokedSessionIds = await signOutEverywhere(txDb, row.user.id, { reason: "password_change" });
+    await clearFailures(txDb, row.user.email);
+
+    return {
+      ok: true,
+      user: { ...row.user, passwordHash },
+      createdBy: row.reset.createdBy,
+      revokedSessionIds,
+    } as const;
+  });
+}
+
+/** Set a password for someone who is signed in and knows their current one.
+ *  Revokes every *other* session — they keep the one they're using, because
+ *  being logged out of the tab you just changed your password in is hostile.
+ *  Returns the ids of the sessions it ended. */
+export async function changeOwnPassword(
+  db: Database,
+  userId: string,
+  newPassword: string,
+  keepSessionId: string,
+): Promise<string[]> {
+  const passwordHash = await hashPassword(newPassword);
+  // One transaction, for the same reason as a reset: a new password with the
+  // old devices still signed in is the state this exists to prevent.
+  return db.transaction(async (tx) => {
+    await tx
+      .update(users)
+      .set({ passwordHash, passwordUpdatedAt: new Date() })
+      .where(eq(users.id, userId));
+
+    // Per-device revoke, not the cutoff: `signed_out_all_at` compares against the
+    // token's `iat` and would kill the surviving session too. Being logged out of
+    // the tab you just changed your password in is hostile, so the other devices
+    // go and this one stays.
+    return revokeAllForUser(tx as unknown as Database, userId, {
+      reason: "password_change",
+      except: keepSessionId,
+    });
+  });
+}

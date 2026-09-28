@@ -206,6 +206,24 @@ export const config = {
      * Unset ⇒ forwarded context is always ignored (safe, less useful).
      */
     internalSecret: env("INTERNAL_AUTH_SECRET"),
+    /**
+     * 32 bytes, base64 or hex, encrypting every enrolled TOTP secret at rest.
+     *
+     * **Deliberately not derived from `AUTH_SECRET`.** That key signs sessions
+     * and rotating it is a routine operation; if it also unlocked the
+     * authenticator secrets, one rotation would invalidate every enrolled phone
+     * in the deployment at once. Two very different blast radii, so two keys.
+     *
+     * No default, and none is possible: a per-boot random key would encrypt
+     * secrets the next restart could not read, which presents as "everyone's
+     * authenticator broke overnight". Required whenever AUTH_MODE=enabled —
+     * `services/two-factor.ts` throws with the `openssl` line to generate one.
+     */
+    totpEncryptionKey: env("TOTP_ENCRYPTION_KEY"),
+    /** What an authenticator app shows as the issuer. Overridable so somebody
+     *  administering two dashboards can tell the two entries apart; defaults to
+     *  `TOTP_DEFAULT_ISSUER` in `@sr/shared`. */
+    totpIssuer: env("TOTP_ISSUER"),
   },
 
   /**
@@ -232,7 +250,9 @@ export const config = {
    * Which shape of deployment this is. It forks every credential-delivery path,
    * because on-prem has no mail server and never will:
    *
-   *  - `managed`  — we host. Invitations and password resets are emailed.
+   *  - `managed`  — we host. Invitations and self-serve password resets are
+   *                 emailed once `AWS_REGION` is set; an invitation that could
+   *                 not be sent comes back to the admin to hand over.
    *  - `onprem`   — the customer hosts. Links are shown to an admin and handed
    *                 over directly; the first admin is created through the
    *                 first-run page using the installer's setup token.
@@ -242,6 +262,24 @@ export const config = {
    * silently never arrives".
    */
   deploymentMode: (env("DEPLOYMENT_MODE") ?? "onprem") as "managed" | "onprem",
+
+  /**
+   * Who this deployment belongs to, as it appears in the invitation subject
+   * ("You've been added to {customer} on Smart Router").
+   *
+   * An invitation arrives at an address that has never heard of us, so the
+   * customer's own name is what stops it reading as spam. Defaults to the
+   * product name rather than a placeholder: "You've been added to Smart Router
+   * on Smart Router" is clumsy, but "You've been added to {customer}" reaching
+   * somebody's inbox is worse.
+   */
+  customerName: env("CUSTOMER_NAME")?.trim() || "Smart Router",
+
+  /** Browser-facing origin of the web app, used to build invitation and
+   *  password-reset links. There is no sane default: guessing a host would
+   *  produce a link that looks right and goes nowhere, so the routes that need
+   *  it fail loudly instead. */
+  publicWebOrigin: env("PUBLIC_WEB_ORIGIN"),
 
   logLevel: (env("LOG_LEVEL") ?? "info").toLowerCase(),
 
@@ -257,6 +295,25 @@ export const config = {
     config: 300,
   },
 } as const;
+
+/**
+ * The web origin links are built on, and the deployment's shape — read from the
+ * live environment first.
+ *
+ * `config` snapshots at module load, which is before any test's `beforeEach`
+ * can set a variable, so a route reading the snapshot cannot be tested with
+ * more than one value. Every route that builds a link or forks on the mode
+ * reads these instead, so they cannot disagree with one another.
+ */
+export function publicWebOrigin(): string | undefined {
+  return process.env.PUBLIC_WEB_ORIGIN?.trim() || config.publicWebOrigin;
+}
+
+export function deploymentMode(): "managed" | "onprem" {
+  const live = process.env.DEPLOYMENT_MODE;
+  if (live === "managed" || live === "onprem") return live;
+  return config.deploymentMode;
+}
 
 /**
  * The deployment scope: a `label="value"` matcher EVERY metrics query carries,
