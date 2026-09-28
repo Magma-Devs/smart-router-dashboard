@@ -1,17 +1,24 @@
 "use client";
 
-/* Port of SR_Dashboard/magma/pages.jsx AccountPage — Basic details,
- * Connected accounts, Change password, Active sessions, Sign out from all
- * devices, Delete account. Inline styles are verbatim from the prototype.
- * Self-hosted reality: this deployment uses a single shared login with no
- * user store — Basic details carries the REAL build provenance from the
- * api's /version endpoint, and the credential/session sections render the
- * design chrome with disabled controls and honest copy. The theme toggle
- * lives in the Topbar — not duplicated here. */
+/* Port of SR_Dashboard/magma/pages.jsx AccountPage. Inline styles are verbatim
+ * from the prototype.
+ *
+ * Change password and Active sessions act on the signed-in account. Basic
+ * details carries the REAL build provenance from the api's /version endpoint.
+ * Connected accounts and Leaving? are statements, not controls: a provider
+ * links itself by verified address at sign-in, and nobody deletes their own
+ * account. The theme toggle lives in the Topbar.
+ *
+ * With AUTH_MODE=disabled there are no accounts, so only Basic details renders:
+ * the other cards post to routes the api never registers in that mode. */
 
 import type { CSSProperties } from "react";
+import Link from "next/link";
 import { useApi } from "@/hooks/use-api";
-import { CloudNotice } from "@/components/gateway/CloudNotice";
+import { ChangePasswordCard } from "@/components/account/ChangePasswordCard";
+import { TwoFactorCard } from "@/components/account/TwoFactorCard";
+import { SessionsCard } from "@/components/account/SessionsCard";
+import { useAuthMode } from "@/components/gateway/auth-mode";
 
 interface VersionInfo {
   commit: string;
@@ -20,8 +27,6 @@ interface VersionInfo {
   startedAt: string;
   uptimeSec: number;
 }
-
-const NOT_AVAILABLE = "Not available on self-hosted deployments";
 
 function fmtUptime(sec: number): string {
   const d = Math.floor(sec / 86400);
@@ -33,15 +38,13 @@ function fmtUptime(sec: number): string {
 }
 
 export default function AccountPage() {
+  // The page survives AUTH_MODE=disabled because Basic details is not about an
+  // account: it is what an operator reads off a self-hosted deployment.
+  const authEnabled = useAuthMode();
   // REAL build provenance — same `${NEXT_PUBLIC_API_URL}/version` fetch as
   // before, via the shared api client (runtime-config base resolution).
   const { data: version } = useApi<VersionInfo>("/version", 60000);
 
-  const providers = [
-    { id: "google", label: "Google" },
-    { id: "github", label: "GitHub" },
-    { id: "discord", label: "Discord" },
-  ];
   const fl: CSSProperties = { fontSize: 11, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600, marginBottom: 8 };
 
   const build = [
@@ -55,7 +58,11 @@ export default function AccountPage() {
   return (
     <div className="gw-page" style={{ maxWidth: 720 }}>
       <h1>Account Settings</h1>
-      <p className="lede">Manage your credentials and session settings.</p>
+      <p className="lede">
+        {authEnabled
+          ? "Manage your credentials and session settings."
+          : "Build and runtime details for this deployment."}
+      </p>
 
       <div className="gw-card" style={{ marginBottom: 14 }}>
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Basic details</div>
@@ -67,49 +74,51 @@ export default function AccountPage() {
         ))}
       </div>
 
-      <div className="gw-card" style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Connected accounts</div>
-        <div style={{ marginBottom: 12 }}><CloudNotice feature="OAuth sign-in" detail="this deployment uses a single shared login, so there are no per-user connected accounts." compact /></div>
-        <div style={{ display: "grid", gap: 7 }}>
-          {providers.map(p => (
-            <div key={p.id} className="gw-row" style={{ padding: "9px 11px", borderRadius: 7, background: "var(--bg)", border: "1px solid var(--line)", gap: 10 }}>
-              <div style={{ fontSize: 13, fontWeight: 500, flex: 1 }}>{p.label}</div>
-              <button className="gw-btn" style={{ fontSize: 11, padding: "5px 9px" }} disabled title={NOT_AVAILABLE}>Connect</button>
+      {authEnabled && (
+        <>
+        {/* No provider list and no Connect buttons. Which providers this
+            deployment offers is server-side configuration this page cannot
+            see, and linking needs no button: a Google or GitHub sign-in whose
+            verified address matches an account links to it (upsertOAuthUser). */}
+        <div className="gw-card" style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Connected accounts</div>
+          <div style={{ fontSize: 12.5, color: "var(--text-2)", lineHeight: 1.65 }}>
+            Where this deployment offers Google or GitHub sign-in, signing in with an account whose
+            verified address matches this one links it here the first time you use it — on GitHub,
+            that has to be your primary address. Nothing on this page disconnects one.
+          </div>
+        </div>
+
+        <TwoFactorCard />
+
+        <ChangePasswordCard />
+
+        <SessionsCard />
+
+        {/* Not a notice, and not a disabled Delete button. Nothing deletes an
+            account on any deployment, and nobody removes themselves — the
+            ticket says both, and the api enforces the second in
+            services/members.ts rather than trusting this screen. A greyed-out
+            button would promise a feature nobody intends to build, so the card
+            states the rule and names who can act instead. */}
+        <div className="gw-card">
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Leaving?</div>
+          <div style={{ fontSize: 12.5, color: "var(--text-2)", lineHeight: 1.65 }}>
+            Accounts here are never deleted, and nobody can remove their own — including
+            administrators. Ask another administrator to remove you from{" "}
+            <Link href="/team" style={{ color: "var(--brand)" }}>
+              Team
+            </Link>
+            .
+            <div style={{ marginTop: 8 }}>
+              Removal ends every session you have within one request and frees your address to be
+              invited again later. Your name stays in the audit log permanently — that record is the
+              point, and deleting the row would erase the trail it exists to keep.
             </div>
-          ))}
+          </div>
         </div>
-      </div>
-
-      <div className="gw-card" style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Change password</div>
-        <div style={{ marginBottom: 12 }}><CloudNotice feature="Password management" detail="this deployment authenticates with a single shared login configured at deploy time." compact /></div>
-        <div style={{ display: "grid", gap: 9, maxWidth: 360 }}>
-          <input className="gw-input" type="password" placeholder="Current password" disabled />
-          <input className="gw-input" type="password" placeholder="New password" disabled />
-          <input className="gw-input" type="password" placeholder="Repeat new password" disabled />
-          <button className="gw-btn gw-btn--primary" style={{ alignSelf: "flex-start" }} disabled title={NOT_AVAILABLE}>Update password</button>
-        </div>
-      </div>
-
-      <div className="gw-card" style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Active sessions</div>
-        <CloudNotice feature="Session tracking" detail="this dashboard uses a single shared login, so there are no per-user sessions to list." compact />
-      </div>
-
-      <div className="gw-card" style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 12 }}>Sign out from all devices</div>
-        <div style={{ marginBottom: 12 }}><CloudNotice feature="Per-device sessions" detail="there are no per-user sessions to invalidate on this deployment." compact /></div>
-        <button className="gw-btn" disabled title={NOT_AVAILABLE}>Sign out everywhere</button>
-      </div>
-
-      <div className="gw-card" style={{ borderColor: "rgba(239,68,68,0.3)" }}>
-        <div style={{ fontSize: 13, fontWeight: 500, color: "var(--err)", marginBottom: 12 }}>Delete account</div>
-        <div style={{ marginBottom: 12 }}><CloudNotice feature="Account deletion" detail="this deployment has no per-user account store to delete from." compact /></div>
-        <button className="gw-btn gw-btn--danger" disabled title={NOT_AVAILABLE}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6"/></svg>
-          Delete account
-        </button>
-      </div>
+        </>
+      )}
     </div>
   );
 }

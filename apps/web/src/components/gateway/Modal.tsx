@@ -10,13 +10,26 @@ export interface ModalProps {
   wide?: boolean;
   md?: boolean;
   footer?: React.ReactNode;
+  /** False while the dialog shows something it can show only once, such as a
+   *  one-time link, so a stray click outside cannot lose it. The close button
+   *  still works. */
+  closeOnBackdrop?: boolean;
 }
 
-export function Modal({ open, onClose, title, children, wide, md, footer }: ModalProps) {
+export function Modal({
+  open,
+  onClose,
+  title,
+  children,
+  wide,
+  md,
+  footer,
+  closeOnBackdrop = true,
+}: ModalProps) {
   if (!open) return null;
   const cls = "gw-modal fade-in" + (wide ? " gw-modal--wide" : md ? " gw-modal--md" : "");
   return (
-    <div className="gw-modal-bg" onClick={onClose}>
+    <div className="gw-modal-bg" onClick={closeOnBackdrop ? onClose : undefined}>
       <div className={cls} onClick={(e) => e.stopPropagation()}>
         <div className="gw-modal__head">
           <div className="gw-modal__title">{title}</div>

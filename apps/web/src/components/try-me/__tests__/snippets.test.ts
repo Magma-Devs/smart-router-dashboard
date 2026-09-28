@@ -304,3 +304,62 @@ describe("snippetsFor — gRPC", () => {
     );
   });
 });
+
+describe("snippetsFor — upstream pin", () => {
+  // The router reads lava-select-provider off gRPC call metadata through the
+  // same directive parser as an HTTP header, so a pinned gRPC snippet has to
+  // carry it or the copied call is not the pinned call the banner describes.
+  it("gRPC CLI: grpcurl sends the pin as a -H header before the address", () => {
+    const cli = snippetsFor(GRPC, "chainstack").cli[0]?.code ?? "";
+    const pin = cli.indexOf(`-H "lava-select-provider: chainstack"`);
+    expect(pin).toBeGreaterThan(-1);
+    // grpcurl reads flags only before the positional address.
+    expect(pin).toBeLessThan(cli.indexOf("localhost:3363"));
+  });
+
+  it("gRPC Python: the call passes the pin as metadata", () => {
+    const py = script(snippetsFor(GRPC, "chainstack").python);
+    expect(py).toContain(
+      `stub.GetLatestBlock(request, metadata=[("lava-select-provider", "chainstack")])`,
+    );
+  });
+
+  it("gRPC Go: the call runs on an outgoing context carrying the pin", () => {
+    const go = script(snippetsFor(GRPC, "chainstack").go);
+    expect(go).toContain(`"google.golang.org/grpc/metadata"`);
+    expect(go).toContain(
+      `ctx := metadata.AppendToOutgoingContext(context.Background(), "lava-select-provider", "chainstack")`,
+    );
+    expect(go).not.toContain("context.Background(),\n");
+  });
+
+  it("gRPC JavaScript: the pin is the call's metadata argument", () => {
+    const js = script(snippetsFor(GRPC_WEB, "chainstack").javascript);
+    expect(js).toContain(`client.getLatestBlock(request, { "lava-select-provider": "chainstack" }, `);
+  });
+
+  it("discovery: the method call carries the pin, reflection does not need it", () => {
+    const cli = grpcDiscoveryCli("https://sui-testnet-grpc.example.com", "chainstack");
+    expect(cli).toContain(
+      `grpcurl -d '{}' -H "lava-select-provider: chainstack" sui-testnet-grpc.example.com:443 <service>/<Method>`,
+    );
+    expect(cli).toContain("grpcurl sui-testnet-grpc.example.com:443 list");
+  });
+
+  it("unpinned gRPC snippets carry no pin", () => {
+    const all = Object.values(snippetsFor(GRPC))
+      .flat()
+      .map((b: SnippetBlock) => b.code)
+      .join("\n");
+    expect(all).not.toContain("lava-select-provider");
+    expect(all).not.toContain("grpc/metadata");
+    expect(script(snippetsFor(GRPC).javascript)).toContain("client.getLatestBlock(request, {}, ");
+    expect(grpcDiscoveryCli("http://localhost:3366")).not.toContain("lava-select-provider");
+  });
+
+  it("HTTP: curl sends the pin as a header", () => {
+    expect(snippetsFor(POST, "chainstack").cli[0]?.code ?? "").toContain(
+      `-H "lava-select-provider: chainstack"`,
+    );
+  });
+});

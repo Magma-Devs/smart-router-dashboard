@@ -47,6 +47,190 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   the older (`ProcessingResult RETURNED`) and newer (`relay finished`) routers'
   final lines are read.
 
+## [0.26.1]
+
+### Changed
+
+- **Chain catalogs resynced with lava-specs.** Bitcoin Cash no longer lists
+  `finalizeblock`, `parkblock` or `unparkblock`: lava-specs #152 stopped
+  serving these BCHN node-admin RPCs as priced relays. No chain was added or
+  removed, and no explorer, icon or runnable default changed.
+
+## [0.26.0]
+
+### Changed
+
+- **Discord is no longer a way to sign in** (`AUTH_MODE=enabled`). Google and
+  GitHub stay, each shown only when its client id and secret are set.
+  `/auth/oauth/discord` and a Discord invitation redemption answer 400. The
+  `discord_id` column stays, so nothing is dropped, but nothing links it any
+  more. An account that used only Discord signs in with Google or GitHub under
+  the same verified address, which links on first use.
+- **The `ADMIN_EMAIL` / `ADMIN_PASSWORD` seed is development-only.** Under
+  `NODE_ENV=production`, which the published images set, the api ignores it
+  and logs a warning. The first admin is created at `/setup` with the
+  installer's setup token. `make dev-auth` still seeds. `make up-auth` and the
+  README's quick start go through `/setup`.
+- **The web build no longer downloads its fonts.** `next/font/google` fetches
+  them at build time, and in August gstatic 404'd the Inter file this Next
+  version asks for, failing `next build` outright. Inter and JetBrains Mono are
+  vendored as latin-subset variable files, with their OFL license beside them.
+  Characters outside latin (ł, ř, ș, …) fall back to the system font.
+- **`AUTH_MODE=enabled` now requires `TOTP_ENCRYPTION_KEY`** and refuses to boot
+  without it. Two-factor secrets are encrypted at rest with it, and it is
+  deliberately not derived from `AUTH_SECRET`: rotating the session signing key
+  would otherwise invalidate every enrolled phone in the deployment at once.
+  Generate one with `openssl rand -base64 32`. Failing at boot turns "the
+  dashboard stopped working for everybody overnight" into a startup error naming
+  the variable — without the key, nobody can enrol, and the gate lets nobody
+  through who has not.
+
+### Fixed
+
+- **Signing out left the session live on the api.** The browser's Sign out
+  cleared only the Auth.js cookie. The api session went on working until it
+  expired, stayed in the sessions list, and wrote no `signout` row. Signing
+  out now closes it too.
+- **The api refused every cross-origin PATCH and DELETE.** `@fastify/cors`
+  allows only GET, HEAD and POST unless it is given a method list, and the web
+  calls the api cross-origin (`:3000` → `:8000`). Nothing in the web sent
+  either until this release's Team and Account pages, which need both; the api
+  now allows them.
+- **A pinned gRPC Try-now copied an unpinned call.** The banner said the
+  request was pinned with `lava-select-provider`, but only the HTTP snippets
+  carried it. The router reads the pin from gRPC call metadata through the same
+  directive parser as an HTTP header, so every gRPC snippet now sends it:
+  grpcurl `-H`, Python `metadata=`, Go `metadata.AppendToOutgoingContext`, and
+  the gRPC-Web metadata argument, plus the discovery snippet's method call. The
+  banner now says the snippets carry the pin, because the drawer can't send
+  gRPC itself.
+- **A pinned Try-now on a WebSocket claimed a pin that can't exist.** The
+  router reads no directives on a WebSocket connection, from any client: every
+  frame is parsed with no request headers. So a WS test was routed however the
+  router liked, while the banner said it was pinned. The banner now says a pin
+  doesn't apply there, and points to HTTP or Direct to upstream.
+
+### Added
+
+- **Two-factor login (TOTP).** Everyone who uses the dashboard sets up an
+  authenticator app and enters a six-digit code when they sign in. The one
+  softening is a grace period for the very first admin on a fresh install, which
+  ends the moment they invite somebody or after 30 days, whichever comes first.
+  A countdown sits in the header the whole time. Only under
+  `AUTH_MODE=enabled` — the default deployment is unchanged.
+
+  **A verified password now opens no session.** `POST /auth/sign-in` returns a
+  short-lived single-use challenge for an enrolled account, and only
+  `POST /auth/2fa/verify` opens a session row. The api already refuses any token
+  whose session id resolves to nothing, so a half-authenticated caller has no
+  shape it can take — as opposed to opening the session early and hanging a
+  "pending" flag off it, where every route's correctness would rest on
+  remembering to read that flag.
+
+  **Google and GitHub sign-in ask for the code too.** For an enrolled account
+  `POST /auth/oauth/:provider` answers with a challenge and no session, and the
+  web carries it to the code screen in an httpOnly five-minute cookie
+  (`sr_2fa`) — never through a URL or a page script. The session the code
+  opens records what came first, `google+totp` rather than `password+totp`
+  (migration `0007_challenge_first_factor`).
+
+  The grace period is a **one-time right**: enrolling spends it, so if the
+  first admin's 2FA is reset later they re-enrol at their next sign-in like
+  everyone else.
+
+  Failed codes count into the **same** per-account lockout as failed passwords —
+  five failures in fifteen minutes, one counter keyed on the address. A separate
+  counter would quietly hand out five password attempts and then five more.
+
+- **`POST /api/account/2fa/begin` · `POST /api/account/2fa/confirm`** —
+  enrolment. The QR is rendered server-side and the secret comes back as text
+  beside it, once; a desktop password manager cannot scan a screen.
+
+- **`POST /api/team/members/:id/2fa/reset`** — the lost-phone path, and the only
+  one. The secret is destroyed rather than disabled, the member is signed out
+  everywhere, and they enrol again at their next sign-in from a secret only they
+  will hold — all in one transaction with its `2fa.reset` row (naming both
+  people) and a `session.revoked` per ended session. Nothing is emailed; the
+  member finds out at their next sign-in. Self re-enrolment is refused, and so
+  is an admin resetting their own 2FA or minting their own password-reset link:
+  together those were a takeover from one stolen admin session.
+
+- **Host recovery** — `reset-2fa`, `reset-password` and `promote-admin`, run on
+  the machine the dashboard runs on (`make recover CMD="…"`). Shell access is
+  the authorisation and these hand out nothing new; what they add is that each
+  writes a `host.recovery` row naming the command and the operator, so a
+  recovery shows up in the customer's own audit log and cannot be done quietly
+  — the change and its row commit in one transaction, and the command says
+  which database and deployment shape it is about to act on first.
+  `reset-password` prints a link and never sets a password.
+
+- **The member list's 2FA column is real** — it was pinned to `—` while 2FA did
+  not exist. A "No" is someone the dashboard is shut to until they set one up —
+  they joined and have not enrolled, or an admin reset theirs — or the first
+  admin inside their grace period, and it is marked to be noticed.
+
+- **The Team page manages people** (`AUTH_MODE=enabled`). The member list is
+  readable by every role and exports as CSV, with spreadsheet formula leads
+  neutralised because members choose their own display names. From a member's
+  row an admin can:
+  - **change their role**, which applies to the session they have open without
+    signing them out;
+  - **remove them**, which in one transaction revokes their sessions, stamps the
+    sign-out cutoff, clears their linked Google and GitHub ids and revokes any
+    pending invitation to their address. The row stays, so the audit log
+    keeps their name, and the same person can be invited back later;
+  - **generate a password-reset link** to hand over.
+
+  Each change re-checks under a row lock that the caller is still an admin, so
+  two admins acting on each other at once can't leave the team with none, and
+  writes its audit row in the same transaction. The page's admin controls and
+  the sidebar's role badge follow the caller's live role
+  (`GET /api/account/me`), so a role change shows up within 15 seconds rather
+  than at the next sign-in. Invitations are created, re-sent and
+  revoked from the same page. On the Account page, changing your password and
+  the list of active sessions (sign out one device, or all of them) now work.
+
+  A device whose session is revoked, or whose person is removed, signs itself
+  out and lands on `/login` at its next request rather than going on looking
+  signed in; a removed person is told the account is no longer active, not to
+  sign in again. Changing your password needs the repeat field to match.
+
+  The export is UTF-8 with a byte-order mark, so Excel reads non-latin names
+  correctly. With `AUTH_MODE=disabled` — the default — none of this appears:
+  Team leaves the sidebar and `/team` redirects, and Account shows only the
+  build details.
+
+- **The audit log records the account system** (migration `0004_audit`,
+  MAG-2770's tables and writer). Every event the accounts work emits lands in
+  `audit_events`: first-run setup, sign-ins (including failed and blocked
+  ones), sign-outs, revoked sessions, invitations, role changes, removals,
+  password changes and reset links. Triggers refuse UPDATE and DELETE; the
+  only way past them is a retention sweep's own transaction. Each row keeps the actor's name and email as they were, so a removed
+  person's name survives. Sign-in and session rows carry the browser's
+  address and a device string ("Chrome 141 / macOS"). Both come from request
+  headers, so they are cut to fit their columns; a crafted header can't make
+  the insert fail and lose the row. A change of role is stored with its
+  before and after. There is no viewer yet (MAG-2770); `docs/AUTH.md` has
+  the query.
+- **On a managed deployment, the Magma account says it is ours** (migration
+  `0005_magma_account`). The account `/setup` creates there stays after
+  handover, and is labelled as Magma's in the member list and in the CSV
+  export's `magma_account` column. On-prem never has one.
+- **An invitation opened in a signed-in browser says so**, instead of
+  bouncing to the dashboard, and offers to sign out and come straight back
+  to accept. If the browser still holds the sign-in of the invited address's
+  removed account, that is the only offer.
+- **Managed deployments email invitations and password resets** (MAG-2870;
+  `AWS_REGION` switches the SES transport on). Two messages, each with the
+  link as text beside the button, the expiry stated, and no footer, tracking
+  or images. An invitation whose email was not sent comes back to the admin
+  with `deliveryFallback: true`, and the dialog says so rather than reporting
+  it delivered. The sign-in page gains **Forgot your password?** (on-prem it
+  points at an administrator), and the reset page names the address it
+  changes. Self-serve reset sends at most one link per account every five
+  minutes, and still answers 404 wherever no transport is configured.
+  On-prem sends nothing; admins hand the links over, as before.
+
 - **Five chains arrived upstream.** **Arc** (`ARC` / `ARCT`) and **Robinhood
   Chain** (`ROBINHOOD` / `ROBINHOODT`) are EVM chains importing `ETH1`, so they
   inherit the whole Ethereum JSON-RPC surface and needed no method curation.
@@ -93,6 +277,68 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   Send" — and the public Rosetta node answers 404 on it, on every verb. It now
   carries the reason instead of the claim.
 
+
+### Fixed
+
+- **Opening a session is one transaction.** The session row, the sign-in stamp
+  and the `signin.succeeded` event were four separate writes, so a failure
+  partway left a device with no record of arriving — the row an investigation
+  goes looking for — or handed the web a session id a later failure had rolled
+  back.
+
+- **The database pool is sized for what the gate does.** It was five, on the
+  rationale that the api only touches the database on auth flows; since the
+  session became a row, every authenticated request resolves it.
+
+- **Session rows are not pruned, and the schema no longer says they are.** Three
+  comments and the operator guide described an ageing job that does not exist.
+  How long to keep one is the same question as access-event retention, which
+  MAG-2770 owns and has left open.
+
+- **A refreshed token outran the sign-out-everywhere cutoff.** `users.
+  signed_out_all_at` is compared to the token's `iat`, and the web re-signed the
+  token with `iat` set to "now" on every session read — so a tab that reloaded
+  after somebody signed out everywhere carried itself back over the line. It
+  matters most where nothing else would catch it: that cutoff is the lever for
+  tokens no session row is held for. `iat` is now fixed at sign-in and carried
+  through every re-encode.
+
+- **`AUTH_MODE=enabled` now requires `INTERNAL_AUTH_SECRET`** on both tiers, and
+  the api refuses to boot without it. Unset, it failed in the direction nobody
+  notices: the api ignored the address the web forwards and recorded its own, so
+  every session row and every access event carried the web pod on a log whose
+  job is answering where a sign-in came from, and the per-IP limiter keyed on
+  the same one address for the whole deployment. The web logs an error rather
+  than failing, because the two tiers can be configured apart.
+
+- **The browser's address was taken from the wrong end of `X-Forwarded-For`.**
+  It read the left-most entry, which most ingresses leave as whatever the caller
+  sent — so a client could choose the address written to its own session row and
+  every access event for that sign-in, which is the forgery the internal secret
+  exists to prevent. The web now counts back from the right by `TRUST_PROXY_HOPS`
+  (default `1`) and reports nothing when the chain is shorter than that. `0`
+  means nothing sits in front of the web — the compose files publish it
+  directly and set it — and forwards no address at all, since Next leaves a
+  browser's own `X-Forwarded-For` intact there. The server-rendered invite and
+  reset previews forward the same headers, so their limit counts visitors too.
+
+- **The code check shared one rate-limit bucket for the whole deployment.** The
+  per-IP limit on `/auth/*` keyed on the connection, and Auth.js calls those
+  routes from the web tier — so ten sign-in steps a minute across every person,
+  which two-factor roughly doubles the cost of. It now keys on the forwarded
+  browser address when the internal secret vouches for it, falling back to the
+  connection for direct callers. The forwarded context moved from the request
+  body to `X-Forwarded-Client-Ip` / `-Ua` headers, because the limiter runs
+  before a body exists.
+
+- **A sign-in without a second factor opened two sessions.** The login form asks
+  the api which step comes next, then Auth.js signs in through the same route —
+  so an account with no authenticator was completed twice, leaving a device on
+  its sessions list that nobody had signed in from and two `signin.succeeded`
+  rows carrying different addresses. The form's first call now sends
+  `probe: true`, which checks the password and opens nothing. Only accounts
+  inside the first admin's grace period could reach it; an enrolled account
+  finishes at `/auth/2fa/verify` and never had the problem.
 
 ## [0.25.0]
 

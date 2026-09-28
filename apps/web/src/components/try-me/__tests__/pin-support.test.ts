@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { initialTargetFor, isPinnable, pinRefusalFor, pinRefusalHintFor } from "../pin-support";
+import { initialTargetFor, isPinnable, pinCarrierFor, pinRefusalFor, pinRefusalHintFor } from "../pin-support";
 
 describe("pinRefusalFor", () => {
   it("has nothing to say about a primary upstream", () => {
@@ -49,5 +49,19 @@ describe("initialTargetFor", () => {
     // A grpc-only row, or one with no url for the selected transport: the
     // drawer would otherwise open on a mode with no Send button.
     expect(initialTargetFor({ tier: "backup", directAvailable: false })).toBe("router");
+  });
+});
+
+describe("pinCarrierFor", () => {
+  it("sends the pin as a header on HTTP", () => {
+    expect(pinCarrierFor("http")).toBe("header");
+  });
+
+  it("carries the pin as call metadata on gRPC", () => {
+    expect(pinCarrierFor("grpc")).toBe("metadata");
+  });
+
+  it("has no way to pin a WebSocket — the router reads no directives there", () => {
+    expect(pinCarrierFor("ws")).toBeNull();
   });
 });

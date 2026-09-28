@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { SignJWT } from "jose";
 import { eq } from "drizzle-orm";
-import { createTestDb, type TestDb } from "@sr/db/testing";
+import { createTestDb, enrolledTwoFactor, type TestDb } from "@sr/db/testing";
 import { users, type User } from "@sr/db";
 import type { Role } from "@sr/shared";
 import { buildApp } from "../app.js";
@@ -20,6 +20,9 @@ import { hashPassword } from "../services/password.js";
  */
 
 const SECRET = "test-secret-for-auth-tests-32-chars!";
+/** Any 32 bytes — these tests never verify a code, they only need the api
+ *  to boot with AUTH_MODE=enabled. */
+const TOTP_KEY = "Ozw3vJk9pQ0sT6xN2mB8fH4dR1yL5aC7eU3gI9oK0jM=";
 const INTERNAL = "internal-secret-for-tests";
 // Unroutable per RFC 5737 — the lazy connect loop fails fast and we swap in
 // pglite by hand, so nothing waits on a real Postgres.
@@ -58,6 +61,7 @@ async function buildGatedApp(): Promise<FastifyInstance> {
   setEnv({
     AUTH_MODE: "enabled",
     AUTH_SECRET: SECRET,
+    TOTP_ENCRYPTION_KEY: TOTP_KEY,
     DATABASE_URL: DEAD_DB,
     INTERNAL_AUTH_SECRET: INTERNAL,
   });
@@ -81,6 +85,10 @@ async function seedUser(overrides: Partial<typeof users.$inferInsert> = {}): Pro
       email: `dana+${++seq}@example.com`,
       name: "Dana Levi",
       role: "read_only",
+      // Enrolled unless a case says otherwise — MAG-2730's gate shuts the
+      // dashboard to anyone without an authenticator, and these tests are about
+      // the session and role checks that sit in front of it.
+      ...enrolledTwoFactor(),
       ...overrides,
     })
     .returning();
@@ -207,6 +215,11 @@ describe("POST /auth/sign-in", () => {
     await seedUser({
       email: "dana@example.com",
       passwordHash: await hashPassword("correct horse battery staple"),
+      // Not enrolled: this block is about the password leg, which is the whole
+      // of a sign-in only for an account with no authenticator. The two-step
+      // path an enrolled account takes is `two-factor.test.ts`'s.
+      totpSecret: null,
+      totpEnrolledAt: null,
     });
   });
 
@@ -240,11 +253,16 @@ describe("POST /auth/sign-in", () => {
     const credentials = {
       email: "dana@example.com",
       password: "correct horse battery staple",
-      clientContext: { ip: "203.0.113.7", userAgent: "Mozilla/5.0 (Windows NT 10.0) Firefox/131.0" },
+    };
+    /** Sent as headers, not a body field: the rate limiter runs before a body
+     *  exists and has to key on this same address. */
+    const forwarded = {
+      "x-forwarded-client-ip": "203.0.113.7",
+      "x-forwarded-client-ua": "Mozilla/5.0 (Windows NT 10.0) Firefox/131.0",
     };
 
     it("is recorded when the caller proves it is our web tier", async () => {
-      const res = await signIn(credentials, { "x-internal-auth": INTERNAL });
+      const res = await signIn(credentials, { ...forwarded, "x-internal-auth": INTERNAL });
       expect(res.statusCode).toBe(200);
 
       const [row] = await t.db.query.sessions.findMany({ limit: 1 });
@@ -255,7 +273,7 @@ describe("POST /auth/sign-in", () => {
     it("is ignored without the internal secret, so nobody can forge an audit trail", async () => {
       // The route is publicly reachable. Without this, an attacker could pin
       // any address to their own sign-in attempts.
-      const res = await signIn(credentials);
+      const res = await signIn(credentials, forwarded);
       expect(res.statusCode).toBe(200);
 
       const [row] = await t.db.query.sessions.findMany({ limit: 1 });
@@ -263,11 +281,35 @@ describe("POST /auth/sign-in", () => {
     });
 
     it("is ignored when the secret is wrong", async () => {
-      const res = await signIn(credentials, { "x-internal-auth": "not-the-secret" });
+      const res = await signIn(credentials, { ...forwarded, "x-internal-auth": "not-the-secret" });
       expect(res.statusCode).toBe(200);
 
       const [row] = await t.db.query.sessions.findMany({ limit: 1 });
       expect(row?.ip).not.toBe("203.0.113.7");
+    });
+
+    it("records the device when no address is forwarded, as with no proxy in front", async () => {
+      // TRUST_PROXY_HOPS=0: the web forwards the browser's device and no
+      // address. The address falls back to the observed one; the device must not.
+      const res = await signIn(credentials, {
+        "x-forwarded-client-ua": forwarded["x-forwarded-client-ua"],
+        "x-internal-auth": INTERNAL,
+      });
+      expect(res.statusCode).toBe(200);
+
+      const [row] = await t.db.query.sessions.findMany({ limit: 1 });
+      expect(row?.client).toBe("Firefox 131 / Windows");
+      expect(row?.ip).not.toBe("203.0.113.7");
+    });
+
+    it("ignores a forwarded device without the secret, too", async () => {
+      const res = await signIn(credentials, {
+        "x-forwarded-client-ua": forwarded["x-forwarded-client-ua"],
+      });
+      expect(res.statusCode).toBe(200);
+
+      const [row] = await t.db.query.sessions.findMany({ limit: 1 });
+      expect(row?.client).not.toBe("Firefox 131 / Windows");
     });
   });
 });
@@ -287,5 +329,42 @@ describe("POST /auth/sign-out", () => {
 
     expect((await get(token)).statusCode).toBe(401);
     expect((await get(other.token)).statusCode).not.toBe(401);
+  });
+});
+
+describe("GET /api/account/me", () => {
+  /** The endpoint the UI reads its own role from. It exists because the
+   *  session's copy is stamped at sign-in and never refreshed, so the screen
+   *  disagreed with the api for up to the 30-day session lifetime. */
+  it("reports the role from the row, not the one in the token", async () => {
+    app = await buildGatedApp();
+    // The row says read_only; the token deliberately claims admin.
+    const { user, session } = await signedInUser("read_only");
+    const token = await mint({ sub: user.id, sid: session.id, role: "admin" });
+
+    const asRead = await app!.inject({
+      method: "GET",
+      url: "/api/account/me",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(asRead.statusCode).toBe(200);
+    // The token says admin. The row says read_only. The row wins.
+    expect(asRead.json().role).toBe("read_only");
+
+    await t.db.update(users).set({ role: "admin" }).where(eq(users.id, user.id));
+
+    const asAdmin = await app!.inject({
+      method: "GET",
+      url: "/api/account/me",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    // Same token, no new sign-in.
+    expect(asAdmin.json().role).toBe("admin");
+  });
+
+  it("refuses an anonymous caller", async () => {
+    app = await buildGatedApp();
+    const res = await app.inject({ method: "GET", url: "/api/account/me" });
+    expect(res.statusCode).toBe(401);
   });
 });

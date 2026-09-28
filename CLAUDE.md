@@ -21,7 +21,9 @@ repo root — `apps/`, `packages/`, `docker-compose*.yml`, `Makefile`.
 > api resolves it to a live session and the live user row on every request, and
 > four cumulative roles (`read_only · requester · approver · admin`) gate from
 > that row — so revoking a session or demoting someone takes effect on the
-> request in flight, not at their next sign-in. See [`docs/AUTH.md`](docs/AUTH.md).
+> request in flight, not at their next sign-in. With `AUTH_MODE=enabled` everyone also sets up an authenticator app — see
+> [`docs/TWO-FACTOR.md`](docs/TWO-FACTOR.md), which needs `TOTP_ENCRYPTION_KEY`.
+> See [`docs/AUTH.md`](docs/AUTH.md).
 
 ## Quick start
 
@@ -99,8 +101,18 @@ packages/shared/          @sr/shared — domain types, metric catalog, PromQL bu
                             explorer + deep links (docs/CHAINS.md)
     constants/windows.ts    WINDOWS — 13-window catalog (5m..30d) → PromQL range + step
     promql/builders.ts      typed query builders shared by api (+ docs)
+    constants/roles.ts      ROLES + roleAtLeast — four cumulative roles
+    constants/audit-events.ts  the audit log's verb set (see "Audit log")
+    audit/format.ts         how a value is written into an audit row —
+                            redaction, (none)/(new)/(deleted), yes/no, lists
     types/domain.ts         OverviewData, DashboardData, HeroSummary, ChainSeries,
                             ProviderDetail, ErrorsReport, RouterTopology, …
+packages/db/              @sr/db — Drizzle + Postgres (AUTH_MODE=enabled only)
+  src/
+    schema.ts           users · sessions
+    schema-audit.ts     audit_events · audit_event_changes (append-only)
+    audit.ts            createAuditWriter — the writer every task emits through
+    testing.ts          createTestDb() — pglite, a real Postgres in-process
 apps/api/                 @sr/api — Fastify 5 (:8000)
   src/
     routes/             health · version · metrics · config
@@ -431,6 +443,44 @@ A Kubernetes deployment runs the api as the `…/backend` image and the web as
 | Frontend liveness / readiness | `/api/config` (`/` also answers — it 307s to `/metrics`) |
 | Values mount | `<HELM_VALUES_DIR>/core/values.yml`, the rendered values. Drives `publicUrls` above, so the pod must roll when they change |
 
+## Audit log
+
+`AUTH_MODE=enabled` only — the default mode has no database, so the audit
+surfaces render the usual honest empty state naming the reason. MAG-2770 owns
+the log; the accounts, 2FA and config-approval tasks only emit into it.
+
+- **The verb set is a typed catalog**, not a convention:
+  `packages/shared/src/constants/audit-events.ts` holds every event with its
+  group, whether it carries a diff, and whether it may carry access context.
+  Four tickets write these strings, so a typo is a typecheck failure rather
+  than an unfilterable row — and the same constant generates the published
+  event list the ticket requires.
+- **One writer, `createAuditWriter(db)`** (`packages/db/src/audit.ts`). It
+  lives in `@sr/db`, not the api, because the recovery commands run from a
+  shell on the host with no request anywhere. It resolves the group and the
+  access-context rule from the catalog rather than trusting the caller.
+  `write(event, tx?)` — pass the caller's transaction and the row commits or
+  rolls back with the mutation it records. **Failure behaviour is asymmetric
+  on purpose**: standalone it swallows and reports (a sign-in must not 500
+  because the log is unwell); inside a transaction it propagates, because the
+  failed insert has already aborted the caller's transaction and catching it
+  would turn an atomicity guarantee into a silent maybe.
+- **Redaction happens on the way in.** `audit/format.ts` is the only way values
+  reach a row: `(none)` · `(new)` · `(deleted)` · `yes`/`no` · stable
+  comma-joined lists · `(changed, ends a91f)`. There is no un-redacted copy in
+  the table, which makes "no secret or node URL appears in the log, the export,
+  or the API" a property of the schema rather than a rule three read paths have
+  to remember. MAG-2731's approve screen *does* show full values — that reads
+  the pending-change record, a different table, and must never be pointed here.
+- **Names are snapshots, never joins.** `actor_name` / `target_name` record
+  what the thing was called at the time. A removed person keeps their name in
+  the log permanently, and a rename cannot rewrite history.
+- **Append-only in the database, not just the product.** A
+  `BEFORE UPDATE OR DELETE` trigger on **both** tables raises. The one
+  legitimate writer is retention, which opens the gate with
+  `SET LOCAL audit.purge = 'on'` inside its own transaction. This is a product
+  boundary, not tamper-evidence — hash chaining is deliberately out of scope.
+
 ## Time windows
 
 `packages/shared/src/constants/windows.ts` defines the **13-window catalog**
@@ -455,6 +505,20 @@ Every `/api/metrics/*` route also accepts **`router?`** — the router scope
 | `GET /docs` · `GET /docs/json` | — | Swagger UI explorer + OpenAPI 3.1 spec. Registered outside production only. |
 | `GET /auth/bootstrap` | — | `{ needsSetup, mode }` — whether this deployment still needs its first admin (derived from "no active users", never a flag), and which shape it is. Never reveals the setup token. Public |
 | `POST /auth/setup` | — | Creates the first admin on a fresh install: `{ token, email, password, name? }` → `{ user }`. Opens no session — the web signs in straight afterwards on the ordinary credentials path. 403 on a wrong token, 409 once claimed. Public |
+| `POST /auth/invite/preview` | — | `{ token }` → `{ email, role, expiresAt }` — what an invitation link is for. Public; the token travels in the body, never a URL. 410 for every dead reason, including one that never existed |
+| `POST /auth/invite/accept` | — | Redeem: `{ token, password }` → `{ user }`, or `{ token, oauthProvider, oauthToken }` → `{ user, sessionId }` for **any** configured provider (google/github). The account is created with the **invited** address and the provider id is linked as it inserts. Only the OAuth path opens a session — it holds a one-shot token and has no second sign-in to fall back on; the password path lets the credentials sign-in do it. The OAuth path takes the browser's address from the web's forwarded `X-Forwarded-Client-Ip` / `-Ua` headers (with `X-Internal-Auth`) and writes `signin.succeeded` after `invite.redeemed`. 403 on an address mismatch, 410 on a dead link |
+| `GET /api/team/invites` | — | Invitations not yet redeemed, each with `state` (`pending`/`expired`/`revoked`). Admin |
+| `POST /api/team/invites` | — | `{ email, role }` → the invitation, with `delivery` saying where the link went. `url` (shown once) comes back on-prem, and on managed only when the email was not sent (`deliveryFallback: true`). 409 if already a member or already invited. Admin |
+| `POST /api/team/invites/:id/resend` · `DELETE …/:id` | — | New link (invalidating the old) / revoke. 410 once redeemed. Admin |
+| `POST /auth/password/forgot` | — | `{ email }` → managed with a mail transport: `202` for every address, answered before the lookup so timing says nothing; emails a 1-hour link when the address belongs to an account with a password, at most one per account per 5 minutes (`SELF_SERVE_RESET_COOLDOWN_MS`). The `password.reset_requested` audit note records whether it went. On-prem, or managed with `AWS_REGION` unset: `404` for every address, writing nothing — a link nobody receives would still kill the one the member holds. Public |
+| `POST /auth/password/reset/preview` | — | `{ token }` → `{ email }` — the address a reset link changes, without spending it. `410` with one message for every dead reason. Public |
+| `POST /auth/password/reset` | — | `{ token, password }` → in one transaction: sets the password, revokes every session, **clears the lockout**. Does **not** sign in. Public |
+| `POST /api/team/members/:id/reset-link` | — | `{ url, expiresAt }`, shown once. An admin generates a link; only the holder chooses the value. Not for your own account (409 — your own password changes on the Account page). Admin |
+| `GET /api/team/members` · `GET /api/team/members.csv` | — | `{ members[], adminCount, soleAdmin }`, admins first · the same list as CSV with formula leads neutralised. Every role — the access review is for everyone |
+| `PATCH /api/team/members/:id` · `DELETE …/:id` | — | `{ role }` → change a role (revokes nothing; the gate reads the row) · remove (state change, one transaction: sessions, cutoff, provider ids, pending invite). 409 on your own row, 404 on someone not active, 403 if you stopped being an admin mid-request. Admin |
+| `POST /api/account/password` | — | `{ current, next }` — signs out your other devices, keeps this one. Tests a credential, so: sign-in's per-IP limit (10/min) **and** the account's lockout budget (`423` once spent) |
+| `GET /api/account/me` | — | The caller from the live account row — id, email, name, avatar, role. What the web's `useMe()` polls, so a role change reaches the sidebar badge and the Team page without a new sign-in |
+| `GET /api/account/sessions` · `DELETE …/:id` · `DELETE …` | — | Your live sessions · sign out one device · sign out everywhere |
 | `GET /health` | — | Liveness — `{ health: "ok" }` |
 | `GET /health/ready` | — | Readiness — runs `vector(1)` against the store (not `-/ready`, which Mimir and a query-only proxy don't serve) with the configured credential; 503 + `components.prometheus:"ping_failed"` on failure, including a 401 |
 | `GET /version` | — | Build provenance — `{ commit, version, env, startedAt, uptimeSec }` |
@@ -480,6 +544,10 @@ Every `/api/metrics/*` route also accepts **`router?`** — the router scope
 | `GET /api/ai/health` | — | `{ ok, reason?, provider, auth, model, region, roleArn }` — whether a model is enabled, allowed, and reachable. **Free** — makes no model call. `reason` is `disabled` (`BEDROCK_ENABLED` unset), `auth_required` (enabled but `AUTH_MODE=disabled`, so it must not be spendable anonymously). `roleArn` names the assumed role, `null` when the chain's own identity is used. Resolves no credentials, which would block on IMDS — `POST /api/ai/verify` makes one real ~30-token call and is what proves the identity may actually invoke the model |
 | `GET /api/config/routers` | — | `{ routers: RouterTopology[] }` — live topology from the mounted values file (either format), node URLs masked to scheme+host. Each endpoint also carries `index` (the handle the relay below resolves) + `directable` |
 | `POST /api/upstreams/relay` | body: `{routerId, node, endpointIndex, transport?, httpMethod?, path?, body?}` | Fires ONE request straight at a configured upstream, router excluded — `{httpStatus, latencyMs, body, truncated, transport}`. The target is resolved from the values file, never taken from the caller; the resolved url is never returned and is scrubbed out of the upstream's own body. Upstream 4xx/5xx come back **200** with their status inside; 502/504 mean our hop failed. Off with `UPSTREAM_RELAY_ENABLED=false`. See [`docs/UPSTREAM-DIRECT-TEST.md`](docs/UPSTREAM-DIRECT-TEST.md) |
+| `POST /auth/2fa/verify` | body: `{challenge, code}` | Second sign-in step. `/auth/sign-in` returns a challenge and **no session** for an enrolled account; only this opens one. Wrong code, dead challenge and unknown challenge all answer the same 401 |
+| `POST /auth/oauth/:provider` | body: `{token}` | Google/GitHub sign-in. An account without an authenticator gets `{ user, sessionId }`; an enrolled one gets `{ twoFactorRequired, challenge, expiresAt, email }` and **no session** — the web parks the challenge in the `sr_2fa` handoff cookie for the code screen, and the session opens at `/auth/2fa/verify` as `<provider>+totp` |
+| `POST /api/account/2fa/begin` · `/confirm` | — · `{code}` | Enrolment. `begin` returns the QR (server-rendered SVG) and the secret as text, once; `confirm` proves a code and turns 2FA on. Refused 409 for an already-enrolled account — an admin reset is the only way back |
+| `POST /api/team/members/:id/2fa/reset` | — | Admin only, and not for your own account (409). Destroys the secret, retires live challenges, signs them out everywhere, in one transaction with `2fa.reset` (naming both people) and a `session.revoked` per ended session. Emails nobody (`notified: "on_next_signin"`). See [`docs/TWO-FACTOR.md`](docs/TWO-FACTOR.md) |
 
 ## Environment variables
 
@@ -561,13 +629,23 @@ Auth (only read when `AUTH_MODE=enabled`; the metrics path never touches the DB)
 | `AUTH_MODE` | `disabled` | `enabled` turns on the session gate + `/auth/*` + Postgres |
 | `AUTH_SECRET` | (unset) | HS256 signing secret shared with the web (must match) |
 | `DATABASE_URL` | (unset) | Postgres connection string for `users` + `sessions` |
-| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | (unset) | idempotent bootstrap-admin seed on first boot |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | (unset) | idempotent admin seed on first boot, **development only** — refused under `NODE_ENV=production`, where first-run setup with the installer's `SETUP_TOKEN` is the only way an account comes into existence |
 | `GOOGLE_CLIENT_ID` | (unset) | validates the `aud` claim of Google ID tokens server-side |
-| `INTERNAL_AUTH_SECRET` | (unset) | shared with the web; gates whether forwarded browser IP / User-Agent are trusted on `/auth/sign-in`. Unset ⇒ the api records what it observes |
-| `DEPLOYMENT_MODE` | `onprem` | `managed` (we host, email works) / `onprem` (customer hosts, no mail server). Forks invite + reset delivery; read by the web at runtime via `/api/config` |
+| `INTERNAL_AUTH_SECRET` | (unset) | shared with the web; gates whether the forwarded browser IP / User-Agent (`X-Forwarded-Client-Ip` / `-Ua` headers) are trusted on the routes that open a session (`/auth/sign-in`, `/auth/2fa/verify`, `/auth/oauth/:provider`, `/auth/invite/accept`), and whether the per-IP limiter keys on them. **Required under `AUTH_MODE=enabled`** — the api refuses to boot without it |
+| `DEPLOYMENT_MODE` | `onprem` | `managed` (we host) / `onprem` (customer hosts, no mail server). Forks invite + reset delivery (managed emails them, on-prem hands the admin a link), sets their lifetimes, and marks the first account as Magma's on managed. Read by the web at runtime via `/api/config` |
 | `SETUP_TOKEN` | (generated) | First-run token, required to create the first admin. Must be ≥ 16 characters; unset (or shorter) ⇒ generated once at boot, on an install that still needs setting up, and logged at `warn` |
 | `SETUP_TOKEN_FILE` | (unset) | Path to write a generated token to (mode 0600), so an init container or mounted volume can surface it |
 | `PASSWORD_BREACH_CHECK` | `hibp` | `off` disables the HaveIBeenPwned check — the honest setting for an air-gapped install, rather than relying on a silent timeout |
+| `TOTP_ENCRYPTION_KEY` | (unset) | **Required.** 32 bytes (base64 or hex) encrypting every enrolled TOTP secret at rest. The api refuses to boot without it: the 2FA gate shuts the dashboard to anyone unenrolled, enrolment is the only way through, and enrolment needs this key — so missing it locks out every account at once. Deliberately NOT derived from `AUTH_SECRET`, whose rotation is routine and would otherwise invalidate every enrolled phone. `openssl rand -base64 32` |
+| `TOTP_ISSUER` | `Smart Router` | What an authenticator app shows as the issuer. Override it so somebody administering two dashboards can tell the entries apart |
+| `PUBLIC_WEB_ORIGIN` | (unset) | browser-facing origin of the web app, used to build invitation and password-reset links. Routes that need it fail loudly when it is unset rather than guessing a host — `POST /api/team/invites` 500s. Both compose files default it to the web's `AUTH_URL` |
+| `CUSTOMER_NAME` | `Smart Router` | Who the deployment belongs to, as it appears in the invitation subject ("You've been added to **{customer}** on Smart Router") |
+| `AWS_REGION` | (unset) | **Enables email.** Unset ⇒ nothing is sent; a `warn` line names the recipient, and only under `NODE_ENV=development` carries the body (it holds a live link). On-prem that is correct. On managed it means the admin carries invitation links, and self-serve reset answers 404 rather than issue a link nobody receives |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | (unset) | Optional. Absent ⇒ the SDK resolves credentials from the environment (IRSA / instance role), so production stores no static keys |
+| `EMAIL_FROM` | `Smart Router <noreply@smart-router.local>` | Sender. An unmonitored no-reply |
+| `EMAIL_REPLY_TO` | (unset) | Monitored inbox, so a reply to a reset email reaches somebody |
+| `EMAIL_CONFIGURATION_SET` | (unset) | SES configuration set. Keeps each environment's bounce/complaint reputation separate on a shared identity |
+| `SES_ENDPOINT` | (unset) | Points SES at a local mock for development — `make accounts-managed` runs one and serves its inbox on :8005 |
 
 Web — build-time vs. **runtime**:
 
@@ -580,9 +658,10 @@ Web — build-time vs. **runtime**:
 | `DASHBOARD_GRAFANA_URL` | `http://localhost:3001` | Grafana base URL the "View full logs" button links to — runtime override via `/api/config`, same mechanism (falls back to `NEXT_PUBLIC_GRAFANA_URL`) |
 | `AUTH_MODE` / `AUTH_SECRET` | `disabled` / (unset) | must match the api; `enabled` renders the login page + edge gate |
 | `DEPLOYMENT_MODE` | `onprem` | must match the api. Surfaced to the browser by `GET /api/config`, so one image serves both shapes |
-| `INTERNAL_AUTH_SECRET` | (unset) | must match the api; lets the web forward the browser's real IP / User-Agent on sign-in |
+| `INTERNAL_AUTH_SECRET` | (unset) | must match the api (which requires it under `AUTH_MODE=enabled`); lets the web forward the browser's real IP / User-Agent on sign-in and on the server-rendered previews |
+| `TRUST_PROXY_HOPS` | `1` (compose: `0`) | how many proxies sit in front of the web; `0` when it is published directly, which forwards no address (Next leaves a browser's own `X-Forwarded-For` intact, so nothing in it can be believed). The browser's entry is that many back from the right of `X-Forwarded-For`; the left-most is caller-supplied and never used |
 | `INTERNAL_API_BASE_URL` | (falls back to api url) | server-side api URL for Auth.js callbacks (compose sets `http://api:8000`) |
-| `{GOOGLE,GITHUB,DISCORD}_CLIENT_{ID,SECRET}` | (unset) | each provider's button appears only when its id+secret pair is set |
+| `{GOOGLE,GITHUB}_CLIENT_{ID,SECRET}` | (unset) | each provider's button appears only when its id+secret pair is set |
 
 The browser resolves its api base **once per session** from `/api/config`
 (`DASHBOARD_API_URL` → `NEXT_PUBLIC_API_URL` → `http://localhost:8000`),

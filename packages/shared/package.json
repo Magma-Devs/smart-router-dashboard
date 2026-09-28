@@ -19,6 +19,10 @@
     "./promql": {
       "types": "./src/promql/index.ts",
       "default": "./dist/promql/index.js"
+    },
+    "./audit": {
+      "types": "./src/audit/index.ts",
+      "default": "./dist/audit/index.js"
     }
   },
   "scripts": {

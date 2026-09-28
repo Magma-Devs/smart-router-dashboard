@@ -1,8 +1,7 @@
-/* Standard "this is a Magma Cloud feature" callout. Used wherever a
-   design-prototype surface exists but the self-hosted deployment can't back it
-   (team invites, connected accounts, password change, sessions, …). One shared
-   style so every such spot reads the same: info-tinted panel, icon, a bold lead
-   naming Magma Cloud, then the self-hosted reason. */
+/* Standard "this is a Magma Cloud feature" callout, for a design-prototype
+   surface the self-hosted deployment can't back (JWT management). `Notice` is
+   the same panel with a lead of your own, for something that exists on no
+   deployment — saying "Magma Cloud" there would promise a feature nobody has. */
 
 export function CloudNotice({
   feature,
@@ -11,9 +10,28 @@ export function CloudNotice({
 }: {
   /** What's gated, e.g. "Team accounts", "Changing your password". */
   feature: string;
-  /** Why it's unavailable here, e.g. "this deployment uses a single shared login." */
+  /** Why it's unavailable here, e.g. "no tokens exist on this deployment." */
   detail?: string;
   /** Smaller variant for inline use under a section header. */
+  compact?: boolean;
+}) {
+  return (
+    <Notice
+      lead={`${feature} ${feature.endsWith("s") ? "are" : "is"} a Magma Cloud feature.`}
+      detail={detail}
+      compact={compact}
+    />
+  );
+}
+
+export function Notice({
+  lead,
+  detail,
+  compact = false,
+}: {
+  /** The bold first sentence. */
+  lead: string;
+  detail?: string;
   compact?: boolean;
 }) {
   return (
@@ -48,7 +66,7 @@ export function CloudNotice({
       </svg>
       <span>
         <strong style={{ color: "var(--text)", fontWeight: 600 }}>
-          {`${feature} ${feature.endsWith("s") ? "are" : "is"} a Magma Cloud feature.`}
+          {lead}
         </strong>
         {detail ? ` ${detail}` : null}
       </span>

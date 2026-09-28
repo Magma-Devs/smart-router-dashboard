@@ -142,10 +142,31 @@ export type SetupOutcome =
  *
  * The caller is responsible for having validated the password and the token —
  * this function is the state change, not the policy.
+ *
+ * `isMagmaAccount` is the one place that flag is ever written. On a managed
+ * deployment first-run is run by a Magma operator and that account stays after
+ * handover, so the member list has to show it as ours; on-prem the same page
+ * creates the customer's own admin and there is no Magma account to mark. It
+ * defaults false, so a caller that has no opinion cannot accidentally mint one.
+ *
+ * `createdBySetup` is likewise written only here, and unconditionally — it says
+ * "this is the deployment's first admin", which is true of every account this
+ * function creates in either mode. It is what MAG-2730's grace period keys on:
+ * the one person who may reach the dashboard before setting up an authenticator,
+ * because somebody who has just pulled the repo to look around should not be
+ * handed an authenticator app before they have seen a single screen. Nothing
+ * else may write it, and no other path creates an account that qualifies —
+ * invitation redemption must not, which is why it is set here rather than
+ * defaulted anywhere.
  */
 export async function completeSetup(
   db: Database,
-  input: { email: string; password: string; name?: string | null },
+  input: {
+    email: string;
+    password: string;
+    name?: string | null;
+    isMagmaAccount?: boolean;
+  },
 ): Promise<SetupOutcome> {
   const passwordHash = await hashPassword(input.password);
 
@@ -164,6 +185,8 @@ export async function completeSetup(
         passwordHash,
         role: "admin",
         status: "active",
+        isMagmaAccount: input.isMagmaAccount ?? false,
+        createdBySetup: true,
         passwordUpdatedAt: new Date(),
       })
       .returning();
