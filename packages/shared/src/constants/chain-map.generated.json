@@ -1077,7 +1077,8 @@
     "family": "hedera",
     "icon": "hedera",
     "interfaces": [
-      "jsonrpc"
+      "jsonrpc",
+      "rest"
     ],
     "mainnet": true
   },
@@ -1086,7 +1087,8 @@
     "family": "hedera",
     "icon": "hedera",
     "interfaces": [
-      "jsonrpc"
+      "jsonrpc",
+      "rest"
     ],
     "mainnet": false
   },

@@ -5,6 +5,17 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.27.1]
+
+### Fixed
+
+- **Chain catalogs resynced with lava-specs** (MAG-3939) — Hedera mainnet and
+  testnet gained a REST interface (the mirror node, 47 methods) in
+  [lava-specs #162](https://github.com/Magma-Devs/lava-specs/pull/162);
+  HEDERAT now resolves to HEDERA instead of aliasing ARC. No new chains,
+  icons, explorers or runnable-default gaps.
+  266 chains, unchanged.
+
 ### Added
 
 - **`make e2e`** — one target for an end-to-end test from a fresh install:
