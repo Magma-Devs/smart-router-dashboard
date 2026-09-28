@@ -148,7 +148,10 @@ from the routers' log store (`LOKI_URL`), once per request. A failure is the
 request's final line — `ProcessingResult RETURNED` on older routers, `relay
 finished` on newer ones, or `failed getting responses from RPC endpoints` —
 with an `error`, `has_result: false` or `has_reply: false`: the same lines and
-the same test as the team's customer-failure alert. Two store layouts are read:
+the same test as the team's customer-failure alert. A request that tried every
+provider (`stop_reason: AllProvidersExhausted`) and still came back with a reply
+and no error is a success — the page and the alert decide it the same way, on
+purpose. Two store layouts are read:
 
 | | Per-pod store (the default) | Shared store |
 |---|---|---|

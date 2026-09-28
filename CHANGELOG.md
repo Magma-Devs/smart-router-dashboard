@@ -7,6 +7,46 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ### Added
 
+- **The Status page writes one issue per problem, and follows it.** A
+  background cycle (every 5 minutes) finds what is failing, and Claude on
+  Bedrock writes it up: a title, two to four short points and a bottom line.
+  An issue keeps its id for as long as the problem lasts, updates in place, and
+  resolves at its last failure; changing the page's window filters the log and
+  answers instantly. `ISSUES_STATE_FILE` keeps the log across restarts. A burst
+  of failed requests — the team's customer-failure alert's own test — opens
+  an issue too, which replaced the Live incidents tab.
+
+  Four sections, each with its meaning on screen: **Critical** (the chain
+  can't be used — its requests, its debug calls or its transactions),
+  **Degraded**, **Handled by the router** (a provider failing that the router
+  covered completely; no colour) and **Refused by the chain**. Under them,
+  **Risks**: chains where nothing is failing yet and one provider stands
+  between them and failing.
+
+  What the model does not write, code does, on every card: the chain's numbers
+  with the time they cover, who acts, the newest request IDs and error codes
+  for matching a caller's log, a timeline of five-minute checks, and each
+  failed request's path through the router
+  (`Tatum ✕ timed out → +8s 3 backups (…) ✕ no answer → failed at 30s`).
+  Refused requests are counted once per request, with a check of whether the
+  same transaction had been sent before. Several chains failing in the same
+  five minutes get a card of their own, naming the provider they share or
+  pointing at the router. A title that contradicts the numbers, or a card
+  claiming success, is sent back to the model and replaced if it stays wrong;
+  when the model cannot write a card, a plain one from the measurements
+  stands in.
+
+- **Alerts for Critical issues**, off unless `ISSUES_WEBHOOK_URL` is set: a
+  chain turning Critical, and that issue resolving, posted as `{ text }` —
+  which a Slack incoming webhook takes as it is.
+
+- **The log store is configurable.** `LOKI_URL` with `LOKI_SELECTOR` and
+  `LOKI_ROUTER_LABEL` reads either a per-pod store (the default) or one several
+  deployments share, where routers are told apart by `service_name`;
+  `LOKI_USERNAME` / `LOKI_PASSWORD` and `LOKI_ORG_ID` for its read path. Both
+  the older (`ProcessingResult RETURNED`) and newer (`relay finished`) routers'
+  final lines are read.
+
 - **Five chains arrived upstream.** **Arc** (`ARC` / `ARCT`) and **Robinhood
   Chain** (`ROBINHOOD` / `ROBINHOODT`) are EVM chains importing `ETH1`, so they
   inherit the whole Ethereum JSON-RPC surface and needed no method curation.
