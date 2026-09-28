@@ -58,11 +58,6 @@ export function MetricsView() {
       <div className="gw-row" style={{ justifyContent: "space-between", marginBottom: 20 }}>
         <div>
           <h1>Metrics</h1>
-          <p className="lede">
-            How this deployment is serving traffic — throughput, latency, errors and
-            per-upstream health · live from{" "}
-            <span className="gw-mono" style={{ color: "var(--text-2)" }}>Prometheus</span>.
-          </p>
         </div>
       </div>
       <div style={{ marginBottom: 20 }}>

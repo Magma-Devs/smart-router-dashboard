@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { buildApp } from "../app.js";
-import { readMetricsScope } from "../config.js";
+import { readLokiLayout, readMetricsScope } from "../config.js";
 
 /**
  * `?router=` scoping. The router labels its series with the CHAIN, so two
@@ -368,5 +368,21 @@ describe("METRICS_SCOPE_LABEL / METRICS_SCOPE_VALUE (deployment scope)", () => {
   it("refuses to boot on a value that could break out of the matcher", async () => {
     setScope("zone", 'x" or spec="ETH1');
     await expect(buildApp()).rejects.toThrow(/cannot be embedded/);
+  });
+});
+
+describe("readLokiLayout", () => {
+  it("defaults to the per-pod store, and reads a shared one as set", () => {
+    expect(readLokiLayout({})).toEqual({ selector: '{service_name="router"}', routerLabel: "pod" });
+    expect(
+      readLokiLayout({ LOKI_SELECTOR: '{cluster="t1",namespace="smart-router",component="router"}', LOKI_ROUTER_LABEL: "service_name" }),
+    ).toEqual({ selector: '{cluster="t1",namespace="smart-router",component="router"}', routerLabel: "service_name" });
+  });
+
+  it("refuses the boot on a selector it cannot splice — a wrong one reads as a clean page, not an error", () => {
+    expect(() => readLokiLayout({ LOKI_SELECTOR: 'cluster="t1"' })).toThrow(/not a stream selector/);
+    expect(() => readLokiLayout({ LOKI_SELECTOR: '{cluster="t1"} |= "x"' })).toThrow(/not a stream selector/);
+    expect(() => readLokiLayout({ LOKI_SELECTOR: '{cluster="t"1"}' })).toThrow(/not a stream selector/);
+    expect(() => readLokiLayout({ LOKI_ROUTER_LABEL: "service-name" })).toThrow(/not a label name/);
   });
 });

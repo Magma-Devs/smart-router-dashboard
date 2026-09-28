@@ -76,6 +76,21 @@ export const config = {
     url: env("PROMETHEUS_URL") ?? "http://localhost:9090",
     timeoutMs: envInt("PROMETHEUS_TIMEOUT_MS", 10000),
     /**
+     * `PROMETHEUS_TRACE=1` writes one stderr line per query — duration,
+     * outcome, expression — so a slow or failing read against a remote
+     * Prometheus can be found without guessing. Off by default.
+     */
+    trace: env("PROMETHEUS_TRACE") === "1" || env("PROMETHEUS_TRACE") === "true",
+    /**
+     * Queries in flight at once against Prometheus, across every request this
+     * process serves. A status read fans out to ~35 queries and the web polls
+     * several panels at once; fired unbounded, a remote Prometheus queues them
+     * behind its own `query.max-concurrency` and an ingress in front cuts the
+     * queue at its timeout — at which point even a trivial selector fails.
+     * Eight keeps a read under a few seconds and never floods the server.
+     */
+    maxConcurrency: Math.max(1, envInt("PROMETHEUS_MAX_CONCURRENCY", 8)),
+    /**
      * Target label that identifies ONE router deployment, used by the
      * `?router=` scope (see `promql/scope.ts`). The router labels its series
      * with the chain, not with itself, so telling two routers on one chain
@@ -162,7 +177,15 @@ export const config = {
      * of an unexplained ThrottlingException.
      */
     maxTokens: envInt("BEDROCK_MAX_TOKENS", 4096),
-    timeoutMs: envInt("BEDROCK_TIMEOUT_MS", 60000),
+    /**
+     * Converse does not stream, so nothing arrives until the whole answer is
+     * built and the SDK's inactivity timer runs the entire generation. A
+     * 60s default is fine for a one-line verify and wrong for a brief:
+     * measured in production, a 12-finding report answers in ~5.5k tokens and takes
+     * past a minute, which surfaced as "stream timed out because of no
+     * activity" — a message that reads like a network fault and is not one.
+     */
+    timeoutMs: envInt("BEDROCK_TIMEOUT_MS", 180000),
     /**
      * Per-IP per-minute on the routes that actually call the model, tighter
      * than the global RATE_LIMIT_MAX — the same reasoning as
@@ -170,6 +193,32 @@ export const config = {
      * not stop a signed-in one looping, and Bedrock has no per-key budget.
      */
     rateLimitMax: envInt("BEDROCK_RATE_LIMIT_MAX", 10),
+  },
+
+  /** Optional: the router's log store. Set `LOKI_URL` and the Status page's
+   *  "latest errors" drill-in lights up; unset, the api says the text lives
+   *  in the logs and links Grafana instead. */
+  loki: {
+    url: env("LOKI_URL"),
+    timeoutMs: envInt("LOKI_TIMEOUT_MS", 10000),
+    /** Where the routers' lines are in the store, and how one router's are told apart. */
+    layout: readLokiLayout(),
+    /** Basic auth on every Loki call — a shared store's read path. Both or neither. */
+    username: env("LOKI_USERNAME"),
+    password: env("LOKI_PASSWORD"),
+    /** Sent as `X-Scope-OrgID`, for a multi-tenant store that takes the tenant from the client. */
+    orgId: env("LOKI_ORG_ID"),
+  },
+
+  /** Optional: where the Status page's issue log is kept between restarts.
+   *  Unset, the log lives in memory and a restart starts it empty — every
+   *  open issue is found again on the first cycle, but the history is gone. */
+  issues: {
+    stateFile: env("ISSUES_STATE_FILE"),
+    /** Where a Critical issue is posted as it opens and resolves; unset = no alerts. Carries a secret — never logged. */
+    webhookUrl: env("ISSUES_WEBHOOK_URL"),
+    /** The page's own address, for the link in an alert. */
+    dashboardUrl: env("DASHBOARD_PUBLIC_URL"),
   },
 
   /** Helm-values / router config the dashboard reflects (read-only). */
@@ -326,6 +375,44 @@ export function deploymentMode(): "managed" | "onprem" {
  * dashboard showing another deployment's numbers with nothing on screen to
  * say so. A refused boot is visible; a wrong scope is not.
  */
+/** How the routers' logs are laid out in the store — see `readLokiLayout`. */
+export interface LokiLayout {
+  /** The stream selector every read starts from. */
+  selector: string;
+  /** The label that tells one router's streams apart; its value names the router. */
+  routerLabel: string;
+}
+
+/**
+ * The stream selector and the router label, from `LOKI_SELECTOR` and
+ * `LOKI_ROUTER_LABEL`.
+ *
+ * The default is a per-pod store: `{service_name="router"}`, one stream per
+ * pod, the pod named after its router (`eth-mainnet-router-6b4d…`). A store
+ * several deployments share labels them differently — by `cluster`, with the
+ * router in `service_name` as `<cluster>-<router id>` — and is read with
+ * `LOKI_SELECTOR={cluster="…",component="router"}` and
+ * `LOKI_ROUTER_LABEL=service_name`.
+ *
+ * A selector that matches nothing reads as "no failures", never as an error,
+ * so a malformed one refuses the boot instead of quietly showing a clean page.
+ */
+export function readLokiLayout(source: NodeJS.ProcessEnv = process.env): LokiLayout {
+  const selector = (source.LOKI_SELECTOR ?? "").trim() || '{service_name="router"}';
+  const routerLabel = (source.LOKI_ROUTER_LABEL ?? "").trim() || "pod";
+  const inner = /^\{(.*)\}$/.exec(selector)?.[1];
+  const matcher = /^\s*[a-zA-Z_][a-zA-Z0-9_]*\s*(=|!=|=~|!~)\s*"[^"\\`\n\r{}]*"\s*$/;
+  if (inner == null || inner.split(",").some((m) => !matcher.test(m))) {
+    throw new Error(
+      `LOKI_SELECTOR ${JSON.stringify(selector)} is not a stream selector: {label="value", …} — no quotes, backslashes, braces or commas inside a value`,
+    );
+  }
+  if (!isValidScopeLabel(routerLabel)) {
+    throw new Error(`LOKI_ROUTER_LABEL ${JSON.stringify(routerLabel)} is not a label name ([a-zA-Z_][a-zA-Z0-9_]*)`);
+  }
+  return { selector, routerLabel };
+}
+
 export function readMetricsScope(source: NodeJS.ProcessEnv = process.env): MetricScope | null {
   const label = source.METRICS_SCOPE_LABEL ?? "";
   const value = source.METRICS_SCOPE_VALUE ?? "";

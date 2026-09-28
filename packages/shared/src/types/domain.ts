@@ -434,6 +434,272 @@ export interface ErrorPivotRow {
   share: number | null;
 }
 
+/**
+ * Severity on the status page. Three tiers, and the line between the first two
+ * is not ours: it is where a customer's own production alert sits.
+ *
+ * - `critical`  — a customer request DIED. The router exhausted its options.
+ * - `attention` — the router absorbed it, at the cost of your redundancy.
+ * - `config`    — the deployment is asking for something it cannot get. Will
+ *                 never resolve on its own, and is usually a one-line fix.
+ *
+ * Deliberately NOT a severity: the chain declining a request. A reverted
+ * `eth_call` is a correct answer, and on a busy testnet it outnumbers real
+ * failures hundreds to one.
+ */
+export type StatusTier = "critical" | "attention" | "config";
+
+/** One row on the status page: a problem, its evidence, and what to do. */
+/**
+ * WHY a finding exists — the failure shape, not its severity.
+ *
+ * The four `answered-*` kinds are the axis a failure-counter page cannot see:
+ * every one of them fires while the upstream returns HTTP 200 and every error
+ * counter reads zero. Every diagnosis over six hours in the incident record is
+ * one of these.
+ */
+export type FindingKind =
+  | "dead"              // nothing could serve it — the request died
+  | "answered-stale"    // 200 OK, block height frozen
+  | "answered-late"     // 200 OK, past the caller's usable deadline
+  | "answered-error"    // 200 OK at the transport, an error in the body
+  | "answered-unchecked"// nothing verified the answer's freshness
+  | "no-backup"         // serving fine, nowhere to go if it stops
+  | "config";           // asking for something no upstream here provides
+
+export interface StatusFinding {
+  kind: FindingKind;
+  tier: StatusTier;
+  /** Stable id so the UI can key rows across polls. */
+  id: string;
+  spec: string;
+  chainName: string;
+  /** The upstream at fault; null when the finding spans several. */
+  upstream: string | null;
+  role: "primary" | "backup" | null;
+  /** One sentence: what is wrong. Plain language, no metric names. */
+  headline: string;
+  /** The number on the right of the row. */
+  metric: { value: string; label: string };
+  /** Error names behind it, for the drill-down. */
+  codes: string[];
+  /** The number's frame, rendered muted after the headline: the line it is
+   *  judged against and, when known, the same window one week earlier. */
+  reference?: string;
+  /** Events per code in the window, for the codes above — what actually
+   *  crashed it, with its count. Chain-level (the classified counter carries
+   *  no provider); missing when a code's count is unknown. */
+  codeCounts?: Record<string, number>;
+  /** Key/value pairs proving the headline. */
+  evidence: { k: string; v: string }[];
+  /** What the operator should do. An instruction, not a description. */
+  remedy: string;
+  /**
+   * How long this has been true, in seconds, when it can be measured. Null when
+   * the window can only say "somewhere in here" — never a fabricated interval.
+   */
+  sinceSec: number | null;
+  /** First/last observation of the driving signal (unix secs), measured from
+   *  metric history and never capped at the selected window. */
+  firstSeenUnix: number | null;
+  lastSeenUnix: number | null;
+  /** True when the driving signal was still present in the newest samples. */
+  ongoing: boolean | null;
+  /**
+   * The optimizer's own reasoning at the moment of the finding: each upstream on
+   * the chain, its selection scores, and its share of served traffic.
+   *
+   * This adjudicates rather than detects. A sync score of 1.0 against a frozen
+   * tip says the optimizer never saw the staleness — no config change of the
+   * customer's fixes that. A higher-scoring upstream taking no traffic says
+   * selection ignored its own score. Either answer ends the argument.
+   */
+  decision: {
+    upstream: string;
+    sharePct: number | null;
+    scores: Partial<Record<ScoreType, number>>;
+  }[];
+}
+
+/**
+ * A chain whose redundancy exists in the config but not in reality.
+ *
+ * `effective` is `1 / Σ(share²)` over the chain's traffic — the standard
+ * concentration inverse. A chain with four upstreams where one serves 100% has
+ * `configured: 4, effective: 1`. `provenBackups` counts backups that actually
+ * served something: a backup that has never served has never been tested, and
+ * in production the ones that were tested failed.
+ */
+export interface NoFailoverChain {
+  spec: string;
+  name: string;
+  configured: number;
+  effective: number;
+  topUpstream: string | null;
+  topSharePct: number | null;
+  provenBackups: number;
+  reason: string;
+}
+
+/**
+ * A standing advisory — posture, not an active fire. Judged against the
+ * chain's or upstream's own history wherever possible; every row carries the
+ * arithmetic behind its threshold, because a number the customer cannot
+ * interrogate is a number they will not trust.
+ */
+export interface StatusInsight {
+  id: string;
+  kind:
+    | "no-failover"        // one hiccup from outage — structural, no % to tune
+    | "de-facto-spof"      // config declares redundancy, traffic says otherwise
+    | "backup-unreliable"  // the escape route is burning its error budget
+    | "timeouts-climbing"  // top-bucket share vs its own last week
+    | "slower-than-history"// p95 vs the provider's own trailing median
+    | "creeping-failures"  // under the alarm line but multiples of its own norm
+    | "retries-crutch"     // attempts/request drifting above its own median
+    | "disagrees-with-peers"; // cross-validation: this provider's answer was the odd one out
+  tier: "attention" | "advisory";
+  spec: string;
+  chainName: string;
+  upstream: string | null;
+  headline: string;
+  /** The number, already worded ("0.8%"), with its baseline beside it. */
+  value: string;
+  baseline: string | null;
+  /** WHY the threshold sits where it sits — shown on the page, verbatim. */
+  basis: string;
+  evidence: { k: string; v: string }[];
+}
+
+/** One row of the CHAINS table — every chain, its numbers, no praise. */
+export interface ChainStatusRow {
+  spec: string;
+  name: string;
+  requests: number;
+  /** Transport failure share (0..1); null under the event floor. */
+  noAnswerRate: number | null;
+  /** Error-answer share (0..1); null under the floor. */
+  errorAnswerRate: number | null;
+  /** Client answers that took >= 10s — a count, never hidden by a threshold. */
+  slowAnswers: number;
+  attemptsPerRequest: number | null;
+  /** Same ratio, this window 7 days ago. */
+  attemptsPerRequestWas: number | null;
+  /** "finding" links to a row above; "quiet" = no rule crossed;
+   *  "insufficient" = not enough traffic to judge — never "operational". */
+  state: "finding" | "quiet" | "insufficient";
+}
+
+/** Everything the status page renders, in one round-trip. */
+export interface StatusReport {
+  /** When this report was computed, unix seconds. The api may serve a
+   *  recently computed report while refreshing in the background — the page
+   *  judges freshness by THIS stamp, not by when the response arrived. */
+  computedAtUnix: number;
+  findings: StatusFinding[];
+  insights: StatusInsight[];
+  noFailover: NoFailoverChain[];
+  chains: ChainStatusRow[];
+  /** Headline numbers — derived, not raw counters. */
+  totals: {
+    requestsServed: number;
+    /** Upstream attempts ÷ customer requests. What the router costs you. */
+    attemptsPerRequest: number | null;
+    /** Failed attempts ÷ all attempts (0..1). */
+    upstreamFailureRate: number | null;
+    chainsClear: number;
+    chainsTotal: number;
+    /** Same four numbers, this window 7 days ago — a number without its prior
+     *  is noise on a drift check. Null when no history. */
+    prior: {
+      requestsServed: number | null;
+      attemptsPerRequest: number | null;
+      upstreamFailureRate: number | null;
+    };
+  };
+  /** The verdict's 24-hour memory: the last fatal-class fire even when the
+   *  selected window is clean. "Everything healthy" over a night of fatal
+   *  errors is how a status page loses its audience. */
+  lastCritical24h: { spec: string; chainName: string; atUnix: number } | null;
+  /** Worst chain-level delta, last 15 min vs the same 15 min yesterday —
+   *  fires with no attribution gate so a ramp is on screen while it ramps. */
+  worstMover: { spec: string; chainName: string; metric: string; now: string; was: string } | null;
+  /** False when the classified-error family has never fired. */
+  emitted: boolean;
+}
+
+/**
+ * One upstream's failures, and every chain it is failing on — the view that
+ * answers "is this provider broken everywhere, or just here?".
+ *
+ * Two INDEPENDENT counts, because a single provider error-rate lies. Verified
+ * in production: Tatum on AVALANCHECT showed 635,678 `answeredWithError`
+ * against 22 `unreachable` — a 30,000× gap. A war room reading the second one
+ * reports Tatum at 0.39%, while Tatum returns 635k error bodies a day.
+ * Transport-perfect, functionally broken.
+ */
+export interface ProviderFault {
+  /** `provider_address` / `endpoint_id` — the upstream's configured name. */
+  provider: string;
+  /** They answered, and the answer was an error (`node_errors_total`). */
+  answeredWithError: number;
+  /** We could not get an answer at all (`rpc_endpoint_total_errored`). */
+  unreachable: number;
+  /** Distinct chains on which this provider produced either kind. */
+  chainsAffected: number;
+  /** Per chain, worst first. `errorRate` is null when the chain served none. */
+  chains: {
+    spec: string;
+    name: string;
+    answeredWithError: number;
+    unreachable: number;
+    relaysServiced: number;
+    /** unreachable ÷ (serviced + unreachable) — reachability, 0..1. */
+    errorRate: number | null;
+  }[];
+}
+
+export interface ProviderFaultsReport {
+  /** Presence of the per-provider families at read time. */
+  emitted: { nodeErrors: boolean; endpointErrored: boolean };
+  providers: ProviderFault[];
+}
+
+/**
+ * A named diagnosis, not a number — what is wrong and what to do about it.
+ *
+ * The point is to close the gap the raw panels leave. "blockdaemon: 37,292
+ * failed relays on Solana testnet" makes an SRE go read logs; "blockdaemon is
+ * over its rate limit, every failure is a 429, you sustained 6/s before being
+ * throttled" ends the investigation.
+ *
+ * `confidence` is load-bearing and never cosmetic. Error KINDS come from
+ * `smartrouter_errors_total`, which carries `chain_id` but NO provider label,
+ * while per-provider failure COUNTS come from the endpoint families. So
+ * attributing a kind to a provider is an INFERENCE: sound when one provider
+ * owns nearly all of the chain's failures, guesswork when several share them.
+ * `attributed` says which case this is; the UI must word itself accordingly.
+ */
+export interface ProviderInsight {
+  kind: "rate-limited" | "method-unsupported" | "unreachable" | "answering-errors";
+  severity: "critical" | "warning" | "info";
+  spec: string;
+  /** Null when the chain's failures are spread too thin to name one upstream. */
+  provider: string | null;
+  /**
+   * True when `provider` was proven to own the failures (it holds the dominant
+   * share of the chain's failed relays); false when the finding is chain-level
+   * and the provider column would be a guess.
+   */
+  attributed: boolean;
+  /** One plain sentence: the finding. */
+  headline: string;
+  /** The numbers behind it, already worded. */
+  detail: string;
+  /** Requests involved — the thing being counted. */
+  affected: number;
+}
+
 export interface ErrorsReport {
   /** Derived: clamp_min(total − success, 0). Real math, not a synthetic. */
   total: number;

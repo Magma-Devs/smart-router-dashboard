@@ -1,6 +1,7 @@
 import type { ComponentType } from "react";
 import {
   IconChart,
+  IconPulse,
   IconServer,
   IconSettings,
   IconUsers,
@@ -31,6 +32,7 @@ export const NAV_SECTIONS: NavSection[] = [
       // surface); their routes still resolve if linked directly. Endpoints is
       // gone: the Upstreams page's "By router" grouping is that surface, on
       // the same config the other two groupings read.
+      { href: "/status", label: "Status", icon: IconPulse },
       { href: "/metrics", label: "Metrics", icon: IconChart },
       { href: "/upstreams", label: "Upstreams", icon: IconServer },
     ],

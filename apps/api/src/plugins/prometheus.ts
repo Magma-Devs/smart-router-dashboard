@@ -73,6 +73,12 @@ export const prometheusPlugin = fp(async (app: FastifyInstance) => {
   const metricsDashboard = new MetricsDashboardService(prom);
   app.decorate("metrics", metrics);
   app.decorate("metricsDetail", metricsDetail);
+  // The Status page's standing loop — computed continuously, not per visit.
+  // Off in tests: their per-test fetch stubs must never be hit by a timer.
+  if (process.env.NODE_ENV !== "test" && !process.env.VITEST) {
+    metricsDetail.startStatusLoop();
+    app.addHook("onClose", async () => metricsDetail.stopStatusLoop());
+  }
   app.decorate("metricsDashboard", metricsDashboard);
 
   const unscoped: ScopedServices = { metrics, metricsDetail, metricsDashboard };

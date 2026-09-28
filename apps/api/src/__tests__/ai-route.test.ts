@@ -7,6 +7,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { buildApp } from "../app.js";
+import { config } from "../config.js";
 
 // There is no credential to test with: the SDK signs with SigV4 from the
 // ambient identity, so the route has nothing secret to leak in the first place.
@@ -92,3 +93,55 @@ describe("POST /api/ai/verify", () => {
 function res_json(res: { json(): unknown }): Record<string, unknown> {
   return res.json() as Record<string, unknown>;
 }
+
+describe("GET /api/ai/issues", () => {
+  let app: FastifyInstance;
+  const saved = { auth: process.env.AUTH_MODE, enabled: config.bedrock.enabled };
+
+  beforeEach(async () => {
+    // An empty store: the status report finds nothing, so a cycle runs end
+    // to end without a single model call.
+    vi.stubGlobal("fetch", async () => new Response(JSON.stringify({ status: "success", data: { resultType: "vector", result: [] } }), { status: 200 }));
+    app = await buildApp();
+    // Opened after the build, so no /api/* sign-in gate is installed. The
+    // gate reads AUTH_MODE per request but `enabled` from config at import.
+    process.env.AUTH_MODE = "enabled";
+    (config.bedrock as { enabled: boolean }).enabled = true;
+  });
+  afterEach(async () => {
+    await app.close();
+    vi.unstubAllGlobals();
+    if (saved.auth === undefined) delete process.env.AUTH_MODE;
+    else process.env.AUTH_MODE = saved.auth;
+    (config.bedrock as { enabled: boolean }).enabled = saved.enabled;
+  });
+
+  it("says it is warming before the first cycle, as a 200", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/ai/issues?window=30m" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ ok: false, warming: true });
+  });
+
+  it("says AI is off as a 200 — a state the page shows, not a failure it hides", async () => {
+    (config.bedrock as { enabled: boolean }).enabled = false;
+    const res = await app.inject({ method: "GET", url: "/api/ai/issues?window=7d" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ ok: false, reason: "disabled" });
+  });
+
+  it("after a cycle, any window answers from the log", async () => {
+    await app.issuesFeed.refresh();
+    for (const window of ["30m", "6h"]) {
+      const res = await app.inject({ method: "GET", url: `/api/ai/issues?window=${window}` });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toMatchObject({ ok: true, warming: false, window, issues: [], classified: expect.any(Boolean) });
+    }
+  });
+
+  it("reads a window wider than the log keeps as 7 days", async () => {
+    await app.issuesFeed.refresh();
+    const res = await app.inject({ method: "GET", url: "/api/ai/issues?window=30d" });
+    expect(res.json()).toMatchObject({ ok: true, window: "7d" });
+  });
+});
+

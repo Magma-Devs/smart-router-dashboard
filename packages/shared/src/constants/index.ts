@@ -3,6 +3,7 @@ export * from "./windows.js";
 export * from "./chains.js";
 export * from "./explorers.js";
 export * from "./roles.js";
+export * from "./error-meanings.js";
 export * from "./two-factor.js";
 export * from "./audit-events.js";
 export * from "./emails.js";

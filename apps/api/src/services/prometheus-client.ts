@@ -31,6 +31,23 @@ export interface PromResponse<T> {
   error?: string;
 }
 
+/**
+ * A Prometheus read that failed — HTTP error, timeout, or a PromQL error.
+ * Thrown only by the `*Strict` readers; the plain readers keep returning an
+ * empty result so panels degrade to "—". Carries a 503 so a route can let it
+ * propagate: the dashboard is up, the thing it reads is not.
+ */
+export class PrometheusQueryError extends Error {
+  readonly statusCode = 503;
+  constructor(
+    readonly expr: string,
+    readonly reason: string,
+  ) {
+    super(`prometheus read failed: ${reason}`);
+    this.name = "PrometheusQueryError";
+  }
+}
+
 /** What the client sends to authenticate and (optionally) name its org. */
 export interface PromAuth {
   username?: string;
@@ -75,6 +92,42 @@ export interface PromClientOptions {
 /** One warn line per distinct failure per interval — a dead store must not
  *  turn every panel refresh into forty lines. */
 const WARN_INTERVAL_MS = 60_000;
+
+/**
+ * A counting semaphore: at most `limit` callers inside at once. Two FIFO
+ * queues — `urgent` callers (the strict reads behind a report someone is
+ * waiting on) are admitted before the rest, so a page of slow panel queries
+ * cannot hold the Status report hostage.
+ */
+class Gate {
+  private active = 0;
+  private readonly urgent: Array<() => void> = [];
+  private readonly normal: Array<() => void> = [];
+  constructor(private readonly limit: number) {}
+  async run<T>(fn: () => Promise<T>, isUrgent = false): Promise<T> {
+    if (this.active >= this.limit) {
+      await new Promise<void>((resolve) => (isUrgent ? this.urgent : this.normal).push(resolve));
+    }
+    this.active += 1;
+    try {
+      return await fn();
+    } finally {
+      this.active -= 1;
+      (this.urgent.shift() ?? this.normal.shift())?.();
+    }
+  }
+}
+
+/** One gate per Prometheus, shared by every scoped client built off it. */
+const gates = new Map<string, Gate>();
+function gateFor(baseUrl: string): Gate {
+  let g = gates.get(baseUrl);
+  if (!g) {
+    g = new Gate(config.prometheus.maxConcurrency);
+    gates.set(baseUrl, g);
+  }
+  return g;
+}
 
 export class PrometheusClient {
   private readonly headers: Record<string, string>;
@@ -125,7 +178,11 @@ export class PrometheusClient {
     this.logger.warn(obj, msg);
   }
 
-  private async get<T>(path: string, params: Record<string, string>): Promise<PromResponse<T>> {
+  private async get<T>(
+    path: string,
+    params: Record<string, string>,
+    urgent = false,
+  ): Promise<PromResponse<T>> {
     const base = new URL(this.baseUrl);
     if (!base.pathname.endsWith("/")) base.pathname += "/";
     const url = new URL(path, base);
@@ -136,31 +193,55 @@ export class PrometheusClient {
     for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
     const query = params.query ?? "";
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
-    try {
-      const res = await fetch(url, { signal: controller.signal, headers: this.headers });
-      if (!res.ok) {
-        // Prometheus puts the PromQL error in the body; keep enough to read it.
-        const body = (await res.text().catch(() => "")).slice(0, 300);
-        this.warn(`http:${res.status}:${body}`, { status: res.status, body, query, url: url.origin + url.pathname }, "prometheus call failed");
-        return { status: "error", error: `prometheus ${res.status}` };
+    const queued = Date.now();
+    return gateFor(this.baseUrl).run(async () => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+      const started = Date.now();
+      let outcome: PromResponse<T>;
+      try {
+        const res = await fetch(url, { signal: controller.signal, headers: this.headers });
+        if (!res.ok) {
+          // Prometheus puts the PromQL error in the body; keep enough to read it.
+          const body = (await res.text().catch(() => "")).slice(0, 300);
+          this.warn(
+            `http:${res.status}:${body}`,
+            { status: res.status, body, query, url: url.origin + url.pathname },
+            "prometheus call failed",
+          );
+          outcome = { status: "error", error: `prometheus ${res.status}` };
+        } else {
+          const parsed = (await res.json()) as PromResponse<T>;
+          if (parsed.status === "error") {
+            this.warn(`promql:${parsed.error ?? ""}`, { error: parsed.error, query }, "prometheus returned an error");
+          }
+          if (parsed.status !== "success" && !parsed.error) parsed.error = "prometheus returned an error";
+          outcome = parsed;
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        this.warn(
+          `fetch:${message}`,
+          { error: message, query, url: url.origin + url.pathname },
+          "prometheus unreachable",
+        );
+        outcome = { status: "error", error: message };
+      } finally {
+        clearTimeout(timer);
       }
-      const parsed = (await res.json()) as PromResponse<T>;
-      if (parsed.status === "error") {
-        this.warn(`promql:${parsed.error ?? ""}`, { error: parsed.error, query }, "prometheus returned an error");
+      if (config.prometheus.trace) {
+        const ms = Date.now() - started;
+        const waited = started - queued;
+        const tag = outcome.status === "success" ? "ok " : `ERR ${outcome.error ?? ""}`;
+        process.stderr.write(
+          `[prom] ${String(ms).padStart(6)}ms${waited > 50 ? ` (+${waited}ms queued)` : ""} ${tag} ${query}${params.start ? ` [range ${params.step}]` : ""}\n`,
+        );
       }
-      return parsed;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      this.warn(`fetch:${message}`, { error: message, query, url: url.origin + url.pathname }, "prometheus unreachable");
-      return { status: "error", error: message };
-    } finally {
-      clearTimeout(timer);
-    }
+      return outcome;
+    }, urgent);
   }
 
-  /** Instant query → vector. */
+  /** Instant query → vector. A failed read is an empty vector (see `queryStrict`). */
   async query(expr: string): Promise<PromVectorSample[]> {
     const r = await this.get<PromVectorSample[]>("api/v1/query", {
       query: this.scoped(expr),
@@ -168,7 +249,28 @@ export class PrometheusClient {
     return r.status === "success" && r.data ? r.data.result : [];
   }
 
-  /** Range query → matrix. */
+  /**
+   * Instant query that THROWS `PrometheusQueryError` when the read itself
+   * failed, as opposed to matching nothing. For reports that derive a verdict
+   * from several reads at once: one missing input must not become "0 served"
+   * or "no finding" — a half-read is worse than no read. Strict reads are
+   * also admitted to the concurrency gate ahead of plain panel reads.
+   */
+  async queryStrict(expr: string): Promise<PromVectorSample[]> {
+    const params = { query: this.scoped(expr) };
+    let r = await this.get<PromVectorSample[]>("api/v1/query", params, true);
+    if (r.status !== "success") {
+      // One retry after a beat: a loaded Prometheus (or the ingress in front
+      // of it) answers the same query fine seconds later, and by then the
+      // burst that queued alongside this read has drained.
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      r = await this.get<PromVectorSample[]>("api/v1/query", params, true);
+    }
+    if (r.status !== "success") throw new PrometheusQueryError(expr, r.error ?? "unknown");
+    return r.data ? r.data.result : [];
+  }
+
+  /** Range query → matrix. A failed read is an empty matrix (see `queryRangeStrict`). */
   async queryRange(
     expr: string,
     startSeconds: number,
@@ -184,9 +286,40 @@ export class PrometheusClient {
     return r.status === "success" && r.data ? r.data.result : [];
   }
 
+  /** Range query that throws `PrometheusQueryError` on a failed read. */
+  async queryRangeStrict(
+    expr: string,
+    startSeconds: number,
+    endSeconds: number,
+    step: string,
+  ): Promise<PromMatrixSample[]> {
+    const params = {
+      query: this.scoped(expr),
+      start: String(startSeconds),
+      end: String(endSeconds),
+      step,
+    };
+    let r = await this.get<PromMatrixSample[]>("api/v1/query_range", params, true);
+    if (r.status !== "success") {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      r = await this.get<PromMatrixSample[]>("api/v1/query_range", params, true);
+    }
+    if (r.status !== "success") throw new PrometheusQueryError(expr, r.error ?? "unknown");
+    return r.data ? r.data.result : [];
+  }
+
   /** First scalar value of an instant query, or null when no sample. */
   async scalar(expr: string): Promise<number | null> {
     const result = await this.query(expr);
+    const first = result[0];
+    if (!first) return null;
+    const n = Number(first.value[1]);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  /** `scalar` that throws `PrometheusQueryError` on a failed read; null still means "no sample". */
+  async scalarStrict(expr: string): Promise<number | null> {
+    const result = await this.queryStrict(expr);
     const first = result[0];
     if (!first) return null;
     const n = Number(first.value[1]);

@@ -6,14 +6,17 @@ import { WINDOW_OPTIONS, WINDOWS, type MetricWindow } from "@sr/shared";
 /* Themed time-window dropdown — replaces the native <select> whose option list
    renders in the OS theme (white-on-blue), which looked out of place on the
    dark UI. Mirrors ChainSelect: themed popover, hover/selected states, an icon,
-   click-outside to close. Options come from WINDOW_OPTIONS/WINDOWS. */
+   click-outside to close. Options default to WINDOW_OPTIONS; a page that keeps
+   less passes its own (Status stops at 7 days). */
 
 export function WindowSelect({
   value,
   onChange,
+  options = WINDOW_OPTIONS,
 }: {
   value: MetricWindow;
   onChange: (w: MetricWindow) => void;
+  options?: readonly MetricWindow[];
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -45,7 +48,7 @@ export function WindowSelect({
       </button>
       {open && (
         <div style={{ position: "absolute", top: "calc(100% + 4px)", right: 0, zIndex: 120, minWidth: 150, padding: 4, borderRadius: 9, background: "var(--surface-2)", border: "1px solid var(--line-2)", boxShadow: "0 10px 30px rgba(0,0,0,0.5)", maxHeight: 320, overflowY: "auto" }}>
-          {WINDOW_OPTIONS.map((v) => (
+          {options.map((v) => (
             <button
               key={v}
               onClick={() => { onChange(v); setOpen(false); }}

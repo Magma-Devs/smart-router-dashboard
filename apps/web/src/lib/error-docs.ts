@@ -7,7 +7,7 @@
  * somewhere; this is the somewhere, so the name links straight to the table
  * that defines it rather than to a page they then have to scan.
  *
- * The anchors are the slugs mkdocs generates from that page's headings — they
+ * The anchors are the slugs mkdocs generates from that page's headings - they
  * change only if the headings are retitled, which retitles the layers.
  */
 
@@ -22,8 +22,8 @@ const LAYER_ANCHOR: ReadonlyArray<readonly [prefix: string, anchor: string]> = [
   ["USER_", "layer-d-user-errors-user_-40004999"],
 ];
 
-/** Codes that sit outside the four layers. `UNKNOWN_ERROR` is code 0 — the
- *  fallback the classifier assigns when nothing matched — so it is defined
+/** Codes that sit outside the four layers. `UNKNOWN_ERROR` is code 0 - the
+ *  fallback the classifier assigns when nothing matched - so it is defined
  *  where classification is explained, not in a layer table. */
 const EXCEPTIONS: Readonly<Record<string, string>> = {
   UNKNOWN_ERROR: "how-classification-works",
@@ -41,3 +41,10 @@ export function errorDocsUrl(code: string): string {
   const layer = LAYER_ANCHOR.find(([prefix]) => name.startsWith(prefix));
   return layer ? `${ERROR_CODES_PAGE}#${layer[1]}` : ERROR_CODES_PAGE;
 }
+
+/**
+ * Plain-words meaning for the codes the Status page actually surfaces -
+ * what happened, said the way a colleague would. Codes outside the table
+ * fall back to what their layer prefix tells us, which is still true.
+ */
+export { errorMeaning } from "@sr/shared";

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { errorDocsUrl } from "../error-docs";
+import { errorDocsUrl, errorMeaning } from "../error-docs";
 
 const PAGE = "https://docs.magmadevs.com/reference/error-codes/";
 
@@ -22,5 +22,21 @@ describe("errorDocsUrl", () => {
 
   it("reads a label however the metric cased or padded it", () => {
     expect(errorDocsUrl("  node_rate_limited  ")).toBe(`${PAGE}#layer-b-node-errors-node_-20002999`);
+  });
+});
+
+describe("errorMeaning", () => {
+  it("says what a known code actually means, in plain words", () => {
+    expect(errorMeaning("NODE_SERVER_ERROR")).toContain("internal error");
+    expect(errorMeaning("NODE_RATE_LIMITED")).toContain("request limit");
+  });
+
+  it("falls back to the layer's meaning for a code it has no line for", () => {
+    expect(errorMeaning("NODE_SOMETHING_NEW")).toBe("the provider answered, and the answer was an error");
+    expect(errorMeaning("PROTOCOL_SOMETHING_NEW")).toContain("router-side");
+  });
+
+  it("does not pretend to know a code outside the taxonomy", () => {
+    expect(errorMeaning("WEIRD_THING")).toContain("unrecognised");
   });
 });

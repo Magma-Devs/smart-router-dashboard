@@ -108,6 +108,70 @@ export function bedrockGate(
     : { ok: false, reason: "auth_required" };
 }
 
+/**
+ * The answer was cut off at the token ceiling, so its JSON ends mid-object.
+ *
+ * Its own type because the fix is a ceiling, not a prompt. Reported as "the
+ * model did not return JSON" — which is what happens if you only log it and
+ * fall through to the parser — it sends whoever reads it to the wrong file.
+ * Three services made exactly that mistake before this existed.
+ */
+export class ModelAnswerTruncated extends Error {
+  constructor(
+    readonly what: string,
+    readonly outputTokens: number | null,
+  ) {
+    super(`the ${what} was cut off at the token ceiling`);
+    this.name = "ModelAnswerTruncated";
+  }
+}
+
+/** The model replied, but not with JSON — a refusal, or prose around nothing. */
+export class ModelAnswerUnparseable extends Error {
+  constructor(readonly what: string) {
+    super(`the model did not return JSON for the ${what}`);
+    this.name = "ModelAnswerUnparseable";
+  }
+}
+
+/**
+ * Turn one answer into an object, or throw the RIGHT error.
+ *
+ * Every caller that asks for JSON wants the same three things: truncation
+ * distinguished from a refusal, a stray markdown fence tolerated even though
+ * the prompt forbids it, and a parse failure that says which surface it came
+ * from. Written once here rather than a fourth time.
+ */
+export function parseModelJson(
+  answer: BedrockAnswer,
+  what: string,
+  logger?: BedrockLogger,
+): Record<string, unknown> {
+  if (answer.stopReason === "max_tokens") {
+    // The opening of the answer says why it ran long — a preamble before the
+    // JSON, or a JSON that never stopped — which the count alone cannot.
+    logger?.warn(
+      { what, outputTokens: answer.outputTokens, opening: answer.text.slice(0, 240) },
+      "model answer hit the token ceiling",
+    );
+    throw new ModelAnswerTruncated(what, answer.outputTokens);
+  }
+  // Slice between the outermost braces: tolerates a fence, or a sentence the
+  // model put in front of the object despite being told not to.
+  const start = answer.text.indexOf("{");
+  const end = answer.text.lastIndexOf("}");
+  if (start === -1 || end <= start) {
+    logger?.warn({ what, text: answer.text.slice(0, 300) }, "model answer was not JSON");
+    throw new ModelAnswerUnparseable(what);
+  }
+  try {
+    return JSON.parse(answer.text.slice(start, end + 1)) as Record<string, unknown>;
+  } catch {
+    logger?.warn({ what, text: answer.text.slice(0, 300) }, "model answer was not JSON");
+    throw new ModelAnswerUnparseable(what);
+  }
+}
+
 export class BedrockService {
   private readonly client: BedrockRuntimeClient;
 
@@ -152,10 +216,38 @@ export class BedrockService {
    * and silently reserves far more quota than the call needs, which is the
    * usual cause of a ThrottlingException nobody can explain.
    */
+  /**
+   * One model call — retried ONCE with twice the room when the answer was cut
+   * off at its ceiling.
+   *
+   * The model reasons before it writes, and the reasoning counts against the
+   * ceiling: a four-line issue card used 400 to 2,000+ tokens, measured, and
+   * at 2,000 about one call in six came back cut off or empty. A ceiling that
+   * must be sized for the worst case on every call reserves quota for it on
+   * every call; one retry covers the tail instead. A call that used most of
+   * its room is logged, so a ceiling going stale shows before it breaks.
+   */
   async complete(opts: {
     messages: { role: "user" | "assistant"; content: string }[];
     system?: string;
     maxTokens?: number;
+  }): Promise<BedrockAnswer> {
+    const ceiling = opts.maxTokens ?? config.bedrock.maxTokens;
+    const first = await this.once({ ...opts, maxTokens: ceiling });
+    if ((first.outputTokens ?? 0) >= ceiling * 0.6) {
+      this.logger?.warn(
+        { outputTokens: first.outputTokens, maxTokens: ceiling, stopReason: first.stopReason, model: this.model },
+        "model call used most of its token room",
+      );
+    }
+    if (first.stopReason !== "max_tokens") return first;
+    return this.once({ ...opts, maxTokens: Math.min(ceiling * 2, 64_000) });
+  }
+
+  private async once(opts: {
+    messages: { role: "user" | "assistant"; content: string }[];
+    system?: string;
+    maxTokens: number;
   }): Promise<BedrockAnswer> {
     if (opts.messages.length === 0) throw new BedrockError("no messages");
 
@@ -165,7 +257,7 @@ export class BedrockService {
           modelId: this.model,
           messages: opts.messages.map((m) => ({ role: m.role, content: [{ text: m.content }] })),
           ...(opts.system ? { system: [{ text: opts.system }] } : {}),
-          inferenceConfig: { maxTokens: opts.maxTokens ?? config.bedrock.maxTokens },
+          inferenceConfig: { maxTokens: opts.maxTokens },
         }),
       );
 

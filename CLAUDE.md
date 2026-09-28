@@ -489,7 +489,9 @@ a step targeting ~150–200 range points (clamped to ≥15s, the scrape interval
 Every `window=` query param accepts those keys **plus the `24h` alias (= `1d`)**;
 anything else falls back to the default `30m`. The page-level `<select>` shows
 the design's 12 options (`WINDOW_OPTIONS` — everything except `1h`, which the
-Dashboard page's chip row uses internally).
+Dashboard page's chip row uses internally). The Status page stops at `7d`
+(`STATUS_WINDOW_OPTIONS`): its issue list keeps 7 days, and a wider window
+reads as `7d` there (`toStatusWindow`).
 
 ## API endpoints
 
@@ -541,7 +543,7 @@ Every `/api/metrics/*` route also accepts **`router?`** — the router scope
 | `GET /api/metrics/cross-validation` | `window` | `CrossValidationReport` — `emitted:false` + nulls until `cross_validation_*` fires; **`consistency` (total/caught) is real either way**, but **no web consumer** since MAG-2527 removed the strip that rendered it (consistency checks are head-freshness verification, not cross-validation). `caught` still surfaces as the hero's `staleCaught` |
 | `GET /api/metrics/websocket` | `window` | `WebSocketReport` — `emitted:false` + nulls until `ws_*` fires (first subscription) |
 | `GET /api/metrics/query` | **`query`** (required) | Raw **instant** PromQL passthrough — `{ result }`. 400 without `query` |
-| `GET /api/ai/health` | — | `{ ok, reason?, provider, auth, model, region, roleArn }` — whether a model is enabled, allowed, and reachable. **Free** — makes no model call. `reason` is `disabled` (`BEDROCK_ENABLED` unset), `auth_required` (enabled but `AUTH_MODE=disabled`, so it must not be spendable anonymously) or `roleArn` names the assumed role, `null` when the chain's own identity is used. Resolves no credentials, which would block on IMDS — `POST /api/ai/verify` makes one real ~30-token call and is what proves the identity may actually invoke the model |
+| `GET /api/ai/health` | — | `{ ok, reason?, provider, auth, model, region, roleArn }` — whether a model is enabled, allowed, and reachable. **Free** — makes no model call. `reason` is `disabled` (`BEDROCK_ENABLED` unset), `auth_required` (enabled but `AUTH_MODE=disabled`, so it must not be spendable anonymously). `roleArn` names the assumed role, `null` when the chain's own identity is used. Resolves no credentials, which would block on IMDS — `POST /api/ai/verify` makes one real ~30-token call and is what proves the identity may actually invoke the model |
 | `GET /api/config/routers` | — | `{ routers: RouterTopology[] }` — live topology from the mounted values file (either format), node URLs masked to scheme+host. Each endpoint also carries `index` (the handle the relay below resolves) + `directable` |
 | `POST /api/upstreams/relay` | body: `{routerId, node, endpointIndex, transport?, httpMethod?, path?, body?}` | Fires ONE request straight at a configured upstream, router excluded — `{httpStatus, latencyMs, body, truncated, transport}`. The target is resolved from the values file, never taken from the caller; the resolved url is never returned and is scrubbed out of the upstream's own body. Upstream 4xx/5xx come back **200** with their status inside; 502/504 mean our hop failed. Off with `UPSTREAM_RELAY_ENABLED=false`. See [`docs/UPSTREAM-DIRECT-TEST.md`](docs/UPSTREAM-DIRECT-TEST.md) |
 | `POST /auth/2fa/verify` | body: `{challenge, code}` | Second sign-in step. `/auth/sign-in` returns a challenge and **no session** for an enrolled account; only this opens one. Wrong code, dead challenge and unknown challenge all answer the same 401 |
@@ -567,6 +569,15 @@ API (`apps/api/src/config.ts` is the source of truth):
 | `RATE_LIMIT_MAX` | `300` | per IP per minute |
 | `TRUST_PROXY` | `1` | how far `X-Forwarded-For` is believed when deriving `request.ip` (hop count, proxy IP/CIDR list, or `false`). Not `true` — this api is public, and trusting every hop lets any caller choose their apparent address |
 | `HELM_VALUES_DIR` | `/app/helm-values` | reads `<dir>/core/values.yml` (either format) |
+| `ISSUES_STATE_FILE` | (unset) | Where the Status page's issue log is kept between restarts (JSON, rewritten after every 5-minute cycle). Unset = memory only: a restart finds every open issue again on its first cycle but forgets resolved ones. Point it at a mounted volume to keep history. The log keeps 7 days either way. Memory plus this file is a temporary store — no database, and each api replica keeps its own log |
+| `LOKI_URL` | (unset) | The routers' log store. The Status page counts failed and refused requests from it, once per request, and traces each failure's path. Unset = those are "not counted", and the page says so |
+| `LOKI_SELECTOR` | `{service_name="router"}` | The stream selector for the routers' lines. The default is a per-pod store: one stream per pod, the pod named after its router. A store several deployments share: `{cluster="<cluster>",namespace="smart-router",component="router"}`. A malformed one refuses the boot — a selector that matches nothing reads as a clean page, never as an error |
+| `LOKI_ROUTER_LABEL` | `pod` | The label that tells one router's streams apart. Its value names the router — whole, at its start (`eth-mainnet-router-6b4d…`) or at its end (`<cluster>-eth-mainnet`) — matched to the values file's router ids, longest first. `service_name` on a shared store |
+| `LOKI_USERNAME` / `LOKI_PASSWORD` | unset | Basic auth on every Loki call — a shared store's read path. Both or neither |
+| `LOKI_ORG_ID` | unset | Sent as `X-Scope-OrgID`, for a multi-tenant store that takes the tenant from the client |
+| `LOKI_TIMEOUT_MS` | `10000` | Per read on a page; the Status page's background cycle waits at least 30s |
+| `ISSUES_WEBHOOK_URL` | (unset) | Posts a chain turning Critical, and that issue resolving, as `{ text }` (a Slack incoming webhook takes it as is). Unset = no alerts — who gets told is the operator's call. Carries a secret; never logged. Without `ISSUES_STATE_FILE`, a restart re-sends issues that were already Critical |
+| `DASHBOARD_PUBLIC_URL` | (unset) | The page's own address, for the link in an alert |
 | `UPSTREAM_RELAY_ENABLED` | `true` | `false` 404s `POST /api/upstreams/relay`. With `AUTH_MODE=disabled` anyone who can reach the api can spend the operator's upstream quota through it, using credentials only the api holds — turn it off where that isn't acceptable |
 | `UPSTREAM_RELAY_TIMEOUT_MS` | `10000` | deadline on the api→upstream call |
 | `UPSTREAM_RELAY_MAX_BODY_BYTES` | `262144` | upstream responses past this come back `truncated: true` |
@@ -602,7 +613,7 @@ Setup for both, including Roles Anywhere on non-AWS hardware:
 | `BEDROCK_REGION` | `us-east-1` | |
 | `BEDROCK_MODEL` | `global.anthropic.claude-sonnet-5` | A cross-region **inference profile**, not a bare model id — `global.` routes to whichever region has capacity. Verify with `aws bedrock list-inference-profiles` |
 | `BEDROCK_MAX_TOKENS` | `4096` | **Always sent.** Unset, Bedrock reserves the model's maximum quota per call — the usual cause of an unexplained `ThrottlingException` |
-| `BEDROCK_TIMEOUT_MS` | `60000` | |
+| `BEDROCK_TIMEOUT_MS` | `180000` | Converse does not stream, so the timer runs the whole generation — a multi-thousand-token brief legitimately takes past a minute |
 | `BEDROCK_RATE_LIMIT_MAX` | `10` | Per IP per minute on the routes that call the model, tighter than `RATE_LIMIT_MAX` — same reasoning as `UPSTREAM_RELAY_RATE_LIMIT_MAX`. Auth stops an anonymous caller, not a signed-in one looping |
 | `BEDROCK_ROLE_ARN` | (unset) | The role to assume. Unset ⇒ the chain's own identity, which is the local case |
 | `BEDROCK_ROLE_EXTERNAL_ID` | (unset) | `sts:ExternalId`. Set whenever the role lives in another account — without it, anyone the role trusts who learns its ARN can assume it |

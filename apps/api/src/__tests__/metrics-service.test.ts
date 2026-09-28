@@ -76,10 +76,10 @@ describe("MetricsService query construction (bug regressions)", () => {
   it("per-chain health reads the spec-labelled ENDPOINT gauge, not the global router gauge", async () => {
     const { prom, queries } = capturingProm();
     await new MetricsService(prom).chains("1d");
+    // Grouped since the per-chain fan-out was removed: one read for every
+    // chain, still the ENDPOINT gauge.
     expect(
-      queries.some((q) =>
-        q.includes('max by (spec) (rpc_endpoint_overall_health{spec="'),
-      ),
+      queries.some((q) => q.includes("max by (spec) (rpc_endpoint_overall_health)")),
     ).toBe(true);
     // The label-less router gauge must not be used with a spec in mind:
     // it may appear alone (global health) but never filtered per chain.
@@ -411,8 +411,8 @@ describe("MetricsService.upstreams · scores without traffic", () => {
 });
 
 describe("MetricsService · cross-chain shared node names (MAG-2875)", () => {
-  /** Two routers on DIFFERENT chains reusing one vendor node name — the gk8
-   *  shape: every chain's router declares "lava"/"publicnode"-style nodes. */
+  /** Two routers on DIFFERENT chains reusing one vendor node name — a common
+   *  production shape: every chain's router declares "lava"/"publicnode"-style nodes. */
   const twoChainsSharedName = {
     getRouters: () => [
       {
