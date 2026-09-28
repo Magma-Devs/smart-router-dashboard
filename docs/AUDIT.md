@@ -28,10 +28,14 @@ a retention escape hatch — `set local audit.purge = 'on'` inside a transaction
 — which exists for data-retention law and for nothing else.)
 
 The event vocabulary is a closed catalog
-(`packages/shared/src/constants/audit-events.ts`). The API refuses a filter
-naming an unknown action rather than answering with an empty page — an empty
-answer for `signin.failure` reads exactly like "this never happened", which is
-the one thing an audit surface must never imply.
+(`packages/shared/src/constants/audit-events.ts`), and it is **published**:
+`GET /api/audit/catalog` returns every event name, its group, what it means,
+and whether its rows carry field changes and an access context — readable with
+a session or an audit token, and derived from the same constant the writer and
+the filters validate against. The API refuses a filter naming an unknown
+action rather than answering with an empty page — an empty answer for
+`signin.failure` reads exactly like "this never happened", which is the one
+thing an audit surface must never imply.
 
 ## The page
 

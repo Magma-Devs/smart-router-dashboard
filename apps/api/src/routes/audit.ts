@@ -1,6 +1,7 @@
 import { Readable } from "node:stream";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
+  AUDIT_EVENTS,
   AUDIT_GROUPS,
   escapeCsvField,
   isAuditAction,
@@ -153,7 +154,7 @@ function parseAuditQuery(
     sendApiError(
       reply,
       400,
-      `unknown action "${unknownAction}" — see GET /docs for the event list`,
+      `unknown action "${unknownAction}" — GET /api/audit/catalog lists every event`,
     );
     return null;
   }
@@ -275,6 +276,41 @@ export async function auditRoutes(app: FastifyInstance) {
     }
     return app.db;
   }
+
+  /**
+   * The published event list — the ticket's own words: "a published list of
+   * every event name and what it means. Both references do this and it is the
+   * part customers actually read."
+   *
+   * Served over the API rather than only in the repo because the pull
+   * consumer holds an audit token, and a token reaches exactly `GET` under
+   * `/api/audit/` — pointing it at /docs or at a markdown file behind the
+   * dashboard would be directions to a door it cannot open. Derived from the
+   * catalog constant, so it cannot drift from what the writer accepts and the
+   * filters validate against.
+   */
+  app.get(
+    "/api/audit/catalog",
+    {
+      schema: {
+        tags: ["Audit"],
+        summary: "Every audit event name, and what it means",
+        description:
+          "The closed event vocabulary: name, group, meaning, whether rows carry field " +
+          "changes, and whether they carry an address, client and session. " +
+          "`GET /api/audit/events?action=` accepts exactly these names.",
+      },
+    },
+    async () => ({
+      events: Object.entries(AUDIT_EVENTS).map(([action, spec]) => ({
+        action,
+        group: spec.group,
+        description: spec.description,
+        carries_changes: spec.carriesChanges,
+        carries_access_context: spec.carriesAccessContext,
+      })),
+    }),
+  );
 
   app.get<{ Querystring: AuditEventsQuery }>(
     "/api/audit/events",
