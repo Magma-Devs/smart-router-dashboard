@@ -614,7 +614,16 @@ AUTH_SECRET=$(openssl rand -base64 32) make up-auth
 # a fresh install with NO accounts, for exercising the account system:
 make accounts          # on http://localhost:3000
 make accounts-reset    # wipe the database and start from first-run again
+
+# EVERYTHING from scratch — router, metrics, logs, accounts and email, hot reload:
+make e2e               # managed mode, inbox at http://localhost:8005
+make e2e MODE=onprem   # on-prem mode, no email
+make e2e-down
 ```
+
+`make e2e` wipes the dev volumes on every run (the same ones `make dev-auth`
+uses), then starts from first run like `make accounts`, with the router,
+Prometheus (on :9091) and Loki/Grafana added so the metrics pages have data.
 
 `make accounts` is the stack for exercising the account system. It differs from
 `make dev-auth` in the one way that matters: `dev-auth` seeds

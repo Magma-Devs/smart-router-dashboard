@@ -5,6 +5,13 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Added
+
+- **`make e2e`** — one target for an end-to-end test from a fresh install:
+  router, Prometheus, logs, postgres, api and web in hot reload, no seeded
+  admin, invites and resets emailed to the local SES mock. `MODE=onprem` runs
+  the on-prem shape; `make e2e-down` stops it. Wipes the dev volumes each run.
+
 ## [0.27.0]
 
 ### Added
