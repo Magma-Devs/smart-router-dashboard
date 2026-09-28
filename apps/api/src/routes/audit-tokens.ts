@@ -26,6 +26,20 @@ interface CreateBody {
   name?: string;
 }
 
+/** Strict 8-4-4-4-12, not `format: "uuid"` — Ajv's format admits `urn:uuid:`
+ *  prefixes and other variants that Postgres's uuid parser then 500s on. Same
+ *  shape as the member routes. */
+const ID_PARAMS = {
+  type: "object" as const,
+  required: ["id"],
+  properties: {
+    id: {
+      type: "string" as const,
+      pattern: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+    },
+  },
+};
+
 const NAME_MAX = 120;
 
 /** What a listing may say about a token: everything except the secret and its
@@ -100,18 +114,26 @@ export async function auditTokenRoutes(app: FastifyInstance) {
       const name = request.body?.name?.trim();
       if (!name) return sendApiError(reply, 400, "`name` is required");
 
-      const minted = await mintAuditToken(db, {
-        name,
-        createdBy: admin.id,
-        createdByName: admin.user.name ?? admin.email,
-      });
-
-      await createAuditWriter(db, {
-        onViolation: (v) => request.log.error({ audit: v }, "audit event violated the catalog"),
-      }).write({
-        action: "apikey.created",
-        actor: { id: admin.id, kind: "user" },
-        target: { type: "audit_token", id: minted.row.id, name },
+      // One transaction: a token whose creation the log missed is exactly the
+      // credential an audit of the audit system cannot explain. Inside a tx the
+      // writer propagates failure, so no row means no token.
+      const minted = await db.transaction(async (tx) => {
+        const m = await mintAuditToken(tx, {
+          name,
+          createdBy: admin.id,
+          createdByName: admin.user.name ?? admin.email,
+        });
+        await createAuditWriter(db, {
+          onViolation: (v) => request.log.error({ audit: v }, "audit event violated the catalog"),
+        }).write(
+          {
+            action: "apikey.created",
+            actor: { id: admin.id, kind: "user" },
+            target: { type: "audit_token", id: m.row.id, name },
+          },
+          tx,
+        );
+        return m;
       });
 
       // 201 and the only sight of the secret anyone gets.
@@ -125,11 +147,7 @@ export async function auditTokenRoutes(app: FastifyInstance) {
       schema: {
         tags: ["Audit"],
         summary: "Revoke an audit token (admin)",
-        params: {
-          type: "object" as const,
-          required: ["id"],
-          properties: { id: { type: "string" as const, format: "uuid" } },
-        },
+        params: ID_PARAMS,
       },
     },
     async (request, reply) => {
@@ -138,22 +156,30 @@ export async function auditTokenRoutes(app: FastifyInstance) {
       const db = dbOr503(reply);
       if (!db) return reply;
 
-      const revoked = await revokeAuditToken(db, {
-        id: request.params.id,
-        revokedBy: admin.id,
-        revokedByName: admin.user.name ?? admin.email,
+      // Same transaction rule as minting: the revocation and its row land
+      // together, or neither does.
+      const revoked = await db.transaction(async (tx) => {
+        const row = await revokeAuditToken(tx, {
+          id: request.params.id,
+          revokedBy: admin.id,
+          revokedByName: admin.user.name ?? admin.email,
+        });
+        if (!row) return null;
+        await createAuditWriter(db, {
+          onViolation: (v) => request.log.error({ audit: v }, "audit event violated the catalog"),
+        }).write(
+          {
+            action: "apikey.deleted",
+            actor: { id: admin.id, kind: "user" },
+            target: { type: "audit_token", id: row.id, name: row.name },
+          },
+          tx,
+        );
+        return row;
       });
       // Already revoked, or never existed. Both are "it cannot be used", and
       // distinguishing them would confirm an id to someone guessing.
       if (!revoked) return sendApiError(reply, 404, "No such active audit token");
-
-      await createAuditWriter(db, {
-        onViolation: (v) => request.log.error({ audit: v }, "audit event violated the catalog"),
-      }).write({
-        action: "apikey.deleted",
-        actor: { id: admin.id, kind: "user" },
-        target: { type: "audit_token", id: revoked.id, name: revoked.name },
-      });
 
       return { token: publicToken(revoked) };
     },

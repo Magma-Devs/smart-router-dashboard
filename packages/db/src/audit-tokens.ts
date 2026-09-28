@@ -126,10 +126,29 @@ export async function touchAuditToken(
     .where(eq(auditTokens.id, token.id));
 }
 
-/** Newest first. Never returns a hash — there is nothing a caller can do with
- *  one except try to crack it. */
-export async function listAuditTokens(db: Database): Promise<AuditTokenRow[]> {
-  return db.select().from(auditTokens).orderBy(desc(auditTokens.createdAt));
+/** A token as a listing may see it: everything except the hash. */
+export type ListedAuditToken = Omit<AuditTokenRow, "tokenHash">;
+
+/** Newest first. The hash never leaves this module's resolve path — excluded
+ *  here in the select, not by the caller remembering to drop it, because there
+ *  is nothing a caller can do with one except leak it. */
+export async function listAuditTokens(db: Database): Promise<ListedAuditToken[]> {
+  return db
+    .select({
+      id: auditTokens.id,
+      name: auditTokens.name,
+      suffix: auditTokens.suffix,
+      createdAt: auditTokens.createdAt,
+      createdBy: auditTokens.createdBy,
+      createdByName: auditTokens.createdByName,
+      lastUsedAt: auditTokens.lastUsedAt,
+      lastUsedIp: auditTokens.lastUsedIp,
+      revokedAt: auditTokens.revokedAt,
+      revokedBy: auditTokens.revokedBy,
+      revokedByName: auditTokens.revokedByName,
+    })
+    .from(auditTokens)
+    .orderBy(desc(auditTokens.createdAt));
 }
 
 export interface RevokeAuditTokenInput {
