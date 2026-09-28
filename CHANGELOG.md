@@ -5,6 +5,39 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.27.0]
+
+### Added
+
+- **The audit log** (`AUTH_MODE=enabled`, MAG-2770) — an append-only record of
+  sign-ins, account changes and configuration changes, enforced by a database
+  trigger nobody bypasses through the product, admins included. Readable three
+  ways off one query, so no surface can disagree with another:
+  - **An Audit log page** for every role including read-only — newest first,
+    filterable by group, person, object and date, with a detail sheet per
+    event.
+  - **A pull API** (`GET /api/audit/events`) — oldest first and resumable: the
+    cursor survives restarts, refuses a resume whose filters moved, and a row
+    whose transaction commits late is delivered late rather than never, and
+    never twice. A misspelled action, a malformed actor or a foreign cursor is
+    a 400, never an empty page that reads like "this never happened".
+  - **A CSV export** (`GET /api/audit/export.csv`) — the whole matching
+    history, streamed, flat (one line per changed field), BOM + CRLF for
+    Excel, every cell formula-neutralised.
+- **A published event list** (`GET /api/audit/catalog`) — every event name,
+  its group and its meaning, straight from the catalog the writer and the
+  filters validate against, readable with a session or an audit token. The
+  feed's unknown-action 400 points here.
+- **Read-only audit tokens** (`POST /api/audit/tokens`, admin) for a security
+  team's tooling: `srdash_audit_…`-prefixed so secret scanners catch a leak,
+  stored only as a hash, shown once, revocable, listed with last-used — and
+  able to reach exactly `GET` under `/api/audit/` and nothing else, checked in
+  the auth gate rather than per handler. Minting and revocation are themselves
+  audited (`apikey.created` / `apikey.deleted`), in the same transaction as
+  the change.
+
+See [`docs/AUDIT.md`](./docs/AUDIT.md) for the full reference.
+
 ## [0.26.1]
 
 ### Changed
