@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { and, asc, desc, eq, gt, gte, inArray, lt, lte, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lt, lte, sql, type SQL } from "drizzle-orm";
 import type { AuditChangeRecord, AuditEventRecord } from "@sr/shared";
 import type { Database } from "./client.js";
 import { auditEventChanges, auditEvents } from "./schema-audit.js";
@@ -56,14 +56,16 @@ export interface AuditQuery {
 /**
  * A decoded cursor.
  *
- * `horizon` is the snapshot boundary the previous read used. It is what makes
- * the resume gap-free, and it is why the cursor is opaque on the wire: a
+ * The position is the last served row's `(xact, seq)` pair — the same pair the
+ * feed is ordered by. That it is a pair rather than a sequence alone is what
+ * makes the resume gap-free, and it is why the cursor is opaque on the wire: a
  * caller inventing one would break the guarantee silently.
  */
 export interface AuditCursor {
   seq: number;
-  /** `xid8` as text — 64-bit and unsigned, so never a JS number. */
-  horizon: string;
+  /** The last served row's `xact_id`. `xid8` as text — 64-bit and unsigned,
+   *  so never a JS number. Position only; `desc` ignores it. */
+  xact: string;
   order: "asc" | "desc";
   /** Identifies the filter set. A resume under different filters is refused
    *  rather than silently answered from the wrong position. */
@@ -121,10 +123,10 @@ export function decodeAuditCursor(raw: string): AuditCursor | null {
     if (typeof parsed !== "object" || parsed === null) return null;
     const c = parsed as Record<string, unknown>;
     if (typeof c.seq !== "number" || !Number.isSafeInteger(c.seq) || c.seq < 0) return null;
-    if (typeof c.horizon !== "string" || !/^\d{1,20}$/.test(c.horizon)) return null;
+    if (typeof c.xact !== "string" || !/^\d{1,20}$/.test(c.xact)) return null;
     if (c.order !== "asc" && c.order !== "desc") return null;
     if (typeof c.fingerprint !== "string" || c.fingerprint.length === 0) return null;
-    return { seq: c.seq, horizon: c.horizon, order: c.order, fingerprint: c.fingerprint };
+    return { seq: c.seq, xact: c.xact, order: c.order, fingerprint: c.fingerprint };
   } catch {
     return null;
   }
@@ -198,16 +200,25 @@ async function readHorizon(db: Database): Promise<string> {
  * the unusual need.
  *
  * The gap-free property, stated precisely. A row is served only once its
- * transaction is below the horizon. The cursor carries the horizon that was
- * used, and the next read also picks up anything that was *withheld* last time
- * — `xact_id >= cursor.horizon` — even where its `seq` now sits behind the
- * cursor. So a row whose transaction committed late is delivered late rather
- * than never, and a row already delivered fails both clauses and is not
- * delivered twice.
+ * transaction sits below the horizon — and `xmin` only ever advances, so the
+ * set of rows below any horizon is *final*: every transaction in it has
+ * committed or rolled back, and nothing will join it later. Ordering that
+ * final set by `(xact_id, seq)` therefore gives a total order that new rows
+ * only ever append to — a late-committing transaction has a high `xact_id`
+ * and sorts after everything already served, wherever its sequence numbers
+ * landed. The cursor is simply the last served pair, and the resume predicate
+ * is a plain keyset comparison: `(xact_id, seq) > (cursor.xact, cursor.seq)`.
+ * A row whose transaction committed late is delivered late rather than never,
+ * and a row already served compares behind the position and is not delivered
+ * twice. (The previous design ordered by `seq` alone and re-admitted withheld
+ * rows via the cursor's old horizon — which lost them for good when more than
+ * a page of them settled at once, because the position had already moved past
+ * their sequences while the stored horizon jumped ahead.)
  *
- * The consequence, which is the honest cost: across pages the sequence is not
- * strictly monotonic — a straggler can arrive after higher-seq rows. Within a
- * page it always is. No ordering can do better without either dropping the
+ * The honest cost is unchanged: across pages the *sequence* is not strictly
+ * monotonic — a straggler transaction's rows arrive after higher-seq rows.
+ * Each row's `time` says when it happened; the feed order is for resuming,
+ * not for display. No ordering can do better without either dropping the
  * straggler or blocking the feed behind it, and for an audit log delivering
  * late beats not delivering.
  *
@@ -221,14 +232,13 @@ export async function listAuditEvents(db: Database, query: AuditQuery = {}): Pro
   const where = filterConditions(query);
   const cursor = query.cursor;
 
-  let horizon: string | null = null;
   if (order === "asc") {
-    horizon = query.horizonOverride ?? (await readHorizon(db));
+    const horizon = query.horizonOverride ?? (await readHorizon(db));
     where.push(sql`${auditEvents.xactId} < ${horizon}::xid8`);
     if (cursor) {
-      // Either new ground, or a row this cursor's own read was too early to see.
+      // Postgres row comparison — the keyset resume over the (xact, seq) order.
       where.push(
-        or(gt(auditEvents.seq, cursor.seq), sql`${auditEvents.xactId} >= ${cursor.horizon}::xid8`)!,
+        sql`(${auditEvents.xactId}, ${auditEvents.seq}) > (${cursor.xact}::xid8, ${cursor.seq})`,
       );
     }
   } else if (cursor) {
@@ -240,7 +250,11 @@ export async function listAuditEvents(db: Database, query: AuditQuery = {}): Pro
     .select()
     .from(auditEvents)
     .where(where.length ? and(...where) : undefined)
-    .orderBy(order === "asc" ? asc(auditEvents.seq) : desc(auditEvents.seq))
+    .orderBy(
+      ...(order === "asc"
+        ? [asc(auditEvents.xactId), asc(auditEvents.seq)]
+        : [desc(auditEvents.seq)]),
+    )
     .limit(limit + 1);
 
   const hasMore = rows.length > limit;
@@ -253,21 +267,17 @@ export async function listAuditEvents(db: Database, query: AuditQuery = {}): Pro
 
   const items = page.map((row) => toRecord(row, changes.get(row.seq) ?? []));
 
-  let next: AuditCursor | null = null;
-  if (page.length > 0) {
-    const seqs = page.map((r) => r.seq);
-    next = {
-      // Monotonic on purpose: a late straggler must not drag the position
-      // backwards and re-deliver everything after it.
-      seq:
-        order === "asc"
-          ? Math.max(cursor?.seq ?? 0, ...seqs)
-          : Math.min(cursor?.seq ?? Number.MAX_SAFE_INTEGER, ...seqs),
-      horizon: horizon ?? cursor?.horizon ?? "0",
-      order,
-      fingerprint: auditFilterFingerprint(query),
-    };
-  }
+  // The position is the last row served — strictly increasing in the feed's
+  // own order, so a straggler cannot drag it backwards by construction.
+  const last = page.at(-1);
+  const next: AuditCursor | null = last
+    ? {
+        seq: last.seq,
+        xact: last.xactId,
+        order,
+        fingerprint: auditFilterFingerprint(query),
+      }
+    : null;
 
   return { items, cursor: next, hasMore };
 }
