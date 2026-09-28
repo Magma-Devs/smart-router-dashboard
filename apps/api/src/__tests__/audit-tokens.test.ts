@@ -218,6 +218,19 @@ describe("the token as a principal", () => {
     expect(actions).toContain("apikey.created");
   });
 
+  it("reads the event catalog — the door its 400s point at", async () => {
+    app = await buildAuthedApp();
+    const { token: adminToken } = await signedIn("admin");
+    const secret = await mintViaApi(adminToken);
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/audit/catalog",
+      headers: auth(secret),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().events.length).toBeGreaterThan(30);
+  });
+
   it("downloads the export", async () => {
     app = await buildAuthedApp();
     const { token: adminToken } = await signedIn("admin");

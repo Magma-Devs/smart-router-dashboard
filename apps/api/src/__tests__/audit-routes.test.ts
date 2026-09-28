@@ -3,7 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { SignJWT } from "jose";
 import { createTestDb, enrolledTwoFactor, type TestDb } from "@sr/db/testing";
 import { createAuditWriter, users, type User } from "@sr/db";
-import type { AuditEventsResponse } from "@sr/shared";
+import { AUDIT_ACTIONS, type AuditEventsResponse } from "@sr/shared";
 import type { Role } from "@sr/shared";
 import { buildApp } from "../app.js";
 import { SESSION_JWT_AUDIENCE, SESSION_JWT_ISSUER } from "../plugins/auth.js";
@@ -114,6 +114,34 @@ async function seedEvents(): Promise<void> {
     changes: [{ field: "providers", from: "Alchemy, QuickNode", to: "Alchemy" }],
   });
 }
+
+describe("GET /api/audit/catalog", () => {
+  it("publishes every event the filters accept, with its meaning", async () => {
+    app = await buildAuthedApp();
+    const { token } = await signedIn("read_only");
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/audit/catalog",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const events = res.json().events as {
+      action: string;
+      group: string;
+      description: string;
+    }[];
+    // Complete by construction — but pinned, because "the published list" that
+    // silently lost a group would fail the requirement while looking fine.
+    expect(events.map((e) => e.action).sort()).toEqual([...AUDIT_ACTIONS].sort());
+    for (const e of events) expect(e.description.length).toBeGreaterThan(10);
+  });
+
+  it("needs a session, like the log itself", async () => {
+    app = await buildAuthedApp();
+    const res = await app.inject({ method: "GET", url: "/api/audit/catalog" });
+    expect(res.statusCode).toBe(401);
+  });
+});
 
 describe("GET /api/audit/events", () => {
   /**
