@@ -109,6 +109,11 @@ export interface IssuesSnapshot {
   computedAtUnix: number;
   logsAvailable: boolean;
   configAvailable: boolean;
+  /**
+   * Whether the router has classified any error yet (`smartrouter_errors_total`
+   * has fired). Carried here so the page needs no report of its own.
+   */
+  classified?: boolean;
   issues: ServedIssue[];
   risks: Risk[];
 }
@@ -1234,6 +1239,7 @@ export class IssuesFeedService {
         computedAtUnix: report.computedAtUnix,
         logsAvailable: this.loki.available,
         configAvailable: routers.length > 0,
+        classified: report.emitted,
         risks: risksOf(
           routers,
           outcomeOf,

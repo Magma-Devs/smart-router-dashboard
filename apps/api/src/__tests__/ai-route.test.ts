@@ -122,12 +122,19 @@ describe("GET /api/ai/issues", () => {
     expect(res.json()).toMatchObject({ ok: false, warming: true });
   });
 
+  it("says AI is off as a 200 — a state the page shows, not a failure it hides", async () => {
+    (config.bedrock as { enabled: boolean }).enabled = false;
+    const res = await app.inject({ method: "GET", url: "/api/ai/issues?window=7d" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ ok: false, reason: "disabled" });
+  });
+
   it("after a cycle, any window answers from the log", async () => {
     await app.issuesFeed.refresh();
     for (const window of ["30m", "6h"]) {
       const res = await app.inject({ method: "GET", url: `/api/ai/issues?window=${window}` });
       expect(res.statusCode).toBe(200);
-      expect(res.json()).toMatchObject({ ok: true, warming: false, window, issues: [] });
+      expect(res.json()).toMatchObject({ ok: true, warming: false, window, issues: [], classified: expect.any(Boolean) });
     }
   });
 });

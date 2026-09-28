@@ -522,12 +522,12 @@ export async function aiRoutes(app: FastifyInstance) {
           "before the first cycle has finished.",
       },
     },
-    async (request, reply) => {
+    async (request) => {
       const g = gate();
-      if (!g.ok) {
-        reply.status(503);
-        return { ...g, ...target() };
-      }
+      // 200, not 503, for the same reason as warming below: the page's reader
+      // throws on a non-2xx and shows nothing, and "AI is off here" or "sign
+      // in for AI" is a state to put on screen, not a failure to hide.
+      if (!g.ok) return { ...g, ...target() };
       const window = parseWindow(request.query.window);
       // A filter over the issue log, never a new analysis: changing the
       // window is instant because the model only runs in the background.
