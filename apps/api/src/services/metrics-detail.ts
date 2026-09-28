@@ -26,8 +26,6 @@ import {
   qCrossValidationDisagreementsByUpstream,
   qCrossValidationFailedByReason,
   qCrossValidationRounds,
-  qFreshnessCaught,
-  qFreshnessChecks,
   qSelectionScores,
   qAnsweredWithin,
   qTipMovement,
@@ -686,10 +684,7 @@ export class MetricsDetailService {
       this.familyPresent(ENDPOINT_METRICS.totalErrored),
     ]);
 
-    const classifiedPresent = await this.familyPresent(
-      OPTIONAL_METRICS.errorsClassifiedTotal,
-    );
-    const [answered, unreachable, serviced, peakRates, kindRows] = await Promise.all([
+    const [answered, unreachable, serviced, peakRates] = await Promise.all([
       nodePresent
         ? this.prom.query(qNodeErrorsByUpstream(window, spec))
         : Promise.resolve([]),
@@ -698,9 +693,6 @@ export class MetricsDetailService {
         : Promise.resolve([]),
       this.prom.query(qRelaysServicedByUpstream(window, spec)),
       this.prom.query(qPeakServedRateByUpstream(window, spec)),
-      classifiedPresent
-        ? this.prom.query(qClassifiedErrorsByChainAndName(window, spec))
-        : Promise.resolve([]),
     ]);
 
     /** (provider, spec) → every count, filled in from whichever family has it. */

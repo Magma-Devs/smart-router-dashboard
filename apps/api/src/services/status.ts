@@ -68,9 +68,8 @@ const MIN_ANSWERS = 300;
 /** And at least this many actual errors, so a 1-in-300 blip is not a row. */
 const MIN_EVENTS = 5;
 const minRequestsFor = (threshold: number) => Math.max(MIN_ANSWERS, Math.ceil(3 / threshold));
-/** Kept for the few call sites that still name them; both equal the model. */
+/** Kept for the call sites that still name it; equal to the model. */
 const NO_ANSWER_RATE = DEGRADED_RATE;
-const BAD_ANSWER_RATE = DEGRADED_RATE;
 /** Share of a chain's failures one upstream must own before it may be named. */
 const ATTRIBUTION = 0.8;
 /** Effective-upstream count at or below which a chain has no real failover. */
@@ -318,15 +317,8 @@ export function deriveChainFindings(
   const owner = dominantUpstream(cells);
   const scope = owner ? cells.filter((c) => c.upstream === owner) : cells;
   const role = owner ? (scope[0]?.role ?? null) : null;
-  const who = owner ?? "One or more upstreams";
   const out: StatusFinding[] = [];
 
-  const noAnswer = scope.reduce((s, c) => s + c.noAnswer, 0);
-  const badAnswer = scope.reduce((s, c) => s + c.badAnswer, 0);
-  const served = scope.reduce((s, c) => s + c.served, 0);
-  const attempts = served + noAnswer;
-  const failRate = attempts > 0 ? noAnswer / attempts : null;
-  const badRate = served > 0 ? badAnswer / served : null;
   const peak = scope.reduce<number | null>(
     (m, c) => (c.peakRps == null ? m : Math.max(m ?? 0, c.peakRps)),
     null,

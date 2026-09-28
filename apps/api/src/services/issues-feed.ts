@@ -747,7 +747,6 @@ export async function outcomesBySpec(
     const by = new Map(rows.map((r) => [r.metric.spec ?? "", Math.round(Number(r.value[1]) || 0)]));
     return (spec: string): number | null => by.get(spec) ?? 0;
   };
-  const failures = read(failed);
   const recovered = read(saved);
   const requests = read(requested);
 
@@ -784,7 +783,7 @@ export async function outcomesBySpec(
     return {
       recovered: recovered(spec),
       // Once per customer request, after every retry, from the router's own
-      // log. `failures(spec)` above is the per-ATTEMPT counter and stays out
+      // log. The requests_failed counter (`failed` above) is per ATTEMPT and stays out
       // of this: a request that failed on one provider and was saved on
       // another is not a failure.
       failures: logs?.failed.get(spec) ?? null,
