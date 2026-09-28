@@ -137,5 +137,11 @@ describe("GET /api/ai/issues", () => {
       expect(res.json()).toMatchObject({ ok: true, warming: false, window, issues: [], classified: expect.any(Boolean) });
     }
   });
+
+  it("reads a window wider than the log keeps as 7 days", async () => {
+    await app.issuesFeed.refresh();
+    const res = await app.inject({ method: "GET", url: "/api/ai/issues?window=30d" });
+    expect(res.json()).toMatchObject({ ok: true, window: "7d" });
+  });
 });
 

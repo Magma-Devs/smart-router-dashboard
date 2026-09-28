@@ -12,7 +12,9 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   Bedrock writes it up: a title, two to four short points and a bottom line.
   An issue keeps its id for as long as the problem lasts, updates in place, and
   resolves at its last failure; changing the page's window filters the log and
-  answers instantly. `ISSUES_STATE_FILE` keeps the log across restarts. A burst
+  answers instantly. The log is kept in the api's memory for 7 days, and the
+  page's window stops there — a temporary store, with no database behind it;
+  `ISSUES_STATE_FILE` keeps it across restarts. A burst
   of failed requests — the team's customer-failure alert's own test — opens
   an issue too, which replaced the Live incidents tab.
 

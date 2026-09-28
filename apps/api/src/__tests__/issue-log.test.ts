@@ -6,7 +6,7 @@ import { plainIssue, type FormulatedInputs, type FormulatedIssue } from "../serv
 import type { MetricsDetailService } from "../services/metrics-detail.js";
 import type { ConfigurationService } from "../services/configuration.js";
 import { LokiService } from "../services/loki.js";
-import { IssueLog, IssuesFeedService, REOPEN_GRACE_SEC, type Sighting } from "../services/issues-feed.js";
+import { IssueLog, IssuesFeedService, KEEP_RESOLVED_SEC, REOPEN_GRACE_SEC, type Sighting } from "../services/issues-feed.js";
 
 const T0 = 1_790_000_000;
 
@@ -95,6 +95,17 @@ describe("IssueLog: one issue per problem, for its whole life", () => {
     const sixHoursLater = T0 + 6 * 3600;
     expect(log.view(1800, sixHoursLater)).toHaveLength(0); // 30m: gone
     expect(log.view(6 * 3600, sixHoursLater)).toHaveLength(1); // 6h: still listed
+  });
+
+  it("keeps a resolved issue for 7 days, then lets it go", () => {
+    expect(KEEP_RESOLVED_SEC).toBe(7 * 86_400);
+    const log = new IssueLog();
+    log.advance([saw({ issue: issue({ lastSeenUnix: T0 }) })], T0);
+    log.advance([], T0 + REOPEN_GRACE_SEC + 60); // past the grace: into history
+    log.advance([], T0 + KEEP_RESOLVED_SEC - 60);
+    expect(log.history).toHaveLength(1);
+    log.advance([], T0 + KEEP_RESOLVED_SEC + 60);
+    expect(log.history).toHaveLength(0);
   });
 });
 

@@ -53,6 +53,23 @@ export const WINDOW_OPTIONS: readonly MetricWindow[] = [
   "30d",
 ] as const;
 
+/**
+ * The Status page's widest window. Its issue list lives in the api's memory
+ * and keeps this long — a temporary store, with no database behind it — so
+ * the page offers nothing wider.
+ */
+export const STATUS_MAX_WINDOW: MetricWindow = "7d";
+
+/** The Status page's window options: the design's list, up to `STATUS_MAX_WINDOW`. */
+export const STATUS_WINDOW_OPTIONS: readonly MetricWindow[] = WINDOW_OPTIONS.filter(
+  (w) => WINDOWS[w].rangeSeconds <= WINDOWS[STATUS_MAX_WINDOW].rangeSeconds,
+);
+
+/** A window for the Status page: one wider than the issue list keeps reads as `STATUS_MAX_WINDOW`. */
+export function toStatusWindow(w: MetricWindow): MetricWindow {
+  return WINDOWS[w].rangeSeconds > WINDOWS[STATUS_MAX_WINDOW].rangeSeconds ? STATUS_MAX_WINDOW : w;
+}
+
 /** Wire-format aliases (the design's Dashboard chips say "24h" for "1d"). */
 const WINDOW_ALIASES: Record<string, MetricWindow> = { "24h": "1d" };
 

@@ -19,17 +19,21 @@
  * array filter and no model call. The model only ever runs in the background,
  * and only for an issue whose facts changed.
  *
- * ## Kept between restarts, when asked
+ * ## Where it is kept — a temporary solution
  *
- * `ISSUES_STATE_FILE` persists the log after every cycle. Unset, it lives in
- * memory: a restart finds every open issue again on its first cycle, but
- * forgets what was already resolved.
+ * In this process's memory, for 7 days (`STATUS_MAX_WINDOW`, the page's
+ * widest window). There is no database behind it. `ISSUES_STATE_FILE` saves
+ * the log after every cycle and reads it back at boot; unset, a restart finds
+ * every open issue again on its first cycle, but forgets what was already
+ * resolved. Each api replica keeps a log of its own. A database store would
+ * fix both, for a deployment that needs it; it is not built.
  */
 import {
   buildChainMetaByIndex,
   DEFAULT_WINDOW,
   OPTIONAL_METRICS,
   ROUTER_METRICS,
+  STATUS_MAX_WINDOW,
   WINDOWS,
   qClientRequestsBy,
   type MetricWindow,
@@ -880,8 +884,8 @@ function pointOf(issue: FormulatedIssue, t: number): TimelinePoint {
 
 /** A resolved issue found again within this is the same issue, reopened. */
 export const REOPEN_GRACE_SEC = 3600;
-/** Resolved issues are kept as long as the widest window the page offers. */
-export const KEEP_RESOLVED_SEC = WINDOWS["30d"].rangeSeconds;
+/** Resolved issues are kept as long as the page's widest window: 7 days. */
+export const KEEP_RESOLVED_SEC = WINDOWS[STATUS_MAX_WINDOW].rangeSeconds;
 /** Hard cap on history, oldest dropped first. */
 export const MAX_HISTORY = 500;
 

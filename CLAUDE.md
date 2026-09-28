@@ -489,7 +489,9 @@ a step targeting ~150–200 range points (clamped to ≥15s, the scrape interval
 Every `window=` query param accepts those keys **plus the `24h` alias (= `1d`)**;
 anything else falls back to the default `30m`. The page-level `<select>` shows
 the design's 12 options (`WINDOW_OPTIONS` — everything except `1h`, which the
-Dashboard page's chip row uses internally).
+Dashboard page's chip row uses internally). The Status page stops at `7d`
+(`STATUS_WINDOW_OPTIONS`): its issue list keeps 7 days, and a wider window
+reads as `7d` there (`toStatusWindow`).
 
 ## API endpoints
 
@@ -567,7 +569,7 @@ API (`apps/api/src/config.ts` is the source of truth):
 | `RATE_LIMIT_MAX` | `300` | per IP per minute |
 | `TRUST_PROXY` | `1` | how far `X-Forwarded-For` is believed when deriving `request.ip` (hop count, proxy IP/CIDR list, or `false`). Not `true` — this api is public, and trusting every hop lets any caller choose their apparent address |
 | `HELM_VALUES_DIR` | `/app/helm-values` | reads `<dir>/core/values.yml` (either format) |
-| `ISSUES_STATE_FILE` | (unset) | Where the Status page's issue log is kept between restarts (JSON, rewritten after every 5-minute cycle). Unset = memory only: a restart finds every open issue again on its first cycle but forgets resolved ones. Point it at a mounted volume to keep history |
+| `ISSUES_STATE_FILE` | (unset) | Where the Status page's issue log is kept between restarts (JSON, rewritten after every 5-minute cycle). Unset = memory only: a restart finds every open issue again on its first cycle but forgets resolved ones. Point it at a mounted volume to keep history. The log keeps 7 days either way. Memory plus this file is a temporary store — no database, and each api replica keeps its own log |
 | `LOKI_URL` | (unset) | The routers' log store. The Status page counts failed and refused requests from it, once per request, and traces each failure's path. Unset = those are "not counted", and the page says so |
 | `LOKI_SELECTOR` | `{service_name="router"}` | The stream selector for the routers' lines. The default is a per-pod store: one stream per pod, the pod named after its router. A store several deployments share: `{cluster="<cluster>",namespace="smart-router",component="router"}`. A malformed one refuses the boot — a selector that matches nothing reads as a clean page, never as an error |
 | `LOKI_ROUTER_LABEL` | `pod` | The label that tells one router's streams apart. Its value names the router — whole, at its start (`eth-mainnet-router-6b4d…`) or at its end (`<cluster>-eth-mainnet`) — matched to the values file's router ids, longest first. `service_name` on a shared store |

@@ -19,7 +19,7 @@ import { BedrockError, BedrockService, bedrockGate, isLoopback } from "../servic
 import { StatusAiService } from "../services/status-ai.js";
 import { FailureAnalysisService } from "../services/failure-analysis.js";
 import { ChainAnalysisService } from "../services/chain-analysis.js";
-import { WINDOWS } from "@sr/shared";
+import { WINDOWS, toStatusWindow } from "@sr/shared";
 import { FormulatedIssueService, severityOf } from "../services/formulated-issues.js";
 import { outcomesBySpec, readLogs } from "../services/issues-feed.js";
 import { LokiService, groupErrors } from "../services/loki.js";
@@ -518,8 +518,9 @@ export async function aiRoutes(app: FastifyInstance) {
           "One issue per problem for as long as it lasts: a stable `id`, `status` open or " +
           "resolved, `openedAtUnix`, `updatedAtUnix`, `resolvedAtUnix`, `severitySinceUnix`. " +
           "A background cycle updates the log every 5 minutes; `window` filters it to the " +
-          "issues active at any point inside it, with no model call. `warming: true` only " +
-          "before the first cycle has finished.",
+          "issues active at any point inside it, with no model call. The log keeps 7 days, " +
+          "so a wider `window` reads as `7d`. `warming: true` only before the first cycle " +
+          "has finished.",
       },
     },
     async (request) => {
@@ -528,7 +529,8 @@ export async function aiRoutes(app: FastifyInstance) {
       // throws on a non-2xx and shows nothing, and "AI is off here" or "sign
       // in for AI" is a state to put on screen, not a failure to hide.
       if (!g.ok) return { ...g, ...target() };
-      const window = parseWindow(request.query.window);
+      // The log keeps 7 days: a 30-day answer would be 7 days under a 30-day name.
+      const window = toStatusWindow(parseWindow(request.query.window));
       // A filter over the issue log, never a new analysis: changing the
       // window is instant because the model only runs in the background.
       const view = app.issuesFeed.view(window);

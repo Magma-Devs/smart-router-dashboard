@@ -2,8 +2,9 @@
 
 The rule catalog behind `/status`. This is the reference the page used to
 carry as its "What each section shows" table; it lives here so the page stays
-an incident surface. Every rule is judged over the page's selected time
-window (default 30 minutes) unless a row says otherwise. Derivations live in
+an incident surface. Every rule is judged over the last 30 minutes, by a
+background check every 5 minutes, unless a row says otherwise; the page's
+window only picks which issues show. Derivations live in
 `apps/api/src/services/status.ts`; every threshold below is asserted by
 `apps/api/src/__tests__/status.test.ts`.
 
@@ -171,6 +172,22 @@ with fresh numbers, and a new one gets a card written from its findings
 used to limit detection itself, and an open issue that a cycle does not find
 is resolved — so an outage wider than 20 chains showed chains that were still
 down as resolved.
+
+**Where the issue list is kept — for now, the api's memory.** The background
+check updates the list and the page only reads it, so any window answers at
+once. It keeps 7 days, and the page's window stops there. There is no
+database behind it, which is what makes it temporary:
+
+- **A restart empties it.** Problems still happening come back on the first
+  check, within 5 minutes; resolved ones are gone. So "7 days" covers only the
+  time since the api started.
+- **`ISSUES_STATE_FILE`** saves the list to a JSON file after every check and
+  reads it back at boot. On a mounted volume, that keeps it across restarts.
+- **Each api replica keeps its own list**, runs its own checks and sends its
+  own alerts.
+
+A database store fixes all three, for a deployment that needs it. It is not
+built.
 
 The rules below find the problems. The heading each rule sits under is its
 own level, for one provider or one rule. It does not set the badge: a rule can

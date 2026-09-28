@@ -35,6 +35,7 @@
  * lasts: same card, same id, numbers updated in place, then resolved.
  */
 import { useEffect, useState } from "react";
+import type { MetricWindow } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { useFilters } from "@/components/gateway/FiltersProvider";
@@ -493,8 +494,9 @@ function Card({ issue, color, now }: { issue: Issue; color: string; now: number 
   );
 }
 
-export function IssueCards() {
-  const { timeWindow, scopeQ } = useFilters();
+/** `timeWindow` comes from the page, already capped at what the issue list keeps. */
+export function IssueCards({ timeWindow }: { timeWindow: MetricWindow }) {
+  const { scopeQ } = useFilters();
   // Recent first by default: opening the page, the question is what just
   // started, not which chain sorts first alphabetically.
   const [order, setOrder] = useState<"recent" | "chain">("recent");

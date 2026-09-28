@@ -27,6 +27,7 @@
  * read as noise; the tier was encoded four times and the headline got lost. */
 
 import { useEffect, useState, useSyncExternalStore } from "react";
+import { STATUS_WINDOW_OPTIONS, toStatusWindow } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { useFilters } from "@/components/gateway/FiltersProvider";
 import { IssueCards } from "./IssueCards";
@@ -99,12 +100,16 @@ function Freshness({ lastOk, ageSec, refreshing, unreachable, paused }: {
 
 export function StatusView() {
   const { timeWindow, setTimeWindow, scopeQ } = useFilters();
+  // The issue list keeps 7 days, so the page offers nothing wider. A wider
+  // window picked on another page reads as 7 days here, and stays as picked
+  // there.
+  const win = toStatusWindow(timeWindow);
   // ONE read: the issue log, which the api keeps current in the background
   // and filters to the window in a millisecond. The page used to ask
   // Prometheus for a whole report over the window as well — for 7 days on a
   // large deployment that ran four minutes and ended in a 504, and the cards
   // never needed it. The same key as the cards', so it is one request.
-  const { data, error, isValidating, mutate } = useApi<IssuesRead>(`/api/ai/issues?window=${timeWindow}${scopeQ}`);
+  const { data, error, isValidating, mutate } = useApi<IssuesRead>(`/api/ai/issues?window=${win}${scopeQ}`);
   // An SRE alt-tabbing back mid-incident needs a fresh read, not the last one
   // from before they left. useApi turns revalidateOnFocus off globally; this
   // page turns it back on by hand.
@@ -136,7 +141,7 @@ export function StatusView() {
           {!refused && (
             <Freshness lastOk={lastOk} ageSec={ageSec} refreshing={isValidating} unreachable={!!error} paused={!visible && !error} />
           )}
-          <WindowSelect value={timeWindow} onChange={setTimeWindow} />
+          <WindowSelect value={win} onChange={setTimeWindow} options={STATUS_WINDOW_OPTIONS} />
         </div>
       </div>
 
@@ -154,7 +159,7 @@ export function StatusView() {
         )}
       </div>
 
-      <IssueCards />
+      <IssueCards timeWindow={win} />
 
       {data?.ok && data.classified === false && (
         <p style={{ fontSize: 12.5, color: "var(--text-3)", marginTop: 14, lineHeight: 1.5 }}>

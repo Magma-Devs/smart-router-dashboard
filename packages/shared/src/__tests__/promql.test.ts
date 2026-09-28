@@ -70,6 +70,9 @@ import {
   toMetricWindow,
   DEFAULT_WINDOW,
   stepSeconds,
+  STATUS_MAX_WINDOW,
+  STATUS_WINDOW_OPTIONS,
+  toStatusWindow,
 } from "../constants/windows.js";
 
 describe("selector", () => {
@@ -270,6 +273,18 @@ describe("windows catalog", () => {
     // changing it should be a deliberate edit here, not a silent side effect.
     expect(DEFAULT_WINDOW).toBe("30m");
     expect(WINDOWS[DEFAULT_WINDOW].rangeSeconds).toBe(1800);
+  });
+
+  it("the Status page stops at 7 days, the most its issue list keeps", () => {
+    expect(STATUS_MAX_WINDOW).toBe("7d");
+    expect(STATUS_WINDOW_OPTIONS).toEqual(WINDOW_OPTIONS.slice(0, WINDOW_OPTIONS.indexOf("7d") + 1));
+  });
+
+  it("toStatusWindow reads a wider window as 7 days and leaves the rest", () => {
+    expect(toStatusWindow("30d")).toBe("7d");
+    expect(toStatusWindow("14d")).toBe("7d");
+    expect(toStatusWindow("7d")).toBe("7d");
+    expect(toStatusWindow("3h")).toBe("3h");
   });
 });
 
