@@ -1,0 +1,30 @@
+# Bedrock through an IAM Roles Anywhere certificate — the api container's half
+# of docs/BEDROCK-IAM.md → "Per deployment". Layer it on the main file:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.bedrock-cert.yml up -d
+#
+# Everything comes from the host, read-only. One directory (SR_BEDROCK_DIR,
+# default /etc/smart-router) holds:
+#   dash.crt     this server's certificate
+#   dash.key     its private key, readable by uid 1000 — the container runs as
+#                `node`, not root:  chown 1000:1000 dash.key && chmod 400 dash.key
+#   aws-config   the credential_process profile, written with the IN-CONTAINER
+#                paths below (the doc prints it)
+# plus the signing helper binary (AWS_SIGNING_HELPER, default
+# /usr/local/bin/aws_signing_helper). AWS builds it against glibc; the image
+# carries gcompat so it runs on Alpine.
+#
+# AI also needs AUTH_MODE=enabled: this container is reachable through its
+# published port, and the api refuses unauthenticated AI anywhere but loopback.
+services:
+  api:
+    environment:
+      - BEDROCK_ENABLED=true
+      # The SDK reads this file; its credential_process runs the helper, which
+      # signs with the certificate and returns short-lived keys (1h, refreshed).
+      - AWS_CONFIG_FILE=/etc/smart-router/aws-config
+    volumes:
+      - ${SR_BEDROCK_DIR:-/etc/smart-router}/dash.crt:/etc/smart-router/dash.crt:ro
+      - ${SR_BEDROCK_DIR:-/etc/smart-router}/dash.key:/etc/smart-router/dash.key:ro
+      - ${SR_BEDROCK_DIR:-/etc/smart-router}/aws-config:/etc/smart-router/aws-config:ro
+      - ${AWS_SIGNING_HELPER:-/usr/local/bin/aws_signing_helper}:/usr/local/bin/aws_signing_helper:ro

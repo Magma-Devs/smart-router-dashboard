@@ -14,6 +14,7 @@ import { metricRoutes } from "./routes/metrics.js";
 import { configRoutes } from "./routes/config.js";
 import { upstreamRoutes } from "./routes/upstreams.js";
 import { authRoutes } from "./routes/auth.js";
+import { aiRoutes } from "./routes/ai.js";
 import { teamRoutes, teamPasswordRoutes, teamMemberRoutes } from "./routes/team.js";
 import { accountRoutes } from "./routes/account.js";
 import { announceSetupToken } from "./services/setup.js";
@@ -104,6 +105,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(metricRoutes);
   await app.register(configRoutes);
   await app.register(upstreamRoutes);
+  await app.register(aiRoutes);
 
   return app;
 }

@@ -102,6 +102,76 @@ export const config = {
     orgId: env("PROMETHEUS_ORG_ID"),
   },
 
+  /**
+   * Amazon Bedrock — the model behind any AI surface (MAG-3702).
+   *
+   * There is deliberately **no API key here.** The AWS SDK signs with SigV4
+   * from the default credential chain (env → `~/.aws/credentials` → SSO →
+   * container → instance/pod role), so in a cluster the api runs under an IAM
+   * role and there is no long-lived secret to mount, rotate or leak. Locally
+   * it is whatever `aws configure` / `aws sso login` left behind.
+   *
+   * Off unless `enabled`, because model calls cost money, and refused while
+   * `AUTH_MODE=disabled` — see `bedrockGate()`. An open api would let anyone
+   * who can reach it spend the account's Bedrock budget under our identity.
+   */
+  bedrock: {
+    /** Explicit opt-in. Off by default so ambient AWS credentials can't quietly start billing. */
+    enabled: env("BEDROCK_ENABLED") === "true" || env("BEDROCK_ENABLED") === "1",
+    /**
+     * Serve AI even with `AUTH_MODE=disabled`, which installs no `/api/*` gate
+     * at all — so anyone who can reach the api can spend the model budget.
+     *
+     * Exists because the zero-dependency boot IS the default: a developer who
+     * clones the repo has no Postgres and no `AUTH_SECRET`, and demanding both
+     * to try one feature means nobody tries it. Same trade `UPSTREAM_RELAY_ENABLED`
+     * already makes for the relay, which spends the operator's upstream quota
+     * on the same terms.
+     *
+     * Off by default, so an exposed deployment has to say this out loud.
+     */
+    allowUnauthenticated:
+      env("BEDROCK_ALLOW_UNAUTHENTICATED") === "true" || env("BEDROCK_ALLOW_UNAUTHENTICATED") === "1",
+    /**
+     * A role to ASSUME on top of whatever the chain resolved. This is how a
+     * customer deployment is handed an identity: the box proves who it is
+     * once (a Roles Anywhere certificate, an instance profile, a key), and
+     * this names the role it should actually act as.
+     *
+     * Unset — the local case — the chain's own identity is used directly, so
+     * a developer with `aws configure` done needs no extra setup.
+     */
+    roleArn: env("BEDROCK_ROLE_ARN"),
+    /**
+     * Shared secret the role's trust policy can demand (`sts:ExternalId`).
+     * The standard confused-deputy guard for a role assumed across accounts:
+     * without it, anyone who learns the role ARN and is trusted by it can
+     * assume it. Set whenever `roleArn` points into someone else's account.
+     */
+    roleExternalId: env("BEDROCK_ROLE_EXTERNAL_ID"),
+    region: env("BEDROCK_REGION") ?? "us-east-1",
+    /**
+     * A cross-region inference profile, not a bare model id. `global.` routes
+     * to whichever region has capacity; a bare `anthropic.claude-sonnet-5`
+     * is rejected for models only offered through a profile.
+     */
+    model: env("BEDROCK_MODEL") ?? "global.anthropic.claude-sonnet-5",
+    /**
+     * Ceiling on one answer, ALWAYS sent. Unset, Bedrock defaults to the
+     * model's maximum and reserves that much quota per call — the usual cause
+     * of an unexplained ThrottlingException.
+     */
+    maxTokens: envInt("BEDROCK_MAX_TOKENS", 4096),
+    timeoutMs: envInt("BEDROCK_TIMEOUT_MS", 60000),
+    /**
+     * Per-IP per-minute on the routes that actually call the model, tighter
+     * than the global RATE_LIMIT_MAX — the same reasoning as
+     * `UPSTREAM_RELAY_RATE_LIMIT_MAX`. Auth stops an anonymous caller; it does
+     * not stop a signed-in one looping, and Bedrock has no per-key budget.
+     */
+    rateLimitMax: envInt("BEDROCK_RATE_LIMIT_MAX", 10),
+  },
+
   /** Helm-values / router config the dashboard reflects (read-only). */
   config: {
     valuesDir: env("HELM_VALUES_DIR") ?? "/app/helm-values",
