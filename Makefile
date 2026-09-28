@@ -41,7 +41,7 @@ WEB_PORT   ?= 3000
 SES_UI_PORT ?= 8005
 API_URL    ?= http://localhost:$(API_PORT)
 
-.PHONY: up down dev dev-down up-auth dev-auth accounts accounts-managed accounts-reset router ps clean builder build build-api build-web typecheck test
+.PHONY: up down dev dev-down up-auth dev-auth accounts accounts-managed accounts-reset e2e e2e-down router ps clean builder build build-api build-web typecheck test
 
 ## up: SELF-CONTAINED stack — router + Prometheus + api + web + logs (Loki/Grafana)
 up:
@@ -171,6 +171,43 @@ accounts-reset:
 	docker compose -f docker-compose.dev.yml -f docker-compose.accounts.yml \
 		-f docker-compose.managed.yml --profile auth down -v
 	@echo '▶ wiped — run make accounts for a fresh first-run'
+
+## e2e: EVERYTHING, from scratch — wipes the accounts database, then brings up
+## router + Prometheus + logs + postgres + api + web in hot reload, with no
+## seeded admin (first run at /setup) and managed-mode email to the local SES
+## mock. The one stack for walking the whole product end to end.
+##   make e2e                 managed: invites + resets emailed (inbox :8005)
+##   make e2e MODE=onprem     on-prem: links handed over by an admin, no email
+## Prometheus is on :9091 here (the accounts overlay remaps it).
+MODE ?= managed
+E2E_FILES = -f docker-compose.dev.yml -f docker-compose.accounts.yml \
+	$(if $(filter managed,$(MODE)),-f docker-compose.managed.yml,)
+E2E_PROFILES = --profile router --profile auth --profile logs
+e2e:
+	@test "$(MODE)" = managed -o "$(MODE)" = onprem || (echo 'MODE must be managed or onprem'; exit 2)
+	docker compose -f docker-compose.dev.yml -f docker-compose.accounts.yml \
+		-f docker-compose.managed.yml $(E2E_PROFILES) down -v
+	AUTH_MODE=enabled \
+	AUTH_SECRET=$${AUTH_SECRET:-dev-secret-change-me-please-32chars!} \
+	DATABASE_URL=$${DATABASE_URL:-postgres://sr:$${POSTGRES_PASSWORD:-dev}@postgres:5432/sr_dashboard} \
+	TOTP_ENCRYPTION_KEY=$${TOTP_ENCRYPTION_KEY:-ZGV2LW9ubHkta2V5LW5vdC1mb3ItcHJvZHVjdGlvbiE=} \
+	docker compose $(E2E_FILES) $(E2E_PROFILES) up -d --build
+	@echo ""
+	@echo "  🧪 End-to-end stack, fresh install ($(MODE) mode)"
+	@echo "     App      → http://localhost:$(WEB_PORT)  →  /setup, token: installer-printed-this-token"
+	@echo "     API      → http://localhost:$(API_PORT)  (OpenAPI at /docs)"
+	@$(if $(filter managed,$(MODE)),echo "     Inbox    → http://localhost:$(SES_UI_PORT)",echo "     Email    → none (on-prem: an admin hands links over)")
+	@echo "     Prom     → http://localhost:9091"
+	@echo "     Grafana  → http://localhost:3001  (admin / admin)"
+	@echo "     Router   → http://localhost:3360-3367"
+	@echo ""
+	@echo "     Logs:  docker compose $(E2E_FILES) logs -f api web"
+	@echo "     Again from scratch:  make e2e   ·   Stop:  make e2e-down"
+
+## e2e-down: stop the e2e stack (volumes kept; `make e2e` wipes them on the next run)
+e2e-down:
+	docker compose -f docker-compose.dev.yml -f docker-compose.accounts.yml \
+		-f docker-compose.managed.yml $(E2E_PROFILES) down
 
 ## router: bring up ONLY the router + Prometheus from this compose
 router:
