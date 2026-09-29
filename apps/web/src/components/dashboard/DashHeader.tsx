@@ -58,7 +58,7 @@ export function DashHeader({
   function customLabel() {
     if (!isCustomWin) return "Custom";
     const pts = win.split(":");
-    return pts[1] + " – " + pts[2];
+    return pts[1] + " - " + pts[2];
   }
 
   return (

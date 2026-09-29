@@ -27,16 +27,6 @@ export interface SideSheetProps {
   children?: React.ReactNode;
 }
 
-/** Stat card used inside sheets — ported verbatim from page-metrics.jsx SheetStat. */
-export function SheetStat({ label, value, color }: { label: React.ReactNode; value: React.ReactNode; color?: string }) {
-  return (
-    <div className="gw-card" style={{ padding: "10px 12px" }}>
-      <div style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--text-3)", marginBottom: 4 }}>{label}</div>
-      <div className="gw-mono gw-tnum" style={{ fontSize: 18, fontWeight: 700, color: color || "var(--text)" }}>{value}</div>
-    </div>
-  );
-}
-
 export function SideSheet({ open, onClose, title, sub, wide, center, footer, steps, children }: SideSheetProps) {
   if (!open) return null;
   const sheet = (

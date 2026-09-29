@@ -164,7 +164,7 @@ function EndpointRow({
       {showRouter && (
         <span
           className="gw-mono"
-          title={`Declared by router ${row.routerId} — more than one router on this chain declares this upstream`}
+          title={`Declared by router ${row.routerId} - more than one router on this chain declares this upstream`}
           style={{ fontSize: 10, padding: "1px 5px", borderRadius: 4, whiteSpace: "nowrap", color: "var(--text-3)", border: "1px solid var(--line)", flexShrink: 0 }}
         >
           {row.routerId}
@@ -238,11 +238,11 @@ export function UpstreamsView() {
   /* Chain filter — the Metrics page's picker, on the same shared selection, so
      narrowing there and walking here keeps the chain. */
   const chainFilter = chain ?? "all";
-  /* Router-first by default: the endpoints a router publishes are what a
-     self-hosted deployment reaches for — the address to dial, what it serves,
-     and how many upstreams stand behind it. The chain and upstream groupings
-     answer the two follow-up questions off the same config. */
-  const [groupBy, setGroupBy] = useState<GroupBy>("router");
+  /* Chain-first by default: "what serves Ethereum, and is it healthy?" is the
+     question people open this page with. The router grouping - the endpoints
+     a router publishes, the address to dial - and the upstream grouping answer
+     the follow-up questions off the same config. */
+  const [groupBy, setGroupBy] = useState<GroupBy>("chain");
   const [newChainCtas, setNewChainCtas] = useState<{ chainId: string; upstreamName: string }[]>([]);
 
   const routers = useMemo(() => config.data?.routers ?? [], [config.data]);
@@ -361,7 +361,7 @@ export function UpstreamsView() {
             <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
           </svg>
           <input className="gw-input" type="search"
-            placeholder={groupBy === "router" ? "Search chains, interfaces…" : "Search upstreams…"} value={search}
+            placeholder={groupBy === "router" ? "Search chains, interfaces…" : groupBy === "chain" ? "Search chains, upstreams…" : "Search upstreams…"} value={search}
             onChange={(e) => setSearch(e.target.value)} style={{ paddingLeft: 32 }} />
         </div>
         {/* Chain filter — the Metrics page's picker, same shared selection. */}
@@ -381,17 +381,21 @@ export function UpstreamsView() {
             <button key={val} className={netFilter === val ? "on" : ""} onClick={() => setNetFilter(val)}>{lbl}</button>
           ))}
         </div>
-        <span style={{ flex: 1 }} />
+        {/* An auto margin, not a flex spacer: it takes only what the search box
+            leaves, so the box fills out first - a spacer split the room evenly
+            with it and cut the placeholder to "Search c". */}
+        <span style={{ marginLeft: "auto" }} />
         {/* Re-fetch every panel now, ahead of the poll interval */}
         <RefreshButton />
         {/* The shared time window — the roster's health is derived from the
             metrics in it, so this page can't be the one screen that ignores
             the selector every other screen honours. */}
         <WindowSelect value={timeWindow} onChange={setTimeWindow} />
-        {/* One config, three ways to carve it: by the router that publishes an
-            endpoint, by the chain it serves, or by the upstream behind it. */}
+        {/* One config, three ways to carve it: by the chain an endpoint serves,
+            by the router that publishes it, or by the upstream behind it. The
+            default leads. */}
         <div className="gw-segctl">
-          {([["router", "By router"], ["chain", "By chain"], ["upstream", "By upstream"]] as const).map(([val, lbl]) => (
+          {([["chain", "By chain"], ["router", "By router"], ["upstream", "By upstream"]] as const).map(([val, lbl]) => (
             <button key={val} className={groupBy === val ? "on" : ""} onClick={() => setGroupBy(val)}>{lbl}</button>
           ))}
         </div>
@@ -400,7 +404,7 @@ export function UpstreamsView() {
       {unhealthyOnly && (
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, padding: "8px 14px", borderRadius: 8, background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.18)", fontSize: 12, color: "var(--warn)" }}>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-          Showing unhealthy upstreams only —{" "}
+          Showing unhealthy upstreams only -{" "}
           <button onClick={() => setUnhealthyOnly(false)} style={{ border: "none", background: "none", color: "var(--brand)", cursor: "pointer", padding: 0, fontSize: 12, fontWeight: 600, fontFamily: "inherit" }}>clear filter</button>
         </div>
       )}
@@ -413,12 +417,12 @@ export function UpstreamsView() {
           {groupBy === "router" ? (
             <>
               <h2>No endpoints yet</h2>
-              <p>No router config mounted — set HELM_VALUES_DIR / mount core/values.yml and its chains and interfaces will appear here.</p>
+              <p>No router config mounted - set HELM_VALUES_DIR / mount core/values.yml and its chains and interfaces will appear here.</p>
             </>
           ) : (
             <>
               <h2>No upstreams yet</h2>
-              <p>The mounted values file has no upstream nodes. Add your first upstream — Alchemy, Infura, QuickNode, or your own node — by editing the values file.</p>
+              <p>The mounted values file has no upstream nodes. Add your first upstream - Alchemy, Infura, QuickNode, or your own node - by editing the values file.</p>
             </>
           )}
         </div>

@@ -77,4 +77,28 @@ describe("MetricsDashboardService query construction (bug regressions)", () => {
       ),
     ).toBe(true);
   });
+
+  // With no chain selected, the p95 KPI came back as one series per chain and
+  // scalar() kept the first. The per-chain lines are the one place that needs
+  // a series per chain, so they must keep it.
+  it("p95 KPI with no chain reads all chains as one; per-chain lines stay split", async () => {
+    const { prom, queries } = capturingProm();
+    await new MetricsDashboardService(prom).dashboard("1d");
+    const groupings = (q: string) => [...q.matchAll(/\bby \(([^)]*)\)/g)].map((m) => m[1]);
+    const latency = queries.filter(
+      (q) =>
+        q.startsWith("histogram_quantile(") &&
+        q.includes("smartrouter_end_to_end_latency_milliseconds_bucket["),
+    );
+
+    // 1d: the KPI and its prior read [86400s].
+    const kpi = latency.filter((q) => q.includes("[86400s]"));
+    expect(kpi).toHaveLength(2);
+    for (const q of kpi) expect(groupings(q)).toEqual(["le"]);
+
+    // One [10m] step per point: p50/p95/p99 overall, then per chain.
+    const lines = latency.filter((q) => q.includes("[10m]"));
+    expect(lines.filter((q) => groupings(q)[0] === "le")).toHaveLength(3);
+    expect(lines.filter((q) => groupings(q)[0] === "spec, le")).toHaveLength(3);
+  });
 });

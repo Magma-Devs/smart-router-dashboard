@@ -54,7 +54,7 @@ export function PocExportModal({ onClose }: { onClose: () => void }) {
           <label style={{ fontSize: 10, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: "0.09em", fontWeight: 600 }}>Narrative <span style={{ color: "var(--text-4)", textTransform: "none", letterSpacing: 0 }}>(optional)</span></label>
           <textarea className="gw-input" rows={3} value={narr}
             onChange={(e) => setNarr(e.target.value)}
-            placeholder="Add a closing note for the CTO — what went well, what to highlight…"
+            placeholder="Add a closing note for the CTO - what went well, what to highlight…"
             style={{ resize: "vertical", fontSize: 12, lineHeight: 1.55 }} />
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>

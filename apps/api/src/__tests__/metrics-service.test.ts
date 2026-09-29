@@ -126,6 +126,48 @@ describe("MetricsService query construction (bug regressions)", () => {
   });
 });
 
+/** Every `by (…)` label list in a query: `sum by (spec, le) (…)` → ["spec, le"]. */
+function groupings(q: string): string[] {
+  return [...q.matchAll(/\bby \(([^)]*)\)/g)].map((m) => m[1] ?? "");
+}
+
+/** Quantiles over the router histogram with NO chain selector, at one range. */
+function allChainQuantiles(queries: string[], range: string): string[] {
+  return queries.filter(
+    (q) =>
+      q.startsWith("histogram_quantile(") &&
+      q.includes(`smartrouter_end_to_end_latency_milliseconds_bucket[${range}]`),
+  );
+}
+
+// With no chain selected, a quantile grouped `by (spec, le)` came back as one
+// series per chain and scalar() kept the first: the hero p95 was whichever
+// chain Prometheus listed first, and "—" when that chain had no traffic in the
+// window, while all chains together had a p95.
+describe("MetricsService · latency with no chain selected reads all chains as one", () => {
+  it("hero p95 and its prior group by le only", async () => {
+    const { prom, queries } = capturingProm();
+    await new MetricsService(prom).dashboardSummary("1d");
+    const kpi = allChainQuantiles(queries, "86400s");
+    expect(kpi).toHaveLength(2);
+    expect(kpi.filter((q) => q.includes("offset 86400s"))).toHaveLength(1);
+    for (const q of kpi) expect(groupings(q)).toEqual(["le"]);
+  });
+
+  it("overview p50/p95/p99, their priors and the latency chart group by le only", async () => {
+    const { prom, queries } = capturingProm();
+    await new MetricsService(prom).overview("1d");
+    // 1d: the KPIs read [86400s], the chart's series one [10m] step each.
+    const kpis = allChainQuantiles(queries, "86400s");
+    expect(kpis).toHaveLength(6);
+    for (const q of kpis) expect(groupings(q)).toEqual(["le"]);
+    // The chart plots the first series of each percentile, so it had the same bug.
+    const chart = allChainQuantiles(queries, "10m");
+    expect(chart).toHaveLength(3);
+    for (const q of chart) expect(groupings(q)).toEqual(["le"]);
+  });
+});
+
 describe("MetricsDetailService · chain-series backup share (MAG-2537)", () => {
   /** A chain whose values file marks one of two upstreams as the backup. */
   const configWithBackup = {
@@ -324,6 +366,29 @@ describe("MetricsService.upstreams · scores without traffic", () => {
   const row = async (p: PrometheusClient, id: string) =>
     (await new MetricsService(p).upstreams(undefined, "1d")).find((r) => r.endpointId === id);
 
+  it("one row per upstream × chain: poll counts join the row they belong to, never a chain-less copy", async () => {
+    // Answer as Prometheus does - only the labels the query groups by. A poll
+    // query grouped by endpoint alone came back without `spec`, and the join
+    // made a second row with an empty chain for every upstream.
+    const labelled = (expr: string, id: string) => {
+      const by = /sum by \(([^)]*)\)/.exec(expr)?.[1]?.split(",").map((x) => x.trim()) ?? ["endpoint_id", "spec"];
+      return Object.fromEntries(Object.entries({ endpoint_id: id, spec: "ETH1" }).filter(([k]) => by.includes(k)));
+    };
+    const p = {
+      async query(expr: string) {
+        if (expr.includes("fetch_latest_success") || expr.includes("total_relays_serviced")) {
+          return [{ metric: labelled(expr, "eth-a"), value: [1, "10"] as [number, string] }];
+        }
+        return [];
+      },
+      async queryRange() { return []; },
+      async scalar() { return null; },
+      async ping() { return true; },
+    } as unknown as PrometheusClient;
+    const rows = await new MetricsService(p).upstreams(undefined, "1d");
+    expect(rows.map((r) => [r.endpointId, r.spec])).toEqual([["eth-a", "ETH1"]]);
+  });
+
   it("scores an upstream that served nothing, and says the score is live", async () => {
     // The whole point: zero relays, real score. This is the backup case.
     const backup = await row(
@@ -411,8 +476,9 @@ describe("MetricsService.upstreams · scores without traffic", () => {
 });
 
 describe("MetricsService · cross-chain shared node names (MAG-2875)", () => {
-  /** Two routers on DIFFERENT chains reusing one vendor node name — the gk8
-   *  shape: every chain's router declares "lava"/"publicnode"-style nodes. */
+  /** Two routers on DIFFERENT chains reusing one vendor node name - a shape
+   *  production deployments have: every chain's router declares
+   *  "lava"/"publicnode"-style nodes. */
   const twoChainsSharedName = {
     getRouters: () => [
       {

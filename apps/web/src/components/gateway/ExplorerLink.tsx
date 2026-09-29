@@ -40,8 +40,9 @@ const linkStyle: React.CSSProperties = {
   borderBottom: "1px solid transparent",
 };
 
-/** Shared hover affordance: the underline appears on hover only, so a dense
- *  table does not turn into a wall of links. */
+/** A linked number's hover affordance: the underline appears on hover only,
+ *  so a dense table does not turn into a wall of links. The identity link has
+ *  its arrow instead. */
 const hoverProps = {
   onMouseEnter: (e: React.MouseEvent<HTMLAnchorElement>) => {
     e.currentTarget.style.borderBottomColor = "var(--text-3)";
@@ -85,7 +86,8 @@ export function ExplorerBlockLink({
 
 /** A small outbound arrow. Persistent rather than hover-only: a chain icon
  *  gives no hint that it is clickable, and an affordance nobody sees is the
- *  same as no link. It is muted until the link is hovered. */
+ *  same as no link. It is muted until the link is hovered (`.gw-xhome` in
+ *  globals.css) - the only hover cue the identity link has. */
 function OutboundArrow() {
   return (
     <svg
@@ -98,7 +100,8 @@ function OutboundArrow() {
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden
-      style={{ color: "var(--text-4)", flexShrink: 0, marginLeft: 1, marginTop: -6 }}
+      className="gw-xhome__arrow"
+      style={{ flexShrink: 0, marginLeft: 1, marginTop: -6 }}
     >
       <line x1="7" y1="17" x2="17" y2="7" />
       <polyline points="7 7 17 7 17 17" />
@@ -135,9 +138,10 @@ export function ExplorerHomeLink({
       title={`Open ${name}`}
       // An explicit gap rather than `inherit`: the two tables space their chain
       // cells differently, and the arrow should sit the same distance from the
-      // mark in both.
-      style={{ ...linkStyle, display: "inline-flex", alignItems: "center", gap: 3 }}
-      {...hoverProps}
+      // mark in both. No underline: under a badge and a name it drew a rule
+      // across the card header rather than marking a link.
+      className="gw-xhome"
+      style={{ color: "inherit", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 3 }}
     >
       {children}
       {arrow && <OutboundArrow />}

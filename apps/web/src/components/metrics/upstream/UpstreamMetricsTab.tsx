@@ -18,16 +18,18 @@ import { useFilters } from "@/components/gateway/FiltersProvider";
 import { fmtNum } from "@/lib/format";
 import { uptimeColor } from "@/lib/colors";
 import { HEALTH_UNKNOWN_HINT, healthColor, healthLabel } from "@/lib/health";
-import { qosHint, qosIsStale, qosValue } from "@/lib/upstream-signals";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { PMRoster, upstreamKey, usePMRosterData } from "./PMRoster";
 import { PMStat, PMNoVal } from "./PMPanel";
 import { PMEmpty } from "./PMEmpty";
 import { PMBody } from "./PMBody";
+import type { ErrorsJump } from "../ErrorsBreakdown";
 
-export function UpstreamMetricsTab({ timeWindow, chainFilter }: {
+export function UpstreamMetricsTab({ timeWindow, chainFilter, onOpenErrors }: {
   timeWindow: MetricWindow;
   chainFilter: string | null;
+  /** Where a click on an errors bar goes - the Errors tab, on its requests. */
+  onOpenErrors?: (jump: ErrorsJump) => void;
 }) {
   const { scopeQ, routerId } = useFilters();
   const rosterRes = usePMRosterData(timeWindow, chainFilter);
@@ -88,24 +90,9 @@ export function UpstreamMetricsTab({ timeWindow, chainFilter }: {
                 );
               })()}
               <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 8 }}>{chainName}</div>
-              {/* QoS rides the Status card rather than the traffic-derived
-                  cards below, because the router scores an upstream from its
-                  probe loop whether or not it routes anything here. */}
-              {(() => {
-                const q = qosValue(pm);
-                if (q === null) return null;
-                return (
-                  <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 4 }} title={qosHint(pm)}>
-                    QoS{" "}
-                    <span className="gw-mono gw-tnum" style={{ fontWeight: 700, color: q > 97 ? "var(--ok)" : q > 90 ? "var(--warn)" : "var(--err)", opacity: qosIsStale(pm) ? 0.55 : 1 }}>
-                      {Math.round(q)}
-                    </span>
-                  </div>
-                );
-              })()}
             </PMStat>
 
-            <PMStat label="Availability" tip={"**Requests this upstream answered** as a share of all requests routed to it — i.e. **success rate**, not wall-clock uptime or an SLA figure.\n\nIt is measured from real traffic, so it is empty until the router routes something here. The router's own block polls are reported separately below.\n\nThe large figure follows the window above; 1h / 24h / 7d are shown for context."}>
+            <PMStat label="Availability" tip={"**Requests this upstream answered** as a share of all requests routed to it - i.e. **success rate**, not wall-clock uptime or an SLA figure.\n\nIt is measured from real traffic, so it is empty until the router routes something here. The router's own block polls are reported separately below.\n\nThe large figure follows the window above; 1h / 24h / 7d are shown for context."}>
               {hasData && availPct != null ? (
                 <>
                   <div className="gw-mono gw-tnum" style={{ fontSize: 26, fontWeight: 700, lineHeight: 1, color: availCol(availPct) }}>{availPct.toFixed(2)}%</div>
@@ -166,7 +153,7 @@ export function UpstreamMetricsTab({ timeWindow, chainFilter }: {
             </PMStat>
           </div>
 
-          {hasData ? <PMBody pm={pm} detail={detail} name={activeName} timeWindow={timeWindow} /> : <PMEmpty pm={pm} name={activeName} chainName={chainName} timeWindow={timeWindow} />}
+          {hasData ? <PMBody pm={pm} detail={detail} name={activeName} timeWindow={timeWindow} onOpenErrors={onOpenErrors} /> : <PMEmpty pm={pm} name={activeName} chainName={chainName} timeWindow={timeWindow} />}
         </>
       )}
     </div>

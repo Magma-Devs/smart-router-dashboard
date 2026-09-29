@@ -290,8 +290,10 @@ export interface MetricsQuery {
 /* ── Hero panel (Metrics · Overview tab) ─────────────────────────────────── */
 
 /**
- * The six HeroPanel cards. Real: requests, success rate, effective read p95,
- * stale caught. Null until the router emits the family: retries, cache.
+ * What the HeroPanel's cards read. Real: requests, success rate, effective
+ * read p95 (returned, no longer shown: its card is "Failed requests", from
+ * `GET /api/error-requests/count`), stale caught. Null until the router emits
+ * the family: retries, cache.
  */
 export interface HeroSummary {
   requestsServed: Kpi;
@@ -359,6 +361,30 @@ export interface UpstreamRef {
   endpointId: string;
 }
 
+/**
+ * The time axis a chart's series were sampled on, unix seconds: a point at
+ * every `start + k·stepSec` up to `end`. A chart lays points out by time on
+ * it, so a stretch with no data shows as a gap instead of being squeezed out.
+ */
+export interface ChartGrid {
+  start: number;
+  end: number;
+  stepSec: number;
+}
+
+/**
+ * Every upstream of one chain side by side, for the charts that read an
+ * upstream against its peers: p95 latency, requests per second and the tip
+ * it reports, over the window - sampled on `grid`. One series per upstream;
+ * an upstream with no requests at a point has no latency there, which the
+ * chart draws as a gap.
+ */
+export interface UpstreamPeers {
+  spec: string;
+  grid: ChartGrid;
+  upstreams: { upstream: string; latencyP95: TimePoint[]; rps: TimePoint[]; latestBlock: TimePoint[] }[];
+}
+
 export interface UpstreamDetail {
   endpointId: string;
   spec: string;
@@ -385,6 +411,15 @@ export interface UpstreamDetail {
     batch: TimePoint[] | null;
   };
   blockLagSeries: TimePoint[];
+  /**
+   * Errors per bucket, on the clock (`bucketGrid`): `failed` = tries with no
+   * usable answer (requests minus successes), `node` = JSON-RPC error replies
+   * (null until that family fires). A bucket at `t` covers the
+   * `grid.stepSec` seconds before it, and the last one - still filling -
+   * only up to `asOf` (unix seconds, when this was read). That span is what
+   * the Errors tab reads when a bar is clicked.
+   */
+  errorsOverTime: { grid: ChartGrid; failed: TimePoint[]; node: TimePoint[] | null; asOf: number };
   /** Availability over fixed sub-windows (independent of the page window). */
   availabilityWindows: {
     last1h: number | null;
@@ -466,7 +501,197 @@ export interface ErrorsReport {
   };
 }
 
-/* ── Traffic tab panels ──────────────────────────────────────────────────── */
+/* ── Retry counters (the Errors tab's cards) ─────────────────────────────── */
+
+/** The Errors tab's count cards - the router's retry counters (Prometheus). */
+export interface RetriesReport {
+  /**
+   * The retry counters exist. The router creates them on its first retry, so
+   * `false` means "no retry recorded yet" - every retry value is then null.
+   */
+  emitted: boolean;
+  retried: number | null;
+  recovered: number | null;
+  failed: number | null;
+  /** recovered ÷ retried (0..1). */
+  recoveryRate: number | null;
+  /** retried ÷ client requests (0..1). */
+  retryRate: number | null;
+  /** Mean extra attempts per retried request. */
+  avgExtraAttempts: number | null;
+}
+
+/**
+ * One try at one upstream, in the order the router made them - a retried
+ * request's tries one after another, or a transaction's broadcast all at once.
+ */
+export interface RelayAttempt {
+  upstream: string;
+  /** Which choice of upstreams it went out in, from 0: tries in one batch went out together. */
+  batch: number;
+  /**
+   * - `ok`        - it answered without an error
+   * - `failed`    - it answered with an error, or not usefully (timeout, 429 …)
+   * - `skipped`   - chosen, then passed over: behind the chain head the request needs
+   * - `cancelled` - the router called it off: another try had already answered,
+   *                 or the app stopped waiting. Not an error.
+   * - `no-result` - sent, and the logs show no answer (overtaken, or cut off)
+   */
+  outcome: "ok" | "failed" | "skipped" | "cancelled" | "no-result";
+  /** Its reply is the one that went back to the client. */
+  replied: boolean;
+  /** The router's error code, e.g. NODE_RATE_LIMITED; null when it gave none. */
+  code: string | null;
+  /**
+   * The router's own verdict on the error - could another upstream help? A
+   * rate limit or a timeout is retryable; invalid params or a pruned state the
+   * chain itself gave are not. Null when its log line doesn't say.
+   */
+  retryable: boolean | null;
+  /** What the upstream or the router said, word for word. */
+  message: string | null;
+  /**
+   * Why the router passed it over, or sent to it anyway - the router's
+   * reasoning, never an error. E.g. "Passed over: 154 blocks behind the chain
+   * head (up to 10 allowed)."
+   */
+  note: string | null;
+  /** ms from the request's arrival to the try going out. */
+  atMs: number;
+  /** ms from the request's arrival to its answer or its failure; null when the logs show neither. */
+  endMs: number | null;
+}
+
+/** One request that hit an error - a try failed, or the router gave up - rebuilt from the router's log lines. */
+export interface ErrorRequestRow {
+  /** The router's request id (`Lava-Guid`). */
+  guid: string;
+  /** When the router received it, unix ms. */
+  time: number;
+  spec: string | null;
+  /** JSON-RPC method, or the REST path; `unknown` when the logs don't say. */
+  method: string;
+  attempts: RelayAttempt[];
+  /**
+   * What the app got:
+   * - `ok`          - an upstream answered without an error, and nothing
+   *                   failed on the way (only a look-up by ID shows these)
+   * - `recovered`   - an upstream answered without an error, after one had failed
+   * - `error-reply` - the reply that went back was an upstream's error
+   * - `failed`      - no usable reply at all
+   * - `unknown`     - the logs show no end
+   */
+  result: "ok" | "recovered" | "error-reply" | "failed" | "unknown";
+  /** The upstream whose reply went back. */
+  resolvedBy: string | null;
+  /** The router tried another upstream: more than one batch of tries went out. */
+  retried: boolean;
+  /**
+   * Why the router stopped, in its own words (`stop_reason` on its "relay
+   * finished" line): Success, NonRetryableNodeError, AllProvidersExhausted,
+   * ProcessingTimeout, Stateful, … Null when the logs show no end.
+   */
+  stopReason: string | null;
+  /** The router wanted another try and had no upstream left to send it to. */
+  exhausted: boolean;
+  totalMs: number | null;
+  /** The router's own error, for `failed`. */
+  error: string | null;
+}
+
+/** One request looked up by its ID - any request, whatever happened to it. `row` null: not in the logs of the range read. */
+export interface RequestLookup {
+  available: boolean;
+  row: ErrorRequestRow | null;
+}
+
+/**
+ * Client requests the router could not serve in a window: no upstream
+ * returned a usable response, so the router returned its own error. Counted
+ * from the router's logs; `available:false` (and a null value) without Loki.
+ */
+export interface FailedRequests {
+  available: boolean;
+  value: number | null;
+}
+
+/** The Errors tab's request list - from the router's logs (Loki), newest first, one read at a time. */
+export interface ErrorRequestsReport {
+  /** The router's logs could be read (LOKI_URL set, and Loki answered). */
+  available: boolean;
+  /** Newest first. */
+  rows: ErrorRequestRow[];
+  /** The range holds older requests than these: read on with `before=nextBefore`. */
+  more: boolean;
+  /** Unix ms the next, older read ends at (with its fraction - pass it back as is); null without `more`. */
+  nextBefore: number | null;
+}
+
+/* ── Transactions tab ────────────────────────────────────────────────────── */
+
+/**
+ * How a transaction ended, as the client saw it:
+ *  - `accepted` - the upstream that answered took it (in its pending pool; not yet in a block)
+ *  - `rejected` - that upstream answered with an error, e.g. nonce too low
+ *  - `failed`   - no usable answer: the router returned an error of its own
+ *  - `unknown`  - the logs can't say: no end in them, or a chain that puts a
+ *                 refusal inside a normal reply the router doesn't log (`note`)
+ */
+export type TxOutcome = "accepted" | "rejected" | "failed" | "unknown";
+
+export interface TxLogRow {
+  /** The router's request id (`Lava-Guid`); every log line of the request carries it. */
+  guid: string;
+  /** When the router received it, unix ms. */
+  time: number;
+  /** Chain; null when neither the logs nor the mounted config say. */
+  spec: string | null;
+  /** JSON-RPC method, or the REST path. */
+  method: string;
+  /** Every upstream the router sent it to - all in one batch, for a broadcast - and what each answered. */
+  attempts: RelayAttempt[];
+  /** The upstream whose reply went back to the client. */
+  answeredBy: string | null;
+  /** Time until that reply, ms - not time until a block, which needs the chain. */
+  replyMs: number | null;
+  outcome: TxOutcome;
+  /** The reply's error, for `rejected` and `failed`. */
+  error: { code: string; message: string } | null;
+  /** Why the outcome is `unknown`, in plain words; null otherwise. */
+  note: string | null;
+}
+
+/**
+ * One transaction looked up by its request ID. `found` says the logs hold the
+ * request at all - with `row` null, it was found but isn't a transaction.
+ */
+export interface TransactionLookup {
+  available: boolean;
+  found: boolean;
+  row: TxLogRow | null;
+}
+
+export interface TransactionsReport {
+  /**
+   * The router's logs could be read. False when no log store is configured
+   * (LOKI_URL) or it did not answer - everything below is then empty.
+   */
+  available: boolean;
+  total: number;
+  accepted: number;
+  rejected: number;
+  failed: number;
+  /** accepted ÷ (accepted + rejected + failed); `unknown` is left out. Null with none. */
+  successRate: number | null;
+  /** Newest first. */
+  rows: TxLogRow[];
+  /** The range holds older transactions than these: read on with `before=nextBefore`. Every number above covers `rows` only. */
+  more: boolean;
+  /** Unix ms the next, older read ends at (with its fraction - pass it back as is); null without `more`. */
+  nextBefore: number | null;
+}
+
+/* ── Cross-validation / WebSocket reports (no screen since the Traffic tab went) ── */
 
 export interface CrossValidationReport {
   emitted: boolean;

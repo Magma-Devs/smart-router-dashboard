@@ -50,7 +50,7 @@ export function Skel({ w = "100%", h = 12, r = 5, style }: {
 
 /**
  * The ghost for one of the big KPI numbers (the 22–24px `gw-tnum` figures on
- * HeroPanel / CrossValidation / WebSocketPanel). Sized to the digits, not to
+ * HeroPanel and the Retry / Transaction count cards). Sized to the digits, not to
  * the column — a full-width bar reads as a loading *card* and overstates how
  * much is missing.
  */

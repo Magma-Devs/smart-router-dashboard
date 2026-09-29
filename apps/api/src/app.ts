@@ -6,6 +6,7 @@ import { config } from "./config.js";
 import { errorHandlerPlugin } from "./plugins/error-handler.js";
 import { swaggerPlugin } from "./plugins/swagger.js";
 import { prometheusPlugin } from "./plugins/prometheus.js";
+import { lokiPlugin } from "./plugins/loki.js";
 import { authPlugin } from "./plugins/auth.js";
 import { dbPlugin } from "./plugins/db.js";
 import { healthRoutes } from "./routes/health.js";
@@ -13,6 +14,8 @@ import { versionRoutes } from "./routes/version.js";
 import { metricRoutes } from "./routes/metrics.js";
 import { configRoutes } from "./routes/config.js";
 import { upstreamRoutes } from "./routes/upstreams.js";
+import { transactionRoutes } from "./routes/transactions.js";
+import { errorRequestRoutes } from "./routes/error-requests.js";
 import { authRoutes } from "./routes/auth.js";
 import { teamRoutes, teamPasswordRoutes, teamMemberRoutes } from "./routes/team.js";
 import { accountRoutes } from "./routes/account.js";
@@ -64,6 +67,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   // Swagger must be registered before the routes so their schemas are collected.
   await app.register(swaggerPlugin);
   await app.register(prometheusPlugin);
+  // After prometheusPlugin: it reuses that plugin's values-file service.
+  await app.register(lokiPlugin);
 
   // AUTH_MODE=enabled flips on: Postgres users (lazy connect + migrate +
   // admin seed), HS256 JWT validation, a global /api/* auth gate, and the
@@ -111,6 +116,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(metricRoutes);
   await app.register(configRoutes);
   await app.register(upstreamRoutes);
+  await app.register(transactionRoutes);
+  await app.register(errorRequestRoutes);
 
   return app;
 }

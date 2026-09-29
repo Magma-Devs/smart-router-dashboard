@@ -89,7 +89,7 @@ export function ForgotForm() {
                 margin: "0 0 20px",
               }}
             >
-              Nothing has changed yet — your current password still works until you use the link.
+              Nothing has changed yet - your current password still works until you use the link.
             </p>
             <a className="gw-btn" href="/login" style={{ justifyContent: "center", width: "100%" }}>
               Back to sign in

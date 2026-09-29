@@ -142,7 +142,7 @@ export function ResetLinkModal({
           </button>
           {copied === "failed" && (
             <div role="alert" style={{ fontSize: 12, color: "var(--err)" }}>
-              Couldn&apos;t copy it here — select the link above and copy it by hand.
+              Couldn&apos;t copy it here - select the link above and copy it by hand.
             </div>
           )}
           <div style={{ fontSize: 11.5, color: "var(--text-3)", lineHeight: 1.6 }}>
@@ -160,8 +160,8 @@ export function ResetLinkModal({
             will be able to set a new password using a single-use link.
           </div>
           <ul style={{ margin: 0, paddingLeft: 18, color: "var(--text-2)", fontSize: 12.5 }}>
-            <li>You never see or choose their password — only they do.</li>
-            <li>Nothing is emailed — you hand the link over yourself.</li>
+            <li>You never see or choose their password - only they do.</li>
+            <li>Nothing is emailed - you hand the link over yourself.</li>
             <li>It is shown once, and cannot be read back afterwards.</li>
             <li>Using it ends every session that account currently has.</li>
           </ul>

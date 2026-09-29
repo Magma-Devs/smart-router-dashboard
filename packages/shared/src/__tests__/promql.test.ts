@@ -11,12 +11,18 @@ import {
   qLatestBlock,
   qErrorCount,
   qErrorsBy,
+  qErrorsByUpstream,
+  increaseFromBirth,
+  qClientRequestsFromBirth,
+  qRetriesByMethod,
+  qRetryAvgExtraAttempts,
   qRequestsBy,
   qAvailabilitySeriesExpr,
   qErrorRateSeriesExpr,
   qErrorCountSeriesExpr,
   qRpsSeriesExpr,
   qLatencySeriesExpr,
+  qPerSpecLatencySeriesExpr,
   qPerUpstreamRpsExpr,
   qPerSpecRpsExpr,
   qBackupShareExpr,
@@ -45,6 +51,11 @@ import {
   qCsm,
   qLatencyDistribution,
   qPresence,
+  qEndpointLatencyByEndpointSeriesExpr,
+  qEndpointTipsSeriesExpr,
+  qUpstreamFailedSeriesExpr,
+  qUpstreamNodeErrorSeriesExpr,
+  qUpstreamRpsByUpstreamSeriesExpr,
 } from "../promql/builders.js";
 import { buildChainMetaByIndex } from "../constants/chains.js";
 import {
@@ -54,7 +65,11 @@ import {
   toMetricWindow,
   DEFAULT_WINDOW,
   stepSeconds,
+  bucketGrid,
+  chartSampling,
+  errorBuckets,
 } from "../constants/windows.js";
+import { applyScope } from "../promql/scope.js";
 
 describe("selector", () => {
   it("drops undefined and empty labels", () => {
@@ -93,10 +108,16 @@ describe("query builders use the real metric names", () => {
   it("qErrorRate is 1 - availability", () => {
     expect(qErrorRate("ETH1", "1h").startsWith("1 - (")).toBe(true);
   });
-  it("qLatencyQuantile uses histogram_quantile on the bucket series", () => {
-    const q = qLatencyQuantile(0.95, "ETH1", "1d");
-    expect(q).toContain("histogram_quantile(0.95");
-    expect(q).toContain("smartrouter_end_to_end_latency_milliseconds_bucket");
+  it("qLatencyQuantile reads every chain in scope as one distribution", () => {
+    // Grouped by (spec, le), no chain meant a series per chain, and scalar()
+    // put whichever came first on the card.
+    expect(qLatencyQuantile(0.95, undefined, "1d")).toBe(
+      "histogram_quantile(0.95, sum by (le) (rate(smartrouter_end_to_end_latency_milliseconds_bucket[86400s])))",
+    );
+    // A chain narrows the selector; the grouping stays the same.
+    expect(qLatencyQuantile(0.95, "ETH1", "1d")).toBe(
+      'histogram_quantile(0.95, sum by (le) (rate(smartrouter_end_to_end_latency_milliseconds_bucket{spec="ETH1"}[86400s])))',
+    );
   });
   it("qLatestBlock aggregates by spec", () => {
     expect(qLatestBlock()).toBe("max by (spec) (smartrouter_latest_block)");
@@ -268,7 +289,9 @@ describe("offset (prior-window) variants", () => {
     expect(q.match(/offset 3600s/g)).toHaveLength(2);
   });
   it("qLatencyQuantile offsets the bucket rate", () => {
-    expect(qLatencyQuantile(0.95, undefined, "1h", "3600s")).toContain("[3600s] offset 3600s");
+    expect(qLatencyQuantile(0.95, undefined, "1h", "3600s")).toBe(
+      "histogram_quantile(0.95, sum by (le) (rate(smartrouter_end_to_end_latency_milliseconds_bucket[3600s] offset 3600s)))",
+    );
   });
   it("no offset ⇒ unchanged output", () => {
     expect(qRequestsTotal("ETH1", "1d")).not.toContain("offset");
@@ -315,6 +338,11 @@ describe("series expressions", () => {
   it("latency series drops the spec grouping (single-chain scope)", () => {
     expect(qLatencySeriesExpr(0.5, "10m", "ETH1")).toBe(
       'histogram_quantile(0.5, sum by (le) (rate(smartrouter_end_to_end_latency_milliseconds_bucket{spec="ETH1"}[10m])))',
+    );
+  });
+  it("per-spec latency series keeps a series per chain", () => {
+    expect(qPerSpecLatencySeriesExpr(0.95, "10m")).toBe(
+      "histogram_quantile(0.95, sum by (spec, le) (rate(smartrouter_end_to_end_latency_milliseconds_bucket[10m])))",
     );
   });
   it("per-upstream and per-spec stacks group correctly", () => {
@@ -414,10 +442,10 @@ describe("health / lag / score / gauge builders", () => {
     // These are what an upstream with zero relays still reports — the router
     // polls every configured endpoint whether or not it routes to it.
     expect(qEndpointPolls("ok", "ETH1", "1d")).toBe(
-      'sum by (endpoint_id) (increase(rpc_endpoint_fetch_latest_success{spec="ETH1"}[86400s]))',
+      'sum by (endpoint_id, spec) (increase(rpc_endpoint_fetch_latest_success{spec="ETH1"}[86400s]))',
     );
     expect(qEndpointPolls("failed", "ETH1", "1d")).toBe(
-      'sum by (endpoint_id) (increase(rpc_endpoint_fetch_latest_fails{spec="ETH1"}[86400s]))',
+      'sum by (endpoint_id, spec) (increase(rpc_endpoint_fetch_latest_fails{spec="ETH1"}[86400s]))',
     );
     // Success and failure must read DIFFERENT families — one typo here and a
     // failing upstream reports as a passing one.
@@ -506,5 +534,144 @@ describe("block tips", () => {
 
   it("tip changes count over the staleness window", () => {
     expect(qTipChanges()).toBe("changes(rpc_endpoint_latest_block[15m])");
+  });
+});
+
+describe("retry builders", () => {
+  // Measured on a live router: a burst of 11 retries on a new method gave the
+  // raw counter 11 and plain increase() 0, because the series was born at 11.
+  // Then an 18-minute gap in scraping (the laptop slept): a 15m window that
+  // started inside the gap read 31 - the whole total - without the day check.
+  // Then a production deployment's metrics: a zero side of `S * 0` dropped every series
+  // that had stopped reporting (restarted pods) and read 43,716 retries for
+  // Solana testnet where plain increase() read 142,257; this form read 142,408.
+  it("increaseFromBirth adds a born-in-range series' first value back, but not after a gap", () => {
+    const s = 'm{spec="ETH1"}';
+    const birth = `((min_over_time(${s}[60s]) unless ${s} offset 60s) unless (min_over_time(${s}[60s]) >= last_over_time(${s}[1d] offset 60s)))`;
+    expect(increaseFromBirth(s, "60s")).toBe(`((increase(${s}[60s]) + (${birth} or increase(${s}[60s]) * 0)) or ${birth})`);
+  });
+
+  it("increaseFromBirth never needs a series to still be reporting at query time", () => {
+    // `S * 0` is an instant selector: it matches only live series, and a `+`
+    // with no match on one side drops the series.
+    const q = increaseFromBirth("m", "3d");
+    expect(q).not.toContain("or m * 0");
+    expect(q).toContain("or increase(m[3d]) * 0");
+  });
+
+  it("per-method retries read the outcome's own counter, in whole requests", () => {
+    expect(qRetriesByMethod("recovered", "1h", "SOLANA")).toBe(
+      `round(sum by (spec, method) ${increaseFromBirth('smartrouter_retries_success_total{spec="SOLANA"}', "3600s")})`,
+    );
+    expect(qRetriesByMethod("failed", "1h")).toBe(
+      `round(sum by (spec, method) ${increaseFromBirth("smartrouter_retries_failed_total", "3600s")})`,
+    );
+  });
+
+  it("extra attempts average the histogram: sum over count", () => {
+    expect(qRetryAvgExtraAttempts("1d", "ETH1")).toBe(
+      `sum${increaseFromBirth('smartrouter_retry_attempts_sum{spec="ETH1"}', "86400s")} / sum${increaseFromBirth('smartrouter_retry_attempts_count{spec="ETH1"}', "86400s")}`,
+    );
+  });
+
+  it("the retry rate's denominator counts client requests the same way", () => {
+    expect(qClientRequestsFromBirth("1h", "ETH1")).toBe(
+      `round(sum${increaseFromBirth('smartrouter_end_to_end_latency_milliseconds_count{spec="ETH1"}', "3600s")})`,
+    );
+  });
+
+  it("failed relays per upstream keep all-error pairs, like qErrorsBy", () => {
+    const q = qErrorsByUpstream("1d", "ETH1");
+    expect(q).toContain("sum by (spec, provider_address)");
+    expect(q).toContain(
+      'or sum by (spec, provider_address) (increase(smartrouter_requests_total{spec="ETH1"}[86400s])) * 0',
+    );
+    expect(q.startsWith("round(clamp_min(")).toBe(true);
+  });
+});
+
+describe("an upstream against its peers", () => {
+  it("latency for every endpoint of a chain keeps one series per endpoint_id, and only where it was scraped", () => {
+    expect(qEndpointLatencyByEndpointSeriesExpr(0.95, "ETH1", "10m", "1m")).toBe(
+      'histogram_quantile(0.95, sum by (le, endpoint_id) (rate(rpc_endpoint_end_to_end_latency_milliseconds_bucket{spec="ETH1"}[10m]))) and on (endpoint_id) (sum by (endpoint_id) (count_over_time(rpc_endpoint_end_to_end_latency_milliseconds_bucket{spec="ETH1",le="+Inf"}[1m])) > 0)',
+    );
+  });
+
+  it("the tip each endpoint of a chain reports, one series per endpoint_id - the highest in each step", () => {
+    expect(qEndpointTipsSeriesExpr("SOLANA", "5m")).toBe('max by (endpoint_id) (max_over_time(rpc_endpoint_latest_block{spec="SOLANA"}[5m]))');
+  });
+
+  it("requests per second for every upstream of a chain: short rates averaged over what is there, a gap left a gap", () => {
+    expect(qUpstreamRpsByUpstreamSeriesExpr("ETH1", "1h", "5m", "5m")).toBe(
+      'avg_over_time((sum by (provider_address) (rate(smartrouter_requests_total{spec="ETH1"}[5m])))[1h:5m]) and on (provider_address) (sum by (provider_address) (count_over_time(smartrouter_requests_total{spec="ETH1"}[5m])) > 0)',
+    );
+  });
+
+  it("the router scope reaches every selector of the subquery and leaves its range alone", () => {
+    const q = applyScope(qUpstreamRpsByUpstreamSeriesExpr("ETH1", "1h", "5m", "5m"), { label: "service", value: "eth-router" });
+    expect(q.match(/service="eth-router"/g)).toHaveLength(2);
+    expect(q).toContain(")[1h:5m])");
+  });
+
+  it("one upstream's failed tries per bucket are whole requests minus successes, never negative", () => {
+    const q = qUpstreamFailedSeriesExpr({ spec: "ETH1", endpointId: "eth-tenderly" }, "10m");
+    expect(q).toContain('spec="ETH1"');
+    expect(q).toContain('provider_address="eth-tenderly"');
+    expect(q).toMatch(/^round\(clamp_min\(sum\(increase\(smartrouter_requests_total\{.*\}\[10m\]\)\) - sum\(increase\(smartrouter_requests_success_total\{.*\}\[10m\]\)\), 0\)\)$/);
+  });
+
+  it("one upstream's node-error replies per bucket read the optional family, on its own chain only", () => {
+    expect(qUpstreamNodeErrorSeriesExpr({ spec: "SOLANA", endpointId: "sol-publicnode" }, "1m")).toBe(
+      'round(sum(increase(smartrouter_node_errors_total{spec="SOLANA",provider_address="sol-publicnode"}[1m])))',
+    );
+  });
+});
+
+describe("how a chart samples a window", () => {
+  it("about 300 points whatever the window, on round steps, never finer than a scrape - and smooth", () => {
+    // Each point averages a 24th of the window (four steps at least, five
+    // minutes once the window holds six), a whole number of steps, built from
+    // rates over a step - a minute at least.
+    expect(chartSampling("1d")).toEqual({ step: "5m", stepSec: 300, lookback: "1h", lookbackSec: 3600, rateWindow: "5m", rateWindowSec: 300 });
+    expect(chartSampling("1h")).toEqual({ step: "15s", stepSec: 15, lookback: "5m", lookbackSec: 300, rateWindow: "1m", rateWindowSec: 60 });
+    expect(chartSampling("30m")).toMatchObject({ lookback: "5m", lookbackSec: 300 });
+    expect(chartSampling("5m")).toMatchObject({ lookback: "1m", lookbackSec: 60 });
+    expect(chartSampling("6h")).toEqual({ step: "2m", stepSec: 120, lookback: "16m", lookbackSec: 960, rateWindow: "2m", rateWindowSec: 120 });
+    expect(chartSampling("7d")).toEqual({ step: "1h", stepSec: 3600, lookback: "7h", lookbackSec: 25200, rateWindow: "1h", rateWindowSec: 3600 });
+    for (const w of ["5m", "30m", "3h", "12h", "3d", "14d", "30d"] as const) {
+      const { stepSec } = chartSampling(w);
+      expect(stepSec).toBeGreaterThanOrEqual(15);
+      expect(WINDOWS[w].rangeSeconds / stepSec).toBeLessThanOrEqual(300);
+    }
+  });
+
+  it("errors come in bars the clock names, ten minutes at least - a day is a bar per 30 minutes", () => {
+    expect(errorBuckets("1d")).toEqual({ step: "30m", stepSec: 1800 });
+    expect(errorBuckets("6h")).toEqual({ step: "10m", stepSec: 600 });
+    expect(errorBuckets("30m")).toEqual({ step: "10m", stepSec: 600 });
+    expect(errorBuckets("12h")).toEqual({ step: "30m", stepSec: 1800 });
+    expect(errorBuckets("30d")).toEqual({ step: "24h", stepSec: 86400 });
+    for (const w of ["5m", "6h", "3d", "7d"] as const) expect(WINDOWS[w].rangeSeconds / errorBuckets(w).stepSec).toBeLessThanOrEqual(48);
+  });
+
+  it("error bars sit on the clock: whole bars from the one the window starts in, then the one still filling", () => {
+    const now = Date.UTC(2026, 8, 28, 15, 23, 32) / 1000; // 15:23:32, 30-minute bars on 1d
+    const { grid, lastFull, partialSec } = bucketGrid("1d", now);
+    expect(grid.stepSec).toBe(1800);
+    expect(lastFull).toBe(Date.UTC(2026, 8, 28, 15, 0) / 1000);
+    expect(partialSec).toBe(23 * 60 + 32);
+    // The first bar starts at the boundary at or before now − 1d, and ends 30 minutes later.
+    expect(grid.start).toBe(Date.UTC(2026, 8, 27, 15, 30) / 1000);
+    expect(grid.end).toBe(Date.UTC(2026, 8, 28, 15, 30) / 1000);
+    // 48 whole bars and the one filling.
+    expect((grid.end - grid.start) / grid.stepSec + 1).toBe(49);
+  });
+
+  it("an error bar that has just closed leaves none filling", () => {
+    const now = Date.UTC(2026, 8, 28, 15, 30) / 1000;
+    const { grid, lastFull, partialSec } = bucketGrid("6h", now);
+    expect(partialSec).toBe(0);
+    expect(grid.end).toBe(lastFull);
+    expect((grid.end - grid.start) / grid.stepSec + 1).toBe(36);
   });
 });

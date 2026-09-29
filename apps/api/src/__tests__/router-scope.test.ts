@@ -96,12 +96,14 @@ describe("?router= scoping", () => {
     "/api/metrics/traffic",
     "/api/metrics/methods",
     "/api/metrics/errors",
+    "/api/metrics/retries",
     "/api/metrics/cross-validation",
     "/api/metrics/websocket",
     "/api/metrics/unavailable",
     "/api/metrics/specs",
     "/api/metrics/chain-series?spec=ETH1",
     "/api/metrics/upstream-detail?endpointId=eth-lava&spec=ETH1",
+    "/api/metrics/upstream-peers?spec=ETH1",
   ];
 
   it.each(SCOPED_ROUTES)("scopes every metric selector on %s", async (route) => {

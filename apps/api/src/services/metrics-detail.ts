@@ -17,16 +17,25 @@ import {
   qEndpointBlockLagSeriesExpr,
   qEndpointLatencyQuantile,
   qEndpointLatencySeriesExpr,
+  qEndpointLatencyByEndpointSeriesExpr,
+  qEndpointTipsSeriesExpr,
+  qUpstreamFailedSeriesExpr,
+  qUpstreamNodeErrorSeriesExpr,
+  qUpstreamRpsByUpstreamSeriesExpr,
   qErrorCount,
   qErrorCountSeriesExpr,
   qErrorRateSeriesExpr,
   qErrorsBy,
+  qErrorsByUpstream,
   qLatencySeriesExpr,
   qOptimizerScore,
   qPresence,
+  qRetriesByMethod,
+  qRetryAvgExtraAttempts,
   qUpstreamErrorRate,
   qUpstreamReadVolumeSeriesExpr,
   qUpstreamVolumeSeriesExpr,
+  qClientRequestsFromBirth,
   qClientRpsSeriesExpr,
   qScoreExpr,
   rangeFor,
@@ -38,15 +47,18 @@ import {
   type CrossValidationReport,
   type ErrorsReport,
   type MetricWindow,
+  type RetriesReport,
   type UpstreamDetail,
   type UpstreamRef,
+  type UpstreamPeers,
+  type ChartGrid,
   type ScoreType,
   type TimePoint,
   type UnavailableChain,
   type WebSocketReport,
 } from "@sr/shared";
-import { WINDOWS } from "@sr/shared/constants";
-import type { PrometheusClient } from "./prometheus-client.js";
+import { WINDOWS, bucketGrid, chartSampling, errorBuckets } from "@sr/shared/constants";
+import type { PrometheusClient, PromVectorSample } from "./prometheus-client.js";
 import type { ConfigurationService } from "./configuration.js";
 import { health, toPoints } from "./metrics.js";
 
@@ -75,10 +87,65 @@ export class MetricsDetailService {
     return v !== null && v > 0;
   }
 
+  /** The grid a window is sampled on at `stepSec`: the same start and end every series of one read shares. */
+  private grid(window: MetricWindow, stepSec: number): ChartGrid {
+    const { start, end } = this.windowBounds(window);
+    return { start, end, stepSec };
+  }
+
+  private async seriesOn(expr: string, grid: ChartGrid): Promise<TimePoint[]> {
+    const matrix = await this.prom.queryRange(expr, grid.start, grid.end, `${grid.stepSec}s`);
+    return toPoints(matrix[0]?.values);
+  }
+
+  /** One errors-over-time series: the whole bars from a range read, then the
+   *  bar still filling from one instant read over the seconds it has run. */
+  private async barsOf(exprFor: (range: string) => string, step: string, bars: ReturnType<typeof bucketGrid>): Promise<TimePoint[]> {
+    const { grid, lastFull, partialSec } = bars;
+    const [whole, filling] = await Promise.all([
+      lastFull >= grid.start ? this.seriesOn(exprFor(step), { ...grid, end: lastFull }) : Promise.resolve([] as TimePoint[]),
+      partialSec > 0 ? this.prom.scalar(exprFor(`${partialSec}s`)) : Promise.resolve(null),
+    ]);
+    return filling == null ? whole : [...whole, { t: grid.end, v: filling }];
+  }
+
   private async series(expr: string, window: MetricWindow): Promise<TimePoint[]> {
     const { start, end, step } = this.windowBounds(window);
     const matrix = await this.prom.queryRange(expr, start, end, step);
     return toPoints(matrix[0]?.values);
+  }
+
+  /**
+   * Every upstream of one chain side by side: p95 latency, requests per
+   * second and the tip each reports, one series per upstream - what the
+   * deep-dive's charts read an upstream against its peers with. Three range
+   * queries, whatever the count.
+   */
+  async upstreamPeers(spec: string, window: MetricWindow): Promise<UpstreamPeers> {
+    // ~300 points whatever the window, each averaging a 24th of it (see
+    // chartSampling): dense, smooth lines rather than a few coarse steps.
+    const { stepSec, step, lookback, rateWindow } = chartSampling(window);
+    const grid = this.grid(window, stepSec);
+    const range = (expr: string) => this.prom.queryRange(expr, grid.start, grid.end, step);
+    const [latency, rps, tips] = await Promise.all([
+      range(qEndpointLatencyByEndpointSeriesExpr(0.95, spec, lookback, rateWindow)),
+      range(qUpstreamRpsByUpstreamSeriesExpr(spec, lookback, rateWindow, step)),
+      range(qEndpointTipsSeriesExpr(spec, step)),
+    ]);
+    const by = new Map<string, { latencyP95: TimePoint[]; rps: TimePoint[]; latestBlock: TimePoint[] }>();
+    const entry = (u: string) => {
+      const e = by.get(u) ?? { latencyP95: [], rps: [], latestBlock: [] };
+      by.set(u, e);
+      return e;
+    };
+    for (const s of latency) if (s.metric.endpoint_id) entry(s.metric.endpoint_id).latencyP95 = toPoints(s.values);
+    for (const s of rps) if (s.metric.provider_address) entry(s.metric.provider_address).rps = toPoints(s.values);
+    for (const s of tips) if (s.metric.endpoint_id) entry(s.metric.endpoint_id).latestBlock = toPoints(s.values);
+    return {
+      spec,
+      grid,
+      upstreams: [...by].map(([upstream, v]) => ({ upstream, ...v })).sort((a, b) => a.upstream.localeCompare(b.upstream)),
+    };
   }
 
   /** ChainDetail metric-switcher bundle (fetched on row expand only). */
@@ -94,8 +161,7 @@ export class MetricsDetailService {
       this.series(qAvailabilitySeriesExpr(step, spec), window),
       this.series(qLatencySeriesExpr(0.95, step, spec), window),
       this.series(qErrorRateSeriesExpr(step, spec), window),
-      // CLIENT-scoped, matching the Traffic tab and the hero "Requests served"
-      // card. The relay-scoped counter (qRpsSeriesExpr) counts health probes
+      // CLIENT-scoped, matching the hero "Requests served" card. The relay-scoped counter (qRpsSeriesExpr) counts health probes
       // and one increment per cross-validation participant, so this chart used
       // to show a permanent non-zero floor on an idle chain (MAG-2737).
       this.series(qClientRpsSeriesExpr(step, spec), window),
@@ -170,13 +236,18 @@ export class MetricsDetailService {
       if (type) scores[type] = Number(s.value[1]);
     }
 
-    const [latP50, latP95, latP99, volTotal, volRead, blockLagSeries] = await Promise.all([
+    // Bars on the clock (bucketGrid): the whole ones, then the one filling.
+    const asOf = Math.floor(Date.now() / 1000);
+    const bars = bucketGrid(window, asOf);
+    const errStep = errorBuckets(window).step;
+    const [latP50, latP95, latP99, volTotal, volRead, blockLagSeries, failedSeries] = await Promise.all([
       this.series(qEndpointLatencySeriesExpr(0.5, ref, step), window),
       this.series(qEndpointLatencySeriesExpr(0.95, ref, step), window),
       this.series(qEndpointLatencySeriesExpr(0.99, ref, step), window),
       this.series(qUpstreamVolumeSeriesExpr(ref, step), window),
       this.series(qUpstreamReadVolumeSeriesExpr(ref, step), window),
       this.series(qEndpointBlockLagSeriesExpr(ref), window),
+      this.barsOf((range) => qUpstreamFailedSeriesExpr(ref, range), errStep, bars),
     ]);
 
     const scoreSeries: Partial<Record<ScoreType, TimePoint[]>> = {};
@@ -194,6 +265,7 @@ export class MetricsDetailService {
       this.familyPresent(OPTIONAL_METRICS.nodeErrorsTotal),
       this.familyPresent(OPTIONAL_METRICS.protocolErrorsTotal),
     ]);
+    const nodeSeries = nodeErrs ? await this.barsOf((range) => qUpstreamNodeErrorSeriesExpr(ref, range), errStep, bars) : null;
 
     const availOver = (w: MetricWindow) =>
       this.prom.scalar(
@@ -266,6 +338,7 @@ export class MetricsDetailService {
       latencySeries: { p50: latP50, p95: latP95, p99: latP99 },
       volume: { total: volTotal, read: volRead, write: null, batch: null },
       blockLagSeries,
+      errorsOverTime: { grid: bars.grid, failed: failedSeries, node: nodeSeries, asOf },
       availabilityWindows: { last1h, last24h, last7d },
       errorSplit: {
         node: nodeErrorCount ?? 0,
@@ -308,9 +381,7 @@ export class MetricsDetailService {
         this.prom.query(qErrorsBy("spec", window, spec)),
         this.prom.query(qErrorsBy("method", window, spec)),
         // Hotspots need BOTH labels on one vector.
-        this.prom.query(
-          `round(clamp_min(sum by (spec, provider_address) (increase(${ROUTER_METRICS.requestsTotal}${selector({ spec })}[${rangeFor(window)}])) - (sum by (spec, provider_address) (increase(${ROUTER_METRICS.requestsSuccessTotal}${selector({ spec })}[${rangeFor(window)}])) or sum by (spec, provider_address) (increase(${ROUTER_METRICS.requestsTotal}${selector({ spec })}[${rangeFor(window)}])) * 0), 0))`,
-        ),
+        this.prom.query(qErrorsByUpstream(window, spec)),
         Promise.all([
           this.familyPresent(OPTIONAL_METRICS.requestsFailedTotal),
           this.familyPresent(OPTIONAL_METRICS.nodeErrorsTotal),
@@ -455,10 +526,7 @@ export class MetricsDetailService {
         // round(): un-rounded increase() extrapolation can put a bucket ABOVE
         // the window's headline total (e.g. a 77 spike on 60 errors) — whole
         // errors per bucket keep the trend reconcilable with the total.
-        h.trend = await this.series(
-          `round(clamp_min(sum(increase(${ROUTER_METRICS.requestsTotal}${selector({ spec: h.spec, provider_address: h.upstream })}[${step}])) - sum(increase(${ROUTER_METRICS.requestsSuccessTotal}${selector({ spec: h.spec, provider_address: h.upstream })}[${step}])), 0))`,
-          window,
-        );
+        h.trend = await this.series(qUpstreamFailedSeriesExpr({ spec: h.spec, endpointId: h.upstream }, step), window);
       }),
     );
 
@@ -498,6 +566,39 @@ export class MetricsDetailService {
         nodeErrorsTotal: families[1],
         protocolErrorsTotal: families[2],
       },
+    };
+  }
+
+  /**
+   * Retry-breakdown tab's count cards, from the router's retry counters. The
+   * table of retried requests comes from the router's logs instead
+   * (`RetryLogService`): the counters carry only {spec, apiInterface, method}.
+   */
+  async retries(window: MetricWindow, spec?: string): Promise<RetriesReport> {
+    const emitted = await this.familyPresent(OPTIONAL_METRICS.retriesTotal);
+    if (!emitted) {
+      return { emitted, retried: null, recovered: null, failed: null, recoveryRate: null, retryRate: null, avgExtraAttempts: null };
+    }
+    const [recoveredRows, failedRows, avgExtraAttempts, clientRequests] = await Promise.all([
+      this.prom.query(qRetriesByMethod("recovered", window, spec)),
+      this.prom.query(qRetriesByMethod("failed", window, spec)),
+      this.prom.scalar(qRetryAvgExtraAttempts(window, spec)),
+      this.prom.scalar(qClientRequestsFromBirth(window, spec)),
+    ]);
+    // Summed from the per-(chain × method) rows, each already rounded, so the
+    // three cards add up on screen.
+    const total = (rows: PromVectorSample[]) => rows.reduce((s, r) => s + (Number(r.value[1]) || 0), 0);
+    const recovered = total(recoveredRows);
+    const failed = total(failedRows);
+    const retried = recovered + failed;
+    return {
+      emitted,
+      retried,
+      recovered,
+      failed,
+      recoveryRate: retried ? recovered / retried : null,
+      retryRate: clientRequests ? retried / clientRequests : null,
+      avgExtraAttempts,
     };
   }
 

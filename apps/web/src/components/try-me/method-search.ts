@@ -51,11 +51,11 @@ export const RUNNABILITY_LABEL: Record<Runnability, string> = {
 /** The `title` on each heading — why the group exists, in one sentence. */
 export const RUNNABILITY_HINT: Record<Runnability, string> = {
   ready:
-    "These carry a checked example. Pick one and press Send — nothing else to fill in.",
+    "These carry a checked example. Pick one and press Send - nothing else to fill in.",
   "needs-input":
     "These take an argument the catalog cannot supply (a hash, an address, a height). Fill the params in before sending.",
   unverified:
-    "Nobody has checked these against a live node, so the catalog claims nothing about them. They may take arguments — read the params before sending.",
+    "Nobody has checked these against a live node, so the catalog claims nothing about them. They may take arguments - read the params before sending.",
 };
 
 /** Split a tier's commands into the three sections, keeping catalog order. */

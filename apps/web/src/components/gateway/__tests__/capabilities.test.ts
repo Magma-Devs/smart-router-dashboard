@@ -17,6 +17,15 @@ describe("capabilitiesOf", () => {
     ]);
   });
 
+  it("keeps every other add-on when asked, after the known ones", () => {
+    expect(capabilitiesOf({ addons: ["tokens-owner-indexed", "Archive", "bundler", " "], includeUnknown: true })).toEqual([
+      "archive",
+      "bundler",
+      "tokens-owner-indexed",
+    ]);
+    expect(capabilitiesOf({ addons: ["pruning"], hasWs: true, includeUnknown: true })).toEqual(["ws", "pruning"]);
+  });
+
   it("appends a derived ws capability", () => {
     expect(capabilitiesOf({ addons: ["archive"], hasWs: true })).toEqual(["archive", "ws"]);
     expect(capabilitiesOf({ hasWs: true })).toEqual(["ws"]);

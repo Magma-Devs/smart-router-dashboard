@@ -20,6 +20,7 @@ import {
   qErrorsBy,
   qLatencyDistribution,
   qLatencyQuantile,
+  qLatencySeriesExpr,
   qBestTipBySpec,
   qBlockRateBySpec,
   qEndpointPolls,
@@ -287,14 +288,14 @@ export class MetricsService {
       this.prom.scalar(ROUTER_METRICS.overallHealth),
       this.prom.queryRange(qClientRpsSeriesExpr(win.step, spec), start, end, win.step),
       this.prom.queryRange(`round(clamp_min(sum(increase(${ROUTER_METRICS.requestsTotal}${sel}[${win.step}])) - sum(increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${win.step}])), 0))`, start, end, win.step),
-      this.prom.queryRange(qLatencyQuantile(0.95, spec, window).replace(`[${r}]`, `[${win.step}]`), start, end, win.step),
+      this.prom.queryRange(qLatencySeriesExpr(0.95, win.step, spec), start, end, win.step),
       spec ? Promise.resolve([spec]) : this.listSpecs(),
     ]);
 
     // Latency series per percentile for the p50/p95/p99 chart toggle.
     const [latP50, latP99] = await Promise.all([
-      this.prom.queryRange(qLatencyQuantile(0.5, spec, window).replace(`[${r}]`, `[${win.step}]`), start, end, win.step),
-      this.prom.queryRange(qLatencyQuantile(0.99, spec, window).replace(`[${r}]`, `[${win.step}]`), start, end, win.step),
+      this.prom.queryRange(qLatencySeriesExpr(0.5, win.step, spec), start, end, win.step),
+      this.prom.queryRange(qLatencySeriesExpr(0.99, win.step, spec), start, end, win.step),
     ]);
 
     // Errors = total − success over the window, for BOTH windows (the prior
@@ -1017,8 +1018,9 @@ export class MetricsService {
   }
 
   /**
-   * Traffic tab: aggregate RPS-now + per-chain rows (rpsNow, requests, share,
-   * trend sparkline). Mirrors the design's "Requests / sec · N chains" view.
+   * Aggregate RPS-now + per-chain rows (rpsNow, requests, share, trend
+   * sparkline): the design's "Requests / sec · N chains" view, which the
+   * removed Traffic tab drew. No web consumer now.
    */
   async traffic(window: MetricWindow): Promise<{
     rpsNow: number | null;

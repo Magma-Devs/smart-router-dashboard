@@ -355,11 +355,11 @@ export default function TeamPage() {
                     <div style={{ marginBottom: 6, color: "var(--text-2)" }}>
                       {freshLink.fallback && (
                         <>
-                          <strong>The email could not be sent</strong> — tell an operator that mail
+                          <strong>The email could not be sent</strong> - tell an operator that mail
                           is not working.{" "}
                         </>
                       )}
-                      New link for <strong>{freshLink.email}</strong> — the previous one no longer
+                      New link for <strong>{freshLink.email}</strong> - the previous one no longer
                       works. Shown once.
                     </div>
                     <div
@@ -371,7 +371,7 @@ export default function TeamPage() {
                   </>
                 ) : (
                   <div style={{ color: "var(--text-2)" }}>
-                    Emailed a new link to <strong>{freshLink.email}</strong> — the previous one no
+                    Emailed a new link to <strong>{freshLink.email}</strong> - the previous one no
                     longer works.
                   </div>
                 )}

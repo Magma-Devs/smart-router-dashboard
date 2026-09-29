@@ -6,6 +6,7 @@
 import {
   ENDPOINT_METRICS,
   OPTIMIZER_METRICS,
+  OPTIONAL_METRICS,
   ROUTER_METRICS,
 } from "../constants/metrics.js";
 import { DEFAULT_WINDOW, WINDOWS, type MetricWindow } from "../constants/windows.js";
@@ -116,7 +117,15 @@ export function qErrorRate(
   return `1 - (${qAvailability(spec, window, offset)})`;
 }
 
-/** histogram_quantile over the router latency histogram. */
+/**
+ * histogram_quantile over the router latency histogram, for the window. All
+ * chains in scope count as one distribution: `spec` narrows it to one chain,
+ * but the result is never split per chain. Grouped `by (spec, le)`, it
+ * returned one series per chain, and a KPI read through `scalar()` took the
+ * first - so with no chain selected, the card showed whichever chain
+ * Prometheus listed first, or nothing when that chain had no traffic in the
+ * window. Per-chain lines use `qPerSpecLatencySeriesExpr`.
+ */
 export function qLatencyQuantile(
   quantile: number,
   spec?: string,
@@ -125,7 +134,7 @@ export function qLatencyQuantile(
 ): string {
   const sel = selector({ spec });
   const r = rangeFor(window);
-  return `histogram_quantile(${quantile}, sum by (spec, le) (rate(${ROUTER_METRICS.latencyBucket}${sel}[${r}]${off(offset)})))`;
+  return `histogram_quantile(${quantile}, sum by (le) (rate(${ROUTER_METRICS.latencyBucket}${sel}[${r}]${off(offset)})))`;
 }
 
 /** Instant requests/sec (rate over the last 5m). */
@@ -190,6 +199,18 @@ export function qErrorsBy(
   return `round(clamp_min(${tot} - (${ok} or ${tot} * 0), 0))`;
 }
 
+/**
+ * Failed relays per (chain × upstream) - `qErrorsBy` with both labels on one
+ * vector, the pair the Errors hotspots and the Retry upstream panel list.
+ */
+export function qErrorsByUpstream(window: MetricWindow = DEFAULT_WINDOW, spec?: string): string {
+  const sel = selector({ spec });
+  const r = rangeFor(window);
+  const tot = `sum by (spec, provider_address) (increase(${ROUTER_METRICS.requestsTotal}${sel}[${r}]))`;
+  const ok = `sum by (spec, provider_address) (increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${r}]))`;
+  return `round(clamp_min(${tot} - (${ok} or ${tot} * 0), 0))`;
+}
+
 /** Relays grouped by a label over the window (whole numbers). */
 export function qRequestsBy(
   by: ErrorsGroupBy,
@@ -221,6 +242,73 @@ export function qLabelledErrorsTotal(
   offset?: string,
 ): string {
   return `round(sum(increase(${metricName}${selector({ spec })}[${rangeFor(window)}]${off(offset)})))`;
+}
+
+/* ── Retries (absent until the router's first retry) ─────────────────────── */
+
+/**
+ * `increase()` that also counts a series' birth. The router creates each
+ * labelled retry counter on its first retry, so a series born inside the range
+ * starts at its first value, not 0 - and plain `increase()` drops that value:
+ * a burst of 11 retries on a new method read as 0. When the series has no
+ * sample at the range start, its first value (the minimum, for a counter) is
+ * added back - unless it was seen in the day before with a value no higher:
+ * that is a gap in scraping (a sleeping laptop, a Prometheus restart), not a
+ * birth, and adding it would count the whole total again.
+ *
+ * Built so no series drops out of a `+`: the zero side is `increase() * 0`,
+ * which exists for every series with two samples in the range - not `S * 0`,
+ * which exists only for series still reporting at query time. On one production
+ * deployment's metrics, pods restart and leave dozens of ended series (51 for Solana testnet in
+ * three days); the `S * 0` form lost them and read 43,716 retries where plain
+ * increase() read 142,257. A series seen once in the range has no increase()
+ * at all, so its birth value is kept on its own. Parenthesised, so it can
+ * follow `sum` / `sum by (…)` directly.
+ */
+export function increaseFromBirth(series: string, range: string): string {
+  const inc = `increase(${series}[${range}])`;
+  const first = `min_over_time(${series}[${range}])`;
+  const birth = `((${first} unless ${series} offset ${range}) unless (${first} >= last_over_time(${series}[1d] offset ${range})))`;
+  return `((${inc} + (${birth} or ${inc} * 0)) or ${birth})`;
+}
+
+/** How a retried request ended: a reply in the end (`recovered`) or an error. */
+export type RetryOutcome = "recovered" | "failed";
+
+const RETRY_OUTCOME_METRIC: Record<RetryOutcome, string> = {
+  recovered: OPTIONAL_METRICS.retriesSuccessTotal,
+  failed: OPTIONAL_METRICS.retriesFailedTotal,
+};
+
+/** Retried requests with one outcome over the window, per (spec × method). */
+export function qRetriesByMethod(
+  outcome: RetryOutcome,
+  window: MetricWindow = DEFAULT_WINDOW,
+  spec?: string,
+): string {
+  return `round(sum by (spec, method) ${increaseFromBirth(`${RETRY_OUTCOME_METRIC[outcome]}${selector({ spec })}`, rangeFor(window))})`;
+}
+
+/** Mean extra attempts per retried request: the histogram's sum ÷ count. */
+export function qRetryAvgExtraAttempts(
+  window: MetricWindow = DEFAULT_WINDOW,
+  spec?: string,
+): string {
+  const sel = selector({ spec });
+  const r = rangeFor(window);
+  return `sum${increaseFromBirth(`${OPTIONAL_METRICS.retryAttemptsSum}${sel}`, r)} / sum${increaseFromBirth(`${OPTIONAL_METRICS.retryAttemptsCount}${sel}`, r)}`;
+}
+
+/**
+ * Client requests over the window, counting series born inside it - the
+ * retry rate's denominator, on the same footing as the retry counts above
+ * (a method first called inside the window is a new series too).
+ */
+export function qClientRequestsFromBirth(
+  window: MetricWindow = DEFAULT_WINDOW,
+  spec?: string,
+): string {
+  return `round(sum${increaseFromBirth(`${ROUTER_METRICS.latencyCount}${selector({ spec })}`, rangeFor(window))})`;
 }
 
 /* ── Series expressions (for query_range; [step] = per-bucket lookback) ──── */
@@ -255,6 +343,11 @@ export function qLatencySeriesExpr(
   spec?: string,
 ): string {
   return `histogram_quantile(${quantile}, sum by (le) (rate(${ROUTER_METRICS.latencyBucket}${selector({ spec })}[${step}])))`;
+}
+
+/** Latency-quantile series per chain (the Dashboard's per-chain latency lines). */
+export function qPerSpecLatencySeriesExpr(quantile: number, step: string): string {
+  return `histogram_quantile(${quantile}, sum by (spec, le) (rate(${ROUTER_METRICS.latencyBucket}[${step}])))`;
 }
 
 /** Per-upstream RPS series (stacked upstream-mix charts). */
@@ -325,6 +418,37 @@ export function qEndpointLatencySeriesExpr(
   return `histogram_quantile(${quantile}, sum by (le) (rate(${ENDPOINT_METRICS.latencyBucket}${upstreamEndpointSelector(ref)}[${step}])))`;
 }
 
+/**
+ * A latency-quantile series for EVERY endpoint of one chain - one series per
+ * `endpoint_id`, so an upstream can be read against its peers on one chart.
+ */
+export function qEndpointLatencyByEndpointSeriesExpr(
+  quantile: number,
+  spec: string,
+  lookback: string,
+  presence: string,
+): string {
+  // Only where the upstream was scraped in the last `presence`: a quantile
+  // over `lookback` would otherwise carry the last value that far into a
+  // stretch with no data at all.
+  const seen = `sum by (endpoint_id) (count_over_time(${ENDPOINT_METRICS.latencyBucket}${selector({ spec, le: "+Inf" })}[${presence}])) > 0`;
+  return `histogram_quantile(${quantile}, sum by (le, endpoint_id) (rate(${ENDPOINT_METRICS.latencyBucket}${selector({ spec })}[${lookback}]))) and on (endpoint_id) (${seen})`;
+}
+
+/**
+ * Requests per second for every upstream of one chain, one series per
+ * upstream: the `rateWindow` rates averaged over `lookback`, at `step`. An
+ * average of what is THERE - one long `rate()` divides by the whole lookback
+ * whatever part of it holds data, so after any stretch with no scrapes (a
+ * router restarting, a laptop asleep) its line slides to zero and climbs
+ * back for a whole lookback, traffic that never changed. Only where the
+ * upstream was scraped in the last `rateWindow`, so a gap is a gap.
+ */
+export function qUpstreamRpsByUpstreamSeriesExpr(spec: string, lookback: string, rateWindow: string, step: string): string {
+  const m = `${ROUTER_METRICS.requestsTotal}${selector({ spec })}`;
+  return `avg_over_time((sum by (provider_address) (rate(${m}[${rateWindow}])))[${lookback}:${step}]) and on (provider_address) (sum by (provider_address) (count_over_time(${m}[${rateWindow}])) > 0)`;
+}
+
 /** One upstream's request-volume series (router scope). */
 export function qUpstreamVolumeSeriesExpr(ref: UpstreamRef, step: string): string {
   return `sum(increase(${ROUTER_METRICS.requestsTotal}${upstreamProviderSelector(ref)}[${step}]))`;
@@ -333,6 +457,22 @@ export function qUpstreamVolumeSeriesExpr(ref: UpstreamRef, step: string): strin
 /** One upstream's READ-volume series (requests_read_total is real). */
 export function qUpstreamReadVolumeSeriesExpr(ref: UpstreamRef, step: string): string {
   return `sum(increase(${ROUTER_METRICS.requestsReadTotal}${upstreamProviderSelector(ref)}[${step}]))`;
+}
+
+/**
+ * One upstream's failed tries per bucket - its requests minus its successes
+ * (an upstream's JSON-RPC error reply counts as a success here). Rounded:
+ * un-rounded `increase()` extrapolation can put a bucket above the window's
+ * own total, and whole errors keep the two reconcilable.
+ */
+export function qUpstreamFailedSeriesExpr(ref: UpstreamRef, step: string): string {
+  const sel = upstreamProviderSelector(ref);
+  return `round(clamp_min(sum(increase(${ROUTER_METRICS.requestsTotal}${sel}[${step}])) - sum(increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${step}])), 0))`;
+}
+
+/** One upstream's JSON-RPC error replies per bucket - absent until the family fires. */
+export function qUpstreamNodeErrorSeriesExpr(ref: UpstreamRef, step: string): string {
+  return `round(sum(increase(${OPTIONAL_METRICS.nodeErrorsTotal}${upstreamProviderSelector(ref)}[${step}])))`;
 }
 
 /** Per-upstream error rate over the window (router scope). */
@@ -404,6 +544,15 @@ export function qRouterTips(scopeLabel?: string, spec?: string): string {
     ? `${scopeLabel}, spec, apiInterface`
     : "spec, apiInterface";
   return `max by (${by}) (${ROUTER_METRICS.latestBlock}${selector({ spec })})`;
+}
+
+/**
+ * The tip every endpoint of one chain reports, one series per `endpoint_id`
+ * (its highest interface) - the highest it reached within each `step`, so a
+ * sample between two scrapes can't hide a tip that moved.
+ */
+export function qEndpointTipsSeriesExpr(spec: string, step: string): string {
+  return `max by (endpoint_id) (max_over_time(${ENDPOINT_METRICS.latestBlock}${selector({ spec })}[${step}]))`;
 }
 
 /** Per-upstream tips, keeping the interface split a per-endpoint_id roll-up loses. */
@@ -512,7 +661,9 @@ export function qEndpointPolls(
 ): string {
   const metric =
     kind === "ok" ? ENDPOINT_METRICS.fetchLatestSuccess : ENDPOINT_METRICS.fetchLatestFails;
-  return `sum by (endpoint_id) (increase(${metric}${selector({ spec })}[${rangeFor(window)}]))`;
+  // `spec` in the by-clause: the roster joins rows on (upstream × chain), and
+  // a poll row without it became a second, chain-less copy of every upstream.
+  return `sum by (endpoint_id, spec) (increase(${metric}${selector({ spec })}[${rangeFor(window)}]))`;
 }
 
 /**

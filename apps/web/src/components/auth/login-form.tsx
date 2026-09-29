@@ -69,7 +69,7 @@ export function LoginForm({
   /** A lockout is not a wrong password: saying "invalid" to someone with the
    *  right one sends them to try again, which keeps them locked. */
   const LOCKED =
-    "Too many failed attempts on this account. It unlocks within 15 minutes — or ask an administrator for a reset link.";
+    "Too many failed attempts on this account. It unlocks within 15 minutes - or ask an administrator for a reset link.";
   /** The per-network limit, not the account's lockout — and not a wrong
    *  password, which is what "invalid" would tell somebody who typed it right. */
   const THROTTLED = "Too many sign-in attempts from this network. Wait a minute and try again.";

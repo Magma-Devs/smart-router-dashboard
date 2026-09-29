@@ -4,6 +4,11 @@
  * a websocket transport is available. Honest-data: renders nothing when there
  * is no capability to show — never invents them.
  *
+ * The lists keep to the four chips below; an add-on outside them (the
+ * config's addons list also carries tokens like `pruning`) is dropped there.
+ * A detail view that owes the reader everything passes `includeUnknown`, and
+ * those render neutral under the config's own name.
+ *
  * `hasWs` means different things by row, both true as stated: on an ENDPOINT
  * it is the router's own ws upgrade (served on every jsonrpc / tendermintrpc
  * listener); on an UPSTREAM it is that node-url being a ws(s) one.
@@ -23,19 +28,30 @@ const CAP_META: Record<string, { label: string; color: string; title: string }> 
 const CAP_ORDER = ["archive", "debug", "trace", "ws"];
 
 /** Derive the capability set from a row's addons + whether a ws transport is
- *  available on it. */
+ *  available on it. `includeUnknown` keeps every other add-on too, after the
+ *  known ones, alphabetically. */
 export function capabilitiesOf(opts: {
   addons?: string[];
   hasWs?: boolean;
+  includeUnknown?: boolean;
 }): string[] {
   const set = new Set<string>();
+  const other = new Set<string>();
   for (const a of opts.addons ?? []) {
-    const k = a.toLowerCase();
+    const k = a.trim().toLowerCase();
     if (k in CAP_META) set.add(k);
+    else if (k && opts.includeUnknown) other.add(k);
   }
   if (opts.hasWs) set.add("ws");
-  return CAP_ORDER.filter((c) => set.has(c));
+  return [...CAP_ORDER.filter((c) => set.has(c)), ...[...other].sort()];
 }
+
+/** An add-on the chips don't know: neutral, under the config's own name. */
+const unknownMeta = (c: string) => ({
+  label: c,
+  color: "#94a3b8",
+  title: `"${c}" - in this url's addons list in the values file`,
+});
 
 export function CapabilityTags({
   capabilities,
@@ -50,7 +66,7 @@ export function CapabilityTags({
   return (
     <span style={{ display: "inline-flex", gap: 4, flexShrink: 0 }}>
       {capabilities.map((c) => {
-        const m = CAP_META[c]!;
+        const m = CAP_META[c] ?? unknownMeta(c);
         return (
           <span
             key={c}

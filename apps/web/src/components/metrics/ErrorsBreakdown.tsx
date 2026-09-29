@@ -1,194 +1,109 @@
 "use client";
 
-/* Errors-breakdown tab — hotspot list + error-types view. Ported verbatim
- * from the design prototype (page-metrics.jsx ErrorsBreakdown +
- * ErrorTypesView). Live data: /api/metrics/errors. The design's error-types
- * catalog (ERROR_CATALOG mock) maps to the `code` pivot, which is EMPTY until
- * the router emits labelled error counters — the view then renders an honest
- * empty state, never the mock's synthetic codes. */
+/* Errors tab - what went wrong, where, and what the app got. The count cards
+ * run from an upstream failing to the client seeing it: failed attempts
+ * (/api/metrics/errors), then the router's retry counters
+ * (/api/metrics/retries). Below them, every request that hit an error, one
+ * row each, from the router's logs (ErrorRequests, /api/error-requests). Its
+ * filters - the result, retryable or not, the error type, the method, the
+ * upstream - answer what the Upstreams and Error types views used to, with
+ * the requests themselves behind every count, so those views are gone. A bar
+ * on the Upstreams tab's "Errors over time" opens the tab on its own
+ * requests (ErrorsJump). */
 
 import { useState } from "react";
-import type { ErrorPivotRow, ErrorsReport, MetricWindow } from "@sr/shared";
+import type { ErrorRequestsReport, ErrorsReport, MetricWindow, RetriesReport } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
-import { fmtComma } from "@/lib/format";
-import { errorDocsUrl } from "@/lib/error-docs";
-import { HotspotRow } from "./HotspotRow";
+import { fmtComma, fmtNum, fmtPct } from "@/lib/format";
+import { TT } from "@/lib/tooltips";
+import { ALL, ErrorRequests } from "./ErrorRequests";
 import { useFilters } from "@/components/gateway/FiltersProvider";
 import { useRouterFilter } from "@/hooks/use-router-options";
-import { Skel, SkelLine } from "@/components/gateway/Skel";
+import { SkelLine, SkelValue } from "@/components/gateway/Skel";
+import { Tip } from "@/components/gateway/Tip";
 
-/* "Error types" reference view — live counts per error code (code pivot). */
-function ErrorTypesView({ rows, loading }: { rows: ErrorPivotRow[]; loading: boolean }) {
-  if (loading) {
-    return (
-      <div className="gw-card" style={{ display: "grid", gap: 14 }}>
-        {[0, 1, 2, 3].map((i) => (
-          <div key={i} style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <Skel w={132} h={11} />
-            <Skel w="100%" h={8} style={{ flex: 1 }} />
-            <Skel w={54} h={11} />
-          </div>
-        ))}
-      </div>
-    );
-  }
-  if (!rows.length) {
-    return (
-      <div className="gw-card" style={{ padding: "40px 24px", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
-        <span style={{ fontSize: 13, color: "var(--text-3)" }}>No errors this window.</span>
-        <span style={{ fontSize: 12, color: "var(--text-4)", maxWidth: 460, lineHeight: 1.6 }}>
-          Error classes (node / protocol / transport) appear here as soon as any request fails.
-        </span>
-      </div>
-    );
-  }
-  const grand = rows.reduce((s, r) => s + r.errors, 0) || 1;
-  return (
-    <div className="gw-card" style={{ padding: 0, overflow: "hidden" }}>
-      {/* These counts come from the router's classified error counter, which
-          counts EVERY error event — including the upstream replies that the
-          relay went on to serve. The headline above counts failed relays only,
-          so the two legitimately differ; saying so beats leaving the reader to
-          reconcile them. */}
-      <div style={{ padding: "10px 16px", borderBottom: "1px solid var(--line)", fontSize: 11, color: "var(--text-3)", lineHeight: 1.5 }}>
-        Every error event the router classified — including upstream replies it
-        recovered from, which is why this can exceed the failed-relay count above.
-      </div>
-      {rows.map((e, idx) => {
-        const muted = e.errors === 0;
-        return (
-          <div key={e.key} style={{ borderBottom: idx === rows.length - 1 ? "none" : "1px solid var(--line)" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", opacity: muted ? 0.5 : 1 }}>
-              <span style={{ width: 8, height: 8, borderRadius: 2, background: "var(--text-3)", flexShrink: 0 }} />
-              <div style={{ flex: 1.4, minWidth: 0 }}>
-                {/* The code is a name the reader has to look up, so it IS
-                    the link — to the layer table that defines it, not to the
-                    top of the reference. */}
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <a
-                    className="gw-mono"
-                    href={errorDocsUrl(e.label)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    title={`What ${e.label} means, and whether the router retries it — opens the error-codes reference`}
-                    style={{ fontSize: 12, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textDecoration: "underline dotted", textDecorationColor: "var(--text-4)", textUnderlineOffset: 3 }}
-                  >
-                    {e.label}
-                  </a>
-                </div>
-              </div>
-              <div style={{ flexShrink: 0, minWidth: 150, textAlign: "right" }}>
-                {muted
-                  ? <span style={{ fontSize: 11, color: "var(--text-4)" }}>none this window</span>
-                  : <>
-                      <span className="gw-mono gw-tnum" style={{ fontSize: 14, fontWeight: 700 }}>{fmtComma(e.errors)}</span>
-                      <div style={{ fontSize: 10.5, color: "var(--text-3)", marginTop: 3 }}>{e.share != null ? (e.share * 100).toFixed(1) + "% of errors" : ""}</div>
-                    </>}
-              </div>
-              <div style={{ width: 84, height: 6, borderRadius: 999, background: "var(--bg-2)", flexShrink: 0 }}>
-                <div style={{ width: Math.max(2, Math.round((e.errors / grand) * 100)) + "%", height: "100%", borderRadius: 999, background: "var(--warn)", opacity: 0.85 }} />
-              </div>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
+/** One upstream's requests over exact times (unix ms) - what a click
+ *  elsewhere opens this tab on. `spec` is its chain. */
+export interface ErrorsJump {
+  spec: string;
+  upstream: string;
+  from: number;
+  to: number;
 }
 
-export function ErrorsBreakdown({ chainFilter, win }: { chainFilter: string | null; win: MetricWindow }) {
-  const [view, setView] = useState<"hotspots" | "types">("hotspots");
-  const [openId, setOpenId] = useState<string | null | undefined>(undefined);
+export function ErrorsBreakdown({ chainFilter, win, focus = null }: {
+  chainFilter: string | null;
+  win: MetricWindow;
+  /** Open on one upstream's requests over a stretch of time instead of the window. */
+  focus?: ErrorsJump | null;
+}) {
+  const [upstream, setUpstream] = useState(focus?.upstream ?? ALL);
 
   const specQ = chainFilter ? `&spec=${encodeURIComponent(chainFilter)}` : "";
   const { scopeQ } = useFilters();
-  // The hotspots below are (chain × upstream) pairs, so the router filter CAN
-  // narrow them — the api resolves the upstream against the values file. The
-  // pivots in the "Error types" view can't be attributed and stay as they are.
+  // The failed-tries card counts (chain × upstream) pairs, so the router
+  // filter CAN narrow it - the api resolves the upstream against the values
+  // file.
   const { routerIdQ } = useRouterFilter();
   const { data, isLoading } = useApi<ErrorsReport>(`/api/metrics/errors?window=${win}${specQ}${routerIdQ}${scopeQ}`);
+  const counts = useApi<RetriesReport>(`/api/metrics/retries?window=${win}${specQ}${scopeQ}`);
+  // The page window's request list - the same read the list below makes
+  // until someone picks exact times, so it costs nothing twice.
+  const logs = useApi<ErrorRequestsReport>(`/api/error-requests?window=${win}${specQ}${routerIdQ}`);
 
-  /* Failing pairs first by rate, then the node-error-only ones (see
-     HotspotRow) — the api already orders them that way; this keeps it after
-     the rate re-sort. */
-  const all = [...(data?.hotspots ?? [])];
-  const failing = all
-    .filter((h) => h.errors > 0)
-    .sort((a, b) => (b.errorRate ?? -1) - (a.errorRate ?? -1));
-  const nodeOnly = all
-    .filter((h) => h.errors === 0)
-    .sort((a, b) => b.nodeErrors - a.nodeErrors);
-  const hotspots = [...failing, ...nodeOnly];
+  const failing = (data?.hotspots ?? []).filter((h) => h.errors > 0);
   const total = data?.total ?? 0;
-  const keyOf = (h: { spec: string; upstream: string }) => h.spec + "·" + h.upstream;
-  // The design auto-opens the first hotspot; `undefined` = untouched state.
-  const effectiveOpen = openId === undefined ? (hotspots[0] ? keyOf(hotspots[0]) : null) : openId;
+
+  const c = counts.data;
+  const emitted = c?.emitted ?? false;
+  // The router counts a retry only once two tries have come back, so a
+  // request it couldn't retry (no upstream left, a try that never answered)
+  // is only in the logs. When they show more, the card says so.
+  // Only the ones it meant to retry: a transaction is never retried by design.
+  const logFailed = (logs.data?.rows ?? []).filter((r) => r.result === "failed" && (r.retried || r.exhausted)).length;
+  const failedNote = logs.data?.available && logFailed > (c?.failed ?? 0)
+    ? <span style={{ color: "var(--warn)" }}>{fmtComma(logFailed - (c?.failed ?? 0))}{logs.data.more ? "+" : ""} more in the list below that the retry counter misses: only one attempt returned</span>
+    : null;
+  const kpis: { label: string; tipKey: string; value: string; color: string; sub: React.ReactNode; loading: boolean }[] = [
+    { label: "Failed attempts", tipKey: "failedTries", value: fmtComma(total), color: total ? "var(--text)" : "var(--ok)", loading: isLoading,
+      sub: <>across {fmtComma(failing.length)} chain · upstream pair{failing.length === 1 ? "" : "s"}</> },
+    { label: "Retried requests", tipKey: "retriedRequests", value: fmtNum(c?.retried), color: emitted ? "var(--text)" : "var(--text-4)", loading: counts.isLoading,
+      sub: !emitted ? "no retries recorded yet"
+        : <>{fmtPct(c?.retryRate)} of all requests{c?.avgExtraAttempts != null && <> · {c.avgExtraAttempts.toFixed(1)} extra attempts each</>}</> },
+    { label: "Recovered", tipKey: "retryRecovered", value: fmtNum(c?.recovered), color: emitted ? "var(--ok)" : "var(--text-4)", loading: counts.isLoading,
+      sub: emitted && c?.recoveryRate != null ? <>{fmtPct(c.recoveryRate, 1)} of retried requests received a response</> : <>&nbsp;</> },
+    { label: "Still failed", tipKey: "retryFailed", value: fmtNum(c?.failed), loading: counts.isLoading,
+      color: c?.failed ? "var(--err)" : failedNote ? "var(--text)" : emitted ? "var(--ok)" : "var(--text-4)",
+      sub: failedNote ?? (emitted ? <>failed after all retries</> : <>&nbsp;</>) },
+  ];
 
   return (
     <div style={{ paddingTop: 8 }}>
-      {/* header */}
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 12 }}>
-        <div>
-          <div style={{ fontSize: 15, fontWeight: 600, letterSpacing: "-0.01em" }}>Errors</div>
-          {/* `total` and the pair counts default to 0, so before the response
-              lands this line reads "0 errors this window, across 0 pairs" — a
-              clean bill of health we have no basis for. Ghost it. */}
-          <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 3, minHeight: 18, display: "flex", alignItems: "center" }}>
-            {isLoading ? <SkelLine w={286} h={10} /> : (
-              <span>
-                <span className="gw-mono gw-tnum" style={{ fontWeight: 700, color: "var(--text)" }}>{fmtComma(total)}</span>{" "}errors this window, across <span className="gw-mono gw-tnum">{failing.length}</span> chain · upstream pair{failing.length === 1 ? "" : "s"}
-                {/* Node-error pairs are counted apart: they failed nothing, so
-                    folding them into the pair count overstated the damage. */}
-                {nodeOnly.length > 0 && (
-                  <> · <span className="gw-mono gw-tnum">{nodeOnly.length}</span> more answered with node errors only</>
-                )}
-              </span>
-            )}
-          </div>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <div className="gw-segctl">
-            <button className={view === "hotspots" ? "on" : ""} onClick={() => setView("hotspots")} style={{ padding: "5px 12px" }}>Hotspots</button>
-            <button className={view === "types" ? "on" : ""} onClick={() => setView("types")} style={{ padding: "5px 12px" }}>Error types</button>
-          </div>
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ fontSize: 15, fontWeight: 600, letterSpacing: "-0.01em" }}>Errors</div>
+        <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 3 }}>
+          Failed attempts, retries, and the responses returned to clients.
         </div>
       </div>
 
-      {view === "hotspots" && (
-        <>
-          {/* The green tick is an ALL-CLEAR. Showing it on an empty `hotspots`
-              before the response arrives tells the operator the deployment is
-              fine at exactly the moment we don't know. Ghost cards first. */}
-          {isLoading ? (
-            [0, 1, 2].map((i) => (
-              <div key={i} className="gw-card" style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8, padding: "16px 18px" }}>
-                <Skel w={16} h={16} r={4} />
-                <Skel w={150} h={11} />
-                <Skel w={92} h={11} />
-                <span style={{ flex: 1 }} />
-                <Skel w={64} h={11} />
-                <Skel w={48} h={11} />
-              </div>
-            ))
-          ) : hotspots.length === 0 ? (
-            <div className="gw-card" style={{ padding: "40px 24px", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
-              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-              <span style={{ fontSize: 13, color: "var(--text-3)" }}>No errors on this chain in the selected window.</span>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: 12, marginBottom: 16 }}>
+        {kpis.map((k) => (
+          <div key={k.label} className="gw-card" style={{ padding: "13px 16px" }}>
+            <div style={{ display: "inline-flex", alignItems: "center", fontSize: 12, color: "var(--text-3)", fontWeight: 500 }}>
+              {k.label}<Tip text={TT[k.tipKey]!} />
             </div>
-          ) : hotspots.map((h) => (
-            <HotspotRow key={keyOf(h)} h={h} win={win} open={effectiveOpen === keyOf(h)} onToggle={() => setOpenId(effectiveOpen === keyOf(h) ? null : keyOf(h))} />
-          ))}
-        </>
-      )}
+            <div className="gw-tnum" style={{ fontSize: 24, fontWeight: 700, letterSpacing: "-0.02em", lineHeight: 1.05, color: k.color, marginTop: 7 }}>
+              {k.loading ? <SkelValue h={25} w={96} /> : k.value}
+            </div>
+            <div style={{ fontSize: 11, color: "var(--text-4)", marginTop: 6, minHeight: "1.5em" }}>
+              {k.loading ? <SkelLine w={176} /> : k.sub}
+            </div>
+          </div>
+        ))}
+      </div>
 
-      {/* Per-code catalog from smartrouter_errors_total{error_name} when the
-          classified family has fired; class/category pivot as the fallback. */}
-      {view === "types" && (
-        <ErrorTypesView
-          rows={(data?.pivots.code?.length ? data.pivots.code : data?.pivots.category) ?? []}
-          loading={isLoading}
-        />
-      )}
+      <ErrorRequests chainFilter={chainFilter} win={win} upstream={upstream} onUpstream={setUpstream}
+        initialRange={focus ? { from: focus.from, to: focus.to } : null} />
     </div>
   );
 }

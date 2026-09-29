@@ -127,7 +127,7 @@ export function MetricsTabSectionC({
                     <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12, color: (t.failoverPct ?? 0) > 25 ? "var(--warn)" : "var(--text-3)" }} title={t.failoverCount != null ? dshFmtComma(t.failoverCount) + " failover events" : undefined}>{t.failoverPct != null ? t.failoverPct + "%" : "—"}</span></td>
                     <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12, color: t.sr == null ? "var(--text-4)" : t.sr < 99 ? "var(--err)" : "var(--ok)" }}>{t.sr != null ? t.sr.toFixed(2) + "%" : "—"}</span></td>
                     <td style={{ textAlign: "right" }}>
-                      <span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{t.p95 != null ? t.p95 + " ms " : "— "}</span>
+                      <span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{t.p95 != null ? t.p95 + " ms " : "- "}</span>
                       <span className="gw-mono" style={{ fontSize: 10, color: rc }}>({t.baselineRatio != null ? t.baselineRatio.toFixed(2) + "×" : "—"})</span>
                     </td>
                     <td>{t.topErr ? <span className="gw-tag gw-tag--warn" style={{ fontSize: 10 }}>{t.topErr}</span> : <span style={{ fontSize: 10, color: "var(--text-4)" }}>—</span>}</td>
@@ -226,7 +226,7 @@ export function MetricsTabSectionC({
         )}
         {uncatCount > 0 && (
           <div style={{ padding: "8px 16px", fontSize: 10, color: "var(--text-3)", borderTop: "1px solid var(--line)" }}>
-            {uncatCount} method(s) Uncategorized — latency shown but not color-thresholded against a baseline.
+            {uncatCount} method(s) Uncategorized - latency shown but not color-thresholded against a baseline.
           </div>
         )}
       </div>

@@ -97,8 +97,16 @@ export const OPTIONAL_METRICS = {
   errorsClassifiedTotal: "smartrouter_errors_total",
   cacheTotalHits: "cache_total_hits",
   cacheTotalMisses: "cache_total_misses",
+  // Retry families - labels {spec, apiInterface, method}: NO provider and NO
+  // reason. Recorded once per client REQUEST that needed an extra attempt
+  // (smart-router rpcsmartrouter_server.go), so these count retried requests,
+  // not attempts, and success + failed = total. The `retry_attempts` histogram
+  // observes the extra attempts (attempts − 1) of each retried request.
   retriesTotal: "smartrouter_retries_total",
   retriesSuccessTotal: "smartrouter_retries_success_total",
+  retriesFailedTotal: "smartrouter_retries_failed_total",
+  retryAttemptsSum: "smartrouter_retry_attempts_sum",
+  retryAttemptsCount: "smartrouter_retry_attempts_count",
   hedgeTotal: "smartrouter_hedge_total",
   hedgeSuccessTotal: "smartrouter_hedge_success_total",
   hedgeFailedTotal: "smartrouter_hedge_failed_total",

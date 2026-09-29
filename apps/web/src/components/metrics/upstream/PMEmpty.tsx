@@ -2,7 +2,7 @@
 
 import type { MetricWindow, UpstreamMetrics } from "@sr/shared";
 import { healthColor, healthLabel, HEALTH_UNKNOWN_HINT } from "@/lib/health";
-import { pollColor, pollSummary, qosHint, qosIsStale, qosValue } from "@/lib/upstream-signals";
+import { pollColor, pollSummary } from "@/lib/upstream-signals";
 
 /* PMEmpty — an upstream the router routed no requests to in this window.
  *
@@ -14,8 +14,7 @@ import { pollColor, pollSummary, qosHint, qosIsStale, qosValue } from "@/lib/ups
  * no traffic-derived numbers to show.
  *
  * What replaces it is the same shape filled with things the router really
- * reports without traffic — its live QoS score, its own block polls, and the
- * tip it last saw. "No traffic" turns out to be a long way from "no data". */
+ * reports without traffic - its own block polls, and the tip it last saw. "No traffic" turns out to be a long way from "no data". */
 
 export function PMEmpty({
   pm,
@@ -28,14 +27,13 @@ export function PMEmpty({
   chainName: string;
   timeWindow: MetricWindow;
 }) {
-  const qos = qosValue(pm);
   const polls = pollSummary(pm.polls);
   /* Whether the router is telling us anything at all about this upstream.
      "The router still watches this upstream" is a claim, and on a row with no
-     score, no answered poll and no tip it is not one we can make — that would
+     answered poll and no tip it is not one we can make - that would
      be the same invention as the "probes are passing" line this replaced. */
   const polled = pm.polls !== null && pm.polls.ok + pm.polls.failed > 0;
-  const watched = qos !== null || polled || pm.latestBlock !== null;
+  const watched = polled || pm.latestBlock !== null;
   const roleLine =
     pm.role === "backup"
       ? "A backup only serves when the primaries cannot."
@@ -70,19 +68,10 @@ export function PMEmpty({
           </span>
         </Fact>
 
-        {qos != null && (
-          <Fact label="QoS" title={qosHint(pm)}>
-            <span className="gw-mono gw-tnum" style={{ fontWeight: 700, color: qos > 97 ? "var(--ok)" : qos > 90 ? "var(--warn)" : "var(--err)", opacity: qosIsStale(pm) ? 0.55 : 1 }}>
-              {Math.round(qos)}
-            </span>
-            {qosIsStale(pm) && <span style={{ color: "var(--text-4)" }}> old</span>}
-          </Fact>
-        )}
-
         {polls !== null && (
           <Fact
             label={`Block polls · ${timeWindow}`}
-            title="The router polls every configured upstream for its latest block, whether or not it routes requests to it. Zero polls means the poll gate suppressed them — served traffic or a peer's poll already refreshed the tip — not that the upstream failed."
+            title="The router polls every configured upstream for its latest block, whether or not it routes requests to it. Zero polls means the poll gate suppressed them - served traffic or a peer's poll already refreshed the tip - not that the upstream failed."
           >
             <span style={{ color: pollColor(pm.polls) }}>{polls}</span>
           </Fact>

@@ -2,13 +2,17 @@
 
 /* MetricsView — the Metrics page body, ported verbatim from the design
  * prototype (page-metrics.jsx MetricsPage): RouterHeader, the four tabs
- * (Overview / Upstreams / Errors breakdown / Traffic), and the cross-tab
+ * (Overview / Upstreams / Errors / Transactions - the Errors tab folds the
+ * prototype's error breakdown and our retry breakdown into one, the
+ * transaction tab is ours, and the prototype's Traffic tab is gone), and the
+ * cross-tab
  * chain-filter banner. Exported standalone so both /metrics and the
  * chrome-less /standalone route can render it. timeWindow AND the chain come
  * from the shared FiltersProvider — the chain narrows every tab here, and the
  * Upstreams page reads the same selection, so filtering on one page and
  * walking to the other keeps it. RouterOverview's "View upstreams →" drill-in
- * sets it too. */
+ * sets it too, and a bar on the Upstreams tab's "Errors over time" opens the
+ * Errors tab on its own requests. */
 
 import { useState } from "react";
 import { buildChainMetaByIndex } from "@sr/shared";
@@ -20,13 +24,11 @@ import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { HeroPanel } from "./HeroPanel";
 import { CurrentlyUnavailable } from "./CurrentlyUnavailable";
 import { RouterOverview } from "./RouterOverview";
-import { CrossValidation } from "./CrossValidation";
-import { WebSocketPanel } from "./WebSocketPanel";
-import { MethodBreakdown } from "./MethodBreakdown";
-import { ErrorsBreakdown } from "./ErrorsBreakdown";
+import { ErrorsBreakdown, type ErrorsJump } from "./ErrorsBreakdown";
+import { TransactionLog } from "./TransactionLog";
 import { UpstreamMetricsTab } from "./upstream/UpstreamMetricsTab";
 
-type Tab = "metrics" | "upstreams" | "errors" | "traffic";
+type Tab = "metrics" | "upstreams" | "errors" | "transactions";
 
 export function MetricsView() {
   const { timeWindow, setTimeWindow } = useFilters();
@@ -34,6 +36,16 @@ export function MetricsView() {
   const [tab, setTab] = useState<Tab>("metrics");
   const activeChain = chain;
   const setChainFilter = (v: string) => selectChain(v === "all" ? null : v);
+  /* A bar clicked on the Upstreams tab: the Errors tab opens on that
+     upstream's chain, the upstream, and the bar's stretch of time. Picking a
+     tab yourself clears it - "Errors" from the tab bar is the whole window,
+     as it always was. */
+  const [errorsFocus, setErrorsFocus] = useState<ErrorsJump | null>(null);
+  const openErrors = (jump: ErrorsJump) => {
+    if (jump.spec) setChainFilter(jump.spec);
+    setErrorsFocus(jump);
+    setTab("errors");
+  };
 
   /* Config ∪ traffic (see useChainOptions). A configured chain that has served
      nothing is offered but dimmed: every panel here would be empty for it, and
@@ -59,7 +71,7 @@ export function MetricsView() {
         <div>
           <h1>Metrics</h1>
           <p className="lede">
-            How this deployment is serving traffic — throughput, latency, errors and
+            How this deployment is serving traffic - throughput, latency, errors and
             per-upstream health · live from{" "}
             <span className="gw-mono" style={{ color: "var(--text-2)" }}>Prometheus</span>.
           </p>
@@ -69,9 +81,12 @@ export function MetricsView() {
         <RouterHeader chains={routedChains} chainFilter={activeChain ?? "all"} setChainFilter={setChainFilter}
           timeWindow={timeWindow} setTimeWindow={setTimeWindow} />
       </div>
-      <div style={{ display: "flex", borderBottom: "1px solid var(--line)", marginBottom: 24 }}>
-        {([["metrics", "Overview"], ["upstreams", "Upstreams"], ["errors", "Errors breakdown"], ["traffic", "Traffic"]] as [Tab, string][]).map(([k, l]) => (
-          <button key={k} onClick={() => setTab(k)} style={{
+      {/* Six tabs outgrow a narrow screen: they scroll sideways rather than
+          wrap each label onto two lines. */}
+      <div style={{ display: "flex", borderBottom: "1px solid var(--line)", marginBottom: 24, overflowX: "auto", overflowY: "hidden" }}>
+        {([["metrics", "Overview"], ["upstreams", "Upstreams"], ["errors", "Errors"], ["transactions", "Transactions"]] as [Tab, string][]).map(([k, l]) => (
+          <button key={k} onClick={() => { setTab(k); setErrorsFocus(null); }} style={{
+            whiteSpace: "nowrap", flexShrink: 0,
             padding: "8px 20px", border: "none", background: "transparent",
             fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: "inherit",
             color: tab === k ? "var(--text)" : "var(--text-3)",
@@ -86,7 +101,7 @@ export function MetricsView() {
       {activeChain && !activeRouter && (
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20, padding: "9px 14px", borderRadius: 9, background: "rgba(255,57,0,0.06)", border: "1px solid rgba(255,57,0,0.22)" }}>
           <ChainBadge spec={activeChain} size={16} />
-          <span style={{ fontSize: 13, color: "var(--text-2)" }}>Viewing <strong style={{ color: "var(--text)" }}>{chainObj ? chainObj.name : activeChain}</strong> — clear to see all chains.</span>
+          <span style={{ fontSize: 13, color: "var(--text-2)" }}>Viewing <strong style={{ color: "var(--text)" }}>{chainObj ? chainObj.name : activeChain}</strong> - clear to see all chains.</span>
           <span style={{ flex: 1 }} />
           <button onClick={() => selectChain(null)} style={{ border: "none", background: "none", color: "var(--brand)", cursor: "pointer", padding: 0, fontSize: 13, fontWeight: 600, fontFamily: "inherit" }}>Clear filter</button>
         </div>
@@ -103,8 +118,8 @@ export function MetricsView() {
           <span style={{ fontSize: 13, color: "var(--text-2)" }}>
             Router <strong className="gw-mono" style={{ color: "var(--text)" }}>{activeRouter.id}</strong>
             {scopeUnavailable
-              ? ` — its upstreams and error hotspots are filtered to what it declares, and the rest of the page to ${activeRouter.chainName}, its chain. Panels that aggregate by chain can't go further: no metric says which router served a request, so a second router on ${activeRouter.chainName} would be counted in with it.`
-              : " — every panel is scoped to it."}
+              ? ` - its upstreams and failed attempts are filtered to what it declares, and the rest of the page to ${activeRouter.chainName}, its chain. Panels that aggregate by chain can't go further: no metric says which router served a request, so a second router on ${activeRouter.chainName} would be counted in with it.`
+              : " - every panel is scoped to it."}
           </span>
           <span style={{ flex: 1 }} />
           <button onClick={() => selectRouter(null)} style={{ border: "none", background: "none", color: "var(--brand)", cursor: "pointer", padding: 0, fontSize: 13, fontWeight: 600, fontFamily: "inherit" }}>Clear filter</button>
@@ -118,18 +133,9 @@ export function MetricsView() {
           <RouterOverview chainFilter={activeChain} timeWindow={timeWindow} onChainClick={(ch) => { setChainFilter(ch); setTab("upstreams"); }} />
         </>
       )}
-      {tab === "traffic" && (
-        <>
-          <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 12, alignItems: "start", marginBottom: 14 }}>
-            <CrossValidation tw={timeWindow} />
-            <WebSocketPanel tw={timeWindow} />
-          </div>
-
-          <MethodBreakdown win={timeWindow} chainFilter={activeChain} />
-        </>
-      )}
-      {tab === "upstreams" && <UpstreamMetricsTab timeWindow={timeWindow} chainFilter={activeChain} />}
-      {tab === "errors" && <ErrorsBreakdown chainFilter={activeChain} win={timeWindow} />}
+      {tab === "upstreams" && <UpstreamMetricsTab timeWindow={timeWindow} chainFilter={activeChain} onOpenErrors={openErrors} />}
+      {tab === "errors" && <ErrorsBreakdown key={errorsFocus ? `${errorsFocus.upstream}|${errorsFocus.from}` : "window"} chainFilter={activeChain} win={timeWindow} focus={errorsFocus} />}
+      {tab === "transactions" && <TransactionLog chainFilter={activeChain} win={timeWindow} />}
     </div>
   );
 }
