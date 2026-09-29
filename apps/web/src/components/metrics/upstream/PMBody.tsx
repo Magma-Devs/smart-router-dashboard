@@ -15,9 +15,9 @@
  *  - all four on ONE time axis, labelled at round times of day, so an error
  *    bar sits over the latency spike it belongs with - and one pointer: the
  *    moment under it, on any chart, draws every chart's crosshair;
- *  - a legend beside each chart that reads that moment out (its latest when
- *    the pointer is elsewhere), rather than a row of chips over it or a box
- *    that covers the lines. Pointing at a row brings its line forward.
+ *  - the values at that moment beside the dots under the pointer, and a
+ *    legend on one line under each chart naming the lines, so every chart
+ *    keeps the full width. Pointing at a name brings its line forward.
  * The prototype's selection-score and disagreement-rate panels are gone:
  * neither was something an operator could act on here. */
 
@@ -31,14 +31,11 @@ import type { ErrorsJump } from "../ErrorsBreakdown";
 import { PMPanel } from "./PMPanel";
 
 /** Every chart's margins: on the left the widest axis labels' (a block
- *  height), on the right just room for the last tick - the legend sits beside
+ *  height), on the right just room for the last tick - the legend sits under
  *  the chart. The four stack on one time axis, so they must share both, or
  *  the same moment lands at a different x in each. */
 const PAD_X = 80;
 const PAD_R = 16;
-/** The legend column beside every chart - one width for all four, so the
- *  charts beside them stay one width too. */
-const LEGEND_W = 210;
 
 /** The peers' colours; the selected upstream is always the brand colour. */
 const PEER_COLORS = ["#38bdf8", "#a78bfa", "#22c55e", "#eab308", "#ec4899", "#14b8a6", "#f97316", "#94a3b8"];
@@ -120,41 +117,38 @@ interface LegendRow {
 }
 
 /**
- * The legend beside a chart: which line is which. The values themselves are
- * read on the chart, beside the dots under the pointer (LineChart
- * pointLabels), where the eye already is. A chain has two to four upstreams,
- * so each gets a row of its own; pointing at one brings its line forward.
+ * The legend under a chart, one line left to right: which line is which. The
+ * values themselves are read on the chart, beside the dots under the pointer
+ * (LineChart pointLabels), where the eye already is. It starts where the plot
+ * starts, and pointing at a name brings its line forward.
  */
-function SideLegend({ heading, rows, foot, onFocus }: {
+function LegendLine({ heading, rows, foot, onFocus }: {
   heading?: string;
   rows: LegendRow[];
   foot?: ReactNode;
   onFocus?: (key: string | null) => void;
 }) {
   return (
-    <div style={{ flex: `0 0 ${LEGEND_W}px`, minWidth: 0, borderLeft: "1px solid var(--line)", paddingLeft: 14, display: "flex", flexDirection: "column", gap: 10 }}>
-      {heading && <div className="gw-mono gw-tnum" style={{ fontSize: 10, color: "var(--text-4)", textTransform: "uppercase", letterSpacing: "0.06em", minHeight: 13 }}>{heading}</div>}
+    <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", columnGap: 18, rowGap: 6, marginTop: 6, paddingLeft: PAD_X, paddingRight: PAD_R }}>
+      {heading && <span className="gw-mono" style={{ fontSize: 10, color: "var(--text-4)", textTransform: "uppercase", letterSpacing: "0.06em" }}>{heading}</span>}
       {rows.map((r) => (
-        <div key={r.key} onMouseEnter={onFocus ? () => onFocus(r.key) : undefined} onMouseLeave={onFocus ? () => onFocus(null) : undefined} style={{ minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0 }}>
-            <span style={{ width: r.mark === "box" ? 9 : 12, height: r.mark === "box" ? 9 : r.selected ? 3 : 2, borderRadius: r.mark === "box" ? 2 : 1, background: r.color, flexShrink: 0 }} />
-            <span className={r.mark === "box" ? undefined : "gw-mono"} title={r.name} style={{ fontSize: 11, color: r.selected ? "var(--text)" : "var(--text-2)", fontWeight: r.selected ? 600 : 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.name}</span>
-          </div>
-          {r.value != null && (
-            <div className="gw-mono gw-tnum" style={{ paddingLeft: r.mark === "box" ? 16 : 19, marginTop: 2, fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{r.value}</div>
-          )}
-        </div>
+        <span key={r.key} onMouseEnter={onFocus ? () => onFocus(r.key) : undefined} onMouseLeave={onFocus ? () => onFocus(null) : undefined}
+          style={{ display: "inline-flex", alignItems: "center", gap: 7, minWidth: 0 }}>
+          <span style={{ width: r.mark === "box" ? 9 : 12, height: r.mark === "box" ? 9 : r.selected ? 3 : 2, borderRadius: r.mark === "box" ? 2 : 1, background: r.color, flexShrink: 0 }} />
+          <span className={r.mark === "box" ? undefined : "gw-mono"} style={{ fontSize: 11, color: r.selected ? "var(--text)" : "var(--text-2)", fontWeight: r.selected ? 600 : 400, whiteSpace: "nowrap" }}>{r.name}</span>
+          {r.value != null && <span className="gw-mono gw-tnum" style={{ fontSize: 12, fontWeight: 700, color: "var(--text)" }}>{r.value}</span>}
+        </span>
       ))}
-      {foot && <div style={{ fontSize: 10.5, color: "var(--text-4)", lineHeight: 1.5, marginTop: "auto" }}>{foot}</div>}
+      {foot && <span style={{ marginLeft: "auto", fontSize: 10.5, color: "var(--text-4)" }}>{foot}</span>}
     </div>
   );
 }
 
-/** A chart and its legend, side by side - the legend drops below on a narrow screen. */
+/** A chart, and its legend on one line under it. */
 function ChartRow({ height, chart, legend }: { height: number; chart: ReactNode; legend: ReactNode }) {
   return (
-    <div style={{ display: "flex", gap: 16, alignItems: "stretch", flexWrap: "wrap" }}>
-      <div style={{ flex: "1 1 480px", minWidth: 0, height }}>{chart}</div>
+    <div>
+      <div style={{ height }}>{chart}</div>
       {legend}
     </div>
   );
@@ -308,7 +302,7 @@ export function PMBody({ pm, detail, name, timeWindow, onOpenErrors }: {
                   ))}
                 </>
               )} />}
-            legend={<SideLegend heading="This window" rows={errRows} foot={errFoot} />} />
+            legend={<LegendLine heading="This window" rows={errRows} foot={errFoot} />} />
         ) : empty(eot ? `No errors at ${name} in this window.` : "Loading…")}
       </PMPanel>
 
@@ -319,7 +313,7 @@ export function PMBody({ pm, detail, name, timeWindow, onOpenErrors }: {
             chart={<LineChart series={ordered.map((u, i) => lineOf(u.upstream, i, rps[i]!))} id={"pmv" + pid} padY={16}
               yDomain={[0, rpsHi > 0 ? rpsHi * 1.1 : 0.01]} niceY yFmt={fmtRps} xs={times} maxGap={2}
               hover={hoverOf((v) => `${fmtRps(v)} rps`)} hoverBox={false} pointLabels {...shared} />}
-            legend={<SideLegend rows={nameRows} onFocus={setFocusUp} />} />
+            legend={<LegendLine rows={nameRows} onFocus={setFocusUp} />} />
         ) : empty(peers.isLoading ? "Loading…" : `No upstream on ${chainLabel} served a request in this window.`)}
       </PMPanel>
 
@@ -330,7 +324,7 @@ export function PMBody({ pm, detail, name, timeWindow, onOpenErrors }: {
             <ChartRow height={220}
               chart={<LineChart series={ordered.map((u, i) => lineOf(u.upstream, i, lat[i]!))} id={"pml" + pid} padY={16}
                 yDomain={[0, latTop]} niceY yFmt={fmtMs} xs={times} maxGap={2} hover={hoverOf(fmtMs)} hoverBox={false} pointLabels {...shared} />}
-              legend={<SideLegend rows={nameRows} onFocus={setFocusUp} />} />
+              legend={<LegendLine rows={nameRows} onFocus={setFocusUp} />} />
             {latOver.length > 0 && (
               <div style={{ marginTop: 6, fontSize: 11, color: "var(--text-4)" }}>
                 ↑ Off the top of the chart: {latOver.map((x) => `${x.name} (up to ${fmtMs(x.max)})`).join(", ")} - point at it to read each value.
@@ -341,13 +335,13 @@ export function PMBody({ pm, detail, name, timeWindow, onOpenErrors }: {
       </PMPanel>
 
       <PMPanel full title="Latest block"
-        tip={`The block each upstream reports.\n\n- **Climbing together**: in sync\n- **Flat**: stopped syncing\n- **Below the others**: behind - the legend counts the blocks, against the highest tip at that moment`}>
+        tip={`The block each upstream reports.\n\n- **Climbing together**: in sync\n- **Flat**: stopped syncing\n- **Below the others**: behind - point at the chart to see how many blocks, against the highest tip at that moment`}>
         {tipAll.length ? (
           <ChartRow height={220}
             chart={<LineChart series={ordered.map((u, i) => lineOf(u.upstream, i, tips[i]!, "linear"))} id={"pmb" + pid} padY={16}
               yDomain={[tipLo - tipPad, tipHi + tipPad]} niceY yFmt={(v) => fmtComma(Math.round(v))} xs={times} maxGap={2}
               hover={hoverOf((v) => fmtComma(Math.round(v)), behindAt)} hoverBox={false} pointLabels {...shared} />}
-            legend={<SideLegend rows={nameRows} onFocus={setFocusUp} />} />
+            legend={<LegendLine rows={nameRows} onFocus={setFocusUp} />} />
         ) : empty(peers.isLoading ? "Loading…" : `No upstream on ${chainLabel} reported a block in this window.`)}
       </PMPanel>
     </div>

@@ -79,13 +79,6 @@ export function ErrorsBreakdown({ chainFilter, win, focus = null }: {
 
   return (
     <div style={{ paddingTop: 8 }}>
-      <div style={{ marginBottom: 16 }}>
-        <div style={{ fontSize: 15, fontWeight: 600, letterSpacing: "-0.01em" }}>Errors</div>
-        <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 3 }}>
-          Failed attempts, retries, and the responses returned to clients.
-        </div>
-      </div>
-
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: 12, marginBottom: 16 }}>
         {kpis.map((k) => (
           <div key={k.label} className="gw-card" style={{ padding: "13px 16px" }}>

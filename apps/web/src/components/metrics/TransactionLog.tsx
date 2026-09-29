@@ -157,13 +157,7 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
   const pageRows = rows.slice(curPage * PER_PAGE, (curPage + 1) * PER_PAGE);
 
   const header = (
-    <div style={{ marginBottom: 16, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-      <div>
-        <div style={{ fontSize: 15, fontWeight: 600, letterSpacing: "-0.01em" }}>Transactions</div>
-        <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 3 }}>
-          Every transaction the router sent: the upstreams it was broadcast to, each response, and the outcome.
-        </div>
-      </div>
+    <div style={{ marginBottom: 16, display: "flex", justifyContent: "flex-end" }}>
       <TimeRangeControl
         range={range}
         onChange={(r) => { setRange(r); setPage(0); }}

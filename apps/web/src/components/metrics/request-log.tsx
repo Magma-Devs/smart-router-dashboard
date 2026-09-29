@@ -252,10 +252,19 @@ const toLocalInput = (ms: number) => {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
 
+const dayWords = (ms: number) => new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+const clockWords = (ms: number) => new Date(ms).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
+/** "Sep 29, 16:10 - 16:20", or "Sep 28, 16:10 - Sep 29, 16:20" across midnight. */
+export function rangeWords(r: ExactRange): string {
+  const same = dayWords(r.from) === dayWords(r.to);
+  return `${dayWords(r.from)}, ${clockWords(r.from)} - ${same ? "" : `${dayWords(r.to)}, `}${clockWords(r.to)}`;
+}
+
 /**
  * The list's time range: the page's window by default, or an exact From / To
  * to zoom into an incident. The page's other panels keep the page's window -
- * an exact range needs the router's logs, which only the lists read.
+ * an exact range needs the router's logs, which only the lists read. A picked
+ * range reads as one short line; the From / To fields show only while editing.
  */
 export function TimeRangeControl({ range, onChange, windowLabel, windowMs }: {
   range: ExactRange | null;
@@ -279,6 +288,15 @@ export function TimeRangeControl({ range, onChange, windowLabel, windowMs }: {
       </div>
     );
   }
+  if (range && !draft) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12, color: "var(--text-3)" }}>
+        <span className="gw-mono" style={{ color: "var(--text)" }}>{rangeWords(range)}</span>
+        <button style={link} onClick={() => setDraft({ from: toLocalInput(range.from), to: toLocalInput(range.to) })}>Change</button>
+        <button style={link} onClick={() => onChange(null)}>Back to the last {windowLabel}</button>
+      </div>
+    );
+  }
   const shown = draft ?? { from: toLocalInput(range!.from), to: toLocalInput(range!.to) };
   const from = new Date(shown.from).getTime();
   const to = new Date(shown.to).getTime();
@@ -294,6 +312,8 @@ export function TimeRangeControl({ range, onChange, windowLabel, windowMs }: {
       From <input type="datetime-local" aria-label="From" value={shown.from} max={latest} onChange={(e) => apply({ ...shown, from: e.target.value })} style={input} />
       to <input type="datetime-local" aria-label="To" value={shown.to} max={latest} onChange={(e) => apply({ ...shown, to: e.target.value })} style={input} />
       {bad && <span style={{ color: "var(--err)" }}>{bad}</span>}
+      {/* The times already apply as they change; Done folds the fields back to one line. */}
+      <button style={link} onClick={() => setDraft(null)}>Done</button>
       <button style={link} onClick={() => { setDraft(null); onChange(null); }}>Back to the last {windowLabel}</button>
     </div>
   );

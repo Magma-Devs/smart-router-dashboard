@@ -59,23 +59,21 @@ export interface RouterHeaderProps {
   setChainFilter: (v: string) => void;
   timeWindow: MetricWindow;
   setTimeWindow: (w: MetricWindow) => void;
+  /** False where the page puts its actions beside its title (PageActions). */
+  withActions?: boolean;
 }
 
-export function RouterHeader({ chains, chainFilter, setChainFilter, timeWindow, setTimeWindow }: RouterHeaderProps) {
+/** Refresh, the time window and the logs link: the page's own actions, beside its title. */
+export function PageActions({ timeWindow, setTimeWindow, chainFilter }: {
+  timeWindow: MetricWindow;
+  setTimeWindow: (w: MetricWindow) => void;
+  /** "all" or a spec label: the logs board opens on it. */
+  chainFilter: string;
+}) {
   const grafanaBase = useGrafanaUrl();
   const logsHref = fullLogsHref(grafanaBase, timeWindow, chainFilter);
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, flexWrap: "wrap" }}>
-
-      {/* Chain filter */}
-      <ChainSelect value={chainFilter} onChange={setChainFilter} chains={chains} />
-
-      {/* Router filter — the second axis. A chain can be served by several
-          config routers, which a chain filter alone folds together. */}
-      <RouterFilterSelect />
-
-      <div style={{ flex: 1 }} />
-
+    <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
       {/* Re-fetch every panel now, ahead of the poll interval */}
       <RefreshButton />
 
@@ -87,6 +85,27 @@ export function RouterHeader({ chains, chainFilter, setChainFilter, timeWindow, 
       <a className="gw-btn gw-btn--primary" href={logsHref} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, padding: "5px 12px", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6 }}>
         View full logs ↗
       </a>
+    </div>
+  );
+}
+
+export function RouterHeader({ chains, chainFilter, setChainFilter, timeWindow, setTimeWindow, withActions = true }: RouterHeaderProps) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, flexWrap: "wrap" }}>
+
+      {/* Chain filter */}
+      <ChainSelect value={chainFilter} onChange={setChainFilter} chains={chains} />
+
+      {/* Router filter — the second axis. A chain can be served by several
+          config routers, which a chain filter alone folds together. */}
+      <RouterFilterSelect />
+
+      {withActions && (
+        <>
+          <div style={{ flex: 1 }} />
+          <PageActions timeWindow={timeWindow} setTimeWindow={setTimeWindow} chainFilter={chainFilter} />
+        </>
+      )}
     </div>
   );
 }
