@@ -125,11 +125,8 @@ export default function TeamPage() {
 
   return (
     <div className="gw-page">
-      <div className="gw-row" style={{ justifyContent: "space-between", marginBottom: 6 }}>
-        <div>
-          <h1>Team</h1>
-          <p className="lede">Everyone with access to this dashboard, and what they can do.</p>
-        </div>
+      <div className="gw-row" style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+        <h1 style={{ margin: 0 }}>Team</h1>
         <div className="gw-row" style={{ gap: 8 }}>
           <button
             className="gw-btn"

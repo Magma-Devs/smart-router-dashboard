@@ -85,12 +85,13 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   [Screenshot](./docs/assets/endpoint-served-by.jpg).
 - **The Metrics page's actions sit beside its title**: refresh, the time
   window and View full logs. The page's subtitle and the Errors and
-  Transactions tabs' headings, which repeated the tab's name with a line
-  of description, are gone. The Errors list's controls are two rows: the
-  results with their counts beside the title and the times it covers, then
-  the other filters with Find a request by ID. A picked time range reads as
-  one line ("Sep 29, 16:10 - 16:20"), with the From and To fields only while
-  you change it.
+  Transactions tabs' headings, which repeated the tab's name with a line of
+  description, are gone, and so are the subtitles on the Upstreams, Team,
+  Audit log and Account pages. The Errors list's controls are two rows: the
+  results with their counts beside the title and the times it covers, then the
+  other filters with Find a request by ID. A picked time range reads as one
+  line ("Sep 29, 16:10 - 16:20"), with the From and To fields only while you
+  change it.
 - **A chain's name no longer underlines on hover** where it opens the chain's
   block explorer; the ↗ beside it brightens instead.
 - **The Upstreams page opens grouped by chain**, and "By chain" now leads the

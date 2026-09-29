@@ -32,8 +32,6 @@ import { apiDownload } from "@/lib/api-client";
  * alters a row through the product, admins included.
  */
 
-const LEDE = "Every recorded action — who did what, and when. Read-only for everyone.";
-
 function FilterField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
@@ -76,11 +74,8 @@ export function AuditView() {
 
   return (
     <div className="gw-page">
-      <div className="gw-row" style={{ justifyContent: "space-between", marginBottom: 6 }}>
-        <div>
-          <h1>Audit log</h1>
-          <p className="lede">{LEDE}</p>
-        </div>
+      <div className="gw-row" style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+        <h1 style={{ margin: 0 }}>Audit log</h1>
         <div className="gw-row" style={{ gap: 8 }}>
           {/* Exports what the filters currently say, not just the rows already
               loaded — "Load more" is a reading convenience, and a file that
