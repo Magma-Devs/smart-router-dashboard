@@ -4,9 +4,10 @@ import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { useEffect, useState, useSyncExternalStore, type ComponentType } from "react";
 import { signOut } from "next-auth/react";
-import type { OverviewData } from "@sr/shared";
+import { buildChainMetaByIndex, type OverviewData } from "@sr/shared";
 import { NAV_SECTIONS, visibleNavSections } from "./nav";
 import { useAuthMode } from "./auth-mode";
+import { CHAIN_DRAWER_PATH, ChainDrawer, ChainDrawerProvider, useChainDrawer } from "./ChainDrawer";
 import { IconMoon, IconSun, type IconProps } from "./icons";
 import { useApi } from "@/hooks/use-api";
 import { useFilters } from "@/components/gateway/FiltersProvider";
@@ -43,8 +44,11 @@ export function ThemeToggle() {
 function Sidebar() {
   const pathname = usePathname();
   const sections = visibleNavSections(useAuthMode());
+  // Beside the chains drawer this shrinks to its icons.
+  const compact = useChainDrawer().visible;
+  const { setChain, setRouterId, setRouter } = useFilters();
   return (
-    <aside className="gw-side">
+    <aside className={`gw-side${compact ? " gw-side--compact" : ""}`}>
       {/* The brand is the way home, as it is on every product: `/` redirects to
           whatever the default surface is (Metrics), so home stays defined in one
           place rather than being restated here. */}
@@ -73,11 +77,22 @@ function Sidebar() {
             {section.items.map((item) => {
               const Icon: ComponentType<IconProps> = item.icon;
               const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+              // Metrics while on Metrics: back to every chain, as the drawer's first row does.
+              const toAllChains = compact && item.href === CHAIN_DRAWER_PATH;
               return (
                 <Link
                   key={item.href}
                   href={item.href}
                   className={`gw-nav-item${active ? " active" : ""}`}
+                  title={compact ? item.label : undefined}
+                  aria-label={compact ? item.label : undefined}
+                  onClick={toAllChains ? (e) => {
+                    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+                    e.preventDefault();
+                    setRouterId(null);
+                    setRouter(null);
+                    setChain(null);
+                  } : undefined}
                 >
                   <Icon
                     size={16}
@@ -176,7 +191,7 @@ function SidebarUser() {
   );
 }
 
-function Topbar({ here }: { here: string }) {
+function Topbar({ here, sub }: { here: string; sub: string | null }) {
   // Live throughput + health for the top-bar stats (real data; CU/mo is a
   // Lava-consumer concept the router doesn't emit, so it's omitted here).
   // Scoped like every other panel, so the pills describe the selected router.
@@ -198,7 +213,15 @@ function Topbar({ here }: { here: string }) {
         >
           <polyline points="9 18 15 12 9 6" />
         </svg>
-        <span className="here">{here}</span>
+        <span className={sub ? undefined : "here"} style={sub ? { color: "var(--text-3)" } : undefined}>{here}</span>
+        {sub && (
+          <>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-4)" strokeWidth="2">
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+            <span className="here">{sub}</span>
+          </>
+        )}
       </div>
       <div className="gw-top__right">
         <span className="pill gw-mono" title="Live throughput">
@@ -225,11 +248,14 @@ function Topbar({ here }: { here: string }) {
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const { chain } = useFilters();
 
   const here =
     NAV_SECTIONS.flatMap((s) => s.items).find(
       (i) => pathname === i.href || pathname.startsWith(`${i.href}/`),
     )?.label ?? "Overview";
+  // Metrics on one chain: the chain is the last crumb.
+  const sub = pathname === CHAIN_DRAWER_PATH && chain ? buildChainMetaByIndex(chain).name : null;
 
   return (
     // Outside the chrome, not inside it: a blocked dashboard should not render a
@@ -237,15 +263,22 @@ export function Shell({ children }: { children: React.ReactNode }) {
     // unenrolled session regardless — this is what the person sees instead of
     // watching forty panels fail one by one.
     <TwoFactorGate>
-      <div className="gw-app">
-        <Sidebar />
-        <div className="gw-main">
-          <Topbar here={here} />
-          <div className="fade-in" key={pathname}>
-            {children}
+      <ChainDrawerProvider>
+        <div className="gw-app">
+          <Sidebar />
+          <ChainDrawerSlot />
+          <div className="gw-main">
+            <Topbar here={here} sub={sub} />
+            <div className="fade-in" key={pathname}>
+              {children}
+            </div>
           </div>
         </div>
-      </div>
+      </ChainDrawerProvider>
     </TwoFactorGate>
   );
+}
+
+function ChainDrawerSlot() {
+  return useChainDrawer().visible ? <ChainDrawer /> : null;
 }

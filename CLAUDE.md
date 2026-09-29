@@ -182,9 +182,11 @@ apps/web/                 @sr/web — Next.js 16 App Router (:3000)
     app/standalone/     chrome-less Metrics page (sharing/embedding)
     app/api/config/     runtime-config route (DASHBOARD_API_URL → browser)
     components/
-      gateway/          Shell · Sidebar/Topbar · RouterHeader · FiltersProvider ·
-                        WindowSelect · ChainSelect · RouterFilterSelect ·
-                        HealthTag · charts · SortTable · SideSheet · icons
+      gateway/          Shell · Sidebar/Topbar · ChainDrawer (the Metrics
+                        page's chains, beside the sidebar) · RouterHeader ·
+                        FiltersProvider · WindowSelect · ChainSelect ·
+                        RouterFilterSelect · HealthTag · charts · SortTable ·
+                        SideSheet · icons
       overview/         OverviewView (KPI strip + 2×2 chart grid)
       dashboard/        DashHeader · OverviewTab · MetricsTab · TroubleDetail · …
       metrics/          MetricsView (4 tabs) · HeroPanel · RouterOverview ·
@@ -399,8 +401,10 @@ a router selection is made: it sets the config id and, when that router maps to
 a scrape target the collector actually reports, the scope too. The list is
 narrowed by the chain filter, and `useChainFilter()` clears a router the new
 chain excludes — the pair stays consistent without an effect watching for it.
-`<RouterFilterSelect>` renders it next to `<ChainSelect>`, and hides itself only
-when the deployment has fewer than two routers at all.
+`<RouterFilterSelect>` renders it next to `<ChainSelect>`, and only for a chain
+that two or more routers serve: with one router per chain, picking the router
+is picking the chain. Beside the Metrics page's chains drawer it isn't drawn:
+such a chain lists its routers under it there (`?chain=ETH1&router=eth-prod`).
 
 #### The scope label
 
@@ -436,6 +440,15 @@ value is the router's Service name (`<router-id-lowered>-router`).
   that outlives its screen is a trap). Every metrics URL appends `scopeQ` /
   `withScope(url)`. A selection that disappears from the list resets to "All
   routers" instead of silently filtering every panel to nothing.
+- The Metrics page picks them in its **chains drawer** (`ChainDrawer`, beside
+  the sidebar, which shrinks to its icons): one row per chain with its health,
+  requests and error rate for the page's window, problems first, and a search.
+  A row IS the chain filter (`useChainFilter`), so every tab follows it; a
+  chain two or more routers serve lists them under it once picked. The page
+  also writes both into its URL (`?chain=ETH1&router=eth-prod`,
+  `useScopeInUrl`): a link opens them, Back returns to the previous ones, and
+  another page's URL has none, so the per-page rule above still holds.
+  Clicking Metrics while on it goes back to every chain.
 
 #### The deployment scope
 

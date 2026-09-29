@@ -135,6 +135,57 @@ a.gw-side__brand:hover { opacity: 0.82; }
 .gw-side__user .plan-chip { font-size: 9px; padding: 2px 6px; border-radius: 4px; background: rgba(255,57,0,0.15); color: var(--brand); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; display: inline-block; margin-top: 2px; border: 1px solid rgba(255,57,0,0.30); }
 .gw-side__user .admin-chip { font-size: 9px; padding: 2px 6px; border-radius: 4px; background: rgba(252,211,77,0.12); color: var(--brand-2); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; display: inline-block; margin-top: 2px; margin-left: 6px; border: 1px solid rgba(252,211,77,0.30); }
 
+/* Beside the chains drawer the sidebar shrinks to its icons. */
+.gw-side { transition: width 0.16s ease; }
+.gw-side--compact { width: 64px; }
+.gw-side--compact .gw-side__brand { justify-content: center; padding: 18px 0 14px; }
+.gw-side--compact .gw-side__brand > div,
+.gw-side--compact .gw-side__section-label,
+.gw-side--compact .gw-nav-item > span,
+.gw-side--compact .gw-side__user .meta,
+.gw-side--compact .gw-side__user > button { display: none; }
+.gw-side--compact .gw-side__nav > div + div { border-top: 1px solid var(--line); margin-top: 8px; padding-top: 8px; }
+.gw-side--compact .gw-nav-item { justify-content: center; padding: 9px 0; }
+.gw-side--compact .gw-side__foot { padding: 12px 0; }
+.gw-side--compact .gw-side__user { justify-content: center; }
+
+/* ── Chains drawer (Metrics): one row per chain, the page's chain filter ── */
+.gw-chains { width: 244px; flex-shrink: 0; background: var(--bg); border-right: 1px solid var(--line); display: flex; flex-direction: column; height: 100vh; position: sticky; top: 0; }
+.gw-chains__head { height: 56px; flex-shrink: 0; display: flex; align-items: center; gap: 8px; padding: 0 10px 0 18px; border-bottom: 1px solid var(--line); }
+.gw-chains__head .title { font-size: 13px; font-weight: 600; color: var(--text); }
+.gw-chains__search { display: flex; align-items: center; gap: 7px; margin: 10px 10px 0; padding: 0 9px; height: 30px; border-radius: 7px; border: 1px solid var(--line-2); background: var(--surface); color: var(--text-4); }
+.gw-chains__search input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; color: var(--text); font-size: 12px; font-family: inherit; }
+.gw-chains__search:focus-within { border-color: var(--text-4); }
+.gw-chains__search button { border: none; background: none; color: var(--text-3); cursor: pointer; padding: 0 2px; font-size: 15px; line-height: 1; font-family: inherit; }
+.gw-chains__search button:hover { color: var(--text); }
+.gw-chains__cols { display: flex; justify-content: space-between; padding: 12px 35px 4px 18px; font-size: 9px; color: var(--text-4); text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; }
+.gw-chains__list { flex: 1; overflow-y: auto; padding: 0 10px 10px; display: flex; flex-direction: column; gap: 1px; }
+.gw-chains__group { display: flex; flex-direction: column; gap: 1px; }
+.gw-chains__group-label { font-size: 9px; color: var(--text-4); text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; padding: 12px 8px 4px; }
+.gw-chains__empty { padding: 12px 8px; font-size: 12px; color: var(--text-3); }
+.gw-chains__foot { padding: 10px 18px; border-top: 1px solid var(--line); font-size: 11px; color: var(--text-4); }
+.gw-chain-row { display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 6px; color: var(--text-2); text-decoration: none; position: relative; transition: background 0.1s, color 0.1s; }
+.gw-chain-row:hover { background: var(--hover); color: var(--text); }
+.gw-chain-row.active { background: var(--hover); color: var(--text); }
+.gw-chain-row.active::before { content: ""; position: absolute; left: -10px; top: 8px; bottom: 8px; width: 2px; background: var(--brand); border-radius: 0 2px 2px 0; }
+.gw-chain-row .meta { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.gw-chain-row .name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gw-chain-row .sub { font-size: 11px; color: var(--text-3); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.gw-chain-row.muted .name { color: var(--text-3); }
+.gw-chain-row .err { font-size: 11.5px; font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.gw-chain-row .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.gw-chain-row__all { width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; gap: 1.5px; flex-shrink: 0; }
+.gw-chain-row__all span { width: 4px; height: 11px; border-radius: 1px; }
+.gw-chain-row.open:not(.active) { color: var(--text); }
+/* A picked chain's routers, when two or more serve it. */
+.gw-chain-subrows { display: flex; flex-direction: column; gap: 1px; margin: 1px 0 4px 17px; padding-left: 10px; border-left: 1px solid var(--line-2); }
+.gw-chain-subrow { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; color: var(--text-3); text-decoration: none; font-size: 12px; position: relative; }
+.gw-chain-subrow:hover { background: var(--hover); color: var(--text); }
+.gw-chain-subrow.active { background: var(--hover); color: var(--text); }
+.gw-chain-subrow.active::before { content: ""; position: absolute; left: -11px; top: 6px; bottom: 6px; width: 2px; background: var(--brand); border-radius: 0 2px 2px 0; }
+.gw-chain-subrow .id { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gw-chain-subrow .n { font-size: 11px; color: var(--text-4); flex-shrink: 0; }
+
 /* ── Topbar ── */
 .gw-top { height: 56px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: 0 28px; border-bottom: 1px solid var(--line); background: var(--bg); position: sticky; top: 0; z-index: 10; }
 .gw-top__crumbs { display: flex; align-items: center; gap: 8px; color: var(--text-3); font-size: 13px; }

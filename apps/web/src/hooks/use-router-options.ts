@@ -38,10 +38,14 @@ export interface RouterOptionRow {
   /** Another config router serves the same chain — the case a chain filter
    *  alone can't represent, and the reason this filter exists. */
   sharesChain: boolean;
+  /** Upstreams it declares - the config's count, so always its own. */
+  upstreams: number;
 }
 
 export function useRouterOptions(): {
   routers: RouterOptionRow[];
+  /** The config has been read: an empty list then means no routers, not "not yet". */
+  loaded: boolean;
   /** The collector's scope label, for copy that has to name it. */
   scopeLabel: string | null;
   /** True when NO router maps to a scrape target: chain-level panels can't be
@@ -66,10 +70,12 @@ export function useRouterOptions(): {
         chainName: buildChainMetaByIndex(r.spec).name,
         scopeValue: scopeValues.has(candidate) ? candidate : scopeValues.has(r.id) ? r.id : null,
         sharesChain: (perSpec.get(r.spec) ?? 0) > 1,
+        upstreams: r.nodes.length,
       };
     });
     return {
       routers,
+      loaded: config.data !== undefined,
       scopeLabel: scope.data?.label ?? null,
       scopeUnavailable: routers.length > 0 && routers.every((r) => r.scopeValue === null),
     };
@@ -105,10 +111,6 @@ export function useRouterFilter(): {
   /** `&routerId=…` (or "") for the routes that take it. Derived here rather
    *  than on the context so it can never carry a selection the list dropped. */
   routerIdQ: string;
-  /** Routers the DEPLOYMENT has, before the chain filter narrows the list —
-   *  what the control's visibility keys on, so picking a chain served by one
-   *  router narrows the list instead of making the control disappear. */
-  totalRouters: number;
 } {
   const { chain, setChain, routerId, setRouterId, setRouter } = useFilters();
   const { routers: all, scopeUnavailable } = useRouterOptions();
@@ -130,6 +132,5 @@ export function useRouterFilter(): {
     scopeUnavailable,
     select,
     routerIdQ: effective ? `&routerId=${encodeURIComponent(effective)}` : "",
-    totalRouters: all.length,
   };
 }

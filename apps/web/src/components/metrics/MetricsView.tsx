@@ -18,9 +18,11 @@ import { useState } from "react";
 import { buildChainMetaByIndex } from "@sr/shared";
 import { useFilters } from "@/components/gateway/FiltersProvider";
 import { useChainFilter, useChainOptions, withMutedRows } from "@/hooks/use-chain-options";
-import { useRouterFilter } from "@/hooks/use-router-options";
+import { useScopeInUrl } from "@/hooks/use-scope-in-url";
+import { useRouterFilter, useRouterOptions } from "@/hooks/use-router-options";
 import { PageActions, RouterHeader } from "@/components/gateway/RouterHeader";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
+import { useChainDrawer } from "@/components/gateway/ChainDrawer";
 import { HeroPanel } from "./HeroPanel";
 import { CurrentlyUnavailable } from "./CurrentlyUnavailable";
 import { RouterOverview } from "./RouterOverview";
@@ -33,6 +35,8 @@ type Tab = "metrics" | "upstreams" | "errors" | "transactions";
 export function MetricsView() {
   const { timeWindow, setTimeWindow } = useFilters();
   const { chain, select: selectChain } = useChainFilter();
+  // With the chains drawer open, the drawer is the chain and router control.
+  const { visible: drawerOpen } = useChainDrawer();
   const [tab, setTab] = useState<Tab>("metrics");
   const activeChain = chain;
   const setChainFilter = (v: string) => selectChain(v === "all" ? null : v);
@@ -52,6 +56,9 @@ export function MetricsView() {
      saying so beats leaving it out of the list. */
   const { routerId, routers, scopeUnavailable, select: selectRouter } = useRouterFilter();
   const activeRouter = routers.find((r) => r.id === routerId) ?? null;
+  // The chain and router are in the URL: a link opens them, Back the ones before.
+  const { routers: configRouters, loaded: routersLoaded } = useRouterOptions();
+  useScopeInUrl({ chain, router: routerId }, { selectChain, selectRouter }, routersLoaded ? configRouters : null);
   const { chains: chainRows } = useChainOptions();
   const routedChains = withMutedRows(chainRows, (c) => (c.hasTraffic ? false : "no traffic yet"));
   const chainObj = activeChain
@@ -64,15 +71,26 @@ export function MetricsView() {
 
   return (
     <div className="gw-page gw-metrics-inter" style={{ paddingBottom: 60 }}>
-      {/* The title, and the page's actions beside it: refresh, the window, the logs. */}
+      {/* The title - the chain's own name once one is picked - and the page's
+          actions beside it: refresh, the window, the logs. */}
       <div className="gw-row" style={{ justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
-        <h1 style={{ margin: 0 }}>Metrics</h1>
+        {chainObj ? (
+          <h1 style={{ margin: 0, display: "flex", alignItems: "center", gap: 10 }}>
+            <ChainBadge spec={chainObj.spec} size={24} />
+            {chainObj.name}
+          </h1>
+        ) : (
+          <h1 style={{ margin: 0 }}>Metrics</h1>
+        )}
         <PageActions timeWindow={timeWindow} setTimeWindow={setTimeWindow} chainFilter={activeChain ?? "all"} />
       </div>
-      <div style={{ marginBottom: 20 }}>
-        <RouterHeader chains={routedChains} chainFilter={activeChain ?? "all"} setChainFilter={setChainFilter}
-          timeWindow={timeWindow} setTimeWindow={setTimeWindow} withActions={false} />
-      </div>
+      {/* Beside the chains drawer the drawer picks the chain and the router. */}
+      {!drawerOpen && (
+        <div style={{ marginBottom: 20 }}>
+          <RouterHeader chains={routedChains} chainFilter={activeChain ?? "all"} setChainFilter={setChainFilter}
+            timeWindow={timeWindow} setTimeWindow={setTimeWindow} withActions={false} />
+        </div>
+      )}
       {/* The tabs outgrow a narrow screen: they scroll sideways rather than
           wrap each label onto two lines. */}
       <div style={{ display: "flex", borderBottom: "1px solid var(--line)", marginBottom: 24, overflowX: "auto", overflowY: "hidden" }}>
@@ -89,8 +107,9 @@ export function MetricsView() {
       </div>
 
       {/* Only when the chain is the whole story — a router selection implies its
-          chain and its own banner says so, so two banners would say it twice. */}
-      {activeChain && !activeRouter && (
+          chain and its own banner says so, so two banners would say it twice.
+          And not beside the chains drawer, where the picked row says it. */}
+      {activeChain && !activeRouter && !drawerOpen && (
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20, padding: "9px 14px", borderRadius: 9, background: "rgba(255,57,0,0.06)", border: "1px solid rgba(255,57,0,0.22)" }}>
           <ChainBadge spec={activeChain} size={16} />
           <span style={{ fontSize: 13, color: "var(--text-2)" }}>Viewing <strong style={{ color: "var(--text)" }}>{chainObj ? chainObj.name : activeChain}</strong> - clear to see all chains.</span>

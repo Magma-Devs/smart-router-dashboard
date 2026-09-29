@@ -14,12 +14,14 @@ import { useRouterFilter } from "@/hooks/use-router-options";
  * matching scrape target — the label scope that narrows the PromQL too. Doing
  * it in one place is what keeps the two from drifting apart.
  *
- * Renders nothing when the config declares fewer than two routers: there is
- * nothing to choose between, and a filter that can't change anything is worse
- * than no filter (the rule RouterSelect already followed).
+ * It offers only the routers of a chain that two or more routers serve, and
+ * renders nothing where there are none: with one router per chain, picking a
+ * router is picking its chain, which the chain control already does. A filter
+ * that can't change anything is worse than no filter. (Beside the chains
+ * drawer it isn't drawn at all: those routers are rows under their chain.)
  */
 export function RouterFilterSelect() {
-  const { routerId, routers, scopeUnavailable, select: selectRouter, totalRouters } = useRouterFilter();
+  const { routerId, routers, scopeUnavailable, select: selectRouter } = useRouterFilter();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -32,10 +34,9 @@ export function RouterFilterSelect() {
     return () => document.removeEventListener("mousedown", h);
   }, [open]);
 
-  // Keyed on the deployment's router count, not the chain-narrowed list: with a
-  // chain picked whose one router is the answer, the control has to stay and
-  // name it. It disappears only where there was never a choice to make.
-  if (totalRouters < 2) return null;
+  // The list is already narrowed to the picked chain (useRouterFilter).
+  const choices = routers.filter((r) => r.sharesChain);
+  if (choices.length === 0) return null;
 
   /* A selection that left the config reads as "All routers" rather than
      narrowing everything to nothing — derived, not reset (same rule as the
@@ -65,7 +66,7 @@ export function RouterFilterSelect() {
             <IconRouter />
             All routers
           </button>
-          {routers.map((r) => (
+          {choices.map((r) => (
             <button key={r.id} onClick={() => select(r.id)}
               style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "7px 9px", borderRadius: 6, border: "none", background: routerId === r.id ? "var(--hover)" : "transparent", color: "var(--text)", fontSize: 12, fontFamily: "inherit", cursor: "pointer", textAlign: "left" }}>
               <ChainBadge spec={r.spec} size={16} />
@@ -88,16 +89,16 @@ export function RouterFilterSelect() {
 }
 
 /**
- * What to say after a router's name: that another router serves its chain (the
- * case this filter exists for), and the chain itself only when the name isn't
- * already it — `ETH1` serving Ethereum needs no gloss, `eth-prod` does.
+ * What to say after a router's name: its chain, only when the name isn't
+ * already it (`ETH1` serving Ethereum needs no gloss, `eth-prod` does), and
+ * how many upstreams it declares, which is what sets two routers apart.
  */
-function hintFor(r: { id: string; spec: string; chainName: string; sharesChain: boolean }): string {
+function hintFor(r: { id: string; spec: string; chainName: string; upstreams: number }): string {
   const fold = (v: string) => v.toLowerCase().replace(/[^a-z0-9]/g, "");
   const namesItsChain = fold(r.id) === fold(r.spec) || fold(r.id) === fold(r.chainName);
   const parts = [];
   if (!namesItsChain) parts.push(r.chainName);
-  if (r.sharesChain) parts.push("shared chain");
+  parts.push(`${r.upstreams} upstream${r.upstreams === 1 ? "" : "s"}`);
   return parts.join(" · ");
 }
 

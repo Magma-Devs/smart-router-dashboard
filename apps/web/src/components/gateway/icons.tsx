@@ -99,6 +99,13 @@ export const IconSettings = svg(
   </>,
 );
 
+export const IconSearch = svg(
+  <>
+    <circle cx="11" cy="11" r="7" />
+    <line x1="21" y1="21" x2="16.65" y2="16.65" />
+  </>,
+);
+
 /* ── Chain brand logos ──────────────────────────────────────────────────
    Recognizable brand marks for the major chains. Each is self-colored.
    Ported verbatim from the design prototype (icons.jsx CHAIN_LOGOS). */

@@ -37,6 +37,23 @@ export function uptimeColorFrac(frac: number | null): string {
   return uptimeColor(frac === null ? null : frac * 100);
 }
 
+/* ── Error-rate thresholds ───────────────────────────────────────────────────
+   The Routers table's bands, shared with the chains drawer so a chain's error
+   rate reads the same colour in both.
+     quiet          < 0.5%
+     amber (warn)   < 1.5%
+     red   (err)    ≥ 1.5%                                                      */
+export const ERR_WARN_PCT = 0.5;
+export const ERR_BAD_PCT = 1.5;
+
+/** CSS colour var for an error-rate PERCENTAGE; `quiet` is the colour below the bands. */
+export function errRateColor(pct: number | null, quiet = "var(--text-2)"): string {
+  if (pct === null) return "var(--text-4)";
+  if (pct < ERR_WARN_PCT) return quiet;
+  if (pct < ERR_BAD_PCT) return "var(--warn)";
+  return "var(--err)";
+}
+
 /* ── Tip freshness thresholds ───────────────────────────────────────────────
    How far behind the chain's best upstream a tip may fall before it reads as a
    problem. Measured in SECONDS, deliberately: a block count means nothing
