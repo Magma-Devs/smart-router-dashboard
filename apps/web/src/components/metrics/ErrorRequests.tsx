@@ -197,6 +197,9 @@ function Seg<T extends string>({ value, onChange, options }: {
   );
 }
 
+/** The filter row's dropdowns: capped, so a long error name can't push the row onto two lines. */
+const narrowSelect: React.CSSProperties = { ...filterSelectStyle, maxWidth: 200 };
+
 export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialRange = null }: {
   chainFilter: string | null;
   win: MetricWindow;
@@ -283,22 +286,12 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
   return (
     <div ref={listRef} className="gw-card" style={{ padding: 0, overflow: "hidden", scrollMarginTop: 16 }}>
       <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--line)", display: "grid", gap: 10 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+        {/* What the list holds: how many, what came of them, and the times it covers. */}
+        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <span style={{ display: "inline-flex", alignItems: "center", fontSize: 12, fontWeight: 600, color: "var(--text-2)" }}>
             Requests with an error<Tip text={TT.errorRequests!} />
             {first.data && <span style={{ fontWeight: 400, color: "var(--text-4)", marginLeft: 8 }}>{fmtComma(rows.length)}{rows.length !== allRows.length ? ` of ${fmtComma(allRows.length)}` : ""}</span>}
           </span>
-          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-            <IdSearch onFind={setLookupId} />
-            <TimeRangeControl
-              range={range}
-              onChange={(r) => { setRange(r); setPage(0); }}
-              windowLabel={WINDOWS[win].label}
-              windowMs={WINDOWS[win].rangeSeconds * 1000}
-            />
-          </div>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <Seg
             value={result}
             onChange={reset(setResult)}
@@ -308,30 +301,36 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
                 .map((k) => ({ key: k, label: RESULT[k].label, count: byResult(k), color: RESULT[k].color, title: RESULT[k].hint })),
             ]}
           />
-          <Seg
-            value={retry}
-            onChange={reset(setRetry)}
-            options={[
-              { key: ALL, label: "Any error" },
-              { key: "retryable", label: "Retryable", count: kinds.filter((k) => k.retryable).length },
-              { key: "not-retryable", label: "Not retryable", count: kinds.filter((k) => k.notRetryable).length },
-            ]}
+          <span style={{ flex: 1 }} />
+          <TimeRangeControl
+            range={range}
+            onChange={(r) => { setRange(r); setPage(0); }}
+            windowLabel={WINDOWS[win].label}
+            windowMs={WINDOWS[win].rangeSeconds * 1000}
           />
         </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <select aria-label="Error type" value={errType} onChange={(e) => reset(setErrType)(e.target.value)} style={filterSelectStyle} disabled={!errTypes.length}>
+        {/* Narrowing it down, and finding one request. */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <select aria-label="Retryable" value={retry} onChange={(e) => reset(setRetry)(e.target.value as RetryFilter)} style={narrowSelect}>
+            <option value={ALL}>Retryable or not</option>
+            <option value="retryable">Retryable ({fmtComma(kinds.filter((k) => k.retryable).length)})</option>
+            <option value="not-retryable">Not retryable ({fmtComma(kinds.filter((k) => k.notRetryable).length)})</option>
+          </select>
+          <select aria-label="Error type" value={errType} onChange={(e) => reset(setErrType)(e.target.value)} style={narrowSelect} disabled={!errTypes.length}>
             <option value={ALL}>All error types</option>
             {errTypes.map((t) => <option key={t.key} value={t.key}>{t.label} ({fmtComma(t.count)})</option>)}
           </select>
-          <select aria-label="Method" value={method} onChange={(e) => reset(setMethod)(e.target.value)} style={filterSelectStyle} disabled={!methods.length}>
+          <select aria-label="Method" value={method} onChange={(e) => reset(setMethod)(e.target.value)} style={narrowSelect} disabled={!methods.length}>
             <option value={ALL}>All methods</option>
             {methods.map((m) => <option key={m} value={m}>{m === "unknown" ? "method not in the logs" : m}</option>)}
           </select>
-          <select aria-label="Upstream" value={upstream} onChange={(e) => { onUpstream(e.target.value); setPage(0); }} style={filterSelectStyle} disabled={!upstreams.length && upstream === ALL}>
+          <select aria-label="Upstream" value={upstream} onChange={(e) => { onUpstream(e.target.value); setPage(0); }} style={narrowSelect} disabled={!upstreams.length && upstream === ALL}>
             <option value={ALL}>All upstreams</option>
             {upstream !== ALL && !upstreams.some((u) => u.name === upstream) && <option value={upstream}>{upstream}</option>}
             {upstreams.map((u) => <option key={u.name} value={u.name}>{u.name} ({fmtComma(u.count)})</option>)}
           </select>
+          <span style={{ flex: 1 }} />
+          <IdSearch onFind={setLookupId} />
         </div>
         {range && (
           <div style={{ fontSize: 11, color: "var(--text-4)" }}>

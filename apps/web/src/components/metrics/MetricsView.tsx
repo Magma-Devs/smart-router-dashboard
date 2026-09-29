@@ -19,7 +19,7 @@ import { buildChainMetaByIndex } from "@sr/shared";
 import { useFilters } from "@/components/gateway/FiltersProvider";
 import { useChainFilter, useChainOptions, withMutedRows } from "@/hooks/use-chain-options";
 import { useRouterFilter } from "@/hooks/use-router-options";
-import { RouterHeader } from "@/components/gateway/RouterHeader";
+import { PageActions, RouterHeader } from "@/components/gateway/RouterHeader";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { HeroPanel } from "./HeroPanel";
 import { CurrentlyUnavailable } from "./CurrentlyUnavailable";
@@ -64,22 +64,14 @@ export function MetricsView() {
 
   return (
     <div className="gw-page gw-metrics-inter" style={{ paddingBottom: 60 }}>
-      {/* Title block, the shape every other page uses — the page had none, so
-          the filters were the first thing on it and nothing said where you
-          were. */}
-      <div className="gw-row" style={{ justifyContent: "space-between", marginBottom: 20 }}>
-        <div>
-          <h1>Metrics</h1>
-          <p className="lede">
-            How this deployment is serving traffic - throughput, latency, errors and
-            per-upstream health · live from{" "}
-            <span className="gw-mono" style={{ color: "var(--text-2)" }}>Prometheus</span>.
-          </p>
-        </div>
+      {/* The title, and the page's actions beside it: refresh, the window, the logs. */}
+      <div className="gw-row" style={{ justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
+        <h1 style={{ margin: 0 }}>Metrics</h1>
+        <PageActions timeWindow={timeWindow} setTimeWindow={setTimeWindow} chainFilter={activeChain ?? "all"} />
       </div>
       <div style={{ marginBottom: 20 }}>
         <RouterHeader chains={routedChains} chainFilter={activeChain ?? "all"} setChainFilter={setChainFilter}
-          timeWindow={timeWindow} setTimeWindow={setTimeWindow} />
+          timeWindow={timeWindow} setTimeWindow={setTimeWindow} withActions={false} />
       </div>
       {/* Six tabs outgrow a narrow screen: they scroll sideways rather than
           wrap each label onto two lines. */}

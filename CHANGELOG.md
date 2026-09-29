@@ -39,13 +39,13 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   upstream returned a usable response (*Insufficient results · returned by
   router*). Filters: the result, whether the error was retryable by the
   router's own verdict, the error type, the method, and the upstream an
-  attempt failed at. The list follows the page's window, or exact times you pick; it reads 300 requests
-  at a time, and "Load older" reads on. An attempt the router cancelled
-  because another had already succeeded is not an error. **Find a request by
-  ID** looks any request up by the GUID the router logs
+  attempt failed at. The list follows the page's window, or exact times you
+  pick; it reads 300 requests at a time, and "Load older" reads on. An attempt
+  the router cancelled because another had already succeeded is not an error.
+  **Find a request by ID** looks any request up by the GUID the router logs
   (`GET /api/requests/:guid`). The Upstreams and Error types views are gone:
-  the list's filters answer the same questions, with the requests behind
-  every count; without Loki the tab shows the cards only.
+  the list's filters answer the same questions, with the requests behind every
+  count; without Loki the tab shows the cards only.
   [The tab](./docs/assets/errors-tab.jpg) and
   [a request opened](./docs/assets/errors-request-open.jpg).
 
@@ -83,6 +83,14 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   broken it was. The interface chip, which repeated the panel's own on every
   row, is gone too, and the panel is wider.
   [Screenshot](./docs/assets/endpoint-served-by.jpg).
+- **The Metrics page's actions sit beside its title**: refresh, the time
+  window and View full logs. The page's subtitle and the Errors and
+  Transactions tabs' headings, which repeated the tab's name with a line
+  of description, are gone. The Errors list's controls are two rows: the
+  results with their counts beside the title and the times it covers, then
+  the other filters with Find a request by ID. A picked time range reads as
+  one line ("Sep 29, 16:10 - 16:20"), with the From and To fields only while
+  you change it.
 - **A chain's name no longer underlines on hover** where it opens the chain's
   block explorer; the ↗ beside it brightens instead.
 - **The Upstreams page opens grouped by chain**, and "By chain" now leads the
@@ -92,8 +100,9 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   one time axis**: Errors over time, Request volume, Latency p95 and Latest
   block, each drawing every upstream on the chain with the selected one bold
   (`GET /api/metrics/upstream-peers` is new). Point at any moment and one
-  crosshair runs through all four, with each line's value beside its dot; the
-  legends name the lines, and pointing at a name brings its line forward.
+  crosshair runs through all four, with each line's value beside its dot; a
+  legend on one line under each chart names the lines, and pointing at a name
+  brings its line forward.
   *Errors over time* comes in bars the clock names (10 minutes up to six
   hours, 30 on a day, hours on a window of days), the last one still in
   progress; click a bar to open its requests in the Errors tab: the ones that
@@ -140,10 +149,11 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 - **With no chain selected, the latency cards showed one chain's number, or
   "—".** The Overview page's p50/p95/p99, the Dashboard page's p95 and
   `effectiveReadP95Ms` in `GET /api/metrics/dashboard-summary` got one value
-  per chain and showed the first one Prometheus returned. When that chain had no requests in the
-  window, the card showed "—", even when other chains had traffic. They now
-  combine all chains into one number, and so does the Overview page's latency
-  chart, which had the same problem. With a chain selected, nothing changes.
+  per chain and showed the first one Prometheus returned. When that chain had
+  no requests in the window, the card showed "—", even when other chains had
+  traffic. They now combine all chains into one number, and so does the
+  Overview page's latency chart, which had the same problem. With a chain
+  selected, nothing changes.
 
 ## [0.27.2]
 
