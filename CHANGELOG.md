@@ -5,6 +5,146 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.28.0]
+
+### Added
+
+- **A Transactions tab on the Metrics page** (`GET /api/transactions`). One
+  row per transaction the router sent: when, which chain and method, every
+  upstream it was broadcast to and each response, the one returned to the
+  client (marked "→ client"), the response time, and the outcome: accepted,
+  rejected by the node, a router error (no upstream returned a usable
+  response), or unknown. Above it: the success rate. Two filters narrow the
+  rows by method and by error type, and a row opens to every response in
+  full. The tab follows the page's window, or exact times you pick, and so do
+  its numbers; it reads 500 transactions at a time, and "Load older" reads
+  on. **Find a request by ID** looks one transaction up
+  (`GET /api/transactions/:guid`), and says so when the ID is a request that
+  isn't a transaction. It reads the router's logs from Loki, because
+  Prometheus holds totals and counts a rejected transaction as a success. Set
+  `LOKI_URL` (compose sets it for the `logs` profile); without it the tab says
+  it can't read the logs. On Cosmos chains a refused transaction still gets a
+  normal response the router doesn't log, so those show as unknown.
+  Transaction value and finality come later.
+  [Screenshot](./docs/assets/transactions-tab.jpg).
+- **The Errors tab lists every request that encountered an error.** It folds
+  the old Errors breakdown and a retry breakdown into one place: four cards
+  (failed attempts, retried requests, recovered, still failed), then one row
+  per request (`GET /api/error-requests`), retried or not. Each row shows
+  every attempt in order, with the router's or the node's own reason for each
+  failure; the attempt whose response was returned to the client is marked
+  "→ client", and the response itself follows word for word. The result names
+  the error and its source: a node error, the upstream's own error response
+  (*Invalid params · returned by sol-solana-labs*), or a router error, when no
+  upstream returned a usable response (*Insufficient results · returned by
+  router*). Filters: the result, whether the error was retryable by the
+  router's own verdict, the error type, the method, and the upstream an
+  attempt failed at. The list follows the page's window, or exact times you pick; it reads 300 requests
+  at a time, and "Load older" reads on. An attempt the router cancelled
+  because another had already succeeded is not an error. **Find a request by
+  ID** looks any request up by the GUID the router logs
+  (`GET /api/requests/:guid`). The Upstreams and Error types views are gone:
+  the list's filters answer the same questions, with the requests behind
+  every count; without Loki the tab shows the cards only.
+  [The tab](./docs/assets/errors-tab.jpg) and
+  [a request opened](./docs/assets/errors-request-open.jpg).
+
+  The list reads the router's logs from Loki (`LOKI_URL`). The retry counters
+  carry only chain, interface and method, and the router counts a retry only
+  once two attempts have returned. A request it couldn't retry, because no
+  other upstream was available or an attempt never returned, isn't counted,
+  so the "Still failed" card says when the logs show more failures than the
+  counter. The counts include the first value of a counter born inside the
+  window. Plain `increase()` dropped it, so a first burst of 11 retries on a
+  method read as 0.
+
+### Changed
+
+- **Tooltips point at what they explain.** An arrow to their (i), a brighter
+  first line, spaced paragraphs, lists, and bold and italic terms that render
+  instead of showing their asterisks; they open above when there's no room
+  below and never run off the screen. An (i) with nothing to say isn't drawn,
+  and the deep-dive charts' tips say only what the chart doesn't.
+  [Screenshot](./docs/assets/tooltip.jpg).
+- **"Failed requests" replaces "Effective read p95"** on the Metrics page:
+  client requests the router could not serve, because no upstream returned a
+  usable response and the router returned its own error, with their share of
+  all client requests. No metric counts this (the router counts requests per
+  attempt, and records a request's latency only when it succeeds), so it
+  comes from the router's logs (`GET /api/error-requests/count`), one entry
+  per failed request; without Loki the card says so. The p95 stays on the
+  Upstreams tab. [Screenshot](./docs/assets/metrics-failed-requests.jpg).
+- **"Served by" in an endpoint's panel** (Upstreams, By router, an endpoint)
+  lists each upstream's urls, each with the add-ons the values file declares
+  on it: archive, debug, trace, or any other under its own name. The health
+  tag is gone from those rows until it can be trusted: it reads
+  `rpc_endpoint_overall_health`, which starts healthy and moves only when a
+  relay fails, so an upstream that gets no traffic read "Operational" however
+  broken it was. The interface chip, which repeated the panel's own on every
+  row, is gone too, and the panel is wider.
+  [Screenshot](./docs/assets/endpoint-served-by.jpg).
+- **A chain's name no longer underlines on hover** where it opens the chain's
+  block explorer; the ↗ beside it brightens instead.
+- **The Upstreams page opens grouped by chain**, and "By chain" now leads the
+  switch. By router and by upstream are one click away, as before.
+  [Screenshot](./docs/assets/upstreams-by-chain.jpg).
+- **An upstream's detail on the Upstreams tab is four full-width charts on
+  one time axis**: Errors over time, Request volume, Latency p95 and Latest
+  block, each drawing every upstream on the chain with the selected one bold
+  (`GET /api/metrics/upstream-peers` is new). Point at any moment and one
+  crosshair runs through all four, with each line's value beside its dot; the
+  legends name the lines, and pointing at a name brings its line forward.
+  *Errors over time* comes in bars the clock names (10 minutes up to six
+  hours, 30 on a day, hours on a window of days), the last one still in
+  progress; click a bar to open its requests in the Errors tab: the ones that
+  failed at that upstream in those times. *Latency* fits the selected
+  upstream's line, and a peer far slower than the rest runs off the top and is
+  named under the chart. *Latest block* labels show how far behind the highest
+  tip each upstream is. The charts sample about 300 points whatever the
+  window, each averaging a 24th of it: volume averages short rates over what
+  is there, and both volume and latency are cut where the upstream wasn't
+  scraped, so a router restart or a gap in scraping shows as a gap, not a
+  slide to zero. The disagreement-rate panel and the node-vs-transport
+  breakdown are gone.
+  [The four charts](./docs/assets/upstream-deep-dive.jpg),
+  [an error bar](./docs/assets/upstream-errors-bar.jpg) and
+  [the Errors tab it opens](./docs/assets/errors-from-bar.jpg).
+
+### Removed
+
+- **QoS and selection scores are no longer shown.** The Upstreams roster's QoS
+  column, the QoS on an upstream's status card and on its no-traffic card,
+  the selection-score chart in an upstream's deep-dive, and the QoS option in a
+  chain's detail chart are gone: nothing on them was something to act on. The
+  api still returns the scores.
+- **The Metrics page's Traffic tab.** Its cross-validation, WebSocket and
+  per-method panels are gone. The api endpoints behind them stay
+  (`/api/metrics/cross-validation`, `/api/metrics/websocket`,
+  `/api/metrics/methods`), and the Dashboard page still reads the per-method
+  one.
+
+### Fixed
+
+- **Line charts drew values that never happened.** The smoothing overshot
+  every step: a square wave rang at its corners, and a quiet line dipped below
+  zero beside each burst of requests. Lines now bend without leaving the
+  points (monotone curves), on every chart that smooths.
+- **The Upstreams roster listed every upstream twice** (the second time with
+  no chain and no numbers), and choosing a chain didn't remove the copies.
+  The block-poll counts were added up per upstream without their chain, and
+  joining them onto the roster made a new, chain-less row for each.
+- **The Overview's "successful retries" card said the build can't count
+  retries.** The router creates its retry counters on the first retry, so no
+  retry yet and no retry counters look the same in Prometheus. The card now
+  says "no retries recorded yet".
+- **With no chain selected, the latency cards showed one chain's number, or
+  "—".** The Overview page's p50/p95/p99, the Dashboard page's p95 and
+  `effectiveReadP95Ms` in `GET /api/metrics/dashboard-summary` got one value
+  per chain and showed the first one Prometheus returned. When that chain had no requests in the
+  window, the card showed "—", even when other chains had traffic. They now
+  combine all chains into one number, and so does the Overview page's latency
+  chart, which had the same problem. With a chain selected, nothing changes.
+
 ## [0.27.2]
 
 ### Fixed
