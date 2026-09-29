@@ -5,6 +5,31 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.29.0]
+
+### Added
+
+- **A chains drawer on the Metrics page**, beside the sidebar, which shrinks
+  to its icons. One row per chain with its health, requests and error rate for
+  the page's window (the Routers table's numbers and colours), chains with
+  problems first, and a search by name. Picking a row scopes the whole page,
+  every tab, to that chain: the title and breadcrumbs name it, and the URL
+  carries it (`/metrics?chain=SOLANA`), so a link opens it and Back returns to
+  the chain before. Clicking Metrics while on it goes back to every chain. The
+  chain and router dropdowns leave the page's header.
+  [Screenshot](./docs/assets/chains-drawer.jpg).
+
+### Changed
+
+- **A router choice exists only where a chain has two or more routers.** The
+  "All routers" dropdown showed whenever the deployment had two routers in
+  total, so with one router per chain it offered a choice that was only the
+  chain again. Now such a chain says "2 routers" in the drawer and lists them,
+  with their upstream counts, once picked; the pick goes into the URL
+  (`?chain=ETH1&router=eth-prod`). Elsewhere (the Upstreams page, the
+  standalone page) the dropdown appears only for such a chain.
+  [Screenshot](./docs/assets/chains-drawer-routers.jpg).
+
 ## [0.28.0]
 
 ### Added
