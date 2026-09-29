@@ -20,7 +20,7 @@ const HANDOFF_ERRORS: Record<string, string> = {
   email_mismatch:
     "That Google account is not the address this invitation was sent to. Sign in with the invited account, or set a password below instead.",
   invite_failed:
-    "That invitation could not be accepted. It may have expired or already been used — ask an administrator for a new link.",
+    "That invitation could not be accepted. It may have expired or already been used - ask an administrator for a new link.",
 };
 
 export function InviteForm({
@@ -237,7 +237,7 @@ export function InviteForm({
           </label>
 
           <p style={{ fontSize: 11.5, color: "var(--text-3)", margin: "2px 0 0", lineHeight: 1.5 }}>
-            Any characters, 8 to 64. Checked against known breached passwords — there are no
+            Any characters, 8 to 64. Checked against known breached passwords - there are no
             other rules, and it never expires.
           </p>
 

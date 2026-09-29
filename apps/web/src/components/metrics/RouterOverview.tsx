@@ -30,9 +30,9 @@ import { ChainDetail, type ChainDetailRow } from "./ChainDetail";
 import { useState } from "react";
 import { useFilters } from "@/components/gateway/FiltersProvider";
 
-const BLOCK_TIP = "**The head this router serves** — `smartrouter_latest_block`, the tip it has accepted, leading with the furthest-ahead api interface.\n\nIt is a CHAIN-level series, so two routers on one chain read the same one. Per-upstream lag lives on the Upstreams tab.\n\n**Click a height** to open it on the chain\u2019s block explorer. Chains with no verified block page show the number plain \u2014 the chain icon still opens their explorer.";
+const BLOCK_TIP = "**The head this router serves** - `smartrouter_latest_block`, the tip it has accepted, leading with the furthest-ahead api interface.\n\nIt is a CHAIN-level series, so two routers on one chain read the same one. Per-upstream lag lives on the Upstreams tab.\n\n**Click a height** to open it on the chain\u2019s block explorer. Chains with no verified block page show the number plain \u2014 the chain icon still opens their explorer.";
 
-const ROUTER_SR_TIP = "**Chain-level availability** — successful requests ÷ total, **rolled up across every upstream** on the chain (what your apps actually got).\n\nSame definition as per-upstream Availability in the Upstreams tab.";
+const ROUTER_SR_TIP = "**Chain-level availability** - successful requests ÷ total, **rolled up across every upstream** on the chain (what clients received).\n\nSame definition as per-upstream Availability in the Upstreams tab.";
 
 type RoStatus = "up" | "down" | "unknown";
 
@@ -54,9 +54,6 @@ interface RoRow {
   availPct: number | null;
   p95Ms: number | null;
   errPct: number | null;
-  /** Composite QoS — feeds the expanded ChainDetail only; the table itself
-   *  carries no QoS column (MAG-2901). */
-  qosVal: number | null;
   reqCount: number;
   statusKind: RoStatus;
   /** Furthest-ahead router tip across this chain's interfaces. The rollup shows
@@ -110,16 +107,15 @@ export function RouterOverview({ onChainClick, chainFilter, timeWindow }: {
       (max, x) => (x.block !== null && (max === null || x.block > max) ? x.block : max), null);
     const availPct = c.availability != null ? c.availability * 100 : null;
     const errPct = c.errorRate != null ? c.errorRate * 100 : null;
-    const qosVal = c.qos != null ? c.qos * 100 : null;
     return {
       routerId: c.routerId, attribution: c.attribution, sharedWith: c.sharedWith,
       spec: c.spec, name: c.name, color: c.color,
       network: t?.network ?? null,
       provCount: c.upstreamCount, nPrimary, nBackup, primaryName,
       otherCount: Math.max(0, c.upstreamCount - 1),
-      availPct, p95Ms: c.p95Ms, errPct, qosVal, reqCount: c.requests, statusKind,
+      availPct, p95Ms: c.p95Ms, errPct, reqCount: c.requests, statusKind,
       tipBlock: tipBlock ?? c.latestBlock,
-      detail: { spec: c.spec, availPct, p95Ms: c.p95Ms, errPct, qos: qosVal, requests: c.requests, hasBackup: (nBackup ?? 0) > 0 },
+      detail: { spec: c.spec, availPct, p95Ms: c.p95Ms, errPct, requests: c.requests, hasBackup: (nBackup ?? 0) > 0 },
       natural: 0,
       router: c.routerId.toLowerCase(),
       upstreams: c.upstreamCount,
@@ -159,7 +155,7 @@ export function RouterOverview({ onChainClick, chainFilter, timeWindow }: {
     <div className="gw-card" style={{ padding: 0, overflow: "hidden", marginBottom: 14 }}>
       <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-2)", flex: 1, display: "inline-flex", alignItems: "center" }}>
-          Routers · how each router performs<Tip text="**One row per router in the mounted values file** — not per chain. A chain can be served by several routers, and the config is the only place they are distinguishable: no metric series carries a router.\n\nA **shared** row means the collector reports no per-router target label, so the chain-level figures cover every router on that chain. Two such rows carry the same numbers; adding them up would count that traffic twice. Upstream counts are always the router's own.\n\n**Click a row** to expand its chain-health graphs over the selected window." />
+          Routers · how each router performs<Tip text="**One row per router in the mounted values file** - not per chain. A chain can be served by several routers, and the config is the only place they are distinguishable: no metric series carries a router.\n\nA **shared** row means the collector reports no per-router target label, so the chain-level figures cover every router on that chain. Two such rows carry the same numbers; adding them up would count that traffic twice. Upstream counts are always the router's own.\n\n**Click a row** to expand its chain-health graphs over the selected window." />
         </div>
         {/* `keepPreviousData` means a window change re-fetches with the OLD
             rows still on screen. The dot is the only thing that says so. */}
@@ -202,7 +198,7 @@ export function RouterOverview({ onChainClick, chainFilter, timeWindow }: {
             return (
               <Fragment key={rowKey}>
               <tr style={{ cursor: "pointer", background: isOpen ? "var(--hover)" : undefined }} onClick={() => setOpen(isOpen ? null : rowKey)}
-                title={`${r.routerId} on ${r.name} — click for chain health`}>
+                title={`${r.routerId} on ${r.name} - click for chain health`}>
                 <td>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <ExplorerHomeLink spec={r.spec}><ChainBadge spec={r.spec} size={22} /></ExplorerHomeLink>
@@ -212,7 +208,7 @@ export function RouterOverview({ onChainClick, chainFilter, timeWindow }: {
                         {r.attribution === "shared" && (
                           <span
                             className="gw-tag"
-                            title={`${r.sharedWith.join(", ")} also serve${r.sharedWith.length === 1 ? "s" : ""} ${r.name}, and the collector reports no per-router target label — these numbers are all of them together. Adding the rows up would count that traffic twice.`}
+                            title={`${r.sharedWith.join(", ")} also serve${r.sharedWith.length === 1 ? "s" : ""} ${r.name}, and the collector reports no per-router target label - these numbers are all of them together. Adding the rows up would count that traffic twice.`}
                             style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", padding: "1px 6px" }}
                           >
                             shared

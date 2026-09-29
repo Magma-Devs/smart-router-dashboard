@@ -90,7 +90,7 @@ export function ChangeRoleModal({
           </button>
         ))}
         <div style={{ fontSize: 11.5, color: "var(--text-3)", marginTop: 4, lineHeight: 1.5 }}>
-          This takes effect immediately, on whatever they have open right now — not at their
+          This takes effect immediately, on whatever they have open right now - not at their
           next sign-in.
         </div>
         {error && <div role="alert" style={{ fontSize: 12, color: "var(--err)" }}>{error}</div>}

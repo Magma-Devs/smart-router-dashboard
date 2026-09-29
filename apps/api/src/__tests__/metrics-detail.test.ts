@@ -65,3 +65,51 @@ describe("MetricsDetailService query construction (bug regressions)", () => {
     expect(unscoped).toEqual([]);
   });
 });
+
+describe("MetricsDetailService.retries", () => {
+  const vec = (metric: Record<string, string>, v: number) => ({ metric, value: [1, String(v)] as [number, string] });
+
+  /** The retry family present; canned rows keyed on the counter each query reads. */
+  function retryProm(): PrometheusClient {
+    return {
+      async query(expr: string) {
+        if (expr.includes("retries_success_total")) {
+          return [vec({ spec: "SOLANA", method: "getSlot" }, 11), vec({ spec: "ETH1", method: "eth_getLogs" }, 2)];
+        }
+        if (expr.includes("retries_failed_total")) return [vec({ spec: "ETH1", method: "eth_getLogs" }, 3)];
+        return [];
+      },
+      async scalar(expr: string) {
+        if (expr.startsWith("count({__name__=")) return 1;
+        if (expr.includes("retry_attempts_sum")) return 1.5;
+        if (expr.includes("latency_milliseconds_count")) return 1600;
+        return null;
+      },
+    } as unknown as PrometheusClient;
+  }
+
+  it("adds the cards up from the per-method rows, so they agree on screen", async () => {
+    const r = await new MetricsDetailService(retryProm()).retries("1h");
+    expect(r).toMatchObject({ emitted: true, retried: 16, recovered: 13, failed: 3, avgExtraAttempts: 1.5 });
+    expect(r.recoveryRate).toBeCloseTo(13 / 16);
+    expect(r.retryRate).toBeCloseTo(16 / 1600);
+  });
+
+  it("every retry expression scopes to the chosen chain", async () => {
+    const { prom, queries } = capturingProm();
+    // capturingProm answers every presence probe with null ⇒ nothing else is
+    // queried; flip the probes on to see the rest.
+    (prom as unknown as { scalar: (e: string) => Promise<number | null> }).scalar = async (e: string) => {
+      queries.push(e);
+      return e.startsWith("count({__name__=") ? 1 : null;
+    };
+    await new MetricsDetailService(prom).retries("1h", "SOLANA");
+    const retryQueries = queries.filter(
+      (q) =>
+        !q.startsWith("count({__name__=") &&
+        (q.includes("smartrouter_retr") || q.includes("latency_milliseconds_count")),
+    );
+    expect(retryQueries.length).toBe(4);
+    expect(retryQueries.every((q) => q.includes('spec="SOLANA"'))).toBe(true);
+  });
+});

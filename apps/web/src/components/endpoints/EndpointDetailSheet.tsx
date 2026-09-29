@@ -3,7 +3,8 @@
 /* Endpoint detail sheet — ported from the design prototype
  * (page-endpoints.jsx EndpointDetailSheet). SELF-HOSTED REALITY:
  *  · URLs are the local listen port (http/ws://localhost:<port>) plus each
- *    upstream node's urlHost list under "Served by";
+ *    upstream node's urls under "Served by", each with the add-ons the
+ *    config declares on it;
  *  · JWT management (reissue / revoke / reveal) is a Magma-Cloud feature —
  *    the controls render disabled with an honest hint and the masked value
  *    is "—" (never a fabricated token);
@@ -16,8 +17,8 @@ import { buildChainMetaByIndex } from "@sr/shared";
 import { labelStyle } from "@/lib/styles";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { ExplorerHomeLink } from "@/components/gateway/ExplorerLink";
+import { CapabilityTags, capabilitiesOf } from "@/components/gateway/CapabilityTags";
 import { CloudNotice } from "@/components/gateway/CloudNotice";
-import { HealthTag } from "@/components/gateway/HealthTag";
 import { JWT_CLOUD_MSG, READONLY_MSG, type UpstreamRow } from "@/components/upstreams/catalog";
 import {
   IfaceTag,
@@ -30,7 +31,8 @@ import {
   type EndpointRowModel,
 } from "@/components/endpoints/bits";
 
-interface NodeGroup { name: string; isBackup: boolean; hosts: string[] }
+interface NodeUrl { host: string; addons: string[] }
+interface NodeGroup { name: string; isBackup: boolean; urls: NodeUrl[] }
 
 export function EndpointDetailSheet({ open, ep, onClose, upstreams }: {
   open: boolean;
@@ -41,13 +43,19 @@ export function EndpointDetailSheet({ open, ep, onClose, upstreams }: {
   const [editingUpstreams, setEditingUpstreams] = useState(false);
   const [localUpstreamIds, setLocalUpstreamIds] = useState<string[]>([]);
 
-  /* One entry per upstream node (its urlHost list joined for display). */
+  /* One entry per upstream node, each of its urls with the add-ons declared
+     on THAT url. The config declares them per url, so one upstream can list
+     archive on its https url and nothing on its wss one - merging them per
+     upstream would claim archive for both. */
   const nodeGroups = useMemo<NodeGroup[]>(() => {
     const m = new Map<string, NodeGroup>();
     for (const n of ep?.nodes ?? []) {
       let g = m.get(n.name);
-      if (!g) { g = { name: n.name, isBackup: n.isBackup, hosts: [] }; m.set(n.name, g); }
-      if (n.urlHost && !g.hosts.includes(n.urlHost)) g.hosts.push(n.urlHost);
+      if (!g) { g = { name: n.name, isBackup: n.isBackup, urls: [] }; m.set(n.name, g); }
+      if (!n.urlHost) continue;
+      const u = g.urls.find((x) => x.host === n.urlHost);
+      if (u) u.addons = [...new Set([...u.addons, ...n.addons])];
+      else g.urls.push({ host: n.urlHost, addons: [...n.addons] });
     }
     return [...m.values()];
   }, [ep]);
@@ -69,14 +77,16 @@ export function EndpointDetailSheet({ open, ep, onClose, upstreams }: {
   // serves the upgrade on the interface's own listener, so there is no
   // separate ws host or port to look up.
   const wsUrl = epWsUrl(ep);
-  const upstreamByName = (name: string): UpstreamRow | undefined => upstreams.find((p) => p.id === name);
 
   // Portal to <body>: the page uses a `transform` (fade-in) ancestor, which
   // makes position:fixed resolve against it instead of the viewport — so an
   // un-portaled backdrop wouldn't cover the shell or truly center.
   const sheet = (
     <div className="gw-sheet-bg gw-sheet-bg--center" onClick={onClose}>
-      <div className="gw-sheet gw-sheet--wide gw-sheet--center" onClick={(e) => e.stopPropagation()}>
+      <div className="gw-sheet gw-sheet--wide gw-sheet--center" onClick={(e) => e.stopPropagation()}
+        // Wider than the sheet's 560: each upstream's urls run with their
+        // add-ons beside them.
+        style={{ width: "min(640px, 100%)" }}>
 
         {/* Head */}
         <div className="gw-sheet__head">
@@ -107,7 +117,7 @@ export function EndpointDetailSheet({ open, ep, onClose, upstreams }: {
             <div style={{ display: "grid", gap: 5 }}>
               {httpUrl === null ? (
                 <div style={{ fontSize: 12, color: "var(--text-3)" }}>
-                  No routable address in the mounted config — no local listen port, and no
+                  No routable address in the mounted config - no local listen port, and no
                   Gateway to publish this router.
                 </div>
               ) : ep.iface === "websocket" && ep.port !== null ? (
@@ -191,34 +201,46 @@ export function EndpointDetailSheet({ open, ep, onClose, upstreams }: {
                   );
                 })()
               ) : (
-                /* Read mode — the config's upstream nodes + their urlHost list */
-                <div style={{ display: "grid", gap: 5 }}>
+                /* Read mode - the config's upstream nodes, one line per url
+                   with that url's add-ons. No health tag: it read the
+                   router's rpc_endpoint_overall_health, which starts healthy
+                   and moves only when a relay fails, so an upstream with no
+                   traffic read Operational however broken it was. No
+                   interface chip either - it repeated the sheet's own. */
+                <div style={{ display: "grid", gap: 6 }}>
                   {nodeGroups.length === 0 ? (
                     <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 11px", borderRadius: 7,
                       background: "rgba(239,68,68,0.05)", border: "1px solid rgba(239,68,68,0.18)" }}>
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--err)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                      <span style={{ fontSize: 12, color: "var(--err)" }}>No upstreams — endpoint will return errors.</span>
+                      <span style={{ fontSize: 12, color: "var(--err)" }}>No upstreams - endpoint will return errors.</span>
                     </div>
                   ) : (
-                    nodeGroups.map((n) => {
-                      const pv = upstreamByName(n.name);
-                      return (
-                        <div key={n.name} style={{ padding: "7px 10px", borderRadius: 7, background: "var(--hover)", border: "1px solid var(--line)" }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-                            <span style={{ fontSize: 12, fontWeight: 500, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{n.name}</span>
-                            {!n.isBackup && <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 4, background: "rgba(34,197,94,0.1)", color: "var(--ok)", border: "1px solid rgba(34,197,94,0.2)", flexShrink: 0 }}>Primary</span>}
-                            {n.isBackup && <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 4, background: "rgba(96,165,250,0.1)", color: "#60a5fa", border: "1px solid rgba(96,165,250,0.2)", flexShrink: 0 }}>Backup</span>}
-                            <IfaceTag id={ep.iface} />
-                            <HealthTag health={pv?.health ?? "unknown"} />
-                          </div>
-                          {n.hosts.length > 0 && (
-                            <div className="gw-mono" style={{ fontSize: 10, color: "var(--text-4)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 3 }}>
-                              {n.hosts.join(" · ")}
-                            </div>
-                          )}
+                    nodeGroups.map((n) => (
+                      <div key={n.name} style={{ padding: "9px 12px 10px", borderRadius: 8, background: "var(--hover)", border: "1px solid var(--line)" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ fontSize: 12.5, fontWeight: 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{n.name}</span>
+                          {!n.isBackup && <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 4, background: "rgba(34,197,94,0.1)", color: "var(--ok)", border: "1px solid rgba(34,197,94,0.2)", flexShrink: 0 }}>Primary</span>}
+                          {n.isBackup && <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 4, background: "rgba(96,165,250,0.1)", color: "#60a5fa", border: "1px solid rgba(96,165,250,0.2)", flexShrink: 0 }}>Backup</span>}
                         </div>
-                      );
-                    })
+                        {n.urls.length > 0 && (
+                          <div style={{ display: "grid", gap: 5, marginTop: 8 }}>
+                            {n.urls.map((u) => {
+                              // Every add-on the url declares, not just the
+                              // four the lists show.
+                              const caps = capabilitiesOf({ addons: u.addons, includeUnknown: true });
+                              return (
+                                <div key={u.host} style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "4px 12px" }}>
+                                  <span className="gw-mono" title={u.host} style={{ flex: "1 1 220px", minWidth: 0, fontSize: 11, color: "var(--text-2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.host}</span>
+                                  {caps.length > 0
+                                    ? <CapabilityTags size="xs" capabilities={caps} />
+                                    : <span style={{ fontSize: 10.5, color: "var(--text-4)" }}>no add-ons</span>}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    ))
                   )}
                 </div>
               )}
@@ -246,7 +268,7 @@ export function EndpointDetailSheet({ open, ep, onClose, upstreams }: {
                     Revoke
                   </button>
                 </div>
-                <CloudNotice feature="JWT management" detail="no tokens exist on this self-hosted deployment — local endpoints answer unauthenticated on their listen port." compact />
+                <CloudNotice feature="JWT management" detail="no tokens exist on this self-hosted deployment - local endpoints answer unauthenticated on their listen port." compact />
               </div>
             </div>
           </div>

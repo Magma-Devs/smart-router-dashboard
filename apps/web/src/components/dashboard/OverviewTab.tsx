@@ -150,7 +150,7 @@ export function OverviewTab({
         <DSHKpi label="Compute units" value={data?.scu ? dshFmtNum(data.scu.used) : "—"}>
           <div style={{ fontSize: 10, color: "var(--text-3)", margin: "5px 0 4px" }}>
             {data?.scu
-              ? (data.scu.quotaPct <= 100 ? data.scu.quotaPct + "% of monthly quota" : data.scu.quotaPct + "% — over plan")
+              ? (data.scu.quotaPct <= 100 ? data.scu.quotaPct + "% of monthly quota" : data.scu.quotaPct + "% - over plan")
               : "—"}
           </div>
           <div style={{ height: 4, background: "var(--hover)", borderRadius: 999 }}>

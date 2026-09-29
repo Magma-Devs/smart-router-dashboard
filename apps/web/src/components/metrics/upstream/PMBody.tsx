@@ -1,227 +1,355 @@
 "use client";
 
-/* PMBody — the selected upstream's data panels (rows 2–4 of the deep dive).
- * Ported verbatim from the design prototype (page-provider-metrics.jsx
- * PMBody + pmBuild); the mock's synthetic series are replaced by
- * /api/metrics/upstream-detail. Honest-state rules:
- *  - volume: `read` is real; write/batch layers appear only once their
- *    counters are emitted (legend chips keep the design chrome);
- *  - node-vs-blockchain error split: the two counters aren't emitted on this
- *    build ⇒ the split rows/bar show "—" (the design's 62/38 was invented);
- *  - disagreement: no per-upstream cross-validation metric ⇒ chrome + gap;
- *  - selection score: REAL (rpc_endpoint_selection_score), 0..1 → 0–100. */
+/* PMBody - the selected upstream's charts in the Upstreams deep-dive, each
+ * full width, one below the other, every upstream of the chain on the same
+ * chart with the selected one bold, in the order an incident is read -
+ * did it fail, how much traffic, how slow, was it in sync:
+ *  - Errors over time: this upstream's, a bar per 10 or 30 minutes (longer on
+ *    a window of days), on the clock. Hover a bar for its counts; click it to
+ *    open those requests in the Errors tab, filtered to this upstream and
+ *    that stretch of time;
+ *  - Request volume (req/s), Latency (p95), Latest block - sampled at ~300
+ *    points and laid out by TIME on the grid the api sampled them on, so a
+ *    stretch with no data is a gap, never a straight ramp across it. Hover any
+ *    of them for every upstream's value at that moment;
+ *  - all four on ONE time axis, labelled at round times of day, so an error
+ *    bar sits over the latency spike it belongs with - and one pointer: the
+ *    moment under it, on any chart, draws every chart's crosshair;
+ *  - a legend beside each chart that reads that moment out (its latest when
+ *    the pointer is elsewhere), rather than a row of chips over it or a box
+ *    that covers the lines. Pointing at a row brings its line forward.
+ * The prototype's selection-score and disagreement-rate panels are gone:
+ * neither was something an operator could act on here. */
 
-import { useState } from "react";
-import type { MetricWindow, UpstreamDetail, UpstreamMetrics, TimePoint } from "@sr/shared";
-import { LineChart, StackedAreaChart, type Layer, type Series } from "@/components/gateway/charts";
+import { useMemo, useState, type ReactNode } from "react";
+import { chartSampling, WINDOWS, type ChartGrid, type MetricWindow, type TimePoint, type UpstreamDetail, type UpstreamMetrics, type UpstreamPeers } from "@sr/shared";
+import { ColumnChart, LineChart, niceScale, type ChartHover, type Layer, type Series, type XTick } from "@/components/gateway/charts";
+import { useApi } from "@/hooks/use-api";
+import { useFilters } from "@/components/gateway/FiltersProvider";
 import { fmtComma } from "@/lib/format";
-import { nums } from "../bits";
+import type { ErrorsJump } from "../ErrorsBreakdown";
 import { PMPanel } from "./PMPanel";
-import { PMRecentErrors } from "./PMErrors";
 
-const pct = (pts: TimePoint[] | null | undefined): number[] => nums(pts).map((v) => v * 100);
+/** Every chart's margins: on the left the widest axis labels' (a block
+ *  height), on the right just room for the last tick - the legend sits beside
+ *  the chart. The four stack on one time axis, so they must share both, or
+ *  the same moment lands at a different x in each. */
+const PAD_X = 80;
+const PAD_R = 16;
+/** The legend column beside every chart - one width for all four, so the
+ *  charts beside them stay one width too. */
+const LEGEND_W = 210;
 
-export function PMBody({ pm, detail, name, timeWindow }: {
+/** The peers' colours; the selected upstream is always the brand colour. */
+const PEER_COLORS = ["#38bdf8", "#a78bfa", "#22c55e", "#eab308", "#ec4899", "#14b8a6", "#f97316", "#94a3b8"];
+
+/** Every point of a grid, unix seconds: the chart's time axis. */
+function gridTimes(grid: ChartGrid | undefined): number[] {
+  if (!grid || grid.stepSec <= 0) return [];
+  const out: number[] = [];
+  for (let t = grid.start; t <= grid.end; t += grid.stepSec) out.push(t);
+  return out;
+}
+
+/** Series laid on a grid by time - NaN where one has no point there, which
+ *  the chart draws as a gap. A point lands on its nearest slot. */
+function onGrid(times: number[], grid: ChartGrid | undefined, series: TimePoint[][]): number[][] {
+  return series.map((s) => {
+    const out: number[] = new Array(times.length).fill(NaN);
+    if (!grid || !times.length) return out;
+    for (const p of s) {
+      if (p.v == null) continue;
+      const k = Math.round((p.t - grid.start) / grid.stepSec);
+      if (k >= 0 && k < out.length) out[k] = p.v;
+    }
+    return out;
+  });
+}
+
+const whenOf = (t: number | undefined) =>
+  t ? new Date(t * 1000).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }) : "";
+const dayOf = (ms: number) => new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+const hhmm = (ms: number) => new Date(ms).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
+
+/** Tick spacings for a time axis: the clock's own, a minute to a week. */
+const TICK_STEPS = [60, 120, 300, 600, 900, 1800, 3600, 7200, 10800, 21600, 43200, 86400, 172800, 259200, 604800];
+
+/** Labels at round local times across [from, to] (unix seconds), seven at
+ *  most: 00:00 · 06:00 · 12:00 · 18:00 across a day, a date a day across a
+ *  week. The evenly spaced labels this replaced landed on 00:37 and 06:45. */
+function timeTicks(dom: [number, number] | undefined): XTick[] | undefined {
+  if (!dom) return undefined;
+  const [from, to] = dom;
+  const span = to - from;
+  const step = TICK_STEPS.find((sec) => span / sec <= 7) ?? 604800;
+  const tz = -new Date(to * 1000).getTimezoneOffset() * 60;
+  const out: XTick[] = [];
+  for (let t = Math.ceil((from + tz) / step) * step - tz; t <= to; t += step) {
+    const d = new Date(t * 1000);
+    const midnight = d.getHours() === 0 && d.getMinutes() === 0;
+    out.push({ at: t, label: step >= 86400 || (span > 86400 && midnight) ? dayOf(t * 1000) : hhmm(t * 1000) });
+  }
+  return out;
+}
+
+
+/** The value at quantile q of some numbers (0 when there are none). */
+const quantile = (xs: number[], q: number) => {
+  const s = [...xs].sort((a, b) => a - b);
+  return s.length ? s[Math.floor(q * (s.length - 1))]! : 0;
+};
+
+const fmtMs = (v: number) => `${fmtComma(Math.round(v))} ms`;
+/** "the hour", "the 16 minutes", "the 150 seconds" - how long each point averages. */
+const spanWords = (sec: number) =>
+  sec % 3600 === 0 ? (sec === 3600 ? "the hour" : `the ${sec / 3600} hours`) : sec % 60 === 0 ? `the ${sec / 60} minutes` : `the ${sec} seconds`;
+const fmtRps = (v: number) => (v === 0 ? "0" : v < 0.1 ? v.toFixed(3) : v < 10 ? v.toFixed(2) : fmtComma(Math.round(v)));
+/** "10 minutes", "an hour", "6 hours", "a day" - one bar's span. */
+const barSpanWords = (sec: number) =>
+  sec >= 86400 ? (sec === 86400 ? "a day" : `${sec / 86400} days`) : sec >= 3600 ? (sec === 3600 ? "an hour" : `${sec / 3600} hours`) : `${sec / 60} minutes`;
+
+interface LegendRow {
+  key: string;
+  name: string;
+  color: string;
+  /** A count beside the name (the errors legend); the line legends name their lines only. */
+  value?: string;
+  selected?: boolean;
+  /** A line for a line chart's series, a square for a bar chart's. */
+  mark?: "line" | "box";
+}
+
+/**
+ * The legend beside a chart: which line is which. The values themselves are
+ * read on the chart, beside the dots under the pointer (LineChart
+ * pointLabels), where the eye already is. A chain has two to four upstreams,
+ * so each gets a row of its own; pointing at one brings its line forward.
+ */
+function SideLegend({ heading, rows, foot, onFocus }: {
+  heading?: string;
+  rows: LegendRow[];
+  foot?: ReactNode;
+  onFocus?: (key: string | null) => void;
+}) {
+  return (
+    <div style={{ flex: `0 0 ${LEGEND_W}px`, minWidth: 0, borderLeft: "1px solid var(--line)", paddingLeft: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+      {heading && <div className="gw-mono gw-tnum" style={{ fontSize: 10, color: "var(--text-4)", textTransform: "uppercase", letterSpacing: "0.06em", minHeight: 13 }}>{heading}</div>}
+      {rows.map((r) => (
+        <div key={r.key} onMouseEnter={onFocus ? () => onFocus(r.key) : undefined} onMouseLeave={onFocus ? () => onFocus(null) : undefined} style={{ minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0 }}>
+            <span style={{ width: r.mark === "box" ? 9 : 12, height: r.mark === "box" ? 9 : r.selected ? 3 : 2, borderRadius: r.mark === "box" ? 2 : 1, background: r.color, flexShrink: 0 }} />
+            <span className={r.mark === "box" ? undefined : "gw-mono"} title={r.name} style={{ fontSize: 11, color: r.selected ? "var(--text)" : "var(--text-2)", fontWeight: r.selected ? 600 : 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.name}</span>
+          </div>
+          {r.value != null && (
+            <div className="gw-mono gw-tnum" style={{ paddingLeft: r.mark === "box" ? 16 : 19, marginTop: 2, fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{r.value}</div>
+          )}
+        </div>
+      ))}
+      {foot && <div style={{ fontSize: 10.5, color: "var(--text-4)", lineHeight: 1.5, marginTop: "auto" }}>{foot}</div>}
+    </div>
+  );
+}
+
+/** A chart and its legend, side by side - the legend drops below on a narrow screen. */
+function ChartRow({ height, chart, legend }: { height: number; chart: ReactNode; legend: ReactNode }) {
+  return (
+    <div style={{ display: "flex", gap: 16, alignItems: "stretch", flexWrap: "wrap" }}>
+      <div style={{ flex: "1 1 480px", minWidth: 0, height }}>{chart}</div>
+      {legend}
+    </div>
+  );
+}
+
+const empty = (text: string) => (
+  <div style={{ height: 120, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "var(--text-4)" }}>{text}</div>
+);
+
+export function PMBody({ pm, detail, name, timeWindow, onOpenErrors }: {
   pm: UpstreamMetrics;
   detail: UpstreamDetail | undefined;
   name: string;
   timeWindow: MetricWindow;
+  /** Opens the Errors tab on one bar's requests; without it the bars only hover. */
+  onOpenErrors?: (jump: ErrorsJump) => void;
 }) {
-  const [logOpen, setLogOpen] = useState(false);
   const pid = name.replace(/[^a-zA-Z0-9_-]/g, "");
+  const spec = detail?.spec || pm.spec;
+  const chainLabel = spec || "this chain";
+  const { scopeQ } = useFilters();
+  const peers = useApi<UpstreamPeers>(spec ? `/api/metrics/upstream-peers?spec=${encodeURIComponent(spec)}&window=${timeWindow}${scopeQ}` : null);
+  /* One pointer for all four charts - the moment under it (unix seconds),
+     whichever chart it is on - and the upstream a legend row points at. */
+  const [hovT, setHovT] = useState<number | null>(null);
+  const [focusUp, setFocusUp] = useState<string | null>(null);
 
-  /* volume layers — only counters that exist (read is real on this build) */
-  const volume: Layer[] = [
-    { name: "Read", values: nums(detail?.volume.read), color: "#3b82f6" },
-    ...(detail?.volume.write ? [{ name: "Write", values: nums(detail.volume.write), color: "#f97316" }] : []),
-    ...(detail?.volume.batch ? [{ name: "Batch", values: nums(detail.volume.batch), color: "#a78bfa" }] : []),
-  ];
-  const rpsNow = detail?.rpsNow ?? null;
-  const fmtAll = (n: number) => (n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? (n / 1e3).toFixed(1) + "K" : String(Math.round(n)));
-
-  /* latency series + legend scalars */
-  const latency: Series[] = [
-    { values: nums(detail?.latencySeries.p50), color: "#38bdf8", width: 1.5 },
-    { values: nums(detail?.latencySeries.p95), color: "#3b82f6", width: 2 },
-    { values: nums(detail?.latencySeries.p99), color: "#f97316", width: 1.5 },
-  ];
-  const latLegend: [string, number | null][] = [
-    ["median", detail?.p50Ms ?? null],
-    ["p95", detail?.p95Ms ?? pm.p95Ms],
-    ["p99", detail?.p99Ms ?? null],
-  ];
-  const latColors = ["#38bdf8", "#3b82f6", "#f97316"];
-
-  /* Real error split from the API: node (upstream JSON-RPC error replies),
-   * protocol, transport (derived relay failures). Whole numbers. */
-  const split = detail?.errorSplit ?? null;
-  const totalErr = split ? split.node + split.protocol + split.transport : null;
-  const splitPct = (n: number) =>
-    totalErr && totalErr > 0 ? Math.round((n / totalErr) * 100) : 0;
-  const cvStats = detail?.crossValidation ?? null;
-  const disagreePct = cvStats?.disagreementRate != null ? cvStats.disagreementRate * 100 : null;
-
-  /* selection score — real 0..1 gauges → the design's 0–100 axis */
-  const score: Series[] = [
-    ...(detail?.scoreSeries.availability ? [{ values: pct(detail.scoreSeries.availability), color: "#22c55e", width: 1.4, opacity: 0.55 }] : []),
-    ...(detail?.scoreSeries.latency ? [{ values: pct(detail.scoreSeries.latency), color: "#3b82f6", width: 1.4, opacity: 0.55 }] : []),
-    ...(detail?.scoreSeries.sync ? [{ values: pct(detail.scoreSeries.sync), color: "#38bdf8", width: 1.4, opacity: 0.55 }] : []),
-    ...(detail?.scoreSeries.composite ? [{ values: pct(detail.scoreSeries.composite), color: "#a78bfa", width: 2.6 }] : []),
-  ];
-  const sc = (t: "availability" | "latency" | "sync" | "composite") => {
-    const v = detail?.scores[t];
-    return v != null ? Math.round(v * 100) : null;
+  /* The selected upstream last, so its bold line is drawn on top of the rest. */
+  const ordered = useMemo(() => {
+    const ups = peers.data?.upstreams ?? [];
+    return [...ups.filter((u) => u.upstream !== name), ...ups.filter((u) => u.upstream === name)];
+  }, [peers.data, name]);
+  const grid = peers.data?.grid;
+  const times = useMemo(() => gridTimes(grid), [grid]);
+  const colorOf = (u: string, i: number) => (u === name ? "var(--brand)" : PEER_COLORS[i % PEER_COLORS.length]!);
+  /* A line pointed at in a legend comes forward; the others fade. */
+  const lineOf = (u: string, i: number, values: number[], curve: Series["curve"] = "smooth"): Series => {
+    const faded = focusUp != null && focusUp !== u;
+    return u === name
+      ? { values, color: colorOf(u, i), width: 2.6, opacity: faded ? 0.25 : 1, fill: false, curve }
+      : { values, color: colorOf(u, i), width: focusUp === u ? 2.2 : 1.4, opacity: faded ? 0.2 : focusUp === u ? 1 : 0.8, fill: false, curve };
   };
-  const scoreLegend: { lbl: string; val: number | null; color: string; raw: string | null; hero?: boolean }[] = [
-    { lbl: "Composite QoS", val: sc("composite"), color: "#a78bfa", raw: null, hero: true },
-    { lbl: "Availability", val: sc("availability"), color: "#22c55e", raw: sc("availability") != null ? sc("availability") + "% up" : null },
-    { lbl: "Latency", val: sc("latency"), color: "#3b82f6", raw: pm.p95Ms != null ? Math.round(pm.p95Ms) + "ms p95" : null },
-    { lbl: "Freshness", val: sc("sync"), color: "#38bdf8", raw: detail?.blockLag != null ? detail.blockLag + " blk lag" : null },
-  ];
+  /* The pointer snaps to the grid the lines are sampled on, so moving within
+     one point doesn't redraw every chart. */
+  const setHover = (t: number | null) =>
+    setHovT(t == null || !grid ? t : grid.start + Math.round((t - grid.start) / grid.stepSec) * grid.stepSec);
+  /* The legend's rows: this upstream first, then its peers - names only. */
+  const ix = ordered.map((u, i) => ({ u, i }));
+  const nameRows: LegendRow[] = [...ix.filter((x) => x.u.upstream === name), ...ix.filter((x) => x.u.upstream !== name)]
+    .map(({ u, i }) => ({ key: u.upstream, name: u.upstream, color: colorOf(u.upstream, i), selected: u.upstream === name }));
+  const hoverOf = (fmt: (v: number) => string, sub?: ChartHover["sub"]): ChartHover => ({
+    title: (i) => whenOf(times[i]),
+    rows: ordered.map((u) => ({ name: u.upstream, bold: u.upstream === name })),
+    fmt,
+    sub,
+  });
+  const averages = spanWords(chartSampling(timeWindow).lookbackSec);
 
-  const chainName = detail?.spec || pm.spec;
+  /* latency - p95 per upstream. The axis fits all of this upstream's line
+     and the bulk of every upstream's points, not a peer's outlier: one stuck
+     at eight seconds for an hour would otherwise flatten every other line
+     against the floor. A peer that runs off the top is named under the
+     chart, and the hover still reads its real value. */
+  const lat = useMemo(() => onGrid(times, grid, ordered.map((u) => u.latencyP95)), [times, grid, ordered]);
+  const latAll = lat.flat().filter(Number.isFinite);
+  const selIdx = ordered.findIndex((u) => u.upstream === name);
+  const selLat = selIdx >= 0 ? lat[selIdx]!.filter(Number.isFinite) : [];
+  const latFit = Math.max(selLat.length ? Math.max(...selLat) : 0, quantile(latAll, 0.75), 1) * 1.1;
+  const latTop = niceScale(0, latFit).hi;
+  const latOver = ordered
+    .map((u, i) => ({ name: u.upstream, max: Math.max(-Infinity, ...lat[i]!.filter(Number.isFinite)) }))
+    .filter((x) => x.max > latTop);
+
+  /* request volume - req/s per upstream, from zero */
+  const rps = useMemo(() => onGrid(times, grid, ordered.map((u) => u.rps)), [times, grid, ordered]);
+  const rpsAll = rps.flat().filter(Number.isFinite);
+  const rpsHi = rpsAll.length ? Math.max(...rpsAll) : 0;
+
+  /* latest block - the tip per upstream, straight segments (a height jumps;
+     a smoothed curve would dip before the jump), on a tight axis: heights are
+     huge numbers a few blocks apart, and an axis from zero stacks every line
+     on the others. */
+  const tips = useMemo(() => onGrid(times, grid, ordered.map((u) => u.latestBlock)), [times, grid, ordered]);
+  const tipAll = tips.flat().filter(Number.isFinite);
+  const tipHi = tipAll.length ? Math.max(...tipAll) : 0;
+  const tipLo = tipAll.length ? Math.min(...tipAll) : 0;
+  const tipPad = Math.max(1, (tipHi - tipLo) * 0.08);
+  /* A tip's label adds how far behind the highest tip at that point it is. */
+  const behindAt = (si: number, i: number) => {
+    const best = Math.max(-Infinity, ...tips.map((t) => (Number.isFinite(t[i]!) ? t[i]! : -Infinity)));
+    const v = tips[si]?.[i];
+    const b = v != null && Number.isFinite(v) && Number.isFinite(best) ? best - v : 0;
+    return b > 0 ? `${fmtComma(b)} behind` : null;
+  };
+
+  /* errors over time - failed attempts and node errors per bar, on the clock.
+     A bar at t covers the stepSec before it; the last one, still filling,
+     only up to asOf. The legend adds up the bars, so the two always agree. */
+  const eot = detail?.errorsOverTime;
+  const errTimes = useMemo(() => gridTimes(eot?.grid), [eot]);
+  const errVals = useMemo(() => onGrid(errTimes, eot?.grid, [eot?.failed ?? [], ...(eot?.node ? [eot.node] : [])]), [errTimes, eot]);
+  const zeroGaps = (vals: number[] | undefined) => (vals ?? []).map((v) => (Number.isFinite(v) ? v : 0));
+  const errStacks: Layer[] = [
+    { name: "Failed attempts", values: zeroGaps(errVals[0]), color: "var(--err)" },
+    ...(eot?.node ? [{ name: "Node errors", values: zeroGaps(errVals[1]), color: "#f97316" }] : []),
+  ];
+  const sumOf = (vals: number[]) => vals.reduce((a, b) => a + b, 0);
+  const errTotals = errStacks.map((l) => ({ name: l.name, color: l.color, total: sumOf(l.values) }));
+  const errTotal = errTotals.reduce((s, l) => s + l.total, 0);
+  const barSec = eot?.grid.stepSec ?? 0;
+  const barFrom = (i: number) => (errTimes[i]! - barSec) * 1000;
+  const barTo = (i: number) => Math.min(errTimes[i]!, eot?.asOf ?? Infinity) * 1000;
+  const barFilling = (i: number) => eot != null && errTimes[i]! > eot.asOf;
+  /* One time axis for all four: the window, ending when it was read. The
+     errors' first bar starts before it and the last is still filling, so
+     both are cut at the edges - their tooltips give the whole bar. */
+  const domEnd = grid?.end ?? eot?.asOf;
+  const dom: [number, number] | undefined = domEnd != null ? [domEnd - WINDOWS[timeWindow].rangeSeconds, domEnd] : undefined;
+  const ticks = timeTicks(dom);
+  const barWords = (i: number) => {
+    const from = barFrom(i), to = barTo(i);
+    const end = barFilling(i) ? "now" : dayOf(to) === dayOf(from) || barSec < 86400 ? hhmm(to) : `${dayOf(to)} ${hhmm(to)}`;
+    return `${dayOf(from)}, ${hhmm(from)} - ${end}`;
+  };
+
+  /* The errors legend: the window's totals, or the bar under the pointer -
+     the bar the moment pointed at on any chart falls in. */
+  const errRows: LegendRow[] = errStacks.map((l, k) => ({
+    key: l.name, name: l.name, color: l.color, mark: "box", value: fmtComma(errTotals[k]!.total),
+  }));
+  const errFoot = onOpenErrors ? "Click a bar to see its requests in the Errors tab." : undefined;
+  const shared = { xDomain: dom, xTicks: ticks, hoverAt: hovT, onHoverAt: setHover, padX: PAD_X, padR: PAD_R } as const;
 
   return (
-    <>
-      {/* ════ ROW 2 — TRAFFIC & SPEED ════ */}
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 12, marginBottom: 12 }}>
-        <PMPanel title="Request volume" tip={"Requests per second this upstream served, **split by Read / Write / Batch** (the three mutually-exclusive request types). Read includes archive lookups.\n\nCache hits are excluded — they never reach an upstream."}
-          right={<div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center" }}>
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11 }}>
-              <span style={{ color: "var(--text-3)" }}>All</span>
-              <span className="gw-mono gw-tnum" style={{ color: "var(--text)", fontWeight: 700 }}>{rpsNow != null ? fmtAll(rpsNow) : "—"}</span>
-              <span style={{ color: "var(--text-4)" }}>rps</span>
-            </span>
-            {([["Read", "#3b82f6"], ["Write", "#f97316"], ["Batch", "#a78bfa"]] as const).map(([lbl, c]) => (
-              <span key={lbl} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11 }}>
-                <span style={{ width: 9, height: 9, borderRadius: 2, background: c, flexShrink: 0 }} />
-                <span style={{ color: "var(--text-3)" }}>{lbl}</span>
-              </span>
-            ))}
-          </div>}>
-          <div style={{ height: 180 }}><StackedAreaChart layers={volume} id={"pmv" + pid} padY={16} /></div>
-        </PMPanel>
-
-        <PMPanel title="Latency"
-          right={<div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
-            {latLegend.map(([lbl, val], i) => (
-              <span key={lbl} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11 }}>
-                <span style={{ width: 9, height: 2, background: latColors[i], flexShrink: 0, borderRadius: 1 }} />
-                <span style={{ color: "var(--text-3)" }}>{lbl}</span>
-                <span className="gw-mono gw-tnum" style={{ color: "var(--text-2)", fontWeight: 600 }}>{val != null ? Math.round(val) + "ms" : "—"}</span>
-              </span>
-            ))}
-          </div>}>
-          <div style={{ height: 180 }}><LineChart series={latency} id={"pml" + pid} padY={16} yFmt={(v) => Math.round(v) + "ms"} /></div>
-        </PMPanel>
-      </div>
-
-      {/* ════ ROW 3 — ERRORS ════ */}
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 12, marginBottom: 12, alignItems: "start" }}>
-        <PMPanel title="Errors · node vs transport" tip={"**Node errors** — the upstream answered with a JSON-RPC error object (invalid params, method not found, …). These count as transport SUCCESS on the availability figures.\n\n**Transport / routing** — the relay itself failed: connection refused, timeout, rate-limit, cross-validation shortfall.\n\n**Protocol errors** — protocol-level failures the router attributes to this upstream."}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 16, padding: "2px 0 4px" }}>
-            <div>
-              <div className="gw-mono gw-tnum" style={{ fontSize: 30, fontWeight: 700, lineHeight: 1, color: totalErr == null ? "var(--text-4)" : totalErr === 0 ? "var(--ok)" : "var(--text)" }}>{totalErr != null ? fmtComma(totalErr) : "—"}</div>
-              <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 6 }}>total errors · {timeWindow}</div>
-            </div>
-            <div style={{ height: 8, borderRadius: 999, overflow: "hidden", display: "flex", background: "var(--bg-2)" }}>
-              {split && totalErr != null && totalErr > 0 && (
+    <div style={{ display: "grid", gap: 12, marginBottom: 12 }}>
+      <PMPanel full title="Errors over time"
+        tip={`**Failed attempts**: attempts at ${name} with no usable response - a timeout, a connection error, a rate limit, an HTTP 5xx.\n\n**Node errors**: error responses from the node itself. Shown once the router reports them.\n\nOne bar per ${barSpanWords(barSec || 600)}, aligned to the clock; the last bar is still in progress.`}>
+        {errTotal > 0 ? (
+          <ChartRow height={160}
+            chart={<ColumnChart stacks={errStacks} id={"pme" + pid} integerY xs={errTimes} barSpan={barSec} {...shared}
+              onBarClick={onOpenErrors ? (i) => onOpenErrors({ spec, upstream: name, from: barFrom(i), to: barTo(i) }) : undefined}
+              tooltip={(i) => (
                 <>
-                  <div style={{ width: `${splitPct(split.node)}%`, background: "#f97316" }} />
-                  <div style={{ width: `${splitPct(split.protocol)}%`, background: "#a78bfa" }} />
-                  <div style={{ width: `${splitPct(split.transport)}%`, background: "#fbbf24" }} />
-                </>
-              )}
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {(
-                [
-                  ["Node errors (JSON-RPC)", "#f97316", split?.node ?? null],
-                  ["Protocol errors", "#a78bfa", split?.protocol ?? null],
-                  ["Transport / routing", "#fbbf24", split?.transport ?? null],
-                ] as const
-              ).map(([lbl, c, v]) => (
-                <div key={lbl} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: 2, background: c, flexShrink: 0 }} />
-                  <span style={{ fontSize: 12.5, color: "var(--text-2)", flex: 1 }}>{lbl}</span>
-                  <span style={{ fontSize: 11, color: "var(--text-4)" }}>{v != null && totalErr ? `${splitPct(v)}%` : ""}</span>
-                  <span className="gw-mono gw-tnum" style={{ fontSize: 13, fontWeight: 600, minWidth: 56, textAlign: "right", color: v == null ? "var(--text-4)" : "var(--text)" }}>{v != null ? fmtComma(v) : "—"}</span>
-                </div>
-              ))}
-            </div>
-            <div style={{ height: 1, background: "var(--line)" }} />
-            <div>
-              <div style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.07em", color: "var(--text-3)", marginBottom: 11 }}>Node errors by method <span style={{ textTransform: "none", letterSpacing: 0, fontWeight: 400, color: "var(--text-4)" }}>— node_errors_total has no code label, the method split is the real one</span></div>
-              {(detail?.nodeErrorsByMethod?.length ?? 0) > 0 ? (
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {detail!.nodeErrorsByMethod.map((m) => (
-                    <div key={m.method} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span className="gw-mono" style={{ fontSize: 11.5, color: "var(--text-2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{m.method}</span>
-                      <span className="gw-mono gw-tnum" style={{ fontSize: 12, fontWeight: 700 }}>{fmtComma(m.count)}</span>
+                  <div className="gw-mono" style={{ color: "var(--text-3)", marginBottom: 6 }}>{barWords(i)}</div>
+                  {errStacks.map((l) => (
+                    <div key={l.name} style={{ display: "flex", alignItems: "center", gap: 7, padding: "2px 0" }}>
+                      <span style={{ width: 9, height: 9, borderRadius: 2, background: l.color, flexShrink: 0 }} />
+                      <span style={{ flex: 1, color: "var(--text-2)" }}>{l.name}</span>
+                      <span className="gw-mono gw-tnum" style={{ color: "var(--text)", fontWeight: 600 }}>{fmtComma(l.values[i] ?? 0)}</span>
                     </div>
                   ))}
-                </div>
-              ) : (
-                <div style={{ fontSize: 12, color: "var(--text-4)" }}>No node errors this window.</div>
-              )}
-            </div>
-            <button onClick={() => setLogOpen(true)} className="gw-btn gw-btn--ghost" style={{ fontSize: 12, alignSelf: "flex-start", padding: "6px 11px" }}>Recent errors →</button>
-          </div>
-        </PMPanel>
-
-        <PMPanel title="Disagreement rate" tip={"How often this upstream's responses **conflict with the consensus** of other upstreams on the same cross-validated request (provider agreements vs disagreements)."}
-          right={<span className="gw-mono gw-tnum" style={{ fontSize: 18, fontWeight: 700, color: disagreePct == null ? "var(--text-4)" : disagreePct > 0 ? "var(--warn)" : "var(--ok)" }}>{disagreePct != null ? disagreePct.toFixed(2) + "%" : "—"}</span>}>
-          {cvStats && (cvStats.agreements > 0 || cvStats.disagreements > 0) ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: 14, padding: "8px 0" }}>
-              <div style={{ height: 8, borderRadius: 999, overflow: "hidden", display: "flex", background: "var(--bg-2)" }}>
-                <div style={{ width: `${(cvStats.agreements / (cvStats.agreements + cvStats.disagreements)) * 100}%`, background: "var(--ok)" }} />
-                <div style={{ width: `${(cvStats.disagreements / (cvStats.agreements + cvStats.disagreements)) * 100}%`, background: "var(--warn)" }} />
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: 2, background: "var(--ok)", flexShrink: 0 }} />
-                  <span style={{ fontSize: 12.5, color: "var(--text-2)", flex: 1 }}>Agreed with consensus</span>
-                  <span className="gw-mono gw-tnum" style={{ fontSize: 13, fontWeight: 600 }}>{fmtComma(cvStats.agreements)}</span>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: 2, background: "var(--warn)", flexShrink: 0 }} />
-                  <span style={{ fontSize: 12.5, color: "var(--text-2)", flex: 1 }}>Disagreed</span>
-                  <span className="gw-mono gw-tnum" style={{ fontSize: 13, fontWeight: 600, color: cvStats.disagreements > 0 ? "var(--warn)" : "var(--text)" }}>{fmtComma(cvStats.disagreements)}</span>
-                </div>
-              </div>
-              <div style={{ fontSize: 11, color: "var(--text-4)", lineHeight: 1.5 }}>Cross-validated rounds this upstream participated in · {timeWindow}</div>
-            </div>
-          ) : (
-            <div style={{ height: 150, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "var(--text-4)", textAlign: "center", lineHeight: 1.6 }}>
-              This upstream hasn&apos;t participated in a cross-validated round this window —<br />rates appear once a cross-validation policy fans a request out to it.
-            </div>
-          )}
-        </PMPanel>
-      </div>
-
-      {/* ════ ROW 4 — ROUTING (optional) ════ */}
-      <PMPanel full title="Selection score" tip={"Each line is a **0–100 score** (higher = better), **not** a raw measurement — the router converts p95 latency and block lag into scores so they all share one axis.\n\n**Composite QoS** (purple, bold) is the weighted blend the router actually ranks upstreams on. The three faint lines are its inputs: availability, latency, and sync freshness.\n\nThe dashed **admit ≥ 90** line is the cutoff — when Composite QoS drops below it, the router pulls this upstream from rotation until it recovers."}
-        right={<div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-          {scoreLegend.map((it) => (
-            <span key={it.lbl} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11 }}>
-              <span style={{ width: 10, height: it.hero ? 3 : 2, background: it.color, borderRadius: 1, flexShrink: 0, opacity: it.hero ? 1 : 0.7 }} />
-              <span style={{ color: it.hero ? "var(--text)" : "var(--text-3)", fontWeight: it.hero ? 600 : 400 }}>{it.lbl}</span>
-              <span className="gw-mono gw-tnum" style={{ color: it.hero ? "var(--text)" : "var(--text-2)", fontWeight: 700 }}>{it.val != null ? it.val : "—"}</span>
-              {it.raw && <span style={{ color: "var(--text-4)", fontSize: 10 }}>({it.raw})</span>}
-            </span>
-          ))}
-        </div>}>
-        {score.length ? (
-          <div style={{ height: 180 }}><LineChart series={score} id={"pms" + pid} yDomain={[0, 100]} gridCount={4} yFmt={(v) => String(Math.round(v))} target={{ value: 90, color: "var(--text-4)", label: "admit ≥ 90" }} /></div>
-        ) : (
-          <div style={{ height: 180, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "var(--text-4)" }}>No selection-score samples for this upstream in this window.</div>
-        )}
-        <div style={{ marginTop: 8, fontSize: 11, color: "var(--text-4)", lineHeight: 1.5 }}>
-          Scored 0–100, higher is better. Below the dashed <span style={{ color: "var(--text-3)" }}>admit ≥ 90</span> line the router stops sending this upstream traffic until its score recovers.
-        </div>
+                </>
+              )} />}
+            legend={<SideLegend heading="This window" rows={errRows} foot={errFoot} />} />
+        ) : empty(eot ? `No errors at ${name} in this window.` : "Loading…")}
       </PMPanel>
 
-      <PMRecentErrors name={name} chainName={chainName} rows={detail?.recentErrors ?? []} open={logOpen} onClose={() => setLogOpen(false)} />
-    </>
+      <PMPanel full title="Request volume"
+        tip={`Requests per second each upstream served, each point averaging ${averages} before it.\n\n- A gap is a stretch with no data, not zero traffic\n- Cache hits aren't counted: they never reach an upstream`}>
+        {rpsAll.length ? (
+          <ChartRow height={200}
+            chart={<LineChart series={ordered.map((u, i) => lineOf(u.upstream, i, rps[i]!))} id={"pmv" + pid} padY={16}
+              yDomain={[0, rpsHi > 0 ? rpsHi * 1.1 : 0.01]} niceY yFmt={fmtRps} xs={times} maxGap={2}
+              hover={hoverOf((v) => `${fmtRps(v)} rps`)} hoverBox={false} pointLabels {...shared} />}
+            legend={<SideLegend rows={nameRows} onFocus={setFocusUp} />} />
+        ) : empty(peers.isLoading ? "Loading…" : `No upstream on ${chainLabel} served a request in this window.`)}
+      </PMPanel>
+
+      <PMPanel full title="Latency · p95"
+        tip={`The time 95% of requests finished within, each point over ${averages} before it.\n\nA gap means that upstream served no requests then.`}>
+        {latAll.length ? (
+          <>
+            <ChartRow height={220}
+              chart={<LineChart series={ordered.map((u, i) => lineOf(u.upstream, i, lat[i]!))} id={"pml" + pid} padY={16}
+                yDomain={[0, latTop]} niceY yFmt={fmtMs} xs={times} maxGap={2} hover={hoverOf(fmtMs)} hoverBox={false} pointLabels {...shared} />}
+              legend={<SideLegend rows={nameRows} onFocus={setFocusUp} />} />
+            {latOver.length > 0 && (
+              <div style={{ marginTop: 6, fontSize: 11, color: "var(--text-4)" }}>
+                ↑ Off the top of the chart: {latOver.map((x) => `${x.name} (up to ${fmtMs(x.max)})`).join(", ")} - point at it to read each value.
+              </div>
+            )}
+          </>
+        ) : empty(peers.isLoading ? "Loading…" : `No upstream on ${chainLabel} served a request with a measured latency in this window.`)}
+      </PMPanel>
+
+      <PMPanel full title="Latest block"
+        tip={`The block each upstream reports.\n\n- **Climbing together**: in sync\n- **Flat**: stopped syncing\n- **Below the others**: behind - the legend counts the blocks, against the highest tip at that moment`}>
+        {tipAll.length ? (
+          <ChartRow height={220}
+            chart={<LineChart series={ordered.map((u, i) => lineOf(u.upstream, i, tips[i]!, "linear"))} id={"pmb" + pid} padY={16}
+              yDomain={[tipLo - tipPad, tipHi + tipPad]} niceY yFmt={(v) => fmtComma(Math.round(v))} xs={times} maxGap={2}
+              hover={hoverOf((v) => fmtComma(Math.round(v)), behindAt)} hoverBox={false} pointLabels {...shared} />}
+            legend={<SideLegend rows={nameRows} onFocus={setFocusUp} />} />
+        ) : empty(peers.isLoading ? "Loading…" : `No upstream on ${chainLabel} reported a block in this window.`)}
+      </PMPanel>
+    </div>
   );
 }

@@ -140,7 +140,7 @@ export function AddUpstreamSheet({ open, onClose, existingIds, chains, ifacesByS
         background: "rgba(255,168,10,0.08)", border: "1px solid rgba(255,168,10,0.22)", color: "var(--text-2)",
       }}>
         <span style={{ color: "#ffa80a", flexShrink: 0, marginTop: 1 }}>ⓘ</span>
-        <span>Adding upstreams is a <strong>Magma Cloud</strong> feature. On this self-hosted deployment upstreams are defined in the read-only mounted values file — edit that file to change them.</span>
+        <span>Adding upstreams is a <strong>Magma Cloud</strong> feature. On this self-hosted deployment upstreams are defined in the read-only mounted values file - edit that file to change them.</span>
       </div>
 
       {/* Step indicator (SideSheet used to render this via its `steps` prop). */}

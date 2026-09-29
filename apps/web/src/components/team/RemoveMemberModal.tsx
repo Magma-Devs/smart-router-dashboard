@@ -60,7 +60,7 @@ export function RemoveMemberModal({
         <div>
           <strong>{member?.name || member?.email}</strong>
           {member?.name ? <span style={{ color: "var(--text-3)" }}> ({member.email})</span> : null}{" "}
-          will lose access immediately — on whatever they have open right now, not at their next
+          will lose access immediately - on whatever they have open right now, not at their next
           sign-in.
         </div>
         <ul style={{ margin: 0, paddingLeft: 18, color: "var(--text-2)", fontSize: 12.5 }}>

@@ -17,10 +17,9 @@ import { Tip } from "@/components/gateway/Tip";
 import { ThCol, useSort } from "@/components/gateway/SortTable";
 import { Refreshing, Skel, SkelRows } from "@/components/gateway/Skel";
 import { useFilters } from "@/components/gateway/FiltersProvider";
-import { qosHint, qosIsStale, qosValue } from "@/lib/upstream-signals";
 import { useRouterFilter } from "@/hooks/use-router-options";
 
-const BLOCK_TIP = "**The head this upstream reports** — `rpc_endpoint_latest_block`, its own tip rather than the router's.\n\n**Click a height** to open it on the chain\u2019s block explorer and check it against the public chain. Chains with no verified block page show the number plain — the chain name still opens their explorer.";
+const BLOCK_TIP = "**The head this upstream reports** - `rpc_endpoint_latest_block`, its own tip rather than the router's.\n\n**Click a height** to open it on the chain\u2019s block explorer and check it against the public chain. Chains with no verified block page show the number plain - the chain name still opens their explorer.";
 
 /**
  * A roster row's identity — one per (endpoint × chain). A vendor reuses its
@@ -37,7 +36,6 @@ interface RosterRow {
   name: string;
   chainName: string;
   chainColor: string;
-  qosVal: number | null;
   /** Config routers declaring this upstream — several ⇒ one shared series. */
   routerIds: string[];
   /* flat sort accessors (design SV semantics) */
@@ -50,7 +48,6 @@ interface RosterRow {
   uptime: number;
   latency: number;
   err: number;
-  qos: number;
 }
 
 export function PMRoster({ rows, activeKey, onSelect, timeWindow, loading = false, refreshing = false }: {
@@ -79,13 +76,11 @@ export function PMRoster({ rows, activeKey, onSelect, timeWindow, loading = fals
 
   const built: RosterRow[] = rows.map((v, i) => {
     const meta = buildChainMetaByIndex(v.spec);
-    const qosVal = qosValue(v);
     return {
       pm: v,
       name: v.endpointId,
       chainName: meta.name,
       chainColor: meta.color,
-      qosVal,
       routerIds: v.routerIds,
       natural: i,
       upstream: v.endpointId.toLowerCase(),
@@ -96,7 +91,6 @@ export function PMRoster({ rows, activeKey, onSelect, timeWindow, loading = fals
       uptime: v.uptime ?? -1,
       latency: v.p95Ms ?? Infinity,
       err: v.errorRate ?? -1,
-      qos: qosVal ?? -1,
     };
   });
 
@@ -128,7 +122,6 @@ export function PMRoster({ rows, activeKey, onSelect, timeWindow, loading = fals
             <ThCol align="right" sortKey="uptime" sort={sort} onSort={onSort}>Uptime</ThCol>
             <ThCol align="right" sortKey="latency" sort={sort} onSort={onSort}>Latency</ThCol>
             <ThCol align="right" sortKey="err" sort={sort} onSort={onSort}>Error rate</ThCol>
-            <ThCol align="right" sortKey="qos" sort={sort} onSort={onSort}>QoS</ThCol>
           </tr>
         </thead>
         <tbody>
@@ -158,7 +151,7 @@ export function PMRoster({ rows, activeKey, onSelect, timeWindow, loading = fals
                     <span
                       className="gw-mono"
                       style={{ fontSize: 11, color: "var(--text-2)" }}
-                      title={r.routerIds.length > 1 ? `Declared by ${r.routerIds.join(", ")} — one upstream name, so one series: these numbers are those routers' traffic together` : undefined}
+                      title={r.routerIds.length > 1 ? `Declared by ${r.routerIds.join(", ")} - one upstream name, so one series: these numbers are those routers' traffic together` : undefined}
                     >
                       {leadRouter(r.routerIds)}
                     </span>
@@ -190,35 +183,21 @@ export function PMRoster({ rows, activeKey, onSelect, timeWindow, loading = fals
                 <td style={{ textAlign: "right" }}>{(() => { const a = v.uptime != null ? v.uptime * 100 : null; return a != null ? <span className="gw-mono gw-tnum" style={{ fontSize: 12, color: uptimeColor(a) }}>{a.toFixed(2)}%</span> : <span style={{ fontSize: 12, color: "var(--text-4)" }}>—</span>; })()}</td>
                 <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{v.p95Ms != null ? Math.round(v.p95Ms) + " ms" : "—"}</span></td>
                 <td style={{ textAlign: "right" }}>{(() => { const e = v.errorRate != null ? v.errorRate * 100 : null; return e != null ? <span className="gw-mono gw-tnum" style={{ fontSize: 12, color: e < 0.5 ? "var(--text-3)" : e < 1.5 ? "var(--warn)" : "var(--err)" }}>{e.toFixed(2)}%</span> : <span style={{ fontSize: 12, color: "var(--text-4)" }}>—</span>; })()}</td>
-                {/* QoS on every row, including the ones with no traffic — the
-                    router scores an upstream from its probe loop whether or not
-                    it routes anything there. A score that can be out of date
-                    (the routing gauge on an idle row) is dimmed rather than
-                    labelled: the label was one cryptic word in a numeric column,
-                    and the case only arises on a router too old to publish the
-                    probe-fed gauge. The tooltip carries the why. */}
-                <td style={{ textAlign: "right" }} title={qosHint(v)}>
-                  {r.qosVal != null ? (
-                    <span className="gw-mono gw-tnum" style={{ fontSize: 13, fontWeight: 700, color: r.qosVal > 97 ? "var(--ok)" : r.qosVal > 90 ? "var(--warn)" : "var(--err)", opacity: qosIsStale(v) ? 0.5 : 1 }}>
-                      {Math.round(r.qosVal)}
-                    </span>
-                  ) : <span style={{ fontSize: 12, color: "var(--text-4)" }}>—</span>}
-                </td>
               </tr>
             );
           })}
           {loading && <SkelRows rows={6} cols={[
             { w: 156 }, { w: 96 }, { w: 110 }, { w: 84, align: "right" }, { w: 62, align: "right" },
-            { w: 64, align: "right" }, { w: 56, align: "right" }, { w: 58, align: "right" }, { w: 36, align: "right" },
+            { w: 64, align: "right" }, { w: 56, align: "right" }, { w: 58, align: "right" },
           ]} />}
           {!loading && rows.length === 0 && (
-            <tr><td colSpan={9} style={{ padding: "24px 16px", textAlign: "center", color: "var(--text-4)", fontSize: 13 }}>No upstreams configured yet.</td></tr>
+            <tr><td colSpan={8} style={{ padding: "24px 16px", textAlign: "center", color: "var(--text-4)", fontSize: 13 }}>No upstreams configured yet.</td></tr>
           )}
         </tbody>
       </table>
       {pageCount > 1 && (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10, padding: "9px 14px", borderTop: "1px solid var(--line)" }}>
-          <span style={{ fontSize: 11, color: "var(--text-4)" }}>{curPage * PAGE + 1}–{Math.min(rows.length, curPage * PAGE + PAGE)} of {rows.length}</span>
+          <span style={{ fontSize: 11, color: "var(--text-4)" }}>{curPage * PAGE + 1}-{Math.min(rows.length, curPage * PAGE + PAGE)} of {rows.length}</span>
           <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={curPage === 0} className="gw-btn gw-btn--ghost" style={{ padding: "3px 9px", fontSize: 12, opacity: curPage === 0 ? 0.4 : 1, cursor: curPage === 0 ? "default" : "pointer" }}>Prev</button>
           <span style={{ fontSize: 11, color: "var(--text-3)", fontVariantNumeric: "tabular-nums" }}>{curPage + 1} / {pageCount}</span>
           <button onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))} disabled={curPage >= pageCount - 1} className="gw-btn gw-btn--ghost" style={{ padding: "3px 9px", fontSize: 12, opacity: curPage >= pageCount - 1 ? 0.4 : 1, cursor: curPage >= pageCount - 1 ? "default" : "pointer" }}>Next</button>

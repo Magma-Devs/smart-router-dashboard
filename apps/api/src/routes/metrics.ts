@@ -151,8 +151,9 @@ export async function metricRoutes(app: FastifyInstance) {
     return app.scoped(request.query.router).metrics.rpsSeries(spec, parseWindow(request.query.window));
   });
 
-  // Traffic tab: aggregate RPS-now + per-chain rows (rpsNow, requests, share, trend).
-  app.get<{ Querystring: WindowQuery }>("/api/metrics/traffic", tag("Traffic tab (aggregate + per-chain rps/share/trend)", false), async (request) => {
+  // Aggregate RPS-now + per-chain rows (rpsNow, requests, share, trend). No web
+  // consumer since the Traffic tab went; kept as a documented read surface.
+  app.get<{ Querystring: WindowQuery }>("/api/metrics/traffic", tag("Aggregate + per-chain rps/share/trend", false), async (request) => {
     return app.scoped(request.query.router).metrics.traffic(parseWindow(request.query.window));
   });
 
@@ -176,6 +177,31 @@ export async function metricRoutes(app: FastifyInstance) {
       return reply;
     }
     return app.scoped(request.query.router).metricsDetail.chainSeries(spec, parseWindow(request.query.window));
+  });
+
+  // Every upstream of one chain side by side - the deep-dive's volume, latency
+  // and latest-block charts read the selected upstream against these.
+  app.get<{ Querystring: { window?: string; spec?: string; router?: string } }>("/api/metrics/upstream-peers", {
+    schema: {
+      tags: ["Metrics"],
+      summary: "Every upstream of one chain: p95 latency, requests per second and latest block over the window, one series per upstream",
+      querystring: {
+        type: "object" as const,
+        required: ["spec"],
+        properties: {
+          window: windowQuerySchema.properties.window,
+          router: windowQuerySchema.properties.router,
+          spec: { type: "string" as const, description: "Chain spec label, e.g. ETH1" },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const { spec } = request.query;
+    if (!spec) {
+      sendApiError(reply, 400, "spec is required");
+      return reply;
+    }
+    return app.scoped(request.query.router).metricsDetail.upstreamPeers(spec, parseWindow(request.query.window));
   });
 
   // Upstream deep-dive (PMBody). An upstream is a name ON A CHAIN — vendors
@@ -207,11 +233,19 @@ export async function metricRoutes(app: FastifyInstance) {
   });
 
   // Errors-breakdown tab (derived totals/hotspots/pivots + family presence).
-  app.get<{ Querystring: WindowQuery }>("/api/metrics/errors", tag("Errors breakdown (hotspots + pivots)"), async (request) => {
+  app.get<{ Querystring: WindowQuery }>("/api/metrics/errors", tag("Errors tab: failed tries, hotspots + pivots"), async (request) => {
     const { spec, routerId } = request.query;
     return app
       .scoped(request.query.router)
       .metricsDetail.errors(parseWindow(request.query.window), spec, routerId);
+  });
+
+  // The Errors tab's retry cards (retried / recovered / failed). Its request
+  // list is GET /api/error-requests, from the router's logs.
+  app.get<{ Querystring: WindowQuery }>("/api/metrics/retries", tag("Errors tab retry cards (retried, recovered, failed, rates)"), async (request) => {
+    return app
+      .scoped(request.query.router)
+      .metricsDetail.retries(parseWindow(request.query.window), request.query.spec);
   });
 
   // Chains whose every backing endpoint is down (CurrentlyUnavailable strip).

@@ -84,7 +84,7 @@ export default function AccountPage() {
           <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Connected accounts</div>
           <div style={{ fontSize: 12.5, color: "var(--text-2)", lineHeight: 1.65 }}>
             Where this deployment offers Google or GitHub sign-in, signing in with an account whose
-            verified address matches this one links it here the first time you use it — on GitHub,
+            verified address matches this one links it here the first time you use it - on GitHub,
             that has to be your primary address. Nothing on this page disconnects one.
           </div>
         </div>
@@ -104,7 +104,7 @@ export default function AccountPage() {
         <div className="gw-card">
           <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Leaving?</div>
           <div style={{ fontSize: 12.5, color: "var(--text-2)", lineHeight: 1.65 }}>
-            Accounts here are never deleted, and nobody can remove their own — including
+            Accounts here are never deleted, and nobody can remove their own - including
             administrators. Ask another administrator to remove you from{" "}
             <Link href="/team" style={{ color: "var(--brand)" }}>
               Team
@@ -112,7 +112,7 @@ export default function AccountPage() {
             .
             <div style={{ marginTop: 8 }}>
               Removal ends every session you have within one request and frees your address to be
-              invited again later. Your name stays in the audit log permanently — that record is the
+              invited again later. Your name stays in the audit log permanently - that record is the
               point, and deleting the row would erase the trail it exists to keep.
             </div>
           </div>

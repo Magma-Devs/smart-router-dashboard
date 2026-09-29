@@ -4,7 +4,8 @@
  * Ported verbatim from the design prototype (page-metrics.jsx ChainDetail);
  * the mock's synthetic series are replaced by /api/metrics/chain-series,
  * fetched only while the row is expanded (this component only mounts then).
- * qos / backupShare = null ⇒ the design's own no-data option states. */
+ * backupShare = null ⇒ the design's own no-data option state. The design's
+ * QoS option is gone: a selection score isn't something to act on here. */
 
 import { useState } from "react";
 import { WINDOWS, type ChainSeries, type MetricWindow, type TimePoint } from "@sr/shared";
@@ -23,8 +24,6 @@ export interface ChainDetailRow {
   p95Ms: number | null;
   /** Error rate over the window, percent 0–100. */
   errPct: number | null;
-  /** Composite QoS 0–100 (null = score not emitted). */
-  qos: number | null;
   /** Requests over the selected window. */
   requests: number;
   /** True when the mounted config marks at least one backup for this chain. */
@@ -92,7 +91,6 @@ export function ChainDetail({ r, onChainClick, win }: { r: ChainDetailRow; onCha
   const p95 = seriesXY(data.p95Ms);
   const err = pct(data.errorRate);
   const rps = seriesXY(data.rps);
-  const qos = data.qos?.length ? pct(data.qos) : null;
   // `[]` is TRUTHY — the old guard let an empty result render a fabricated
   // "0% backup" over an empty chart. Length-check both series, and state the
   // routing metric as PRIMARY share (MAG-2537): that's the number an operator
@@ -116,11 +114,8 @@ export function ChainDetail({ r, onChainClick, win }: { r: ChainDetailRow; onCha
     ...(r.p95Ms != null ? [{ key: "p95", label: "P95 latency", cur: Math.round(r.p95Ms) + " ms", color: "#3b82f6", values: p95.values, times: p95.times, yFmt: (v: number) => Math.round(v) + " ms" }] : []),
     ...(r.errPct != null ? [{ key: "err", label: "Error rate", cur: r.errPct.toFixed(2) + "%", color: "#f97316", values: err.values, times: err.times, yFmt: (v: number) => v.toFixed(2) + "%", yMaxCap: 100 }] : []),
     { key: "rps", label: "Requests / sec", cur: avgRps > 0 && avgRps < 1 ? avgRps.toFixed(2) : fmtNum(Math.round(avgRps)), color: "var(--brand)", values: rps.values, times: rps.times, yFmt: rpsFmt },
-    qos
-      ? { key: "qos", label: "QoS", cur: r.qos != null ? String(Math.round(r.qos)) : "—", note: "composite", color: "#a78bfa", values: qos.values, times: qos.times, yFmt: (v: number) => v.toFixed(0), target: { value: 90, label: "admit ≥ 90" }, yMaxCap: 100 }
-      : { key: "qos", label: "QoS", cur: "—", note: "no data", color: "#a78bfa", values: [], times: [], yFmt: (v: number) => v.toFixed(0) },
     primaryShare && curPrimary !== null
-      ? { ...ROUTING, cur: fmtPrimaryShare(curPrimary) + "% primary", values: primaryShare.values, times: primaryShare.times, caption: "share of traffic served by primary upstreams — 100% = nothing failed over" }
+      ? { ...ROUTING, cur: fmtPrimaryShare(curPrimary) + "% primary", values: primaryShare.values, times: primaryShare.times, caption: "share of traffic served by primary upstreams - 100% = nothing failed over" }
       : r.hasBackup
         // Backups ARE configured but nothing came back: honest "—", not a
         // flat 100% line that would claim they never took traffic.

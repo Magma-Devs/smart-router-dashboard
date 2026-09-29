@@ -62,19 +62,6 @@ export const CAT_STYLE: Record<string, { bg: string; fg: string }> = {
   internal: { bg: "rgba(129,140,248,0.14)", fg: "#818cf8" },
 };
 
-export const SEV_STYLE = {
-  high:   { c: "var(--err)",  bg: "rgba(239,68,68,0.09)",  ring: "rgba(239,68,68,0.35)",  lbl: "Needs attention" },
-  medium: { c: "var(--warn)", bg: "rgba(251,191,36,0.09)", ring: "rgba(251,191,36,0.30)", lbl: "Watch" },
-  low:    { c: "var(--text-3)", bg: "transparent",         ring: "var(--line-2)",          lbl: "Healthy" },
-} as const;
-export type Sev = keyof typeof SEV_STYLE;
-
-/** Severity from a live error-rate percentage (the mock hardcoded `sev`). */
-export function sevForErrRatePct(pct: number | null): Sev {
-  if (pct == null) return "low";
-  return pct >= 1 ? "high" : pct >= 0.1 ? "medium" : "low";
-}
-
 export function RolePill({ role }: { role: "primary" | "backup" }) {
   const on = role === "primary";
   return <span style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", padding: "1px 6px", borderRadius: 4, color: on ? "#60a5fa" : "#fb923c", background: on ? "rgba(96,165,250,0.1)" : "rgba(251,146,60,0.1)" }}>{on ? "Primary" : "Backup"}</span>;

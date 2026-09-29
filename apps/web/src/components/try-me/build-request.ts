@@ -113,7 +113,7 @@ export function buildRequest(
     if (!parts) {
       return {
         ok: false,
-        error: `Malformed gRPC method "${command.method}" — expected "/service/Method".`,
+        error: `Malformed gRPC method "${command.method}" - expected "/service/Method".`,
       };
     }
     return {

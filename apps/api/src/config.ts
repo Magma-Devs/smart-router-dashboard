@@ -102,6 +102,20 @@ export const config = {
     orgId: env("PROMETHEUS_ORG_ID"),
   },
 
+  /**
+   * Log store the Transactions tab, the Errors tab's request list and the
+   * Failed requests card read (Loki). The router writes a line for each step
+   * of every request, all carrying the request's GUID. Unset ⇒ they say the
+   * logs can't be read. `routerSelector` is the LogQL stream
+   * selector for the router's lines - `{service="router"}` is the label the
+   * compose `logs` profile's promtail attaches; a cluster names its own.
+   */
+  loki: {
+    url: env("LOKI_URL") || undefined,
+    timeoutMs: envInt("LOKI_TIMEOUT_MS", 10000),
+    routerSelector: env("LOKI_ROUTER_SELECTOR") || '{service="router"}',
+  },
+
   /** Helm-values / router config the dashboard reflects (read-only). */
   config: {
     valuesDir: env("HELM_VALUES_DIR") ?? "/app/helm-values",
@@ -237,6 +251,11 @@ export const config = {
  */
 export function publicWebOrigin(): string | undefined {
   return process.env.PUBLIC_WEB_ORIGIN?.trim() || config.publicWebOrigin;
+}
+
+/** The Loki URL, live env first - same reason as `publicWebOrigin()`. */
+export function lokiUrl(): string | undefined {
+  return process.env.LOKI_URL?.trim() || config.loki.url;
 }
 
 export function deploymentMode(): "managed" | "onprem" {

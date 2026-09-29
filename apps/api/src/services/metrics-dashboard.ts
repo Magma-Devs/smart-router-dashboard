@@ -17,6 +17,7 @@ import {
   qErrorRateSeriesExpr,
   qLatencyQuantile,
   qLatencySeriesExpr,
+  qPerSpecLatencySeriesExpr,
   qPerUpstreamRpsExpr,
   qPerSpecRpsExpr,
   qClientRps,
@@ -92,11 +93,6 @@ export class MetricsDashboardService {
     };
     const range = (expr: string) => this.prom.queryRange(expr, start, end, step);
 
-    // Per-spec latency-quantile series: qLatencyQuantile keeps the (spec, le)
-    // grouping — swap the window range for the step to get per-bucket values
-    // (same rewrite metrics.ts uses for the overview latency series).
-    const perSpecLatencyExpr = (q: number) =>
-      qLatencyQuantile(q, undefined, window).replace(`[${r}]`, `[${step}]`);
     // Per-chain availability-ratio series (success/total grouped by spec).
     const perSpecSrExpr = `clamp_max(sum by (spec) (rate(${ROUTER_METRICS.requestsSuccessTotal}[${step}])) / sum by (spec) (rate(${ROUTER_METRICS.requestsTotal}[${step}])), 1)`;
     // Per-upstream p95 — the endpoint histogram carries endpoint_id.
@@ -147,9 +143,9 @@ export class MetricsDashboardService {
       range(qLatencySeriesExpr(0.99, step, spec)),
       range(qPerSpecRpsExpr(step)),
       range(perSpecSrExpr),
-      range(perSpecLatencyExpr(0.5)),
-      range(perSpecLatencyExpr(0.95)),
-      range(perSpecLatencyExpr(0.99)),
+      range(qPerSpecLatencySeriesExpr(0.5, step)),
+      range(qPerSpecLatencySeriesExpr(0.95, step)),
+      range(qPerSpecLatencySeriesExpr(0.99, step)),
       range(qPerUpstreamRpsExpr(step, spec)),
       range(perUpstreamLatencyExpr),
       this.prom.query(`count by (spec) (${ROUTER_METRICS.requestsTotal})`),

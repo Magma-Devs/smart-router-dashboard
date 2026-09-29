@@ -46,7 +46,7 @@ export function ProbeStep({ catalogId, upstreamName, onReady }: {
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 13, fontWeight: 600 }}>{upstreamName || catalogId || "Custom"}</div>
           <div style={{ fontSize: 11, color: "var(--text-3)" }}>
-            Capability probes not run — self-hosted
+            Capability probes not run - self-hosted
           </div>
         </div>
         <span style={{ color: "var(--text-4)", fontSize: 11 }}>—</span>

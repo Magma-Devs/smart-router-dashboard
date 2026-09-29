@@ -1,59 +1,15 @@
 import type { UpstreamMetrics } from "@sr/shared";
 
 /**
- * ONE vocabulary for the two signals an upstream keeps when no traffic reaches
- * it — its QoS score and its poll outcomes.
- *
- * Both exist because the router does not wait for a request to judge an
- * upstream. A probe loop scores every configured upstream (backups included)
- * every few seconds, and a chain tracker polls each one for its latest block on
- * the chain's own cadence. Neither needs a relay.
- *
- * The dashboard used to throw both away. `/api/metrics/upstreams` read the QoS
- * gauge the ROUTING path writes — present only where a relay had been routed —
- * and the roster then folded that column into the "No recent traffic" cell
- * anyway. So a backup nobody had failed over to read as a row the dashboard
- * knew nothing about, when in fact the router was scoring it continuously.
+ * The words for the signal an upstream keeps when no traffic reaches it: its
+ * block polls. The router does not wait for a request to watch an upstream -
+ * a chain tracker polls each one for its latest block on the chain's own
+ * cadence, backups included, with no relay needed.
  *
  * Wording lives here rather than in the panels for the reason `lib/health.ts`
- * exists: the same upstream is read across the roster, the deep-dive and the
- * empty state, and three phrasings of one fact is how a reader ends up
- * believing they are three different facts.
+ * exists: one upstream is read on several surfaces, and several phrasings of
+ * one fact is how a reader ends up believing they are several facts.
  */
-
-/** What the roster's QoS column shows when the score is missing entirely. */
-export const QOS_NONE = "—";
-
-/**
- * Why a QoS cell reads the way it does — for a `title`.
- *
- * The distinction that matters is not the number, it is when it was written.
- * The sampler's gauge is refreshed on a timer for every upstream; the routing
- * path's is frozen at the last relay, which on an idle row can be any age at
- * all. Both carry the same five numbers from the same optimizer computation,
- * so this is a freshness caveat, never a "different score" caveat.
- */
-export function qosHint(pm: UpstreamMetrics): string | undefined {
-  if (pm.scoreSource === "optimizer") {
-    return "Live score from the router's probe loop — refreshed for every upstream on a timer, so it stays current with no traffic.";
-  }
-  if (pm.scoreSource === "endpoint") {
-    return pm.requests > 0
-      ? "Score as of the router's last selection for this upstream."
-      : "Score as of the last time a request was routed here — this upstream has served none in this window, so it may be old. This router build does not publish the probe loop's live score.";
-  }
-  return "No score reported for this upstream.";
-}
-
-/** True when the score is real but may be arbitrarily stale — worth marking. */
-export function qosIsStale(pm: UpstreamMetrics): boolean {
-  return pm.scoreSource === "endpoint" && pm.requests === 0;
-}
-
-/** Composite QoS as the 0–100 figure every surface renders, or null. */
-export function qosValue(pm: UpstreamMetrics): number | null {
-  return pm.scores.composite != null ? pm.scores.composite * 100 : null;
-}
 
 /**
  * How the router's own polls went, for a field already labelled "Block polls" —

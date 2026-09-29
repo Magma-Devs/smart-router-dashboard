@@ -224,6 +224,10 @@ services:
       - NODE_ENV=production
       - API_PORT=8000
       - PROMETHEUS_URL=http://prometheus:9090
+      # The router's logs, read by the Transactions and Errors tabs - the `logs`
+      # profile runs this Loki. Without it the tab says it can't read them.
+      - LOKI_URL=${LOKI_URL:-http://loki:3100}
+      - LOKI_ROUTER_SELECTOR=${LOKI_ROUTER_SELECTOR:-}
       # Deployment scope (see .env.example). Empty = unset = the whole store.
       - METRICS_SCOPE_LABEL=${METRICS_SCOPE_LABEL:-}
       - METRICS_SCOPE_VALUE=${METRICS_SCOPE_VALUE:-}

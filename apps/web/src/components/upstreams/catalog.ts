@@ -11,9 +11,9 @@ import { buildChainMetaByIndex, type HealthState, type UpstreamMetrics, type Rou
 import type { DirectTarget } from "@/components/try-me/direct-request";
 
 /** The honest-state copy for every config-mutating commit button. */
-export const READONLY_MSG = "Config is a read-only mount on self-hosted — edit the values file";
+export const READONLY_MSG = "Config is a read-only mount on self-hosted - edit the values file";
 /** The honest-state copy for JWT reissue/revoke/reveal controls. */
-export const JWT_CLOUD_MSG = "JWT management is a Magma Cloud feature — no tokens exist on this self-hosted deployment";
+export const JWT_CLOUD_MSG = "JWT management is a Magma Cloud feature - no tokens exist on this self-hosted deployment";
 
 /* ─────────────────────────────────────────────
    Upstream logos — Clearbit with SVG fallback

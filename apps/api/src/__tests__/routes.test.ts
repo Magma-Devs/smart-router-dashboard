@@ -16,6 +16,31 @@ function mockPrometheus(): void {
     const query = new URL(url).searchParams.get("query") ?? "";
     let result: unknown[] = [];
 
+    // The chain-wide peer reads come back as ranges, one series per upstream.
+    const matrix = (series: unknown[]) =>
+      new Response(JSON.stringify({ status: "success", data: { resultType: "matrix", result: series } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    if (new URL(url).pathname.endsWith("/query_range") && query.includes("sum by (le, endpoint_id)")) {
+      return matrix([
+        { metric: { endpoint_id: "eth-lava" }, values: [[1, "40"], [2, "44"]] },
+        { metric: { endpoint_id: "eth-frozen" }, values: [[1, "90"], [2, "NaN"]] },
+      ]);
+    }
+    // Request volume: short rates averaged over what is there (see qUpstreamRpsByUpstreamSeriesExpr).
+    if (new URL(url).pathname.endsWith("/query_range") && query.startsWith("avg_over_time((sum by (provider_address) (rate(")) {
+      return matrix([
+        { metric: { provider_address: "eth-lava" }, values: [[1, "0.5"], [2, "0.25"]] },
+      ]);
+    }
+    if (new URL(url).pathname.endsWith("/query_range") && query.startsWith("max by (endpoint_id) (max_over_time(rpc_endpoint_latest_block")) {
+      return matrix([
+        { metric: { endpoint_id: "eth-lava" }, values: [[1, "100"], [2, "101"]] },
+        { metric: { endpoint_id: "eth-frozen" }, values: [[1, "95"], [2, "95"]] },
+      ]);
+    }
+
     if (query.startsWith("count({__name__=")) {
       result = []; // presence probes: every optional family is absent
     } else if (query.startsWith("count by (spec)")) {
@@ -250,6 +275,47 @@ describe("api routes", () => {
     expect(body.errorsByCode).toEqual([]);
     expect(body.recentErrors).toEqual([]);
     expect(body.emitted.errorsByCode).toBe(false);
+    // Errors in bars; node errors wait for their family.
+    expect(body.errorsOverTime).toMatchObject({ grid: { stepSec: 1800 }, node: null });
+    expect(Array.isArray(body.errorsOverTime.failed)).toBe(true);
+  });
+
+  it("GET /api/metrics/upstream-detail: error bars sit on the clock, the last one still filling", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(Date.UTC(2026, 8, 28, 15, 23, 32)));
+    try {
+      const res = await app.inject({ method: "GET", url: "/api/metrics/upstream-detail?endpointId=eth-lava&spec=ETH1&window=1d" });
+      const eot = res.json().errorsOverTime;
+      expect(eot.asOf).toBe(Date.UTC(2026, 8, 28, 15, 23, 32) / 1000);
+      // A day is a bar per 30 minutes: from the one the window starts in
+      // (yesterday 15:00-15:30) to the one still filling (15:00-15:30 today).
+      expect(eot.grid).toEqual({ start: Date.UTC(2026, 8, 27, 15, 30) / 1000, end: Date.UTC(2026, 8, 28, 15, 30) / 1000, stepSec: 1800 });
+      // The bar still filling is one instant read over the 23:32 it has run,
+      // placed at the bar's end like the rest.
+      expect(eot.failed.at(-1)).toEqual({ t: Date.UTC(2026, 8, 28, 15, 30) / 1000, v: 3 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("GET /api/metrics/upstream-peers requires spec; one latency and one tip series per upstream", async () => {
+    const missing = await app.inject({ method: "GET", url: "/api/metrics/upstream-peers?window=1d" });
+    expect(missing.statusCode).toBe(400);
+
+    const res = await app.inject({ method: "GET", url: "/api/metrics/upstream-peers?spec=ETH1&window=1d" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    // ~300 points: a day is a point every 5 minutes.
+    expect(body.grid.stepSec).toBe(300);
+    expect(body.grid.end - body.grid.start).toBe(86_400);
+    expect(body.upstreams).toEqual([
+      // No requests at a point ⇒ no latency there: a gap, never a zero.
+      { upstream: "eth-frozen", latencyP95: [{ t: 1, v: 90 }, { t: 2, v: null }], rps: [], latestBlock: [{ t: 1, v: 95 }, { t: 2, v: 95 }] },
+      {
+        upstream: "eth-lava", latencyP95: [{ t: 1, v: 40 }, { t: 2, v: 44 }], rps: [{ t: 1, v: 0.5 }, { t: 2, v: 0.25 }],
+        latestBlock: [{ t: 1, v: 100 }, { t: 2, v: 101 }],
+      },
+    ]);
   });
 
   it("GET /api/metrics/errors → derived totals + pivots; labelled pivots wait for families", async () => {
@@ -271,6 +337,21 @@ describe("api routes", () => {
       requestsFailedTotal: false,
       nodeErrorsTotal: false,
       protocolErrorsTotal: false,
+    });
+  });
+
+  it("GET /api/metrics/retries → the count cards are null until the retry family fires", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/metrics/retries?window=1d" });
+    expect(res.statusCode).toBe(200);
+    // No retry recorded yet ⇒ every value is null, never a guessed 0.
+    expect(res.json()).toEqual({
+      emitted: false,
+      retried: null,
+      recovered: null,
+      failed: null,
+      recoveryRate: null,
+      retryRate: null,
+      avgExtraAttempts: null,
     });
   });
 

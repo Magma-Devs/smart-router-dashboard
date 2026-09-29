@@ -30,7 +30,7 @@ The observability dashboard for the [Smart Router](https://github.com/Magma-Devs
 
 ## What is Smart Router Dashboard
 
-- **Live metrics, honestly sourced** — KPIs, RPS, latency, error breakdowns, provider selection scores: all straight from the router's `smartrouter_*` / `rpc_endpoint_*` Prometheus families. Metric families the router hasn't emitted yet render the design's own empty states and light up automatically when they appear.
+- **Live metrics, honestly sourced** - KPIs, RPS, latency and error breakdowns straight from the router's `smartrouter_*` / `rpc_endpoint_*` Prometheus families, and the per-request error and transaction logs from its own log lines (Loki). Metric families the router hasn't emitted yet render the design's own empty states and light up automatically when they appear.
 - **Topology-aware** — one values file drives both the router and the dashboard, so the Upstreams page always reflects the running configuration.
 - **Live test console** — fire requests at any chain × interface the router serves, straight from the browser, with a full method catalog generated from the [lava-specs](https://github.com/Magma-Devs/lava-specs) repo (238 chains, jsonrpc/rest/tendermint/grpc, archive/debug/trace tiers).
 - **Self-contained** — `make up` gives you router + Prometheus + api + web from nothing. No accounts, no cloud, optional auth.
@@ -99,8 +99,8 @@ router uses its in-process cache.
 
 - **Overview** — KPI strip (requests, RPS, errors, success rate, latency) + chart grid, all live
 - **Dashboard** — ops surface, 1h/3h/24h/7d/custom windows, client-side chain multiselect
-- **Upstreams** — the mounted config joined with live per-endpoint stats, carved three ways: **by router** (the endpoints each router publishes — the default), by chain (who serves it), or by upstream (what it serves)
-- **Metrics** — four tabs: Overview, Providers deep-dive, Errors breakdown, Traffic
+- **Upstreams** - the mounted config joined with live per-endpoint stats, carved three ways: **by chain** (who serves it - the default), by router (the endpoints each router publishes), or by upstream (what it serves)
+- **Metrics** - four tabs: Overview, Upstreams, Errors, Transactions. The Transactions tab and the Errors tab's request list read the router's logs from Loki (`LOKI_URL`; the `logs` profile runs one)
 - **Live test** — POST straight to the router's listen ports from the browser; full per-chain method catalog with archive/debug/trace tiers
 - **/standalone** — the Metrics page without the shell, for sharing or embedding
 
