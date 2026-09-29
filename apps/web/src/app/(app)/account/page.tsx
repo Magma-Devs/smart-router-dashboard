@@ -57,12 +57,7 @@ export default function AccountPage() {
 
   return (
     <div className="gw-page" style={{ maxWidth: 720 }}>
-      <h1>Account Settings</h1>
-      <p className="lede">
-        {authEnabled
-          ? "Manage your credentials and session settings."
-          : "Build and runtime details for this deployment."}
-      </p>
+      <h1 style={{ marginBottom: 20 }}>Account Settings</h1>
 
       <div className="gw-card" style={{ marginBottom: 14 }}>
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Basic details</div>
