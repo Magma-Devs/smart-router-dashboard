@@ -24,7 +24,7 @@ import { ThCol, useSort } from "@/components/gateway/SortTable";
 import { Refreshing, Skel, SkelRows } from "@/components/gateway/Skel";
 import { TT } from "@/lib/tooltips";
 import { fmtComma, fmtNum } from "@/lib/format";
-import { uptimeColor } from "@/lib/colors";
+import { errRateColor, uptimeColor } from "@/lib/colors";
 import { healthColor, healthLabel } from "@/lib/health";
 import { ChainDetail, type ChainDetailRow } from "./ChainDetail";
 import { useState } from "react";
@@ -240,7 +240,7 @@ export function RouterOverview({ onChainClick, chainFilter, timeWindow }: {
                 <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{fmtNum(r.reqCount)}</span></td>
                 <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 13, fontWeight: 700, color: srColor(r.availPct) }}>{r.availPct != null ? r.availPct.toFixed(2) + "%" : "—"}</span></td>
                 <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{r.p95Ms != null ? Math.round(r.p95Ms) + " ms" : "—"}</span></td>
-                <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12, color: r.errPct == null ? "var(--text-4)" : r.errPct < 0.5 ? "var(--text-2)" : r.errPct < 1.5 ? "var(--warn)" : "var(--err)" }}>{r.errPct != null ? r.errPct.toFixed(2) + "%" : "—"}</span></td>
+                <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12, color: errRateColor(r.errPct) }}>{r.errPct != null ? r.errPct.toFixed(2) + "%" : "—"}</span></td>
                 <td>
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
                     <span style={{ width: 8, height: 8, borderRadius: 999, background: sm[0], boxShadow: "0 0 6px " + sm[0], flexShrink: 0 }} />
