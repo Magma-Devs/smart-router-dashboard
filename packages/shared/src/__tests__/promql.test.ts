@@ -13,7 +13,7 @@ import {
   qErrorsBy,
   qErrorsByUpstream,
   increaseFromBirth,
-  qClientRequestsFromBirth,
+  qRetriesTotal,
   qRetriesByMethod,
   qRetryAvgExtraAttempts,
   qRequestsBy,
@@ -547,8 +547,25 @@ describe("retry builders", () => {
   // Solana testnet where plain increase() read 142,257; this form read 142,408.
   it("increaseFromBirth adds a born-in-range series' first value back, but not after a gap", () => {
     const s = 'm{spec="ETH1"}';
-    const birth = `((min_over_time(${s}[60s]) unless ${s} offset 60s) unless (min_over_time(${s}[60s]) >= last_over_time(${s}[1d] offset 60s)))`;
+    const held = "count(last_over_time(smartrouter_overall_health[1d] offset 60s)) > 0";
+    const birth = `(((min_over_time(${s}[60s]) unless ${s} offset 60s) unless (min_over_time(${s}[60s]) >= last_over_time(${s}[1d] offset 60s))) and on () (${held}))`;
     expect(increaseFromBirth(s, "60s")).toBe(`((increase(${s}[60s]) + (${birth} or increase(${s}[60s]) * 0)) or ${birth})`);
+  });
+
+  it("increaseFromBirth counts a birth only where the store held the router the day before", () => {
+    // Past the store's first sample every series looks newborn: a counter at
+    // 5000 when the store began read 5241 over 90 minutes where increase() read 241.
+    const q = increaseFromBirth("m", "5400s");
+    expect(q).toContain("and on () (count(last_over_time(smartrouter_overall_health[1d] offset 5400s)) > 0)");
+  });
+
+  it("increaseFromBirth reads a prior window: every look-back moves by the offset", () => {
+    const q = increaseFromBirth("m", "3600s", "3600s");
+    expect(q).toContain("increase(m[3600s] offset 3600s)");
+    expect(q).toContain("min_over_time(m[3600s] offset 3600s)");
+    expect(q).toContain("unless m offset 7200s");
+    expect(q).toContain("last_over_time(m[1d] offset 7200s)");
+    expect(q).toContain("smartrouter_overall_health[1d] offset 7200s");
   });
 
   it("increaseFromBirth never needs a series to still be reporting at query time", () => {
@@ -574,9 +591,12 @@ describe("retry builders", () => {
     );
   });
 
-  it("the retry rate's denominator counts client requests the same way", () => {
-    expect(qClientRequestsFromBirth("1h", "ETH1")).toBe(
-      `round(sum${increaseFromBirth('smartrouter_end_to_end_latency_milliseconds_count{spec="ETH1"}', "3600s")})`,
+  it("the hero's recovered retries count births the way the retry cards do, now and a window back", () => {
+    expect(qRetriesTotal("recovered", "1h", "ETH1")).toBe(
+      `round(sum${increaseFromBirth('smartrouter_retries_success_total{spec="ETH1"}', "3600s")})`,
+    );
+    expect(qRetriesTotal("recovered", "1h", undefined, "3600s")).toBe(
+      `round(sum${increaseFromBirth("smartrouter_retries_success_total", "3600s", "3600s")})`,
     );
   });
 
@@ -617,7 +637,13 @@ describe("an upstream against its peers", () => {
     const q = qUpstreamFailedSeriesExpr({ spec: "ETH1", endpointId: "eth-tenderly" }, "10m");
     expect(q).toContain('spec="ETH1"');
     expect(q).toContain('provider_address="eth-tenderly"');
-    expect(q).toMatch(/^round\(clamp_min\(sum\(increase\(smartrouter_requests_total\{.*\}\[10m\]\)\) - sum\(increase\(smartrouter_requests_success_total\{.*\}\[10m\]\)\), 0\)\)$/);
+    expect(q).toMatch(/^round\(clamp_min\(sum\(increase\(smartrouter_requests_total\{.*\}\[10m\]\)\) - \(sum\(increase\(smartrouter_requests_success_total\{.*\}\[10m\]\)\) or .* \* 0\), 0\)\)$/);
+  });
+
+  it("an upstream that never succeeded still has failed tries: no success series is no successes", () => {
+    const q = qUpstreamFailedSeriesExpr({ spec: "ETH1", endpointId: "eth-dead" }, "10m");
+    const tot = 'sum(increase(smartrouter_requests_total{spec="ETH1",provider_address="eth-dead"}[10m]))';
+    expect(q).toContain(`or ${tot} * 0)`);
   });
 
   it("one upstream's node-error replies per bucket read the optional family, on its own chain only", () => {

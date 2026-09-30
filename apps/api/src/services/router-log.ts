@@ -59,13 +59,20 @@ export function methodOf(received: RouterLine | undefined, others: RouterLine[] 
     }
   }
   const path = received ? str(received.f.path) : "";
-  if (path && path !== "/") return path;
+  let redacted = path === REDACTED;
+  if (path && path !== "/" && !redacted) return path;
   for (const l of others) {
     const named = str(l.f.api) || str(l.f.Request).replace(/^Default-/, "");
-    if (named) return named;
+    if (named === REDACTED) redacted = true;
+    else if (named) return named;
   }
-  return "unknown";
+  return redacted ? METHOD_REDACTED : "unknown";
 }
+
+/** What a log collector that masks paths leaves of one (the fleet's does). */
+const REDACTED = "/REDACTED";
+/** The method of a REST request whose path the collector masked. */
+export const METHOD_REDACTED = "(path redacted)";
 
 /**
  * Upstream URLs routinely carry API keys in the path, and router errors quote
@@ -149,6 +156,18 @@ export const TRY_MSG = {
   skipped: "skipping endpoint due to consistency check",
   fallback: "all selectable providers failed consistency validation; serving from stale fallback",
   staleAccepted: "consistency fallback accepted stale endpoint batch",
+} as const;
+
+/**
+ * The lines that end a request the router could not serve, each carrying
+ * `error` and the listener as `endpoint` (`<spec><interface>`): nothing came
+ * back (`noAnswer`, which returns before "relay finished"), or nothing usable
+ * (`gaveUp`). `writeUnknown`: a write the router can't tell went through.
+ */
+export const END_MSG = {
+  noAnswer: "failed getting responses from RPC endpoints",
+  gaveUp: "failed processing responses from RPC endpoints",
+  writeUnknown: "write outcome unknown",
 } as const;
 
 export const CANCELLED_NOTE = "Cancelled: another attempt had already succeeded, or the client disconnected.";
@@ -275,21 +294,75 @@ export function withoutGuid(message: string): string {
   return message.replace(/\s*\{GUID:[^}]*\}/g, "");
 }
 
-/** What the values file says about an upstream. */
+/** What the values file says about an upstream on one chain. */
 export interface UpstreamInfo {
   spec: string;
   interfaces: string[];
 }
 
-export function upstreamIndex(routers: RouterTopology[]): Map<string, UpstreamInfo> {
-  const index = new Map<string, UpstreamInfo>();
-  for (const r of routers) {
-    for (const n of r.nodes) {
-      if (!index.has(n.name)) index.set(n.name, { spec: r.spec, interfaces: n.endpoints.map((e) => e.interface) });
+/**
+ * The values file's upstreams, keyed by chain AND name: one node name can
+ * serve many chains, so a name alone never says which chain a request was on.
+ */
+export class UpstreamIndex {
+  private readonly bySpecName = new Map<string, UpstreamInfo>();
+  private readonly specsByName = new Map<string, Set<string>>();
+
+  constructor(routers: RouterTopology[]) {
+    for (const r of routers) {
+      for (const n of r.nodes) {
+        const key = `${r.spec}\u0000${n.name}`;
+        const info = this.bySpecName.get(key) ?? { spec: r.spec, interfaces: [] };
+        for (const e of n.endpoints) if (!info.interfaces.includes(e.interface)) info.interfaces.push(e.interface);
+        this.bySpecName.set(key, info);
+        this.specsByName.set(n.name, (this.specsByName.get(n.name) ?? new Set()).add(r.spec));
+      }
     }
   }
-  return index;
+
+  info(spec: string, name: string): UpstreamInfo | null {
+    return this.bySpecName.get(`${spec}\u0000${name}`) ?? null;
+  }
+
+  /** The chains a request can be on: those serving every configured name it used. */
+  chainsOf(names: Iterable<string>): string[] {
+    let chains: string[] | null = null;
+    for (const name of names) {
+      const specs = this.specsByName.get(name);
+      if (!specs) continue;
+      chains = chains === null ? [...specs] : chains.filter((s) => specs.has(s));
+    }
+    return (chains ?? []).sort();
+  }
 }
+
+/** Every upstream name a request's "Choosing providers" lines offered or picked, and its tries'. */
+export function namesOf(ordered: RouterLine[], attempts: RelayAttempt[]): string[] {
+  const names = new Set(attempts.map((a) => a.upstream));
+  for (const l of ordered) {
+    if (l.message !== TRY_MSG.choosing) continue;
+    for (const field of [l.f.chosenProviders, l.f.validAddresses]) {
+      for (const n of str(field).split(",")) if (n.trim()) names.add(n.trim());
+    }
+  }
+  return [...names];
+}
+
+/**
+ * A request's chain: the one its lines name (`chain_id`), else the only chain
+ * serving every upstream it used. `specs` lists the candidates when several do.
+ */
+export function chainOf(ordered: RouterLine[], names: string[], index: UpstreamIndex): { spec: string | null; specs?: string[] } {
+  const named = str(ordered.find((l) => str(l.f.chain_id))?.f.chain_id);
+  if (named) return { spec: named };
+  const chains = index.chainsOf(names);
+  if (chains.length === 1) return { spec: chains[0]! };
+  return chains.length > 1 ? { spec: null, specs: chains } : { spec: null };
+}
+
+/** Whether a row belongs to a chain: its own, or one of its candidates when the logs can't tell. */
+export const onChain = (row: { spec: string | null; specs?: string[] }, spec: string) =>
+  row.spec === spec || (row.spec === null && (row.specs?.includes(spec) ?? false));
 
 export const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 

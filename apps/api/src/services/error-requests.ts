@@ -19,13 +19,27 @@
  *   Circuit breaker: all providers exhausted  it wanted another try, no upstream left
  *   relay finished                            `served_by`, `stop_reason`, `error`,
  *                                             `has_reply`
+ *   failed getting responses from …           nothing came back; the router's last
+ *                                             line for the request (no "relay finished")
+ *   failed processing responses from …        nothing usable came back
  *   [-] failed sending init relay             one of the router's own relays
  */
-import { WINDOWS, type ErrorRequestRow, type ErrorRequestsReport, type FailedRequests, type MetricWindow, type RequestLookup, type RouterTopology } from "@sr/shared";
-import { readEnd, type ReadRange } from "./read-range.js";
+import type {
+  ErrorRequestRow,
+  ErrorRequestsReport,
+  FailedRequests,
+  LogUnavailable,
+  MetricWindow,
+  RequestLookup,
+  RouterTopology,
+} from "@sr/shared";
+import { WINDOWS } from "@sr/shared";
+import { readEnd, readOnFrom, type ReadRange } from "./read-range.js";
 import type { LokiClient } from "./loki-client.js";
 import type { ConfigurationService } from "./configuration.js";
 import {
+  chainOf,
+  END_MSG,
   escapeRe,
   inRawString,
   LABEL_TOKEN,
@@ -34,15 +48,16 @@ import {
   linesOfRequest,
   REQUEST_ID,
   methodOf,
+  namesOf,
+  onChain,
   parseAll,
   scrubUrls,
   str,
   TRY_MSG,
   triesOf,
-  upstreamIndex,
+  UpstreamIndex,
   withoutGuid,
   type RouterLine,
-  type UpstreamInfo,
 } from "./router-log.js";
 
 export const ERROR_MSG = {
@@ -52,6 +67,8 @@ export const ERROR_MSG = {
   noResults: "failed relay, insufficient results",
   exhausted: "Circuit breaker: all providers exhausted",
   finished: "relay finished",
+  noAnswer: END_MSG.noAnswer,
+  gaveUp: END_MSG.gaveUp,
   initRelay: "[-] failed sending init relay",
 } as const;
 
@@ -63,6 +80,8 @@ const FOUND_BY = [
   ERROR_MSG.directFailed,
   ERROR_MSG.decide,
   ERROR_MSG.noResults,
+  ERROR_MSG.noAnswer,
+  ERROR_MSG.gaveUp,
 ];
 
 /** Requests one read returns; `more` says when the range holds older ones. */
@@ -75,16 +94,12 @@ export { REQUEST_ID } from "./router-log.js";
 const REQUEST_SPAN_MS = 60_000;
 
 /**
- * One row per request that hit an error, newest first. `lookup` resolves an
- * upstream from the mounted config: the lines name the chain only on an error.
- * `every` keeps every request the lines hold - what a look-up by ID wants, for
- * a request that went fine as much as one that didn't.
+ * One row per request that hit an error, newest first. `index` resolves a
+ * request's chain from the mounted config when no line names it. `every`
+ * keeps every request the lines hold - what a look-up by ID wants, for a
+ * request that went fine as much as one that didn't.
  */
-export function buildErrorRows(
-  lines: RouterLine[],
-  lookup: (upstream: string) => UpstreamInfo | null,
-  every = false,
-): ErrorRequestRow[] {
+export function buildErrorRows(lines: RouterLine[], index: UpstreamIndex, every = false): ErrorRequestRow[] {
   const byGuid = new Map<string, RouterLine[]>();
   for (const l of lines) byGuid.set(l.guid, [...(byGuid.get(l.guid) ?? []), l]);
 
@@ -93,16 +108,19 @@ export function buildErrorRows(
     const ordered = [...group].sort((a, b) => a.tsMs - b.tsMs);
     const received = ordered.find((l) => l.message.startsWith(ERROR_MSG.received));
     const finished = lastWhere(ordered, (l) => l.message === ERROR_MSG.finished);
+    // With nothing back at all the router's last line is `noAnswer`: it
+    // returns before writing "relay finished".
+    const gaveUp = lastWhere(ordered, (l) => l.message === ERROR_MSG.noAnswer || l.message === ERROR_MSG.gaveUp);
     // The router's own relays (its health checks, the first relays of a chain)
     // log neither an arrival nor an end, and no app waits on them.
-    if (!every && (ordered.some((l) => l.message === ERROR_MSG.initRelay) || (!received && !finished))) continue;
+    if (!every && (ordered.some((l) => l.message === ERROR_MSG.initRelay) || (!received && !finished && !gaveUp))) continue;
     const t0 = (received ?? ordered[0]!).tsMs;
     const attempts = triesOf(ordered, t0, finished);
     const replied = attempts.find((a) => a.replied);
-    const routerError = finished ? withoutGuid(str(finished.f.error)) : "";
+    const routerError = withoutGuid(str((finished ?? gaveUp)?.f.error));
 
     let result: ErrorRequestRow["result"] = "recovered";
-    if (!finished) result = "unknown";
+    if (!finished) result = gaveUp ? "failed" : "unknown";
     else if (routerError || str(finished.f.has_reply) === "false") result = "failed";
     else if (replied?.outcome === "failed") result = "error-reply";
 
@@ -112,12 +130,12 @@ export function buildErrorRows(
     // Nothing went wrong after all: every "failure" was a try called off.
     if (!every && !attempts.some((a) => a.outcome === "failed") && result !== "failed" && !decidedRetry) continue;
 
-    const named = ordered.find((l) => str(l.f.chain_id));
     const sentBatches = new Set(attempts.filter((a) => a.outcome !== "skipped").map((a) => a.batch));
+    const end = finished ?? gaveUp;
     rows.push({
       guid,
       time: Math.round(t0),
-      spec: str(named?.f.chain_id) || attempts.map((a) => lookup(a.upstream)).find(Boolean)?.spec || null,
+      ...chainOf(ordered, namesOf(ordered, attempts), index),
       method: methodOf(received, ordered),
       attempts,
       result,
@@ -127,7 +145,7 @@ export function buildErrorRows(
       exhausted:
         str(finished?.f.stop_reason) === "AllProvidersExhausted" ||
         ordered.some((l) => l.message.startsWith(ERROR_MSG.exhausted)),
-      totalMs: finished ? Math.round(finished.tsMs - t0) : null,
+      totalMs: end ? Math.round(end.tsMs - t0) : null,
       error: result === "failed" ? scrubUrls(routerError || "no upstream replied") : null,
     });
   }
@@ -135,16 +153,21 @@ export function buildErrorRows(
 }
 
 /**
- * The one line the router writes per request it gives up on - when no node
- * gave an answer it could use and it returns its own error (the `err != nil`
- * return at the end of SendParsedRelay). Other lines quote it in their error
- * field, so it is matched as the `message`, not anywhere in the line. The
- * router's own relays write "[-] failed sending init relay" instead.
+ * The lines the router writes, one per client request it could not serve:
+ * nothing came back (`noAnswer`) or nothing usable did (`gaveUp`). A request
+ * writes one or the other, never both. Other lines quote them in their error
+ * field, so each is matched as the `message`, not anywhere in the line. A
+ * write whose outcome is unknown after a partial reply is in neither.
  */
-export const GAVE_UP_MSG = "failed processing responses from RPC endpoints";
+export const GAVE_UP = `failed (getting|processing) responses from RPC endpoints`;
 
-/** How long a failed-request count is kept before Loki is asked again. */
+/** How long a failed-request count is kept before Loki is asked again - a failed read too. */
 export const COUNT_TTL_MS = 30_000;
+
+/** Counts kept at most: one per window and chain in use. */
+const COUNT_KEEP = 256;
+
+const unavailable = <R extends string>(reason: R) => ({ available: false as const, reason });
 
 export class ErrorRequestsService {
   constructor(
@@ -165,35 +188,61 @@ export class ErrorRequestsService {
     return [...new Set(routers.flatMap((r) => r.nodes.map((n) => n.name)))];
   }
 
-  /** The last count per window and chain, kept for COUNT_TTL_MS: the count
-   *  scans the whole window of logs (a month, on the widest), and every open
-   *  page asks for the same number. A failed read isn't kept. */
   private readonly counted = new Map<string, { at: number; result: FailedRequests }>();
+  private readonly counting = new Map<string, Promise<FailedRequests>>();
+
+  private keep(key: string, result: FailedRequests): void {
+    this.counted.delete(key);
+    this.counted.set(key, { at: Date.now(), result });
+    if (this.counted.size > COUNT_KEEP) this.counted.delete(this.counted.keys().next().value!);
+  }
 
   /**
    * How many client requests the router could not serve in `window`: one
-   * GAVE_UP_MSG line each, counted by Loki. Prometheus can't give this
-   * number: the router's request counters move once per ATTEMPT (and count
-   * its own relays), and its one per-request series, the end-to-end latency
+   * GAVE_UP line each, counted by Loki. Prometheus can't give this number:
+   * the router's request counters move once per ATTEMPT (and count its own
+   * relays), and its one per-request series, the end-to-end latency
    * histogram, is only observed when a request succeeds. A chain narrows it
    * by the listener that logged it (`<spec><interface>`).
+   *
+   * A config router narrows it to its chain. The lines don't say which
+   * router wrote them, so on a chain several routers serve the count can't
+   * be split, and says so. Kept COUNT_TTL_MS per window and chain, one read
+   * in flight per key: the count scans the whole window of logs.
    */
-  async failedCount(window: MetricWindow, spec?: string): Promise<FailedRequests> {
+  async failedCount(window: MetricWindow, spec?: string, routerId?: string): Promise<FailedRequests> {
     const loki = this.loki;
-    const none: FailedRequests = { available: false, value: null };
-    if (!loki || (spec != null && !LABEL_TOKEN.test(spec))) return none;
-    const key = `${window}|${spec ?? ""}`;
+    if (!loki) return { ...unavailable("unconfigured"), value: null };
+    if (spec != null && !LABEL_TOKEN.test(spec)) return { available: true, value: 0 };
+    const routers = this.routers();
+    let chain = spec;
+    if (routerId) {
+      const router = routers.find((r) => r.id === routerId);
+      if (!router || (spec != null && spec !== router.spec)) return { available: true, value: 0 };
+      if (routers.some((r) => r.id !== router.id && r.spec === router.spec)) return { ...unavailable("shared-chain"), value: null };
+      chain = router.spec;
+    }
+    // A chain the values file doesn't serve has no listener to log it.
+    if (chain != null && routers.length && !routers.some((r) => r.spec === chain)) return { available: true, value: 0 };
+
+    const key = `${window}|${chain ?? ""}`;
     const kept = this.counted.get(key);
     if (kept && Date.now() - kept.at < COUNT_TTL_MS) return kept.result;
+    const pending = this.counting.get(key);
+    if (pending) return pending;
+
     const r = `${WINDOWS[window].rangeSeconds}s`;
-    const chain = spec ? ` | ep=~\`${escapeRe(spec)}(jsonrpc|rest|tendermintrpc|grpc)\`` : "";
-    const value = await loki.count(
-      `sum(count_over_time(${this.selector} |= \`${GAVE_UP_MSG}\` | json msg="message", ep="endpoint" | msg=\`${GAVE_UP_MSG}\`${chain} [${r}]))`,
-    );
-    if (value === null) return none;
-    const result: FailedRequests = { available: true, value };
-    this.counted.set(key, { at: Date.now(), result });
-    return result;
+    const byChain = chain ? ` | ep=~\`${escapeRe(chain)}(jsonrpc|rest|tendermintrpc|grpc)\`` : "";
+    const read = loki
+      .count(`sum(count_over_time(${this.selector} |~ \`${GAVE_UP}\` | json msg="message", ep="endpoint" | msg=~\`${GAVE_UP}\`${byChain} [${r}]))`)
+      .then((value): FailedRequests => {
+        const result: FailedRequests = value === null ? { ...unavailable("unreachable"), value: null } : { available: true, value };
+        this.keep(key, result);
+        return result;
+      })
+      .finally(() => this.counting.delete(key));
+    this.counting.set(key, read);
+    return read;
   }
 
   /**
@@ -204,11 +253,11 @@ export class ErrorRequestsService {
    */
   async lookup(guid: string, range: ReadRange): Promise<RequestLookup> {
     const loki = this.loki;
-    if (!loki || !REQUEST_ID.test(guid)) return { available: !!loki, row: null };
+    if (!loki) return { ...unavailable("unconfigured"), row: null };
+    if (!REQUEST_ID.test(guid)) return { available: true, row: null };
     const lines = await linesOfRequest(loki, this.selector, guid, range.startMs, range.endMs);
-    if (lines === null) return { available: false, row: null };
-    const index = upstreamIndex(this.routers());
-    const rows = buildErrorRows(lines, (u) => index.get(u) ?? null, true);
+    if (lines === null) return { ...unavailable("unreachable"), row: null };
+    const rows = buildErrorRows(lines, new UpstreamIndex(this.routers()), true);
     return { available: true, row: rows[0] ?? null };
   }
 
@@ -216,19 +265,23 @@ export class ErrorRequestsService {
    * The newest requests with an error in `range`, ending at `before` when
    * given (the previous read's `nextBefore`). A request whose lines straddle
    * two reads can come back in both; the client keeps it once, by GUID.
+   * `upstream` keeps the requests whose try at that upstream failed - what
+   * an errors-over-time bar counts - and narrows the read to it, so the cap
+   * applies to what was asked for.
    */
-  async report(range: ReadRange, spec?: string, routerId?: string, before?: number): Promise<ErrorRequestsReport> {
-    const none = (available: boolean): ErrorRequestsReport => ({ available, rows: [], more: false, nextBefore: null });
+  async report(range: ReadRange, spec?: string, routerId?: string, before?: number, upstream?: string): Promise<ErrorRequestsReport> {
+    const none = (available: boolean, reason?: LogUnavailable): ErrorRequestsReport =>
+      ({ available, ...(reason ? { reason } : {}), rows: [], more: false, nextBefore: null });
     const loki = this.loki;
-    if (!loki) return none(false);
+    if (!loki) return none(false, "unconfigured");
     const endMs = readEnd(range, before);
     if (endMs <= range.startMs) return none(true);
 
     // A request writes several of these lines, so read a few per request.
     // Called-off tries are left out here: they alone don't make an error.
-    // A chain or router narrows the read to its upstreams' names, so the cap
-    // applies to what was asked for.
-    const names = this.upstreamsFor(spec, routerId);
+    // A chain, router or upstream narrows the read to those names, so the
+    // cap applies to what was asked for.
+    const names = upstream ? [upstream] : this.upstreamsFor(spec, routerId);
     const safe = names?.filter(inRawString);
     const narrow = safe?.length ? ` |~ \`${safe.map(escapeRe).join("|")}\`` : "";
     const limit = this.cap * 4;
@@ -239,36 +292,37 @@ export class ErrorRequestsService {
       limit,
       "backward",
     );
-    if (found === null) return none(false);
+    if (found === null) return none(false, "unreachable");
 
     const newestFirst = parseAll(found).sort((a, b) => b.tsMs - a.tsMs);
-    const guids = [...new Set(newestFirst.map((l) => l.guid))];
-    if (!guids.length) return none(true);
-    const kept = new Set(guids.slice(0, this.cap));
+    const newestOf = new Map<string, number>();
+    for (const l of newestFirst) if (!newestOf.has(l.guid)) newestOf.set(l.guid, l.tsMs);
+    if (!newestOf.size) return none(true);
+    const ranked = [...newestOf];
+    const kept = new Set(ranked.slice(0, this.cap).map(([g]) => g));
     const keptTimes = newestFirst.filter((l) => kept.has(l.guid)).map((l) => l.tsMs);
-    const more = found.length >= limit || guids.length > this.cap;
-    const oldest = Math.min(...keptTimes);
+    const cuts = found.length >= limit ? [Math.min(...found.map((l) => l.tsMs))] : [];
+    const nextBefore = readOnFrom(ranked, this.cap, cuts, endMs);
 
     const lines = await linesForGuids(
       loki,
       this.selector,
       [...kept],
-      oldest - REQUEST_SPAN_MS,
+      Math.min(...keptTimes) - REQUEST_SPAN_MS,
       Object.values(ERROR_MSG),
       40,
       Math.min(Date.now(), Math.max(...keptTimes) + REQUEST_SPAN_MS),
     );
-    if (lines === null) return none(false);
+    if (lines === null) return none(false, "unreachable");
 
-    const index = upstreamIndex(this.routers());
-    let rows = buildErrorRows(lines, (u) => index.get(u) ?? null);
-    if (spec) rows = rows.filter((r) => r.spec === spec);
+    let rows = buildErrorRows(lines, new UpstreamIndex(this.routers()));
+    if (spec) rows = rows.filter((r) => onChain(r, spec));
     if (routerId) {
+      const router = this.routers().find((r) => r.id === routerId);
       const own = new Set(names ?? []);
-      rows = rows.filter((r) => r.attempts.some((a) => own.has(a.upstream)));
+      rows = router ? rows.filter((r) => onChain(r, router.spec) && r.attempts.some((a) => own.has(a.upstream))) : [];
     }
-    // The oldest kept line itself, fraction and all: the next read ends there,
-    // so it moves strictly back and skips nothing in that millisecond.
-    return { available: true, rows, more, nextBefore: more ? oldest : null };
+    if (upstream) rows = rows.filter((r) => r.attempts.some((a) => a.upstream === upstream && a.outcome === "failed"));
+    return { available: true, rows, more: nextBefore !== null, nextBefore };
   }
 }

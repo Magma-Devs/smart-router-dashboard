@@ -21,7 +21,13 @@ declare module "fastify" {
  */
 export const lokiPlugin = fp(async (app: FastifyInstance) => {
   const url = lokiUrl();
-  const loki = url ? new LokiClient(url, config.loki.timeoutMs, app.log) : null;
+  const live = (name: string) => process.env[name]?.trim() || undefined;
+  const auth = {
+    username: live("LOKI_USERNAME") ?? config.loki.username,
+    password: live("LOKI_PASSWORD") ?? config.loki.password,
+    orgId: live("LOKI_ORG_ID") ?? config.loki.orgId,
+  };
+  const loki = url ? new LokiClient(url, config.loki.timeoutMs, app.log, auth) : null;
   const selector = process.env.LOKI_ROUTER_SELECTOR?.trim() || config.loki.routerSelector;
   app.decorate("transactions", new TransactionsService(loki, selector, app.routerConfig));
   app.decorate("errorRequests", new ErrorRequestsService(loki, selector, app.routerConfig));

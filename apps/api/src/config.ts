@@ -109,11 +109,16 @@ export const config = {
    * logs can't be read. `routerSelector` is the LogQL stream
    * selector for the router's lines - `{service="router"}` is the label the
    * compose `logs` profile's promtail attaches; a cluster names its own.
+   * Credentials work as the Prometheus ones do: basic auth only with both
+   * halves, `X-Scope-OrgID` only when `orgId` is set.
    */
   loki: {
     url: env("LOKI_URL") || undefined,
     timeoutMs: envInt("LOKI_TIMEOUT_MS", 10000),
     routerSelector: env("LOKI_ROUTER_SELECTOR") || '{service="router"}',
+    username: env("LOKI_USERNAME"),
+    password: env("LOKI_PASSWORD"),
+    orgId: env("LOKI_ORG_ID"),
   },
 
   /** Helm-values / router config the dashboard reflects (read-only). */

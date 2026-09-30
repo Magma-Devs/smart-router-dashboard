@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { buildApp } from "../app.js";
 import { buildTxRows, NOTE, summarize, TransactionsService } from "../services/transactions.js";
-import { parseRouterLine, type RouterLine, type UpstreamInfo } from "../services/router-log.js";
+import type { RouterTopology } from "@sr/shared";
+import { onChain, parseRouterLine, UpstreamIndex, type RouterLine, type UpstreamInfo } from "../services/router-log.js";
 import { LokiClient, msToNs, type LokiLine } from "../services/loki-client.js";
 import type { ConfigurationService } from "../services/configuration.js";
 
@@ -127,7 +128,12 @@ const UPSTREAMS: Record<string, UpstreamInfo> = {
   "cosmos-tendermintrpc-polkachu": { spec: "COSMOSHUB", interfaces: ["tendermintrpc"] },
 };
 const parse = (ls: LokiLine[]) => ls.map(parseRouterLine).filter((l): l is RouterLine => l !== null);
-const rowsOf = (ls: LokiLine[]) => buildTxRows(parse(ls), (u) => UPSTREAMS[u] ?? null);
+/** An index of one single-node router per upstream - the fixtures' names are each on one chain. */
+const indexOf = (ups: Record<string, UpstreamInfo>) =>
+  new UpstreamIndex(
+    Object.entries(ups).map(([name, u]) => ({ id: name, spec: u.spec, nodes: [{ name, endpoints: u.interfaces.map((i) => ({ interface: i })) }] })) as unknown as RouterTopology[],
+  );
+const rowsOf = (ls: LokiLine[]) => buildTxRows(parse(ls), indexOf(UPSTREAMS));
 const byGuid = (guid: string) => rowsOf(ALL).find((r) => r.guid === guid);
 
 describe("transaction rows from the router's log lines", () => {
@@ -318,9 +324,12 @@ describe("TransactionsService", () => {
     const svc = new TransactionsService(loki, '{service="router"}', configSvc, 3);
     const first = await svc.report(RANGE);
     expect(first.rows.map((x) => x.guid)).toEqual(["10227923066219274059", "6955311520133973510", "111"]);
-    expect(first).toMatchObject({ more: true, nextBefore: 4000, total: 3 }); // the oldest line kept: "111" arriving
+    // Just past the newest line of the first transaction not kept, so the next read includes it.
+    expect(first).toMatchObject({ more: true, nextBefore: 4000.001, total: 3 });
     const older = await svc.report(RANGE, undefined, undefined, first.nextBefore!);
-    expect(older.rows.map((x) => x.guid)).toEqual(["9946532266546017239"]);
+    // The first read hit its line limit at 4000, so the next one reads that
+    // line again: "111" comes back on the seam, and the list keeps it once.
+    expect(older.rows.map((x) => x.guid)).toEqual(["111", "9946532266546017239"]);
     expect(older).toMatchObject({ more: false, nextBefore: null });
   });
 
@@ -451,5 +460,79 @@ describe("GET /api/transactions", () => {
     const body = res.json();
     expect(body).toMatchObject({ available: true, total: 1, rejected: 1, successRate: 0 });
     expect(body.rows[0]).toMatchObject({ method: "eth_sendRawTransaction", spec: "ETH1", answeredBy: "eth-mevblocker" });
+  });
+});
+
+describe("transactions the router could not settle", () => {
+  const sent = (guid: string) => [
+    at(1000, { GUID: guid, path: "/", body: '{"jsonrpc":"2.0","id":1,"method":"eth_sendRawTransaction","params":["0x00"]}', message: RECEIVED }),
+    at(1001, { GUID: guid, validAddresses: "eth-mevblocker,eth-tenderly", chosenProviders: "eth-mevblocker,eth-tenderly", stateful: "1", message: "Choosing providers" }),
+    at(11_000, { GUID: guid, endpoint: "eth-mevblocker", error: "context deadline exceeded", message: "direct RPC relay failed in goroutine" }),
+    at(11_001, { GUID: guid, endpoint: "eth-tenderly", error: "connection refused", message: "direct RPC relay failed in goroutine" }),
+    at(11_002, { GUID: guid, endpoint: "ETH1jsonrpc", error: "failed relay, insufficient results", message: "failed getting responses from RPC endpoints" }),
+  ];
+
+  it("nothing came back and the router says so: failed, with its error", () => {
+    const [row] = rowsOf(sent("1"));
+    expect(row).toMatchObject({ outcome: "failed", error: { code: "NO_REPLY", message: "failed relay, insufficient results" }, replyMs: 10_002, spec: "ETH1" });
+  });
+
+  it("the router can't tell whether the write went through: unknown, in its own words", () => {
+    const lines = [...sent("2"), at(11_003, { GUID: "2", level: "warning", write_outcome: "unknown", endpoint: "ETH1jsonrpc", message: "write outcome unknown" })];
+    const [row] = rowsOf(lines);
+    expect(row).toMatchObject({ outcome: "unknown", note: NOTE.writeUnknown, error: null });
+  });
+});
+
+describe("the chain of a transaction through a shared node name", () => {
+  const node = (name: string) => ({ name, endpoints: [{ interface: "jsonrpc" }] });
+  const routers = [
+    { id: "eth", spec: "ETH1", nodes: [node("publicnode"), node("eth-alchemy")] },
+    { id: "base", spec: "BASE", nodes: [node("publicnode"), node("base-alchemy")] },
+  ];
+  const accepted = (guid: string, pool: string) => [
+    at(5000, { GUID: guid, path: "/", body: '{"jsonrpc":"2.0","id":1,"method":"eth_sendRawTransaction","params":["0x"]}', message: RECEIVED }),
+    at(5001, { GUID: guid, validAddresses: pool, chosenProviders: "publicnode", stateful: "1", message: "Choosing providers" }),
+    at(5050, { GUID: guid, served_by: "publicnode", has_reply: "true", error: "", message: "relay finished" }),
+  ];
+
+  it("is the chain its pool belongs to, and lists under that chain only", async () => {
+    const lines = accepted("505", "publicnode,base-alchemy");
+    const [row] = buildTxRows(parse(lines), new UpstreamIndex(routers as unknown as RouterTopology[]));
+    expect(row).toMatchObject({ spec: "BASE", outcome: "accepted" });
+    const loki = {
+      async queryRange(query: string) {
+        return query.includes("GUID") || query.includes("stateful") ? lines.filter((l) => query.includes("GUID") || l.line.includes("Choosing")) : [];
+      },
+    } as unknown as LokiClient;
+    const svc = new TransactionsService(loki, '{service="router"}', { getRouters: () => routers } as unknown as ConfigurationService);
+    expect((await svc.report({ startMs: 0, endMs: 100_000 }, "BASE")).rows.map((r) => r.guid)).toEqual(["505"]);
+    expect((await svc.report({ startMs: 0, endMs: 100_000 }, "ETH1")).rows).toEqual([]);
+  });
+
+  it("with nothing to settle it, it stays open and lists under each chain it could be on", () => {
+    const [row] = buildTxRows(parse(accepted("506", "publicnode")), new UpstreamIndex(routers as unknown as RouterTopology[]));
+    expect(row).toMatchObject({ spec: null, specs: ["BASE", "ETH1"] });
+    expect(onChain(row!, "BASE") && onChain(row!, "ETH1")).toBe(true);
+  });
+});
+
+describe("LokiClient credentials", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("sends basic auth only with both halves, and the org only when set", async () => {
+    const sent: Headers[] = [];
+    vi.stubGlobal("fetch", async (_input: URL | string, init?: RequestInit) => {
+      sent.push(new Headers(init?.headers));
+      return Response.json({ status: "success", data: { result: [] } });
+    });
+    await new LokiClient("http://loki:3100", 1000).queryRange("q", 0, 1, 1, "forward");
+    await new LokiClient("http://loki:3100", 1000, undefined, { username: "acme", password: "s3cret", orgId: "acme" }).count("q");
+    await new LokiClient("http://loki:3100", 1000, undefined, { username: "acme" }).queryRange("q", 0, 1, 1, "forward");
+    expect(sent[0]!.get("authorization")).toBeNull();
+    expect(sent[0]!.get("x-scope-orgid")).toBeNull();
+    expect(sent[1]!.get("authorization")).toBe(`Basic ${Buffer.from("acme:s3cret").toString("base64")}`);
+    expect(sent[1]!.get("x-scope-orgid")).toBe("acme");
+    expect(sent[2]!.get("authorization")).toBeNull(); // half a pair sends nothing
   });
 });

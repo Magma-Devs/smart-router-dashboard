@@ -3,7 +3,8 @@ import type { FastifyInstance } from "fastify";
 import { buildApp } from "../app.js";
 import { buildErrorRows, ErrorRequestsService } from "../services/error-requests.js";
 import { readRange } from "../services/read-range.js";
-import { CANCELLED_NOTE, parseRouterLine, scrubUrls, type RouterLine, type UpstreamInfo } from "../services/router-log.js";
+import type { RouterTopology } from "@sr/shared";
+import { CANCELLED_NOTE, METHOD_REDACTED, methodOf, onChain, parseRouterLine, scrubUrls, UpstreamIndex, type RouterLine, type UpstreamInfo } from "../services/router-log.js";
 import type { LokiClient, LokiLine } from "../services/loki-client.js";
 import type { ConfigurationService } from "../services/configuration.js";
 
@@ -145,7 +146,12 @@ const UPSTREAMS: Record<string, UpstreamInfo> = {
   "eth-publicnode": { spec: "ETH1", interfaces: ["jsonrpc"] },
 };
 const parse = (ls: LokiLine[]) => ls.map(parseRouterLine).filter((l): l is RouterLine => l !== null);
-const rowsOf = (ls: LokiLine[]) => buildErrorRows(parse(ls), (u) => UPSTREAMS[u] ?? null);
+/** An index of one single-node router per upstream - the fixtures' names are each on one chain. */
+const indexOf = (ups: Record<string, UpstreamInfo>) =>
+  new UpstreamIndex(
+    Object.entries(ups).map(([name, u]) => ({ id: name, spec: u.spec, nodes: [{ name, endpoints: u.interfaces.map((i) => ({ interface: i })) }] })) as unknown as RouterTopology[],
+  );
+const rowsOf = (ls: LokiLine[]) => buildErrorRows(parse(ls), indexOf(UPSTREAMS));
 const ALL = [...PRUNED_THEN_OK, ...RATE_LIMITED_THEN_OK, ...ERROR_REPLY, ...FAILED, ...NO_CODE, ...NON_RETRYABLE, ...CALLED_OFF, ...INIT_RELAY, ...NOT_RETRIED];
 const row = (guid: string) => rowsOf(ALL).find((r) => r.guid === guid);
 
@@ -304,7 +310,8 @@ describe("ErrorRequestsService", () => {
   function lokiStub(lines: LokiLine[]) {
     const queries: string[] = [];
     const found = ["received node error reply from provider", "Relay received a node error", "could not send relay to provider",
-      "direct RPC relay failed in goroutine", "[StateMachine] policy.Decide", "failed relay, insufficient results"];
+      "direct RPC relay failed in goroutine", "[StateMachine] policy.Decide", "failed relay, insufficient results",
+      "failed getting responses from RPC endpoints", "failed processing responses from RPC endpoints"];
     const loki = {
       async queryRange(query: string, startMs: number, endMs: number, limit: number) {
         queries.push(query);
@@ -359,8 +366,9 @@ describe("ErrorRequestsService", () => {
     const first = await svc.report(RANGE);
     expect(first.rows.map((x) => x.method)).toEqual(["eth_getLogs", "eth_gasPrice"]);
     expect(first.more).toBe(true);
-    // eth_getLogs' refusal is the oldest line kept (eth_gasPrice's are newer), fraction and all.
-    expect(first.nextBefore).toBeCloseTo(5081.094, 6);
+    // The next read ends just past the newest line of the first request not
+    // kept, so that line is read again: nothing between the two reads is lost.
+    expect(first.nextBefore).toBeCloseTo(2064.001, 6);
     const older = await svc.report(RANGE, undefined, undefined, first.nextBefore!);
     expect(older.rows.map((x) => x.method)).toEqual(["getSlot", "getBlock"]);
     expect(older).toMatchObject({ more: false, nextBefore: null });
@@ -400,16 +408,19 @@ describe("ErrorRequestsService", () => {
 
 describe("readRange", () => {
   const NOW = 1_800_000_000_000;
-  it("an exact from-to when the pair makes sense, never past now", () => {
+  it("an exact from-to, never past now", () => {
     expect(readRange({ from: NOW - 3_600_000, to: NOW - 60_000 }, NOW)).toEqual({ startMs: NOW - 3_600_000, endMs: NOW - 60_000 });
     expect(readRange({ from: NOW - 3_600_000, to: NOW + 3_600_000 }, NOW)).toEqual({ startMs: NOW - 3_600_000, endMs: NOW });
   });
-  it("anything else is the page's window back from now, like an unknown window", () => {
-    const day = { startMs: NOW - 86_400_000, endMs: NOW };
-    expect(readRange({ window: "1d", from: NOW - 1000, to: NOW - 2000 }, NOW)).toEqual(day); // reversed
-    expect(readRange({ window: "1d", from: NOW - 40 * 86_400_000, to: NOW }, NOW)).toEqual(day); // past 30 days
-    expect(readRange({ window: "1d", from: NOW - 1000 }, NOW)).toEqual(day); // half a pair
-    expect(readRange({ window: "30m" }, NOW)).toEqual({ startMs: NOW - 1_800_000, endMs: NOW });
+  it("a pair it can't read is an error - never a quiet read of another range", () => {
+    expect(readRange({ window: "1d", from: NOW - 1000, to: NOW - 2000 }, NOW)).toEqual({ error: "from must be before to" });
+    expect(readRange({ window: "1d", from: NOW - 40 * 86_400_000, to: NOW }, NOW)).toEqual({ error: "a range is at most 30 days" });
+    expect(readRange({ window: "1d", from: NOW - 1000 }, NOW)).toEqual({ error: "from and to go together" });
+    expect(readRange({ from: NOW + 60_000, to: NOW + 120_000 }, NOW)).toEqual({ error: "from must be in the past" });
+  });
+  it("without from and to it is the page's window back from now; an unknown window is the default", () => {
+    expect(readRange({ window: "1d" }, NOW)).toEqual({ startMs: NOW - 86_400_000, endMs: NOW });
+    expect(readRange({ window: "nope" }, NOW)).toEqual({ startMs: NOW - 1_800_000, endMs: NOW });
   });
 });
 
@@ -442,7 +453,7 @@ describe("GET /api/error-requests", () => {
     app = await buildApp();
     const res = await app.inject({ method: "GET", url: "/api/error-requests?window=1h" });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ available: false, rows: [], more: false, nextBefore: null });
+    expect(res.json()).toEqual({ available: false, reason: "unconfigured", rows: [], more: false, nextBefore: null });
   });
 
   it("GET /api/requests/:guid looks one request up; a malformed ID is a 400", async () => {
@@ -497,10 +508,10 @@ describe("GET /api/error-requests/count", () => {
     app = await buildApp();
     const res = await app.inject({ method: "GET", url: "/api/error-requests/count?window=1d" });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ available: false, value: null });
+    expect(res.json()).toEqual({ available: false, reason: "unconfigured", value: null });
   });
 
-  it("counts the one line the router writes per request it could not serve", async () => {
+  it("counts the line the router ends each request it could not serve with - nothing back, or nothing usable", async () => {
     process.env.LOKI_URL = "http://loki.test:3100";
     answer = () => [{ metric: {}, value: [0, "4"] }];
     app = await buildApp();
@@ -509,8 +520,9 @@ describe("GET /api/error-requests/count", () => {
     expect(res.json()).toEqual({ available: true, value: 4 });
     expect(queries).toHaveLength(1);
     for (const q of queries) {
+      expect(q).toContain("|~ `failed (getting|processing) responses from RPC endpoints`");
       // Matched as the line's message: other lines quote it in their error field.
-      expect(q).toContain('| json msg="message", ep="endpoint" | msg=`failed processing responses from RPC endpoints`');
+      expect(q).toContain('| json msg="message", ep="endpoint" | msg=~`failed (getting|processing) responses from RPC endpoints`');
       // A chain is the listener that logged it: <spec><interface>.
       expect(q).toContain("| ep=~`ETH1(jsonrpc|rest|tendermintrpc|grpc)`");
       expect(q).toContain("[86400s]");
@@ -547,5 +559,204 @@ describe("GET /api/error-requests/count", () => {
     const res = await app.inject({ method: "GET", url: "/api/error-requests/count?window=1h" });
     expect(res.json()).toEqual({ available: true, value: 0 });
     expect(queries.every((q) => !q.includes("| ep=~"))).toBe(true);
+  });
+});
+
+const SEL = '{service="router"}';
+const nodeOf = (name: string) => ({ name, endpoints: [{ interface: "jsonrpc" }] });
+
+describe("a request no upstream answered", () => {
+  // As smart-router v1.5.6 writes it: with nothing back, the router logs
+  // "failed getting responses from RPC endpoints" and returns before "relay finished".
+  const NO_ANSWER = [
+    at(7000, { GUID: "303", path: "/", body: '{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber"}', message: RECEIVED }),
+    at(7001, { GUID: "303", chosenProviders: "eth-publicnode,eth-tenderly", stateful: "0", message: "Choosing providers" }),
+    at(17_000, { GUID: "303", endpoint: "eth-publicnode", error: 'Post "https://eth.example.com/v2/KEY": context deadline exceeded', message: "direct RPC relay failed in goroutine" }),
+    at(17_001, { GUID: "303", endpoint: "eth-tenderly", error: "dial tcp 10.0.0.2:443: connect: connection refused", message: "direct RPC relay failed in goroutine" }),
+    at(17_002, { GUID: "303", endpoint: "ETH1jsonrpc", error: "failed relay, insufficient results {GUID:303}", message: "failed getting responses from RPC endpoints" }),
+  ];
+
+  it("is failed, with the router's own error and the time it gave up - not 'unknown'", () => {
+    const [r] = rowsOf(NO_ANSWER);
+    expect(r).toMatchObject({ guid: "303", result: "failed", error: "failed relay, insufficient results", totalMs: 10_002, spec: "ETH1" });
+    expect(r!.attempts.map((a) => `${a.upstream}:${a.outcome}`)).toEqual(["eth-publicnode:failed", "eth-tenderly:failed"]);
+  });
+
+  it("is found and read back by the list", async () => {
+    const node = (name: string) => ({ name, endpoints: [{ interface: "jsonrpc" }] });
+    const cfg = { getRouters: () => [{ id: "eth", spec: "ETH1", nodes: [node("eth-publicnode"), node("eth-tenderly")] }] } as unknown as ConfigurationService;
+    const loki = {
+      async queryRange(query: string, startMs: number, endMs: number) {
+        return NO_ANSWER.filter((l) => l.tsMs >= startMs && l.tsMs < endMs && (query.includes("GUID") || /failed getting|direct RPC/.test(l.line)));
+      },
+    } as unknown as LokiClient;
+    const r = await new ErrorRequestsService(loki, SEL, cfg).report({ startMs: 0, endMs: 100_000 });
+    expect(r.rows.map((x) => [x.guid, x.result])).toEqual([["303", "failed"]]);
+  });
+});
+
+describe("reading on with Load older", () => {
+  // Request 1's tries failed at 970 and at 1000; request 2's at 985, in between.
+  const lines = [
+    at(960, { GUID: "1", path: "/", body: '{"method":"eth_call"}', message: RECEIVED }),
+    at(961, { GUID: "1", chosenProviders: "eth-publicnode", message: "Choosing providers" }),
+    at(970, { GUID: "1", endpoint: "eth-publicnode", error: "context deadline exceeded", message: "direct RPC relay failed in goroutine" }),
+    at(971, { GUID: "1", chosenProviders: "eth-tenderly", message: "Choosing providers" }),
+    at(1000, { GUID: "1", provider: "eth-tenderly", error_name: "NODE_ERR", chain_id: "ETH1", message: "received node error reply from provider" }),
+    at(1001, { GUID: "1", served_by: "eth-tenderly", has_reply: "true", message: "relay finished" }),
+    at(980, { GUID: "2", path: "/", body: '{"method":"eth_getLogs"}', message: RECEIVED }),
+    at(981, { GUID: "2", chosenProviders: "eth-publicnode", message: "Choosing providers" }),
+    at(985, { GUID: "2", provider: "eth-publicnode", error_name: "NODE_ERR", chain_id: "ETH1", message: "received node error reply from provider" }),
+    at(986, { GUID: "2", served_by: "eth-publicnode", has_reply: "true", message: "relay finished" }),
+  ];
+
+  it("lists a request whose lines sit between a kept request's first and last - one per read", async () => {
+    const cfg = { getRouters: () => [{ id: "eth", spec: "ETH1", nodes: [nodeOf("eth-publicnode"), nodeOf("eth-tenderly")] }] } as unknown as ConfigurationService;
+    const loki = {
+      async queryRange(query: string, startMs: number, endMs: number, limit: number) {
+        const asked = /`"GUID":"\(([^)]*)\)"`/.exec(query)?.[1]?.split("|");
+        if (asked) return lines.filter((l) => asked.some((g) => l.line.includes(`"GUID":"${g}"`)));
+        return lines
+          .filter((l) => l.tsMs >= startMs && l.tsMs < endMs && /node error reply|direct RPC/.test(l.line))
+          .sort((a, b) => b.tsMs - a.tsMs)
+          .slice(0, limit);
+      },
+    } as unknown as LokiClient;
+    const svc = new ErrorRequestsService(loki, SEL, cfg, 1);
+    const listed: string[] = [];
+    let before: number | undefined;
+    for (let read = 0; read < 5; read++) {
+      const r = await svc.report({ startMs: 0, endMs: 10_000 }, undefined, undefined, before);
+      for (const row of r.rows) if (!listed.includes(row.guid)) listed.push(row.guid);
+      if (!r.more) break;
+      before = r.nextBefore!;
+    }
+    expect(listed).toEqual(["1", "2"]);
+  });
+});
+
+describe("which chain a request was on", () => {
+  // One node name serving two chains, as vendors' do in production.
+  const index = new UpstreamIndex([
+    { id: "eth", spec: "ETH1", nodes: [nodeOf("publicnode"), nodeOf("eth-alchemy")] },
+    { id: "base", spec: "BASE", nodes: [nodeOf("publicnode"), nodeOf("base-alchemy")] },
+  ] as unknown as RouterTopology[]);
+  const failedAt = (guid: string, pool: string) => [
+    at(1, { GUID: guid, path: "/", body: '{"method":"eth_call"}', message: RECEIVED }),
+    at(2, { GUID: guid, validAddresses: pool, chosenProviders: "publicnode", message: "Choosing providers" }),
+    at(3, { GUID: guid, endpoint: "publicnode", error: "HTTP 503", message: "direct RPC relay failed in goroutine" }),
+    at(4, { GUID: guid, served_by: "", has_reply: "false", error: "failed relay", message: "relay finished" }),
+  ];
+
+  it("the pool the router chose from settles a shared name", () => {
+    const [row] = buildErrorRows(parse(failedAt("7", "publicnode,base-alchemy")), index);
+    expect(row).toMatchObject({ spec: "BASE" });
+    expect(row!.specs).toBeUndefined();
+  });
+
+  it("when nothing settles it, the chain stays open and the request shows under each - never under the first alone", () => {
+    const [row] = buildErrorRows(parse(failedAt("8", "publicnode")), index);
+    expect(row).toMatchObject({ spec: null, specs: ["BASE", "ETH1"] });
+    expect(onChain(row!, "BASE") && onChain(row!, "ETH1")).toBe(true);
+  });
+
+  it("a chain_id on a line is the chain, whatever the names say", () => {
+    const lines = [...failedAt("9", "publicnode"), at(5, { GUID: "9", provider: "publicnode", chain_id: "ETH1", error_name: "X", message: "received node error reply from provider" })];
+    expect(buildErrorRows(parse(lines), index)[0]).toMatchObject({ spec: "ETH1" });
+  });
+});
+
+describe("the Failed requests count", () => {
+  const counter = (value: number | null) => {
+    const queries: string[] = [];
+    const loki = { async count(q: string) { queries.push(q); return value; } } as unknown as LokiClient;
+    return { loki, queries };
+  };
+  const cfg = {
+    getRouters: () => [
+      { id: "eth-a", spec: "ETH1", nodes: [nodeOf("a")] },
+      { id: "eth-b", spec: "ETH1", nodes: [nodeOf("b")] },
+      { id: "btc", spec: "BTC", nodes: [nodeOf("c")] },
+    ],
+  } as unknown as ConfigurationService;
+
+  it("a router alone on its chain is counted by that chain; one sharing it can't be told apart, and says so", async () => {
+    const { loki, queries } = counter(2);
+    const svc = new ErrorRequestsService(loki, SEL, cfg);
+    expect(await svc.failedCount("1h", undefined, "btc")).toEqual({ available: true, value: 2 });
+    expect(queries[0]).toContain("| ep=~`BTC(jsonrpc|rest|tendermintrpc|grpc)`");
+    expect(await svc.failedCount("1h", undefined, "eth-a")).toEqual({ available: false, reason: "shared-chain", value: null });
+    expect(queries).toHaveLength(1);
+  });
+
+  it("a chain the values file doesn't serve is zero, without reading the logs", async () => {
+    const { loki, queries } = counter(9);
+    expect(await new ErrorRequestsService(loki, SEL, cfg).failedCount("1h", "NOPE")).toEqual({ available: true, value: 0 });
+    expect(queries).toHaveLength(0);
+  });
+
+  it("one read in flight per window and chain, and a failed read is kept too: a down Loki isn't asked on every poll", async () => {
+    let calls = 0;
+    let settle: (v: number | null) => void = () => {};
+    const loki = { count: () => { calls += 1; return new Promise<number | null>((r) => { settle = r; }); } } as unknown as LokiClient;
+    const svc = new ErrorRequestsService(loki, SEL, cfg);
+    const first = svc.failedCount("1h");
+    const second = svc.failedCount("1h");
+    settle(null);
+    const down = { available: false, reason: "unreachable", value: null };
+    expect(await first).toEqual(down);
+    expect(await second).toEqual(down);
+    expect(await svc.failedCount("1h")).toEqual(down);
+    expect(calls).toBe(1);
+  });
+});
+
+describe("a bar's requests", () => {
+  it("an upstream narrows the read to its name, and keeps the requests whose try at it failed", async () => {
+    const queries: string[] = [];
+    const loki = {
+      async queryRange(query: string) {
+        queries.push(query);
+        return PRUNED_THEN_OK;
+      },
+    } as unknown as LokiClient;
+    const cfg = { getRouters: () => [{ id: "sol", spec: "SOLANA", nodes: [nodeOf("sol-publicnode"), nodeOf("sol-solana-labs")] }] } as unknown as ConfigurationService;
+    const svc = new ErrorRequestsService(loki, SEL, cfg);
+    const r = await svc.report({ startMs: 0, endMs: 100_000 }, undefined, undefined, undefined, "sol-publicnode");
+    expect(queries[0]).toMatch(/\|~ `sol-publicnode`$/);
+    expect(r.rows.map((x) => x.guid)).toEqual(["2933472877181550523"]);
+    const other = await svc.report({ startMs: 0, endMs: 100_000 }, undefined, undefined, undefined, "sol-solana-labs");
+    expect(other.rows).toEqual([]); // its try answered; it didn't fail there
+  });
+});
+
+describe("the method of a request whose path a log collector masked", () => {
+  it("says the path was redacted, rather than showing the mask as a path", () => {
+    const rec = parse([at(1, { GUID: "9", path: "/REDACTED", message: "Consumer received a new REST non-POST request" })])[0];
+    expect(methodOf(rec)).toBe(METHOD_REDACTED);
+    expect(methodOf(undefined, parse([at(2, { GUID: "9", api: "/REDACTED", message: "received node error reply from provider" })]))).toBe(METHOD_REDACTED);
+    expect(methodOf(undefined, parse([at(2, { GUID: "9", api: "/cosmos/bank/v1beta1/balances/{address}", message: "x" })]))).toBe("/cosmos/bank/v1beta1/balances/{address}");
+  });
+});
+
+describe("GET /api/error-requests - ranges it can't read", () => {
+  let app: FastifyInstance;
+  afterEach(async () => {
+    await app.close();
+    delete process.env.LOKI_URL;
+  });
+
+  it("answers 400 rather than listing another range under the picked times", async () => {
+    process.env.LOKI_URL = "http://loki.test:3100";
+    app = await buildApp();
+    const now = Date.now();
+    for (const url of [
+      `/api/error-requests?from=${now + 3_600_000}&to=${now + 7_200_000}`,
+      `/api/error-requests?from=${now - 1000}`,
+      `/api/transactions?from=${now - 1000}&to=${now - 2000}`,
+      "/api/requests/123?from=-5&to=10",
+    ]) {
+      expect((await app.inject({ method: "GET", url })).statusCode, url).toBe(400);
+    }
   });
 });
