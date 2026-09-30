@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
-import { scopeFromSearch, type PageScope } from "@/lib/chain-drawer";
+import { usePathname } from "next/navigation";
+import { resolveScope, scopeFromSearch, type PageScope } from "@/lib/chain-drawer";
 
 interface ScopeActions {
   selectChain: (spec: string | null) => void;
@@ -13,36 +14,39 @@ interface ScopeActions {
  * The page's chain and router in its URL (`?chain=ETH1&router=eth-prod`), both
  * ways. A link opens the page on them, and every change - the drawer, a
  * dropdown, a drill-in - becomes a history entry, so Back returns to the one
- * before.
+ * before. A URL that already means the current scope but spells it otherwise
+ * (a malformed value, an unknown router, a router under the wrong chain) is
+ * corrected in place, so Back never lands on a copy of the same view.
  *
  * They stay the page's own, as `FiltersProvider` wants: another page's URL has
- * none, so neither follows you to the next screen.
+ * none, so neither follows you to the next screen, and Back to another page
+ * leaves the filters alone while that page loads.
  *
- * `routers` is the config's list, null until it has been read: a router from
- * the URL is picked only once the config says which chain it serves, and one
- * the config doesn't have reads as none.
+ * `routers` is the config's list, null until it and the collector's scope list
+ * have answered: a router from the URL is picked only once the config says
+ * which chain it serves and the scope list says which scrape target it is.
+ * One the config doesn't have reads as none; see `resolveScope`.
  */
 export function useScopeInUrl(
   scope: PageScope,
   actions: ScopeActions,
   routers: { id: string; spec: string }[] | null,
 ): void {
+  const path = usePathname();
   // Read at event time (Back/Forward, the config arriving), so refreshed after every render.
-  const latest = useRef({ scope, actions, routers });
+  const latest = useRef({ scope, actions, routers, path });
   useEffect(() => {
-    latest.current = { scope, actions, routers };
+    latest.current = { scope, actions, routers, path };
   });
   /** What the URL asked for, until the filters show it: nothing is written back meanwhile. */
   const pending = useRef<PageScope | undefined>(undefined);
 
   // Reads the refs when called, so one function serves every call.
   const adopt = useCallback(() => {
-    const { scope: now, actions: act, routers: known } = latest.current;
-    let want = scopeFromSearch(window.location.search);
-    if (want.router !== null && known !== null) {
-      const r = known.find((x) => x.id === want.router);
-      want = r ? { chain: r.spec, router: r.id } : { chain: want.chain, router: null };
-    }
+    const { scope: now, actions: act, routers: known, path: here } = latest.current;
+    // Back/Forward to another page: that page's URL is not this one's scope.
+    if (window.location.pathname !== here) return;
+    const want = resolveScope(scopeFromSearch(window.location.search), known);
     if (want.chain === now.chain && want.router === now.router) {
       pending.current = undefined;
       return;
@@ -74,15 +78,19 @@ export function useScopeInUrl(
   useEffect(() => {
     const want = pending.current;
     if (want !== undefined) {
-      if (want.chain === scope.chain && want.router === scope.router) pending.current = undefined;
-      return;
+      if (want.chain !== scope.chain || want.router !== scope.router) return;
+      // Shown now; the URL may still spell it otherwise (`?router=` alone).
+      pending.current = undefined;
     }
     const url = new URL(window.location.href);
     if (url.searchParams.get("chain") === scope.chain && url.searchParams.get("router") === scope.router) return;
+    const meant = resolveScope(scopeFromSearch(url.search), latest.current.routers);
+    const same = meant.chain === scope.chain && meant.router === scope.router;
     for (const [key, value] of [["chain", scope.chain], ["router", scope.router]] as const) {
       if (value) url.searchParams.set(key, value);
       else url.searchParams.delete(key);
     }
-    window.history.pushState(null, "", url);
+    if (same) window.history.replaceState(null, "", url);
+    else window.history.pushState(null, "", url);
   }, [scope.chain, scope.router]);
 }

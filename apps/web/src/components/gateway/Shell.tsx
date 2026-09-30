@@ -47,6 +47,15 @@ function Sidebar() {
   // Beside the chains drawer this shrinks to its icons.
   const compact = useChainDrawer().visible;
   const { setChain, setRouterId, setRouter } = useFilters();
+  // Home or Metrics while on Metrics: back to every chain, as the drawer's
+  // first row does. Navigating would land on the same page with the chain kept.
+  const toAllChains = compact ? (e: React.MouseEvent) => {
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    setRouterId(null);
+    setRouter(null);
+    setChain(null);
+  } : undefined;
   return (
     <aside className={`gw-side${compact ? " gw-side--compact" : ""}`}>
       {/* The brand is the way home, as it is on every product: `/` redirects to
@@ -56,6 +65,7 @@ function Sidebar() {
         href="/"
         className="gw-side__brand"
         style={{ textDecoration: "none", color: "inherit" }}
+        onClick={toAllChains}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
@@ -77,8 +87,6 @@ function Sidebar() {
             {section.items.map((item) => {
               const Icon: ComponentType<IconProps> = item.icon;
               const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
-              // Metrics while on Metrics: back to every chain, as the drawer's first row does.
-              const toAllChains = compact && item.href === CHAIN_DRAWER_PATH;
               return (
                 <Link
                   key={item.href}
@@ -86,13 +94,7 @@ function Sidebar() {
                   className={`gw-nav-item${active ? " active" : ""}`}
                   title={compact ? item.label : undefined}
                   aria-label={compact ? item.label : undefined}
-                  onClick={toAllChains ? (e) => {
-                    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-                    e.preventDefault();
-                    setRouterId(null);
-                    setRouter(null);
-                    setChain(null);
-                  } : undefined}
+                  onClick={item.href === CHAIN_DRAWER_PATH ? toAllChains : undefined}
                 >
                   <Icon
                     size={16}
