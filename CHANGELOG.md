@@ -5,6 +5,24 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.28.2]
+
+### Fixed
+
+- **One slow log read no longer blanks the Transactions tab or the Errors
+  tab's request list.** Each list reads its requests' lines in batches of
+  100; a batch Loki doesn't answer in time now leaves only its own requests
+  out, and a strip above the list says how many (`unread` on
+  `/api/transactions` and `/api/error-requests`). The tab says the logs
+  didn't answer only when no batch did.
+- **The log lists show that they're working.** While the first read runs, a
+  strip says the router's logs are being read; "Load older" shows ghost rows
+  where the older rows will land; a poll of a list already on screen shows
+  the refreshing dot. The Errors list's result filter shows no counts until
+  its first read lands.
+- **`LOKI_TIMEOUT_MS` defaults to 60000** (was 10000). A day of router lines
+  on a shared Loki takes seconds per read; chart 6.16.2 sets the same.
+
 ## [0.28.1]
 
 ### Added
