@@ -186,8 +186,8 @@ export function PMBody({ pm, detail, name, timeWindow, onOpenErrors }: {
   // A gap of up to 10 minutes is bridged; a longer one is drawn as a gap.
   const maxGap = grid ? Math.floor(600 / grid.stepSec) : 0;
   // An empty chart after a read that failed says so, rather than "no requests".
-  const peersEmpty = (none: string) =>
-    empty(peers.isLoading ? "Loading…" : peers.data && !peers.data.available ? "Couldn't read these series in time - try a shorter window." : none);
+  const peersEmpty = (series: UpstreamPeers["failed"][number], none: string) =>
+    empty(peers.isLoading ? "Loading…" : peers.data?.failed.includes(series) ? "Couldn't read this series in time - try a shorter window." : none);
   const times = useMemo(() => gridTimes(grid), [grid]);
   const colorOf = (u: string, i: number) => (u === name ? "var(--brand)" : PEER_COLORS[i % PEER_COLORS.length]!);
   /* A line pointed at in a legend comes forward; the others fade. */
@@ -319,7 +319,7 @@ export function PMBody({ pm, detail, name, timeWindow, onOpenErrors }: {
               yDomain={[0, rpsHi > 0 ? rpsHi * 1.1 : 0.01]} niceY yFmt={fmtRps} xs={times} maxGap={maxGap}
               hover={hoverOf((v) => `${fmtRps(v)} rps`)} hoverBox={false} pointLabels {...shared} />}
             legend={<LegendLine rows={nameRows} onFocus={setFocusUp} />} />
-        ) : peersEmpty(`No upstream on ${chainLabel} served a request in this window.`)}
+        ) : peersEmpty("rps", `No upstream on ${chainLabel} served a request in this window.`)}
       </PMPanel>
 
       <PMPanel full title="Latency · p95"
@@ -336,7 +336,7 @@ export function PMBody({ pm, detail, name, timeWindow, onOpenErrors }: {
               </div>
             )}
           </>
-        ) : peersEmpty(`No upstream on ${chainLabel} served a request with a measured latency in this window.`)}
+        ) : peersEmpty("latencyP95", `No upstream on ${chainLabel} served a request with a measured latency in this window.`)}
       </PMPanel>
 
       <PMPanel full title="Latest block"
@@ -347,7 +347,7 @@ export function PMBody({ pm, detail, name, timeWindow, onOpenErrors }: {
               yDomain={[tipLo - tipPad, tipHi + tipPad]} niceY yFmt={(v) => fmtComma(Math.round(v))} xs={times} maxGap={maxGap}
               hover={hoverOf((v) => fmtComma(Math.round(v)), behindAt)} hoverBox={false} pointLabels {...shared} />}
             legend={<LegendLine rows={nameRows} onFocus={setFocusUp} />} />
-        ) : peersEmpty(`No upstream on ${chainLabel} reported a block in this window.`)}
+        ) : peersEmpty("latestBlock", `No upstream on ${chainLabel} reported a block in this window.`)}
       </PMPanel>
     </div>
   );

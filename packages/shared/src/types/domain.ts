@@ -383,6 +383,8 @@ export interface UpstreamPeers {
   spec: string;
   /** Every read answered. False: one failed or timed out, so an empty series means nothing. */
   available: boolean;
+  /** The series whose read failed or timed out. */
+  failed: ("latencyP95" | "rps" | "latestBlock")[];
   grid: ChartGrid;
   upstreams: { upstream: string; latencyP95: TimePoint[]; rps: TimePoint[]; latestBlock: TimePoint[] }[];
 }
@@ -639,6 +641,12 @@ export interface ErrorRequestsReport {
   more: boolean;
   /** Unix ms the next, older read ends at (with its fraction - pass it back as is); null without `more`. */
   nextBefore: number | null;
+  /**
+   * The times the read covers, unix ms: for a window, the window as it was when
+   * read. Older reads send it back as from/to, so a list read on later still
+   * covers the same stretch rather than one that moved with the clock.
+   */
+  range?: { startMs: number; endMs: number };
 }
 
 /* ── Transactions tab ────────────────────────────────────────────────────── */
@@ -708,6 +716,12 @@ export interface TransactionsReport {
   more: boolean;
   /** Unix ms the next, older read ends at (with its fraction - pass it back as is); null without `more`. */
   nextBefore: number | null;
+  /**
+   * The times the read covers, unix ms: for a window, the window as it was when
+   * read. Older reads send it back as from/to, so a list read on later still
+   * covers the same stretch rather than one that moved with the clock.
+   */
+  range?: { startMs: number; endMs: number };
 }
 
 /* ── Cross-validation / WebSocket reports (no screen reads them) ── */

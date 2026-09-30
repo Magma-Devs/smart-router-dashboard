@@ -44,12 +44,14 @@ import {
   inRawString,
   LABEL_TOKEN,
   lastWhere,
+  listenerPattern,
   linesForGuids,
   linesOfRequest,
   REQUEST_ID,
   methodOf,
   namesOf,
   onChain,
+  ownRow,
   parseAll,
   scrubUrls,
   str,
@@ -270,8 +272,9 @@ export class ErrorRequestsService {
    * applies to what was asked for.
    */
   async report(range: ReadRange, spec?: string, routerId?: string, before?: number, upstream?: string): Promise<ErrorRequestsReport> {
+    const read = { startMs: range.startMs, endMs: range.endMs };
     const none = (available: boolean, reason?: LogUnavailable): ErrorRequestsReport =>
-      ({ available, ...(reason ? { reason } : {}), rows: [], more: false, nextBefore: null });
+      ({ available, ...(reason ? { reason } : { range: read }), rows: [], more: false, nextBefore: null });
     const loki = this.loki;
     if (!loki) return none(false, "unconfigured");
     const endMs = readEnd(range, before);
@@ -281,9 +284,16 @@ export class ErrorRequestsService {
     // Called-off tries are left out here: they alone don't make an error.
     // A chain, router or upstream narrows the read to those names, so the
     // cap applies to what was asked for.
+    const routers = this.routers();
+    const router = routerId ? routers.find((r) => r.id === routerId) : undefined;
     const names = upstream ? [upstream] : this.upstreamsFor(spec, routerId);
-    const safe = names?.filter(inRawString);
-    const narrow = safe?.length ? ` |~ \`${safe.map(escapeRe).join("|")}\`` : "";
+    // A request no upstream could be chosen for names none: its end line names the chain's listener.
+    const chain = upstream ? undefined : (router?.spec ?? spec);
+    const alts = [
+      ...(names?.filter(inRawString).map(escapeRe) ?? []),
+      ...(names && chain && LABEL_TOKEN.test(chain) ? [listenerPattern(chain)] : []),
+    ];
+    const narrow = alts.length ? ` |~ \`${alts.join("|")}\`` : "";
     const limit = this.cap * 4;
     const found = await loki.queryRange(
       `${this.selector} |~ \`${FOUND_BY.map(escapeRe).join("|")}\` !~ \`PROTOCOL_CONTEXT_CANCELED|context canceled\`${narrow}`,
@@ -315,14 +325,10 @@ export class ErrorRequestsService {
     );
     if (lines === null) return none(false, "unreachable");
 
-    let rows = buildErrorRows(lines, new UpstreamIndex(this.routers()));
+    let rows = buildErrorRows(lines, new UpstreamIndex(routers));
     if (spec) rows = rows.filter((r) => onChain(r, spec));
-    if (routerId) {
-      const router = this.routers().find((r) => r.id === routerId);
-      const own = new Set(names ?? []);
-      rows = router ? rows.filter((r) => onChain(r, router.spec) && r.attempts.some((a) => own.has(a.upstream))) : [];
-    }
+    if (routerId) rows = router ? rows.filter((r) => ownRow(r, router, routers)) : [];
     if (upstream) rows = rows.filter((r) => r.attempts.some((a) => a.upstream === upstream && a.outcome === "failed"));
-    return { available: true, rows, more: nextBefore !== null, nextBefore };
+    return { available: true, rows, more: nextBefore !== null, nextBefore, range: read };
   }
 }

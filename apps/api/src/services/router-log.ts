@@ -348,13 +348,25 @@ export function namesOf(ordered: RouterLine[], attempts: RelayAttempt[]): string
   return [...names];
 }
 
+/** A listener as the router names it: `<spec><interface>`. */
+const LISTENER = /^(.+?)(jsonrpc|rest|tendermintrpc|grpc)$/;
+const END_LINES: ReadonlySet<string> = new Set(Object.values(END_MSG));
+
+/** The LogQL pattern of a chain's listener on the lines that end a request (`"endpoint":"ETH1jsonrpc"`). */
+export const listenerPattern = (spec: string) => `"endpoint":"${escapeRe(spec)}(jsonrpc|rest|tendermintrpc|grpc)"`;
+
 /**
- * A request's chain: the one its lines name (`chain_id`), else the only chain
- * serving every upstream it used. `specs` lists the candidates when several do.
+ * A request's chain: the one its lines name (`chain_id`, or the listener on
+ * the line that ends it), else the only chain serving every upstream it used.
+ * `specs` lists the candidates when several do.
  */
 export function chainOf(ordered: RouterLine[], names: string[], index: UpstreamIndex): { spec: string | null; specs?: string[] } {
   const named = str(ordered.find((l) => str(l.f.chain_id))?.f.chain_id);
   if (named) return { spec: named };
+  // With no upstream left to choose, a request's only line is its end.
+  const end = ordered.find((l) => END_LINES.has(l.message) && str(l.f.endpoint));
+  const listened = end ? LISTENER.exec(str(end.f.endpoint))?.[1] : undefined;
+  if (listened) return { spec: listened };
   const chains = index.chainsOf(names);
   if (chains.length === 1) return { spec: chains[0]! };
   return chains.length > 1 ? { spec: null, specs: chains } : { spec: null };
@@ -363,6 +375,22 @@ export function chainOf(ordered: RouterLine[], names: string[], index: UpstreamI
 /** Whether a row belongs to a chain: its own, or one of its candidates when the logs can't tell. */
 export const onChain = (row: { spec: string | null; specs?: string[] }, spec: string) =>
   row.spec === spec || (row.spec === null && (row.specs?.includes(spec) ?? false));
+
+/**
+ * Whether a row belongs to a config router: on its chain, and sent to one of
+ * its upstreams. A request sent nowhere (no upstream could be chosen) is its
+ * router's only when no other router serves that chain.
+ */
+export function ownRow(
+  row: { spec: string | null; specs?: string[]; attempts: { upstream: string }[] },
+  router: RouterTopology,
+  routers: RouterTopology[],
+): boolean {
+  if (!onChain(row, router.spec)) return false;
+  if (!row.attempts.length) return !routers.some((r) => r.id !== router.id && r.spec === router.spec);
+  const own = new Set(router.nodes.map((n) => n.name));
+  return row.attempts.some((a) => own.has(a.upstream));
+}
 
 export const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 

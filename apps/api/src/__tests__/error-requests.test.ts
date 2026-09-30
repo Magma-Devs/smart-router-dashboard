@@ -4,7 +4,7 @@ import { buildApp } from "../app.js";
 import { buildErrorRows, ErrorRequestsService } from "../services/error-requests.js";
 import { readRange } from "../services/read-range.js";
 import type { RouterTopology } from "@sr/shared";
-import { CANCELLED_NOTE, METHOD_REDACTED, methodOf, onChain, parseRouterLine, scrubUrls, UpstreamIndex, type RouterLine, type UpstreamInfo } from "../services/router-log.js";
+import { CANCELLED_NOTE, METHOD_REDACTED, methodOf, onChain, ownRow, parseRouterLine, scrubUrls, UpstreamIndex, type RouterLine, type UpstreamInfo } from "../services/router-log.js";
 import type { LokiClient, LokiLine } from "../services/loki-client.js";
 import type { ConfigurationService } from "../services/configuration.js";
 
@@ -356,7 +356,8 @@ describe("ErrorRequestsService", () => {
     const { loki, queries } = lokiStub(LINES);
     const svc = new ErrorRequestsService(loki, '{service="router"}', configSvc);
     expect((await svc.report(RANGE, "ETH1")).rows.map((x) => x.method)).toEqual(["eth_getLogs", "eth_gasPrice"]);
-    expect(queries[0]).toMatch(/\|~ `eth-mevblocker\|eth-tenderly\|eth-publicnode`$/);
+    // The chain's upstreams, and its listener: a request sent nowhere names only that.
+    expect(queries[0]).toMatch(/\|~ `eth-mevblocker\|eth-tenderly\|eth-publicnode\|"endpoint":"ETH1\(jsonrpc\|rest\|tendermintrpc\|grpc\)"`$/);
     expect((await svc.report(RANGE, undefined, "sol")).rows.map((x) => x.method)).toEqual(["getSlot", "getBlock"]);
   });
 
@@ -402,7 +403,7 @@ describe("ErrorRequestsService", () => {
     const down = { async queryRange() { return null; } } as unknown as LokiClient;
     expect((await new ErrorRequestsService(down, '{service="router"}').report(RANGE)).available).toBe(false);
     const { loki } = lokiStub([]);
-    expect(await new ErrorRequestsService(loki, '{service="router"}').report(RANGE)).toEqual({ available: true, rows: [], more: false, nextBefore: null });
+    expect(await new ErrorRequestsService(loki, '{service="router"}').report(RANGE)).toEqual({ available: true, rows: [], more: false, nextBefore: null, range: RANGE });
   });
 });
 
@@ -760,5 +761,62 @@ describe("GET /api/error-requests - ranges it can't read", () => {
     ]) {
       expect((await app.inject({ method: "GET", url })).statusCode, url).toBe(400);
     }
+  });
+});
+
+describe("a request no upstream could be chosen for", () => {
+  // With an empty pool the router returns before "Choosing providers": the
+  // request's only lines are its arrival and its end, which names the listener.
+  const SENT_NOWHERE = [
+    at(9000, { GUID: "404", path: "/", body: '{"jsonrpc":"2.0","id":1,"method":"eth_call"}', message: RECEIVED }),
+    at(9001, { GUID: "404", endpoint: "ETH1jsonrpc", error: "no pairings available {GUID:404}", message: "failed getting responses from RPC endpoints" }),
+  ];
+  /** A Loki stub that applies the query's own line filters, as regexes. */
+  const realLoki = (lines: LokiLine[]) => ({
+    async queryRange(query: string, startMs: number, endMs: number, limit: number) {
+      const filters = [...query.matchAll(/(\|~|!~|\|=) (`[^`]*`|"[^"]*")/g)].map(([, op, q]) => ({ op, re: op === "|=" ? null : new RegExp(q!.slice(1, -1)), text: q!.slice(1, -1) }));
+      return lines
+        .filter((l) => l.tsMs >= startMs && l.tsMs < endMs)
+        .filter((l) => filters.every((f) => (f.op === "|=" ? l.line.includes(f.text) : f.op === "|~" ? f.re!.test(l.line) : !f.re!.test(l.line))))
+        .sort((a, b) => b.tsMs - a.tsMs)
+        .slice(0, limit);
+    },
+  }) as unknown as LokiClient;
+
+  it("takes its chain from the listener on its end line", () => {
+    expect(rowsOf(SENT_NOWHERE)[0]).toMatchObject({ spec: "ETH1", result: "failed", error: "no pairings available", attempts: [] });
+  });
+
+  it("is listed under its chain and its router, when the router is alone on the chain", async () => {
+    const cfg = { getRouters: () => [{ id: "eth", spec: "ETH1", nodes: [nodeOf("eth-publicnode")] }] } as unknown as ConfigurationService;
+    const svc = new ErrorRequestsService(realLoki(SENT_NOWHERE), SEL, cfg);
+    expect((await svc.report({ startMs: 0, endMs: 100_000 }, "ETH1")).rows.map((r) => r.guid)).toEqual(["404"]);
+    expect((await svc.report({ startMs: 0, endMs: 100_000 }, undefined, "eth")).rows.map((r) => r.guid)).toEqual(["404"]);
+  });
+
+  it("belongs to no one router on a chain several serve: the lines can't say which", () => {
+    const [row] = rowsOf(SENT_NOWHERE);
+    const a = { id: "a", spec: "ETH1", nodes: [{ name: "x", endpoints: [] }] } as unknown as RouterTopology;
+    const b = { id: "b", spec: "ETH1", nodes: [{ name: "y", endpoints: [] }] } as unknown as RouterTopology;
+    expect(ownRow(row!, a, [a])).toBe(true);
+    expect(ownRow(row!, a, [a, b])).toBe(false);
+  });
+});
+
+describe("a router with a bar's upstream", () => {
+  it("keeps the router's own requests, not those of another router on the chain sent to the same upstream", () => {
+    const row = { spec: "ETH1", attempts: [{ upstream: "c" }] };
+    const r1 = { id: "r1", spec: "ETH1", nodes: [{ name: "a" }] } as unknown as RouterTopology;
+    const r2 = { id: "r2", spec: "ETH1", nodes: [{ name: "c" }] } as unknown as RouterTopology;
+    expect(ownRow(row, r1, [r1, r2])).toBe(false);
+    expect(ownRow(row, r2, [r1, r2])).toBe(true);
+  });
+});
+
+describe("the range a read covers", () => {
+  it("comes back with the read, so older reads can ask for the same times", async () => {
+    const loki = { async queryRange() { return []; } } as unknown as LokiClient;
+    const r = await new ErrorRequestsService(loki, SEL).report({ startMs: 1000, endMs: 5000 }, undefined, undefined, 3000);
+    expect(r.range).toEqual({ startMs: 1000, endMs: 5000 });
   });
 });

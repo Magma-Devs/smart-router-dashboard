@@ -14,6 +14,7 @@ import {
   qErrorsByUpstream,
   increaseFromBirth,
   qRetriesTotal,
+  qClientRequestsFromBirth,
   qRetriesByMethod,
   qRetryAvgExtraAttempts,
   qRequestsBy,
@@ -592,11 +593,16 @@ describe("retry builders", () => {
   });
 
   it("the hero's recovered retries count births the way the retry cards do, now and a window back", () => {
-    expect(qRetriesTotal("recovered", "1h", "ETH1")).toBe(
-      `round(sum${increaseFromBirth('smartrouter_retries_success_total{spec="ETH1"}', "3600s")})`,
-    );
+    // The sum of the rounded per-method rows the card adds up, so the two agree.
+    expect(qRetriesTotal("recovered", "1h", "ETH1")).toBe(`sum(${qRetriesByMethod("recovered", "1h", "ETH1")})`);
     expect(qRetriesTotal("recovered", "1h", undefined, "3600s")).toBe(
-      `round(sum${increaseFromBirth("smartrouter_retries_success_total", "3600s", "3600s")})`,
+      `sum(round(sum by (spec, method) ${increaseFromBirth("smartrouter_retries_success_total", "3600s", "3600s")}))`,
+    );
+  });
+
+  it("the retry rate's denominator counts client requests the way the retries are counted, births included", () => {
+    expect(qClientRequestsFromBirth("1h", "ETH1")).toBe(
+      `round(sum${increaseFromBirth('smartrouter_end_to_end_latency_milliseconds_count{spec="ETH1"}', "3600s")})`,
     );
   });
 

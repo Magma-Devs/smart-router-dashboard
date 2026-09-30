@@ -281,23 +281,24 @@ const RETRY_OUTCOME_METRIC: Record<RetryOutcome, string> = {
   failed: OPTIONAL_METRICS.retriesFailedTotal,
 };
 
-/** Retried requests with one outcome over the window (the hero's "successful retries"); `offset` = the prior window. */
+/** Retried requests with one outcome over the window, per (spec × method); `offset` = a window back. */
+export function qRetriesByMethod(
+  outcome: RetryOutcome,
+  window: MetricWindow = DEFAULT_WINDOW,
+  spec?: string,
+  offset?: string,
+): string {
+  return `round(sum by (spec, method) ${increaseFromBirth(`${RETRY_OUTCOME_METRIC[outcome]}${selector({ spec })}`, rangeFor(window), offset)})`;
+}
+
+/** The per-method rows added up - the hero's "successful retries", equal to the Errors tab's card. */
 export function qRetriesTotal(
   outcome: RetryOutcome,
   window: MetricWindow = DEFAULT_WINDOW,
   spec?: string,
   offset?: string,
 ): string {
-  return `round(sum${increaseFromBirth(`${RETRY_OUTCOME_METRIC[outcome]}${selector({ spec })}`, rangeFor(window), offset)})`;
-}
-
-/** Retried requests with one outcome over the window, per (spec × method). */
-export function qRetriesByMethod(
-  outcome: RetryOutcome,
-  window: MetricWindow = DEFAULT_WINDOW,
-  spec?: string,
-): string {
-  return `round(sum by (spec, method) ${increaseFromBirth(`${RETRY_OUTCOME_METRIC[outcome]}${selector({ spec })}`, rangeFor(window))})`;
+  return `sum(${qRetriesByMethod(outcome, window, spec, offset)})`;
 }
 
 /** Mean extra attempts per retried request: the histogram's sum ÷ count. */
@@ -308,6 +309,18 @@ export function qRetryAvgExtraAttempts(
   const sel = selector({ spec });
   const r = rangeFor(window);
   return `sum${increaseFromBirth(`${OPTIONAL_METRICS.retryAttemptsSum}${sel}`, r)} / sum${increaseFromBirth(`${OPTIONAL_METRICS.retryAttemptsCount}${sel}`, r)}`;
+}
+
+/**
+ * Client requests served over the window, births included - the retry
+ * rate's denominator, counted the way the retries are: a method first called
+ * inside the window is a new series on both sides.
+ */
+export function qClientRequestsFromBirth(
+  window: MetricWindow = DEFAULT_WINDOW,
+  spec?: string,
+): string {
+  return `round(sum${increaseFromBirth(`${ROUTER_METRICS.latencyCount}${selector({ spec })}`, rangeFor(window))})`;
 }
 
 
