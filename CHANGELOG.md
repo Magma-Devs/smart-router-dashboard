@@ -5,6 +5,24 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.29.0]
+
+### Changed
+
+- **The Transactions tab finds transactions in the `stateful="1"` stream**
+  where the log agent labels the router's `"stateful":"1"` lines (the
+  fleet's Alloy does, from smart-router-infrastructure MAG-4046). Loki
+  skips data only by label, so the read no longer scans every router line:
+  a day on a production tenant is ~0.2 MB instead of 3.2 GB. The label is
+  used when the range's first hour has it; the method-name search is left
+  out then, since every transaction method in the specs is a write but
+  MONAD's and OPTM's `eth_sendTransaction`. Without the label the read is
+  unchanged.
+- **The log lists read each batch of requests over its own times.** The
+  Transactions tab and the Errors tab's request list read a list's lines in
+  batches of 100 request IDs, and every batch read the whole list's range;
+  batches now hold neighbours in time and read only the times they span.
+
 ## [0.28.3]
 
 ### Fixed
