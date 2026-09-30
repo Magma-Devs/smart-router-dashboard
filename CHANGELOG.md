@@ -5,6 +5,18 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Fixed
+
+- **The sidebar keeps its labels on Metrics.** Beside the chains drawer it
+  used to shrink to a 64px icon rail, the only page where it did; it now looks
+  the same everywhere.
+- **"View full logs" shows only when a Grafana is configured.** With no
+  `DASHBOARD_GRAFANA_URL` (or `NEXT_PUBLIC_GRAFANA_URL`) it linked to
+  `http://localhost:3001` whether or not anything ran there, so on every
+  deployment without the `logs` profile it opened a dead page. `/api/config`
+  now returns `grafanaUrl: null` then, and the button is hidden. Running the
+  `logs` compose profile? Set `DASHBOARD_GRAFANA_URL=http://localhost:3001`.
+
 ## [0.28.3]
 
 ### Fixed

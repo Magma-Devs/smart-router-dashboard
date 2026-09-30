@@ -308,9 +308,9 @@ services:
       - NEXT_PUBLIC_LOCAL_MODE=true
       # Base URL of the Grafana that hosts the logs board — the "View full logs"
       # button links here (read at runtime via /api/config, so one published
-      # image serves any host). Defaults to the bundled `logs` profile's Grafana
-      # on :3001; set it to your Grafana origin in a real deployment.
-      - DASHBOARD_GRAFANA_URL=${DASHBOARD_GRAFANA_URL:-http://localhost:3001}
+      # image serves any host). Unset hides the button; with the `logs` profile
+      # up, set it to http://localhost:3001 (that profile's Grafana).
+      - DASHBOARD_GRAFANA_URL=${DASHBOARD_GRAFANA_URL:-}
       # Auth (see docs/AUTH.md) — same AUTH_MODE + AUTH_SECRET as the api.
       # DEPLOYMENT_MODE must match the api's: the web serves it from
       # /api/config and forks the invitation copy on it.

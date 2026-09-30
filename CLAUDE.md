@@ -763,7 +763,7 @@ Web — build-time vs. **runtime**:
 | `NEXT_PUBLIC_LOCAL_MODE` | `false` | build-time default for the `localMode` flag |
 | `DASHBOARD_API_URL` | (unset) | **runtime** override — read from the container env per-request by `GET /api/config`, so one published image serves any host |
 | `DASHBOARD_LOCAL_MODE` | (unset) | runtime override of `localMode`, same mechanism |
-| `DASHBOARD_GRAFANA_URL` | `http://localhost:3001` | Grafana base URL the "View full logs" button links to — runtime override via `/api/config`, same mechanism (falls back to `NEXT_PUBLIC_GRAFANA_URL`) |
+| `DASHBOARD_GRAFANA_URL` | (unset) | Grafana base URL the "View full logs" button links to — runtime override via `/api/config`, same mechanism (falls back to `NEXT_PUBLIC_GRAFANA_URL`). Unset hides the button; the `logs` compose profile's Grafana is `http://localhost:3001` |
 | `AUTH_MODE` / `AUTH_SECRET` | `disabled` / (unset) | must match the api; `enabled` renders the login page + edge gate |
 | `DEPLOYMENT_MODE` | `onprem` | must match the api. Surfaced to the browser by `GET /api/config`, so one image serves both shapes |
 | `INTERNAL_AUTH_SECRET` | (unset) | must match the api (which requires it under `AUTH_MODE=enabled`); lets the web forward the browser's real IP / User-Agent on sign-in and on the server-rendered previews |

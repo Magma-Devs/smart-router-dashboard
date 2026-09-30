@@ -10,11 +10,11 @@ import { WindowSelect } from "./WindowSelect";
 /* Grafana base URL for the "View full logs" button. Resolved at runtime from
    /api/config (which reads DASHBOARD_GRAFANA_URL from the container env), so one
    published web image can point at any Grafana. Falls back to the build-time
-   NEXT_PUBLIC_GRAFANA_URL, then to the bundled `logs` profile's :3001. */
-const BUILD_GRAFANA_URL = process.env.NEXT_PUBLIC_GRAFANA_URL ?? "http://localhost:3001";
+   NEXT_PUBLIC_GRAFANA_URL; null when neither names one, and the button is hidden. */
+const BUILD_GRAFANA_URL = process.env.NEXT_PUBLIC_GRAFANA_URL || null;
 
-function useGrafanaUrl(): string {
-  const [url, setUrl] = useState(BUILD_GRAFANA_URL);
+function useGrafanaUrl(): string | null {
+  const [url, setUrl] = useState<string | null>(BUILD_GRAFANA_URL);
   useEffect(() => {
     let alive = true;
     fetch("/api/config")
@@ -71,7 +71,7 @@ export function PageActions({ timeWindow, setTimeWindow, chainFilter }: {
   chainFilter: string;
 }) {
   const grafanaBase = useGrafanaUrl();
-  const logsHref = fullLogsHref(grafanaBase, timeWindow, chainFilter);
+  const logsHref = grafanaBase ? fullLogsHref(grafanaBase, timeWindow, chainFilter) : null;
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
       {/* Re-fetch every panel now, ahead of the poll interval */}
@@ -81,10 +81,11 @@ export function PageActions({ timeWindow, setTimeWindow, chainFilter }: {
       <WindowSelect value={timeWindow} onChange={setTimeWindow} />
 
       {/* View full logs — links to the Grafana logs board (base URL from
-          /api/config → DASHBOARD_GRAFANA_URL), scoped to the current window. */}
-      <a className="gw-btn gw-btn--primary" href={logsHref} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, padding: "5px 12px", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6 }}>
+          /api/config → DASHBOARD_GRAFANA_URL), scoped to the current window.
+          Hidden when no Grafana is configured. */}
+      {logsHref && <a className="gw-btn gw-btn--primary" href={logsHref} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, padding: "5px 12px", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6 }}>
         View full logs ↗
-      </a>
+      </a>}
     </div>
   );
 }

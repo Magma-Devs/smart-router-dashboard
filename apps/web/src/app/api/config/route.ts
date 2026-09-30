@@ -25,11 +25,12 @@ export function GET() {
     deploymentMode: process.env.DEPLOYMENT_MODE === "managed" ? "managed" : "onprem",
     // Base URL of the Grafana that hosts the logs board — the "View full logs"
     // button links here. Set DASHBOARD_GRAFANA_URL in the container env to point
-    // at any Grafana (the bundled `logs` profile publishes it on :3001). Default
-    // matches that profile so the button works out of the box locally.
+    // at any Grafana (the bundled `logs` profile publishes it on :3001). Null
+    // when neither is set: the page then shows no button rather than a link
+    // to a Grafana that isn't there.
     grafanaUrl:
-      process.env.DASHBOARD_GRAFANA_URL ??
-      process.env.NEXT_PUBLIC_GRAFANA_URL ??
-      "http://localhost:3001",
+      process.env.DASHBOARD_GRAFANA_URL ||
+      process.env.NEXT_PUBLIC_GRAFANA_URL ||
+      null,
   });
 }
