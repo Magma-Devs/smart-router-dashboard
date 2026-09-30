@@ -441,7 +441,7 @@ value is the router's Service name (`<router-id-lowered>-router`).
   `withScope(url)`. A selection that disappears from the list resets to "All
   routers" instead of silently filtering every panel to nothing.
 - The Metrics page picks them in its **chains drawer** (`ChainDrawer`, beside
-  the sidebar, which shrinks to its icons): one row per chain with its health,
+  the sidebar): one row per chain with its health,
   requests and error rate for the page's window, problems first, and a search.
   A row IS the chain filter (`useChainFilter`), so every tab follows it; a
   chain two or more routers serve lists them under it once picked. The page
