@@ -29,6 +29,13 @@ const SRC = fileURLToPath(new URL("../../../", import.meta.url));
  */
 const UNSCOPED_BY_DESIGN = new Set(["/api/metrics/routers"]);
 
+/**
+ * Files whose every metrics read is unscoped by design, with the reason.
+ * The chains drawer is how you move between chains: under a router's scope it
+ * would hold that router's chain alone, and every other row would go blank.
+ */
+const UNSCOPED_FILES = new Set(["components/gateway/ChainDrawer.tsx"]);
+
 function walk(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
     const p = join(dir, entry);
@@ -123,6 +130,7 @@ describe("router scope (?router=) coverage", () => {
   it("every /api/metrics/* fetch carries the router scope", () => {
     const unscoped: string[] = [];
     for (const file of files) {
+      if (UNSCOPED_FILES.has(file.slice(SRC.length))) continue;
       for (const { literal, scoped } of metricsUrlLiterals(readFileSync(file, "utf8"))) {
         const path = literal.split("?")[0]!;
         if (scoped || UNSCOPED_BY_DESIGN.has(path)) continue;
@@ -144,5 +152,14 @@ describe("router scope (?router=) coverage", () => {
     );
     expect(routers).toBeDefined();
     expect(routers!.scoped).toBe(false);
+  });
+
+  it("the chains drawer reads the whole deployment", () => {
+    const drawer = readFileSync(join(SRC, "components/gateway/ChainDrawer.tsx"), "utf8");
+    const reads = metricsUrlLiterals(drawer);
+    expect(reads.map((u) => u.literal.split("?")[0])).toEqual([
+      "/api/metrics/chains", "/api/metrics/specs", "/api/metrics/dashboard-summary",
+    ]);
+    expect(reads.every((u) => !u.scoped)).toBe(true);
   });
 });

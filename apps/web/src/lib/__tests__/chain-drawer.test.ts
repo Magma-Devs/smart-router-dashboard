@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { attention, byAttention, chainHref, scopeFromSearch, type DrawerChain } from "../chain-drawer";
+import { attention, byAttention, chainHref, resolveScope, scopeFromSearch, type DrawerChain } from "../chain-drawer";
 import { errRateColor } from "../colors";
 
 const row = (over: Partial<DrawerChain>): DrawerChain => ({
@@ -50,6 +50,33 @@ describe("scopeFromSearch", () => {
     expect(scopeFromSearch("?chain=&router=")).toEqual({ chain: null, router: null });
     expect(scopeFromSearch("?chain=ETH1%22%7D&router=a%20b")).toEqual({ chain: null, router: null });
     expect(scopeFromSearch(`?chain=${"A".repeat(65)}`).chain).toBeNull();
+  });
+});
+
+describe("resolveScope", () => {
+  const routers = [
+    { id: "eth-prod", spec: "ETH1" },
+    { id: "eth-staging", spec: "ETH1" },
+    { id: "SOLANA", spec: "SOLANA" },
+  ];
+
+  it("gives a router its own chain, whatever chain the URL named", () => {
+    expect(resolveScope({ chain: null, router: "eth-prod" }, routers)).toEqual({ chain: "ETH1", router: "eth-prod" });
+    expect(resolveScope({ chain: "SOLANA", router: "eth-staging" }, routers)).toEqual({ chain: "ETH1", router: "eth-staging" });
+  });
+
+  it("reads the router of a chain nothing else serves as that chain", () => {
+    expect(resolveScope({ chain: null, router: "SOLANA" }, routers)).toEqual({ chain: "SOLANA", router: null });
+  });
+
+  it("drops a router the config doesn't have, keeping the chain", () => {
+    expect(resolveScope({ chain: "ETH1", router: "gone" }, routers)).toEqual({ chain: "ETH1", router: null });
+    expect(resolveScope({ chain: null, router: "gone" }, [])).toEqual({ chain: null, router: null });
+  });
+
+  it("leaves the scope as asked until the config has been read", () => {
+    expect(resolveScope({ chain: null, router: "eth-prod" }, null)).toEqual({ chain: null, router: "eth-prod" });
+    expect(resolveScope({ chain: "ETH1", router: null }, routers)).toEqual({ chain: "ETH1", router: null });
   });
 });
 

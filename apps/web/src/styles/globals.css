@@ -142,12 +142,12 @@ a.gw-side__brand:hover { opacity: 0.82; }
 .gw-side--compact .gw-side__brand > div,
 .gw-side--compact .gw-side__section-label,
 .gw-side--compact .gw-nav-item > span,
-.gw-side--compact .gw-side__user .meta,
-.gw-side--compact .gw-side__user > button { display: none; }
+.gw-side--compact .gw-side__user .meta { display: none; }
 .gw-side--compact .gw-side__nav > div + div { border-top: 1px solid var(--line); margin-top: 8px; padding-top: 8px; }
 .gw-side--compact .gw-nav-item { justify-content: center; padding: 9px 0; }
 .gw-side--compact .gw-side__foot { padding: 12px 0; }
-.gw-side--compact .gw-side__user { justify-content: center; }
+/* The sign-out button stays, under the avatar: Metrics is the landing page. */
+.gw-side--compact .gw-side__user { flex-direction: column; gap: 6px; }
 
 /* ── Chains drawer (Metrics): one row per chain, the page's chain filter ── */
 .gw-chains { width: 244px; flex-shrink: 0; background: var(--bg); border-right: 1px solid var(--line); display: flex; flex-direction: column; height: 100vh; position: sticky; top: 0; }

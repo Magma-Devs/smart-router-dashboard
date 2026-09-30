@@ -44,7 +44,9 @@ export interface RouterOptionRow {
 
 export function useRouterOptions(): {
   routers: RouterOptionRow[];
-  /** The config has been read: an empty list then means no routers, not "not yet". */
+  /** The config and the collector's scope list have both answered (or failed):
+   *  an empty list then means no routers, not "not yet", and each row's
+   *  `scopeValue` is final. */
   loaded: boolean;
   /** The collector's scope label, for copy that has to name it. */
   scopeLabel: string | null;
@@ -75,11 +77,12 @@ export function useRouterOptions(): {
     });
     return {
       routers,
-      loaded: config.data !== undefined,
+      loaded: (config.data !== undefined || config.error !== undefined)
+        && (scope.data !== undefined || scope.error !== undefined),
       scopeLabel: scope.data?.label ?? null,
       scopeUnavailable: routers.length > 0 && routers.every((r) => r.scopeValue === null),
     };
-  }, [config.data, scope.data]);
+  }, [config.data, config.error, scope.data, scope.error]);
 }
 
 /**

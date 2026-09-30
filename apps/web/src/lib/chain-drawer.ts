@@ -56,6 +56,19 @@ export function scopeFromSearch(search: string): PageScope {
   };
 }
 
+/**
+ * What a URL's scope means against the config's routers (null until read): a
+ * router picks its own chain, one the config doesn't have reads as none, and
+ * so does the router of a chain nothing else serves - there it is the chain.
+ */
+export function resolveScope(want: PageScope, routers: { id: string; spec: string }[] | null): PageScope {
+  if (want.router === null || routers === null) return want;
+  const picked = routers.find((r) => r.id === want.router);
+  if (!picked) return { chain: want.chain, router: null };
+  const shared = routers.some((r) => r.spec === picked.spec && r.id !== picked.id);
+  return { chain: picked.spec, router: shared ? picked.id : null };
+}
+
 /** The link to one chain's metrics (and one of its routers); null is every chain. */
 export function chainHref(spec: string | null, router: string | null = null): string {
   if (!spec) return "/metrics";

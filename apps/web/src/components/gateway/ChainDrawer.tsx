@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
-import { buildChainMetaByIndex, WINDOWS, type ChainMetrics } from "@sr/shared";
+import { buildChainMetaByIndex, WINDOWS, type ChainMetrics, type HeroSummary } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { useChainFilter, useChainOptions } from "@/hooks/use-chain-options";
 import { useRouterFilter, useRouterOptions, type RouterOptionRow } from "@/hooks/use-router-options";
@@ -41,7 +41,7 @@ export function useChainDrawer(): { visible: boolean } {
 }
 
 export function ChainDrawer() {
-  const { timeWindow, scopeQ } = useFilters();
+  const { timeWindow } = useFilters();
   const { chain, select } = useChainFilter();
   const { routerId, select: selectRouter } = useRouterFilter();
   const { routers: allRouters } = useRouterOptions();
@@ -52,14 +52,22 @@ export function ChainDrawer() {
     for (const r of allRouters) bySpec.set(r.spec, [...(bySpec.get(r.spec) ?? []), r]);
     return new Map([...bySpec].filter(([, list]) => list.length > 1));
   }, [allRouters]);
-  const metrics = useApi<{ chains: ChainMetrics[] }>(`/api/metrics/chains?window=${timeWindow}${scopeQ}`, 30000);
+  // The whole deployment, never the picked router's scope: the drawer is how
+  // you move between chains, and a router's scope holds only its own chain.
+  const metrics = useApi<{ chains: ChainMetrics[] }>(`/api/metrics/chains?window=${timeWindow}`, 30000);
+  const traffic = useApi<{ specs: string[] }>("/api/metrics/specs", 60000);
+  // Every chain's error rate as one ratio, the same key the Metrics tab's hero
+  // reads with no chain or router picked.
+  const summary = useApi<HeroSummary>(`/api/metrics/dashboard-summary?window=${timeWindow}`);
   const [query, setQuery] = useState("");
 
-  // Every chain the config declares or the metrics report (useChainOptions),
-  // with its numbers for the page's window.
+  // Every chain the config declares or the metrics report, with its numbers
+  // for the page's window.
   const rows = useMemo<DrawerChain[]>(() => {
     const bySpec = new Map((metrics.data?.chains ?? []).map((c) => [c.spec, c]));
-    const specs = [...new Set([...options.map((o) => o.spec), ...bySpec.keys()])];
+    // Unknown until read, so no row says "no traffic yet" while it loads.
+    const served = traffic.data ? new Set(traffic.data.specs) : null;
+    const specs = [...new Set([...options.map((o) => o.spec), ...(served ?? []), ...bySpec.keys()])];
     return byAttention(specs.map((spec) => {
       const m = bySpec.get(spec);
       const meta = buildChainMetaByIndex(spec);
@@ -69,12 +77,13 @@ export function ChainDrawer() {
         mainnet: meta.mainnet,
         health: m?.health ?? "unknown",
         requests: Math.round(m?.requests ?? 0),
-        // No requests, no rate: 0.00% would claim they all succeeded.
-        errPct: m?.errorRate != null && m.requests > 0 ? m.errorRate * 100 : null,
-        noTraffic: options.find((o) => o.spec === spec)?.hasTraffic === false,
+        // Failed over every request, so a chain failing them all reads 100%;
+        // null when it had none. `requests` counts only the answered ones.
+        errPct: m?.errorRate != null ? m.errorRate * 100 : null,
+        noTraffic: served !== null && !served.has(spec) && !m,
       };
     }));
-  }, [options, metrics.data]);
+  }, [options, metrics.data, traffic.data]);
 
   const q = query.trim().toLowerCase();
   const shown = q ? rows.filter((r) => r.name.toLowerCase().includes(q) || r.spec.toLowerCase().includes(q)) : rows;
@@ -83,8 +92,7 @@ export function ChainDrawer() {
     ? [["Mainnet", shown.filter((r) => r.mainnet)], ["Testnet", shown.filter((r) => !r.mainnet)]]
     : [[null, shown]];
 
-  const total = rows.reduce((n, r) => n + r.requests, 0);
-  const failed = rows.reduce((n, r) => n + (r.errPct ?? 0) / 100 * r.requests, 0);
+  const successRate = summary.data?.successRate.value ?? null;
   const unhealthy = rows.filter((r) => r.health === "unhealthy").length;
   const loading = !metrics.data;
 
@@ -133,7 +141,7 @@ export function ChainDrawer() {
               {unhealthy > 0 && <span style={{ color: "var(--err)" }}> · {unhealthy} unhealthy</span>}
             </span>
           </span>
-          <ErrRate pct={loading || total === 0 ? null : (failed / total) * 100} />
+          <ErrRate pct={successRate === null ? null : (1 - successRate) * 100} />
           <span className="dot" style={{ visibility: "hidden" }} />
         </a>
         {groups.map(([label, list]) => (
