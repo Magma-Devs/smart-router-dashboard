@@ -171,7 +171,7 @@ export function MetricsTabSectionB({
           <div style={{ fontSize: 10, color: "var(--text-3)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 14 }}>Performance contribution</div>
           <div style={{ fontSize: 42, fontWeight: 400, fontFamily: "var(--font-mono)", color: contrib ? "var(--text)" : "var(--text-4)", marginBottom: 10, letterSpacing: "-0.04em" }}>{contrib ? contrib.perfPct + "%" : "—"}</div>
           <div style={{ fontSize: 13, color: "var(--text-2)", lineHeight: 1.6, marginBottom: 12 }}>
-            of requests delivered under P95 threshold <em>because</em> of failover or hedging - primary would have returned them above threshold.
+            of requests delivered under P95 threshold <em>because</em> of failover or hedging — primary would have returned them above threshold.
           </div>
         </div>
       </div>

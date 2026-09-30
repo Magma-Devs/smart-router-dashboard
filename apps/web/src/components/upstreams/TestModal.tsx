@@ -131,7 +131,7 @@ export function TestModal({ open, onClose, upstream, routers }: {
             <div style={{ padding: "12px 14px", borderRadius: 8, background: "var(--hover)", fontSize: 12, color: "var(--text-3)", lineHeight: 1.5 }}>
               <strong style={{ color: "var(--text-2)" }}>This upstream is a backup.</strong> The probe
               goes through the router pinned to one upstream, and the router honours a pin only
-              within its primary pool - a backup is reached solely when every primary is exhausted,
+              within its primary pool — a backup is reached solely when every primary is exhausted,
               and the router picks among the backups itself. There is no router-side probe that
               would say anything about this upstream. Use <strong>Try now → Direct to upstream</strong>:
               the api dials this node&apos;s url itself.
@@ -140,7 +140,7 @@ export function TestModal({ open, onClose, upstream, routers }: {
           {target && !pinRefusal && (
             <div style={{ fontSize: 12, color: "var(--text-3)", lineHeight: 1.5 }}>
               Sent through the router, pinned to this upstream with the{" "}
-              <span className="gw-mono">lava-select-provider</span> header - the router&apos;s
+              <span className="gw-mono">lava-select-provider</span> header — the router&apos;s
               cache can still answer it.
             </div>
           )}

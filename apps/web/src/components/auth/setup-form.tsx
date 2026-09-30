@@ -95,7 +95,7 @@ export function SetupForm({ mode }: { mode: "managed" | "onprem" }) {
               renders flush against the preceding word. */}
           Nothing else opens until this is done. You&apos;ll need the setup token{" "}
           {mode === "onprem" ? "printed by the installer" : "we sent you"}
-          {" - "}it proves you&apos;re the person who installed this, and it&apos;s
+          {" — "}it proves you&apos;re the person who installed this, and it&apos;s
           only needed once.
         </p>
 
@@ -165,7 +165,7 @@ export function SetupForm({ mode }: { mode: "managed" | "onprem" }) {
           </label>
 
           <p style={{ fontSize: 11.5, color: "var(--text-3)", margin: "2px 0 0", lineHeight: 1.5 }}>
-            Any characters, 8 to 64. Checked against known breached passwords - there are no
+            Any characters, 8 to 64. Checked against known breached passwords — there are no
             other rules, and it never expires.
           </p>
 

@@ -289,7 +289,7 @@ const EVM_JSONRPC: InterfaceConfig = {
       method: "eth_call",
       label: "eth_call",
       params: '[{"to":"0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48","data":"0x18160ddd"}, "latest"]',
-      desc: "Executes a read-only call - great for reading contract state (e.g. ERC-20 totalSupply).",
+      desc: "Executes a read-only call — great for reading contract state (e.g. ERC-20 totalSupply).",
     },
     {
       method: "eth_getLogs",
@@ -403,7 +403,7 @@ const COSMOS_TENDERMINT: InterfaceConfig = {
   regular: [
     { method: "abci_info", label: "abci_info", params: "[]", desc: "Returns ABCI application data." },
     { method: "net_info", label: "net_info", params: "[]", desc: "Returns active peer network info." },
-    { method: "health", label: "health", params: "[]", desc: "Returns node health - empty = healthy." },
+    { method: "health", label: "health", params: "[]", desc: "Returns node health — empty = healthy." },
   ],
   archive: [{ method: "block", label: "Block (Archive)", params: '{"height":"340801"}' }],
   debug: null,

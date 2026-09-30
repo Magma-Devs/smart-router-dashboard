@@ -24,7 +24,7 @@ export type UpstreamTier = "primary" | "backup";
  *  is. Null when it can. */
 export function pinRefusalFor(tier: UpstreamTier): string | null {
   if (tier !== "backup") return null;
-  return "This upstream is configured as a backup: the router routes to backups only after every primary upstream is exhausted, and picks among them itself. A pinned request can't reach it - the router answers -32000 Selected provider not available.";
+  return "This upstream is configured as a backup: the router routes to backups only after every primary upstream is exhausted, and picks among them itself. A pinned request can't reach it — the router answers -32000 Selected provider not available.";
 }
 
 /**
@@ -34,7 +34,7 @@ export function pinRefusalFor(tier: UpstreamTier): string | null {
  */
 export function pinRefusalHintFor(tier: UpstreamTier): string | null {
   if (tier !== "backup") return null;
-  return "Backup upstream - the router reaches it only after every primary is exhausted, and picks the backup itself. Send it direct instead.";
+  return "Backup upstream — the router reaches it only after every primary is exhausted, and picks the backup itself. Send it direct instead.";
 }
 
 /** The transports the drawer drives. */

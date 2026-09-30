@@ -109,7 +109,7 @@ export function InviteModal({
               in Members, where they will not be until they redeem. */}
           <div style={{ fontSize: 12.5, color: "var(--text-3)", lineHeight: 1.6 }}>
             They are in <strong>Invites</strong> until they open the link and accept it. The
-            account - and their row in Members - is created at that moment, with this address.
+            account — and their row in Members — is created at that moment, with this address.
           </div>
           {result.url ? (
             <>
@@ -138,7 +138,7 @@ export function InviteModal({
               </button>
               {copied === "failed" && (
                 <div role="alert" style={{ fontSize: 12, color: "var(--err)" }}>
-                  Couldn&apos;t copy it here - select the link above and copy it by hand.
+                  Couldn&apos;t copy it here — select the link above and copy it by hand.
                 </div>
               )}
             </>

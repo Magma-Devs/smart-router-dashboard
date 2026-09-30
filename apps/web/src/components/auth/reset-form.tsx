@@ -86,7 +86,7 @@ export function ResetForm({ token, email }: { token: string; email: string | nul
                 margin: "0 0 20px",
               }}
             >
-              That includes any device you don&apos;t recognise - which is the point, if this reset
+              That includes any device you don&apos;t recognise — which is the point, if this reset
               was because you thought somebody else had your account.
             </p>
             <a className="gw-btn gw-btn--primary" href="/login" style={{ justifyContent: "center", width: "100%" }}>
@@ -201,7 +201,7 @@ export function ResetDead({ managed }: { managed: boolean }) {
         <p style={{ fontSize: 13, color: "var(--text-2)", lineHeight: 1.6, margin: "0 0 20px" }}>
           {managed
             ? "Request a new one and we'll email it to you."
-            : "Ask an administrator to generate a new one - this deployment has no mail server, so they hand it over directly."}
+            : "Ask an administrator to generate a new one — this deployment has no mail server, so they hand it over directly."}
         </p>
         {/* Managed sends people to the form that actually issues one. This used
             to point at /login for both, from before /forgot-password existed —
