@@ -35,7 +35,7 @@ import {
   qUpstreamErrorRate,
   qUpstreamReadVolumeSeriesExpr,
   qUpstreamVolumeSeriesExpr,
-  qClientRequestsFromBirth,
+  qClientRequestsTotal,
   qClientRpsSeriesExpr,
   qScoreExpr,
   rangeFor,
@@ -126,12 +126,13 @@ export class MetricsDetailService {
     // chartSampling): dense, smooth lines rather than a few coarse steps.
     const { stepSec, step, lookback, rateWindow } = chartSampling(window);
     const grid = this.grid(window, stepSec);
-    const range = (expr: string) => this.prom.queryRange(expr, grid.start, grid.end, step);
-    const [latency, rps, tips] = await Promise.all([
+    const range = (expr: string) => this.prom.queryRangeOrNull(expr, grid.start, grid.end, step);
+    const reads = await Promise.all([
       range(qEndpointLatencyByEndpointSeriesExpr(0.95, spec, lookback, rateWindow)),
       range(qUpstreamRpsByUpstreamSeriesExpr(spec, lookback, rateWindow, step)),
       range(qEndpointTipsSeriesExpr(spec, step)),
     ]);
+    const [latency = [], rps = [], tips = []] = reads.map((r) => r ?? []);
     const by = new Map<string, { latencyP95: TimePoint[]; rps: TimePoint[]; latestBlock: TimePoint[] }>();
     const entry = (u: string) => {
       const e = by.get(u) ?? { latencyP95: [], rps: [], latestBlock: [] };
@@ -143,6 +144,7 @@ export class MetricsDetailService {
     for (const s of tips) if (s.metric.endpoint_id) entry(s.metric.endpoint_id).latestBlock = toPoints(s.values);
     return {
       spec,
+      available: reads.every((r) => r !== null),
       grid,
       upstreams: [...by].map(([upstream, v]) => ({ upstream, ...v })).sort((a, b) => a.upstream.localeCompare(b.upstream)),
     };
@@ -579,11 +581,11 @@ export class MetricsDetailService {
     if (!emitted) {
       return { emitted, retried: null, recovered: null, failed: null, recoveryRate: null, retryRate: null, avgExtraAttempts: null };
     }
-    const [recoveredRows, failedRows, avgExtraAttempts, clientRequests] = await Promise.all([
+    const [recoveredRows, failedRows, avgExtraAttempts, served] = await Promise.all([
       this.prom.query(qRetriesByMethod("recovered", window, spec)),
       this.prom.query(qRetriesByMethod("failed", window, spec)),
       this.prom.scalar(qRetryAvgExtraAttempts(window, spec)),
-      this.prom.scalar(qClientRequestsFromBirth(window, spec)),
+      this.prom.scalar(qClientRequestsTotal(spec, window)),
     ]);
     // Summed from the per-(chain × method) rows, each already rounded, so the
     // three cards add up on screen.
@@ -591,13 +593,16 @@ export class MetricsDetailService {
     const recovered = total(recoveredRows);
     const failed = total(failedRows);
     const retried = recovered + failed;
+    // The latency histogram counts only the requests that got a reply, so
+    // the ones that failed after their retries are added to reach every request.
+    const requests = served != null ? served + failed : null;
     return {
       emitted,
       retried,
       recovered,
       failed,
       recoveryRate: retried ? recovered / retried : null,
-      retryRate: clientRequests ? retried / clientRequests : null,
+      retryRate: requests ? retried / requests : null,
       avgExtraAttempts,
     };
   }

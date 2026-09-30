@@ -26,9 +26,14 @@ export async function transactionRoutes(app: FastifyInstance) {
         },
       },
     },
-  }, async (request) => {
+  }, async (request, reply) => {
     const { spec, routerId, before } = request.query;
-    return app.transactions.report(readRange(request.query), spec, routerId, before);
+    const range = readRange(request.query);
+    if ("error" in range) {
+      sendApiError(reply, 400, range.error);
+      return reply;
+    }
+    return app.transactions.report(range, spec, routerId, before);
   });
 
   // One transaction by its request ID - the same row the log shows.
@@ -45,6 +50,11 @@ export async function transactionRoutes(app: FastifyInstance) {
       sendApiError(reply, 400, "not a request ID: letters, digits, - and _ only, up to 64");
       return reply;
     }
-    return app.transactions.lookup(guid, readRange(request.query));
+    const range = readRange(request.query);
+    if ("error" in range) {
+      sendApiError(reply, 400, range.error);
+      return reply;
+    }
+    return app.transactions.lookup(guid, range);
   });
 }

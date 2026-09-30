@@ -21,6 +21,7 @@ import {
   qLatencyDistribution,
   qLatencyQuantile,
   qLatencySeriesExpr,
+  qRetriesTotal,
   qBestTipBySpec,
   qBlockRateBySpec,
   qEndpointPolls,
@@ -212,11 +213,9 @@ export class MetricsService {
       ]);
     const stale = staleKpi;
 
+    // Counted as the Errors tab's retry cards count it, births included.
     const retriesRecovered: Kpi = retriesPresent
-      ? await kpi(
-          `round(sum(increase(${OPTIONAL_METRICS.retriesSuccessTotal}${specSel}[${r}])))`,
-          `round(sum(increase(${OPTIONAL_METRICS.retriesSuccessTotal}${specSel}[${r}] offset ${r})))`,
-        )
+      ? await kpi(qRetriesTotal("recovered", window, spec), qRetriesTotal("recovered", window, spec, r))
       : { value: null, prior: null };
     const cacheOffloadPct: Kpi = cachePresent
       ? await kpi(

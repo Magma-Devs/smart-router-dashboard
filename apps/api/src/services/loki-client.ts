@@ -8,7 +8,7 @@
  * one line per distinct failure per minute, like the Prometheus client.
  */
 import { config } from "../config.js";
-import type { PromLogger } from "./prometheus-client.js";
+import { buildAuthHeaders, type PromAuth, type PromLogger } from "./prometheus-client.js";
 
 export interface LokiLine {
   /**
@@ -46,12 +46,16 @@ export function msToNs(ms: number): string {
 
 export class LokiClient {
   private readonly warnedAt = new Map<string, number>();
+  private readonly headers: Record<string, string>;
 
   constructor(
     private readonly baseUrl: string,
     private readonly timeoutMs: number = config.loki.timeoutMs,
     private readonly logger?: PromLogger,
-  ) {}
+    auth: PromAuth = {},
+  ) {
+    this.headers = buildAuthHeaders(auth);
+  }
 
   private warn(key: string, obj: Record<string, unknown>, msg: string): void {
     if (!this.logger) return;
@@ -81,7 +85,7 @@ export class LokiClient {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
-      const res = await fetch(url, { signal: controller.signal });
+      const res = await fetch(url, { signal: controller.signal, headers: this.headers });
       if (!res.ok) {
         // Loki puts the LogQL error in the body; keep enough to read it.
         const body = (await res.text().catch(() => "")).slice(0, 300);
@@ -117,7 +121,7 @@ export class LokiClient {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
-      const res = await fetch(url, { signal: controller.signal });
+      const res = await fetch(url, { signal: controller.signal, headers: this.headers });
       if (!res.ok) {
         const body = (await res.text().catch(() => "")).slice(0, 300);
         this.warn(`http:${res.status}:${body}`, { status: res.status, body, query }, "loki call failed");

@@ -381,6 +381,8 @@ export interface ChartGrid {
  */
 export interface UpstreamPeers {
   spec: string;
+  /** Every read answered. False: one failed or timed out, so an empty series means nothing. */
+  available: boolean;
   grid: ChartGrid;
   upstreams: { upstream: string; latencyP95: TimePoint[]; rps: TimePoint[]; latestBlock: TimePoint[] }[];
 }
@@ -568,8 +570,11 @@ export interface ErrorRequestRow {
   guid: string;
   /** When the router received it, unix ms. */
   time: number;
+  /** Chain: the one the logs name, else the only chain serving every upstream it used; null when neither says. */
   spec: string | null;
-  /** JSON-RPC method, or the REST path; `unknown` when the logs don't say. */
+  /** With `spec` null: the chains it could be on, when its upstreams serve several. */
+  specs?: string[];
+  /** JSON-RPC method, or the REST path; `unknown` when the logs don't say, `(path redacted)` when a log collector masked it. */
   method: string;
   attempts: RelayAttempt[];
   /**
@@ -599,19 +604,27 @@ export interface ErrorRequestRow {
   error: string | null;
 }
 
+/** Why the router's logs couldn't be read: no log store configured, or it didn't answer in time. */
+export type LogUnavailable = "unconfigured" | "unreachable";
+
 /** One request looked up by its ID - any request, whatever happened to it. `row` null: not in the logs of the range read. */
 export interface RequestLookup {
   available: boolean;
+  reason?: LogUnavailable;
   row: ErrorRequestRow | null;
 }
 
 /**
- * Client requests the router could not serve in a window: no upstream
- * returned a usable response, so the router returned its own error. Counted
- * from the router's logs; `available:false` (and a null value) without Loki.
+ * Client requests the router could not serve in a window: nothing, or
+ * nothing usable, came back from the upstreams, so the router returned its
+ * own error. Counted from the router's logs; `available:false` and a null
+ * value when they can't be read, or (`shared-chain`) when a router was asked
+ * for on a chain other routers serve too - the lines don't say which router
+ * wrote them.
  */
 export interface FailedRequests {
   available: boolean;
+  reason?: LogUnavailable | "shared-chain";
   value: number | null;
 }
 
@@ -619,6 +632,7 @@ export interface FailedRequests {
 export interface ErrorRequestsReport {
   /** The router's logs could be read (LOKI_URL set, and Loki answered). */
   available: boolean;
+  reason?: LogUnavailable;
   /** Newest first. */
   rows: ErrorRequestRow[];
   /** The range holds older requests than these: read on with `before=nextBefore`. */
@@ -634,7 +648,8 @@ export interface ErrorRequestsReport {
  *  - `accepted` - the upstream that answered took it (in its pending pool; not yet in a block)
  *  - `rejected` - that upstream answered with an error, e.g. nonce too low
  *  - `failed`   - no usable answer: the router returned an error of its own
- *  - `unknown`  - the logs can't say: no end in them, or a chain that puts a
+ *  - `unknown`  - the logs can't say: no end in them, a write the router
+ *                 itself can't tell went through, or a chain that puts a
  *                 refusal inside a normal reply the router doesn't log (`note`)
  */
 export type TxOutcome = "accepted" | "rejected" | "failed" | "unknown";
@@ -644,8 +659,10 @@ export interface TxLogRow {
   guid: string;
   /** When the router received it, unix ms. */
   time: number;
-  /** Chain; null when neither the logs nor the mounted config say. */
+  /** Chain: the one the logs name, else the only chain serving every upstream it went to; null when neither says. */
   spec: string | null;
+  /** With `spec` null: the chains it could be on, when its upstreams serve several. */
+  specs?: string[];
   /** JSON-RPC method, or the REST path. */
   method: string;
   /** Every upstream the router sent it to - all in one batch, for a broadcast - and what each answered. */
@@ -667,6 +684,7 @@ export interface TxLogRow {
  */
 export interface TransactionLookup {
   available: boolean;
+  reason?: LogUnavailable;
   found: boolean;
   row: TxLogRow | null;
 }
@@ -677,6 +695,7 @@ export interface TransactionsReport {
    * (LOKI_URL) or it did not answer - everything below is then empty.
    */
   available: boolean;
+  reason?: LogUnavailable;
   total: number;
   accepted: number;
   rejected: number;
@@ -691,7 +710,7 @@ export interface TransactionsReport {
   nextBefore: number | null;
 }
 
-/* ── Cross-validation / WebSocket reports (no screen since the Traffic tab went) ── */
+/* ── Cross-validation / WebSocket reports (no screen reads them) ── */
 
 export interface CrossValidationReport {
   emitted: boolean;

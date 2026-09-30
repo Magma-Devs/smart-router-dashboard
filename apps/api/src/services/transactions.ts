@@ -13,36 +13,41 @@
  *   failed relay, insufficient results `error_name` says why
  *   relay finished                     `served_by` = whose reply the client got;
  *                                      `error` = a failure of the router's own
+ *   failed getting responses from …    nothing came back; no "relay finished"
+ *   write outcome unknown              the router can't tell whether the write
+ *                                      reached a node
  *
  * What each upstream answered comes from the per-try lines `triesOf` reads
  * (router-log.ts) - the same ones the Errors tab's request list shows.
  *
  * The counters can't do this job: a rejected transaction counts as a success
  * on `requests_success_total` (the router got a reply), and node errors on a
- * broadcast are not counted per upstream at all. See `router-log.ts` for how
- * the lines are read.
+ * broadcast are not counted per upstream at all.
  */
-import type { RouterTopology, TransactionLookup, TransactionsReport, TxLogRow, TxOutcome } from "@sr/shared";
-import { readEnd, type ReadRange } from "./read-range.js";
+import type { LogUnavailable, RouterTopology, TransactionLookup, TransactionsReport, TxLogRow, TxOutcome } from "@sr/shared";
+import { readEnd, readOnFrom, type ReadRange } from "./read-range.js";
 import type { LokiClient } from "./loki-client.js";
 import type { ConfigurationService } from "./configuration.js";
 import {
+  chainOf,
+  END_MSG,
   escapeRe,
   inRawString,
   linesForGuids,
   linesOfRequest,
   REQUEST_ID,
   methodOf,
+  namesOf,
+  onChain,
   parseAll,
   providerOf,
   scrubUrls,
   str,
   TRY_MSG,
   triesOf,
-  upstreamIndex,
+  UpstreamIndex,
   withoutGuid,
   type RouterLine,
-  type UpstreamInfo,
 } from "./router-log.js";
 
 export const MSG = {
@@ -50,6 +55,8 @@ export const MSG = {
   ...TRY_MSG,
   noResults: "failed relay, insufficient results",
   finished: "relay finished",
+  noAnswer: END_MSG.noAnswer,
+  writeUnknown: END_MSG.writeUnknown,
 } as const;
 
 /**
@@ -81,6 +88,8 @@ export const NOTE = {
   noEnd: "The logs show no end. It may still be in flight, or some of its log lines are missing.",
   replyNotLogged:
     "The node replied, but on this chain a refused transaction also gets a normal reply. The router doesn't log what the reply said, so the dashboard can't tell.",
+  writeUnknown:
+    "No upstream gave a definite answer, so the router can't tell whether the transaction reached a node. Check the chain before sending it again.",
 } as const;
 
 /** Transactions one read returns; `more` says when the range holds older ones. */
@@ -91,19 +100,16 @@ const REPLY_SPAN_MS = 60_000;
 
 /**
  * One row per transaction - a request the spec marks `stateful:"1"`, or one
- * calling a transaction method - newest first. `lookup` resolves an upstream
- * from the mounted config: the lines name the chain only on an error.
+ * calling a transaction method - newest first. `index` resolves a request's
+ * chain from the mounted config when no line names it.
  */
-export function buildTxRows(
-  lines: RouterLine[],
-  lookup: (upstream: string) => UpstreamInfo | null,
-): TxLogRow[] {
+export function buildTxRows(lines: RouterLine[], index: UpstreamIndex): TxLogRow[] {
   const byGuid = new Map<string, RouterLine[]>();
   for (const l of lines) byGuid.set(l.guid, [...(byGuid.get(l.guid) ?? []), l]);
 
   const rows: TxLogRow[] = [];
   for (const [guid, unordered] of byGuid) {
-    // Time order, not arrival order: each log level is its own stream.
+    // Time order, not arrival order: each log level can be its own stream.
     const group = [...unordered].sort((a, b) => a.tsMs - b.tsMs);
     const choosing = group.find((l) => l.message === MSG.choosing);
     const received = group.find((l) => l.message.startsWith(MSG.received));
@@ -111,6 +117,8 @@ export function buildTxRows(
     if (!choosing || !(str(choosing.f.stateful) === "1" || TX_METHOD_SET.has(method))) continue;
 
     const finished = group.find((l) => l.message === MSG.finished);
+    const noAnswer = group.find((l) => l.message === MSG.noAnswer);
+    const writeUnknown = group.some((l) => l.message === MSG.writeUnknown);
     const nodeErrors = group.filter((l) => l.message === MSG.nodeErrorReply || l.message === MSG.nodeError);
     const relayErrors = group.filter(
       (l) => (l.message === MSG.sendFailed || l.message === MSG.noResults) && str(l.f.error_name),
@@ -119,25 +127,29 @@ export function buildTxRows(
     const attempts = triesOf(group, start.tsMs, finished);
     const sentTo = [...new Set(attempts.map((a) => a.upstream))];
     const answeredBy = finished ? str(finished.f.served_by) || null : null;
-    const upstreams = sentTo.map(lookup);
+    const chain = chainOf(group, namesOf(group, attempts), index);
+    const chains = chain.spec ? [chain.spec] : (chain.specs ?? []);
+    const interfaces = sentTo.flatMap((u) => chains.flatMap((s) => index.info(s, u)?.interfaces ?? []));
 
     // The client got the answering upstream's reply; with a single upstream,
     // its error line is that reply.
     const replyError =
       nodeErrors.find((l) => providerOf(l.f.provider) === answeredBy) ??
       (sentTo.length === 1 ? nodeErrors[0] : undefined);
-    const routerError = finished ? withoutGuid(str(finished.f.error)) : "";
-    const replyDecides =
-      method === REPLY_DECIDES_PATH ||
-      upstreams.some((u) => u?.interfaces.some((i) => REPLY_DECIDES_INTERFACES.has(i)));
+    const routerError = withoutGuid(str((finished ?? noAnswer)?.f.error));
+    const replyDecides = method === REPLY_DECIDES_PATH || interfaces.some((i) => REPLY_DECIDES_INTERFACES.has(i));
 
     let outcome: TxOutcome = "accepted";
     let error: TxLogRow["error"] = null;
     let note: string | null = null;
-    if (!finished) {
+    if (writeUnknown) {
+      // The router's own verdict: it answered the client "status unclear".
+      outcome = "unknown";
+      note = NOTE.writeUnknown;
+    } else if (!finished && !noAnswer) {
       outcome = "unknown";
       note = NOTE.noEnd;
-    } else if (routerError || str(finished.f.has_reply) === "false") {
+    } else if (!finished || routerError || str(finished.f.has_reply) === "false") {
       outcome = "failed";
       error = {
         code: str(relayErrors[0]?.f.error_name) || "NO_REPLY",
@@ -160,18 +172,15 @@ export function buildTxRows(
       }
     }
 
+    const end = finished ?? noAnswer;
     rows.push({
       guid,
       time: Math.round(start.tsMs),
-      spec:
-        str(nodeErrors[0]?.f.chain_id) ||
-        str(relayErrors[0]?.f.chain_id) ||
-        upstreams.find((u) => u)?.spec ||
-        null,
+      ...chain,
       method,
       attempts,
       answeredBy,
-      replyMs: finished ? Math.round(finished.tsMs - start.tsMs) : null,
+      replyMs: end ? Math.round(end.tsMs - start.tsMs) : null,
       outcome,
       error,
       note,
@@ -199,8 +208,8 @@ export function summarize(
   };
 }
 
-function emptyReport(available: boolean): TransactionsReport {
-  return { available, total: 0, accepted: 0, rejected: 0, failed: 0, successRate: null, rows: [], more: false, nextBefore: null };
+function emptyReport(available: boolean, reason?: LogUnavailable): TransactionsReport {
+  return { available, ...(reason ? { reason } : {}), total: 0, accepted: 0, rejected: 0, failed: 0, successRate: null, rows: [], more: false, nextBefore: null };
 }
 
 export class TransactionsService {
@@ -229,11 +238,12 @@ export class TransactionsService {
    */
   async lookup(guid: string, range: ReadRange): Promise<TransactionLookup> {
     const loki = this.loki;
-    if (!loki || !REQUEST_ID.test(guid)) return { available: !!loki, found: false, row: null };
+    if (!loki) return { available: false, reason: "unconfigured", found: false, row: null };
+    if (!REQUEST_ID.test(guid)) return { available: true, found: false, row: null };
     const lines = await linesOfRequest(loki, this.selector, guid, range.startMs, range.endMs);
-    if (lines === null) return { available: false, found: false, row: null };
-    const index = upstreamIndex(this.routers());
-    return { available: true, found: lines.length > 0, row: buildTxRows(lines, (u) => index.get(u) ?? null)[0] ?? null };
+    if (lines === null) return { available: false, reason: "unreachable", found: false, row: null };
+    const row = buildTxRows(lines, new UpstreamIndex(this.routers()))[0] ?? null;
+    return { available: true, found: lines.length > 0, row };
   }
 
   /**
@@ -243,7 +253,7 @@ export class TransactionsService {
    */
   async report(range: ReadRange, spec?: string, routerId?: string, before?: number): Promise<TransactionsReport> {
     const loki = this.loki;
-    if (!loki) return emptyReport(false);
+    if (!loki) return emptyReport(false, "unconfigured");
     const startMs = range.startMs;
     const endMs = readEnd(range, before);
     if (endMs <= startMs) return emptyReport(true);
@@ -262,17 +272,18 @@ export class TransactionsService {
       loki.queryRange(`${this.selector} |= "${MSG.choosing}" |= \`"stateful":"1"\`${narrow}`, startMs, endMs, this.cap, "backward"),
       loki.queryRange(`${this.selector} |= "${MSG.received}" |~ \`(${TX_METHODS.join("|")})\``, startMs, endMs, this.cap, "backward"),
     ]);
-    if (byFlag === null || byMethod === null) return emptyReport(false);
+    if (byFlag === null || byMethod === null) return emptyReport(false, "unreachable");
 
     const found = parseAll([...byFlag, ...byMethod]);
     const newest = new Map<string, number>();
     for (const l of found) newest.set(l.guid, Math.max(newest.get(l.guid) ?? 0, l.tsMs));
-    const picked = [...newest].sort((a, b) => b[1] - a[1]).slice(0, this.cap);
+    const ranked = [...newest].sort((a, b) => b[1] - a[1]);
+    const picked = ranked.slice(0, this.cap);
     if (!picked.length) return emptyReport(true);
     const kept = new Set(picked.map(([g]) => g));
     const keptTimes = found.filter((l) => kept.has(l.guid)).map((l) => l.tsMs);
-    const oldest = Math.min(...keptTimes);
-    const more = byFlag.length >= this.cap || byMethod.length >= this.cap || newest.size > this.cap;
+    const cutOf = (read: { tsMs: number }[]) => (read.length >= this.cap ? [Math.min(...read.map((l) => l.tsMs))] : []);
+    const nextBefore = readOnFrom(ranked, this.cap, [...cutOf(byFlag), ...cutOf(byMethod)], endMs);
 
     // Every line of those requests. The received line comes a few ms before
     // the choice, and the reply can land after the range closed.
@@ -280,22 +291,20 @@ export class TransactionsService {
       loki,
       this.selector,
       [...kept],
-      oldest - 5_000,
+      Math.min(...keptTimes) - 5_000,
       Object.values(MSG),
       30,
       Math.min(Date.now(), Math.max(...keptTimes) + REPLY_SPAN_MS),
     );
-    if (lines === null) return emptyReport(false);
+    if (lines === null) return emptyReport(false, "unreachable");
 
-    const index = upstreamIndex(this.routers());
-    let rows = buildTxRows(lines, (u) => index.get(u) ?? null);
-    if (spec) rows = rows.filter((r) => r.spec === spec);
+    let rows = buildTxRows(lines, new UpstreamIndex(this.routers()));
+    if (spec) rows = rows.filter((r) => onChain(r, spec));
     if (routerId) {
+      const router = this.routers().find((r) => r.id === routerId);
       const own = new Set(names ?? []);
-      rows = rows.filter((r) => r.attempts.some((a) => own.has(a.upstream)));
+      rows = router ? rows.filter((r) => onChain(r, router.spec) && r.attempts.some((a) => own.has(a.upstream))) : [];
     }
-    // The oldest kept line itself, fraction and all: the next read ends there,
-    // so it moves strictly back and skips nothing in that millisecond.
-    return { available: true, ...summarize(rows), rows, more, nextBefore: more ? oldest : null };
+    return { available: true, ...summarize(rows), rows, more: nextBefore !== null, nextBefore };
   }
 }

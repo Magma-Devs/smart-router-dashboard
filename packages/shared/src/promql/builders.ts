@@ -119,12 +119,9 @@ export function qErrorRate(
 
 /**
  * histogram_quantile over the router latency histogram, for the window. All
- * chains in scope count as one distribution: `spec` narrows it to one chain,
- * but the result is never split per chain. Grouped `by (spec, le)`, it
- * returned one series per chain, and a KPI read through `scalar()` took the
- * first - so with no chain selected, the card showed whichever chain
- * Prometheus listed first, or nothing when that chain had no traffic in the
- * window. Per-chain lines use `qPerSpecLatencySeriesExpr`.
+ * chains in scope count as one distribution - one series, so `scalar()` reads
+ * it whole; `spec` narrows it to one chain. Per-chain lines use
+ * `qPerSpecLatencySeriesExpr`.
  */
 export function qLatencyQuantile(
   quantile: number,
@@ -246,29 +243,33 @@ export function qLabelledErrorsTotal(
 
 /* ── Retries (absent until the router's first retry) ─────────────────────── */
 
+/** Two `<n>s` durations (what `rangeFor` returns) added up. */
+function addSeconds(a: string, b?: string): string {
+  const sec = (d: string) => Number(/^(\d+)s$/.exec(d)?.[1] ?? NaN);
+  return b ? `${sec(a) + sec(b)}s` : a;
+}
+
 /**
  * `increase()` that also counts a series' birth. The router creates each
  * labelled retry counter on its first retry, so a series born inside the range
- * starts at its first value, not 0 - and plain `increase()` drops that value:
- * a burst of 11 retries on a new method read as 0. When the series has no
- * sample at the range start, its first value (the minimum, for a counter) is
- * added back - unless it was seen in the day before with a value no higher:
- * that is a gap in scraping (a sleeping laptop, a Prometheus restart), not a
- * birth, and adding it would count the whole total again.
+ * starts at its first value, not 0, and plain `increase()` drops that value.
+ * A series with no sample at the range start has its first value (the minimum,
+ * for a counter) added back, unless it was seen in the day before with a value
+ * no higher: that is a gap in scraping, not a birth.
  *
- * Built so no series drops out of a `+`: the zero side is `increase() * 0`,
- * which exists for every series with two samples in the range - not `S * 0`,
- * which exists only for series still reporting at query time. On one production
- * deployment's metrics, pods restart and leave dozens of ended series (51 for Solana testnet in
- * three days); the `S * 0` form lost them and read 43,716 retries where plain
- * increase() read 142,257. A series seen once in the range has no increase()
- * at all, so its birth value is kept on its own. Parenthesised, so it can
- * follow `sum` / `sum by (…)` directly.
+ * Only when the store holds the router's gauge from that day: past the store's
+ * first sample every series looks newborn, and its first value is everything
+ * it counted before. The zero side is `increase() * 0`, which keeps series that
+ * stopped reporting in the range; a series seen once there keeps its birth
+ * value on its own. `range` and `offset` are `rangeFor` durations.
  */
-export function increaseFromBirth(series: string, range: string): string {
-  const inc = `increase(${series}[${range}])`;
-  const first = `min_over_time(${series}[${range}])`;
-  const birth = `((${first} unless ${series} offset ${range}) unless (${first} >= last_over_time(${series}[1d] offset ${range})))`;
+export function increaseFromBirth(series: string, range: string, offset?: string): string {
+  const o = off(offset);
+  const before = addSeconds(range, offset);
+  const inc = `increase(${series}[${range}]${o})`;
+  const first = `min_over_time(${series}[${range}]${o})`;
+  const storeHeld = `count(last_over_time(${ROUTER_METRICS.overallHealth}[1d] offset ${before})) > 0`;
+  const birth = `(((${first} unless ${series} offset ${before}) unless (${first} >= last_over_time(${series}[1d] offset ${before}))) and on () (${storeHeld}))`;
   return `((${inc} + (${birth} or ${inc} * 0)) or ${birth})`;
 }
 
@@ -279,6 +280,16 @@ const RETRY_OUTCOME_METRIC: Record<RetryOutcome, string> = {
   recovered: OPTIONAL_METRICS.retriesSuccessTotal,
   failed: OPTIONAL_METRICS.retriesFailedTotal,
 };
+
+/** Retried requests with one outcome over the window (the hero's "successful retries"); `offset` = the prior window. */
+export function qRetriesTotal(
+  outcome: RetryOutcome,
+  window: MetricWindow = DEFAULT_WINDOW,
+  spec?: string,
+  offset?: string,
+): string {
+  return `round(sum${increaseFromBirth(`${RETRY_OUTCOME_METRIC[outcome]}${selector({ spec })}`, rangeFor(window), offset)})`;
+}
 
 /** Retried requests with one outcome over the window, per (spec × method). */
 export function qRetriesByMethod(
@@ -299,17 +310,6 @@ export function qRetryAvgExtraAttempts(
   return `sum${increaseFromBirth(`${OPTIONAL_METRICS.retryAttemptsSum}${sel}`, r)} / sum${increaseFromBirth(`${OPTIONAL_METRICS.retryAttemptsCount}${sel}`, r)}`;
 }
 
-/**
- * Client requests over the window, counting series born inside it - the
- * retry rate's denominator, on the same footing as the retry counts above
- * (a method first called inside the window is a new series too).
- */
-export function qClientRequestsFromBirth(
-  window: MetricWindow = DEFAULT_WINDOW,
-  spec?: string,
-): string {
-  return `round(sum${increaseFromBirth(`${ROUTER_METRICS.latencyCount}${selector({ spec })}`, rangeFor(window))})`;
-}
 
 /* ── Series expressions (for query_range; [step] = per-bucket lookback) ──── */
 
@@ -467,7 +467,10 @@ export function qUpstreamReadVolumeSeriesExpr(ref: UpstreamRef, step: string): s
  */
 export function qUpstreamFailedSeriesExpr(ref: UpstreamRef, step: string): string {
   const sel = upstreamProviderSelector(ref);
-  return `round(clamp_min(sum(increase(${ROUTER_METRICS.requestsTotal}${sel}[${step}])) - sum(increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${step}])), 0))`;
+  const tot = `sum(increase(${ROUTER_METRICS.requestsTotal}${sel}[${step}]))`;
+  const ok = `sum(increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${step}]))`;
+  // The success counter exists only after a first success: without it every try failed.
+  return `round(clamp_min(${tot} - (${ok} or ${tot} * 0), 0))`;
 }
 
 /** One upstream's JSON-RPC error replies per bucket - absent until the family fires. */

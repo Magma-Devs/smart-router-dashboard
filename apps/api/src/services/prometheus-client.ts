@@ -184,6 +184,22 @@ export class PrometheusClient {
     return r.status === "success" && r.data ? r.data.result : [];
   }
 
+  /** Range query → matrix; null when the store didn't answer, so "no series" and "no answer" stay apart. */
+  async queryRangeOrNull(
+    expr: string,
+    startSeconds: number,
+    endSeconds: number,
+    step: string,
+  ): Promise<PromMatrixSample[] | null> {
+    const r = await this.get<PromMatrixSample[]>("api/v1/query_range", {
+      query: this.scoped(expr),
+      start: String(startSeconds),
+      end: String(endSeconds),
+      step,
+    });
+    return r.status === "success" && r.data ? r.data.result : null;
+  }
+
   /** First scalar value of an instant query, or null when no sample. */
   async scalar(expr: string): Promise<number | null> {
     const result = await this.query(expr);
