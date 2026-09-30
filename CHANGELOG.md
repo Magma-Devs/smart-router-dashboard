@@ -5,6 +5,16 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.28.3]
+
+### Fixed
+
+- **`GET /api/metrics/overview`'s `errorRate` is failed requests over every
+  request** (`1 − success/total`, the ratio each chain's error rate is), not
+  over the requests the router answered. With 3 failures in 100 it read 0.24%
+  beside 1,234 answered requests instead of 3%, and a deployment failing
+  every request read no rate at all. No page of the web app reads it.
+
 ## [0.28.2]
 
 ### Fixed
