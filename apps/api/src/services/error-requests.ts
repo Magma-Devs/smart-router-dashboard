@@ -45,6 +45,7 @@ import {
   LABEL_TOKEN,
   lastWhere,
   listenerPattern,
+  guidSpans,
   linesForGuids,
   linesOfRequest,
   REQUEST_ID,
@@ -310,19 +311,10 @@ export class ErrorRequestsService {
     if (!newestOf.size) return none(true);
     const ranked = [...newestOf];
     const kept = new Set(ranked.slice(0, this.cap).map(([g]) => g));
-    const keptTimes = newestFirst.filter((l) => kept.has(l.guid)).map((l) => l.tsMs);
     const cuts = found.length >= limit ? [Math.min(...found.map((l) => l.tsMs))] : [];
     const nextBefore = readOnFrom(ranked, this.cap, cuts, endMs);
 
-    const guidLines = await linesForGuids(
-      loki,
-      this.selector,
-      [...kept],
-      Math.min(...keptTimes) - REQUEST_SPAN_MS,
-      Object.values(ERROR_MSG),
-      40,
-      Math.min(Date.now(), Math.max(...keptTimes) + REQUEST_SPAN_MS),
-    );
+    const guidLines = await linesForGuids(loki, this.selector, guidSpans(newestFirst, kept, REQUEST_SPAN_MS, REQUEST_SPAN_MS), Object.values(ERROR_MSG), 40);
     if (guidLines === null) return none(false, "unreachable");
 
     let rows = buildErrorRows(guidLines.lines, new UpstreamIndex(routers));

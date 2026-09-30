@@ -410,15 +410,15 @@ describe("ErrorRequestsService", () => {
       ];
     }).flat();
     const { loki } = lokiStub(many);
-    // The second batch holds the 50 oldest: 700000..700049.
+    // Batches go oldest first: the second holds the 50 newest, 700100..700149.
     const late = {
       queryRange: (query: string, ...rest: [number, number, number, "forward" | "backward"]) =>
-        query.includes('"GUID":"(') && query.includes("|700000)") ? Promise.resolve(null) : loki.queryRange(query, ...rest),
+        query.includes('"GUID":"(') && query.includes("|700149)") ? Promise.resolve(null) : loki.queryRange(query, ...rest),
     } as unknown as LokiClient;
     const r = await new ErrorRequestsService(late, '{service="router"}', configSvc).report(RANGE);
     expect(r).toMatchObject({ available: true, unread: 50 });
     expect(r.rows).toHaveLength(100);
-    expect(r.rows.map((x) => x.guid)).not.toContain("700000");
+    expect(r.rows.map((x) => x.guid)).not.toContain("700149");
   });
 
   it("no log store, or one that does not answer, is 'not available' - never 'no errors'", async () => {
