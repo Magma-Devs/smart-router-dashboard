@@ -30,7 +30,9 @@ import { ErrorsBreakdown, type ErrorsJump } from "./ErrorsBreakdown";
 import { TransactionLog } from "./TransactionLog";
 import { UpstreamMetricsTab } from "./upstream/UpstreamMetricsTab";
 
-type Tab = "metrics" | "upstreams" | "errors" | "transactions";
+/** The first is the default, and the only one the URL leaves out. */
+const TABS = ["metrics", "upstreams", "errors", "transactions"] as const;
+type Tab = (typeof TABS)[number];
 
 export function MetricsView() {
   const { timeWindow, setTimeWindow } = useFilters();
@@ -56,9 +58,11 @@ export function MetricsView() {
      saying so beats leaving it out of the list. */
   const { routerId, routers, scopeUnavailable, select: selectRouter } = useRouterFilter();
   const activeRouter = routers.find((r) => r.id === routerId) ?? null;
-  // The chain and router are in the URL: a link opens them, Back the ones before.
+  // The chain, router and tab are in the URL: a link opens them, Back the ones
+  // before. A tab from the URL is the whole window, as a tab picked by hand is.
   const { routers: configRouters, loaded: routersLoaded } = useRouterOptions();
-  useScopeInUrl({ chain, router: routerId }, { selectChain, selectRouter }, routersLoaded ? configRouters : null);
+  useScopeInUrl({ chain, router: routerId }, { selectChain, selectRouter }, routersLoaded ? configRouters : null,
+    { tab, setTab: (t) => { setTab(t); setErrorsFocus(null); }, tabs: TABS });
   const { chains: chainRows } = useChainOptions();
   const routedChains = withMutedRows(chainRows, (c) => (c.hasTraffic ? false : "no traffic yet"));
   const chainObj = activeChain

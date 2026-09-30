@@ -445,10 +445,14 @@ value is the router's Service name (`<router-id-lowered>-router`).
   requests and error rate for the page's window, problems first, and a search.
   A row IS the chain filter (`useChainFilter`), so every tab follows it; a
   chain two or more routers serve lists them under it once picked. The page
-  also writes both into its URL (`?chain=ETH1&router=eth-prod`,
-  `useScopeInUrl`): a link opens them, Back returns to the previous ones, and
-  another page's URL has none, so the per-page rule above still holds.
-  Clicking Metrics while on it goes back to every chain.
+  also writes both into its URL with the tab
+  (`?chain=ETH1&router=eth-prod&tab=upstreams`, `useScopeInUrl`): a link opens
+  them, a chain or router change is a history entry (Back returns to the
+  previous one, tab included) while a tab change alone rewrites the current
+  entry, and another page's URL has none, so the per-page rule above still
+  holds. The drawer reads the whole deployment, never the router scope (the
+  one exception `router-scope.test.ts` allows). Clicking Metrics, or the logo,
+  while on it goes back to every chain.
 
 #### The deployment scope
 

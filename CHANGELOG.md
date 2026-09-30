@@ -14,8 +14,9 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   the page's window (the Routers table's numbers and colours), chains with
   problems first, and a search by name. Picking a row scopes the whole page,
   every tab, to that chain: the title and breadcrumbs name it, and the URL
-  carries it (`/metrics?chain=SOLANA`), so a link opens it and Back returns to
-  the chain before. Clicking Metrics while on it goes back to every chain. The
+  carries it with the tab (`/metrics?chain=SOLANA&tab=upstreams`), so a link
+  opens it and Back returns to the chain before, on the tab it was on.
+  Clicking Metrics, or the logo, while on it goes back to every chain. The
   chain and router dropdowns leave the page's header.
   [Screenshot](./docs/assets/chains-drawer.jpg).
 
