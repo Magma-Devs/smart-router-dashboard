@@ -106,16 +106,16 @@ export const config = {
    * Log store the Transactions tab, the Errors tab's request list and the
    * Failed requests card read (Loki). The router writes a line for each step
    * of every request, all carrying the request's GUID. Unset ⇒ they say the
-   * logs can't be read. `routerSelector` is the LogQL stream
-   * selector for the router's lines - `{service="router"}` is the label the
-   * compose `logs` profile's promtail attaches; a cluster names its own.
+   * logs can't be read. `routerSelector` is the LogQL stream selector for the
+   * router's lines: `{component="router"}` is what the fleet's log agent and the
+   * compose `logs` profile's promtail both label them.
    * Credentials work as the Prometheus ones do: basic auth only with both
    * halves, `X-Scope-OrgID` only when `orgId` is set.
    */
   loki: {
     url: env("LOKI_URL") || undefined,
     timeoutMs: envInt("LOKI_TIMEOUT_MS", 10000),
-    routerSelector: env("LOKI_ROUTER_SELECTOR") || '{service="router"}',
+    routerSelector: env("LOKI_ROUTER_SELECTOR") || '{component="router"}',
     username: env("LOKI_USERNAME"),
     password: env("LOKI_PASSWORD"),
     orgId: env("LOKI_ORG_ID"),

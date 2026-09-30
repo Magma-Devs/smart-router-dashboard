@@ -24,7 +24,10 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   isn't a transaction. It reads the router's logs from Loki, because
   Prometheus holds totals and counts a rejected transaction as a success. Set
   `LOKI_URL` (compose sets it for the `logs` profile), and `LOKI_USERNAME` /
-  `LOKI_PASSWORD` / `LOKI_ORG_ID` for a Loki that needs them; without it the
+  `LOKI_PASSWORD` / `LOKI_ORG_ID` for a Loki that needs them. The router's
+  lines are read as `{component="router"}`, the label the fleet's log agent
+  and the compose `logs` profile both give them (`LOKI_ROUTER_SELECTOR`
+  overrides it); without `LOKI_URL` the
   tab says it can't read the logs, and when Loki doesn't answer in time it
   says that instead. A row's chain is the one its lines name, else the only
   chain serving every upstream it used: one node name can serve many chains,

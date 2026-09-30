@@ -520,6 +520,8 @@ describe("GET /api/error-requests/count", () => {
     expect(res.json()).toEqual({ available: true, value: 4 });
     expect(queries).toHaveLength(1);
     for (const q of queries) {
+      // The default selector: the label the fleet's log agent and compose's promtail share.
+      expect(q.startsWith('sum(count_over_time({component="router"} ')).toBe(true);
       expect(q).toContain("|~ `failed (getting|processing) responses from RPC endpoints`");
       // Matched as the line's message: other lines quote it in their error field.
       expect(q).toContain('| json msg="message", ep="endpoint" | msg=~`failed (getting|processing) responses from RPC endpoints`');
