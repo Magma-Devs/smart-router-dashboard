@@ -218,6 +218,9 @@ services:
       # profile runs this Loki. Without it the tab says it can't read them.
       - LOKI_URL=${LOKI_URL:-http://loki:3100}
       - LOKI_ROUTER_SELECTOR=${LOKI_ROUTER_SELECTOR:-}
+      - LOKI_USERNAME=${LOKI_USERNAME:-}
+      - LOKI_PASSWORD=${LOKI_PASSWORD:-}
+      - LOKI_ORG_ID=${LOKI_ORG_ID:-}
       # Deployment scope (see .env.example). Empty = unset = the whole store.
       - METRICS_SCOPE_LABEL=${METRICS_SCOPE_LABEL:-}
       - METRICS_SCOPE_VALUE=${METRICS_SCOPE_VALUE:-}

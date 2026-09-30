@@ -13,8 +13,9 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   row per transaction the router sent: when, which chain and method, every
   upstream it was broadcast to and each response, the one returned to the
   client (marked "→ client"), the response time, and the outcome: accepted,
-  rejected by the node, a router error (no upstream returned a usable
-  response), or unknown. Above it: the success rate. Two filters narrow the
+  rejected by the node, a router error (nothing, or nothing usable, came back
+  from the upstreams), or unknown - including a write the router itself
+  couldn't settle ("write outcome unknown"). Above it: the success rate. Two filters narrow the
   rows by method and by error type, and a row opens to every response in
   full. The tab follows the page's window, or exact times you pick, and so do
   its numbers; it reads 500 transactions at a time, and "Load older" reads
@@ -22,8 +23,12 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   (`GET /api/transactions/:guid`), and says so when the ID is a request that
   isn't a transaction. It reads the router's logs from Loki, because
   Prometheus holds totals and counts a rejected transaction as a success. Set
-  `LOKI_URL` (compose sets it for the `logs` profile); without it the tab says
-  it can't read the logs. On Cosmos chains a refused transaction still gets a
+  `LOKI_URL` (compose sets it for the `logs` profile), and `LOKI_USERNAME` /
+  `LOKI_PASSWORD` / `LOKI_ORG_ID` for a Loki that needs them; without it the
+  tab says it can't read the logs, and when Loki doesn't answer in time it
+  says that instead. A row's chain is the one its lines name, else the only
+  chain serving every upstream it used: one node name can serve many chains,
+  and a row that could be on several shows under each. On Cosmos chains a refused transaction still gets a
   normal response the router doesn't log, so those show as unknown.
   Transaction value and finality come later.
   [Screenshot](./docs/assets/transactions-tab.jpg).
@@ -35,12 +40,13 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   failure; the attempt whose response was returned to the client is marked
   "→ client", and the response itself follows word for word. The result names
   the error and its source: a node error, the upstream's own error response
-  (*Invalid params · returned by sol-solana-labs*), or a router error, when no
-  upstream returned a usable response (*Insufficient results · returned by
-  router*). Filters: the result, whether the error was retryable by the
+  (*Invalid params · returned by sol-solana-labs*), or a router error, when
+  nothing, or nothing usable, came back (*Insufficient results · returned by
+  router*) - a request no upstream answered at all is a router error too. Filters: the result, whether the error was retryable by the
   router's own verdict, the error type, the method, and the upstream an
   attempt failed at. The list follows the page's window, or exact times you
-  pick; it reads 300 requests at a time, and "Load older" reads on. An attempt
+  pick; it reads 300 requests at a time, and "Load older" reads on without
+  skipping the requests on the seam between two reads. An attempt
   the router cancelled because another had already succeeded is not an error.
   **Find a request by ID** looks any request up by the GUID the router logs
   (`GET /api/requests/:guid`). The Upstreams and Error types views are gone:
@@ -56,7 +62,10 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   so the "Still failed" card says when the logs show more failures than the
   counter. The counts include the first value of a counter born inside the
   window. Plain `increase()` dropped it, so a first burst of 11 retries on a
-  method read as 0.
+  method read as 0. A birth counts only where the store holds the router from
+  the day before the window: past the store's first sample, every counter's
+  whole total would read as new. The retry rate divides by every client
+  request, the ones that failed after their retries included.
 
 ### Changed
 
@@ -71,8 +80,11 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   usable response and the router returned its own error, with their share of
   all client requests. No metric counts this (the router counts requests per
   attempt, and records a request's latency only when it succeeds), so it
-  comes from the router's logs (`GET /api/error-requests/count`), one entry
-  per failed request; without Loki the card says so. The p95 stays on the
+  comes from the router's logs (`GET /api/error-requests/count`), from the
+  line the router ends each such request with - when nothing came back, and
+  when nothing usable did; without Loki the card says so. With a router
+  picked, the count is that router's; on a chain several routers serve, the
+  logs can't tell them apart and the card says so. The p95 stays on the
   Upstreams tab. [Screenshot](./docs/assets/metrics-failed-requests.jpg).
 - **"Served by" in an endpoint's panel** (Upstreams, By router, an endpoint)
   lists each upstream's urls, each with the add-ons the values file declares
@@ -114,7 +126,9 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   window, each averaging a 24th of it: volume averages short rates over what
   is there, and both volume and latency are cut where the upstream wasn't
   scraped, so a router restart or a gap in scraping shows as a gap, not a
-  slide to zero. The disagreement-rate panel and the node-vs-transport
+  slide to zero; a read that fails or times out says so rather than drawing
+  an empty chain. An upstream that has never succeeded shows every try as a
+  failure. The disagreement-rate panel and the node-vs-transport
   breakdown are gone.
   [The four charts](./docs/assets/upstream-deep-dive.jpg),
   [an error bar](./docs/assets/upstream-errors-bar.jpg) and
@@ -143,6 +157,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   no chain and no numbers), and choosing a chain didn't remove the copies.
   The block-poll counts were added up per upstream without their chain, and
   joining them onto the roster made a new, chain-less row for each.
+- **The Overview's "successful retries" missed a counter's first retries.**
+  It counts them now, the way the Errors tab's cards do.
 - **The Overview's "successful retries" card said the build can't count
   retries.** The router creates its retry counters on the first retry, so no
   retry yet and no retry counters look the same in Prometheus. The card now
