@@ -142,7 +142,7 @@ function Details({ row }: { row: ErrorRequestRow }) {
         </DetailLine>
       )}
       {row.result === "unknown" && (
-        <DetailLine><div style={{ fontSize: 12, color: "var(--text-3)" }}>No completion logged: the request may still be in flight, the client may have disconnected, or log lines are missing.</div></DetailLine>
+        <DetailLine><div style={{ fontSize: 12, color: "var(--text-3)" }}>No completion logged: the request may still be in flight, the client may have disconnected, or log lines are missing - a router logging above info writes none of its tries or its end.</div></DetailLine>
       )}
       <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11.5, color: "var(--text-4)" }}>
         Request ID <span className="gw-mono" style={{ color: "var(--text-3)" }}>{row.guid}</span> <CopyButton text={row.guid} />

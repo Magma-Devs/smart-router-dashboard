@@ -314,7 +314,7 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
               })}
               {data && rows.length === 0 && (
                 <tr><td colSpan={5} style={{ padding: "20px 12px", textAlign: "center", color: "var(--text-4)", fontSize: 12.5 }}>
-                  {allRows.length ? "No transactions match these filters." : `No transactions ${when}.`}
+                  {allRows.length ? "No transactions match these filters." : `No transactions ${when}. The tab reads the router's info lines: a router logging at warn writes none.`}
                 </td></tr>
               )}
             </tbody>
