@@ -125,11 +125,11 @@ export function StepConfigureB({ catalog, onSubmit, onBack }: {
         <input className="gw-input" value={name} onChange={(e) => setName(e.target.value)} maxLength={60} />
       </div>
       <div>
-        <FL>Endpoint URLs <span style={{ color: "var(--text-3)", fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>- one per line</span></FL>
+        <FL>Endpoint URLs <span style={{ color: "var(--text-3)", fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>— one per line</span></FL>
         <textarea className="gw-input gw-mono" rows={5} value={raw} onChange={(e) => setRaw(e.target.value)}
           placeholder={"https://your-endpoint.quiknode.pro/abc123/\nhttps://your-endpoint-2.quiknode.pro/def456/"} style={{ fontSize: 11, resize: "vertical" }} />
         <FE msg={errors.raw} />
-        {altUpstream && <Hint type="warn">Looks like a <strong>{altUpstream.name}</strong> endpoint - <button onClick={onBack} style={{ border: "none", background: "none", color: "var(--brand)", cursor: "pointer", padding: 0, fontSize: 12, fontWeight: 600, fontFamily: "inherit" }}>use that preset instead</button>.</Hint>}
+        {altUpstream && <Hint type="warn">Looks like a <strong>{altUpstream.name}</strong> endpoint — <button onClick={onBack} style={{ border: "none", background: "none", color: "var(--brand)", cursor: "pointer", padding: 0, fontSize: 12, fontWeight: 600, fontFamily: "inherit" }}>use that preset instead</button>.</Hint>}
         <UrlParserPreview urls={raw.split("\n")} catalog={catalog} />
       </div>
       <div>
@@ -188,8 +188,8 @@ export function StepCustomUrl({ chains, onSubmit }: { chains: LiveChain[]; onSub
       <div><FL>Endpoint URL <span style={{ color: "var(--err)" }}>*</span></FL>
         <input className="gw-input gw-mono" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://your-node.example.com/rpc" style={{ fontSize: 12 }} />
         <FE msg={errors.url} />
-        {knownUpstream && <Hint type="warn">Looks like <strong>{knownUpstream.name}</strong> - you can use that preset for easier setup.</Hint>}
-        {looksPrivate && !knownUpstream && <Hint type="info">This looks like a private node - make sure it&apos;s reachable from our routing layer.</Hint>}
+        {knownUpstream && <Hint type="warn">Looks like <strong>{knownUpstream.name}</strong> — you can use that preset for easier setup.</Hint>}
+        {looksPrivate && !knownUpstream && <Hint type="info">This looks like a private node — make sure it&apos;s reachable from our routing layer.</Hint>}
       </div>
       <div><FL>Chain <span style={{ color: "var(--err)" }}>*</span></FL>
         <select className="gw-input" value={chainId} onChange={(e) => setChainId(e.target.value)} style={{ fontSize: 13 }}>
@@ -245,7 +245,7 @@ export function StepJwt({ catalog, chains, onSubmit }: {
     if (mode === "preissued") {
       if (!token.trim()) e.token = "JWT is required";
       else if (token.split(".").length !== 3) e.token = "Not a valid JWT (expected 3 dot-separated parts)";
-      else if (isExpired) e.token = "This token is expired - paste a fresh one.";
+      else if (isExpired) e.token = "This token is expired — paste a fresh one.";
     } else {
       if (!pem.trim()) e.pem = "Private key is required";
       else if (!pem.includes("PRIVATE KEY")) e.pem = "Expected PEM format: -----BEGIN [RSA/EC] PRIVATE KEY-----";
@@ -298,7 +298,7 @@ export function StepJwt({ catalog, chains, onSubmit }: {
           <SecretInput rows={4} value={token} onChange={(e) => setToken(e.target.value)} placeholder="eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9…" />
           <FE msg={errors.token} />
           {jwtExp && !isExpired && !nearExp && <div style={{ fontSize: 11, color: "var(--ok)", marginTop: 5 }}>✓ Expires {jwtExp.toLocaleString()}</div>}
-          {nearExp && <Hint type="warn">Expires soon - {jwtExp?.toLocaleString()}. You&apos;ll need to rotate this.</Hint>}
+          {nearExp && <Hint type="warn">Expires soon — {jwtExp?.toLocaleString()}. You&apos;ll need to rotate this.</Hint>}
           {isExpired && <Hint type="err">This token expired on {jwtExp?.toLocaleString()}.</Hint>}
         </div>
       ) : (
@@ -320,7 +320,7 @@ export function StepJwt({ catalog, chains, onSubmit }: {
               <input className="gw-input gw-mono" type="number" min="10" value={expiry} onChange={(e) => setExp(e.target.value)} style={{ fontSize: 12 }} />
             </div>
           </div>
-          <Hint type="info">We mint a fresh JWT per outbound request using your key - your signing key is never forwarded.</Hint>
+          <Hint type="info">We mint a fresh JWT per outbound request using your key — your signing key is never forwarded.</Hint>
         </div>
       )}
       <EncNote />
@@ -409,10 +409,10 @@ export function NodeConfigSection({ chainId, setChainId, role, setRole, iface, s
       {/* EVM capabilities — multi-select, none is valid */}
       {isEvm && (
         <div>
-          <FL>Capabilities <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0, color: "var(--text-3)" }}>- select all that apply, or none</span></FL>
+          <FL>Capabilities <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0, color: "var(--text-3)" }}>— select all that apply, or none</span></FL>
           <div style={{ display: "grid", gap: 5 }}>
             {([
-              ["archive", "Archive", "Historical state - eth_getStorageAt at any past block"],
+              ["archive", "Archive", "Historical state — eth_getStorageAt at any past block"],
               ["debug", "Debug", "debug_traceTransaction, debug_traceBlock"],
               ["trace", "Trace", "trace_block, trace_transaction (OpenEthereum-style)"],
             ] as const).map(([k, label, desc]) => {

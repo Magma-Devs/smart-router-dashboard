@@ -20,7 +20,7 @@ interface CodeBlockProps {
  *  - `maxHeight: 360` caps the block; both axes scroll.
  */
 export function CodeBlock({ code, language = "bash" }: CodeBlockProps) {
-  void language; // reserved - no syntax highlighter is bundled self-hosted
+  void language; // reserved — no syntax highlighter is bundled self-hosted
   return (
     <div style={{ position: "relative" }}>
       <pre

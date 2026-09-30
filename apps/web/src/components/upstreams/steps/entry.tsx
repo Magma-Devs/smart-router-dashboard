@@ -22,7 +22,7 @@ export function Step1EntryType({ onPick }: { onPick: (t: EntryType) => void }) {
         </div>
       ),
       label: "Upstream preset",
-      caption: "Alchemy, Infura, QuickNode and more - paste your API key and you're done.",
+      caption: "Alchemy, Infura, QuickNode and more — paste your API key and you're done.",
     },
     {
       id: "URL",
@@ -43,7 +43,7 @@ export function Step1EntryType({ onPick }: { onPick: (t: EntryType) => void }) {
         </svg>
       ),
       label: "JWT",
-      caption: "Token-based auth - paste a pre-issued JWT or let us mint one per request from your signing key.",
+      caption: "Token-based auth — paste a pre-issued JWT or let us mint one per request from your signing key.",
     },
   ];
   return (

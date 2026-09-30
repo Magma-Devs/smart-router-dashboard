@@ -13,7 +13,7 @@ const authEnabled = process.env.AUTH_MODE === "enabled";
 
 const { auth } = NextAuth(authConfig);
 
-export default authEnabled ? auth : function proxy() { /* auth disabled - pass through */ };
+export default authEnabled ? auth : function proxy() { /* auth disabled — pass through */ };
 
 export const config = {
   matcher: [

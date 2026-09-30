@@ -33,9 +33,9 @@ export function DshStatus() {
       title={st.state === "unknown" ? "Status unavailable" : undefined}
       style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "var(--text-3)", textDecoration: "none", flexShrink: 0 }}>
       {st.state === "unknown"
-        ? <span style={{ fontSize: 13, color: "var(--text-4)", lineHeight: 1 }}>—</span>
+        ? <span style={{ fontSize: 13, color: "var(--text-4)", lineHeight: 1 }}>–</span>
         : <span style={{ width: 6, height: 6, borderRadius: "50%", background: dotColor, flexShrink: 0 }} />}
-      Smart Router · {st.state === "loading" ? "…" : st.state === "unknown" ? "—" : st.label}
+      Smart Router · {st.state === "loading" ? "…" : st.state === "unknown" ? "–" : st.label}
     </a>
   );
 }
