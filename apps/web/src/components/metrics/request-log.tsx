@@ -10,7 +10,7 @@
  * classify shows the node's own words - there is no "unknown error" here. */
 
 import { Fragment, useState } from "react";
-import type { RelayAttempt } from "@sr/shared";
+import { buildChainMetaByIndex, type LogUnavailable, type RelayAttempt } from "@sr/shared";
 import { errorDocsUrl } from "@/lib/error-docs";
 import { fmtComma } from "@/lib/format";
 
@@ -273,8 +273,8 @@ export function TimeRangeControl({ range, onChange, windowLabel, windowMs }: {
   windowMs: number;
 }) {
   const [draft, setDraft] = useState<{ from: string; to: string } | null>(null);
-  // The latest a time can be: read once, not on every render.
-  const [latest] = useState(() => toLocalInput(Date.now()));
+  // The latest a time can be: read when editing starts, not on every render.
+  const [latest, setLatest] = useState(() => toLocalInput(Date.now()));
   const input: React.CSSProperties = { ...filterSelectStyle, width: 190, colorScheme: "dark light" };
   const link: React.CSSProperties = { border: "none", background: "none", color: "var(--brand)", cursor: "pointer", padding: 0, fontSize: 12, fontWeight: 600, fontFamily: "inherit" };
 
@@ -282,7 +282,7 @@ export function TimeRangeControl({ range, onChange, windowLabel, windowMs }: {
     return (
       <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12, color: "var(--text-3)" }}>
         Last {windowLabel}
-        <button style={link} onClick={() => { const now = Date.now(); setDraft({ from: toLocalInput(now - windowMs), to: toLocalInput(now) }); }}>
+        <button style={link} onClick={() => { const now = Date.now(); setLatest(toLocalInput(now)); setDraft({ from: toLocalInput(now - windowMs), to: toLocalInput(now) }); }}>
           Pick exact times
         </button>
       </div>
@@ -292,7 +292,7 @@ export function TimeRangeControl({ range, onChange, windowLabel, windowMs }: {
     return (
       <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12, color: "var(--text-3)" }}>
         <span className="gw-mono" style={{ color: "var(--text)" }}>{rangeWords(range)}</span>
-        <button style={link} onClick={() => setDraft({ from: toLocalInput(range.from), to: toLocalInput(range.to) })}>Change</button>
+        <button style={link} onClick={() => { setLatest(toLocalInput(Date.now())); setDraft({ from: toLocalInput(range.from), to: toLocalInput(range.to) }); }}>Change</button>
         <button style={link} onClick={() => onChange(null)}>Back to the last {windowLabel}</button>
       </div>
     );
@@ -300,12 +300,15 @@ export function TimeRangeControl({ range, onChange, windowLabel, windowMs }: {
   const shown = draft ?? { from: toLocalInput(range!.from), to: toLocalInput(range!.to) };
   const from = new Date(shown.from).getTime();
   const to = new Date(shown.to).getTime();
-  const bad = !(from < to) ? "From must be before To" : to - from > 30 * 86_400_000 ? "At most 30 days" : null;
+  // `latest` is a minute: a From inside it is still in the past.
+  const bad = !(from < to) ? "From must be before To"
+    : from >= new Date(latest).getTime() + 60_000 ? "From must be in the past"
+    : to - from > 30 * 86_400_000 ? "At most 30 days" : null;
   const apply = (next: { from: string; to: string }) => {
     setDraft(next);
     const f = new Date(next.from).getTime();
     const t = new Date(next.to).getTime();
-    if (f < t && t - f <= 30 * 86_400_000) onChange({ from: f, to: t });
+    if (f < t && f < Date.now() && t - f <= 30 * 86_400_000) onChange({ from: f, to: t });
   };
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 12, color: "var(--text-3)" }}>
@@ -362,6 +365,30 @@ export function NotFound({ rangeWords, wide, onWiden }: { rangeWords: string; wi
 }
 
 export const LOGS_UNREADABLE = "The router's logs can't be read, so a request can't be looked up. Set LOKI_URL on the API.";
+
+/** Why a read of the router's logs came back empty-handed, in words. */
+export function unreadableWords(reason: LogUnavailable | undefined): string {
+  return reason === "unreachable"
+    ? "The router's logs didn't answer in time. Try again, or a shorter range."
+    : LOGS_UNREADABLE;
+}
+
+/** A row's chain - or the chains it could be on, when its upstreams serve several. */
+export function chainWords(row: { spec: string | null; specs?: string[] }): string {
+  if (row.spec) return buildChainMetaByIndex(row.spec).name;
+  return row.specs?.length ? row.specs.map((s) => buildChainMetaByIndex(s).name).join(" or ") : "—";
+}
+
+/** Enter and Space open a row, as a click does. */
+export const onRowKey = (toggle: () => void) => (e: React.KeyboardEvent) => {
+  if (e.key === "Enter" || e.key === " ") {
+    e.preventDefault();
+    toggle();
+  }
+};
+
+/** A picked range still growing (it ends within the last minute): worth polling. */
+export const rangeIsLive = (r: ExactRange | null) => !r || r.to > Date.now() - 60_000;
 
 export const filterSelectStyle: React.CSSProperties = { height: 32, padding: "0 10px", borderRadius: 8, border: "1px solid var(--line-2)", background: "var(--surface)", color: "var(--text)", fontSize: 12, fontFamily: "inherit", maxWidth: 320 };
 

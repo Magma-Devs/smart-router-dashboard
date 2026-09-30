@@ -46,7 +46,8 @@ export function ErrorsBreakdown({ chainFilter, win, focus = null }: {
   // file.
   const { routerIdQ } = useRouterFilter();
   const { data, isLoading } = useApi<ErrorsReport>(`/api/metrics/errors?window=${win}${specQ}${routerIdQ}${scopeQ}`);
-  const counts = useApi<RetriesReport>(`/api/metrics/retries?window=${win}${specQ}${scopeQ}`);
+  // Once a minute: each read counts retries back to their counters' births.
+  const counts = useApi<RetriesReport>(`/api/metrics/retries?window=${win}${specQ}${scopeQ}`, 60_000);
   // The page window's request list - the same read the list below makes
   // until someone picks exact times, so it costs nothing twice.
   const logs = useApi<ErrorRequestsReport>(`/api/error-requests?window=${win}${specQ}${routerIdQ}`);

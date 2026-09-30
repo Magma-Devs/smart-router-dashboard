@@ -167,7 +167,8 @@ export function PMBody({ pm, detail, name, timeWindow, onOpenErrors }: {
   onOpenErrors?: (jump: ErrorsJump) => void;
 }) {
   const pid = name.replace(/[^a-zA-Z0-9_-]/g, "");
-  const spec = detail?.spec || pm.spec;
+  // The selected row's chain: `detail` can still be the previous upstream's while the new one loads.
+  const spec = pm.spec || detail?.spec || "";
   const chainLabel = spec || "this chain";
   const { scopeQ } = useFilters();
   const peers = useApi<UpstreamPeers>(spec ? `/api/metrics/upstream-peers?spec=${encodeURIComponent(spec)}&window=${timeWindow}${scopeQ}` : null);
@@ -182,6 +183,11 @@ export function PMBody({ pm, detail, name, timeWindow, onOpenErrors }: {
     return [...ups.filter((u) => u.upstream !== name), ...ups.filter((u) => u.upstream === name)];
   }, [peers.data, name]);
   const grid = peers.data?.grid;
+  // A gap of up to 10 minutes is bridged; a longer one is drawn as a gap.
+  const maxGap = grid ? Math.floor(600 / grid.stepSec) : 0;
+  // An empty chart after a read that failed says so, rather than "no requests".
+  const peersEmpty = (none: string) =>
+    empty(peers.isLoading ? "Loading…" : peers.data && !peers.data.available ? "Couldn't read these series in time - try a shorter window." : none);
   const times = useMemo(() => gridTimes(grid), [grid]);
   const colorOf = (u: string, i: number) => (u === name ? "var(--brand)" : PEER_COLORS[i % PEER_COLORS.length]!);
   /* A line pointed at in a legend comes forward; the others fade. */
@@ -274,8 +280,7 @@ export function PMBody({ pm, detail, name, timeWindow, onOpenErrors }: {
     return `${dayOf(from)}, ${hhmm(from)} - ${end}`;
   };
 
-  /* The errors legend: the window's totals, or the bar under the pointer -
-     the bar the moment pointed at on any chart falls in. */
+  /* The errors legend: the window's totals. */
   const errRows: LegendRow[] = errStacks.map((l, k) => ({
     key: l.name, name: l.name, color: l.color, mark: "box", value: fmtComma(errTotals[k]!.total),
   }));
@@ -311,10 +316,10 @@ export function PMBody({ pm, detail, name, timeWindow, onOpenErrors }: {
         {rpsAll.length ? (
           <ChartRow height={200}
             chart={<LineChart series={ordered.map((u, i) => lineOf(u.upstream, i, rps[i]!))} id={"pmv" + pid} padY={16}
-              yDomain={[0, rpsHi > 0 ? rpsHi * 1.1 : 0.01]} niceY yFmt={fmtRps} xs={times} maxGap={2}
+              yDomain={[0, rpsHi > 0 ? rpsHi * 1.1 : 0.01]} niceY yFmt={fmtRps} xs={times} maxGap={maxGap}
               hover={hoverOf((v) => `${fmtRps(v)} rps`)} hoverBox={false} pointLabels {...shared} />}
             legend={<LegendLine rows={nameRows} onFocus={setFocusUp} />} />
-        ) : empty(peers.isLoading ? "Loading…" : `No upstream on ${chainLabel} served a request in this window.`)}
+        ) : peersEmpty(`No upstream on ${chainLabel} served a request in this window.`)}
       </PMPanel>
 
       <PMPanel full title="Latency · p95"
@@ -323,7 +328,7 @@ export function PMBody({ pm, detail, name, timeWindow, onOpenErrors }: {
           <>
             <ChartRow height={220}
               chart={<LineChart series={ordered.map((u, i) => lineOf(u.upstream, i, lat[i]!))} id={"pml" + pid} padY={16}
-                yDomain={[0, latTop]} niceY yFmt={fmtMs} xs={times} maxGap={2} hover={hoverOf(fmtMs)} hoverBox={false} pointLabels {...shared} />}
+                yDomain={[0, latTop]} niceY yFmt={fmtMs} xs={times} maxGap={maxGap} hover={hoverOf(fmtMs)} hoverBox={false} pointLabels {...shared} />}
               legend={<LegendLine rows={nameRows} onFocus={setFocusUp} />} />
             {latOver.length > 0 && (
               <div style={{ marginTop: 6, fontSize: 11, color: "var(--text-4)" }}>
@@ -331,7 +336,7 @@ export function PMBody({ pm, detail, name, timeWindow, onOpenErrors }: {
               </div>
             )}
           </>
-        ) : empty(peers.isLoading ? "Loading…" : `No upstream on ${chainLabel} served a request with a measured latency in this window.`)}
+        ) : peersEmpty(`No upstream on ${chainLabel} served a request with a measured latency in this window.`)}
       </PMPanel>
 
       <PMPanel full title="Latest block"
@@ -339,10 +344,10 @@ export function PMBody({ pm, detail, name, timeWindow, onOpenErrors }: {
         {tipAll.length ? (
           <ChartRow height={220}
             chart={<LineChart series={ordered.map((u, i) => lineOf(u.upstream, i, tips[i]!, "linear"))} id={"pmb" + pid} padY={16}
-              yDomain={[tipLo - tipPad, tipHi + tipPad]} niceY yFmt={(v) => fmtComma(Math.round(v))} xs={times} maxGap={2}
+              yDomain={[tipLo - tipPad, tipHi + tipPad]} niceY yFmt={(v) => fmtComma(Math.round(v))} xs={times} maxGap={maxGap}
               hover={hoverOf((v) => fmtComma(Math.round(v)), behindAt)} hoverBox={false} pointLabels {...shared} />}
             legend={<LegendLine rows={nameRows} onFocus={setFocusUp} />} />
-        ) : empty(peers.isLoading ? "Loading…" : `No upstream on ${chainLabel} reported a block in this window.`)}
+        ) : peersEmpty(`No upstream on ${chainLabel} reported a block in this window.`)}
       </PMPanel>
     </div>
   );

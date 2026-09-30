@@ -73,7 +73,7 @@ export function MetricsView() {
         <RouterHeader chains={routedChains} chainFilter={activeChain ?? "all"} setChainFilter={setChainFilter}
           timeWindow={timeWindow} setTimeWindow={setTimeWindow} withActions={false} />
       </div>
-      {/* Six tabs outgrow a narrow screen: they scroll sideways rather than
+      {/* The tabs outgrow a narrow screen: they scroll sideways rather than
           wrap each label onto two lines. */}
       <div style={{ display: "flex", borderBottom: "1px solid var(--line)", marginBottom: 24, overflowX: "auto", overflowY: "hidden" }}>
         {([["metrics", "Overview"], ["upstreams", "Upstreams"], ["errors", "Errors"], ["transactions", "Transactions"]] as [Tab, string][]).map(([k, l]) => (
