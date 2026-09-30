@@ -231,6 +231,9 @@ describe("api routes", () => {
     expect(body.totalRequests).toHaveProperty("prior");
     // errors.prior is prior ERRORS (derived), not prior requests.
     expect(body.errors).toEqual({ value: 3, prior: 3 });
+    // Failed over every request (availability 0.97), not over the 1234
+    // answered client requests the latency histogram counts.
+    expect(body.errorRate).toBeCloseTo(0.03);
     expect(Array.isArray(body.throughput)).toBe(true);
     expect(Array.isArray(body.activeRoutes)).toBe(true);
     expect(Array.isArray(body.latencyDistribution)).toBe(true);

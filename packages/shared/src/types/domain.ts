@@ -249,6 +249,7 @@ export interface OverviewData {
   totalRequests: Kpi;
   throughputRps: Kpi;
   errors: Kpi;
+  /** 1 − success/total over the window (0..1); null with no requests. */
   errorRate: number | null;
   uptime: number | null;
   successRate: Kpi;

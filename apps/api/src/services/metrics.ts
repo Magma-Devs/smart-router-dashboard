@@ -303,9 +303,11 @@ export class MetricsService {
       this.prom.scalar(qErrorCount(spec, window)),
       this.prom.scalar(qErrorCount(spec, window, r)),
     ]);
-    const reqWin = totalRequests.value;
-    const errorRate =
-      reqWin && reqWin > 0 && errorsNow !== null ? errorsNow / reqWin : null;
+    // 1 − success/total, the ratio `qErrorRate` gives per chain; null with no
+    // requests. Not errors over `totalRequests`: that counts only the requests
+    // the router answered (the latency histogram skips failures), from other
+    // counters than the errors.
+    const errorRate = uptime !== null ? 1 - uptime : null;
 
     // Latency histogram distribution (per-bucket counts over the window).
     const distRows = await this.prom.query(qLatencyDistribution(window, spec));
