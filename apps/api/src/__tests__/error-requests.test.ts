@@ -398,6 +398,29 @@ describe("ErrorRequestsService", () => {
     expect(queries).toEqual([]);
   });
 
+  it("a GUID batch Loki doesn't answer leaves its requests out and counts them - the rest still show", async () => {
+    // 150 failed requests - more than one follow-up batch of GUIDs holds.
+    const many = Array.from({ length: 150 }, (_, i) => {
+      const g = String(700_000 + i);
+      return [
+        at(40_000 + i * 10, { GUID: g, path: "/", body: '{"jsonrpc":"2.0","id":1,"method":"eth_gasPrice"}', message: RECEIVED }),
+        at(40_001 + i * 10, { GUID: g, chosenProviders: "eth-tenderly", stateful: "0", message: "Choosing providers" }),
+        at(40_004 + i * 10, { GUID: g, error: "dial tcp: i/o timeout", error_name: "PROTOCOL_CONNECTION_TIMEOUT", retryable: "true", chain_id: "ETH1", provider: "eth-tenderly", message: "could not send relay to provider" }),
+        at(40_005 + i * 10, { GUID: g, served_by: "", stop_reason: "ProcessingTimeout", status: "0", has_reply: "false", error: "failed relay, insufficient results", message: "relay finished" }),
+      ];
+    }).flat();
+    const { loki } = lokiStub(many);
+    // The second batch holds the 50 oldest: 700000..700049.
+    const late = {
+      queryRange: (query: string, ...rest: [number, number, number, "forward" | "backward"]) =>
+        query.includes('"GUID":"(') && query.includes("|700000)") ? Promise.resolve(null) : loki.queryRange(query, ...rest),
+    } as unknown as LokiClient;
+    const r = await new ErrorRequestsService(late, '{service="router"}', configSvc).report(RANGE);
+    expect(r).toMatchObject({ available: true, unread: 50 });
+    expect(r.rows).toHaveLength(100);
+    expect(r.rows.map((x) => x.guid)).not.toContain("700000");
+  });
+
   it("no log store, or one that does not answer, is 'not available' - never 'no errors'", async () => {
     expect((await new ErrorRequestsService(null, '{service="router"}').report(RANGE)).available).toBe(false);
     const down = { async queryRange() { return null; } } as unknown as LokiClient;

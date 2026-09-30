@@ -114,7 +114,7 @@ export const config = {
    */
   loki: {
     url: env("LOKI_URL") || undefined,
-    timeoutMs: envInt("LOKI_TIMEOUT_MS", 10000),
+    timeoutMs: envInt("LOKI_TIMEOUT_MS", 60000),
     routerSelector: env("LOKI_ROUTER_SELECTOR") || '{component="router"}',
     username: env("LOKI_USERNAME"),
     password: env("LOKI_PASSWORD"),
