@@ -13,7 +13,7 @@
  * and finality needs the chain. */
 
 import { Fragment, useMemo, useState } from "react";
-import { buildChainMetaByIndex, WINDOWS, type MetricWindow, type TransactionLookup, type TransactionsReport, type TxLogRow } from "@sr/shared";
+import { WINDOWS, type MetricWindow, type TransactionLookup, type TransactionsReport, type TxLogRow } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { useLogReads } from "@/hooks/use-log-reads";
 import { useRouterFilter } from "@/hooks/use-router-options";
@@ -37,11 +37,14 @@ import {
   fmtWhen,
   hasErrorType,
   IdSearch,
-  LOGS_UNREADABLE,
   LookupFrame,
   NotFound,
   Pager,
   TimeRangeControl,
+  chainWords,
+  onRowKey,
+  rangeIsLive,
+  unreadableWords,
   type ExactRange,
   ResponseSource,
 } from "./request-log";
@@ -100,7 +103,7 @@ function Details({ row }: { row: TxLogRow }) {
 /** One transaction looked up by its request ID - the same row the log shows, opened. */
 function TxLookupPanel({ id, rangeQ, rangeWords, onClose }: { id: string; rangeQ: string; rangeWords: string; onClose: () => void }) {
   const [wide, setWide] = useState(false);
-  const { data, isLoading } = useApi<TransactionLookup>(`/api/transactions/${encodeURIComponent(id)}?${wide ? "window=30d" : rangeQ}`, 0);
+  const { data, error, isLoading } = useApi<TransactionLookup>(`/api/transactions/${encodeURIComponent(id)}?${wide ? "window=30d" : rangeQ}`, 0);
   const row = data?.row ?? null;
   const o = row ? OUTCOME[row.outcome] : null;
   return (
@@ -108,8 +111,10 @@ function TxLookupPanel({ id, rangeQ, rangeWords, onClose }: { id: string; rangeQ
       tag={o && <span className="gw-tag" style={{ fontSize: 10, color: o.color, borderColor: "currentColor" }}>{o.label}</span>}>
       {isLoading ? (
         <SkelLine w="50%" />
+      ) : error && !data ? (
+        <div style={{ color: "var(--text-4)" }}>Couldn&apos;t look this up: it isn&apos;t an ID the router writes (letters, digits, - and _), or the API didn&apos;t answer.</div>
       ) : data && !data.available ? (
-        <div style={{ color: "var(--text-4)" }}>{LOGS_UNREADABLE}</div>
+        <div style={{ color: "var(--text-4)" }}>{unreadableWords(data.reason)}</div>
       ) : data?.found && !row ? (
         <div style={{ color: "var(--text-4)" }}>This request is in the router&apos;s logs, but it isn&apos;t a transaction - look it up on the Errors tab.</div>
       ) : !row ? (
@@ -118,7 +123,7 @@ function TxLookupPanel({ id, rangeQ, rangeWords, onClose }: { id: string; rangeQ
         <div style={{ display: "grid", gap: 8 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--text-2)", flexWrap: "wrap" }}>
             <span className="gw-mono gw-tnum">{fmtWhen(row.time)}</span>
-            {row.spec && <><ChainBadge spec={row.spec} size={14} /><span>{buildChainMetaByIndex(row.spec).name}</span></>}
+            {row.spec ? <><ChainBadge spec={row.spec} size={14} /><span>{chainWords(row)}</span></> : row.specs && <span>{chainWords(row)}</span>}
             <span className="gw-mono" style={{ color: "var(--text-3)" }}>{row.method === "unknown" ? "method not in the logs" : row.method}</span>
             <span style={{ color: "var(--text-4)" }}>responded in {fmtTook(row.replyMs)}</span>
           </div>
@@ -137,14 +142,16 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
   const [open, setOpen] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const [range, setRange] = useState<ExactRange | null>(null);
+  // A picked range that has closed can't change: read it once, don't poll it.
+  const [live, setLive] = useState(true);
   const [lookupId, setLookupId] = useState<string | null>(null);
 
   const specQ = chainFilter ? `&spec=${encodeURIComponent(chainFilter)}` : "";
   // Rows are matched to a config router by the upstreams they went to.
   const { routerIdQ } = useRouterFilter();
   const rangeQ = range ? `from=${Math.round(range.from)}&to=${Math.round(range.to)}` : `window=${win}`;
-  const log = useLogReads<TxLogRow, TransactionsReport>(`/api/transactions?${rangeQ}${specQ}${routerIdQ}`);
-  const data = log.first.data;
+  const log = useLogReads<TxLogRow, TransactionsReport>(`/api/transactions?${rangeQ}${specQ}${routerIdQ}`, live ? 15_000 : 0);
+  const data = log.head;
   const isLoading = log.first.isLoading;
   const allRows = log.rows;
   const sum = useMemo(() => summarize(allRows), [allRows]);
@@ -160,26 +167,33 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
     <div style={{ marginBottom: 16, display: "flex", justifyContent: "flex-end" }}>
       <TimeRangeControl
         range={range}
-        onChange={(r) => { setRange(r); setPage(0); }}
+        onChange={(r) => { setRange(r); setLive(rangeIsLive(r)); setPage(0); }}
         windowLabel={WINDOWS[win].label}
         windowMs={WINDOWS[win].rangeSeconds * 1000}
       />
     </div>
   );
 
-  if (data && !data.available) {
-    return (
-      <div style={{ paddingTop: 8 }}>
-        {header}
-        <div className="gw-card" style={{ padding: "40px 24px", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
-          <span style={{ fontSize: 13, color: "var(--text-3)" }}>The Transactions tab can&apos;t read the router&apos;s logs.</span>
-          <span style={{ fontSize: 12, color: "var(--text-4)", maxWidth: 520, lineHeight: 1.6 }}>
-            It reads them from Loki (the log store). Set <span className="gw-mono">LOKI_URL</span> on the API to your Loki -
-            the compose <span className="gw-mono">logs</span> profile runs one - and check that it is up.
-          </span>
-        </div>
+  const cantRead = (title: string, body: React.ReactNode) => (
+    <div style={{ paddingTop: 8 }}>
+      {header}
+      <div className="gw-card" style={{ padding: "40px 24px", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+        <span style={{ fontSize: 13, color: "var(--text-3)" }}>{title}</span>
+        <span style={{ fontSize: 12, color: "var(--text-4)", maxWidth: 520, lineHeight: 1.6 }}>{body}</span>
       </div>
-    );
+    </div>
+  );
+  if (data && !data.available) {
+    return data.reason === "unreachable"
+      ? cantRead("The router's logs didn't answer in time.", <>Try again, or pick a shorter range.</>)
+      : cantRead("The Transactions tab can't read the router's logs.", <>
+          It reads them from Loki (the log store). Set <span className="gw-mono">LOKI_URL</span> on the API to your Loki -
+          the compose <span className="gw-mono">logs</span> profile runs one - and check that it is up.
+        </>);
+  }
+  // Never zeros for a read that didn't happen.
+  if (log.first.error && !data) {
+    return cantRead("The transactions couldn't be loaded.", <>The API didn&apos;t answer. The tab tries again on its next refresh.</>);
   }
 
   const kpis: { label: string; tipKey: string; value: string; sub: React.ReactNode }[] = [
@@ -262,15 +276,16 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
               {pageRows.map((r) => {
                 const o = OUTCOME[r.outcome];
                 const isOpen = open === r.guid;
+                const toggle = () => setOpen(isOpen ? null : r.guid);
                 return (
                   <Fragment key={r.guid}>
-                    <tr style={{ cursor: "pointer" }} onClick={() => setOpen(isOpen ? null : r.guid)}>
+                    <tr tabIndex={0} aria-expanded={isOpen} style={{ cursor: "pointer" }} onClick={toggle} onKeyDown={onRowKey(toggle)}>
                       <td style={{ verticalAlign: "top" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{fmtWhen(r.time)}</span></td>
                       <td style={{ maxWidth: 0, verticalAlign: "top" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
                           {r.spec && <ChainBadge spec={r.spec} size={16} />}
                           <div style={{ minWidth: 0 }}>
-                            <div style={{ fontSize: 12 }}>{r.spec ? buildChainMetaByIndex(r.spec).name : "—"}</div>
+                            <div style={{ fontSize: 12 }}>{chainWords(r)}</div>
                             {r.method === "unknown"
                               ? <div style={{ fontSize: 10.5, color: "var(--text-4)", fontStyle: "italic" }}>method not in the logs</div>
                               : <div className="gw-mono" title={r.method} style={{ fontSize: 10.5, color: "var(--text-3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.method}</div>}

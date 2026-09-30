@@ -6,49 +6,62 @@ import { useApi } from "@/hooks/use-api";
 
 /** One read of the router's logs, newest first: `more` + `nextBefore` say where the next, older read ends. */
 export interface LogRead<R> {
+  available: boolean;
   rows: R[];
   more: boolean;
   nextBefore: number | null;
 }
 
+/** The older reads of one query, and the first read they continue from. */
+interface Older<T> {
+  key: string;
+  head: T;
+  reads: T[];
+  loading: boolean;
+  failed: boolean;
+}
+
 /**
  * A log list read one piece at a time - the Errors tab's requests and the
- * Transactions tab. The first read polls like any panel; "Load older" appends
- * the next. Older reads belong to the query that made them, so a new query
- * starts over, and once any is loaded the first read holds still: a refresh
- * would move the seam between them. A row on the seam comes back in both
- * reads and is kept once, by GUID.
+ * Transactions tab. The first read polls every `refreshMs` (0 = never);
+ * "Load older" appends the next. Older reads belong to the query that made
+ * them, so a new query starts over, and it shows nothing until its own first
+ * read lands. Once an older read is asked for, the list continues from the
+ * first read as it was then: another panel polling the same key must not
+ * move the seam between them. A row on the seam comes back in both reads and
+ * is kept once, by GUID.
  */
-export function useLogReads<R extends { guid: string }, T extends LogRead<R>>(base: string) {
-  const [older, setOlder] = useState<{ key: string; reads: T[] }>({ key: "", reads: [] });
-  const [loadingOlder, setLoadingOlder] = useState(false);
-  const [olderFailed, setOlderFailed] = useState(false);
-  const olderReads = useMemo(() => (older.key === base ? older.reads : []), [older, base]);
-  const first = useApi<T>(base, olderReads.length ? 0 : 15000);
-  const last = olderReads[olderReads.length - 1] ?? first.data;
+export function useLogReads<R extends { guid: string }, T extends LogRead<R>>(base: string, refreshMs = 15000) {
+  const [older, setOlder] = useState<Older<T> | null>(null);
+  const mine = older?.key === base ? older : null;
+  const first = useApi<T>(base, mine ? 0 : refreshMs, { keepPreviousData: false });
+  const head = mine ? mine.head : (first.data ?? null);
+  const reads = mine?.reads;
+  const last = reads?.[reads.length - 1] ?? head;
 
   const rows = useMemo(() => {
     const seen = new Set<string>();
     const out: R[] = [];
-    for (const read of [first.data, ...olderReads]) {
+    for (const read of [head, ...(reads ?? [])]) {
       for (const r of read?.rows ?? []) if (!seen.has(r.guid)) { seen.add(r.guid); out.push(r); }
     }
     return out;
-  }, [first.data, olderReads]);
+  }, [head, reads]);
 
   const loadOlder = async () => {
-    if (last?.nextBefore == null) return;
-    setLoadingOlder(true);
-    setOlderFailed(false);
+    if (!head || last?.nextBefore == null || mine?.loading) return;
+    const key = base;
+    setOlder({ key, head, reads: reads ?? [], loading: true, failed: false });
+    const done = (patch: (prev: Older<T>) => Older<T>) =>
+      setOlder((prev) => (prev && prev.key === key ? patch(prev) : prev));
     try {
-      const next = await apiGet<T>(`${base}&before=${last.nextBefore}`);
-      setOlder({ key: base, reads: [...olderReads, next] });
+      const next = await apiGet<T>(`${key}&before=${last.nextBefore}`);
+      // A read that couldn't reach the logs is a failure to retry, not the end of the list.
+      done((prev) => (next.available ? { ...prev, reads: [...prev.reads, next], loading: false } : { ...prev, loading: false, failed: true }));
     } catch {
-      setOlderFailed(true); // the button stays: another try may work
-    } finally {
-      setLoadingOlder(false);
+      done((prev) => ({ ...prev, loading: false, failed: true }));
     }
   };
 
-  return { first, rows, more: last?.more ?? false, loadOlder, loadingOlder, olderFailed };
+  return { first, head, rows, more: last?.more ?? false, loadOlder, loadingOlder: mine?.loading ?? false, olderFailed: mine?.failed ?? false };
 }

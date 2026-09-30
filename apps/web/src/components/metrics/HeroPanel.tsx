@@ -1,18 +1,15 @@
 "use client";
 
-/* HeroPanel - the six Metrics·Overview cards. Ported from the design
- * prototype (page-metrics.jsx HeroPanel); data is live
+/* HeroPanel - the Metrics·Overview cards, live from
  * /api/metrics/dashboard-summary. Null Kpi values render "—" in the design's
  * muted colour with an honest sub-line - never an invented number.
- *
- * "Failed requests" took the prototype's "Effective read p95" card: a p95 is
- * on the Upstreams tab, while how many requests failed was nowhere up top.
- * It comes from the router's logs (/api/error-requests/count), because no
- * metric counts it - so without Loki it says so rather than guessing. */
+ * "Failed requests" is counted from the router's logs
+ * (/api/error-requests/count): no metric counts it, so without them it says so. */
 
 import type { FailedRequests, HeroSummary, MetricWindow } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { useFilters } from "@/components/gateway/FiltersProvider";
+import { useRouterFilter } from "@/hooks/use-router-options";
 import { Tip } from "@/components/gateway/Tip";
 import { SkelValue, SkelLine } from "@/components/gateway/Skel";
 import { TT } from "@/lib/tooltips";
@@ -20,6 +17,7 @@ import { fmtNum } from "@/lib/format";
 
 export function HeroPanel({ tw, spec }: { tw: MetricWindow; spec?: string | null }) {
   const { scopeQ } = useFilters();
+  const { routerIdQ } = useRouterFilter();
   const { data, isLoading } = useApi<HeroSummary>(
     `/api/metrics/dashboard-summary?window=${tw}${spec ? `&spec=${encodeURIComponent(spec)}` : ""}${scopeQ}`,
   );
@@ -28,8 +26,12 @@ export function HeroPanel({ tw, spec }: { tw: MetricWindow; spec?: string | null
   const retries = data?.retriesRecovered.value ?? null;   // count (null until family fires)
   const cachePct = data?.cacheOffloadPct.value ?? null;   // ratio 0..1 (null until family fires)
   const reqServed = data?.requestsServed.value ?? null;
-  // Once a minute: the count scans the window's logs, and moves slowly.
-  const failed = useApi<FailedRequests>(`/api/error-requests/count?window=${tw}${spec ? `&spec=${encodeURIComponent(spec)}` : ""}`, 60_000);
+  // Once a minute: the count scans the window's logs, and moves slowly. With
+  // the served count scoped to a router, the failed count is scoped to it too.
+  const failed = useApi<FailedRequests>(
+    `/api/error-requests/count?window=${tw}${spec ? `&spec=${encodeURIComponent(spec)}` : ""}${scopeQ ? routerIdQ : ""}`,
+    60_000,
+  );
   const failedN = failed.data?.available ? failed.data.value : null;
   // "Requests served" counts the requests the router answered; the ones it
   // gave up on aren't in it, so together they are every request.
@@ -65,10 +67,13 @@ export function HeroPanel({ tw, spec }: { tw: MetricWindow; spec?: string | null
         ? <span style={{ color: failedN > 0 ? "var(--err)" : "var(--ok)" }}>{fmtNum(failedN)}</span>
         : "—",
       label: "Failed requests", tipKey: "failedRequests", color: "var(--err)",
-      note: failed.data && !failed.data.available
-        ? "requires the router's logs (LOKI_URL)"
+      note: failed.error && !failed.data ? "couldn't load the count"
+        : failed.data && !failed.data.available
+          ? failed.data.reason === "shared-chain" ? "not split per router on a chain several routers serve"
+          : failed.data.reason === "unreachable" ? "the router's logs didn't answer in time"
+          : "requires the router's logs (LOKI_URL)"
         : failedN === 0 ? "none in this window"
-        : failedPct != null ? `${(failedPct * 100).toFixed(failedPct < 0.001 ? 3 : 2)}% of client requests`
+        : failedPct != null ? `${failedPct < 0.00001 ? "under 0.001" : (failedPct * 100).toFixed(failedPct < 0.001 ? 3 : 2)}% of client requests`
         : "router errors returned to clients" },
     { display: stale != null ? fmtNum(stale) : "—", label: "stale responses caught", tipKey: "staleDetected", color: "var(--warn)",
       note: stale === 0 ? "no stale responses - all consistency checks passed" : "consistency check failed - response behind seen head" },

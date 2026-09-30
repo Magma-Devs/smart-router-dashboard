@@ -17,10 +17,6 @@ export function seriesXY(pts: TimePoint[] | null | undefined): { values: number[
   return { values: kept.map((p) => p.v), times: kept.map((p) => new Date(p.t * 1000)) };
 }
 
-/** Plain number array (null → 0) — the exemplar OverviewView convention for
- *  stacked layers where every layer must share bucket count. */
-export const nums = (pts: TimePoint[] | null | undefined): number[] => (pts ?? []).map((p) => p.v ?? 0);
-
 /** "42s" / "12m" / "2h 05m" — CurrentlyUnavailable "down Xm" text. */
 export function fmtSince(sec: number): string {
   if (sec < 60) return `${Math.round(sec)}s`;

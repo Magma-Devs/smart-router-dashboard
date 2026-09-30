@@ -10,7 +10,7 @@
  * and details are shared with the Transactions tab (request-log.tsx). */
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { buildChainMetaByIndex, WINDOWS, type ErrorRequestRow, type ErrorRequestsReport, type MetricWindow, type RequestLookup } from "@sr/shared";
+import { WINDOWS, type ErrorRequestRow, type ErrorRequestsReport, type MetricWindow, type RequestLookup } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { useLogReads } from "@/hooks/use-log-reads";
 import { useRouterFilter } from "@/hooks/use-router-options";
@@ -33,15 +33,18 @@ import {
   fmtTook,
   fmtWhen,
   hasErrorType,
+  chainWords,
   IdSearch,
   ResponseSource,
-  LOGS_UNREADABLE,
   LookupFrame,
   NotFound,
+  onRowKey,
   Pager,
+  rangeIsLive,
   retryKinds,
   stopMarker,
   TimeRangeControl,
+  unreadableWords,
   type ExactRange,
 } from "./request-log";
 
@@ -151,22 +154,24 @@ function Details({ row }: { row: ErrorRequestRow }) {
 /** One request looked up by its ID: its path, what the app got, and every try in full. */
 function LookupPanel({ id, rangeQ, rangeWords, onClose }: { id: string; rangeQ: string; rangeWords: string; onClose: () => void }) {
   const [wide, setWide] = useState(false);
-  const { data, isLoading } = useApi<RequestLookup>(`/api/requests/${encodeURIComponent(id)}?${wide ? "window=30d" : rangeQ}`, 0);
+  const { data, error, isLoading } = useApi<RequestLookup>(`/api/requests/${encodeURIComponent(id)}?${wide ? "window=30d" : rangeQ}`, 0);
   const row = data?.row ?? null;
   return (
     <LookupFrame id={id} onClose={onClose}
       tag={row && <ResultTag row={row} />}>
       {isLoading ? (
         <SkelLine w="50%" />
+      ) : error && !data ? (
+        <div style={{ color: "var(--text-4)" }}>Couldn&apos;t look this up: it isn&apos;t an ID the router writes (letters, digits, - and _), or the API didn&apos;t answer.</div>
       ) : data && !data.available ? (
-        <div style={{ color: "var(--text-4)" }}>{LOGS_UNREADABLE}</div>
+        <div style={{ color: "var(--text-4)" }}>{unreadableWords(data.reason)}</div>
       ) : !row ? (
         <NotFound rangeWords={rangeWords} wide={wide} onWiden={() => setWide(true)} />
       ) : (
         <div style={{ display: "grid", gap: 8 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--text-2)", flexWrap: "wrap" }}>
             <span className="gw-mono gw-tnum">{fmtWhen(row.time)}</span>
-            {row.spec && <><ChainBadge spec={row.spec} size={14} /><span>{buildChainMetaByIndex(row.spec).name}</span></>}
+            {row.spec ? <><ChainBadge spec={row.spec} size={14} /><span>{chainWords(row)}</span></> : row.specs && <span>{chainWords(row)}</span>}
             <span className="gw-mono" style={{ color: "var(--text-3)" }}>{row.method === "unknown" ? "method not in the logs" : row.method}</span>
             <span style={{ color: "var(--text-4)" }}>took {fmtTook(row.totalMs)}</span>
           </div>
@@ -214,6 +219,8 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
   const [errType, setErrType] = useState(ALL);
   const [method, setMethod] = useState(ALL);
   const [range, setRange] = useState<ExactRange | null>(initialRange);
+  // A picked range that has closed can't change: read it once, don't poll it.
+  const [live, setLive] = useState(() => rangeIsLive(initialRange));
   const [open, setOpen] = useState<string | null>(null);
   const [lookupId, setLookupId] = useState<string | null>(null);
   const [page, setPage] = useState(0);
@@ -221,9 +228,13 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
   const specQ = chainFilter ? `&spec=${encodeURIComponent(chainFilter)}` : "";
   const { routerIdQ } = useRouterFilter();
   const rangeQ = range ? `from=${Math.round(range.from)}&to=${Math.round(range.to)}` : `window=${win}`;
-  const base = `/api/error-requests?${rangeQ}${specQ}${routerIdQ}`;
-  const log = useLogReads<ErrorRequestRow, ErrorRequestsReport>(base);
-  const { first, rows: allRows } = log;
+  // On a bar's times with an upstream picked, the read itself is narrowed to
+  // that upstream, so the cap applies to the requests the bar counts.
+  const onBarRange = initialRange != null && range != null && range.from === initialRange.from && range.to === initialRange.to;
+  const barQ = onBarRange && upstream !== ALL ? `&upstream=${encodeURIComponent(upstream)}` : "";
+  const base = `/api/error-requests?${rangeQ}${specQ}${routerIdQ}${barQ}`;
+  const log = useLogReads<ErrorRequestRow, ErrorRequestsReport>(base, live ? 15_000 : 0);
+  const { first, head, rows: allRows } = log;
 
   const methods = useMemo(() => [...new Set(allRows.map((r) => r.method))].sort(), [allRows]);
   // The upstreams an attempt failed at, each with its count of requests.
@@ -265,22 +276,27 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
      the ones it sends by itself when it starts and to check its upstreams -
      and this list leaves those out: no client sent them. An empty list here has
      to say so, or it reads as the bar being wrong. */
-  const onBar = initialRange != null && range != null && range.from === initialRange.from && range.to === initialRange.to &&
-    upstream !== ALL && result === ALL && retry === ALL && errType === ALL && method === ALL;
+  const onBar = onBarRange && upstream !== ALL && result === ALL && retry === ALL && errType === ALL && method === ALL;
   useEffect(() => {
     if (jumpKey) listRef.current?.scrollIntoView({ block: "start", behavior: "smooth" });
   }, [jumpKey]);
 
-  if (first.data && !first.data.available) {
-    return (
-      <div className="gw-card" style={{ padding: "40px 24px", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
-        <span style={{ fontSize: 13, color: "var(--text-3)" }}>This list can&apos;t read the router&apos;s logs.</span>
-        <span style={{ fontSize: 12, color: "var(--text-4)", maxWidth: 520, lineHeight: 1.6 }}>
+  const cantRead = (title: string, body: React.ReactNode) => (
+    <div className="gw-card" style={{ padding: "40px 24px", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+      <span style={{ fontSize: 13, color: "var(--text-3)" }}>{title}</span>
+      <span style={{ fontSize: 12, color: "var(--text-4)", maxWidth: 520, lineHeight: 1.6 }}>{body}</span>
+    </div>
+  );
+  if (head && !head.available) {
+    return head.reason === "unreachable"
+      ? cantRead("The router's logs didn't answer in time.", <>Try again, or pick a shorter range. The counts above come from Prometheus and work without them.</>)
+      : cantRead("This list can't read the router's logs.", <>
           It reads them from Loki (the log store). Set <span className="gw-mono">LOKI_URL</span> on the API to your Loki - the compose{" "}
           <span className="gw-mono">logs</span> profile runs one - and check that it is up. The counts above come from Prometheus and work without it.
-        </span>
-      </div>
-    );
+        </>);
+  }
+  if (first.error && !head) {
+    return cantRead("The request list couldn't be loaded.", <>The API didn&apos;t answer. The list tries again on its next refresh.</>);
   }
 
   return (
@@ -290,7 +306,7 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <span style={{ display: "inline-flex", alignItems: "center", fontSize: 12, fontWeight: 600, color: "var(--text-2)" }}>
             Requests with an error<Tip text={TT.errorRequests!} />
-            {first.data && <span style={{ fontWeight: 400, color: "var(--text-4)", marginLeft: 8 }}>{fmtComma(rows.length)}{rows.length !== allRows.length ? ` of ${fmtComma(allRows.length)}` : ""}</span>}
+            {head && <span style={{ fontWeight: 400, color: "var(--text-4)", marginLeft: 8 }}>{fmtComma(rows.length)}{rows.length !== allRows.length ? ` of ${fmtComma(allRows.length)}` : ""}</span>}
           </span>
           <Seg
             value={result}
@@ -304,7 +320,7 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
           <span style={{ flex: 1 }} />
           <TimeRangeControl
             range={range}
-            onChange={(r) => { setRange(r); setPage(0); }}
+            onChange={(r) => { setRange(r); setLive(rangeIsLive(r)); setPage(0); }}
             windowLabel={WINDOWS[win].label}
             windowMs={WINDOWS[win].rangeSeconds * 1000}
           />
@@ -366,15 +382,16 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
             {first.isLoading && <SkelRows rows={6} cols={[{ w: 90 }, { w: "70%" }, { w: "85%" }, { w: 90 }, { w: 50, align: "right" }]} />}
             {pageRows.map((r) => {
               const isOpen = open === r.guid;
+              const toggle = () => setOpen(isOpen ? null : r.guid);
               return (
                 <Fragment key={r.guid}>
-                  <tr style={{ cursor: "pointer" }} onClick={() => setOpen(isOpen ? null : r.guid)}>
+                  <tr tabIndex={0} aria-expanded={isOpen} style={{ cursor: "pointer" }} onClick={toggle} onKeyDown={onRowKey(toggle)}>
                     <td style={{ verticalAlign: "top" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{fmtWhen(r.time)}</span></td>
                     <td style={{ maxWidth: 0, verticalAlign: "top" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
                         {r.spec && <ChainBadge spec={r.spec} size={16} />}
                         <div style={{ minWidth: 0 }}>
-                          <div style={{ fontSize: 12 }}>{r.spec ? buildChainMetaByIndex(r.spec).name : "—"}</div>
+                          <div style={{ fontSize: 12 }}>{chainWords(r)}</div>
                           {r.method === "unknown"
                             ? <div style={{ fontSize: 10.5, color: "var(--text-4)", fontStyle: "italic" }}>method not in the logs</div>
                             : <div className="gw-mono" title={r.method} style={{ fontSize: 10.5, color: "var(--text-3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.method}</div>}
@@ -399,7 +416,7 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
                 </Fragment>
               );
             })}
-            {first.data && rows.length === 0 && (
+            {head && rows.length === 0 && (
               <tr><td colSpan={5} style={{ padding: "20px 12px", textAlign: "center", color: "var(--text-4)", fontSize: 12.5 }}>
                 {onBar
                   ? <>No client requests failed at <span className="gw-mono">{upstream}</span> in this period. The bar also counts the router&apos;s internal relays (startup and health checks), which this list excludes.</>
