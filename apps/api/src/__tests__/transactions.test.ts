@@ -357,6 +357,42 @@ describe("TransactionsService", () => {
     expect(queries).toEqual([]);
   });
 
+  /** 150 accepted transactions - more than one follow-up batch of GUIDs holds. */
+  const MANY = Array.from({ length: 150 }, (_, i) => {
+    const g = String(500_000 + i);
+    return [
+      at(10_000 + i * 10, { GUID: g, path: "/", body: '{"jsonrpc":"2.0","id":1,"method":"eth_sendRawTransaction","params":["0x00"]}', message: RECEIVED }),
+      at(10_001 + i * 10, { GUID: g, chosenProviders: "eth-tenderly", stateful: "1", message: "Choosing providers" }),
+      at(10_005 + i * 10, { GUID: g, served_by: "eth-tenderly", stop_reason: "Stateful", status: "200", has_reply: "true", error: "", message: "relay finished" }),
+    ];
+  }).flat();
+  /** The stub, with the GUID reads that ask for `lateGuid` never answered - Loki's timeout. */
+  const lateFor = (loki: LokiClient, lateGuid: (q: string) => boolean) => ({
+    queryRange: (query: string, ...rest: [number, number, number, "forward" | "backward"]) =>
+      query.includes('"GUID":"(') && lateGuid(query) ? Promise.resolve(null) : loki.queryRange(query, ...rest),
+  }) as unknown as LokiClient;
+
+  it("a batch Loki doesn't answer leaves its transactions out and counts them - the other batches still show", async () => {
+    const { loki } = lokiStub(MANY);
+    // The second batch holds the 50 oldest: 500000..500049.
+    const batches: string[] = [];
+    const late = lateFor(loki, (q) => batches.push(q) > 0 && q.includes("|500000)"));
+    const r = await new TransactionsService(late, '{service="router"}', configSvc).report(RANGE);
+    expect(batches).toHaveLength(2);
+    expect(r).toMatchObject({ available: true, total: 100, accepted: 100, unread: 50 });
+    expect(r.rows.map((x) => x.guid)).not.toContain("500000");
+    expect(r.rows[0]?.guid).toBe("500149");
+  });
+
+  it("every batch answering leaves no unread count; none answering is 'not available'", async () => {
+    const { loki } = lokiStub(MANY);
+    const all = await new TransactionsService(loki, '{service="router"}', configSvc).report(RANGE);
+    expect(all).toMatchObject({ available: true, total: 150 });
+    expect(all).not.toHaveProperty("unread");
+    const none = await new TransactionsService(lateFor(loki, () => true), '{service="router"}', configSvc).report(RANGE);
+    expect(none).toMatchObject({ available: false, reason: "unreachable", rows: [] });
+  });
+
   it("no log store, or one that does not answer, is 'not available' - never 'no transactions'", async () => {
     expect((await new TransactionsService(null, '{service="router"}').report(RANGE)).available).toBe(false);
     const down = { async queryRange() { return null; } } as unknown as LokiClient;

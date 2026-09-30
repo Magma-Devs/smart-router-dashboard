@@ -11,6 +11,7 @@
 
 import { Fragment, useState } from "react";
 import { buildChainMetaByIndex, type LogUnavailable, type RelayAttempt } from "@sr/shared";
+import { SkelRows, type SkelCol } from "@/components/gateway/Skel";
 import { errorDocsUrl } from "@/lib/error-docs";
 import { fmtComma } from "@/lib/format";
 
@@ -371,6 +372,50 @@ export function unreadableWords(reason: LogUnavailable | undefined): string {
   return reason === "unreachable"
     ? "The router's logs didn't answer in time. Try again, or a shorter range."
     : LOGS_UNREADABLE;
+}
+
+/** The ghost rows of both log tables - one shape, so a row landing replaces its ghost in place. */
+export const LOG_SKEL_COLS: SkelCol[] = [{ w: 90 }, { w: "70%" }, { w: "85%" }, { w: 90 }, { w: 50, align: "right" }];
+
+/** Ghosts under the last rows while "Load older" reads the next stretch, on the page they will land on. */
+export function OlderRowsLoading({ show }: { show: boolean }) {
+  return show ? <SkelRows rows={3} cols={LOG_SKEL_COLS} /> : null;
+}
+
+/** A line across a log table, under its header - what the list holds, or why it holds less. */
+export function LogStrip({ tone = "quiet", children }: { tone?: "quiet" | "warn"; children: React.ReactNode }) {
+  return (
+    <div role={tone === "warn" ? "status" : undefined} style={{
+      padding: "8px 16px", borderBottom: "1px solid var(--line)", fontSize: 11, lineHeight: 1.5,
+      color: tone === "warn" ? "var(--text-3)" : "var(--text-4)",
+      background: tone === "warn" ? "var(--bg-2)" : undefined,
+    }}>
+      {children}
+    </div>
+  );
+}
+
+/** While the first read runs: a day of the router's lines can take Loki a while, and a silent shimmer reads as stuck. */
+export function ReadingStrip({ show, rangeWords }: { show: boolean; rangeWords: string }) {
+  if (!show) return null;
+  return <LogStrip>Reading the router&apos;s logs {rangeWords} - a long range can take up to a minute.</LogStrip>;
+}
+
+/**
+ * Rows a read found but couldn't read in full before Loki's timeout: they're
+ * left out, and the list says how many, rather than the whole list failing.
+ * `bound`: a chain or router filter is set, and the count was taken before it,
+ * so some of these may be on other chains.
+ */
+export function UnreadStrip({ count, noun, bound, covers }: { count: number; noun: string; bound: boolean; covers?: string }) {
+  if (count <= 0) return null;
+  return (
+    <LogStrip tone="warn">
+      <span aria-hidden style={{ display: "inline-block", width: 6, height: 6, borderRadius: 999, background: "var(--warn)", marginRight: 8, verticalAlign: "middle" }} />
+      <span style={{ color: "var(--warn)" }}>{bound ? "Up to " : ""}{fmtComma(count)} {noun}{count === 1 ? "" : "s"}</span> in this range didn&apos;t come back from the logs in time and {count === 1 ? "is" : "are"} left out{covers ? ` of ${covers}` : ""}.
+      {" "}Refresh to try again, or pick a shorter range.
+    </LogStrip>
+  );
 }
 
 /** A row's chain - or the chains it could be on, when its upstreams serve several. */

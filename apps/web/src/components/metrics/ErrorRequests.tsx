@@ -14,7 +14,7 @@ import { WINDOWS, type ErrorRequestRow, type ErrorRequestsReport, type MetricWin
 import { useApi } from "@/hooks/use-api";
 import { useLogReads } from "@/hooks/use-log-reads";
 import { useRouterFilter } from "@/hooks/use-router-options";
-import { SkelLine, SkelRows } from "@/components/gateway/Skel";
+import { Refreshing, SkelLine, SkelRows } from "@/components/gateway/Skel";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { CopyButton } from "@/components/gateway/CopyButton";
 import { Tip } from "@/components/gateway/Tip";
@@ -35,16 +35,20 @@ import {
   hasErrorType,
   chainWords,
   IdSearch,
+  LOG_SKEL_COLS,
   ResponseSource,
   LookupFrame,
   NotFound,
+  OlderRowsLoading,
   onRowKey,
   Pager,
+  ReadingStrip,
   rangeIsLive,
   retryKinds,
   stopMarker,
   TimeRangeControl,
   unreadableWords,
+  UnreadStrip,
   type ExactRange,
 } from "./request-log";
 
@@ -307,14 +311,16 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
           <span style={{ display: "inline-flex", alignItems: "center", fontSize: 12, fontWeight: 600, color: "var(--text-2)" }}>
             Requests with an error<Tip text={TT.errorRequests!} />
             {head && <span style={{ fontWeight: 400, color: "var(--text-4)", marginLeft: 8 }}>{fmtComma(rows.length)}{rows.length !== allRows.length ? ` of ${fmtComma(allRows.length)}` : ""}</span>}
+            <span style={{ marginLeft: 8, display: "inline-flex" }}><Refreshing show={log.refreshing} label="Reading newer requests" /></span>
           </span>
           <Seg
             value={result}
             onChange={reset(setResult)}
             options={[
-              { key: ALL, label: "All", count: narrowed.length },
+              // No counts before the first read lands: a 0 there would be a claim.
+              { key: ALL, label: "All", count: head ? narrowed.length : undefined },
               ...RESULT_ORDER.filter((k) => k !== "unknown" || byResult("unknown") > 0)
-                .map((k) => ({ key: k, label: RESULT[k].label, count: byResult(k), color: RESULT[k].color, title: RESULT[k].hint })),
+                .map((k) => ({ key: k, label: RESULT[k].label, count: head ? byResult(k) : undefined, color: RESULT[k].color, title: RESULT[k].hint })),
             ]}
           />
           <span style={{ flex: 1 }} />
@@ -354,6 +360,8 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
           </div>
         )}
       </div>
+      <ReadingStrip show={first.isLoading} rangeWords={range ? "for the times you picked" : `for the last ${WINDOWS[win].label}`} />
+      <UnreadStrip count={log.unread} noun="request" bound={!!chainFilter || !!routerIdQ || !!barQ} covers="the list" />
       {lookupId && (
         <LookupPanel key={lookupId + rangeQ} id={lookupId} rangeQ={rangeQ} rangeWords={range ? "of the times you picked" : `of the last ${WINDOWS[win].label}`}
           onClose={() => setLookupId(null)} />
@@ -379,7 +387,7 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
             </tr>
           </thead>
           <tbody>
-            {first.isLoading && <SkelRows rows={6} cols={[{ w: 90 }, { w: "70%" }, { w: "85%" }, { w: 90 }, { w: 50, align: "right" }]} />}
+            {first.isLoading && <SkelRows rows={6} cols={LOG_SKEL_COLS} />}
             {pageRows.map((r) => {
               const isOpen = open === r.guid;
               const toggle = () => setOpen(isOpen ? null : r.guid);
@@ -416,9 +424,11 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
                 </Fragment>
               );
             })}
-            {head && rows.length === 0 && (
+            <OlderRowsLoading show={log.loadingOlder && curPage === pageCount - 1} />
+            {head && rows.length === 0 && !log.loadingOlder && (
               <tr><td colSpan={5} style={{ padding: "20px 12px", textAlign: "center", color: "var(--text-4)", fontSize: 12.5 }}>
-                {onBar
+                {!allRows.length && log.unread ? "None of the requests found in this range came back from the logs in time."
+                  : onBar
                   ? <>No client requests failed at <span className="gw-mono">{upstream}</span> in this period. The bar also counts the router&apos;s internal relays (startup and health checks), which this list excludes.</>
                   : allRows.length ? "No requests match these filters." : range ? "No requests with errors in this period." : `No requests with errors in the last ${WINDOWS[win].label}.`}
                 {log.more ? " Older ones may: load them below." : ""}

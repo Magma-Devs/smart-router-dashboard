@@ -314,7 +314,7 @@ export class ErrorRequestsService {
     const cuts = found.length >= limit ? [Math.min(...found.map((l) => l.tsMs))] : [];
     const nextBefore = readOnFrom(ranked, this.cap, cuts, endMs);
 
-    const lines = await linesForGuids(
+    const guidLines = await linesForGuids(
       loki,
       this.selector,
       [...kept],
@@ -323,12 +323,13 @@ export class ErrorRequestsService {
       40,
       Math.min(Date.now(), Math.max(...keptTimes) + REQUEST_SPAN_MS),
     );
-    if (lines === null) return none(false, "unreachable");
+    if (guidLines === null) return none(false, "unreachable");
 
-    let rows = buildErrorRows(lines, new UpstreamIndex(routers));
+    let rows = buildErrorRows(guidLines.lines, new UpstreamIndex(routers));
     if (spec) rows = rows.filter((r) => onChain(r, spec));
     if (routerId) rows = router ? rows.filter((r) => ownRow(r, router, routers)) : [];
     if (upstream) rows = rows.filter((r) => r.attempts.some((a) => a.upstream === upstream && a.outcome === "failed"));
-    return { available: true, rows, more: nextBefore !== null, nextBefore, range: read };
+    const unread = guidLines.unread.length ? { unread: guidLines.unread.length } : {};
+    return { available: true, rows, ...unread, more: nextBefore !== null, nextBefore, range: read };
   }
 }

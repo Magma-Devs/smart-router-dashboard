@@ -721,7 +721,7 @@ API (`apps/api/src/config.ts` is the source of truth):
 | `UPSTREAM_RELAY_MAX_BODY_BYTES` | `262144` | upstream responses past this come back `truncated: true` |
 | `UPSTREAM_RELAY_RATE_LIMIT_MAX` | `20` | per IP per minute, tighter than `RATE_LIMIT_MAX` |
 | `LOKI_URL` | unset | Loki holding the router's logs, for the Transactions tab, the Errors tab's request list and the Failed requests card. Unset ⇒ they say they can't read them (`available:false`). Compose sets `http://loki:3100` (the `logs` profile). Read from the live env, so tests can set it |
-| `LOKI_TIMEOUT_MS` | `10000` | per-query abort |
+| `LOKI_TIMEOUT_MS` | `60000` | per-query abort — a day of router lines on a shared Loki takes seconds per read; keep it under the edge's cut (Cloudflare: 100 s) |
 | `LOKI_ROUTER_SELECTOR` | `{component="router"}` | LogQL stream selector for the router's lines - the label the fleet's log agent and the compose promtail both put on them; set it only where the router's streams carry other labels. The router must log at `info` |
 | `LOKI_USERNAME` / `LOKI_PASSWORD` | unset | basic auth for Loki, sent only when both are set - e.g. a per-tenant read path that pins the org from the credential |
 | `LOKI_ORG_ID` | unset | sent as `X-Scope-OrgID`, for a Loki that takes the org from the client; unset sends no header |

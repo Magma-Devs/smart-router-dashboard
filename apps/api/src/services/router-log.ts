@@ -397,10 +397,18 @@ export const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 /** GUIDs per follow-up query - they go into one regex alternation. */
 const GUID_BATCH = 100;
 
+/** The lines `linesForGuids` read, and the requests whose batch Loki didn't answer. */
+export interface GuidLines {
+  lines: RouterLine[];
+  /** GUIDs asked for whose lines never came back - none of theirs are in `lines`. */
+  unread: string[];
+}
+
 /**
  * Every line of these requests whose message matches one of `messages`, from
- * `fromMs` to `toMs` (now by default). Null when Loki didn't answer - never a
- * partial list.
+ * `fromMs` to `toMs` (now by default). The GUIDs go out in batches; a batch
+ * Loki didn't answer leaves its GUIDs in `unread` while the others' lines are
+ * kept. Null only when no batch answered.
  */
 export async function linesForGuids(
   loki: LokiClient,
@@ -410,7 +418,7 @@ export async function linesForGuids(
   messages: string[],
   perGuid: number,
   toMs: number = Date.now(),
-): Promise<RouterLine[] | null> {
+): Promise<GuidLines | null> {
   // IDs read back out of log lines go into the next query: plain tokens only.
   const ids = guids.filter((g) => REQUEST_ID.test(g));
   const batches: string[][] = [];
@@ -427,6 +435,9 @@ export async function linesForGuids(
       ),
     ),
   );
-  if (results.some((r) => r === null)) return null;
-  return parseAll(results.flatMap((r) => r ?? []));
+  if (batches.length && results.every((r) => r === null)) return null;
+  return {
+    lines: parseAll(results.flatMap((r) => r ?? [])),
+    unread: batches.filter((_, i) => results[i] === null).flat(),
+  };
 }

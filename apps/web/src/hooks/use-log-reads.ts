@@ -8,6 +8,8 @@ import { useApi } from "@/hooks/use-api";
 export interface LogRead<R> {
   available: boolean;
   rows: R[];
+  /** Rows the read found but couldn't read in full in time - left out of `rows`. */
+  unread?: number;
   more: boolean;
   nextBefore: number | null;
   /** The times the read covers; older reads send them back as from/to. */
@@ -78,5 +80,10 @@ export function useLogReads<R extends { guid: string }, T extends LogRead<R>>(ba
     }
   };
 
-  return { first, head, rows, more: last?.more ?? false, loadOlder, loadingOlder: mine?.loading ?? false, olderFailed: mine?.failed ?? false };
+  // Rows the reads on screen found but couldn't read in full; a later read of the same stretch may.
+  const unread = [head, ...(reads ?? [])].reduce((n, read) => n + (read?.unread ?? 0), 0);
+  // A poll of a list already on screen - the rows stay up while it runs.
+  const refreshing = !mine && first.isValidating && !!first.data;
+
+  return { first, head, rows, unread, refreshing, more: last?.more ?? false, loadOlder, loadingOlder: mine?.loading ?? false, olderFailed: mine?.failed ?? false };
 }

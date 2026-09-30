@@ -17,7 +17,7 @@ import { WINDOWS, type MetricWindow, type TransactionLookup, type TransactionsRe
 import { useApi } from "@/hooks/use-api";
 import { useLogReads } from "@/hooks/use-log-reads";
 import { useRouterFilter } from "@/hooks/use-router-options";
-import { SkelLine, SkelRows, SkelValue } from "@/components/gateway/Skel";
+import { Refreshing, SkelLine, SkelRows, SkelValue } from "@/components/gateway/Skel";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { Tip } from "@/components/gateway/Tip";
 import { CopyButton } from "@/components/gateway/CopyButton";
@@ -37,14 +37,19 @@ import {
   fmtWhen,
   hasErrorType,
   IdSearch,
+  LOG_SKEL_COLS,
+  LogStrip,
   LookupFrame,
   NotFound,
+  OlderRowsLoading,
   Pager,
+  ReadingStrip,
   TimeRangeControl,
   chainWords,
   onRowKey,
   rangeIsLive,
   unreadableWords,
+  UnreadStrip,
   type ExactRange,
   ResponseSource,
 } from "./request-log";
@@ -230,6 +235,7 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
           <span style={{ display: "inline-flex", alignItems: "center", fontSize: 12, fontWeight: 600, color: "var(--text-2)" }}>
             Transactions<Tip text={TT.txLog!} />
             {data && <span style={{ fontWeight: 400, color: "var(--text-4)", marginLeft: 8 }}>{fmtComma(rows.length)}{rows.length !== allRows.length ? ` of ${fmtComma(allRows.length)}` : ""}</span>}
+            <span style={{ marginLeft: 8, display: "inline-flex" }}><Refreshing show={log.refreshing} label="Reading newer transactions" /></span>
           </span>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <IdSearch onFind={setLookupId} />
@@ -247,10 +253,12 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
           <TxLookupPanel key={lookupId + rangeQ} id={lookupId} rangeQ={rangeQ} rangeWords={range ? "of the times you picked" : `of the last ${WINDOWS[win].label}`}
             onClose={() => setLookupId(null)} />
         )}
+        <ReadingStrip show={isLoading} rangeWords={when} />
+        <UnreadStrip count={log.unread} noun="transaction" bound={!!chainFilter || !!routerIdQ} covers="the list and the numbers above" />
         {log.more && (
-          <div style={{ padding: "8px 16px", borderBottom: "1px solid var(--line)", fontSize: 11, color: "var(--text-4)" }}>
+          <LogStrip>
             The latest {fmtComma(allRows.length)} transactions {when} - the numbers above cover these. Load older ones at the bottom.
-          </div>
+          </LogStrip>
         )}
         {/* Below 860px the columns would overlap: scroll sideways instead. */}
         <div style={{ overflowX: "auto" }}>
@@ -272,7 +280,7 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
               </tr>
             </thead>
             <tbody>
-              {isLoading && <SkelRows rows={6} cols={[{ w: 90 }, { w: "70%" }, { w: "85%" }, { w: 90 }, { w: 50, align: "right" }]} />}
+              {isLoading && <SkelRows rows={6} cols={LOG_SKEL_COLS} />}
               {pageRows.map((r) => {
                 const o = OUTCOME[r.outcome];
                 const isOpen = open === r.guid;
@@ -312,9 +320,12 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
                   </Fragment>
                 );
               })}
-              {data && rows.length === 0 && (
+              <OlderRowsLoading show={log.loadingOlder && curPage === pageCount - 1} />
+              {data && rows.length === 0 && !log.loadingOlder && (
                 <tr><td colSpan={5} style={{ padding: "20px 12px", textAlign: "center", color: "var(--text-4)", fontSize: 12.5 }}>
-                  {allRows.length ? "No transactions match these filters." : `No transactions ${when}. The tab reads the router's info lines: a router logging at warn writes none.`}
+                  {allRows.length ? "No transactions match these filters."
+                    : log.unread ? `None of the transactions found ${when} came back from the logs in time.`
+                    : `No transactions ${when}. The tab reads the router's info lines: a router logging at warn writes none.`}
                 </td></tr>
               )}
             </tbody>

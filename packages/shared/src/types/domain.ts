@@ -637,6 +637,8 @@ export interface ErrorRequestsReport {
   reason?: LogUnavailable;
   /** Newest first. */
   rows: ErrorRequestRow[];
+  /** Requests this read found whose lines Loki didn't return in time: left out of `rows`. */
+  unread?: number;
   /** The range holds older requests than these: read on with `before=nextBefore`. */
   more: boolean;
   /** Unix ms the next, older read ends at (with its fraction - pass it back as is); null without `more`. */
@@ -712,6 +714,8 @@ export interface TransactionsReport {
   successRate: number | null;
   /** Newest first. */
   rows: TxLogRow[];
+  /** Transactions this read found whose lines Loki didn't return in time: left out of `rows` and every number above. */
+  unread?: number;
   /** The range holds older transactions than these: read on with `before=nextBefore`. Every number above covers `rows` only. */
   more: boolean;
   /** Unix ms the next, older read ends at (with its fraction - pass it back as is); null without `more`. */

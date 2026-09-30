@@ -290,7 +290,7 @@ export class TransactionsService {
 
     // Every line of those requests. The received line comes a few ms before
     // the choice, and the reply can land after the range closed.
-    const lines = await linesForGuids(
+    const guidLines = await linesForGuids(
       loki,
       this.selector,
       [...kept],
@@ -299,15 +299,16 @@ export class TransactionsService {
       30,
       Math.min(Date.now(), Math.max(...keptTimes) + REPLY_SPAN_MS),
     );
-    if (lines === null) return emptyReport(false, "unreachable");
+    if (guidLines === null) return emptyReport(false, "unreachable");
 
     const routers = this.routers();
-    let rows = buildTxRows(lines, new UpstreamIndex(routers));
+    let rows = buildTxRows(guidLines.lines, new UpstreamIndex(routers));
     if (spec) rows = rows.filter((r) => onChain(r, spec));
     if (routerId) {
       const router = routers.find((r) => r.id === routerId);
       rows = router ? rows.filter((r) => ownRow(r, router, routers)) : [];
     }
-    return { available: true, ...summarize(rows), rows, more: nextBefore !== null, nextBefore, range: read };
+    const unread = guidLines.unread.length ? { unread: guidLines.unread.length } : {};
+    return { available: true, ...summarize(rows), rows, ...unread, more: nextBefore !== null, nextBefore, range: read };
   }
 }
