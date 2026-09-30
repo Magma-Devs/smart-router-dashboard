@@ -35,7 +35,7 @@ import {
   qUpstreamErrorRate,
   qUpstreamReadVolumeSeriesExpr,
   qUpstreamVolumeSeriesExpr,
-  qClientRequestsTotal,
+  qClientRequestsFromBirth,
   qClientRpsSeriesExpr,
   qScoreExpr,
   rangeFor,
@@ -145,6 +145,7 @@ export class MetricsDetailService {
     return {
       spec,
       available: reads.every((r) => r !== null),
+      failed: (["latencyP95", "rps", "latestBlock"] as const).filter((_, i) => reads[i] === null),
       grid,
       upstreams: [...by].map(([upstream, v]) => ({ upstream, ...v })).sort((a, b) => a.upstream.localeCompare(b.upstream)),
     };
@@ -585,7 +586,7 @@ export class MetricsDetailService {
       this.prom.query(qRetriesByMethod("recovered", window, spec)),
       this.prom.query(qRetriesByMethod("failed", window, spec)),
       this.prom.scalar(qRetryAvgExtraAttempts(window, spec)),
-      this.prom.scalar(qClientRequestsTotal(spec, window)),
+      this.prom.scalar(qClientRequestsFromBirth(window, spec)),
     ]);
     // Summed from the per-(chain × method) rows, each already rounded, so the
     // three cards add up on screen.

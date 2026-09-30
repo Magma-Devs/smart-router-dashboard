@@ -536,3 +536,14 @@ describe("LokiClient credentials", () => {
     expect(sent[2]!.get("authorization")).toBeNull(); // half a pair sends nothing
   });
 });
+
+describe("a transaction no upstream could be chosen for", () => {
+  it("is still a transaction, failed, on the chain its end line names", () => {
+    const lines = [
+      at(1000, { GUID: "77", path: "/", body: '{"jsonrpc":"2.0","id":1,"method":"eth_sendRawTransaction","params":["0x"]}', message: RECEIVED }),
+      at(1002, { GUID: "77", endpoint: "ETH1jsonrpc", error: "no pairings available", message: "failed getting responses from RPC endpoints" }),
+    ];
+    const [row] = rowsOf(lines);
+    expect(row).toMatchObject({ guid: "77", spec: "ETH1", outcome: "failed", attempts: [], replyMs: 2 });
+  });
+});

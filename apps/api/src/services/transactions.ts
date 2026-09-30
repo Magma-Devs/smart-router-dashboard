@@ -39,6 +39,7 @@ import {
   methodOf,
   namesOf,
   onChain,
+  ownRow,
   parseAll,
   providerOf,
   scrubUrls,
@@ -114,7 +115,8 @@ export function buildTxRows(lines: RouterLine[], index: UpstreamIndex): TxLogRow
     const choosing = group.find((l) => l.message === MSG.choosing);
     const received = group.find((l) => l.message.startsWith(MSG.received));
     const method = methodOf(received);
-    if (!choosing || !(str(choosing.f.stateful) === "1" || TX_METHOD_SET.has(method))) continue;
+    // No "Choosing providers" when no upstream could be chosen: the method alone makes it a transaction.
+    if (!(str(choosing?.f.stateful) === "1" || TX_METHOD_SET.has(method))) continue;
 
     const finished = group.find((l) => l.message === MSG.finished);
     const noAnswer = group.find((l) => l.message === MSG.noAnswer);
@@ -123,7 +125,7 @@ export function buildTxRows(lines: RouterLine[], index: UpstreamIndex): TxLogRow
     const relayErrors = group.filter(
       (l) => (l.message === MSG.sendFailed || l.message === MSG.noResults) && str(l.f.error_name),
     );
-    const start = received ?? choosing;
+    const start = (received ?? choosing)!;
     const attempts = triesOf(group, start.tsMs, finished);
     const sentTo = [...new Set(attempts.map((a) => a.upstream))];
     const answeredBy = finished ? str(finished.f.served_by) || null : null;
@@ -254,9 +256,10 @@ export class TransactionsService {
   async report(range: ReadRange, spec?: string, routerId?: string, before?: number): Promise<TransactionsReport> {
     const loki = this.loki;
     if (!loki) return emptyReport(false, "unconfigured");
+    const read = { startMs: range.startMs, endMs: range.endMs };
     const startMs = range.startMs;
     const endMs = readEnd(range, before);
-    if (endMs <= startMs) return emptyReport(true);
+    if (endMs <= startMs) return { ...emptyReport(true), range: read };
 
     // Candidates, two ways. Writes by the spec: narrowed inside the query to
     // the chain's upstreams (a name inside `chosenProviders`, bounded by a
@@ -279,7 +282,7 @@ export class TransactionsService {
     for (const l of found) newest.set(l.guid, Math.max(newest.get(l.guid) ?? 0, l.tsMs));
     const ranked = [...newest].sort((a, b) => b[1] - a[1]);
     const picked = ranked.slice(0, this.cap);
-    if (!picked.length) return emptyReport(true);
+    if (!picked.length) return { ...emptyReport(true), range: read };
     const kept = new Set(picked.map(([g]) => g));
     const keptTimes = found.filter((l) => kept.has(l.guid)).map((l) => l.tsMs);
     const cutOf = (read: { tsMs: number }[]) => (read.length >= this.cap ? [Math.min(...read.map((l) => l.tsMs))] : []);
@@ -298,13 +301,13 @@ export class TransactionsService {
     );
     if (lines === null) return emptyReport(false, "unreachable");
 
-    let rows = buildTxRows(lines, new UpstreamIndex(this.routers()));
+    const routers = this.routers();
+    let rows = buildTxRows(lines, new UpstreamIndex(routers));
     if (spec) rows = rows.filter((r) => onChain(r, spec));
     if (routerId) {
-      const router = this.routers().find((r) => r.id === routerId);
-      const own = new Set(names ?? []);
-      rows = router ? rows.filter((r) => onChain(r, router.spec) && r.attempts.some((a) => own.has(a.upstream))) : [];
+      const router = routers.find((r) => r.id === routerId);
+      rows = router ? rows.filter((r) => ownRow(r, router, routers)) : [];
     }
-    return { available: true, ...summarize(rows), rows, more: nextBefore !== null, nextBefore };
+    return { available: true, ...summarize(rows), rows, more: nextBefore !== null, nextBefore, range: read };
   }
 }

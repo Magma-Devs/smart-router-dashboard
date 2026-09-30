@@ -10,6 +10,14 @@ export interface LogRead<R> {
   rows: R[];
   more: boolean;
   nextBefore: number | null;
+  /** The times the read covers; older reads send them back as from/to. */
+  range?: { startMs: number; endMs: number };
+}
+
+/** The query with its window pinned to the times the first read covered. */
+function pinned(base: string, range: { startMs: number; endMs: number } | undefined): string {
+  if (!range) return base;
+  return base.replace(/([?&])window=[^&]*/, `$1from=${Math.floor(range.startMs)}&to=${Math.ceil(range.endMs)}`);
 }
 
 /** The older reads of one query, and the first read they continue from. */
@@ -33,6 +41,12 @@ interface Older<T> {
  */
 export function useLogReads<R extends { guid: string }, T extends LogRead<R>>(base: string, refreshMs = 15000) {
   const [older, setOlder] = useState<Older<T> | null>(null);
+  // A new query drops the last one's older reads, so coming back to it starts fresh.
+  const [readsFor, setReadsFor] = useState(base);
+  if (readsFor !== base) {
+    setReadsFor(base);
+    setOlder(null);
+  }
   const mine = older?.key === base ? older : null;
   const first = useApi<T>(base, mine ? 0 : refreshMs, { keepPreviousData: false });
   const head = mine ? mine.head : (first.data ?? null);
@@ -55,7 +69,8 @@ export function useLogReads<R extends { guid: string }, T extends LogRead<R>>(ba
     const done = (patch: (prev: Older<T>) => Older<T>) =>
       setOlder((prev) => (prev && prev.key === key ? patch(prev) : prev));
     try {
-      const next = await apiGet<T>(`${key}&before=${last.nextBefore}`);
+      // The first read's own times: a window resent later would have moved with the clock.
+      const next = await apiGet<T>(`${pinned(key, head.range)}&before=${last.nextBefore}`);
       // A read that couldn't reach the logs is a failure to retry, not the end of the list.
       done((prev) => (next.available ? { ...prev, reads: [...prev.reads, next], loading: false } : { ...prev, loading: false, failed: true }));
     } catch {
