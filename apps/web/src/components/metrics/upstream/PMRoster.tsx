@@ -111,6 +111,9 @@ export function PMRoster({ rows, activeKey, onSelect, timeWindow, loading = fals
           <Refreshing show={!loading && refreshing} label="Refreshing upstreams" />
         </span>
       </div>
+      {/* Scrolls sideways when the page is narrower than its columns, so the
+          card's overflow never cuts the last ones off. */}
+      <div style={{ overflowX: "auto" }}>
       <table className="gw-table">
         <thead>
           <tr>
@@ -195,6 +198,7 @@ export function PMRoster({ rows, activeKey, onSelect, timeWindow, loading = fals
           )}
         </tbody>
       </table>
+      </div>
       {pageCount > 1 && (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10, padding: "9px 14px", borderTop: "1px solid var(--line)" }}>
           <span style={{ fontSize: 11, color: "var(--text-4)" }}>{curPage * PAGE + 1}-{Math.min(rows.length, curPage * PAGE + PAGE)} of {rows.length}</span>
