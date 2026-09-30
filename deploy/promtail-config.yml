@@ -38,6 +38,11 @@ scrape_configs:
       # is a separate stream, so keep this small).
       - source_labels: ["__meta_docker_container_label_com_docker_compose_service"]
         target_label: service
+      # The same name as `component`, the label a cluster's log agent puts on
+      # the router's streams: the api's default selector, {component="router"},
+      # then reads the router here and on a cluster alike.
+      - source_labels: ["__meta_docker_container_label_com_docker_compose_service"]
+        target_label: component
       - source_labels: ["__meta_docker_container_name"]
         regex: "/(.*)"
         target_label: container
