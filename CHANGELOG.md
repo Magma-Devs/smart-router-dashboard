@@ -9,7 +9,9 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 - **The sidebar keeps its labels on Metrics.** Beside the chains drawer it
   used to shrink to a 64px icon rail, the only page where it did; it now looks
-  the same everywhere.
+  the same everywhere. The routers table and the upstream roster scroll
+  sideways when the page is narrower than their columns, rather than their
+  cards cutting off Error rate and Status.
 - **"View full logs" shows only when a Grafana is configured.** With no
   `DASHBOARD_GRAFANA_URL` (or `NEXT_PUBLIC_GRAFANA_URL`) it linked to
   `http://localhost:3001` whether or not anything ran there, so on every

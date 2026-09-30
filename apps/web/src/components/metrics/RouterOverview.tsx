@@ -169,6 +169,9 @@ export function RouterOverview({ onChainClick, chainFilter, timeWindow }: {
           ))}
         </div>
       </div>
+      {/* Scrolls sideways when the page is narrower than its columns, so the
+          card's overflow never cuts off Error rate and Status. */}
+      <div style={{ overflowX: "auto" }}>
       <table className="gw-table">
         <thead>
           <tr>
@@ -258,6 +261,7 @@ export function RouterOverview({ onChainClick, chainFilter, timeWindow }: {
           )}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }
