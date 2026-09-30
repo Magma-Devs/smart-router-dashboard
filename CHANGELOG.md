@@ -5,7 +5,7 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
-## [0.29.0]
+## [0.28.1]
 
 ### Added
 
