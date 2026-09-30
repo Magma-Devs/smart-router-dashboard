@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.28.4]
+
 ### Fixed
 
 - **The sidebar keeps its labels on Metrics.** Beside the chains drawer it
