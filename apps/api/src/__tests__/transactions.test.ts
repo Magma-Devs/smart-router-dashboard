@@ -374,14 +374,14 @@ describe("TransactionsService", () => {
 
   it("a batch Loki doesn't answer leaves its transactions out and counts them - the other batches still show", async () => {
     const { loki } = lokiStub(MANY);
-    // The second batch holds the 50 oldest: 500000..500049.
+    // Batches go oldest first: the second holds the 50 newest, 500100..500149.
     const batches: string[] = [];
-    const late = lateFor(loki, (q) => batches.push(q) > 0 && q.includes("|500000)"));
+    const late = lateFor(loki, (q) => batches.push(q) > 0 && q.includes("|500149)"));
     const r = await new TransactionsService(late, '{service="router"}', configSvc).report(RANGE);
     expect(batches).toHaveLength(2);
     expect(r).toMatchObject({ available: true, total: 100, accepted: 100, unread: 50 });
-    expect(r.rows.map((x) => x.guid)).not.toContain("500000");
-    expect(r.rows[0]?.guid).toBe("500149");
+    expect(r.rows.map((x) => x.guid)).not.toContain("500149");
+    expect(r.rows[0]?.guid).toBe("500099");
   });
 
   it("every batch answering leaves no unread count; none answering is 'not available'", async () => {
@@ -391,6 +391,74 @@ describe("TransactionsService", () => {
     expect(all).not.toHaveProperty("unread");
     const none = await new TransactionsService(lateFor(loki, () => true), '{service="router"}', configSvc).report(RANGE);
     expect(none).toMatchObject({ available: false, reason: "unreachable", rows: [] });
+  });
+
+  it("each GUID batch reads only the times its own transactions span", async () => {
+    const { loki } = lokiStub(MANY);
+    const windows: [number, number][] = [];
+    const spy = {
+      queryRange: (query: string, startMs: number, endMs: number, ...rest: [number, "forward" | "backward"]) => {
+        if (query.includes('"GUID":"(')) windows.push([startMs, endMs]);
+        return loki.queryRange(query, startMs, endMs, ...rest);
+      },
+    } as unknown as LokiClient;
+    await new TransactionsService(spy, '{service="router"}', configSvc).report(RANGE);
+    // Oldest 100 first, found at 10_000..10_991, then the newest 50 at 11_000..11_491:
+    // 5 s before each batch's first line, a reply's 60 s after its last.
+    expect(windows).toEqual([[5_000, 70_991], [6_000, 71_491]]);
+  });
+
+  describe('the stateful="1" stream', () => {
+    const withLabels = (loki: LokiClient, values: string[] | null) => {
+      const asked: { name: string; startMs: number; endMs: number }[] = [];
+      const client = {
+        queryRange: loki.queryRange.bind(loki),
+        async labelValues(name: string, startMs: number, endMs: number) {
+          asked.push({ name, startMs, endMs });
+          return values;
+        },
+      } as unknown as LokiClient;
+      return { client, asked };
+    };
+
+    it("finds the writes in the labelled stream alone when the range's first hour has it", async () => {
+      const { loki, queries } = lokiStub(TXS);
+      const { client, asked } = withLabels(loki, ["1"]);
+      const r = await new TransactionsService(client, '{service="router"}', configSvc).report(RANGE);
+      expect(asked[0]).toMatchObject({ name: "stateful", startMs: 0, endMs: 3_600_000 });
+      expect(queries[0]).toBe('{service="router", stateful="1"} |= "Choosing providers"');
+      expect(queries.some((q) => q.includes('|= "Consumer received a new"'))).toBe(false);
+      // Everything the stateful read finds still becomes a row.
+      expect(r.available).toBe(true);
+      expect(r.rows.length).toBeGreaterThan(0);
+    });
+
+    it("reads every router line when the label is missing, or the index doesn't answer", async () => {
+      for (const values of [[], ["0"], null]) {
+        const { loki, queries } = lokiStub(TXS);
+        const { client } = withLabels(loki, values);
+        await new TransactionsService(client, '{service="router"}', configSvc).report(RANGE);
+        expect(queries[0]).toBe('{service="router"} |= "Choosing providers" |= `"stateful":"1"`');
+        expect(queries[1]).toContain('|= "Consumer received a new"');
+      }
+    });
+
+    it("asks the index once per hour it finds labelled", async () => {
+      const { loki } = lokiStub(TXS);
+      const { client, asked } = withLabels(loki, ["1"]);
+      const svc = new TransactionsService(client, '{service="router"}', configSvc);
+      await svc.report(RANGE);
+      await svc.report(RANGE);
+      expect(asked).toHaveLength(1);
+    });
+
+    it("a selector with more than a stream selector keeps the full read", async () => {
+      const { loki, queries } = lokiStub(TXS);
+      const { client, asked } = withLabels(loki, ["1"]);
+      await new TransactionsService(client, '{service="router"} |= "x"', configSvc).report(RANGE);
+      expect(asked).toHaveLength(0);
+      expect(queries[0]).toContain('{service="router"} |= "x" |= "Choosing providers"');
+    });
   });
 
   it("no log store, or one that does not answer, is 'not available' - never 'no transactions'", async () => {

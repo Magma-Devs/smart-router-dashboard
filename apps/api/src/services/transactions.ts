@@ -33,6 +33,7 @@ import {
   END_MSG,
   escapeRe,
   inRawString,
+  guidSpans,
   linesForGuids,
   linesOfRequest,
   REQUEST_ID,
@@ -92,6 +93,10 @@ export const NOTE = {
   writeUnknown:
     "No upstream gave a definite answer, so the router can't tell whether the transaction reached a node. Check the chain before sending it again.",
 } as const;
+
+const HOUR_MS = 3_600_000;
+/** An hour found without the label is asked again after this long: its lines may still be arriving. */
+const UNLABELLED_RECHECK_MS = 60_000;
 
 /** Transactions one read returns; `more` says when the range holds older ones. */
 export const TX_READ_CAP = 500;
@@ -222,6 +227,42 @@ export class TransactionsService {
     private readonly cap: number = TX_READ_CAP,
   ) {}
 
+  /** Hours (unix ms / 1h) whose `stateful="1"` stream is known to exist; and when an hour was last found without one. */
+  private readonly labelledHours = new Set<number>();
+  private readonly unlabelledAt = new Map<number, number>();
+
+  /**
+   * The selector for the writes' own stream, when the range's first hour has
+   * one - the log agent labels lines from the day it's configured on, so a
+   * range starting with a labelled hour is labelled throughout. Null means
+   * read every router line: no label yet, a selector that isn't a bare
+   * stream selector, or Loki not answering the index.
+   */
+  private async statefulStream(startMs: number): Promise<string | null> {
+    if (!this.loki || !/^\{.*\}$/.test(this.selector.trim())) return null;
+    const hour = Math.floor(startMs / HOUR_MS);
+    if (!this.labelledHours.has(hour)) {
+      if (Date.now() - (this.unlabelledAt.get(hour) ?? 0) < UNLABELLED_RECHECK_MS) return null;
+      // A lookup that fails only costs the fast path, never the read.
+      const values = await this.statefulValues(startMs);
+      if (!Array.isArray(values) || !values.includes("1")) {
+        this.unlabelledAt.set(hour, Date.now());
+        return null;
+      }
+      this.labelledHours.add(hour);
+    }
+    return this.selector.trim().replace(/\}$/, ', stateful="1"}');
+  }
+
+  /** The `stateful` label's values over the hour from `startMs`; null when the index can't be read. */
+  private async statefulValues(startMs: number): Promise<string[] | null> {
+    try {
+      return (await this.loki?.labelValues("stateful", startMs, Math.min(Date.now(), startMs + HOUR_MS))) ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   private routers(): RouterTopology[] {
     return this.configSvc?.getRouters() ?? [];
   }
@@ -271,9 +312,19 @@ export class TransactionsService {
     const narrow = safe?.length
       ? ` |~ \`"chosenProviders":"([^"]*,)?(${safe.map(escapeRe).join("|")})[,"]\``
       : "";
+    // Where the log agent labels the writes' lines `stateful="1"` over the
+    // whole range, they're read from that stream alone (a day: well under a
+    // MB, against every router line). The method search is left out there:
+    // every transaction method the specs carry is a write but two, MONAD's
+    // and OPTM's eth_sendTransaction.
+    const labelled = await this.statefulStream(startMs);
     const [byFlag, byMethod] = await Promise.all([
-      loki.queryRange(`${this.selector} |= "${MSG.choosing}" |= \`"stateful":"1"\`${narrow}`, startMs, endMs, this.cap, "backward"),
-      loki.queryRange(`${this.selector} |= "${MSG.received}" |~ \`(${TX_METHODS.join("|")})\``, startMs, endMs, this.cap, "backward"),
+      labelled
+        ? loki.queryRange(`${labelled} |= "${MSG.choosing}"${narrow}`, startMs, endMs, this.cap, "backward")
+        : loki.queryRange(`${this.selector} |= "${MSG.choosing}" |= \`"stateful":"1"\`${narrow}`, startMs, endMs, this.cap, "backward"),
+      labelled
+        ? Promise.resolve([])
+        : loki.queryRange(`${this.selector} |= "${MSG.received}" |~ \`(${TX_METHODS.join("|")})\``, startMs, endMs, this.cap, "backward"),
     ]);
     if (byFlag === null || byMethod === null) return emptyReport(false, "unreachable");
 
@@ -284,21 +335,12 @@ export class TransactionsService {
     const picked = ranked.slice(0, this.cap);
     if (!picked.length) return { ...emptyReport(true), range: read };
     const kept = new Set(picked.map(([g]) => g));
-    const keptTimes = found.filter((l) => kept.has(l.guid)).map((l) => l.tsMs);
     const cutOf = (read: { tsMs: number }[]) => (read.length >= this.cap ? [Math.min(...read.map((l) => l.tsMs))] : []);
     const nextBefore = readOnFrom(ranked, this.cap, [...cutOf(byFlag), ...cutOf(byMethod)], endMs);
 
     // Every line of those requests. The received line comes a few ms before
     // the choice, and the reply can land after the range closed.
-    const guidLines = await linesForGuids(
-      loki,
-      this.selector,
-      [...kept],
-      Math.min(...keptTimes) - 5_000,
-      Object.values(MSG),
-      30,
-      Math.min(Date.now(), Math.max(...keptTimes) + REPLY_SPAN_MS),
-    );
+    const guidLines = await linesForGuids(loki, this.selector, guidSpans(found, kept, 5_000, REPLY_SPAN_MS), Object.values(MSG), 30);
     if (guidLines === null) return emptyReport(false, "unreachable");
 
     const routers = this.routers();

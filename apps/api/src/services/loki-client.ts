@@ -141,4 +141,34 @@ export class LokiClient {
       clearTimeout(timer);
     }
   }
+
+  /** The values a label takes on streams between two unix-ms times - read
+   *  from the index, not the lines. Null when Loki didn't answer. */
+  async labelValues(name: string, startMs: number, endMs: number): Promise<string[] | null> {
+    const base = new URL(this.baseUrl);
+    if (!base.pathname.endsWith("/")) base.pathname += "/";
+    const url = new URL(`loki/api/v1/label/${encodeURIComponent(name)}/values`, base);
+    url.searchParams.set("start", msToNs(startMs));
+    url.searchParams.set("end", msToNs(endMs));
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    try {
+      const res = await fetch(url, { signal: controller.signal, headers: this.headers });
+      if (!res.ok) {
+        const body = (await res.text().catch(() => "")).slice(0, 300);
+        this.warn(`http:${res.status}:${body}`, { status: res.status, body, label: name }, "loki call failed");
+        return null;
+      }
+      const parsed = (await res.json()) as { status: string; data?: string[] };
+      if (parsed.status !== "success") return null;
+      return parsed.data ?? [];
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.warn(`fetch:${message}`, { error: message, url: url.origin }, "loki unreachable");
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
 }

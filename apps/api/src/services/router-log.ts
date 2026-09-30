@@ -404,32 +404,54 @@ export interface GuidLines {
   unread: string[];
 }
 
+/** A request to read the lines of, and the times its lines can fall in (unix ms). */
+export interface GuidSpan {
+  guid: string;
+  fromMs: number;
+  toMs: number;
+}
+
+/** Each GUID's span: from its first found line to its last, widened by `beforeMs` / `afterMs`, never past now. */
+export function guidSpans(found: RouterLine[], kept: Set<string>, beforeMs: number, afterMs: number): GuidSpan[] {
+  const spans = new Map<string, GuidSpan>();
+  for (const l of found) {
+    if (!kept.has(l.guid)) continue;
+    const s = spans.get(l.guid);
+    if (s) {
+      s.fromMs = Math.min(s.fromMs, l.tsMs);
+      s.toMs = Math.max(s.toMs, l.tsMs);
+    } else spans.set(l.guid, { guid: l.guid, fromMs: l.tsMs, toMs: l.tsMs });
+  }
+  const now = Date.now();
+  return [...spans.values()].map((s) => ({ guid: s.guid, fromMs: s.fromMs - beforeMs, toMs: Math.min(now, s.toMs + afterMs) }));
+}
+
 /**
- * Every line of these requests whose message matches one of `messages`, from
- * `fromMs` to `toMs` (now by default). The GUIDs go out in batches; a batch
- * Loki didn't answer leaves its GUIDs in `unread` while the others' lines are
+ * Every line of these requests whose message matches one of `messages`. The
+ * GUIDs go out in batches of neighbours in time, and each batch reads only
+ * the times its own GUIDs span: Loki reads every line in a query's range, so
+ * a batch over the whole list's range would read it all again. A batch Loki
+ * didn't answer leaves its GUIDs in `unread` while the others' lines are
  * kept. Null only when no batch answered.
  */
 export async function linesForGuids(
   loki: LokiClient,
   selector: string,
-  guids: string[],
-  fromMs: number,
+  spans: GuidSpan[],
   messages: string[],
   perGuid: number,
-  toMs: number = Date.now(),
 ): Promise<GuidLines | null> {
   // IDs read back out of log lines go into the next query: plain tokens only.
-  const ids = guids.filter((g) => REQUEST_ID.test(g));
-  const batches: string[][] = [];
+  const ids = spans.filter((s) => REQUEST_ID.test(s.guid)).sort((a, b) => a.fromMs - b.fromMs);
+  const batches: GuidSpan[][] = [];
   for (let i = 0; i < ids.length; i += GUID_BATCH) batches.push(ids.slice(i, i + GUID_BATCH));
   const pattern = messages.map(escapeRe).join("|");
   const results = await Promise.all(
     batches.map((batch) =>
       loki.queryRange(
-        `${selector} |~ \`"GUID":"(${batch.join("|")})"\` |~ \`${pattern}\``,
-        fromMs,
-        toMs,
+        `${selector} |~ \`"GUID":"(${batch.map((s) => s.guid).join("|")})"\` |~ \`${pattern}\``,
+        Math.min(...batch.map((s) => s.fromMs)),
+        Math.max(...batch.map((s) => s.toMs)),
         batch.length * perGuid,
         "forward",
       ),
@@ -438,6 +460,6 @@ export async function linesForGuids(
   if (batches.length && results.every((r) => r === null)) return null;
   return {
     lines: parseAll(results.flatMap((r) => r ?? [])),
-    unread: batches.filter((_, i) => results[i] === null).flat(),
+    unread: batches.filter((_, i) => results[i] === null).flat().map((s) => s.guid),
   };
 }
