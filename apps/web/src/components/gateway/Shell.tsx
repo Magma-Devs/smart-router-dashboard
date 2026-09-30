@@ -44,12 +44,11 @@ export function ThemeToggle() {
 function Sidebar() {
   const pathname = usePathname();
   const sections = visibleNavSections(useAuthMode());
-  // Beside the chains drawer this shrinks to its icons.
-  const compact = useChainDrawer().visible;
+  const drawerOpen = useChainDrawer().visible;
   const { setChain, setRouterId, setRouter } = useFilters();
   // Home or Metrics while on Metrics: back to every chain, as the drawer's
   // first row does. Navigating would land on the same page with the chain kept.
-  const toAllChains = compact ? (e: React.MouseEvent) => {
+  const toAllChains = drawerOpen ? (e: React.MouseEvent) => {
     if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     e.preventDefault();
     setRouterId(null);
@@ -57,7 +56,7 @@ function Sidebar() {
     setChain(null);
   } : undefined;
   return (
-    <aside className={`gw-side${compact ? " gw-side--compact" : ""}`}>
+    <aside className="gw-side">
       {/* The brand is the way home, as it is on every product: `/` redirects to
           whatever the default surface is (Metrics), so home stays defined in one
           place rather than being restated here. */}
@@ -92,8 +91,6 @@ function Sidebar() {
                   key={item.href}
                   href={item.href}
                   className={`gw-nav-item${active ? " active" : ""}`}
-                  title={compact ? item.label : undefined}
-                  aria-label={compact ? item.label : undefined}
                   onClick={item.href === CHAIN_DRAWER_PATH ? toAllChains : undefined}
                 >
                   <Icon

@@ -20,8 +20,7 @@ import { byAttention, chainHref, type DrawerChain } from "@/lib/chain-drawer";
  * follows it, and the page writes it into its URL (`useScopeInUrl`). A chain
  * that two or more routers serve lists them under it once picked - the only
  * place a router choice exists, since with one router per chain picking the
- * router is picking the chain. Beside it the sidebar shrinks to its icons,
- * so the page loses little width. */
+ * router is picking the chain. */
 
 /** The page the drawer belongs to. */
 export const CHAIN_DRAWER_PATH = "/metrics";
@@ -35,7 +34,7 @@ export function ChainDrawerProvider({ children }: { children: React.ReactNode })
   return <ChainDrawerContext.Provider value={onPage}>{children}</ChainDrawerContext.Provider>;
 }
 
-/** Whether the chains drawer is on screen (then the sidebar shrinks, and the page drops its chain and router dropdowns). */
+/** Whether the chains drawer is on screen (then the page drops its chain and router dropdowns). */
 export function useChainDrawer(): { visible: boolean } {
   return { visible: useContext(ChainDrawerContext) };
 }
