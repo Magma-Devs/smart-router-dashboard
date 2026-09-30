@@ -56,6 +56,12 @@ export function scopeFromSearch(search: string): PageScope {
   };
 }
 
+/** The tab a page URL names (`?tab=errors`); the first tab when it names none of them. */
+export function tabFromSearch<T extends string>(search: string, tabs: readonly [T, ...T[]]): T {
+  const tab = new URLSearchParams(search).get("tab");
+  return tabs.find((t) => t === tab) ?? tabs[0];
+}
+
 /**
  * What a URL's scope means against the config's routers (null until read): a
  * router picks its own chain, one the config doesn't have reads as none, and

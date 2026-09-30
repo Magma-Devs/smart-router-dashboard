@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { attention, byAttention, chainHref, resolveScope, scopeFromSearch, type DrawerChain } from "../chain-drawer";
+import { attention, byAttention, chainHref, resolveScope, scopeFromSearch, tabFromSearch, type DrawerChain } from "../chain-drawer";
 import { errRateColor } from "../colors";
 
 const row = (over: Partial<DrawerChain>): DrawerChain => ({
@@ -50,6 +50,21 @@ describe("scopeFromSearch", () => {
     expect(scopeFromSearch("?chain=&router=")).toEqual({ chain: null, router: null });
     expect(scopeFromSearch("?chain=ETH1%22%7D&router=a%20b")).toEqual({ chain: null, router: null });
     expect(scopeFromSearch(`?chain=${"A".repeat(65)}`).chain).toBeNull();
+  });
+});
+
+describe("tabFromSearch", () => {
+  const tabs = ["metrics", "upstreams", "errors"] as const;
+
+  it("reads the tab a page URL names", () => {
+    expect(tabFromSearch("?chain=ETH1&tab=upstreams", tabs)).toBe("upstreams");
+  });
+
+  it("falls back to the first tab when the URL names none of them", () => {
+    expect(tabFromSearch("", tabs)).toBe("metrics");
+    expect(tabFromSearch("?tab=", tabs)).toBe("metrics");
+    expect(tabFromSearch("?tab=traffic", tabs)).toBe("metrics");
+    expect(tabFromSearch("?tab=Errors", tabs)).toBe("metrics");
   });
 });
 
