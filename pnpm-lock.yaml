@@ -84,7 +84,7 @@ importers:
         version: 3.0.3
       drizzle-orm:
         specifier: ^0.45.2
-        version: 0.45.2(@electric-sql/pglite@0.5.5)(postgres@3.4.9)
+        version: 0.45.2(@electric-sql/pglite@0.5.8)(postgres@3.4.9)
       fastify:
         specifier: ^5.12.1
         version: 5.12.1
@@ -102,8 +102,8 @@ importers:
         version: 2.9.1
     devDependencies:
       '@electric-sql/pglite':
-        specifier: ^0.5.5
-        version: 0.5.5
+        specifier: ^0.5.8
+        version: 0.5.8
       '@types/node':
         specifier: ^26.4.1
         version: 26.4.1
@@ -170,14 +170,14 @@ importers:
         version: 3.0.3
       drizzle-orm:
         specifier: ^0.45.2
-        version: 0.45.2(@electric-sql/pglite@0.5.5)(postgres@3.4.9)
+        version: 0.45.2(@electric-sql/pglite@0.5.8)(postgres@3.4.9)
       postgres:
         specifier: ^3.4.9
         version: 3.4.9
     devDependencies:
       '@electric-sql/pglite':
-        specifier: ^0.5.5
-        version: 0.5.5
+        specifier: ^0.5.8
+        version: 0.5.8
       '@types/node':
         specifier: ^26
         version: 26.4.1
@@ -350,8 +350,8 @@ packages:
   '@drizzle-team/brocli@0.10.2':
     resolution: {integrity: sha512-z33Il7l5dKjUgGULTqBsQBQwckHh5AbIuxhdsIxDDiZAzBOrZO6q9ogcWC65kU382AfynTfgNumVcNIjuIua6w==}
 
-  '@electric-sql/pglite@0.5.5':
-    resolution: {integrity: sha512-QeZ+oB7QaU4EJj2awrB8hwFZ5TXxLRBQ9Gfq0dQauYDdWsRtuWRCERgtri35vRfL07KQHlVlc/4Qxvn7a5AXeA==}
+  '@electric-sql/pglite@0.5.8':
+    resolution: {integrity: sha512-n9tsbUOhwx2epK1V0ZG9Ar4SHWUju04dhmzZXiSBXwBoleOvIfals33NAaWgagQVAL4Rbvx/Ptsu3P+pA09f6Q==}
 
   '@emnapi/runtime@1.11.3':
     resolution: {integrity: sha512-Xz4Tpyki7XyrpbUK1jR1AhdAdaXyhhY4lZ3neLodmhpuWfy2PAQN5B46sAiU4liOXGLkHypn/qU+jvfWSCYYLA==}
@@ -2832,7 +2832,7 @@ snapshots:
 
   '@drizzle-team/brocli@0.10.2': {}
 
-  '@electric-sql/pglite@0.5.5': {}
+  '@electric-sql/pglite@0.5.8': {}
 
   '@emnapi/runtime@1.11.3':
     dependencies:
@@ -3685,9 +3685,9 @@ snapshots:
       esbuild: 0.25.12
       tsx: 4.23.13
 
-  drizzle-orm@0.45.2(@electric-sql/pglite@0.5.5)(postgres@3.4.9):
+  drizzle-orm@0.45.2(@electric-sql/pglite@0.5.8)(postgres@3.4.9):
     optionalDependencies:
-      '@electric-sql/pglite': 0.5.5
+      '@electric-sql/pglite': 0.5.8
       postgres: 3.4.9
 
   ecdsa-sig-formatter@1.0.11:
