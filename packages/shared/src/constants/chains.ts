@@ -59,7 +59,8 @@ export type ChainFamily =
   | "mina"
   | "multiversx"
   | "stacks"
-  | "rosetta";
+  | "rosetta"
+  | "kaspa";
 
 interface ChainMapEntry {
   name: string;

@@ -102,6 +102,37 @@ stops — `#182680`, the navy at the top of the sweep. Robinhood's is a flat
 glyph is `#111`. Internet Computer's is a flat `#46ABE3`, where white clears
 the line at about 2.6:1 and the glyph stays white.
 
+Nine more arrived with AB Core, Etherlink, Gensyn, Gnosis, Kaspa, Pharos, Quai,
+Shape and Songbird. `etherlink`, `gnosis` and `songbird` are web3icons'
+`networks/mono` glyphs, and `kaspa` is the K from `tokens/mono/KAS`. That glyph
+draws a filled blob with the K knocked out, so only the K subpath is kept,
+fitted to the house footprint. Gnosis (`#3E6957`) and Songbird (`#E62058`) keep
+their flat backdrops with a white glyph. Etherlink's backdrop is a
+green-to-black gradient, so the circle takes its green stop, `#38FF9C`.
+Kaspa's is a flat `#71C9BB`. White reaches only 1.3:1 on that green and 2:1 on
+the teal, so both glyphs are `#111`.
+
+The other five are not in web3icons, so each is reduced from the project's own
+asset:
+
+- `gensyn` is the pixel mark from the 54×54 logo SVG on
+  [gensyn.ai](https://www.gensyn.ai). It sits on `#FFD4CF`, the pink backdrop of
+  the chain's ethereum-lists/chains icon, with a `#111` glyph.
+- `pharos` is the three-band symbol from the horizontal logo on
+  [pharos.xyz](https://www.pharos.xyz), with its two fading bands kept. It sits
+  on `#070EBB`, the blue of the chain's ethereum-lists/chains icon.
+- `abcore` is a potrace of the white "AB" monogram in
+  [ab.org](https://ab.org)'s 512px app icon, the only form the project
+  publishes. Its backdrop is a teal-to-blue gradient, so the circle takes the
+  blue stop, `#1E5EC4`.
+- `quai` is the ethereum-lists/chains SVG. That mark is a badge: a red disc
+  with the Q knocked out. So the source disc is mapped onto the house circle
+  rather than shrunk by 0.72, and a white underlay shows through the
+  knock-out. The circle is the logo's own `#E22901`.
+- `shape` is the bare ring of [shape.network](https://shape.network)'s mark,
+  white on that mark's black. The source draws the ring with a 2/220 stroke,
+  which vanishes at 24px, so the stroke is thickened.
+
 ## One icon per chain, not per network
 
 A testnet index inherits its mainnet's icon (by base name, then index prefix),

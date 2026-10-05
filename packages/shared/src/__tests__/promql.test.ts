@@ -179,6 +179,11 @@ describe("buildChainMetaByIndex", () => {
     // fallback. The /construction/* endpoints the Rosetta spec mandates are
     // what identify it.
     expect(buildChainMetaByIndex("ICP").family).toBe("rosetta");
+    // Kaspa serves only its REST API, whose paths carry no ecosystem prefix,
+    // so it reached the same fallback. The BlockDAG info endpoints identify
+    // it; the testnet inherits through its KASPA import.
+    expect(buildChainMetaByIndex("KASPA").family).toBe("kaspa");
+    expect(buildChainMetaByIndex("KASPAT").family).toBe("kaspa");
   });
   it("inherits a forked chain's family from its imports", () => {
     // Dash imports BTC and Koii imports SOLANA; neither index shares a prefix

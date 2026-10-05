@@ -5,6 +5,68 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Added
+
+- **Nine chains arrived upstream** (MAG-4162). **AB Core** (`ABCORE`),
+  **Etherlink** (`ETHERLINK`), **Gensyn** (`GENSYN`), **Gnosis** (`GNOSIS`),
+  **Pharos** (`PHAROS`), **Shape** (`SHAPE`) and **Songbird** (`SONGBIRD`,
+  importing `FLARE`) are EVM chains, so they inherit the Ethereum JSON-RPC
+  surface and needed no method curation. **Quai** (`QUAI`) serves its own
+  `quai_*` namespace alongside `eth_*`. `rpc.quai.network` answers both
+  `eth_blockNumber` and `quai_blockNumber`, so the inherited defaults run as
+  they are. **Kaspa** (`KASPA`) is the catalog's first BlockDAG: 35 REST paths
+  from the Kaspa REST server. Each chain also brings a testnet spec.
+
+  The nine mainnets each get an icon, and every testnet inherits its
+  mainnet's. Gnosis, Etherlink and Songbird use web3icons network glyphs, and
+  Kaspa uses the K from web3icons' KAS token. Gensyn and Pharos are reduced
+  from the projects' own logo SVGs, Quai uses its chainlist SVG badge, AB Core
+  is traced from ab.org's app icon, and Shape is its bare ring. The chains
+  README records the source and colour of each.
+
+  Eight of the nine took their explorers from the refreshed chainlist
+  snapshot. Three were curated, and each was watched in a browser:
+  - **Pharos Atlantic** (`PHAROST`) has no chainlist row in the snapshot. Its
+    explorer is `atlantic.pharosscan.xyz`, whose block page renders
+    "Block #1000".
+  - **Kaspa** (`KASPA`) links to `kaspa.stream`, and its testnet (`KASPAT`) to
+    `tn10.kaspa.stream`. Both are home-only, because Kaspa addresses blocks
+    by hash and a height renders "Invalid hash". The Kaspa-org explorer
+    answers a Cloudflare bot challenge, and its testnet-10 host answers
+    HTTP 402.
+
+  The chainlist refresh also moved chains that were already in the catalog:
+  - Moonbeam, Moonriver and the Moonbase testnet now link to Subscan instead
+    of Moonscan.
+  - Shiden lost its Blockscout entry and keeps only Subscan.
+
+  Other upstream changes:
+  - **Polymesh** gained a REST interface (the Substrate sidecar), and its
+    testnet with it.
+  - **Cronos** dropped seven `debug_*` methods.
+  - **Aptos** and **Movement** dropped `/events/{event_key}`. Their `raw_item`
+    path now carries its `{table_handle}` placeholder, and `encode_submission`
+    is now a POST.
+  - **ARC** gained `eth_sendRawTransactionSync`. ARC therefore no longer
+    matches the shared `ETH1` surface, and `BASE` becomes that surface's
+    canonical entry again. 26 specs move from `alias ARC` to `alias BASE`,
+    and none of their method sets changed.
+
+  284 chains, 241 with an explorer, 194 primaries linking a height.
+
+### Fixed
+
+- **Kaspa was labelled an EVM chain.** It serves only REST, with nothing that
+  names an ecosystem, so it reached `deriveFamily`'s `evm` fallback. It now has
+  its own `kaspa` family, identified by the BlockDAG info endpoints
+  (`/info/blockdag`, `/info/virtual-chain-blue-score`). Its testnet inherits
+  the family through its import.
+- **Three Kaspa REST paths were offered as "press Send".** `/blocks`,
+  `/blocks-from-bluescore` and `/virtual-chain` take their arguments in the
+  query string, and `api.kaspa.org` answers 422 or 400 without them. They are
+  now marked as needing input, and each description names the parameter. The
+  other 16 parameterless GETs answered 200 and stay runnable.
+
 ## [0.28.4]
 
 ### Fixed
