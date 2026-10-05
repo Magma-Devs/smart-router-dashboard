@@ -443,6 +443,12 @@ const REST_HINTS = [
   { m: "/network/direct-staked-info", unserved: true, d: "Requires Basic Authentication on the public gateway (401).", only: ["MULTIVERSX"] },
   { m: "/about/nodes-versions", unserved: true, d: "Blocked on the public gateway (403).", only: ["MULTIVERSX"] },
   { m: "/transaction/pool", unserved: true, d: "Operator-gated — the public gateway answers 500 \"operation not allowed\".", only: ["MULTIVERSX"] },
+  // Kaspa — query-string routes; without the query the REST server answers
+  // 422 / 400. Every other GET with no path placeholder answers 200.
+  // Verified against api.kaspa.org on 2026-10-05.
+  { m: "/blocks", needs: true, d: "Lists blocks after a hash — append ?lowHash=<block hash> (from /info/blockdag).", only: ["KASPA"] },
+  { m: "/blocks-from-bluescore", needs: true, d: "Returns blocks by blue score — append exactly one of ?blueScore=, ?blueScoreGte= or ?blueScoreLt= (see /info/virtual-chain-blue-score).", only: ["KASPA"] },
+  { m: "/virtual-chain", needs: true, d: "Returns the virtual chain from a blue score — append ?blueScoreGte=<n>, divisible by the page limit (10 by default).", only: ["KASPA"] },
   // Concordium (node REST proxy — {…} segments are placeholders to replace)
   { m: "/v0/consensusInfo", d: "Returns consensus state: best block, epoch and finalization info." },
   { m: "/v0/chainParameters", d: "Returns the current chain parameters." },

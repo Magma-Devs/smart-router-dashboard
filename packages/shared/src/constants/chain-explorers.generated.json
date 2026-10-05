@@ -17,6 +17,24 @@
       "source": "ethereum-lists/chains#16602"
     }
   ],
+  "ABCORE": [
+    {
+      "name": "AB Core Explorer",
+      "url": "https://explorer.core.ab.org",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#36888"
+    }
+  ],
+  "ABCORET": [
+    {
+      "name": "AB Core explorer",
+      "url": "https://explorer.core.testnet.ab.org",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#26888"
+    }
+  ],
   "ACA": [
     {
       "name": "Blockscout",
@@ -922,6 +940,24 @@
       "source": "curated — chainlist's row for this chain id is a DIFFERENT chain (Smart Bitcoin Cash Testnet also claims 10001)"
     }
   ],
+  "ETHERLINK": [
+    {
+      "name": "Etherlink Explorer",
+      "url": "https://explorer.etherlink.com",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#42793"
+    }
+  ],
+  "ETHERLINKT": [
+    {
+      "name": "Etherlink Shadownet Testnet Explorer",
+      "url": "https://shadownet.explorer.etherlink.com",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#127823"
+    }
+  ],
   "EVMOS": [
     {
       "name": "mintscan",
@@ -1095,6 +1131,49 @@
       "source": "ethereum-lists/chains#314159"
     }
   ],
+  "GENSYN": [
+    {
+      "name": "Gensyn Mainnet Explorer",
+      "url": "https://gensyn-mainnet.explorer.alchemy.com",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#685689"
+    }
+  ],
+  "GENSYNT": [
+    {
+      "name": "Gensyn Testnet Explorer",
+      "url": "https://gensyn-testnet.explorer.alchemy.com",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#685685"
+    }
+  ],
+  "GNOSIS": [
+    {
+      "name": "gnosisscan",
+      "url": "https://gnosisscan.io",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#100"
+    },
+    {
+      "name": "blockscout",
+      "url": "https://gnosis.blockscout.com",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#100"
+    }
+  ],
+  "GNOSIST": [
+    {
+      "name": "blockscout",
+      "url": "https://gnosis-chiado.blockscout.com",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#10200"
+    }
+  ],
   "HEDERA": [
     {
       "name": "HashScan",
@@ -1252,6 +1331,24 @@
       "kind": "home",
       "verified": "registry — the registry row supplies no block page and this host proved none elsewhere, so only the home page is offered",
       "source": "cosmos/chain-registry/testnets/junotestnet6"
+    }
+  ],
+  "KASPA": [
+    {
+      "name": "Kaspa.stream",
+      "url": "https://kaspa.stream",
+      "kind": "home",
+      "verified": "browser 2026-10-05 — home page watched rendering mainnet; a height at /blocks/<n> renders \"Invalid hash\", since Kaspa blocks are hash-addressed",
+      "source": "curated — kas.fyi redirects here; the Kaspa-org explorer (explorer.kaspa.org) answers a Cloudflare bot challenge (403) to the browser and curl as of 2026-10-05"
+    }
+  ],
+  "KASPAT": [
+    {
+      "name": "Kaspa.stream",
+      "url": "https://tn10.kaspa.stream",
+      "kind": "home",
+      "verified": "browser 2026-10-05 — home page watched rendering the network (title \"Kaspa.stream Block Explorer TESTNET-10\"); blocks are hash-addressed, so home only",
+      "source": "curated — Kaspa.stream testnet-10 deployment; explorer-tn10.kaspa.org answers HTTP 402 as of 2026-10-05"
     }
   ],
   "KAVA": [
@@ -1477,8 +1574,8 @@
   ],
   "MOONBEAM": [
     {
-      "name": "moonscan",
-      "url": "https://moonbeam.moonscan.io",
+      "name": "subscan",
+      "url": "https://moonbeam.subscan.io",
       "kind": "home",
       "verified": "registry — the chainlist row declares no url standard, so only the home page is offered",
       "source": "ethereum-lists/chains#1284"
@@ -1486,8 +1583,8 @@
   ],
   "MOONBEAMT": [
     {
-      "name": "moonscan",
-      "url": "https://moonbase.moonscan.io",
+      "name": "subscan",
+      "url": "https://moonbase.subscan.io",
       "kind": "home",
       "verified": "registry — the chainlist row declares no url standard, so only the home page is offered",
       "source": "ethereum-lists/chains#1287"
@@ -1495,8 +1592,8 @@
   ],
   "MOONRIVER": [
     {
-      "name": "moonscan",
-      "url": "https://moonriver.moonscan.io",
+      "name": "subscan",
+      "url": "https://moonriver.subscan.io",
       "kind": "home",
       "verified": "registry — the chainlist row declares no url standard, so only the home page is offered",
       "source": "ethereum-lists/chains#1285"
@@ -1504,8 +1601,8 @@
   ],
   "MOONRIVERT": [
     {
-      "name": "moonscan",
-      "url": "https://moonbase.moonscan.io",
+      "name": "subscan",
+      "url": "https://moonbase.subscan.io",
       "kind": "home",
       "verified": "registry — the chainlist row declares no url standard, so only the home page is offered",
       "source": "ethereum-lists/chains#1287"
@@ -1724,6 +1821,24 @@
       "source": "curated — Subscan runs one deployment per network on a shared codebase. chainlist (ethereum-lists/chains#9990) lists the same host with no url standard; its other row is a polkadot.js apps deep link, which is an RPC client rather than an explorer"
     }
   ],
+  "PHAROS": [
+    {
+      "name": "Pharos Explorer",
+      "url": "https://pharosscan.xyz",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#1672"
+    }
+  ],
+  "PHAROST": [
+    {
+      "name": "Pharosscan",
+      "url": "https://atlantic.pharosscan.xyz",
+      "kind": "block",
+      "verified": "browser 2026-10-05 — block page watched rendering the requested height (\"Block #1000\", title \"Pharos Atlantic Network Blocks #1000\")",
+      "source": "curated — chainlist 688689 names atlantic.pharosscan.xyz; the snapshot has no row for it. pharos-testnet.socialscan.io redirects here"
+    }
+  ],
   "PLASMA": [
     {
       "name": "Routescan",
@@ -1848,6 +1963,24 @@
       "source": "curated — Subscan runs one deployment per network on a shared codebase"
     }
   ],
+  "QUAI": [
+    {
+      "name": "Quaiscan",
+      "url": "https://quaiscan.io",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#9"
+    }
+  ],
+  "QUAIT": [
+    {
+      "name": "Orchard Quaiscan",
+      "url": "https://orchard.quaiscan.io",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#15000"
+    }
+  ],
   "RACE": [
     {
       "name": "blockscout",
@@ -1916,13 +2049,6 @@
       "kind": "home",
       "verified": "registry — the chainlist row declares no url standard, so only the home page is offered",
       "source": "ethereum-lists/chains#336"
-    },
-    {
-      "name": "blockscout",
-      "url": "https://blockscout.com/shiden",
-      "kind": "block",
-      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
-      "source": "ethereum-lists/chains#336"
     }
   ],
   "SECRET": [
@@ -1973,6 +2099,24 @@
       "source": "ethereum-lists/chains#11155111"
     }
   ],
+  "SHAPE": [
+    {
+      "name": "shapescan",
+      "url": "https://shapescan.xyz",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#360"
+    }
+  ],
+  "SHAPET": [
+    {
+      "name": "blockscout",
+      "url": "https://explorer-sepolia.shape.network",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#11011"
+    }
+  ],
   "SOLANA": [
     {
       "name": "Solana Explorer",
@@ -2000,6 +2144,38 @@
       "suffix": "?cluster=testnet",
       "verified": "browser 2026-08-17 — block page watched rendering the requested height (mainnet cluster; the suffix selects the cluster)",
       "source": "curated"
+    }
+  ],
+  "SONGBIRD": [
+    {
+      "name": "blockscout",
+      "url": "https://songbird-explorer.flare.network",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#19"
+    },
+    {
+      "name": "Routescan",
+      "url": "https://songbird.flarescan.com",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#19"
+    }
+  ],
+  "SONGBIRDT": [
+    {
+      "name": "blockscout",
+      "url": "https://coston-explorer.flare.network",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#16"
+    },
+    {
+      "name": "Routescan",
+      "url": "https://coston.testnet.flarescan.com",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#16"
     }
   ],
   "SONIC": [

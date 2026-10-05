@@ -17,6 +17,24 @@
     ],
     "mainnet": false
   },
+  "ABCORE": {
+    "name": "AB Core",
+    "family": "evm",
+    "icon": "abcore",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "ABCORET": {
+    "name": "AB Core Testnet",
+    "family": "evm",
+    "icon": "abcore",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": false
+  },
   "ACA": {
     "name": "Acala",
     "family": "evm",
@@ -936,6 +954,24 @@
     ],
     "mainnet": false
   },
+  "ETHERLINK": {
+    "name": "Etherlink",
+    "family": "evm",
+    "icon": "etherlink",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "ETHERLINKT": {
+    "name": "Etherlink Shadownet Testnet",
+    "family": "evm",
+    "icon": "etherlink",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": false
+  },
   "EVMOS": {
     "name": "Evmos",
     "family": "cosmos",
@@ -1067,6 +1103,42 @@
     "name": "Filecoin Testnet",
     "family": "evm",
     "icon": "filecoin",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": false
+  },
+  "GENSYN": {
+    "name": "Gensyn",
+    "family": "evm",
+    "icon": "gensyn",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "GENSYNT": {
+    "name": "Gensyn Testnet",
+    "family": "evm",
+    "icon": "gensyn",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": false
+  },
+  "GNOSIS": {
+    "name": "Gnosis",
+    "family": "evm",
+    "icon": "gnosis",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "GNOSIST": {
+    "name": "Gnosis Chiado Testnet",
+    "family": "evm",
+    "icon": "gnosis",
     "interfaces": [
       "jsonrpc"
     ],
@@ -1259,6 +1331,24 @@
     "icon": "kakarott",
     "interfaces": [
       "jsonrpc"
+    ],
+    "mainnet": false
+  },
+  "KASPA": {
+    "name": "Kaspa",
+    "family": "kaspa",
+    "icon": "kaspa",
+    "interfaces": [
+      "rest"
+    ],
+    "mainnet": true
+  },
+  "KASPAT": {
+    "name": "Kaspa Testnet-10",
+    "family": "kaspa",
+    "icon": "kaspa",
+    "interfaces": [
+      "rest"
     ],
     "mainnet": false
   },
@@ -1744,6 +1834,24 @@
     ],
     "mainnet": false
   },
+  "PHAROS": {
+    "name": "Pharos Pacific",
+    "family": "evm",
+    "icon": "pharos",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "PHAROST": {
+    "name": "Pharos Atlantic Testnet",
+    "family": "evm",
+    "icon": "pharos",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": false
+  },
   "PLASMA": {
     "name": "Plasma",
     "family": "evm",
@@ -1853,7 +1961,8 @@
     "family": "substrate",
     "icon": "polymesh",
     "interfaces": [
-      "jsonrpc"
+      "jsonrpc",
+      "rest"
     ],
     "mainnet": true
   },
@@ -1861,6 +1970,25 @@
     "name": "Polymesh Testnet",
     "family": "substrate",
     "icon": "polymesh",
+    "interfaces": [
+      "jsonrpc",
+      "rest"
+    ],
+    "mainnet": false
+  },
+  "QUAI": {
+    "name": "Quai",
+    "family": "evm",
+    "icon": "quai",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "QUAIT": {
+    "name": "Orchard Testnet",
+    "family": "evm",
+    "icon": "quai",
     "interfaces": [
       "jsonrpc"
     ],
@@ -1984,6 +2112,24 @@
     ],
     "mainnet": false
   },
+  "SHAPE": {
+    "name": "Shape",
+    "family": "evm",
+    "icon": "shape",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "SHAPET": {
+    "name": "Shape Sepolia Testnet",
+    "family": "evm",
+    "icon": "shape",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": false
+  },
   "SIDET": {
     "name": "Side Testnet",
     "family": "cosmos",
@@ -2017,6 +2163,24 @@
     "name": "Solana Testnet",
     "family": "solana",
     "icon": "solana",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": false
+  },
+  "SONGBIRD": {
+    "name": "Songbird Canary-Network",
+    "family": "evm",
+    "icon": "songbird",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "SONGBIRDT": {
+    "name": "Songbird Testnet Coston",
+    "family": "evm",
+    "icon": "songbird",
     "interfaces": [
       "jsonrpc"
     ],

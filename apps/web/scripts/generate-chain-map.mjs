@@ -264,6 +264,10 @@ function deriveFamily(index, interfaces, imports) {
   // is too generic to identify it — `/block`, `/mempool` and `/status` carry no
   // ecosystem marker, so without this the chain reaches the `evm` tail below.
   if (serves("/construction/metadata", "/construction/payloads")) return "rosetta";
+  // Kaspa's REST API (kaspa-rest-server). A BlockDAG with no jsonrpc at all,
+  // so without this it reaches the `evm` tail below. Keyed on the DAG-info
+  // endpoints no other ecosystem serves.
+  if (serves("/info/blockdag", "/info/virtual-chain-blue-score")) return "kaspa";
 
   // Polkadot ecosystem (relay chains + asset hubs) — substrate, but grouped
   // under the pre-existing family the v1 overlay already uses for them.

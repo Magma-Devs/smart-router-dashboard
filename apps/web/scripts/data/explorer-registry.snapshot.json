@@ -18,6 +18,13 @@
         "standard": "EIP3091"
       }
     ],
+    "9": [
+      {
+        "name": "Quaiscan",
+        "url": "https://quaiscan.io",
+        "standard": "EIP3091"
+      }
+    ],
     "10": [
       {
         "name": "etherscan",
@@ -39,6 +46,30 @@
       {
         "name": "Routescan",
         "url": "https://mainnet.flarescan.com",
+        "standard": "EIP3091"
+      }
+    ],
+    "16": [
+      {
+        "name": "blockscout",
+        "url": "https://coston-explorer.flare.network",
+        "standard": "EIP3091"
+      },
+      {
+        "name": "Routescan",
+        "url": "https://coston.testnet.flarescan.com",
+        "standard": "EIP3091"
+      }
+    ],
+    "19": [
+      {
+        "name": "blockscout",
+        "url": "https://songbird-explorer.flare.network",
+        "standard": "EIP3091"
+      },
+      {
+        "name": "Routescan",
+        "url": "https://songbird.flarescan.com",
         "standard": "EIP3091"
       }
     ],
@@ -140,6 +171,18 @@
       {
         "name": "bscscan-testnet",
         "url": "https://testnet.bscscan.com",
+        "standard": "EIP3091"
+      }
+    ],
+    "100": [
+      {
+        "name": "gnosisscan",
+        "url": "https://gnosisscan.io",
+        "standard": "EIP3091"
+      },
+      {
+        "name": "blockscout",
+        "url": "https://gnosis.blockscout.com",
         "standard": "EIP3091"
       }
     ],
@@ -326,11 +369,6 @@
         "name": "subscan",
         "url": "https://shiden.subscan.io",
         "standard": "none"
-      },
-      {
-        "name": "blockscout",
-        "url": "https://blockscout.com/shiden",
-        "standard": "EIP3091"
       }
     ],
     "338": [
@@ -338,6 +376,13 @@
         "name": "Cronos Testnet Explorer",
         "url": "https://explorer.cronos.org/testnet",
         "standard": "none"
+      }
+    ],
+    "360": [
+      {
+        "name": "shapescan",
+        "url": "https://shapescan.xyz",
+        "standard": "EIP3091"
       }
     ],
     "480": [
@@ -401,22 +446,22 @@
     ],
     "1284": [
       {
-        "name": "moonscan",
-        "url": "https://moonbeam.moonscan.io",
+        "name": "subscan",
+        "url": "https://moonbeam.subscan.io",
         "standard": "none"
       }
     ],
     "1285": [
       {
-        "name": "moonscan",
-        "url": "https://moonriver.moonscan.io",
+        "name": "subscan",
+        "url": "https://moonriver.subscan.io",
         "standard": "none"
       }
     ],
     "1287": [
       {
-        "name": "moonscan",
-        "url": "https://moonbase.moonscan.io",
+        "name": "subscan",
+        "url": "https://moonbase.subscan.io",
         "standard": "none"
       }
     ],
@@ -443,6 +488,13 @@
       {
         "name": "blockscout",
         "url": "https://datanetscan.io",
+        "standard": "EIP3091"
+      }
+    ],
+    "1672": [
+      {
+        "name": "Pharos Explorer",
+        "url": "https://pharosscan.xyz",
         "standard": "EIP3091"
       }
     ],
@@ -593,11 +645,32 @@
         "standard": "EIP3091"
       }
     ],
+    "10200": [
+      {
+        "name": "blockscout",
+        "url": "https://gnosis-chiado.blockscout.com",
+        "standard": "EIP3091"
+      }
+    ],
+    "11011": [
+      {
+        "name": "blockscout",
+        "url": "https://explorer-sepolia.shape.network",
+        "standard": "EIP3091"
+      }
+    ],
     "14601": [
       {
         "name": "Sonic Testnet Explorer",
         "url": "https://explorer.testnet.soniclabs.com",
         "standard": "none"
+      }
+    ],
+    "15000": [
+      {
+        "name": "Orchard Quaiscan",
+        "url": "https://orchard.quaiscan.io",
+        "standard": "EIP3091"
       }
     ],
     "16602": [
@@ -645,6 +718,20 @@
         "standard": "EIP3091"
       }
     ],
+    "26888": [
+      {
+        "name": "AB Core explorer",
+        "url": "https://explorer.core.testnet.ab.org",
+        "standard": "EIP3091"
+      }
+    ],
+    "36888": [
+      {
+        "name": "AB Core Explorer",
+        "url": "https://explorer.core.ab.org",
+        "standard": "EIP3091"
+      }
+    ],
     "42161": [
       {
         "name": "Arbiscan",
@@ -680,6 +767,13 @@
       {
         "name": "tempo-explorer",
         "url": "https://explore.testnet.tempo.xyz",
+        "standard": "EIP3091"
+      }
+    ],
+    "42793": [
+      {
+        "name": "Etherlink Explorer",
+        "url": "https://explorer.etherlink.com",
         "standard": "EIP3091"
       }
     ],
@@ -854,6 +948,13 @@
         "standard": "EIP3091"
       }
     ],
+    "127823": [
+      {
+        "name": "Etherlink Shadownet Testnet Explorer",
+        "url": "https://shadownet.explorer.etherlink.com",
+        "standard": "EIP3091"
+      }
+    ],
     "314159": [
       {
         "name": "Filscan - Calibration",
@@ -912,6 +1013,20 @@
         "name": "dora",
         "url": "https://light-hoodi.beaconcha.in",
         "standard": "none"
+      }
+    ],
+    "685685": [
+      {
+        "name": "Gensyn Testnet Explorer",
+        "url": "https://gensyn-testnet.explorer.alchemy.com",
+        "standard": "EIP3091"
+      }
+    ],
+    "685689": [
+      {
+        "name": "Gensyn Mainnet Explorer",
+        "url": "https://gensyn-mainnet.explorer.alchemy.com",
+        "standard": "EIP3091"
       }
     ],
     "763373": [
@@ -1475,6 +1590,13 @@
           "block_page": null,
           "tx_page": "https://moon-runners.net/celestia/mainnet/finder?search=${txHash}",
           "account_page": "https://moon-runners.net/celestia/mainnet/finder?search=${accountAddress}"
+        },
+        {
+          "kind": "Crouton Digital",
+          "url": "https://explorer.crouton.digital/mainnets/celestia/overview",
+          "block_page": null,
+          "tx_page": "https://explorer.crouton.digital/mainnets/celestia/transactions/${txHash}",
+          "account_page": "https://explorer.crouton.digital/mainnets/celestia/account/${accountAddress}"
         }
       ]
     },
@@ -2198,6 +2320,13 @@
           "block_page": null,
           "tx_page": "https://moon-runners.net/lava/mainnet/finder?search=${txHash}",
           "account_page": "https://moon-runners.net/lava/mainnet/finder?search=${accountAddress}"
+        },
+        {
+          "kind": "Crouton Digital",
+          "url": "https://explorer.crouton.digital/mainnets/lava/overview",
+          "block_page": null,
+          "tx_page": "https://explorer.crouton.digital/mainnets/lava/transactions/${txHash}",
+          "account_page": "https://explorer.crouton.digital/mainnets/lava/account/${accountAddress}"
         }
       ]
     },
