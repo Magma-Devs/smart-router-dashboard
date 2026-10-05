@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.29.0]
+
 ### Added
 
 - **Nine chains arrived upstream** (MAG-4162). **AB Core** (`ABCORE`),
