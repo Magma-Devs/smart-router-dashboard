@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.32.0]
+
 ### Added
 
 - **Conflux eSpace arrived upstream** (MAG-4179). **Conflux eSpace**
