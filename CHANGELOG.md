@@ -5,6 +5,25 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Fixed
+
+- **Four Dependabot alerts** (MAG-4174). All four are transitive packages.
+  `pnpm.overrides` in the root `package.json` now sets a floor for each one,
+  capped at its current major:
+  - `ip-address` 10.7.0 → 10.7.3, used by `@fastify/rate-limit` in the api.
+    It fixes GHSA-h3mg-xc3c-68pw: `Address6` builds a parse diagnostic with
+    no length bound, so one long string can stall the process. It also fixes
+    GHSA-j6r3-76f7-8jcv: `isInSubnet()` compares IPv4 and IPv6 addresses as if
+    they shared one address space.
+  - `fast-uri` 3.1.7 → 3.1.8, used by `json-schema-resolver` under
+    `@fastify/swagger`. It fixes GHSA-hrr3-gc8f-f4qj, where host case
+    normalization is inconsistent for percent-encoded octets. The existing
+    `fast-uri` override moves its floor from 3.1.6 to 3.1.8.
+  - `browserslist` 4.28.5 → 4.29.3. It fixes GHSA-73wf-gq98-2v4g, where an
+    untrusted stats file can crash the process or write to the prototype. It
+    is reached only through `eslint-plugin-react-hooks` → `@babel/core`, so
+    lint is its only consumer.
+
 ## [0.32.0]
 
 ### Added
