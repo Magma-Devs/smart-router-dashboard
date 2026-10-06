@@ -133,6 +133,12 @@ asset:
   white on that mark's black. The source draws the ring with a 2/220 stroke,
   which vanishes at 24px, so the stroke is thickened.
 
+MegaETH arrived alone. `megaeth` is web3icons' `networks/mono/mega-eth` glyph:
+the ring, the M and its two dots. Its `background` variant draws that glyph in
+`#302C2D` on a flat white backdrop. So the circle is `#FFFFFF`, as `peaq`'s is,
+and the glyph is `#111`, because white would sit at 1:1. The testnet
+(`MEGAETHT`) resolves to the same file.
+
 ## One icon per chain, not per network
 
 A testnet index inherits its mainnet's icon (by base name, then index prefix),

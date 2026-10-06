@@ -5,6 +5,34 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Added
+
+- **MegaETH arrived upstream** (MAG-4176). `MEGAETH` is the mainnet (chain
+  id 4326) and `MEGAETHT` the testnet (chain id 6343). MegaETH is an EVM chain
+  that imports `ETH1`, so it inherits the Ethereum JSON-RPC surface and its
+  runnable defaults. It adds eleven methods of its own and one `debug` method:
+  - `eth_callMany`, `eth_getCodeByHash`, `eth_getHeaderByHash` /
+    `ByNumber`, `eth_getWithdrawalProof` and `eth_sendRawTransactionSync`
+  - `mega_getBlockWitness`, `mega_getWithdrawalProof`, `mega_outputAtBlock`
+    and `optimism_outputAtBlock`
+  - `realtime_sendRawTransaction`
+  - `debug_getHistoryTransactionCount`
+
+  The `mega_*`, `optimism_*` and `realtime_*` methods take arguments, so
+  Try-me lists them as needing input. Because of these methods, `MEGAETH`
+  keeps its own surface rather than aliasing `BASE`. The testnet aliases it.
+
+  Both networks share `megaeth.svg`, web3icons' `networks/mono/mega-eth`
+  glyph in `#111` on the white of its `background` variant. The explorers
+  came from the refreshed chainlist snapshot:
+  - **mainnet:** MegaETH Etherscan, with Blockscout as a second explorer
+  - **testnet:** `testnet-mega.etherscan.io`
+
+  Both Etherscan block pages render the requested height server-side
+  ("MegaETH Blocks #1000"). The refresh moved no other chain.
+
+  286 chains, 243 with an explorer, 196 primaries linking a height.
+
 ## [0.30.0]
 
 ### Changed

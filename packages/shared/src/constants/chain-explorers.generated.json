@@ -1517,6 +1517,31 @@
       "source": "sweep 2026-08-18 — moved from explorer.sepolia.mantle.xyz"
     }
   ],
+  "MEGAETH": [
+    {
+      "name": "MegaETH Etherscan",
+      "url": "https://mega.etherscan.io",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#4326"
+    },
+    {
+      "name": "MegaETH Blockscout",
+      "url": "https://megaeth.blockscout.com",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#4326"
+    }
+  ],
+  "MEGAETHT": [
+    {
+      "name": "MegaETH Testnet Explorer",
+      "url": "https://testnet-mega.etherscan.io",
+      "kind": "block",
+      "verified": "registry — the chainlist row declares standard EIP3091, which defines /block/<height>",
+      "source": "ethereum-lists/chains#6343"
+    }
+  ],
   "MINA": [
     {
       "name": "Minascan",

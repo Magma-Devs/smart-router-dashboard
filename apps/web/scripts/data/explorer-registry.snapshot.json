@@ -526,6 +526,18 @@
         "standard": "EIP3091"
       }
     ],
+    "4326": [
+      {
+        "name": "MegaETH Etherscan",
+        "url": "https://mega.etherscan.io",
+        "standard": "EIP3091"
+      },
+      {
+        "name": "MegaETH Blockscout",
+        "url": "https://megaeth.blockscout.com",
+        "standard": "EIP3091"
+      }
+    ],
     "4663": [
       {
         "name": "robinscan",
@@ -583,6 +595,13 @@
       {
         "name": "Arc Explorer",
         "url": "https://explorer.arc.io",
+        "standard": "EIP3091"
+      }
+    ],
+    "6343": [
+      {
+        "name": "MegaETH Testnet Explorer",
+        "url": "https://testnet-mega.etherscan.io",
         "standard": "EIP3091"
       }
     ],
