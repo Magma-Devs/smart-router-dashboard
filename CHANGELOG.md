@@ -5,6 +5,40 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Changed
+
+- **The 0.28 screens are behind a flag, `DASHBOARD_NEW_UI`** (MAG-4173). It
+  is unset by default, and the web then draws the screens 0.27.2 shipped:
+  - the Metrics page with its Traffic tab and the Effective read p95 card
+  - the Errors tab's Upstreams and Error types views
+  - the upstream deep-dive with its QoS and selection scores and its errors
+    panel
+  - the chain and router dropdowns, with "All routers" whenever two or more
+    routers are configured
+  - Upstreams grouped by router, and the tooltips and charts as they were
+  - the subtitles under the Upstreams, Team, Audit log and Account titles
+
+  `DASHBOARD_NEW_UI=true` draws today's screens unchanged:
+  - the Errors and Transactions tabs from the router's logs, and the Failed
+    requests card
+  - the deep-dive on one time axis
+  - the chains drawer, with chain and router in the URL
+  - Upstreams grouped by chain, and the tooltips with an arrow
+
+  **Upgrading from 0.28.x or 0.29.0 without setting it brings the 0.27
+  screens back.**
+
+  The web reads the variable per request in its root layout, so one image
+  serves both and the first paint is already the right one. Compose passes it
+  through (`${DASHBOARD_NEW_UI:-}`).
+
+  The 0.27 components live under `apps/web/src/legacy/`, as 0.27.2 shipped
+  them, with only their imports repointed. The api serves both, and none of
+  its routes reads the flag. Its 0.28 fixes therefore count the same numbers
+  under either UI: the overview's error rate, per-chain latency, the retry
+  births and the roster's duplicate rows. The "View full logs" button stays
+  hidden without a Grafana in both.
+
 ## [0.29.0]
 
 ### Added

@@ -14,6 +14,7 @@ import useSWR from "swr";
 import { apiGet, apiDownload, apiSend } from "@/lib/api-client";
 import { type Role } from "@sr/shared";
 import { useMe } from "@/hooks/use-me";
+import { useNewUi } from "@/components/gateway/new-ui";
 import {
   InitialsAvatar,
   MagmaAccountTag,
@@ -59,6 +60,9 @@ interface InvitesResponse {
 
 export default function TeamPage() {
   const [tab, setTab] = useState<Tab>("members");
+  // DASHBOARD_NEW_UI: no subtitle and plain dashes, else 0.27's page.
+  const newUi = useNewUi();
+  const dash = newUi ? "-" : "—";
   const [showInvite, setShowInvite] = useState(false);
   const [changing, setChanging] = useState<MemberSummary | null>(null);
   const [removing, setRemoving] = useState<MemberSummary | null>(null);
@@ -125,8 +129,15 @@ export default function TeamPage() {
 
   return (
     <div className="gw-page">
-      <div className="gw-row" style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-        <h1 style={{ margin: 0 }}>Team</h1>
+      <div className="gw-row" style={newUi ? { justifyContent: "space-between", alignItems: "center", marginBottom: 20 } : { justifyContent: "space-between", marginBottom: 6 }}>
+        {newUi ? (
+          <h1 style={{ margin: 0 }}>Team</h1>
+        ) : (
+          <div>
+            <h1>Team</h1>
+            <p className="lede">Everyone with access to this dashboard, and what they can do.</p>
+          </div>
+        )}
         <div className="gw-row" style={{ gap: 8 }}>
           <button
             className="gw-btn"
@@ -352,11 +363,11 @@ export default function TeamPage() {
                     <div style={{ marginBottom: 6, color: "var(--text-2)" }}>
                       {freshLink.fallback && (
                         <>
-                          <strong>The email could not be sent</strong> - tell an operator that mail
+                          <strong>The email could not be sent</strong> {dash} tell an operator that mail
                           is not working.{" "}
                         </>
                       )}
-                      New link for <strong>{freshLink.email}</strong> - the previous one no longer
+                      New link for <strong>{freshLink.email}</strong> {dash} the previous one no longer
                       works. Shown once.
                     </div>
                     <div
@@ -368,7 +379,7 @@ export default function TeamPage() {
                   </>
                 ) : (
                   <div style={{ color: "var(--text-2)" }}>
-                    Emailed a new link to <strong>{freshLink.email}</strong> - the previous one no
+                    Emailed a new link to <strong>{freshLink.email}</strong> {dash} the previous one no
                     longer works.
                   </div>
                 )}

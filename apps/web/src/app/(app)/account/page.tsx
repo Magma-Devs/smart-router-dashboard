@@ -19,6 +19,7 @@ import { ChangePasswordCard } from "@/components/account/ChangePasswordCard";
 import { TwoFactorCard } from "@/components/account/TwoFactorCard";
 import { SessionsCard } from "@/components/account/SessionsCard";
 import { useAuthMode } from "@/components/gateway/auth-mode";
+import { useNewUi } from "@/components/gateway/new-ui";
 
 interface VersionInfo {
   commit: string;
@@ -41,6 +42,9 @@ export default function AccountPage() {
   // The page survives AUTH_MODE=disabled because Basic details is not about an
   // account: it is what an operator reads off a self-hosted deployment.
   const authEnabled = useAuthMode();
+  // DASHBOARD_NEW_UI: no subtitle and plain dashes, else 0.27's page.
+  const newUi = useNewUi();
+  const dash = newUi ? "-" : "—";
   // REAL build provenance — same `${NEXT_PUBLIC_API_URL}/version` fetch as
   // before, via the shared api client (runtime-config base resolution).
   const { data: version } = useApi<VersionInfo>("/version", 60000);
@@ -57,7 +61,18 @@ export default function AccountPage() {
 
   return (
     <div className="gw-page" style={{ maxWidth: 720 }}>
-      <h1 style={{ marginBottom: 20 }}>Account Settings</h1>
+      {newUi ? (
+        <h1 style={{ marginBottom: 20 }}>Account Settings</h1>
+      ) : (
+        <>
+          <h1>Account Settings</h1>
+          <p className="lede">
+            {authEnabled
+              ? "Manage your credentials and session settings."
+              : "Build and runtime details for this deployment."}
+          </p>
+        </>
+      )}
 
       <div className="gw-card" style={{ marginBottom: 14 }}>
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Basic details</div>
@@ -79,7 +94,7 @@ export default function AccountPage() {
           <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Connected accounts</div>
           <div style={{ fontSize: 12.5, color: "var(--text-2)", lineHeight: 1.65 }}>
             Where this deployment offers Google or GitHub sign-in, signing in with an account whose
-            verified address matches this one links it here the first time you use it - on GitHub,
+            verified address matches this one links it here the first time you use it {dash} on GitHub,
             that has to be your primary address. Nothing on this page disconnects one.
           </div>
         </div>
@@ -99,7 +114,7 @@ export default function AccountPage() {
         <div className="gw-card">
           <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Leaving?</div>
           <div style={{ fontSize: 12.5, color: "var(--text-2)", lineHeight: 1.65 }}>
-            Accounts here are never deleted, and nobody can remove their own - including
+            Accounts here are never deleted, and nobody can remove their own {dash} including
             administrators. Ask another administrator to remove you from{" "}
             <Link href="/team" style={{ color: "var(--brand)" }}>
               Team
@@ -107,7 +122,7 @@ export default function AccountPage() {
             .
             <div style={{ marginTop: 8 }}>
               Removal ends every session you have within one request and frees your address to be
-              invited again later. Your name stays in the audit log permanently - that record is the
+              invited again later. Your name stays in the audit log permanently {dash} that record is the
               point, and deleting the row would erase the trail it exists to keep.
             </div>
           </div>

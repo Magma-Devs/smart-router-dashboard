@@ -18,6 +18,7 @@ import {
   type AuditFilters,
 } from "@/components/audit/useAuditFeed";
 import { apiDownload } from "@/lib/api-client";
+import { useNewUi } from "@/components/gateway/new-ui";
 
 /**
  * The audit log — MAG-2770.
@@ -31,6 +32,9 @@ import { apiDownload } from "@/lib/api-client";
  * `bits.tsx` writes, because the ticket's rule is that nobody removes or
  * alters a row through the product, admins included.
  */
+
+/** The subtitle 0.27 drew under the title; DASHBOARD_NEW_UI drops it. */
+const LEDE = "Every recorded action — who did what, and when. Read-only for everyone.";
 
 function FilterField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -67,6 +71,7 @@ export function AuditView() {
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const feed = useAuditFeed(filters);
+  const newUi = useNewUi();
 
   const filtered = useMemo(() => hasAnyFilter(filters), [filters]);
   const set = (patch: Partial<AuditFilters>) => setFilters((f) => ({ ...f, ...patch }));
@@ -74,8 +79,15 @@ export function AuditView() {
 
   return (
     <div className="gw-page">
-      <div className="gw-row" style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-        <h1 style={{ margin: 0 }}>Audit log</h1>
+      <div className="gw-row" style={newUi ? { justifyContent: "space-between", alignItems: "center", marginBottom: 20 } : { justifyContent: "space-between", marginBottom: 6 }}>
+        {newUi ? (
+          <h1 style={{ margin: 0 }}>Audit log</h1>
+        ) : (
+          <div>
+            <h1>Audit log</h1>
+            <p className="lede">{LEDE}</p>
+          </div>
+        )}
         <div className="gw-row" style={{ gap: 8 }}>
           {/* Exports what the filters currently say, not just the rows already
               loaded — "Load more" is a reading convenience, and a file that

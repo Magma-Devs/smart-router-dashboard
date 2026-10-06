@@ -2,9 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
-import { useRouterFilter } from "@/hooks/use-router-options";
-import { RouterFilterSelect as LegacyRouterFilterSelect } from "@/legacy/components/gateway/RouterFilterSelect";
-import { useNewUi } from "./new-ui";
+import { useRouterFilter } from "@/legacy/hooks/use-router-options";
 
 /**
  * "All routers" — the config-router filter, styled as ChainSelect's sibling
@@ -16,14 +14,12 @@ import { useNewUi } from "./new-ui";
  * matching scrape target — the label scope that narrows the PromQL too. Doing
  * it in one place is what keeps the two from drifting apart.
  *
- * It offers only the routers of a chain that two or more routers serve, and
- * renders nothing where there are none: with one router per chain, picking a
- * router is picking its chain, which the chain control already does. A filter
- * that can't change anything is worse than no filter. (Beside the chains
- * drawer it isn't drawn at all: those routers are rows under their chain.)
+ * Renders nothing when the config declares fewer than two routers: there is
+ * nothing to choose between, and a filter that can't change anything is worse
+ * than no filter (the rule RouterSelect already followed).
  */
-function NewRouterFilterSelect() {
-  const { routerId, routers, scopeUnavailable, select: selectRouter } = useRouterFilter();
+export function RouterFilterSelect() {
+  const { routerId, routers, scopeUnavailable, select: selectRouter, totalRouters } = useRouterFilter();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -36,9 +32,10 @@ function NewRouterFilterSelect() {
     return () => document.removeEventListener("mousedown", h);
   }, [open]);
 
-  // The list is already narrowed to the picked chain (useRouterFilter).
-  const choices = routers.filter((r) => r.sharesChain);
-  if (choices.length === 0) return null;
+  // Keyed on the deployment's router count, not the chain-narrowed list: with a
+  // chain picked whose one router is the answer, the control has to stay and
+  // name it. It disappears only where there was never a choice to make.
+  if (totalRouters < 2) return null;
 
   /* A selection that left the config reads as "All routers" rather than
      narrowing everything to nothing — derived, not reset (same rule as the
@@ -68,7 +65,7 @@ function NewRouterFilterSelect() {
             <IconRouter />
             All routers
           </button>
-          {choices.map((r) => (
+          {routers.map((r) => (
             <button key={r.id} onClick={() => select(r.id)}
               style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "7px 9px", borderRadius: 6, border: "none", background: routerId === r.id ? "var(--hover)" : "transparent", color: "var(--text)", fontSize: 12, fontFamily: "inherit", cursor: "pointer", textAlign: "left" }}>
               <ChainBadge spec={r.spec} size={16} />
@@ -91,16 +88,16 @@ function NewRouterFilterSelect() {
 }
 
 /**
- * What to say after a router's name: its chain, only when the name isn't
- * already it (`ETH1` serving Ethereum needs no gloss, `eth-prod` does), and
- * how many upstreams it declares, which is what sets two routers apart.
+ * What to say after a router's name: that another router serves its chain (the
+ * case this filter exists for), and the chain itself only when the name isn't
+ * already it — `ETH1` serving Ethereum needs no gloss, `eth-prod` does.
  */
-function hintFor(r: { id: string; spec: string; chainName: string; upstreams: number }): string {
+function hintFor(r: { id: string; spec: string; chainName: string; sharesChain: boolean }): string {
   const fold = (v: string) => v.toLowerCase().replace(/[^a-z0-9]/g, "");
   const namesItsChain = fold(r.id) === fold(r.spec) || fold(r.id) === fold(r.chainName);
   const parts = [];
   if (!namesItsChain) parts.push(r.chainName);
-  parts.push(`${r.upstreams} upstream${r.upstreams === 1 ? "" : "s"}`);
+  if (r.sharesChain) parts.push("shared chain");
   return parts.join(" · ");
 }
 
@@ -110,10 +107,4 @@ function IconRouter() {
       <rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6.5" y1="18" x2="6.51" y2="18"/><line x1="10.5" y1="18" x2="10.51" y2="18"/><path d="M12 10V2"/><path d="M8 6l4-4 4 4"/>
     </svg>
   );
-}
-
-/** The 0.28 control under DASHBOARD_NEW_UI, else the 0.27 one (src/legacy):
- *  every router whenever the deployment has two or more. */
-export function RouterFilterSelect() {
-  return useNewUi() ? <NewRouterFilterSelect /> : <LegacyRouterFilterSelect />;
 }

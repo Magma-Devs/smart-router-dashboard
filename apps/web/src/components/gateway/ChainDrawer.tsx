@@ -7,6 +7,7 @@ import { useApi } from "@/hooks/use-api";
 import { useChainFilter, useChainOptions } from "@/hooks/use-chain-options";
 import { useRouterFilter, useRouterOptions, type RouterOptionRow } from "@/hooks/use-router-options";
 import { useFilters } from "./FiltersProvider";
+import { useNewUi } from "./new-ui";
 import { ChainBadge } from "./ChainBadge";
 import { IconSearch } from "./icons";
 import { HEALTH_COLOR, HEALTH_LABEL, HEALTH_UNKNOWN_HINT } from "@/lib/health";
@@ -25,12 +26,14 @@ import { byAttention, chainHref, type DrawerChain } from "@/lib/chain-drawer";
 /** The page the drawer belongs to. */
 export const CHAIN_DRAWER_PATH = "/metrics";
 
-/** On its page, inside the Shell; the standalone page has no drawer. */
+/** On its page, inside the Shell, under DASHBOARD_NEW_UI; the standalone page has no drawer. */
 const ChainDrawerContext = createContext(false);
 
 export function ChainDrawerProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const onPage = pathname === CHAIN_DRAWER_PATH || pathname.startsWith(`${CHAIN_DRAWER_PATH}/`);
+  // Without the flag the page is 0.27's, which picks its chain from a dropdown.
+  const newUi = useNewUi();
+  const onPage = newUi && (pathname === CHAIN_DRAWER_PATH || pathname.startsWith(`${CHAIN_DRAWER_PATH}/`));
   return <ChainDrawerContext.Provider value={onPage}>{children}</ChainDrawerContext.Provider>;
 }
 

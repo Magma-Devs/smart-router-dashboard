@@ -2,6 +2,8 @@
 
 import { Fragment, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { Tip as LegacyTip } from "@/legacy/components/gateway/Tip";
+import { useNewUi } from "./new-ui";
 
 /* The (i) beside a label, and the card it opens. The card points at its (i)
  * with an arrow, opens below it - above when there's no room - and never
@@ -61,7 +63,7 @@ export function renderTipText(text: string): ReactNode {
 const ARROW = 6;
 const GAP = 4;
 
-export function Tip({ text }: { text: string | null | undefined }) {
+function NewTip({ text }: { text: string | null | undefined }) {
   const [anchor, setAnchor] = useState<DOMRect | null>(null);
   const icon = useRef<HTMLSpanElement>(null);
   const card = useRef<HTMLDivElement>(null);
@@ -141,4 +143,9 @@ export function Tip({ text }: { text: string | null | undefined }) {
       )}
     </span>
   );
+}
+
+/** The 0.28 tip under DASHBOARD_NEW_UI, else the 0.27 one (src/legacy). */
+export function Tip({ text }: { text: string | null | undefined }) {
+  return useNewUi() ? <NewTip text={text} /> : <LegacyTip text={text ?? ""} />;
 }
