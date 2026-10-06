@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.30.0]
+
 ### Changed
 
 - **The 0.28 screens are behind a flag, `DASHBOARD_NEW_UI`** (MAG-4173). It
