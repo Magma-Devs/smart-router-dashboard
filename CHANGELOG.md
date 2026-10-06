@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.31.0]
+
 ### Added
 
 - **MegaETH arrived upstream** (MAG-4176). `MEGAETH` is the mainnet (chain
