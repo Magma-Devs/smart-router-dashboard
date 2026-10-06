@@ -1538,6 +1538,24 @@
     ],
     "mainnet": false
   },
+  "MEGAETH": {
+    "name": "Megaeth",
+    "family": "evm",
+    "icon": "megaeth",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "MEGAETHT": {
+    "name": "Megaeth Testnet",
+    "family": "evm",
+    "icon": "megaeth",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": false
+  },
   "MINA": {
     "name": "Mina",
     "family": "mina",
