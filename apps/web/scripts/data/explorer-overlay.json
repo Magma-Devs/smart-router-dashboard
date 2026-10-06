@@ -348,6 +348,28 @@
       }
     ]
   },
+  "CONFLUX": {
+    "explorers": [
+      {
+        "name": "ConfluxScan",
+        "url": "https://evm.confluxscan.org",
+        "kind": "block",
+        "verified": "browser 2026-10-06 — block page watched rendering the requested height (\"Block Height 1,000\", title \"Block - ConfluxScan\")",
+        "source": "curated — upgrades the chainlist row (ethereum-lists/chains#1030), which declares no url standard; the .net host it names redirects to evm.confluxscan.org"
+      }
+    ]
+  },
+  "CONFLUXT": {
+    "explorers": [
+      {
+        "name": "ConfluxScan",
+        "url": "https://evmtestnet.confluxscan.org",
+        "kind": "block",
+        "verified": "browser 2026-10-06 — block page watched rendering the requested height (\"Block Height 1,000\", title \"Block - ConfluxScan\")",
+        "source": "curated — upgrades the chainlist row (ethereum-lists/chains#71), which declares no url standard; the .net host it names redirects to evmtestnet.confluxscan.org"
+      }
+    ]
+  },
   "CRONOS": {
     "explorers": [
       {

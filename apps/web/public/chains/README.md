@@ -139,6 +139,12 @@ the ring, the M and its two dots. Its `background` variant draws that glyph in
 and the glyph is `#111`, because white would sit at 1:1. The testnet
 (`MEGAETHT`) resolves to the same file.
 
+Conflux eSpace arrived alone. `conflux` is web3icons' `networks/mono/conflux`
+glyph: the two stacked chevrons. Its `background` variant draws that glyph in
+white on a flat `#37A1DB` backdrop. So the circle is `#37A1DB` and the glyph
+stays white, at a contrast of about 2.9, like `#03A2E5`. The testnet
+(`CONFLUXT`) resolves to the same file.
+
 ## One icon per chain, not per network
 
 A testnet index inherits its mainnet's icon (by base name, then index prefix),
