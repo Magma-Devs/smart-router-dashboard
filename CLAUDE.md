@@ -522,7 +522,7 @@ A Kubernetes deployment runs the api as the `…/backend` image and the web as
 |---|---|
 | Backend liveness / readiness | `/health` · `/health/ready` (**not** `/api/health` — that's the retired v1 path). Readiness pings Prometheus, so give it a timeout ≥3s and a failureThreshold >1, or a Prometheus blip evicts the only replica |
 | Backend env | `PROMETHEUS_URL`, `CORS_ORIGINS` (comma list **or** JSON array), `HELM_VALUES_DIR` (default `/app/helm-values`, matching the values mount), `LOG_LEVEL`, `RATE_LIMIT_MAX`. No basic auth: `AUTH_USERNAME` / `AUTH_PASSWORD` / `DEBUG` / `CORS_ALLOW_CREDENTIALS` / `AUTH_GATEWAY_*` are v1-only and unread here |
-| Frontend runtime env | `DASHBOARD_API_URL` (browser-facing api origin) and `DASHBOARD_GRAFANA_URL`, both read per-request by `GET /api/config` so one image serves any host. `NEXT_PUBLIC_*` are build-time and can't vary per deployment |
+| Frontend runtime env | `DASHBOARD_API_URL` (browser-facing api origin) and `DASHBOARD_GRAFANA_URL`, both read per-request by `GET /api/config` so one image serves any host; `DASHBOARD_NEW_UI=true` for the 0.28 screens, read per request by the root layout. `NEXT_PUBLIC_*` are build-time and can't vary per deployment |
 | Frontend liveness / readiness | `/api/config` (`/` also answers — it 307s to `/metrics`) |
 | Values mount | `<HELM_VALUES_DIR>/core/values.yml`, the rendered values. Drives `publicUrls` above, so the pod must roll when they change |
 
@@ -764,6 +764,7 @@ Web — build-time vs. **runtime**:
 | `DASHBOARD_API_URL` | (unset) | **runtime** override — read from the container env per-request by `GET /api/config`, so one published image serves any host |
 | `DASHBOARD_LOCAL_MODE` | (unset) | runtime override of `localMode`, same mechanism |
 | `DASHBOARD_GRAFANA_URL` | (unset) | Grafana base URL the "View full logs" button links to — runtime override via `/api/config`, same mechanism (falls back to `NEXT_PUBLIC_GRAFANA_URL`). Unset hides the button; the `logs` compose profile's Grafana is `http://localhost:3001` |
+| `DASHBOARD_NEW_UI` | (unset) | `true` (any case) draws the screens 0.28 introduced; anything else draws the 0.27 ones. Read per request by the root layout and handed down (`useNewUi()`), so one image serves both. See "Two UIs" below |
 | `AUTH_MODE` / `AUTH_SECRET` | `disabled` / (unset) | must match the api; `enabled` renders the login page + edge gate |
 | `DEPLOYMENT_MODE` | `onprem` | must match the api. Surfaced to the browser by `GET /api/config`, so one image serves both shapes |
 | `INTERNAL_AUTH_SECRET` | (unset) | must match the api (which requires it under `AUTH_MODE=enabled`); lets the web forward the browser's real IP / User-Agent on sign-in and on the server-rendered previews |
@@ -821,4 +822,5 @@ Compose / Makefile knobs:
 | Provider `role` | Only the helm values format marks backups (`is_backup`); with a raw SR_CONFIG mount, `role` is null and backup-share panels stay empty — that's honest, not a bug. |
 | Endpoint URLs | `localhost:<port>` comes from SR_CONFIG's listen ports, gateway hostnames from helm values' `publicUrls` — a mount never has both. Anything that renders or dials an endpoint address must resolve public → local → `—` (`epHttpUrl` / `epWsUrl` in `components/endpoints/bits.tsx`), never hardcode `localhost`. |
 | Health words | `HealthState` has exactly three states and exactly one wording — `lib/health.ts` / `<HealthTag>`. A panel that maps health to its own labels/colours is a bug, even when the words look nicer locally: the same upstream is read across panels. |
+| Two UIs (`DASHBOARD_NEW_UI`) | The 0.27 screens live under `apps/web/src/legacy/`, at their original paths and as 0.27.2 shipped them (only their imports point at each other), and draw when the flag is off — the default. The Metrics, standalone and Upstreams pages pick one on `newUiEnabled()`, server side. `Tip`, `LineChart` / `ColumnChart` and `RouterFilterSelect` pick inside themselves on `useNewUi()`, because screens that 0.28 left alone (Overview among them) draw them too. `Shell` (the chains drawer), Account, Team and Audit branch inline on `useNewUi()`. A change to a screen in `components/` reaches only the 0.28 UI; the api serves both, and none of its routes reads the flag. Retiring the flag = delete `legacy/` and those branches |
 | BuildKit cache | `make build*` targets use the isolated `srdash-builder` (see Docker / images / isolation). Plain `docker compose up --build` is fine for the stack itself. |

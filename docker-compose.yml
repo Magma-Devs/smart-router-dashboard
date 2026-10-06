@@ -311,6 +311,10 @@ services:
       # image serves any host). Unset hides the button; with the `logs` profile
       # up, set it to http://localhost:3001 (that profile's Grafana).
       - DASHBOARD_GRAFANA_URL=${DASHBOARD_GRAFANA_URL:-}
+      # `true` draws the 0.28 screens (log-backed Errors + Transactions tabs,
+      # the chains drawer, ...); unset draws the 0.27 ones. Read per request
+      # by the root layout. See apps/web/src/lib/new-ui.ts.
+      - DASHBOARD_NEW_UI=${DASHBOARD_NEW_UI:-}
       # Auth (see docs/AUTH.md) — same AUTH_MODE + AUTH_SECRET as the api.
       # DEPLOYMENT_MODE must match the api's: the web serves it from
       # /api/config and forks the invitation copy on it.

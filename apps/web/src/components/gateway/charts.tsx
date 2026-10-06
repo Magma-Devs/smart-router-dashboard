@@ -4,6 +4,8 @@
    Ported 1:1 from the design prototype (SR_Dashboard/magma/charts.jsx). */
 
 import { useEffect, useRef, useState } from "react";
+import { ColumnChart as LegacyColumnChart, LineChart as LegacyLineChart } from "@/legacy/components/gateway/charts";
+import { useNewUi } from "./new-ui";
 
 /* default x-axis tick labels — charts hold ~24h of hourly data */
 export const X_DEFAULT = ["−24h", "−18h", "−12h", "−6h", "now"];
@@ -168,7 +170,7 @@ export interface ChartTarget {
 /* ── LineChart ───────────────────────────────────────────────────────── */
 /* series: [{values, color, dashed, width, opacity, fill}]
    bgBands: [{lo, hi, fill}]   target: {value, color, label} */
-export function LineChart({
+function NewLineChart({
   series,
   height,
   padX = 40,
@@ -564,7 +566,7 @@ export function StackedAreaChart({
 
 /* ── ColumnChart ─────────────────────────────────────────────────────── */
 /* stacks: [{name, values, color}] — bottom to top */
-export function ColumnChart({
+function NewColumnChart({
   stacks,
   height,
   padX = 40,
@@ -791,4 +793,15 @@ export function ChartLegend({ items, style }: { items: LegendItem[]; style?: Rea
       ))}
     </div>
   );
+}
+
+/* DASHBOARD_NEW_UI: the two charts 0.28 changed draw as in 0.28 under the
+   flag, else as in 0.27 (src/legacy) - the curve that overshoots its points
+   included. The props are 0.28's, a superset; 0.27 callers pass only its own. */
+export function LineChart(props: React.ComponentProps<typeof NewLineChart>) {
+  return useNewUi() ? <NewLineChart {...props} /> : <LegacyLineChart {...props} />;
+}
+
+export function ColumnChart(props: React.ComponentProps<typeof NewColumnChart>) {
+  return useNewUi() ? <NewColumnChart {...props} /> : <LegacyColumnChart {...props} />;
 }
