@@ -160,6 +160,13 @@
         "standard": "none"
       }
     ],
+    "71": [
+      {
+        "name": "Conflux Scan",
+        "url": "https://evmtestnet.confluxscan.net",
+        "standard": "none"
+      }
+    ],
     "81": [
       {
         "name": "Block Explorer",
@@ -428,6 +435,13 @@
         "name": "wanscan",
         "url": "https://testnet.wanscan.org",
         "standard": "EIP3091"
+      }
+    ],
+    "1030": [
+      {
+        "name": "Conflux Scan",
+        "url": "https://evm.confluxscan.net",
+        "standard": "none"
       }
     ],
     "1111": [

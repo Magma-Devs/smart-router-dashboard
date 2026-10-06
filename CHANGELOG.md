@@ -5,6 +5,29 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.32.0]
+
+### Added
+
+- **Conflux eSpace arrived upstream** (MAG-4179). **Conflux eSpace**
+  (`CONFLUX`) is an EVM chain, so it inherits the Ethereum JSON-RPC surface
+  from its `ETH1` import, plus two methods of its own: `parity_getBlockReceipts`
+  and `rpc_modules`. Its testnet (`CONFLUXT`) aliases it. It needed no method
+  curation, and the runnable-defaults roll-call did not change.
+
+  The icon is web3icons' `networks/mono/conflux` glyph in white on its
+  `#37A1DB` backdrop, and the testnet inherits it. The chains README records
+  the source and colour.
+
+  Both networks link a block height on ConfluxScan (`evm.confluxscan.org`,
+  `evmtestnet.confluxscan.org`). Chainlist names the `.net` hosts with no
+  url standard, which would have made them home-only. Both block pages were
+  watched in a browser rendering "Block Height 1,000", so an overlay entry
+  upgrades each one to a `/block/<n>` link. The registry refresh moved no
+  other chain.
+
+  288 chains, 245 with an explorer, 198 primaries linking a height.
+
 ## [0.31.0]
 
 ### Added

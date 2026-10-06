@@ -708,6 +708,24 @@
     ],
     "mainnet": false
   },
+  "CONFLUX": {
+    "name": "Conflux eSpace",
+    "family": "evm",
+    "icon": "conflux",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "CONFLUXT": {
+    "name": "Conflux eSpace Testnet",
+    "family": "evm",
+    "icon": "conflux",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": false
+  },
   "COSMOSHUB": {
     "name": "Cosmos Hub",
     "family": "cosmos",
