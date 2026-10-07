@@ -113,3 +113,89 @@ describe("MetricsDetailService.retries", () => {
     expect(retryQueries.every((q) => q.includes('spec="SOLANA"'))).toBe(true);
   });
 });
+
+describe("MetricsDetailService error classes (MAG-3847)", () => {
+  /**
+   * The router books a protocol error on an attempt it also counts in
+   * requests_failed_total, so the attempt is already inside total − success.
+   * The classes must stay disjoint: transport = failed − protocol.
+   */
+  function classProm(counts: {
+    failed: number;
+    protocol: number | null;
+    node: number | null;
+  }): PrometheusClient {
+    const present = (n: number | null) => (n === null ? null : 1);
+    return {
+      async query() {
+        return [];
+      },
+      async queryRange() {
+        return [];
+      },
+      async scalar(expr: string) {
+        if (expr === 'count({__name__="smartrouter_protocol_errors_total"})')
+          return present(counts.protocol);
+        if (expr === 'count({__name__="smartrouter_node_errors_total"})')
+          return present(counts.node);
+        // Derived failed attempts: total − success, the transport expression and qErrorCount alike.
+        if (expr.startsWith("round(clamp_min(sum(increase(smartrouter_requests_total"))
+          return counts.failed;
+        if (expr.startsWith("round(sum(increase(smartrouter_protocol_errors_total"))
+          return counts.protocol;
+        if (expr.startsWith("round(sum(increase(smartrouter_node_errors_total")) return counts.node;
+        return null;
+      },
+      async ping() {
+        return true;
+      },
+    } as unknown as PrometheusClient;
+  }
+  const ref = { spec: "ETH1", endpointId: "vendor-a" };
+
+  it("N dropped connections and nothing else: N errors, all under protocol (the ticket's done-when)", async () => {
+    const service = new MetricsDetailService(classProm({ failed: 7, protocol: 7, node: null }));
+
+    const detail = await service.upstreamDetail(ref, "1d");
+    expect(detail.errorSplit).toEqual({ node: 0, protocol: 7, transport: 0 });
+
+    const report = await service.errors("1d", "ETH1");
+    expect(report.pivots.category.map((c) => [c.key, c.errors, c.share])).toEqual([
+      ["protocol-error", 7, 1],
+    ]);
+  });
+
+  it("transport keeps the failed attempts the protocol class does not cover", async () => {
+    const service = new MetricsDetailService(classProm({ failed: 10, protocol: 4, node: 3 }));
+
+    const detail = await service.upstreamDetail(ref, "1d");
+    expect(detail.errorSplit).toEqual({ node: 3, protocol: 4, transport: 6 });
+
+    const report = await service.errors("1d", "ETH1");
+    expect(report.total).toBe(10);
+    const classes = Object.fromEntries(report.pivots.category.map((c) => [c.key, c.errors]));
+    expect(classes).toEqual({ "node-error": 3, "protocol-error": 4, transport: 6 });
+    const shares = report.pivots.category.reduce((sum, c) => sum + (c.share ?? 0), 0);
+    expect(shares).toBeCloseTo(1, 10);
+  });
+
+  it("before the router emits protocol errors, transport is every failed attempt", async () => {
+    const service = new MetricsDetailService(classProm({ failed: 5, protocol: null, node: null }));
+
+    expect((await service.upstreamDetail(ref, "1d")).errorSplit).toEqual({
+      node: 0,
+      protocol: 0,
+      transport: 5,
+    });
+    const report = await service.errors("1d", "ETH1");
+    expect(report.pivots.category.map((c) => [c.key, c.errors])).toEqual([["transport", 5]]);
+  });
+
+  it("transport never goes negative when increase() extrapolation puts protocol above failed", async () => {
+    const service = new MetricsDetailService(classProm({ failed: 6, protocol: 7, node: null }));
+
+    expect((await service.upstreamDetail(ref, "1d")).errorSplit.transport).toBe(0);
+    const report = await service.errors("1d", "ETH1");
+    expect(report.pivots.category.find((c) => c.key === "transport")).toBeUndefined();
+  });
+});

@@ -53,7 +53,8 @@ export function PMBody({ pm, detail, name, timeWindow }: {
   const latColors = ["#38bdf8", "#3b82f6", "#f97316"];
 
   /* Real error split from the API: node (upstream JSON-RPC error replies),
-   * protocol, transport (derived relay failures). Whole numbers. */
+   * protocol, transport (the failed attempts protocol does not cover).
+   * Disjoint, so they add up. Whole numbers. */
   const split = detail?.errorSplit ?? null;
   const totalErr = split ? split.node + split.protocol + split.transport : null;
   const splitPct = (n: number) =>
@@ -118,7 +119,7 @@ export function PMBody({ pm, detail, name, timeWindow }: {
 
       {/* ════ ROW 3 — ERRORS ════ */}
       <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 12, marginBottom: 12, alignItems: "start" }}>
-        <PMPanel title="Errors · node vs transport" tip={"**Node errors** — the upstream answered with a JSON-RPC error object (invalid params, method not found, …). These count as transport SUCCESS on the availability figures.\n\n**Transport / routing** — the relay itself failed: connection refused, timeout, rate-limit, cross-validation shortfall.\n\n**Protocol errors** — protocol-level failures the router attributes to this upstream."}>
+        <PMPanel title="Errors · node vs transport" tip={"**Node errors** — the upstream answered with a JSON-RPC error object (invalid params, method not found, …). These count as transport SUCCESS on the availability figures.\n\n**Transport / routing** — every other failed attempt: a 5xx or 429 from the upstream, and every failure on a gRPC endpoint. On a router that does not report protocol errors yet, the failures below count here too.\n\n**Protocol errors** — the attempt went out and got no usable answer: the connection was refused, reset or dropped, the body was cut off or not valid JSON, or the attempt timed out or hung. gRPC endpoints never count these."}>
           <div style={{ display: "flex", flexDirection: "column", gap: 16, padding: "2px 0 4px" }}>
             <div>
               <div className="gw-mono gw-tnum" style={{ fontSize: 30, fontWeight: 700, lineHeight: 1, color: totalErr == null ? "var(--text-4)" : totalErr === 0 ? "var(--ok)" : "var(--text)" }}>{totalErr != null ? fmtComma(totalErr) : "—"}</div>
