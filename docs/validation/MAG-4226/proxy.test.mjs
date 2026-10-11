@@ -3,15 +3,15 @@ import { spawn } from "node:child_process";
 import { once } from "node:events";
 import test from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
 
-const fixture = new URL("./proxy.mjs", import.meta.url).href;
 const privateDiagnostic = "PRIVATE_STACK_TRACE_AND_PROVIDER_DIAGNOSTIC";
 
-async function withProxy(fetchImplementation, check) {
+async function withProxy(mode, check) {
   const child = spawn(process.execPath, [
-    "--input-type=module",
-    "--eval",
-    `globalThis.fetch = ${fetchImplementation}; await import(${JSON.stringify(fixture)});`,
+    fileURLToPath(import.meta.url),
+    "--proxy-test-child",
+    mode,
   ]);
   let stderr = "";
   child.stderr.on("data", (chunk) => (stderr += chunk));
@@ -36,10 +36,15 @@ async function withProxy(fetchImplementation, check) {
   }
 }
 
-test("failed upstream returns a fixed 502 without private diagnostics", async () => {
-  await withProxy(
-    `async () => { throw new Error(${JSON.stringify(privateDiagnostic)}); }`,
-    async () => {
+if (process.argv[2] === "--proxy-test-child") {
+  globalThis.fetch = async (_url, options) => {
+    if (process.argv[3] === "failure") throw new Error(privateDiagnostic);
+    return new Response(options.body, { status: 200 });
+  };
+  await import("./proxy.mjs");
+} else {
+  test("failed upstream returns a fixed 502 without private diagnostics", async () => {
+    await withProxy("failure", async () => {
       const response = await fetch("http://127.0.0.1:8545", {
         method: "POST",
         body: '{"jsonrpc":"2.0","method":"eth_blockNumber","id":1}',
@@ -49,14 +54,11 @@ test("failed upstream returns a fixed 502 without private diagnostics", async ()
       const body = await response.text();
       assert.equal(body, '{"error":"Upstream request failed"}');
       assert.ok(!body.includes(privateDiagnostic));
-    },
-  );
-});
+    });
+  });
 
-test("successful upstream responses and request counts are preserved", async () => {
-  await withProxy(
-    `async (_url, options) => new Response(options.body, { status: 200 })`,
-    async () => {
+  test("successful upstream responses and request counts are preserved", async () => {
+    await withProxy("success", async () => {
       const body = '{"jsonrpc":"2.0","id":1,"result":"0x123abc"}';
       const response = await fetch("http://127.0.0.1:8545", {
         method: "POST",
@@ -66,6 +68,6 @@ test("successful upstream responses and request counts are preserved", async () 
       assert.equal(await response.text(), body);
       const stats = await fetch("http://127.0.0.1:8545/stats");
       assert.deepEqual(await stats.json(), { calls: 1 });
-    },
-  );
-});
+    });
+  });
+}
