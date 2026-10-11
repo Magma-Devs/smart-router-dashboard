@@ -716,6 +716,7 @@ API (`apps/api/src/config.ts` is the source of truth):
 | `RATE_LIMIT_MAX` | `300` | per IP per minute |
 | `TRUST_PROXY` | `1` | how far `X-Forwarded-For` is believed when deriving `request.ip` (hop count, proxy IP/CIDR list, or `false`). Not `true` — this api is public, and trusting every hop lets any caller choose their apparent address |
 | `HELM_VALUES_DIR` | `/app/helm-values` | reads `<dir>/core/values.yml` (either format) |
+| `ROUTER_CONFIG_FILE` | unset | direct path to the read-only config inside the API container; overrides `HELM_VALUES_DIR`. Supports native Smart Router YAML and Helm values |
 | `UPSTREAM_RELAY_ENABLED` | `true` | `false` 404s `POST /api/upstreams/relay`. With `AUTH_MODE=disabled` anyone who can reach the api can spend the operator's upstream quota through it, using credentials only the api holds — turn it off where that isn't acceptable |
 | `UPSTREAM_RELAY_TIMEOUT_MS` | `10000` | deadline on the api→upstream call |
 | `UPSTREAM_RELAY_MAX_BODY_BYTES` | `262144` | upstream responses past this come back `truncated: true` |

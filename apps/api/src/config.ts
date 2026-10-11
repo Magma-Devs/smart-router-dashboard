@@ -123,6 +123,7 @@ export const config = {
 
   /** Helm-values / router config the dashboard reflects (read-only). */
   config: {
+    file: env("ROUTER_CONFIG_FILE") || undefined,
     valuesDir: env("HELM_VALUES_DIR") ?? "/app/helm-values",
   },
 

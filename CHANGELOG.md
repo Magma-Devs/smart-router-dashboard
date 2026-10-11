@@ -5,6 +5,14 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Fixed
+
+- **Upstreams on Docker Compose (MAG-4227)**: the API accepts a direct
+  `ROUTER_CONFIG_FILE` path alongside the existing Helm-values directory.
+  Both dashboard versions explain missing, unreadable, invalid and unsupported
+  configuration, API failures and loading instead of implying an empty roster.
+  Document how to connect an existing router's native YAML without Kubernetes.
+
 ## [0.32.1]
 
 ### Fixed

@@ -535,6 +535,71 @@ describe("ConfigurationService · unknown shapes", () => {
   });
 });
 
+describe("ConfigurationService · configuration diagnostics", () => {
+  it("loads native YAML from an explicit file path, ahead of the legacy directory", () => {
+    const dir = mkdtempSync(join(tmpdir(), "srdash-direct-"));
+    dirs.push(dir);
+    const path = join(dir, "smartrouter.yml");
+    writeFileSync(path, SR_CONFIG_ETH);
+    const service = new ConfigurationService("/nonexistent-dir", path);
+    const result = service.getConfiguration();
+    expect(result.configuration).toEqual({ status: "loaded", format: "sr-config" });
+    expect(result.routers[0]?.nodes.map((n) => n.name)).toEqual(["eth-lava", "eth-publicnode"]);
+    expect(JSON.stringify(result)).not.toContain("lava-referer-secret-key");
+    expect(service.resolveEndpointUrl({ routerId: "ETH1", node: "eth-lava", endpointIndex: 0 })).toContain("lava-referer-secret-key");
+  });
+
+  it("does not fall back to an unrelated config when the explicit path is missing", () => {
+    const legacy = serviceFor(SR_CONFIG_ETH);
+    expect(legacy.getRouters()).toHaveLength(1);
+    expect(new ConfigurationService(dirs.at(-1)!, "/nonexistent-config.yml").getConfiguration())
+      .toEqual({ routers: [], configuration: { status: "missing" } });
+  });
+
+  it("reports an unreadable mount separately from a missing mount", () => {
+    const dir = mkdtempSync(join(tmpdir(), "srdash-directory-"));
+    dirs.push(dir);
+    expect(new ConfigurationService(dir, dir).getConfiguration())
+      .toEqual({ routers: [], configuration: { status: "unreadable" } });
+  });
+
+  it.each([
+    ["{{{ https://rpc.example.com/private-key", "invalid"],
+    ["routers: wrong-type", "invalid"],
+    ["direct-rpc: wrong-type", "invalid"],
+    ["direct-rpc: []\nbackup-direct-rpc: wrong-type", "invalid"],
+    ["foo: bar", "unsupported"],
+    ["", "unsupported"],
+  ])("reports %s safely as %s", (yaml, status) => {
+    expect(serviceFor(yaml).getConfiguration()).toEqual({ routers: [], configuration: { status } });
+  });
+
+  it.each([["routers: []", "helm"], ["direct-rpc: []", "sr-config"]])(
+    "distinguishes a successfully loaded empty config (%s) from a missing file", (yaml, format) => {
+      expect(serviceFor(yaml).getConfiguration()).toEqual({ routers: [], configuration: { status: "loaded", format } });
+    },
+  );
+
+  it("recognizes a native config containing only backup-direct-rpc", () => {
+    const result = serviceFor(`backup-direct-rpc:
+  - name: eth-backup
+    chain-id: ETH1
+    api-interface: jsonrpc
+    node-urls: [{ url: 'https://rpc.example.com/private-key' }]
+`).getConfiguration();
+    expect(result.configuration).toEqual({ status: "loaded", format: "sr-config" });
+    expect(result.routers[0]?.nodes[0]?.isBackup).toBe(true);
+  });
+
+  it("re-reads configuration and recovers after the mount is fixed", () => {
+    const service = serviceFor("{{{ not yaml");
+    expect(service.getConfiguration().configuration.status).toBe("invalid");
+    writeFileSync(join(dirs.at(-1)!, "core", "values.yml"), SR_CONFIG_ETH);
+    expect(service.getConfiguration().configuration.status).toBe("loaded");
+    expect(service.getRouters()).toHaveLength(1);
+  });
+});
+
 describe("normalizeHelmNodeName", () => {
   it("lowercases and de-spaces", () => {
     expect(normalizeHelmNodeName("Lava")).toBe("lava");

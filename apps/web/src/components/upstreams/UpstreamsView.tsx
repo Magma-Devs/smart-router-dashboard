@@ -12,7 +12,9 @@ import {
   buildChainMetaByIndex,
   type UpstreamMetrics,
   type RouterTopology,
+  type RouterConfiguration,
 } from "@sr/shared";
+import { UpstreamConfigState } from "@/components/upstreams/UpstreamConfigState";
 import { useApi } from "@/hooks/use-api";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { ExplorerHomeLink } from "@/components/gateway/ExplorerLink";
@@ -221,7 +223,7 @@ function EndpointRow({
 }
 
 export function UpstreamsView() {
-  const config = useApi<{ routers: RouterTopology[] }>("/api/config/routers", 60000);
+  const config = useApi<RouterConfiguration>("/api/config/routers", 60000);
   /* The shared window (and router scope) the metrics screens use — this page
      used to pin 1d while honouring the scope, which made it the one screen
      where the window selector's absence was a silent override. */
@@ -308,6 +310,7 @@ export function UpstreamsView() {
   /* Nothing to show. The router grouping renders the routers themselves, so a
      values file with routers but no upstream nodes still has endpoints to
      list — only an empty topology is empty here. */
+  const configUnavailable = config.data?.configuration && config.data.configuration.status !== "loaded";
   const nothingMounted = groupBy === "router" ? routers.length === 0 : upstreams.length === 0;
 
   return (
@@ -399,23 +402,13 @@ export function UpstreamsView() {
         </div>
       )}
 
-      {loading ? null : nothingMounted ? (
-        <div className="gw-empty">
-          <div className="gw-empty__icon">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
-          </div>
-          {groupBy === "router" ? (
-            <>
-              <h2>No endpoints yet</h2>
-              <p>No router config mounted - set HELM_VALUES_DIR / mount core/values.yml and its chains and interfaces will appear here.</p>
-            </>
-          ) : (
-            <>
-              <h2>No upstreams yet</h2>
-              <p>The mounted values file has no upstream nodes. Add your first upstream - Alchemy, Infura, QuickNode, or your own node - by editing the values file.</p>
-            </>
-          )}
-        </div>
+      {loading || config.error || configUnavailable || nothingMounted ? (
+        <UpstreamConfigState
+          configuration={config.data?.configuration}
+          error={Boolean(config.error)}
+          loading={loading}
+          emptyKind={groupBy === "router" ? "routers" : "upstreams"}
+        />
       ) : groupBy === "router" ? (
         <RouterGroups routers={routers} upstreams={upstreams} search={search} netFilter={netFilter} chainFilter={activeChain} routerFilter={routerId} />
       ) : groupBy === "chain" ? (

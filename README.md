@@ -58,6 +58,47 @@ With a router already running on the host's `:7779`:
 docker compose up --build     # dashboard + Prometheus only
 ```
 
+### Router configuration for Docker Compose
+
+The **Upstreams** page works with Docker Compose; it does not require Helm or
+Kubernetes. Prometheus supplies metrics, but the upstream names, URLs and
+interfaces come from the configuration file mounted into the **dashboard API**.
+Connecting Prometheus alone does not connect that file.
+
+When using an existing router, point `SR_CONFIG_HOST` at the **same YAML file the
+router uses**, instead of the bundled example:
+
+```bash
+SR_CONFIG_HOST=/path/to/smartrouter.yml docker compose up -d --build
+```
+
+Both production and development Compose files mount it read-only at
+`/app/helm-values/core/values.yml` in the API container. The loader accepts native
+Smart Router YAML (`direct-rpc` / `backup-direct-rpc`) and Helm values (`routers`).
+There is no need to translate native YAML into Helm values. Make sure the host
+path exists and is a readable file before starting Compose.
+
+For a custom Compose file or a standalone API container, mount the configuration
+read-only at any container path and set **`ROUTER_CONFIG_FILE` in the API
+container** to that path. For example, an API service can use:
+
+```yaml
+environment:
+  ROUTER_CONFIG_FILE: /app/router-config.yml
+volumes:
+  - /path/to/smartrouter.yml:/app/router-config.yml:ro
+```
+
+`ROUTER_CONFIG_FILE` takes precedence over the legacy
+`HELM_VALUES_DIR/core/values.yml` location. It is a container path, whereas
+`SR_CONFIG_HOST` is a host path used by the bundled Compose files.
+`GET /api/config/routers` returns masked topology plus a safe `configuration`
+status: `loaded` (with `helm` or `sr-config` format), `missing`, `unreadable`,
+`invalid` or `unsupported`. The Upstreams page explains configuration problems
+separately from API connection errors and a successfully loaded empty config.
+The API re-reads the file on each request; use Refresh after fixing it. Neither
+raw YAML nor parser errors are returned because they can contain credentials.
+
 ### Relay cache (optional)
 
 The stack can run the smart-router's RAM relay **cache** sidecar (mirrors

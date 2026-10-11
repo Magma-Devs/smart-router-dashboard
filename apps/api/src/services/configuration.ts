@@ -20,7 +20,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse } from "yaml";
-import type { RouterNode, RouterTopology, UpstreamEndpointRef } from "@sr/shared";
+import type { RouterConfiguration, RouterNode, RouterTopology, UpstreamEndpointRef } from "@sr/shared";
 import { config } from "../config.js";
 
 /** First defined value among several key dialects (snake/kebab/camel). */
@@ -74,7 +74,7 @@ function detectFormat(raw: unknown): "helm" | "sr-config" | "unknown" {
   if (typeof raw !== "object" || raw === null) return "unknown";
   const o = raw as Record<string, unknown>;
   if ("routers" in o) return "helm";
-  if ("direct-rpc" in o) return "sr-config";
+  if ("direct-rpc" in o || "backup-direct-rpc" in o) return "sr-config";
   return "unknown";
 }
 
@@ -447,16 +447,10 @@ function dedupe(values: string[]): string[] {
 }
 
 export class ConfigurationService {
-  constructor(private readonly valuesDir: string = config.config.valuesDir) {}
-
-  private readRaw(): unknown {
-    const path = join(this.valuesDir, "core", "values.yml");
-    try {
-      return parse(readFileSync(path, "utf8"));
-    } catch {
-      return null;
-    }
-  }
+  constructor(
+    valuesDir: string = config.config.valuesDir,
+    private readonly configFile: string = config.config.file ?? join(valuesDir, "core", "values.yml"),
+  ) {}
 
   /**
    * Normalize the mounted values file into BOTH the masked topology the api
@@ -464,17 +458,44 @@ export class ConfigurationService {
    * re-read per call (it is a live mount — the operator can edit it under a
    * running api), so both views are always the same generation of the file.
    */
-  private normalize(): { routers: RouterTopology[]; endpoints: EndpointIndex } {
-    const raw = this.readRaw();
+  private normalize(): RouterConfiguration & { endpoints: EndpointIndex } {
     const endpoints = new EndpointIndex();
-    switch (detectFormat(raw)) {
-      case "helm":
-        return { routers: normalizeHelm(raw as Record<string, unknown>, endpoints), endpoints };
-      case "sr-config":
-        return { routers: normalizeSrConfig(raw as Record<string, unknown>, endpoints), endpoints };
-      default:
-        return { routers: [], endpoints };
+    const unavailable = (status: "missing" | "unreadable" | "invalid" | "unsupported") =>
+      ({ routers: [], endpoints, configuration: { status } });
+    let text: string;
+    try {
+      text = readFileSync(this.configFile, "utf8");
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      return unavailable(code === "ENOENT" || code === "ENOTDIR" ? "missing" : "unreadable");
     }
+    let raw: unknown;
+    try {
+      raw = parse(text);
+    } catch {
+      // YAML diagnostics can include entire credential-bearing source lines.
+      return unavailable("invalid");
+    }
+    const format = detectFormat(raw);
+    if (format === "unknown") return unavailable("unsupported");
+    const obj = raw as Record<string, unknown>;
+    const keys = format === "helm" ? ["routers"] : ["direct-rpc", "backup-direct-rpc", "endpoints"];
+    if (keys.some((key) => obj[key] !== undefined && !Array.isArray(obj[key]))) {
+      return unavailable("invalid");
+    }
+    const configuration = { status: "loaded", format } as const;
+    switch (format) {
+      case "helm":
+        return { routers: normalizeHelm(obj, endpoints), endpoints, configuration };
+      case "sr-config":
+        return { routers: normalizeSrConfig(obj, endpoints), endpoints, configuration };
+    }
+  }
+
+  /** Topology and load status from the same file read, without private dials. */
+  getConfiguration(): RouterConfiguration {
+    const { routers, configuration } = this.normalize();
+    return { routers, configuration };
   }
 
   /** The normalized topology from EITHER supported values-file format. */

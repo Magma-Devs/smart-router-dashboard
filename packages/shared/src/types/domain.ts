@@ -808,6 +808,15 @@ export interface RouterNode {
   endpoints: RouterNodeEndpoint[];
 }
 
+/** The public topology response, including safe configuration diagnostics. */
+export interface RouterConfiguration {
+  routers: RouterTopology[];
+  /** Safe diagnostics only: never include YAML, credentials or parser errors. */
+  configuration:
+    | { status: "loaded"; format: "helm" | "sr-config" }
+    | { status: "missing" | "unreadable" | "invalid" | "unsupported" };
+}
+
 /**
  * One router (chain) from the mounted values file — normalized from EITHER
  * the helm-chart `routers:` format OR the router's own SR_CONFIG
