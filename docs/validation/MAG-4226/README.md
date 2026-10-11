@@ -79,6 +79,10 @@ count in both UIs; [filter evidence](https://raw.githubusercontent.com/Magma-Dev
   tests** and workspace typechecks; only the changelog needed reconciliation.
 - Both Docker production images and the local router image built successfully.
 - New implementation/test files pass Prettier; `git diff --check` passed.
+- `node --test docs/validation/MAG-4226/proxy.test.mjs`: both HTTP regression
+  checks passed. Upstream failures return a fixed JSON 502 without exception
+  details; successful responses and request counts remain intact. This check
+  uses an isolated proxy on port 8545 and needs no external provider.
 
 The health window is fixed at five minutes, independent of request-history
 filters. Poll success metrics count tracker events, not every HTTP response.

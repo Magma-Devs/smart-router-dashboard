@@ -19,9 +19,9 @@ http
       });
       res.writeHead(response.status, { "content-type": "application/json" });
       res.end(await response.text());
-    } catch (error) {
-      res.writeHead(502);
-      res.end(String(error));
+    } catch {
+      res.writeHead(502, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "Upstream request failed" }));
     }
   })
   .listen(8545, "0.0.0.0");
