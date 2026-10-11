@@ -22,7 +22,7 @@ This is separate from the health change in PR #234.
 ![New chain icons](https://raw.githubusercontent.com/Magma-Devs/smart-router-dashboard/a6e34036e4a20f87f6ea967d9591a097c07eb0e2/icons.png)
 
 All five generated artifacts passed the live `check-spec-sync.mjs` guard.
-`pnpm -r test` passed **2,394 tests**; all workspace typechecks and the web
+`pnpm -r test` passed **2,399 tests**; all workspace typechecks and the web
 production build passed. Lint had zero errors and 26 existing warnings.
 The generator reports **292 chains**, **249 with an explorer**, and **202
 primary explorers linking a block height**. No new gap was accepted in the
