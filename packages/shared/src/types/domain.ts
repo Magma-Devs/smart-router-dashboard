@@ -432,10 +432,12 @@ export interface UpstreamDetail {
     last7d: number | null;
   };
   /**
-   * Whole-number error split over the window. `transport` = derived
-   * relay failures (total − success). `node`/`protocol` come from the
-   * lazily-registered labelled counters — an absent family means the event
-   * never fired since boot, so 0 is the honest value.
+   * Whole-number error split over the window, three disjoint classes.
+   * `transport` = derived relay failures (total − success) less `protocol`:
+   * the router books a protocol error on an attempt it also counts as
+   * failed. `node`/`protocol` come from the lazily-registered labelled
+   * counters — an absent family means the event never fired since boot, so
+   * 0 is the honest value.
    */
   errorSplit: { node: number; protocol: number; transport: number };
   /** Node errors by method for this upstream (real once the family fires). */

@@ -5,6 +5,34 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.32.2]
+
+### Fixed
+
+- **A protocol error is counted once in the error splits** (MAG-3847). The
+  router books a protocol error on an attempt it also counts as failed, and
+  the dashboard derives transport failures as `total − success`. So once a
+  router emits `smartrouter_protocol_errors_total` (MAG-3536, smart-router
+  PR #426), the upstream panel's error split and the errors page's class
+  split would each show a protocol error twice: once as a protocol error and
+  again inside transport. Transport is now `total − success − protocol`, so
+  the three classes are disjoint, and N dropped connections show as N
+  protocol errors rather than 2N split half and half. On a router that does
+  not emit the family yet, nothing changes.
+
+  The upstream panel's tooltip now says what each class holds:
+  - **protocol errors:** refused, reset or dropped connections, cut-off or
+    invalid bodies, and timeouts;
+  - **transport:** 5xx and 429 answers, and gRPC failures that carry no
+    status;
+  - **node errors:** error replies, and on gRPC any non-OK status,
+    including UNAVAILABLE.
+
+  Protocol errors are counted from the first one on each series. The router
+  creates a series on its first error, and a plain `increase()` would drop
+  that error and leave it under transport. This happens on the first
+  incident per upstream and method after every router restart.
+
 ## [0.32.1]
 
 ### Fixed

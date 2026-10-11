@@ -36,6 +36,7 @@ import {
   qUpstreamReadVolumeSeriesExpr,
   qUpstreamVolumeSeriesExpr,
   qClientRequestsFromBirth,
+  increaseFromBirth,
   qClientRpsSeriesExpr,
   qScoreExpr,
   rangeFor,
@@ -299,7 +300,7 @@ export class MetricsDetailService {
         : Promise.resolve(0),
       protoErrs
         ? this.prom.scalar(
-            `round(sum(increase(${OPTIONAL_METRICS.protocolErrorsTotal}${provSel}[${r}])))`,
+            `round(sum${increaseFromBirth(`${OPTIONAL_METRICS.protocolErrorsTotal}${provSel}`, r)})`,
           )
         : Promise.resolve(0),
       nodeErrs
@@ -322,6 +323,15 @@ export class MetricsDetailService {
       .slice(0, 8);
     const agree = cvAgree ?? 0;
     const disagree = cvDisagree ?? 0;
+    // A protocol error is a failed attempt too: the router books it in
+    // requests_failed_total, so it is already inside total − success. Take it
+    // out of transport so the three classes stay disjoint and add up to the
+    // upstream's errors (MAG-3847). With the family absent this is a no-op.
+    // Protocol is counted from birth: the router creates a series on its first
+    // error, so plain increase() would drop the first error of every burst on
+    // a fresh series and leave it in transport.
+    const protocol = protoErrorCount ?? 0;
+    const transport = Math.max(0, (transportErrors ?? 0) - protocol);
 
     return {
       endpointId,
@@ -345,8 +355,8 @@ export class MetricsDetailService {
       availabilityWindows: { last1h, last24h, last7d },
       errorSplit: {
         node: nodeErrorCount ?? 0,
-        protocol: protoErrorCount ?? 0,
-        transport: transportErrors ?? 0,
+        protocol,
+        transport,
       },
       nodeErrorsByMethod,
       crossValidation: {
@@ -398,8 +408,10 @@ export class MetricsDetailService {
 
     // Real error-class breakdown. `transport` = derived relay failures
     // (total − success; node errors count as transport SUCCESS — verified
-    // empirically: a -32601 reply increments requests_success_total). node /
+    // empirically: a -32601 reply increments requests_success_total), less the
+    // protocol errors, which are failed attempts too (MAG-3847). node /
     // protocol come from the labelled counters; absent family ⇒ zero events.
+    // Protocol reads from birth, as the upstream split does (see there).
     const [nodePresent, protoPresent] = [families[1], families[2]];
     const sel = selector({ spec });
     const rr = rangeFor(window);
@@ -447,7 +459,7 @@ export class MetricsDetailService {
         : Promise.resolve(0),
       protoPresent
         ? this.prom.scalar(
-            `round(sum(increase(${OPTIONAL_METRICS.protocolErrorsTotal}${sel}[${rr}])))`,
+            `round(sum${increaseFromBirth(`${OPTIONAL_METRICS.protocolErrorsTotal}${sel}`, rr)})`,
           )
         : Promise.resolve(0),
       nodePresent
@@ -534,11 +546,18 @@ export class MetricsDetailService {
     );
 
     // Error classes: transport failures (derived), node errors (upstream
-    // answered with a JSON-RPC error), protocol errors. All whole numbers.
+    // answered with a JSON-RPC error), protocol errors. All whole numbers, and
+    // disjoint: a protocol error is also a failed attempt, so it comes out of
+    // the derived transport count rather than being counted twice (MAG-3847).
+    const protocolErrors = protoTotal ?? 0;
     const classCounts = [
       { key: "node-error", label: "Node errors (upstream JSON-RPC)", errors: nodeTotal ?? 0 },
-      { key: "protocol-error", label: "Protocol errors", errors: protoTotal ?? 0 },
-      { key: "transport", label: "Transport / routing failures", errors: totalErrors },
+      { key: "protocol-error", label: "Protocol errors", errors: protocolErrors },
+      {
+        key: "transport",
+        label: "Transport / routing failures",
+        errors: Math.max(0, totalErrors - protocolErrors),
+      },
     ].filter((c) => c.errors > 0);
     const classSum = classCounts.reduce((s, c) => s + c.errors, 0);
 
