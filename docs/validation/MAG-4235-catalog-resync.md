@@ -23,7 +23,7 @@ This is separate from the health change in PR #234.
 
 All five generated artifacts passed the live `check-spec-sync.mjs` guard.
 `pnpm -r test` passed **2,399 tests**; all workspace typechecks and the web
-production build passed. Lint had zero errors and 26 existing warnings.
+production build passed. Lint had zero errors and 30 existing warnings.
 The generator reports **292 chains**, **249 with an explorer**, and **202
 primary explorers linking a block height**. No new gap was accepted in the
 missing-explorer or runnable-default roll calls. The committed registry
