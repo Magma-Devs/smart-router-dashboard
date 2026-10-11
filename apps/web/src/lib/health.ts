@@ -13,7 +13,7 @@ import type { HealthState } from "@sr/shared";
  * prominent; everything else now defers to these.
  *
  * `unknown` means no current health measurement, not "down". It has an
- * explicit label and a neutral dot so missing data cannot look healthy.
+ * explicit warning label so missing data is a visible problem.
  */
 export const HEALTH_LABEL: Record<HealthState, string> = {
   operational: "Operational",
@@ -24,11 +24,11 @@ export const HEALTH_LABEL: Record<HealthState, string> = {
 export const HEALTH_COLOR: Record<HealthState, string> = {
   operational: "var(--ok)",
   unhealthy: "var(--err)",
-  unknown: "var(--text-4)",
+  unknown: "var(--warn)",
 };
 
 /** Explain an unknown health state wherever it is shown. */
-export const HEALTH_UNKNOWN_HINT = "No current health reported";
+export const HEALTH_UNKNOWN_HINT = "No current health data reported; check the router and Prometheus scrape.";
 
 export function healthLabel(health: HealthState): string {
   return HEALTH_LABEL[health];
@@ -42,12 +42,12 @@ export function healthColor(health: HealthState): string {
 export function healthTagClass(health: HealthState): string {
   if (health === "operational") return "gw-tag gw-tag--ok";
   if (health === "unhealthy") return "gw-tag gw-tag--err";
-  return "gw-tag";
+  return "gw-tag gw-tag--warn";
 }
 
 /** Worst-first ordering (an unhealthy row is the one you came to find). */
 export const HEALTH_RANK: Record<HealthState, number> = {
   unhealthy: 0,
-  operational: 1,
-  unknown: 2,
+  operational: 2,
+  unknown: 1,
 };

@@ -14,21 +14,42 @@ in `packages/shared/src/constants/metrics.ts`; the typed query builders in
 ## Current upstream health and request history (MAG-4226)
 
 Both Metrics layouts show **Status** instead of calling request success
-"Uptime". Status reads `rpc_endpoint_overall_health`: any unhealthy sample
-on an upstream × chain row wins across interfaces and replicas. A missing or
-non-finite measurement is unknown, not healthy or down. The dashboard has no
-explicit disabled-state signal, so it does not invent a `Disabled` label.
+"Uptime". The API seeds every configured upstream × chain row even before
+its first scrape. Status combines `rpc_endpoint_overall_health` with recent
+`rpc_endpoint_fetch_latest_{success,fails}` increases in a fixed **5-minute**
+window, independent of the selected request-history window:
+
+- A failing live check, or failed block polls with no successful polls in
+  the health window, means **Unhealthy** (even with health gauge = 1).
+- A healthy live check or successful recent block polls provides operational
+  evidence. Both-zero or missing poll counters alone do not establish health.
+- Missing/non-finite health without successful poll evidence means **Unknown**,
+  shown as a warning with the missing-data reason. A configured interface
+  without evidence cannot be hidden behind a healthy interface.
+
+The worst interface/replica wins per upstream × chain. Poll evaluation keeps
+`apiInterface` and scrape `instance` until after classification; one working
+replica cannot mask failed polls on another. Prometheus needs at least two
+scrapes for `increase()`, and its usual instant-selector lookback applies to
+health gauges. Poll success counters report latest-block tracker events,
+not every HTTP request; a non-advancing chain alone is not failure.
 
 The **Request success rate** card retains the historical success/total ratio
 and its fixed windows. When health is unhealthy or unknown, these percentages,
 error rates and QoS figures use neutral colours and a notice explains the
-request window. Block heights are **last reported**, latency is window-scoped,
-and failure-only traffic keeps its diagnostics available. A QoS availability
-score is an optimizer score, not a percentage of time up. The header reports
-router health separately from unhealthy or unknown upstreams.
+request window and health reason. Block heights are **last reported**, latency
+is window-scoped, and failure-only traffic keeps its diagnostics available.
+A QoS availability score is an optimizer score, not a percentage of time up.
+There is no explicit disabled-state signal, so the UI does not invent one.
 
-This presentation relies on the router publishing accurate health gauges;
-it does not detect a disabled endpoint whose gauge still reports healthy.
+`/api/metrics/overview` includes `upstreamHealthCounts: { unhealthy, unknown }`
+using the same three lightweight health reads as the roster. The optional
+`spec` and `routerId` filter these counts; `router` scopes all Prometheus
+queries. Headers consume this existing overview call every 30 seconds and
+make no additional roster/histogram/QoS request. They show **Checking health…**
+until the selected scope answers, a warning on fetch errors, and warning
+counts for missing upstream health. Background refresh retains the same
+scope's last measurement; changing scope does not reuse another scope's data.
 
 ## Label conventions
 

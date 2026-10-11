@@ -25,9 +25,7 @@ describe("MAG-4226: current health takes precedence over historical metrics", ()
   });
 
   it("reports partial upstream failure even while the router serves traffic", () => {
-    expect(
-      deploymentHealthSummary("operational", [{ health: "operational" }, { health: "unhealthy" }]),
-    ).toEqual({
+    expect(deploymentHealthSummary("operational", { unhealthy: 1, unknown: 0 })).toEqual({
       label: "Router operational · 1 upstream unhealthy",
       color: "var(--warn)",
     });
@@ -36,17 +34,17 @@ describe("MAG-4226: current health takes precedence over historical metrics", ()
   it("reports missing upstream health and a missing router measurement explicitly", () => {
     expect(deploymentHealthSummary(undefined, undefined)).toEqual({
       label: "Router health unknown",
-      color: "var(--text-3)",
+      color: "var(--warn)",
     });
-    expect(deploymentHealthSummary("operational", [{ health: "unknown" }])).toEqual({
+    expect(deploymentHealthSummary("operational", { unhealthy: 0, unknown: 1 })).toEqual({
       label: "Router operational · 1 upstream unknown",
-      color: "var(--text-3)",
+      color: "var(--warn)",
     });
   });
 
   it("does not claim that all systems are normal from router health alone", () => {
     expect(deploymentHealthSummary("operational", undefined).label).toBe("Router operational");
-    expect(deploymentHealthSummary("unhealthy", [{ health: "unhealthy" }]).color).toBe(
+    expect(deploymentHealthSummary("unhealthy", { unhealthy: 1, unknown: 0 }).color).toBe(
       "var(--err)",
     );
   });

@@ -505,9 +505,13 @@ state can't be worded or sourced two ways:
   filter's only entry point — one selection, both router axes (see "Two router
   axes"), chain-narrowed list, `routerId` on `FiltersProvider` (`sr:routerId`).
 - **`lib/health.ts`** owns the words and colours for `HealthState`
-  (`operational | unhealthy | unknown`) — **Operational / Unhealthy / —** — and
+  (`operational | unhealthy | unknown`) — **Operational / Unhealthy / Unknown** — and
   `<HealthTag>` / `<HealthDot>` are how they reach the screen. `unknown` means
-  "no metrics in this window", never "down", so it renders neutral. Nothing
+  "no current health evidence", so it renders as a warning with a reason.
+  Configured endpoints remain in the roster without metrics. Current health
+  uses live checks and a fixed 5-minute block-poll window; request-history
+  filters do not change it. Overview carries unhealthy/unknown counts, and
+  headers show a loading state until the selected scope answers. Nothing
   invents its own health vocabulary: four surfaces used to (the roster said
   "healthy / degraded", the deep-dive "Live · up", the drawer the raw wire
   word), and one upstream read three different ways depending on the panel.

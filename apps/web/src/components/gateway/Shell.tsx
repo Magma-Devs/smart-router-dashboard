@@ -4,15 +4,14 @@ import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { useEffect, useState, useSyncExternalStore, type ComponentType } from "react";
 import { signOut } from "next-auth/react";
-import { buildChainMetaByIndex, type OverviewData, type UpstreamMetrics } from "@sr/shared";
+import { buildChainMetaByIndex } from "@sr/shared";
 import { NAV_SECTIONS, visibleNavSections } from "./nav";
 import { useAuthMode } from "./auth-mode";
 import { useNewUi } from "./new-ui";
 import { CHAIN_DRAWER_PATH, ChainDrawer, ChainDrawerProvider, useChainDrawer } from "./ChainDrawer";
 import { IconMoon, IconSun, type IconProps } from "./icons";
-import { useApi } from "@/hooks/use-api";
 import { useFilters } from "@/components/gateway/FiltersProvider";
-import { DeploymentHealthBadge } from "./DeploymentHealth";
+import { DeploymentHealthBadge, useDeploymentOverview } from "./DeploymentHealth";
 import { fmtNum } from "@/lib/format";
 import { getAuthVersion, subscribeAuth } from "@/lib/auth-store";
 import { useMe } from "@/hooks/use-me";
@@ -196,10 +195,8 @@ function Topbar({ here, sub }: { here: string; sub: string | null }) {
   // Live throughput + health for the top-bar stats (real data; CU/mo is a
   // Lava-consumer concept the router doesn't emit, so it's omitted here).
   // Scoped like every other panel, so the pills describe the selected router.
-  const { scopeQ } = useFilters();
-  const { data } = useApi<OverviewData>(`/api/metrics/overview?window=1h${scopeQ}`, 30000);
+  const { data, isLoading, error } = useDeploymentOverview();
   const rps = data?.throughputRps.value;
-  const roster = useApi<{ upstreams: UpstreamMetrics[] }>(`/api/metrics/upstreams?window=1h${scopeQ}`, 15000, { keepPreviousData: false });
   return (
     <header className="gw-top">
       <div className="gw-top__crumbs">
@@ -228,7 +225,7 @@ function Topbar({ here, sub }: { here: string; sub: string | null }) {
         <span className="pill gw-mono" title="Live throughput">
           {fmtNum(rps)} RPS
         </span>
-        <DeploymentHealthBadge health={data?.health} upstreams={roster.data?.upstreams} />
+        <DeploymentHealthBadge health={data?.health} counts={data?.upstreamHealthCounts} loading={!data && isLoading && !error} error={Boolean(error)} />
         {/* Router scope — global, so it sits next to the theme toggle rather
             than in any one page's header. Hides itself when the metrics can't
             be split per router. */}

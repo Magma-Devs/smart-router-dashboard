@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import Fastify from "fastify";
 import { metricRoutes } from "../routes/metrics.js";
 import { MetricsService } from "../services/metrics.js";
+import type { ConfigurationService } from "../services/configuration.js";
+import { readUpstreamHealth } from "../services/upstream-health.js";
 import type { PrometheusClient, PromVectorSample } from "../services/prometheus-client.js";
 
 const sample = (value: string, spec = "ETH1", apiInterface = "jsonrpc"): PromVectorSample => ({
@@ -78,4 +80,195 @@ describe("MAG-4226: upstream health through the HTTP route", () => {
       expect(row.health).toBe("unknown");
     },
   );
+});
+
+const configured = {
+  getRouters: () => [
+    {
+      id: "eth-prod",
+      spec: "ETH1",
+      nodes: [
+        { name: "test-upstream", endpoints: [{ interface: "jsonrpc" }] },
+        { name: "missing", endpoints: [{ interface: "jsonrpc" }] },
+      ],
+    },
+    {
+      id: "eth-staging",
+      spec: "ETH1",
+      nodes: [{ name: "staging", endpoints: [{ interface: "jsonrpc" }] }],
+    },
+    {
+      id: "sol",
+      spec: "SOLANA",
+      nodes: [{ name: "test-upstream", endpoints: [{ interface: "jsonrpc" }] }],
+    },
+  ],
+} as unknown as ConfigurationService;
+
+function healthProm(
+  gauges: PromVectorSample[],
+  ok: PromVectorSample[] = [],
+  failed: PromVectorSample[] = [],
+) {
+  const queries: string[] = [];
+  const prom = {
+    query: async (q: string) => {
+      queries.push(q);
+      if (q.startsWith("rpc_endpoint_overall_health")) return gauges;
+      if (q.includes("rpc_endpoint_fetch_latest_success")) return ok;
+      if (q.includes("rpc_endpoint_fetch_latest_fails")) return failed;
+      return [];
+    },
+    scalar: async () => 1,
+    queryRange: async () => [],
+  } as unknown as PrometheusClient;
+  return { prom, queries };
+}
+
+async function healthHttp(
+  gauges: PromVectorSample[],
+  ok: PromVectorSample[],
+  failed: PromVectorSample[],
+  params = "",
+) {
+  const { prom } = healthProm(gauges, ok, failed);
+  const metrics = new MetricsService(prom, configured);
+  const app = Fastify();
+  app.decorate("scoped", () => ({ metrics }));
+  await app.register(metricRoutes);
+  try {
+    const roster = await app.inject(`/api/metrics/upstreams?window=7d${params}`);
+    const overview = await app.inject(`/api/metrics/overview?window=1h${params}`);
+    expect(roster.statusCode).toBe(200);
+    expect(overview.statusCode).toBe(200);
+    return {
+      rows: roster.json().upstreams as import("@sr/shared").UpstreamMetrics[],
+      overview: overview.json() as import("@sr/shared").OverviewData,
+    };
+  } finally {
+    await app.close();
+  }
+}
+
+describe("MAG-4226 review: configured upstream liveness", () => {
+  it("keeps every configured endpoint visible with a reason before the first scrape", async () => {
+    const { rows, overview } = await healthHttp([], [], []);
+    expect(rows).toHaveLength(4);
+    expect(
+      rows.every(
+        (row) => row.health === "unknown" && row.healthReason?.includes("check the router"),
+      ),
+    ).toBe(true);
+    expect(overview.upstreamHealthCounts).toEqual({ unhealthy: 0, unknown: 4 });
+  });
+
+  it("failed recent block polls override a stuck healthy gauge with no traffic", async () => {
+    const { rows, overview } = await healthHttp(
+      [sample("1")],
+      [],
+      [sample("2")],
+      "&routerId=eth-prod",
+    );
+    const row = rows.find((row) => row.endpointId === "test-upstream")!;
+    expect(row.health).toBe("unhealthy");
+    expect(row.healthReason).toContain("All reported block polls failed");
+    expect(row.requests).toBe(0);
+    expect(row.uptime).toBeNull();
+    expect(rows).toHaveLength(2);
+    expect(overview.upstreamHealthCounts).toEqual({ unhealthy: 1, unknown: 1 });
+  });
+
+  it("does not label zero polls as failure, and positive successes establish health", async () => {
+    const { prom } = healthProm([], [sample("0")], [sample("0")]);
+    expect([...(await readUpstreamHealth(prom))].map(([, row]) => row.health)).toEqual(["unknown"]);
+    const recovered = healthProm([], [sample("1")], [sample("0")]);
+    expect([...(await readUpstreamHealth(recovered.prom))].map(([, row]) => row.health)).toEqual([
+      "operational",
+    ]);
+  });
+
+  it("mixed poll results do not override a healthy gauge", async () => {
+    const { prom } = healthProm([sample("1")], [sample("1")], [sample("2")]);
+    expect([...(await readUpstreamHealth(prom))].map(([, row]) => row.health)).toEqual([
+      "operational",
+    ]);
+  });
+
+  it("successful polls never override an unhealthy live check", async () => {
+    const { prom } = healthProm([sample("0")], [sample("4")]);
+    expect([...(await readUpstreamHealth(prom))].map(([, row]) => row.health)).toEqual([
+      "unhealthy",
+    ]);
+  });
+
+  it.each([false, true])(
+    "does not let another interface's successful polls mask failures (reverse=%s)",
+    async (reverse) => {
+      const gauges = [sample("1"), sample("1", "ETH1", "rest")];
+      const { prom } = healthProm(
+        reverse ? gauges.reverse() : gauges,
+        [sample("3")],
+        [sample("0.2", "ETH1", "rest")],
+      );
+      expect([...(await readUpstreamHealth(prom))].map(([, row]) => row.health)).toEqual([
+        "unhealthy",
+      ]);
+    },
+  );
+
+  it("does not let another scrape target's successes mask a failed replica", async () => {
+    const replica = (value: string, instance: string) => ({
+      ...sample(value),
+      metric: { ...sample(value).metric, instance },
+    });
+    const { prom } = healthProm(
+      [replica("1", "a"), replica("1", "b")],
+      [replica("3", "a")],
+      [replica("2", "b")],
+    );
+    expect([...(await readUpstreamHealth(prom))].map(([, row]) => row.health)).toEqual([
+      "unhealthy",
+    ]);
+  });
+
+  it("does not hide an unmeasured configured interface behind a healthy one", async () => {
+    const config = {
+      getRouters: () => [
+        {
+          id: "eth",
+          spec: "ETH1",
+          nodes: [
+            { name: "test-upstream", endpoints: [{ interface: "jsonrpc" }, { interface: "rest" }] },
+          ],
+        },
+      ],
+    } as unknown as ConfigurationService;
+    const { prom } = healthProm([sample("1")]);
+    const row = [...(await readUpstreamHealth(prom, config))][0][1];
+    expect(row.health).toBe("unknown");
+    expect(row.healthReason).toContain("rest interface");
+  });
+
+  it("isolates the same vendor name on different chains and filters both counts and rows", async () => {
+    const { rows, overview } = await healthHttp(
+      [sample("0"), sample("1", "SOLANA")],
+      [],
+      [],
+      "&spec=SOLANA&routerId=sol",
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].spec).toBe("SOLANA");
+    expect(rows[0].health).toBe("operational");
+    expect(overview.upstreamHealthCounts).toEqual({ unhealthy: 0, unknown: 0 });
+  });
+
+  it("uses only three current-health queries, without traffic, QoS or histograms", async () => {
+    const { prom, queries } = healthProm([sample("1")]);
+    await readUpstreamHealth(prom, configured);
+    expect(queries).toHaveLength(3);
+    expect(queries.every((q) => !/histogram|selection_score|requests_total/.test(q))).toBe(true);
+    expect(queries.filter((q) => q.includes("increase(")).every((q) => q.includes("[5m]"))).toBe(
+      true,
+    );
+  });
 });

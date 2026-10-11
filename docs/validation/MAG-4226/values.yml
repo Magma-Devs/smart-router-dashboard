@@ -1,0 +1,17 @@
+metrics-listen-address: "0.0.0.0:7779"
+endpoints:
+  - listen-address: "0.0.0.0:3360"
+    chain-id: "ETH1"
+    api-interface: "jsonrpc"
+    network-address: "0.0.0.0:3360"
+direct-rpc:
+  - name: "eth-publicnode"
+    chain-id: "ETH1"
+    api-interface: "jsonrpc"
+    node-urls:
+      - url: "https://ethereum-rpc.publicnode.com"
+  - name: "bitvavo-switchable"
+    chain-id: "ETH1"
+    api-interface: "jsonrpc"
+    node-urls:
+      - url: "http://upstream-switch:8545"

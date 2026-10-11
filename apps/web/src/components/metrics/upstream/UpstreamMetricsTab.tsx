@@ -80,7 +80,7 @@ export function UpstreamMetricsTab({ timeWindow, chainFilter, onOpenErrors }: {
             <span style={{ fontSize: 12, color: "var(--text-3)" }}>· {chainName} · detailed metrics</span>
           </div>
 
-          <UpstreamHealthNotice health={pm.health} />
+          <UpstreamHealthNotice health={pm.health} reason={pm.healthReason} />
 
           {/* ════ ROW 1 — AT A GLANCE ════ */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, marginBottom: 12 }}>

@@ -112,6 +112,9 @@ describe.each([
     );
     expect(html).toContain("Unknown");
     expect(html).toContain("health is unknown");
+    expect(html).toContain("var(--warn)");
+    expect(html).toContain("No current health data reported");
+    expect(html).toContain('role="alert"');
     expect(html).not.toContain("100.00%");
     expect(html).not.toContain("Unhealthy");
     expect(html).not.toContain("Operational");
@@ -174,8 +177,33 @@ describe.each([
 
 it("does not claim all systems normal when an upstream is unhealthy", () => {
   const html = renderToStaticMarkup(
-    createElement(DeploymentHealthBadge, { health: "operational", upstreams: fixture.rows }),
+    createElement(DeploymentHealthBadge, {
+      health: "operational",
+      counts: { unhealthy: 1, unknown: 0 },
+    }),
   );
   expect(html).toContain("Router operational · 1 upstream unhealthy");
   expect(html).not.toContain("All systems normal");
+});
+
+it("shows loading separately from measured unknown health", () => {
+  const html = renderToStaticMarkup(
+    createElement(DeploymentHealthBadge, { health: undefined, counts: undefined, loading: true }),
+  );
+  expect(html).toContain("Checking health");
+  expect(html).toContain('aria-busy="true"');
+  expect(html).not.toContain("unknown");
+});
+
+it("shows failed refreshes as a problem instead of stale green health", () => {
+  const html = renderToStaticMarkup(
+    createElement(DeploymentHealthBadge, {
+      health: "operational",
+      counts: { unhealthy: 0, unknown: 0 },
+      error: true,
+    }),
+  );
+  expect(html).toContain("Health data unavailable");
+  expect(html).toContain("var(--warn)");
+  expect(html).not.toContain("Router operational");
 });

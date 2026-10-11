@@ -19,11 +19,11 @@ export function HealthDot({ health, size = 7 }: { health: HealthState; size?: nu
  * Upstreams roster, the Try-it drawer header and the deep-dive can't drift
  * apart again (see `lib/health.ts` for what they used to say).
  */
-export function HealthTag({ health, fontSize = 10 }: { health: HealthState; fontSize?: number }) {
+export function HealthTag({ health, fontSize = 10, reason }: { health: HealthState; fontSize?: number; reason?: string }) {
   return (
     <span
       className={healthTagClass(health)}
-      title={health === "unknown" ? HEALTH_UNKNOWN_HINT : undefined}
+      title={reason ?? (health === "unknown" ? HEALTH_UNKNOWN_HINT : undefined)}
       style={{ fontSize, padding: "1px 6px", display: "inline-flex", gap: 5, alignItems: "center" }}
     >
       <HealthDot health={health} size={6} />

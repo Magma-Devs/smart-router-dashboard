@@ -91,6 +91,8 @@ export interface UpstreamMetrics {
    */
   polls: { ok: number; failed: number } | null;
   health: HealthState;
+  /** Current health evidence or the reason measurement is unavailable. */
+  healthReason?: string;
   latestBlock: number | null;
   /** Blocks behind the spec's best endpoint; null when unknown. */
   blockLag: number | null;
@@ -257,6 +259,8 @@ export interface OverviewData {
   p95Ms: Kpi;
   p99Ms: Kpi;
   health: HealthState;
+  /** Current upstream × chain status, independent of the history window. */
+  upstreamHealthCounts: { unhealthy: number; unknown: number };
   /** Quota/cap are NOT emitted by the router — always null (gated in the UI). */
   computeUnits: { used: number | null; limit: number | null; resetsAt: string | null };
   rpsCap: number | null;

@@ -189,7 +189,7 @@ export function PMRoster({ rows, activeKey, onSelect, timeWindow, loading = fals
                     sentence that used to span these four cells repeated the
                     BACKUP badge two columns to the left. */}
                 <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12, color: v.requests > 0 ? "var(--text)" : "var(--text-4)" }}>{fmtReq(v.requests)}</span></td>
-                <td style={{ textAlign: "right" }}><HealthTag health={v.health} /></td>
+                <td style={{ textAlign: "right" }}><HealthTag health={v.health} reason={v.healthReason} /></td>
                 <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{v.p95Ms != null ? Math.round(v.p95Ms) + " ms" : "—"}</span></td>
                 <td style={{ textAlign: "right" }}>{(() => { const e = v.errorRate != null ? v.errorRate * 100 : null; return e != null ? <span className="gw-mono gw-tnum" style={{ fontSize: 12, color: upstreamMetricColor(v.health, e < 0.5 ? "var(--text-3)" : e < 1.5 ? "var(--warn)" : "var(--err)") }}>{e.toFixed(2)}%</span> : <span style={{ fontSize: 12, color: "var(--text-4)" }}>—</span>; })()}</td>
                 {/* QoS on every row, including the ones with no traffic — the
