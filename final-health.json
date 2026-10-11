@@ -1,0 +1,70 @@
+{
+  "ok": true,
+  "error": null,
+  "results": [
+    {
+      "name": "eth-publicnode",
+      "chainId": "ETH1",
+      "apiInterface": "jsonrpc",
+      "url": "https://ethereum-rpc.publicnode.com",
+      "transport": "http",
+      "addons": [],
+      "extensions": [],
+      "specValid": true,
+      "latestBlock": 26170264,
+      "ok": true,
+      "verifications": [
+        {
+          "name": "chain-id",
+          "addon": "",
+          "extension": "",
+          "ok": true
+        },
+        {
+          "name": "pruning",
+          "addon": "",
+          "extension": "",
+          "ok": true
+        },
+        {
+          "name": "trustless-rpc",
+          "addon": "",
+          "extension": "",
+          "ok": true
+        }
+      ]
+    },
+    {
+      "name": "bitvavo-switchable",
+      "chainId": "ETH1",
+      "apiInterface": "jsonrpc",
+      "url": "http://upstream-switch:8545",
+      "transport": "http",
+      "addons": [],
+      "extensions": [],
+      "specValid": true,
+      "latestBlock": 26170264,
+      "ok": true,
+      "verifications": [
+        {
+          "name": "chain-id",
+          "addon": "",
+          "extension": "",
+          "ok": true
+        },
+        {
+          "name": "pruning",
+          "addon": "",
+          "extension": "",
+          "ok": true
+        },
+        {
+          "name": "trustless-rpc",
+          "addon": "",
+          "extension": "",
+          "ok": true
+        }
+      ]
+    }
+  ]
+}
