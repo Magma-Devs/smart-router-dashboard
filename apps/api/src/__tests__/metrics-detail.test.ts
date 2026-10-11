@@ -115,6 +115,7 @@ describe("MetricsDetailService.retries", () => {
 });
 
 describe("MetricsDetailService error classes (MAG-3847)", () => {
+  const protocolExprs: string[] = [];
   /**
    * The router books a protocol error on an attempt it also counts in
    * requests_failed_total, so the attempt is already inside total − success.
@@ -141,8 +142,11 @@ describe("MetricsDetailService error classes (MAG-3847)", () => {
         // Derived failed attempts: total − success, the transport expression and qErrorCount alike.
         if (expr.startsWith("round(clamp_min(sum(increase(smartrouter_requests_total"))
           return counts.failed;
-        if (expr.startsWith("round(sum(increase(smartrouter_protocol_errors_total"))
+        // Counted from birth, so the first error on a fresh series is not lost.
+        if (expr.startsWith("round(sum((increase(smartrouter_protocol_errors_total")) {
+          protocolExprs.push(expr);
           return counts.protocol;
+        }
         if (expr.startsWith("round(sum(increase(smartrouter_node_errors_total")) return counts.node;
         return null;
       },
@@ -197,5 +201,15 @@ describe("MetricsDetailService error classes (MAG-3847)", () => {
     expect((await service.upstreamDetail(ref, "1d")).errorSplit.transport).toBe(0);
     const report = await service.errors("1d", "ETH1");
     expect(report.pivots.category.find((c) => c.key === "transport")).toBeUndefined();
+  });
+
+  it("counts protocol errors from birth, so a burst on a fresh series is not left in transport", async () => {
+    protocolExprs.length = 0;
+    const service = new MetricsDetailService(classProm({ failed: 3, protocol: 3, node: null }));
+
+    await service.upstreamDetail(ref, "1d");
+    await service.errors("1d", "ETH1");
+    expect(protocolExprs).toHaveLength(2);
+    for (const expr of protocolExprs) expect(expr).toContain("min_over_time(smartrouter_protocol_errors_total");
   });
 });

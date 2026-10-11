@@ -36,6 +36,7 @@ import {
   qUpstreamReadVolumeSeriesExpr,
   qUpstreamVolumeSeriesExpr,
   qClientRequestsFromBirth,
+  increaseFromBirth,
   qClientRpsSeriesExpr,
   qScoreExpr,
   rangeFor,
@@ -299,7 +300,7 @@ export class MetricsDetailService {
         : Promise.resolve(0),
       protoErrs
         ? this.prom.scalar(
-            `round(sum(increase(${OPTIONAL_METRICS.protocolErrorsTotal}${provSel}[${r}])))`,
+            `round(sum${increaseFromBirth(`${OPTIONAL_METRICS.protocolErrorsTotal}${provSel}`, r)})`,
           )
         : Promise.resolve(0),
       nodeErrs
@@ -326,6 +327,9 @@ export class MetricsDetailService {
     // requests_failed_total, so it is already inside total − success. Take it
     // out of transport so the three classes stay disjoint and add up to the
     // upstream's errors (MAG-3847). With the family absent this is a no-op.
+    // Protocol is counted from birth: the router creates a series on its first
+    // error, so plain increase() would drop the first error of every burst on
+    // a fresh series and leave it in transport.
     const protocol = protoErrorCount ?? 0;
     const transport = Math.max(0, (transportErrors ?? 0) - protocol);
 
@@ -407,6 +411,7 @@ export class MetricsDetailService {
     // empirically: a -32601 reply increments requests_success_total), less the
     // protocol errors, which are failed attempts too (MAG-3847). node /
     // protocol come from the labelled counters; absent family ⇒ zero events.
+    // Protocol reads from birth, as the upstream split does (see there).
     const [nodePresent, protoPresent] = [families[1], families[2]];
     const sel = selector({ spec });
     const rr = rangeFor(window);
@@ -454,7 +459,7 @@ export class MetricsDetailService {
         : Promise.resolve(0),
       protoPresent
         ? this.prom.scalar(
-            `round(sum(increase(${OPTIONAL_METRICS.protocolErrorsTotal}${sel}[${rr}])))`,
+            `round(sum${increaseFromBirth(`${OPTIONAL_METRICS.protocolErrorsTotal}${sel}`, rr)})`,
           )
         : Promise.resolve(0),
       nodePresent

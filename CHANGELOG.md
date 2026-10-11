@@ -23,8 +23,15 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   The upstream panel's tooltip now says what each class holds:
   - **protocol errors:** refused, reset or dropped connections, cut-off or
     invalid bodies, and timeouts;
-  - **transport:** 5xx and 429 answers, and every failure on a gRPC
-    endpoint.
+  - **transport:** 5xx and 429 answers, and gRPC failures that carry no
+    status;
+  - **node errors:** error replies, and on gRPC any non-OK status,
+    including UNAVAILABLE.
+
+  Protocol errors are counted from the first one on each series. The router
+  creates a series on its first error, and a plain `increase()` would drop
+  that error and leave it under transport. This happens on the first
+  incident per upstream and method after every router restart.
 
 ## [0.32.1]
 
