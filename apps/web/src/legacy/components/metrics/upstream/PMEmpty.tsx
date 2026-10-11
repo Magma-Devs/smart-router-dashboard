@@ -1,6 +1,7 @@
 "use client";
 
 import type { MetricWindow, UpstreamMetrics } from "@sr/shared";
+import { upstreamMetricColor } from "@/lib/upstream-presentation";
 import { healthColor, healthLabel, HEALTH_UNKNOWN_HINT } from "@/lib/health";
 import { pollColor, pollSummary, qosHint, qosIsStale, qosValue } from "@/legacy/lib/upstream-signals";
 
@@ -72,7 +73,7 @@ export function PMEmpty({
 
         {qos != null && (
           <Fact label="QoS" title={qosHint(pm)}>
-            <span className="gw-mono gw-tnum" style={{ fontWeight: 700, color: qos > 97 ? "var(--ok)" : qos > 90 ? "var(--warn)" : "var(--err)", opacity: qosIsStale(pm) ? 0.55 : 1 }}>
+            <span className="gw-mono gw-tnum" style={{ fontWeight: 700, color: upstreamMetricColor(pm.health, qos > 97 ? "var(--ok)" : qos > 90 ? "var(--warn)" : "var(--err)"), opacity: qosIsStale(pm) ? 0.55 : 1 }}>
               {Math.round(qos)}
             </span>
             {qosIsStale(pm) && <span style={{ color: "var(--text-4)" }}> old</span>}
@@ -84,12 +85,12 @@ export function PMEmpty({
             label={`Block polls · ${timeWindow}`}
             title="The router polls every configured upstream for its latest block, whether or not it routes requests to it. Zero polls means the poll gate suppressed them — served traffic or a peer's poll already refreshed the tip — not that the upstream failed."
           >
-            <span style={{ color: pollColor(pm.polls) }}>{polls}</span>
+            <span style={{ color: upstreamMetricColor(pm.health, pollColor(pm.polls)) }}>{polls}</span>
           </Fact>
         )}
 
         {pm.latestBlock != null && (
-          <Fact label="Latest block" title={`The head this upstream reports on ${chainName}.`}>
+          <Fact label="Last reported block" title={`The head this upstream reports on ${chainName}.`}>
             <span className="gw-mono gw-tnum">{pm.latestBlock.toLocaleString("en-US")}</span>
             {pm.behindSec != null && pm.behindSec >= 1 && (
               <span style={{ color: "var(--text-3)" }}> · {Math.round(pm.behindSec)}s behind</span>

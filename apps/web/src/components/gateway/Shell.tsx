@@ -4,7 +4,7 @@ import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { useEffect, useState, useSyncExternalStore, type ComponentType } from "react";
 import { signOut } from "next-auth/react";
-import { buildChainMetaByIndex, type OverviewData } from "@sr/shared";
+import { buildChainMetaByIndex, type OverviewData, type UpstreamMetrics } from "@sr/shared";
 import { NAV_SECTIONS, visibleNavSections } from "./nav";
 import { useAuthMode } from "./auth-mode";
 import { useNewUi } from "./new-ui";
@@ -12,6 +12,7 @@ import { CHAIN_DRAWER_PATH, ChainDrawer, ChainDrawerProvider, useChainDrawer } f
 import { IconMoon, IconSun, type IconProps } from "./icons";
 import { useApi } from "@/hooks/use-api";
 import { useFilters } from "@/components/gateway/FiltersProvider";
+import { DeploymentHealthBadge } from "./DeploymentHealth";
 import { fmtNum } from "@/lib/format";
 import { getAuthVersion, subscribeAuth } from "@/lib/auth-store";
 import { useMe } from "@/hooks/use-me";
@@ -198,7 +199,7 @@ function Topbar({ here, sub }: { here: string; sub: string | null }) {
   const { scopeQ } = useFilters();
   const { data } = useApi<OverviewData>(`/api/metrics/overview?window=1h${scopeQ}`, 30000);
   const rps = data?.throughputRps.value;
-  const ok = data?.health === "operational";
+  const roster = useApi<{ upstreams: UpstreamMetrics[] }>(`/api/metrics/upstreams?window=1h${scopeQ}`, 15000, { keepPreviousData: false });
   return (
     <header className="gw-top">
       <div className="gw-top__crumbs">
@@ -227,10 +228,7 @@ function Topbar({ here, sub }: { here: string; sub: string | null }) {
         <span className="pill gw-mono" title="Live throughput">
           {fmtNum(rps)} RPS
         </span>
-        <span className="pill">
-          <span className={ok ? "dot-ok" : "dot-warn"} />
-          {ok ? "All systems normal" : data ? "Degraded" : "…"}
-        </span>
+        <DeploymentHealthBadge health={data?.health} upstreams={roster.data?.upstreams} />
         {/* Router scope — global, so it sits next to the theme toggle rather
             than in any one page's header. Hides itself when the metrics can't
             be split per router. */}

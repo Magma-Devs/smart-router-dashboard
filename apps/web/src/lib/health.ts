@@ -12,13 +12,13 @@ import type { HealthState } from "@sr/shared";
  * were looking at. The Routers table's wording won because it was the most
  * prominent; everything else now defers to these.
  *
- * `unknown` is "no metrics in this window", NOT "down" — hence a neutral dot
- * and an em dash rather than a red anything.
+ * `unknown` means no current health measurement, not "down". It has an
+ * explicit label and a neutral dot so missing data cannot look healthy.
  */
 export const HEALTH_LABEL: Record<HealthState, string> = {
   operational: "Operational",
   unhealthy: "Unhealthy",
-  unknown: "—",
+  unknown: "Unknown",
 };
 
 export const HEALTH_COLOR: Record<HealthState, string> = {
@@ -27,8 +27,8 @@ export const HEALTH_COLOR: Record<HealthState, string> = {
   unknown: "var(--text-4)",
 };
 
-/** Why a row reads `—` — worth a title attribute wherever it's shown bare. */
-export const HEALTH_UNKNOWN_HINT = "No metrics reported in this window";
+/** Explain an unknown health state wherever it is shown. */
+export const HEALTH_UNKNOWN_HINT = "No current health reported";
 
 export function healthLabel(health: HealthState): string {
   return HEALTH_LABEL[health];

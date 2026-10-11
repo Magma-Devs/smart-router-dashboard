@@ -11,6 +11,25 @@ in `packages/shared/src/constants/metrics.ts`; the typed query builders in
 > *and* `host.docker.internal:7779`), all counts double. `deploy/prometheus.yml`
 > uses a single `host.docker.internal:7779` target for that reason.
 
+## Current upstream health and request history (MAG-4226)
+
+Both Metrics layouts show **Status** instead of calling request success
+"Uptime". Status reads `rpc_endpoint_overall_health`: any unhealthy sample
+on an upstream × chain row wins across interfaces and replicas. A missing or
+non-finite measurement is unknown, not healthy or down. The dashboard has no
+explicit disabled-state signal, so it does not invent a `Disabled` label.
+
+The **Request success rate** card retains the historical success/total ratio
+and its fixed windows. When health is unhealthy or unknown, these percentages,
+error rates and QoS figures use neutral colours and a notice explains the
+request window. Block heights are **last reported**, latency is window-scoped,
+and failure-only traffic keeps its diagnostics available. A QoS availability
+score is an optimizer score, not a percentage of time up. The header reports
+router health separately from unhealthy or unknown upstreams.
+
+This presentation relies on the router publishing accurate health gauges;
+it does not detect a disabled endpoint whose gauge still reports healthy.
+
 ## Label conventions
 
 | UI concept | Prometheus label |

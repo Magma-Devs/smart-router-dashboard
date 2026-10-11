@@ -906,10 +906,22 @@ export class MetricsService {
     };
     scoreRows(optimizerScores, "optimizer");
     scoreRows(scores, "endpoint");
+    // One roster row represents every interface/replica of this endpoint on
+    // this chain. A healthy sample must never overwrite an unhealthy one.
+    const healthByNode = new Map<string, HealthState>();
     for (const s of healthRows) {
       const id = s.metric.endpoint_id;
       if (!id) continue;
-      ensure(id, s.metric.spec ?? "").health = health(Number(s.value[1]));
+      const specLabel = s.metric.spec ?? "";
+      const row = ensure(id, specLabel);
+      const value = Number(s.value[1]);
+      const key = nodeKey(id, specLabel);
+      const current = healthByNode.get(key);
+      const measured = Number.isFinite(value) ? health(value) : "unknown";
+      const worst = current === "unhealthy" || measured === "unhealthy" ? "unhealthy"
+        : current === "unknown" || measured === "unknown" ? "unknown" : "operational";
+      healthByNode.set(key, worst);
+      row.health = worst;
     }
     for (const s of blocks) {
       const id = s.metric.endpoint_id;

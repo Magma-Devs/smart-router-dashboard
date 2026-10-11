@@ -5,6 +5,18 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Fixed
+
+- **Current upstream health instead of misleading uptime** (MAG-4226).
+  Both Metrics layouts show a Status column, an explicit unknown state, and
+  an unhealthy notice. Historical request success, errors and QoS no longer
+  look healthy when the upstream is unhealthy or unknown. Diagnostics remain
+  available when every request failed; block heights are labelled as last
+  reported. Availability scores no longer claim "% up", and the header
+  distinguishes router availability from unhealthy upstreams. An unhealthy
+  interface cannot be overwritten by a healthy interface on the same row.
+  React DOM is aligned with React's patch version for reliable rendering.
+
 ## [0.34.0]
 
 ### Removed

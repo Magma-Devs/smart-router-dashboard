@@ -9,10 +9,11 @@
 import { useEffect, useState } from "react";
 import { buildChainMetaByIndex, type MetricWindow, type UpstreamMetrics, type UpstreamRef } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
-import { uptimeColor } from "@/lib/colors";
+import { HEALTH_RANK } from "@/lib/health";
+import { upstreamMetricColor } from "@/lib/upstream-presentation";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { ExplorerBlockLink, ExplorerHomeLink } from "@/components/gateway/ExplorerLink";
-import { HealthDot } from "@/components/gateway/HealthTag";
+import { HealthDot, HealthTag } from "@/components/gateway/HealthTag";
 import { Tip } from "@/components/gateway/Tip";
 import { ThCol, useSort } from "@/components/gateway/SortTable";
 import { Refreshing, Skel, SkelRows } from "@/components/gateway/Skel";
@@ -45,7 +46,7 @@ interface RosterRow {
   chain: string;
   block: number;
   requests: number;
-  uptime: number;
+  status: number;
   latency: number;
   err: number;
 }
@@ -88,7 +89,7 @@ export function PMRoster({ rows, activeKey, onSelect, timeWindow, loading = fals
       chain: meta.name.toLowerCase(),
       block: v.latestBlock ?? -1,
       requests: v.requests || 0,
-      uptime: v.uptime ?? -1,
+      status: -HEALTH_RANK[v.health],
       latency: v.p95Ms ?? Infinity,
       err: v.errorRate ?? -1,
     };
@@ -104,10 +105,10 @@ export function PMRoster({ rows, activeKey, onSelect, timeWindow, loading = fals
     <div className="gw-card" style={{ padding: 0, overflow: "hidden", marginBottom: 18 }}>
       <div style={{ padding: "11px 14px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 6 }}>
         <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-2)" }}>All upstreams</span>
-        <Tip text="Every upstream × chain you've configured. Uptime reflects the time window selected above. Click a row to drill into its full metrics below." />
+        <Tip text="Every upstream × chain you've configured. Status reports current upstream health. Request metrics reflect the selected time window. Click a row to drill into its full metrics below." />
         <div style={{ flex: 1 }} />
         <span style={{ fontSize: 11, color: "var(--text-3)", display: "inline-flex", alignItems: "center", gap: 7 }}>
-          {loading ? <Skel w={168} h={9} /> : <>{rows.length} upstream{rows.length === 1 ? "" : "s"} · uptime over {timeWindow}</>}
+          {loading ? <Skel w={168} h={9} /> : <>{rows.length} upstream{rows.length === 1 ? "" : "s"} · request metrics over {timeWindow}</>}
           <Refreshing show={!loading && refreshing} label="Refreshing upstreams" />
         </span>
       </div>
@@ -120,10 +121,10 @@ export function PMRoster({ rows, activeKey, onSelect, timeWindow, loading = fals
             <ThCol sortKey="upstream" sort={sort} onSort={onSort}>Upstream</ThCol>
             <ThCol sortKey="router" sort={sort} onSort={onSort}>Router</ThCol>
             <ThCol sortKey="chain" sort={sort} onSort={onSort}>Chain</ThCol>
-            <ThCol align="right" tip={BLOCK_TIP} sortKey="block" sort={sort} onSort={onSort}>Latest block</ThCol>
+            <ThCol align="right" tip={BLOCK_TIP} sortKey="block" sort={sort} onSort={onSort}>Last reported block</ThCol>
             <ThCol align="right" sortKey="requests" sort={sort} onSort={onSort}>Total requests</ThCol>
-            <ThCol align="right" sortKey="uptime" sort={sort} onSort={onSort}>Uptime</ThCol>
-            <ThCol align="right" sortKey="latency" sort={sort} onSort={onSort}>Latency</ThCol>
+            <ThCol align="right" sortKey="status" sort={sort} onSort={onSort}>Status</ThCol>
+            <ThCol align="right" tip={`p95 latency over ${timeWindow}. Historical request data, independent of current health.`} sortKey="latency" sort={sort} onSort={onSort}>Latency</ThCol>
             <ThCol align="right" sortKey="err" sort={sort} onSort={onSort}>Error rate</ThCol>
           </tr>
         </thead>
@@ -183,9 +184,9 @@ export function PMRoster({ rows, activeKey, onSelect, timeWindow, loading = fals
                     sentence that used to span these four cells repeated the
                     BACKUP badge two columns to the left. */}
                 <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12, color: v.requests > 0 ? "var(--text)" : "var(--text-4)" }}>{fmtReq(v.requests)}</span></td>
-                <td style={{ textAlign: "right" }}>{(() => { const a = v.uptime != null ? v.uptime * 100 : null; return a != null ? <span className="gw-mono gw-tnum" style={{ fontSize: 12, color: uptimeColor(a) }}>{a.toFixed(2)}%</span> : <span style={{ fontSize: 12, color: "var(--text-4)" }}>—</span>; })()}</td>
+                <td style={{ textAlign: "right" }}><HealthTag health={v.health} /></td>
                 <td style={{ textAlign: "right" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{v.p95Ms != null ? Math.round(v.p95Ms) + " ms" : "—"}</span></td>
-                <td style={{ textAlign: "right" }}>{(() => { const e = v.errorRate != null ? v.errorRate * 100 : null; return e != null ? <span className="gw-mono gw-tnum" style={{ fontSize: 12, color: e < 0.5 ? "var(--text-3)" : e < 1.5 ? "var(--warn)" : "var(--err)" }}>{e.toFixed(2)}%</span> : <span style={{ fontSize: 12, color: "var(--text-4)" }}>—</span>; })()}</td>
+                <td style={{ textAlign: "right" }}>{(() => { const e = v.errorRate != null ? v.errorRate * 100 : null; return e != null ? <span className="gw-mono gw-tnum" style={{ fontSize: 12, color: upstreamMetricColor(v.health, e < 0.5 ? "var(--text-3)" : e < 1.5 ? "var(--warn)" : "var(--err)") }}>{e.toFixed(2)}%</span> : <span style={{ fontSize: 12, color: "var(--text-4)" }}>—</span>; })()}</td>
               </tr>
             );
           })}
