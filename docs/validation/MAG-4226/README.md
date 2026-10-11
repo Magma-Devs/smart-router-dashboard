@@ -74,7 +74,9 @@ count in both UIs; [filter evidence](https://raw.githubusercontent.com/Magma-Dev
 
 - `pnpm -r test`: **2,426 tests passed** across all four test packages.
 - `pnpm -r typecheck`: passed.
-- `pnpm lint`: zero errors, 26 existing warnings.
+- `pnpm lint`: zero errors, 30 existing warnings.
+- A local merge of this change and the catalog resync passed all **2,442
+  tests** and workspace typechecks; only the changelog needed reconciliation.
 - Both Docker production images and the local router image built successfully.
 - New implementation/test files pass Prettier; `git diff --check` passed.
 
