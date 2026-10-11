@@ -63,7 +63,8 @@ Configured rows remained visible as **Unknown warnings with a reason**, with
 matching header counts. Historical success stayed separate from current
 status. Headers showed Checking health… during delayed initial loads and made
 no roster request on the Overview page. Both standalone layouts displayed the
-unhealthy count. [Browser results](https://raw.githubusercontent.com/Magma-Devs/smart-router-dashboard/a6e34036e4a20f87f6ea967d9591a097c07eb0e2/browser-results.json).
+unhealthy count. Router-filter changes showed loading and then the correct
+count in both UIs; [filter evidence](https://raw.githubusercontent.com/Magma-Devs/smart-router-dashboard/bd8298f60c9823c9973717a2793e78e21a1752ae/filter-browser-results.json). [Browser results](https://raw.githubusercontent.com/Magma-Devs/smart-router-dashboard/a6e34036e4a20f87f6ea967d9591a097c07eb0e2/browser-results.json).
 
 ![Real router failure — default UI](https://raw.githubusercontent.com/Magma-Devs/smart-router-dashboard/a6e34036e4a20f87f6ea967d9591a097c07eb0e2/default-unhealthy.png)
 ![Real router failure — new UI](https://raw.githubusercontent.com/Magma-Devs/smart-router-dashboard/a6e34036e4a20f87f6ea967d9591a097c07eb0e2/new-unhealthy.png)
@@ -71,7 +72,7 @@ unhealthy count. [Browser results](https://raw.githubusercontent.com/Magma-Devs/
 
 ## Automated validation and limits
 
-- `pnpm -r test`: **2,421 tests passed** across all four test packages.
+- `pnpm -r test`: **2,426 tests passed** across all four test packages.
 - `pnpm -r typecheck`: passed.
 - `pnpm lint`: zero errors, 26 existing warnings.
 - Both Docker production images and the local router image built successfully.
