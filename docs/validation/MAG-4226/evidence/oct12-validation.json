@@ -25,5 +25,6 @@
     "old published Git objects are not erased",
     "catalog guard depends on separate PR 237",
     "router startup missing-series follow-up MAG-4248"
-  ]
+  ],
+  "realEthereumRecovery": "Both rows Operational after restoring proxy and router gauge refresh; HTTP overall health OK"
 }

@@ -195,7 +195,10 @@ separate settled batch is in
 [Updated roster](./evidence/oct12-dead-roster.json),
 [overview counts](./evidence/oct12-dead-overview.json) and
 [raw Prometheus queries](./evidence/oct12-real-polls.json) are also in this
-branch. The fixture was restored after validation.
+branch. Restoring the proxy returned **both rows to Operational** after
+the router refreshed its live gauge; successful block events never override
+a still-failing gauge. [Recovered roster](./evidence/oct12-recovered-roster.json).
+The router HTTP health probe also returned `Health status OK`.
 
 ![Real configured Ethereum endpoint stopped — default UI](./evidence/real-default-unhealthy.png)
 ![Real configured Ethereum endpoint stopped — new UI](./evidence/real-new-unhealthy.png)
