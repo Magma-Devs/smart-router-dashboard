@@ -35,7 +35,7 @@ vi.mock("@/legacy/components/metrics/upstream/PMBody", () => ({
 }));
 
 const upstream = (over: Partial<UpstreamMetrics> = {}): UpstreamMetrics => ({
-  endpointId: "bitvavo-test",
+  endpointId: "fixture-upstream",
   spec: "ETH1",
   requests: 100,
   uptime: 0.999999,

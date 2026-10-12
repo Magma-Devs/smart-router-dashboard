@@ -3,7 +3,7 @@ import Fastify from "fastify";
 import { metricRoutes } from "../routes/metrics.js";
 import { MetricsService } from "../services/metrics.js";
 import type { ConfigurationService } from "../services/configuration.js";
-import { readUpstreamHealth } from "../services/upstream-health.js";
+import { readUpstreamHealth, healthWindowSeconds } from "../services/upstream-health.js";
 import type { PrometheusClient, PromVectorSample } from "../services/prometheus-client.js";
 
 const sample = (value: string, spec = "ETH1", apiInterface = "jsonrpc"): PromVectorSample => ({
@@ -15,6 +15,8 @@ async function roster(healthRows: PromVectorSample[], total = 1_000_000, ok = 99
   const prom = {
     query: async (q: string) => {
       if (q.startsWith("rpc_endpoint_overall_health")) return healthRows;
+      if (q.includes("rpc_endpoint_fetch_latest_success"))
+        return healthRows.filter((row) => row.value[1] === "1");
       if (q.includes("smartrouter_requests_success_total"))
         return [
           { metric: { provider_address: "test-upstream", spec: "ETH1" }, value: [1, String(ok)] },
@@ -109,6 +111,7 @@ function healthProm(
   gauges: PromVectorSample[],
   ok: PromVectorSample[] = [],
   failed: PromVectorSample[] = [],
+  rates: PromVectorSample[] = [],
 ) {
   const queries: string[] = [];
   const prom = {
@@ -117,6 +120,7 @@ function healthProm(
       if (q.startsWith("rpc_endpoint_overall_health")) return gauges;
       if (q.includes("rpc_endpoint_fetch_latest_success")) return ok;
       if (q.includes("rpc_endpoint_fetch_latest_fails")) return failed;
+      if (q.includes("deriv(")) return rates;
       return [];
     },
     scalar: async () => 1,
@@ -243,7 +247,7 @@ describe("MAG-4226 review: configured upstream liveness", () => {
         },
       ],
     } as unknown as ConfigurationService;
-    const { prom } = healthProm([sample("1")]);
+    const { prom } = healthProm([sample("1")], [sample("1")]);
     const row = [...(await readUpstreamHealth(prom, config))][0][1];
     expect(row.health).toBe("unknown");
     expect(row.healthReason).toContain("rest interface");
@@ -252,7 +256,7 @@ describe("MAG-4226 review: configured upstream liveness", () => {
   it("isolates the same vendor name on different chains and filters both counts and rows", async () => {
     const { rows, overview } = await healthHttp(
       [sample("0"), sample("1", "SOLANA")],
-      [],
+      [sample("1", "SOLANA")],
       [],
       "&spec=SOLANA&routerId=sol",
     );
@@ -262,13 +266,121 @@ describe("MAG-4226 review: configured upstream liveness", () => {
     expect(overview.upstreamHealthCounts).toEqual({ unhealthy: 0, unknown: 0 });
   });
 
-  it("uses only three current-health queries, without traffic, QoS or histograms", async () => {
+  it("uses four bounded current-health queries, without traffic, QoS or histograms", async () => {
     const { prom, queries } = healthProm([sample("1")]);
     await readUpstreamHealth(prom, configured);
-    expect(queries).toHaveLength(3);
+    expect(queries).toHaveLength(4);
     expect(queries.every((q) => !/histogram|selection_score|requests_total/.test(q))).toBe(true);
-    expect(queries.filter((q) => q.includes("increase(")).every((q) => q.includes("[5m]"))).toBe(
+    expect(queries.filter((q) => q.includes("increase(")).every((q) => q.includes("[1800s]"))).toBe(
       true,
     );
+  });
+});
+
+describe("MAG-4226 slow-chain windows", () => {
+  it.each([
+    [1 / 12, 300],
+    [1 / 200, 900],
+    [1 / 600, 1800],
+    [1 / 1200, 3600],
+    [1 / 10000, 3600],
+    [0, 1800],
+    [-1, 1800],
+    [NaN, 1800],
+    [Infinity, 1800],
+    [undefined, 1800],
+  ])("sizes a bounded window for rate %s", (rate, expected) => {
+    expect(healthWindowSeconds(rate)).toBe(expected);
+  });
+
+  it("groups chains into two poll requests and keeps unrated chains in the fallback", async () => {
+    const { prom, queries } = healthProm(
+      [],
+      [],
+      [],
+      [
+        sample(String(1 / 12)),
+        sample(String(1 / 600), "BTC"),
+        sample(String(1 / 1200), "SLOW"),
+        sample(String(1 / 12), "A.B"),
+      ],
+    );
+    await readUpstreamHealth(prom);
+    expect(queries).toHaveLength(4);
+    const polls = queries.filter((q) => q.includes("increase("));
+    for (const q of polls) {
+      expect(q).toContain("[300s]");
+      expect(q).toContain("[1800s]");
+      expect(q).toContain("[3600s]");
+      expect(q).toContain("spec!~");
+      expect(q).toContain("A\\\\.B");
+      expect(q).not.toContain("endpoint_id=");
+    }
+  });
+
+  it.each(["BTC", "BTCT", "BCHT"])(
+    "uses thirty minutes for %s in both HTTP counts and rows",
+    async (spec) => {
+      const { prom, queries } = healthProm(
+        [sample("1", spec)],
+        [],
+        [sample("1", spec)],
+        [sample(String(1 / 600), spec)],
+      );
+      const config = {
+        getRouters: () => [
+          {
+            id: "slow",
+            spec,
+            nodes: [{ name: "test-upstream", endpoints: [{ interface: "jsonrpc" }] }],
+          },
+        ],
+      } as unknown as ConfigurationService;
+      const metrics = new MetricsService(prom, config);
+      const app = Fastify();
+      app.decorate("scoped", () => ({ metrics }));
+      await app.register(metricRoutes);
+      try {
+        const rows = (
+          await app.inject(`/api/metrics/upstreams?spec=${spec}&routerId=slow&window=5m`)
+        ).json().upstreams;
+        const overview = (
+          await app.inject(`/api/metrics/overview?spec=${spec}&routerId=slow&window=7d`)
+        ).json();
+        expect(rows[0].health).toBe("unhealthy");
+        expect(rows[0].healthReason).toContain("30 minutes");
+        expect(overview.upstreamHealthCounts).toEqual({ unhealthy: 1, unknown: 0 });
+        expect(
+          queries.find(
+            (q) => q.includes("rpc_endpoint_fetch_latest_fails") && q.includes("apiInterface"),
+          ),
+        ).toContain("[1800s]");
+      } finally {
+        await app.close();
+      }
+    },
+  );
+
+  it("does not let an empty or expired poll window turn a reset gauge green", async () => {
+    const { prom } = healthProm(
+      [sample("1", "BTC")],
+      [sample("0", "BTC")],
+      [sample("0", "BTC")],
+      [sample("0", "BTC")],
+    );
+    const row = [...(await readUpstreamHealth(prom))][0][1];
+    expect(row.health).toBe("unknown");
+    expect(row.healthReason).toContain("cannot confirm recovery");
+    expect(row.healthReason).toContain("30 minutes");
+  });
+
+  it("requires positive success evidence to recover from a stuck gauge", async () => {
+    const { prom } = healthProm(
+      [sample("1", "BTC")],
+      [sample("1", "BTC")],
+      [sample("2", "BTC")],
+      [sample(String(1 / 600), "BTC")],
+    );
+    expect([...(await readUpstreamHealth(prom))][0][1].health).toBe("operational");
   });
 });

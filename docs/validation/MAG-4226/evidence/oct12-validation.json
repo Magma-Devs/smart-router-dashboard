@@ -1,0 +1,29 @@
+{
+  "workspaceTests": {
+    "shared": 1150,
+    "web": 378,
+    "db": 76,
+    "api": 838,
+    "total": 2442
+  },
+  "typechecks": "passed",
+  "lint": {
+    "errors": 0,
+    "existingWarnings": 30
+  },
+  "slowChainRealHttpPrometheusScenarios": 7,
+  "proxyHttpTests": 2,
+  "productionApiImage": "built",
+  "productionUiSource": "unchanged; existing reviewed production image used for browser checks",
+  "browser": "both layouts, missing warnings, initial loading, no header roster read, both standalone headers, router-filter loading/counts",
+  "stableEthereumRequests": 25,
+  "stableEthereumProvider": "eth-publicnode",
+  "limits": [
+    "controlled slow-chain time-series input; not a customer or live Bitcoin-router reproduction",
+    "archived Ethereum gauge-reset evidence is normalized and labeled as archived",
+    "one fresh warm-up request timed out under local Docker resource pressure",
+    "old published Git objects are not erased",
+    "catalog guard depends on separate PR 237",
+    "router startup missing-series follow-up MAG-4248"
+  ]
+}

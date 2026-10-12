@@ -16,13 +16,19 @@ in `packages/shared/src/constants/metrics.ts`; the typed query builders in
 Both Metrics layouts show **Status** instead of calling request success
 "Uptime". The API seeds every configured upstream × chain row even before
 its first scrape. Status combines `rpc_endpoint_overall_health` with recent
-`rpc_endpoint_fetch_latest_{success,fails}` increases in a fixed **5-minute**
-window, independent of the selected request-history window:
+`rpc_endpoint_fetch_latest_{success,fails}` increases in a **chain-sized window**, independent of request history.
+The chain rate is `max by (spec) (deriv(rpc_endpoint_latest_block[1h]))`.
+The window covers three expected blocks, rounded up to 5 / 15 / 30 / 60
+minutes, with a one-hour cap and a 30-minute fallback for missing, non-finite
+or non-positive rates. Bitcoin at one block per 600 seconds uses 30 minutes:
+
 
 - A failing live check, or failed block polls with no successful polls in
   the health window, means **Unhealthy** (even with health gauge = 1).
-- A healthy live check or successful recent block polls provides operational
-  evidence. Both-zero or missing poll counters alone do not establish health.
+- Successful recent block events provide operational evidence unless a live
+  check reports unhealthy. A healthy gauge alone is insufficient: the router
+  can reset it to 1 while an endpoint is still dead. Empty or expired poll
+  windows show an explicit Unknown warning, never assumed recovery.
 - Missing/non-finite health without successful poll evidence means **Unknown**,
   shown as a warning with the missing-data reason. A configured interface
   without evidence cannot be hidden behind a healthy interface.
@@ -31,7 +37,8 @@ The worst interface/replica wins per upstream × chain. Poll evaluation keeps
 `apiInterface` and scrape `instance` until after classification; one working
 replica cannot mask failed polls on another. Prometheus needs at least two
 scrapes for `increase()`, and its usual instant-selector lookback applies to
-health gauges. Poll success counters report latest-block tracker events,
+health gauges. The one-hour rate estimate smooths sparse arrivals; it remains
+a measured estimate, so a long gap can select the fallback. Poll success counters report latest-block tracker events,
 not every HTTP request; a non-advancing chain alone is not failure.
 
 The **Request success rate** card retains the historical success/total ratio
@@ -43,7 +50,9 @@ A QoS availability score is an optimizer score, not a percentage of time up.
 There is no explicit disabled-state signal, so the UI does not invent one.
 
 `/api/metrics/overview` includes `upstreamHealthCounts: { unhealthy, unknown }`
-using the same three lightweight health reads as the roster. The optional
+using the same four health reads as the roster (gauge, chain rate, success
+and failure events). Chains sharing a window are grouped into PromQL union
+branches; query count is independent of the number of endpoints or chains. The optional
 `spec` and `routerId` filter these counts; `router` scopes all Prometheus
 queries. Headers consume this existing overview call every 30 seconds and
 make no additional roster/histogram/QoS request. They show **Checking health…**

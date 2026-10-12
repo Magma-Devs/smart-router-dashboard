@@ -1,0 +1,55 @@
+{
+  "upstreams": [
+    {
+      "endpointId": "eth-publicnode",
+      "spec": "ETH1",
+      "requests": 0,
+      "uptime": null,
+      "p95Ms": null,
+      "errorRate": null,
+      "scores": {
+        "availability": 1,
+        "composite": 0.9970206446511336,
+        "latency": 0.9900688155037791,
+        "stake": 1,
+        "sync": 1
+      },
+      "scoreSource": "optimizer",
+      "polls": {
+        "ok": 5,
+        "failed": 0
+      },
+      "health": "operational",
+      "healthReason": "The router's live health check reports this upstream operational.",
+      "latestBlock": 26170185,
+      "blockLag": 0,
+      "behindSec": 0,
+      "stale": false,
+      "role": null,
+      "apiInterface": "jsonrpc",
+      "inFlight": 0,
+      "routerIds": ["ETH1"]
+    },
+    {
+      "endpointId": "fixture-switchable",
+      "spec": "ETH1",
+      "requests": 0,
+      "uptime": null,
+      "p95Ms": null,
+      "errorRate": null,
+      "scores": {},
+      "scoreSource": null,
+      "polls": null,
+      "health": "unknown",
+      "healthReason": "No current health data reported for the configured jsonrpc interface; check the router and Prometheus scrape.",
+      "latestBlock": null,
+      "blockLag": null,
+      "behindSec": null,
+      "stale": false,
+      "role": null,
+      "apiInterface": "jsonrpc",
+      "inFlight": 0,
+      "routerIds": ["ETH1"]
+    }
+  ]
+}

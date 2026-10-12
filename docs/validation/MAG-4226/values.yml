@@ -10,7 +10,7 @@ direct-rpc:
     api-interface: "jsonrpc"
     node-urls:
       - url: "https://ethereum-rpc.publicnode.com"
-  - name: "bitvavo-switchable"
+  - name: "fixture-switchable"
     chain-id: "ETH1"
     api-interface: "jsonrpc"
     node-urls:

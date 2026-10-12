@@ -509,8 +509,11 @@ state can't be worded or sourced two ways:
   `<HealthTag>` / `<HealthDot>` are how they reach the screen. `unknown` means
   "no current health evidence", so it renders as a warning with a reason.
   Configured endpoints remain in the roster without metrics. Current health
-  uses live checks and a fixed 5-minute block-poll window; request-history
-  filters do not change it. Overview carries unhealthy/unknown counts, and
+  uses live checks and block-poll windows sized to three expected blocks
+  (5 / 15 / 30 / 60 minutes, 30-minute fallback for an unmeasurable rate).
+  A reset healthy gauge alone cannot establish recovery without a recent
+  successful block event; an expired/empty window is a warning with a reason.
+  Request-history filters do not change current health. Overview carries unhealthy/unknown counts, and
   headers show a loading state until the selected scope answers. Nothing
   invents its own health vocabulary: four surfaces used to (the roster said
   "healthy / degraded", the deep-dive "Live · up", the drawer the raw wire

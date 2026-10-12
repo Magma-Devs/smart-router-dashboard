@@ -1,0 +1,12 @@
+[
+  {
+    "mode": "default",
+    "url": "http://localhost:3000/metrics",
+    "row": "fixture-switchable\n\tETH1\t\nEthereum\n\t\n26,176,135\n\t7\t\nUnhealthy\t456 ms\t30.00%\t1"
+  },
+  {
+    "mode": "new",
+    "url": "http://localhost:3002/metrics?tab=upstreams",
+    "row": "fixture-switchable\n\tETH1\t\nEthereum\n\t\n26,176,135\n\t7\t\nUnhealthy\t456 ms\t30.00%"
+  }
+]

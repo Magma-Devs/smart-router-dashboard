@@ -1,0 +1,71 @@
+{
+  "results": [
+    {
+      "name": "default",
+      "label": "Unhealthy",
+      "header": "Router operational \u00b7 1 upstream unhealthy",
+      "url": "http://localhost:3000/metrics"
+    },
+    {
+      "name": "new",
+      "label": "Unhealthy",
+      "header": "Router operational \u00b7 1 upstream unhealthy",
+      "url": "http://localhost:3002/metrics?tab=upstreams"
+    },
+    {
+      "name": "standalone",
+      "port": 3000,
+      "status": "unhealthy shown"
+    },
+    {
+      "name": "standalone",
+      "port": 3002,
+      "status": "unhealthy shown"
+    },
+    {
+      "name": "header loading and query budget",
+      "port": 3000,
+      "requests": [
+        "http://localhost:8000/api/metrics/overview?window=1h",
+        "http://localhost:8000/api/metrics/routers",
+        "http://localhost:8000/api/metrics/overview?window=30m",
+        "http://localhost:8000/api/metrics/specs"
+      ]
+    },
+    {
+      "name": "header loading and query budget",
+      "port": 3002,
+      "requests": [
+        "http://localhost:8000/api/metrics/overview?window=1h",
+        "http://localhost:8000/api/metrics/routers",
+        "http://localhost:8000/api/metrics/overview?window=30m",
+        "http://localhost:8000/api/metrics/specs"
+      ]
+    },
+    {
+      "name": "stuck-default",
+      "label": "Unhealthy",
+      "header": "Router operational \u00b7 1 upstream unhealthy",
+      "url": "http://localhost:3004/metrics"
+    },
+    {
+      "name": "stuck-new",
+      "label": "Unhealthy",
+      "header": "Router operational \u00b7 1 upstream unhealthy",
+      "url": "http://localhost:3005/metrics?tab=upstreams"
+    },
+    {
+      "name": "missing-default",
+      "label": "Unknown",
+      "header": "Router operational \u00b7 2 upstreams unknown",
+      "url": "http://localhost:3004/metrics"
+    },
+    {
+      "name": "missing-new",
+      "label": "Unknown",
+      "header": "Router operational \u00b7 2 upstreams unknown",
+      "url": "http://localhost:3005/metrics?tab=upstreams"
+    }
+  ],
+  "errors": []
+}

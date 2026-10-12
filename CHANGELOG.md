@@ -12,6 +12,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   request success rate kept as history. Configured upstreams remain visible
   when health data is missing, with a warning and reason. The header reports
   unhealthy and unknown upstream counts without a separate roster request.
+  Health windows follow the chain block rate, including slow chains; a reset
+  health gauge without recent success evidence cannot falsely show recovery.
 
 ## [0.34.0]
 

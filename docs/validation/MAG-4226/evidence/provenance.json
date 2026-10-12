@@ -1,0 +1,6 @@
+{
+  "captured": "2026-10-11",
+  "imported": "2026-10-12",
+  "source": "Local Compose Ethereum reproduction, router commit 123ed29d9e85172c2c1cbc697f04ebb7695368e8, dashboard e44dee2",
+  "sanitization": "Fixture identifiers renamed consistently in archived JSON. These are archived observations of the previous five-minute implementation, not a rerun of the new slow-chain implementation. Original external asset links removed. Screenshots will be regenerated with neutral fixtures."
+}
