@@ -25,6 +25,19 @@ SHELL := /bin/bash
 export SR_SPEC ?=
 export SR_CONFIG_HOST ?=
 
+## Configuration-aware production setup (same live file in router and API).
+.PHONY: check-config prepare-config up-config up-config-router apply-config
+check-config:
+	bash scripts/config-stack.sh check
+prepare-config:
+	bash scripts/config-stack.sh prepare
+up-config:
+	bash scripts/config-stack.sh up
+up-config-router:
+	bash scripts/config-stack.sh up-router
+apply-config:
+	bash scripts/config-stack.sh restart-router
+
 # Build provenance surfaced by GET /version + the Account page. Read from the
 # VERSION file and git so `make up` stamps the real version instead of the
 # compose default (0.0.0 / dev). Overridable from the environment.

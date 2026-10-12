@@ -5,6 +5,15 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Fixed
+
+- **Upstreams on Docker Compose** (MAG-4227). Missing, unreadable, invalid or
+  unsupported router configuration now produces an actionable notice in both
+  UIs instead of an empty topology. Native router YAML and Helm values remain
+  supported. An opt-in Compose installer checks access as the API user and
+  shares a read-only configuration directory with the router, including
+  atomic file replacements. See [Compose configuration access](docs/COMPOSE-CONFIG.md).
+
 ## [0.32.2]
 
 ### Fixed

@@ -20,8 +20,8 @@
 #
 # ONE values file drives BOTH the router and the dashboard (the v1 pattern):
 # SR_CONFIG_HOST (default ./dev-config/values.yml) is mounted as the router's
-# config AND as the api's helm-values, so the Endpoints/Providers pages always
-# reflect the running topology. It can be either format the api understands —
+# config AND as the api's helm-values, so the dashboard reflects the saved
+# topology. Restart the router to apply changes. The API accepts either format —
 # a raw smart-router SR_CONFIG or helm-chart values.
 #
 # The router profile pulls the published image (ghcr.io/magma-devs/smart-router
@@ -58,7 +58,7 @@ services:
     image: ${SR_ROUTER_IMAGE:-ghcr.io/magma-devs/smart-router:main}
     pull_policy: ${SR_ROUTER_PULL:-always}
     command:
-      - "values.yml"
+      - "${SR_CONFIG_CONTAINER_FILE:-values.yml}"
       - "--use-static-spec"
       - "${SR_SPEC:-https://github.com/Magma-Devs/lava-specs/tree/main}"
       # GitHub PAT for fetching specs from the lava-specs GitHub repo above.
@@ -214,6 +214,7 @@ services:
     restart: unless-stopped
 
   api:
+    image: ${DASHBOARD_API_IMAGE:-ghcr.io/magma-devs/smart-router-dashboard/backend:local}
     build:
       context: .
       dockerfile: apps/api/Dockerfile
@@ -296,6 +297,7 @@ services:
     restart: unless-stopped
 
   web:
+    image: ${DASHBOARD_WEB_IMAGE:-ghcr.io/magma-devs/smart-router-dashboard/frontend:local}
     build:
       context: .
       dockerfile: apps/web/Dockerfile
