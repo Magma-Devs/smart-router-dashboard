@@ -42,9 +42,9 @@ export function ThemeToggle() {
   );
 }
 
-function Sidebar() {
+function Sidebar({ grafanaDashboardUrl }: { grafanaDashboardUrl?: string | null }) {
   const pathname = usePathname();
-  const sections = visibleNavSections(useAuthMode());
+  const sections = visibleNavSections(useAuthMode(), grafanaDashboardUrl);
   const drawerOpen = useChainDrawer().visible;
   const { setChain, setRouterId, setRouter } = useFilters();
   // Home or Metrics while on Metrics: back to every chain, as the drawer's
@@ -86,6 +86,21 @@ function Sidebar() {
             {section.label && <div className="gw-side__section-label">{section.label}</div>}
             {section.items.map((item) => {
               const Icon: ComponentType<IconProps> = item.icon;
+              if (item.external) {
+                return (
+                  <a
+                    key={item.href}
+                    href={item.href}
+                    className="gw-nav-item"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={`${item.label} (opens in a new tab)`}
+                  >
+                    <Icon size={16} className="ic" strokeWidth={1.75} />
+                    <span>{item.label}</span>
+                  </a>
+                );
+              }
               const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
               return (
                 <Link
@@ -241,7 +256,10 @@ function Topbar({ here, sub }: { here: string; sub: string | null }) {
   );
 }
 
-export function Shell({ children }: { children: React.ReactNode }) {
+export function Shell({ children, grafanaDashboardUrl }: {
+  children: React.ReactNode;
+  grafanaDashboardUrl?: string | null;
+}) {
   const pathname = usePathname();
   const { chain } = useFilters();
   const newUi = useNewUi();
@@ -262,7 +280,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
     <TwoFactorGate>
       <ChainDrawerProvider>
         <div className="gw-app">
-          <Sidebar />
+          <Sidebar grafanaDashboardUrl={grafanaDashboardUrl} />
           <ChainDrawerSlot />
           <div className="gw-main">
             <Topbar here={here} sub={sub} />

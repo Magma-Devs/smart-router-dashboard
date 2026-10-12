@@ -5,6 +5,15 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.34.2]
+
+### Added
+
+- Optional **Advanced → Grafana** sidebar link, configured per deployment by
+  `DASHBOARD_GRAFANA_DASHBOARD_URL` at runtime (MAG-4241). Empty, whitespace-only and invalid
+  URLs hide the section. Valid HTTP(S) URLs open unchanged in a new tab, including
+  their time range and Grafana variables. The existing logs URL is independent.
+
 ## [0.34.1]
 
 ### Fixed

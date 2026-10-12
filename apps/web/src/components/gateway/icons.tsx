@@ -58,6 +58,13 @@ export const IconChart = svg(
     <line x1="6" y1="20" x2="6" y2="14" />
   </>,
 );
+export const IconReport = svg(
+  <>
+    <path d="M4 4a2 2 0 0 1 2-2h8l4 4v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" />
+    <polyline points="14 2 14 6 18 6" />
+    <path d="M8 17v-3m3 3v-6m3 6v-4" />
+  </>,
+);
 export const IconPlay = svg(<polygon points="5 3 19 12 5 21 5 3" />);
 export const IconSun = svg(
   <>
