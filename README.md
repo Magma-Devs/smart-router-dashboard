@@ -31,7 +31,7 @@ The observability dashboard for the [Smart Router](https://github.com/Magma-Devs
 ## What is Smart Router Dashboard
 
 - **Live metrics, honestly sourced** - KPIs, RPS, latency and error breakdowns straight from the router's `smartrouter_*` / `rpc_endpoint_*` Prometheus families, and the per-request error and transaction logs from its own log lines (Loki). Metric families the router hasn't emitted yet render the design's own empty states and light up automatically when they appear.
-- **Topology-aware** — one values file drives both the router and the dashboard, so the Upstreams page always reflects the running configuration.
+- **Topology-aware** — one values file supplies the router and dashboard topology. Upstreams shows the saved configuration; restart the router to apply changes.
 - **Live test console** — fire requests at any chain × interface the router serves, straight from the browser, with a full method catalog generated from the [lava-specs](https://github.com/Magma-Devs/lava-specs) repo (238 chains, jsonrpc/rest/tendermint/grpc, archive/debug/trace tiers).
 - **Self-contained** — `make up` gives you router + Prometheus + api + web from nothing. No accounts, no cloud, optional auth.
 - **Optional authentication** — `AUTH_MODE=enabled` adds Auth.js sign-in (email+password + Google/GitHub) backed by Postgres. Default is open (`disabled`) for private deployments.
@@ -57,6 +57,12 @@ With a router already running on the host's `:7779`:
 ```bash
 docker compose up --build     # dashboard + Prometheus only
 ```
+
+For customer installations, use `make up-config-router` (full stack) or
+`SR_CONFIG_HOST=/srv/smart-router/config/router.yml make up-config` (existing
+router). These commands check configuration access as the dashboard user and
+mount the live configuration directory. See [Compose configuration access](docs/COMPOSE-CONFIG.md)
+for permissions, upstream changes and prebuilt images.
 
 ### Relay cache (optional)
 

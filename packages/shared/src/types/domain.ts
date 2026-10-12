@@ -810,6 +810,18 @@ export interface RouterNode {
   endpoints: RouterNodeEndpoint[];
 }
 
+/** Configuration availability is separate from router/endpoint health. */
+export interface RouterConfigurationState {
+  status: "ready" | "empty" | "missing" | "unreadable" | "invalid" | "unsupported" | "error";
+  format: "helm" | "sr-config" | null;
+}
+
+export interface RouterConfigurationResponse {
+  routers: RouterTopology[];
+  /** Optional for compatibility with older dashboard backends. */
+  configuration?: RouterConfigurationState;
+}
+
 /**
  * One router (chain) from the mounted values file — normalized from EITHER
  * the helm-chart `routers:` format OR the router's own SR_CONFIG

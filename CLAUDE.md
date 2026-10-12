@@ -45,6 +45,13 @@ docker compose up --build                        # dashboard + Prometheus only
 UI → http://localhost:3000 · API → http://localhost:8000 ·
 Prometheus → http://localhost:9090 · router ETH1 jsonrpc → http://localhost:3360
 
+For configuration-aware Compose setup, use `make up-config-router` (router,
+Prometheus, API and web) or `SR_CONFIG_HOST=/srv/smart-router/config/router.yml
+make up-config` (dashboard alongside an existing router). These opt-in commands
+check read access as the API user and mount the same configuration directory.
+They do not start the optional logs/cache services. See
+[`docs/COMPOSE-CONFIG.md`](docs/COMPOSE-CONFIG.md) for permissions and upgrades.
+
 ```bash
 # Host dev (Node 22 + pnpm 10) — needs a Prometheus at PROMETHEUS_URL
 pnpm install
@@ -138,8 +145,11 @@ it was then, whatever later polls of that key bring.
 
 **ONE values file drives both the router and the dashboard** (the v1 pattern):
 `SR_CONFIG_HOST` (default `./dev-config/values.yml`) is mounted as the router's
-config **and** as the api's helm-values, so the Upstreams page always
-reflects the running topology with no duplicated config.
+config **and** as the api's helm-values, so the Upstreams page reflects the
+saved topology with no duplicated config. The API rereads it per request;
+the page polls every minute. Restart the router to apply upstream changes.
+`make apply-config` checks configuration access and recreates only the router
+under the directory-mount overlay. It does not validate every router rule.
 
 ## Monorepo layout
 
@@ -716,6 +726,7 @@ API (`apps/api/src/config.ts` is the source of truth):
 | `RATE_LIMIT_MAX` | `300` | per IP per minute |
 | `TRUST_PROXY` | `1` | how far `X-Forwarded-For` is believed when deriving `request.ip` (hop count, proxy IP/CIDR list, or `false`). Not `true` — this api is public, and trusting every hop lets any caller choose their apparent address |
 | `HELM_VALUES_DIR` | `/app/helm-values` | reads `<dir>/core/values.yml` (either format) |
+| `ROUTER_CONFIG_FILE` | unset | Explicit container file path; overrides `HELM_VALUES_DIR/core/values.yml`. `/api/config/routers` retains `routers` and adds a safe `configuration` availability status. |
 | `UPSTREAM_RELAY_ENABLED` | `true` | `false` 404s `POST /api/upstreams/relay`. With `AUTH_MODE=disabled` anyone who can reach the api can spend the operator's upstream quota through it, using credentials only the api holds — turn it off where that isn't acceptable |
 | `UPSTREAM_RELAY_TIMEOUT_MS` | `10000` | deadline on the api→upstream call |
 | `UPSTREAM_RELAY_MAX_BODY_BYTES` | `262144` | upstream responses past this come back `truncated: true` |
@@ -782,6 +793,9 @@ Compose / Makefile knobs:
 | Variable | Default | Notes |
 |---|---|---|
 | `SR_CONFIG_HOST` | `./dev-config/values.yml` | **the** values file — mounted into the router as its config AND into the api as helm-values |
+| `SR_CONFIG_GID` | `2000` | Configuration-aware installer group; preparation changes the selected directory/file group and makes the file readable as `0640`. Use a dedicated config directory. |
+| `SR_CONFIG_BUILD` | `1` | Set `0` with versioned `DASHBOARD_API_IMAGE` and `DASHBOARD_WEB_IMAGE` to use prebuilt images in the config installer. |
+| `SR_COMPOSE_OVERRIDE` | unset | Optional final Compose override for the configuration-aware installer. |
 | `ROUTER_DIR` | `~/projects/smart-router` (make) / `../../smart-router` (compose) | router-profile build context |
 | `SR_SPEC` | `specs/` | `--use-static-spec` dir inside the router image |
 | `SR_LOG_LEVEL` / `SR_LOG_FORMAT` | `info` / `json` | router logging |
