@@ -5,6 +5,15 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.33.0]
+
+### Removed
+
+- **The unused `/dashboard` page.** It was not in the sidebar and nothing
+  linked to it, so it was reachable only by typing the URL. The page and the
+  components only it used are gone, and `/dashboard` now answers 404. The api
+  endpoint behind it stays (`/api/metrics/dashboard`), with no web consumer.
+
 ## [0.32.2]
 
 ### Fixed
