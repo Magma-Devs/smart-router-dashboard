@@ -17,10 +17,10 @@
  * else yields an empty topology. Node URLs are sanitized to scheme+host —
  * upstream provider URLs routinely embed API keys in the path.
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { parse } from "yaml";
-import type { RouterNode, RouterTopology, UpstreamEndpointRef } from "@sr/shared";
+import type { RouterConfigurationState, RouterConfigurationResponse, RouterNode, RouterTopology, UpstreamEndpointRef } from "@sr/shared";
 import { config } from "../config.js";
 
 /** First defined value among several key dialects (snake/kebab/camel). */
@@ -74,7 +74,7 @@ function detectFormat(raw: unknown): "helm" | "sr-config" | "unknown" {
   if (typeof raw !== "object" || raw === null) return "unknown";
   const o = raw as Record<string, unknown>;
   if ("routers" in o) return "helm";
-  if ("direct-rpc" in o) return "sr-config";
+  if ("direct-rpc" in o || "backup-direct-rpc" in o || "endpoints" in o) return "sr-config";
   return "unknown";
 }
 
@@ -447,15 +447,12 @@ function dedupe(values: string[]): string[] {
 }
 
 export class ConfigurationService {
-  constructor(private readonly valuesDir: string = config.config.valuesDir) {}
+  private readonly file: string;
 
-  private readRaw(): unknown {
-    const path = join(this.valuesDir, "core", "values.yml");
-    try {
-      return parse(readFileSync(path, "utf8"));
-    } catch {
-      return null;
-    }
+  constructor(valuesDir?: string, file?: string) {
+    // An explicitly supplied valuesDir is used by existing callers/tests.
+    // Runtime construction uses the explicit file override when configured.
+    this.file = file ?? (valuesDir === undefined ? config.config.file : undefined) ?? join(valuesDir ?? config.config.valuesDir, "core", "values.yml");
   }
 
   /**
@@ -464,17 +461,48 @@ export class ConfigurationService {
    * re-read per call (it is a live mount — the operator can edit it under a
    * running api), so both views are always the same generation of the file.
    */
-  private normalize(): { routers: RouterTopology[]; endpoints: EndpointIndex } {
-    const raw = this.readRaw();
+  private normalize(): { routers: RouterTopology[]; endpoints: EndpointIndex; configuration: RouterConfigurationState } {
     const endpoints = new EndpointIndex();
-    switch (detectFormat(raw)) {
-      case "helm":
-        return { routers: normalizeHelm(raw as Record<string, unknown>, endpoints), endpoints };
-      case "sr-config":
-        return { routers: normalizeSrConfig(raw as Record<string, unknown>, endpoints), endpoints };
-      default:
-        return { routers: [], endpoints };
+    const failure = (status: RouterConfigurationState["status"], format: RouterConfigurationState["format"] = null) =>
+      ({ routers: [], endpoints: new EndpointIndex(), configuration: { status, format } });
+    let text: string;
+    try {
+      if (!statSync(this.file).isFile()) return failure("invalid");
+      text = readFileSync(this.file, "utf8");
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "ENOENT" || code === "ENOTDIR") return failure("missing");
+      if (code === "EACCES" || code === "EPERM") return failure("unreadable");
+      return failure("error");
     }
+    let raw: unknown;
+    try {
+      raw = parse(text);
+    } catch {
+      // YAML errors can include entire source lines (including credentials).
+      return failure("invalid");
+    }
+    const format = detectFormat(raw);
+    if (format === "unknown") return failure("unsupported");
+    const object = raw as Record<string, unknown>;
+    const keys = format === "helm" ? ["routers"] : ["endpoints", "direct-rpc", "backup-direct-rpc"];
+    for (const key of keys) {
+      if (key in object && (!Array.isArray(object[key]) || object[key].some((entry: unknown) => typeof entry !== "object" || entry === null || Array.isArray(entry)))) {
+        return failure("invalid", format);
+      }
+    }
+    try {
+      const routers = format === "helm" ? normalizeHelm(object, endpoints) : normalizeSrConfig(object, endpoints);
+      return { routers, endpoints, configuration: { status: routers.length ? "ready" : "empty", format } };
+    } catch {
+      return failure("invalid", format);
+    }
+  }
+
+  /** One read supplies both topology and a safe, content-free diagnostic. */
+  getConfiguration(): RouterConfigurationResponse {
+    const { routers, configuration } = this.normalize();
+    return { routers, configuration };
   }
 
   /** The normalized topology from EITHER supported values-file format. */

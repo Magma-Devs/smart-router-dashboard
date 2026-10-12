@@ -11,9 +11,11 @@ import { useMemo, useState } from "react";
 import {
   buildChainMetaByIndex,
   type UpstreamMetrics,
+  type RouterConfigurationResponse,
   type RouterTopology,
 } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
+import { ConfigurationNotice } from "@/components/upstreams/ConfigurationNotice";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { ExplorerHomeLink } from "@/legacy/components/gateway/ExplorerLink";
 import { ChainSelect } from "@/components/gateway/ChainSelect";
@@ -221,7 +223,7 @@ function EndpointRow({
 }
 
 export function UpstreamsView() {
-  const config = useApi<{ routers: RouterTopology[] }>("/api/config/routers", 60000);
+  const config = useApi<RouterConfigurationResponse>("/api/config/routers", 60000);
   /* The shared window (and router scope) the metrics screens use — this page
      used to pin 1d while honouring the scope, which made it the one screen
      where the window selector's absence was a silent override. */
@@ -305,6 +307,9 @@ export function UpstreamsView() {
   }, [upstreams, unhealthyOnly, search, netFilter, activeChain, routerId]);
 
   const loading = !config.data && !config.error;
+  const configurationStatus = config.data?.configuration?.status;
+  const configurationProblem = configurationStatus && configurationStatus !== "ready" && configurationStatus !== "empty" ? configurationStatus : null;
+  const noticeStatus = loading ? "loading" : config.error ? "request-error" : configurationProblem;
   /* Nothing to show. The router grouping renders the routers themselves, so a
      values file with routers but no upstream nodes still has endpoints to
      list — only an empty topology is empty here. */
@@ -324,6 +329,7 @@ export function UpstreamsView() {
         </div>
       </div>
 
+      <p className="lede" style={{ marginBottom: 16 }}>Saved router configuration. Restart your router after changing upstreams to apply the changes.</p>
       <StatStrip />
 
       {/* First-upstream CTAs — one per newly-covered chain (design flow;
@@ -405,7 +411,9 @@ export function UpstreamsView() {
         </div>
       )}
 
-      {loading ? null : nothingMounted ? (
+      {noticeStatus ? (
+        <ConfigurationNotice status={noticeStatus} busy={config.isValidating} onRetry={() => { void config.mutate().catch(() => undefined); }} />
+      ) : nothingMounted ? (
         <div className="gw-empty">
           <div className="gw-empty__icon">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
@@ -413,7 +421,7 @@ export function UpstreamsView() {
           {groupBy === "router" ? (
             <>
               <h2>No endpoints yet</h2>
-              <p>No router config mounted — set HELM_VALUES_DIR / mount core/values.yml and its chains and interfaces will appear here.</p>
+              <p>The configuration contains no router endpoints. Add endpoints to your router configuration, then refresh this page.</p>
             </>
           ) : (
             <>

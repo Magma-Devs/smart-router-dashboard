@@ -1,0 +1,66 @@
+# Production Compose overlay: mount the live config DIRECTORY, so atomic
+# replacement of the YAML file is visible to both services. No copied config.
+# Use scripts/config-stack.sh to resolve the existing SR_CONFIG_HOST setting.
+# Requires Docker Compose 2.24.4+ (!override).
+x-config-installer:
+  build: ${SR_CONFIG_BUILD:-1}
+  override: ${SR_COMPOSE_OVERRIDE:-}
+services:
+  router:
+    volumes: !override
+      - type: bind
+        source: ${SR_CONFIG_DIR:-./dev-config}
+        target: /smart-router/config
+        read_only: true
+        bind:
+          create_host_path: false
+    working_dir: /smart-router/config
+  api:
+    environment:
+      ROUTER_CONFIG_FILE: /app/router-config/${SR_CONFIG_FILENAME:-values.yml}
+    group_add:
+      - "${SR_CONFIG_GID:-2000}"
+    volumes: !override
+      - type: bind
+        source: ${SR_CONFIG_DIR:-./dev-config}
+        target: /app/router-config
+        read_only: true
+        bind:
+          create_host_path: false
+  config-check:
+    profiles: [config-tools]
+    image: ${DASHBOARD_API_IMAGE:-ghcr.io/magma-devs/smart-router-dashboard/backend:local}
+    entrypoint: [node, apps/api/dist/check-config.js]
+    environment:
+      ROUTER_CONFIG_FILE: /app/router-config/${SR_CONFIG_FILENAME:-values.yml}
+    group_add:
+      - "${SR_CONFIG_GID:-2000}"
+    volumes:
+      - type: bind
+        source: ${SR_CONFIG_DIR:-./dev-config}
+        target: /app/router-config
+        read_only: true
+        bind:
+          create_host_path: false
+  config-prepare:
+    profiles: [config-tools]
+    image: ${DASHBOARD_API_IMAGE:-ghcr.io/magma-devs/smart-router-dashboard/backend:local}
+    user: "0:0"
+    entrypoint: [sh, -eu, -c]
+    command:
+      - |
+        file="/config/$$SR_CONFIG_FILENAME"
+        test -f "$$file" && test ! -L "$$file" || { echo 'Expected a regular configuration file (not a symlink).' >&2; exit 1; }
+        chgrp "$$SR_CONFIG_GID" /config "$$file"
+        chmod g+rx /config
+        chmod 0640 "$$file"
+        echo 'Configuration read access prepared. File owner UID and contents are unchanged.'
+    environment:
+      SR_CONFIG_FILENAME: ${SR_CONFIG_FILENAME:-values.yml}
+      SR_CONFIG_GID: ${SR_CONFIG_GID:-2000}
+    volumes:
+      - type: bind
+        source: ${SR_CONFIG_DIR:-./dev-config}
+        target: /config
+        bind:
+          create_host_path: false
