@@ -22,10 +22,10 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     label: "Smart Router",
     items: [
-      // Overview + Dashboard are hidden from nav (Metrics is the default
-      // surface); their routes still resolve if linked directly. Endpoints is
-      // gone: the Upstreams page's "By router" grouping is that surface, on
-      // the same config the other two groupings read.
+      // Overview is hidden from nav (Metrics is the default surface); its
+      // route still resolves if linked directly. Endpoints is gone: the
+      // Upstreams page's "By router" grouping is that surface, on the same
+      // config the other two groupings read.
       { href: "/metrics", label: "Metrics", icon: IconChart },
       { href: "/upstreams", label: "Upstreams", icon: IconServer },
     ],
