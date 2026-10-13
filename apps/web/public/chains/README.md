@@ -168,3 +168,14 @@ Drop `<slug>.svg` in this directory following the house style, then re-run
 Adding a **mainnet** icon is usually enough — testnet siblings inherit it, by
 base name first and then by index prefix (`BERAB` → `BERA`), so a testnet with
 its own brand ("Bepolia", "Shibuya", "Westend") is covered too.
+
+
+### Katana and Qtum (2026-10-11)
+
+Katana uses web3icons `raw-svgs/networks/mono/katana.svg`; its circle is
+`#0441B2`, the middle blue stop of the source background gradient. Qtum uses
+`raw-svgs/tokens/mono/QTUM.svg` (no network entry), with the source background
+`#2E9AD0`. Both retain white glyphs and the 0.72 house inset; white contrast
+is 8.73 and 3.16 respectively. Sources: [Katana](https://github.com/0xa3k5/web3icons/blob/main/raw-svgs/networks/mono/katana.svg),
+[Qtum](https://github.com/0xa3k5/web3icons/blob/main/raw-svgs/tokens/mono/QTUM.svg)
+(MIT). Their testnets inherit these mainnet icons.

@@ -1370,6 +1370,24 @@
     ],
     "mainnet": false
   },
+  "KATANA": {
+    "name": "Katana",
+    "family": "evm",
+    "icon": "katana",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "KATANAT": {
+    "name": "Katana Bokuto Testnet",
+    "family": "evm",
+    "icon": "katana",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": false
+  },
   "KAVA": {
     "name": "Kava",
     "family": "cosmos",
@@ -2012,6 +2030,24 @@
     ],
     "mainnet": false
   },
+  "QTUM": {
+    "name": "Qtum",
+    "family": "bitcoin",
+    "icon": "qtum",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": true
+  },
+  "QTUMT": {
+    "name": "Qtum Testnet",
+    "family": "bitcoin",
+    "icon": "qtum",
+    "interfaces": [
+      "jsonrpc"
+    ],
+    "mainnet": false
+  },
   "QUAI": {
     "name": "Quai",
     "family": "evm",
@@ -2371,7 +2407,8 @@
     "icon": "sui",
     "interfaces": [
       "jsonrpc",
-      "grpc"
+      "grpc",
+      "graphql"
     ],
     "mainnet": true
   },
@@ -2380,7 +2417,8 @@
     "family": "aptos",
     "icon": "sui",
     "interfaces": [
-      "grpc"
+      "grpc",
+      "graphql"
     ],
     "mainnet": false
   },
@@ -2390,7 +2428,8 @@
     "icon": "sui",
     "interfaces": [
       "jsonrpc",
-      "grpc"
+      "grpc",
+      "graphql"
     ],
     "mainnet": false
   },

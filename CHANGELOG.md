@@ -5,7 +5,7 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
-## [0.33.0]
+## [0.34.0]
 
 ### Removed
 
@@ -13,6 +13,15 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   linked to it, so it was reachable only by typing the URL. The page and the
   components only it used are gone, and `/dashboard` now answers 404. The api
   endpoint behind it stays (`/api/metrics/dashboard`), with no web consumer.
+
+## [0.33.0]
+
+### Added
+
+- Chain catalog: Katana and Bokuto, Qtum mainnet and testnet, with chain icons
+  and verified block explorer links. Updated Sui interface metadata and the
+  TON method catalog to match lava-specs. 292 chains, 249 with an explorer,
+  and 202 primary explorers linking a block height.
 
 ## [0.32.2]
 

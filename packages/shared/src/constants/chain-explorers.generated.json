@@ -1369,6 +1369,24 @@
       "source": "curated — Kaspa.stream testnet-10 deployment; explorer-tn10.kaspa.org answers HTTP 402 as of 2026-10-05"
     }
   ],
+  "KATANA": [
+    {
+      "name": "Katana Explorer",
+      "url": "https://explorer.katanarpc.com",
+      "kind": "block",
+      "verified": "browser 2026-10-11 — /block/1000 rendered the requested height and network-specific block details",
+      "source": "https://docs.katana.network/katana/how-to/verifying-contracts/"
+    }
+  ],
+  "KATANAT": [
+    {
+      "name": "Bokuto Explorer",
+      "url": "https://explorer-bokuto.katanarpc.com",
+      "kind": "block",
+      "verified": "browser 2026-10-11 — /block/1000 rendered the requested height and network-specific block details",
+      "source": "https://docs.katana.network/katana/get-started/technical-reference-testnet/"
+    }
+  ],
   "KAVA": [
     {
       "name": "mintscan",
@@ -2004,6 +2022,24 @@
       "kind": "block",
       "verified": "browser 2026-08-17 — the polkadot deployment was watched rendering /block/20000000",
       "source": "curated — Subscan runs one deployment per network on a shared codebase"
+    }
+  ],
+  "QTUM": [
+    {
+      "name": "Qtum.info",
+      "url": "https://qtum.info",
+      "kind": "block",
+      "verified": "browser 2026-10-11 — /block/1000 rendered the requested height and network-specific block details",
+      "source": "https://github.com/qtumproject/qtum"
+    }
+  ],
+  "QTUMT": [
+    {
+      "name": "Qtum.info Testnet",
+      "url": "https://testnet.qtum.info",
+      "kind": "block",
+      "verified": "browser 2026-10-11 — /block/1000 rendered the requested height and network-specific block details",
+      "source": "https://github.com/qtumproject/qtuminfo-api"
     }
   ],
   "QUAI": [
