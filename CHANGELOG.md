@@ -5,6 +5,26 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.33.1]
+
+### Fixed
+
+- **Seven Dependabot alerts** (MAG-4271). Both packages are transitive.
+  `pnpm.overrides` in the root `package.json` now sets a floor for each one,
+  capped at its current major:
+  - `fast-jwt` 6.2.4 → 6.3.4, used by `@fastify/jwt` to verify the api's
+    Bearer tokens. It fixes six advisories: GHSA-ww5h-9m49-7xx4 (critical: an
+    incomplete patch of CVE-2026-34950 re-enables RSA→HS256 algorithm
+    confusion), GHSA-g3jj-5cmm-3hxx (a raw public JWK is treated as an HMAC
+    secret), GHSA-8wpc-h4q6-8fxv (an empty or null key accepts unsigned
+    tokens), GHSA-5hjw-83fp-phq9 (claim validators are skipped when the
+    payload is a JSON array), GHSA-687g-22h4-j4w4 (`clockTolerance: Infinity`
+    skips `exp` and `nbf`) and GHSA-x937-hj6v-793p (the verifier cache accepts
+    expired tokens that have no `iat`).
+  - `fast-copy` 4.0.3 → 4.1.2, used by `pino-pretty` for the api's dev-mode
+    logs. It fixes GHSA-jggr-w7fw-pc2j, where copying deeply nested values
+    exhausts the stack.
+
 ## [0.33.0]
 
 ### Added
