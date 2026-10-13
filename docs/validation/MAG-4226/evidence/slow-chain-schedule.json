@@ -1,0 +1,41 @@
+{
+  "origin": 1791794100,
+  "specs": ["BTC", "BTCT", "BCHT", "ETH1", "UNRATED", "A.B"],
+  "evaluations": [
+    {
+      "name": "sparse-failure-6-minutes-after-last-event",
+      "offset": 960,
+      "expected": "unhealthy"
+    },
+    {
+      "name": "sparse-failure-9-minutes-after-last-event",
+      "offset": 1140,
+      "expected": "unhealthy"
+    },
+    {
+      "name": "next-failure-event",
+      "offset": 1215,
+      "expected": "unhealthy"
+    },
+    {
+      "name": "failure-in-window",
+      "offset": 2100,
+      "expected": "unhealthy"
+    },
+    {
+      "name": "recovery-positive-success",
+      "offset": 2415,
+      "expected": "operational"
+    },
+    {
+      "name": "counter-reset-and-new-success",
+      "offset": 3015,
+      "expected": "operational"
+    },
+    {
+      "name": "expired-outcomes-no-false-green",
+      "offset": 7200,
+      "expected": "unknown"
+    }
+  ]
+}

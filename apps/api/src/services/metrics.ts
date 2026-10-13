@@ -57,9 +57,10 @@ import {
 import { WINDOWS } from "@sr/shared/constants";
 import type { PrometheusClient, PromVectorSample } from "./prometheus-client.js";
 import type { ConfigurationService } from "./configuration.js";
+import { readUpstreamHealth } from "./upstream-health.js";
 
 export function health(value: number | null): HealthState {
-  if (value === null) return "unknown";
+  if (value === null || !Number.isFinite(value)) return "unknown";
   return value >= 1 ? "operational" : "unhealthy";
 }
 
@@ -248,6 +249,7 @@ export class MetricsService {
   async overview(
     window: MetricWindow,
     spec?: string,
+    routerId?: string,
   ): Promise<import("@sr/shared").OverviewData> {
     const win = WINDOWS[window];
     const sel = selector({ spec });
@@ -274,6 +276,7 @@ export class MetricsService {
       errorsSeries,
       latencySeries,
       specs,
+      upstreamHealth,
     ] = await Promise.all([
       // Client-scoped requests + RPS (histogram _count) — relay-scoped
       // requests_total stays only where the per-provider lens is the point.
@@ -289,6 +292,7 @@ export class MetricsService {
       this.prom.queryRange(`round(clamp_min(sum(increase(${ROUTER_METRICS.requestsTotal}${sel}[${win.step}])) - sum(increase(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${win.step}])), 0))`, start, end, win.step),
       this.prom.queryRange(qLatencySeriesExpr(0.95, win.step, spec), start, end, win.step),
       spec ? Promise.resolve([spec]) : this.listSpecs(),
+      readUpstreamHealth(this.prom, this.configSvc, spec, routerId),
     ]);
 
     // Latency series per percentile for the p50/p95/p99 chart toggle.
@@ -376,6 +380,10 @@ export class MetricsService {
       p95Ms: p95,
       p99Ms: p99,
       health: health(healthGauge),
+      upstreamHealthCounts: {
+        unhealthy: [...upstreamHealth.values()].filter((row) => row.health === "unhealthy").length,
+        unknown: [...upstreamHealth.values()].filter((row) => row.health === "unknown").length,
+      },
       computeUnits: { used: null, limit: null, resetsAt: null },
       rpsCap: null,
       throughput: toPoints(throughput[0]?.values),
@@ -766,7 +774,7 @@ export class MetricsService {
       requests,
       optimizerScores,
       scores,
-      healthRows,
+      currentHealth,
       blocks,
       inFlight,
       latency,
@@ -785,7 +793,7 @@ export class MetricsService {
       // Fallback for a router too old to publish the sampler's gauge. Same
       // numbers, but written only when a relay was routed here.
       this.prom.query(`${ENDPOINT_METRICS.selectionScore}${sel}`),
-      this.prom.query(`${ENDPOINT_METRICS.overallHealth}${sel}`),
+      readUpstreamHealth(this.prom, this.configSvc, spec, routerId),
       this.prom.query(`${ENDPOINT_METRICS.latestBlock}${sel}`),
       this.prom.query(
         `sum by (endpoint_id, spec) (${ENDPOINT_METRICS.requestsInFlight}${sel})`,
@@ -856,6 +864,7 @@ export class MetricsService {
           scoreSource: null,
           polls: null,
           health: "unknown",
+          healthReason: "No current health measurement or successful block polls reported; check the router and Prometheus scrape.",
           latestBlock: null,
           blockLag: null,
           behindSec: null,
@@ -906,10 +915,10 @@ export class MetricsService {
     };
     scoreRows(optimizerScores, "optimizer");
     scoreRows(scores, "endpoint");
-    for (const s of healthRows) {
-      const id = s.metric.endpoint_id;
-      if (!id) continue;
-      ensure(id, s.metric.spec ?? "").health = health(Number(s.value[1]));
+    for (const status of currentHealth.values()) {
+      const row = ensure(status.endpointId, status.spec);
+      row.health = status.health;
+      row.healthReason = status.healthReason;
     }
     for (const s of blocks) {
       const id = s.metric.endpoint_id;

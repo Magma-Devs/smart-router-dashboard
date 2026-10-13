@@ -1,0 +1,1356 @@
+{
+  "fixture": "Controlled OpenMetrics loaded into real Prometheus TSDB; actual Fastify HTTP routes and PrometheusClient, no mocked PromQL answers",
+  "results": [
+    {
+      "name": "sparse-failure-6-minutes-after-last-event",
+      "evaluation": 1791795060,
+      "expected": "unhealthy",
+      "slowRows": [
+        {
+          "endpointId": "fixture-switchable",
+          "spec": "BTC",
+          "requests": 0,
+          "uptime": null,
+          "p95Ms": null,
+          "errorRate": null,
+          "scores": {},
+          "scoreSource": null,
+          "polls": {
+            "ok": 0,
+            "failed": 0
+          },
+          "health": "unhealthy",
+          "healthReason": "All reported block polls failed in the last 30 minutes.",
+          "latestBlock": 100000,
+          "blockLag": 8,
+          "behindSec": 4935.771428571428,
+          "stale": false,
+          "role": null,
+          "apiInterface": "jsonrpc",
+          "inFlight": 0,
+          "routerIds": ["BTC"]
+        },
+        {
+          "endpointId": "fixture-switchable",
+          "spec": "BTCT",
+          "requests": 0,
+          "uptime": null,
+          "p95Ms": null,
+          "errorRate": null,
+          "scores": {},
+          "scoreSource": null,
+          "polls": {
+            "ok": 0,
+            "failed": 0
+          },
+          "health": "unhealthy",
+          "healthReason": "All reported block polls failed in the last 30 minutes.",
+          "latestBlock": 100000,
+          "blockLag": 8,
+          "behindSec": 4935.771428571428,
+          "stale": false,
+          "role": null,
+          "apiInterface": "jsonrpc",
+          "inFlight": 0,
+          "routerIds": ["BTCT"]
+        },
+        {
+          "endpointId": "fixture-switchable",
+          "spec": "BCHT",
+          "requests": 0,
+          "uptime": null,
+          "p95Ms": null,
+          "errorRate": null,
+          "scores": {},
+          "scoreSource": null,
+          "polls": {
+            "ok": 0,
+            "failed": 0
+          },
+          "health": "unhealthy",
+          "healthReason": "All reported block polls failed in the last 30 minutes.",
+          "latestBlock": 100000,
+          "blockLag": 8,
+          "behindSec": 4935.771428571428,
+          "stale": false,
+          "role": null,
+          "apiInterface": "jsonrpc",
+          "inFlight": 0,
+          "routerIds": ["BCHT"]
+        },
+        {
+          "endpointId": "fixture-switchable",
+          "spec": "UNRATED",
+          "requests": 0,
+          "uptime": null,
+          "p95Ms": null,
+          "errorRate": null,
+          "scores": {},
+          "scoreSource": null,
+          "polls": {
+            "ok": 0,
+            "failed": 0
+          },
+          "health": "unhealthy",
+          "healthReason": "All reported block polls failed in the last 30 minutes.",
+          "latestBlock": 100000,
+          "blockLag": 0,
+          "behindSec": null,
+          "stale": false,
+          "role": null,
+          "apiInterface": "jsonrpc",
+          "inFlight": 0,
+          "routerIds": ["UNRATED"]
+        }
+      ],
+      "counts": {
+        "unhealthy": 4,
+        "unknown": 2
+      },
+      "fixedFiveMinuteFailures": [
+        {
+          "metric": {
+            "endpoint_id": "fixture-peer",
+            "spec": "A.B"
+          },
+          "value": [1791795060, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-peer",
+            "spec": "BCHT"
+          },
+          "value": [1791795060, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-peer",
+            "spec": "BTC"
+          },
+          "value": [1791795060, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-peer",
+            "spec": "BTCT"
+          },
+          "value": [1791795060, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-peer",
+            "spec": "ETH1"
+          },
+          "value": [1791795060, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-peer",
+            "spec": "UNRATED"
+          },
+          "value": [1791795060, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-switchable",
+            "spec": "A.B"
+          },
+          "value": [1791795060, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-switchable",
+            "spec": "BCHT"
+          },
+          "value": [1791795060, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-switchable",
+            "spec": "BTC"
+          },
+          "value": [1791795060, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-switchable",
+            "spec": "BTCT"
+          },
+          "value": [1791795060, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-switchable",
+            "spec": "ETH1"
+          },
+          "value": [1791795060, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-switchable",
+            "spec": "UNRATED"
+          },
+          "value": [1791795060, "0"]
+        }
+      ]
+    },
+    {
+      "name": "sparse-failure-9-minutes-after-last-event",
+      "evaluation": 1791795240,
+      "expected": "unhealthy",
+      "slowRows": [
+        {
+          "endpointId": "fixture-switchable",
+          "spec": "BTC",
+          "requests": 0,
+          "uptime": null,
+          "p95Ms": null,
+          "errorRate": null,
+          "scores": {},
+          "scoreSource": null,
+          "polls": {
+            "ok": 0,
+            "failed": 0
+          },
+          "health": "unhealthy",
+          "healthReason": "All reported block polls failed in the last 60 minutes.",
+          "latestBlock": 100000,
+          "blockLag": 8,
+          "behindSec": 5074.97062279671,
+          "stale": false,
+          "role": null,
+          "apiInterface": "jsonrpc",
+          "inFlight": 0,
+          "routerIds": ["BTC"]
+        },
+        {
+          "endpointId": "fixture-switchable",
+          "spec": "BTCT",
+          "requests": 0,
+          "uptime": null,
+          "p95Ms": null,
+          "errorRate": null,
+          "scores": {},
+          "scoreSource": null,
+          "polls": {
+            "ok": 0,
+            "failed": 0
+          },
+          "health": "unhealthy",
+          "healthReason": "All reported block polls failed in the last 60 minutes.",
+          "latestBlock": 100000,
+          "blockLag": 8,
+          "behindSec": 5074.97062279671,
+          "stale": false,
+          "role": null,
+          "apiInterface": "jsonrpc",
+          "inFlight": 0,
+          "routerIds": ["BTCT"]
+        },
+        {
+          "endpointId": "fixture-switchable",
+          "spec": "BCHT",
+          "requests": 0,
+          "uptime": null,
+          "p95Ms": null,
+          "errorRate": null,
+          "scores": {},
+          "scoreSource": null,
+          "polls": {
+            "ok": 0,
+            "failed": 0
+          },
+          "health": "unhealthy",
+          "healthReason": "All reported block polls failed in the last 60 minutes.",
+          "latestBlock": 100000,
+          "blockLag": 8,
+          "behindSec": 5074.97062279671,
+          "stale": false,
+          "role": null,
+          "apiInterface": "jsonrpc",
+          "inFlight": 0,
+          "routerIds": ["BCHT"]
+        },
+        {
+          "endpointId": "fixture-switchable",
+          "spec": "UNRATED",
+          "requests": 0,
+          "uptime": null,
+          "p95Ms": null,
+          "errorRate": null,
+          "scores": {},
+          "scoreSource": null,
+          "polls": {
+            "ok": 0,
+            "failed": 0
+          },
+          "health": "unhealthy",
+          "healthReason": "All reported block polls failed in the last 30 minutes.",
+          "latestBlock": 100000,
+          "blockLag": 0,
+          "behindSec": null,
+          "stale": false,
+          "role": null,
+          "apiInterface": "jsonrpc",
+          "inFlight": 0,
+          "routerIds": ["UNRATED"]
+        }
+      ],
+      "counts": {
+        "unhealthy": 4,
+        "unknown": 2
+      },
+      "fixedFiveMinuteFailures": [
+        {
+          "metric": {
+            "endpoint_id": "fixture-peer",
+            "spec": "A.B"
+          },
+          "value": [1791795240, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-peer",
+            "spec": "BCHT"
+          },
+          "value": [1791795240, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-peer",
+            "spec": "BTC"
+          },
+          "value": [1791795240, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-peer",
+            "spec": "BTCT"
+          },
+          "value": [1791795240, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-peer",
+            "spec": "ETH1"
+          },
+          "value": [1791795240, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-peer",
+            "spec": "UNRATED"
+          },
+          "value": [1791795240, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-switchable",
+            "spec": "A.B"
+          },
+          "value": [1791795240, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-switchable",
+            "spec": "BCHT"
+          },
+          "value": [1791795240, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-switchable",
+            "spec": "BTC"
+          },
+          "value": [1791795240, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-switchable",
+            "spec": "BTCT"
+          },
+          "value": [1791795240, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-switchable",
+            "spec": "ETH1"
+          },
+          "value": [1791795240, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-switchable",
+            "spec": "UNRATED"
+          },
+          "value": [1791795240, "0"]
+        }
+      ]
+    },
+    {
+      "name": "next-failure-event",
+      "evaluation": 1791795315,
+      "expected": "unhealthy",
+      "slowRows": [
+        {
+          "endpointId": "fixture-switchable",
+          "spec": "BTC",
+          "requests": 0,
+          "uptime": null,
+          "p95Ms": null,
+          "errorRate": null,
+          "scores": {},
+          "scoreSource": null,
+          "polls": {
+            "ok": 0,
+            "failed": 1
+          },
+          "health": "unhealthy",
+          "healthReason": "All reported block polls failed in the last 60 minutes.",
+          "latestBlock": 100000,
+          "blockLag": 9,
+          "behindSec": 5571.84633027523,
+          "stale": false,
+          "role": null,
+          "apiInterface": "jsonrpc",
+          "inFlight": 0,
+          "routerIds": ["BTC"]
+        },
+        {
+          "endpointId": "fixture-switchable",
+          "spec": "BTCT",
+          "requests": 0,
+          "uptime": null,
+          "p95Ms": null,
+          "errorRate": null,
+          "scores": {},
+          "scoreSource": null,
+          "polls": {
+            "ok": 0,
+            "failed": 1
+          },
+          "health": "unhealthy",
+          "healthReason": "All reported block polls failed in the last 60 minutes.",
+          "latestBlock": 100000,
+          "blockLag": 9,
+          "behindSec": 5571.84633027523,
+          "stale": false,
+          "role": null,
+          "apiInterface": "jsonrpc",
+          "inFlight": 0,
+          "routerIds": ["BTCT"]
+        },
+        {
+          "endpointId": "fixture-switchable",
+          "spec": "BCHT",
+          "requests": 0,
+          "uptime": null,
+          "p95Ms": null,
+          "errorRate": null,
+          "scores": {},
+          "scoreSource": null,
+          "polls": {
+            "ok": 0,
+            "failed": 1
+          },
+          "health": "unhealthy",
+          "healthReason": "All reported block polls failed in the last 60 minutes.",
+          "latestBlock": 100000,
+          "blockLag": 9,
+          "behindSec": 5571.84633027523,
+          "stale": false,
+          "role": null,
+          "apiInterface": "jsonrpc",
+          "inFlight": 0,
+          "routerIds": ["BCHT"]
+        },
+        {
+          "endpointId": "fixture-switchable",
+          "spec": "UNRATED",
+          "requests": 0,
+          "uptime": null,
+          "p95Ms": null,
+          "errorRate": null,
+          "scores": {},
+          "scoreSource": null,
+          "polls": {
+            "ok": 0,
+            "failed": 1
+          },
+          "health": "unhealthy",
+          "healthReason": "All reported block polls failed in the last 30 minutes.",
+          "latestBlock": 100000,
+          "blockLag": 0,
+          "behindSec": null,
+          "stale": false,
+          "role": null,
+          "apiInterface": "jsonrpc",
+          "inFlight": 0,
+          "routerIds": ["UNRATED"]
+        }
+      ],
+      "counts": {
+        "unhealthy": 6,
+        "unknown": 0
+      },
+      "fixedFiveMinuteFailures": [
+        {
+          "metric": {
+            "endpoint_id": "fixture-peer",
+            "spec": "A.B"
+          },
+          "value": [1791795315, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-peer",
+            "spec": "BCHT"
+          },
+          "value": [1791795315, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-peer",
+            "spec": "BTC"
+          },
+          "value": [1791795315, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-peer",
+            "spec": "BTCT"
+          },
+          "value": [1791795315, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-peer",
+            "spec": "ETH1"
+          },
+          "value": [1791795315, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-peer",
+            "spec": "UNRATED"
+          },
+          "value": [1791795315, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-switchable",
+            "spec": "A.B"
+          },
+          "value": [1791795315, "1.0526315789473684"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-switchable",
+            "spec": "BCHT"
+          },
+          "value": [1791795315, "1.0526315789473684"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-switchable",
+            "spec": "BTC"
+          },
+          "value": [1791795315, "1.0526315789473684"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-switchable",
+            "spec": "BTCT"
+          },
+          "value": [1791795315, "1.0526315789473684"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-switchable",
+            "spec": "ETH1"
+          },
+          "value": [1791795315, "1.0526315789473684"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-switchable",
+            "spec": "UNRATED"
+          },
+          "value": [1791795315, "1.0526315789473684"]
+        }
+      ]
+    },
+    {
+      "name": "failure-in-window",
+      "evaluation": 1791796200,
+      "expected": "unhealthy",
+      "slowRows": [
+        {
+          "endpointId": "fixture-switchable",
+          "spec": "BTC",
+          "requests": 0,
+          "uptime": null,
+          "p95Ms": null,
+          "errorRate": null,
+          "scores": {},
+          "scoreSource": null,
+          "polls": {
+            "ok": 0,
+            "failed": 0
+          },
+          "health": "unhealthy",
+          "healthReason": "All reported block polls failed in the last 30 minutes.",
+          "latestBlock": 100000,
+          "blockLag": 10,
+          "behindSec": 6591.575091575091,
+          "stale": false,
+          "role": null,
+          "apiInterface": "jsonrpc",
+          "inFlight": 0,
+          "routerIds": ["BTC"]
+        },
+        {
+          "endpointId": "fixture-switchable",
+          "spec": "BTCT",
+          "requests": 0,
+          "uptime": null,
+          "p95Ms": null,
+          "errorRate": null,
+          "scores": {},
+          "scoreSource": null,
+          "polls": {
+            "ok": 0,
+            "failed": 0
+          },
+          "health": "unhealthy",
+          "healthReason": "All reported block polls failed in the last 30 minutes.",
+          "latestBlock": 100000,
+          "blockLag": 10,
+          "behindSec": 6591.575091575091,
+          "stale": false,
+          "role": null,
+          "apiInterface": "jsonrpc",
+          "inFlight": 0,
+          "routerIds": ["BTCT"]
+        },
+        {
+          "endpointId": "fixture-switchable",
+          "spec": "BCHT",
+          "requests": 0,
+          "uptime": null,
+          "p95Ms": null,
+          "errorRate": null,
+          "scores": {},
+          "scoreSource": null,
+          "polls": {
+            "ok": 0,
+            "failed": 0
+          },
+          "health": "unhealthy",
+          "healthReason": "All reported block polls failed in the last 30 minutes.",
+          "latestBlock": 100000,
+          "blockLag": 10,
+          "behindSec": 6591.575091575091,
+          "stale": false,
+          "role": null,
+          "apiInterface": "jsonrpc",
+          "inFlight": 0,
+          "routerIds": ["BCHT"]
+        },
+        {
+          "endpointId": "fixture-switchable",
+          "spec": "UNRATED",
+          "requests": 0,
+          "uptime": null,
+          "p95Ms": null,
+          "errorRate": null,
+          "scores": {},
+          "scoreSource": null,
+          "polls": {
+            "ok": 0,
+            "failed": 0
+          },
+          "health": "unhealthy",
+          "healthReason": "All reported block polls failed in the last 30 minutes.",
+          "latestBlock": 100000,
+          "blockLag": 0,
+          "behindSec": null,
+          "stale": false,
+          "role": null,
+          "apiInterface": "jsonrpc",
+          "inFlight": 0,
+          "routerIds": ["UNRATED"]
+        }
+      ],
+      "counts": {
+        "unhealthy": 4,
+        "unknown": 2
+      },
+      "fixedFiveMinuteFailures": [
+        {
+          "metric": {
+            "endpoint_id": "fixture-peer",
+            "spec": "A.B"
+          },
+          "value": [1791796200, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-peer",
+            "spec": "BCHT"
+          },
+          "value": [1791796200, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-peer",
+            "spec": "BTC"
+          },
+          "value": [1791796200, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-peer",
+            "spec": "BTCT"
+          },
+          "value": [1791796200, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-peer",
+            "spec": "ETH1"
+          },
+          "value": [1791796200, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-peer",
+            "spec": "UNRATED"
+          },
+          "value": [1791796200, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-switchable",
+            "spec": "A.B"
+          },
+          "value": [1791796200, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-switchable",
+            "spec": "BCHT"
+          },
+          "value": [1791796200, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-switchable",
+            "spec": "BTC"
+          },
+          "value": [1791796200, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-switchable",
+            "spec": "BTCT"
+          },
+          "value": [1791796200, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-switchable",
+            "spec": "ETH1"
+          },
+          "value": [1791796200, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-switchable",
+            "spec": "UNRATED"
+          },
+          "value": [1791796200, "0"]
+        }
+      ]
+    },
+    {
+      "name": "recovery-positive-success",
+      "evaluation": 1791796515,
+      "expected": "operational",
+      "slowRows": [
+        {
+          "endpointId": "fixture-switchable",
+          "spec": "BTC",
+          "requests": 0,
+          "uptime": null,
+          "p95Ms": null,
+          "errorRate": null,
+          "scores": {},
+          "scoreSource": null,
+          "polls": {
+            "ok": 1,
+            "failed": 0
+          },
+          "health": "operational",
+          "healthReason": "The router's live health check reports this upstream operational.",
+          "latestBlock": 100000,
+          "blockLag": 11,
+          "behindSec": 6810.034403669725,
+          "stale": false,
+          "role": null,
+          "apiInterface": "jsonrpc",
+          "inFlight": 0,
+          "routerIds": ["BTC"]
+        },
+        {
+          "endpointId": "fixture-switchable",
+          "spec": "BTCT",
+          "requests": 0,
+          "uptime": null,
+          "p95Ms": null,
+          "errorRate": null,
+          "scores": {},
+          "scoreSource": null,
+          "polls": {
+            "ok": 1,
+            "failed": 0
+          },
+          "health": "operational",
+          "healthReason": "The router's live health check reports this upstream operational.",
+          "latestBlock": 100000,
+          "blockLag": 11,
+          "behindSec": 6810.034403669725,
+          "stale": false,
+          "role": null,
+          "apiInterface": "jsonrpc",
+          "inFlight": 0,
+          "routerIds": ["BTCT"]
+        },
+        {
+          "endpointId": "fixture-switchable",
+          "spec": "BCHT",
+          "requests": 0,
+          "uptime": null,
+          "p95Ms": null,
+          "errorRate": null,
+          "scores": {},
+          "scoreSource": null,
+          "polls": {
+            "ok": 1,
+            "failed": 0
+          },
+          "health": "operational",
+          "healthReason": "The router's live health check reports this upstream operational.",
+          "latestBlock": 100000,
+          "blockLag": 11,
+          "behindSec": 6810.034403669725,
+          "stale": false,
+          "role": null,
+          "apiInterface": "jsonrpc",
+          "inFlight": 0,
+          "routerIds": ["BCHT"]
+        },
+        {
+          "endpointId": "fixture-switchable",
+          "spec": "UNRATED",
+          "requests": 0,
+          "uptime": null,
+          "p95Ms": null,
+          "errorRate": null,
+          "scores": {},
+          "scoreSource": null,
+          "polls": {
+            "ok": 1,
+            "failed": 0
+          },
+          "health": "operational",
+          "healthReason": "The router's live health check reports this upstream operational.",
+          "latestBlock": 100000,
+          "blockLag": 0,
+          "behindSec": null,
+          "stale": false,
+          "role": null,
+          "apiInterface": "jsonrpc",
+          "inFlight": 0,
+          "routerIds": ["UNRATED"]
+        }
+      ],
+      "counts": {
+        "unhealthy": 0,
+        "unknown": 0
+      },
+      "fixedFiveMinuteFailures": [
+        {
+          "metric": {
+            "endpoint_id": "fixture-peer",
+            "spec": "A.B"
+          },
+          "value": [1791796515, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-peer",
+            "spec": "BCHT"
+          },
+          "value": [1791796515, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-peer",
+            "spec": "BTC"
+          },
+          "value": [1791796515, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-peer",
+            "spec": "BTCT"
+          },
+          "value": [1791796515, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-peer",
+            "spec": "ETH1"
+          },
+          "value": [1791796515, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-peer",
+            "spec": "UNRATED"
+          },
+          "value": [1791796515, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-switchable",
+            "spec": "A.B"
+          },
+          "value": [1791796515, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-switchable",
+            "spec": "BCHT"
+          },
+          "value": [1791796515, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-switchable",
+            "spec": "BTC"
+          },
+          "value": [1791796515, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-switchable",
+            "spec": "BTCT"
+          },
+          "value": [1791796515, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-switchable",
+            "spec": "ETH1"
+          },
+          "value": [1791796515, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-switchable",
+            "spec": "UNRATED"
+          },
+          "value": [1791796515, "0"]
+        }
+      ]
+    },
+    {
+      "name": "counter-reset-and-new-success",
+      "evaluation": 1791797115,
+      "expected": "operational",
+      "slowRows": [
+        {
+          "endpointId": "fixture-switchable",
+          "spec": "BTC",
+          "requests": 0,
+          "uptime": null,
+          "p95Ms": null,
+          "errorRate": null,
+          "scores": {},
+          "scoreSource": null,
+          "polls": {
+            "ok": 1,
+            "failed": 0
+          },
+          "health": "operational",
+          "healthReason": "The router's live health check reports this upstream operational.",
+          "latestBlock": 100000,
+          "blockLag": 12,
+          "behindSec": 7429.128440366972,
+          "stale": false,
+          "role": null,
+          "apiInterface": "jsonrpc",
+          "inFlight": 0,
+          "routerIds": ["BTC"]
+        },
+        {
+          "endpointId": "fixture-switchable",
+          "spec": "BTCT",
+          "requests": 0,
+          "uptime": null,
+          "p95Ms": null,
+          "errorRate": null,
+          "scores": {},
+          "scoreSource": null,
+          "polls": {
+            "ok": 1,
+            "failed": 0
+          },
+          "health": "operational",
+          "healthReason": "The router's live health check reports this upstream operational.",
+          "latestBlock": 100000,
+          "blockLag": 12,
+          "behindSec": 7429.128440366972,
+          "stale": false,
+          "role": null,
+          "apiInterface": "jsonrpc",
+          "inFlight": 0,
+          "routerIds": ["BTCT"]
+        },
+        {
+          "endpointId": "fixture-switchable",
+          "spec": "BCHT",
+          "requests": 0,
+          "uptime": null,
+          "p95Ms": null,
+          "errorRate": null,
+          "scores": {},
+          "scoreSource": null,
+          "polls": {
+            "ok": 1,
+            "failed": 0
+          },
+          "health": "operational",
+          "healthReason": "The router's live health check reports this upstream operational.",
+          "latestBlock": 100000,
+          "blockLag": 12,
+          "behindSec": 7429.128440366972,
+          "stale": false,
+          "role": null,
+          "apiInterface": "jsonrpc",
+          "inFlight": 0,
+          "routerIds": ["BCHT"]
+        },
+        {
+          "endpointId": "fixture-switchable",
+          "spec": "UNRATED",
+          "requests": 0,
+          "uptime": null,
+          "p95Ms": null,
+          "errorRate": null,
+          "scores": {},
+          "scoreSource": null,
+          "polls": {
+            "ok": 1,
+            "failed": 0
+          },
+          "health": "operational",
+          "healthReason": "The router's live health check reports this upstream operational.",
+          "latestBlock": 100000,
+          "blockLag": 0,
+          "behindSec": null,
+          "stale": false,
+          "role": null,
+          "apiInterface": "jsonrpc",
+          "inFlight": 0,
+          "routerIds": ["UNRATED"]
+        }
+      ],
+      "counts": {
+        "unhealthy": 0,
+        "unknown": 0
+      },
+      "fixedFiveMinuteFailures": [
+        {
+          "metric": {
+            "endpoint_id": "fixture-peer",
+            "spec": "A.B"
+          },
+          "value": [1791797115, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-peer",
+            "spec": "BCHT"
+          },
+          "value": [1791797115, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-peer",
+            "spec": "BTC"
+          },
+          "value": [1791797115, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-peer",
+            "spec": "BTCT"
+          },
+          "value": [1791797115, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-peer",
+            "spec": "ETH1"
+          },
+          "value": [1791797115, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-peer",
+            "spec": "UNRATED"
+          },
+          "value": [1791797115, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-switchable",
+            "spec": "A.B"
+          },
+          "value": [1791797115, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-switchable",
+            "spec": "BCHT"
+          },
+          "value": [1791797115, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-switchable",
+            "spec": "BTC"
+          },
+          "value": [1791797115, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-switchable",
+            "spec": "BTCT"
+          },
+          "value": [1791797115, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-switchable",
+            "spec": "ETH1"
+          },
+          "value": [1791797115, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-switchable",
+            "spec": "UNRATED"
+          },
+          "value": [1791797115, "0"]
+        }
+      ]
+    },
+    {
+      "name": "expired-outcomes-no-false-green",
+      "evaluation": 1791801300,
+      "expected": "unknown",
+      "slowRows": [
+        {
+          "endpointId": "fixture-switchable",
+          "spec": "BTC",
+          "requests": 0,
+          "uptime": null,
+          "p95Ms": null,
+          "errorRate": null,
+          "scores": {},
+          "scoreSource": null,
+          "polls": {
+            "ok": 0,
+            "failed": 0
+          },
+          "health": "unknown",
+          "healthReason": "No block-poll outcome reported in the last 60 minutes; the live health gauge alone cannot confirm recovery. Check the router and Prometheus scrape.",
+          "latestBlock": 100000,
+          "blockLag": 19,
+          "behindSec": 12240.035799522673,
+          "stale": false,
+          "role": null,
+          "apiInterface": "jsonrpc",
+          "inFlight": 0,
+          "routerIds": ["BTC"]
+        },
+        {
+          "endpointId": "fixture-switchable",
+          "spec": "BTCT",
+          "requests": 0,
+          "uptime": null,
+          "p95Ms": null,
+          "errorRate": null,
+          "scores": {},
+          "scoreSource": null,
+          "polls": {
+            "ok": 0,
+            "failed": 0
+          },
+          "health": "unknown",
+          "healthReason": "No block-poll outcome reported in the last 60 minutes; the live health gauge alone cannot confirm recovery. Check the router and Prometheus scrape.",
+          "latestBlock": 100000,
+          "blockLag": 19,
+          "behindSec": 12240.035799522673,
+          "stale": false,
+          "role": null,
+          "apiInterface": "jsonrpc",
+          "inFlight": 0,
+          "routerIds": ["BTCT"]
+        },
+        {
+          "endpointId": "fixture-switchable",
+          "spec": "BCHT",
+          "requests": 0,
+          "uptime": null,
+          "p95Ms": null,
+          "errorRate": null,
+          "scores": {},
+          "scoreSource": null,
+          "polls": {
+            "ok": 0,
+            "failed": 0
+          },
+          "health": "unknown",
+          "healthReason": "No block-poll outcome reported in the last 60 minutes; the live health gauge alone cannot confirm recovery. Check the router and Prometheus scrape.",
+          "latestBlock": 100000,
+          "blockLag": 19,
+          "behindSec": 12240.035799522673,
+          "stale": false,
+          "role": null,
+          "apiInterface": "jsonrpc",
+          "inFlight": 0,
+          "routerIds": ["BCHT"]
+        },
+        {
+          "endpointId": "fixture-switchable",
+          "spec": "UNRATED",
+          "requests": 0,
+          "uptime": null,
+          "p95Ms": null,
+          "errorRate": null,
+          "scores": {},
+          "scoreSource": null,
+          "polls": {
+            "ok": 0,
+            "failed": 0
+          },
+          "health": "unknown",
+          "healthReason": "No block-poll outcome reported in the last 30 minutes; the live health gauge alone cannot confirm recovery. Check the router and Prometheus scrape.",
+          "latestBlock": 100000,
+          "blockLag": 0,
+          "behindSec": null,
+          "stale": false,
+          "role": null,
+          "apiInterface": "jsonrpc",
+          "inFlight": 0,
+          "routerIds": ["UNRATED"]
+        }
+      ],
+      "counts": {
+        "unhealthy": 0,
+        "unknown": 6
+      },
+      "fixedFiveMinuteFailures": [
+        {
+          "metric": {
+            "endpoint_id": "fixture-peer",
+            "spec": "A.B"
+          },
+          "value": [1791801300, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-peer",
+            "spec": "BCHT"
+          },
+          "value": [1791801300, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-peer",
+            "spec": "BTC"
+          },
+          "value": [1791801300, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-peer",
+            "spec": "BTCT"
+          },
+          "value": [1791801300, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-peer",
+            "spec": "ETH1"
+          },
+          "value": [1791801300, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-peer",
+            "spec": "UNRATED"
+          },
+          "value": [1791801300, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-switchable",
+            "spec": "A.B"
+          },
+          "value": [1791801300, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-switchable",
+            "spec": "BCHT"
+          },
+          "value": [1791801300, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-switchable",
+            "spec": "BTC"
+          },
+          "value": [1791801300, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-switchable",
+            "spec": "BTCT"
+          },
+          "value": [1791801300, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-switchable",
+            "spec": "ETH1"
+          },
+          "value": [1791801300, "0"]
+        },
+        {
+          "metric": {
+            "endpoint_id": "fixture-switchable",
+            "spec": "UNRATED"
+          },
+          "value": [1791801300, "0"]
+        }
+      ]
+    }
+  ]
+}

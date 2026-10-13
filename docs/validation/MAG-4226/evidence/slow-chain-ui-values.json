@@ -1,0 +1,183 @@
+{
+  "routers": [
+    {
+      "id": "BTC",
+      "spec": "BTC",
+      "network": "btc",
+      "nodes": [
+        {
+          "name": "fixture-peer",
+          "endpoints": [
+            {
+              "api_interface": "jsonrpc",
+              "interface": "jsonrpc",
+              "url": "http://fixture.invalid"
+            }
+          ]
+        },
+        {
+          "name": "fixture-switchable",
+          "endpoints": [
+            {
+              "api_interface": "jsonrpc",
+              "interface": "jsonrpc",
+              "url": "http://fixture.invalid"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "BTCT",
+      "spec": "BTCT",
+      "network": "btct",
+      "nodes": [
+        {
+          "name": "fixture-peer",
+          "endpoints": [
+            {
+              "api_interface": "jsonrpc",
+              "interface": "jsonrpc",
+              "url": "http://fixture.invalid"
+            }
+          ]
+        },
+        {
+          "name": "fixture-switchable",
+          "endpoints": [
+            {
+              "api_interface": "jsonrpc",
+              "interface": "jsonrpc",
+              "url": "http://fixture.invalid"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "BCHT",
+      "spec": "BCHT",
+      "network": "bcht",
+      "nodes": [
+        {
+          "name": "fixture-peer",
+          "endpoints": [
+            {
+              "api_interface": "jsonrpc",
+              "interface": "jsonrpc",
+              "url": "http://fixture.invalid"
+            }
+          ]
+        },
+        {
+          "name": "fixture-switchable",
+          "endpoints": [
+            {
+              "api_interface": "jsonrpc",
+              "interface": "jsonrpc",
+              "url": "http://fixture.invalid"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ETH1",
+      "spec": "ETH1",
+      "network": "eth1",
+      "nodes": [
+        {
+          "name": "fixture-peer",
+          "endpoints": [
+            {
+              "api_interface": "jsonrpc",
+              "interface": "jsonrpc",
+              "url": "http://fixture.invalid"
+            }
+          ]
+        },
+        {
+          "name": "fixture-switchable",
+          "endpoints": [
+            {
+              "api_interface": "jsonrpc",
+              "interface": "jsonrpc",
+              "url": "http://fixture.invalid"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "UNRATED",
+      "spec": "UNRATED",
+      "network": "unrated",
+      "nodes": [
+        {
+          "name": "fixture-peer",
+          "endpoints": [
+            {
+              "api_interface": "jsonrpc",
+              "interface": "jsonrpc",
+              "url": "http://fixture.invalid"
+            }
+          ]
+        },
+        {
+          "name": "fixture-switchable",
+          "endpoints": [
+            {
+              "api_interface": "jsonrpc",
+              "interface": "jsonrpc",
+              "url": "http://fixture.invalid"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "A.B",
+      "spec": "A.B",
+      "network": "a.b",
+      "nodes": [
+        {
+          "name": "fixture-peer",
+          "endpoints": [
+            {
+              "api_interface": "jsonrpc",
+              "interface": "jsonrpc",
+              "url": "http://fixture.invalid"
+            }
+          ]
+        },
+        {
+          "name": "fixture-switchable",
+          "endpoints": [
+            {
+              "api_interface": "jsonrpc",
+              "interface": "jsonrpc",
+              "url": "http://fixture.invalid"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "btc-staging",
+      "spec": "BTC",
+      "network": "btc",
+      "nodes": [
+        {
+          "name": "fixture-peer",
+          "endpoints": [
+            {
+              "api_interface": "jsonrpc",
+              "interface": "jsonrpc",
+              "url": "http://fixture.invalid"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

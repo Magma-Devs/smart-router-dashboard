@@ -35,7 +35,7 @@ const windowQuerySchema = {
     routerId: {
       type: "string" as const,
       description:
-        "Restrict to the upstreams ONE config router declares — an id from GET /api/config/routers. A different axis from `router`: this filters rows against the mounted values file, it does not narrow the PromQL. Read by /api/metrics/upstreams (optional)",
+        "Restrict to the upstreams ONE config router declares — an id from GET /api/config/routers. A different axis from `router`: this filters rows against the mounted values file, it does not narrow the PromQL. Read by /api/metrics/upstreams and overview health counts (optional)",
     },
   },
 };
@@ -87,7 +87,7 @@ export async function metricRoutes(app: FastifyInstance) {
 
   // Rich Overview/Dashboard payload (KPIs + deltas + series + per-chain).
   app.get<{ Querystring: WindowQuery }>("/api/metrics/overview", tag("Rich Overview/Dashboard payload (KPIs, deltas, series, per-chain)"), async (request) => {
-    return app.scoped(request.query.router).metrics.overview(parseWindow(request.query.window), request.query.spec);
+    return app.scoped(request.query.router).metrics.overview(parseWindow(request.query.window), request.query.spec, request.query.routerId);
   });
 
   // Dashboard page payload (Overview + Metrics tabs). The chains multiselect

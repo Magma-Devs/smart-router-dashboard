@@ -311,8 +311,12 @@ describe("MetricsService · router attribution on the upstream roster", () => {
     const svc = new MetricsService(prom, twoRoutersOneChain);
     // Unfiltered it still shows up (real traffic, honestly reported) with no
     // router to its name; asked for one router's rows, it is not one of them.
-    expect((await svc.upstreams(undefined, "1d")).map((r) => r.routerIds)).toEqual([[]]);
-    expect(await svc.upstreams(undefined, "1d", "eth-prod")).toEqual([]);
+    const all = await svc.upstreams(undefined, "1d");
+    expect(all.find((r) => r.endpointId === "gone-vendor")?.routerIds).toEqual([]);
+    const prod = await svc.upstreams(undefined, "1d", "eth-prod");
+    expect(prod.every((r) => r.routerIds.includes("eth-prod"))).toBe(true);
+    expect(prod.some((r) => r.endpointId === "gone-vendor")).toBe(false);
+    expect(prod).toHaveLength(2); // Configured rows remain visible without metrics.
   });
 });
 

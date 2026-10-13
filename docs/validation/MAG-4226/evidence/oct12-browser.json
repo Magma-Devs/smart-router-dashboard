@@ -1,0 +1,54 @@
+{
+  "source": "Production API image with controlled sparse-event Prometheus TSDB; unchanged production UI source from e44dee2",
+  "results": [
+    {
+      "mode": "default",
+      "url": "http://localhost:3006/metrics",
+      "row": "fixture-switchable\n\tBTC\t\nBitcoin\n\t\n100,000\n\t0\t\nUnhealthy\t—\t—\t—",
+      "reason": [
+        "This upstream is unhealthy. All reported block polls failed in the last 30 minutes. Request metrics below describe the selected time window.",
+        ""
+      ]
+    },
+    {
+      "mode": "default",
+      "headerLoading": true,
+      "noHeaderRosterFetch": true,
+      "requests": [
+        "http://localhost:18086/api/metrics/overview?window=1h",
+        "http://localhost:18086/api/metrics/routers",
+        "http://localhost:18086/api/metrics/overview?window=30m",
+        "http://localhost:18086/api/metrics/specs"
+      ]
+    },
+    {
+      "mode": "default",
+      "standalone": true
+    },
+    {
+      "mode": "new",
+      "url": "http://localhost:3007/metrics?tab=upstreams",
+      "row": "fixture-switchable\n\tBTC\t\nBitcoin\n\t\n100,000\n\t0\t\nUnhealthy\t—\t—",
+      "reason": [
+        "This upstream is unhealthy. All reported block polls failed in the last 30 minutes. Request metrics below describe the selected time window.",
+        ""
+      ]
+    },
+    {
+      "mode": "new",
+      "headerLoading": true,
+      "noHeaderRosterFetch": true,
+      "requests": [
+        "http://localhost:18086/api/metrics/overview?window=1h",
+        "http://localhost:18086/api/metrics/routers",
+        "http://localhost:18086/api/metrics/overview?window=30m",
+        "http://localhost:18086/api/metrics/specs"
+      ]
+    },
+    {
+      "mode": "new",
+      "standalone": true
+    }
+  ],
+  "errors": []
+}
