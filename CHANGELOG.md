@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.35.5]
+
 ### Changed
 
 - **Tests:** every database-backed test loads its pglite from a snapshot of
