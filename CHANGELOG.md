@@ -19,6 +19,13 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   350 Prometheus reads per call to at most 15, so rows stop timing out into
   "unknown" and zeros (MAG-4295).
 
+### Changed
+
+- **Topbar:** the health badge and live RPS poll a dedicated
+  `GET /api/metrics/pulse` — router health, upstream health counts and the
+  current client RPS in six Prometheus reads — instead of the full overview
+  payload every 30 s on every page (MAG-4296).
+
 ## [0.34.2]
 
 ### Added

@@ -85,6 +85,25 @@ export async function metricRoutes(app: FastifyInstance) {
     return app.scoped(request.query.router).metrics.dashboardSummary(parseWindow(request.query.window), request.query.spec);
   });
 
+  // The topbar's health badge + live RPS, on every page: six reads, no
+  // window. Takes the same two router axes as the overview it replaces there.
+  app.get<{ Querystring: WindowQuery }>("/api/metrics/pulse", {
+    schema: {
+      tags: ["Metrics"],
+      summary: "Topbar pulse: router health, upstream health counts, current RPS",
+      querystring: {
+        type: "object" as const,
+        properties: {
+          spec: windowQuerySchema.properties.spec,
+          router: windowQuerySchema.properties.router,
+          routerId: windowQuerySchema.properties.routerId,
+        },
+      },
+    },
+  }, async (request) => {
+    return app.scoped(request.query.router).metrics.pulse(request.query.spec, request.query.routerId);
+  });
+
   // Rich Overview/Dashboard payload (KPIs + deltas + series + per-chain).
   app.get<{ Querystring: WindowQuery }>("/api/metrics/overview", tag("Rich Overview/Dashboard payload (KPIs, deltas, series, per-chain)"), async (request) => {
     return app.scoped(request.query.router).metrics.overview(parseWindow(request.query.window), request.query.spec, request.query.routerId);
