@@ -5,6 +5,20 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.35.2]
+
+### Fixed
+
+- **Try it:** the method catalog is back in sync with lava-specs, which the
+  drift check had been failing on. SEI's REST and gRPC surfaces gain their
+  archive collection — a historical block on each, marked as needing an
+  archive node — after the archive rules were extended to them upstream
+  (MAG-4282). TON's v3 REST gains `/account`, `/wallet` and
+  `/balanceChanges`, and `/decode` is offered as a POST, as the spec now
+  declares it (MAG-4180). Nothing was removed and no runnable default was
+  lost; the chain map and explorer catalog did not move. 292 chains, 202 of
+  249 primaries linking a height (MAG-4324).
+
 ## [0.35.1]
 
 ### Fixed
