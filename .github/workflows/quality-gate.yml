@@ -41,8 +41,15 @@ jobs:
       - name: Type check (all packages)
         run: pnpm -r typecheck
 
+      # One vitest worker per CPU. Vitest's default is one fewer, to leave a
+      # core for its own process — on a dev box that is right; here that
+      # process is idle while the db-backed suites, which are CPU-bound (a
+      # WASM Postgres per test), run on the rest, and the spare core is worth
+      # about 15% of the step. `nproc` keeps it true on whatever runner size
+      # the job lands on. The env var takes an integer only — a percentage is
+      # parsed as a count, so `100%` would mean 100 workers.
       - name: Tests (all packages)
-        run: pnpm -r test
+        run: VITEST_MAX_WORKERS=$(nproc) pnpm -r test
 
   spec-drift:
     name: Chain catalogs ↔ lava-specs drift
