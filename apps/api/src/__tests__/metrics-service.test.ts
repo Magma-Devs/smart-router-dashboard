@@ -250,6 +250,94 @@ describe("MetricsService.overview · per-chain panels read grouped series (MAG-4
   });
 });
 
+// MAG-4322: the hero summary gated its optional-family reads behind their
+// presence probes, then awaited the retries and cache pairs on their own —
+// four round trips to the store per call, each waiting for the slowest read
+// of the one before. Every read now goes out at once; the probes decide
+// afterwards whether an answer is kept.
+describe("MetricsService.dashboardSummary · one round of reads (MAG-4322)", () => {
+  const PRESENCE = "count({__name__=";
+
+  /** A client that records every read and answers none until `release()`. */
+  function gatedProm(answer: (expr: string) => number | null) {
+    const issued: string[] = [];
+    let release = (): void => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const read = async (expr: string): Promise<number | null> => {
+      issued.push(expr);
+      await gate;
+      return answer(expr);
+    };
+    const prom = {
+      async query(expr: string): Promise<PromVectorSample[]> {
+        const v = await read(expr);
+        return v === null ? [] : [{ metric: {}, value: [1, String(v)] }];
+      },
+      scalar: read,
+      async queryRange() {
+        return [];
+      },
+      async ping() {
+        return true;
+      },
+    } as unknown as PrometheusClient;
+    return { prom, issued, release: () => release() };
+  }
+
+  it("issues every read before the first one is answered", async () => {
+    const { prom, issued, release } = gatedProm(() => 1);
+    const pending = new MetricsService(prom).dashboardSummary("6h");
+    await Promise.resolve();
+    // 3 presence probes, 6 KPI pairs, the chain list, the upstream count, health.
+    expect(issued).toHaveLength(18);
+    expect(issued.filter((q) => q.startsWith(PRESENCE))).toHaveLength(3);
+    const reads = issued.filter((q) => !q.startsWith(PRESENCE));
+    expect(reads.filter((q) => q.includes("smartrouter_retries_success_total"))).toHaveLength(2);
+    expect(reads.filter((q) => q.includes("cache_total_hits"))).toHaveLength(2);
+    expect(reads.filter((q) => q.includes("smartrouter_consistency_failed_total"))).toHaveLength(2);
+    release();
+    await pending;
+  });
+
+  it("with a chain selected, the same eighteen reads, scoped", async () => {
+    const { prom, issued, release } = gatedProm(() => 1);
+    const pending = new MetricsService(prom).dashboardSummary("6h", "ETH1");
+    await Promise.resolve();
+    expect(issued).toHaveLength(18);
+    // The six KPI pairs, the upstream count and the chain's health gauge.
+    expect(issued.filter((q) => q.includes('spec="ETH1"'))).toHaveLength(14);
+    release();
+    await pending;
+  });
+
+  it("an answered read of an absent family is discarded, not shown", async () => {
+    // Every probe says absent; every other read answers 7 anyway.
+    const { prom, release } = gatedProm((expr) => (expr.startsWith(PRESENCE) ? 0 : 7));
+    const pending = new MetricsService(prom).dashboardSummary("6h");
+    release();
+    const summary = await pending;
+    expect(summary.requestsServed).toEqual({ value: 7, prior: 7 });
+    expect(summary.retriesRecovered).toEqual({ value: null, prior: null });
+    expect(summary.cacheOffloadPct).toEqual({ value: null, prior: null });
+    // Absent consistency_failed_total = zero failures since boot, not unknown.
+    expect(summary.staleCaught).toEqual({ value: 0, prior: 0 });
+    expect(summary.emitted).toEqual({ retries: false, cache: false });
+  });
+
+  it("a present family's read is kept", async () => {
+    const { prom, release } = gatedProm((expr) => (expr.startsWith(PRESENCE) ? 1 : 7));
+    const pending = new MetricsService(prom).dashboardSummary("6h");
+    release();
+    const summary = await pending;
+    expect(summary.retriesRecovered).toEqual({ value: 7, prior: 7 });
+    expect(summary.cacheOffloadPct).toEqual({ value: 7, prior: 7 });
+    expect(summary.staleCaught).toEqual({ value: 7, prior: 7 });
+    expect(summary.emitted).toEqual({ retries: true, cache: true });
+  });
+});
+
 describe("MetricsDetailService · chain-series backup share (MAG-2537)", () => {
   /** A chain whose values file marks one of two upstreams as the backup. */
   const configWithBackup = {

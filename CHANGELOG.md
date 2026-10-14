@@ -5,6 +5,17 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.35.4]
+
+### Fixed
+
+- **Metrics:** the HeroPanel summary (`/api/metrics/dashboard-summary`) issues
+  its eighteen Prometheus reads in one round instead of four — the optional
+  families' presence probes no longer gate their reads, and the retries and
+  cache pairs no longer wait their turn — so a call costs its slowest read
+  rather than the sum of four. The output contract is unchanged: an absent
+  family still reads null and `emitted:false` (MAG-4322).
+
 ## [0.35.3]
 
 ### Fixed

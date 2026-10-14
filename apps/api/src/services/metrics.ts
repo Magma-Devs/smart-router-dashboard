@@ -201,7 +201,19 @@ export class MetricsService {
     return v !== null && v > 0;
   }
 
-  /** The six HeroPanel cards (Metrics · Overview tab). */
+  /**
+   * The six HeroPanel cards (Metrics · Overview tab).
+   *
+   * One round: every read goes out at once and nothing waits on an earlier
+   * answer. The optional families (retries, cache, consistency failures) are
+   * read whether or not their presence probes find them — a read of an
+   * absent family matches no series and costs the store nothing — and the
+   * probes decide afterwards whether the answer is kept, so the contract
+   * holds: absent ⇒ null and emitted:false, never an invented value. Gating
+   * those reads behind the probes, then awaiting the retries and cache pairs
+   * on their own, made this call four round trips to the store, each waiting
+   * for the slowest read of the one before (MAG-4322).
+   */
   async dashboardSummary(window: MetricWindow, spec?: string): Promise<HeroSummary> {
     const r = rangeFor(window);
     // Label selector for the metrics that carry a `spec` label, so the hero
@@ -211,58 +223,66 @@ export class MetricsService {
       const [value, p] = await Promise.all([this.prom.scalar(cur), this.prom.scalar(prior)]);
       return { value, prior: p };
     };
+    // hits / (hits + misses) over the window; `offset` reads the window before.
+    const cacheOffload = (offset?: string): string => {
+      const o = offset ? ` offset ${offset}` : "";
+      const inc = (metric: string) => `sum(increase(${metric}${specSel}[${r}]${o}))`;
+      return `${inc(OPTIONAL_METRICS.cacheTotalHits)} / (${inc(OPTIONAL_METRICS.cacheTotalHits)} + ${inc(OPTIONAL_METRICS.cacheTotalMisses)})`;
+    };
 
-    const [retriesPresent, cachePresent, consistencyFailedPresent] = await Promise.all([
+    const [
+      retriesPresent,
+      cachePresent,
+      consistencyFailedPresent,
+      requestsServed,
+      successRate,
+      p95,
+      staleRead,
+      retriesRead,
+      cacheRead,
+      specs,
+      upstreams,
+      healthGauge,
+    ] = await Promise.all([
       this.familyPresent(OPTIONAL_METRICS.retriesSuccessTotal),
       this.familyPresent(OPTIONAL_METRICS.cacheTotalHits),
       this.familyPresent(OPTIONAL_METRICS.consistencyFailedTotal),
+      // CLIENT-scoped: the latency-histogram _count increments exactly once
+      // per client request. requests_total is relay-scoped (per participant,
+      // probes included) — see qRequestsTotal's doc note.
+      kpi(qClientRequestsTotal(spec, window), qClientRequestsTotal(spec, window, r)),
+      kpi(qAvailability(spec, window), qAvailability(spec, window, r)),
+      // No cache on this build ⇒ the documented derived "effective read p95"
+      // reduces to the node read p95 (the overall router histogram).
+      kpi(qLatencyQuantile(0.95, spec, window), qLatencyQuantile(0.95, spec, window, r)),
+      // Stale caught = consistency checks that FAILED. success_total counts
+      // checks that PASSED and must never be shown here.
+      kpi(qConsistencyCaught(window, undefined, spec), qConsistencyCaught(window, r, spec)),
+      // Counted as the Errors tab's retry cards count it, births included.
+      kpi(qRetriesTotal("recovered", window, spec), qRetriesTotal("recovered", window, spec, r)),
+      kpi(cacheOffload(), cacheOffload(r)),
+      this.listSpecs(),
+      // `rpc_endpoint_overall_health` carries {spec, apiInterface, endpoint_id}
+      // (smartrouter_metrics_manager.go endpointLabels), so it scopes exactly
+      // like the KPIs above — `selector` yields "" with no chain selected,
+      // which is the account-wide count. Unfiltered, this tile paired a
+      // chain-scoped request count with an account-wide upstream count and
+      // read "50.0K across 4 upstreams" on a chain that had one (MAG-2710).
+      this.prom.query(
+        `count by (endpoint_id) (${ENDPOINT_METRICS.overallHealth}${selector({ spec })})`,
+      ),
+      // Same reasoning for health: the ROUTER gauge is label-less, so under a
+      // chain filter it reports the whole deployment. chainHealth() reads the
+      // spec-labelled endpoint gauge — see chains()/chainFigures(), which has
+      // always done this correctly.
+      spec ? this.chainHealth(spec) : this.prom.scalar(ROUTER_METRICS.overallHealth),
     ]);
 
-    const [requestsServed, successRate, p95, staleKpi, specs, upstreams, healthGauge] =
-      await Promise.all([
-        // CLIENT-scoped: the latency-histogram _count increments exactly once
-        // per client request. requests_total is relay-scoped (per participant,
-        // probes included) — see qRequestsTotal's doc note.
-        kpi(qClientRequestsTotal(spec, window), qClientRequestsTotal(spec, window, r)),
-        kpi(qAvailability(spec, window), qAvailability(spec, window, r)),
-        // No cache on this build ⇒ the documented derived "effective read p95"
-        // reduces to the node read p95 (the overall router histogram).
-        kpi(qLatencyQuantile(0.95, spec, window), qLatencyQuantile(0.95, spec, window, r)),
-        // Stale caught = consistency checks that FAILED. An absent
-        // consistency_failed_total family means zero failures since boot, so
-        // the honest value is 0 — success_total counts checks that PASSED and
-        // must never be shown here.
-        consistencyFailedPresent
-          ? kpi(qConsistencyCaught(window, undefined, spec), qConsistencyCaught(window, r, spec))
-          : Promise.resolve({ value: 0, prior: 0 } as Kpi),
-        this.listSpecs(),
-        // `rpc_endpoint_overall_health` carries {spec, apiInterface, endpoint_id}
-        // (smartrouter_metrics_manager.go endpointLabels), so it scopes exactly
-        // like the KPIs above — `selector` yields "" with no chain selected,
-        // which is the account-wide count. Unfiltered, this tile paired a
-        // chain-scoped request count with an account-wide upstream count and
-        // read "50.0K across 4 upstreams" on a chain that had one (MAG-2710).
-        this.prom.query(
-          `count by (endpoint_id) (${ENDPOINT_METRICS.overallHealth}${selector({ spec })})`,
-        ),
-        // Same reasoning for health: the ROUTER gauge is label-less, so under a
-        // chain filter it reports the whole deployment. chainHealth() reads the
-        // spec-labelled endpoint gauge — see chains()/chainFigures(), which has
-        // always done this correctly.
-        spec ? this.chainHealth(spec) : this.prom.scalar(ROUTER_METRICS.overallHealth),
-      ]);
-    const stale = staleKpi;
-
-    // Counted as the Errors tab's retry cards count it, births included.
-    const retriesRecovered: Kpi = retriesPresent
-      ? await kpi(qRetriesTotal("recovered", window, spec), qRetriesTotal("recovered", window, spec, r))
-      : { value: null, prior: null };
-    const cacheOffloadPct: Kpi = cachePresent
-      ? await kpi(
-          `sum(increase(${OPTIONAL_METRICS.cacheTotalHits}${specSel}[${r}])) / (sum(increase(${OPTIONAL_METRICS.cacheTotalHits}${specSel}[${r}])) + sum(increase(${OPTIONAL_METRICS.cacheTotalMisses}${specSel}[${r}])))`,
-          `sum(increase(${OPTIONAL_METRICS.cacheTotalHits}${specSel}[${r}] offset ${r})) / (sum(increase(${OPTIONAL_METRICS.cacheTotalHits}${specSel}[${r}] offset ${r})) + sum(increase(${OPTIONAL_METRICS.cacheTotalMisses}${specSel}[${r}] offset ${r})))`,
-        )
-      : { value: null, prior: null };
+    // An absent consistency_failed_total family means zero failures since
+    // boot, so the honest value is 0 — never the read's null.
+    const stale: Kpi = consistencyFailedPresent ? staleRead : { value: 0, prior: 0 };
+    const retriesRecovered: Kpi = retriesPresent ? retriesRead : { value: null, prior: null };
+    const cacheOffloadPct: Kpi = cachePresent ? cacheRead : { value: null, prior: null };
 
     return {
       requestsServed,
@@ -280,11 +300,6 @@ export class MetricsService {
     };
   }
 
-  /**
-   * One-shot payload for the Overview + Dashboard screens. Every value maps to
-   * a real series; quota/cap (Compute Units, RPS cap) are NOT router metrics —
-   * they stay null and the UI shows an honest "not tracked" state.
-   */
   async overview(
     window: MetricWindow,
     spec?: string,
