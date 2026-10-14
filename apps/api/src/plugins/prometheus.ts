@@ -6,7 +6,7 @@ import { MetricsDetailService } from "../services/metrics-detail.js";
 import { MetricsDashboardService } from "../services/metrics-dashboard.js";
 import { ConfigurationService } from "../services/configuration.js";
 import { ROUTER_METRICS } from "@sr/shared";
-import { config, readMetricsScope } from "../config.js";
+import { ROUTER_SCOPE_CANDIDATES, config, readMetricsScope } from "../config.js";
 
 /** Services bound to one router scope (or to the whole cluster when unset). */
 export interface ScopedServices {
@@ -29,6 +29,15 @@ declare module "fastify" {
      * cluster-wide rather than silently returning a different slice.
      */
     scoped: (router?: string) => ScopedServices;
+    /**
+     * The target label the per-router scope selects on: `ROUTER_SCOPE_LABEL`
+     * when set, else the first of `ROUTER_SCOPE_CANDIDATES` the store reports
+     * values for. Resolved when a request first needs it, never at boot, and
+     * remembered once found — so nobody has to tell the api which collector
+     * scrapes it. Until something reports, it answers the first candidate and
+     * asks again next time.
+     */
+    routerScopeLabel: () => Promise<string>;
   }
 }
 
@@ -39,11 +48,17 @@ export const prometheusPlugin = fp(async (app: FastifyInstance) => {
   // the scope-discovery query lists only this deployment's routers. A bad
   // pair throws here and the boot fails with the reason.
   const baseScope = readMetricsScope();
-  if (baseScope && baseScope.label === config.prometheus.routerScopeLabel) {
-    // Two matchers on one label: the same value is redundant, different
-    // values are an empty result. Neither is what anyone configured.
+  const configured = config.prometheus.routerScopeLabel;
+  // Two matchers on one label: the same value is redundant, different values
+  // are an empty result. Neither is what anyone configured. With the router
+  // label left to resolve itself, every candidate is off limits.
+  const clash = configured
+    ? baseScope?.label === configured
+    : ROUTER_SCOPE_CANDIDATES.some((label) => label === baseScope?.label);
+  if (baseScope && clash) {
+    const how = configured ? "" : ` (ROUTER_SCOPE_LABEL is unset and resolves to ${ROUTER_SCOPE_CANDIDATES.join(" or ")})`;
     throw new Error(
-      `METRICS_SCOPE_LABEL and ROUTER_SCOPE_LABEL are both "${baseScope.label}" — the deployment scope and the per-router scope must select on different labels`,
+      `METRICS_SCOPE_LABEL and ROUTER_SCOPE_LABEL are both "${baseScope.label}"${how} — the deployment scope and the per-router scope must select on different labels`,
     );
   }
   const prom = new PrometheusClient(undefined, undefined, null, undefined, { baseScope, logger: app.log });
@@ -75,10 +90,35 @@ export const prometheusPlugin = fp(async (app: FastifyInstance) => {
   app.decorate("metricsDetail", metricsDetail);
   app.decorate("metricsDashboard", metricsDashboard);
 
+  // Which target label tells routers apart. Set: taken as is. Unset: the
+  // first candidate the store reports values for, asked when a request first
+  // needs it — never at boot, readiness must not hinge on the store — and
+  // remembered once found. Until then every use asks again, so a store that
+  // was still empty at the first request is picked up by a later one.
+  let resolved: string | null = configured || null;
+  const routerScopeLabel = async (): Promise<string> => {
+    if (resolved) return resolved;
+    for (const label of ROUTER_SCOPE_CANDIDATES) {
+      if ((await metrics.listRouterScopes(label)).length > 0) {
+        resolved = label;
+        app.log.info({ label }, `router scope: the store tells routers apart on the "${label}" label`);
+        return label;
+      }
+    }
+    return ROUTER_SCOPE_CANDIDATES[0];
+  };
+  app.decorate("routerScopeLabel", routerScopeLabel);
+  // `scoped()` is synchronous and every metrics route calls it: settle the
+  // label before a `?router=` request reaches it.
+  app.addHook("preHandler", async (request) => {
+    const router = (request.query as { router?: unknown } | undefined)?.router;
+    if (typeof router === "string" && router !== "" && !resolved) await routerScopeLabel();
+  });
+
   const unscoped: ScopedServices = { metrics, metricsDetail, metricsDashboard };
   app.decorate("scoped", (router?: string): ScopedServices => {
     if (!router) return unscoped;
-    const scopedProm = prom.withScope({ label: config.prometheus.routerScopeLabel, value: router });
+    const scopedProm = prom.withScope({ label: resolved ?? ROUTER_SCOPE_CANDIDATES[0], value: router });
     // withScope returns `this` when the scope is unusable — no point building
     // a second set of services around the same client.
     if (scopedProm === prom) return unscoped;

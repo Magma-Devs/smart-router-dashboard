@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.35.0]
+
 ### Fixed
 
 - **Metrics:** the overview reads its per-chain latency, health and throughput
@@ -25,6 +27,19 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   `GET /api/metrics/pulse` — router health, upstream health counts and the
   current client RPS in six Prometheus reads — instead of the full overview
   payload every 30 s on every page (MAG-4296).
+- **API:** identical Prometheus reads in flight at the same moment share one
+  request, and a successful answer is reused for `PROMETHEUS_CACHE_TTL_MS`
+  (default 10 s, under the 15 s panel poll; `0` keeps every read live).
+  Failures and the readiness probe are never kept (MAG-4297).
+- **Per-router scoping finds its label.** `ROUTER_SCOPE_LABEL` is unset by
+  default; the api resolves it on first use to the first of `router`, `service`
+  the store reports router values for, and remembers it. The fleet's collector
+  stamps `router`, so the Routers table attributes a chain served by several
+  routers per router instead of marking every such row `shared`, the router
+  filter appears, and `?router=` scoping works — without per-deployment config.
+  A bare Prometheus Operator install keeps working on `service`. An explicit
+  `ROUTER_SCOPE_LABEL` still wins; the boot refusal for a `METRICS_SCOPE_LABEL`
+  that collides now covers both candidates (MAG-4303).
 
 ## [0.34.2]
 
