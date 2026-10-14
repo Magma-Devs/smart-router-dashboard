@@ -311,6 +311,8 @@ services:
       # image serves any host). Unset hides the button; with the `logs` profile
       # up, set it to http://localhost:3001 (that profile's Grafana).
       - DASHBOARD_GRAFANA_URL=${DASHBOARD_GRAFANA_URL:-}
+      # Exact customer reports link in the sidebar; empty hides Advanced → Grafana.
+      - DASHBOARD_GRAFANA_DASHBOARD_URL=${DASHBOARD_GRAFANA_DASHBOARD_URL:-}
       # `true` draws the 0.28 screens (log-backed Errors + Transactions tabs,
       # the chains drawer, ...); unset draws the 0.27 ones. Read per request
       # by the root layout. See apps/web/src/lib/new-ui.ts.
