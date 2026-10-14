@@ -1,34 +1,56 @@
 import { describe, expect, it } from "vitest";
+import { WINDOWS } from "@sr/shared/constants";
 import { MetricsService } from "../services/metrics.js";
 import { MetricsDetailService } from "../services/metrics-detail.js";
 import type { ConfigurationService } from "../services/configuration.js";
-import type { PrometheusClient } from "../services/prometheus-client.js";
+import type {
+  PrometheusClient,
+  PromMatrixSample,
+  PromVectorSample,
+} from "../services/prometheus-client.js";
 
-/** Fake Prometheus client that records every instant/range expression. */
-function capturingProm(): { prom: PrometheusClient; queries: string[] } {
+interface FakeAnswers {
+  /** The chains `count by (spec)` lists. Default: one. */
+  specs?: string[];
+  /** Canned rows for an instant expression (`query()` and `scalar()`); undefined → none. */
+  vector?: (expr: string) => PromVectorSample[] | undefined;
+  /** Canned rows for a range expression; undefined → none. */
+  matrix?: (expr: string) => PromMatrixSample[] | undefined;
+}
+
+/**
+ * Fake Prometheus client that records every expression: all of them in
+ * `queries`, the `scalar()` reads in `scalars`, the range reads in `ranges`.
+ */
+function capturingProm(answers: FakeAnswers = {}) {
   const queries: string[] = [];
+  const scalars: string[] = [];
+  const ranges: string[] = [];
   const prom = {
     async query(expr: string) {
       queries.push(expr);
-      // listSpecs() must find one chain or per-chain queries never fire.
+      // listSpecs() must find a chain or the per-chain rows never appear.
       if (expr.startsWith("count by (spec)")) {
-        return [{ metric: { spec: "ETH1" }, value: [1, "1"] as [number, string] }];
+        return (answers.specs ?? ["ETH1"]).map((spec) => ({ metric: { spec }, value: [1, "1"] as [number, string] }));
       }
-      return [];
+      return answers.vector?.(expr) ?? [];
     },
     async queryRange(expr: string) {
       queries.push(expr);
-      return [];
+      ranges.push(expr);
+      return answers.matrix?.(expr) ?? [];
     },
     async scalar(expr: string) {
       queries.push(expr);
-      return null;
+      scalars.push(expr);
+      const n = Number(answers.vector?.(expr)?.[0]?.value[1]);
+      return Number.isFinite(n) ? n : null;
     },
     async ping() {
       return true;
     },
   } as unknown as PrometheusClient;
-  return { prom, queries };
+  return { prom, queries, scalars, ranges };
 }
 
 describe("MetricsService query construction (bug regressions)", () => {
@@ -143,28 +165,92 @@ function allChainQuantiles(queries: string[], range: string): string[] {
 // With no chain selected, a quantile grouped `by (spec, le)` came back as one
 // series per chain and scalar() kept the first: the hero p95 was whichever
 // chain Prometheus listed first, and "—" when that chain had no traffic in the
-// window, while all chains together had a p95.
+// window, while all chains together had a p95. (The per-chain panel reads
+// `by (spec, le)` on purpose, through `query()`, and joins on the label — see
+// the grouped-reads cases below.)
 describe("MetricsService · latency with no chain selected reads all chains as one", () => {
   it("hero p95 and its prior group by le only", async () => {
-    const { prom, queries } = capturingProm();
+    const { prom, scalars } = capturingProm();
     await new MetricsService(prom).dashboardSummary("1d");
-    const kpi = allChainQuantiles(queries, "86400s");
+    const kpi = allChainQuantiles(scalars, "86400s");
     expect(kpi).toHaveLength(2);
     expect(kpi.filter((q) => q.includes("offset 86400s"))).toHaveLength(1);
     for (const q of kpi) expect(groupings(q)).toEqual(["le"]);
   });
 
   it("overview p50/p95/p99, their priors and the latency chart group by le only", async () => {
-    const { prom, queries } = capturingProm();
+    const { prom, scalars, ranges } = capturingProm();
     await new MetricsService(prom).overview("1d");
     // 1d: the KPIs read [86400s], the chart's series one [10m] step each.
-    const kpis = allChainQuantiles(queries, "86400s");
+    const kpis = allChainQuantiles(scalars, "86400s");
     expect(kpis).toHaveLength(6);
     for (const q of kpis) expect(groupings(q)).toEqual(["le"]);
     // The chart plots the first series of each percentile, so it had the same bug.
-    const chart = allChainQuantiles(queries, "10m");
+    const chart = allChainQuantiles(ranges, "10m");
     expect(chart).toHaveLength(3);
     for (const q of chart) expect(groupings(q)).toEqual(["le"]);
+  });
+});
+
+// MAG-4294: the overview read three series per chain for its per-chain panels,
+// and the trend a second time for `perChainSeries` — about 200 reads on a
+// 40-chain deployment, enough for the store to reject part of each burst and
+// the rows to render empty. It reads one grouped series each and joins on the
+// spec label.
+describe("MetricsService.overview · per-chain panels read grouped series (MAG-4294)", () => {
+  const perSpecP50 = "histogram_quantile(0.5, sum by (spec, le) (rate(smartrouter_end_to_end_latency_milliseconds_bucket";
+  const perSpecHealth = "max by (spec) (rpc_endpoint_overall_health";
+  const perSpecTrend = "sum by (spec) (rate(smartrouter_end_to_end_latency_milliseconds_count";
+  const row = (spec: string, v: string): PromVectorSample => ({ metric: { spec }, value: [1, v] });
+
+  it("costs the same number of reads for one chain as for three", async () => {
+    const one = capturingProm({ specs: ["ETH1"] });
+    await new MetricsService(one.prom).overview("1h");
+    const three = capturingProm({ specs: ["ETH1", "SOLANA", "APT1"] });
+    await new MetricsService(three.prom).overview("1h");
+    expect(three.queries).toHaveLength(one.queries.length);
+    // Without a chain filter no read names a single chain.
+    expect(three.queries.every((q) => !q.includes('{spec="'))).toBe(true);
+    expect(three.queries.filter((q) => q.startsWith(perSpecP50))).toHaveLength(1);
+    expect(three.queries.filter((q) => q.startsWith(perSpecHealth))).toHaveLength(1);
+    expect(three.ranges.filter((q) => q.startsWith(perSpecTrend))).toHaveLength(1);
+  });
+
+  it("joins the grouped rows onto each chain; a chain without a row keeps its nulls", async () => {
+    const { prom } = capturingProm({
+      specs: ["APT1", "ETH1", "SOLANA"],
+      vector: (expr) => {
+        // A NaN quantile is a chain with buckets but no samples in the window.
+        if (expr.startsWith(perSpecP50)) return [row("ETH1", "42"), row("SOLANA", "NaN")];
+        if (expr.startsWith(perSpecHealth)) return [row("ETH1", "0"), row("SOLANA", "1")];
+        return undefined;
+      },
+      matrix: (expr) =>
+        expr.startsWith(perSpecTrend) ? [{ metric: { spec: "ETH1" }, values: [[1, "3"], [2, "4"]] }] : undefined,
+    });
+    const data = await new MetricsService(prom).overview("1h");
+    const by = Object.fromEntries(data.perChainLatency.map((c) => [c.spec, c]));
+    expect(by.ETH1).toMatchObject({ p50Ms: 42, degraded: true, trend: [{ t: 1, v: 3 }, { t: 2, v: 4 }] });
+    expect(by.SOLANA).toMatchObject({ p50Ms: null, degraded: false, trend: [] });
+    expect(by.APT1).toMatchObject({ p50Ms: null, degraded: false, trend: [] });
+    expect(data.perChainLatency.map((c) => c.spec)).toEqual(["APT1", "ETH1", "SOLANA"]);
+    // perChainSeries is the same matrix, not a second read of it.
+    const series = Object.fromEntries(data.perChainSeries.map((c) => [c.spec, c.points]));
+    expect(series.ETH1).toEqual(by.ETH1!.trend);
+    expect(series.SOLANA).toEqual([]);
+  });
+
+  it("a chain filter scopes the grouped reads to that chain", async () => {
+    const { prom, queries, ranges } = capturingProm({ specs: ["ETH1", "SOLANA"] });
+    const data = await new MetricsService(prom).overview("1h", "ETH1");
+    expect(queries.find((q) => q.startsWith(perSpecP50))).toContain('{spec="ETH1"}[3600s]');
+    expect(queries.find((q) => q.startsWith(perSpecHealth))).toBe(
+      'max by (spec) (rpc_endpoint_overall_health{spec="ETH1"})',
+    );
+    expect(ranges.find((q) => q.startsWith(perSpecTrend))).toBe(
+      `sum by (spec) (rate(smartrouter_end_to_end_latency_milliseconds_count{spec="ETH1"}[${WINDOWS["1h"].step}]))`,
+    );
+    expect(data.perChainLatency.map((c) => c.spec)).toEqual(["ETH1"]);
   });
 });
 
