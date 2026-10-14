@@ -19,42 +19,90 @@ import type { Database } from "./client.js";
  * single-use updates that are correct only if the rowcount is real, and cascade
  * on delete.
  *
- * Each call gets its own isolated in-memory database with every migration
- * applied. Test-only — never imported by `src/index.ts`, so nothing ships it.
+ * Every call hands back a database with every migration applied and no rows in
+ * it. Test-only — never imported by `src/index.ts`, so nothing ships it.
  *
- * **Per-test isolation is deliberate, and it is the expensive choice.** The
- * suite stands up one instance per test, with `apps/api` doing the same in
- * parallel, so the cost grows with the test count. What an instance costs is
- * `initdb` — about 1.4s, with the migrations adding nothing measurable — which
- * is why every instance boots from a snapshot of an already-migrated data dir
- * instead (about 0.3s; see `template()`). If tests start failing under load,
- * raise vitest's `testTimeout` first. Sharing an instance across tests would be
- * the next saving and the wrong one: it trades a rare timeout for cross-test
- * state leaking through a shared database, which is a subtler bug than the one
- * it fixes and much harder to attribute.
+ * **One instance per test file, wiped between tests.** The first call in a
+ * process opens a pglite from the migrated snapshot `template()` keeps; every
+ * later call truncates every table — `RESTART IDENTITY CASCADE`, so sequences
+ * start over too — and hands the same instance back. Vitest runs each test
+ * file in a process of its own, so nothing crosses a file boundary, and within
+ * a file a test starts where a fresh instance would start it: the tables,
+ * indexes and constraints the migrations made, untouched, and no rows. What
+ * the wipe does not reach is state a test leaves outside the tables — a
+ * session setting, an advisory lock held past its transaction — which no test
+ * here does. A test that needs the database to itself, to watch its SQL or to
+ * leave it in a state the next test must not see, passes `onQuery` and gets a
+ * private instance.
+ *
+ * Why share at all: even from the snapshot a fresh instance costs about 0.3s —
+ * pglite unpacking a 41 MB data dir into its in-memory filesystem — while the
+ * truncate costs about 20ms, and the api suite opens one per test. The risk
+ * the trade takes on is cross-test state leaking through the shared database;
+ * the truncate between calls is what closes that door, and `testing.test.ts`
+ * pins that it does.
  */
 export interface TestDb {
   db: Database;
-  /** Free the WASM instance. Call in `afterEach`/`afterAll`. */
+  /** Free a private instance. For the shared one this is a no-op: the
+   *  package's vitest setup file frees it with `closeSharedTestDb()` once the
+   *  file is done. Call in `afterEach`/`afterAll` either way. */
   close: () => Promise<void>;
 }
 
 export async function createTestDb(
   options: {
-    /** Sees every statement drizzle sends. For asserting SQL a
-     *  single-connection database can't exercise — a row lock needs a second
-     *  connection to contend with, and pglite has one. */
+    /** Sees every statement drizzle sends, on a private instance. For
+     *  asserting SQL a single-connection database can't exercise — a row lock
+     *  needs a second connection to contend with, and pglite has one. */
     onQuery?: (sql: string) => void;
   } = {},
 ): Promise<TestDb> {
-  const client = new PGlite({ loadDataDir: await template() });
   const { onQuery } = options;
-  const db = drizzle(client, {
-    schema,
-    logger: onQuery ? { logQuery: (sql) => onQuery(sql) } : undefined,
-  });
+  if (onQuery) {
+    const client = new PGlite({ loadDataDir: await template() });
+    const db = drizzle(client, { schema, logger: { logQuery: (sql) => onQuery(sql) } });
+    return { db, close: () => client.close() };
+  }
 
-  return { db, close: () => client.close() };
+  if (shared) {
+    const { client, db, truncate } = await shared;
+    await client.exec(truncate);
+    return { db, close: async () => undefined };
+  }
+  shared = openShared();
+  const { db } = await shared;
+  return { db, close: async () => undefined };
+}
+
+interface Shared {
+  client: PGlite;
+  db: Database;
+  /** The statement that puts the instance back to empty. */
+  truncate: string;
+}
+
+let shared: Promise<Shared> | undefined;
+
+async function openShared(): Promise<Shared> {
+  const client = new PGlite({ loadDataDir: await template() });
+  const db = drizzle(client, { schema });
+  // Every table the migrations made, read once from the catalog, so a table
+  // added later needs no edit here. drizzle's own bookkeeping lives in the
+  // `drizzle` schema and is left alone.
+  const { rows } = await client.query<{ tables: string }>(
+    `select string_agg(format('%I', tablename), ', ' order by tablename) as tables
+       from pg_tables where schemaname = 'public'`,
+  );
+  return { client, db, truncate: `truncate ${rows[0]!.tables} restart identity cascade` };
+}
+
+/** Free the instance this process's tests shared. Each package's vitest setup
+ *  file calls it in `afterAll`. */
+export async function closeSharedTestDb(): Promise<void> {
+  const open = shared;
+  shared = undefined;
+  if (open) await (await open).client.close();
 }
 
 const here = dirname(fileURLToPath(import.meta.url));

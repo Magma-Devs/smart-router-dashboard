@@ -20,6 +20,11 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   a test-only `setPasswordCostForTests()`; production stays at cost 12, and
   the setup test that asserts the stored cost keeps asserting 12
   (MAG-4318).
+- **Tests:** database-backed tests in one file share a pglite instance that
+  is truncated between tests (sequences restart), instead of opening one
+  per test; a test that watches its SQL still gets a private instance. With
+  the three changes above, the api suite runs in about a minute on the CI
+  runner, down from about 5.5 (MAG-4318).
 
 ## [0.35.4]
 

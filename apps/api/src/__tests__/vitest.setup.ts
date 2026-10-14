@@ -1,4 +1,5 @@
-import { beforeEach } from "vitest";
+import { afterAll, beforeEach } from "vitest";
+import { closeSharedTestDb } from "@sr/db/testing";
 import { setPasswordCostForTests } from "../services/password.js";
 
 /**
@@ -14,3 +15,6 @@ import { setPasswordCostForTests } from "../services/password.js";
 beforeEach(() => {
   setPasswordCostForTests(4);
 });
+
+/** The database the file's tests share is freed once the file is done. */
+afterAll(() => closeSharedTestDb());
