@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.35.4]
+
 ### Fixed
 
 - **Metrics:** the HeroPanel summary (`/api/metrics/dashboard-summary`) issues
