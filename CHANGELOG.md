@@ -5,6 +5,15 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Fixed
+
+- **Try it:** the method catalog follows lava-specs again — it was one method
+  behind within minutes of #250: NEAR's `next_light_client_block` no longer
+  carries the "needs an argument" mark, because lava-specs (64dcd8b0,
+  2026-10-14) moved its block parsing from a canonical block argument to the
+  default parser with block-hash paths. Nothing was added or removed, and the
+  explorer and runnable roll-calls are unchanged. 292 chains, 249 with an
+  explorer, 202 primaries linking a height (MAG-4329).
 ## [0.35.2]
 
 ### Fixed
