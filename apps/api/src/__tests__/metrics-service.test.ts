@@ -98,14 +98,10 @@ describe("MetricsService query construction (bug regressions)", () => {
   it("per-chain health reads the spec-labelled ENDPOINT gauge, not the global router gauge", async () => {
     const { prom, queries } = capturingProm();
     await new MetricsService(prom).chains("1d");
-    expect(
-      queries.some((q) =>
-        q.includes('max by (spec) (rpc_endpoint_overall_health{spec="'),
-      ),
-    ).toBe(true);
+    expect(queries.some((q) => q === "max by (spec) (rpc_endpoint_overall_health)")).toBe(true);
     // The label-less router gauge must not be used with a spec in mind:
     // it may appear alone (global health) but never filtered per chain.
-    expect(queries.every((q) => !q.includes('smartrouter_overall_health{spec='))).toBe(true);
+    expect(queries.every((q) => !q.includes("smartrouter_overall_health{spec="))).toBe(true);
   });
 
   // MAG-2710: the hero tile read "50.0K across 4 upstreams" while the Routers
@@ -651,5 +647,82 @@ describe("MetricsService · cross-chain shared node names (MAG-2875)", () => {
     ]);
     const solOnly = await svc.upstreams(undefined, "1d", "Solana");
     expect(solOnly.map((r) => [r.endpointId, r.spec])).toEqual([["lava", "SOLANA"]]);
+  });
+});
+
+// MAG-4295: `chains()` and the Routers table read eight series per chain or
+// per router. They read seven grouped series per set and join on the labels.
+describe("MetricsService · chain-level figures read grouped series (MAG-4295)", () => {
+  const row = (metric: Record<string, string>, v: string): PromVectorSample => ({ metric, value: [1, v] });
+  const answers = (expr: string): PromVectorSample[] | undefined => {
+    if (expr.startsWith("sum by (spec) (increase(smartrouter_end_to_end_latency_milliseconds_count")) return [row({ spec: "ETH1" }, "1234.4")];
+    if (expr.startsWith("clamp_max(sum by (spec) (increase(smartrouter_requests_success_total")) return [row({ spec: "ETH1" }, "0.995")];
+    if (expr.startsWith("histogram_quantile(0.95, sum by (spec, le)")) return [row({ spec: "ETH1" }, "42"), row({ spec: "SOLANA" }, "NaN")];
+    if (expr.startsWith("avg by (spec) (rpc_endpoint_selection_score")) return [row({ spec: "ETH1" }, "0.9")];
+    if (expr === "max by (spec) (rpc_endpoint_overall_health)") return [row({ spec: "ETH1" }, "1"), row({ spec: "SOLANA" }, "0")];
+    if (expr === "max by (spec) (smartrouter_latest_block)") return [row({ spec: "ETH1" }, "100")];
+    if (expr === "count by (spec, endpoint_id) (rpc_endpoint_overall_health)") {
+      return [row({ spec: "ETH1", endpoint_id: "a" }, "1"), row({ spec: "ETH1", endpoint_id: "b" }, "1"), row({ endpoint_id: "orphan" }, "1")];
+    }
+    return undefined;
+  };
+
+  it("costs the same reads for one chain as for three", async () => {
+    const one = capturingProm({ specs: ["ETH1"] });
+    await new MetricsService(one.prom).chains("1h");
+    const three = capturingProm({ specs: ["ETH1", "SOLANA", "APT1"] });
+    await new MetricsService(three.prom).chains("1h");
+    // The chain list, then seven grouped reads.
+    expect(one.queries).toHaveLength(1 + 7);
+    expect(three.queries).toHaveLength(one.queries.length);
+    expect(three.queries.every((q) => !q.includes('{spec="'))).toBe(true);
+  });
+
+  it("joins every figure on the spec label and derives the error rate from the availability read", async () => {
+    const { prom, queries } = capturingProm({ specs: ["ETH1", "SOLANA"], vector: answers });
+    const chains = await new MetricsService(prom).chains("1h");
+    const eth = chains.find((c) => c.spec === "ETH1")!;
+    expect(eth).toMatchObject({ requests: 1234, availability: 0.995, p95Ms: 42, qos: 0.9, health: "operational", latestBlock: 100, upstreamCount: 2 });
+    expect(eth.errorRate).toBeCloseTo(0.005, 10);
+    // No second read of the ratio for the error rate.
+    expect(queries.filter((q) => q.startsWith("1 - ("))).toHaveLength(0);
+    // A NaN quantile is "no samples"; a health gauge of 0 is unhealthy; the rest never arrived.
+    const sol = chains.find((c) => c.spec === "SOLANA")!;
+    expect(sol).toMatchObject({ requests: 0, availability: null, errorRate: null, p95Ms: null, qos: null, health: "unhealthy", latestBlock: null, upstreamCount: 0 });
+  });
+
+  it("the Routers table reads per-target rows for the routers the collector splits, and the chain row for the rest", async () => {
+    const topology = [
+      { id: "eth-prod", spec: "ETH1", nodes: [{}, {}] },
+      { id: "eth-staging", spec: "ETH1", nodes: [{}] },
+      { id: "sol-main", spec: "SOLANA", nodes: [{}] },
+    ];
+    const configSvc = { getRouters: () => topology } as unknown as ConfigurationService;
+    const { prom, queries } = capturingProm({
+      vector: (expr) => {
+        if (expr.startsWith("count by (service)")) return [row({ service: "eth-prod-router" }, "1")];
+        if (expr.startsWith("sum by (spec, service) (increase(smartrouter_end_to_end_latency_milliseconds_count")) {
+          return [row({ spec: "ETH1", service: "eth-prod-router" }, "700")];
+        }
+        return answers(expr);
+      },
+    });
+    const rows = await new MetricsService(prom, configSvc).routers("1h", "service");
+    // Target discovery + one set by spec + one set by (spec, service): never a read per router.
+    expect(queries).toHaveLength(1 + 7 + 7);
+    const by = Object.fromEntries(rows.map((r) => [r.routerId, r]));
+    expect(by["eth-prod"]).toMatchObject({ attribution: "own", requests: 700, upstreamCount: 2, sharedWith: [] });
+    expect(by["eth-staging"]).toMatchObject({ attribution: "shared", requests: 1234, sharedWith: ["eth-prod"], upstreamCount: 1 });
+    expect(by["sol-main"]).toMatchObject({ attribution: "own", requests: 0, health: "unhealthy", sharedWith: [] });
+  });
+
+  it.each(["spec", "le", "endpoint_id"])("%s, a label the grouped reads use, cannot serve as the target label", async (label) => {
+    const configSvc = { getRouters: () => [{ id: "eth-prod", spec: "ETH1", nodes: [] }] } as unknown as ConfigurationService;
+    const { prom, queries } = capturingProm();
+    const rows = await new MetricsService(prom, configSvc).routers("1h", label);
+    // No target discovery and no per-target set: the one chain-level set only.
+    expect(queries).toHaveLength(7);
+    expect(queries.some((q) => q.startsWith(`count by (${label})`))).toBe(false);
+    expect(rows[0]!.attribution).toBe("own");
   });
 });
