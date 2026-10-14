@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.35.2]
+
 ### Fixed
 
 - **Try it:** the method catalog is back in sync with lava-specs, which the
