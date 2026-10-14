@@ -25,6 +25,10 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   `GET /api/metrics/pulse` — router health, upstream health counts and the
   current client RPS in six Prometheus reads — instead of the full overview
   payload every 30 s on every page (MAG-4296).
+- **API:** identical Prometheus reads in flight at the same moment share one
+  request, and a successful answer is reused for `PROMETHEUS_CACHE_TTL_MS`
+  (default 10 s, under the 15 s panel poll; `0` keeps every read live).
+  Failures and the readiness probe are never kept (MAG-4297).
 
 ## [0.34.2]
 

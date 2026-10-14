@@ -11,5 +11,11 @@ export default defineConfig({
     // generous one slows nothing down.
     hookTimeout: 120_000,
     testTimeout: 60_000,
+    env: {
+      // Route tests build one app and swap the canned store between cases;
+      // with the client's answer cache on, a case would read the previous
+      // case's answers. The cache's own tests pass an explicit TTL.
+      PROMETHEUS_CACHE_TTL_MS: "0",
+    },
   },
 });
