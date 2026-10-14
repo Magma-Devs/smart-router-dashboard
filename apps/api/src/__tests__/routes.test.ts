@@ -223,6 +223,17 @@ describe("api routes", () => {
     expect(body.classTotals.emitted).toEqual({ write: false, batch: false });
   });
 
+  it("GET /api/metrics/pulse → the topbar's three fields", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/metrics/pulse" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(["operational", "unhealthy", "unknown"]).toContain(body.health);
+    expect(typeof body.upstreamHealthCounts.unhealthy).toBe("number");
+    expect(typeof body.upstreamHealthCounts.unknown).toBe("number");
+    expect(body.throughputRps === null || typeof body.throughputRps === "number").toBe(true);
+    expect(typeof body.lastUpdated).toBe("string");
+  });
+
   it("GET /api/metrics/overview → KPIs + series + gated CU/cap + prior errors", async () => {
     const res = await app.inject({ method: "GET", url: "/api/metrics/overview?window=1d" });
     expect(res.statusCode).toBe(200);

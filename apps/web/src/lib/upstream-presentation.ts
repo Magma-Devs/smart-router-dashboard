@@ -1,4 +1,4 @@
-import type { HealthState, OverviewData } from "@sr/shared";
+import type { DeploymentPulse, HealthState } from "@sr/shared";
 
 /** A historical request statistic must not certify an unavailable upstream. */
 export function upstreamMetricColor(health: HealthState, color: string): string {
@@ -20,7 +20,7 @@ export function upstreamHealthNotice(health: HealthState, reason?: string): stri
 /** Router availability and the health of every backing upstream are separate facts. */
 export function deploymentHealthSummary(
   health: HealthState | undefined,
-  counts: OverviewData["upstreamHealthCounts"] | undefined,
+  counts: DeploymentPulse["upstreamHealthCounts"] | undefined,
 ): { label: string; color: string } {
   const label =
     health === "operational"

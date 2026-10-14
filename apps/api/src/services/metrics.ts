@@ -47,6 +47,7 @@ import {
   rangeFor,
   type BlockHeights,
   type ChainMetrics,
+  type DeploymentPulse,
   type GroupBy,
   type RouterMetrics,
   type ChainTips,
@@ -444,6 +445,28 @@ export class MetricsService {
       perChainLatency,
       activeRoutes,
       perChainSeries,
+      lastUpdated: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * The topbar's three fields in six reads: the router's health gauge, the
+   * current client RPS, and the upstream health roll-up (four reads of its
+   * own). No window — the badge describes now.
+   */
+  async pulse(spec?: string, routerId?: string): Promise<DeploymentPulse> {
+    const [healthGauge, throughputRps, upstreamHealth] = await Promise.all([
+      spec ? this.chainHealth(spec) : this.prom.scalar(ROUTER_METRICS.overallHealth),
+      this.prom.scalar(qClientRps(spec)),
+      readUpstreamHealth(this.prom, this.configSvc, spec, routerId),
+    ]);
+    return {
+      health: health(healthGauge),
+      upstreamHealthCounts: {
+        unhealthy: [...upstreamHealth.values()].filter((row) => row.health === "unhealthy").length,
+        unknown: [...upstreamHealth.values()].filter((row) => row.health === "unknown").length,
+      },
+      throughputRps,
       lastUpdated: new Date().toISOString(),
     };
   }

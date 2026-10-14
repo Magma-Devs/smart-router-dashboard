@@ -726,3 +726,25 @@ describe("MetricsService · chain-level figures read grouped series (MAG-4295)",
     expect(rows[0]!.attribution).toBe("own");
   });
 });
+
+// MAG-4296: the topbar read the full overview — dozens of reads, per-chain
+// series it never shows — every 30 s on every page, for three fields.
+describe("MetricsService.pulse · the topbar reads six series, not the overview (MAG-4296)", () => {
+  it("costs six reads whatever the chain count, none of them per chain", async () => {
+    const { prom, queries } = capturingProm({ specs: ["ETH1", "SOLANA", "APT1"] });
+    const pulse = await new MetricsService(prom).pulse();
+    expect(queries).toHaveLength(6);
+    expect(queries).toContain("smartrouter_overall_health");
+    expect(queries).toContain("sum(rate(smartrouter_end_to_end_latency_milliseconds_count[5m]))");
+    expect(queries.every((q) => !q.includes("histogram_quantile") && !q.startsWith("count by (spec)"))).toBe(true);
+    expect(pulse).toMatchObject({ health: "unknown", upstreamHealthCounts: { unhealthy: 0, unknown: 0 }, throughputRps: null });
+  });
+
+  it("under a chain filter reads that chain's endpoint gauge and RPS, like the hero", async () => {
+    const { prom, queries } = capturingProm();
+    await new MetricsService(prom).pulse("ETH1");
+    expect(queries).toContain('max by (spec) (rpc_endpoint_overall_health{spec="ETH1"})');
+    expect(queries).toContain('sum(rate(smartrouter_end_to_end_latency_milliseconds_count{spec="ETH1"}[5m]))');
+    expect(queries.every((q) => q !== "smartrouter_overall_health")).toBe(true);
+  });
+});

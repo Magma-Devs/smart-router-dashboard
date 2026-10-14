@@ -89,6 +89,7 @@ describe("GET /api/metrics/routers", () => {
 describe("?router= scoping", () => {
   const SCOPED_ROUTES = [
     "/api/metrics/overview",
+    "/api/metrics/pulse",
     "/api/metrics/dashboard",
     "/api/metrics/dashboard-summary",
     "/api/metrics/chains",
@@ -240,6 +241,7 @@ describe("METRICS_SCOPE_LABEL / METRICS_SCOPE_VALUE (deployment scope)", () => {
 
   const ROUTES = [
     "/api/metrics/overview",
+    "/api/metrics/pulse",
     "/api/metrics/dashboard",
     "/api/metrics/chains",
     "/api/metrics/routers-rollup",

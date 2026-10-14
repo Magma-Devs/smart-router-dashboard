@@ -246,6 +246,21 @@ export interface ActiveRoute {
   share: number;
 }
 
+/**
+ * What the topbar shows on every page: the router's health, how many of its
+ * upstreams are unhealthy or unreported, and the current client RPS. Six
+ * reads, independent of the chain count — the full overview was read for
+ * these three fields before.
+ */
+export interface DeploymentPulse {
+  health: HealthState;
+  /** Current upstream × chain status, independent of any time window. */
+  upstreamHealthCounts: { unhealthy: number; unknown: number };
+  /** Client requests per second over the last 5 minutes; null with no traffic. */
+  throughputRps: number | null;
+  lastUpdated: string;
+}
+
 /** Everything the Overview + Dashboard screens need in one round-trip. */
 export interface OverviewData {
   totalRequests: Kpi;
