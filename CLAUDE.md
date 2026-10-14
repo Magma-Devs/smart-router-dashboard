@@ -410,10 +410,14 @@ such a chain lists its routers under it there (`?chain=ETH1&router=eth-prod`).
 `smartrouter_*` carries `spec` (the chain) and no router identity, so two
 routers on one chain sum into a single set of numbers. What *does* separate
 them is the collector: each router is its own scrape target, so Prometheus
-attaches a per-target label — `service` under the Prometheus Operator, whose
-value is the router's Service name (`<router-id-lowered>-router`).
-`ROUTER_SCOPE_LABEL` names that label
-(default `service`; use `job` for a scrape config that names jobs per router).
+attaches a per-target label — `router` from the fleet's collector and the
+chart's ServiceMonitor (6.20.0+), copied from the pod label
+`app.smart-router-id`; `service` under a bare Prometheus Operator, whose value
+is the router's Service name (`<router-id-lowered>-router`).
+`ROUTER_SCOPE_LABEL` names that label. Unset (the default), the api resolves
+it on first use: the first of `router`, `service` the store reports values
+for, remembered once found, asked again on every use until then, never at
+boot. Set `job` for a scrape config that names jobs per router.
 
 - **`GET /api/metrics/routers`** → `{ label, routers[] }` — the distinct
   values actually present. Empty means the collector attaches no such label
@@ -485,7 +489,7 @@ deployment to one label value:
   `count(smartrouter_overall_health)` through the scoped client, a gauge
   every running router exports whether or not it has traffic — that warns
   when it counts zero. Advisory only: a zone still provisioning is also zero.
-- `METRICS_SCOPE_LABEL` equal to `ROUTER_SCOPE_LABEL` is refused at boot:
+- `METRICS_SCOPE_LABEL` equal to `ROUTER_SCOPE_LABEL` (or, with that unset, to either label it could resolve to) is refused at boot:
   the router scope would put a second matcher on the same label — redundant
   for the same value, an empty result for any other.
 
@@ -718,7 +722,7 @@ API (`apps/api/src/config.ts` is the source of truth):
 | `PROMETHEUS_CACHE_TTL_MS` | `10000` | how long a successful answer is reused for an identical read (same path, params, scope and credential) — under the 15 s panel poll, so two tabs or two panels asking the same instant read in an interval cost the store one query (range reads stamp their window with the current second and share only when they coincide; the store is per process, each replica keeps its own). `0` keeps every read live. Identical reads in flight at the same moment share one request whatever the value. A refused refresh (429, timeout, error) is answered from the last good read for up to 60 s and retried next time; failures themselves and the readiness probe are never kept |
 | `PROMETHEUS_USERNAME` / `PROMETHEUS_PASSWORD` | unset | Basic auth on every Prometheus call — for a per-tenant read proxy or Mimir behind an auth gateway. Both or neither: one half alone sends no header |
 | `PROMETHEUS_ORG_ID` | unset | Sent as `X-Scope-OrgID`, for a multi-tenant store that takes the org from the client. The fleet's read proxy pins the org from the credential and ignores this |
-| `ROUTER_SCOPE_LABEL` | `service` | Target label carrying the router identity for `?router=` (Prometheus Operator's `service`; `job` for a per-router scrape config). Parsed at import — a change needs a restart |
+| `ROUTER_SCOPE_LABEL` | unset | Target label carrying the router identity for `?router=`. Unset: resolved on first use — `router` (the fleet's collector and the chart's ServiceMonitor from 6.20.0 stamp it from the pod label `app.smart-router-id`), else `service` (the Prometheus Operator's automatic label, the router's Service name); never probed at boot, remembered once found. Set `job` for a scrape config that names jobs per router. Parsed at import — a change needs a restart |
 | `METRICS_SCOPE_LABEL` / `METRICS_SCOPE_VALUE` | unset | Deployment scope: a `label="value"` matcher EVERY metrics query carries (`cache_*`, router discovery and the `/query` passthrough included), for one dashboard per zone / tenant against a shared store. Both or neither — half a pair, a value that cannot sit in a matcher, or a label equal to `ROUTER_SCOPE_LABEL` refuses the boot. A scope that selects no router series warns at boot. Unset = the whole store, as before. See "The deployment scope" |
 | `CORS_ORIGINS` | all | comma list or JSON array |
 | `RATE_LIMIT_MAX` | `300` | per IP per minute |

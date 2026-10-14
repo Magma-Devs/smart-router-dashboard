@@ -29,6 +29,15 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   request, and a successful answer is reused for `PROMETHEUS_CACHE_TTL_MS`
   (default 10 s, under the 15 s panel poll; `0` keeps every read live).
   Failures and the readiness probe are never kept (MAG-4297).
+- **Per-router scoping finds its label.** `ROUTER_SCOPE_LABEL` is unset by
+  default; the api resolves it on first use to the first of `router`, `service`
+  the store reports router values for, and remembers it. The fleet's collector
+  stamps `router`, so the Routers table attributes a chain served by several
+  routers per router instead of marking every such row `shared`, the router
+  filter appears, and `?router=` scoping works — without per-deployment config.
+  A bare Prometheus Operator install keeps working on `service`. An explicit
+  `ROUTER_SCOPE_LABEL` still wins; the boot refusal for a `METRICS_SCOPE_LABEL`
+  that collides now covers both candidates (MAG-4303).
 
 ## [0.34.2]
 
