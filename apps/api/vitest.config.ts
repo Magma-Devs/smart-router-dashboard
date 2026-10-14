@@ -17,5 +17,6 @@ export default defineConfig({
       // case's answers. The cache's own tests pass an explicit TTL.
       PROMETHEUS_CACHE_TTL_MS: "0",
     },
+    setupFiles: ["./src/__tests__/vitest.setup.ts"],
   },
 });

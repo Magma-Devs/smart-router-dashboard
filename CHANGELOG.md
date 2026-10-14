@@ -16,6 +16,10 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   (`VITEST_MAX_WORKERS=$(nproc)`) instead of vitest's default of one fewer,
   which left a quarter of the 4-vCPU runner idle through the test step
   (MAG-4318).
+- **Tests:** the api suite hashes fixture passwords at bcrypt cost 4 through
+  a test-only `setPasswordCostForTests()`; production stays at cost 12, and
+  the setup test that asserts the stored cost keeps asserting 12
+  (MAG-4318).
 
 ## [0.35.4]
 

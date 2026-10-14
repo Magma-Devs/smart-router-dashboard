@@ -179,7 +179,7 @@ describe("POST /api/account/password", () => {
   it("is limited like sign-in per address, because it tests a credential too", async () => {
     // One guess per member, all from one address: the per-account budget never
     // fires, so what stops the eleventh is the per-IP limit alone. One shared
-    // hash, because eleven bcrypt hashes at cost 12 outrun the test timeout.
+    // hash: the eleven accounts differ only in address.
     const passwordHash = await hashPassword(OLD_PASSWORD);
     const statuses: number[] = [];
     for (let i = 0; i < 11; i++) {
