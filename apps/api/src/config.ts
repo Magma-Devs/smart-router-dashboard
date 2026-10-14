@@ -45,6 +45,15 @@ function envList(name: string): string[] | true {
   return trimmed.split(",").map((o) => o.trim()).filter(Boolean);
 }
 
+/**
+ * The labels a collector stamps the router identity on, in the order they
+ * are tried when `ROUTER_SCOPE_LABEL` is unset: `router` is what the fleet's
+ * collector and the chart's ServiceMonitor (6.20.0+) copy from the pod label
+ * `app.smart-router-id`; `service` is the Prometheus Operator's automatic
+ * label, the router's Service name (`<id>-router`).
+ */
+export const ROUTER_SCOPE_CANDIDATES = ["router", "service"] as const;
+
 export const config = {
   env: env("NODE_ENV") ?? "production",
   isDev: env("NODE_ENV") === "development",
@@ -91,11 +100,13 @@ export const config = {
      * Target label that identifies ONE router deployment, used by the
      * `?router=` scope (see `promql/scope.ts`). The router labels its series
      * with the chain, not with itself, so telling two routers on one chain
-     * apart relies on a per-target label the collector attaches. `service` is
-     * the Prometheus Operator's (the value being the router's Service name);
-     * point it at `job` for a scrape config that names jobs per router.
+     * apart relies on a per-target label the collector attaches. Empty (the
+     * default) means "find out": the first of `ROUTER_SCOPE_CANDIDATES` the
+     * store reports values for, probed when a request first needs it and
+     * remembered once found (`plugins/prometheus.ts`). Set it to `job` for a
+     * scrape config that names jobs per router.
      */
-    routerScopeLabel: env("ROUTER_SCOPE_LABEL") ?? "service",
+    routerScopeLabel: env("ROUTER_SCOPE_LABEL") ?? "",
     /**
      * Deployment scope — see `readMetricsScope()`. Read at plugin registration
      * (live env, not this snapshot) so a bad pair fails the boot with a

@@ -19,7 +19,13 @@ let sent: string[] = [];
  * `present` names optional families whose presence probe answers 1, so the
  * reads behind them are issued.
  */
-function mockPrometheus(routerLabelValues: string[] = [], present: string[] = [], routersInScope = 1): void {
+function mockPrometheus(
+  routerLabelValues: string[] = [],
+  present: string[] = [],
+  routersInScope = 1,
+  /** Values per label, when the test needs the candidates to answer differently. */
+  perLabel?: Record<string, string[]>,
+): void {
   sent = [];
   vi.stubGlobal("fetch", async (input: URL | string) => {
     const url = typeof input === "string" ? input : input.toString();
@@ -37,7 +43,7 @@ function mockPrometheus(routerLabelValues: string[] = [], present: string[] = []
     const scopeMatch = /^count by \((\w+)\) \(smartrouter_requests_total/.exec(query);
     const probed = /^count\(\{(?:[^}]*,)?__name__="([^"]+)"\}\)$/.exec(query)?.[1];
     const result = scopeMatch
-      ? routerLabelValues.map((v) => ({ metric: { [scopeMatch[1]!]: v }, value: [1, "1"] }))
+      ? (perLabel ? (perLabel[scopeMatch[1]!] ?? []) : routerLabelValues).map((v) => ({ metric: { [scopeMatch[1]!]: v }, value: [1, "1"] }))
       : probed && present.includes(probed)
         ? [{ metric: {}, value: [1, "1"] }]
         : [];
@@ -57,9 +63,15 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-/** Queries carrying at least one metric selector (the ones a scope must reach). */
+/**
+ * Queries carrying at least one metric selector (the ones a scope must reach)
+ * — minus router discovery, which lists the routers and so never carries a
+ * router matcher itself.
+ */
 function metricQueries(): string[] {
-  return sent.filter((q) => /smartrouter_|rpc_endpoint_|rpc_optimizer_/.test(q));
+  return sent.filter(
+    (q) => /smartrouter_|rpc_endpoint_|rpc_optimizer_/.test(q) && !/^count by \((?:router|service)\) \(smartrouter_requests_total/.test(q),
+  );
 }
 
 describe("GET /api/metrics/routers", () => {
@@ -70,7 +82,7 @@ describe("GET /api/metrics/routers", () => {
     const res = await app.inject({ method: "GET", url: "/api/metrics/routers" });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({
-      label: "service",
+      label: "router",
       routers: ["hyperliquidproduction-router", "hyperliquidstaging-router"], // sorted
     });
   });
@@ -80,7 +92,7 @@ describe("GET /api/metrics/routers", () => {
     app = await buildApp();
 
     expect(await app.inject({ method: "GET", url: "/api/metrics/routers" }).then((r) => r.json())).toEqual({
-      label: "service",
+      label: "router",
       routers: [],
     });
   });
@@ -117,7 +129,7 @@ describe("?router= scoping", () => {
 
     const queries = metricQueries();
     expect(queries.length).toBeGreaterThan(0);
-    expect(queries.filter((q) => !q.includes('service="eth-router"'))).toEqual([]);
+    expect(queries.filter((q) => !q.includes('router="eth-router"'))).toEqual([]);
   });
 
   it.each(SCOPED_ROUTES)("stays cluster-wide on %s without the param", async (route) => {
@@ -125,7 +137,7 @@ describe("?router= scoping", () => {
 
     const res = await app.inject({ method: "GET", url: route });
     expect(res.statusCode).toBe(200);
-    expect(sent.filter((q) => q.includes("service="))).toEqual([]);
+    expect(sent.filter((q) => q.includes("router="))).toEqual([]);
   });
 
   it("ignores a value that could break out of the label matcher", async () => {
@@ -138,7 +150,7 @@ describe("?router= scoping", () => {
     // Reads cluster-wide rather than becoming a different query — and the
     // injection attempt reaches Prometheus nowhere.
     expect(res.statusCode).toBe(200);
-    expect(sent.filter((q) => q.includes("service="))).toEqual([]);
+    expect(sent.filter((q) => q.includes("router="))).toEqual([]);
     expect(sent.filter((q) => q.includes('or spec="ETH1'))).toEqual([]);
   });
 
@@ -150,7 +162,7 @@ describe("?router= scoping", () => {
       url: "/api/metrics/query?query=smartrouter_overall_health&router=eth-router",
     });
     expect(res.statusCode).toBe(200);
-    expect(sent).toContain('smartrouter_overall_health{service="eth-router"}');
+    expect(sent).toContain('smartrouter_overall_health{router="eth-router"}');
   });
 
   it("leaves the presence probes' quoted metric names intact", async () => {
@@ -162,13 +174,14 @@ describe("?router= scoping", () => {
     const probes = sent.filter((q) => q.includes("__name__="));
     expect(probes.length).toBeGreaterThan(0);
     for (const probe of probes) {
-      expect(probe).toMatch(/^count\(\{service="eth-router",__name__=/);
+      expect(probe).toMatch(/^count\(\{router="eth-router",__name__=/);
     }
   });
 });
 
 describe("ROUTER_SCOPE_LABEL", () => {
-  it("selects on the configured label instead of `service`", async () => {
+  it("selects on the configured label — no probing, even when the store reports others", async () => {
+    mockPrometheus([], [], 1, { router: ["eth-router"], service: ["eth-router"] });
     // config.ts parses env at import time, so the override needs a fresh
     // module graph.
     const saved = process.env.ROUTER_SCOPE_LABEL;
@@ -282,7 +295,7 @@ describe("METRICS_SCOPE_LABEL / METRICS_SCOPE_VALUE (deployment scope)", () => {
     app = await buildApp();
 
     expect((await app.inject({ method: "GET", url: "/api/metrics/routers" })).statusCode).toBe(200);
-    expect(sent).toContain('count by (service) (smartrouter_requests_total{zone="eu-west"})');
+    expect(sent).toContain('count by (router) (smartrouter_requests_total{zone="eu-west"})');
   });
 
   it("stacks the per-request router scope on top", async () => {
@@ -296,7 +309,7 @@ describe("METRICS_SCOPE_LABEL / METRICS_SCOPE_VALUE (deployment scope)", () => {
     // not a request and carries no router.
     const queries = metricQueries().filter((q) => !q.startsWith("count(smartrouter_overall_health{"));
     expect(queries.length).toBeGreaterThan(0);
-    expect(queries.filter((q) => !q.includes('service="eth-router"') || !q.includes('zone="eu-west"'))).toEqual([]);
+    expect(queries.filter((q) => !q.includes('router="eth-router"') || !q.includes('zone="eu-west"'))).toEqual([]);
   });
 
   it("scopes the raw PromQL passthrough", async () => {
@@ -358,6 +371,11 @@ describe("METRICS_SCOPE_LABEL / METRICS_SCOPE_VALUE (deployment scope)", () => {
     await expect(buildApp()).rejects.toThrow(/both "service"/);
   });
 
+  it("refuses to boot when the deployment label is any label the router scope could resolve to", async () => {
+    setScope("router", "eth-router");
+    await expect(buildApp()).rejects.toThrow(/both "router" \(ROUTER_SCOPE_LABEL is unset/);
+  });
+
   it("sends nothing extra when unset — today's behaviour", async () => {
     setScope(undefined, undefined);
     app = await buildApp();
@@ -393,5 +411,69 @@ describe("GET /api/metrics/upstream-detail", () => {
     expect(naming.filter((q) => !/spec="SOLANA",(endpoint_id|provider_address)="blockdaemon"/.test(q))).toEqual([]);
     // …and the node-error reads are among them, not skipped.
     expect(naming.some((q) => q.includes("smartrouter_node_errors_total"))).toBe(true);
+  });
+});
+
+// MAG-4303: the fleet's collector stamps the router identity as `router`; the
+// Prometheus Operator's automatic label is `service`. Left unset, the api
+// finds out which one the store carries instead of being told per deployment.
+describe("ROUTER_SCOPE_LABEL left unset (MAG-4303)", () => {
+  const routersOf = async () => (await app!.inject({ method: "GET", url: "/api/metrics/routers" })).json();
+  const discovery = () => sent.filter((q) => q.startsWith("count by ("));
+
+  it("resolves to `router` when the store reports routers on it", async () => {
+    mockPrometheus([], [], 1, { router: ["eth-router"] });
+    app = await buildApp();
+    expect(await routersOf()).toEqual({ label: "router", routers: ["eth-router"] });
+    // The first candidate answered, so the second was never asked.
+    expect(discovery()).toEqual(["count by (router) (smartrouter_requests_total)", "count by (router) (smartrouter_requests_total)"]);
+
+    const res = await app.inject({ method: "GET", url: "/api/metrics/chains?router=eth-router" });
+    expect(res.statusCode).toBe(200);
+    const scopedReads = metricQueries();
+    expect(scopedReads.length).toBeGreaterThan(0);
+    expect(scopedReads.filter((q) => !q.includes('router="eth-router"'))).toEqual([]);
+  });
+
+  it("falls back to the operator's `service` when only that label reports", async () => {
+    mockPrometheus([], [], 1, { service: ["eth-router"] });
+    app = await buildApp();
+    expect(await routersOf()).toEqual({ label: "service", routers: ["eth-router"] });
+    expect(discovery().slice(0, 2)).toEqual([
+      "count by (router) (smartrouter_requests_total)",
+      "count by (service) (smartrouter_requests_total)",
+    ]);
+
+    await app.inject({ method: "GET", url: "/api/metrics/chains?router=eth-router" });
+    const scopedReads = metricQueries();
+    expect(scopedReads.length).toBeGreaterThan(0);
+    expect(scopedReads.filter((q) => !q.includes('service="eth-router"'))).toEqual([]);
+  });
+
+  it("asks again on every use until a label reports — and never at boot", async () => {
+    mockPrometheus([]);
+    app = await buildApp();
+    await app.ready();
+    expect(sent).toEqual([]);
+    expect(await routersOf()).toEqual({ label: "router", routers: [] });
+
+    // The collector starts stamping the label: the next use finds it.
+    mockPrometheus([], [], 1, { service: ["eth-router"] });
+    expect(await routersOf()).toEqual({ label: "service", routers: ["eth-router"] });
+
+    // Remembered from here on: one discovery read, on the label found.
+    mockPrometheus([], [], 1, { service: ["eth-router"] });
+    expect(await routersOf()).toEqual({ label: "service", routers: ["eth-router"] });
+    expect(discovery()).toEqual(["count by (service) (smartrouter_requests_total)"]);
+  });
+
+  it("settles the label before a `?router=` read, so the first scoped request is already right", async () => {
+    mockPrometheus([], [], 1, { service: ["eth-router"] });
+    app = await buildApp();
+    const res = await app.inject({ method: "GET", url: "/api/metrics/overview?router=eth-router" });
+    expect(res.statusCode).toBe(200);
+    const scopedReads = metricQueries();
+    expect(scopedReads.length).toBeGreaterThan(0);
+    expect(scopedReads.filter((q) => !q.includes('service="eth-router"'))).toEqual([]);
   });
 });
