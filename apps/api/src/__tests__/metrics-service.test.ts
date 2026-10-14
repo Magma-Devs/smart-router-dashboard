@@ -716,11 +716,13 @@ describe("MetricsService · chain-level figures read grouped series (MAG-4295)",
     expect(by["sol-main"]).toMatchObject({ attribution: "own", requests: 0, health: "unhealthy", sharedWith: [] });
   });
 
-  it("the chain label cannot serve as the target label", async () => {
+  it.each(["spec", "le", "endpoint_id"])("%s, a label the grouped reads use, cannot serve as the target label", async (label) => {
     const configSvc = { getRouters: () => [{ id: "eth-prod", spec: "ETH1", nodes: [] }] } as unknown as ConfigurationService;
     const { prom, queries } = capturingProm();
-    const rows = await new MetricsService(prom, configSvc).routers("1h", "spec");
-    expect(queries.every((q) => !q.includes("by (spec, spec"))).toBe(true);
+    const rows = await new MetricsService(prom, configSvc).routers("1h", label);
+    // No target discovery and no per-target set: the one chain-level set only.
+    expect(queries).toHaveLength(7);
+    expect(queries.some((q) => q.startsWith(`count by (${label})`))).toBe(false);
     expect(rows[0]!.attribution).toBe("own");
   });
 });

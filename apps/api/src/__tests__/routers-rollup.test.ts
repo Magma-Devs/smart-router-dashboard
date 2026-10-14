@@ -142,6 +142,7 @@ async function rollup() {
     sharedWith: string[];
     upstreamCount: number;
     requests: number;
+    latestBlock: number | null;
   }[];
 }
 
@@ -216,8 +217,11 @@ describe("GET /api/metrics/routers-rollup", () => {
     const rows = await rollup();
     expect(sent).toHaveLength(1 + 7 + 7);
     expect(sent.filter((q) => q.includes("by (spec, service"))).toHaveLength(7);
-    // The per-target row joins on BOTH labels: eth-prod's own upstream rows.
-    expect(rows.find((r) => r.routerId === "eth-prod")!.upstreamCount).toBe(2);
+    // The per-target row joins on BOTH labels: a READ field (the config
+    // overrides upstreamCount) comes from eth-prod's own (ETH1, target) row,
+    // while its sibling, which the collector does not split, reads the chain's.
+    expect(rows.find((r) => r.routerId === "eth-prod")!.latestBlock).toBe(700);
+    expect(rows.find((r) => r.routerId === "eth-staging")!.latestBlock).toBe(1000);
   });
 
   it("every row of a fully split deployment comes from the per-target set", async () => {

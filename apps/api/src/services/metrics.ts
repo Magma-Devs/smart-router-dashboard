@@ -144,6 +144,9 @@ const NO_FIGURES: ChainFigures = {
   upstreamCount: 0,
 };
 
+/** Labels the grouped reads already key or aggregate on — none can double as the target label. */
+const GROUPED_LABELS: ReadonlySet<string> = new Set(["spec", "le", "endpoint_id"]);
+
 /** Map key for one group's label values (`["ETH1"]`, `["ETH1", "eth-router"]`). */
 const groupKey = (values: readonly string[]): string => values.join("\u0000");
 
@@ -509,9 +512,9 @@ export class MetricsService {
     // Which routers the collector can actually tell apart. Checked against the
     // reported target values rather than assumed from the chart's naming, so a
     // deployment whose Service names differ degrades to `shared` instead of
-    // grouping on a label nothing carries (which reads as zero). The chain's
-    // own label cannot double as the target label.
-    const scopable = isValidScopeLabel(scopeLabel) && scopeLabel !== "spec";
+    // grouping on a label nothing carries (which reads as zero). A label the
+    // grouped reads already use cannot double as the target label.
+    const scopable = isValidScopeLabel(scopeLabel) && !GROUPED_LABELS.has(scopeLabel);
     const scopeValues = new Set(scopable ? await this.listRouterScopes(scopeLabel) : []);
     const scopeFor = (routerId: string): string | null => {
       const candidate = `${routerId.toLowerCase()}-router`;
