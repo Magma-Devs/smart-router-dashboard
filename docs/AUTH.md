@@ -1089,6 +1089,12 @@ rate limit.
 in-process) with every migration applied, no Docker and no service
 container. Used by the DB-backed api tests.
 
+Every instance loads from a snapshot of the migrated data dir that the helper
+builds once and keeps under `packages/db/node_modules/.cache/pglite-template/`,
+keyed by the migrations folder and the installed pglite — a new migration is a
+cache miss, so the snapshot is never stale. Delete that directory to force a
+rebuild.
+
 This matters because the behaviour the schema leans on hardest is exactly
 what a hand-rolled fake cannot reproduce — the partial unique index on
 `lower(email)`, conditional single-use updates whose correctness depends

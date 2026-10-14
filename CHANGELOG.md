@@ -5,6 +5,14 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Changed
+
+- **Tests:** every database-backed test loads its pglite from a snapshot of
+  the migrated data dir, built once and cached under `node_modules/.cache`,
+  instead of running `initdb` and every migration itself. A fresh instance
+  costs about 0.3s rather than 1.4s, which takes the api suite from about
+  5.5 minutes to under 3 on the CI runner (MAG-4318).
+
 ## [0.35.4]
 
 ### Fixed
