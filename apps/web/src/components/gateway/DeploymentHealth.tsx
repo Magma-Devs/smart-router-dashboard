@@ -1,6 +1,6 @@
 "use client";
 
-import type { HealthState, OverviewData } from "@sr/shared";
+import type { DeploymentPulse, HealthState } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { useFilters } from "./FiltersProvider";
 import { deploymentHealthSummary } from "@/lib/upstream-presentation";
@@ -12,7 +12,7 @@ export function DeploymentHealthBadge({
   error = false,
 }: {
   health: HealthState | undefined;
-  counts: OverviewData["upstreamHealthCounts"] | undefined;
+  counts: DeploymentPulse["upstreamHealthCounts"] | undefined;
   loading?: boolean;
   error?: boolean;
 }) {
@@ -41,16 +41,22 @@ export function DeploymentHealthBadge({
   );
 }
 
-export function useDeploymentOverview() {
-  const { scopeQ, routerId } = useFilters();
-  const configScope = routerId ? `&routerId=${encodeURIComponent(routerId)}` : "";
-  return useApi<OverviewData>(`/api/metrics/overview?window=1h${scopeQ}${configScope}`, 30000, {
-    keepPreviousData: false,
-  });
+/**
+ * The topbar's pulse — health, upstream health counts, current RPS — polled
+ * on every page. Its own six-read endpoint: the full overview it used to read
+ * for these three fields costs dozens of reads a call (MAG-4296).
+ */
+export function useDeploymentPulse() {
+  const { withScope, routerId } = useFilters();
+  const scoped = withScope("/api/metrics/pulse");
+  const url = routerId
+    ? `${scoped}${scoped.includes("?") ? "&" : "?"}routerId=${encodeURIComponent(routerId)}`
+    : scoped;
+  return useApi<DeploymentPulse>(url, 30000, { keepPreviousData: false });
 }
 
 export function DeploymentHealth() {
-  const { data, isLoading, error } = useDeploymentOverview();
+  const { data, isLoading, error } = useDeploymentPulse();
   return (
     <DeploymentHealthBadge
       health={data?.health}
