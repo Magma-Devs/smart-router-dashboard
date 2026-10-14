@@ -5,6 +5,16 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Fixed
+
+- **CI:** the main build tags each release it publishes (`v<VERSION>`, once
+  both images are pushed), so "Validate version was bumped" has a tag to
+  compare against — with none in the repository it passed every merge. The
+  registry check behind it now lowercases the image path (the org name's
+  capitals made `docker manifest inspect` fail on the reference, which the
+  step read as "proceed") and fails on anything but "no such manifest"
+  (MAG-4314).
+
 ## [0.35.0]
 
 ### Fixed
