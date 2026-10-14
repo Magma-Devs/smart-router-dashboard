@@ -12,6 +12,12 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   per chain plus a second copy of the trend, and issues every read in one round.
   A 40-chain deployment goes from about 200 Prometheus reads per call to about
   30, so the per-chain panels stop timing out into empty rows (MAG-4294).
+- **Metrics:** the Routers table and `/api/metrics/chains` read their
+  chain-level figures as seven grouped series — one row per chain, plus one
+  row per (chain, scrape target) for the routers the collector tells apart —
+  instead of eight reads per router. A 44-router deployment goes from about
+  350 Prometheus reads per call to at most 15, so rows stop timing out into
+  "unknown" and zeros (MAG-4295).
 
 ## [0.34.2]
 

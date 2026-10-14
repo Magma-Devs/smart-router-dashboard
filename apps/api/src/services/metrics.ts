@@ -16,8 +16,14 @@ import {
   qClientRpsSeriesExpr,
   qConsistencyCaught,
   qErrorCount,
-  qErrorRate,
   qErrorsBy,
+  qGroupedAvailability,
+  qGroupedClientRequests,
+  qGroupedHealth,
+  qGroupedLatencyQuantile,
+  qGroupedLatestBlock,
+  qGroupedQos,
+  qGroupedUpstreams,
   qLatencyDistribution,
   qLatencyQuantile,
   qLatencySeriesExpr,
@@ -26,7 +32,6 @@ import {
   qBlockRateBySpec,
   qEndpointPolls,
   qOptimizerScoresByEndpoint,
-  qLatestBlock,
   qMethodLatencyQuantile,
   qPerSpecClientRpsSeriesExpr,
   qPerSpecHealth,
@@ -42,6 +47,7 @@ import {
   rangeFor,
   type BlockHeights,
   type ChainMetrics,
+  type GroupBy,
   type RouterMetrics,
   type ChainTips,
   type HealthState,
@@ -122,6 +128,24 @@ export function toGridPoints(
   }
   return out;
 }
+
+/** The chain-level figures `chainFigures()` reads — a `ChainMetrics` row minus the chain's identity. */
+type ChainFigures = Omit<ChainMetrics, "spec" | "name" | "color">;
+
+/** What a chain or router shows when no grouped row covers it: the nulls a missing read always gave. */
+const NO_FIGURES: ChainFigures = {
+  requests: 0,
+  availability: null,
+  errorRate: null,
+  p95Ms: null,
+  qos: null,
+  health: "unknown",
+  latestBlock: null,
+  upstreamCount: 0,
+};
+
+/** Map key for one group's label values (`["ETH1"]`, `["ETH1", "eth-router"]`). */
+const groupKey = (values: readonly string[]): string => values.join("\u0000");
 
 /** Instant vector → `spec` label → finite value. Rows without either are dropped. */
 function valuesBySpec(rows: PromVectorSample[]): Map<string, number> {
@@ -219,7 +243,7 @@ export class MetricsService {
         ),
         // Same reasoning for health: the ROUTER gauge is label-less, so under a
         // chain filter it reports the whole deployment. chainHealth() reads the
-        // spec-labelled endpoint gauge — see chains()/chainRow(), which has
+        // spec-labelled endpoint gauge — see chains()/chainFigures(), which has
         // always done this correctly.
         spec ? this.chainHealth(spec) : this.prom.scalar(ROUTER_METRICS.overallHealth),
       ]);
@@ -485,10 +509,10 @@ export class MetricsService {
     // Which routers the collector can actually tell apart. Checked against the
     // reported target values rather than assumed from the chart's naming, so a
     // deployment whose Service names differ degrades to `shared` instead of
-    // scoping every query to a label nothing carries (which reads as zero).
-    const scopeValues = new Set(
-      isValidScopeLabel(scopeLabel) ? await this.listRouterScopes(scopeLabel) : [],
-    );
+    // grouping on a label nothing carries (which reads as zero). The chain's
+    // own label cannot double as the target label.
+    const scopable = isValidScopeLabel(scopeLabel) && scopeLabel !== "spec";
+    const scopeValues = new Set(scopable ? await this.listRouterScopes(scopeLabel) : []);
     const scopeFor = (routerId: string): string | null => {
       const candidate = `${routerId.toLowerCase()}-router`;
       if (scopeValues.has(candidate)) return candidate;
@@ -503,83 +527,112 @@ export class MetricsService {
       else ids.push(r.id);
     }
 
-    // One chain-level read per spec, shared by every router that can't be
-    // scoped — the unscoped row is identical for all of them, so re-running it
-    // per router would be the same queries for the same answer.
-    const unscopedBySpec = new Map<string, Promise<ChainMetrics>>();
-    const chainRowFor = (spec: string): Promise<ChainMetrics> => {
-      let row = unscopedBySpec.get(spec);
-      if (!row) {
-        row = this.chainRow(spec, window);
-        unscopedBySpec.set(spec, row);
-      }
-      return row;
-    };
+    // Two grouped reads at most, whatever the router count: one row per chain
+    // for the routers the collector cannot split (the same row for every
+    // sibling, so read once), one row per (chain, target) for the ones it
+    // can. A set no router needs is not read.
+    const scoped = topology.map((router) => scopeFor(router.id));
+    const none = new Map<string, ChainFigures>();
+    const [bySpec, byTarget] = await Promise.all([
+      scoped.some((v) => v === null) ? this.chainFigures(window, ["spec"]) : none,
+      scoped.some((v) => v !== null) ? this.chainFigures(window, ["spec", scopeLabel]) : none,
+    ]);
 
-    return Promise.all(
-      topology.map(async (router): Promise<RouterMetrics> => {
-        const scopeValue = scopeFor(router.id);
-        const alone = (siblings.get(router.spec) ?? []).length <= 1;
-        const base = scopeValue
-          ? await new MetricsService(
-              this.prom.withScope({ label: scopeLabel, value: scopeValue }),
-              this.configSvc,
-            ).chainRow(router.spec, window)
-          : await chainRowFor(router.spec);
-
-        return {
-          ...base,
-          routerId: router.id,
-          attribution: scopeValue || alone ? "own" : "shared",
-          sharedWith:
-            scopeValue || alone
-              ? []
-              : (siblings.get(router.spec) ?? []).filter((id) => id !== router.id),
-          // The config's own count — the one number here that is always this
-          // router's, whatever Prometheus can or cannot split.
-          upstreamCount: router.nodes.length,
-        };
-      }),
-    );
+    return topology.map((router, i): RouterMetrics => {
+      const scopeValue = scoped[i] ?? null;
+      const alone = (siblings.get(router.spec) ?? []).length <= 1;
+      const meta = buildChainMetaByIndex(router.spec);
+      const figures = scopeValue
+        ? byTarget.get(groupKey([router.spec, scopeValue]))
+        : bySpec.get(groupKey([router.spec]));
+      return {
+        spec: router.spec,
+        name: meta.name,
+        color: meta.color,
+        ...(figures ?? NO_FIGURES),
+        routerId: router.id,
+        attribution: scopeValue || alone ? "own" : "shared",
+        sharedWith:
+          scopeValue || alone
+            ? []
+            : (siblings.get(router.spec) ?? []).filter((id) => id !== router.id),
+        // The config's own count — the one number here that is always this
+        // router's, whatever Prometheus can or cannot split.
+        upstreamCount: router.nodes.length,
+      };
+    });
   }
 
   async chains(window: MetricWindow): Promise<ChainMetrics[]> {
-    const specs = await this.listSpecs();
-    return Promise.all(specs.map((spec) => this.chainRow(spec, window)));
+    const [specs, figures] = await Promise.all([this.listSpecs(), this.chainFigures(window, ["spec"])]);
+    return specs.map((spec) => {
+      const meta = buildChainMetaByIndex(spec);
+      return { spec, name: meta.name, color: meta.color, ...(figures.get(groupKey([spec])) ?? NO_FIGURES) };
+    });
   }
 
-  /** @internal Reused by `routers()`, including on a scoped sibling instance. */
-  async chainRow(spec: string, window: MetricWindow): Promise<ChainMetrics> {
-    const meta = buildChainMetaByIndex(spec);
-    const [requests, availability, errorRate, p95, qos, healthGauge, latestBlock, upstreams] =
+  /**
+   * The chain-level figures for EVERY group in one round of seven reads:
+   * `by (spec)` is one row per chain, `by (spec, <target label>)` one row per
+   * (chain, scrape target). Reading them per chain or per router cost the
+   * Routers table eight queries a row; the store rejected part of each burst
+   * and the rows rendered empty. A group absent from a read keeps that read's
+   * null, as a missing scalar did.
+   */
+  private async chainFigures(window: MetricWindow, groupBy: GroupBy): Promise<Map<string, ChainFigures>> {
+    const [requestRows, availabilityRows, p95Rows, qosRows, healthRows, tipRows, upstreamRows] =
       await Promise.all([
-        this.prom.scalar(qClientRequestsTotal(spec, window)),
-        this.prom.scalar(qAvailability(spec, window)),
-        this.prom.scalar(qErrorRate(spec, window)),
-        this.prom.scalar(qLatencyQuantile(0.95, spec, window)),
-        this.prom.scalar(
-          `avg(${ENDPOINT_METRICS.selectionScore}${selector({ spec, score_type: "composite" })})`,
-        ),
-        this.chainHealth(spec),
-        this.prom.scalar(qLatestBlock(spec)),
-        this.prom.query(
-          `count by (endpoint_id) (${ENDPOINT_METRICS.overallHealth}${selector({ spec })})`,
-        ),
+        this.prom.query(qGroupedClientRequests(groupBy, window)),
+        this.prom.query(qGroupedAvailability(groupBy, window)),
+        this.prom.query(qGroupedLatencyQuantile(0.95, groupBy, window)),
+        this.prom.query(qGroupedQos(groupBy)),
+        this.prom.query(qGroupedHealth(groupBy)),
+        this.prom.query(qGroupedLatestBlock(groupBy)),
+        this.prom.query(qGroupedUpstreams(groupBy)),
       ]);
-
-    return {
-      spec,
-      name: meta.name,
-      color: meta.color,
-      requests: requests ?? 0,
-      availability,
-      errorRate,
-      p95Ms: p95,
-      qos,
-      health: health(healthGauge),
-      latestBlock,
-      upstreamCount: upstreams.length,
+    // A row missing any of the group's labels belongs to no group.
+    const keyOf = (row: PromVectorSample): string | null => {
+      const values = groupBy.map((label) => row.metric[label] ?? "");
+      return values.every((v) => v !== "") ? groupKey(values) : null;
     };
+    const finite = (rows: PromVectorSample[]): Map<string, number> => {
+      const out = new Map<string, number>();
+      for (const row of rows) {
+        const k = keyOf(row);
+        const n = Number(row.value[1]);
+        if (k !== null && Number.isFinite(n)) out.set(k, n);
+      }
+      return out;
+    };
+    const requests = finite(requestRows);
+    const availability = finite(availabilityRows);
+    const p95 = finite(p95Rows);
+    const qos = finite(qosRows);
+    const healthGauge = finite(healthRows);
+    const tips = finite(tipRows);
+    const upstreams = new Map<string, number>();
+    for (const row of upstreamRows) {
+      const k = keyOf(row);
+      if (k !== null) upstreams.set(k, (upstreams.get(k) ?? 0) + 1);
+    }
+
+    const out = new Map<string, ChainFigures>();
+    const keys = new Set([requests, availability, p95, qos, healthGauge, tips, upstreams].flatMap((m) => [...m.keys()]));
+    for (const k of keys) {
+      const a = availability.get(k) ?? null;
+      out.set(k, {
+        requests: Math.round(requests.get(k) ?? 0),
+        availability: a,
+        // 1 − success/total: the same ratio, not a second read of it.
+        errorRate: a === null ? null : 1 - a,
+        p95Ms: p95.get(k) ?? null,
+        qos: qos.get(k) ?? null,
+        health: health(healthGauge.get(k) ?? null),
+        latestBlock: tips.get(k) ?? null,
+        upstreamCount: upstreams.get(k) ?? 0,
+      });
+    }
+    return out;
   }
 
   /**
