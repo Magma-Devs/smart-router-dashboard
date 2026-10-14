@@ -363,6 +363,32 @@ export function qPerSpecLatencySeriesExpr(quantile: number, step: string): strin
   return `histogram_quantile(${quantile}, sum by (spec, le) (rate(${ROUTER_METRICS.latencyBucket}[${step}])))`;
 }
 
+/* ── Grouped per-chain reads (one query for every chain, joined on `spec`) ── */
+
+/**
+ * A quantile per chain over the window, instant. `sum by (spec, le)` keeps the
+ * chain on every bucket, so one read answers what `qLatencyQuantile` answers
+ * per spec. Read with `query()` and join on the label — `scalar()` would keep
+ * whichever chain comes first.
+ */
+export function qPerSpecLatencyQuantile(
+  quantile: number,
+  window: MetricWindow = DEFAULT_WINDOW,
+  spec?: string,
+): string {
+  return `histogram_quantile(${quantile}, sum by (spec, le) (rate(${ROUTER_METRICS.latencyBucket}${selector({ spec })}[${rangeFor(window)}])))`;
+}
+
+/** Health per chain from the spec-labelled ENDPOINT gauge (1/0), one row per spec. */
+export function qPerSpecHealth(spec?: string): string {
+  return `max by (spec) (${ENDPOINT_METRICS.overallHealth}${selector({ spec })})`;
+}
+
+/** Client RPS series per chain (histogram _count) — one matrix row per spec. */
+export function qPerSpecClientRpsSeriesExpr(step: string, spec?: string): string {
+  return `sum by (spec) (rate(${ROUTER_METRICS.latencyCount}${selector({ spec })}[${step}]))`;
+}
+
 /** Per-upstream RPS series (stacked upstream-mix charts). */
 export function qPerUpstreamRpsExpr(step: string, spec?: string): string {
   return `sum by (provider_address) (rate(${ROUTER_METRICS.requestsTotal}${selector({ spec })}[${step}]))`;

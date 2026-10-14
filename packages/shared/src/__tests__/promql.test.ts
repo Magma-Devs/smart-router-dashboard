@@ -24,6 +24,9 @@ import {
   qRpsSeriesExpr,
   qLatencySeriesExpr,
   qPerSpecLatencySeriesExpr,
+  qPerSpecLatencyQuantile,
+  qPerSpecHealth,
+  qPerSpecClientRpsSeriesExpr,
   qPerUpstreamRpsExpr,
   qPerSpecRpsExpr,
   qBackupShareExpr,
@@ -710,5 +713,30 @@ describe("how a chart samples a window", () => {
     expect(partialSec).toBe(0);
     expect(grid.end).toBe(lastFull);
     expect((grid.end - grid.start) / grid.stepSec + 1).toBe(36);
+  });
+});
+
+describe("grouped per-chain reads (MAG-4294)", () => {
+  it("qPerSpecLatencyQuantile keeps the chain on every bucket", () => {
+    expect(qPerSpecLatencyQuantile(0.5, "1h")).toBe(
+      "histogram_quantile(0.5, sum by (spec, le) (rate(smartrouter_end_to_end_latency_milliseconds_bucket[3600s])))",
+    );
+    expect(qPerSpecLatencyQuantile(0.95, "1h", "ETH1")).toBe(
+      'histogram_quantile(0.95, sum by (spec, le) (rate(smartrouter_end_to_end_latency_milliseconds_bucket{spec="ETH1"}[3600s])))',
+    );
+  });
+
+  it("qPerSpecHealth reads the spec-labelled endpoint gauge, one row per chain", () => {
+    expect(qPerSpecHealth()).toBe("max by (spec) (rpc_endpoint_overall_health)");
+    expect(qPerSpecHealth("ETH1")).toBe('max by (spec) (rpc_endpoint_overall_health{spec="ETH1"})');
+  });
+
+  it("qPerSpecClientRpsSeriesExpr is the client-scoped rate, one matrix row per chain", () => {
+    expect(qPerSpecClientRpsSeriesExpr("30s")).toBe(
+      "sum by (spec) (rate(smartrouter_end_to_end_latency_milliseconds_count[30s]))",
+    );
+    expect(qPerSpecClientRpsSeriesExpr("30s", "ETH1")).toBe(
+      'sum by (spec) (rate(smartrouter_end_to_end_latency_milliseconds_count{spec="ETH1"}[30s]))',
+    );
   });
 });
