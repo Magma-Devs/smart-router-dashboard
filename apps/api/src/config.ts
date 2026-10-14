@@ -76,6 +76,18 @@ export const config = {
     url: env("PROMETHEUS_URL") ?? "http://localhost:9090",
     timeoutMs: envInt("PROMETHEUS_TIMEOUT_MS", 10000),
     /**
+     * How long a successful answer is reused for an identical read (same
+     * path, params, scope and credential). The panels poll every 15 s, so
+     * 10 s means two tabs or two panels asking the same instant read in an
+     * interval cost the store one query; range reads stamp their window with
+     * the current second, so they share only when they coincide. Per
+     * process — each replica keeps its own. 0 keeps every read live;
+     * identical reads in flight at the same moment share one request either
+     * way, and a refused refresh is answered from the last good read for up
+     * to 60 s (see `PrometheusClient`).
+     */
+    cacheTtlMs: envInt("PROMETHEUS_CACHE_TTL_MS", 10000),
+    /**
      * Target label that identifies ONE router deployment, used by the
      * `?router=` scope (see `promql/scope.ts`). The router labels its series
      * with the chain, not with itself, so telling two routers on one chain

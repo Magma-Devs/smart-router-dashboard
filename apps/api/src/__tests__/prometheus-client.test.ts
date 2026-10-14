@@ -108,7 +108,9 @@ describe("PrometheusClient deployment scope (METRICS_SCOPE_*)", () => {
 
   it("reaches the cache sidecar's families, which the router scope leaves alone", async () => {
     const calls = captureFetch();
-    const base = new PrometheusClient(BASE, 1000, null, {}, { baseScope: ZONE });
+    // Both reads end up as the same URL (that is the point), so the second
+    // would be answered from memory — keep every read live to see it sent.
+    const base = new PrometheusClient(BASE, 1000, null, {}, { baseScope: ZONE, cacheTtlMs: 0 });
     await base.query("increase(cache_total_hits[300s])");
     await base.withScope({ label: "service", value: "eth-router" }).query("increase(cache_total_hits[300s])");
 
@@ -232,5 +234,171 @@ describe("PrometheusClient base URL", () => {
     const calls = captureFetch();
     await new PrometheusClient(BASE, 1000, null, {}).query("up");
     expect([...new URL(calls[0]!.url).searchParams.keys()]).toEqual(["query"]);
+  });
+});
+
+/** Counts the requests that reach the store; answers each after a tick so concurrent reads overlap. */
+function countingFetch(answer: () => Response = () => Response.json({ status: "success", data: { resultType: "vector", result: [{ metric: {}, value: [1, "1"] }] } })) {
+  const calls: string[] = [];
+  vi.stubGlobal("fetch", async (input: URL | string) => {
+    calls.push(typeof input === "string" ? input : input.toString());
+    await new Promise((r) => setTimeout(r, 5));
+    return answer();
+  });
+  return calls;
+}
+
+// MAG-4297: every read went straight to the store — two tabs, two panels or
+// two polls asking the same thing in one interval each cost a query, and the
+// store answered part of them with 429. Identical reads now share one
+// request in flight and reuse a successful answer briefly.
+describe("PrometheusClient read coalescing + cache (MAG-4297)", () => {
+  const fresh = (ttl: number, auth = {}) => new PrometheusClient(BASE, 1000, null, auth, { cacheTtlMs: ttl });
+
+  it("identical reads in flight together share one request, even with the cache off", async () => {
+    const calls = countingFetch();
+    const client = fresh(0);
+    const answers = await Promise.all([client.query("up"), client.query("up"), client.scalar("up")]);
+    expect(calls).toHaveLength(1);
+    expect(answers[0]).toEqual([{ metric: {}, value: [1, "1"] }]);
+    expect(answers[2]).toBe(1);
+  });
+
+  it("reuses a successful answer within the TTL and reads again after it", async () => {
+    const calls = countingFetch();
+    const client = fresh(40);
+    await client.query("up");
+    await client.query("up");
+    expect(calls).toHaveLength(1);
+    await new Promise((r) => setTimeout(r, 50));
+    await client.query("up");
+    expect(calls).toHaveLength(2);
+  });
+
+  it("with the TTL at 0 every sequential read is live", async () => {
+    const calls = countingFetch();
+    const client = fresh(0);
+    await client.query("up");
+    await client.query("up");
+    expect(calls).toHaveLength(2);
+  });
+
+  it("keys a range read by its window and step too", async () => {
+    const calls = countingFetch();
+    const client = fresh(10_000);
+    await client.queryRange("up", 1, 2, "15s");
+    await client.queryRange("up", 1, 2, "15s");
+    expect(calls).toHaveLength(1);
+    await client.queryRange("up", 1, 3, "15s");
+    await client.queryRange("up", 1, 2, "30s");
+    expect(calls).toHaveLength(3);
+  });
+
+  it("a scoped copy shares the store but not the answers — its query text differs", async () => {
+    const calls = countingFetch();
+    const client = fresh(10_000);
+    await client.query("smartrouter_overall_health");
+    await client.withScope({ label: "service", value: "eth" }).query("smartrouter_overall_health");
+    await client.withScope({ label: "service", value: "eth" }).query("smartrouter_overall_health");
+    expect(calls).toHaveLength(2);
+    expect(sentQuery(calls.map((url) => ({ url })), 1)).toBe('smartrouter_overall_health{service="eth"}');
+  });
+
+  it("never hands one credential's answer to another", async () => {
+    const calls = countingFetch();
+    const reads = { inflight: new Map(), remembered: new Map() };
+    const a = new PrometheusClient(BASE, 1000, null, AUTH, { cacheTtlMs: 10_000, reads });
+    const b = new PrometheusClient(BASE, 1000, null, { ...AUTH, username: "tenant-b" }, { cacheTtlMs: 10_000, reads });
+    await a.query("up");
+    await b.query("up");
+    await a.query("up");
+    expect(calls).toHaveLength(2);
+  });
+
+  it("never keeps a failure — the next caller retries", async () => {
+    let n = 0;
+    const calls = countingFetch(() =>
+      n++ === 0
+        ? new Response('{"status":"error","errorType":"too_many_requests","error":"too many outstanding requests"}', { status: 429 })
+        : Response.json({ status: "success", data: { resultType: "vector", result: [{ metric: {}, value: [1, "7"] }] } }),
+    );
+    const client = fresh(10_000);
+    expect(await client.query("up")).toEqual([]);
+    expect(await client.scalar("up")).toBe(7);
+    expect(calls).toHaveLength(2);
+    // A 200 whose envelope says error is a failure too.
+    const again = countingFetch(() => Response.json({ status: "error", errorType: "execution", error: "query timed out" }));
+    const other = fresh(10_000);
+    await other.query("down");
+    await other.query("down");
+    expect(again).toHaveLength(2);
+  });
+
+  it("answers a refused refresh from the last good read, and retries next time", async () => {
+    let n = 0;
+    const calls = countingFetch(() =>
+      n++ === 1
+        ? new Response('{"status":"error","errorType":"too_many_requests","error":"too many outstanding requests"}', { status: 429 })
+        : Response.json({ status: "success", data: { resultType: "vector", result: [{ metric: {}, value: [1, String(n)] }] } }),
+    );
+    const warnings: string[] = [];
+    const logger: PromLogger = { warn: (_obj, msg) => void warnings.push(msg) };
+    const client = new PrometheusClient(BASE, 1000, null, {}, { cacheTtlMs: 20, staleMaxMs: 10_000, logger });
+    expect(await client.scalar("up")).toBe(1);
+    await new Promise((r) => setTimeout(r, 30));
+    // The refresh is refused: the failure is logged as ever, and the first
+    // answer stands in, logged once more.
+    expect(await client.scalar("up")).toBe(1);
+    expect(warnings).toEqual(["prometheus call failed", "prometheus refused a refresh — answered from the last good read"]);
+    await new Promise((r) => setTimeout(r, 30));
+    // The refusal was not kept: the next refresh goes out and wins.
+    expect(await client.scalar("up")).toBe(3);
+    expect(calls).toHaveLength(3);
+  });
+
+  it("past the stale cap a refused refresh is empty again", async () => {
+    let n = 0;
+    const calls = countingFetch(() =>
+      n++ === 0
+        ? Response.json({ status: "success", data: { resultType: "vector", result: [{ metric: {}, value: [1, "1"] }] } })
+        : new Response("busy", { status: 503 }),
+    );
+    const client = new PrometheusClient(BASE, 1000, null, {}, { cacheTtlMs: 10, staleMaxMs: 40 });
+    expect(await client.scalar("up")).toBe(1);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(await client.scalar("up")).toBeNull();
+    expect(calls).toHaveLength(2);
+  });
+
+  it("forgets answers no refresh could use any more", async () => {
+    countingFetch();
+    const reads = { inflight: new Map(), remembered: new Map() };
+    const client = new PrometheusClient(BASE, 1000, null, {}, { cacheTtlMs: 10, staleMaxMs: 40, reads });
+    await client.query("a");
+    await client.query("b");
+    await client.query("c");
+    expect(reads.remembered.size).toBe(3);
+    await new Promise((r) => setTimeout(r, 50));
+    await client.query("d");
+    expect([...reads.remembered.keys()].map((k) => new URL(k.split("\n")[1]!).searchParams.get("query"))).toEqual(["d"]);
+  });
+
+  it("the readiness probe is always live", async () => {
+    const calls = countingFetch();
+    const client = fresh(10_000);
+    expect(await client.ping()).toBe(true);
+    expect(await client.ping()).toBe(true);
+    expect(calls).toHaveLength(2);
+  });
+
+  it("forgets the oldest answer past the cap", async () => {
+    const calls = countingFetch();
+    const client = fresh(10_000);
+    for (let i = 0; i < 4097; i++) await client.query(`up{i="${i}"}`);
+    expect(calls).toHaveLength(4097);
+    // The first read is gone; the last 4096 are kept.
+    await client.query('up{i="0"}');
+    await client.query('up{i="4096"}');
+    expect(calls).toHaveLength(4098);
   });
 });
