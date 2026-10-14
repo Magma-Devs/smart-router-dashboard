@@ -5,6 +5,29 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.35.5]
+
+### Changed
+
+- **Tests:** every database-backed test loads its pglite from a snapshot of
+  the migrated data dir, built once and cached under `node_modules/.cache`,
+  instead of running `initdb` and every migration itself. A fresh instance
+  costs about 0.3s rather than 1.4s, which takes the api suite from about
+  5.5 minutes to under 3 on the CI runner (MAG-4318).
+- **CI:** the Quality Gate runs vitest with one worker per CPU
+  (`VITEST_MAX_WORKERS=$(nproc)`) instead of vitest's default of one fewer,
+  which left a quarter of the 4-vCPU runner idle through the test step
+  (MAG-4318).
+- **Tests:** the api suite hashes fixture passwords at bcrypt cost 4 through
+  a test-only `setPasswordCostForTests()`; production stays at cost 12, and
+  the setup test that asserts the stored cost keeps asserting 12
+  (MAG-4318).
+- **Tests:** database-backed tests in one file share a pglite instance that
+  is truncated between tests (sequences restart), instead of opening one
+  per test; a test that watches its SQL still gets a private instance. With
+  the three changes above, the api suite runs in about a minute on the CI
+  runner, down from about 5.5 (MAG-4318).
+
 ## [0.35.4]
 
 ### Fixed
