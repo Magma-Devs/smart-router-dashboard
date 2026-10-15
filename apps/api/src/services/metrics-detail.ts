@@ -63,7 +63,7 @@ import {
   type UnavailableChain,
   type WebSocketReport,
 } from "@sr/shared";
-import { WINDOWS, bucketGrid, chartSampling, errorBuckets } from "@sr/shared/constants";
+import { WINDOWS, bucketGrid, chartSampling, errorBuckets, stepSeconds } from "@sr/shared/constants";
 import type { PrometheusClient, PromVectorSample } from "./prometheus-client.js";
 import type { ConfigurationService } from "./configuration.js";
 import { health, toPoints } from "./metrics.js";
@@ -179,7 +179,9 @@ export class MetricsDetailService {
         ? this.series(qBackupShareExpr(spec, backupNames, step, window), window)
         : Promise.resolve(null),
       // Which upstream took the chain's traffic: one series per upstream, the cache's included.
-      this.prom.queryRange(qPerUpstreamRpsExpr(step, spec, window), start, end, step),
+      // A rate over one 15-second step holds one scrape at most and comes back empty, so on the
+      // short windows each point averages the minute before it - still drawn every step.
+      this.prom.queryRange(qPerUpstreamRpsExpr(stepSeconds(window) < 60 ? "1m" : step, spec, window), start, end, step),
     ]);
 
     // Optimizer score may be absent (older builds) — fall back to the
