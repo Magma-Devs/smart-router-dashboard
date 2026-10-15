@@ -5,6 +5,20 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.37.1]
+
+### Fixed
+
+- **Upstreams:** the endpoint sheet no longer cuts off its right side. When an
+  upstream's addresses were long, the status tags, the Edit button, the copy
+  buttons and the Authentication box ran past the sheet's edge and were cut.
+  The cause: the sheet body is a grid, and a grid's automatic column grows to
+  the widest line that can't wrap - here, one upstream's addresses joined on
+  one line. The column is now exactly the sheet's width (`minmax(0, 1fr)` on
+  the shared `.gw-sheet__body` and on the sheet's inner lists). Each address
+  has its own line and wraps when it is too long, and on a narrow window the
+  status tags move under the upstream's name. Fixed in both UIs.
+
 ## [0.37.0]
 
 ### Added
