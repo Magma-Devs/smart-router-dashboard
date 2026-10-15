@@ -5,6 +5,31 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Added
+
+- **Metrics:** windows of 3 hours and up read the fleet store's recorded series
+  (`promql/recorded.ts`: the Mimir ruler's two-minute rates of the request
+  counters, the two latency histograms and the upstream relay counters, summed
+  per chain and router) instead of scanning the raw families — a per-chain p95
+  over seven days reads 645 series instead of 7,530, and the upstream roster's
+  reads over the 10,620-series endpoint histogram become reads over 1,230.
+  Narrower windows stay raw and exact. The api probes the series' freshness on
+  the first metrics request and once a minute after it, and reads raw while
+  they are missing or older than five minutes, so a store without the rules
+  (or a ruler that stopped) is slow again, never wrong. `METRICS_RECORDED_FROM`
+  moves the floor or holds a tenant on raw (`never`); the `?router=` scope
+  reaches the recorded names. The per-method latency quantile, the small
+  counter families (consistency, retries, node and classified errors, cache,
+  cross-validation) and every gauge keep reading raw (MAG-4339).
+
+### Fixed
+
+- **Metrics (0.27 page):** on a window change the Routers table drew four
+  skeleton rows above the previous window's rows, with a ninth skeleton
+  column the table does not have, and the hero cards blanked. Skeletons now
+  appear only with no rows to show; otherwise the previous window's rows and
+  cards stay up, dimmed, with the refreshing dot, until the next ones land
+  (MAG-4339).
 ## [0.35.5]
 
 ### Changed

@@ -2,7 +2,7 @@
  * Single source of truth for env-var defaults. Parsed once at startup.
  * Every default is documented in the env-var table in the repo CLAUDE.md.
  */
-import { isValidScopeLabel, isValidScopeValue, type MetricScope } from "@sr/shared";
+import { isMetricWindow, isValidScopeLabel, isValidScopeValue, type MetricScope, type MetricWindow } from "@sr/shared";
 
 function env(name: string): string | undefined {
   return process.env[name];
@@ -27,6 +27,14 @@ function envTrustProxy(name: string): number | string | false {
   if (Number.isInteger(hops) && hops > 0) return hops;
   // Anything else is a proxy list ("10.0.0.0/8, 192.168.1.1").
   return raw;
+}
+
+/** A metric window, or null for `never` / `off` / `0`; an unknown value takes the fallback. */
+function envWindow(name: string, fallback: MetricWindow): MetricWindow | null {
+  const raw = env(name)?.trim().toLowerCase();
+  if (raw === undefined || raw === "") return fallback;
+  if (raw === "never" || raw === "off" || raw === "0" || raw === "false") return null;
+  return isMetricWindow(raw) ? raw : fallback;
 }
 
 function envList(name: string): string[] | true {
@@ -107,6 +115,20 @@ export const config = {
      * scrape config that names jobs per router.
      */
     routerScopeLabel: env("ROUTER_SCOPE_LABEL") ?? "",
+    /**
+     * Recorded reads — see `promql/recorded.ts`. The narrowest window read
+     * from the store's recorded series instead of the raw families; windows
+     * under it stay raw and exact. `never` (or `off`) holds a tenant on raw
+     * reads for every window. The series exist only where the fleet store's
+     * ruler evaluates the rules, and only from then on, so the api probes
+     * their freshness (`plugins/prometheus.ts`) and reads raw while they are
+     * missing or older than `recordedStaleMs`.
+     */
+    recorded: {
+      from: envWindow("METRICS_RECORDED_FROM", "3h"),
+      staleMs: envInt("METRICS_RECORDED_STALE_MS", 300_000),
+      probeMs: envInt("METRICS_RECORDED_PROBE_MS", 60_000),
+    },
     /**
      * Deployment scope — see `readMetricsScope()`. Read at plugin registration
      * (live env, not this snapshot) so a bad pair fails the boot with a
