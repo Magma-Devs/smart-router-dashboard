@@ -1037,7 +1037,7 @@ export interface DashboardData {
   lastUpdated: string | null;
 }
 
-/* ── Recorded reads (the api's read policy, reported to the dashboard) ──── */
+/* ── Recorded reads (the api's read policy, as /api/metrics/reads reports it) ── */
 
 /**
  * How the api reads long windows right now. `reason` says why recorded

@@ -25,7 +25,7 @@ interface RecordedReadsProbe {
 declare module "fastify" {
   interface FastifyInstance {
     prom: PrometheusClient;
-    /** The recorded-reads policy as the api applies it now — for `/api/metrics/reads` and the dashboard's notice. */
+    /** The recorded-reads policy as the api applies it now — for `/api/metrics/reads`. */
     recordedReads: () => RecordedReadsState;
     metrics: MetricsService;
     metricsDetail: MetricsDetailService;
