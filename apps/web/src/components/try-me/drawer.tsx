@@ -40,6 +40,7 @@ import {
   type Tier,
 } from "./chain-methods";
 import { CodeBlock } from "./code-block";
+import { formatGraphQL, hasGraphQLErrors } from "./graphql-query";
 import {
   COMMON_METHODS,
   commandKey,
@@ -93,6 +94,7 @@ export const IFACE_LABEL: Record<CatalogInterface, string> = {
   "tendermintrpc-ws": "Tendermint RPC over WS",
   grpc: "gRPC",
   "grpc-web": "gRPC-Web",
+  graphql: "GraphQL",
 };
 
 interface TryMeDrawerProps {
@@ -297,6 +299,7 @@ function parseKey(
 }
 
 function defaultParamsFor(command: AddonCommand, iface: CatalogInterface): string {
+  if (paramsKindFor(iface) === "graphql") return formatGraphQL(command.params);
   if (paramsKindFor(iface) === "json") {
     try {
       return JSON.stringify(JSON.parse(command.params), null, 2);
@@ -482,7 +485,10 @@ async function readRelay(url: string, init: RequestInit, t0: number): Promise<Ou
   }
   const retriesHdr = res.headers.get("Lava-Retries");
   return {
-    errored: !res.ok || (typeof json === "object" && json !== null && "error" in json),
+    errored:
+      !res.ok ||
+      (typeof json === "object" && json !== null && "error" in json) ||
+      hasGraphQLErrors(json),
     httpStatus: res.status,
     latencyMs: dt,
     body: json,
@@ -937,7 +943,8 @@ export function TryMeDrawer({
         ...NO_ROUTER_META,
         errored:
           (res.httpStatus !== null && res.httpStatus >= 400) ||
-          (typeof res.body === "object" && res.body !== null && "error" in res.body),
+          (typeof res.body === "object" && res.body !== null && "error" in res.body) ||
+          hasGraphQLErrors(res.body),
         httpStatus: res.httpStatus,
         latencyMs: res.latencyMs,
         body: res.body,
@@ -1004,7 +1011,9 @@ export function TryMeDrawer({
 
   if (!mounted) return null;
 
-  const paramsLabel = paramsKindFor(iface) === "json" ? "Params (JSON)" : "Path";
+  const paramsKind = paramsKindFor(iface);
+  const paramsLabel =
+    paramsKind === "json" ? "Params (JSON)" : paramsKind === "graphql" ? "Query (GraphQL)" : "Path";
 
   const drawer = (
     <>
@@ -1507,13 +1516,26 @@ export function TryMeDrawer({
               value={paramsText}
               onChange={(e) => setParamsText(e.target.value)}
               spellCheck={false}
-              rows={paramsKindFor(iface) === "json" ? 6 : 2}
+              rows={
+                paramsKind === "json"
+                  ? 6
+                  : paramsKind === "graphql"
+                    ? // A laid-out query is one line per field: fit it, up
+                      // to a point, rather than scroll a nested selection.
+                      Math.min(16, Math.max(6, paramsText.split("\n").length + 1))
+                    : 2
+              }
               style={{
                 ...FIELD_INPUT,
                 resize: "vertical",
                 lineHeight: 1.6,
               }}
             />
+            {paramsKind === "graphql" && !buildError && (
+              <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 6 }}>
+                Sent as {"{"}&quot;query&quot;: …{"}"}. Paste a JSON body instead to add variables.
+              </div>
+            )}
             {buildError && (
               <div
                 style={{ fontSize: 11, color: "var(--err)", marginTop: 6 }}

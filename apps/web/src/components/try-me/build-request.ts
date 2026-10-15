@@ -5,11 +5,14 @@
  *  - `jsonrpc` / `tendermintrpc`           → POST a JSON-RPC envelope.
  *  - `jsonrpc-ws` / `tendermintrpc-ws`     → same envelope sent over WebSocket.
  *  - `rest`                                → GET endpointUrl + path.
+ *  - `graphql`                             → POST `{"query": …}` (or the
+ *                                             JSON body the caller wrote).
  *  - `grpc` / `grpc-web`                   → snippets-only; we still resolve
  *                                             service+method+JSON-body so the
  *                                             snippet generators can render.
  */
 import type { AddonCommand, CatalogInterface } from "./chain-methods";
+import { graphqlBody } from "./graphql-query";
 
 export interface ResolvedHttp {
   transport: "http";
@@ -101,6 +104,24 @@ export function buildRequest(
     };
   }
 
+  if (iface === "graphql") {
+    // The command picks the root field; what is sent is the query box. The
+    // router names the api after the root fields IN the query, so an edited
+    // query is routed as what it now asks for, not as the command it began as.
+    const body = graphqlBody(paramsText);
+    if (!body.ok) return body;
+    return {
+      ok: true,
+      request: {
+        transport: "http",
+        httpMethod: "POST",
+        url: endpointUrl,
+        body: body.value,
+        contentType: "application/json",
+      },
+    };
+  }
+
   if (iface === "grpc" || iface === "grpc-web") {
     const parsed = parseJsonParams(paramsText);
     if (!parsed.ok) return parsed;
@@ -152,7 +173,10 @@ export function buildRequest(
   };
 }
 
-/** Whether the params textarea should be parsed as JSON or treated as a path. */
-export function paramsKindFor(iface: CatalogInterface): "json" | "path" {
-  return iface === "rest" ? "path" : "json";
+/** What the params textarea holds: JSON params, a REST path, or a GraphQL
+ *  query document. */
+export function paramsKindFor(iface: CatalogInterface): "json" | "path" | "graphql" {
+  if (iface === "rest") return "path";
+  if (iface === "graphql") return "graphql";
+  return "json";
 }
