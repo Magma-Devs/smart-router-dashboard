@@ -174,7 +174,9 @@ describe("transport twins", () => {
     expect(httpVariantOf("rest")).toBe("rest");
   });
 
-  it("has no ws form for REST or gRPC", () => {
+  it("has no ws form for REST, gRPC or GraphQL", () => {
+    expect(wsVariantOf("graphql")).toBeNull();
+    expect(httpVariantOf("graphql")).toBe("graphql");
     expect(wsVariantOf("rest")).toBeNull();
     expect(wsVariantOf("grpc")).toBeNull();
     expect(wsVariantOf("grpc-web")).toBeNull();
@@ -312,6 +314,7 @@ describe("isCatalogInterface", () => {
     expect(isCatalogInterface("tendermintrpc-ws")).toBe(true);
     expect(isCatalogInterface("grpc")).toBe(true);
     expect(isCatalogInterface("grpc-web")).toBe(true);
+    expect(isCatalogInterface("graphql")).toBe(true);
   });
 
   it("rejects raw config ids that aren't drawer transports", () => {
@@ -333,6 +336,7 @@ describe("storageKey", () => {
     expect(storageKey("rest")).toBe("rest");
     expect(storageKey("tendermintrpc")).toBe("tendermintrpc");
     expect(storageKey("grpc")).toBe("grpc");
+    expect(storageKey("graphql")).toBe("graphql");
   });
 });
 
@@ -343,6 +347,7 @@ describe("ifaceCanFire", () => {
     expect(ifaceCanFire("rest")).toBe(true);
     expect(ifaceCanFire("tendermintrpc")).toBe(true);
     expect(ifaceCanFire("tendermintrpc-ws")).toBe(true);
+    expect(ifaceCanFire("graphql")).toBe(true);
   });
   it("returns false for gRPC variants the browser can't dial", () => {
     expect(ifaceCanFire("grpc")).toBe(false);
@@ -670,5 +675,62 @@ describe("groupByInternalPath", () => {
       ["root", [root]],
       ["/P", [p]],
     ]);
+  });
+});
+
+describe("GraphQL catalog", () => {
+  /** The GraphQL slot is `<two words>`. A single bracketed word is a Move
+   *  type argument (`Coin<0x2::sui::SUI>`), not something to fill in. */
+  const SLOT = /<[a-z][a-z0-9-]* [a-z0-9 -]+>/;
+
+  it("serves Sui's root fields, one command per field", () => {
+    const cfg = getInterfaceConfig("SUI", "graphql", []);
+    expect(cfg).not.toBeNull();
+    const fields = cfg!.regular.map((c) => c.method);
+    expect(fields).toContain("chainIdentifier");
+    expect(fields).toContain("executeTransaction");
+    expect(new Set(fields).size).toBe(fields.length);
+  });
+
+  it("opens on queries that run as they stand", () => {
+    const head = headCommands(getInterfaceConfig("SUI", "graphql", [])!.regular);
+    expect(head.length).toBe(HEAD_LIMIT);
+    expect(head[0]?.method).toBe("chainIdentifier");
+    for (const cmd of head) {
+      expect(cmd.ready, cmd.method).toBe(true);
+      expect(cmd.params, cmd.method).not.toMatch(SLOT);
+      // Every default is a query selecting the field it is filed under.
+      expect(cmd.params, cmd.method).toMatch(new RegExp(`^(mutation )?\\{ ${cmd.method}\\b`));
+    }
+  });
+
+  it("does not take a Move type argument for a slot", () => {
+    const type = getInterfaceConfig("SUI", "graphql", [])!.regular.find((c) => c.method === "type");
+    expect(type?.params).toContain("Coin<0x2::sui::SUI>");
+    expect(type?.ready).toBe(true);
+  });
+
+  it("marks the fields that need an argument, and shows where it goes", () => {
+    const cfg = getInterfaceConfig("SUI", "graphql", [])!;
+    for (const field of ["transaction", "verifySignature", "simulateTransaction", "executeTransaction"]) {
+      const cmd = cfg.regular.find((c) => c.method === field);
+      expect(cmd?.needsInput, field).toBe(true);
+      expect(cmd?.ready, field).toBeUndefined();
+      expect(cmd?.params, field).toMatch(SLOT);
+    }
+  });
+
+  it("serves the same console on testnet and devnet", () => {
+    const mainnet = getInterfaceConfig("SUI", "graphql", [])!;
+    expect(getInterfaceConfig("SUIT", "graphql", [])).toBe(mainnet);
+    expect(getInterfaceConfig("SUID", "graphql", [])?.regular).toEqual(mainnet.regular);
+  });
+
+  it("borrows no other chain's schema", () => {
+    // A known spec with no graphql collection, and an index nobody knows:
+    // neither has a fallback family, because no other chain's root fields
+    // would answer.
+    expect(getInterfaceConfig("ETH1", "graphql", [])).toBeNull();
+    expect(getInterfaceConfig("TOTALLY_UNKNOWN", "graphql", [])).toBeNull();
   });
 });

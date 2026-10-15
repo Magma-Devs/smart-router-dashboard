@@ -175,14 +175,17 @@ roll-call.
   name (`eth_*`, `chain_*`, cosmos REST paths), so it inherits them. Confirm
   the roll-call diff is empty or only names the expected surface.
 - **A new family needs hints** in `generate-try-me-catalog.mjs`
-  (`JSONRPC_HINTS`, `REST_HINTS`, `TENDERMINT_HINTS`, `GRPC_HINTS`), scoped
+  (`JSONRPC_HINTS`, `REST_HINTS`, `TENDERMINT_HINTS`, `GRPC_HINTS`,
+  `GRAPHQL_HINTS`), scoped
   with `only: ["PREFIX"]` when the method name is generic. **Fire every
   hint with `p` before it ships** — at the router if the chain is in
   `dev-config/values.yml`, else at a public endpoint — and say in the PR
   which endpoint answered. Params shapes differ per family (CometBFT `{}`,
   XRPL `[{}]`, EVM `[]`). A method that needs an argument gets `d` only.
-- **A GraphQL-over-POST surface is an accepted gap**; commit the roll-call
-  with the entry in it.
+- **GraphQL filed as a REST collection is an accepted gap** (Mina, Fuel,
+  Subgraph); commit the roll-call with the entry in it. A spec's native
+  `graphql` interface is not: curate `GRAPHQL_HINTS` (`p` is the query
+  document, a slot to fill is `<two words>`).
 
 ## 5. `methods changed (N)` — a base spec or a spec moved
 
