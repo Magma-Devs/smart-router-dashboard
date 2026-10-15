@@ -20,6 +20,10 @@ export function HeroPanel({ tw, spec }: { tw: MetricWindow; spec?: string | null
   const { data, isLoading } = useApi<HeroSummary>(
     `/api/metrics/dashboard-summary?window=${tw}${spec ? `&spec=${encodeURIComponent(spec)}` : ""}${scopeQ}`,
   );
+  // Skeletons only with nothing to show. On a window change the previous
+  // window's values stay up, dimmed, until the next ones land.
+  const showSkeleton = isLoading && !data;
+  const refreshing = isLoading && !!data;
 
   const sr = data?.successRate.value ?? null;             // ratio 0..1
   const retries = data?.retriesRecovered.value ?? null;   // count (null until family fires)
@@ -63,7 +67,7 @@ export function HeroPanel({ tw, spec }: { tw: MetricWindow; spec?: string | null
   ];
 
   return (
-    <div style={{ marginBottom: 14 }}>
+    <div style={{ marginBottom: 14, opacity: refreshing ? 0.55 : 1, transition: "opacity 0.2s" }}>
       {/* headline value props */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, marginBottom: 12 }}>
         {headline.map((h) => (
@@ -72,13 +76,13 @@ export function HeroPanel({ tw, spec }: { tw: MetricWindow; spec?: string | null
               {h.label}<Tip text={TT[h.tipKey]!} />
             </div>
             <div className="gw-tnum" style={{ fontSize: 24, fontWeight: 700, letterSpacing: "-0.02em", lineHeight: 1.05, color: h.color, marginTop: 7 }}>
-              {isLoading ? <SkelValue h={25} w={104} /> : h.value}
+              {showSkeleton ? <SkelValue h={25} w={104} /> : h.value}
             </div>
             {/* The sub-line is a CLAIM about the deployment ("cache not enabled
                 on this build"). It must not be made before the answer is in —
                 until then it's a ghost, not a sentence. */}
             <div style={{ fontSize: 11, color: "var(--text-4)", marginTop: 6, minHeight: "1.5em" }}>
-              {isLoading ? <SkelLine w={168} /> : h.sub}
+              {showSkeleton ? <SkelLine w={168} /> : h.sub}
             </div>
           </div>
         ))}
@@ -93,10 +97,10 @@ export function HeroPanel({ tw, spec }: { tw: MetricWindow; spec?: string | null
               {s.label}<Tip text={TT[s.tipKey]!} />
             </div>
             <div className="gw-tnum" style={{ fontSize: 24, fontWeight: 700, letterSpacing: "-0.02em", lineHeight: 1.05, marginTop: 7 }}>
-              {isLoading ? <SkelValue h={25} w={104} /> : s.display}
+              {showSkeleton ? <SkelValue h={25} w={104} /> : s.display}
             </div>
             <div style={{ fontSize: 11, color: "var(--text-4)", marginTop: 6, minHeight: "1.5em" }}>
-              {isLoading ? <SkelLine w={186} /> : s.note}
+              {showSkeleton ? <SkelLine w={186} /> : s.note}
             </div>
           </div>
         ))}

@@ -70,7 +70,11 @@ afterEach(async () => {
  */
 function metricQueries(): string[] {
   return sent.filter(
-    (q) => /smartrouter_|rpc_endpoint_|rpc_optimizer_/.test(q) && !/^count by \((?:router|service)\) \(smartrouter_requests_total/.test(q),
+    (q) =>
+      /smartrouter_|rpc_endpoint_|rpc_optimizer_/.test(q) &&
+      !/^count by \((?:router|service)\) \(smartrouter_requests_total/.test(q) &&
+      // The recorded-reads freshness probe asks the whole store, on purpose.
+      !q.startsWith("time() - max(timestamp("),
   );
 }
 
