@@ -12,17 +12,18 @@
  *
  *   { [specIndex]:
  *       string                               // alias — identical to that index
- *     | { [iface in jsonrpc|rest|tendermintrpc|grpc]?: {
+ *     | { [iface in jsonrpc|rest|tendermintrpc|grpc|graphql]?: {
  *          regular?: Cmd[]; archive?: Cmd[]; debug?: Cmd[]; trace?: Cmd[] } } }
  *
  *   Cmd = { m: string; v?: string; l?: string; p?: string; d?: string;
  *           ip?: string; a?: 1 }
- *     m  method name (JSON-RPC method / REST path template / grpc Svc/Method)
+ *     m  method name (JSON-RPC method / REST path template / grpc Svc/Method
+ *        / GraphQL root field)
  *     v  HTTP verb for REST when not GET
  *     l  label when different from m (curated)
- *     p  example params when known (JSON string, or concrete REST path);
- *        omitted when it equals the interface default ("[]" / the path
- *        template itself / "{}")
+ *     p  example params when known (JSON string, concrete REST path, or a
+ *        GraphQL query document); omitted when it equals the interface
+ *        default ("[]" / the path template itself / "{}" / "{ <field> }")
  *     d  one-line description (curated)
  *     ip internal path of the collection that serves it (`/v2`, `/P`), when
  *        the method is served under one. NOT part of the identifier — see
@@ -536,11 +537,66 @@ const GRPC_HINTS = [
   { m: "sui.rpc.v2.LedgerService/ListEvents", p: "{}", d: "Lists recent events.", only: ["SUI"] },
 ];
 
+/**
+ * GraphQL root fields. `m` is the root field, which is the api name the router
+ * resolves a GraphQL request to: smart-router's `chainlib/graphql.go` reads
+ * the operation out of the body and keys each root field as its own api. `p`
+ * is the query document, which the drawer sends as `{"query": p}`.
+ *
+ * Every query here was sent to graphql.{mainnet,testnet,devnet}.sui.io on
+ * 2026-10-15. The ready ones name only system objects (0x1 / 0x2 framework,
+ * 0x5 system state, 0x6 Clock) and relative windows (`last: 5`), so one table
+ * holds on all three networks. The `needs` ones passed validation with dummy
+ * arguments: the errors that came back were about the values, not the query.
+ * `<two words>` marks the slot to fill. A single angle-bracket word is not a
+ * slot, because Move types are spelled `Coin<0x2::sui::SUI>`.
+ */
+const GRAPHQL_HINTS = [
+  { m: "chainIdentifier", p: "{ chainIdentifier }", d: "Returns the chain identifier, which is the digest of the genesis checkpoint.", only: ["SUI"] },
+  { m: "checkpoint", p: "{ checkpoint { sequenceNumber digest timestamp networkTotalTransactions } }", d: "Returns the latest checkpoint when no sequence number is given.", only: ["SUI"] },
+  { m: "epoch", p: "{ epoch { epochId referenceGasPrice startTimestamp totalCheckpoints } }", d: "Returns the current epoch when no id is given.", only: ["SUI"] },
+  { m: "serviceConfig", p: '{ serviceConfig { availableRange(type: "Checkpoint") { first { sequenceNumber } last { sequenceNumber } } } }', d: "Returns the oldest and newest checkpoint this endpoint can answer for.", only: ["SUI"] },
+  { m: "protocolConfigs", p: "{ protocolConfigs { protocolVersion } }", d: "Returns the protocol version in force.", only: ["SUI"] },
+  { m: "checkpoints", p: "{ checkpoints(last: 5) { nodes { sequenceNumber digest timestamp } } }", d: "Lists the five most recent checkpoints.", only: ["SUI"] },
+  { m: "transactions", p: "{ transactions(last: 5) { nodes { digest sender { address } } } }", d: "Lists the five most recent transactions.", only: ["SUI"] },
+  { m: "events", p: "{ events(last: 5) { nodes { timestamp contents { type { repr } } } } }", d: "Lists the five most recent events.", only: ["SUI"] },
+  { m: "coinMetadata", p: '{ coinMetadata(coinType: "0x2::sui::SUI") { name symbol decimals supply } }', d: "Returns SUI's name, symbol, decimals and total supply.", only: ["SUI"] },
+  { m: "object", p: '{ object(address: "0x6") { address version digest } }', d: "Returns an object by address. 0x6 is the shared Clock.", only: ["SUI"] },
+  { m: "address", p: '{ address(address: "0x5") { address objects(first: 3) { nodes { address } } } }', d: "Returns what an address owns. 0x5 is the system state object.", only: ["SUI"] },
+  { m: "package", p: '{ package(address: "0x2") { address version modules(first: 5) { nodes { name } } } }', d: "Returns a package and its modules. 0x2 is the Sui framework.", only: ["SUI"] },
+  { m: "type", p: '{ type(type: "0x2::coin::Coin<0x2::sui::SUI>") { repr abilities } }', d: "Resolves a Move type to its canonical form and abilities.", only: ["SUI"] },
+  { m: "epochs", p: "{ epochs(last: 3) { nodes { epochId startTimestamp referenceGasPrice } } }", d: "Lists the three most recent epochs.", only: ["SUI"] },
+  { m: "objects", p: '{ objects(filter: { type: "0x2::clock::Clock" }, first: 1) { nodes { address version } } }', d: "Lists objects matching a filter, here by Move type.", only: ["SUI"] },
+  { m: "objectVersions", p: '{ objectVersions(address: "0x6", last: 3) { nodes { version digest } } }', d: "Lists the latest versions of an object.", only: ["SUI"] },
+  { m: "packages", p: "{ packages(last: 5) { nodes { address version } } }", d: "Lists the five most recently published packages.", only: ["SUI"] },
+  { m: "packageVersions", p: '{ packageVersions(address: "0x2", last: 3) { nodes { address version } } }', d: "Lists the latest versions of a package.", only: ["SUI"] },
+  { m: "multiGetCheckpoints", p: "{ multiGetCheckpoints(keys: [0, 1]) { sequenceNumber digest timestamp } }", d: "Fetches several checkpoints by sequence number in one call.", only: ["SUI"] },
+  { m: "multiGetEpochs", p: "{ multiGetEpochs(keys: [0, 1]) { epochId startTimestamp } }", d: "Fetches several epochs by id in one call.", only: ["SUI"] },
+  { m: "multiGetObjects", p: '{ multiGetObjects(keys: [{ address: "0x5" }, { address: "0x6" }]) { address version } }', d: "Fetches several objects by address in one call.", only: ["SUI"] },
+  { m: "multiGetPackages", p: '{ multiGetPackages(keys: [{ address: "0x1" }, { address: "0x2" }]) { address version } }', d: "Fetches several packages by address in one call.", only: ["SUI"] },
+  { m: "multiGetTypes", p: '{ multiGetTypes(keys: ["0x2::sui::SUI", "u64"]) { repr } }', d: "Resolves several Move types in one call.", only: ["SUI"] },
+  { m: "multiGetAddresses", p: '{ multiGetAddresses(keys: [{ address: "0x5" }, { address: "0x6" }]) { address } }', d: "Fetches several addresses in one call.", only: ["SUI"] },
+  { m: "multiGetBalances", p: '{ multiGetBalances(keys: [{ address: "0x5", coinType: "0x2::sui::SUI" }]) { coinType { repr } totalBalance } }', d: "Returns an address's total balance of a coin type.", only: ["SUI"] },
+  { m: "nameRecord", p: '{ nameRecord(name: "example.sui") { domain target { address } } }', d: "Resolves a SuiNS name. example.sui is registered on mainnet only; testnet and devnet answer null.", only: ["SUI"] },
+  { m: "transaction", p: '{ transaction(digest: "<transaction digest>") { digest sender { address } effects { status timestamp } } }', needs: true, d: "Returns a transaction by digest.", only: ["SUI"] },
+  { m: "transactionEffects", p: '{ transactionEffects(digest: "<transaction digest>") { status timestamp checkpoint { sequenceNumber } } }', needs: true, d: "Returns a transaction's effects by digest.", only: ["SUI"] },
+  { m: "multiGetTransactions", p: '{ multiGetTransactions(keys: ["<transaction digest>"]) { digest effects { status } } }', needs: true, d: "Fetches several transactions by digest in one call.", only: ["SUI"] },
+  { m: "multiGetTransactionEffects", p: '{ multiGetTransactionEffects(keys: ["<transaction digest>"]) { status timestamp } }', needs: true, d: "Fetches the effects of several transactions in one call.", only: ["SUI"] },
+  { m: "node", p: '{ node(id: "<global id>") { id } }', needs: true, d: "Fetches any node by its global ID.", only: ["SUI"] },
+  { m: "multiGetDynamicFields", p: '{ multiGetDynamicFields(keys: [{ parent: "<parent address>", name: { type: "<move type>", bcs: "<base64 bcs name>" } }]) { address } }', needs: true, d: "Fetches dynamic fields by parent and name.", only: ["SUI"] },
+  { m: "multiGetDynamicObjectFields", p: '{ multiGetDynamicObjectFields(keys: [{ parent: "<parent address>", name: { type: "<move type>", bcs: "<base64 bcs name>" } }]) { address } }', needs: true, d: "Fetches dynamic object fields by parent and name.", only: ["SUI"] },
+  { m: "multiGetDerivedObjects", p: '{ multiGetDerivedObjects(keys: [{ parent: "<parent address>", name: { type: "<move type>", bcs: "<base64 bcs name>" } }]) { address } }', needs: true, d: "Fetches derived objects by parent and key.", only: ["SUI"] },
+  { m: "verifySignature", p: '{ verifySignature(message: "<base64 message>", signature: "<base64 signature>", intentScope: PERSONAL_MESSAGE, author: "<signer address>") { success } }', needs: true, d: "Checks a signature against a message and its signer.", only: ["SUI"] },
+  { m: "simulateTransaction", p: "{ simulateTransaction(transaction: <transaction json>) { effects { status } } }", needs: true, d: "Dry-runs a transaction and returns its effects. Nothing is committed.", only: ["SUI"] },
+  { m: "executeTransaction", p: 'mutation { executeTransaction(transactionDataBcs: "<base64 transaction bytes>", signatures: ["<base64 signature>"]) { effects { status digest } } }', needs: true, d: "Submits a signed transaction. A mutation, so the request starts with `mutation`.", only: ["SUI"] },
+];
+
 const HINTS = {
   jsonrpc: JSONRPC_HINTS,
   rest: REST_HINTS,
   tendermintrpc: TENDERMINT_HINTS,
   grpc: GRPC_HINTS,
+  graphql: GRAPHQL_HINTS,
 };
 
 /** Archive-tier examples, synthesised for archive-capable interfaces from
@@ -571,7 +627,7 @@ const ARCHIVE_HINTS = {
 
 /* ── Spec loading ────────────────────────────────────────────────────────── */
 
-const INTERFACES = ["jsonrpc", "rest", "tendermintrpc", "grpc"];
+const INTERFACES = ["jsonrpc", "rest", "tendermintrpc", "grpc", "graphql"];
 const TIER_BY_ADDON = { "": "regular", debug: "debug", trace: "trace", arbtrace: "trace" };
 const TIERS = ["regular", "archive", "debug", "trace"];
 
@@ -771,11 +827,16 @@ const specMatches = (list, specIndex) =>
 const defaultParamsFor = (iface, method) =>
   iface === "rest"
     ? method
-    // CometBFT reads an empty ARRAY as "zero arguments supplied" and errors on
-    // any method with optional ones; an empty object is the no-arguments call.
-    : iface === "grpc" || iface === "tendermintrpc"
-      ? "{}"
-      : "[]";
+    // A GraphQL query selecting the root field alone. It runs as it stands
+    // only on a scalar field, so an uncurated one is still left unmarked.
+    : iface === "graphql"
+      ? `{ ${method} }`
+      // CometBFT reads an empty ARRAY as "zero arguments supplied" and errors
+      // on any method with optional ones; an empty object is the no-arguments
+      // call.
+      : iface === "grpc" || iface === "tendermintrpc"
+        ? "{}"
+        : "[]";
 
 function hintApplies(hint, specIndex) {
   if (!hint.only) return true;
@@ -837,6 +898,16 @@ function buildCmds(iface, specIndex, entries) {
  */
 const PLACEHOLDER = /\.\.\.|<[^>]{2,}>|\{[^}"]+\}/;
 
+/**
+ * The GraphQL slot: two or more lowercase words in angle brackets
+ * (`<transaction digest>`). PLACEHOLDER above cannot be used there, because
+ * every GraphQL query is a `{ … }` selection set, `...` spreads a fragment,
+ * and a Move type is spelled `Coin<0x2::sui::SUI>` or `Table<address, u64>`.
+ * None of those has a lowercase word, a space and another word between the
+ * brackets.
+ */
+const GRAPHQL_PLACEHOLDER = /<[a-z][a-z0-9-]* [a-z0-9 -]+>/;
+
 /** Does the spec's block_parsing prove the method takes positional args? */
 function specTakesArgs(block) {
   const func = block?.parser_func ?? "";
@@ -862,7 +933,8 @@ function specTakesArgs(block) {
  */
 function runnability(iface, cmd, hint, api, specIndex) {
   const params = cmd.p ?? defaultParamsFor(iface, cmd.m);
-  if (hint?.needs || PLACEHOLDER.test(params)) return { n: 1 };
+  const placeholder = iface === "graphql" ? GRAPHQL_PLACEHOLDER : PLACEHOLDER;
+  if (hint?.needs || placeholder.test(params)) return { n: 1 };
   // Checked, and it still cannot be sent from here — a WebSocket upgrade, a
   // chunked stream that never closes, an authenticated route, a path the
   // public endpoints of this chain do not serve. None of those is "needs

@@ -5,6 +5,22 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Added
+
+- **Try it:** GraphQL endpoints get a console. A router serving a chain over
+  the `graphql` interface (Sui, smart-router#480) shows **Try now** on its
+  Upstreams rows, where it showed nothing before. The method catalog carries
+  each root field the spec declares, with an example query: 26 of Sui's 37 run
+  as they stand, and the other 11 show where their argument goes
+  (`<transaction digest>`). Every example was sent to Sui's public GraphQL
+  endpoints on mainnet, testnet and devnet. The query box shows the query laid
+  out one field per line and sends it as `{"query": …}` on one line, so the
+  curl, Python, Go and JavaScript snippets stay readable. A JSON body pasted
+  into the box goes as written, which is how to send `variables`. A response
+  carrying GraphQL `errors` reads as a failure, although the server answers
+  it with HTTP 200. Through the router, pinned to an upstream, and direct to
+  the upstream all work.
+
 ## [0.36.0]
 
 ### Added

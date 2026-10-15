@@ -245,9 +245,15 @@ the runnable ones, so a chain with none opens on a list where nothing works.
    then claims nothing, and the ones you actually fire get a hint. This is what
    put 25 of TON's 41 "ready" commands behind a 422.
 
-7. **Accepting a gap is allowed.** GraphQL-over-POST surfaces (Mina, Fuel,
-   Subgraph) need a query body the console has no field for. Commit the
-   roll-call file with the entry in it; the diff records the decision.
+7. **Accepting a gap is allowed.** GraphQL filed as a REST collection (Mina,
+   Fuel, Subgraph) needs a request body, and the REST drawer sends a path and
+   no body. Commit the roll-call file with the entry in it; the diff records
+   the decision. A spec that declares the native `graphql` interface (Sui) is
+   not that gap: it gets its own catalog key, the drawer sends the query box
+   as `{"query": …}`, and its examples are `GRAPHQL_HINTS`, one per root
+   field, each a query document. A hint with an argument to fill marks the
+   slot `<two words>`; the usual placeholder rule does not apply there,
+   because every query is a `{ … }` selection set.
 
 ## Related
 
