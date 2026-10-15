@@ -29,6 +29,7 @@ import {
   qErrorsByUpstream,
   qLatencySeriesExpr,
   qOptimizerScore,
+  qPerUpstreamRpsExpr,
   qPresence,
   qRetriesByMethod,
   qRetryAvgExtraAttempts,
@@ -157,14 +158,14 @@ export class MetricsDetailService {
 
   /** ChainDetail metric-switcher bundle (fetched on row expand only). */
   async chainSeries(spec: string, window: MetricWindow): Promise<ChainSeries> {
-    const { step } = this.windowBounds(window);
+    const { start, end, step } = this.windowBounds(window);
 
     // Backup share only exists when the config marks backups (helm format).
     const backupNames = (this.configSvc?.getRouters() ?? [])
       .filter((r) => r.spec === spec)
       .flatMap((r) => r.nodes.filter((n) => n.isBackup).map((n) => n.name));
 
-    const [availability, p95Ms, errorRate, rps, qosProbe, backupProbe] = await Promise.all([
+    const [availability, p95Ms, errorRate, rps, qosProbe, backupProbe, mix] = await Promise.all([
       this.series(qAvailabilitySeriesExpr(step, spec, window), window),
       this.series(qLatencySeriesExpr(0.95, step, spec, window), window),
       this.series(qErrorRateSeriesExpr(step, spec, window), window),
@@ -176,6 +177,8 @@ export class MetricsDetailService {
       backupNames.length
         ? this.series(qBackupShareExpr(spec, backupNames, step, window), window)
         : Promise.resolve(null),
+      // Which upstream took the chain's traffic: one series per upstream, the cache's included.
+      this.prom.queryRange(qPerUpstreamRpsExpr(step, spec, window), start, end, step),
     ]);
 
     // Optimizer score may be absent (older builds) — fall back to the
@@ -192,7 +195,13 @@ export class MetricsDetailService {
     const backupShare =
       backupProbe && backupProbe.some((p) => p.v !== null) ? backupProbe : null;
 
-    return { spec, availability, p95Ms, errorRate, rps, qos, backupShare };
+    const volume = (points: TimePoint[]) => points.reduce((a, p) => a + (p.v ?? 0), 0);
+    const upstreamMix = mix
+      .filter((m) => m.metric.provider_address)
+      .map((m) => ({ upstream: m.metric.provider_address!, points: toPoints(m.values) }))
+      .sort((a, b) => volume(b.points) - volume(a.points));
+
+    return { spec, availability, p95Ms, errorRate, rps, qos, backupShare, upstreamMix };
   }
 
   /**

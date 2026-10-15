@@ -5,6 +5,21 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.48.0]
+
+### Added
+
+- **Metrics (0.28 page): which provider took a chain's traffic.** With a
+  chain or a router picked, a "Traffic by provider" chart shows each
+  upstream's part of that chain's traffic over the window - its share at
+  every moment, or its requests per second - drawn like the Overview's
+  "Requests per chain". A failover shows as one upstream's band handing over
+  to another's. The relay cache's part is its own layer, and past the five
+  biggest upstreams the rest are summed into "Other". The counts are the
+  requests the router sent, so a retried request counts at every upstream it
+  reached. New field `upstreamMix` on `GET /api/metrics/chain-series`, from
+  the per-upstream read the Overview already makes.
+
 ## [0.47.1]
 
 ### Changed
