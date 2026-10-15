@@ -6,7 +6,7 @@ import { MetricsService } from "../services/metrics.js";
 import type { PrometheusClient, PromVectorSample } from "../services/prometheus-client.js";
 
 /** A store that answers the freshness probe with a given age and everything else empty. */
-function mockStore(ageSec: number | null | "error"): string[] {
+function mockStore(ageSec: number | null | "error", historySec = 2_592_000): string[] {
   const sent: string[] = [];
   vi.stubGlobal("fetch", async (input: URL | string) => {
     const url = typeof input === "string" ? input : input.toString();
@@ -15,6 +15,11 @@ function mockStore(ageSec: number | null | "error"): string[] {
     if (query.startsWith("time() - max(timestamp(")) {
       if (ageSec === "error") return new Response("boom", { status: 500 });
       const result = ageSec === null ? [] : [{ metric: {}, value: [1, String(ageSec)] }];
+      return Response.json({ status: "success", data: { resultType: "vector", result } });
+    }
+    if (query.startsWith("time() - min(min_over_time(timestamp(")) {
+      // The oldest recorded sample: thirty days back when the series exist at all.
+      const result = ageSec === null || ageSec === "error" ? [] : [{ metric: {}, value: [1, String(historySec)] }];
       return Response.json({ status: "success", data: { resultType: "vector", result } });
     }
     return Response.json({ status: "success", data: { resultType: "vector", result: [] } });
@@ -44,10 +49,10 @@ describe("the freshness probe", () => {
     app = await buildApp();
     await app.ready();
     expect(sent.filter((q) => q.startsWith(PROBE))).toHaveLength(0);
-    expect(recordedReadsPolicy()).toEqual({ from: "3h", available: false });
+    expect(recordedReadsPolicy()).toEqual({ from: "3h", available: false, historySeconds: null });
     const res = await app.inject({ method: "GET", url: "/api/metrics/specs" });
     expect(res.statusCode).toBe(200);
-    expect(recordedReadsPolicy()).toEqual({ from: "3h", available: true });
+    expect(recordedReadsPolicy()).toEqual({ from: "3h", available: true, historySeconds: 2_592_000 });
     // One probe, and the request's own read came after it.
     const probeAt = sent.findIndex((q) => q.startsWith(PROBE));
     expect(probeAt).toBeGreaterThanOrEqual(0);
@@ -61,11 +66,37 @@ describe("the freshness probe", () => {
       app = await buildApp();
       await app.inject({ method: "GET", url: "/api/metrics/specs" });
       expect(sent.filter((q) => q.startsWith(PROBE))).toHaveLength(1);
-      expect(recordedReadsPolicy()).toEqual({ from: "3h", available: false });
+      expect(recordedReadsPolicy()).toEqual({ from: "3h", available: false, historySeconds: null });
       await app.close();
       app = null;
       vi.unstubAllGlobals();
     }
+  });
+
+  it("reports the reads state for the dashboard's notice", async () => {
+    // No recorded series at all: raw everywhere, reason absent, every window raw.
+    mockStore(null);
+    app = await buildApp();
+    let res = await app.inject({ method: "GET", url: "/api/metrics/reads" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ from: "3h", chartFloor: "12h", available: false, reason: "absent", ageSec: null, historySec: null });
+    expect(res.json().windows.recorded).toEqual([]);
+    await app.close();
+    vi.unstubAllGlobals();
+    // Fresh with six hours of history: 3h and 6h read recorded, a day does not.
+    mockStore(30, 6 * 3600);
+    app = await buildApp();
+    res = await app.inject({ method: "GET", url: "/api/metrics/reads" });
+    expect(res.json()).toMatchObject({ available: true, reason: "fresh", ageSec: 30, historySec: 21600 });
+    expect(res.json().windows.recorded).toEqual(["3h", "6h"]);
+    expect(res.json().windows.raw).toContain("1d");
+    await app.close();
+    vi.unstubAllGlobals();
+    // Stale: the series exist, the newest sample is old.
+    mockStore(900);
+    app = await buildApp();
+    res = await app.inject({ method: "GET", url: "/api/metrics/reads" });
+    expect(res.json()).toMatchObject({ available: false, reason: "stale", ageSec: 900 });
   });
 
   it("is not armed when METRICS_RECORDED_FROM is never", async () => {
@@ -79,6 +110,8 @@ describe("the freshness probe", () => {
     await app.inject({ method: "GET", url: "/api/metrics/specs" });
     expect(policy().from).toBeNull();
     expect(sent.some((q) => q.startsWith(PROBE))).toBe(false);
+    const res = await app.inject({ method: "GET", url: "/api/metrics/reads" });
+    expect(res.json()).toMatchObject({ from: null, reason: "off", available: false });
   });
 });
 
@@ -108,9 +141,11 @@ describe("services under the policy", () => {
   // The raw family on its own, not inside a recorded name.
   const RAW_HISTOGRAM = /(?<![:a-z_])smartrouter_end_to_end_latency_milliseconds_bucket(?![:a-z_])/;
 
-  it("the hero summary, the routers table and the overview read recorded series at 6h and raw at 1h", async () => {
-    setRecordedReads({ from: "3h", available: true });
-    for (const [window, recorded] of [["6h", true], ["1h", false]] as const) {
+  it("the hero summary, the routers table and the overview read recorded series at 1d and raw at 1h", async () => {
+    setRecordedReads({ from: "3h", available: true, historySeconds: 2_592_000 });
+    // A day: the KPIs, the grouped per-chain reads and the chart series (the
+    // chart floor is 12h) all read recorded series.
+    for (const [window, recorded] of [["1d", true], ["1h", false]] as const) {
       const { prom, queries } = capturing();
       const svc = new MetricsService(prom);
       await svc.dashboardSummary(window);

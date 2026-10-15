@@ -73,8 +73,8 @@ function metricQueries(): string[] {
     (q) =>
       /smartrouter_|rpc_endpoint_|rpc_optimizer_/.test(q) &&
       !/^count by \((?:router|service)\) \(smartrouter_requests_total/.test(q) &&
-      // The recorded-reads freshness probe asks the whole store, on purpose.
-      !q.startsWith("time() - max(timestamp("),
+      // The recorded-reads probes (newest and oldest sample) ask the whole store, on purpose.
+      !q.startsWith("time() - "),
   );
 }
 

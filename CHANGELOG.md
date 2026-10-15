@@ -5,6 +5,24 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.38.0]
+
+### Added
+
+- **Metrics:** a store without the recording rules gets the raw reads it had
+  before 0.36.0, window by window, and is told so. The api's probe measures
+  how far back the recorded series reach as well as how old the newest sample
+  is, and a window reads recorded only while that history covers it (twice
+  the window for a read with a prior-window delta): rules added an hour ago no
+  longer undercount a three-day window — it reads the raw query, byte for
+  byte, until the history catches up. `GET /api/metrics/reads` reports the
+  state (`off`, `unprobed`, `absent`, `stale` or `fresh`, the sample age, the
+  history, and which windows read recorded). The Metrics page shows a notice
+  when the store has no rules, when they are behind, or while their history
+  is shorter than a window the page offers, linking to
+  `docs/RECORDING-RULES.md` — the rules file to copy into any Prometheus or
+  Mimir, the math behind each read, and the measured deviation (MAG-4348).
+
 ## [0.37.1]
 
 ### Fixed

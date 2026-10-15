@@ -59,17 +59,27 @@ export function isRecordedMetric(name: string): boolean {
   return RECORDED_NAMES.has(name);
 }
 
-/** The read policy: `from` is the narrowest window read from recorded series; `available` says the series are fresh. */
+/**
+ * The read policy. `from` is the narrowest window read from recorded series
+ * (null: never). `available` says the newest recorded sample is fresh.
+ * `historySeconds` says how far back the recorded series reach — a store
+ * whose rules started an hour ago has an hour of them, and a 3-day read over
+ * that would sum one hour and call it three days; so a window reads recorded
+ * series only when the history covers it (twice, when the read also wants
+ * the window before, for a delta). Null history means "not measured", which
+ * reads as none.
+ */
 export interface RecordedReadsPolicy {
   from: MetricWindow | null;
   available: boolean;
+  historySeconds: number | null;
 }
 
-let policy: RecordedReadsPolicy = { from: null, available: false };
+let policy: RecordedReadsPolicy = { from: null, available: false, historySeconds: null };
 
 /** Replace the policy. The api sets it at boot and on every freshness probe; tests reset it. */
-export function setRecordedReads(next: RecordedReadsPolicy): void {
-  policy = { from: next.from, available: next.available };
+export function setRecordedReads(next: { from: MetricWindow | null; available: boolean; historySeconds?: number | null }): void {
+  policy = { from: next.from, available: next.available, historySeconds: next.historySeconds ?? null };
 }
 
 /** The current policy, as last set. */
@@ -77,8 +87,38 @@ export function recordedReadsPolicy(): RecordedReadsPolicy {
   return { ...policy };
 }
 
-/** Whether a builder should read the recorded series for this window. */
-export function recordedReadsFor(window: MetricWindow): boolean {
+/**
+ * Whether a builder should read the recorded series for this window.
+ * `spans` is how many windows of history the read needs: 1 for the window
+ * itself, 2 when it also reads the window before (`offset`).
+ */
+export function recordedReadsFor(window: MetricWindow, spans = 1): boolean {
   if (policy.from === null || !policy.available) return false;
-  return WINDOWS[window].rangeSeconds >= WINDOWS[policy.from].rangeSeconds;
+  const range = WINDOWS[window].rangeSeconds;
+  if (range < WINDOWS[policy.from].rangeSeconds) return false;
+  return policy.historySeconds !== null && policy.historySeconds >= range * spans;
+}
+
+/**
+ * The narrowest window whose CHART series read the recorded series. A chart
+ * point is `avg_over_time(rule[step])`: a two-minute rate sampled every
+ * minute, averaged over the step, covers one minute more than the raw
+ * `rate(x[step])` it replaces. On a 1–2 minute step that shift is a few
+ * percent of a fast-moving line; from a 5-minute step up it is under 2.6 %
+ * on a signal that swings 50 % every 90 minutes, and the raw read it
+ * replaces is the one that costs seconds. Window totals, ratios and
+ * quantiles are not affected: they sum the whole window.
+ */
+export const RECORDED_CHART_FLOOR: MetricWindow = "12h";
+
+/** Whether a chart-series builder should read the recorded series for this window. */
+export function recordedSeriesFor(window: MetricWindow | undefined): boolean {
+  if (!window || !recordedReadsFor(window)) return false;
+  return WINDOWS[window].rangeSeconds >= WINDOWS[RECORDED_CHART_FLOOR].rangeSeconds;
+}
+
+/** The windows a reader may ask for, narrowest first — for the reads-state report. */
+export function recordedWindows(): { recorded: MetricWindow[]; raw: MetricWindow[] } {
+  const all = Object.keys(WINDOWS) as MetricWindow[];
+  return { recorded: all.filter((w) => recordedReadsFor(w)), raw: all.filter((w) => !recordedReadsFor(w)) };
 }

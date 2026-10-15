@@ -5,7 +5,7 @@ import { MetricsService } from "../services/metrics.js";
 import { MetricsDetailService } from "../services/metrics-detail.js";
 import { MetricsDashboardService } from "../services/metrics-dashboard.js";
 import { ConfigurationService } from "../services/configuration.js";
-import { RECORDED, ROUTER_METRICS, recordedReadsPolicy, setRecordedReads } from "@sr/shared";
+import { RECORDED, RECORDED_CHART_FLOOR, ROUTER_METRICS, recordedReadsPolicy, recordedWindows, setRecordedReads, type RecordedReadsState } from "@sr/shared";
 import { ROUTER_SCOPE_CANDIDATES, config, readMetricsScope } from "../config.js";
 
 /** Services bound to one router scope (or to the whole cluster when unset). */
@@ -15,9 +15,18 @@ export interface ScopedServices {
   metricsDashboard: MetricsDashboardService;
 }
 
+/** What the last freshness probe saw. */
+interface RecordedReadsProbe {
+  at: string | null;
+  ageSec: number | null;
+  historySec: number | null;
+}
+
 declare module "fastify" {
   interface FastifyInstance {
     prom: PrometheusClient;
+    /** The recorded-reads policy as the api applies it now — for `/api/metrics/reads` and the dashboard's notice. */
+    recordedReads: () => RecordedReadsState;
     metrics: MetricsService;
     metricsDetail: MetricsDetailService;
     metricsDashboard: MetricsDashboardService;
@@ -92,20 +101,35 @@ export const prometheusPlugin = fp(async (app: FastifyInstance) => {
   const recorded = config.prometheus.recorded;
   let probeTimer: NodeJS.Timeout | null = null;
   let armed = false;
+  let lastProbe: RecordedReadsProbe = { at: null, ageSec: null, historySec: null };
   const probe = async (): Promise<void> => {
     const from = recorded.from;
     if (!from) return;
-    // A store that cannot answer is a store without fresh series.
-    const ageSec = await prom.scalar(`time() - max(timestamp(${RECORDED.requests}))`).catch(() => null);
+    // Two cheap reads: how old the newest recorded sample is, and how far
+    // back the oldest one within the widest window reaches. A store that
+    // cannot answer is a store without fresh series.
+    const [ageSec, historySec] = await Promise.all([
+      prom.scalar(`time() - max(timestamp(${RECORDED.requests}))`).catch(() => null),
+      prom.scalar(`time() - min(min_over_time(timestamp(${RECORDED.requests})[${recorded.historyLookback}:1h]))`).catch(() => null),
+    ]);
     const available = ageSec !== null && Number.isFinite(ageSec) && ageSec * 1000 <= recorded.staleMs;
-    const was = recordedReadsPolicy().available;
-    setRecordedReads({ from, available });
-    if (available && !was) {
-      app.log.info({ ageSec, from }, `recorded series are fresh — windows of ${from} and up read them`);
-    } else if (!available && was) {
+    const history = available && historySec !== null && Number.isFinite(historySec) ? Math.max(0, Math.floor(historySec)) : null;
+    const was = recordedReadsPolicy();
+    setRecordedReads({ from, available, historySeconds: history });
+    lastProbe = { at: new Date().toISOString(), ageSec, historySec: history };
+    if (available && !was.available) {
+      app.log.info({ ageSec, historySec: history, from }, `recorded series are fresh — windows of ${from} and up read them where the history covers the window`);
+    } else if (!available && was.available) {
       app.log.warn({ ageSec, series: RECORDED.requests }, "recorded series missing or stale — every window reads raw until they are fresh again");
     }
   };
+  app.decorate("recordedReads", (): RecordedReadsState => {
+    const pol = recordedReadsPolicy();
+    const reason: RecordedReadsState["reason"] =
+      pol.from === null ? "off" : !armed ? "unprobed" : lastProbe.ageSec === null ? "absent" : !pol.available ? "stale" : "fresh";
+    const windows = recordedWindows();
+    return { from: pol.from, chartFloor: RECORDED_CHART_FLOOR, available: pol.available, reason, ageSec: lastProbe.ageSec, historySec: pol.historySeconds, probedAt: lastProbe.at, windows };
+  });
   const armRecordedReads = async (): Promise<void> => {
     if (armed || !recorded.from) return;
     armed = true;
