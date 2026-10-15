@@ -1036,3 +1036,24 @@ export interface DashboardData {
   trouble: DashboardTroubleRow[];
   lastUpdated: string | null;
 }
+
+/* ── Recorded reads (the api's read policy, reported to the dashboard) ──── */
+
+/**
+ * How the api reads long windows right now. `reason` says why recorded
+ * reads are on or off: `off` (configured never), `unprobed` (no metrics
+ * request yet), `absent` (the store has no recorded series — no recording
+ * rules), `stale` (the series exist but are behind), `fresh`. `historySec`
+ * is how far back the recorded series reach; `windows.recorded` lists the
+ * windows that read them now, the rest read raw.
+ */
+export interface RecordedReadsState {
+  from: MetricWindow | null;
+  chartFloor: MetricWindow;
+  available: boolean;
+  reason: "off" | "unprobed" | "absent" | "stale" | "fresh";
+  ageSec: number | null;
+  historySec: number | null;
+  probedAt: string | null;
+  windows: { recorded: MetricWindow[]; raw: MetricWindow[] };
+}

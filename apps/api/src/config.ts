@@ -128,6 +128,8 @@ export const config = {
       from: envWindow("METRICS_RECORDED_FROM", "3h"),
       staleMs: envInt("METRICS_RECORDED_STALE_MS", 300_000),
       probeMs: envInt("METRICS_RECORDED_PROBE_MS", 60_000),
+      /** How far back the probe looks for the oldest recorded sample; the widest window the dashboard offers. */
+      historyLookback: "30d" as const,
     },
     /**
      * Deployment scope — see `readMetricsScope()`. Read at plugin registration

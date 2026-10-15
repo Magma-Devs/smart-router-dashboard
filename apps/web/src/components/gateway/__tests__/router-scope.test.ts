@@ -26,8 +26,10 @@ const SRC = fileURLToPath(new URL("../../../", import.meta.url));
  * Endpoints that must NOT be scoped, with the reason.
  * `routers` enumerates the routers you can pick between — scoping it to the
  * current selection would make every other router unreachable.
+ * `reads` is the store's recorded-reads state (are the rules there, how far
+ * back they reach): one answer for the whole deployment, no router in it.
  */
-const UNSCOPED_BY_DESIGN = new Set(["/api/metrics/routers"]);
+const UNSCOPED_BY_DESIGN = new Set(["/api/metrics/routers", "/api/metrics/reads"]);
 
 /**
  * Files whose every metrics read is unscoped by design, with the reason.

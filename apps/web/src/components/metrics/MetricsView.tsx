@@ -21,6 +21,7 @@ import { useChainFilter, useChainOptions, withMutedRows } from "@/hooks/use-chai
 import { useScopeInUrl } from "@/hooks/use-scope-in-url";
 import { useRouterFilter, useRouterOptions } from "@/hooks/use-router-options";
 import { PageActions, RouterHeader } from "@/components/gateway/RouterHeader";
+import { RecordedReadsNotice } from "@/components/gateway/RecordedReadsNotice";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { useChainDrawer } from "@/components/gateway/ChainDrawer";
 import { HeroPanel } from "./HeroPanel";
@@ -95,6 +96,7 @@ export function MetricsView() {
             timeWindow={timeWindow} setTimeWindow={setTimeWindow} withActions={false} />
         </div>
       )}
+      <RecordedReadsNotice />
       {/* The tabs outgrow a narrow screen: they scroll sideways rather than
           wrap each label onto two lines. */}
       <div style={{ display: "flex", borderBottom: "1px solid var(--line)", marginBottom: 24, overflowX: "auto", overflowY: "hidden" }}>
