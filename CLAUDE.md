@@ -670,6 +670,12 @@ the log; the accounts, 2FA and config-approval tasks only emit into it.
 `packages/shared/src/constants/windows.ts` defines the **13-window catalog**
 (`5m 15m 30m 1h 3h 6h 12h 1d 3d 7d 14d 21d 30d`), each with a PromQL range and
 a step targeting ~150–200 range points (clamped to ≥15s, the scrape interval).
+The step is how often a chart draws, not what its rate reads: a rate is never
+taken over less than a minute (`rateRange` in `promql/builders.ts`). A rate
+needs two samples, and a range of one 15-second step holds one scrape at most,
+so the store answered nothing and every rate-based chart from 5 minutes to an
+hour was empty. A count per step (errors, volume) is read over the minute and
+scaled back to one step, so the points still add up to the window.
 Charts that need to be dense rather than cheap sample on their own grid:
 `chartSampling(window)` - ~300 points, each averaging a 24th of the window (≥4
 steps, and ≥5 minutes once the window holds six), so light traffic reads as a
