@@ -353,6 +353,13 @@ export interface ChainSeries {
   qos: TimePoint[] | null;
   /** Share of traffic on backup upstreams; null unless config marks backups. */
   backupShare: TimePoint[] | null;
+  /**
+   * Requests per second each upstream took on this chain (`provider_address`
+   * on the request counter), biggest first. Relay-scoped: a retried request
+   * counts at every upstream it reached. `Cached` is the relay cache answering
+   * with no upstream at all.
+   */
+  upstreamMix: { upstream: string; points: TimePoint[] }[];
 }
 
 /* ── Upstream deep-dive (Metrics · Upstreams tab, PMBody) ────────────────── */

@@ -66,6 +66,45 @@ describe("MetricsDetailService query construction (bug regressions)", () => {
   });
 });
 
+describe("MetricsDetailService.chainSeries · which upstream took the chain's traffic", () => {
+  it("one series per upstream, biggest first, the cache's kept as its own", async () => {
+    const queries: string[] = [];
+    const series = (name: string, v: number) => ({ metric: { provider_address: name }, values: [[100, String(v)], [200, String(v)]] as [number, string][] });
+    const prom = {
+      async queryRange(expr: string) {
+        queries.push(expr);
+        return expr.startsWith("sum by (provider_address)") ? [series("tatum", 1), series("Cached", 5), series("blockdaemon", 2), { metric: {}, values: [[100, "9"]] }] : [];
+      },
+      async query() {
+        return [];
+      },
+      async scalar() {
+        return null;
+      },
+    } as unknown as PrometheusClient;
+    const res = await new MetricsDetailService(prom).chainSeries("ETH1", "1d");
+    expect(res.upstreamMix.map((u) => u.upstream)).toEqual(["Cached", "blockdaemon", "tatum"]);
+    expect(res.upstreamMix[1]!.points).toEqual([{ t: 100, v: 2 }, { t: 200, v: 2 }]);
+    // The chain's own traffic only: a mix that went deployment-wide would describe every chain at once.
+    expect(queries.find((q) => q.startsWith("sum by (provider_address)"))).toContain('spec="ETH1"');
+  });
+});
+
+describe("MetricsDetailService.chainSeries · short windows", () => {
+  // At a 15-second step, a rate over the step holds one scrape at most and the
+  // store answers nothing - the card read "No requests" on the default window.
+  it("averages each point of the upstream split over a minute when the step is shorter", async () => {
+    const { prom, queries } = capturingProm();
+    await new MetricsDetailService(prom).chainSeries("ETH1", "30m");
+    const mix = queries.find((q) => q.startsWith("sum by (provider_address)"))!;
+    expect(mix).toContain('[1m]');
+    expect(mix).not.toContain("[15s]");
+    const day = capturingProm();
+    await new MetricsDetailService(day.prom).chainSeries("ETH1", "1d");
+    expect(day.queries.find((q) => q.startsWith("sum by (provider_address)"))).not.toContain("[1m]");
+  });
+});
+
 describe("MetricsDetailService.retries", () => {
   const vec = (metric: Record<string, string>, v: number) => ({ metric, value: [1, String(v)] as [number, string] });
 

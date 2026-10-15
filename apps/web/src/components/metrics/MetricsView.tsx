@@ -27,6 +27,7 @@ import { useChainDrawer } from "@/components/gateway/ChainDrawer";
 import { HeroPanel } from "./HeroPanel";
 import { CurrentlyUnavailable } from "./CurrentlyUnavailable";
 import { RouterOverview } from "./RouterOverview";
+import { ChainTrafficByProvider } from "./ChainTrafficByProvider";
 import { ErrorsBreakdown, type ErrorsJump } from "./ErrorsBreakdown";
 import { TransactionLog } from "./TransactionLog";
 import { UpstreamMetricsTab } from "./upstream/UpstreamMetricsTab";
@@ -147,6 +148,7 @@ export function MetricsView() {
         <>
           <HeroPanel tw={timeWindow} spec={activeChain} />
           <CurrentlyUnavailable />
+          {activeChain && <ChainTrafficByProvider spec={activeChain} timeWindow={timeWindow} />}
           <RouterOverview chainFilter={activeChain} timeWindow={timeWindow} onChainClick={(ch) => { setChainFilter(ch); setTab("upstreams"); }} />
         </>
       )}
