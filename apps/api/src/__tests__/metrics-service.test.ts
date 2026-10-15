@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { WINDOWS } from "@sr/shared/constants";
+import { rateRange } from "@sr/shared";
 import { MetricsService } from "../services/metrics.js";
 import { MetricsDetailService } from "../services/metrics-detail.js";
 import type { ConfigurationService } from "../services/configuration.js";
@@ -244,7 +245,8 @@ describe("MetricsService.overview · per-chain panels read grouped series (MAG-4
       'max by (spec) (rpc_endpoint_overall_health{spec="ETH1"})',
     );
     expect(ranges.find((q) => q.startsWith(perSpecTrend))).toBe(
-      `sum by (spec) (rate(smartrouter_end_to_end_latency_milliseconds_count{spec="ETH1"}[${WINDOWS["1h"].step}]))`,
+      // Never a rate over less than a minute: a 30-second range misses series whose scrapes don't land twice in it.
+      `sum by (spec) (rate(smartrouter_end_to_end_latency_milliseconds_count{spec="ETH1"}[${rateRange(WINDOWS["1h"].step)}]))`,
     );
     expect(data.perChainLatency.map((c) => c.spec)).toEqual(["ETH1"]);
   });
