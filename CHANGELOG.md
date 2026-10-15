@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.36.0]
+
 ### Added
 
 - **Metrics:** windows of 3 hours and up read the fleet store's recorded series
@@ -13,7 +15,9 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   per chain and router) instead of scanning the raw families — a per-chain p95
   over seven days reads 645 series instead of 7,530, and the upstream roster's
   reads over the 10,620-series endpoint histogram become reads over 1,230.
-  Narrower windows stay raw and exact. The api probes the series' freshness on
+  Narrower windows stay raw and exact, and chart lines switch only from 12
+  hours up, where a chart point is a two-minute average over the step rather
+  than an instantaneous rate. The api probes the series' freshness on
   the first metrics request and once a minute after it, and reads raw while
   they are missing or older than five minutes, so a store without the rules
   (or a ruler that stopped) is slow again, never wrong. `METRICS_RECORDED_FROM`
