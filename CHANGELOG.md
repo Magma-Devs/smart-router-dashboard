@@ -5,6 +5,22 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.38.1]
+
+### Fixed
+
+- **Charts on 5-minute to 1-hour windows were empty.** Those windows draw a
+  point every 15 or 30 seconds, and every rate-based chart took its rate over
+  that one step. A rate needs two samples, and a 15-second range holds one
+  scrape at most, so the store answered nothing: on the default 30-minute
+  window the Metrics page's expanded router rows, the Upstreams tab's latency
+  and volume, and the Overview's charts read "No samples". At 30 seconds
+  (the hour) some series dropped out the same way. A rate is now never taken
+  over less than a minute (`rateRange` in `promql/builders.ts`); a chart still
+  draws a point every step, each covering the minute before it. A count per
+  step (errors, volume) is read over the minute and scaled back to one step,
+  so the points still add up to the window's total. Both UIs.
+
 ## [0.38.0]
 
 ### Added

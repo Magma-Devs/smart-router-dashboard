@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  MIN_RATE_RANGE_SEC,
+  qClientRpsSeriesExpr,
+  rateRange,
   selector,
   upstreamEndpointSelector,
   upstreamProviderSelector,
@@ -348,8 +351,9 @@ describe("series expressions", () => {
   it("error-count series clamps at zero", () => {
     expect(qErrorCountSeriesExpr("10m")).toContain("clamp_min(");
   });
-  it("rps series uses rate over the step", () => {
-    expect(qRpsSeriesExpr("30s")).toBe("sum(rate(smartrouter_requests_total[30s]))");
+  it("rps series uses rate over the step, never less than a minute", () => {
+    expect(qRpsSeriesExpr("10m")).toBe("sum(rate(smartrouter_requests_total[10m]))");
+    expect(qRpsSeriesExpr("30s")).toBe("sum(rate(smartrouter_requests_total[1m]))");
   });
   it("latency series drops the spec grouping (single-chain scope)", () => {
     expect(qLatencySeriesExpr(0.5, "10m", "ETH1")).toBe(
@@ -739,11 +743,11 @@ describe("grouped per-chain reads (MAG-4294)", () => {
   });
 
   it("qPerSpecClientRpsSeriesExpr is the client-scoped rate, one matrix row per chain", () => {
-    expect(qPerSpecClientRpsSeriesExpr("30s")).toBe(
-      "sum by (spec) (rate(smartrouter_end_to_end_latency_milliseconds_count[30s]))",
+    expect(qPerSpecClientRpsSeriesExpr("5m")).toBe(
+      "sum by (spec) (rate(smartrouter_end_to_end_latency_milliseconds_count[5m]))",
     );
     expect(qPerSpecClientRpsSeriesExpr("30s", "ETH1")).toBe(
-      'sum by (spec) (rate(smartrouter_end_to_end_latency_milliseconds_count{spec="ETH1"}[30s]))',
+      'sum by (spec) (rate(smartrouter_end_to_end_latency_milliseconds_count{spec="ETH1"}[1m]))',
     );
   });
 });
@@ -780,5 +784,54 @@ describe("grouped chain-level reads (MAG-4295)", () => {
   it("the per-spec readers are the grouped ones by spec", () => {
     expect(qPerSpecLatencyQuantile(0.5, "1h", "ETH1")).toBe(qGroupedLatencyQuantile(0.5, ["spec"], "1h", "ETH1"));
     expect(qPerSpecHealth("ETH1")).toBe(qGroupedHealth(["spec"], "ETH1"));
+  });
+});
+
+// A rate needs two samples in its range. The store scrapes every 15 seconds, so
+// a range of one 15-second step held one at most and every chart drawn at that
+// step (5 minutes to an hour) came back empty.
+describe("short drawing steps", () => {
+  it("rateRange: the step itself, never less than a minute", () => {
+    expect(MIN_RATE_RANGE_SEC).toBe(60);
+    expect(rateRange("15s")).toBe("1m");
+    expect(rateRange("30s")).toBe("1m");
+    expect(rateRange("1m")).toBe("1m");
+    expect(rateRange("5m")).toBe("5m");
+    expect(rateRange("1h")).toBe("1h");
+  });
+
+  it("no series builder rates over less than a minute at a short step", () => {
+    const ref = { endpointId: "eth-lava", spec: "ETH1" };
+    for (const step of ["15s", "30s"]) {
+      const exprs = [
+        qClientRpsSeriesExpr(step, "ETH1"),
+        qAvailabilitySeriesExpr(step, "ETH1"),
+        qErrorRateSeriesExpr(step, "ETH1"),
+        qErrorCountSeriesExpr(step, "ETH1"),
+        qRpsSeriesExpr(step, "ETH1"),
+        qLatencySeriesExpr(0.95, step, "ETH1"),
+        qPerSpecLatencySeriesExpr(0.95, step),
+        qPerSpecClientRpsSeriesExpr(step),
+        qPerUpstreamRpsExpr(step, "ETH1"),
+        qPerSpecRpsExpr(step),
+        qBackupShareExpr("ETH1", ["eth-lava"], step),
+        qEndpointLatencySeriesExpr(0.95, ref, step),
+        qUpstreamVolumeSeriesExpr(ref, step),
+        qUpstreamReadVolumeSeriesExpr(ref, step),
+        qUpstreamFailedSeriesExpr(ref, step),
+        qUpstreamNodeErrorSeriesExpr(ref, step),
+        qEndpointTipsSeriesExpr("ETH1", step),
+      ];
+      for (const e of exprs) expect(e, e).not.toMatch(/\[(15|30)s\]/);
+    }
+  });
+
+  it("a count per step is read over the minute and scaled back to one step, so the points still add up", () => {
+    expect(qErrorCountSeriesExpr("15s")).toContain("(increase(smartrouter_requests_total[1m]) * 0.25)");
+    expect(qErrorCountSeriesExpr("30s")).toContain("(increase(smartrouter_requests_total[1m]) * 0.5)");
+    // A step of a minute or more reads exactly as before.
+    expect(qErrorCountSeriesExpr("10m")).toBe(
+      "round(clamp_min(sum(increase(smartrouter_requests_total[10m])) - sum(increase(smartrouter_requests_success_total[10m])), 0))",
+    );
   });
 });

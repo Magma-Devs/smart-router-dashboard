@@ -5,6 +5,11 @@ import type { ChartGrid } from "../types/domain.js";
  * ~150–200 range points (v1's adaptive-step semantics), clamped to ≥15s
  * (the Prometheus scrape interval — finer steps just repeat samples).
  *
+ * The step is how often a chart draws a point, not the range its rate reads:
+ * a rate needs two samples, so the builders never take one over less than a
+ * minute (`rateRange` in promql/builders.ts) - over one 15-second step the
+ * store answered nothing, and every chart from 5 minutes to an hour was empty.
+ *
  * Keys mirror the design's page-level window <select> (12 options) plus
  * "1h", which the api accepts and no page offers.
  */
