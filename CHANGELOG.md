@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.37.0]
+
 ### Added
 
 - **Try it:** GraphQL endpoints get a console. A router serving a chain over
