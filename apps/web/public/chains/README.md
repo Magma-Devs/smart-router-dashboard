@@ -179,3 +179,18 @@ Katana uses web3icons `raw-svgs/networks/mono/katana.svg`; its circle is
 is 8.73 and 3.16 respectively. Sources: [Katana](https://github.com/0xa3k5/web3icons/blob/main/raw-svgs/networks/mono/katana.svg),
 [Qtum](https://github.com/0xa3k5/web3icons/blob/main/raw-svgs/tokens/mono/QTUM.svg)
 (MIT). Their testnets inherit these mainnet icons.
+
+### Pepecoin (2026-10-18)
+
+web3icons has no Pepecoin entry. Its `PEPE` token is the unrelated ERC-20,
+so `pepecoin` is reduced from the project's own mark,
+[`share/pixmaps/pepecoin256.svg`](https://github.com/pepecoinppc/pepecoin/blob/master/share/pixmaps/pepecoin256.svg)
+in pepecoinppc/pepecoin (MIT, the repo whose `chainparams.cpp` carries the
+genesis hash the spec verifies). That mark is a badge, like `quai`'s, so the
+source disc is mapped onto the house circle rather than shrunk by 0.72. The
+circle is the disc's own `#55883A`; the disc's darker `#125200` rim is dropped.
+The face keeps its source colours, as `doge`'s does: black line art, white
+eyes, `#D30556` mouth, `#DCAFC2` tongue, and `#945D24` lips. Only the visible
+vector paths are kept. The hidden tracing bitmap and two hairline construction
+strokes are dropped, and coordinates are rounded to three decimals. The testnet
+(`PEPT`) resolves to the same file.

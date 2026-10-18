@@ -1882,6 +1882,24 @@
       "source": "curated — Subscan runs one deployment per network on a shared codebase. chainlist (ethereum-lists/chains#9990) lists the same host with no url standard; its other row is a polkadot.js apps deep link, which is an RPC client rather than an explorer"
     }
   ],
+  "PEP": [
+    {
+      "name": "Peppool",
+      "url": "https://peppool.space",
+      "kind": "block",
+      "verified": "browser 2026-10-18 — /block/1000 rendered \"Block 1,000\" (hash f442caf4…, the same block PepecoinExplorer shows at 1000); /block/0 rendered the genesis hash 37981c0c…, the spec's chain-id",
+      "source": "curated — one of the explorers pepecoin.com lists; PepeBlocks, listed first, answers headless browsers with a Cloudflare challenge (403 \"Just a moment...\") as of 2026-10-18, so its block page could not be watched"
+    }
+  ],
+  "PEPT": [
+    {
+      "name": "Pepeblocks Testnet",
+      "url": "https://testnet.pepeblocks.com",
+      "kind": "block",
+      "verified": "browser 2026-10-18 — /block/1000 rendered height 1,000 (\"Block: #1000\", hash 8849a140…, not mainnet's); /block/0 rendered the genesis hash f9f4ea4a…, the spec's chain-id",
+      "source": "curated — Pepeblocks' testnet host; no other Pepecoin explorer serves the testnet (peppool.space and pepecoinexplorer.com have no testnet as of 2026-10-18)"
+    }
+  ],
   "PHAROS": [
     {
       "name": "Pharos Explorer",
