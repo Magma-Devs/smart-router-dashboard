@@ -5,6 +5,29 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Added
+
+- **Pepecoin arrived upstream** (MAG-4391). lava-specs added `pep.json`:
+  `PEP` is the mainnet and `PEPT` the testnet. Pepecoin is a Dogecoin fork
+  whose spec imports `DOGE`, so it inherits Dogecoin's JSON-RPC surface and
+  its runnable defaults. It adds `estimatefee` and `getcoincount`, and
+  disables five Dogecoin methods: `getblockfilter`, `getchaintxstats`,
+  `getindexinfo`, `submitpackage` and `testmempoolaccept`.
+
+  `pepecoin.svg` is reduced from the badge in Pepecoin Core's own
+  `share/pixmaps`, because web3icons' `PEPE` is the unrelated ERC-20. The
+  testnet inherits it. Both explorers are curated, and both block pages were
+  watched rendering height 1000. Each one's genesis page shows the hash the
+  spec verifies as its chain-id:
+  - **mainnet:** Peppool (`peppool.space/block/<height>`). PepeBlocks, which
+    pepecoin.com lists first, puts a Cloudflare challenge in front of headless
+    browsers, so its block page could not be watched.
+  - **testnet:** Pepeblocks Testnet (`testnet.pepeblocks.com/block/<height>`)
+
+  The registry snapshot was not refreshed, so no other chain moved.
+
+  294 chains, 251 with an explorer, 204 primaries linking a height.
+
 ## [0.38.1]
 
 ### Removed
