@@ -2,7 +2,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
-import { config } from "./config.js";
+import { config, readIncidentSettings } from "./config.js";
 import { errorHandlerPlugin } from "./plugins/error-handler.js";
 import { swaggerPlugin } from "./plugins/swagger.js";
 import { prometheusPlugin } from "./plugins/prometheus.js";
@@ -16,6 +16,7 @@ import { configRoutes } from "./routes/config.js";
 import { upstreamRoutes } from "./routes/upstreams.js";
 import { transactionRoutes } from "./routes/transactions.js";
 import { errorRequestRoutes } from "./routes/error-requests.js";
+import { incidentRoutes } from "./routes/incidents.js";
 import { authRoutes } from "./routes/auth.js";
 import { teamRoutes, teamPasswordRoutes, teamMemberRoutes } from "./routes/team.js";
 import { accountRoutes } from "./routes/account.js";
@@ -118,6 +119,14 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(upstreamRoutes);
   await app.register(transactionRoutes);
   await app.register(errorRequestRoutes);
+  // Both modes, behind its own switch: with accounts on, the global gate above
+  // already requires a session and the reporter is the signed-in user; with
+  // them off, anyone who reaches the api may report. Settings are read from the
+  // live env here, for the same reason as the auth mode.
+  await app.register(incidentRoutes, {
+    authMode: authMode === "enabled" ? "enabled" : "disabled",
+    settings: readIncidentSettings(),
+  });
 
   return app;
 }

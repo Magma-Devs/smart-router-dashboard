@@ -1,5 +1,6 @@
 import type { ScoreType } from "../constants/metrics.js";
 import type { MetricWindow } from "../constants/windows.js";
+import type { IncidentSeverity } from "../constants/incidents.js";
 
 export type { MetricWindow, ScoreType };
 
@@ -1058,4 +1059,39 @@ export interface RecordedReadsState {
   scrapeSec: number | null;
   probedAt: string | null;
   windows: { recorded: MetricWindow[]; raw: MetricWindow[] };
+}
+
+/* ── Customer-reported incidents (POST /api/incidents) ──────────────────── */
+
+/** Who reported, as typed into the form. Only read when `AUTH_MODE=disabled`;
+ *  with accounts on, the reporter is the signed-in user and this is ignored. */
+export interface IncidentReporter {
+  name: string;
+  email: string;
+  phone?: string | null;
+}
+
+export interface IncidentReportRequest {
+  /**
+   * Minted by the form when it opens (a UUID). Sending it again after a timeout
+   * joins the report already filed instead of filing a second one, so a retry
+   * is always safe.
+   */
+  id: string;
+  severity: IncidentSeverity;
+  title: string;
+  description?: string | null;
+  /** Spec index of the chain the report is about (`ETH1`), when it is about one. */
+  chain?: string | null;
+  /** Config router id, when the report is about one router. */
+  routerId?: string | null;
+  reporter?: IncidentReporter | null;
+}
+
+export interface IncidentReportResponse {
+  id: string;
+  severity: IncidentSeverity;
+  /** When our on-call system accepted it. Accepted, not acted on: it queues the
+   *  report and routes it after answering. */
+  sentAt: string;
 }

@@ -22,6 +22,7 @@ export const swaggerPlugin = fp(async (app: FastifyInstance) => {
         { name: "Auth", description: "Sign-in flows (AUTH_MODE=enabled only) — consumed by the web's Auth.js callbacks" },
         { name: "Metrics", description: "Prometheus-backed metrics: overview, chains, upstreams, traffic, methods" },
         { name: "Config", description: "Live router topology read from the mounted helm-values" },
+        { name: "Incidents", description: "Customer-reported incidents sent to Magma's on-call system (INCIDENTS_ENABLED=true only)" },
       ],
     },
   });

@@ -9,6 +9,8 @@ export function sendApiError(reply: FastifyReply, statusCode: number, message: s
     statusCode === 403 ? "Forbidden" :
     statusCode === 404 ? "Not Found" :
     statusCode === 422 ? "Unprocessable Entity" :
+    statusCode === 429 ? "Too Many Requests" :
+    statusCode === 502 ? "Bad Gateway" :
     statusCode === 503 ? "Service Unavailable" :
     "Error";
   const body: ApiError = { error, message, statusCode };

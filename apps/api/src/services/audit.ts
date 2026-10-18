@@ -30,7 +30,7 @@ import type { AuditActionOf } from "@sr/shared";
  * MAG-2731's, and the two groups a CHECK constraint forbids from carrying an IP.
  */
 export type AuditAction = AuditActionOf<
-  "access" | "accounts" | "people" | "setup" | "2fa" | "recovery"
+  "access" | "accounts" | "people" | "setup" | "2fa" | "recovery" | "incidents"
 >;
 
 /**

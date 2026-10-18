@@ -346,3 +346,71 @@ export function readMetricsScope(source: NodeJS.ProcessEnv = process.env): Metri
   }
   return { label, value };
 }
+
+/**
+ * Customer-reported incidents (`POST /api/incidents`), from the live env so
+ * tests can flip them per app instance.
+ *
+ *  - `INCIDENTS_ENABLED` — the switch. Off unless it is exactly `true`: the
+ *    route sends a report into our on-call system, and with the default
+ *    `AUTH_MODE=disabled` anyone who can reach the api may send one, so it is
+ *    opt-in per deployment, never on by accident.
+ *  - `INCIDENT_WEBHOOK_URL` — the deployment's own inbound webhook in our
+ *    on-call system. The URL is the credential, so it arrives from a Secret.
+ *    https only; plain http is accepted for a loopback host, which is a local
+ *    mock and nothing else.
+ *  - `INCIDENT_WEBHOOK_TIMEOUT_MS` (10 s), `INCIDENT_RATE_LIMIT_MAX` (3 per
+ *    caller per 10 minutes) and `INCIDENT_POD_MAX` (10 per 5 minutes from
+ *    every caller together, per api process) — see `services/incidents.ts`.
+ *
+ * Switched on with no usable URL is NOT a refused boot: the dashboard is the
+ * customer's view of their traffic, and losing it over the incident form would
+ * be the worse outage. `problem` says what is wrong; the api logs it at boot
+ * and every report answers 503 with the form's fallback contact on screen.
+ */
+export interface IncidentSettings {
+  enabled: boolean;
+  /** Null when unset or refused — `problem` says which. */
+  webhookUrl: string | null;
+  problem: string | null;
+  timeoutMs: number;
+  perIpMax: number;
+  podMax: number;
+}
+
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+function positiveInt(raw: string | undefined, fallback: number): number {
+  const n = raw !== undefined ? Number(raw) : NaN;
+  return Number.isInteger(n) && n > 0 ? n : fallback;
+}
+
+export function readIncidentSettings(source: NodeJS.ProcessEnv = process.env): IncidentSettings {
+  const enabled = source.INCIDENTS_ENABLED?.trim().toLowerCase() === "true";
+  const raw = source.INCIDENT_WEBHOOK_URL?.trim() ?? "";
+  let webhookUrl: string | null = null;
+  let problem: string | null = null;
+  if (raw === "") {
+    problem = "INCIDENT_WEBHOOK_URL is not set";
+  } else {
+    let url: URL | null = null;
+    try {
+      url = new URL(raw);
+    } catch {
+      problem = "INCIDENT_WEBHOOK_URL is not a URL";
+    }
+    if (url) {
+      const secure = url.protocol === "https:" || (url.protocol === "http:" && LOOPBACK_HOSTS.has(url.hostname));
+      if (secure) webhookUrl = url.toString();
+      else problem = "INCIDENT_WEBHOOK_URL must be https";
+    }
+  }
+  return {
+    enabled,
+    webhookUrl,
+    problem: enabled ? problem : null,
+    timeoutMs: positiveInt(source.INCIDENT_WEBHOOK_TIMEOUT_MS, 10_000),
+    perIpMax: positiveInt(source.INCIDENT_RATE_LIMIT_MAX, 3),
+    podMax: positiveInt(source.INCIDENT_POD_MAX, 10),
+  };
+}

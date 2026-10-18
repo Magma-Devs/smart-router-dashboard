@@ -127,6 +127,14 @@ AUTH_SECRET=$(openssl rand -base64 32) make up-auth
 # (make dev-auth seeds a development admin instead — see docs/AUTH.md)
 ```
 
+## Incident reports
+
+With `INCIDENTS_ENABLED=true` on both containers, the top bar carries a
+**Report incident** button. A report (Critical / High / Medium / Low) goes to the
+deployment's own inbound webhook in Magma's on-call system, which decides who
+hears about it: Critical calls the on-call engineer. Off by default. Full guide:
+[`docs/INCIDENTS.md`](./docs/INCIDENTS.md).
+
 ## Development
 
 ```bash
