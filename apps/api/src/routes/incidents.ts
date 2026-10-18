@@ -20,6 +20,7 @@ import {
   INCIDENT_LIMITS,
   INCIDENT_SEVERITIES,
   INCIDENT_SEVERITY_LABELS,
+  looksLikeEmail,
   type IncidentReportRequest,
   type IncidentReportResponse,
 } from "@sr/shared";
@@ -33,7 +34,6 @@ import {
   buildIrmPayload,
   cleanIncidentText,
   cleanIncidentTitle,
-  EMAIL_SHAPE,
   ReportBudget,
   sendToIrm,
   type IncidentReporterContext,
@@ -146,7 +146,7 @@ export async function incidentRoutes(app: FastifyInstance, opts: IncidentRoutesO
         const email = typed.email.trim();
         const phone = typed.phone ? cleanIncidentTitle(typed.phone) : "";
         if (name === "") return refuse(reply, 400, "Your name is required.");
-        if (!EMAIL_SHAPE.test(email)) return refuse(reply, 400, "That email address doesn't look complete.");
+        if (!looksLikeEmail(email)) return refuse(reply, 400, "That email address doesn't look complete.");
         reporter = { name, email, phone: phone || null, signedIn: false, role: null };
       }
 

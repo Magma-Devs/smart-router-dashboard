@@ -57,10 +57,6 @@ export function cleanIncidentText(raw: string): string {
     .trim();
 }
 
-/** The address shape the form asks for. Real deliverability is not checked;
- *  this only keeps an obviously broken contact out of the report. */
-export const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
 export interface IncidentReporterContext {
   name: string;
   email: string;

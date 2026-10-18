@@ -8,6 +8,7 @@ import {
   INCIDENT_SEVERITY_LABELS,
   INCIDENT_SEVERITY_NEXT,
   buildChainMetaByIndex,
+  looksLikeEmail,
   newIncidentId,
   type IncidentReportRequest,
   type IncidentReportResponse,
@@ -298,13 +299,11 @@ function ReportIncidentModal({
   );
 }
 
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
 /** The way to reach us that does not depend on this form, the api behind it, or
  *  the cluster both run in. */
 function FallbackContact({ contact }: { contact: string | null }) {
   if (!contact) return null;
-  const link = EMAIL.test(contact)
+  const link = looksLikeEmail(contact)
     ? `mailto:${contact}`
     : /^https:\/\//i.test(contact)
       ? contact
