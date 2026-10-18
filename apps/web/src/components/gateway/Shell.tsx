@@ -16,6 +16,7 @@ import { fmtNum } from "@/lib/format";
 import { getAuthVersion, subscribeAuth } from "@/lib/auth-store";
 import { useMe } from "@/hooks/use-me";
 import { TwoFactorCountdown, TwoFactorGate } from "@/components/auth/two-factor-gate";
+import { ReportIncidentButton, type IncidentsConfig } from "@/components/incidents/ReportIncident";
 
 export function ThemeToggle() {
   const [theme, setTheme] = useState<"dark" | "light">("dark");
@@ -206,7 +207,7 @@ function SidebarUser() {
   );
 }
 
-function Topbar({ here, sub }: { here: string; sub: string | null }) {
+function Topbar({ here, sub, incidents }: { here: string; sub: string | null; incidents: IncidentsConfig }) {
   // Live throughput + health for the top-bar stats (real data; CU/mo is a
   // Lava-consumer concept the router doesn't emit, so it's omitted here).
   // Scoped like every other panel, so the pills describe the selected router.
@@ -250,15 +251,19 @@ function Topbar({ here, sub }: { here: string; sub: string | null }) {
         {/* Shows only for the one account that may still defer 2FA. Not
             dismissible: what it counts down to is the dashboard closing. */}
         <TwoFactorCountdown />
+        <ReportIncidentButton config={incidents} />
         <ThemeToggle />
       </div>
     </header>
   );
 }
 
-export function Shell({ children, grafanaDashboardUrl }: {
+const INCIDENTS_OFF: IncidentsConfig = { enabled: false, fallbackContact: null };
+
+export function Shell({ children, grafanaDashboardUrl, incidents = INCIDENTS_OFF }: {
   children: React.ReactNode;
   grafanaDashboardUrl?: string | null;
+  incidents?: IncidentsConfig;
 }) {
   const pathname = usePathname();
   const { chain } = useFilters();
@@ -283,7 +288,7 @@ export function Shell({ children, grafanaDashboardUrl }: {
           <Sidebar grafanaDashboardUrl={grafanaDashboardUrl} />
           <ChainDrawerSlot />
           <div className="gw-main">
-            <Topbar here={here} sub={sub} />
+            <Topbar here={here} sub={sub} incidents={incidents} />
             <div className="fade-in" key={pathname}>
               {children}
             </div>

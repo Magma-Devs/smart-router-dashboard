@@ -5,6 +5,10 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Added
+
+- **Incidents:** a **Report incident** button in the top bar sends a report (Critical, High, Medium or Low) to the deployment's own inbound webhook in Magma's on-call system, which routes it by severity; Critical calls the on-call engineer. Off unless `INCIDENTS_ENABLED=true`. With accounts off anyone who reaches the dashboard may report; with them on the reporter is the signed-in user, audited as `incident.reported`. A retry never files twice, Critical calls at most once an hour, and two limits keep a flood off the on-call system's shared budget. See `docs/INCIDENTS.md` (MAG-4403).
+
 ## [0.40.0]
 
 ### Added

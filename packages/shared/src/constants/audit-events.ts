@@ -36,6 +36,7 @@ export const AUDIT_GROUPS = [
   "people",
   "2fa",
   "recovery",
+  "incidents",
   "config",
   "approval",
 ] as const;
@@ -56,7 +57,7 @@ export type AuditGroup = (typeof AUDIT_GROUPS)[number];
 export const AUDIT_GROUP_FALLBACK = "unclassified";
 
 /** Which ticket emits an event. Provenance for the docs; drives no behaviour. */
-export type AuditOrigin = "MAG-2729" | "MAG-2730" | "MAG-2731" | "MAG-2770";
+export type AuditOrigin = "MAG-2729" | "MAG-2730" | "MAG-2731" | "MAG-2770" | "MAG-4403";
 
 export interface AuditEventSpec {
   readonly group: AuditGroup;
@@ -265,6 +266,19 @@ export const AUDIT_EVENTS = {
     carriesChanges: false,
     carriesAccessContext: false,
     origin: "MAG-2730",
+  },
+
+  // ── Incidents ─────────────────────────────────────────────────────────────
+  // A member raised an incident with our engineers from the dashboard. Carries
+  // ip/client/session: a report that phones somebody is worth knowing the
+  // source of. Written only after our on-call system accepted the report.
+  "incident.reported": {
+    group: "incidents",
+    description:
+      "A member reported an incident to Magma's engineers from the dashboard, with a severity. The row is written once the on-call system accepted the report; the severity and title are in its note.",
+    carriesChanges: false,
+    carriesAccessContext: true,
+    origin: "MAG-4403",
   },
 
   // ── Config ────────────────────────────────────────────────────────────────

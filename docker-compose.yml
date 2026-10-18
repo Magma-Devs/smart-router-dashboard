@@ -230,6 +230,10 @@ services:
       - LOKI_ROUTER_SELECTOR=${LOKI_ROUTER_SELECTOR:-}
       - LOKI_USERNAME=${LOKI_USERNAME:-}
       - LOKI_PASSWORD=${LOKI_PASSWORD:-}
+      # Customer incident reports (docs/INCIDENTS.md). Off unless `true`;
+      # the webhook is the deployment's inbound URL in our on-call system.
+      - INCIDENTS_ENABLED=${INCIDENTS_ENABLED:-}
+      - INCIDENT_WEBHOOK_URL=${INCIDENT_WEBHOOK_URL:-}
       - LOKI_ORG_ID=${LOKI_ORG_ID:-}
       # Deployment scope (see .env.example). Empty = unset = the whole store.
       - METRICS_SCOPE_LABEL=${METRICS_SCOPE_LABEL:-}
@@ -317,6 +321,11 @@ services:
       # the chains drawer, ...); unset draws the 0.27 ones. Read per request
       # by the root layout. See apps/web/src/lib/new-ui.ts.
       - DASHBOARD_NEW_UI=${DASHBOARD_NEW_UI:-}
+      # The "Report incident" button and its fallback contact — read by the
+      # web itself, so both still show when the api is down. Set the same
+      # INCIDENTS_ENABLED as the api.
+      - INCIDENTS_ENABLED=${INCIDENTS_ENABLED:-}
+      - INCIDENT_FALLBACK_CONTACT=${INCIDENT_FALLBACK_CONTACT:-}
       # Auth (see docs/AUTH.md) — same AUTH_MODE + AUTH_SECRET as the api.
       # DEPLOYMENT_MODE must match the api's: the web serves it from
       # /api/config and forks the invitation copy on it.
