@@ -4,6 +4,7 @@ import {
   INCIDENT_SEVERITY_DESCRIPTIONS,
   INCIDENT_SEVERITY_NEXT,
   isIncidentSeverity,
+  looksLikeEmail,
   newIncidentId,
 } from "../index.js";
 
@@ -38,5 +39,25 @@ describe("incident severities", () => {
       expect(INCIDENT_SEVERITY_NEXT[s]).not.toMatch(/being called/i);
     }
     expect(INCIDENT_SEVERITY_NEXT.critical).toMatch(/being called/i);
+  });
+});
+
+describe("looksLikeEmail", () => {
+  it("takes an address with one @ and a dotted domain", () => {
+    for (const ok of ["dana@example.com", "a.b+c@sub.example.co", "x@y.z"]) expect(looksLikeEmail(ok), ok).toBe(true);
+  });
+
+  it("refuses what is not one", () => {
+    for (const bad of ["", "dana", "@example.com", "dana@", "dana@example", "dana@.com", "dana@example.", "a@b@c.com", "dana @example.com", "dana@exa mple.com"]) {
+      expect(looksLikeEmail(bad), bad).toBe(false);
+    }
+  });
+
+  /** The input CodeQL flagged against the regex this replaces. */
+  it("answers at once on a long run of dots", () => {
+    const hostile = "!@!." + "!.".repeat(50_000);
+    const started = Date.now();
+    looksLikeEmail(hostile);
+    expect(Date.now() - started).toBeLessThan(100);
   });
 });
