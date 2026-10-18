@@ -101,7 +101,8 @@ Long windows read the raw router metrics unless the store evaluates the
 twelve recording rules in [docs/RECORDING-RULES.md](docs/RECORDING-RULES.md);
 with them, windows of three hours and up read a few hundred recorded series
 instead of every raw histogram bucket, within a fraction of a percent of the
-same numbers. Without them everything works, only slower on long windows.
+same numbers, provided the routers are scraped every 15 seconds, which the
+api checks. Without them everything works, only slower on long windows.
 `GET /api/metrics/reads` reports which case a deployment is in.
 
 ## Pages

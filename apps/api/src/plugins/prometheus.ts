@@ -5,7 +5,7 @@ import { MetricsService } from "../services/metrics.js";
 import { MetricsDetailService } from "../services/metrics-detail.js";
 import { MetricsDashboardService } from "../services/metrics-dashboard.js";
 import { ConfigurationService } from "../services/configuration.js";
-import { RECORDED, RECORDED_CHART_FLOOR, ROUTER_METRICS, recordedReadsPolicy, recordedWindows, setRecordedReads, type RecordedReadsState } from "@sr/shared";
+import { RECORDED, RECORDED_CHART_FLOOR, ROUTER_METRICS, recordedReadsPolicy, recordedWindows, scrapeIntervalMatches, setRecordedReads, type RecordedReadsState } from "@sr/shared";
 import { ROUTER_SCOPE_CANDIDATES, config, readMetricsScope } from "../config.js";
 
 /** Services bound to one router scope (or to the whole cluster when unset). */
@@ -20,6 +20,12 @@ interface RecordedReadsProbe {
   at: string | null;
   ageSec: number | null;
   historySec: number | null;
+  /** Sample spacing of the densest raw router series, seconds; null when the store has none. */
+  scrapeSec: number | null;
+  /** The newest recorded sample is under the stale limit. */
+  fresh: boolean;
+  /** The spacing is the 15 s the rules' window is sized to (or unknown, with no router series). */
+  scrapeOk: boolean;
 }
 
 declare module "fastify" {
@@ -101,34 +107,49 @@ export const prometheusPlugin = fp(async (app: FastifyInstance) => {
   const recorded = config.prometheus.recorded;
   let probeTimer: NodeJS.Timeout | null = null;
   let armed = false;
-  let lastProbe: RecordedReadsProbe = { at: null, ageSec: null, historySec: null };
+  let lastProbe: RecordedReadsProbe = { at: null, ageSec: null, historySec: null, scrapeSec: null, fresh: false, scrapeOk: true };
   const probe = async (): Promise<void> => {
     const from = recorded.from;
     if (!from) return;
-    // Two cheap reads: how old the newest recorded sample is, and how far
-    // back the oldest one within the widest window reaches. A store that
-    // cannot answer is a store without fresh series.
-    const [ageSec, historySec] = await Promise.all([
+    // Three cheap reads: how old the newest recorded sample is, how far
+    // back the oldest one within the widest window reaches, and how far
+    // apart the raw router samples are — the rules' 2m15s window counts
+    // exactly for a 15-second scrape and is phase-biased for any other. A
+    // store that cannot answer the first is a store without fresh series.
+    const [ageSec, historySec, scrapeSec] = await Promise.all([
       prom.scalar(`time() - max(timestamp(${RECORDED.requests}))`).catch(() => null),
       prom.scalar(`time() - min(min_over_time(timestamp(${RECORDED.requests})[${recorded.historyLookback}:1h]))`).catch(() => null),
+      prom.scalar(`600 / max(count_over_time(${ROUTER_METRICS.requestsTotal}[10m]))`).catch(() => null),
     ]);
-    const available = ageSec !== null && Number.isFinite(ageSec) && ageSec * 1000 <= recorded.staleMs;
+    const fresh = ageSec !== null && Number.isFinite(ageSec) && ageSec * 1000 <= recorded.staleMs;
+    // No router series at all is not a wrong interval — there is nothing to be wrong about yet.
+    const scrapeOk = scrapeSec === null || !Number.isFinite(scrapeSec) || scrapeIntervalMatches(scrapeSec);
+    const available = fresh && scrapeOk;
     const history = available && historySec !== null && Number.isFinite(historySec) ? Math.max(0, Math.floor(historySec)) : null;
     const was = recordedReadsPolicy();
     setRecordedReads({ from, available, historySeconds: history });
-    lastProbe = { at: new Date().toISOString(), ageSec, historySec: history };
+    lastProbe = { at: new Date().toISOString(), ageSec, historySec: history, scrapeSec, fresh, scrapeOk };
     if (available && !was.available) {
-      app.log.info({ ageSec, historySec: history, from }, `recorded series are fresh — windows of ${from} and up read them where the history covers the window`);
+      app.log.info({ ageSec, historySec: history, scrapeSec, from }, `recorded series are fresh — windows of ${from} and up read them where the history covers the window`);
     } else if (!available && was.available) {
-      app.log.warn({ ageSec, series: RECORDED.requests }, "recorded series missing or stale — every window reads raw until they are fresh again");
+      if (fresh && !scrapeOk) {
+        app.log.warn({ scrapeSec, expected: 15 }, "the store does not scrape the routers every 15 s — the recorded series would be phase-biased, every window reads raw");
+      } else {
+        app.log.warn({ ageSec, series: RECORDED.requests }, "recorded series missing or stale — every window reads raw until they are fresh again");
+      }
     }
   };
   app.decorate("recordedReads", (): RecordedReadsState => {
     const pol = recordedReadsPolicy();
     const reason: RecordedReadsState["reason"] =
-      pol.from === null ? "off" : !armed ? "unprobed" : lastProbe.ageSec === null ? "absent" : !pol.available ? "stale" : "fresh";
+      pol.from === null ? "off"
+        : !armed ? "unprobed"
+        : lastProbe.ageSec === null ? "absent"
+        : !lastProbe.fresh ? "stale"
+        : !lastProbe.scrapeOk ? "scrape"
+        : "fresh";
     const windows = recordedWindows();
-    return { from: pol.from, chartFloor: RECORDED_CHART_FLOOR, available: pol.available, reason, ageSec: lastProbe.ageSec, historySec: pol.historySeconds, probedAt: lastProbe.at, windows };
+    return { from: pol.from, chartFloor: RECORDED_CHART_FLOOR, available: pol.available, reason, ageSec: lastProbe.ageSec, historySec: pol.historySeconds, scrapeSec: lastProbe.scrapeSec, probedAt: lastProbe.at, windows };
   });
   const armRecordedReads = async (): Promise<void> => {
     if (armed || !recorded.from) return;

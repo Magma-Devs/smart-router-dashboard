@@ -1051,9 +1051,11 @@ export interface RecordedReadsState {
   from: MetricWindow | null;
   chartFloor: MetricWindow;
   available: boolean;
-  reason: "off" | "unprobed" | "absent" | "stale" | "fresh";
+  reason: "off" | "unprobed" | "absent" | "stale" | "scrape" | "fresh";
   ageSec: number | null;
   historySec: number | null;
+  /** The sample spacing of the densest raw router series, seconds; the rules assume 15. */
+  scrapeSec: number | null;
   probedAt: string | null;
   windows: { recorded: MetricWindow[]; raw: MetricWindow[] };
 }

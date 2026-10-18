@@ -4,52 +4,74 @@
  * recording-rules.yaml`), and the policy that decides when a builder reads
  * them instead of the raw families.
  *
- * Every recorded series is a two-minute rate of one counter family, summed to
+ * Every recorded series is a 2m15s rate of one counter family, summed to
  * `cluster, chain, spec, router` and at most one more label. A window total is
  * `sum_over_time(rule[W]) * RECORDED_INTERVAL_SECONDS` (one sample a minute,
  * each a per-second rate); a ratio is the ratio of two such sums; a quantile is
  * `histogram_quantile` over the summed bucket rates; a series point is
- * `avg_over_time(rule[step])`, the mean rate across the step. A 2-minute rate
- * smooths one minute of edge per window, so a total sits within about 1% of a
- * raw `increase()` at three hours and under 0.2% at a day — which is why the
- * policy has a floor: windows under it stay on raw reads, exact and cheap.
+ * `avg_over_time(rule[step])`, the mean rate across the step.
+ *
+ * Why 2m15s: the routers are scraped every SCRAPE_INTERVAL_SECONDS, so a
+ * counter step sits inside a window of W seconds for W − 15 s, and the
+ * one-minute evaluation grid hits that span (W − 15) / 60 times. At W = 120
+ * that is 1.75 — a busy series averages out, a quiet one always meets the grid
+ * at the same phase and counts every step once or twice (0.571 or 1.143 of a
+ * step, at every window). At W = 135 the span is exactly two evaluations at
+ * half a step each, for every phase: the sum over a window counts the same
+ * steps as a raw `increase()`, shifted one minute earlier. The one assumption
+ * is the 15-second scrape, which the api's probe checks — a store on another
+ * interval reads raw, as it does without the rules at all.
  *
  * The policy is process-wide state, set by the api (`plugins/prometheus.ts`)
- * from `METRICS_RECORDED_FROM` and a freshness probe: when the recorded
- * series are missing or stale — the ruler not deployed, stopped, or behind —
- * every builder falls back to raw. Slow again, never wrong.
+ * from `METRICS_RECORDED_FROM` and a probe: when the recorded series are
+ * missing or stale — the ruler not deployed, stopped, or behind — or the
+ * store does not scrape every 15 s, every builder falls back to raw. Slow
+ * again, never wrong.
  */
 import { WINDOWS, type MetricWindow } from "../constants/windows.js";
 
 /** The ruler's evaluation interval. Coupled to `interval: 1m` in the rules file. */
 export const RECORDED_INTERVAL_SECONDS = 60;
 
+/** The router scrape interval the rules' 2m15s window is sized to: (135 − 15) s = two evaluations. */
+export const SCRAPE_INTERVAL_SECONDS = 15;
+
+/**
+ * Whether a measured sample spacing is the one the rules assume. A ten-minute
+ * count of a 15-second series is 39 to 41 samples (600 / 41 = 14.6 s, 600 / 39
+ * = 15.4 s); anything outside 15 ± 1.5 s is another scrape interval, and the
+ * recorded sums would be phase-biased there.
+ */
+export function scrapeIntervalMatches(seconds: number): boolean {
+  return Math.abs(seconds - SCRAPE_INTERVAL_SECONDS) <= 1.5;
+}
+
 /** Recorded series names, `level:family:operation`. */
 export const RECORDED = {
   /** Client requests served (histogram _count), by spec, router. */
-  clientRequests: "spec_router:smartrouter_end_to_end_latency_milliseconds_count:rate2m",
+  clientRequests: "spec_router:smartrouter_end_to_end_latency_milliseconds_count:rate2m15s",
   /** Relays, by spec, router. */
-  requests: "spec_router:smartrouter_requests_total:rate2m",
+  requests: "spec_router:smartrouter_requests_total:rate2m15s",
   /** Successful relays, by spec, router. */
-  success: "spec_router:smartrouter_requests_success_total:rate2m",
+  success: "spec_router:smartrouter_requests_success_total:rate2m15s",
   /** Router latency histogram buckets, by spec, router, le. */
-  latencyBucket: "spec_router_le:smartrouter_end_to_end_latency_milliseconds_bucket:rate2m",
+  latencyBucket: "spec_router_le:smartrouter_end_to_end_latency_milliseconds_bucket:rate2m15s",
   /** Relays by spec, router, provider_address. */
-  requestsByProvider: "spec_router_provider:smartrouter_requests_total:rate2m",
+  requestsByProvider: "spec_router_provider:smartrouter_requests_total:rate2m15s",
   /** Successful relays by spec, router, provider_address. */
-  successByProvider: "spec_router_provider:smartrouter_requests_success_total:rate2m",
+  successByProvider: "spec_router_provider:smartrouter_requests_success_total:rate2m15s",
   /** Relays by spec, router, method. */
-  requestsByMethod: "spec_router_method:smartrouter_requests_total:rate2m",
+  requestsByMethod: "spec_router_method:smartrouter_requests_total:rate2m15s",
   /** Successful relays by spec, router, method. */
-  successByMethod: "spec_router_method:smartrouter_requests_success_total:rate2m",
+  successByMethod: "spec_router_method:smartrouter_requests_success_total:rate2m15s",
   /** Read relays by spec, router, method. */
-  readByMethod: "spec_router_method:smartrouter_requests_read_total:rate2m",
+  readByMethod: "spec_router_method:smartrouter_requests_read_total:rate2m15s",
   /** Upstream latency histogram buckets, by spec, router, endpoint_id, le. */
-  endpointLatencyBucket: "spec_endpoint_le:rpc_endpoint_end_to_end_latency_milliseconds_bucket:rate2m",
+  endpointLatencyBucket: "spec_endpoint_le:rpc_endpoint_end_to_end_latency_milliseconds_bucket:rate2m15s",
   /** Relays served per upstream, by spec, router, endpoint_id. */
-  endpointRelays: "spec_endpoint:rpc_endpoint_total_relays_serviced:rate2m",
+  endpointRelays: "spec_endpoint:rpc_endpoint_total_relays_serviced:rate2m15s",
   /** Relays errored per upstream, by spec, router, endpoint_id. */
-  endpointErrored: "spec_endpoint:rpc_endpoint_total_errored:rate2m",
+  endpointErrored: "spec_endpoint:rpc_endpoint_total_errored:rate2m15s",
 } as const;
 
 const RECORDED_NAMES: ReadonlySet<string> = new Set(Object.values(RECORDED));
