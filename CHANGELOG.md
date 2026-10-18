@@ -5,6 +5,26 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.39.1]
+
+### Fixed
+
+- **Metrics:** the recorded reads follow the fleet store's second generation
+  of recording rules, `…:rate2m15s`. The first (`…:rate2m`) was phase-biased
+  on sparse counters: the routers report every 15 s, a counter step sat
+  inside a two-minute window for 105 s, and the one-minute evaluation grid
+  hit that span once or twice depending on how the scrape clock met the
+  ruler's — a busy series averaged out, a quiet method, provider or chain
+  counted every step at 57 % or 114 % of raw at every window. A 2m15s window
+  lands every step in exactly two evaluations at half each: measured within
+  0.1 % of the exact counter delta on quiet and busy routers alike. The read
+  math is unchanged. Because the exactness assumes the 15-second scrape, the
+  api's probe now also measures the raw sample spacing and reads raw on a
+  store that scrapes at another interval (`GET /api/metrics/reads` reports
+  `scrapeSec` and the reason `scrape`). The renamed series start with no
+  history, so every window reads raw until the ruler or a backfill covers it
+  (MAG-4393).
+
 ## [0.39.0]
 
 ### Added

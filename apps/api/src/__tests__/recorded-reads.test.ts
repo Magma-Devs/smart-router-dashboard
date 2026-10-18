@@ -6,7 +6,7 @@ import { MetricsService } from "../services/metrics.js";
 import type { PrometheusClient, PromVectorSample } from "../services/prometheus-client.js";
 
 /** A store that answers the freshness probe with a given age and everything else empty. */
-function mockStore(ageSec: number | null | "error", historySec = 2_592_000): string[] {
+function mockStore(ageSec: number | null | "error", historySec = 2_592_000, scrapeSec: number | null = 15): string[] {
   const sent: string[] = [];
   vi.stubGlobal("fetch", async (input: URL | string) => {
     const url = typeof input === "string" ? input : input.toString();
@@ -20,6 +20,11 @@ function mockStore(ageSec: number | null | "error", historySec = 2_592_000): str
     if (query.startsWith("time() - min(min_over_time(timestamp(")) {
       // The oldest recorded sample: thirty days back when the series exist at all.
       const result = ageSec === null || ageSec === "error" ? [] : [{ metric: {}, value: [1, String(historySec)] }];
+      return Response.json({ status: "success", data: { resultType: "vector", result } });
+    }
+    if (query.startsWith("600 / max(count_over_time(")) {
+      // The raw sample spacing: 15 s on the fleet, whatever the test says otherwise.
+      const result = scrapeSec === null ? [] : [{ metric: {}, value: [1, String(scrapeSec)] }];
       return Response.json({ status: "success", data: { resultType: "vector", result } });
     }
     return Response.json({ status: "success", data: { resultType: "vector", result: [] } });
@@ -87,7 +92,7 @@ describe("the freshness probe", () => {
     mockStore(30, 6 * 3600);
     app = await buildApp();
     res = await app.inject({ method: "GET", url: "/api/metrics/reads" });
-    expect(res.json()).toMatchObject({ available: true, reason: "fresh", ageSec: 30, historySec: 21600 });
+    expect(res.json()).toMatchObject({ available: true, reason: "fresh", ageSec: 30, historySec: 21600, scrapeSec: 15 });
     expect(res.json().windows.recorded).toEqual(["3h", "6h"]);
     expect(res.json().windows.raw).toContain("1d");
     await app.close();
@@ -97,6 +102,23 @@ describe("the freshness probe", () => {
     app = await buildApp();
     res = await app.inject({ method: "GET", url: "/api/metrics/reads" });
     expect(res.json()).toMatchObject({ available: false, reason: "stale", ageSec: 900 });
+    await app.close();
+    vi.unstubAllGlobals();
+    // Fresh and deep, but the store scrapes the routers every 30 s: the 2m15s
+    // window would be phase-biased there, so every window reads raw.
+    mockStore(30, 2_592_000, 30);
+    app = await buildApp();
+    res = await app.inject({ method: "GET", url: "/api/metrics/reads" });
+    expect(res.json()).toMatchObject({ available: false, reason: "scrape", ageSec: 30, scrapeSec: 30 });
+    expect(res.json().windows.recorded).toEqual([]);
+    expect(recordedReadsPolicy()).toEqual({ from: "3h", available: false, historySeconds: null });
+    await app.close();
+    vi.unstubAllGlobals();
+    // A store with no router series yet cannot be on the wrong interval.
+    mockStore(30, 6 * 3600, null);
+    app = await buildApp();
+    res = await app.inject({ method: "GET", url: "/api/metrics/reads" });
+    expect(res.json()).toMatchObject({ available: true, reason: "fresh", scrapeSec: null });
   });
 
   it("is not armed when METRICS_RECORDED_FROM is never", async () => {
@@ -168,6 +190,6 @@ describe("services under the policy", () => {
     setRecordedReads({ from: "3h", available: false });
     const { prom, queries } = capturing();
     await new MetricsService(prom).dashboardSummary("6h");
-    expect(queries.some((q) => q.includes(":rate2m"))).toBe(false);
+    expect(queries.some((q) => q.includes(":rate2m15s"))).toBe(false);
   });
 });
