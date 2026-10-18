@@ -5,6 +5,17 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.38.1]
+
+### Removed
+
+- **Metrics:** the recording-rules notice above the Metrics tabs, in both UIs.
+  It told the viewer whether the store has the rules, whether they are behind,
+  and how far their history reaches — detail for whoever runs the store, not
+  for someone reading the page. Reads are unchanged: each window still picks
+  recorded or raw series by the same policy, and `GET /api/metrics/reads`
+  still reports which case a deployment is in (MAG-4353).
+
 ## [0.38.0]
 
 ### Added

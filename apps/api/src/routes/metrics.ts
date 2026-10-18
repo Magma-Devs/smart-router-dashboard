@@ -85,8 +85,8 @@ export async function metricRoutes(app: FastifyInstance) {
   });
 
   // How long windows are being read right now — recorded series (the store's
-  // recording rules) or raw — and why. The Metrics page's notice reads it so
-  // an operator whose store has no rules learns what adding them buys.
+  // recording rules) or raw — and why. For operators: whether the store has
+  // the rules, whether they are behind, and which windows they cover.
   app.get("/api/metrics/reads", {
     schema: {
       tags: ["Metrics"],

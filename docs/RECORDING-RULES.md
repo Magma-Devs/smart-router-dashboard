@@ -42,8 +42,7 @@ api asks the store, on the first metrics request and once a minute after,
 how old the newest recorded sample is and how far back the oldest one
 reaches:
 
-- no recorded series at all (no rules): every window reads raw, and the
-  Metrics page shows a notice pointing here;
+- no recorded series at all (no rules): every window reads raw;
 - the series exist but the newest sample is older than five minutes (the
   ruler stopped, or is behind): every window reads raw until it catches up;
 - the series are fresh but their history is shorter than a window (rules
