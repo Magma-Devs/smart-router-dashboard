@@ -3,7 +3,9 @@
  * step of every request, all carrying the request's GUID; the Transactions tab
  * and the Errors tab's request list each rebuild one request per GUID from them. That
  * wording is the router's, not an interface - the tests pin it with lines
- * captured from live routers (smart-router :main and 1.5.3).
+ * captured from live routers (smart-router :main and 1.5.3). A router on
+ * smart-router #543 or later also ends each request in one `relay_end` event,
+ * which is an interface (relay-end.ts): a request with one is read from it alone.
  */
 import type { RelayAttempt, RouterTopology } from "@sr/shared";
 import type { LokiClient, LokiLine } from "./loki-client.js";
@@ -376,10 +378,13 @@ export function chainOf(ordered: RouterLine[], names: string[], index: UpstreamI
 export const onChain = (row: { spec: string | null; specs?: string[] }, spec: string) =>
   row.spec === spec || (row.spec === null && (row.specs?.includes(spec) ?? false));
 
+/** A cache hit's upstream, as the router names it on `relay_end`. */
+export const CACHED = "Cached";
+
 /**
  * Whether a row belongs to a config router: on its chain, and sent to one of
- * its upstreams. A request sent nowhere (no upstream could be chosen) is its
- * router's only when no other router serves that chain.
+ * its upstreams. A request sent nowhere (no upstream could be chosen, or the
+ * cache answered it) is its router's only when no other router serves that chain.
  */
 export function ownRow(
   row: { spec: string | null; specs?: string[]; attempts: { upstream: string }[] },
@@ -387,9 +392,10 @@ export function ownRow(
   routers: RouterTopology[],
 ): boolean {
   if (!onChain(row, router.spec)) return false;
-  if (!row.attempts.length) return !routers.some((r) => r.id !== router.id && r.spec === router.spec);
+  const sent = row.attempts.filter((a) => a.upstream !== CACHED);
+  if (!sent.length) return !routers.some((r) => r.id !== router.id && r.spec === router.spec);
   const own = new Set(router.nodes.map((n) => n.name));
-  return row.attempts.some((a) => own.has(a.upstream));
+  return sent.some((a) => own.has(a.upstream));
 }
 
 export const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

@@ -5,6 +5,28 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Added
+
+- **Transactions and Errors tabs: smart-router's `relay_end` event**
+  (MAG-4422). From smart-router #543, a router ends each request in one
+  `relay_end` line, written at every log level, and stops writing `relay
+  finished`, `failed getting responses from RPC endpoints`, `write outcome
+  unknown` and `failed processing responses from RPC endpoints`. The tabs,
+  the request look-up and the Failed requests card read those lines, so on
+  such a router they lost the end of every request, and showed nothing at
+  `warn`. A request that has a `relay_end` is now read from it alone: its
+  chain, method, outcome and every try, with the router's code, verdict,
+  words and timings, and the upstreams the consistency check passed over.
+  Each tab also finds requests by the event, next to the old lines, so a
+  window across an upgrade reads both shapes. The failed count adds the
+  event's failed requests to the old lines, with the server-errors alert's
+  definition: parsed, not a subscription request, and an outcome of
+  `no_answer`, `write_unknown`, `rejected_before_dispatch` or
+  `router_error`. Two things the old lines could not show: a Cosmos node's
+  refusal inside a normal reply is read from the event's `tx_code`, and a
+  transaction submitted over a WebSocket subscription (Substrate's
+  submit-and-watch) is a row.
+
 ## [0.39.1]
 
 ### Fixed

@@ -93,7 +93,12 @@ joined by the request GUID (`services/transactions.ts` and
 `services/error-requests.ts` list the lines they read; what each try at each
 upstream did is `triesOf` in `services/router-log.ts`, shared by both). That wording is the
 router's, not an interface: a reworded line empties the tab, and the tests pin
-it with captured lines. Order them by Loki's nanosecond timestamp, never by
+it with captured lines. A router on smart-router #543 or later ends each
+request in one `relay_end` event instead (`services/relay-end.ts`; contract:
+smart-router's `docs/RELAY-END-EVENT.md`), written at every log level with the
+chain, the method, the outcome and every try: a request that has one is read
+from it alone, and each tab finds requests by it as well as by the old lines,
+so a window across an upgrade reads both. Order them by Loki's nanosecond timestamp, never by
 arrival: the router writes several lines of one request in the same
 millisecond at different levels, and each level is its own Loki stream. A transaction
 is a request the spec marks `stateful:"1"` **or** a transaction method by name
@@ -101,7 +106,10 @@ is a request the spec marks `stateful:"1"` **or** a transaction method by name
 chains a refused transaction still gets a normal reply, which the router
 doesn't log, so there a reply without a node-error line is `unknown`, never
 `accepted`. A write the router itself can't settle ("write outcome unknown") is
-`unknown` too, in its words. Credentials work as the Prometheus ones do:
+`unknown` too, in its words. On `relay_end` a Cosmos refusal is read: the
+router puts the reply's code in `tx_code`, so only a gRPC write is `unknown`
+for it; and a transaction submitted over a WebSocket subscription (Substrate's
+submit-and-watch) is a row, which the old lines never logged. Credentials work as the Prometheus ones do:
 `LOKI_USERNAME` + `LOKI_PASSWORD` for basic auth (both or nothing),
 `LOKI_ORG_ID` for `X-Scope-OrgID`.
 
@@ -116,7 +124,14 @@ policy decided to retry it (`[StateMachine] policy.Decide`, `action: retry`),
 or when the router gave up. It gives up with one of two lines: `failed
 getting responses from RPC endpoints` when nothing came back (it returns
 before "relay finished"), `failed processing responses from RPC endpoints`
-when nothing usable did - either makes the request `failed`. A try the router **called off** (`context
+when nothing usable did - either makes the request `failed`. A router on #543
+writes neither line: its failed requests are `relay_end` events with an
+`outcome` of `no_answer`, `write_unknown`, `rejected_before_dispatch` or
+`router_error`, the server-errors alert's set. Such a request is listed when a
+try or the request failed - what its finder reads, so the list does not change
+with the log level. A request the router couldn't parse and a subscription
+request write the event too, and are neither listed nor counted, as the alert
+counts neither. A try the router **called off** (`context
 canceled` - another try had answered, or the client stopped waiting) is not a
 failure. Each try carries the router's own words: the node's error message,
 the router's `retryable` verdict on it, or why it passed an upstream over
@@ -694,7 +709,7 @@ Every `/api/metrics/*` route also accepts **`router?`** — the router scope
 | `GET /api/metrics/query` | **`query`** (required) | Raw **instant** PromQL passthrough — `{ result }`. 400 without `query` |
 | `GET /api/config/routers` | — | `{ routers: RouterTopology[] }` — live topology from the mounted values file (either format), node URLs masked to scheme+host. Each endpoint also carries `index` (the handle the relay below resolves) + `directable` |
 | `GET /api/error-requests` | `window` **or** `from` + `to` (unix ms, in the past, ≤30 days; 400 otherwise), `before?`, `spec?`, `routerId?`, `upstream?` | `ErrorRequestsReport` - the Errors tab's request list, from the router's logs in Loki (not Prometheus): every request that hit an error, newest first - `attempts[]` in order (`upstream`, `batch` (tries sent together share one), `outcome` ∈ ok/failed/skipped/cancelled/no-result, `replied`, the router's `code` and `retryable` verdict, the node's `message` word for word, the router's `note`, `atMs` / `endMs`), `result` ∈ recovered/error-reply/failed/unknown, `resolvedBy`, `retried`, `stopReason` (the router's own), `exhausted`, `totalMs`, `error`, `spec` (null + `specs` when its upstreams serve several chains). At most 300 requests per read: `more` + `nextBefore` say where to read on (`before=`). A chain or router narrows the read to its upstreams' names; `upstream` (an errors-over-time bar's) narrows it to that one and keeps the requests whose try there failed. Node urls in messages are cut to scheme+host. `available:false` + `reason` (`unconfigured` / `unreachable`) without `LOKI_URL` or when Loki doesn't answer |
-| `GET /api/error-requests/count` | `window`, `spec?`, `routerId?` | `FailedRequests` - `{ available, reason?, value }`: client requests the router **could not serve** (nothing, or nothing usable, came back from the upstreams, so the router returned its own error, typically "insufficient results") in the window. Counted by Loki from the line the router ends each such request with (`message` = "failed getting responses from RPC endpoints" when nothing came back, "failed processing responses from RPC endpoints" when nothing usable did; its own relays log "[-] failed sending init relay" instead); a chain narrows it by the listener that logged it (`<spec><interface>`). A config router narrows it to its chain; on a chain other routers serve too it answers `reason: "shared-chain"` - the lines don't say which router wrote them. A chain the values file doesn't serve is 0 without a read. Kept 30 s per window and chain, a failed read too, one read in flight per key. No metric has this number: `smartrouter_requests_{total,success,failed}_total` move once per TRY, and the one per-request series, the end-to-end latency histogram, is only observed on success. The Metrics page's "Failed requests" card |
+| `GET /api/error-requests/count` | `window`, `spec?`, `routerId?` | `FailedRequests` - `{ available, reason?, value }`: client requests the router **could not serve** (nothing, or nothing usable, came back from the upstreams, so the router returned its own error, typically "insufficient results") in the window. Counted by Loki from the line the router ends each such request with (`message` = "failed getting responses from RPC endpoints" when nothing came back, "failed processing responses from RPC endpoints" when nothing usable did; its own relays log "[-] failed sending init relay" instead), plus each failed `relay_end` on a router on smart-router #543 or later, which writes neither line (the server-errors alert's leg: parsed, not a subscription, `outcome` `no_answer` / `write_unknown` / `rejected_before_dispatch` / `router_error`); a chain narrows it by the listener that logged it (`<spec><interface>`), or by the event's `chain`. A config router narrows it to its chain; on a chain other routers serve too it answers `reason: "shared-chain"` - the lines don't say which router wrote them. A chain the values file doesn't serve is 0 without a read. Kept 30 s per window and chain, a failed read too, one read in flight per key. No metric has this number: `smartrouter_requests_{total,success,failed}_total` move once per TRY, and the one per-request series, the end-to-end latency histogram, is only observed on success. The Metrics page's "Failed requests" card |
 | `GET /api/requests/:guid` | `window` **or** `from` + `to` | `RequestLookup` - one request by its ID (the GUID the router puts in its errors), from its logs: the same row the Errors list shows, for ANY request - `result: "ok"` when nothing failed on the way. `row: null` = not in the logs of the range read; the web offers a 30-day read on purpose rather than by default (it scans every line in the range). 400 on an ID that isn't a plain token |
 | `GET /api/transactions` | `window` **or** `from` + `to` (unix ms, in the past, ≤30 days; 400 otherwise), `before?`, `spec?`, `routerId?` | `TransactionsReport` - the Transactions tab, from the router's logs in Loki (not Prometheus): `rows` (newest first: time, chain, method, `attempts` - every upstream it went to and what each answered, the same shape as a retried request's tries - `answeredBy`, `replyMs`, `outcome` ∈ accepted/rejected/failed/unknown, `error`, `note`), totals, `successRate` (unknown left out). At most 500 transactions per read, and the numbers cover those: `more` + `nextBefore` say where to read on (`before=`), the same paging as `/api/error-requests`. `available:false` without `LOKI_URL` or when Loki doesn't answer. Value and finality are not here: the logs cut long bodies short, and finality needs the chain |
 | `GET /api/transactions/:guid` | `window` **or** `from` + `to` | `TransactionLookup` - one transaction by its request ID, the same row the Transactions tab shows. `found` with `row: null` = the ID is a request that isn't a transaction (the Errors tab's look-up shows it). 400 on an ID that isn't a plain token |

@@ -319,6 +319,7 @@ describe("ErrorRequestsService", () => {
         if (asked) return lines.filter((l) => asked.some((g) => l.line.includes(`"GUID":"${g}"`)));
         const one = /\|= `"GUID":"([^"]+)"`/.exec(query)?.[1];
         if (one) return lines.filter((l) => l.line.includes(`"GUID":"${one}"`));
+        if (query.includes('|= `"event":"relay_end"`')) return []; // these routers write none
         const names = [...query.matchAll(/`([^`]*)`/g)][2]?.[1]?.split("|");
         return lines
           .filter((l) => l.tsMs >= startMs && l.tsMs < endMs)
@@ -345,7 +346,8 @@ describe("ErrorRequestsService", () => {
     const r = await new ErrorRequestsService(loki, '{service="router"}', configSvc).report(RANGE);
     expect(queries[0]).toContain("received node error reply from provider|Relay received a node error|could not send relay to provider");
     expect(queries[0]).toContain("!~ `PROTOCOL_CONTEXT_CANCELED|context canceled`");
-    expect(queries[1]).toContain('`"GUID":"(');
+    expect(queries[1]).toContain('|= `"event":"relay_end"`');
+    expect(queries[2]).toContain('`"GUID":"(');
     expect(r).toMatchObject({ available: true, more: false, nextBefore: null });
     expect(r.rows.map((x) => [x.method, x.result])).toEqual([
       ["eth_getLogs", "error-reply"], ["eth_gasPrice", "failed"], ["getSlot", "recovered"], ["getBlock", "recovered"],
@@ -535,7 +537,7 @@ describe("GET /api/error-requests/count", () => {
     expect(res.json()).toEqual({ available: false, reason: "unconfigured", value: null });
   });
 
-  it("counts the line the router ends each request it could not serve with - nothing back, or nothing usable", async () => {
+  it("counts the line the router ends each request it could not serve with - nothing back, or nothing usable - and the failed relay_end", async () => {
     process.env.LOKI_URL = "http://loki.test:3100";
     answer = () => [{ metric: {}, value: [0, "4"] }];
     app = await buildApp();
@@ -545,13 +547,16 @@ describe("GET /api/error-requests/count", () => {
     expect(queries).toHaveLength(1);
     for (const q of queries) {
       // The default selector: the label the fleet's log agent and compose's promtail share.
-      expect(q.startsWith('sum(count_over_time({component="router"} ')).toBe(true);
+      expect(q.startsWith('(sum(count_over_time({component="router"} ')).toBe(true);
       expect(q).toContain("|~ `failed (getting|processing) responses from RPC endpoints`");
       // Matched as the line's message: other lines quote it in their error field.
       expect(q).toContain('| json msg="message", ep="endpoint" | msg=~`failed (getting|processing) responses from RPC endpoints`');
       // A chain is the listener that logged it: <spec><interface>.
       expect(q).toContain("| ep=~`ETH1(jsonrpc|rest|tendermintrpc|grpc)`");
       expect(q).toContain("[86400s]");
+      // The relay_end leg, on the same chain; a leg with no lines adds 0.
+      expect(q).toContain('{component="router"} |= `"chain":"ETH1"` |= `"event":"relay_end"`');
+      expect(q).toContain(" or vector(0)) + (");
     }
   });
 
