@@ -273,8 +273,9 @@ describe("transaction rows from the router's log lines", () => {
 });
 
 describe("TransactionsService", () => {
-  /** A Loki stub for the three reads: writes by flag, methods by name, then
-   *  every line of the GUIDs asked for - filtered, as Loki does. */
+  /** A Loki stub for the four reads: writes by flag, methods by name, the
+   *  relay_end events, then every line of the GUIDs asked for - filtered, as
+   *  Loki does. */
   function lokiStub(lines: LokiLine[]) {
     const queries: string[] = [];
     const loki = {
@@ -286,6 +287,7 @@ describe("TransactionsService", () => {
         if (one) return lines.filter((l) => l.line.includes(`"GUID":"${one}"`));
         // The two finding reads: newest first, in the range, at most `limit`.
         const inRange = (ls: LokiLine[]) => ls.filter((l) => l.tsMs >= startMs && l.tsMs < endMs).sort((a, b) => b.tsMs - a.tsMs).slice(0, limit);
+        if (query.includes('|= `"event":"relay_end"`')) return inRange(lines.filter((l) => l.line.includes('"event":"relay_end"')));
         if (query.includes('|= "Choosing providers"')) return inRange(lines.filter((l) => l.line.includes("Choosing providers") && l.line.includes('"stateful":"1"')));
         if (query.includes('|= "Consumer received a new"')) return inRange(lines.filter((l) => l.line.includes("Consumer received") && /sendRawTransaction|sendTransaction|sendrawtransaction/.test(l.line)));
         return [];
@@ -303,12 +305,14 @@ describe("TransactionsService", () => {
   const TXS = [...ETH_REJECTED, ...ETH_ACCEPTED, ...BTC_FAILED, ...HL_REJECTED];
   const RANGE = { startMs: 0, endMs: 100_000 };
 
-  it("finds transactions two ways, then reads every line of them by GUID", async () => {
+  it("finds transactions three ways, then reads every line of them by GUID", async () => {
     const { loki, queries } = lokiStub(TXS);
     const r = await new TransactionsService(loki, '{service="router"}', configSvc).report(RANGE);
     expect(queries[0]).toBe('{service="router"} |= "Choosing providers" |= `"stateful":"1"`');
     expect(queries[1]).toContain('{service="router"} |= "Consumer received a new" |~ `(eth_sendRawTransaction|');
-    expect(queries[2]).toContain("10227923066219274059"); // found by method name only
+    expect(queries[2]).toContain('{service="router"} |= `"event":"relay_end"`');
+    expect(queries[3]).toContain("10227923066219274059"); // found by method name only
+    expect(queries[3]).toContain('"event":"relay_end"'); // and its relay_end, had it one
     expect(r).toMatchObject({ available: true, total: 4, accepted: 1, rejected: 2, failed: 1, more: false, nextBefore: null });
   });
 

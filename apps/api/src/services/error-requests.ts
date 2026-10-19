@@ -23,6 +23,15 @@
  *                                             line for the request (no "relay finished")
  *   failed processing responses from …        nothing usable came back
  *   [-] failed sending init relay             one of the router's own relays
+ *
+ * A router on smart-router #543 or later ends each request in one `relay_end`
+ * event instead (relay-end.ts), which holds every try: such a request is read
+ * from it alone, and found by it too, at any log level. It is listed when a
+ * try or the request failed - what the event read finds - so the list does not
+ * change with the log level: a hedge nothing failed in is not on it. A request
+ * the router couldn't parse, and a subscription request, write the event but
+ * never wrote the old lines: neither is listed or counted, as the
+ * server-errors alert counts neither.
  */
 import type {
   ErrorRequestRow,
@@ -34,6 +43,20 @@ import type {
   RouterTopology,
 } from "@sr/shared";
 import { WINDOWS } from "@sr/shared";
+import {
+  attemptsOf,
+  FAILED_OUTCOMES,
+  FAILED_PIPELINE,
+  isRelayEnd,
+  PARSED_PIPELINE,
+  isSubscription,
+  methodOf as methodOfEvent,
+  parsed,
+  RELAY_END,
+  retried as retriedEvent,
+  startMs,
+  WRONG_OUTCOMES,
+} from "./relay-end.js";
 import { readEnd, readOnFrom, type ReadRange } from "./read-range.js";
 import type { LokiClient } from "./loki-client.js";
 import type { ConfigurationService } from "./configuration.js";
@@ -89,6 +112,8 @@ const FOUND_BY = [
 /** Requests one read returns; `more` says when the range holds older ones. */
 export const ERROR_READ_CAP = 300;
 
+const FAILED_SET: ReadonlySet<string> = new Set(FAILED_OUTCOMES);
+
 export { REQUEST_ID } from "./router-log.js";
 
 /** A request's lines can come this long before the first one that finds it
@@ -108,6 +133,12 @@ export function buildErrorRows(lines: RouterLine[], index: UpstreamIndex, every 
   const rows: ErrorRequestRow[] = [];
   for (const [guid, group] of byGuid) {
     const ordered = [...group].sort((a, b) => a.tsMs - b.tsMs);
+    const event = lastWhere(ordered, isRelayEnd);
+    if (event) {
+      const row = rowOfEvent(event, guid, index, every);
+      if (row) rows.push(row);
+      continue;
+    }
     const received = ordered.find((l) => l.message.startsWith(ERROR_MSG.received));
     const finished = lastWhere(ordered, (l) => l.message === ERROR_MSG.finished);
     // With nothing back at all the router's last line is `noAnswer`: it
@@ -154,12 +185,45 @@ export function buildErrorRows(lines: RouterLine[], index: UpstreamIndex, every 
   return rows.sort((a, b) => b.time - a.time);
 }
 
+/** A request's row from its `relay_end` alone; null when the list leaves it out. */
+function rowOfEvent(e: RouterLine, guid: string, index: UpstreamIndex, every: boolean): ErrorRequestRow | null {
+  if (!every && (!parsed(e) || isSubscription(e))) return null;
+  const attempts = attemptsOf(e);
+  const outcome = str(e.f.outcome);
+  let result: ErrorRequestRow["result"] = "unknown"; // an outcome schema 1 doesn't have
+  if (FAILED_SET.has(outcome)) result = "failed";
+  else if (outcome === "node_error") result = "error-reply";
+  else if (outcome === "ok") result = attempts.some((a) => a.outcome === "failed") ? "recovered" : "ok";
+  // Listed by what its finder reads - a failed try or request - so the list
+  // does not change with the router's log level.
+  if (!every && !attempts.some((a) => a.outcome === "failed") && result !== "failed") return null;
+
+  const chain = str(e.f.chain);
+  const latency = typeof e.f.latency_ms === "number" ? Math.round(e.f.latency_ms) : null;
+  const stopReason = str(e.f.stop_reason) || null;
+  return {
+    guid,
+    time: Math.round(startMs(e)),
+    ...(chain ? { spec: chain } : chainOf([e], attempts.map((a) => a.upstream), index)),
+    method: methodOfEvent(e),
+    attempts,
+    result,
+    resolvedBy: result === "failed" ? null : str(e.f.served_by) || null,
+    retried: retriedEvent(e),
+    stopReason,
+    exhausted: stopReason === "AllProvidersExhausted",
+    totalMs: latency,
+    error: result === "failed" ? scrubUrls(withoutGuid(str(e.f.error)) || "no upstream replied") : null,
+  };
+}
+
 /**
  * The lines the router writes, one per client request it could not serve:
  * nothing came back (`noAnswer`) or nothing usable did (`gaveUp`). A request
  * writes one or the other, never both. Other lines quote them in their error
  * field, so each is matched as the `message`, not anywhere in the line. A
- * write whose outcome is unknown after a partial reply is in neither.
+ * write whose outcome is unknown after a partial reply is in neither. A router
+ * on #543 writes neither: its failed requests are `relay_end` events.
  */
 export const GAVE_UP = `failed (getting|processing) responses from RPC endpoints`;
 
@@ -201,7 +265,8 @@ export class ErrorRequestsService {
 
   /**
    * How many client requests the router could not serve in `window`: one
-   * GAVE_UP line each, counted by Loki. Prometheus can't give this number:
+   * GAVE_UP line each, or one failed `relay_end` (FAILED_PIPELINE), counted by
+   * Loki. A request writes one or the other: #543 writes no GAVE_UP line. Prometheus can't give this number:
    * the router's request counters move once per ATTEMPT (and count its own
    * relays), and its one per-request series, the end-to-end latency
    * histogram, is only observed when a request succeeds. A chain narrows it
@@ -235,8 +300,13 @@ export class ErrorRequestsService {
 
     const r = `${WINDOWS[window].rangeSeconds}s`;
     const byChain = chain ? ` | ep=~\`${escapeRe(chain)}(jsonrpc|rest|tendermintrpc|grpc)\`` : "";
+    const eventChain = chain ? ` |= \`"chain":"${chain}"\`` : "";
+    // Each leg summed on its own, then added: `or vector(0)` keeps a leg with
+    // no lines from emptying the total.
+    const lines = `sum(count_over_time(${this.selector} |~ \`${GAVE_UP}\` | json msg="message", ep="endpoint" | msg=~\`${GAVE_UP}\`${byChain} [${r}]))`;
+    const events = `sum(count_over_time(${this.selector}${eventChain} ${FAILED_PIPELINE} [${r}]))`;
     const read = loki
-      .count(`sum(count_over_time(${this.selector} |~ \`${GAVE_UP}\` | json msg="message", ep="endpoint" | msg=~\`${GAVE_UP}\`${byChain} [${r}]))`)
+      .count(`(${lines} or vector(0)) + (${events} or vector(0))`)
       .then((value): FailedRequests => {
         const result: FailedRequests = value === null ? { ...unavailable("unreachable"), value: null } : { available: true, value };
         this.keep(key, result);
@@ -294,38 +364,59 @@ export class ErrorRequestsService {
       ...(names && chain && LABEL_TOKEN.test(chain) ? [listenerPattern(chain)] : []),
     ];
     const narrow = alts.length ? ` |~ \`${alts.join("|")}\`` : "";
+    // A relay_end is one line per request and names its chain and its tries' upstreams.
+    const eventNarrow = upstream
+      ? inRawString(upstream) ? ` |= \`"upstream":"${upstream}"\`` : ""
+      : chain && LABEL_TOKEN.test(chain) ? ` |= \`"chain":"${chain}"\`` : "";
     const limit = this.cap * 4;
-    const found = await loki.queryRange(
-      `${this.selector} |~ \`${FOUND_BY.map(escapeRe).join("|")}\` !~ \`PROTOCOL_CONTEXT_CANCELED|context canceled\`${narrow}`,
-      range.startMs,
-      endMs,
-      limit,
-      "backward",
-    );
-    if (found === null) return none(false, "unreachable");
+    const [found, events] = await Promise.all([
+      loki.queryRange(
+        `${this.selector} |~ \`${FOUND_BY.map(escapeRe).join("|")}\` !~ \`PROTOCOL_CONTEXT_CANCELED|context canceled\`${narrow}`,
+        range.startMs,
+        endMs,
+        limit,
+        "backward",
+      ),
+      loki.queryRange(
+        `${this.selector} |= \`${RELAY_END}\` != \`"selection":"subscription"\` |~ \`"outcome":"(${WRONG_OUTCOMES.join("|")})"\`${eventNarrow} ${PARSED_PIPELINE}`,
+        range.startMs,
+        endMs,
+        this.cap,
+        "backward",
+      ),
+    ]);
+    if (found === null || events === null) return none(false, "unreachable");
 
-    const newestFirst = parseAll(found).sort((a, b) => b.tsMs - a.tsMs);
+    const newestFirst = parseAll([...found, ...events]).sort((a, b) => b.tsMs - a.tsMs);
     const newestOf = new Map<string, number>();
     for (const l of newestFirst) if (!newestOf.has(l.guid)) newestOf.set(l.guid, l.tsMs);
     if (!newestOf.size) return none(true);
     const ranked = [...newestOf];
     const kept = new Set(ranked.slice(0, this.cap).map(([g]) => g));
-    const keptTimes = newestFirst.filter((l) => kept.has(l.guid)).map((l) => l.tsMs);
-    const cuts = found.length >= limit ? [Math.min(...found.map((l) => l.tsMs))] : [];
-    const nextBefore = readOnFrom(ranked, this.cap, cuts, endMs);
+    const cutOf = (read: { tsMs: number }[], cap: number) => (read.length >= cap ? [Math.min(...read.map((l) => l.tsMs))] : []);
+    const nextBefore = readOnFrom(ranked, this.cap, [...cutOf(found, limit), ...cutOf(events, this.cap)], endMs);
 
-    const guidLines = await linesForGuids(
-      loki,
-      this.selector,
-      [...kept],
-      Math.min(...keptTimes) - REQUEST_SPAN_MS,
-      Object.values(ERROR_MSG),
-      40,
-      Math.min(Date.now(), Math.max(...keptTimes) + REQUEST_SPAN_MS),
-    );
+    // A request found by its relay_end needs nothing more; one found by its
+    // lines needs the rest of them - and its relay_end, when it has one.
+    const ends = newestFirst.filter((l) => isRelayEnd(l) && kept.has(l.guid));
+    const inHand = new Set(ends.map((l) => l.guid));
+    const toRead = [...kept].filter((g) => !inHand.has(g));
+    const reading = new Set(toRead);
+    const toReadTimes = newestFirst.filter((l) => reading.has(l.guid)).map((l) => l.tsMs);
+    const guidLines = toRead.length
+      ? await linesForGuids(
+          loki,
+          this.selector,
+          toRead,
+          Math.min(...toReadTimes) - REQUEST_SPAN_MS,
+          [...Object.values(ERROR_MSG), RELAY_END],
+          40,
+          Math.min(Date.now(), Math.max(...toReadTimes) + REQUEST_SPAN_MS),
+        )
+      : { lines: [], unread: [] };
     if (guidLines === null) return none(false, "unreachable");
 
-    let rows = buildErrorRows(guidLines.lines, new UpstreamIndex(routers));
+    let rows = buildErrorRows([...guidLines.lines, ...ends], new UpstreamIndex(routers));
     if (spec) rows = rows.filter((r) => onChain(r, spec));
     if (routerId) rows = router ? rows.filter((r) => ownRow(r, router, routers)) : [];
     if (upstream) rows = rows.filter((r) => r.attempts.some((a) => a.upstream === upstream && a.outcome === "failed"));
