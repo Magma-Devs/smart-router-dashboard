@@ -5,6 +5,67 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.42.0]
+
+### Added
+
+- **The Postgres pool is configurable: `DB_POOL_MAX` and `DB_IDLE_TIMEOUT_S`.**
+  Both default to what the api always ran with (20 connections, each closed
+  after 30 s idle), so a deployment that sets neither is unchanged. Every
+  authenticated request takes a connection for the session join, so the pool
+  bounds a backend's concurrency and, summed over a deployment's backends,
+  what its Postgres has to admit: the fleet runs one backend per node against
+  a shared instance and sets the pool per backend from that instance's
+  connection budget. `DB_IDLE_TIMEOUT_S=0` keeps idle connections for the life
+  of the process; the first request after an idle close pays for a new
+  connection (TCP, TLS and three SCRAM legs). A value that is not a whole
+  number in range refuses the boot, naming the variable, rather than quietly
+  becoming the default (`readDbPoolOptions` in `config.ts`; `createDb` in
+  `@sr/db` takes the same options and refuses a pool of nothing).
+  `db-pool.test.ts` and `packages/db`'s `client.test.ts` pin both.
+- **`DB_TLS_SERVERNAME` verifies the server certificate against a name of
+  its own.** The fleet keeps its Postgres private and reaches it through a
+  Cloudflare Tunnel: a cloudflared sidecar listens on `127.0.0.1:5432` in the
+  pod, so `DATABASE_URL` names the loopback address while the TLS session
+  still ends on RDS, whose certificate names the endpoint. Node verifies a
+  certificate against the name it dialled, and an IP address has no name to
+  verify, so without this the check would be silently defeated. Set, the
+  driver gets `ssl: { servername }`: TLS is always on, the chain is checked
+  against the trusted CAs (`NODE_EXTRA_CA_CERTS` for the RDS bundle) and the
+  certificate must name exactly that host — `sslmode=verify-full` with the
+  name supplied — whatever the URL's own `sslmode` says. Unset, nothing
+  changes. A value that is not a DNS name (a scheme, a port, an IP address)
+  refuses the boot, naming the variable, because the driver would accept it
+  and every connection would then fail its name check, which reads like an
+  outage. `createDb` takes it as `tlsServername`; the same two test files
+  pin it.
+- **`GET /health/ready` checks the database under `AUTH_MODE=enabled`.** The
+  probe pinged Prometheus only, so a backend whose database was unreachable
+  was Ready while every authenticated request answered 503 — the gate fails
+  closed by design (`plugins/auth.ts`). It now also runs `select 1`, within
+  3 s, and reports `components.database` as `ok`, `not_connected` (the lazy
+  connect loop has not succeeded: Postgres unreachable, the credential
+  refused, or migrations still running), `query_failed` or `timeout`;
+  anything but `ok` is a 503. On the fleet's surge-first rollout that makes
+  the order of a credential change mechanical: a new pod that cannot reach
+  its database never replaces the one serving. With auth off the body carries
+  no `database` key, as before. Give the probe a timeout of 5 s or more.
+  `health-ready.test.ts` pins every state.
+- **The api image ships `aws_signing_helper`** — the IAM Roles Anywhere
+  credential helper, 1.8.4, at `/usr/local/bin`. A managed deployment can then
+  send mail through SES with a certificate instead of an access key: an AWS
+  config file whose profile sets `credential_process` to the helper, and the
+  SES client — built with no explicit credentials (`services/email.ts`) —
+  resolves one-hour credentials through the SDK's default chain.
+  `aws-credential-process.test.ts` pins the chain: a profile's
+  `credential_process` alone is enough for `SESv2Client` to resolve
+  credentials, with no key in the environment. The helper is built from
+  source in a `golang:1.26-alpine` stage with cgo on, because its PKCS#11
+  package does not compile with cgo off and AWS's release binary is linked
+  against glibc, which the image's musl cannot load; the build then runs
+  `aws_signing_helper version` on the runtime stage, so an image whose helper
+  cannot run is never published.
+
 ## [0.41.0]
 
 ### Added

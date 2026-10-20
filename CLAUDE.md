@@ -545,7 +545,7 @@ A Kubernetes deployment runs the api as the `…/backend` image and the web as
 
 | | Value |
 |---|---|
-| Backend liveness / readiness | `/health` · `/health/ready` (**not** `/api/health` — that's the retired v1 path). Readiness pings Prometheus, so give it a timeout ≥3s and a failureThreshold >1, or a Prometheus blip evicts the only replica |
+| Backend liveness / readiness | `/health` · `/health/ready` (**not** `/api/health` — that's the retired v1 path). Readiness pings Prometheus, and under `AUTH_MODE=enabled` the database (3 s), so give it a timeout ≥5s and a failureThreshold >1, or a blip of either evicts the only replica |
 | Backend env | `PROMETHEUS_URL`, `CORS_ORIGINS` (comma list **or** JSON array), `HELM_VALUES_DIR` (default `/app/helm-values`, matching the values mount), `LOG_LEVEL`, `RATE_LIMIT_MAX`. Optional: `INCIDENTS_ENABLED` + `INCIDENT_WEBHOOK_URL` (a `secretKeyRef` — the URL is the credential). No basic auth: `AUTH_USERNAME` / `AUTH_PASSWORD` / `DEBUG` / `CORS_ALLOW_CREDENTIALS` / `AUTH_GATEWAY_*` are v1-only and unread here |
 | Frontend runtime env | `DASHBOARD_API_URL` (browser-facing api origin) and `DASHBOARD_GRAFANA_URL`, both read per-request by `GET /api/config` so one image serves any host; `DASHBOARD_NEW_UI=true` for the 0.28 screens, read per request by the root layout. Optional: `INCIDENTS_ENABLED` (same as the backend's). `NEXT_PUBLIC_*` are build-time and can't vary per deployment |
 | Frontend liveness / readiness | `/api/config` (`/` also answers — it 307s to `/metrics`) |
@@ -683,7 +683,7 @@ Every `/api/metrics/*` route also accepts **`router?`** — the router scope
 | `GET /api/account/me` | — | The caller from the live account row — id, email, name, avatar, role. What the web's `useMe()` polls, so a role change reaches the sidebar badge and the Team page without a new sign-in |
 | `GET /api/account/sessions` · `DELETE …/:id` · `DELETE …` | — | Your live sessions · sign out one device · sign out everywhere |
 | `GET /health` | — | Liveness — `{ health: "ok" }` |
-| `GET /health/ready` | — | Readiness — runs `vector(1)` against the store (not `-/ready`, which Mimir and a query-only proxy don't serve) with the configured credential; 503 + `components.prometheus:"ping_failed"` on failure, including a 401 |
+| `GET /health/ready` | — | Readiness — runs `vector(1)` against the store (not `-/ready`, which Mimir and a query-only proxy don't serve) with the configured credential; 503 + `components.prometheus:"ping_failed"` on failure, including a 401. Under `AUTH_MODE=enabled` it also runs `select 1` on the database, within 3 s: `components.database` is `ok`, `not_connected` (the lazy connect has not succeeded — Postgres unreachable, the credential refused, or migrations still running), `query_failed` or `timeout`, and anything but `ok` is a 503, so a pod whose database does not answer never becomes Ready and a surge-first rollout keeps the old pods serving. Absent from the body with auth off |
 | `GET /version` | — | Build provenance — `{ commit, version, env, startedAt, uptimeSec }` |
 | `GET /api/metrics/routers` | — | `{ label, routers: string[] }` — router deployments the metrics can be scoped to (distinct values of `ROUTER_SCOPE_LABEL`). `[]` when the collector can't tell routers apart. See "Router scope" |
 | `GET /api/metrics/specs` | `router?` | `{ specs: string[] }` — distinct chains present on the requests counter |
@@ -772,6 +772,9 @@ Auth (only read when `AUTH_MODE=enabled`; the metrics path never touches the DB)
 | `AUTH_MODE` | `disabled` | `enabled` turns on the session gate + `/auth/*` + Postgres |
 | `AUTH_SECRET` | (unset) | HS256 signing secret shared with the web (must match) |
 | `DATABASE_URL` | (unset) | Postgres connection string for `users` + `sessions` |
+| `DB_POOL_MAX` | `20` | Connections each api process holds open to Postgres. Every authenticated request takes one for the session join, so this bounds a backend's concurrency and, summed over a deployment's backends, what its instance must admit — the fleet sets it per backend from a shared instance's connection budget. Anything but a whole number ≥ 1 refuses the boot |
+| `DB_IDLE_TIMEOUT_S` | `30` | Seconds a pooled connection sits idle before it is closed; the next request pays for a new one (TCP, TLS, three SCRAM legs). `0` keeps idle connections for the life of the process. Anything but a whole number ≥ 0 refuses the boot |
+| `DB_TLS_SERVERNAME` | (unset) | The name the Postgres server's TLS certificate must carry, when `DATABASE_URL` points at a local proxy rather than at the database — the fleet's backends dial a cloudflared sidecar on `127.0.0.1:5432` while the TLS session ends on RDS, whose certificate names the endpoint, and an IP in the URL has no name to verify. Set, TLS is always on and the certificate must match this name whatever the URL's `sslmode` says (`verify-full` with the name supplied; the chain still needs the CA, `NODE_EXTRA_CA_CERTS`). Unset, the URL decides. Anything but a DNS name refuses the boot |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | (unset) | idempotent admin seed on first boot, **development only** — refused under `NODE_ENV=production`, where first-run setup with the installer's `SETUP_TOKEN` is the only way an account comes into existence |
 | `GOOGLE_CLIENT_ID` | (unset) | validates the `aud` claim of Google ID tokens server-side |
 | `INTERNAL_AUTH_SECRET` | (unset) | shared with the web; gates whether the forwarded browser IP / User-Agent (`X-Forwarded-Client-Ip` / `-Ua` headers) are trusted on the routes that open a session (`/auth/sign-in`, `/auth/2fa/verify`, `/auth/oauth/:provider`, `/auth/invite/accept`), and whether the per-IP limiter keys on them. **Required under `AUTH_MODE=enabled`** — the api refuses to boot without it |
@@ -834,6 +837,17 @@ Compose / Makefile knobs:
 - The router profile boots with `--cors-headers "*"` (the browser Live-test
   panel preflights cross-origin POSTs) and `--skip-websocket-verification`
   (http-only upstreams boot cleanly).
+- **The api image carries `aws_signing_helper`** (the IAM Roles Anywhere
+  credential helper) at `/usr/local/bin`, built from source in a
+  `golang:1.26-alpine` stage of `apps/api/Dockerfile` with cgo on — its
+  PKCS#11 package needs cgo, and AWS's release binary is glibc-linked, which
+  Alpine's musl cannot load — and run once (`version`) on the runtime stage so
+  an image whose helper cannot run is never published. A managed deployment
+  sends mail through SES as a certificate rather than an access key: an AWS
+  config file whose profile sets `credential_process` to the helper is all
+  the SES client needs, since `services/email.ts` builds it with no explicit
+  credentials and the SDK's default chain finds the profile
+  (`aws-credential-process.test.ts`).
 - **GHCR publishing**: the `build-and-push` job in
   `.github/workflows/build-and-push.yml` publishes the api as
   `ghcr.io/magma-devs/smart-router-dashboard/backend` and the web as
