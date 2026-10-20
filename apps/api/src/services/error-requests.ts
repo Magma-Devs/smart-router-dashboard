@@ -22,6 +22,9 @@
  *   failed getting responses from …           nothing came back; the router's last
  *                                             line for the request (no "relay finished")
  *   failed processing responses from …        nothing usable came back
+ *   write outcome unknown                     a write no upstream settled: the
+ *                                             router can't tell whether it reached
+ *                                             a node (`write-unknown`)
  *   [-] failed sending init relay             one of the router's own relays
  *
  * A router on smart-router #543 or later ends each request in one `relay_end`
@@ -94,6 +97,7 @@ export const ERROR_MSG = {
   finished: "relay finished",
   noAnswer: END_MSG.noAnswer,
   gaveUp: END_MSG.gaveUp,
+  writeUnknown: END_MSG.writeUnknown,
   initRelay: "[-] failed sending init relay",
 } as const;
 
@@ -153,7 +157,9 @@ export function buildErrorRows(lines: RouterLine[], index: UpstreamIndex, every 
     const routerError = withoutGuid(str((finished ?? gaveUp)?.f.error));
 
     let result: ErrorRequestRow["result"] = "recovered";
-    if (!finished) result = gaveUp ? "failed" : "unknown";
+    // The router's own verdict on a write: "status unclear", whatever else it wrote.
+    if (ordered.some((l) => l.message === ERROR_MSG.writeUnknown)) result = "write-unknown";
+    else if (!finished) result = gaveUp ? "failed" : "unknown";
     else if (routerError || str(finished.f.has_reply) === "false") result = "failed";
     else if (replied?.outcome === "failed") result = "error-reply";
 
@@ -161,7 +167,7 @@ export function buildErrorRows(lines: RouterLine[], index: UpstreamIndex, every 
     // An answer with nothing failed on the way isn't a recovery.
     if (result === "recovered" && !attempts.some((a) => a.outcome === "failed")) result = "ok";
     // Nothing went wrong after all: every "failure" was a try called off.
-    if (!every && !attempts.some((a) => a.outcome === "failed") && result !== "failed" && !decidedRetry) continue;
+    if (!every && !attempts.some((a) => a.outcome === "failed") && result !== "failed" && result !== "write-unknown" && !decidedRetry) continue;
 
     const sentBatches = new Set(attempts.filter((a) => a.outcome !== "skipped").map((a) => a.batch));
     const end = finished ?? gaveUp;
@@ -172,14 +178,15 @@ export function buildErrorRows(lines: RouterLine[], index: UpstreamIndex, every 
       method: methodOf(received, ordered),
       attempts,
       result,
-      resolvedBy: result === "failed" ? null : str(finished?.f.served_by) || null,
+      resolvedBy: result === "failed" || result === "write-unknown" ? null : str(finished?.f.served_by) || null,
       retried: sentBatches.size > 1,
       stopReason: str(finished?.f.stop_reason) || null,
       exhausted:
         str(finished?.f.stop_reason) === "AllProvidersExhausted" ||
         ordered.some((l) => l.message.startsWith(ERROR_MSG.exhausted)),
       totalMs: end ? Math.round(end.tsMs - t0) : null,
-      error: result === "failed" ? scrubUrls(routerError || "no upstream replied") : null,
+      error: result === "failed" || result === "write-unknown" ? scrubUrls(routerError || "no upstream replied") : null,
+      errorCode: null,
     });
   }
   return rows.sort((a, b) => b.time - a.time);
@@ -191,12 +198,15 @@ function rowOfEvent(e: RouterLine, guid: string, index: UpstreamIndex, every: bo
   const attempts = attemptsOf(e);
   const outcome = str(e.f.outcome);
   let result: ErrorRequestRow["result"] = "unknown"; // an outcome schema 1 doesn't have
-  if (FAILED_SET.has(outcome)) result = "failed";
+  // A write no upstream settled: the Transactions tab's `unknown`. Still a
+  // server error - the Failed requests card counts it, as the alert does.
+  if (outcome === "write_unknown") result = "write-unknown";
+  else if (FAILED_SET.has(outcome)) result = "failed";
   else if (outcome === "node_error") result = "error-reply";
   else if (outcome === "ok") result = attempts.some((a) => a.outcome === "failed") ? "recovered" : "ok";
   // Listed by what its finder reads - a failed try or request - so the list
   // does not change with the router's log level.
-  if (!every && !attempts.some((a) => a.outcome === "failed") && result !== "failed") return null;
+  if (!every && !attempts.some((a) => a.outcome === "failed") && !FAILED_SET.has(outcome)) return null;
 
   const chain = str(e.f.chain);
   const latency = typeof e.f.latency_ms === "number" ? Math.round(e.f.latency_ms) : null;
@@ -208,12 +218,13 @@ function rowOfEvent(e: RouterLine, guid: string, index: UpstreamIndex, every: bo
     method: methodOfEvent(e),
     attempts,
     result,
-    resolvedBy: result === "failed" ? null : str(e.f.served_by) || null,
+    resolvedBy: result === "failed" || result === "write-unknown" ? null : str(e.f.served_by) || null,
     retried: retriedEvent(e),
     stopReason,
     exhausted: stopReason === "AllProvidersExhausted",
     totalMs: latency,
-    error: result === "failed" ? scrubUrls(withoutGuid(str(e.f.error)) || "no upstream replied") : null,
+    error: FAILED_SET.has(outcome) ? scrubUrls(withoutGuid(str(e.f.error)) || "no upstream replied") : null,
+    errorCode: str(e.f.error_code) || null,
   };
 }
 

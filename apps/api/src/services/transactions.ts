@@ -32,6 +32,7 @@
  * broadcast are not counted per upstream at all.
  */
 import type { LogUnavailable, RouterTopology, TransactionLookup, TransactionsReport, TxLogRow, TxOutcome } from "@sr/shared";
+import { WRITE_UNKNOWN_NOTE } from "@sr/shared";
 import {
   attemptsOf,
   FAILED_OUTCOMES,
@@ -110,8 +111,8 @@ export const NOTE = {
   noEnd: "The logs show no end. It may still be in flight, or some of its log lines are missing.",
   replyNotLogged:
     "The node replied, but on this chain a refused transaction also gets a normal reply. The router doesn't log what the reply said, so the dashboard can't tell.",
-  writeUnknown:
-    "No upstream gave a definite answer, so the router can't tell whether the transaction reached a node. Check the chain before sending it again.",
+  /** The Errors tab's `write-unknown` says the same. */
+  writeUnknown: WRITE_UNKNOWN_NOTE,
 } as const;
 
 /** Transactions one read returns; `more` says when the range holds older ones. */

@@ -4,15 +4,16 @@
  * chain and method, every upstream it went to and what each answered, whose
  * reply went back, how long that took, and how it ended. Live data:
  * /api/transactions, which rebuilds each transaction from the router's own
- * log lines in Loki - Prometheus holds totals, never one request. Two filters
- * narrow the rows: the method and the error type. The tab follows the page's
+ * log lines in Loki - Prometheus holds totals, never one request. Four filters
+ * narrow the rows: the result, the method, the error type and an upstream it
+ * went to. The tab follows the page's
  * window or exact times picked here - the cards too, since they count the
  * list - and "Load older" reads on past one read's cap. The chips and
  * details are shared with the Errors tab's request list (request-log.tsx).
  * Value and finality are not here yet: the logs cut long transactions short,
  * and finality needs the chain. */
 
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { WINDOWS, type MetricWindow, type TransactionLookup, type TransactionsReport, type TxLogRow } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { useLogReads } from "@/hooks/use-log-reads";
@@ -20,10 +21,10 @@ import { useRouterFilter } from "@/hooks/use-router-options";
 import { Refreshing, SkelLine, SkelRows, SkelValue } from "@/components/gateway/Skel";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { Tip } from "@/components/gateway/Tip";
-import { CopyButton } from "@/components/gateway/CopyButton";
 import { TT } from "@/lib/tooltips";
 import { errorDocsUrl } from "@/lib/error-docs";
 import { fmtComma, fmtPct } from "@/lib/format";
+import { linkRequest, requestFromUrl } from "@/lib/request-in-url";
 import {
   AppGot,
   appGot,
@@ -44,6 +45,7 @@ import {
   OlderRowsLoading,
   Pager,
   ReadingStrip,
+  RequestIdLine,
   TimeRangeControl,
   chainWords,
   onRowKey,
@@ -56,6 +58,9 @@ import {
 
 const PER_PAGE = 25;
 const ALL = "all";
+
+/** The filter row's dropdowns: capped, so a long name can't push the row onto two lines. */
+const narrowSelect: React.CSSProperties = { ...filterSelectStyle, maxWidth: 200 };
 
 /** The cards' numbers over the rows loaded so far - every read appended, each
  *  transaction once. `unknown` counts in the total but not in the rate: its
@@ -75,6 +80,7 @@ const OUTCOME: Record<TxLogRow["outcome"], { label: string; color: string }> = {
   failed: { label: "Router error", color: "var(--err)" },
   unknown: { label: "Unknown", color: "var(--text-4)" },
 };
+const OUTCOME_ORDER: TxLogRow["outcome"][] = ["accepted", "rejected", "failed", "unknown"];
 
 /** Every upstream's answer in full, when a row is opened. A rejection is the
  *  answering upstream's own error, so it shows on that upstream's line. */
@@ -98,9 +104,7 @@ function Details({ row }: { row: TxLogRow }) {
           <div className="gw-mono" style={detailText}>{row.error.message}</div>
         </DetailLine>
       )}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11.5, color: "var(--text-4)" }}>
-        Request ID <span className="gw-mono" style={{ color: "var(--text-3)" }}>{row.guid}</span> <CopyButton text={row.guid} />
-      </div>
+      <RequestIdLine id={row.guid} startMs={row.time} tookMs={row.replyMs} />
     </div>
   );
 }
@@ -142,14 +146,26 @@ function TxLookupPanel({ id, rangeQ, rangeWords, onClose }: { id: string; rangeQ
 }
 
 export function TransactionLog({ chainFilter, win }: { chainFilter: string | null; win: MetricWindow }) {
+  const [outcome, setOutcome] = useState<TxLogRow["outcome"] | typeof ALL>(ALL);
   const [method, setMethod] = useState(ALL);
   const [errType, setErrType] = useState(ALL);
+  const [upstream, setUpstream] = useState(ALL);
   const [open, setOpen] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const [range, setRange] = useState<ExactRange | null>(null);
   // A picked range that has closed can't change: read it once, don't poll it.
   const [live, setLive] = useState(true);
-  const [lookupId, setLookupId] = useState<string | null>(null);
+  // A request named in the URL opens looked up.
+  const [lookupId, setLookupId] = useState<string | null>(requestFromUrl);
+  // Back / Forward: the look-up follows the URL.
+  useEffect(() => {
+    const onPop = () => setLookupId(requestFromUrl());
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+  // The URL names the request last opened or found that is still in view.
+  const find = (id: string | null) => { setLookupId(id); linkRequest(id ?? open); };
+  const toggleRow = (guid: string) => { const next = open === guid ? null : guid; setOpen(next); linkRequest(next ?? lookupId); };
 
   const specQ = chainFilter ? `&spec=${encodeURIComponent(chainFilter)}` : "";
   // Rows are matched to a config router by the upstreams they went to.
@@ -163,7 +179,19 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
   const when = range ? "in the times you picked" : `in the last ${WINDOWS[win].label}`;
   const methods = useMemo(() => [...new Set(allRows.map((r) => r.method))].sort(), [allRows]);
   const errTypes = useMemo(() => errorTypeOptions(allRows), [allRows]);
-  const rows = allRows.filter((r) => (method === ALL || r.method === method) && (errType === ALL || hasErrorType(r, errType)));
+  // The upstreams the transactions went to, each with its count of transactions.
+  const upstreams = useMemo(() => {
+    const n = new Map<string, number>();
+    for (const r of allRows) for (const u of new Set(r.attempts.map((a) => a.upstream))) n.set(u, (n.get(u) ?? 0) + 1);
+    return [...n].sort(([a], [b]) => (a < b ? -1 : 1)).map(([name, count]) => ({ name, count }));
+  }, [allRows]);
+  // The result options count within the other filters, so a number is what picking it would list.
+  const byOthers = allRows.filter((r) =>
+    (method === ALL || r.method === method) &&
+    (errType === ALL || hasErrorType(r, errType)) &&
+    (upstream === ALL || r.attempts.some((a) => a.upstream === upstream)));
+  const rows = outcome === ALL ? byOthers : byOthers.filter((r) => r.outcome === outcome);
+  const reset = <T,>(set: (v: T) => void) => (v: T) => { set(v); setPage(0); };
   const pageCount = Math.max(1, Math.ceil(rows.length / PER_PAGE));
   const curPage = Math.min(page, pageCount - 1);
   const pageRows = rows.slice(curPage * PER_PAGE, (curPage + 1) * PER_PAGE);
@@ -231,27 +259,39 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
       </div>
 
       <div className="gw-card" style={{ padding: 0, overflow: "hidden" }}>
-        <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--line)", display: "grid", gap: 10 }}>
           <span style={{ display: "inline-flex", alignItems: "center", fontSize: 12, fontWeight: 600, color: "var(--text-2)" }}>
             Transactions<Tip text={TT.txLog!} />
             {data && <span style={{ fontWeight: 400, color: "var(--text-4)", marginLeft: 8 }}>{fmtComma(rows.length)}{rows.length !== allRows.length ? ` of ${fmtComma(allRows.length)}` : ""}</span>}
             <span style={{ marginLeft: 8, display: "inline-flex" }}><Refreshing show={log.refreshing} label="Reading newer transactions" /></span>
           </span>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <IdSearch onFind={setLookupId} />
-            <select aria-label="Method" value={method} onChange={(e) => { setMethod(e.target.value); setPage(0); }} style={filterSelectStyle} disabled={!methods.length}>
+          {/* Narrowing it down, and finding one transaction. */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <select aria-label="Result" value={outcome} onChange={(e) => reset(setOutcome)(e.target.value as TxLogRow["outcome"] | typeof ALL)} style={narrowSelect} disabled={!allRows.length && outcome === ALL}>
+              <option value={ALL}>All results</option>
+              {/* No counts before the first read lands: a 0 there would be a claim. */}
+              {OUTCOME_ORDER.map((o) => <option key={o} value={o}>{OUTCOME[o].label}{data ? ` (${fmtComma(byOthers.filter((r) => r.outcome === o).length)})` : ""}</option>)}
+            </select>
+            <select aria-label="Method" value={method} onChange={(e) => reset(setMethod)(e.target.value)} style={narrowSelect} disabled={!methods.length}>
               <option value={ALL}>All methods</option>
               {methods.map((m) => <option key={m} value={m}>{m === "unknown" ? "method not in the logs" : m}</option>)}
             </select>
-            <select aria-label="Error type" value={errType} onChange={(e) => { setErrType(e.target.value); setPage(0); }} style={filterSelectStyle} disabled={!errTypes.length}>
+            <select aria-label="Error type" value={errType} onChange={(e) => reset(setErrType)(e.target.value)} style={narrowSelect} disabled={!errTypes.length}>
               <option value={ALL}>All error types</option>
               {errTypes.map((t) => <option key={t.key} value={t.key}>{t.label} ({fmtComma(t.count)})</option>)}
             </select>
+            <select aria-label="Upstream" value={upstream} onChange={(e) => reset(setUpstream)(e.target.value)} style={narrowSelect} disabled={!upstreams.length && upstream === ALL}>
+              <option value={ALL}>All upstreams</option>
+              {upstream !== ALL && !upstreams.some((u) => u.name === upstream) && <option value={upstream}>{upstream}</option>}
+              {upstreams.map((u) => <option key={u.name} value={u.name}>{u.name} ({fmtComma(u.count)})</option>)}
+            </select>
+            <span style={{ flex: 1 }} />
+            <IdSearch onFind={find} />
           </div>
         </div>
         {lookupId && (
           <TxLookupPanel key={lookupId + rangeQ} id={lookupId} rangeQ={rangeQ} rangeWords={range ? "of the times you picked" : `of the last ${WINDOWS[win].label}`}
-            onClose={() => setLookupId(null)} />
+            onClose={() => find(null)} />
         )}
         <ReadingStrip show={isLoading} rangeWords={when} />
         <UnreadStrip count={log.unread} noun="transaction" bound={!!chainFilter || !!routerIdQ} covers="the list and the numbers above" />
@@ -284,7 +324,7 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
               {pageRows.map((r) => {
                 const o = OUTCOME[r.outcome];
                 const isOpen = open === r.guid;
-                const toggle = () => setOpen(isOpen ? null : r.guid);
+                const toggle = () => toggleRow(r.guid);
                 return (
                   <Fragment key={r.guid}>
                     <tr tabIndex={0} aria-expanded={isOpen} style={{ cursor: "pointer" }} onClick={toggle} onKeyDown={onRowKey(toggle)}>
@@ -325,7 +365,7 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
                 <tr><td colSpan={5} style={{ padding: "20px 12px", textAlign: "center", color: "var(--text-4)", fontSize: 12.5 }}>
                   {allRows.length ? "No transactions match these filters."
                     : log.unread ? `None of the transactions found ${when} came back from the logs in time.`
-                    : `No transactions ${when}. The tab reads the router's info lines: a router logging at warn writes none.`}
+                    : `No transactions ${when}. Before smart-router v1.6.1, a router logs them only at info level: one logging at warn shows none.`}
                 </td></tr>
               )}
             </tbody>

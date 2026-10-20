@@ -10,16 +10,17 @@
  * and details are shared with the Transactions tab (request-log.tsx). */
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { WINDOWS, type ErrorRequestRow, type ErrorRequestsReport, type MetricWindow, type RequestLookup } from "@sr/shared";
+import { WINDOWS, WRITE_UNKNOWN_NOTE, type ErrorRequestRow, type ErrorRequestsReport, type MetricWindow, type RequestLookup } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { useLogReads } from "@/hooks/use-log-reads";
 import { useRouterFilter } from "@/hooks/use-router-options";
 import { Refreshing, SkelLine, SkelRows } from "@/components/gateway/Skel";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
-import { CopyButton } from "@/components/gateway/CopyButton";
 import { Tip } from "@/components/gateway/Tip";
 import { TT } from "@/lib/tooltips";
+import { errorDocsUrl } from "@/lib/error-docs";
 import { fmtComma } from "@/lib/format";
+import { linkRequest, requestFromUrl } from "@/lib/request-in-url";
 import {
   AppGot,
   appGot,
@@ -44,6 +45,7 @@ import {
   Pager,
   ReadingStrip,
   rangeIsLive,
+  RequestIdLine,
   retryKinds,
   stopMarker,
   TimeRangeControl,
@@ -77,9 +79,13 @@ export const RESULT: Record<ErrorRequestRow["result"], { label: string; color: s
     color: "var(--err)",
     hint: "Router error: no upstream returned a usable response (timeouts, connection errors, rate limits, HTTP 5xx), so the router returned its own error, typically \"insufficient results\".",
   },
-  unknown: { label: "Unknown", color: "var(--text-4)", hint: "No completion logged: the request may still be in flight, or the client disconnected." },
+  // The Transactions tab's "Unknown", in its words: the same request reads the same on both tabs.
+  "write-unknown": { label: "Unknown", color: "var(--text-4)", hint: `Unknown: ${WRITE_UNKNOWN_NOTE}` },
+  unknown: { label: "No end logged", color: "var(--text-4)", hint: "No end logged: the request may still be in flight, or the client disconnected." },
 };
-const RESULT_ORDER: ErrorRequestRow["result"][] = ["recovered", "error-reply", "failed", "unknown"];
+const RESULT_ORDER: ErrorRequestRow["result"][] = ["recovered", "error-reply", "failed", "write-unknown", "unknown"];
+/** Rare results: a pill only while the list holds one. */
+const RARE: ReadonlySet<ErrorRequestRow["result"]> = new Set(["write-unknown", "unknown"]);
 
 /** Did this upstream's own attempt fail - no response, or an error response?
  *  What the upstream filter keeps, and what its bar on the Upstreams tab
@@ -139,18 +145,28 @@ function Details({ row }: { row: ErrorRequestRow }) {
       {end && (
         <DetailLine><div style={{ fontSize: 12, color: "var(--text-3)" }}>{end.title}.</div></DetailLine>
       )}
+      {row.result === "write-unknown" && (
+        <DetailLine>
+          <div style={{ fontSize: 12, color: "var(--text-3)", lineHeight: 1.5 }}>
+            <span style={{ color: "var(--text-2)" }}>Why the result is unknown: </span>{WRITE_UNKNOWN_NOTE}
+          </div>
+        </DetailLine>
+      )}
       {row.error && (
         <DetailLine at={row.totalMs != null ? `+${fmtComma(row.totalMs)} ms` : ""}>
-          <div style={{ fontSize: 12, color: "var(--err)" }}>Router error returned to the client</div>
+          <div style={{ fontSize: 12, color: row.result === "failed" ? "var(--err)" : "var(--text-3)" }}>
+            {row.result === "failed" ? "Router error returned to the client" : "Returned to the client"}
+            {row.errorCode && (
+              <> · <a className="gw-mono" href={errorDocsUrl(row.errorCode)} target="_blank" rel="noopener noreferrer" style={{ color: "var(--text-3)" }}>{row.errorCode}</a></>
+            )}
+          </div>
           <div className="gw-mono" style={detailText}>{row.error}</div>
         </DetailLine>
       )}
       {row.result === "unknown" && (
-        <DetailLine><div style={{ fontSize: 12, color: "var(--text-3)" }}>No completion logged: the request may still be in flight, the client may have disconnected, or log lines are missing - a router logging above info writes none of its tries or its end.</div></DetailLine>
+        <DetailLine><div style={{ fontSize: 12, color: "var(--text-3)" }}>No end logged: the request may still be in flight, the client may have disconnected, or log lines are missing. Before smart-router v1.6.1, a router logs its tries and its end only at info level.</div></DetailLine>
       )}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11.5, color: "var(--text-4)" }}>
-        Request ID <span className="gw-mono" style={{ color: "var(--text-3)" }}>{row.guid}</span> <CopyButton text={row.guid} />
-      </div>
+      <RequestIdLine id={row.guid} startMs={row.time} tookMs={row.totalMs} />
     </div>
   );
 }
@@ -226,8 +242,18 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
   // A picked range that has closed can't change: read it once, don't poll it.
   const [live, setLive] = useState(() => rangeIsLive(initialRange));
   const [open, setOpen] = useState<string | null>(null);
-  const [lookupId, setLookupId] = useState<string | null>(null);
+  // A request named in the URL opens looked up.
+  const [lookupId, setLookupId] = useState<string | null>(requestFromUrl);
   const [page, setPage] = useState(0);
+  // Back / Forward: the look-up follows the URL.
+  useEffect(() => {
+    const onPop = () => setLookupId(requestFromUrl());
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+  // The URL names the request last opened or found that is still in view.
+  const find = (id: string | null) => { setLookupId(id); linkRequest(id ?? open); };
+  const toggleRow = (guid: string) => { const next = open === guid ? null : guid; setOpen(next); linkRequest(next ?? lookupId); };
 
   const specQ = chainFilter ? `&spec=${encodeURIComponent(chainFilter)}` : "";
   const { routerIdQ } = useRouterFilter();
@@ -319,7 +345,7 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
             options={[
               // No counts before the first read lands: a 0 there would be a claim.
               { key: ALL, label: "All", count: head ? narrowed.length : undefined },
-              ...RESULT_ORDER.filter((k) => k !== "unknown" || byResult("unknown") > 0)
+              ...RESULT_ORDER.filter((k) => !RARE.has(k) || byResult(k) > 0)
                 .map((k) => ({ key: k, label: RESULT[k].label, count: head ? byResult(k) : undefined, color: RESULT[k].color, title: RESULT[k].hint })),
             ]}
           />
@@ -352,7 +378,7 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
             {upstreams.map((u) => <option key={u.name} value={u.name}>{u.name} ({fmtComma(u.count)})</option>)}
           </select>
           <span style={{ flex: 1 }} />
-          <IdSearch onFind={setLookupId} />
+          <IdSearch onFind={find} />
         </div>
         {range && (
           <div style={{ fontSize: 11, color: "var(--text-4)" }}>
@@ -364,7 +390,7 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
       <UnreadStrip count={log.unread} noun="request" bound={!!chainFilter || !!routerIdQ || !!barQ} covers="the list" />
       {lookupId && (
         <LookupPanel key={lookupId + rangeQ} id={lookupId} rangeQ={rangeQ} rangeWords={range ? "of the times you picked" : `of the last ${WINDOWS[win].label}`}
-          onClose={() => setLookupId(null)} />
+          onClose={() => find(null)} />
       )}
 
       {/* Below 860px the columns would overlap: scroll sideways instead. */}
@@ -390,7 +416,7 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
             {first.isLoading && <SkelRows rows={6} cols={LOG_SKEL_COLS} />}
             {pageRows.map((r) => {
               const isOpen = open === r.guid;
-              const toggle = () => setOpen(isOpen ? null : r.guid);
+              const toggle = () => toggleRow(r.guid);
               return (
                 <Fragment key={r.guid}>
                   <tr tabIndex={0} aria-expanded={isOpen} style={{ cursor: "pointer" }} onClick={toggle} onKeyDown={onRowKey(toggle)}>

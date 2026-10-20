@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { RouterTopology } from "@sr/shared";
+import { WRITE_UNKNOWN_NOTE, type RouterTopology } from "@sr/shared";
 import { buildErrorRows, ErrorRequestsService } from "../services/error-requests.js";
 import { buildTxRows, NOTE, TransactionsService } from "../services/transactions.js";
 import { attemptsOf, methodOf, retried } from "../services/relay-end.js";
@@ -197,6 +197,7 @@ describe("the Errors tab from relay_end", () => {
       exhausted: false,
       totalMs: 120,
       error: null,
+      errorCode: null,
     }]);
   });
 
@@ -211,6 +212,28 @@ describe("the Errors tab from relay_end", () => {
     expect(errorRows([READ_NODE_ERROR])[0]).toMatchObject({ result: "error-reply", resolvedBy: "node-a", stopReason: "NonRetryableNodeError" });
     expect(errorRows([READ_OK])).toEqual([]);
     expect(errorRows([READ_OK], true)[0]).toMatchObject({ result: "ok", attempts: [{ upstream: "node-a", outcome: "ok" }], totalMs: 12 });
+  });
+
+  it("a write the router can't settle is its own result - the Transactions tab's unknown - with the words the client got", () => {
+    expect(errorRows([WRITE_UNKNOWN])[0]).toMatchObject({
+      guid: "7043733", result: "write-unknown", resolvedBy: null, stopReason: "ProcessingTimeout",
+      error: UNCLEAR, errorCode: "PROTOCOL_CONTEXT_DEADLINE",
+    });
+    // Both tabs explain it with the same words.
+    expect(NOTE.writeUnknown).toBe(WRITE_UNKNOWN_NOTE);
+  });
+
+  it("the request's own error code, beside its tries' - what the error type filter also matches", () => {
+    const timedOut = ev(72_600, {
+      GUID: "7043734", stateful: true, method: "eth_sendRawTransaction", chain: "ETH1", selection: "stateful", outcome: "write_unknown", stop_reason: "ProcessingTimeout", served_by: "", status: 500, has_reply: false, latency_ms: 30_000,
+      error_code: "NODE_GATEWAY_TIMEOUT", error: UNCLEAR,
+      attempts: [{ upstream: "node-a", outcome: "timeout", error_code: "", message: "", batch: 0, sent_ms: 1, returned_to_client: false }],
+    });
+    // No try failed - the one still out has no result - yet the request is listed, by its own code.
+    expect(errorRows([timedOut])[0]).toMatchObject({ result: "write-unknown", errorCode: "NODE_GATEWAY_TIMEOUT", attempts: [{ outcome: "no-result", code: null }] });
+    expect(errorRows([NO_ANSWER])[0]?.errorCode).toBe("PROTOCOL_CONNECTION_REFUSED");
+    expect(errorRows([READ_NODE_ERROR])[0]?.errorCode).toBe("CHAIN_EXECUTION_REVERTED");
+    expect(errorRows([READ_RECOVERED])[0]?.errorCode).toBeNull(); // ended ok
   });
 
   it("a request the router couldn't parse, and a subscription request, are not on the list - as the alert counts neither", () => {

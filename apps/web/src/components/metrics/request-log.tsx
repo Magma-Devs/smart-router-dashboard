@@ -12,8 +12,11 @@
 import { Fragment, useState } from "react";
 import { buildChainMetaByIndex, type LogUnavailable, type RelayAttempt } from "@sr/shared";
 import { SkelRows, type SkelCol } from "@/components/gateway/Skel";
+import { CopyButton } from "@/components/gateway/CopyButton";
+import { useGrafanaUrl } from "@/hooks/use-grafana-url";
 import { errorDocsUrl } from "@/lib/error-docs";
 import { fmtComma } from "@/lib/format";
+import { requestLogsHref } from "@/lib/grafana-logs";
 
 /** The router's error code in plain words: NODE_RATE_LIMITED → "rate limited". */
 export function codeWords(code: string): string {
@@ -49,25 +52,38 @@ export function errorType(a: RelayAttempt): { key: string; label: string } {
   return { key: "msg:" + m, label: clip(m) };
 }
 
+/** A row the error type filter reads: its tries, and the request's own code where the router names one. */
+interface ErrorTyped {
+  attempts: RelayAttempt[];
+  errorCode?: string | null;
+}
+
+/** A row's error types, key → label: each failed try's, and the request's own
+ *  code - a write the router couldn't settle names one when no try failed. */
+function errorTypesOf(r: ErrorTyped): Map<string, string> {
+  const types = new Map<string, string>();
+  for (const a of r.attempts) {
+    if (a.outcome !== "failed") continue;
+    const t = errorType(a);
+    types.set(t.key, t.label);
+  }
+  if (r.errorCode && r.errorCode !== "UNKNOWN_ERROR") types.set(r.errorCode, codeWords(r.errorCode));
+  return types;
+}
+
 /** The error types in these rows, most common first, each with how many rows have it. */
-export function errorTypeOptions(rows: { attempts: RelayAttempt[] }[]): { key: string; label: string; count: number }[] {
+export function errorTypeOptions(rows: ErrorTyped[]): { key: string; label: string; count: number }[] {
   const seen = new Map<string, { label: string; count: number }>();
   for (const r of rows) {
-    const types = new Map<string, string>();
-    for (const a of r.attempts) {
-      if (a.outcome !== "failed") continue;
-      const t = errorType(a);
-      types.set(t.key, t.label);
-    }
-    for (const [key, label] of types) seen.set(key, { label, count: (seen.get(key)?.count ?? 0) + 1 });
+    for (const [key, label] of errorTypesOf(r)) seen.set(key, { label, count: (seen.get(key)?.count ?? 0) + 1 });
   }
   return [...seen]
     .map(([key, v]) => ({ key, ...v }))
     .sort((x, y) => y.count - x.count || x.label.localeCompare(y.label));
 }
 
-export function hasErrorType(r: { attempts: RelayAttempt[] }, key: string): boolean {
-  return r.attempts.some((a) => a.outcome === "failed" && errorType(a).key === key);
+export function hasErrorType(r: ErrorTyped, key: string): boolean {
+  return errorTypesOf(r).has(key);
 }
 
 export function fmtWhen(ms: number): string {
@@ -206,7 +222,7 @@ export function AttemptList({ attempts }: { attempts: RelayAttempt[] }) {
 /** The words the app got back, when a request ended in an error: the
  *  answering upstream's own message, or the router's. Null otherwise. */
 export function appGot(row: { result: string; attempts: RelayAttempt[]; error: string | null }): string | null {
-  if (row.result === "failed") return row.error;
+  if (row.result === "failed" || row.result === "write-unknown") return row.error;
   if (row.result !== "error-reply" && row.result !== "rejected") return null;
   const replied = row.attempts.find((a) => a.replied);
   return replied ? replied.message ?? (replied.code ? codeWords(replied.code) : null) : null;
@@ -319,6 +335,29 @@ export function TimeRangeControl({ range, onChange, windowLabel, windowMs }: {
       {/* The times already apply as they change; Done folds the fields back to one line. */}
       <button style={link} onClick={() => setDraft(null)}>Done</button>
       <button style={link} onClick={() => { setDraft(null); onChange(null); }}>Back to the last {windowLabel}</button>
+    </div>
+  );
+}
+
+/** "Logs ↗": the request's own lines on the Grafana logs board, a minute either side of it. Nothing without a Grafana. */
+export function RequestLogsLink({ id, startMs, tookMs }: { id: string; startMs: number; tookMs: number | null }) {
+  const grafana = useGrafanaUrl();
+  if (!grafana) return null;
+  return (
+    <a href={requestLogsHref(grafana, id, startMs, tookMs)} target="_blank" rel="noopener noreferrer"
+      title="Every line the router wrote for this request, on the Grafana logs board"
+      style={{ color: "var(--brand)", fontWeight: 600, textDecoration: "none", whiteSpace: "nowrap" }}>
+      Logs ↗
+    </a>
+  );
+}
+
+/** The foot of an opened row: the request's ID to copy, and its lines in the logs. */
+export function RequestIdLine({ id, startMs, tookMs }: { id: string; startMs: number; tookMs: number | null }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11.5, color: "var(--text-4)" }}>
+      Request ID <span className="gw-mono" style={{ color: "var(--text-3)" }}>{id}</span> <CopyButton text={id} />
+      <RequestLogsLink id={id} startMs={startMs} tookMs={tookMs} />
     </div>
   );
 }

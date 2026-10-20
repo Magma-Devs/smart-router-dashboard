@@ -179,6 +179,7 @@ describe("requests that hit an error, from the router's log lines", () => {
       exhausted: false,
       totalMs: 243,
       error: null,
+      errorCode: null, // the old lines name no request-level code
     });
   });
 
@@ -224,6 +225,7 @@ describe("requests that hit an error, from the router's log lines", () => {
       exhausted: true,
       totalMs: 30272,
       error: "failed relay, insufficient results ErrMsg: " + TLS_TIMEOUT,
+      errorCode: null,
     });
   });
 
@@ -623,6 +625,40 @@ describe("a request no upstream answered", () => {
     } as unknown as LokiClient;
     const r = await new ErrorRequestsService(loki, SEL, cfg).report({ startMs: 0, endMs: 100_000 });
     expect(r.rows.map((x) => [x.guid, x.result])).toEqual([["303", "failed"]]);
+  });
+});
+
+describe("a write the router could not settle", () => {
+  // As the Transactions tab's fixture: both upstreams failed, then the router
+  // wrote that it can't tell whether the write went through.
+  const UNSETTLED = [
+    at(1000, { GUID: "404", path: "/", body: '{"jsonrpc":"2.0","id":1,"method":"eth_sendRawTransaction","params":["0x00"]}', message: RECEIVED }),
+    at(1001, { GUID: "404", validAddresses: "eth-mevblocker,eth-tenderly", chosenProviders: "eth-mevblocker,eth-tenderly", stateful: "1", message: "Choosing providers" }),
+    at(11_000, { GUID: "404", endpoint: "eth-mevblocker", error: "context deadline exceeded", message: "direct RPC relay failed in goroutine" }),
+    at(11_001, { GUID: "404", endpoint: "eth-tenderly", error: "connection refused", message: "direct RPC relay failed in goroutine" }),
+    at(11_002, { GUID: "404", endpoint: "ETH1jsonrpc", error: "failed relay, insufficient results", message: "failed getting responses from RPC endpoints" }),
+    at(11_003, { GUID: "404", level: "warning", write_outcome: "unknown", endpoint: "ETH1jsonrpc", message: "write outcome unknown" }),
+  ];
+
+  it("is its own result, as on the Transactions tab - not a router error", () => {
+    const [r] = rowsOf(UNSETTLED);
+    expect(r).toMatchObject({ guid: "404", result: "write-unknown", resolvedBy: null, error: "failed relay, insufficient results", spec: "ETH1" });
+    // Without the line it is the router error it looks like.
+    expect(rowsOf(UNSETTLED.slice(0, -1))[0]).toMatchObject({ result: "failed" });
+  });
+
+  it("is read back with the line that settles it", async () => {
+    const cfg = { getRouters: () => [{ id: "eth", spec: "ETH1", nodes: [nodeOf("eth-mevblocker"), nodeOf("eth-tenderly")] }] } as unknown as ConfigurationService;
+    const queries: string[] = [];
+    const loki = {
+      async queryRange(query: string, startMs: number, endMs: number) {
+        queries.push(query);
+        return UNSETTLED.filter((l) => l.tsMs >= startMs && l.tsMs < endMs && (query.includes("GUID") || /failed getting|direct RPC/.test(l.line)));
+      },
+    } as unknown as LokiClient;
+    const r = await new ErrorRequestsService(loki, SEL, cfg).report({ startMs: 0, endMs: 100_000 });
+    expect(queries.at(-1)).toContain("write outcome unknown");
+    expect(r.rows.map((x) => [x.guid, x.result])).toEqual([["404", "write-unknown"]]);
   });
 });
 

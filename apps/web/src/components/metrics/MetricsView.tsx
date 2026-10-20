@@ -23,6 +23,7 @@ import { useRouterFilter, useRouterOptions } from "@/hooks/use-router-options";
 import { PageActions, RouterHeader } from "@/components/gateway/RouterHeader";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { useChainDrawer } from "@/components/gateway/ChainDrawer";
+import { linkRequest } from "@/lib/request-in-url";
 import { HeroPanel } from "./HeroPanel";
 import { CurrentlyUnavailable } from "./CurrentlyUnavailable";
 import { RouterOverview } from "./RouterOverview";
@@ -99,7 +100,8 @@ export function MetricsView() {
           wrap each label onto two lines. */}
       <div style={{ display: "flex", borderBottom: "1px solid var(--line)", marginBottom: 24, overflowX: "auto", overflowY: "hidden" }}>
         {([["metrics", "Overview"], ["upstreams", "Upstreams"], ["errors", "Errors"], ["transactions", "Transactions"]] as [Tab, string][]).map(([k, l]) => (
-          <button key={k} onClick={() => { setTab(k); setErrorsFocus(null); }} style={{
+          // A request in the URL is the tab's it was opened on (`?request=`): another tab drops it.
+          <button key={k} onClick={() => { if (k !== tab) linkRequest(null); setTab(k); setErrorsFocus(null); }} style={{
             whiteSpace: "nowrap", flexShrink: 0,
             padding: "8px 20px", border: "none", background: "transparent",
             fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: "inherit",
