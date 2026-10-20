@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.42.0]
+
 ### Added
 
 - **Transactions and Errors tabs: links to a request** (MAG-4458). Opening a
