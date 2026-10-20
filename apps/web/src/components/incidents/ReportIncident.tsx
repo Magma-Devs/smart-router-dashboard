@@ -8,7 +8,6 @@ import {
   INCIDENT_SEVERITY_LABELS,
   INCIDENT_SEVERITY_NEXT,
   buildChainMetaByIndex,
-  looksLikeEmail,
   newIncidentId,
   type IncidentReportRequest,
   type IncidentReportResponse,
@@ -23,28 +22,22 @@ import { apiPost } from "@/lib/api-client";
 import { labelStyle } from "@/lib/styles";
 
 /**
- * What the layout read from the web container's env, handed down rather than
- * asked of the api: a customer reports an incident exactly when something is
- * broken, and the api may be part of it. The button and the fallback contact
- * have to render without it.
+ * The top-bar button. Renders nothing while incident reporting is off.
+ *
+ * `enabled` is the web container's own INCIDENTS_ENABLED, read by the layout and
+ * handed down rather than asked of the api: a customer reports an incident
+ * exactly when something is broken, and the api may be part of it.
  */
-export interface IncidentsConfig {
-  enabled: boolean;
-  /** Where to go when the form cannot help — shown on every screen of it. */
-  fallbackContact: string | null;
-}
-
-/** The top-bar button. Renders nothing while incident reporting is off. */
-export function ReportIncidentButton({ config }: { config: IncidentsConfig }) {
+export function ReportIncidentButton({ enabled }: { enabled: boolean }) {
   const [open, setOpen] = useState(false);
-  if (!config.enabled) return null;
+  if (!enabled) return null;
   return (
     <>
       <button className="gw-btn" onClick={() => setOpen(true)} title="Report an incident to Magma's engineers">
         <IconAlert size={14} />
         Report incident
       </button>
-      <ReportIncidentModal open={open} onClose={() => setOpen(false)} fallbackContact={config.fallbackContact} />
+      <ReportIncidentModal open={open} onClose={() => setOpen(false)} />
     </>
   );
 }
@@ -71,15 +64,7 @@ const freshDraft = (): Draft => ({
   includeScope: true,
 });
 
-function ReportIncidentModal({
-  open,
-  onClose,
-  fallbackContact,
-}: {
-  open: boolean;
-  onClose: () => void;
-  fallbackContact: string | null;
-}) {
+function ReportIncidentModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const signedIn = useAuthMode();
   const { me } = useMe();
   const { chain, routerId } = useFilters();
@@ -168,7 +153,6 @@ function ReportIncidentModal({
             <div style={{ ...labelStyle, marginBottom: 6 }}>Reference</div>
             <div className="gw-mono" style={{ fontSize: 12, userSelect: "all" }}>{sent.id}</div>
           </div>
-          <FallbackContact contact={fallbackContact} />
         </div>
       ) : (
         <div style={{ display: "grid", gap: 14 }}>
@@ -292,33 +276,8 @@ function ReportIncidentModal({
           {error && (
             <div role="alert" style={{ fontSize: 12, color: "var(--err)", lineHeight: 1.5 }}>{error}</div>
           )}
-          <FallbackContact contact={fallbackContact} />
         </div>
       )}
     </Modal>
-  );
-}
-
-/** The way to reach us that does not depend on this form, the api behind it, or
- *  the cluster both run in. */
-function FallbackContact({ contact }: { contact: string | null }) {
-  if (!contact) return null;
-  const link = looksLikeEmail(contact)
-    ? `mailto:${contact}`
-    : /^https:\/\//i.test(contact)
-      ? contact
-      : null;
-  return (
-    <div style={{ fontSize: 12, color: "var(--text-3)", borderTop: "1px solid var(--line)", paddingTop: 10 }}>
-      Form not working, or no answer? Contact{" "}
-      {link ? (
-        <a href={link} style={{ color: "var(--text-2)" }} target={link.startsWith("https") ? "_blank" : undefined} rel="noreferrer">
-          {contact}
-        </a>
-      ) : (
-        <strong style={{ color: "var(--text-2)" }}>{contact}</strong>
-      )}
-      .
-    </div>
   );
 }
