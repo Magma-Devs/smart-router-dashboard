@@ -5,6 +5,42 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Added
+
+- **Transactions and Errors tabs: links to a request** (MAG-4458). Opening a
+  row puts its request in the page's URL (`?request=<id>`), and so does
+  finding one by ID; closing it takes it out, and picking another tab drops
+  it. A link with it opens that tab's look-up on the request, so a reload
+  keeps it and a link can be shared. Each opened row also has **Logs ↗**: the
+  request's own lines on the Grafana logs board, searched by its ID, from a
+  minute before it started to a minute after it ended. It shows only where
+  the board's Grafana is set (`DASHBOARD_GRAFANA_URL`), as "View full logs"
+  does.
+- **Transactions tab: two filters.** The result (Accepted, Rejected, Router
+  error, Unknown) and an upstream the transaction went to, each with its
+  count, next to the method and the error type.
+- **Errors tab:** the error type filter also matches the request's own error
+  code from `relay_end`, not only its tries'. A write the router couldn't
+  settle carries its code on the request (`NODE_GATEWAY_TIMEOUT`, say) even
+  when no try failed, and was in no error type. The code is shown beside the error the client got, and
+  `GET /api/error-requests` returns it as `errorCode`.
+
+### Fixed
+
+- **Errors tab: a write the router couldn't settle** is no longer a red
+  "Router error". The Transactions tab calls the same request "Unknown": no
+  upstream gave a definite answer, so the router can't tell whether the
+  transaction reached a node. The Errors tab now says the same, in grey and in
+  the same words, and shows the "transaction status unclear" reply the client
+  got. Its result is `write-unknown` in `GET /api/error-requests`. The Failed
+  requests card still counts it: by the server-errors alert's definition it
+  is a failed request. The tab's other grey result, a request whose end isn't
+  in the logs, is now called "No end logged".
+- **Transactions and Errors tabs:** the empty list and the "No end logged"
+  details no longer say the router must log at `info`. smart-router v1.6.1
+  and later write `relay_end` at every log level; only an older router needs
+  `info`.
+
 ## [0.41.0]
 
 ### Added

@@ -604,14 +604,17 @@ export interface ErrorRequestRow {
   attempts: RelayAttempt[];
   /**
    * What the app got:
-   * - `ok`          - an upstream answered without an error, and nothing
-   *                   failed on the way (only a look-up by ID shows these)
-   * - `recovered`   - an upstream answered without an error, after one had failed
-   * - `error-reply` - the reply that went back was an upstream's error
-   * - `failed`      - no usable reply at all
-   * - `unknown`     - the logs show no end
+   * - `ok`            - an upstream answered without an error, and nothing
+   *                     failed on the way (only a look-up by ID shows these)
+   * - `recovered`     - an upstream answered without an error, after one had failed
+   * - `error-reply`   - the reply that went back was an upstream's error
+   * - `failed`        - no usable reply at all
+   * - `write-unknown` - a write no upstream gave a definite answer to: the
+   *                     router can't tell whether it reached a node (the
+   *                     Transactions tab's `unknown` for the same request)
+   * - `unknown`       - the logs show no end
    */
-  result: "ok" | "recovered" | "error-reply" | "failed" | "unknown";
+  result: "ok" | "recovered" | "error-reply" | "failed" | "write-unknown" | "unknown";
   /** The upstream whose reply went back. */
   resolvedBy: string | null;
   /** The router tried another upstream: more than one batch of tries went out. */
@@ -625,8 +628,14 @@ export interface ErrorRequestRow {
   /** The router wanted another try and had no upstream left to send it to. */
   exhausted: boolean;
   totalMs: number | null;
-  /** The router's own error, for `failed`. */
+  /** The router's own error, for `failed` and `write-unknown`: what the client got. */
   error: string | null;
+  /**
+   * The request's own error code, as the router's `relay_end` names it
+   * (`error_code`), e.g. NODE_GATEWAY_TIMEOUT on a write it couldn't settle.
+   * Null when it ended `ok`, and on a router that writes no `relay_end`.
+   */
+  errorCode: string | null;
 }
 
 /** Why the router's logs couldn't be read: no log store configured, or it didn't answer in time. */
