@@ -474,7 +474,9 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
                 {!allRows.length && log.unread ? "None of the requests found in this range came back from the logs in time."
                   : onBar
                   ? <>No client requests failed at <span className="gw-mono">{upstream}</span> in this period. The bar also counts the router&apos;s internal relays (startup and health checks), which this list excludes.</>
-                  : allRows.length ? "No requests match these filters." : range ? "No requests with errors in this period." : `No requests with errors in the last ${WINDOWS[win].label}.`}
+                  : allRows.length ? "No requests match these filters."
+                  : log.more ? "No requests with errors in the part of this period read so far."
+                  : range ? "No requests with errors in this period." : `No requests with errors in the last ${WINDOWS[win].label}.`}
                 {log.more ? " Older ones may: load them below." : ""}
               </td></tr>
             )}

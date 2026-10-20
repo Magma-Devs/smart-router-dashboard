@@ -5,6 +5,27 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Fixed
+
+- **Long windows no longer stall the shared log store** (MAG-4465). The
+  Failed requests card and the Errors and Transactions lists read the raw
+  router lines over the whole window, and a line filter doesn't make that
+  cheaper: Loki opens every chunk of the router's streams. On the largest
+  tenant 14 days is about 800 GB; on 2026-10-20 such a read pinned the fleet
+  Loki at 97 % CPU for five minutes and timed out every tenant's alert rules.
+  - The **Failed requests** card reads the counts the fleet Loki's ruler
+    records once a minute (`smartrouter_final_failures:count1m`, the
+    server-errors alert's count): about a second for a month. A router on a
+    chain other routers serve now gets its own count. Where the recorded
+    counts start inside the window the card says since when. Without them
+    it counts the raw lines as before, for a window light enough to read in
+    one go, and says so for a heavier one.
+  - The **Errors** and **Transactions** lists read at most 4 GB of logs per
+    read, weighed first from Loki's index: a range within that is read
+    whole (a small deployment's month), a heavier one from its newest part
+    (about half an hour on the largest tenant), and **Load older** reads on.
+    An empty part says it is a part.
+
 ## [0.44.0]
 
 ### Added

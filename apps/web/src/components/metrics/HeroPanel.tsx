@@ -4,7 +4,8 @@
  * /api/metrics/dashboard-summary. Null Kpi values render "—" in the design's
  * muted colour with an honest sub-line - never an invented number.
  * "Failed requests" is counted from the router's logs
- * (/api/error-requests/count): no metric counts it, so without them it says so. */
+ * (/api/error-requests/count) - the log store's recorded counts of them, or
+ * the lines themselves: no metric counts it, so without them it says so. */
 
 import type { FailedRequests, HeroSummary, MetricWindow } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
@@ -26,16 +27,22 @@ export function HeroPanel({ tw, spec }: { tw: MetricWindow; spec?: string | null
   const retries = data?.retriesRecovered.value ?? null;   // count (null until family fires)
   const cachePct = data?.cacheOffloadPct.value ?? null;   // ratio 0..1 (null until family fires)
   const reqServed = data?.requestsServed.value ?? null;
-  // Once a minute: the count scans the window's logs, and moves slowly. With
-  // the served count scoped to a router, the failed count is scoped to it too.
+  // Once a minute: the count moves slowly, and without recorded counts it
+  // scans the window's logs. With the served count scoped to a router, the
+  // failed count is scoped to it too.
   const failed = useApi<FailedRequests>(
     `/api/error-requests/count?window=${tw}${spec ? `&spec=${encodeURIComponent(spec)}` : ""}${scopeQ ? routerIdQ : ""}`,
     60_000,
   );
   const failedN = failed.data?.available ? failed.data.value : null;
+  // Recorded counts that start inside the window count from there.
+  const failedSince = failed.data?.available && failed.data.since
+    ? new Date(failed.data.since).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+    : null;
   // "Requests served" counts the requests the router answered; the ones it
-  // gave up on aren't in it, so together they are every request.
-  const failedPct = failedN != null && reqServed != null && failedN + reqServed > 0 ? failedN / (failedN + reqServed) : null;
+  // gave up on aren't in it, so together they are every request - over the
+  // same stretch only, so not when the failed count starts later.
+  const failedPct = failedSince == null && failedN != null && reqServed != null && failedN + reqServed > 0 ? failedN / (failedN + reqServed) : null;
   const stale = data?.staleCaught.value ?? null;
   const provCount = data?.upstreamCount ?? 0;
 
@@ -71,7 +78,9 @@ export function HeroPanel({ tw, spec }: { tw: MetricWindow; spec?: string | null
         : failed.data && !failed.data.available
           ? failed.data.reason === "shared-chain" ? "not split per router on a chain several routers serve"
           : failed.data.reason === "unreachable" ? "the router's logs didn't answer in time"
+          : failed.data.reason === "too-large" ? "too many log lines to count in this window - pick a shorter one"
           : "requires the router's logs (LOKI_URL)"
+        : failedSince ? `${failedN === 0 ? "none " : ""}since ${failedSince}, when the counts start`
         : failedN === 0 ? "none in this window"
         : failedPct != null ? `${failedPct < 0.00001 ? "under 0.001" : (failedPct * 100).toFixed(failedPct < 0.001 ? 3 : 2)}% of client requests`
         : "router errors returned to clients" },

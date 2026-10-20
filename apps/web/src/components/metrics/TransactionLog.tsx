@@ -257,7 +257,9 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
 
   const kpis: { label: string; tipKey: string; value: string; sub: React.ReactNode }[] = [
     { label: "Transactions", tipKey: "txTotal", value: fmtComma(sum.total) + (log.more ? "+" : ""),
-      sub: log.more ? <>the latest {fmtComma(sum.total)} {when} - load older ones below</> : <>sent through the router {when}</> },
+      sub: log.more
+        ? sum.total ? <>the latest {fmtComma(sum.total)} {when} - load older ones below</> : <>none in the part read so far - load older ones below</>
+        : <>sent through the router {when}</> },
     { label: "Success rate", tipKey: "txSuccessRate", value: fmtPct(sum.successRate, 1),
       sub: <>{fmtComma(sum.accepted)} accepted by an upstream</> },
     { label: "Failed", tipKey: "txFailed", value: fmtComma(sum.rejected + sum.failed + sum.failedOnChain),
@@ -327,7 +329,7 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
         )}
         <ReadingStrip show={isLoading} rangeWords={when} />
         <UnreadStrip count={log.unread} noun="transaction" bound={!!chainFilter || !!routerIdQ} covers="the list and the numbers above" />
-        {log.more && (
+        {log.more && allRows.length > 0 && (
           <LogStrip>
             The latest {fmtComma(allRows.length)} transactions {when} - the numbers above cover these. Load older ones at the bottom.
           </LogStrip>
@@ -401,6 +403,7 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
                 <tr><td colSpan={5} style={{ padding: "20px 12px", textAlign: "center", color: "var(--text-4)", fontSize: 12.5 }}>
                   {allRows.length ? "No transactions match these filters."
                     : log.unread ? `None of the transactions found ${when} came back from the logs in time.`
+                    : log.more ? "No transactions in the part of this period read so far. Older ones may be: load them below."
                     : `No transactions ${when}. Before smart-router v1.6.1, a router logs them only at info level: one logging at warn shows none.`}
                 </td></tr>
               )}
