@@ -40,14 +40,14 @@ browser ──POST /api/incidents──▶ api ──POST (formatted_webhook)─
    └──── 200 {id, severity, sentAt} only after IRM answered 2xx
 ```
 
-- **The button and the fallback contact come from the web container's env**
-  (`INCIDENTS_ENABLED`, `INCIDENT_FALLBACK_CONTACT`), read by the `(app)` layout.
-  A customer reports an incident exactly when something is broken, and the api
-  may be part of it; the dialog still opens and still says where else to go.
+- **The button comes from the web container's env** (`INCIDENTS_ENABLED`), read
+  by the `(app)` layout. A customer reports an incident exactly when something
+  is broken, and the api may be part of it; the dialog still opens and says
+  what went wrong.
 - **A 200 means IRM accepted the report, nothing more.** IRM queues the alert
   and routes it after answering, so the dialog says the report "reached our
-  on-call system". Any other outcome keeps the form, shows the error and the
-  fallback contact.
+  on-call system". Any other outcome keeps the form and shows the error, and
+  the same id goes with the next try.
 - **Nothing in the report is turned into a link.** The payload carries no
   `link_to_upstream_details` and no `image_url`, which IRM renders as links:
   with accounts off, anyone could choose them.
@@ -97,8 +97,7 @@ without a new escalation.
 | Per caller | 3 per 10 min (`INCIDENT_RATE_LIMIT_MAX`) | Keyed on `cf-connecting-ip`, which Cloudflare sets in front of the fleet, then the connection. Not `request.ip`: behind the gateway that is an in-cluster hop shared by everyone on the node, so one caller could lock out the rest. Without Cloudflare a caller can choose the header — which only gets them a fresh allowance, as a new address would |
 | Per api process | 10 per 5 min (`INCIDENT_POD_MAX`) | IRM caps alerts at 300 per 5 min per integration and **900 per 5 min per organisation**, and fleet alerts are delivered on that organisation budget. Callers change address for free, so only a total protects it. The chart runs one api per node, so a deployment's ceiling is this times its node count |
 
-Past either limit the api answers 429 and the dialog points at the fallback
-contact.
+Past either limit the api answers 429 and the dialog says so.
 
 ## Configuration
 
@@ -108,7 +107,6 @@ contact.
 | api | `INCIDENT_WEBHOOK_URL` | the IRM integration's URL. **The URL is the credential** — from a Secret, never a plain chart value (the chart writes its values into a ConfigMap). https only; http for a loopback mock |
 | api | `INCIDENT_WEBHOOK_TIMEOUT_MS` · `INCIDENT_RATE_LIMIT_MAX` · `INCIDENT_POD_MAX` | see above |
 | web | `INCIDENTS_ENABLED` | shows the button; set it with the api's |
-| web | `INCIDENT_FALLBACK_CONTACT` | an address, an https URL, or text |
 
 On with no usable URL is not a refused boot — losing the customer's dashboard
 over the report form would be the worse outage. The api logs the problem at
@@ -126,8 +124,7 @@ INCIDENT_WEBHOOK_URL=http://127.0.0.1:9099/integrations/v1/formatted_webhook/tes
 HELM_VALUES_DIR=<dir holding core/values.yml> NODE_ENV=development \
 pnpm --filter @sr/api dev
 
-INCIDENTS_ENABLED=true INCIDENT_FALLBACK_CONTACT=support@magmadevs.com \
-pnpm --filter @sr/web dev
+INCIDENTS_ENABLED=true pnpm --filter @sr/web dev
 ```
 
 ## Code

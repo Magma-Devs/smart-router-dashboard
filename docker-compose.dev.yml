@@ -319,11 +319,9 @@ services:
       # the chains drawer, ...); unset draws the 0.27 ones. Read per request
       # by the root layout. See apps/web/src/lib/new-ui.ts.
       - DASHBOARD_NEW_UI=${DASHBOARD_NEW_UI:-}
-      # The "Report incident" button and its fallback contact — read by the
-      # web itself, so both still show when the api is down. Set the same
-      # INCIDENTS_ENABLED as the api.
+      # The "Report incident" button — read by the web itself, so it still
+      # shows when the api is down. Set the same INCIDENTS_ENABLED as the api.
       - INCIDENTS_ENABLED=${INCIDENTS_ENABLED:-}
-      - INCIDENT_FALLBACK_CONTACT=${INCIDENT_FALLBACK_CONTACT:-}
       # Auth (see docs/AUTH.md) — same AUTH_MODE + AUTH_SECRET as the api.
       # DEPLOYMENT_MODE must match the api's: the web serves it from
       # /api/config and forks the invitation copy on it.

@@ -366,7 +366,7 @@ export function readMetricsScope(source: NodeJS.ProcessEnv = process.env): Metri
  * Switched on with no usable URL is NOT a refused boot: the dashboard is the
  * customer's view of their traffic, and losing it over the incident form would
  * be the worse outage. `problem` says what is wrong; the api logs it at boot
- * and every report answers 503 with the form's fallback contact on screen.
+ * and every report answers 503, which the form shows.
  */
 export interface IncidentSettings {
   enabled: boolean;

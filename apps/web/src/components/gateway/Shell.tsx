@@ -16,7 +16,7 @@ import { fmtNum } from "@/lib/format";
 import { getAuthVersion, subscribeAuth } from "@/lib/auth-store";
 import { useMe } from "@/hooks/use-me";
 import { TwoFactorCountdown, TwoFactorGate } from "@/components/auth/two-factor-gate";
-import { ReportIncidentButton, type IncidentsConfig } from "@/components/incidents/ReportIncident";
+import { ReportIncidentButton } from "@/components/incidents/ReportIncident";
 
 export function ThemeToggle() {
   const [theme, setTheme] = useState<"dark" | "light">("dark");
@@ -207,7 +207,7 @@ function SidebarUser() {
   );
 }
 
-function Topbar({ here, sub, incidents }: { here: string; sub: string | null; incidents: IncidentsConfig }) {
+function Topbar({ here, sub, incidentsEnabled }: { here: string; sub: string | null; incidentsEnabled: boolean }) {
   // Live throughput + health for the top-bar stats (real data; CU/mo is a
   // Lava-consumer concept the router doesn't emit, so it's omitted here).
   // Scoped like every other panel, so the pills describe the selected router.
@@ -251,19 +251,17 @@ function Topbar({ here, sub, incidents }: { here: string; sub: string | null; in
         {/* Shows only for the one account that may still defer 2FA. Not
             dismissible: what it counts down to is the dashboard closing. */}
         <TwoFactorCountdown />
-        <ReportIncidentButton config={incidents} />
+        <ReportIncidentButton enabled={incidentsEnabled} />
         <ThemeToggle />
       </div>
     </header>
   );
 }
 
-const INCIDENTS_OFF: IncidentsConfig = { enabled: false, fallbackContact: null };
-
-export function Shell({ children, grafanaDashboardUrl, incidents = INCIDENTS_OFF }: {
+export function Shell({ children, grafanaDashboardUrl, incidentsEnabled = false }: {
   children: React.ReactNode;
   grafanaDashboardUrl?: string | null;
-  incidents?: IncidentsConfig;
+  incidentsEnabled?: boolean;
 }) {
   const pathname = usePathname();
   const { chain } = useFilters();
@@ -288,7 +286,7 @@ export function Shell({ children, grafanaDashboardUrl, incidents = INCIDENTS_OFF
           <Sidebar grafanaDashboardUrl={grafanaDashboardUrl} />
           <ChainDrawerSlot />
           <div className="gw-main">
-            <Topbar here={here} sub={sub} incidents={incidents} />
+            <Topbar here={here} sub={sub} incidentsEnabled={incidentsEnabled} />
             <div className="fade-in" key={pathname}>
               {children}
             </div>

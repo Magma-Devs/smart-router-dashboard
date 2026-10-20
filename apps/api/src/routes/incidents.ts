@@ -180,7 +180,7 @@ export async function incidentRoutes(app: FastifyInstance, opts: IncidentRoutesO
         return refuse(
           reply,
           429,
-          "Too many incident reports have come from this dashboard in the last few minutes. Please use the contact below.",
+          "Too many incident reports have come from this dashboard in the last few minutes. Please try again shortly.",
         );
       }
 
@@ -200,7 +200,7 @@ export async function incidentRoutes(app: FastifyInstance, opts: IncidentRoutesO
       const logged = { incidentId: ctx.id, severity: ctx.severity, signedIn: reporter.signedIn };
       if (!delivery.ok) {
         request.log.warn({ ...logged, status: delivery.status, reason: delivery.reason }, "incident report not accepted by the on-call system");
-        return refuse(reply, 502, "Our on-call system did not accept the report. Please try again, or use the contact below.");
+        return refuse(reply, 502, "Our on-call system did not accept the report. Please try again.");
       }
       request.log.info(logged, "incident report accepted by the on-call system");
 
