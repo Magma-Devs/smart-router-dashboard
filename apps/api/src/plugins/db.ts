@@ -1,7 +1,7 @@
 import fp from "fastify-plugin";
 import type { FastifyInstance } from "fastify";
 import { createDb, migrate, seedAdmin, type Database, type DbHandle } from "@sr/db";
-import { config } from "../config.js";
+import { config, readDbPoolOptions } from "../config.js";
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -75,6 +75,10 @@ export const dbPlugin = fp(async (app: FastifyInstance) => {
     throw new Error("AUTH_MODE=enabled requires DATABASE_URL (postgres://user:pass@host:5432/db).");
   }
 
+  // Refused at register time, so a malformed DB_POOL_MAX fails the boot with
+  // its name rather than opening a pool nobody sized (see readDbPoolOptions).
+  const pool = readDbPoolOptions();
+
   app.decorate("db", null as Database | null);
   let handle: DbHandle | null = null;
   let stopped = false;
@@ -82,12 +86,12 @@ export const dbPlugin = fp(async (app: FastifyInstance) => {
   const connectLoop = (async () => {
     for (let attempt = 1; !stopped; attempt++) {
       try {
-        const candidate = createDb(url);
+        const candidate = createDb(url, pool);
         await migrate(candidate.db);
         await maybeSeedAdmin(app, candidate.db);
         handle = candidate;
         app.db = candidate.db;
-        app.log.info({ attempt }, "database connected, migrations applied");
+        app.log.info({ attempt, pool }, "database connected, migrations applied");
         return;
       } catch (err) {
         const delay = Math.min(RETRY_DELAY_MS * Math.ceil(attempt / 10), RETRY_DELAY_MAX_MS);
