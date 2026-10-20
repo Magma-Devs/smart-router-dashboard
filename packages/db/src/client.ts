@@ -48,6 +48,36 @@ export interface DbPoolOptions {
 export const DEFAULT_DB_POOL: Readonly<Required<DbPoolOptions>> = { max: 20, idleTimeout: 30 };
 
 /**
+ * Everything `createDb` takes beside the URL: the pool, and how the server is
+ * verified when the socket does not go to the server itself.
+ */
+export interface DbConnectOptions extends DbPoolOptions {
+  /**
+   * The name the server's TLS certificate must carry — set when the URL points
+   * at a local proxy rather than at the database.
+   *
+   * The fleet's backends reach a private RDS instance through a cloudflared
+   * sidecar listening on `127.0.0.1:5432` in the pod, so `DATABASE_URL` names
+   * the loopback address while the TLS session still terminates on RDS. Node
+   * verifies a certificate against the name it dialled, and an IP address in
+   * the URL has no name to verify, which would silently defeat the check. With
+   * this set, TLS is always on, the chain is verified against the trusted CAs
+   * (`NODE_EXTRA_CA_CERTS` for the RDS bundle) and the certificate must name
+   * exactly this host — `sslmode=verify-full` with the name supplied — whatever
+   * the URL's own `sslmode` says. Unset, the URL decides, as it always did.
+   */
+  tlsServername?: string;
+}
+
+/** A DNS name: labels of letters, digits and hyphens, joined by dots. An IP
+ *  address is refused on purpose — RDS certificates name the endpoint, never
+ *  an address, so an IP here would fail every connection. */
+const HOSTNAME = /^(?=.{1,253}$)[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$/;
+export function isTlsServername(value: string): boolean {
+  return HOSTNAME.test(value) && !/^[0-9.]+$/.test(value);
+}
+
+/**
  * Open a Postgres connection and return a Drizzle handle. Caller owns
  * lifecycle — call `handle.sql.end()` on shutdown to close the pool.
  *
@@ -60,11 +90,13 @@ export const DEFAULT_DB_POOL: Readonly<Required<DbPoolOptions>> = { max: 20, idl
  *
  * A pool that could hold nothing, or a negative idle timeout, is refused here
  * rather than handed to the driver: postgres-js would take `max: 0` and then
- * never answer a query.
+ * never answer a query. So is a TLS server name that is not a DNS name — the
+ * driver would accept it and every connection would then fail its name check.
  */
-export function createDb(databaseUrl: string, pool: DbPoolOptions = {}): DbHandle {
-  const max = pool.max ?? DEFAULT_DB_POOL.max;
-  const idleTimeout = pool.idleTimeout ?? DEFAULT_DB_POOL.idleTimeout;
+export function createDb(databaseUrl: string, options: DbConnectOptions = {}): DbHandle {
+  const max = options.max ?? DEFAULT_DB_POOL.max;
+  const idleTimeout = options.idleTimeout ?? DEFAULT_DB_POOL.idleTimeout;
+  const tlsServername = options.tlsServername?.trim() || undefined;
   if (!Number.isInteger(max) || max < 1) {
     throw new Error(`database pool size must be a whole number of at least 1, got ${String(max)}`);
   }
@@ -73,10 +105,19 @@ export function createDb(databaseUrl: string, pool: DbPoolOptions = {}): DbHandl
       `database idle timeout must be a whole number of seconds, 0 or more, got ${String(idleTimeout)}`,
     );
   }
+  if (tlsServername !== undefined && !isTlsServername(tlsServername)) {
+    throw new Error(
+      `database TLS server name must be a DNS name (letters, digits, dots, hyphens — no scheme, port or address), got ${JSON.stringify(options.tlsServername)}`,
+    );
+  }
+  // An object `ssl` is handed to tls.connect as it is: it switches TLS on
+  // whatever the URL says and overrides the servername the driver derives
+  // from the host — the one it dialled, or none for an IP address.
   const sql = postgres(databaseUrl, {
     max,
     idle_timeout: idleTimeout,
     connect_timeout: 10,
+    ...(tlsServername ? { ssl: { servername: tlsServername } } : {}),
   });
   const db = drizzle(sql, { schema });
   return { db, sql };

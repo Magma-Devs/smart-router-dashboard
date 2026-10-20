@@ -49,4 +49,27 @@ describe("readDbPoolOptions", () => {
   it("quotes the offending value in the error", () => {
     expect(() => readDbPoolOptions({ DB_POOL_MAX: "twenty" })).toThrow('"twenty"');
   });
+
+  // DB_TLS_SERVERNAME: the certificate name when DATABASE_URL points at a local
+  // proxy (the fleet's cloudflared sidecar) rather than at the database.
+  it("carries no server name unless one is set", () => {
+    expect(readDbPoolOptions({})).not.toHaveProperty("tlsServername");
+    expect(readDbPoolOptions({ DB_TLS_SERVERNAME: "" })).not.toHaveProperty("tlsServername");
+    expect(readDbPoolOptions({ DB_TLS_SERVERNAME: "   " })).not.toHaveProperty("tlsServername");
+  });
+
+  it("reads the server name, trimmed", () => {
+    expect(readDbPoolOptions({ DB_TLS_SERVERNAME: " fleet-prod.abc123.us-east-1.rds.amazonaws.com " })).toEqual({
+      max: 20,
+      idleTimeout: 30,
+      tlsServername: "fleet-prod.abc123.us-east-1.rds.amazonaws.com",
+    });
+  });
+
+  it("refuses a server name that is not a DNS name, naming the variable and quoting the value", () => {
+    for (const bad of ["https://db.example.com", "db.example.com:5432", "db example", "10.0.0.1", "db_example"]) {
+      expect(() => readDbPoolOptions({ DB_TLS_SERVERNAME: bad })).toThrow(/DB_TLS_SERVERNAME/);
+      expect(() => readDbPoolOptions({ DB_TLS_SERVERNAME: bad })).toThrow(JSON.stringify(bad));
+    }
+  });
 });

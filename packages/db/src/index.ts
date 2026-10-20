@@ -4,6 +4,8 @@ export {
   type Database,
   type DbHandle,
   type DbPoolOptions,
+  type DbConnectOptions,
+  isTlsServername,
   type PostgresDatabase,
 } from "./client.js";
 export { migrate } from "./migrate.js";

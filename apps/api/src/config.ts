@@ -3,7 +3,7 @@
  * Every default is documented in the env-var table in the repo CLAUDE.md.
  */
 import { isMetricWindow, isValidScopeLabel, isValidScopeValue, type MetricScope, type MetricWindow } from "@sr/shared";
-import { DEFAULT_DB_POOL, type DbPoolOptions } from "@sr/db";
+import { DEFAULT_DB_POOL, isTlsServername, type DbConnectOptions, type DbPoolOptions } from "@sr/db";
 
 function env(name: string): string | undefined {
   return process.env[name];
@@ -362,14 +362,32 @@ export function readMetricsScope(source: NodeJS.ProcessEnv = process.env): Metri
  * pool of `0`, or `abc`, quietly becoming 20 is a budget somebody sized from a
  * value that was never applied. Read live (the db plugin registers after tests
  * set the environment), like `readMetricsScope`.
+ *
+ * `DB_TLS_SERVERNAME` rides along: the name the server certificate must carry
+ * when `DATABASE_URL` points at a local proxy instead of the database — the
+ * fleet's backends dial a cloudflared sidecar on `127.0.0.1` and the TLS
+ * session ends on RDS, whose certificate names the endpoint. Unset, the URL's
+ * `sslmode` decides, as before. A value that is not a DNS name refuses the
+ * boot: the driver would take `https://…` or `host:5432` and then fail every
+ * connection's name check, which reads like a database outage.
  */
 export function readDbPoolOptions(
   source: NodeJS.ProcessEnv = process.env,
-): Required<DbPoolOptions> {
-  return {
+): Required<DbPoolOptions> & Pick<DbConnectOptions, "tlsServername"> {
+  const options: Required<DbPoolOptions> & Pick<DbConnectOptions, "tlsServername"> = {
     max: envWholeNumber(source, "DB_POOL_MAX", DEFAULT_DB_POOL.max, 1),
     idleTimeout: envWholeNumber(source, "DB_IDLE_TIMEOUT_S", DEFAULT_DB_POOL.idleTimeout, 0),
   };
+  const servername = source.DB_TLS_SERVERNAME?.trim();
+  if (servername !== undefined && servername !== "") {
+    if (!isTlsServername(servername)) {
+      throw new Error(
+        `DB_TLS_SERVERNAME must be a DNS name — letters, digits, dots and hyphens, no scheme, port or IP address — got ${JSON.stringify(servername)}`,
+      );
+    }
+    options.tlsServername = servername;
+  }
+  return options;
 }
 
 /** Unset or empty takes the fallback; anything else must be digits only and at least `min`. */
