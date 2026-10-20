@@ -354,6 +354,7 @@ describe("the Transactions tab from relay_end", () => {
 const lokiOf = (lines: LokiLine[]) => {
   const queries: string[] = [];
   const loki = {
+    async volume() { return 0; },
     async queryRange(query: string, startMs: number, endMs: number, limit: number) {
       queries.push(query);
       const filters = [...query.matchAll(/(\|~|!~|\|=|!=) (`[^`]*`|"(?:[^"\\]|\\.)*")/g)].map(([, op, q]) => {

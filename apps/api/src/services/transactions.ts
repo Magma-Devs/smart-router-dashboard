@@ -45,7 +45,7 @@ import {
   RELAY_END,
   startMs as startOf,
 } from "./relay-end.js";
-import { readEnd, readOnFrom, type ReadRange } from "./read-range.js";
+import { readEnd, readOnFrom, readStart, type ReadRange } from "./read-range.js";
 import type { LokiClient } from "./loki-client.js";
 import type { ConfigurationService } from "./configuration.js";
 import {
@@ -384,15 +384,19 @@ export class TransactionsService {
   /**
    * The newest transactions in `range`, ending at `before` when given (the
    * previous read's `nextBefore`). One on the seam between two reads can come
-   * back in both; the client keeps it once, by GUID.
+   * back in both; the client keeps it once, by GUID. One read scans at most
+   * LOG_READ_BUDGET_BYTES of logs (`readStart`): on a busy deployment a long
+   * range is read in parts, newest first, one per "Load older".
    */
   async report(range: ReadRange, spec?: string, routerId?: string, before?: number): Promise<TransactionsReport> {
     const loki = this.loki;
     if (!loki) return emptyReport(false, "unconfigured");
     const read = { startMs: range.startMs, endMs: range.endMs };
-    const startMs = range.startMs;
     const endMs = readEnd(range, before);
-    if (endMs <= startMs) return { ...emptyReport(true), range: read };
+    if (endMs <= range.startMs) return { ...emptyReport(true), range: read };
+    // At most LOG_READ_BUDGET_BYTES of logs per read: the older part of the range is the next read's.
+    const startMs = await readStart(loki, this.selector, range, endMs);
+    const unreadCut = startMs > range.startMs ? [startMs] : [];
 
     // Candidates, two ways. Writes by the spec: narrowed inside the query to
     // the chain's upstreams (a name inside `chosenProviders`, bounded by a
@@ -420,10 +424,14 @@ export class TransactionsService {
     for (const l of found) newest.set(l.guid, Math.max(newest.get(l.guid) ?? 0, l.tsMs));
     const ranked = [...newest].sort((a, b) => b[1] - a[1]);
     const picked = ranked.slice(0, this.cap);
-    if (!picked.length) return { ...emptyReport(true), range: read };
+    if (!picked.length) {
+      return unreadCut.length
+        ? { ...emptyReport(true), more: true, nextBefore: readOnFrom([], this.cap, unreadCut, endMs), range: read }
+        : { ...emptyReport(true), range: read };
+    }
     const kept = new Set(picked.map(([g]) => g));
     const cutOf = (read: { tsMs: number }[]) => (read.length >= this.cap ? [Math.min(...read.map((l) => l.tsMs))] : []);
-    const nextBefore = readOnFrom(ranked, this.cap, [...cutOf(byFlag), ...cutOf(byMethod), ...cutOf(byEvent)], endMs);
+    const nextBefore = readOnFrom(ranked, this.cap, [...cutOf(byFlag), ...cutOf(byMethod), ...cutOf(byEvent), ...unreadCut], endMs);
 
     // A transaction found by its relay_end needs nothing more. One found by
     // its lines needs the rest of them, and its relay_end when it has one:

@@ -5,6 +5,7 @@
  * picks one, which Prometheus-backed panels can't follow but a log read can.
  */
 import { DEFAULT_WINDOW, WINDOWS, toMetricWindow, type MetricWindow } from "@sr/shared";
+import type { LokiClient } from "./loki-client.js";
 
 /** Unix ms. */
 export interface ReadRange {
@@ -44,6 +45,55 @@ export function readRange(q: RangeQuery, now = Date.now()): ReadRange | { error:
 /** Where a read ends: the range's end, or `before` (the previous read's `nextBefore`) when that's earlier. */
 export const readEnd = (range: ReadRange, before?: number) =>
   before != null ? Math.min(range.endMs, before) : range.endMs;
+
+/**
+ * The most log one read may scan, in bytes as Loki's index counts them: about
+ * half an hour of the busiest tenant's router lines (production, 2026-10-20: 6.7 GB
+ * an hour, 1.6 TB a month), so the default half hour reads whole on every
+ * tenant at its usual volume.
+ * A line filter doesn't lower it - a read opens every chunk of the streams it
+ * selects, matches or not - and a read with few matches can't stop early.
+ * A 14-day read that ignored it pinned the shared Loki at 97 % CPU for five
+ * minutes and timed out every tenant's alert rules (2026-10-20).
+ */
+export const LOG_READ_BUDGET_BYTES = 4e9;
+
+/** What a read covers when Loki can't say what the stretch weighs. */
+export const UNSIZED_READ_SPAN_MS = 30 * 60_000;
+
+/** The shortest stretch a read covers, however heavy. */
+const MIN_READ_SPAN_MS = 60_000;
+
+/** How many times a read's part is re-weighed before it is read. */
+const SIZING_ROUNDS = 3;
+
+/**
+ * Where a read ending at `endMs` starts: the range's start when the stretch
+ * between fits the budget, else the newest part that does. The part is sized
+ * from the stretch's weight as if spread evenly, then weighed again and cut
+ * again: traffic grows, and a month's average is a third of the largest
+ * tenant's current hour. Older lines are the next read's (`readOnFrom` takes
+ * the start as a cut), so a long window costs one budget per "Load older",
+ * not all of it at once.
+ */
+export async function readStart(
+  loki: LokiClient,
+  selector: string,
+  range: ReadRange,
+  endMs: number,
+  budget = LOG_READ_BUDGET_BYTES,
+): Promise<number> {
+  let startMs = range.startMs;
+  for (let round = 0; round < SIZING_ROUNDS; round++) {
+    const spanMs = endMs - startMs;
+    if (spanMs <= MIN_READ_SPAN_MS) return startMs;
+    const bytes = await loki.volume(selector, startMs, endMs);
+    if (bytes === null) return Math.max(startMs, endMs - UNSIZED_READ_SPAN_MS);
+    if (bytes <= budget) return startMs;
+    startMs = Math.max(startMs, endMs - Math.max(MIN_READ_SPAN_MS, (spanMs * budget) / bytes));
+  }
+  return startMs;
+}
 
 /** Past a line's time, still before the next line: `tsMs` carries ~0.25 µs of float error. */
 const SEAM_MS = 0.001;

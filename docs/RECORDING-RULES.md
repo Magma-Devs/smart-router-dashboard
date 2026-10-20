@@ -88,6 +88,24 @@ reaches, and how far apart the raw router samples are:
 windows read recorded series right now. `METRICS_RECORDED_FROM=never` holds
 every window on raw reads regardless.
 
+## The log store's counts
+
+One more pair of recorded series lives in the same store, from another
+ruler: the fleet Loki's, which counts the router's final log lines once a
+minute into each tenant's org (devops-magmadevs,
+`components/smart-router-fleet-loki/configs/recording-rules.yaml`):
+`smartrouter_final_requests:count1m` and `smartrouter_final_failures:count1m`,
+by `cluster`, `chain` (the router's network, lower case) and `service_name`
+(`<tenant>-<router id>`). The Metrics page's Failed requests card reads
+`sum_over_time` of the failures (`GET /api/error-requests/count`): about a
+second for a month on the largest tenant, where counting the raw lines over
+the same month scans some 1.6 TB. The api looks once a minute at how old the
+newest sample is and how far back they reach: fresh, every window reads them,
+and a window older than their history says where they start (`since`);
+missing or older than five minutes, the card counts the raw lines, for a
+window light enough to read in one go (`too-large` otherwise). They are not
+part of the policy above: no `METRICS_RECORDED_FROM` floor, and no switch.
+
 ## The rules file
 
 Copy this into the store's rule configuration for each tenant org. It is

@@ -34,5 +34,7 @@ export const lokiPlugin = fp(async (app: FastifyInstance) => {
   const selector = process.env.LOKI_ROUTER_SELECTOR?.trim() || config.loki.routerSelector;
   app.decorate("transactions", new TransactionsService(loki, selector, app.routerConfig));
   app.decorate("transactionsOverTime", new TransactionsOverTimeService(app.prom, loki, selector, app.routerConfig));
-  app.decorate("errorRequests", new ErrorRequestsService(loki, selector, app.routerConfig));
+  // The Failed requests card reads the counts the fleet Loki's ruler records
+  // into the metrics store when they are there (RECORDED_OUTCOMES).
+  app.decorate("errorRequests", new ErrorRequestsService(loki, selector, app.routerConfig, undefined, app.prom));
 });

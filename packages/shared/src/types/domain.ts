@@ -680,15 +680,19 @@ export interface RequestLookup {
 /**
  * Client requests the router could not serve in a window: nothing, or
  * nothing usable, came back from the upstreams, so the router returned its
- * own error. Counted from the router's logs; `available:false` and a null
- * value when they can't be read, or (`shared-chain`) when a router was asked
- * for on a chain other routers serve too - the lines don't say which router
- * wrote them.
+ * own error. Counted from the router's logs - from the counts the fleet's log
+ * store records of them a minute at a time, or from the lines themselves where
+ * there are none. `available:false` and a null value when they can't be read;
+ * `shared-chain` when a router was asked for and its lines can't be told from
+ * another router's on the same chain; `too-large` when there are no recorded
+ * counts and the window holds more lines than one read may scan.
  */
 export interface FailedRequests {
   available: boolean;
-  reason?: LogUnavailable | "shared-chain";
+  reason?: LogUnavailable | "shared-chain" | "too-large";
   value: number | null;
+  /** ISO time the recorded counts start, when that is inside the window: the value counts from there. */
+  since?: string;
 }
 
 /** The Errors tab's request list - from the router's logs (Loki), newest first, one read at a time. */
