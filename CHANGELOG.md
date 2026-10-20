@@ -23,6 +23,23 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   becoming the default (`readDbPoolOptions` in `config.ts`; `createDb` in
   `@sr/db` takes the same options and refuses a pool of nothing).
   `db-pool.test.ts` and `packages/db`'s `client.test.ts` pin both.
+- **`DB_TLS_SERVERNAME` verifies the server certificate against a name of
+  its own.** The fleet keeps its Postgres private and reaches it through a
+  Cloudflare Tunnel: a cloudflared sidecar listens on `127.0.0.1:5432` in the
+  pod, so `DATABASE_URL` names the loopback address while the TLS session
+  still ends on RDS, whose certificate names the endpoint. For an IP address
+  the driver sends no server name and Node checks the certificate against
+  `localhost`, so `sslmode=verify-full` alone refuses every connection through
+  the sidecar (and would accept a certificate that names `localhost`). Set, the
+  driver gets `ssl: { servername }`: TLS is always on, the chain is checked
+  against the trusted CAs (`NODE_EXTRA_CA_CERTS` for the RDS bundle) and the
+  certificate must name exactly that host — `sslmode=verify-full` with the
+  name supplied — whatever the URL's own `sslmode` says. Unset, nothing
+  changes. A value that is not a DNS name (a scheme, a port, an IP address)
+  refuses the boot, naming the variable, because the driver would accept it
+  and every connection would then fail its name check, which reads like an
+  outage. `createDb` takes it as `tlsServername`; the same two test files
+  pin it.
 - **`GET /health/ready` checks the database under `AUTH_MODE=enabled`.** The
   probe pinged Prometheus only, so a backend whose database was unreachable
   was Ready while every authenticated request answered 503 — the gate fails

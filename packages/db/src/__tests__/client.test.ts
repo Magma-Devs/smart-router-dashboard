@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createDb, DEFAULT_DB_POOL } from "../client.js";
+import { createDb, DEFAULT_DB_POOL, isTlsServername } from "../client.js";
 
 /**
  * The pool options reach the driver, and the ones that could not work are
@@ -52,5 +52,41 @@ describe("createDb", () => {
   it("refuses a negative or fractional idle timeout", () => {
     expect(() => createDb(URL, { idleTimeout: -1 })).toThrow(/idle timeout/);
     expect(() => createDb(URL, { idleTimeout: 1.5 })).toThrow(/idle timeout/);
+  });
+
+  // The fleet dials a cloudflared sidecar on loopback while the TLS session
+  // ends on RDS: the name the certificate must carry comes from the option,
+  // not from the address dialled.
+  it("verifies the certificate against the server name it is given, whatever the URL says", async () => {
+    // The URL asks for an unverified `require`; the option wins over it.
+    const h = createDb("postgres://sr:x@127.0.0.1:5432/na?sslmode=require", {
+      tlsServername: "fleet-prod.abc123.us-east-1.rds.amazonaws.com",
+    });
+    try {
+      expect(h.sql.options.ssl).toEqual({ servername: "fleet-prod.abc123.us-east-1.rds.amazonaws.com" });
+    } finally {
+      await h.sql.end({ timeout: 0 });
+    }
+  });
+
+  it("leaves TLS to the URL when no server name is given", async () => {
+    const plain = createDb(URL);
+    const full = createDb(`${URL}?sslmode=verify-full`);
+    const blank = createDb(URL, { tlsServername: "  " });
+    try {
+      expect(plain.sql.options.ssl).toBe(false);
+      expect(full.sql.options.ssl).toBe("verify-full");
+      expect(blank.sql.options.ssl).toBe(false);
+    } finally {
+      await Promise.all([plain, full, blank].map((h) => h.sql.end({ timeout: 0 })));
+    }
+  });
+
+  it("refuses a server name that is not a DNS name", () => {
+    for (const bad of ["https://db.example.com", "db.example.com:5432", "db example", "10.0.0.1", "-db.example.com"]) {
+      expect(() => createDb(URL, { tlsServername: bad })).toThrow(/TLS server name/);
+    }
+    expect(isTlsServername("db.example.com")).toBe(true);
+    expect(isTlsServername("rds")).toBe(true);
   });
 });
