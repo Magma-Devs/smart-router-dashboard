@@ -203,6 +203,8 @@ Changes are tracked in [CHANGELOG.md](./CHANGELOG.md). Versioning is driven by t
 - `ghcr.io/magma-devs/smart-router-dashboard/backend` — the Fastify api (`apps/api`)
 - `ghcr.io/magma-devs/smart-router-dashboard/frontend` — the Next.js web (`apps/web`)
 
+Both images are published for `linux/amd64` and `linux/arm64` from a single build stage (no emulation; see CLAUDE.md → Docker / images / isolation).
+
 Set `DASHBOARD_API_URL` on the web container at runtime to point one published image at any api host.
 
 ```bash

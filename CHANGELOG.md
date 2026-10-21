@@ -5,6 +5,36 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Changed
+
+- **Images build and publish in a fraction of the time** (MAG-4483). The
+  `build-and-push` workflow built each image for `linux/amd64` and
+  `linux/arm64` by running the whole install-and-compile stage twice, and
+  the arm64 copy ran under QEMU: `next build` took 313 s there against 37 s
+  native, the api's tsc builds 139 s against 14 s, so a push waited 5 to 9
+  minutes on an image whose native build work is under a minute. Both
+  Dockerfiles now build on `$BUILDPLATFORM` (the output is plain JS; the api
+  has no native module and the web never loads sharp, pinned by
+  `images.unoptimized`) and keep their runtime stages free of `RUN`, so one
+  build stage serves both architectures and the workflow sets up no
+  QEMU. A `smoke-arm64` job then starts each arm64 image on an arm64
+  runner and waits for its health endpoint, so a dependency that loads a
+  native binding at boot fails the run instead of shipping an amd64-only
+  arm64 image. The install layer is keyed on the lockfile and the package
+  manifests alone, so a code-only commit reuses it. The layer cache moved from the
+  Actions cache, which sat at its 10 GB cap and evicted these blobs between
+  runs, to GHCR (`…/<image>:buildcache`, shared by every branch). A newer
+  push to a branch cancels the run it supersedes; on main every push builds
+  in its own group, so quick merges never cancel each other. The
+  api runtime image is a `pnpm deploy` production tree, 237 MB instead of
+  415 MB (`files` in the package manifests keep sources and tests out of
+  it); `pnpm install --prod` would not have helped, on pnpm 10 it leaves the
+  virtual store as it is. The tree has no devDependencies, so
+  `NODE_ENV=development` (the dev-only `pino-pretty` log transport) is for
+  the dev stack, not the published image. The image layout
+  (`apps/api/dist/main.js`) is unchanged. Measured on the runner with a cold cache: backend step 43 s,
+  frontend step 70 s, the whole run 1m31 against 8m34.
+
 ## [0.43.1]
 
 ### Fixed
