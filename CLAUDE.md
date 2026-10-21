@@ -116,6 +116,26 @@ submit-and-watch) is a row, which the old lines never logged. Credentials work a
 `LOKI_USERNAME` + `LOKI_PASSWORD` for basic auth (both or nothing),
 `LOKI_ORG_ID` for `X-Scope-OrgID`.
 
+The Transactions tab's chart (`services/transactions-over-time.ts`) counts the
+same `relay_end` lines over the page window, a bar per stretch of the clock
+(`bucketGrid`), each split by result. It reads the store first: the fleet's
+Loki ruler records `smartrouter_transactions:count1m` in each tenant's org
+(labels `cluster`, `chain` = the spec lowercased, `service_name` =
+`<tenant>-<router id>`, `api_interface`, `outcome`, `tx_status`, `tx_refused`;
+the rule's line filter is `TX_EVENT_FILTER`, the list's own). A series' result
+is `txResultOf`, the mapping the list's rows use too, so the two can't drift;
+a subscription request a node refused on a try is the one case the list reads
+as `rejected` and the counts can't. The recorded counts lag about two minutes
+(`[1m] offset 30s`, then the ruler's delay): the newest minutes are counted
+from the logs, from where the ruler's newest count ends (read off a sample's
+timestamp, since it evaluates at a second of its own), and the bars say so
+(`partialFrom`) when the logs don't answer. Where the store records none for
+the scope - a standalone install has no ruler - the whole window is counted
+from the logs. A config router is read through its chain; on a chain other
+routers serve too, the recorded counts split it by `service_name`, and the
+logs, which can't, answer `shared-chain`. A router before smart-router v1.6.1
+writes no `relay_end`, so its transactions are in the list, not the chart.
+
 A request's chain is the one its lines name (`chain_id` on an error line),
 else the only chain serving every upstream it used - its tries and the pool
 the router chose from (`validAddresses`). One node name serves many chains,
@@ -191,7 +211,8 @@ apps/api/                 @sr/api — Fastify 5 (:8000)
     services/           prometheus-client · metrics · metrics-detail ·
                         metrics-dashboard · configuration (values-file loader) ·
                         loki-client · router-log (parsing the router's lines) ·
-                        transactions · error-requests (rows from the router's logs)
+                        transactions · error-requests (rows from the router's logs) ·
+                        transactions-over-time (the Transactions tab's chart)
     config.ts           single source of truth for env defaults
 apps/web/                 @sr/web — Next.js 16 App Router (:3000)
   src/
@@ -209,7 +230,8 @@ apps/web/                 @sr/web — Next.js 16 App Router (:3000)
       metrics/          MetricsView (4 tabs) · HeroPanel · RouterOverview ·
                         ChainDetail · ErrorsBreakdown (the Errors tab: count
                         cards + ErrorRequests, the request list) ·
-                        TransactionLog · request-log (the two log tables'
+                        TransactionLog · TransactionsChart (its bars over
+                        time) · request-log (the two log tables'
                         shared chips + details) · upstream/ (the
                         Upstreams tab: PMRoster · PMBody - errors over time
                         (a bar opens the Errors tab on the requests
@@ -720,6 +742,7 @@ Every `/api/metrics/*` route also accepts **`router?`** — the router scope
 | `GET /api/error-requests/count` | `window`, `spec?`, `routerId?` | `FailedRequests` - `{ available, reason?, value }`: client requests the router **could not serve** (nothing, or nothing usable, came back from the upstreams, so the router returned its own error, typically "insufficient results") in the window. Counted by Loki from the line the router ends each such request with (`message` = "failed getting responses from RPC endpoints" when nothing came back, "failed processing responses from RPC endpoints" when nothing usable did; its own relays log "[-] failed sending init relay" instead), plus each failed `relay_end` on a router on smart-router #543 or later, which writes neither line (the server-errors alert's leg: parsed, not a subscription, `outcome` `no_answer` / `write_unknown` / `rejected_before_dispatch` / `router_error`); a chain narrows it by the listener that logged it (`<spec><interface>`), or by the event's `chain`. A config router narrows it to its chain; on a chain other routers serve too it answers `reason: "shared-chain"` - the lines don't say which router wrote them. A chain the values file doesn't serve is 0 without a read. Kept 30 s per window and chain, a failed read too, one read in flight per key. No metric has this number: `smartrouter_requests_{total,success,failed}_total` move once per TRY, and the one per-request series, the end-to-end latency histogram, is only observed on success. The Metrics page's "Failed requests" card |
 | `GET /api/requests/:guid` | `window` **or** `from` + `to` | `RequestLookup` - one request by its ID (the GUID the router puts in its errors), from its logs: the same row the Errors list shows, for ANY request - `result: "ok"` when nothing failed on the way. `row: null` = not in the logs of the range read; the web offers a 30-day read on purpose rather than by default (it scans every line in the range). 400 on an ID that isn't a plain token |
 | `GET /api/transactions` | `window` **or** `from` + `to` (unix ms, in the past, ≤30 days; 400 otherwise), `before?`, `spec?`, `routerId?` | `TransactionsReport` - the Transactions tab, from the router's logs in Loki (not Prometheus): `rows` (newest first: time, chain, method, `attempts` - every upstream it went to and what each answered, the same shape as a retried request's tries - `answeredBy`, `replyMs`, `outcome` ∈ accepted/rejected/failed/unknown, `error`, `note`), totals, `successRate` (unknown left out). At most 500 transactions per read, and the numbers cover those: `more` + `nextBefore` say where to read on (`before=`), the same paging as `/api/error-requests`. `available:false` without `LOKI_URL` or when Loki doesn't answer. Value and finality are not here: the logs cut long bodies short, and finality needs the chain |
+| `GET /api/transactions/over-time` | `window`, `spec?`, `routerId?` | `TransactionsOverTime` - the Transactions tab's chart: `grid` (the bars' end times, `bucketGrid`), `counts` (one count per bar for each result in the window: accepted/rejected/failed/unknown, and `failed-on-chain` where the send reply says the chain ran it and it failed), `asOf`, `source` (`recorded`: the store's `smartrouter_transactions:count1m`, the newest minutes from the logs; `logs`: counted from the router's logs where the store records none for the scope), `partialFrom` (unix s from which the newest bars may be short: the logs didn't answer for the minutes the store doesn't hold yet). `available:false` + `reason` (`unconfigured` / `unreachable` / `shared-chain`: a router whose lines can't be told from another router's on its chain). Kept 30 s per window, chain and router, one read in flight per key |
 | `GET /api/transactions/:guid` | `window` **or** `from` + `to` | `TransactionLookup` - one transaction by its request ID, the same row the Transactions tab shows. `found` with `row: null` = the ID is a request that isn't a transaction (the Errors tab's look-up shows it). 400 on an ID that isn't a plain token |
 | `POST /api/upstreams/relay` | body: `{routerId, node, endpointIndex, transport?, httpMethod?, path?, body?}` | Fires ONE request straight at a configured upstream, router excluded — `{httpStatus, latencyMs, body, truncated, transport}`. The target is resolved from the values file, never taken from the caller; the resolved url is never returned and is scrubbed out of the upstream's own body. Upstream 4xx/5xx come back **200** with their status inside; 502/504 mean our hop failed. Off with `UPSTREAM_RELAY_ENABLED=false`. See [`docs/UPSTREAM-DIRECT-TEST.md`](docs/UPSTREAM-DIRECT-TEST.md) |
 | `POST /api/incidents` | body: `{id, severity, title, description?, chain?, routerId?, reporter?}` | A member reports an incident to our on-call system → `{id, severity, sentAt}`, **only after IRM answered 2xx** (IRM queues; routing and the call follow). `severity` ∈ critical/high/medium/low; `id` is a UUID the form mints, reused on retry. `AUTH_MODE=disabled`: `reporter {name, email, phone?}` required, recorded as typed; `enabled`: the signed-in user, any role, `reporter` ignored, audited as `incident.reported`. A `chain` / `routerId` the values file doesn't declare is 400. 404 while `INCIDENTS_ENABLED` is off, 503 without a usable webhook, 429 past either limit, 502 when IRM refused or didn't answer. See [`docs/INCIDENTS.md`](docs/INCIDENTS.md) |

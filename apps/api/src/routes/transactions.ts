@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { toMetricWindow } from "@sr/shared";
 import { RANGE_QUERY_PROPERTIES, readRange, type RangeQuery } from "../services/read-range.js";
 import { REQUEST_ID } from "../services/router-log.js";
 import { sendApiError } from "../plugins/error-handler.js";
@@ -35,6 +36,29 @@ export async function transactionRoutes(app: FastifyInstance) {
     }
     return app.transactions.report(range, spec, routerId, before);
   });
+
+  // The tab's chart: transactions over the window, a bar per stretch of the
+  // clock, split by result. Recorded counts first, the logs where there are none.
+  app.get<{ Querystring: { window?: string; spec?: string; routerId?: string } }>("/api/transactions/over-time", {
+    schema: {
+      tags: ["Transactions"],
+      summary:
+        "Transactions over the window, a bar per stretch of the clock, split by result: the store's recorded counts (smartrouter_transactions:count1m), the newest minutes and a store without them from the router's logs; kept 30 s",
+      querystring: {
+        type: "object" as const,
+        properties: {
+          window: RANGE_QUERY_PROPERTIES.window,
+          // Spliced into the PromQL and the LogQL: a plain token or a 400 (see LABEL_TOKEN).
+          spec: { type: "string" as const, pattern: "^[A-Za-z0-9_-]{1,64}$", description: "Chain spec label, e.g. ETH1 (optional)" },
+          routerId: {
+            type: "string" as const,
+            description: "Only this config router's transactions - an id from GET /api/config/routers (optional). `shared-chain` when its lines can't be told from another router's on its chain",
+          },
+        },
+      },
+    },
+  }, async (request) =>
+    app.transactionsOverTime.overTime(toMetricWindow(request.query.window), request.query.spec, request.query.routerId));
 
   // One transaction by its request ID - the same row the log shows.
   app.get<{ Params: { guid: string }; Querystring: RangeQuery }>("/api/transactions/:guid", {

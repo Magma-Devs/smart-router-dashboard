@@ -5,6 +5,26 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Added
+
+- **Transactions tab: transactions over time** (MAG-4461). A chart between the
+  cards and the list counts the page window's transactions, a bar per stretch
+  of the clock (10 minutes on an hour, longer on days), each bar split by
+  result in the list's colours: Accepted, Rejected, Router error, Unknown, and
+  Failed on chain where the send reply says the chain ran the transaction and
+  it failed. Router error is striped and Failed on chain lighter, as both share
+  the list's red. Hover a bar for its counts; the legend adds up the window.
+  The counts come from the store's per-minute series
+  `smartrouter_transactions:count1m`, which the fleet's Loki ruler records in
+  each tenant's org. They run about two minutes behind, so the newest minutes
+  are counted from the router's logs, and a bar says so when the logs don't
+  answer. A store without the series, such as a standalone install, has the
+  whole window counted from the logs. A result is mapped by one function the
+  list's rows use too, so the chart and the list can't disagree. A chain or a
+  router narrows it: on a chain several routers serve, the recorded counts
+  tell a router's own apart by its `service_name`, and the logs, which can't,
+  say so. `GET /api/transactions/over-time`.
+
 ## [0.42.0]
 
 ### Added

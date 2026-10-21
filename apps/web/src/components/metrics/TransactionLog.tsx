@@ -8,7 +8,8 @@
  * narrow the rows: the result, the method, the error type and an upstream it
  * went to. The tab follows the page's
  * window or exact times picked here - the cards too, since they count the
- * list - and "Load older" reads on past one read's cap. The chips and
+ * list - and "Load older" reads on past one read's cap. Between the cards and
+ * the list, the window's transactions over time (TransactionsChart). The chips and
  * details are shared with the Errors tab's request list (request-log.tsx).
  * Value and finality are not here yet: the logs cut long transactions short,
  * and finality needs the chain. */
@@ -55,6 +56,7 @@ import {
   type ExactRange,
   ResponseSource,
 } from "./request-log";
+import { TransactionsChart, TX_RESULT } from "./TransactionsChart";
 
 const PER_PAGE = 25;
 const ALL = "all";
@@ -74,12 +76,8 @@ function summarize(rows: TxLogRow[]) {
   return { total: rows.length, accepted, rejected, failed, successRate: decided > 0 ? accepted / decided : null };
 }
 
-const OUTCOME: Record<TxLogRow["outcome"], { label: string; color: string }> = {
-  accepted: { label: "Accepted", color: "var(--ok)" },
-  rejected: { label: "Rejected", color: "var(--err)" },
-  failed: { label: "Router error", color: "var(--err)" },
-  unknown: { label: "Unknown", color: "var(--text-4)" },
-};
+/** The list's results, as the chart above it draws them. */
+const OUTCOME: Record<TxLogRow["outcome"], { label: string; color: string }> = TX_RESULT;
 const OUTCOME_ORDER: TxLogRow["outcome"][] = ["accepted", "rejected", "failed", "unknown"];
 
 /** Every upstream's answer in full, when a row is opened. A rejection is the
@@ -257,6 +255,8 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
           </div>
         ))}
       </div>
+
+      <TransactionsChart win={win} specQ={specQ} routerIdQ={routerIdQ} exactRange={range !== null} />
 
       <div className="gw-card" style={{ padding: 0, overflow: "hidden" }}>
         <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--line)", display: "grid", gap: 10 }}>

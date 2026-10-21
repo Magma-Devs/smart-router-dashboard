@@ -23,10 +23,11 @@
 
 import { useMemo, useState, type ReactNode } from "react";
 import { chartSampling, WINDOWS, type ChartGrid, type MetricWindow, type TimePoint, type UpstreamDetail, type UpstreamMetrics, type UpstreamPeers } from "@sr/shared";
-import { ColumnChart, LineChart, niceScale, type ChartHover, type Layer, type Series, type XTick } from "@/components/gateway/charts";
+import { ColumnChart, LineChart, niceScale, type ChartHover, type Layer, type Series } from "@/components/gateway/charts";
 import { useApi } from "@/hooks/use-api";
 import { useFilters } from "@/components/gateway/FiltersProvider";
 import { fmtComma } from "@/lib/format";
+import { barSpanWords, dayOf, gridTimes, hhmm, timeTicks } from "@/lib/chart-time";
 import type { ErrorsJump } from "../ErrorsBreakdown";
 import { PMPanel } from "./PMPanel";
 
@@ -39,14 +40,6 @@ const PAD_R = 16;
 
 /** The peers' colours; the selected upstream is always the brand colour. */
 const PEER_COLORS = ["#38bdf8", "#a78bfa", "#22c55e", "#eab308", "#ec4899", "#14b8a6", "#f97316", "#94a3b8"];
-
-/** Every point of a grid, unix seconds: the chart's time axis. */
-function gridTimes(grid: ChartGrid | undefined): number[] {
-  if (!grid || grid.stepSec <= 0) return [];
-  const out: number[] = [];
-  for (let t = grid.start; t <= grid.end; t += grid.stepSec) out.push(t);
-  return out;
-}
 
 /** Series laid on a grid by time - NaN where one has no point there, which
  *  the chart draws as a gap. A point lands on its nearest slot. */
@@ -65,30 +58,6 @@ function onGrid(times: number[], grid: ChartGrid | undefined, series: TimePoint[
 
 const whenOf = (t: number | undefined) =>
   t ? new Date(t * 1000).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }) : "";
-const dayOf = (ms: number) => new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-const hhmm = (ms: number) => new Date(ms).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
-
-/** Tick spacings for a time axis: the clock's own, a minute to a week. */
-const TICK_STEPS = [60, 120, 300, 600, 900, 1800, 3600, 7200, 10800, 21600, 43200, 86400, 172800, 259200, 604800];
-
-/** Labels at round local times across [from, to] (unix seconds), seven at
- *  most: 00:00 · 06:00 · 12:00 · 18:00 across a day, a date a day across a
- *  week. The evenly spaced labels this replaced landed on 00:37 and 06:45. */
-function timeTicks(dom: [number, number] | undefined): XTick[] | undefined {
-  if (!dom) return undefined;
-  const [from, to] = dom;
-  const span = to - from;
-  const step = TICK_STEPS.find((sec) => span / sec <= 7) ?? 604800;
-  const tz = -new Date(to * 1000).getTimezoneOffset() * 60;
-  const out: XTick[] = [];
-  for (let t = Math.ceil((from + tz) / step) * step - tz; t <= to; t += step) {
-    const d = new Date(t * 1000);
-    const midnight = d.getHours() === 0 && d.getMinutes() === 0;
-    out.push({ at: t, label: step >= 86400 || (span > 86400 && midnight) ? dayOf(t * 1000) : hhmm(t * 1000) });
-  }
-  return out;
-}
-
 
 /** The value at quantile q of some numbers (0 when there are none). */
 const quantile = (xs: number[], q: number) => {
@@ -101,9 +70,6 @@ const fmtMs = (v: number) => `${fmtComma(Math.round(v))} ms`;
 const spanWords = (sec: number) =>
   sec % 3600 === 0 ? (sec === 3600 ? "the hour" : `the ${sec / 3600} hours`) : sec % 60 === 0 ? `the ${sec / 60} minutes` : `the ${sec} seconds`;
 const fmtRps = (v: number) => (v === 0 ? "0" : v < 0.1 ? v.toFixed(3) : v < 10 ? v.toFixed(2) : fmtComma(Math.round(v)));
-/** "10 minutes", "an hour", "6 hours", "a day" - one bar's span. */
-const barSpanWords = (sec: number) =>
-  sec >= 86400 ? (sec === 86400 ? "a day" : `${sec / 86400} days`) : sec >= 3600 ? (sec === 3600 ? "an hour" : `${sec / 3600} hours`) : `${sec / 60} minutes`;
 
 interface LegendRow {
   key: string;
