@@ -17,9 +17,18 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   and volume, and the Overview's charts read "No samples". At 30 seconds
   (the hour) some series dropped out the same way. A rate is now never taken
   over less than a minute (`rateRange` in `promql/builders.ts`); a chart still
-  draws a point every step, each covering the minute before it. A count per
-  step (errors, volume) is read over the minute and scaled back to one step,
-  so the points still add up to the window's total. Both UIs.
+  draws a point every step, each covering the minute before it. Both UIs.
+- **Error and volume points add up to the counter.** A count per point (the
+  Overview's and the Errors tab's errors, a hotspot's trend, an upstream's
+  volume and error bars) reads m steps and one scrape (`countRangeSec`): 60 s
+  at a 15-second step, 75 s at 30 s, the step and 15 s from a minute up. Each
+  counter step then lands in exactly m points at 1/m each, whatever the phase
+  of the scrape clock, so the points sum to the counter's delta; they are
+  rounded only where m is 1. A quiet chain's or upstream's errors read 0× to
+  1.34× of the truth per series before: at a 15-second step rounding hid
+  them, at 30 seconds they doubled, and on the 3- and 6-hour windows
+  `increase()` over the step dropped or overcounted them. The errors-over-time
+  bar still filling reads only its own seconds, not the minute before it.
 
 ## [0.43.0]
 

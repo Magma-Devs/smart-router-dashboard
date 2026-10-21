@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  MIN_RATE_RANGE_SEC,
+  countPointsPerStep,
+  countRangeSec,
   qClientRpsSeriesExpr,
   rateRange,
   selector,
@@ -81,7 +82,9 @@ import {
   stepSeconds,
   bucketGrid,
   chartSampling,
+  durationSeconds,
   errorBuckets,
+  MIN_RATE_RANGE_SEC,
 } from "../constants/windows.js";
 import { applyScope } from "../promql/scope.js";
 
@@ -662,18 +665,18 @@ describe("an upstream against its peers", () => {
     const q = qUpstreamFailedSeriesExpr({ spec: "ETH1", endpointId: "eth-tenderly" }, "10m");
     expect(q).toContain('spec="ETH1"');
     expect(q).toContain('provider_address="eth-tenderly"');
-    expect(q).toMatch(/^round\(clamp_min\(sum\(increase\(smartrouter_requests_total\{.*\}\[10m\]\)\) - \(sum\(increase\(smartrouter_requests_success_total\{.*\}\[10m\]\)\) or .* \* 0\), 0\)\)$/);
+    expect(q).toMatch(/^round\(clamp_min\(sum\(\(rate\(smartrouter_requests_total\{.*\}\[615s\]\) \* 600\)\) - \(sum\(\(rate\(smartrouter_requests_success_total\{.*\}\[615s\]\) \* 600\)\) or .* \* 0\), 0\)\)$/);
   });
 
   it("an upstream that never succeeded still has failed tries: no success series is no successes", () => {
     const q = qUpstreamFailedSeriesExpr({ spec: "ETH1", endpointId: "eth-dead" }, "10m");
-    const tot = 'sum(increase(smartrouter_requests_total{spec="ETH1",provider_address="eth-dead"}[10m]))';
+    const tot = 'sum((rate(smartrouter_requests_total{spec="ETH1",provider_address="eth-dead"}[615s]) * 600))';
     expect(q).toContain(`or ${tot} * 0)`);
   });
 
   it("one upstream's node-error replies per bucket read the optional family, on its own chain only", () => {
     expect(qUpstreamNodeErrorSeriesExpr({ spec: "SOLANA", endpointId: "sol-publicnode" }, "1m")).toBe(
-      'round(sum(increase(smartrouter_node_errors_total{spec="SOLANA",provider_address="sol-publicnode"}[1m])))',
+      'round(sum((rate(smartrouter_node_errors_total{spec="SOLANA",provider_address="sol-publicnode"}[75s]) * 60)))',
     );
   });
 });
@@ -787,10 +790,11 @@ describe("grouped chain-level reads (MAG-4295)", () => {
   });
 });
 
-// A rate needs two samples in its range. The store scrapes every 15 seconds, so
-// a range of one 15-second step held one at most and every chart drawn at that
-// step (5 minutes to an hour) came back empty.
+// A rate needs two samples in its range, and the store scrapes every 15 seconds:
+// a range of one 15-second step holds one.
 describe("short drawing steps", () => {
+  const ref = { endpointId: "eth-lava", spec: "ETH1" };
+
   it("rateRange: the step itself, never less than a minute", () => {
     expect(MIN_RATE_RANGE_SEC).toBe(60);
     expect(rateRange("15s")).toBe("1m");
@@ -800,8 +804,7 @@ describe("short drawing steps", () => {
     expect(rateRange("1h")).toBe("1h");
   });
 
-  it("no series builder rates over less than a minute at a short step", () => {
-    const ref = { endpointId: "eth-lava", spec: "ETH1" };
+  it("no series builder reads less than a minute at a short step", () => {
     for (const step of ["15s", "30s"]) {
       const exprs = [
         qClientRpsSeriesExpr(step, "ETH1"),
@@ -826,12 +829,45 @@ describe("short drawing steps", () => {
     }
   });
 
-  it("a count per step is read over the minute and scaled back to one step, so the points still add up", () => {
-    expect(qErrorCountSeriesExpr("15s")).toContain("(increase(smartrouter_requests_total[1m]) * 0.25)");
-    expect(qErrorCountSeriesExpr("30s")).toContain("(increase(smartrouter_requests_total[1m]) * 0.5)");
-    // A step of a minute or more reads exactly as before.
+  it("a count reads m steps and one scrape, so a counter step lands in exactly m points at every phase", () => {
+    const windows = Object.keys(WINDOWS) as (keyof typeof WINDOWS)[];
+    const steps = new Set(windows.flatMap((w) => [WINDOWS[w].step, chartSampling(w).step, errorBuckets(w).step]));
+    for (const step of steps) {
+      const range = countRangeSec(step);
+      expect((range - 15) / durationSeconds(step), step).toBe(countPointsPerStep(step));
+      expect(range, step).toBeGreaterThanOrEqual(MIN_RATE_RANGE_SEC);
+    }
+    expect(["15s", "30s", "1m", "2m", "10m"].map((st) => countRangeSec(st))).toEqual([60, 75, 75, 135, 615]);
+    expect(["15s", "30s", "1m"].map((st) => countPointsPerStep(st))).toEqual([3, 2, 1]);
+  });
+
+  it("a point is the rate over its range times the step, so the points add up to the counter's delta", () => {
+    expect(qErrorCountSeriesExpr("15s")).toContain("(rate(smartrouter_requests_total[60s]) * 15)");
+    expect(qErrorCountSeriesExpr("30s")).toContain("(rate(smartrouter_requests_total[75s]) * 30)");
     expect(qErrorCountSeriesExpr("10m")).toBe(
-      "round(clamp_min(sum(increase(smartrouter_requests_total[10m])) - sum(increase(smartrouter_requests_success_total[10m])), 0))",
+      "round(clamp_min(sum((rate(smartrouter_requests_total[615s]) * 600)) - sum((rate(smartrouter_requests_success_total[615s]) * 600)), 0))",
     );
+  });
+
+  it("rounds only where a point holds whole counts: below a minute each counter step is shared by several points", () => {
+    for (const step of ["15s", "30s"]) {
+      expect(qErrorCountSeriesExpr(step), step).not.toMatch(/^round\(/);
+      expect(qUpstreamFailedSeriesExpr(ref, step), step).not.toMatch(/^round\(/);
+      expect(qUpstreamNodeErrorSeriesExpr(ref, step), step).not.toMatch(/^round\(/);
+    }
+    for (const step of ["1m", "10m"]) {
+      expect(qErrorCountSeriesExpr(step), step).toMatch(/^round\(/);
+      expect(qUpstreamFailedSeriesExpr(ref, step), step).toMatch(/^round\(/);
+      expect(qUpstreamNodeErrorSeriesExpr(ref, step), step).toMatch(/^round\(/);
+    }
+  });
+
+  it("a single read (the error bar still filling) covers its own seconds and one scrape, never the bar before it", () => {
+    expect(countPointsPerStep("37s", true)).toBe(1);
+    expect(countRangeSec("37s", true)).toBe(52);
+    const failed = qUpstreamFailedSeriesExpr(ref, "37s", undefined, true);
+    expect(failed).toMatch(/^round\(/);
+    expect(failed).toContain('{spec="ETH1",provider_address="eth-lava"}[52s]) * 37)');
+    expect(qUpstreamNodeErrorSeriesExpr(ref, "37s", true)).toContain("[52s]) * 37)");
   });
 });

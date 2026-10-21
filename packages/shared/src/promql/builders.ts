@@ -9,9 +9,9 @@ import {
   OPTIONAL_METRICS,
   ROUTER_METRICS,
 } from "../constants/metrics.js";
-import { DEFAULT_WINDOW, WINDOWS, type MetricWindow } from "../constants/windows.js";
+import { DEFAULT_WINDOW, MIN_RATE_RANGE_SEC, WINDOWS, durationSeconds, type MetricWindow } from "../constants/windows.js";
 import type { UpstreamRef } from "../types/domain.js";
-import { RECORDED, RECORDED_INTERVAL_SECONDS, recordedReadsFor, recordedSeriesFor } from "./recorded.js";
+import { RECORDED, RECORDED_INTERVAL_SECONDS, SCRAPE_INTERVAL_SECONDS, recordedReadsFor, recordedSeriesFor } from "./recorded.js";
 
 /** Build a `{spec="ETH1",...}` label selector; empty string for no filters. */
 export function selector(labels: Record<string, string | undefined>): string {
@@ -30,46 +30,44 @@ function off(offset?: string): string {
   return offset ? ` offset ${offset}` : "";
 }
 
-/* ── Short drawing steps ─────────────────────────────────────────────────── */
+/* ── Ranges for series drawn every `step` ────────────────────────────────── */
 
-/**
- * The shortest range a rate is taken over: four 15-second scrapes. A rate
- * needs two samples in its range, and a range of one 15-second step holds one
- * at most - so on the windows drawn every 15 or 30 seconds (5 minutes to an
- * hour) the store answered nothing, or at 30 seconds only for the series
- * whose scrapes happened to land twice in the range, and their charts were
- * empty.
- */
-export const MIN_RATE_RANGE_SEC = 60;
-
-/** A step such as "15s", "5m" or "1h", in seconds; NaN when it is none of those. */
-function durationSec(d: string): number {
-  const m = /^(\d+)([smh])$/.exec(d);
-  if (!m) return NaN;
-  const n = Number(m[1]);
-  return m[2] === "s" ? n : m[2] === "m" ? n * 60 : n * 3600;
-}
-
-/**
- * The range a series' rate is taken over when it is drawn every `step`: the
- * step itself, or a minute when the step is shorter. Each point then covers
- * the minute before it - still one point per step.
- */
+/** The range a rate line drawn every `step` reads: the step, or a minute when the step is shorter. */
 export function rateRange(step: string): string {
-  return durationSec(step) < MIN_RATE_RANGE_SEC ? "1m" : step;
+  return durationSeconds(step) < MIN_RATE_RANGE_SEC ? "1m" : step;
 }
 
 /**
- * `increase()` over one drawing step, for the series that count per step
- * (errors, volume): read over `rateRange` and scaled back to the step, so a
- * point still holds one step's worth and the points still add up to the
- * window.
+ * How many points of a `step` grid a counter step lands in: the fewest that
+ * make the count range (`countRangeSec`) a minute at least. One for a
+ * `single` read, which no other point overlaps.
  */
-function increaseOverStep(series: string, step: string): string {
-  const range = rateRange(step);
-  return range === step
-    ? `increase(${series}[${step}])`
-    : `(increase(${series}[${range}]) * ${durationSec(step) / MIN_RATE_RANGE_SEC})`;
+export function countPointsPerStep(step: string, single = false): number {
+  const sec = durationSeconds(step);
+  if (single || !(sec > 0)) return 1;
+  return Math.max(1, Math.ceil((MIN_RATE_RANGE_SEC - SCRAPE_INTERVAL_SECONDS) / sec));
+}
+
+/**
+ * The range a count drawn every `step` reads: m steps and one scrape. A
+ * counter step sits inside it for exactly m steps, so it lands in m points at
+ * 1/m each, at every phase of the scrape clock, and the points add up to the
+ * counter's delta.
+ */
+export function countRangeSec(step: string, single = false): number {
+  return countPointsPerStep(step, single) * durationSeconds(step) + SCRAPE_INTERVAL_SECONDS;
+}
+
+/** The count per point of a series drawn every `step` (errors, volume); see `countRangeSec`. */
+export function countOverStep(series: string, step: string, single = false): string {
+  const sec = durationSeconds(step);
+  if (!(sec > 0)) return `increase(${series}[${step}])`;
+  return `(rate(${series}[${countRangeSec(step, single)}s]) * ${sec})`;
+}
+
+/** `round()` where a counter step lands in one point; a point holding shares of steps stays as it is. */
+function roundWhole(expr: string, step: string, single = false): string {
+  return countPointsPerStep(step, single) === 1 ? `round(${expr})` : expr;
 }
 
 /* ── Recorded-series forms (see recorded.ts) ─────────────────────────────── */
@@ -503,13 +501,13 @@ export function qErrorRateSeriesExpr(step: string, spec?: string, window?: Metri
   return `1 - (${qAvailabilitySeriesExpr(step, spec, window)})`;
 }
 
-/** Error-count series (whole errors per step bucket). */
+/** Error-count series: errors per step, whole from a one-minute step up. */
 export function qErrorCountSeriesExpr(step: string, spec?: string, window?: MetricWindow): string {
   const sel = selector({ spec });
   if (recordedSeriesFor(window)) {
     return `round(clamp_min((sum(${sot(`${RECORDED.requests}${sel}`, step)}) - sum(${sot(`${RECORDED.success}${sel}`, step)})) * ${K}, 0))`;
   }
-  return `round(clamp_min(sum(${increaseOverStep(`${ROUTER_METRICS.requestsTotal}${sel}`, step)}) - sum(${increaseOverStep(`${ROUTER_METRICS.requestsSuccessTotal}${sel}`, step)}), 0))`;
+  return roundWhole(`clamp_min(sum(${countOverStep(`${ROUTER_METRICS.requestsTotal}${sel}`, step)}) - sum(${countOverStep(`${ROUTER_METRICS.requestsSuccessTotal}${sel}`, step)}), 0)`, step);
 }
 
 /** RPS series. */
@@ -756,36 +754,35 @@ export function qUpstreamVolumeSeriesExpr(ref: UpstreamRef, step: string, window
   if (recordedSeriesFor(window)) {
     return `sum(${sot(`${RECORDED.requestsByProvider}${upstreamProviderSelector(ref)}`, step)}) * ${K}`;
   }
-  return `sum(${increaseOverStep(`${ROUTER_METRICS.requestsTotal}${upstreamProviderSelector(ref)}`, step)})`;
+  return `sum(${countOverStep(`${ROUTER_METRICS.requestsTotal}${upstreamProviderSelector(ref)}`, step)})`;
 }
 
 /** One upstream's READ-volume series (requests_read_total is real). */
 export function qUpstreamReadVolumeSeriesExpr(ref: UpstreamRef, step: string): string {
-  return `sum(${increaseOverStep(`${ROUTER_METRICS.requestsReadTotal}${upstreamProviderSelector(ref)}`, step)})`;
+  return `sum(${countOverStep(`${ROUTER_METRICS.requestsReadTotal}${upstreamProviderSelector(ref)}`, step)})`;
 }
 
 /**
  * One upstream's failed tries per bucket - its requests minus its successes
- * (an upstream's JSON-RPC error reply counts as a success here). Rounded:
- * un-rounded `increase()` extrapolation can put a bucket above the window's
- * own total, and whole errors keep the two reconcilable.
+ * (an upstream's JSON-RPC error reply counts as a success here). `single`:
+ * one read over the `step` just past (the error bar still filling).
  */
-export function qUpstreamFailedSeriesExpr(ref: UpstreamRef, step: string, window?: MetricWindow): string {
+export function qUpstreamFailedSeriesExpr(ref: UpstreamRef, step: string, window?: MetricWindow, single = false): string {
   const sel = upstreamProviderSelector(ref);
   if (recordedSeriesFor(window)) {
     const tot = `sum(${sot(`${RECORDED.requestsByProvider}${sel}`, step)})`;
     const ok = `sum(${sot(`${RECORDED.successByProvider}${sel}`, step)})`;
     return `round(clamp_min((${tot} - (${ok} or ${tot} * 0)) * ${K}, 0))`;
   }
-  const tot = `sum(${increaseOverStep(`${ROUTER_METRICS.requestsTotal}${sel}`, step)})`;
-  const ok = `sum(${increaseOverStep(`${ROUTER_METRICS.requestsSuccessTotal}${sel}`, step)})`;
+  const tot = `sum(${countOverStep(`${ROUTER_METRICS.requestsTotal}${sel}`, step, single)})`;
+  const ok = `sum(${countOverStep(`${ROUTER_METRICS.requestsSuccessTotal}${sel}`, step, single)})`;
   // The success counter exists only after a first success: without it every try failed.
-  return `round(clamp_min(${tot} - (${ok} or ${tot} * 0), 0))`;
+  return roundWhole(`clamp_min(${tot} - (${ok} or ${tot} * 0), 0)`, step, single);
 }
 
-/** One upstream's JSON-RPC error replies per bucket - absent until the family fires. */
-export function qUpstreamNodeErrorSeriesExpr(ref: UpstreamRef, step: string): string {
-  return `round(sum(${increaseOverStep(`${OPTIONAL_METRICS.nodeErrorsTotal}${upstreamProviderSelector(ref)}`, step)}))`;
+/** One upstream's JSON-RPC error replies per bucket - absent until the family fires. `single` as above. */
+export function qUpstreamNodeErrorSeriesExpr(ref: UpstreamRef, step: string, single = false): string {
+  return roundWhole(`sum(${countOverStep(`${OPTIONAL_METRICS.nodeErrorsTotal}${upstreamProviderSelector(ref)}`, step, single)})`, step, single);
 }
 
 /** One upstream's relays over the window (router scope), unrounded. */

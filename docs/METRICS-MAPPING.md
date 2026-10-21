@@ -69,7 +69,7 @@ scope's last measurement; changing scope does not reuse another scope's data.
 | API interface | `apiInterface` (`jsonrpc`, `rest`, `tendermintrpc`, `grpc`) |
 | Method | `method` on `requests_*`; latency histogram uses `function` instead |
 | Selection score axis | `score_type ∈ {availability, latency, sync, stake, composite}` |
-| Time window | PromQL range from the 13-window catalog (`constants/windows.ts`) — scalars use `increase(m[$range])`, series use `rate(m[$step])` via `query_range`; prior-window KPIs add `offset $range` |
+| Time window | PromQL range from the 13-window catalog (`constants/windows.ts`) — scalars use `increase(m[$range])`; via `query_range`, rate lines use `rate(m[rateRange($step)])` and counts per point `rate(m[countRangeSec($step)]) * $step`; prior-window KPIs add `offset $range` |
 
 ## Confirmed real series (this build)
 
