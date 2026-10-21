@@ -24,11 +24,15 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   at a 15-second step, 75 s at 30 s, the step and 15 s from a minute up. Each
   counter step then lands in exactly m points at 1/m each, whatever the phase
   of the scrape clock, so the points sum to the counter's delta; they are
-  rounded only where m is 1. A quiet chain's or upstream's errors read 0× to
-  1.34× of the truth per series before: at a 15-second step rounding hid
-  them, at 30 seconds they doubled, and on the 3- and 6-hour windows
-  `increase()` over the step dropped or overcounted them. The errors-over-time
-  bar still filling reads only its own seconds, not the minute before it.
+  rounded only where m is 1. Before, a quiet chain's or upstream's errors
+  read wrong per series: at a 15-second step rounding hid them, at 30 seconds
+  they doubled, and on the 3- and 6-hour windows `increase()` over the step
+  dropped or overcounted them. The errors-over-time bar still filling reads
+  only its own seconds, not the minute before it.
+- **Upstreams tab, without `DASHBOARD_NEW_UI`: the Request volume tooltip**
+  says what the chart draws, the requests served per point (per 15 seconds
+  on half an hour, per 10 minutes on a day), not per second. The `rps`
+  beside the title is per second.
 
 ## [0.43.0]
 

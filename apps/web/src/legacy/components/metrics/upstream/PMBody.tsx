@@ -12,7 +12,7 @@
  *  - selection score: REAL (rpc_endpoint_selection_score), 0..1 → 0–100. */
 
 import { useState } from "react";
-import type { MetricWindow, UpstreamDetail, UpstreamMetrics, TimePoint } from "@sr/shared";
+import { stepSeconds, type MetricWindow, type UpstreamDetail, type UpstreamMetrics, type TimePoint } from "@sr/shared";
 import { LineChart, StackedAreaChart, type Layer, type Series } from "@/legacy/components/gateway/charts";
 import { upstreamMetricColor } from "@/lib/upstream-presentation";
 import { fmtComma } from "@/lib/format";
@@ -21,6 +21,10 @@ import { PMPanel } from "@/components/metrics/upstream/PMPanel";
 import { PMRecentErrors } from "@/legacy/components/metrics/upstream/PMErrors";
 
 const pct = (pts: TimePoint[] | null | undefined): number[] => nums(pts).map((v) => v * 100);
+
+/** "15 seconds", "minute", "10 minutes", "hour", "4 hours" - one point's span, after "per". */
+const stepWords = (sec: number) =>
+  sec % 3600 === 0 ? (sec === 3600 ? "hour" : `${sec / 3600} hours`) : sec % 60 === 0 ? (sec === 60 ? "minute" : `${sec / 60} minutes`) : `${sec} seconds`;
 
 export function PMBody({ pm, detail, name, timeWindow }: {
   pm: UpstreamMetrics;
@@ -37,6 +41,7 @@ export function PMBody({ pm, detail, name, timeWindow }: {
     ...(detail?.volume.write ? [{ name: "Write", values: nums(detail.volume.write), color: "#f97316" }] : []),
     ...(detail?.volume.batch ? [{ name: "Batch", values: nums(detail.volume.batch), color: "#a78bfa" }] : []),
   ];
+  const perPoint = stepWords(stepSeconds(timeWindow));
   const rpsNow = detail?.rpsNow ?? null;
   const fmtAll = (n: number) => (n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? (n / 1e3).toFixed(1) + "K" : String(Math.round(n)));
 
@@ -87,7 +92,7 @@ export function PMBody({ pm, detail, name, timeWindow }: {
     <>
       {/* ════ ROW 2 — TRAFFIC & SPEED ════ */}
       <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 12, marginBottom: 12 }}>
-        <PMPanel title="Request volume" tip={"Requests per second this upstream served, **split by Read / Write / Batch** (the three mutually-exclusive request types). Read includes archive lookups.\n\nCache hits are excluded — they never reach an upstream."}
+        <PMPanel title="Request volume" tip={`Requests this upstream served per ${perPoint}, **split by Read / Write / Batch** (the three mutually-exclusive request types). Read includes archive lookups. The rps beside the title is per second.\n\nCache hits are excluded — they never reach an upstream.`}
           right={<div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center" }}>
             <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11 }}>
               <span style={{ color: "var(--text-3)" }}>All</span>
