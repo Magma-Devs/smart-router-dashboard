@@ -587,10 +587,32 @@ export interface RelayAttempt {
   atMs: number;
   /** ms from the request's arrival to its answer or its failure; null when the logs show neither. */
   endMs: number | null;
+  /** The node's own numeric JSON-RPC error code for this try (`node_code` on `relay_end`), when the router wrote one. */
+  nodeCode?: number;
+}
+
+/**
+ * What a router's `relay_end` says about the call itself, beyond its tries.
+ * Each is absent when the router doesn't write it or the caller didn't send it.
+ */
+export interface CallFacts {
+  /** The caller's project id. */
+  customer?: string;
+  /** The caller's own ids: X-Request-Id, X-Task-Id, X-Tx-Id. */
+  requestId?: string;
+  taskId?: string;
+  txId?: string;
+  /** Sizes of the request and of the reply the client got, in bytes. */
+  requestBytes?: number;
+  replyBytes?: number;
+  /** The block the request names, when it names a specific one. */
+  requestedBlock?: number;
+  /** The router's latest block when it parsed the request. */
+  seenBlock?: number;
 }
 
 /** One request that hit an error - a try failed, or the router gave up - rebuilt from the router's log lines. */
-export interface ErrorRequestRow {
+export interface ErrorRequestRow extends CallFacts {
   /** The router's request id (`Lava-Guid`). */
   guid: string;
   /** When the router received it, unix ms. */
@@ -641,11 +663,18 @@ export interface ErrorRequestRow {
 /** Why the router's logs couldn't be read: no log store configured, or it didn't answer in time. */
 export type LogUnavailable = "unconfigured" | "unreachable";
 
-/** One request looked up by its ID - any request, whatever happened to it. `row` null: not in the logs of the range read. */
+/**
+ * One request looked up by its ID, its transaction hash or the caller's
+ * request id - any request, whatever happened to it. `row` null: not in the
+ * logs of the range read. `matches`: how many requests the value names (a
+ * resent transaction, a reused caller id) when more than one; `row` is the
+ * newest.
+ */
 export interface RequestLookup {
   available: boolean;
   reason?: LogUnavailable;
   row: ErrorRequestRow | null;
+  matches?: number;
 }
 
 /**
@@ -687,16 +716,17 @@ export interface ErrorRequestsReport {
 
 /**
  * How a transaction ended, as the client saw it:
- *  - `accepted` - the upstream that answered took it (in its pending pool; not yet in a block)
- *  - `rejected` - that upstream answered with an error, e.g. nonce too low
- *  - `failed`   - no usable answer: the router returned an error of its own
- *  - `unknown`  - the logs can't say: no end in them, a write the router
- *                 itself can't tell went through, or a chain that puts a
- *                 refusal inside a normal reply the router doesn't log (`note`)
+ *  - `accepted`        - the upstream that answered took it (in its pending pool; not yet in a block)
+ *  - `rejected`        - that upstream answered with an error, e.g. nonce too low
+ *  - `failed`          - no usable answer: the router returned an error of its own
+ *  - `failed-on-chain` - the send reply says the chain ran it and it failed (`tx_status: failure`, `txError`)
+ *  - `unknown`         - the logs can't say: no end in them, a write the router
+ *                        itself can't tell went through, or a chain that puts a
+ *                        refusal inside a normal reply the router doesn't log (`note`)
  */
-export type TxOutcome = "accepted" | "rejected" | "failed" | "unknown";
+export type TxOutcome = "accepted" | "rejected" | "failed" | "failed-on-chain" | "unknown";
 
-export interface TxLogRow {
+export interface TxLogRow extends CallFacts {
   /** The router's request id (`Lava-Guid`); every log line of the request carries it. */
   guid: string;
   /** When the router received it, unix ms. */
@@ -718,17 +748,27 @@ export interface TxLogRow {
   error: { code: string; message: string } | null;
   /** Why the outcome is `unknown`, in plain words; null otherwise. */
   note: string | null;
+  /** The transaction's hash as its chain names it: an EVM 0x hash, a Sui digest, a Solana signature, a Cosmos hex hash. */
+  txHash?: string;
+  /** The on-chain result, where the send reply reports it (Sui). */
+  txStatus?: "success" | "failure";
+  /** The chain's execution error, when `txStatus` is `failure`. */
+  txError?: string;
 }
 
 /**
- * One transaction looked up by its request ID. `found` says the logs hold the
- * request at all - with `row` null, it was found but isn't a transaction.
+ * One transaction looked up by its request ID, its hash or the caller's
+ * request id. `found` says the logs hold the request at all - with `row`
+ * null, it was found but isn't a transaction. `matches`: how many requests
+ * the value names when more than one (a resent transaction keeps its hash);
+ * `row` is the newest.
  */
 export interface TransactionLookup {
   available: boolean;
   reason?: LogUnavailable;
   found: boolean;
   row: TxLogRow | null;
+  matches?: number;
 }
 
 export interface TransactionsReport {
@@ -742,7 +782,8 @@ export interface TransactionsReport {
   accepted: number;
   rejected: number;
   failed: number;
-  /** accepted ÷ (accepted + rejected + failed); `unknown` is left out. Null with none. */
+  failedOnChain: number;
+  /** accepted ÷ (accepted + rejected + failed + failedOnChain); `unknown` is left out. Null with none. */
   successRate: number | null;
   /** Newest first. */
   rows: TxLogRow[];
@@ -760,12 +801,8 @@ export interface TransactionsReport {
   range?: { startMs: number; endMs: number };
 }
 
-/**
- * A transaction's result on the Transactions tab's chart: the list's four, and
- * `failed-on-chain` - the send reply says the chain ran it and it failed
- * (`tx_status: "failure"`).
- */
-export type TxResult = TxOutcome | "failed-on-chain";
+/** A transaction's result on the Transactions tab's chart: the list's own. */
+export type TxResult = TxOutcome;
 
 /**
  * Transactions over the page window, a bar per stretch of the clock, each bar

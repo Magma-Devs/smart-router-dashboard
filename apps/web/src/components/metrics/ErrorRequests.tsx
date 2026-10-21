@@ -4,7 +4,7 @@
  * first, from the router's logs (/api/error-requests): each try's upstream
  * and what it answered, what the app got, and why the router stopped.
  * Filters: the result, whether the error was retryable, the error type, the
- * method and the upstream (chain and router come from the page). An exact
+ * customer, the method and the upstream (chain and router come from the page). An exact
  * time range zooms into an incident - a bar on the Upstreams tab opens the
  * list on its own - and "Load older" reads on past one read's cap. The chips
  * and details are shared with the Transactions tab (request-log.tsx). */
@@ -25,7 +25,13 @@ import {
   AppGot,
   appGot,
   AttemptList,
+  CallFactsLine,
+  CustomerCell,
+  customerOptions,
   DetailLine,
+  hasCustomer,
+  LOOKUP_REFUSED,
+  MatchesNote,
   detailText,
   errorLabel,
   errorTypeOptions,
@@ -166,6 +172,7 @@ function Details({ row }: { row: ErrorRequestRow }) {
       {row.result === "unknown" && (
         <DetailLine><div style={{ fontSize: 12, color: "var(--text-3)" }}>No end logged: the request may still be in flight, the client may have disconnected, or log lines are missing. Before smart-router v1.6.1, a router logs its tries and its end only at info level.</div></DetailLine>
       )}
+      <CallFactsLine row={row} />
       <RequestIdLine id={row.guid} startMs={row.time} tookMs={row.totalMs} />
     </div>
   );
@@ -182,13 +189,14 @@ function LookupPanel({ id, rangeQ, rangeWords, onClose }: { id: string; rangeQ: 
       {isLoading ? (
         <SkelLine w="50%" />
       ) : error && !data ? (
-        <div style={{ color: "var(--text-4)" }}>Couldn&apos;t look this up: it isn&apos;t an ID the router writes (letters, digits, - and _), or the API didn&apos;t answer.</div>
+        <div style={{ color: "var(--text-4)" }}>{LOOKUP_REFUSED}</div>
       ) : data && !data.available ? (
         <div style={{ color: "var(--text-4)" }}>{unreadableWords(data.reason)}</div>
       ) : !row ? (
         <NotFound rangeWords={rangeWords} wide={wide} onWiden={() => setWide(true)} />
       ) : (
         <div style={{ display: "grid", gap: 8 }}>
+          <MatchesNote matches={data?.matches} />
           <div style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--text-2)", flexWrap: "wrap" }}>
             <span className="gw-mono gw-tnum">{fmtWhen(row.time)}</span>
             {row.spec ? <><ChainBadge spec={row.spec} size={14} /><span>{chainWords(row)}</span></> : row.specs && <span>{chainWords(row)}</span>}
@@ -237,6 +245,7 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
   const [result, setResult] = useState<ErrorRequestRow["result"] | typeof ALL>(ALL);
   const [retry, setRetry] = useState<RetryFilter>(ALL);
   const [errType, setErrType] = useState(ALL);
+  const [customer, setCustomer] = useState(ALL);
   const [method, setMethod] = useState(ALL);
   const [range, setRange] = useState<ExactRange | null>(initialRange);
   // A picked range that has closed can't change: read it once, don't poll it.
@@ -276,10 +285,12 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
     return [...n].sort(([a], [b]) => (a < b ? -1 : 1)).map(([name, count]) => ({ name, count }));
   }, [allRows]);
   const errTypes = useMemo(() => errorTypeOptions(allRows), [allRows]);
+  const customers = useMemo(() => customerOptions(allRows), [allRows]);
 
   // Each row of pills counts within every other filter, so a pill's number is
   // what picking it would list.
   const byDropdowns = allRows.filter((r) =>
+    (customer === ALL || hasCustomer(r, customer)) &&
     (method === ALL || r.method === method) &&
     (upstream === ALL || failedAt(r, upstream)) &&
     (errType === ALL || hasErrorType(r, errType)));
@@ -306,7 +317,7 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
      the ones it sends by itself when it starts and to check its upstreams -
      and this list leaves those out: no client sent them. An empty list here has
      to say so, or it reads as the bar being wrong. */
-  const onBar = onBarRange && upstream !== ALL && result === ALL && retry === ALL && errType === ALL && method === ALL;
+  const onBar = onBarRange && upstream !== ALL && result === ALL && retry === ALL && errType === ALL && customer === ALL && method === ALL;
   useEffect(() => {
     if (jumpKey) listRef.current?.scrollIntoView({ block: "start", behavior: "smooth" });
   }, [jumpKey]);
@@ -368,6 +379,10 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
             <option value={ALL}>All error types</option>
             {errTypes.map((t) => <option key={t.key} value={t.key}>{t.label} ({fmtComma(t.count)})</option>)}
           </select>
+          <select aria-label="Customer" value={customer} onChange={(e) => reset(setCustomer)(e.target.value)} style={narrowSelect} disabled={!customers.length && customer === ALL}>
+            <option value={ALL}>All customers</option>
+            {customers.map((c) => <option key={c.key} value={c.key}>{c.label} ({fmtComma(c.count)})</option>)}
+          </select>
           <select aria-label="Method" value={method} onChange={(e) => reset(setMethod)(e.target.value)} style={narrowSelect} disabled={!methods.length}>
             <option value={ALL}>All methods</option>
             {methods.map((m) => <option key={m} value={m}>{m === "unknown" ? "method not in the logs" : m}</option>)}
@@ -405,7 +420,7 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
           </colgroup>
           <thead>
             <tr>
-              <th>Time</th>
+              <th>Time · customer</th>
               <th>Chain · method</th>
               <th>What happened</th>
               <th>Result</th>
@@ -420,7 +435,10 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
               return (
                 <Fragment key={r.guid}>
                   <tr tabIndex={0} aria-expanded={isOpen} style={{ cursor: "pointer" }} onClick={toggle} onKeyDown={onRowKey(toggle)}>
-                    <td style={{ verticalAlign: "top" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{fmtWhen(r.time)}</span></td>
+                    <td style={{ maxWidth: 0, verticalAlign: "top" }}>
+                      <span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{fmtWhen(r.time)}</span>
+                      <CustomerCell customer={r.customer} />
+                    </td>
                     <td style={{ maxWidth: 0, verticalAlign: "top" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
                         {r.spec && <ChainBadge spec={r.spec} size={16} />}

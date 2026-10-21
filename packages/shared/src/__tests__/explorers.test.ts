@@ -5,8 +5,10 @@ import {
   explorerBlockUrl,
   explorerHome,
   explorersFor,
+  explorerTxUrl,
   hasExplorer,
   primaryExplorer,
+  TX_PAGES,
   type ChainExplorer,
 } from "../constants/explorers.js";
 import explorerMap from "../constants/chain-explorers.generated.json" with { type: "json" };
@@ -138,5 +140,50 @@ describe("explorerBlockUrl", () => {
     expect(spec).toBeDefined();
     const alt = MAP[spec as string]?.[1] as ChainExplorer;
     expect(explorerBlockUrl(spec as string, 7, alt)).toContain(alt.url);
+  });
+});
+
+/* Transaction pages are curated, not generated: each chain's page was watched
+ * rendering a real transaction. These keep the table and the catalog in step. */
+describe("explorerTxUrl", () => {
+  const EVM = "0x" + "8f3a91c2".repeat(8);
+  const SIG = "5VERv8NMvzbJMEkV8xnrLkEaWRtSz9CosKDYVCJjBRSJ2mWbmJu3pXr8ZqAiBXhBxwMpvz1k7iVNyQFJqU1n2Yb";
+  const DIGEST = "8kNVrbs2QzMnVuMxQ7f2YtaE9qH1rJ4Z5pW3cX6vB9dL";
+  const COSMOS = "4D1E9F0A6B2C8E7D3F5A1B9C0D2E4F6A8B0C1D3E5F7A9B1C3D5E7F9A1B3C5D7E";
+
+  it("an EVM chain: its explorer's /tx/<hash>", () => {
+    expect(explorerTxUrl("ETH1", EVM)).toBe(`https://etherscan.io/tx/${EVM}`);
+    expect(explorerTxUrl("BASE", EVM)).toBe(`https://basescan.org/tx/${EVM}`);
+  });
+
+  it("Solana: the cluster stays on the url for testnet and devnet", () => {
+    expect(explorerTxUrl("SOLANA", SIG)).toBe(`https://explorer.solana.com/tx/${SIG}`);
+    expect(explorerTxUrl("SOLANAT", SIG)).toBe(`https://explorer.solana.com/tx/${SIG}?cluster=testnet`);
+    expect(explorerTxUrl("SOLANAD", SIG)).toBe(`https://explorer.solana.com/tx/${SIG}?cluster=devnet`);
+  });
+
+  it("Sui and Cosmos: the network's own path", () => {
+    expect(explorerTxUrl("SUI", DIGEST)).toBe(`https://suiscan.xyz/mainnet/tx/${DIGEST}`);
+    expect(explorerTxUrl("SUIT", DIGEST)).toBe(`https://suiscan.xyz/testnet/tx/${DIGEST}`);
+    expect(explorerTxUrl("COSMOSHUB", COSMOS)).toBe(`https://www.mintscan.io/cosmos/tx/${COSMOS}`);
+  });
+
+  it("null for a chain with no watched page, and for a hash not in the chain's form", () => {
+    expect(explorerTxUrl("BSC", EVM)).toBeNull(); // its page sits behind a challenge no one has watched past
+    expect(explorerTxUrl("NOT_A_CHAIN", EVM)).toBeNull();
+    expect(explorerTxUrl("ETH1", SIG)).toBeNull();
+    expect(explorerTxUrl("ETH1", EVM.slice(0, 40))).toBeNull();
+    expect(explorerTxUrl("SOLANA", EVM)).toBeNull();
+    expect(explorerTxUrl("COSMOSHUB", `${COSMOS}"><script>`)).toBeNull();
+  });
+
+  it.each(Object.entries(TX_PAGES))("%s: names an explorer the catalog lists for it, on its host, and says how it is known", (spec, page) => {
+    const e = explorersFor(spec).find((x) => x.name === page.explorer);
+    expect(e).toBeDefined();
+    expect(page.tx).toContain("{base}");
+    expect(page.tx).toContain("{hash}");
+    expect(page.verified.length).toBeGreaterThan(0);
+    const sample = { evm: EVM, base58: SIG, hex: COSMOS }[page.hash];
+    expect(hostOf(explorerTxUrl(spec, sample)!)).toBe(hostOf(e!.url));
   });
 });

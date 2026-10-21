@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { WRITE_UNKNOWN_NOTE, type RouterTopology } from "@sr/shared";
 import { buildErrorRows, ErrorRequestsService } from "../services/error-requests.js";
-import { buildTxRows, NOTE, TransactionsService } from "../services/transactions.js";
+import { buildTxRows, NOTE, summarize, TransactionsService } from "../services/transactions.js";
 import { attemptsOf, methodOf, retried } from "../services/relay-end.js";
-import { CANCELLED_NOTE, METHOD_REDACTED, ownRow, parseRouterLine, UpstreamIndex, type RouterLine } from "../services/router-log.js";
+import { CANCELLED_NOTE, LOOKUP_ID, METHOD_REDACTED, ownRow, parseRouterLine, UpstreamIndex, type RouterLine } from "../services/router-log.js";
 import type { LokiClient, LokiLine } from "../services/loki-client.js";
 import type { ConfigurationService } from "../services/configuration.js";
 
@@ -486,5 +486,115 @@ describe("TransactionsService on a router that writes relay_end", () => {
   it("looks a transaction up by its ID from its relay_end", async () => {
     const { loki } = lokiOf(LINES);
     expect(await new TransactionsService(loki, SEL, cfg).lookup("7481116", RANGE)).toMatchObject({ found: true, row: { outcome: "rejected", answeredBy: "node-a" } });
+  });
+});
+
+/* The fields the router adds to relay_end, schema 1 still: each absent when
+   unknown, so an event without them reads as before. Shapes from the field
+   list (smart-router's RELAY-END-EVENT.md); not goldens. */
+describe("relay_end's caller, hash and on-chain fields", () => {
+  const HASH = "0x" + "8f3a91c2".repeat(8);
+  const DIGEST = "8kNVrbs2QzMnVuMxQ7f2YtaE9qH1rJ4Z5pW3cX6vB9dL";
+  const SENT = ev(90_310, {
+    GUID: "9001", stateful: true, method: "eth_sendRawTransaction", chain: "ETH1", selection: "stateful", outcome: "ok", stop_reason: "Success", served_by: "node-b", status: 200, has_reply: true, latency_ms: 310,
+    tx_hash: HASH, customer: "demo-acme", request_id: "acme-req-0192", task_id: "settle-77", tx_id: "acme-tx-5521", request_bytes: 412, reply_bytes: 104, seen_block: 21_734_118,
+    attempts: [
+      { upstream: "node-a", outcome: "node_error", error_code: "CHAIN_NONCE_TOO_LOW", node_code: -32000, message: NONCE, retryable: false, batch: 0, sent_ms: 1, latency_ms: 2, returned_to_client: false },
+      { upstream: "node-b", outcome: "ok", error_code: "", message: "", batch: 0, sent_ms: 1, latency_ms: 304, returned_to_client: true },
+    ],
+  });
+  const sui = (guid: string, at: number, more: Record<string, unknown>) => ev(at, {
+    GUID: guid, stateful: true, method: "sui_executeTransactionBlock", chain: "SUI", selection: "stateful", outcome: "ok", stop_reason: "Success", served_by: "node-a", status: 200, has_reply: true, latency_ms: 640, tx_hash: DIGEST,
+    attempts: [{ upstream: "node-a", outcome: "ok", error_code: "", message: "", batch: 0, sent_ms: 1, latency_ms: 638, returned_to_client: true }],
+    ...more,
+  });
+  const ABORT = "MoveAbort(MoveLocation { module: balance, function: 3 }, 2) in command 0";
+  const SUI_FAILED = sui("9002", 91_640, { tx_status: "failure", tx_error: `${ABORT}, at https://fullnode.example.com/v1/SECRETKEY`, customer: "demo-globex" });
+  const SUI_OK = sui("9003", 92_640, { tx_status: "success" });
+  const READ_FAILED = ev(93_050, {
+    GUID: "9004", method: "eth_getBalance", chain: "ETH1", selection: "stateless", outcome: "no_answer", stop_reason: "AllProvidersExhausted", served_by: "", status: 0, has_reply: false, latency_ms: 50,
+    error_code: "NODE_SERVER_ERROR", error: "failed relay, insufficient results", customer: "demo-initech", request_bytes: 120, requested_block: 21_734_000, seen_block: 21_734_110,
+    attempts: [{ upstream: "node-a", outcome: "node_error", error_code: "NODE_SERVER_ERROR", node_code: -32603, message: "header not found", retryable: true, batch: 0, sent_ms: 1, latency_ms: 4, returned_to_client: false }],
+  });
+  const FACTS = ["customer", "requestId", "taskId", "txId", "requestBytes", "replyBytes", "requestedBlock", "seenBlock", "txHash", "txStatus", "txError"];
+
+  it("a transaction carries its hash, the caller's project and ids, its sizes, and each try the node's own code", () => {
+    const [row] = txRows([SENT]);
+    expect(row).toMatchObject({
+      outcome: "accepted", txHash: HASH, customer: "demo-acme", requestId: "acme-req-0192", taskId: "settle-77", txId: "acme-tx-5521",
+      requestBytes: 412, replyBytes: 104, seenBlock: 21_734_118,
+    });
+    expect(row).not.toHaveProperty("requestedBlock"); // a send names no block
+    expect(row?.attempts.map((a) => [a.upstream, a.nodeCode])).toEqual([["node-a", -32000], ["node-b", undefined]]);
+    expect(row?.attempts[1]).not.toHaveProperty("nodeCode");
+  });
+
+  it("an event without them reads exactly as before: none of them, on either tab", () => {
+    for (const row of [...txRows([WRITE_AFTER_A_REJECTION, WRITE_NODE_ERROR]), ...errorRows([READ_RECOVERED, NO_ANSWER])]) {
+      for (const k of FACTS) expect(row).not.toHaveProperty(k);
+      for (const a of row.attempts) expect(a).not.toHaveProperty("nodeCode");
+    }
+  });
+
+  it("the chain ran it and it failed: Failed on chain, in the chain's words with any node url cut; a success stays Accepted", () => {
+    expect(txRows([SUI_FAILED])[0]).toMatchObject({
+      outcome: "failed-on-chain", txStatus: "failure", txHash: DIGEST, customer: "demo-globex", error: null,
+      txError: `${ABORT}, at https://fullnode.example.com`,
+    });
+    expect(txRows([SUI_OK])[0]).toMatchObject({ outcome: "accepted", txStatus: "success" });
+    expect(txRows([SUI_OK])[0]).not.toHaveProperty("txError");
+  });
+
+  it("values not in the field's form are left out, never shown as something they aren't", () => {
+    const odd = sui("9005", 94_000, { tx_status: "pending", tx_error: "ignored without a failure", customer: 7, request_id: "", request_bytes: -1, reply_bytes: 1.5, seen_block: "21734110", tx_hash: "  " });
+    const [row] = txRows([odd]);
+    expect(row?.outcome).toBe("accepted");
+    for (const k of FACTS) expect(row).not.toHaveProperty(k);
+  });
+
+  it("a failure on chain counts as failed: in the totals and against the success rate", () => {
+    expect(summarize(txRows([SENT, SUI_FAILED, SUI_OK]))).toEqual({ total: 3, accepted: 2, rejected: 0, failed: 0, failedOnChain: 1, successRate: 2 / 3 });
+  });
+
+  it("the Errors tab's rows carry the same facts, and the blocks a read named and the router had", () => {
+    expect(errorRows([READ_FAILED])[0]).toMatchObject({
+      result: "failed", customer: "demo-initech", requestBytes: 120, requestedBlock: 21_734_000, seenBlock: 21_734_110,
+      attempts: [{ upstream: "node-a", code: "NODE_SERVER_ERROR", nodeCode: -32603 }],
+    });
+  });
+
+  it("finds a transaction by its hash or by the caller's request id, as by its ID", async () => {
+    const { loki, queries } = lokiOf([SENT, SUI_FAILED, READ_FAILED, WRITE_NODE_ERROR]);
+    const svc = new TransactionsService(loki, SEL, cfg);
+    expect(await svc.lookup(HASH, RANGE)).toMatchObject({ found: true, row: { guid: "9001", txHash: HASH } });
+    expect(queries.at(-1)).toBe(`${SEL} |= \`${HASH}\` |~ \`"(GUID|tx_hash|request_id)":"${HASH}"\``);
+    expect(await svc.lookup("acme-req-0192", RANGE)).toMatchObject({ found: true, row: { guid: "9001" } });
+    expect(await svc.lookup(DIGEST, RANGE)).toMatchObject({ row: { guid: "9002", outcome: "failed-on-chain" } });
+    expect(await svc.lookup("7481116", RANGE)).toMatchObject({ row: { guid: "7481116" } });
+    expect(await new ErrorRequestsService(loki, SEL, cfg).lookup("acme-req-0192", RANGE)).toMatchObject({ row: { guid: "9001", customer: "demo-acme" } });
+    // A value that only turns up inside another request's fields - its words,
+    // or an object of its own - names nothing: only the event's own fields do.
+    const quoted = ev(95_000, { GUID: "9006", method: "eth_call", chain: "ETH1", selection: "stateless", outcome: "node_error", error_code: "CHAIN_EXECUTION_REVERTED", error: `reverted ${HASH}`, served_by: "node-a", status: 200, has_reply: true, latency_ms: 3 });
+    const nested = ev(95_100, { GUID: "9007", method: "eth_call", chain: "ETH1", selection: "stateless", outcome: "ok", served_by: "node-a", status: 200, has_reply: true, latency_ms: 3, client: { request_id: "acme-req-0192" } });
+    const others = new ErrorRequestsService(lokiOf([quoted, nested]).loki, SEL, cfg);
+    expect(await others.lookup(HASH, RANGE)).toEqual({ available: true, row: null });
+    expect(await others.lookup("acme-req-0192", RANGE)).toEqual({ available: true, row: null });
+  });
+
+  it("a hash several requests carry - the transaction sent again - answers with the newest and how many", async () => {
+    const again = ev(96_100, { ...JSON.parse(SENT.line), GUID: "9010", latency_ms: 100 });
+    const { loki } = lokiOf([SENT, again]);
+    expect(await new TransactionsService(loki, SEL, cfg).lookup(HASH, RANGE)).toMatchObject({ found: true, matches: 2, row: { guid: "9010" } });
+    expect(await new ErrorRequestsService(loki, SEL, cfg).lookup(HASH, RANGE)).toMatchObject({ matches: 2, row: { guid: "9010" } });
+    expect(await new TransactionsService(lokiOf([SENT]).loki, SEL, cfg).lookup(HASH, RANGE)).not.toHaveProperty("matches");
+  });
+
+  it("a look-up takes a hash or a caller's id of up to 128 plain characters, and nothing that could reach into the query", async () => {
+    const base58 = "5VERv8NMvzbJMEkV8xnrLkEaWRtSz9CosKDYVCJjBRSJ2mWbmJu3pXr8ZqAiBXhBxwMpvz1k7iVNyQFJqU1n2Yb";
+    for (const ok of [HASH, base58, DIGEST, "acme-req-0192", "job:42.7@eu+1=a", "x".repeat(128)]) expect(LOOKUP_ID.test(ok)).toBe(true);
+    for (const bad of ["x".repeat(129), "a b", "a`b", 'a"b', "a\\b", "a/b", ""]) expect(LOOKUP_ID.test(bad)).toBe(false);
+    const { loki, queries } = lokiOf([SENT]);
+    expect(await new TransactionsService(loki, SEL, cfg).lookup("a`b", RANGE)).toEqual({ available: true, found: false, row: null });
+    expect(queries).toEqual([]);
   });
 });

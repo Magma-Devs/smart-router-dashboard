@@ -48,6 +48,7 @@ import type {
 import { WINDOWS } from "@sr/shared";
 import {
   attemptsOf,
+  callFactsOf,
   FAILED_OUTCOMES,
   FAILED_PIPELINE,
   isRelayEnd,
@@ -73,7 +74,7 @@ import {
   listenerPattern,
   linesForGuids,
   linesOfRequest,
-  REQUEST_ID,
+  LOOKUP_ID,
   methodOf,
   namesOf,
   onChain,
@@ -118,7 +119,7 @@ export const ERROR_READ_CAP = 300;
 
 const FAILED_SET: ReadonlySet<string> = new Set(FAILED_OUTCOMES);
 
-export { REQUEST_ID } from "./router-log.js";
+export { LOOKUP_ID } from "./router-log.js";
 
 /** A request's lines can come this long before the first one that finds it
  *  (its arrival) or after it (a try the router gave up on at its deadline). */
@@ -225,6 +226,7 @@ function rowOfEvent(e: RouterLine, guid: string, index: UpstreamIndex, every: bo
     totalMs: latency,
     error: FAILED_SET.has(outcome) ? scrubUrls(withoutGuid(str(e.f.error)) || "no upstream replied") : null,
     errorCode: str(e.f.error_code) || null,
+    ...callFactsOf(e),
   };
 }
 
@@ -329,19 +331,21 @@ export class ErrorRequestsService {
   }
 
   /**
-   * One request by its ID, whatever happened to it: every line the router
-   * wrote for it in `range`, as the same row the list shows. Reads every line
-   * in the range for the ID - a month is a heavy read, so the caller widens
-   * the range on purpose rather than by default.
+   * One request by its ID, its transaction hash or the caller's request id,
+   * whatever happened to it: every line the router wrote for it in `range`,
+   * as the same row the list shows. A value several requests carry answers
+   * with the newest and how many there are. Reads every line in the range
+   * for the value - a month is a heavy read, so the caller widens the range
+   * on purpose rather than by default.
    */
-  async lookup(guid: string, range: ReadRange): Promise<RequestLookup> {
+  async lookup(id: string, range: ReadRange): Promise<RequestLookup> {
     const loki = this.loki;
     if (!loki) return { ...unavailable("unconfigured"), row: null };
-    if (!REQUEST_ID.test(guid)) return { available: true, row: null };
-    const lines = await linesOfRequest(loki, this.selector, guid, range.startMs, range.endMs);
+    if (!LOOKUP_ID.test(id)) return { available: true, row: null };
+    const lines = await linesOfRequest(loki, this.selector, id, range.startMs, range.endMs);
     if (lines === null) return { ...unavailable("unreachable"), row: null };
     const rows = buildErrorRows(lines, new UpstreamIndex(this.routers()), true);
-    return { available: true, row: rows[0] ?? null };
+    return { available: true, row: rows[0] ?? null, ...(rows.length > 1 ? { matches: rows.length } : {}) };
   }
 
   /**

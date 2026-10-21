@@ -5,6 +5,32 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Added
+
+- **Transactions and Errors tabs: the router's newer `relay_end` fields**
+  (MAG-4459). smart-router adds optional fields to its `relay_end` event, each
+  absent when unknown, so an older router's events read as before. The tabs
+  now use them:
+  - **Customer:** a column and a filter on both tabs, from the caller's
+    project id; "—" when a request carried none.
+  - **Failed on chain:** on the Transactions tab, a transaction whose send
+    reply says the chain ran it and it failed (`tx_status: "failure"`, so far
+    Sui's) is its own red result, with the chain's error in its details. It
+    counts as failed in the cards and the success rate; a `success` stays
+    Accepted.
+  - **Transaction hash:** shown shortened on the Transactions tab, to copy,
+    and linked to the chain's explorer where its transaction page was watched
+    rendering a real transaction: 15 chains, listed in `docs/CHAINS.md`
+    (`explorerTxUrl`). Other chains show the hash without a link.
+  - **Find a request** also takes a transaction hash or the caller's own
+    request id (`X-Request-Id`), up to 128 plain characters. A value several
+    requests carry, such as a transaction sent again, shows the newest and
+    says how many there are.
+  - **Details** add, where the router wrote them: the caller's ids, the
+    request's and the reply's size, the block a request named and the
+    router's latest block, and each try's own JSON-RPC error code from the
+    node.
+
 ## [0.43.3]
 
 ### Changed

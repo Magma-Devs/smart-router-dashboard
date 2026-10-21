@@ -2,17 +2,19 @@
 // on Node 24, whose ESM loader hard-errors without it.
 import explorerMap from "./chain-explorers.generated.json" with { type: "json" };
 import explorerKinds from "./explorer-kinds.json" with { type: "json" };
+import explorerTx from "./explorer-tx.json" with { type: "json" };
 
 /**
  * Where a human goes to check a chain, keyed by Lava spec index.
  *
- * The dashboard renders exactly one value a public chain can confirm: a block
- * HEIGHT — the router's tip, an upstream's tip, the lag between them. It holds
- * no transaction hash and no chain address anywhere (`provider_address` is an
- * upstream's name, not an on-chain address), so this catalog offers a block
- * link and a home link, and nothing else. It stored transaction and address
- * templates once; they addressed values that did not exist, and 18 chains
- * carried nothing but those — covered in the catalog, unlinkable in the UI.
+ * The dashboard renders two values a public chain can confirm: a block
+ * HEIGHT — the router's tip, an upstream's tip, the lag between them — and a
+ * transaction HASH, which a router's `relay_end` names for a transaction it
+ * sent. It holds no chain address anywhere (`provider_address` is an
+ * upstream's name, not an on-chain address). So this catalog offers a block
+ * link and a home link, generated, and a transaction link for the chains in
+ * `explorer-tx.json`, curated by hand: each one's page was watched rendering
+ * a real transaction.
  *
  * GENERATED from lava-specs joined to ethereum-lists/chains and
  * cosmos/chain-registry through each spec's `chain-id` verification, plus a
@@ -113,4 +115,40 @@ export function explorerBlockUrl(
   // composing a url from it would produce a link that cannot resolve.
   if (!/^\d+$/.test(raw)) return null;
   return tpl.replace("{block}", raw) + (e.suffix ?? "");
+}
+
+/** How a chain writes a transaction hash: an EVM 0x hash, base58 (a Solana signature, a Sui digest), or bare hex (Cosmos). */
+export type TxHashFormat = "evm" | "base58" | "hex";
+
+/** One chain's transaction page: which of its explorers, the page's shape (`{base}` is that explorer's url), and how it is known. */
+export interface TxPage {
+  explorer: string;
+  tx: string;
+  hash: TxHashFormat;
+  verified: string;
+}
+
+/** Every chain with a transaction page, keyed by spec index - curated, each watched (docs/CHAINS.md). */
+export const TX_PAGES = explorerTx as Record<string, TxPage>;
+
+const TX_HASH: Record<TxHashFormat, RegExp> = {
+  evm: /^0x[0-9a-fA-F]{64}$/,
+  base58: /^[1-9A-HJ-NP-Za-km-z]{32,90}$/,
+  hex: /^[0-9A-Fa-f]{64}$/,
+};
+
+/**
+ * A link to a transaction on the chain's explorer, or **null**: a chain with
+ * no watched transaction page, an explorer the catalog no longer lists, or a
+ * hash that isn't in the chain's form - composing a url from it would produce
+ * a link that cannot resolve. Callers show the hash as plain text then.
+ */
+export function explorerTxUrl(spec: string, hash: string): string | null {
+  const page = TX_PAGES[spec];
+  if (!page) return null;
+  const e = explorersFor(spec).find((x) => x.name === page.explorer);
+  if (!e) return null;
+  const h = hash.trim();
+  if (!TX_HASH[page.hash]?.test(h)) return null;
+  return page.tx.replace("{base}", e.url).replace("{hash}", h) + (e.suffix ?? "");
 }

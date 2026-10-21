@@ -283,8 +283,9 @@ describe("TransactionsService", () => {
         queries.push(query);
         const asked = /`"GUID":"\(([^)]*)\)"`/.exec(query)?.[1]?.split("|");
         if (asked) return lines.filter((l) => asked.some((g) => l.line.includes(`"GUID":"${g}"`)));
-        const one = /\|= `"GUID":"([^"]+)"`/.exec(query)?.[1];
-        if (one) return lines.filter((l) => l.line.includes(`"GUID":"${one}"`));
+        // A look-up: the request with that ID, or whose relay_end carries it as a hash or a caller's id.
+        const one = /\|~ `"\(GUID\|tx_hash\|request_id\)":"([^"]+)"`/.exec(query)?.[1]?.replace(/\\(.)/g, "$1");
+        if (one) return lines.filter((l) => ["GUID", "tx_hash", "request_id"].some((k) => l.line.includes(`"${k}":"${one}"`)));
         // The two finding reads: newest first, in the range, at most `limit`.
         const inRange = (ls: LokiLine[]) => ls.filter((l) => l.tsMs >= startMs && l.tsMs < endMs).sort((a, b) => b.tsMs - a.tsMs).slice(0, limit);
         if (query.includes('|= `"event":"relay_end"`')) return inRange(lines.filter((l) => l.line.includes('"event":"relay_end"')));
@@ -349,7 +350,7 @@ describe("TransactionsService", () => {
     expect(await svc.lookup("9946532266546017239", RANGE)).toMatchObject({
       available: true, found: true, row: { method: "eth_sendRawTransaction", outcome: "rejected", answeredBy: "eth-mevblocker" },
     });
-    expect(queries.at(-1)).toBe('{service="router"} |= `"GUID":"9946532266546017239"`');
+    expect(queries.at(-1)).toBe('{service="router"} |= `9946532266546017239` |~ `"(GUID|tx_hash|request_id)":"9946532266546017239"`');
     expect(await svc.lookup("13101775707732352358", RANGE)).toEqual({ available: true, found: true, row: null }); // a read
     expect(await svc.lookup("424242", RANGE)).toEqual({ available: true, found: false, row: null });
   });
@@ -461,7 +462,7 @@ describe("GET /api/transactions", () => {
         return Response.json({ status: "success", data: { resultType: "vector", result: [] } });
       }
       const q = url.searchParams.get("query") ?? "";
-      const lines = q.includes('`"GUID":"(') || q.includes('|= `"GUID":"')
+      const lines = q.includes('`"GUID":"(') || q.includes('"(GUID|tx_hash|request_id)":"')
         ? ETH_REJECTED
         : q.includes('|= "Choosing providers"')
           ? ETH_REJECTED.filter((l) => l.line.includes("Choosing providers"))
@@ -487,6 +488,10 @@ describe("GET /api/transactions", () => {
     process.env.LOKI_URL = "http://loki.test:3100";
     app = await buildApp();
     expect((await app.inject({ method: "GET", url: "/api/transactions/not%20an%20id" })).statusCode).toBe(400);
+    // A transaction hash and a caller's request id are look-ups too: 66 and 128 characters.
+    expect((await app.inject({ method: "GET", url: `/api/transactions/0x${"ab".repeat(32)}?window=1d` })).statusCode).toBe(200);
+    expect((await app.inject({ method: "GET", url: `/api/transactions/${"r".repeat(128)}?window=1d` })).statusCode).toBe(200);
+    expect((await app.inject({ method: "GET", url: `/api/transactions/${"r".repeat(129)}?window=1d` })).statusCode).toBe(400);
     const res = await app.inject({ method: "GET", url: "/api/transactions/9946532266546017239?window=1d" });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({ available: true, found: true, row: { guid: "9946532266546017239", outcome: "rejected" } });

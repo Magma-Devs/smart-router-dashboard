@@ -10,7 +10,7 @@
  * classify shows the node's own words - there is no "unknown error" here. */
 
 import { Fragment, useState } from "react";
-import { buildChainMetaByIndex, type LogUnavailable, type RelayAttempt } from "@sr/shared";
+import { buildChainMetaByIndex, explorerTxUrl, type CallFacts, type LogUnavailable, type RelayAttempt } from "@sr/shared";
 import { SkelRows, type SkelCol } from "@/components/gateway/Skel";
 import { CopyButton } from "@/components/gateway/CopyButton";
 import { useGrafanaUrl } from "@/hooks/use-grafana-url";
@@ -207,6 +207,7 @@ export function AttemptList({ attempts }: { attempts: RelayAttempt[] }) {
             {realCode(a) && (
               <> · <a className="gw-mono" href={errorDocsUrl(a.code!)} target="_blank" rel="noopener noreferrer" style={{ color: "var(--text-3)" }}>{a.code}</a></>
             )}
+            {a.nodeCode != null && <span className="gw-mono" style={{ color: "var(--text-3)" }} title="The node's own JSON-RPC error code"> · node {a.nodeCode}</span>}
             {a.outcome === "failed" && a.retryable != null && (
               <span style={{ color: "var(--text-4)" }}> · {a.retryable ? "retryable" : "not retryable"}</span>
             )}
@@ -339,6 +340,84 @@ export function TimeRangeControl({ range, onChange, windowLabel, windowMs }: {
   );
 }
 
+/** Clicks inside an opened row's own controls stay there: a copy or a link doesn't fold the row. */
+const keepClick = (e: React.MouseEvent) => e.stopPropagation();
+
+/** A row's caller, under its time: their project, or "—" when the request carried none. */
+export function CustomerCell({ customer }: { customer?: string }) {
+  const style: React.CSSProperties = { display: "block", marginTop: 4, fontSize: 10.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
+  if (!customer) return <span title="The request named no customer" style={{ ...style, color: "var(--text-4)" }}>—</span>;
+  return <span className="gw-mono" title={`Customer: ${customer}`} style={{ ...style, color: "var(--text-3)" }}>{customer}</span>;
+}
+
+/** The customer filter's key for requests that carried none. */
+export const NO_CUSTOMER = "\u0000none";
+
+/** The customers in these rows, by name, each with its count; "no customer" last, when some carried none. */
+export function customerOptions(rows: { customer?: string }[]): { key: string; label: string; count: number }[] {
+  const n = new Map<string, number>();
+  for (const r of rows) n.set(r.customer ?? NO_CUSTOMER, (n.get(r.customer ?? NO_CUSTOMER) ?? 0) + 1);
+  const named = [...n].filter(([k]) => k !== NO_CUSTOMER).sort(([a], [b]) => a.localeCompare(b)).map(([key, count]) => ({ key, label: key, count }));
+  const none = n.get(NO_CUSTOMER);
+  return none ? [...named, { key: NO_CUSTOMER, label: "No customer", count: none }] : named;
+}
+
+export const hasCustomer = (r: { customer?: string }, key: string) => (r.customer ?? NO_CUSTOMER) === key;
+
+/** A hash too long for a cell, as its two ends: 0x8f3a91…a91c2. */
+export const shortHash = (h: string) => (h.length > 16 ? `${h.slice(0, h.startsWith("0x") ? 8 : 6)}…${h.slice(-6)}` : h);
+
+/**
+ * A transaction's hash, to copy, linked to the chain's explorer where a
+ * transaction page is known (explorerTxUrl) - plain text where it isn't.
+ * `full` writes it out whole, for the details.
+ */
+export function TxHash({ hash, spec, full = false }: { hash: string; spec: string | null; full?: boolean }) {
+  const url = spec ? explorerTxUrl(spec, hash) : null;
+  const text = full ? hash : shortHash(hash);
+  const style: React.CSSProperties = { fontSize: full ? 11.5 : 10.5, wordBreak: full ? "break-all" : undefined, whiteSpace: full ? undefined : "nowrap" };
+  return (
+    <span onClick={keepClick} style={{ display: "inline-flex", alignItems: "center", gap: 6, minWidth: 0, maxWidth: "100%" }}>
+      {url
+        ? <a className="gw-mono" href={url} target="_blank" rel="noopener noreferrer" title={`${hash} - on the chain's explorer`} style={{ ...style, color: "var(--brand)", textDecoration: "none" }}>{text}{full ? "" : " ↗"}</a>
+        : <span className="gw-mono" title={hash} style={{ ...style, color: "var(--text-3)" }}>{text}</span>}
+      <CopyButton text={hash} />
+    </span>
+  );
+}
+
+const fmtBytes = (n: number) => (n < 1024 ? `${fmtComma(n)} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
+
+/**
+ * What the router wrote about the call itself, in an opened row: the
+ * caller's project and ids, the request's and the reply's size, the block it
+ * named and the one the router had. Only what the router wrote; nothing when
+ * it wrote none.
+ */
+export function CallFactsLine({ row }: { row: CallFacts }) {
+  const items: [string, React.ReactNode][] = [];
+  if (row.customer) items.push(["Customer", row.customer]);
+  if (row.requestId) items.push(["Caller's request ID", row.requestId]);
+  if (row.taskId) items.push(["Task ID", row.taskId]);
+  if (row.txId) items.push(["Tx ID", row.txId]);
+  if (row.requestBytes != null) items.push(["Request", fmtBytes(row.requestBytes)]);
+  if (row.replyBytes != null) items.push(["Reply", fmtBytes(row.replyBytes)]);
+  if (row.requestedBlock != null) items.push(["Block asked for", fmtComma(row.requestedBlock)]);
+  if (row.seenBlock != null) items.push(["Router's latest block", fmtComma(row.seenBlock)]);
+  if (!items.length) return null;
+  return (
+    <DetailLine>
+      <div style={{ display: "flex", flexWrap: "wrap", columnGap: 18, rowGap: 4, fontSize: 11.5 }}>
+        {items.map(([k, v]) => (
+          <span key={k} style={{ color: "var(--text-4)", whiteSpace: "nowrap" }}>
+            {k} <span className="gw-mono" style={{ color: "var(--text-2)" }}>{v}</span>
+          </span>
+        ))}
+      </div>
+    </DetailLine>
+  );
+}
+
 /** "Logs ↗": the request's own lines on the Grafana logs board, a minute either side of it. Nothing without a Grafana. */
 export function RequestLogsLink({ id, startMs, tookMs }: { id: string; startMs: number; tookMs: number | null }) {
   const grafana = useGrafanaUrl();
@@ -362,14 +441,15 @@ export function RequestIdLine({ id, startMs, tookMs }: { id: string; startMs: nu
   );
 }
 
-/** "Find a request by ID" - the box both log lists carry. */
+/** "Find a request" - the box both log lists carry: by its ID, its transaction hash, or the caller's own request ID. */
 export function IdSearch({ onFind }: { onFind: (id: string) => void }) {
   const [draft, setDraft] = useState("");
   const id = draft.trim();
   return (
     <form onSubmit={(e) => { e.preventDefault(); if (id) onFind(id); }} style={{ display: "flex", gap: 6 }}>
-      <input aria-label="Request ID" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Find a request by ID"
-        className="gw-mono" style={{ ...filterSelectStyle, width: 210, fontSize: 11.5 }} />
+      <input aria-label="Request ID" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Request ID, tx hash or caller's ID"
+        title="The router's request ID, a transaction's hash, or the caller's X-Request-Id"
+        className="gw-mono" style={{ ...filterSelectStyle, width: 240, fontSize: 11.5 }} />
       <button type="submit" disabled={!id} style={{ ...filterSelectStyle, cursor: id ? "pointer" : "default", color: id ? "var(--text)" : "var(--text-4)" }}>Find</button>
     </form>
   );
@@ -390,11 +470,20 @@ export function LookupFrame({ id, tag, onClose, children }: { id: string; tag?: 
   );
 }
 
+/** What a look-up couldn't read the value as, in words: the shapes it takes. */
+export const LOOKUP_REFUSED = "Couldn't look this up: it isn't a request ID, a transaction hash or a caller's request ID (letters, digits and _ - . : + = @), or the API didn't answer.";
+
+/** Several requests carry the value - a transaction sent again keeps its hash: the newest is shown. */
+export function MatchesNote({ matches }: { matches?: number }) {
+  if (!matches || matches < 2) return null;
+  return <div style={{ fontSize: 11.5, color: "var(--text-4)" }}>{fmtComma(matches)} requests carry this value in the range read; this is the newest.</div>;
+}
+
 /** A look-up that found nothing in the range it read - the month is one click, never the default: it reads every line in it. */
 export function NotFound({ rangeWords, wide, onWiden }: { rangeWords: string; wide: boolean; onWiden: () => void }) {
   return (
     <div style={{ color: "var(--text-4)", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-      No request with this ID in the router&apos;s logs {wide ? "of the last 30 days" : rangeWords}.
+      No request with this ID or hash in the router&apos;s logs {wide ? "of the last 30 days" : rangeWords}.
       {!wide && (
         <button onClick={onWiden} style={{ border: "none", background: "none", color: "var(--brand)", cursor: "pointer", padding: 0, fontSize: 12, fontWeight: 600, fontFamily: "inherit" }}>
           Search the last 30 days
