@@ -1,10 +1,6 @@
-# The build stage runs on the runner's own architecture ($BUILDPLATFORM)
-# whatever the image targets: its output is plain JS, and the web loads no
-# native module at runtime (nothing uses next/image, so the sharp binary that
-# Next traces into the standalone output is never required). BuildKit then
-# runs the stage ONCE for a linux/amd64,linux/arm64 build instead of once per
-# architecture under QEMU, where `next build` took 313 s against 37 s native
-# (MAG-4483).
+# The build stage runs on the runner's own architecture whatever the image
+# targets: its output is plain JS and the web loads no native module at
+# runtime, so BuildKit runs it once for linux/amd64,linux/arm64.
 FROM --platform=$BUILDPLATFORM node:24-alpine AS builder
 RUN corepack enable
 WORKDIR /app
@@ -14,11 +10,9 @@ WORKDIR /app
 ARG NEXT_PUBLIC_API_URL=http://localhost:8000
 ARG NEXT_PUBLIC_LOCAL_MODE=false
 
-# Layers ordered by how often they change: the lockfile and the package
-# manifests drive the install, the sources come after it, so a code-only
-# commit reuses the install layer from the cache. (Not `pnpm fetch`: it
-# imports every package in the lockfile into the virtual store, the other
-# apps' included, and nothing prunes them afterwards.)
+# Lockfile and manifests first, sources after: a code-only commit reuses the
+# install layer. (`pnpm fetch` would pull every lockfile package into the
+# store, the other apps' included.)
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages/shared/package.json packages/shared/
 COPY apps/web/package.json apps/web/
@@ -32,6 +26,12 @@ ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_LOCAL_MODE=$NEXT_PUBLIC_LOCAL_MODE
 RUN pnpm --filter @sr/shared build && \
     pnpm --filter @sr/web build
+
+# Next traces sharp into the standalone output for the build host's
+# architecture only, and `images.unoptimized` means nothing ever loads it,
+# so neither image carries it.
+RUN cd apps/web/.next/standalone/node_modules/.pnpm && \
+    rm -rf sharp@* @img+* node_modules/sharp node_modules/@img next@*/node_modules/sharp
 
 # Runtime stage, built once per target architecture. Keep it free of RUN:
 # the CI builder has no QEMU, so a RUN here fails on arm64 with "exec format

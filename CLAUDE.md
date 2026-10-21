@@ -892,22 +892,23 @@ Compose / Makefile knobs:
   (`ERR_PNPM_OUTDATED_LOCKFILE` mentioning `@info/shared`), so the `make
   build*` targets always pass `--builder srdash-builder`.
 - **One build stage for both architectures**: each Dockerfile builds on
-  `$BUILDPLATFORM` (the output is plain JS; the api has no native module and
-  the web never loads sharp, pinned by `images.unoptimized` in
-  `next.config.mjs`) and keeps its runtime stage free of `RUN`, so the
-  `linux/amd64,linux/arm64` build compiles once and the workflow sets up no
-  QEMU. Layers go lockfile + package manifests → `pnpm install` → sources,
-  so a code-only commit reuses the install layer. The layer cache lives on
-  GHCR as `…/<image>:buildcache` (`type=registry`, shared by every branch),
-  not in the Actions cache. The api runtime image is a
-  `pnpm deploy --legacy --prod` tree under `apps/api/` (the `files` field of
-  each package manifest keeps sources and tests out of it); `pnpm install
-  --prod` leaves pnpm 10's virtual store as it is, so it is no substitute.
-  It carries no devDependencies, so `NODE_ENV=development` (the dev-only
-  `pino-pretty` log transport) is for the dev stack, not the published
-  image. A `smoke-arm64` job then starts each arm64 image on an
-  `ubuntu-24.04-arm` runner and waits for its health endpoint: the check
-  that the cross-compiled image runs.
+  `$BUILDPLATFORM` (plain-JS output; the api has no native module, and the
+  web never loads sharp, which `images.unoptimized` in `next.config.mjs`
+  pins and the web Dockerfile removes from the standalone output) and keeps
+  its runtime stage free of `RUN`, so a `linux/amd64,linux/arm64` build
+  compiles once and the workflow sets up no QEMU. Layers go lockfile +
+  package manifests → `pnpm install` → sources, so a code-only commit
+  reuses the install layer. The layer cache lives on GHCR
+  (`type=registry`): main writes `…/<image>:buildcache`, a branch writes
+  `…/<image>:buildcache-<branch>` and reads both, and a failed cache export
+  never fails a build. The api runtime image is a
+  `pnpm deploy --legacy --prod` tree under `apps/api/`: the `files` field
+  of each package manifest decides what ships, and it carries no
+  devDependencies, so `NODE_ENV=development` (the dev-only `pino-pretty`
+  transport) does not boot it. A `smoke-arm64` job starts each arm64 image
+  on an `ubuntu-24.04-arm` runner after the push and waits for its health
+  endpoint (and the web's first page); the release tag waits for it, the
+  images are already published.
 
 ## Gotchas
 
@@ -923,3 +924,4 @@ Compose / Makefile knobs:
 | Two UIs (`DASHBOARD_NEW_UI`) | The 0.27 screens live under `apps/web/src/legacy/`, at their original paths and as 0.27.2 shipped them (only their imports point at each other), and draw when the flag is off — the default. The Metrics, standalone and Upstreams pages pick one on `newUiEnabled()`, server side. `Tip`, `LineChart` / `ColumnChart` and `RouterFilterSelect` pick inside themselves on `useNewUi()`, because screens that 0.28 left alone (Overview among them) draw them too. `Shell` (the chains drawer), Account, Team and Audit branch inline on `useNewUi()`. A change to a screen in `components/` reaches only the 0.28 UI; the api serves both, and none of its routes reads the flag. Retiring the flag = delete `legacy/` and those branches |
 | BuildKit cache | `make build*` targets use the isolated `srdash-builder` (see Docker / images / isolation). Plain `docker compose up --build` is fine for the stack itself. |
 | `RUN` in a runtime stage | CI builds the arm64 half of each image without QEMU, so a `RUN` in a Dockerfile's runtime stage fails there with `exec format error`. Do the work in the build stage and `COPY --from=builder`. A runtime break on arm64 (a dependency that loads a native binding at boot) shows up in the `smoke-arm64` job instead. |
+| Image `files` whitelist | The api image ships only what each package's `files` lists (`apps/api`: `dist`; `packages/db`: `dist` + `migrations`; `packages/shared`: `dist`). A runtime asset anywhere else (a template, a file read with `fs`) works in dev and fails only in the published image — put it under `dist` or add it to `files`. |
