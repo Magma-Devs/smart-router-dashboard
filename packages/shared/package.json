@@ -2,6 +2,7 @@
   "name": "@sr/shared",
   "version": "0.0.0",
   "private": true,
+  "files": ["dist"],
   "type": "module",
   "exports": {
     ".": {
