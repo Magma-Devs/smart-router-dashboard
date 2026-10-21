@@ -105,11 +105,11 @@ export class MetricsDetailService {
 
   /** One errors-over-time series: the whole bars from a range read, then the
    *  bar still filling from one instant read over the seconds it has run. */
-  private async barsOf(exprFor: (range: string) => string, step: string, bars: ReturnType<typeof bucketGrid>): Promise<TimePoint[]> {
+  private async barsOf(exprFor: (step: string, single: boolean) => string, step: string, bars: ReturnType<typeof bucketGrid>): Promise<TimePoint[]> {
     const { grid, lastFull, partialSec } = bars;
     const [whole, filling] = await Promise.all([
-      lastFull >= grid.start ? this.seriesOn(exprFor(step), { ...grid, end: lastFull }) : Promise.resolve([] as TimePoint[]),
-      partialSec > 0 ? this.prom.scalar(exprFor(`${partialSec}s`)) : Promise.resolve(null),
+      lastFull >= grid.start ? this.seriesOn(exprFor(step, false), { ...grid, end: lastFull }) : Promise.resolve([] as TimePoint[]),
+      partialSec > 0 ? this.prom.scalar(exprFor(`${partialSec}s`, true)) : Promise.resolve(null),
     ]);
     return filling == null ? whole : [...whole, { t: grid.end, v: filling }];
   }
@@ -253,7 +253,7 @@ export class MetricsDetailService {
       this.series(qUpstreamVolumeSeriesExpr(ref, step, window), window),
       this.series(qUpstreamReadVolumeSeriesExpr(ref, step), window),
       this.series(qEndpointBlockLagSeriesExpr(ref), window),
-      this.barsOf((range) => qUpstreamFailedSeriesExpr(ref, range, window), errStep, bars),
+      this.barsOf((range, single) => qUpstreamFailedSeriesExpr(ref, range, window, single), errStep, bars),
     ]);
 
     const scoreSeries: Partial<Record<ScoreType, TimePoint[]>> = {};
@@ -271,7 +271,7 @@ export class MetricsDetailService {
       this.familyPresent(OPTIONAL_METRICS.nodeErrorsTotal),
       this.familyPresent(OPTIONAL_METRICS.protocolErrorsTotal),
     ]);
-    const nodeSeries = nodeErrs ? await this.barsOf((range) => qUpstreamNodeErrorSeriesExpr(ref, range), errStep, bars) : null;
+    const nodeSeries = nodeErrs ? await this.barsOf((range, single) => qUpstreamNodeErrorSeriesExpr(ref, range, single), errStep, bars) : null;
 
     const availOver = (w: MetricWindow) => this.prom.scalar(qUpstreamAvailability(ref, w));
 
@@ -533,9 +533,7 @@ export class MetricsDetailService {
 
     await Promise.all(
       hotspotRows.slice(0, 5).map(async (h) => {
-        // round(): un-rounded increase() extrapolation can put a bucket ABOVE
-        // the window's headline total (e.g. a 77 spike on 60 errors) — whole
-        // errors per bucket keep the trend reconcilable with the total.
+        // The points add up to the pair's errors (countRangeSec), so the trend reconciles with the total.
         h.trend = await this.series(qUpstreamFailedSeriesExpr({ spec: h.spec, endpointId: h.upstream }, step, window), window);
       }),
     );
