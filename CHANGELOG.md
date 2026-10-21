@@ -5,6 +5,25 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Changed
+
+- **A release is tagged only after its arm64 images boot, and `latest`
+  never moves backwards** (MAG-4511). The build pushes each image by digest,
+  with no tag; the `smoke-arm64` job pulls that digest on an arm64 runner,
+  and only once both smokes pass does a `publish` job create the version tag
+  (`<version>-<branch>` and `<major.minor>-<branch>` on a branch). Before,
+  every tag existed before the smoke started, so an arm64 image that failed
+  to boot was already pullable under its release tags, and its version was
+  burned. Now a failed smoke publishes nothing and the version stays free.
+  On main, `tag-release` cuts the `v<VERSION>` git tag and then points
+  `latest` and `<major.minor>` at the highest `v*` release tag rather than at
+  its own build, re-reading the tags until they hold still. Main commits
+  build in parallel, so before, of two merges minutes apart, the slower build
+  took `latest` back to the older release. The version tag is also checked
+  again, for both images before either is tagged, seconds before it is
+  created, so two overlapping runs with the same `VERSION` cannot both
+  publish it; a re-run that finds its own digest there passes.
+
 ## [0.43.2]
 
 ### Changed

@@ -11,8 +11,8 @@ env:
 # A newer push to a branch cancels the run its commit supersedes. main gets a
 # group per commit: GitHub keeps one pending run per group, so a shared group
 # would drop the middle one of three quick merges and leave its VERSION with
-# no images and no tag. Main runs therefore overlap, and of two merges minutes
-# apart the slower build can take `latest`; the version tags are exact.
+# no images and no tag. Main runs may overlap; tag-release keeps `latest` on
+# the highest release whatever order they finish in.
 concurrency:
   group: build-and-push-${{ github.ref_name == 'main' && github.sha || github.ref }}
   cancel-in-progress: ${{ github.ref_name != 'main' }}
@@ -37,9 +37,13 @@ jobs:
     permissions:
       contents: read
       packages: write
-    # Both matrix legs compute the same tag; the smoke job below reads it.
+    # Both legs compute the same version; each sets only its own digest_<name>,
+    # and GitHub merges a matrix's outputs.
     outputs:
       version: ${{ steps.version.outputs.version }}
+      major_minor: ${{ steps.version.outputs.major_minor }}
+      digest_frontend: ${{ steps.digest.outputs.digest_frontend }}
+      digest_backend: ${{ steps.digest.outputs.digest_backend }}
 
     steps:
       - name: Checkout repository
@@ -174,37 +178,24 @@ jobs:
           echo "$OUTPUT"
           exit 1
 
-      - name: Prepare tags
-        id: prepare-tags
-        run: |
-          {
-            echo "type=raw,value=${{ steps.version.outputs.version }}"
-            echo "type=raw,value=${{ steps.version.outputs.major_minor }}"
-            if [ "${{ github.ref_name }}" = "main" ]; then
-              echo "type=raw,value=latest"
-            fi
-          } | tee tags.txt
-
-          # Output tags as multiline string
-          echo "tags<<EOF" >> $GITHUB_OUTPUT
-          cat tags.txt >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
+      # Labels only (the version label among them): the tags come later.
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v6
         with:
-          images: ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.name }}
-          tags: ${{ steps.prepare-tags.outputs.tags }}
+          images: ${{ env.REGISTRY }}/${{ steps.image.outputs.name }}
+          tags: type=raw,value=${{ steps.version.outputs.version }}
 
-      - name: Build and push Docker image
+      # Pushed by digest, with no tag: `publish` tags it once its arm64 half
+      # has booted in smoke-arm64.
+      - name: Build and push the image by digest
+        id: build
         uses: docker/build-push-action@v7
         with:
           context: .
           file: ${{ matrix.dockerfile }}
           platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ steps.image.outputs.name }},push-by-digest=true,name-canonical=true,push=true
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             APP_VERSION=${{ steps.version.outputs.version }}
@@ -219,12 +210,24 @@ jobs:
             type=registry,ref=${{ env.REGISTRY }}/${{ steps.image.outputs.name }}:buildcache
           cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ steps.image.outputs.name }}:${{ steps.image.outputs.cache }},mode=max,image-manifest=true,oci-mediatypes=true,ignore-error=true
 
+      - name: Record the digest
+        id: digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          if ! [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::the build reported no image digest: '$DIGEST'"
+            exit 1
+          fi
+          echo "digest_${{ matrix.name }}=$DIGEST" >> "$GITHUB_OUTPUT"
+          echo "$DIGEST"
+
   # The build stage compiles on amd64 for both architectures, so the build
   # alone never proves the arm64 image runs: a dependency that loads a native
   # binding at boot would ship an amd64-only arm64 image and pass. This job
   # starts each arm64 image on an arm64 runner (free on public repositories)
-  # and waits for its health endpoint. The images are already published by
-  # now: a failure here turns the run red and keeps the release untagged.
+  # and waits for its health endpoint. It pulls by digest: nothing is tagged
+  # until it passes.
   smoke-arm64:
     name: Smoke arm64 ${{ matrix.name }}
     needs: build-and-push
@@ -255,8 +258,10 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Start the image and wait for ${{ matrix.path }}
+        env:
+          DIGEST: ${{ needs.build-and-push.outputs[format('digest_{0}', matrix.name)] }}
         run: |
-          IMAGE="${{ env.REGISTRY }}/${GITHUB_REPOSITORY,,}/${{ matrix.name }}:${{ needs.build-and-push.outputs.version }}"
+          IMAGE="${{ env.REGISTRY }}/${GITHUB_REPOSITORY,,}/${{ matrix.name }}@${DIGEST}"
           echo "runner: $(uname -m); image: $IMAGE"
           docker pull -q "$IMAGE"
           ARCH=$(docker image inspect "$IMAGE" --format '{{.Architecture}}')
@@ -286,18 +291,80 @@ jobs:
           docker logs smoke
           exit 1
 
+  # Tags each image's digest once both arm64 smokes passed: `<version>` on
+  # main (latest and major.minor come in tag-release), `<version>-<branch>` and
+  # `<major.minor>-<branch>` on a branch.
+  publish:
+    name: Publish the tags
+    needs: [build-and-push, smoke-arm64]
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+
+    steps:
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4.6.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tag both images
+        env:
+          VERSION: ${{ needs.build-and-push.outputs.version }}
+          MAJOR_MINOR: ${{ needs.build-and-push.outputs.major_minor }}
+          DIGEST_FRONTEND: ${{ needs.build-and-push.outputs.digest_frontend }}
+          DIGEST_BACKEND: ${{ needs.build-and-push.outputs.digest_backend }}
+        run: |
+          set -euo pipefail
+          BASE="${REGISTRY}/${GITHUB_REPOSITORY,,}"
+          declare -A DIGEST=([frontend]="$DIGEST_FRONTEND" [backend]="$DIGEST_BACKEND")
+          declare -A TODO=()
+          for NAME in frontend backend; do
+            REF="$BASE/$NAME:$VERSION"
+            if [ "$GITHUB_REF_NAME" != "main" ]; then
+              TODO[$NAME]=1
+              continue
+            fi
+            # Checked again here, seconds before tagging, for both images before
+            # either is tagged: a run overlapping this one with the same VERSION
+            # passed the build's check too. Its own digest is a re-run; it passes.
+            if EXISTING=$(docker buildx imagetools inspect "$REF" --format '{{.Manifest.Digest}}' 2>&1); then
+              if [ "$EXISTING" = "${DIGEST[$NAME]}" ]; then
+                echo "✓ $REF already points at $EXISTING"
+                continue
+              fi
+              echo "::error::$REF already exists at $EXISTING; bump VERSION, a published tag is never rewritten"
+              exit 1
+            fi
+            if ! echo "$EXISTING" | grep -qiE "manifest unknown|not found|no such manifest"; then
+              echo "::error::could not tell whether $REF exists: $EXISTING"
+              exit 1
+            fi
+            TODO[$NAME]=1
+          done
+          for NAME in "${!TODO[@]}"; do
+            TAGS=(-t "$BASE/$NAME:$VERSION")
+            if [ "$GITHUB_REF_NAME" != "main" ]; then
+              TAGS+=(-t "$BASE/$NAME:$MAJOR_MINOR")
+            fi
+            docker buildx imagetools create "${TAGS[@]}" "$BASE/$NAME@${DIGEST[$NAME]}"
+            echo "✓ $BASE/$NAME:$VERSION → ${DIGEST[$NAME]}"
+          done
+
   # One tag per published release, so "Validate version was bumped" above has
   # something to compare against: it reads `git describe --tags`, and with no
   # tag in the repository it took its first-release branch on every merge
-  # (MAG-4314). Runs once, after BOTH images are pushed and their arm64 smoke
-  # passed, on main only.
+  # (MAG-4314). Then `latest` and `<major.minor>` move to the highest release.
+  # Runs once, after both version tags exist, on main only.
   tag-release:
     name: Tag the release
-    needs: [build-and-push, smoke-arm64]
+    needs: [build-and-push, publish]
     if: github.ref_name == 'main'
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      packages: write
 
     steps:
       - name: Checkout repository
@@ -324,3 +391,45 @@ jobs:
           git tag "$TAG" "$GITHUB_SHA"
           git push origin "refs/tags/${TAG}"
           echo "✓ Tagged ${TAG} at ${GITHUB_SHA}"
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4.6.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Overlapping main runs finish in any order, so each points `latest` and
+      # its `<major.minor>` at the highest release tag rather than its own, then
+      # re-reads the tags: a newer release tagged meanwhile is picked up here
+      # or by its own run, which tags before it points.
+      - name: Point latest and major.minor at the highest release
+        env:
+          MAJOR_MINOR: ${{ needs.build-and-push.outputs.major_minor }}
+        run: |
+          set -euo pipefail
+          BASE="${REGISTRY}/${GITHUB_REPOSITORY,,}"
+          highest() {
+            git ls-remote --tags --refs origin 'refs/tags/v*' \
+              | awk -v p="$1" '{ sub("refs/tags/v", "", $2) } $2 ~ /^[0-9]+\.[0-9]+\.[0-9]+$/ && (p == "" || index($2, p) == 1) { print $2 }' \
+              | sort -V | tail -n 1
+          }
+          for _ in 1 2 3; do
+            LATEST=$(highest "")
+            LINE=$(highest "${MAJOR_MINOR}.")
+            if [ -z "$LATEST" ] || [ -z "$LINE" ]; then
+              echo "::error::no release tag found (latest='$LATEST', ${MAJOR_MINOR}.x='$LINE')"
+              exit 1
+            fi
+            for NAME in frontend backend; do
+              docker buildx imagetools create -t "$BASE/$NAME:latest" "$BASE/$NAME:$LATEST"
+              docker buildx imagetools create -t "$BASE/$NAME:$MAJOR_MINOR" "$BASE/$NAME:$LINE"
+            done
+            if [ "$(highest "")" = "$LATEST" ] && [ "$(highest "${MAJOR_MINOR}.")" = "$LINE" ]; then
+              echo "✓ latest → $LATEST, $MAJOR_MINOR → $LINE"
+              exit 0
+            fi
+            echo "a newer release was tagged meanwhile; pointing again"
+          done
+          echo "::error::release tags kept moving; latest and $MAJOR_MINOR may lag"
+          exit 1
