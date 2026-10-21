@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.43.0]
+
 ### Added
 
 - **Transactions tab: transactions over time** (MAG-4461). A chart between the
