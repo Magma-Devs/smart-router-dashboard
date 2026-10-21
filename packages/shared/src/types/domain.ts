@@ -760,6 +760,37 @@ export interface TransactionsReport {
   range?: { startMs: number; endMs: number };
 }
 
+/**
+ * A transaction's result on the Transactions tab's chart: the list's four, and
+ * `failed-on-chain` - the send reply says the chain ran it and it failed
+ * (`tx_status: "failure"`).
+ */
+export type TxResult = TxOutcome | "failed-on-chain";
+
+/**
+ * Transactions over the page window, a bar per stretch of the clock, each bar
+ * split by result. `GET /api/transactions/over-time`.
+ */
+export interface TransactionsOverTime {
+  /** False when neither the store's recorded counts nor the router's logs could be read, or (`shared-chain`) a router was asked for whose lines can't be told from the other routers' on its chain. */
+  available: boolean;
+  reason?: LogUnavailable | "shared-chain";
+  /**
+   * Where the counts come from: `recorded` - the store's per-minute counts
+   * (`smartrouter_transactions:count1m`), the newest minutes counted from the
+   * logs; `logs` - counted from the router's logs, where the store records
+   * none for the scope. Null without a read.
+   */
+  source: "recorded" | "logs" | null;
+  /** The bars' END times, unix s: a bar at `t` covers the `stepSec` before it; the last is still filling up to `asOf`. */
+  grid: ChartGrid;
+  asOf: number;
+  /** One count per bar, in grid order, for each result the window holds. */
+  counts: Partial<Record<TxResult, number[]>>;
+  /** Unix s from which the newest bars may be short: minutes the recorded counts don't hold yet and the logs didn't count. Null when every bar is whole. */
+  partialFrom: number | null;
+}
+
 /* ── Cross-validation / WebSocket reports (no screen reads them) ── */
 
 export interface CrossValidationReport {

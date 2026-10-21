@@ -1,7 +1,8 @@
 /**
  * Minimal Loki reader: `query_range` for the lines the Transactions and Errors
- * tabs rebuild requests from, and an instant `count` for the Failed requests
- * card.
+ * tabs rebuild requests from, an instant `count` for the Failed requests
+ * card, and grouped metric queries (`metricRange`, `metricAt`) for the
+ * Transactions tab's chart.
  *
  * Returns `null` when the logs could not be read - distinct from `[]`, "no
  * matching lines" - so the caller can say which. Failures are logged at warn,
@@ -28,6 +29,17 @@ interface LokiStreamsResponse {
 interface LokiVectorResponse {
   status: string;
   data?: { resultType?: string; result: { value: [number, string] }[] };
+}
+
+interface LokiMetricResponse {
+  status: string;
+  data?: { resultType?: string; result: { metric?: Record<string, string>; value?: [number, string]; values?: [number, string][] }[] };
+}
+
+/** One series of a metric query: its labels and its points, `[unix s, value]` - one point for an instant query. */
+export interface LokiSeries {
+  metric: Record<string, string>;
+  values: [number, number][];
 }
 
 const WARN_INTERVAL_MS = 60_000;
@@ -107,6 +119,59 @@ export class LokiClient {
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  /** A metric query's series, read from `url`; null when Loki didn't answer. */
+  private async metric(url: URL, query: string): Promise<LokiSeries[] | null> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    try {
+      const res = await fetch(url, { signal: controller.signal, headers: this.headers });
+      if (!res.ok) {
+        const body = (await res.text().catch(() => "")).slice(0, 300);
+        this.warn(`http:${res.status}:${body}`, { status: res.status, body, query }, "loki call failed");
+        return null;
+      }
+      const parsed = (await res.json()) as LokiMetricResponse;
+      if (parsed.status !== "success" || !parsed.data) {
+        this.warn(`status:${parsed.status}`, { status: parsed.status, query }, "loki returned no data");
+        return null;
+      }
+      return parsed.data.result.map((r) => ({
+        metric: r.metric ?? {},
+        values: (r.values ?? (r.value ? [r.value] : [])).map(([t, v]): [number, number] => [Number(t), Number(v) || 0]),
+      }));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.warn(`fetch:${message}`, { error: message, url: url.origin }, "loki unreachable");
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  private endpoint(path: string): URL {
+    const base = new URL(this.baseUrl);
+    if (!base.pathname.endsWith("/")) base.pathname += "/";
+    return new URL(path, base);
+  }
+
+  /** A metric query (`sum by (…) (count_over_time(…))`) from `startSec` to `endSec`, a point each `stepSec`. */
+  async metricRange(query: string, startSec: number, endSec: number, stepSec: number): Promise<LokiSeries[] | null> {
+    const url = this.endpoint("loki/api/v1/query_range");
+    url.searchParams.set("query", query);
+    url.searchParams.set("start", String(startSec));
+    url.searchParams.set("end", String(endSec));
+    url.searchParams.set("step", String(stepSec));
+    return this.metric(url, query);
+  }
+
+  /** A metric query at `timeSec`: one point per series. */
+  async metricAt(query: string, timeSec: number): Promise<LokiSeries[] | null> {
+    const url = this.endpoint("loki/api/v1/query");
+    url.searchParams.set("query", query);
+    url.searchParams.set("time", String(timeSec));
+    return this.metric(url, query);
   }
 
   /** One number from a metric query (`sum(count_over_time(…))`), now: the

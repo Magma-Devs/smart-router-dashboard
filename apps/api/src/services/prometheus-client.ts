@@ -295,6 +295,15 @@ export class PrometheusClient {
     return r.status === "success" && r.data ? r.data.result : [];
   }
 
+  /** Instant query at `timeSeconds` → vector; null when the store didn't answer. */
+  async queryAtOrNull(expr: string, timeSeconds: number): Promise<PromVectorSample[] | null> {
+    const r = await this.get<PromVectorSample[]>("api/v1/query", {
+      query: this.scoped(expr),
+      time: String(timeSeconds),
+    });
+    return r.status === "success" && r.data ? r.data.result : null;
+  }
+
   /** Range query → matrix; null when the store didn't answer, so "no series" and "no answer" stay apart. */
   async queryRangeOrNull(
     expr: string,

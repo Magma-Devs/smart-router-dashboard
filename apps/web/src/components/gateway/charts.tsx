@@ -155,6 +155,10 @@ export interface Layer {
   name: string;
   values: number[];
   color: string;
+  /** Diagonal stripes in `color`, to tell apart two layers that share one. */
+  hatch?: boolean;
+  /** How strong the fill is; 0.7 by default. */
+  opacity?: number;
 }
 export interface BgBand {
   lo: number;
@@ -667,6 +671,16 @@ function NewColumnChart({
   return (
     <div ref={ref} style={containerStyle}>
       <svg width={w} height={h} style={{ overflow: "visible", display: "block" }}>
+        {stacks.some((s) => s.hatch) && (
+          <defs>
+            {stacks.map((s, si) => s.hatch && (
+              <pattern key={si} id={`${id}-hatch-${si}`} width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+                <rect width="5" height="5" fill={s.color} opacity="0.3" />
+                <line x1="0" y1="0" x2="0" y2="5" stroke={s.color} strokeWidth="2.5" />
+              </pattern>
+            ))}
+          </defs>
+        )}
         {gVals.map((v, i) => (
           <g key={i}>
             <line x1={padX} x2={padX + iW} y1={cy(v)} y2={cy(v)} stroke="var(--line)" strokeWidth="1" />
@@ -710,7 +724,7 @@ function NewColumnChart({
                 cum += v;
                 return (
                   <rect key={si} x={bx} y={y} width={barW} height={Math.max(bh, 0.5)}
-                    fill={isSpike ? "var(--warn)" : s.color} opacity={isSpike ? 0.88 : 0.7}
+                    fill={isSpike ? "var(--warn)" : s.hatch ? `url(#${id}-hatch-${si})` : s.color} opacity={isSpike ? 0.88 : s.opacity ?? 0.7}
                     rx={si === stacks.length - 1 ? 1.5 : 0} />
                 );
               })}
