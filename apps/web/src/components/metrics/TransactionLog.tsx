@@ -4,9 +4,10 @@
  * chain and method, every upstream it went to and what each answered, whose
  * reply went back, how long that took, and how it ended. Live data:
  * /api/transactions, which rebuilds each transaction from the router's own
- * log lines in Loki - Prometheus holds totals, never one request. Four filters
- * narrow the rows: the result, the method, the error type and an upstream it
- * went to. The tab follows the page's
+ * log lines in Loki - Prometheus holds totals, never one request. Five filters
+ * narrow the rows: the result, the customer, the method, the error type and
+ * an upstream it went to. A transaction's hash links to the chain's explorer
+ * where its transaction page is known. The tab follows the page's
  * window or exact times picked here - the cards too, since they count the
  * list - and "Load older" reads on past one read's cap. Between the cards and
  * the list, the window's transactions over time (TransactionsChart). The chips and
@@ -30,6 +31,13 @@ import {
   AppGot,
   appGot,
   AttemptList,
+  CallFactsLine,
+  CustomerCell,
+  customerOptions,
+  hasCustomer,
+  LOOKUP_REFUSED,
+  MatchesNote,
+  TxHash,
   DetailLine,
   detailText,
   errorTypeOptions,
@@ -72,13 +80,14 @@ function summarize(rows: TxLogRow[]) {
   const accepted = count("accepted");
   const rejected = count("rejected");
   const failed = count("failed");
-  const decided = accepted + rejected + failed;
-  return { total: rows.length, accepted, rejected, failed, successRate: decided > 0 ? accepted / decided : null };
+  const failedOnChain = count("failed-on-chain");
+  const decided = accepted + rejected + failed + failedOnChain;
+  return { total: rows.length, accepted, rejected, failed, failedOnChain, successRate: decided > 0 ? accepted / decided : null };
 }
 
 /** The list's results, as the chart above it draws them. */
 const OUTCOME: Record<TxLogRow["outcome"], { label: string; color: string }> = TX_RESULT;
-const OUTCOME_ORDER: TxLogRow["outcome"][] = ["accepted", "rejected", "failed", "unknown"];
+const OUTCOME_ORDER: TxLogRow["outcome"][] = ["accepted", "rejected", "failed-on-chain", "failed", "unknown"];
 
 /** Every upstream's answer in full, when a row is opened. A rejection is the
  *  answering upstream's own error, so it shows on that upstream's line. */
@@ -102,6 +111,21 @@ function Details({ row }: { row: TxLogRow }) {
           <div className="gw-mono" style={detailText}>{row.error.message}</div>
         </DetailLine>
       )}
+      {row.outcome === "failed-on-chain" && (
+        <DetailLine at={row.replyMs != null ? `+${fmtComma(row.replyMs)} ms` : ""}>
+          <div style={{ fontSize: 12, color: "var(--err)" }}>Failed on chain: the chain ran the transaction and it failed</div>
+          {row.txError && <div className="gw-mono" style={detailText}>{row.txError}</div>}
+        </DetailLine>
+      )}
+      {row.txHash && (
+        <DetailLine>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11.5, color: "var(--text-4)", flexWrap: "wrap" }}>
+            Transaction hash <TxHash hash={row.txHash} spec={row.spec} full />
+            {row.txStatus === "success" && <span>· the chain ran it</span>}
+          </div>
+        </DetailLine>
+      )}
+      <CallFactsLine row={row} />
       <RequestIdLine id={row.guid} startMs={row.time} tookMs={row.replyMs} />
     </div>
   );
@@ -119,7 +143,7 @@ function TxLookupPanel({ id, rangeQ, rangeWords, onClose }: { id: string; rangeQ
       {isLoading ? (
         <SkelLine w="50%" />
       ) : error && !data ? (
-        <div style={{ color: "var(--text-4)" }}>Couldn&apos;t look this up: it isn&apos;t an ID the router writes (letters, digits, - and _), or the API didn&apos;t answer.</div>
+        <div style={{ color: "var(--text-4)" }}>{LOOKUP_REFUSED}</div>
       ) : data && !data.available ? (
         <div style={{ color: "var(--text-4)" }}>{unreadableWords(data.reason)}</div>
       ) : data?.found && !row ? (
@@ -128,6 +152,7 @@ function TxLookupPanel({ id, rangeQ, rangeWords, onClose }: { id: string; rangeQ
         <NotFound rangeWords={rangeWords} wide={wide} onWiden={() => setWide(true)} />
       ) : (
         <div style={{ display: "grid", gap: 8 }}>
+          <MatchesNote matches={data?.matches} />
           <div style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--text-2)", flexWrap: "wrap" }}>
             <span className="gw-mono gw-tnum">{fmtWhen(row.time)}</span>
             {row.spec ? <><ChainBadge spec={row.spec} size={14} /><span>{chainWords(row)}</span></> : row.specs && <span>{chainWords(row)}</span>}
@@ -145,6 +170,7 @@ function TxLookupPanel({ id, rangeQ, rangeWords, onClose }: { id: string; rangeQ
 
 export function TransactionLog({ chainFilter, win }: { chainFilter: string | null; win: MetricWindow }) {
   const [outcome, setOutcome] = useState<TxLogRow["outcome"] | typeof ALL>(ALL);
+  const [customer, setCustomer] = useState(ALL);
   const [method, setMethod] = useState(ALL);
   const [errType, setErrType] = useState(ALL);
   const [upstream, setUpstream] = useState(ALL);
@@ -184,7 +210,9 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
     return [...n].sort(([a], [b]) => (a < b ? -1 : 1)).map(([name, count]) => ({ name, count }));
   }, [allRows]);
   // The result options count within the other filters, so a number is what picking it would list.
+  const customers = useMemo(() => customerOptions(allRows), [allRows]);
   const byOthers = allRows.filter((r) =>
+    (customer === ALL || hasCustomer(r, customer)) &&
     (method === ALL || r.method === method) &&
     (errType === ALL || hasErrorType(r, errType)) &&
     (upstream === ALL || r.attempts.some((a) => a.upstream === upstream)));
@@ -232,8 +260,8 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
       sub: log.more ? <>the latest {fmtComma(sum.total)} {when} - load older ones below</> : <>sent through the router {when}</> },
     { label: "Success rate", tipKey: "txSuccessRate", value: fmtPct(sum.successRate, 1),
       sub: <>{fmtComma(sum.accepted)} accepted by an upstream</> },
-    { label: "Failed", tipKey: "txFailed", value: fmtComma(sum.rejected + sum.failed),
-      sub: <>{fmtComma(sum.rejected)} rejected by the node · {fmtComma(sum.failed)} router error{sum.failed === 1 ? "" : "s"}</> },
+    { label: "Failed", tipKey: "txFailed", value: fmtComma(sum.rejected + sum.failed + sum.failedOnChain),
+      sub: <>{fmtComma(sum.rejected)} rejected by the node{sum.failedOnChain ? <> · {fmtComma(sum.failedOnChain)} failed on chain</> : null} · {fmtComma(sum.failed)} router error{sum.failed === 1 ? "" : "s"}</> },
   ];
 
   return (
@@ -271,6 +299,10 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
               <option value={ALL}>All results</option>
               {/* No counts before the first read lands: a 0 there would be a claim. */}
               {OUTCOME_ORDER.map((o) => <option key={o} value={o}>{OUTCOME[o].label}{data ? ` (${fmtComma(byOthers.filter((r) => r.outcome === o).length)})` : ""}</option>)}
+            </select>
+            <select aria-label="Customer" value={customer} onChange={(e) => reset(setCustomer)(e.target.value)} style={narrowSelect} disabled={!customers.length && customer === ALL}>
+              <option value={ALL}>All customers</option>
+              {customers.map((c) => <option key={c.key} value={c.key}>{c.label} ({fmtComma(c.count)})</option>)}
             </select>
             <select aria-label="Method" value={method} onChange={(e) => reset(setMethod)(e.target.value)} style={narrowSelect} disabled={!methods.length}>
               <option value={ALL}>All methods</option>
@@ -312,7 +344,7 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
             </colgroup>
             <thead>
               <tr>
-                <th>Time sent</th>
+                <th>Time · customer</th>
                 <th>Chain · method</th>
                 <th>Sent to</th>
                 <th>Result</th>
@@ -328,7 +360,10 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
                 return (
                   <Fragment key={r.guid}>
                     <tr tabIndex={0} aria-expanded={isOpen} style={{ cursor: "pointer" }} onClick={toggle} onKeyDown={onRowKey(toggle)}>
-                      <td style={{ verticalAlign: "top" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{fmtWhen(r.time)}</span></td>
+                      <td style={{ maxWidth: 0, verticalAlign: "top" }}>
+                        <span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{fmtWhen(r.time)}</span>
+                        <CustomerCell customer={r.customer} />
+                      </td>
                       <td style={{ maxWidth: 0, verticalAlign: "top" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
                           {r.spec && <ChainBadge spec={r.spec} size={16} />}
@@ -337,6 +372,7 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
                             {r.method === "unknown"
                               ? <div style={{ fontSize: 10.5, color: "var(--text-4)", fontStyle: "italic" }}>method not in the logs</div>
                               : <div className="gw-mono" title={r.method} style={{ fontSize: 10.5, color: "var(--text-3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.method}</div>}
+                            {r.txHash && <div style={{ marginTop: 3 }}><TxHash hash={r.txHash} spec={r.spec} /></div>}
                           </div>
                         </div>
                       </td>
@@ -347,7 +383,7 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
                       <td style={{ verticalAlign: "top" }} title={r.note ?? undefined}>
                         <span className="gw-tag" style={{ fontSize: 10, color: o.color, borderColor: "currentColor" }}>{o.label}</span>
                         {r.answeredBy && r.outcome !== "failed" && (
-                          <ResponseSource label={r.outcome === "accepted" ? "served by" : "returned by"} name={r.answeredBy} />
+                          <ResponseSource label={r.outcome === "accepted" || r.outcome === "failed-on-chain" ? "served by" : "returned by"} name={r.answeredBy} />
                         )}
                       </td>
                       <td style={{ textAlign: "right", verticalAlign: "top" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{fmtTook(r.replyMs)}</span></td>

@@ -319,8 +319,9 @@ describe("ErrorRequestsService", () => {
         queries.push(query);
         const asked = /`"GUID":"\(([^)]*)\)"`/.exec(query)?.[1]?.split("|");
         if (asked) return lines.filter((l) => asked.some((g) => l.line.includes(`"GUID":"${g}"`)));
-        const one = /\|= `"GUID":"([^"]+)"`/.exec(query)?.[1];
-        if (one) return lines.filter((l) => l.line.includes(`"GUID":"${one}"`));
+        // A look-up: the request with that ID, or whose relay_end carries it as a hash or a caller's id.
+        const one = /\|~ `"\(GUID\|tx_hash\|request_id\)":"([^"]+)"`/.exec(query)?.[1]?.replace(/\\(.)/g, "$1");
+        if (one) return lines.filter((l) => ["GUID", "tx_hash", "request_id"].some((k) => l.line.includes(`"${k}":"${one}"`)));
         if (query.includes('|= `"event":"relay_end"`')) return []; // these routers write none
         const names = [...query.matchAll(/`([^`]*)`/g)][2]?.[1]?.split("|");
         return lines
@@ -389,7 +390,7 @@ describe("ErrorRequestsService", () => {
     const { loki, queries } = lokiStub(LINES);
     const svc = new ErrorRequestsService(loki, '{service="router"}', configSvc);
     expect((await svc.lookup("15972212763463815960", RANGE)).row).toMatchObject({ method: "getSlot", result: "recovered", retried: true });
-    expect(queries.at(-1)).toBe('{service="router"} |= `"GUID":"15972212763463815960"`');
+    expect(queries.at(-1)).toBe('{service="router"} |= `15972212763463815960` |~ `"(GUID|tx_hash|request_id)":"15972212763463815960"`');
     // Nothing failed on the way: answered, not "recovered".
     expect((await svc.lookup("13101775707732352358", RANGE)).row).toMatchObject({ method: "getSlot", result: "ok", retried: false });
     expect(await svc.lookup("999", RANGE)).toEqual({ available: true, row: null });
@@ -464,7 +465,7 @@ describe("GET /api/error-requests", () => {
       }
       const q = url.searchParams.get("query") ?? "";
       // Every line of the request asked for - by the list's batch or a look-up by ID.
-      const lines = q.includes('`"GUID":"(') || q.includes('|= `"GUID":"')
+      const lines = q.includes('`"GUID":"(') || q.includes('"(GUID|tx_hash|request_id)":"')
         ? RATE_LIMITED_THEN_OK
         : RATE_LIMITED_THEN_OK.filter((l) => l.line.includes("could not send relay") || l.line.includes("policy.Decide"));
       return Response.json({ status: "success", data: { resultType: "streams", result: [{ stream: { service: "router" }, values: ns(lines) }] } });
@@ -489,6 +490,8 @@ describe("GET /api/error-requests", () => {
     app = await buildApp();
     const bad = await app.inject({ method: "GET", url: "/api/requests/not%20an%20id" });
     expect(bad.statusCode).toBe(400);
+    expect((await app.inject({ method: "GET", url: "/api/requests/acme-req-0192?window=1d" })).statusCode).toBe(200);
+    expect((await app.inject({ method: "GET", url: "/api/requests/a%60b?window=1d" })).statusCode).toBe(400);
     const res = await app.inject({ method: "GET", url: "/api/requests/15972212763463815960?window=1d" });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({ available: true, row: { guid: "15972212763463815960", method: "getSlot", resolvedBy: "sol-publicnode" } });

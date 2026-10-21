@@ -97,6 +97,14 @@ export function scrubUrls(message: string): string {
  *  plain token - nothing that could reach into the LogQL around it. */
 export const REQUEST_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
+/**
+ * What a look-up takes: a request ID, a transaction hash (an EVM 0x hash is
+ * 66 characters, a base58 Solana signature up to 88) or the caller's own
+ * request id (up to 128). Plain characters only: none a JSON string escapes,
+ * none that ends a LogQL raw string, so the value matches the line as written.
+ */
+export const LOOKUP_ID = /^[A-Za-z0-9_.:+=@-]{1,128}$/;
+
 /** A request value spliced into a LogQL pattern (a chain's spec) must be a
  *  plain token: LogQL raw strings are backtick-quoted and can't escape one,
  *  so a backtick would end the string and let the rest run as LogQL. */
@@ -106,16 +114,31 @@ export const LABEL_TOKEN = /^[A-Za-z0-9_-]{1,64}$/;
  *  LogQL string; one that can't is left out of the query, not spliced in. */
 export const inRawString = (s: string) => !s.includes("`");
 
-/** Every line of one request, by its ID, in a range - for a look-up. Null when Loki didn't answer. */
+/**
+ * Every line of the requests a look-up names, in a range: the request with
+ * that ID, and on a router that writes them, every request whose `relay_end`
+ * carries it as its transaction hash or as the caller's request id. Null when
+ * Loki didn't answer.
+ */
 export async function linesOfRequest(
   loki: LokiClient,
   selector: string,
-  guid: string,
+  id: string,
   fromMs: number,
   toMs: number,
 ): Promise<RouterLine[] | null> {
-  const found = await loki.queryRange(`${selector} |= \`"GUID":"${guid}"\``, fromMs, toMs, 1000, "forward");
-  return found === null ? null : parseAll(found).filter((l) => l.guid === guid);
+  const found = await loki.queryRange(
+    `${selector} |= \`${id}\` |~ \`"(GUID|tx_hash|request_id)":"${escapeRe(id)}"\``,
+    fromMs,
+    toMs,
+    1000,
+    "forward",
+  );
+  if (found === null) return null;
+  const lines = parseAll(found);
+  // The requests the value names: by their ID, or by a hash or caller id on their relay_end.
+  const named = new Set(lines.filter((l) => l.guid === id || str(l.f.tx_hash) === id || str(l.f.request_id) === id).map((l) => l.guid));
+  return lines.filter((l) => named.has(l.guid));
 }
 
 /** Array#findLast, which this repo's compile target doesn't have yet. */

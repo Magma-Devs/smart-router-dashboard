@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { toMetricWindow } from "@sr/shared";
 import { RANGE_QUERY_PROPERTIES, readRange, type RangeQuery } from "../services/read-range.js";
-import { REQUEST_ID } from "../services/router-log.js";
+import { LOOKUP_ID } from "../services/router-log.js";
 import { sendApiError } from "../plugins/error-handler.js";
 
 interface TransactionsQuery extends RangeQuery {
@@ -64,14 +64,14 @@ export async function transactionRoutes(app: FastifyInstance) {
   app.get<{ Params: { guid: string }; Querystring: RangeQuery }>("/api/transactions/:guid", {
     schema: {
       tags: ["Transactions"],
-      summary: "One transaction by its request ID, from the router's logs; found without a row = the ID isn't a transaction",
-      params: { type: "object" as const, properties: { guid: { type: "string" as const, description: "The request ID - the GUID the router puts in its errors" } } },
+      summary: "One transaction by its request ID, hash or the caller's request ID, from the router's logs; found without a row = it isn't a transaction; matches = how many requests carry the value",
+      params: { type: "object" as const, properties: { guid: { type: "string" as const, description: "The request ID (the GUID the router puts in its errors), the transaction hash, or the caller's X-Request-Id" } } },
       querystring: { type: "object" as const, properties: { ...RANGE_QUERY_PROPERTIES } },
     },
   }, async (request, reply) => {
     const { guid } = request.params;
-    if (!REQUEST_ID.test(guid)) {
-      sendApiError(reply, 400, "not a request ID: letters, digits, - and _ only, up to 64");
+    if (!LOOKUP_ID.test(guid)) {
+      sendApiError(reply, 400, "not a request ID, transaction hash or caller's request ID: letters, digits and _ - . : + = @ only, up to 128");
       return reply;
     }
     const range = readRange(request.query);

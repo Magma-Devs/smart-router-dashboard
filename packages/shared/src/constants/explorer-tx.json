@@ -1,0 +1,92 @@
+{
+  "ETH1": {
+    "explorer": "etherscan",
+    "tx": "{base}/tx/{hash}",
+    "hash": "evm",
+    "verified": "browser 2026-10-21 — tx page watched rendering a real transaction"
+  },
+  "SEP1": {
+    "explorer": "etherscan-sepolia",
+    "tx": "{base}/tx/{hash}",
+    "hash": "evm",
+    "verified": "browser 2026-10-21 — tx page watched rendering a real transaction"
+  },
+  "BASE": {
+    "explorer": "basescan",
+    "tx": "{base}/tx/{hash}",
+    "hash": "evm",
+    "verified": "browser 2026-10-21 — tx page watched rendering a real transaction"
+  },
+  "POLYGON": {
+    "explorer": "polygonscan",
+    "tx": "{base}/tx/{hash}",
+    "hash": "evm",
+    "verified": "browser 2026-10-21 — tx page watched rendering a real transaction"
+  },
+  "POLYGONA": {
+    "explorer": "polygonscan-amoy",
+    "tx": "{base}/tx/{hash}",
+    "hash": "evm",
+    "verified": "browser 2026-10-21 — tx page watched rendering a real transaction"
+  },
+  "OPTMS": {
+    "explorer": "etherscan-sepolia-optimism",
+    "tx": "{base}/tx/{hash}",
+    "hash": "evm",
+    "verified": "browser 2026-10-21 — tx page watched rendering a real transaction"
+  },
+  "AVAX": {
+    "explorer": "Etherscan",
+    "tx": "{base}/tx/{hash}",
+    "hash": "evm",
+    "verified": "browser 2026-10-21 — tx page watched rendering a real transaction"
+  },
+  "HYPERLIQUID": {
+    "explorer": "HyperEVMScan",
+    "tx": "{base}/tx/{hash}",
+    "hash": "evm",
+    "verified": "browser 2026-10-21 — tx page watched rendering a real transaction"
+  },
+  "SOLANA": {
+    "explorer": "Solana Explorer",
+    "tx": "{base}/tx/{hash}",
+    "hash": "base58",
+    "verified": "browser 2026-10-21 — tx page watched rendering a real transaction"
+  },
+  "SOLANAT": {
+    "explorer": "Solana Explorer",
+    "tx": "{base}/tx/{hash}",
+    "hash": "base58",
+    "verified": "browser 2026-10-21 — tx page watched rendering a real transaction"
+  },
+  "SOLANAD": {
+    "explorer": "Solana Explorer",
+    "tx": "{base}/tx/{hash}",
+    "hash": "base58",
+    "verified": "browser 2026-10-21 — tx page watched rendering a real transaction"
+  },
+  "SUI": {
+    "explorer": "Suiscan",
+    "tx": "{base}/tx/{hash}",
+    "hash": "base58",
+    "verified": "browser 2026-10-21 — tx page watched rendering a real transaction"
+  },
+  "SUIT": {
+    "explorer": "Suiscan",
+    "tx": "{base}/tx/{hash}",
+    "hash": "base58",
+    "verified": "browser 2026-10-21 — tx page watched rendering a real transaction"
+  },
+  "COSMOSHUB": {
+    "explorer": "mintscan",
+    "tx": "{base}/tx/{hash}",
+    "hash": "hex",
+    "verified": "browser 2026-10-21 — tx page watched rendering a real transaction"
+  },
+  "OSMOSIS": {
+    "explorer": "mintscan",
+    "tx": "{base}/tx/{hash}",
+    "hash": "hex",
+    "verified": "browser 2026-10-21 — tx page watched rendering a real transaction"
+  }
+}

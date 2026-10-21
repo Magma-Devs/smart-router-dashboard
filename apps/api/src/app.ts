@@ -47,6 +47,10 @@ export async function buildApp(): Promise<FastifyInstance> {
     // the per-IP rate limit and lets an attacker choose the address recorded
     // against their sign-in attempts. See config.server.trustProxy.
     trustProxy: trustProxyOption(config.server.trustProxy),
+    // A look-up's path takes a caller's request id of up to 128 characters
+    // (LOOKUP_ID), which its own check refuses past that; Fastify answers 414
+    // past 100 by default.
+    maxParamLength: 256,
     logger: {
       level: config.logLevel,
       transport: config.isDev ? { target: "pino-pretty" } : undefined,

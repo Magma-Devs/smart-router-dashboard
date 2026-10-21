@@ -9,6 +9,7 @@ generated catalogs keyed by that index.
 |---|---|---|
 | Name, family, icon, interfaces, mainnet flag | `packages/shared/src/constants/chain-map.generated.json` | `buildChainMetaByIndex(spec)` |
 | Block explorers | `packages/shared/src/constants/chain-explorers.generated.json` | `explorersFor(spec)`, `explorerBlockUrl(spec, height)`, `explorerHome(spec)` |
+| Transaction pages (curated, not generated) | `packages/shared/src/constants/explorer-tx.json` | `explorerTxUrl(spec, hash)` |
 | Try-it method catalog | `apps/web/src/components/try-me/chain-methods.generated.json` | the Try-it drawer |
 
 All are generated from [Magma-Devs/lava-specs](https://github.com/Magma-Devs/lava-specs)
@@ -23,13 +24,13 @@ a claim about a public chain. The explorer map is what lets a reader check that
 claim at the source, which is the difference between a dashboard you believe
 and one you verify.
 
-**The catalog links one thing: a block HEIGHT.** That is the only value the
-dashboard holds which a public chain can confirm. There is no transaction hash
-and no chain address anywhere in its domain model — `provider_address` is an
-upstream's name, not an on-chain address — so a transaction or address template
-would address a value that does not exist. The catalog carried 321 of them
-once, and 18 chains carried nothing else: covered in the file, unlinkable in
-the UI.
+**The generated catalog links one thing: a block HEIGHT.** A transaction HASH
+is the other value the dashboard holds which a public chain can confirm - a
+router's `relay_end` names one for a transaction it sent - and its links are a
+small curated table of their own ([Transaction pages](#transaction-pages)).
+There is no chain address anywhere in the domain model — `provider_address` is
+an upstream's name, not an on-chain address — so an address template would
+address a value that does not exist.
 
 ### The join key
 
@@ -173,6 +174,50 @@ simply nothing verified. They are listed in
 `apps/web/scripts/data/no-explorer.generated.json`, which CI gates like the
 other catalogs, so a chain silently arriving without one fails the build rather
 than passing unnoticed.
+
+### Transaction pages
+
+The Transactions tab shows a transaction's hash (`tx_hash` on the router's
+`relay_end`) and links it to the chain's explorer where the explorer's
+transaction page is known. `explorerTxUrl(spec, hash)` returns **null**
+otherwise, and the hash shows as plain text, as a height without a block page
+does. The table is `packages/shared/src/constants/explorer-tx.json`, curated by
+hand and not touched by the generator: each entry names one of the chain's
+explorers in the generated catalog (`{base}` is that explorer's url, and its
+`suffix` - a Solana cluster - is kept), the page's shape, and the hash's form.
+A hash not in that form gets no link. An entry whose explorer leaves the
+catalog on a regeneration links nothing until it is watched again.
+
+Every entry was watched rendering a real transaction, fetched from a public
+node of the chain, in a browser on 2026-10-21:
+
+| Spec | Explorer | Transaction page | Hash |
+|---|---|---|---|
+| `ETH1` | etherscan | `https://etherscan.io/tx/<hash>` | `0x` + 64 hex |
+| `SEP1` | etherscan-sepolia | `https://sepolia.etherscan.io/tx/<hash>` | `0x` + 64 hex |
+| `BASE` | basescan | `https://basescan.org/tx/<hash>` | `0x` + 64 hex |
+| `POLYGON` | polygonscan | `https://polygonscan.com/tx/<hash>` | `0x` + 64 hex |
+| `POLYGONA` | polygonscan-amoy | `https://amoy.polygonscan.com/tx/<hash>` | `0x` + 64 hex |
+| `OPTMS` | etherscan-sepolia-optimism | `https://sepolia-optimism.etherscan.io/tx/<hash>` | `0x` + 64 hex |
+| `AVAX` | Etherscan (Snowscan) | `https://snowscan.xyz/tx/<hash>` | `0x` + 64 hex |
+| `HYPERLIQUID` | HyperEVMScan | `https://hyperevmscan.io/tx/<hash>` | `0x` + 64 hex |
+| `SOLANA` | Solana Explorer | `https://explorer.solana.com/tx/<signature>` | base58 |
+| `SOLANAT` | Solana Explorer | `https://explorer.solana.com/tx/<signature>?cluster=testnet` | base58 |
+| `SOLANAD` | Solana Explorer | `https://explorer.solana.com/tx/<signature>?cluster=devnet` | base58 |
+| `SUI` | Suiscan | `https://suiscan.xyz/mainnet/tx/<digest>` | base58 |
+| `SUIT` | Suiscan | `https://suiscan.xyz/testnet/tx/<digest>` | base58 |
+| `COSMOSHUB` | mintscan | `https://www.mintscan.io/cosmos/tx/<hash>` | 64 hex |
+| `OSMOSIS` | mintscan | `https://www.mintscan.io/osmosis/tx/<hash>` | 64 hex |
+
+Not linked, because a headless browser met a Cloudflare challenge instead of
+the page, so it could not be watched: `BASES` (sepolia.basescan.org), `BSC`
+(bscscan.com), `BSCT` (testnet.bscscan.com), `OPTM`
+(optimistic.etherscan.io), `AVAXT` (testnet.snowscan.xyz). Solscan rendered
+a mainnet transaction but challenged its testnet and devnet pages, so Solana
+links Solana Explorer - the catalog's own explorer for its block links - on all
+three clusters. Every other chain has no watched transaction page. Adding one
+means fetching a real transaction from a public node, watching its page render
+in a browser, and adding the entry and its row here.
 
 ## Regenerating
 

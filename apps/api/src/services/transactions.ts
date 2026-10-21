@@ -35,6 +35,7 @@ import type { LogUnavailable, RouterTopology, TransactionLookup, TransactionsRep
 import { WRITE_UNKNOWN_NOTE } from "@sr/shared";
 import {
   attemptsOf,
+  callFactsOf,
   FAILED_OUTCOMES,
   isRelayEnd,
   isSubscription,
@@ -56,7 +57,7 @@ import {
   lastWhere,
   linesForGuids,
   linesOfRequest,
-  REQUEST_ID,
+  LOOKUP_ID,
   methodOf,
   namesOf,
   onChain,
@@ -265,10 +266,11 @@ function rowOfEvent(e: RouterLine, guid: string, index: UpstreamIndex): TxLogRow
   const outcome = str(e.f.outcome);
   const replied = attempts.find((a) => a.replied);
   const txCode = typeof e.f.tx_code === "number" ? e.f.tx_code : null;
-  // The list reads no tx_status: a transaction is never failed-on-chain here.
-  const result = txResultOf({ outcome, txRefused: txCode !== null && txCode !== 0, apiInterface: str(e.f.api_interface) });
+  const rawStatus = str(e.f.tx_status);
+  const txStatus = rawStatus === "success" || rawStatus === "failure" ? rawStatus : undefined;
+  const result = txResultOf({ outcome, txRefused: txCode !== null && txCode !== 0, apiInterface: str(e.f.api_interface), txStatus });
 
-  let txOutcome: TxOutcome = result === "failed-on-chain" ? "accepted" : result;
+  let txOutcome: TxOutcome = result;
   let error: TxLogRow["error"] = null;
   let note: string | null = null;
   if (outcome === "write_unknown") {
@@ -296,6 +298,9 @@ function rowOfEvent(e: RouterLine, guid: string, index: UpstreamIndex): TxLogRow
   }
 
   const chain = str(e.f.chain);
+  const txHash = str(e.f.tx_hash).trim();
+  // The chain's own words on a failure; a node URL in them is cut like any other.
+  const txError = txStatus === "failure" ? scrubUrls(str(e.f.tx_error)).trim() : "";
   return {
     guid,
     time: Math.round(startOf(e)),
@@ -307,30 +312,37 @@ function rowOfEvent(e: RouterLine, guid: string, index: UpstreamIndex): TxLogRow
     outcome: txOutcome,
     error,
     note,
+    ...(txHash ? { txHash } : {}),
+    ...(txStatus ? { txStatus } : {}),
+    ...(txError ? { txError } : {}),
+    ...callFactsOf(e),
   };
 }
 
 /** Totals and success rate over the rows. `unknown` rows are counted in
- *  `total` but left out of the rate: their end can't be told. */
+ *  `total` but left out of the rate: their end can't be told. One the chain
+ *  ran and failed is a failure. */
 export function summarize(
   rows: TxLogRow[],
-): Pick<TransactionsReport, "total" | "accepted" | "rejected" | "failed" | "successRate"> {
+): Pick<TransactionsReport, "total" | "accepted" | "rejected" | "failed" | "failedOnChain" | "successRate"> {
   const count = (o: TxOutcome) => rows.filter((r) => r.outcome === o).length;
   const accepted = count("accepted");
   const rejected = count("rejected");
   const failed = count("failed");
-  const decided = accepted + rejected + failed;
+  const failedOnChain = count("failed-on-chain");
+  const decided = accepted + rejected + failed + failedOnChain;
   return {
     total: rows.length,
     accepted,
     rejected,
     failed,
+    failedOnChain,
     successRate: decided > 0 ? accepted / decided : null,
   };
 }
 
 function emptyReport(available: boolean, reason?: LogUnavailable): TransactionsReport {
-  return { available, ...(reason ? { reason } : {}), total: 0, accepted: 0, rejected: 0, failed: 0, successRate: null, rows: [], more: false, nextBefore: null };
+  return { available, ...(reason ? { reason } : {}), total: 0, accepted: 0, rejected: 0, failed: 0, failedOnChain: 0, successRate: null, rows: [], more: false, nextBefore: null };
 }
 
 export class TransactionsService {
@@ -353,18 +365,20 @@ export class TransactionsService {
   }
 
   /**
-   * One transaction by its request ID: every line the router wrote for it in
-   * `range`, as the same row the log shows. `found` without a row: the ID is
-   * a request that isn't a transaction.
+   * One transaction by its request ID, its hash or the caller's request id:
+   * every line the router wrote for it in `range`, as the same row the log
+   * shows. `found` without a row: the value names a request that isn't a
+   * transaction. A value several requests carry - a transaction sent again
+   * keeps its hash - answers with the newest and how many there are.
    */
-  async lookup(guid: string, range: ReadRange): Promise<TransactionLookup> {
+  async lookup(id: string, range: ReadRange): Promise<TransactionLookup> {
     const loki = this.loki;
     if (!loki) return { available: false, reason: "unconfigured", found: false, row: null };
-    if (!REQUEST_ID.test(guid)) return { available: true, found: false, row: null };
-    const lines = await linesOfRequest(loki, this.selector, guid, range.startMs, range.endMs);
+    if (!LOOKUP_ID.test(id)) return { available: true, found: false, row: null };
+    const lines = await linesOfRequest(loki, this.selector, id, range.startMs, range.endMs);
     if (lines === null) return { available: false, reason: "unreachable", found: false, row: null };
-    const row = buildTxRows(lines, new UpstreamIndex(this.routers()))[0] ?? null;
-    return { available: true, found: lines.length > 0, row };
+    const rows = buildTxRows(lines, new UpstreamIndex(this.routers()));
+    return { available: true, found: lines.length > 0, row: rows[0] ?? null, ...(rows.length > 1 ? { matches: rows.length } : {}) };
   }
 
   /**
