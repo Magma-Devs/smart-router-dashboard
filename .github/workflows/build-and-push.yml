@@ -8,10 +8,11 @@ on:
 env:
   REGISTRY: ghcr.io
 
-# One run per branch at a time: a newer push to a branch cancels the run its
-# commit supersedes. main gets a group per commit instead: GitHub keeps at
-# most one pending run per group, so a shared group would drop the middle
-# one of three quick merges and leave its VERSION without images or a tag.
+# A newer push to a branch cancels the run its commit supersedes. main gets a
+# group per commit: GitHub keeps one pending run per group, so a shared group
+# would drop the middle one of three quick merges and leave its VERSION with
+# no images and no tag. Main runs therefore overlap, and of two merges minutes
+# apart the slower build can take `latest`; the version tags are exact.
 concurrency:
   group: build-and-push-${{ github.ref_name == 'main' && github.sha || github.ref }}
   cancel-in-progress: ${{ github.ref_name != 'main' }}
@@ -122,18 +123,25 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "major_minor=$MAJOR_MINOR" >> $GITHUB_OUTPUT
 
-      # No QEMU: both Dockerfiles build on $BUILDPLATFORM and keep their
-      # runtime stages free of RUN, so the arm64 image needs no emulation
-      # (MAG-4483). A RUN added to a runtime stage fails here with "exec
-      # format error" — that is the build saying it would be emulated again.
+      # No QEMU: both Dockerfiles build on $BUILDPLATFORM and keep their runtime
+      # stages free of RUN. A RUN added to a runtime stage fails here on arm64
+      # with "exec format error".
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
       - name: Image name
         id: image
         # GHCR wants the path lowercase; github.repository carries the org's
-        # capitals (Magma-Devs).
-        run: echo "name=${GITHUB_REPOSITORY,,}/${{ matrix.name }}" >> "$GITHUB_OUTPUT"
+        # capitals (Magma-Devs). The cache tag carries the branch name with
+        # anything a tag can't hold replaced by `-`; main's is plain `buildcache`.
+        run: |
+          echo "name=${GITHUB_REPOSITORY,,}/${{ matrix.name }}" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_REF_NAME" = "main" ]; then
+            echo "cache=buildcache" >> "$GITHUB_OUTPUT"
+          else
+            BRANCH=$(printf '%s' "$GITHUB_REF_NAME" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9._-]+/-/g' | cut -c1-100)
+            echo "cache=buildcache-${BRANCH}" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v4.6.0
@@ -151,7 +159,7 @@ jobs:
           # as "unexpected, proceeding anyway", so it never guarded anything and
           # three same-version merges overwrote 0.34.2 (MAG-4314). Only "no
           # such manifest" may pass now.
-          IMAGE_TAG="${{ env.REGISTRY }}/${GITHUB_REPOSITORY,,}/${{ matrix.name }}:${{ steps.version.outputs.version }}"
+          IMAGE_TAG="${{ env.REGISTRY }}/${{ steps.image.outputs.name }}:${{ steps.version.outputs.version }}"
           echo "Checking whether $IMAGE_TAG exists"
           if OUTPUT=$(docker manifest inspect "$IMAGE_TAG" 2>&1); then
             echo "Error: $IMAGE_TAG already exists in the registry."
@@ -202,26 +210,27 @@ jobs:
             APP_VERSION=${{ steps.version.outputs.version }}
             NEXT_PUBLIC_API_URL=http://localhost:8000
             NEXT_PUBLIC_LOCAL_MODE=true
-          # Layer cache on GHCR, one `buildcache` tag per image shared by every
-          # branch: the Actions cache sat at its 10 GB cap and evicted these
-          # blobs between runs (MAG-4483). mode=max keeps the build stage's
-          # layers too (the pnpm store and install), which the final image
-          # never carries; the registry only receives blobs it lacks.
-          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ steps.image.outputs.name }}:buildcache
-          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ steps.image.outputs.name }}:buildcache,mode=max,image-manifest=true,oci-mediatypes=true
+          # Layer cache on GHCR; mode=max keeps the build stage's layers too (the
+          # pnpm store and install). A branch writes its own tag and reads it
+          # and main's; main writes `buildcache`. A failed cache export never
+          # fails the build.
+          cache-from: |
+            type=registry,ref=${{ env.REGISTRY }}/${{ steps.image.outputs.name }}:${{ steps.image.outputs.cache }}
+            type=registry,ref=${{ env.REGISTRY }}/${{ steps.image.outputs.name }}:buildcache
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ steps.image.outputs.name }}:${{ steps.image.outputs.cache }},mode=max,image-manifest=true,oci-mediatypes=true,ignore-error=true
 
   # The build stage compiles on amd64 for both architectures, so the build
   # alone never proves the arm64 image runs: a dependency that loads a native
   # binding at boot would ship an amd64-only arm64 image and pass. This job
   # starts each arm64 image on an arm64 runner (free on public repositories)
-  # and waits for its health endpoint.
+  # and waits for its health endpoint. The images are already published by
+  # now: a failure here turns the run red and keeps the release untagged.
   smoke-arm64:
     name: Smoke arm64 ${{ matrix.name }}
     needs: build-and-push
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 10
     permissions:
-      contents: read
       packages: read
     strategy:
       fail-fast: false
@@ -230,6 +239,9 @@ jobs:
           - name: frontend
             port: 3000
             path: /api/config
+            # A rendered page, so the server-side React path runs too, not
+            # only a route handler. `/` redirects to the first screen.
+            page: /
           - name: backend
             port: 8000
             path: /health
@@ -257,6 +269,15 @@ jobs:
           for i in $(seq 1 30); do
             if curl -sf "http://127.0.0.1:${{ matrix.port }}${{ matrix.path }}" >/dev/null; then
               echo "✓ ${{ matrix.path }} answered after $((i * 2)) s"
+              PAGE="${{ matrix.page }}"
+              if [ -n "$PAGE" ]; then
+                if ! curl -sfL "http://127.0.0.1:${{ matrix.port }}${PAGE}" >/dev/null; then
+                  echo "::error::$IMAGE answered ${{ matrix.path }} but not the page ${PAGE}"
+                  docker logs smoke
+                  exit 1
+                fi
+                echo "✓ ${PAGE} rendered"
+              fi
               exit 0
             fi
             sleep 2
@@ -268,10 +289,11 @@ jobs:
   # One tag per published release, so "Validate version was bumped" above has
   # something to compare against: it reads `git describe --tags`, and with no
   # tag in the repository it took its first-release branch on every merge
-  # (MAG-4314). Runs once, after BOTH images are pushed, on main only.
+  # (MAG-4314). Runs once, after BOTH images are pushed and their arm64 smoke
+  # passed, on main only.
   tag-release:
     name: Tag the release
-    needs: build-and-push
+    needs: [build-and-push, smoke-arm64]
     if: github.ref_name == 'main'
     runs-on: ubuntu-latest
     permissions:
