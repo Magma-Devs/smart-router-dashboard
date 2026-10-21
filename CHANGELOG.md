@@ -20,12 +20,16 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   `smartrouter_transactions:count1m`, which the fleet's Loki ruler records in
   each tenant's org. They run about two minutes behind, so the newest minutes
   are counted from the router's logs, and a bar says so when the logs don't
-  answer. A store without the series, such as a standalone install, has the
-  whole window counted from the logs. A result is mapped by one function the
-  list's rows use too, so the chart and the list can't disagree. A chain or a
-  router narrows it: on a chain several routers serve, the recorded counts
-  tell a router's own apart by its `service_name`, and the logs, which can't,
-  say so. `GET /api/transactions/over-time`.
+  answer. A store with the fleet's ruler (it records
+  `smartrouter_final_requests:count1m` too) and no transactions recorded
+  shows none: the whole window is never counted from Loki there, as sparing
+  that read is what the rules are for. Only a store without the ruler, such
+  as a standalone install, has the whole window counted from the logs, and a
+  store that doesn't answer the check says the chart can't be read. A result
+  is mapped by one function the list's rows use too, so the chart and the list
+  can't disagree. A chain or a router narrows it: on a chain several routers
+  serve, the recorded counts tell a router's own apart by its `service_name`,
+  and the logs, which can't, say so. `GET /api/transactions/over-time`.
 
 ## [0.42.0]
 
