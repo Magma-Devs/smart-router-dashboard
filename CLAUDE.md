@@ -883,7 +883,11 @@ Compose / Makefile knobs:
   `.github/workflows/build-and-push.yml` publishes the api as
   `ghcr.io/magma-devs/smart-router-dashboard/backend` and the web as
   `…/frontend` (tags: `VERSION`, `major.minor`, `latest` on main; other
-  branches get a `-<branch>` suffix). Those image names are the ones the
+  branches get a `-<branch>` suffix). Each image is pushed by digest and
+  tagged only after `smoke-arm64` boots it (the `publish` job); on main,
+  `tag-release` then cuts the git tag and points `latest` and `major.minor`
+  at the highest `v*` release tag, so overlapping main runs cannot move
+  them backwards. Those image names are the ones the
   smart-router helm chart consumes, so the build target (`apps/api` /
   `apps/web`) maps onto them in the workflow matrix. `make build` reproduces
   the same images locally on an isolated buildx builder (`srdash-builder`) —
@@ -905,10 +909,10 @@ Compose / Makefile knobs:
   `pnpm deploy --legacy --prod` tree under `apps/api/`: the `files` field
   of each package manifest decides what ships, and it carries no
   devDependencies, so `NODE_ENV=development` (the dev-only `pino-pretty`
-  transport) does not boot it. A `smoke-arm64` job starts each arm64 image
-  on an `ubuntu-24.04-arm` runner after the push and waits for its health
-  endpoint (and the web's first page); the release tag waits for it, the
-  images are already published.
+  transport) does not boot it. A `smoke-arm64` job pulls each image by
+  digest on an `ubuntu-24.04-arm` runner and waits for its health endpoint
+  (and the web's first page); no tag exists until it passes, so a failed
+  smoke leaves the version unpublished and reusable.
 
 ## Gotchas
 
