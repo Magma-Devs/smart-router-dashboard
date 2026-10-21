@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import type { RouterTopology, TxResult } from "@sr/shared";
 import { buildApp } from "../app.js";
-import { RECORDED_TX, TransactionsOverTimeService } from "../services/transactions-over-time.js";
+import { RECORDED_TX, RULER_FAMILY, TransactionsOverTimeService } from "../services/transactions-over-time.js";
 import { buildTxRows, TX_EVENT_FILTER, txResultOf } from "../services/transactions.js";
 import { parseRouterLine, UpstreamIndex, type RouterLine } from "../services/router-log.js";
 import type { PrometheusClient, PromMatrixSample, PromVectorSample } from "../services/prometheus-client.js";
@@ -36,9 +36,10 @@ const cfg = { getRouters: () => ROUTERS } as unknown as ConfigurationService;
 interface Calls { prom: string[]; loki: string[] }
 
 /** A store that answers the range read with `matrix`, the instant read with
- *  `vector`, and the newest sample's timestamp with `written` (none: no sample
- *  in the lookback); null = no answer. */
-function promOf(matrix: PromMatrixSample[] | null, vector: PromVectorSample[] | null, calls: Calls, written: number | null = WRITTEN) {
+ *  `vector`, the newest sample's timestamp with `written` (none: no sample
+ *  in the lookback), and the ruler check with `ruler` samples (0: no ruler);
+ *  null = no answer. */
+function promOf(matrix: PromMatrixSample[] | null, vector: PromVectorSample[] | null, calls: Calls, written: number | null = WRITTEN, ruler: number | null = 0) {
   return {
     async queryRangeOrNull(expr: string, start: number, end: number, step: string) {
       calls.prom.push(`range ${expr} ${start} ${end} ${step}`);
@@ -47,6 +48,7 @@ function promOf(matrix: PromMatrixSample[] | null, vector: PromVectorSample[] | 
     async queryAtOrNull(expr: string, time: number) {
       calls.prom.push(`at ${expr} ${time}`);
       if (expr.startsWith("max(timestamp(")) return vector === null ? null : written === null ? [] : [{ metric: {}, value: [time, String(written)] }];
+      if (expr.startsWith("count(present_over_time(")) return ruler === null ? null : ruler ? [{ metric: {}, value: [time, String(ruler)] }] : [];
       return vector;
     },
   } as unknown as PrometheusClient;
@@ -199,14 +201,75 @@ describe("transactions over time, where the store records none", () => {
     expect(r.counts).toEqual({ accepted: bars({ 0: 4, 5: 1 }), failed: bars({ 4: 2 }), unknown: bars({ 6: 1 }) });
   });
 
-  it("a store that doesn't answer is read around the same way; logs that don't answer are 'not available', never zero", async () => {
+  it("logs that don't answer are 'not available', never zero; no logs at all, the same", async () => {
     const calls: Calls = { prom: [], loki: [] };
-    expect(await new TransactionsOverTimeService(promOf(null, null, calls), lokiOf(WHOLE, FILLING, calls), SEL, cfg).overTime("1h"))
-      .toMatchObject({ available: true, source: "logs" });
     expect(await new TransactionsOverTimeService(promOf([], [], calls), lokiOf(null, FILLING, calls), SEL, cfg).overTime("3h"))
       .toMatchObject({ available: false, reason: "unreachable", counts: {} });
     expect(await new TransactionsOverTimeService(promOf([], [], calls), null, SEL, cfg).overTime("1h"))
       .toMatchObject({ available: false, reason: "unconfigured" });
+  });
+});
+
+/* The fleet's ruler records RULER_FAMILY for every tenant whose routers log.
+   With it on the store, no transactions recorded is none sent: the whole
+   window is never counted from the logs then - that read is what the rules
+   exist to spare a tenant's Loki. */
+describe("transactions over time, and whether the store has the fleet's ruler", () => {
+  const WHOLE: LokiSeries[] = [{ metric: { outcome: "ok", api_interface: "jsonrpc" }, values: [[T0, 4]] }];
+  const TAIL: LokiSeries[] = [{ metric: { outcome: "ok", api_interface: "jsonrpc" }, values: [[COVERED + 60, 1]] }];
+  const wholeWindowReads = (calls: Calls) => calls.loki.filter((q) => q.includes("[600s]") || q.includes("[430s]"));
+  const rulerCheck = `at count(present_over_time(${RULER_FAMILY}[3600s])) ${NOW}`;
+
+  it("the ruler and no transactions recorded: none, and only the newest minutes are read from the logs", async () => {
+    const calls: Calls = { prom: [], loki: [] };
+    const r = await new TransactionsOverTimeService(promOf([], [], calls, null, 12), lokiOf(TAIL, [], calls), SEL, cfg).overTime("1h", "ETH1");
+    expect(calls.prom).toContain(rulerCheck);
+    expect(wholeWindowReads(calls)).toEqual([]);
+    expect(calls.loki[0]).toMatch(new RegExp(` ${LAG_FROM} ${LAG_FROM + 120} 60$`)); // the newest minutes, as with counts recorded
+    expect(r).toMatchObject({ available: true, source: "recorded", partialFrom: null, counts: { accepted: bars({ 6: 1 }) } });
+    const quiet = await new TransactionsOverTimeService(promOf([], [], calls, null, 12), lokiOf([], [], calls), SEL, cfg).overTime("1h", "ETH1");
+    expect(quiet).toMatchObject({ available: true, source: "recorded", counts: {} });
+  });
+
+  it("no ruler on the store (a standalone install): the whole window from the logs", async () => {
+    const calls: Calls = { prom: [], loki: [] };
+    const r = await new TransactionsOverTimeService(promOf([], [], calls, null, 0), lokiOf(WHOLE, [], calls), SEL, cfg).overTime("1h");
+    expect(calls.prom).toContain(rulerCheck);
+    expect(wholeWindowReads(calls)).toHaveLength(2);
+    expect(r).toMatchObject({ available: true, source: "logs", counts: { accepted: bars({ 5: 4 }) } });
+  });
+
+  it("transactions recorded: read from the store, without asking about the ruler", async () => {
+    const calls: Calls = { prom: [], loki: [] };
+    const r = await new TransactionsOverTimeService(promOf([m(eth({ outcome: "ok" }), [[T0 + 30, "2"]])], [], calls, WRITTEN, 0), lokiOf([], [], calls), SEL, cfg).overTime("1h", "ETH1");
+    expect(calls.prom.some((q) => q.includes(RULER_FAMILY))).toBe(false);
+    expect(wholeWindowReads(calls)).toEqual([]);
+    expect(r).toMatchObject({ available: true, source: "recorded", counts: { accepted: bars({ 5: 2 }) } });
+  });
+
+  it("a store that doesn't answer the check gets no whole-window log read: not available", async () => {
+    const calls: Calls = { prom: [], loki: [] };
+    expect(await new TransactionsOverTimeService(promOf(null, null, calls, null, null), lokiOf(WHOLE, [], calls), SEL, cfg).overTime("1h"))
+      .toMatchObject({ available: false, reason: "unreachable", counts: {} });
+    // The ruler's there, but the counts didn't come back.
+    expect(await new TransactionsOverTimeService(promOf(null, null, calls, null, 12), lokiOf(WHOLE, [], calls), SEL, cfg).overTime("1h"))
+      .toMatchObject({ available: false, reason: "unreachable" });
+    expect(calls.loki).toEqual([]);
+  });
+
+  it("the check is kept five minutes, and looks back over the window - 15 minutes at least, a day at most", async () => {
+    const calls: Calls = { prom: [], loki: [] };
+    const svc = new TransactionsOverTimeService(promOf([], [], calls, null, 12), lokiOf([], [], calls), SEL, cfg);
+    await svc.overTime("1h");
+    vi.setSystemTime((NOW + 40) * 1000); // past the chart's own 30 s
+    await svc.overTime("1h");
+    expect(calls.prom.filter((q) => q.includes(RULER_FAMILY))).toHaveLength(1);
+    vi.setSystemTime((NOW + 301) * 1000);
+    await svc.overTime("1h");
+    expect(calls.prom.filter((q) => q.includes(RULER_FAMILY))).toHaveLength(2);
+    await svc.overTime("5m");
+    await svc.overTime("30d");
+    expect(calls.prom.filter((q) => q.includes(RULER_FAMILY)).slice(-2).map((q) => /\[(\d+)s\]/.exec(q)?.[1])).toEqual(["900", "86400"]);
   });
 });
 

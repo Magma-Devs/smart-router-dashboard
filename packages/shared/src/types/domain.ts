@@ -778,8 +778,9 @@ export interface TransactionsOverTime {
   /**
    * Where the counts come from: `recorded` - the store's per-minute counts
    * (`smartrouter_transactions:count1m`), the newest minutes counted from the
-   * logs; `logs` - counted from the router's logs, where the store records
-   * none for the scope. Null without a read.
+   * logs - none recorded is none sent where the store has the fleet's ruler;
+   * `logs` - counted from the router's logs, on a store without the ruler (a
+   * standalone install). Null without a read.
    */
   source: "recorded" | "logs" | null;
   /** The bars' END times, unix s: a bar at `t` covers the `stepSec` before it; the last is still filling up to `asOf`. */

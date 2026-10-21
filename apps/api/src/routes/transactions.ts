@@ -43,7 +43,7 @@ export async function transactionRoutes(app: FastifyInstance) {
     schema: {
       tags: ["Transactions"],
       summary:
-        "Transactions over the window, a bar per stretch of the clock, split by result: the store's recorded counts (smartrouter_transactions:count1m), the newest minutes and a store without them from the router's logs; kept 30 s",
+        "Transactions over the window, a bar per stretch of the clock, split by result: the store's recorded counts (smartrouter_transactions:count1m), the newest minutes and a store without the fleet's ruler from the router's logs; kept 30 s",
       querystring: {
         type: "object" as const,
         properties: {

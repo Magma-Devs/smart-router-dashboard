@@ -4,8 +4,8 @@
  * stretch of the clock (10 minutes on an hour, longer on days), each bar split
  * by result: the list's results in the list's colours, and Failed on chain.
  * Live data: /api/transactions/over-time - the store's recorded per-minute
- * counts, with the newest minutes, and a store that records none, counted
- * from the router's logs. Hover a bar for its counts; the legend adds up the
+ * counts, with the newest minutes, and a store without the fleet's ruler,
+ * counted from the router's logs. Hover a bar for its counts; the legend adds up the
  * window. It follows the page's window and chain or router, not the exact
  * times the list can be set to. */
 

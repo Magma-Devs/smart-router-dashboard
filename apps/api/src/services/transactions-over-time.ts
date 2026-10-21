@@ -18,8 +18,12 @@
  * from where the ruler's newest count read ends: it evaluates once a minute at
  * a second of its own, read off a sample's timestamp.
  *
- * Where the store records none for the scope - a standalone install has no
- * ruler - the whole window is counted from the logs with the same filter.
+ * No series for the scope is zero transactions on a store with the fleet's
+ * ruler: it records RULER_FAMILY, from the same rules file, for every tenant
+ * whose routers log at all. Only a store without it - a standalone install -
+ * has the whole window counted from the logs, with the same filter. Counting
+ * a tenant's whole window from Loki on every read is what the rules exist to
+ * avoid, so a store that doesn't answer the check gets no such read either.
  *
  * A result is `txResultOf` (transactions.ts), the list's own mapping. What the
  * counts can't see: a subscription request the router failed after a node
@@ -28,7 +32,7 @@
  * so its transactions are in the list and not in these bars.
  */
 import type { MetricWindow, RouterTopology, TransactionsOverTime, TxResult } from "@sr/shared";
-import { bucketGrid } from "@sr/shared";
+import { bucketGrid, WINDOWS } from "@sr/shared";
 import type { PrometheusClient } from "./prometheus-client.js";
 import type { LokiClient, LokiSeries } from "./loki-client.js";
 import type { ConfigurationService } from "./configuration.js";
@@ -37,6 +41,19 @@ import { TX_EVENT_FILTER, txResultOf } from "./transactions.js";
 
 /** The store's per-minute transaction counts. */
 export const RECORDED_TX = "smartrouter_transactions:count1m";
+
+/**
+ * The family the fleet's Loki ruler records beside RECORDED_TX, from the same
+ * rules file, for every tenant whose routers log: a sample of it says the
+ * store has the ruler, so a scope with no transactions recorded had none.
+ */
+export const RULER_FAMILY = "smartrouter_final_requests:count1m";
+
+/** How long the ruler check is kept: whether a store has the ruler changes with a deploy, not a poll. */
+export const RULER_TTL_MS = 300_000;
+
+/** How far back the ruler check looks: the window, at least 15 minutes, at most its last day. */
+const rulerLookbackSec = (window: MetricWindow) => Math.max(900, Math.min(WINDOWS[window].rangeSeconds, 86_400));
 
 /** How far behind now the recorded counts are whole: the rule's 30 s offset, its minute, the ruler's delay. */
 export const RECORDED_LAG_SEC = 120;
@@ -83,6 +100,7 @@ function withMatcher(selector: string, label: string, value: string): string | n
 export class TransactionsOverTimeService {
   private readonly kept = new Map<string, { at: number; result: TransactionsOverTime }>();
   private readonly reading = new Map<string, Promise<TransactionsOverTime>>();
+  private readonly ruler = new Map<number, { at: number; present: boolean }>();
 
   constructor(
     private readonly prom: PrometheusClient | null,
@@ -122,7 +140,7 @@ export class TransactionsOverTimeService {
     if (kept && Date.now() - kept.at < OVER_TIME_TTL_MS) return kept.result;
     const pending = this.reading.get(key);
     if (pending) return pending;
-    const read = this.read(nowSec, bars, empty, chain, router)
+    const read = this.read(window, nowSec, bars, empty, chain, router)
       .then((result) => {
         this.kept.delete(key);
         this.kept.set(key, { at: Date.now(), result });
@@ -135,6 +153,7 @@ export class TransactionsOverTimeService {
   }
 
   private async read(
+    window: MetricWindow,
     nowSec: number,
     bars: ReturnType<typeof bucketGrid>,
     empty: (over?: Partial<TransactionsOverTime>) => TransactionsOverTime,
@@ -155,14 +174,22 @@ export class TransactionsOverTimeService {
     };
     const shared = router ? this.routers().some((r) => r.id !== router.id && r.spec === router.spec) : false;
 
-    // The store's recorded counts.
+    // The store's recorded counts. None for the scope is none sent where the
+    // store has the fleet's ruler; only a store without it is read from the logs.
     const read = this.prom ? await this.readRecorded(nowSec, bars, chain) : null;
-    const recorded = read?.samples;
-    if (read && recorded?.length) {
+    const recorded = read?.samples ?? [];
+    let fromStore = recorded.length > 0;
+    if (this.prom && !fromStore) {
+      const ruler = await this.rulerRecords(window, nowSec);
+      // Unanswered, it can't say which: a whole-window log read is not a guess to make.
+      if (ruler === null || (ruler && !read)) return empty({ available: false, reason: "unreachable" });
+      fromStore = ruler;
+    }
+    if (read && fromStore) {
       // A router sharing its chain is told apart by `service_name`: <tenant>-<router id>.
       let own = recorded;
       let serviceName: string | null = null;
-      if (router && shared) {
+      if (router && shared && recorded.length) {
         const nameOf = (s: Sample, id: string) => `${s.metric.cluster ?? ""}-${id.toLowerCase()}`;
         const onChain = this.routers().filter((r) => r.spec === router.spec);
         if (!recorded.some((s) => onChain.some((r) => s.metric.service_name === nameOf(s, r.id)))) {
@@ -180,7 +207,7 @@ export class TransactionsOverTimeService {
       return { available: true, source: "recorded", grid, asOf: nowSec, counts, partialFrom: tail ? null : read.coveredTo };
     }
 
-    // No recorded counts for the scope: count the window from the logs.
+    // No ruler on the store (a standalone install): count the window from the logs.
     if (!this.loki) return empty({ available: false, reason: "unconfigured" });
     if (router && shared) return empty({ available: false, reason: "shared-chain" });
     const logs = await this.readLogs(bars, chain);
@@ -230,6 +257,22 @@ export class TransactionsOverTimeService {
     // The running part lands in the bar its lines end in.
     for (const v of part) out.push({ metric: v.metric, values: [[Math.max(coveredTo, partFrom + 1), Number(v.value[1])]] });
     return { samples: out.filter((s) => s.values.some(([, n]) => n > 0)), coveredTo };
+  }
+
+  /**
+   * Whether the store has the fleet's ruler: any sample of RULER_FAMILY in the
+   * window, at least its last 15 minutes and at most its last day, whatever
+   * the chain. Null when the store didn't answer. Kept RULER_TTL_MS per lookback.
+   */
+  private async rulerRecords(window: MetricWindow, nowSec: number): Promise<boolean | null> {
+    const lookback = rulerLookbackSec(window);
+    const kept = this.ruler.get(lookback);
+    if (kept && Date.now() - kept.at < RULER_TTL_MS) return kept.present;
+    const r = await this.prom!.queryAtOrNull(`count(present_over_time(${RULER_FAMILY}[${lookback}s]))`, nowSec);
+    if (r === null) return null;
+    const present = Number(r[0]?.value[1]) > 0;
+    this.ruler.set(lookback, { at: Date.now(), present });
+    return present;
   }
 
   /** The log count's query over `range` seconds, split by the labels the recorded counts carry. */
