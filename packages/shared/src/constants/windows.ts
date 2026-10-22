@@ -124,6 +124,19 @@ export function chartSampling(window: MetricWindow): {
   return { step: fmtStep(stepSec), stepSec, lookback: fmtStep(lookbackSec), lookbackSec, rateWindow: fmtStep(rateWindowSec), rateWindowSec };
 }
 
+/**
+ * The bounds of a range read at `stepSec`: `end` is the last step boundary at
+ * or before `nowSec`, `start` is `rangeSeconds` before it, rounded down to a
+ * step boundary when the range is not a whole number of steps. The same read
+ * then asks for the same window for a whole step, so a cache can answer it:
+ * Mimir's results cache keeps a range read only when both ends are step
+ * multiples. The cost is that the newest point is up to one step old.
+ */
+export function alignedBounds(rangeSeconds: number, stepSec: number, nowSec: number): { start: number; end: number } {
+  const end = Math.floor(nowSec / stepSec) * stepSec;
+  return { start: Math.floor((end - rangeSeconds) / stepSec) * stepSec, end };
+}
+
 /** The bar sizes an errors-over-time chart uses: the clock's own, ten minutes at least. */
 const ERROR_BUCKETS = [600, 1800, 3600, 10800, 21600, 43200, 86400] as const;
 
