@@ -112,3 +112,11 @@ export function onPhaseTimer(s: IdleState, now: number): IdleState {
   const phase = idlePhase(now - s.lastActivityAt);
   return phase === s.phase ? s : { ...s, phase };
 }
+
+/** Pages the gate leaves alone: the standalone Metrics page is for screens nobody touches. */
+const IDLE_EXEMPT_PATHS = ["/standalone"];
+
+/** Whether the idle gate holds the polls of the page at `pathname`. */
+export function idleGateApplies(pathname: string): boolean {
+  return !IDLE_EXEMPT_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+}

@@ -1,8 +1,11 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
+import { useState, useSyncExternalStore, type CSSProperties } from "react";
 import { useSWRConfig } from "swr";
 import { getIdlePhase, subscribeIdle } from "@/lib/idle-store";
+
+const PAUSED_SAYS = "Polling paused after an hour without activity · move the mouse to resume";
+const PILL_H = 28;
 
 /* RefreshButton — re-fetch every panel on the page NOW, without waiting out
  * the SWR poll interval (15 s to 15 minutes by window, see lib/poll.ts, and
@@ -14,9 +17,10 @@ import { getIdlePhase, subscribeIdle } from "@/lib/idle-store";
  * what the page fetches — the page IS its mounted hooks, so that set is
  * exactly "everything visible".
  *
- * Beside it, the paused pill: an hour with nobody at the page stops every
- * poll (the idle gate, lib/idle-store.ts), and a screen someone only looks at
- * must not pass the last numbers off as live. */
+ * While the idle gate has polling paused (an hour with nobody at the page,
+ * lib/idle-store.ts), the icon turns amber and a "Paused" pill sits beside
+ * it wherever the header has room for all of it: a screen someone only looks
+ * at must not pass the last numbers off as live. */
 export function RefreshButton() {
   const { mutate } = useSWRConfig();
   const [busy, setBusy] = useState(false);
@@ -33,8 +37,21 @@ export function RefreshButton() {
   };
 
   return (
-    <>
-      {paused && <PausedPill />}
+    // One item in the header whatever the state, so the row gains no gap. It
+    // takes the row's free space before anything else does, up to the pill,
+    // and never more than the space it finds: the pill's track starts at 0.
+    <span style={{
+      display: "inline-grid", gridTemplateColumns: "minmax(0, max-content) auto", alignItems: "center",
+      flex: "1000 1 0%", minWidth: "min-content", maxWidth: "max-content",
+    }}>
+      {/* The pill shows whole or not at all: after the zero-width first item,
+          a pill that doesn't fit wraps to a line the slot doesn't show. */}
+      <span role="status" style={{
+        minWidth: 0, height: paused ? PILL_H : undefined, overflow: "hidden",
+        display: "flex", flexWrap: "wrap", justifyContent: "flex-end", alignContent: "flex-start",
+      }}>
+        {paused && <><span style={{ width: 0, height: PILL_H }} /><PausedPill /></>}
+      </span>
       <button
         type="button"
         className="gw-btn gw-btn--ghost"
@@ -42,7 +59,7 @@ export function RefreshButton() {
         disabled={busy}
         aria-label="Refresh data"
         title="Re-fetch everything on this page"
-        style={{ padding: "5px 8px", display: "inline-flex", alignItems: "center", cursor: busy ? "default" : "pointer" }}
+        style={{ padding: "5px 8px", display: "inline-flex", alignItems: "center", cursor: busy ? "default" : "pointer", color: paused ? "var(--warn)" : undefined }}
       >
         <svg
           width="14"
@@ -62,27 +79,32 @@ export function RefreshButton() {
           <path d="M3 21v-5h5" />
         </svg>
       </button>
-    </>
+    </span>
   );
 }
 
+const VISUALLY_HIDDEN: CSSProperties = {
+  position: "absolute", width: 1, height: 1, overflow: "hidden", clipPath: "inset(50%)", whiteSpace: "nowrap",
+};
+
 /**
- * The topbar's pill shape. It takes the row's free space before anything else
- * and gives it up first, so a crowded row cuts its words, never the controls
- * beside it. No tooltip: the pointer that would hover it resumes polling.
+ * The topbar's pill shape, one word long so it fits most headers; the whole
+ * sentence is its tooltip and what a screen reader says. Hovering it resumes
+ * polling, so the words on the pill are what a person reads.
  */
 function PausedPill() {
   return (
     <span
-      role="status"
+      title={PAUSED_SAYS}
       style={{
-        display: "inline-flex", alignItems: "center", gap: 6, flex: "1000 1 0%", minWidth: 0, maxWidth: "max-content",
-        overflow: "hidden", padding: "5px 10px", border: "1px solid var(--line-2)", borderRadius: 999,
+        display: "inline-flex", alignItems: "center", gap: 6, flex: "none", height: PILL_H,
+        marginRight: 8, padding: "0 10px", border: "1px solid var(--line-2)", borderRadius: 999,
         fontSize: 12, lineHeight: "16px", color: "var(--text-2)", whiteSpace: "nowrap",
       }}
     >
       <span className="dot dot--warn" />
-      <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>Polling paused · move the mouse to resume</span>
+      <span aria-hidden="true">Paused</span>
+      <span style={VISUALLY_HIDDEN}>{PAUSED_SAYS}</span>
     </span>
   );
 }

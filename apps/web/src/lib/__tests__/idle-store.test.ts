@@ -6,6 +6,7 @@ const T0 = Date.UTC(2026, 9, 22, 9, 0, 0);
 
 let target: EventTarget;
 let visible: boolean;
+let exempt: boolean;
 let refresh: ReturnType<typeof vi.fn<(keys: ReadonlySet<string>) => void>>;
 let store: IdleStore;
 
@@ -17,8 +18,9 @@ beforeEach(() => {
   vi.setSystemTime(T0);
   target = new EventTarget();
   visible = true;
+  exempt = false;
   refresh = vi.fn<(keys: ReadonlySet<string>) => void>();
-  store = createIdleStore({ target: () => target, visible: () => visible, refresh });
+  store = createIdleStore({ target: () => target, visible: () => visible, refresh, exempt: () => exempt });
 });
 
 afterEach(() => {
@@ -115,11 +117,39 @@ describe("createIdleStore", () => {
     expect(refresh).toHaveBeenCalledTimes(1);
   });
 
-  it("counts focus as activity", () => {
+  it("counts focus, and Back or Forward, as activity", () => {
     store.subscribe(() => {});
     vi.advanceTimersByTime(61 * MIN);
     fire("focus");
     expect(store.phase()).toBe("active");
+    vi.advanceTimersByTime(61 * MIN);
+    fire("popstate");
+    expect(store.phase()).toBe("active");
+  });
+
+  it("never slows or pauses an exempt page, and re-reads nothing there", () => {
+    exempt = true;
+    store.subscribe(() => {});
+    store.watchPoll("/api/metrics/overview?window=30m");
+    for (const after of [11 * MIN, 61 * MIN, 24 * 60 * MIN]) {
+      vi.setSystemTime(T0 + after);
+      vi.advanceTimersByTime(0);
+      expect([store.phase(), store.phaseNow()]).toEqual(["active", "active"]);
+    }
+    fire("pointermove");
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it("keeps an exempt page's clock, so leaving it counts from the last activity there", () => {
+    exempt = true;
+    store.subscribe(() => {});
+    vi.advanceTimersByTime(3 * 60 * MIN);
+    fire("pointerdown"); // the click that leaves the page
+    exempt = false;
+    expect(store.phaseNow()).toBe("active");
+    vi.advanceTimersByTime(10 * MIN);
+    expect(store.phase()).toBe("slow");
+    expect(refresh).not.toHaveBeenCalled();
   });
 
   it("keeps re-reading a key while any panel still polls it", () => {
