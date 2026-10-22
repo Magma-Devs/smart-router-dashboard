@@ -285,8 +285,9 @@ apps/web/                 @sr/web — Next.js 16 App Router (:3000)
       endpoints/        endpoint row model + IfaceTag + detail sheet — the
                         bits the "By router" grouping renders
       team/             InviteModal · ChangeRoleModal · bits
-    hooks/use-api.ts    SWR wrapper (15s poll default)
+    hooks/use-api.ts    SWR wrapper: each window polls at its own pace (see "Polling")
     hooks/use-log-reads.ts  the two log lists' "Load older" paging
+    lib/poll.ts         the poll cadence per window (pure)
     lib/api-client.ts   base URL resolved ONCE per session from /api/config
     styles/globals.css  design tokens + gw-* classes, 1:1 from the prototype
 ```
@@ -751,6 +752,28 @@ anything else falls back to the default `30m`. The page-level `<select>` shows
 the design's 12 options (`WINDOW_OPTIONS` — everything except `1h`, which the
 api accepts and no page offers).
 
+## Polling
+
+Every panel reads through `useApi` (`hooks/use-api.ts`), which polls with
+SWR. A metrics read over a window (`/api/metrics/…?window=`) polls no faster
+than its window can use (`pollMsForKey`, `lib/poll.ts`); the caller's own
+interval wins when it is longer, and a key that doesn't poll (0, the request
+look-ups) never starts.
+
+| Window | Polls every |
+|---|---|
+| 5m · 15m · 30m · 1h | 15 s |
+| 3h · 6h · 12h | 1 minute |
+| 1d · 3d | 5 minutes |
+| 7d · 14d · 21d · 30d | 15 minutes |
+
+A poll is never further apart than the window's chart step, and from 30m up
+it slides the window by under 1% of its length; from 3h the api reads the
+store's recorded series where it has them, which move once a minute. Keys
+without a window (the topbar pulse, block heights, specs) and the log routes
+(`/api/error-requests`, `/api/transactions`, `/api/requests`) poll at the
+caller's interval. A hidden tab doesn't poll at all (SWR's default).
+
 ## API endpoints
 
 All endpoints return `application/json`. With `AUTH_MODE=disabled` (default)
@@ -898,7 +921,7 @@ API (`apps/api/src/config.ts` is the source of truth):
 | `PROMETHEUS_TIMEOUT_MS` | `10000` | per-query abort |
 | `METRICS_RECORDED_FROM` | `3h` | the narrowest window read from the store's recorded series (`promql/recorded.ts`: the fleet Mimir ruler's two-minute rates, summed per chain and router) instead of the raw histograms and counters; narrower windows stay raw and exact; chart series switch only from 12h (`RECORDED_CHART_FLOOR`). `never` holds every window on raw. Only while the series are fresh — see the next row |
 | `METRICS_RECORDED_STALE_MS` | `300000` | the api asks the store once a minute (`METRICS_RECORDED_PROBE_MS`) how old the newest recorded sample is, how far back the oldest one reaches, and how far apart the raw router samples are (the rules' 2m15s window is exact for a 15-second scrape only); older than this, absent, on another scrape interval, or with less history than the window asked for, and the builder reads raw — slow, never wrong. `GET /api/metrics/reads` reports the state; the Metrics page's notice reads it. Transitions are logged once |
-| `PROMETHEUS_CACHE_TTL_MS` | `10000` | how long a successful answer is reused for an identical read (same path, params, scope and credential) — under the 15 s panel poll, so two tabs or two panels asking the same instant read in an interval cost the store one query (the store is per process, each replica keeps its own). A range read ends on a step boundary (see "Time windows"), so it asks for the same window until the next one. An answer read while the window's end is under three minutes old (`RANGE_SETTLE_MS`: raw samples land late, and the ruler writes recorded series a minute or two after their timestamps) is reused for this value only, so a chart's newest point and a just-closed error bar are read again until they settle; once settled, for the read's step, five minutes at most and never less than this value. `0` keeps every read live, range reads included. Identical reads in flight at the same moment share one request whatever the value. A refused refresh (429, timeout, error) is answered from the last good read for up to 60 s (60 s past its reuse, for a range read) and retried next time; failures themselves and the readiness probe are never kept |
+| `PROMETHEUS_CACHE_TTL_MS` | `10000` | how long a successful answer is reused for an identical read (same path, params, scope and credential) — under the fastest panel poll (15 s), so two tabs or two panels asking the same instant read in an interval cost the store one query (the store is per process, each replica keeps its own). A range read ends on a step boundary (see "Time windows"), so it asks for the same window until the next one. An answer read while the window's end is under three minutes old (`RANGE_SETTLE_MS`: raw samples land late, and the ruler writes recorded series a minute or two after their timestamps) is reused for this value only, so a chart's newest point and a just-closed error bar are read again until they settle; once settled, for the read's step, five minutes at most and never less than this value. `0` keeps every read live, range reads included. Identical reads in flight at the same moment share one request whatever the value. A refused refresh (429, timeout, error) is answered from the last good read for up to 60 s (60 s past its reuse, for a range read) and retried next time; failures themselves and the readiness probe are never kept |
 | `METRICS_SNAPSHOT_TTL_MS` | `15000` | the base TTL of the metrics routes' response snapshot (see "Response snapshot"): windows up to 1h and the window-less routes keep an answer this long, and no answer is kept shorter. `0` turns the snapshot off: every request reads live and carries no `Age`. Read at boot |
 | `PROMETHEUS_USERNAME` / `PROMETHEUS_PASSWORD` | unset | Basic auth on every Prometheus call — for a per-tenant read proxy or Mimir behind an auth gateway. Both or neither: one half alone sends no header |
 | `PROMETHEUS_ORG_ID` | unset | Sent as `X-Scope-OrgID`, for a multi-tenant store that takes the org from the client. The fleet's read proxy pins the org from the credential and ignores this |

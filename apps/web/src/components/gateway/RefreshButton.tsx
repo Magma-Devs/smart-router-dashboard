@@ -4,9 +4,10 @@ import { useState } from "react";
 import { useSWRConfig } from "swr";
 
 /* RefreshButton — re-fetch every panel on the page NOW, without waiting out
- * the SWR poll interval (15s by default, and heavy PromQL reads can make a
- * stale view linger longer). One shared control so every page offers the
- * same affordance in its header row, next to the window selector.
+ * the SWR poll interval (15 s to 15 minutes by window, see lib/poll.ts, and
+ * heavy PromQL reads can make a stale view linger longer). One shared control
+ * so every page offers the same affordance in its header row, next to the
+ * window selector.
  *
  * It broadcasts a revalidation to every mounted SWR key rather than tracking
  * what the page fetches — the page IS its mounted hooks, so that set is
