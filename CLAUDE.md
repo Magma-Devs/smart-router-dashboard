@@ -254,7 +254,8 @@ apps/api/                 @sr/api — Fastify 5 (:8000)
                         loki-client · router-log (parsing the router's lines) ·
                         transactions · error-requests (rows from the router's logs) ·
                         transactions-over-time (the Transactions tab's chart) ·
-                        snapshot (the metrics routes' shared answers)
+                        snapshot (the metrics routes' shared answers) ·
+                        read-health (the reads the store refused, per run)
     config.ts           single source of truth for env defaults
 apps/web/                 @sr/web — Next.js 16 App Router (:3000)
   src/
@@ -846,11 +847,18 @@ poll, shares them. `/api/metrics/query` (the caller's own PromQL) and
   and every request that arrives meanwhile shares it. A viewer alone on a page
   whose polls are as far apart as the TTL (15 s on the short windows)
   therefore sees the answer its previous poll read.
-- A refresh that throws keeps the last good answer, still served while it is
-  under twice its TTL, and the key is read again 5 s later at the earliest,
-  never on every request. A failed store read is not a throw: the services
-  answer it with empty fields (the honesty contract), and the snapshot keeps
-  that answer for its TTL like any other.
+- A run that throws, or one during which the store refused a read, gives no
+  good answer, and the key is read again 5 s later at the earliest, never on
+  every request. A refused read (non-2xx, an error envelope, a timeout or a
+  dropped connection) comes back as empty fields rather than an error (the
+  honesty contract), so the client notes it against the run that issued it
+  (`services/read-health.ts`, called from `fetchOnce`). Such a degraded answer
+  never replaces a good one still under twice its TTL: that one keeps being
+  served, its `Age` running on. With no servable good answer, the degraded
+  answer goes to the callers of its run and is kept for those 5 s only; after
+  a throw they get the error. A read that joined one already in flight counts
+  only for the run that issued it, and a refused read counts even when the
+  client answers it from its last good read.
 - At most 256 answers; a new key past that evicts the least recently
   refreshed one. Per process: each replica keeps its own, so a key costs each
   replica one read set per TTL. A values-file edit reaches the answers within
