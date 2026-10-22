@@ -57,6 +57,7 @@ import {
   type UpstreamDetail,
   type UpstreamRef,
   type UpstreamPeers,
+  type UpstreamMix,
   type ChartGrid,
   type ScoreType,
   type TimePoint,
@@ -158,14 +159,14 @@ export class MetricsDetailService {
 
   /** ChainDetail metric-switcher bundle (fetched on row expand only). */
   async chainSeries(spec: string, window: MetricWindow): Promise<ChainSeries> {
-    const { start, end, step } = this.windowBounds(window);
+    const { step } = this.windowBounds(window);
 
     // Backup share only exists when the config marks backups (helm format).
     const backupNames = (this.configSvc?.getRouters() ?? [])
       .filter((r) => r.spec === spec)
       .flatMap((r) => r.nodes.filter((n) => n.isBackup).map((n) => n.name));
 
-    const [availability, p95Ms, errorRate, rps, qosProbe, backupProbe, mix] = await Promise.all([
+    const [availability, p95Ms, errorRate, rps, qosProbe, backupProbe] = await Promise.all([
       this.series(qAvailabilitySeriesExpr(step, spec, window), window),
       this.series(qLatencySeriesExpr(0.95, step, spec, window), window),
       this.series(qErrorRateSeriesExpr(step, spec, window), window),
@@ -177,10 +178,6 @@ export class MetricsDetailService {
       backupNames.length
         ? this.series(qBackupShareExpr(spec, backupNames, step, window), window)
         : Promise.resolve(null),
-      // Which upstream took the chain's traffic: one series per upstream, the cache's included.
-      // A rate over one 15-second step holds one scrape at most and comes back empty, so on the
-      // short windows each point averages the minute before it - still drawn every step.
-      this.prom.queryRange(qPerUpstreamRpsExpr(stepSeconds(window) < 60 ? "1m" : step, spec, window), start, end, step),
     ]);
 
     // Optimizer score may be absent (older builds) — fall back to the
@@ -197,13 +194,26 @@ export class MetricsDetailService {
     const backupShare =
       backupProbe && backupProbe.some((p) => p.v !== null) ? backupProbe : null;
 
+    return { spec, availability, p95Ms, errorRate, rps, qos, backupShare };
+  }
+
+  /**
+   * Which upstream took one chain's traffic: requests per second per upstream,
+   * the relay cache's included, biggest first. One range read - the Overview's
+   * per-upstream read (`qPerUpstreamRpsExpr`, recorded series on long windows)
+   * scoped to the chain. Its own route rather than part of the chain-series
+   * bundle: the card shows whenever a chain is picked, and the bundle's other
+   * reads are only wanted once a row is expanded.
+   */
+  async upstreamMix(spec: string, window: MetricWindow): Promise<UpstreamMix> {
+    const { start, end, step } = this.windowBounds(window);
+    const matrix = await this.prom.queryRange(qPerUpstreamRpsExpr(step, spec, window), start, end, step);
     const volume = (points: TimePoint[]) => points.reduce((a, p) => a + (p.v ?? 0), 0);
-    const upstreamMix = mix
+    const upstreams = matrix
       .filter((m) => m.metric.provider_address)
       .map((m) => ({ upstream: m.metric.provider_address!, points: toPoints(m.values) }))
       .sort((a, b) => volume(b.points) - volume(a.points));
-
-    return { spec, availability, p95Ms, errorRate, rps, qos, backupShare, upstreamMix };
+    return { spec, upstreams };
   }
 
   /**

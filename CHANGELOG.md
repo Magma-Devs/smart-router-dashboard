@@ -17,8 +17,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   to another's. The relay cache's part is its own layer, and past the five
   biggest upstreams the rest are summed into "Other". The counts are the
   requests the router sent, so a retried request counts at every upstream it
-  reached. New field `upstreamMix` on `GET /api/metrics/chain-series`, from
-  the per-upstream read the Overview already makes.
+  reached. New route `GET /api/metrics/upstream-mix`: one range read, the
+  per-upstream read the Overview already makes, scoped to the chain.
 
 ## [0.47.1]
 

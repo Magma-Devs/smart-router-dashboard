@@ -318,6 +318,32 @@ export async function metricRoutes(app: FastifyInstance, opts: MetricRoutesOptio
       app.scoped(router).metricsDetail.chainSeries(spec, window));
   });
 
+  // Which upstream took one chain's traffic - the "Traffic by provider" card.
+  app.get<{ Querystring: { window?: string; spec?: string; router?: string } }>("/api/metrics/upstream-mix", {
+    schema: {
+      tags: ["Metrics"],
+      summary: "Requests per second each upstream took on one chain over the window, the relay cache's included, biggest first",
+      querystring: {
+        type: "object" as const,
+        required: ["spec"],
+        properties: {
+          window: windowQuerySchema.properties.window,
+          router: windowQuerySchema.properties.router,
+          spec: { type: "string" as const, description: "Chain spec label, e.g. ETH1" },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const { spec, router } = request.query;
+    if (!spec) {
+      sendApiError(reply, 400, "spec is required");
+      return reply;
+    }
+    const window = parseWindow(request.query.window);
+    return snapshot(reply, "window", window, ["upstream-mix", window, spec, scopeKey(router)], () =>
+      app.scoped(router).metricsDetail.upstreamMix(spec, window));
+  });
+
   // Every upstream of one chain side by side - the deep-dive's volume, latency
   // and latest-block charts read the selected upstream against these.
   app.get<{ Querystring: { window?: string; spec?: string; router?: string } }>("/api/metrics/upstream-peers", {

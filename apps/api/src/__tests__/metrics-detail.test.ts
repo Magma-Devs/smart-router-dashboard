@@ -66,7 +66,7 @@ describe("MetricsDetailService query construction (bug regressions)", () => {
   });
 });
 
-describe("MetricsDetailService.chainSeries · which upstream took the chain's traffic", () => {
+describe("MetricsDetailService.upstreamMix · which upstream took the chain's traffic", () => {
   it("one series per upstream, biggest first, the cache's kept as its own", async () => {
     const queries: string[] = [];
     const series = (name: string, v: number) => ({ metric: { provider_address: name }, values: [[100, String(v)], [200, String(v)]] as [number, string][] });
@@ -82,26 +82,33 @@ describe("MetricsDetailService.chainSeries · which upstream took the chain's tr
         return null;
       },
     } as unknown as PrometheusClient;
-    const res = await new MetricsDetailService(prom).chainSeries("ETH1", "1d");
-    expect(res.upstreamMix.map((u) => u.upstream)).toEqual(["Cached", "blockdaemon", "tatum"]);
-    expect(res.upstreamMix[1]!.points).toEqual([{ t: 100, v: 2 }, { t: 200, v: 2 }]);
-    // The chain's own traffic only: a mix that went deployment-wide would describe every chain at once.
-    expect(queries.find((q) => q.startsWith("sum by (provider_address)"))).toContain('spec="ETH1"');
+    const res = await new MetricsDetailService(prom).upstreamMix("ETH1", "1d");
+    expect(res.upstreams.map((u) => u.upstream)).toEqual(["Cached", "blockdaemon", "tatum"]);
+    expect(res.upstreams[1]!.points).toEqual([{ t: 100, v: 2 }, { t: 200, v: 2 }]);
+    // One read, and the chain's own traffic only: a mix that went deployment-wide would describe every chain at once.
+    expect(queries).toHaveLength(1);
+    expect(queries[0]).toContain('spec="ETH1"');
+  });
+
+  it("is left out of the chain-series bundle, which only an expanded row reads", async () => {
+    const { prom, queries } = capturingProm();
+    await new MetricsDetailService(prom).chainSeries("ETH1", "1d");
+    expect(queries.some((q) => q.startsWith("sum by (provider_address)"))).toBe(false);
   });
 });
 
-describe("MetricsDetailService.chainSeries · short windows", () => {
+describe("MetricsDetailService.upstreamMix · short windows", () => {
   // At a 15-second step, a rate over the step holds one scrape at most and the
   // store answers nothing - the card read "No requests" on the default window.
   it("averages each point of the upstream split over a minute when the step is shorter", async () => {
     const { prom, queries } = capturingProm();
-    await new MetricsDetailService(prom).chainSeries("ETH1", "30m");
-    const mix = queries.find((q) => q.startsWith("sum by (provider_address)"))!;
+    await new MetricsDetailService(prom).upstreamMix("ETH1", "30m");
+    const mix = queries[0]!;
     expect(mix).toContain('[1m]');
     expect(mix).not.toContain("[15s]");
     const day = capturingProm();
-    await new MetricsDetailService(day.prom).chainSeries("ETH1", "1d");
-    expect(day.queries.find((q) => q.startsWith("sum by (provider_address)"))).not.toContain("[1m]");
+    await new MetricsDetailService(day.prom).upstreamMix("ETH1", "1d");
+    expect(day.queries[0]).not.toContain("[1m]");
   });
 });
 

@@ -221,6 +221,7 @@ describe("the metrics routes' snapshot (MAG-4572)", () => {
       "/api/metrics/traffic",
       "/api/metrics/methods",
       "/api/metrics/chain-series?spec=ETH1",
+      "/api/metrics/upstream-mix?spec=ETH1",
       "/api/metrics/upstream-peers?spec=ETH1",
       "/api/metrics/upstream-detail?spec=ETH1&endpointId=eth-lava",
       "/api/metrics/errors",

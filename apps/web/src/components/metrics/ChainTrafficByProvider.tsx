@@ -3,9 +3,9 @@
 /* ChainTrafficByProvider — which upstream took one chain's traffic over the
  * window: the Overview's "Requests per chain", cut by upstream instead of by
  * chain. Shown on the Metrics tab once a chain (or a router) is picked.
- * Live data: /api/metrics/chain-series (`upstreamMix`, the same read the
- * expanded router row makes, so the two share one request). Honest-state
- * notes:
+ * Live data: /api/metrics/upstream-mix, one range read - not the expanded
+ * row's chain-series bundle, whose other reads only an open row needs.
+ * Honest-state notes:
  *  - the counts are the requests the router SENT: a retried request counts at
  *    every upstream it reached, so the shares are of those, not of clients';
  *  - "Cache" is the relay cache answering with no upstream at all;
@@ -13,7 +13,7 @@
  *    drawn as slivers nobody can read. */
 
 import { useMemo, useState } from "react";
-import { buildChainMetaByIndex, type ChainSeries, type MetricWindow } from "@sr/shared";
+import { buildChainMetaByIndex, type MetricWindow, type UpstreamMix } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { useFilters } from "@/components/gateway/FiltersProvider";
 import { ChartLegend, StackedAreaChart, type Layer } from "@/components/gateway/charts";
@@ -32,12 +32,12 @@ const isCache = (name: string) => name.toLowerCase() === "cached";
 
 export function ChainTrafficByProvider({ spec, timeWindow }: { spec: string; timeWindow: MetricWindow }) {
   const { scopeQ } = useFilters();
-  const { data } = useApi<ChainSeries>(`/api/metrics/chain-series?spec=${encodeURIComponent(spec)}&window=${timeWindow}${scopeQ}`);
+  const { data } = useApi<UpstreamMix>(`/api/metrics/upstream-mix?spec=${encodeURIComponent(spec)}&window=${timeWindow}${scopeQ}`);
   const [mode, setMode] = useState<"share" | "rate">("share");
   const chain = buildChainMetaByIndex(spec).name;
 
   const view = useMemo(() => {
-    const mix = data?.upstreamMix ?? [];
+    const mix = data?.upstreams ?? [];
     // One time axis for every upstream; an upstream with no point at a time took nothing then.
     const times = [...new Set(mix.flatMap((u) => u.points.map((p) => p.t)))].sort((a, b) => a - b);
     const aligned = mix.map((u) => {
