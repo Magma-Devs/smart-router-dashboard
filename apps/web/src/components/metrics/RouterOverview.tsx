@@ -84,6 +84,11 @@ export function RouterOverview({ onChainClick, chainFilter, timeWindow }: {
   const [open, setOpen] = useState<string | null>(null);
   const { scopeQ, withScope } = useFilters();
   const { data, isLoading, isValidating } = useApi<{ routers: RouterMetrics[] }>(`/api/metrics/routers-rollup?window=${timeWindow}${scopeQ}`);
+  // No rows at all (first load) vs. the previous window's rows still up while
+  // the next one loads (`keepPreviousData`): skeletons for the first, a dim
+  // table and the dot for the second.
+  const showSkeleton = isLoading && !data;
+  const refreshing = isValidating || (isLoading && !!data);
   const topo = useApi<{ routers: RouterTopology[] }>("/api/config/routers", 60000);
   // Instant gauges — no window in the key; polled on the default cadence.
   const tips = useApi<BlockHeights>(withScope("/api/metrics/block-heights"));
@@ -158,10 +163,12 @@ export function RouterOverview({ onChainClick, chainFilter, timeWindow }: {
           Routers · how each router performs<Tip text="**One row per router in the mounted values file** - not per chain. A chain can be served by several routers, and the config is the only place they are distinguishable: no metric series carries a router.\n\nA **shared** row means the collector reports no per-router target label, so the chain-level figures cover every router on that chain. Two such rows carry the same numbers; adding them up would count that traffic twice. Upstream counts are always the router's own.\n\n**Click a row** to expand its chain-health graphs over the selected window." />
         </div>
         {/* `keepPreviousData` means a window change re-fetches with the OLD
-            rows still on screen. The dot is the only thing that says so. */}
+            rows still on screen: `isLoading` is true for the new window while
+            `data` still holds the old one. The rows dim and the dot shows;
+            skeletons appear only when there are no rows at all. */}
         <span style={{ fontSize: 11, color: "var(--text-3)", display: "inline-flex", alignItems: "center", gap: 7 }}>
-          {isLoading ? <Skel w={62} h={9} /> : <>{routers.length} router{routers.length === 1 ? "" : "s"}</>}
-          <Refreshing show={!isLoading && isValidating} label="Refreshing routers" />
+          {showSkeleton ? <Skel w={62} h={9} /> : <>{routers.length} router{routers.length === 1 ? "" : "s"}</>}
+          <Refreshing show={refreshing} label="Refreshing routers" />
         </span>
         <div className="gw-segctl">
           {([["all", "All"], ["mainnet", "Mainnet"], ["testnet", "Testnet"]] as const).map(([f, lbl]) => (
@@ -185,14 +192,14 @@ export function RouterOverview({ onChainClick, chainFilter, timeWindow }: {
             <ThCol sortKey="status" sort={sort} onSort={onSort}>Status</ThCol>
           </tr>
         </thead>
-        <tbody>
-          {/* The rollup is the slowest read on the page — ~8 Prometheus queries per
-              router — so this table is the one that most needs to hold its shape
-              while it lands. */}
-          {isLoading && <SkelRows rows={4} cols={[
+        <tbody style={{ opacity: refreshing && !showSkeleton ? 0.55 : 1, transition: "opacity 0.2s" }}>
+          {/* The rollup is the slowest read on the page, so this table is the
+              one that most needs to hold its shape while it lands: one
+              skeleton row per column of the real table, only with no rows to
+              show — never beside rows from the previous window. */}
+          {showSkeleton && <SkelRows rows={4} cols={[
             { w: 150 }, { w: 56, align: "right" }, { w: 84, align: "right" }, { w: 64, align: "right" },
-            { w: 62, align: "right" }, { w: 56, align: "right" }, { w: 58, align: "right" }, { w: 36, align: "right" },
-            { w: 88 },
+            { w: 62, align: "right" }, { w: 56, align: "right" }, { w: 58, align: "right" }, { w: 88 },
           ]} />}
           {sortedRouters.map((r) => {
             const sm = statusMeta[r.statusKind];

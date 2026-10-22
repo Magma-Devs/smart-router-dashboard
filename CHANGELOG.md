@@ -5,6 +5,17 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Fixed
+
+- **The new Metrics page keeps the previous window up while the next one
+  loads.** On a window change the Routers table drew four skeleton rows above
+  the previous window's rows, with a ninth skeleton column the header doesn't
+  have, and the KPI cards went blank. The default UI got this fix in 0.36.0;
+  the new UI's copies now match it: skeletons only with nothing to show, the
+  previous rows and values dimmed with the refresh dot until the next ones
+  land. The Failed requests card, which reads the logs and can land well
+  after the others, dims on its own.
+
 ## [0.47.1]
 
 ### Changed
