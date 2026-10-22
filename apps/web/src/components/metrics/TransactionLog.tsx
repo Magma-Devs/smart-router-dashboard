@@ -52,6 +52,7 @@ import {
   TimeRangeControl,
   chainWords,
   onRowKey,
+  openRowShown,
   rangeIsLive,
   unreadableWords,
   UnreadStrip,
@@ -173,7 +174,9 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
   // Rows are matched to a config router by the upstreams they went to.
   const { routerIdQ } = useRouterFilter();
   const rangeQ = range ? `from=${Math.round(range.from)}&to=${Math.round(range.to)}` : `window=${win}`;
-  const log = useLogReads<TxLogRow, TransactionsReport>(`/api/transactions?${rangeQ}${specQ}${routerIdQ}`, live);
+  // An open row on screen holds the list still (`openRowShown`); set below, once the rows on screen are known.
+  const [held, setHeld] = useState(false);
+  const log = useLogReads<TxLogRow, TransactionsReport>(`/api/transactions?${rangeQ}${specQ}${routerIdQ}`, live && !held);
   const data = log.head;
   const isLoading = log.first.isLoading;
   const allRows = log.rows;
@@ -199,6 +202,8 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
   const pageCount = Math.max(1, Math.ceil(rows.length / PER_PAGE));
   const curPage = Math.min(page, pageCount - 1);
   const pageRows = rows.slice(curPage * PER_PAGE, (curPage + 1) * PER_PAGE);
+  const holds = live && openRowShown(open, pageRows);
+  if (holds !== held) setHeld(holds);
 
   const header = (
     <div style={{ marginBottom: 16, display: "flex", justifyContent: "flex-end" }}>
@@ -272,6 +277,7 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
             Transactions<Tip text={TT.txLog!} />
             {data && <span style={{ fontWeight: 400, color: "var(--text-4)", marginLeft: 8 }}>{fmtComma(rows.length)}{rows.length !== allRows.length ? ` of ${fmtComma(allRows.length)}` : ""}</span>}
             <span style={{ marginLeft: 8, display: "inline-flex" }}><Refreshing show={log.refreshing} label="Reading newer transactions" /></span>
+            {held && <span style={{ fontWeight: 400, color: "var(--text-4)", marginLeft: 8 }}>· paused while a row is open</span>}
           </span>
           {/* Narrowing it down, and finding one transaction. */}
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>

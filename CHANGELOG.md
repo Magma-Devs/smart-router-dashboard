@@ -16,6 +16,11 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   reads the logs and can land well after the others, dims on its own. A poll
   of the same window shows only the dot, so the Routers table no longer dims
   every 15 seconds.
+- **The Transactions and Errors lists hold still while a row is open.** A
+  poll every 30 s moved an open row down or paged it out of view; the list
+  now stops reading newer rows while an open row is on screen, says so in its
+  header, and reads again once the row closes or a filter, page or window
+  takes it out of view.
 
 ## [0.50.1]
 

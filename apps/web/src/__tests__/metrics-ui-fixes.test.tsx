@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { HeroSummary, RouterMetrics } from "@sr/shared";
 import { RouterOverview } from "@/components/metrics/RouterOverview";
 import { HeroPanel } from "@/components/metrics/HeroPanel";
+import { openRowShown } from "@/components/metrics/request-log";
 
 /** What `useApi` answers per path: SWR's fields as a window change leaves them. */
 const fixture = vi.hoisted(() => ({
@@ -102,5 +103,17 @@ describe("window change on the Metrics page", () => {
     const html = renderToStaticMarkup(createElement(HeroPanel, { tw: "21d" }));
     expect(html).toContain("99.99%");
     expect(skelCount(html)).toBe(0);
+  });
+});
+
+describe("an open row holds a live list still", () => {
+  const shown = [{ guid: "a" }, { guid: "b" }];
+  it("while the open row is on screen", () => {
+    expect(openRowShown("a", shown)).toBe(true);
+  });
+  it("not once a filter, a page or a window change has taken it out of view, nor with no row open", () => {
+    expect(openRowShown("gone", shown)).toBe(false);
+    expect(openRowShown("a", [])).toBe(false);
+    expect(openRowShown(null, shown)).toBe(false);
   });
 });

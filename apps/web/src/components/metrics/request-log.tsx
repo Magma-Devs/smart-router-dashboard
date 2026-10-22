@@ -475,6 +475,16 @@ export function chainWords(row: { spec: string | null; specs?: string[] }): stri
   return row.specs?.length ? row.specs.map((s) => buildChainMetaByIndex(s).name).join(" or ") : "—";
 }
 
+/**
+ * Whether the open row is on screen - what holds a live list still. A newer
+ * read would move that row or page it out of view; once a filter, a page or a
+ * window change has taken it out of view, nothing is being read and the list
+ * reads on.
+ */
+export function openRowShown(open: string | null, shown: readonly { guid: string }[]): boolean {
+  return open !== null && shown.some((r) => r.guid === open);
+}
+
 /** Enter and Space open a row, as a click does. */
 export const onRowKey = (toggle: () => void) => (e: React.KeyboardEvent) => {
   if (e.key === "Enter" || e.key === " ") {
