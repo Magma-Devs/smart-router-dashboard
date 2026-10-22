@@ -42,6 +42,9 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   Find a request no longer suggests them.
 - **An opened row's block numbers link to the chain's explorer** where one has
   a proven block page, as the Routers table's do.
+- **Stellar's transactions link to stellar.expert**, mainnet and testnet,
+  each watched rendering a real transaction. The router writes no `tx_hash`
+  for Stellar's `sendTransaction` yet; its rows link once it does.
 
 ## [0.50.1]
 
