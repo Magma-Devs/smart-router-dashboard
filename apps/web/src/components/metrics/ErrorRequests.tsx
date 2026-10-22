@@ -247,6 +247,9 @@ export function useErrorList({ chainFilter, win, upstream, initialRange = null }
   const [range, setRange] = useState<ExactRange | null>(initialRange);
   // A picked range that has closed can't change: read it once, don't poll it.
   const [live, setLive] = useState(() => rangeIsLive(initialRange));
+  // An open row holds the list still: a newer read would move it, or page it out of view.
+  const [rowOpen, setRowOpen] = useState(false);
+  const held = live && rowOpen;
   const specQ = chainFilter ? `&spec=${encodeURIComponent(chainFilter)}` : "";
   const { routerIdQ } = useRouterFilter();
   const rangeQ = range ? `from=${Math.round(range.from)}&to=${Math.round(range.to)}` : `window=${win}`;
@@ -254,9 +257,9 @@ export function useErrorList({ chainFilter, win, upstream, initialRange = null }
   // that upstream, so the cap applies to the requests the bar counts.
   const onBarRange = initialRange != null && range != null && range.from === initialRange.from && range.to === initialRange.to;
   const barQ = onBarRange && upstream !== ALL ? `&upstream=${encodeURIComponent(upstream)}` : "";
-  const log = useLogReads<ErrorRequestRow, ErrorRequestsReport>(`/api/error-requests?${rangeQ}${specQ}${routerIdQ}${barQ}`, live);
+  const log = useLogReads<ErrorRequestRow, ErrorRequestsReport>(`/api/error-requests?${rangeQ}${specQ}${routerIdQ}${barQ}`, live && !held);
   const pick = (r: ExactRange | null) => { setRange(r); setLive(rangeIsLive(r)); };
-  return { log, range, pick, rangeQ, routerIdQ, onBarRange, barQ };
+  return { log, range, pick, rangeQ, routerIdQ, onBarRange, barQ, held, setRowOpen };
 }
 
 export type ErrorList = ReturnType<typeof useErrorList>;
@@ -289,9 +292,9 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
   }, []);
   // The URL names the request last opened or found that is still in view.
   const find = (id: string | null) => { setLookupId(id); linkRequest(id ?? open); };
-  const toggleRow = (guid: string) => { const next = open === guid ? null : guid; setOpen(next); linkRequest(next ?? lookupId); };
+  const toggleRow = (guid: string) => { const next = open === guid ? null : guid; setOpen(next); list.setRowOpen(next !== null); linkRequest(next ?? lookupId); };
 
-  const { log, range, rangeQ, routerIdQ, onBarRange, barQ } = list;
+  const { log, range, rangeQ, routerIdQ, onBarRange, barQ, held } = list;
   const { first, head, rows: allRows } = log;
 
   const methods = useMemo(() => [...new Set(allRows.map((r) => r.method))].sort(), [allRows]);
@@ -368,6 +371,7 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
             Requests with an error<Tip text={TT.errorRequests!} />
             {head && <span style={{ fontWeight: 400, color: "var(--text-4)", marginLeft: 8 }}>{fmtComma(rows.length)}{rows.length !== allRows.length ? ` of ${fmtComma(allRows.length)}` : ""}</span>}
             <span style={{ marginLeft: 8, display: "inline-flex" }}><Refreshing show={log.refreshing} label="Reading newer requests" /></span>
+            {held && <span style={{ fontWeight: 400, color: "var(--text-4)", marginLeft: 8 }}>· paused while a row is open</span>}
           </span>
           <Seg
             value={result}

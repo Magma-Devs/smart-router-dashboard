@@ -15,6 +15,10 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   previous rows and values dimmed with the refresh dot until the next ones
   land. The Failed requests card, which reads the logs and can land well
   after the others, dims on its own.
+- **The Transactions and Errors lists hold still while a row is open.** A
+  poll every 30 s moved an open row down or paged it out of view; the list
+  now stops reading newer rows while one is open, says so in its header, and
+  reads again when it closes.
 
 ## [0.47.1]
 
