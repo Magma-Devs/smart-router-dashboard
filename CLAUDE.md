@@ -228,7 +228,8 @@ packages/shared/          @sr/shared — domain types, metric catalog, PromQL bu
                             explorer + deep links; explorerTxUrl — a
                             transaction's page, from the curated
                             explorer-tx.json (docs/CHAINS.md)
-    constants/windows.ts    WINDOWS — 13-window catalog (5m..30d) → PromQL range + step
+    constants/windows.ts    WINDOWS — 13-window catalog (5m..30d) → PromQL range + step;
+                            alignedBounds — a range read's window, on step boundaries
     promql/builders.ts      typed query builders shared by api (+ docs)
     constants/roles.ts      ROLES + roleAtLeast — four cumulative roles
     constants/audit-events.ts  the audit log's verb set (see "Audit log")
@@ -727,6 +728,20 @@ clock by `bucketGrid`: whole bars from a range read, then the bar still
 filling from one instant `increase` over the seconds it has run (a range read
 can't: it would end in the future, which Mimir refuses past 10 minutes).
 
+The range reads behind the charts end on a step boundary: `alignedBounds(range,
+step, now)` puts the end on the last multiple of the step at or before now and
+the start one window before it, at the step the chart draws on
+(`chartSampling`'s for the Upstreams deep-dive). Two reasons. Every poll until
+the next boundary asks for the same window, so the api's read cache answers it
+for up to a step (see `PROMETHEUS_CACHE_TTL_MS`). And Mimir's results cache
+keeps a range read only when both ends are multiples of its step, then
+recomputes just its newest 10 minutes: about 67% of a 30-minute read comes from
+cache, 94% at 3 hours, 97% at 6 hours. The cost: a chart's newest point is up
+to one step old - 15 s on the 30-minute default, 10 minutes at a day, 4 hours
+at 30 days. The error bars sit on their own clock (`bucketGrid`), and the
+Transactions chart's recorded read on its bars' ends shifted 30 seconds
+(`SAMPLE_SHIFT_SEC`): both move once a bar.
+
 Every `window=` query param accepts those keys **plus the `24h` alias (= `1d`)**;
 anything else falls back to the default `30m`. The page-level `<select>` shows
 the design's 12 options (`WINDOW_OPTIONS` — everything except `1h`, which the
@@ -816,7 +831,7 @@ API (`apps/api/src/config.ts` is the source of truth):
 | `PROMETHEUS_TIMEOUT_MS` | `10000` | per-query abort |
 | `METRICS_RECORDED_FROM` | `3h` | the narrowest window read from the store's recorded series (`promql/recorded.ts`: the fleet Mimir ruler's two-minute rates, summed per chain and router) instead of the raw histograms and counters; narrower windows stay raw and exact; chart series switch only from 12h (`RECORDED_CHART_FLOOR`). `never` holds every window on raw. Only while the series are fresh — see the next row |
 | `METRICS_RECORDED_STALE_MS` | `300000` | the api asks the store once a minute (`METRICS_RECORDED_PROBE_MS`) how old the newest recorded sample is, how far back the oldest one reaches, and how far apart the raw router samples are (the rules' 2m15s window is exact for a 15-second scrape only); older than this, absent, on another scrape interval, or with less history than the window asked for, and the builder reads raw — slow, never wrong. `GET /api/metrics/reads` reports the state; the Metrics page's notice reads it. Transitions are logged once |
-| `PROMETHEUS_CACHE_TTL_MS` | `10000` | how long a successful answer is reused for an identical read (same path, params, scope and credential) — under the 15 s panel poll, so two tabs or two panels asking the same instant read in an interval cost the store one query (range reads stamp their window with the current second and share only when they coincide; the store is per process, each replica keeps its own). `0` keeps every read live. Identical reads in flight at the same moment share one request whatever the value. A refused refresh (429, timeout, error) is answered from the last good read for up to 60 s and retried next time; failures themselves and the readiness probe are never kept |
+| `PROMETHEUS_CACHE_TTL_MS` | `10000` | how long a successful answer is reused for an identical read (same path, params, scope and credential) — under the 15 s panel poll, so two tabs or two panels asking the same instant read in an interval cost the store one query (the store is per process, each replica keeps its own). A range read ends on a step boundary (see "Time windows"), so it asks for the same window until the next one: its answer is reused for its step, five minutes at most (late samples reach a chart within that) and never less than this value. `0` keeps every read live, range reads included. Identical reads in flight at the same moment share one request whatever the value. A refused refresh (429, timeout, error) is answered from the last good read for up to 60 s (60 s past its reuse, for a range read) and retried next time; failures themselves and the readiness probe are never kept |
 | `PROMETHEUS_USERNAME` / `PROMETHEUS_PASSWORD` | unset | Basic auth on every Prometheus call — for a per-tenant read proxy or Mimir behind an auth gateway. Both or neither: one half alone sends no header |
 | `PROMETHEUS_ORG_ID` | unset | Sent as `X-Scope-OrgID`, for a multi-tenant store that takes the org from the client. The fleet's read proxy pins the org from the credential and ignores this |
 | `ROUTER_SCOPE_LABEL` | unset | Target label carrying the router identity for `?router=`. Unset: resolved on first use — `router` (the fleet's collector and the chart's ServiceMonitor from 6.20.0 stamp it from the pod label `app.smart-router-id`), else `service` (the Prometheus Operator's automatic label, the router's Service name); never probed at boot, remembered once found. Set `job` for a scrape config that names jobs per router. Parsed at import — a change needs a restart |

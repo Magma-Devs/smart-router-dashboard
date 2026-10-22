@@ -5,6 +5,24 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Changed
+
+- **Chart range reads end on a step boundary, so a cache can answer a
+  poll** (MAG-4571). Every Prometheus range read behind a chart (overview,
+  dashboard, chain detail, the Upstreams deep-dive, the errors trend) ended
+  on the current second, so no two polls asked for the same window: the
+  api's read cache never matched one, and Mimir's results cache, which keeps
+  a range read only when both ends are multiples of its step, stored none.
+  Each read now ends on the last step boundary at or before now
+  (`alignedBounds`), and its answer is reused for its step, five minutes at
+  most, rather than for the 10-second `PROMETHEUS_CACHE_TTL_MS`; a refused
+  refresh is answered from it for 60 s past that. Mimir recomputes only an
+  aligned read's newest 10 minutes: about 67% of a 30-minute read comes from
+  its cache, 94% at 3 hours, 97% at 6 hours. The cost is that a chart's
+  newest point is up to one step old: 15 s on the 30-minute default,
+  10 minutes at a day, 4 hours at 30 days. Instant reads are unchanged, and
+  `PROMETHEUS_CACHE_TTL_MS=0` still keeps every read live.
+
 ## [0.44.1]
 
 ### Fixed
