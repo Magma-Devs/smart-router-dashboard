@@ -2,7 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import Link from "next/link";
-import { useEffect, useState, useSyncExternalStore, type ComponentType } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type ComponentType } from "react";
 import { signOut } from "next-auth/react";
 import { buildChainMetaByIndex } from "@sr/shared";
 import { NAV_SECTIONS, visibleNavSections } from "./nav";
@@ -46,19 +46,30 @@ export function ThemeToggle() {
 function Sidebar({ grafanaDashboardUrl }: { grafanaDashboardUrl?: string | null }) {
   const pathname = usePathname();
   const sections = visibleNavSections(useAuthMode(), grafanaDashboardUrl);
-  const drawerOpen = useChainDrawer().visible;
+  const { visible: drawerOpen, covering, setCovering } = useChainDrawer();
   const { setChain, setRouterId, setRouter } = useFilters();
   // Home or Metrics while on Metrics: back to every chain, as the drawer's
-  // first row does. Navigating would land on the same page with the chain kept.
+  // first row does, with the drawer over the menu again. Navigating would
+  // land on the same page with the chain kept.
   const toAllChains = drawerOpen ? (e: React.MouseEvent) => {
     if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     e.preventDefault();
     setRouterId(null);
     setRouter(null);
     setChain(null);
+    setCovering(true);
   } : undefined;
+  // The drawer's menu button hid it: focus lands on Metrics, the way back.
+  const metricsLink = useRef<HTMLAnchorElement>(null);
+  const wasCovered = useRef(covering);
+  useEffect(() => {
+    if (drawerOpen && wasCovered.current && !covering) metricsLink.current?.focus({ preventScroll: true });
+    wasCovered.current = covering;
+  }, [drawerOpen, covering]);
   return (
-    <aside className="gw-side">
+    // Under the chains drawer while it covers the menu: out of reach of the
+    // keyboard and screen readers, as it is out of sight.
+    <aside className="gw-side" inert={covering}>
       {/* The brand is the way home, as it is on every product: `/` redirects to
           whatever the default surface is (Metrics), so home stays defined in one
           place rather than being restated here. */}
@@ -106,6 +117,7 @@ function Sidebar({ grafanaDashboardUrl }: { grafanaDashboardUrl?: string | null 
               return (
                 <Link
                   key={item.href}
+                  ref={item.href === CHAIN_DRAWER_PATH ? metricsLink : undefined}
                   href={item.href}
                   className={`gw-nav-item${active ? " active" : ""}`}
                   onClick={item.href === CHAIN_DRAWER_PATH ? toAllChains : undefined}
@@ -283,8 +295,11 @@ export function Shell({ children, grafanaDashboardUrl, incidentsEnabled = false 
     <TwoFactorGate>
       <ChainDrawerProvider>
         <div className="gw-app">
-          <Sidebar grafanaDashboardUrl={grafanaDashboardUrl} />
-          <ChainDrawerSlot />
+          {/* One column on the left: the menu, and on Metrics the chains drawer over it. */}
+          <div className="gw-rail">
+            <Sidebar grafanaDashboardUrl={grafanaDashboardUrl} />
+            <ChainDrawerSlot />
+          </div>
           <div className="gw-main">
             <Topbar here={here} sub={sub} incidentsEnabled={incidentsEnabled} />
             <div className="fade-in" key={pathname}>

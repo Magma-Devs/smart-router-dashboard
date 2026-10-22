@@ -286,7 +286,7 @@ apps/web/                 @sr/web — Next.js 16 App Router (:3000)
     app/api/config/     runtime-config route (DASHBOARD_API_URL → browser)
     components/
       gateway/          Shell · Sidebar/Topbar · ChainDrawer (the Metrics
-                        page's chains, beside the sidebar) · RouterHeader ·
+                        page's chains, over the sidebar) · RouterHeader ·
                         FiltersProvider · WindowSelect · ChainSelect ·
                         RouterFilterSelect · HealthTag · charts · SortTable ·
                         SideSheet · icons
@@ -509,7 +509,7 @@ narrowed by the chain filter, and `useChainFilter()` clears a router the new
 chain excludes — the pair stays consistent without an effect watching for it.
 `<RouterFilterSelect>` renders it next to `<ChainSelect>`, and only for a chain
 that two or more routers serve: with one router per chain, picking the router
-is picking the chain. Beside the Metrics page's chains drawer it isn't drawn:
+is picking the chain. On the Metrics page, which has the chains drawer, it isn't drawn:
 such a chain lists its routers under it there (`?chain=ETH1&router=eth-prod`).
 
 #### The scope label
@@ -550,9 +550,13 @@ boot. Set `job` for a scrape config that names jobs per router.
   that outlives its screen is a trap). Every metrics URL appends `scopeQ` /
   `withScope(url)`. A selection that disappears from the list resets to "All
   routers" instead of silently filtering every panel to nothing.
-- The Metrics page picks them in its **chains drawer** (`ChainDrawer`, beside
-  the sidebar): one row per chain with its health,
+- The Metrics page picks them in its **chains drawer** (`ChainDrawer`), drawn
+  over the sidebar in the same column (`.gw-rail`), so the page never shows
+  two lists side by side: one row per chain with its health,
   requests and error rate for the page's window, problems first, and a search.
+  Its menu button slides it away to show the menu; the menu's Metrics brings
+  it back, and every arrival on the page opens with the drawer over the menu.
+  The covered panel is `inert`, and focus moves to the one that came forward.
   A row IS the chain filter (`useChainFilter`), so every tab follows it; a
   chain two or more routers serve lists them under it once picked. The page
   also writes both into its URL with the tab
@@ -568,7 +572,7 @@ boot. Set `job` for a scrape config that names jobs per router.
   row also links to its own lines on the Grafana logs board (the GUID as the
   search, a minute either side of the request). The drawer reads the whole deployment, never the router scope (the
   one exception `router-scope.test.ts` allows). Clicking Metrics, or the logo,
-  while on it goes back to every chain.
+  while on it goes back to every chain, with the drawer over the menu again.
 
 #### The deployment scope
 

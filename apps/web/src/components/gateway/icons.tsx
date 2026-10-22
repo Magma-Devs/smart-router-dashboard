@@ -119,6 +119,13 @@ export const IconSearch = svg(
     <line x1="21" y1="21" x2="16.65" y2="16.65" />
   </>,
 );
+export const IconMenu = svg(
+  <>
+    <line x1="4" y1="6" x2="20" y2="6" />
+    <line x1="4" y1="12" x2="20" y2="12" />
+    <line x1="4" y1="18" x2="20" y2="18" />
+  </>,
+);
 
 /* ── Chain brand logos ──────────────────────────────────────────────────
    Recognizable brand marks for the major chains. Each is self-colored.

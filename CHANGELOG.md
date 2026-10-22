@@ -5,6 +5,19 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Changed
+
+- **On Metrics, the chains drawer opens over the menu instead of beside it.**
+  The menu and the chains list used to sit side by side and take 492 px
+  together, which pushed the Routers table's Error rate and Status columns
+  off a 1440 px screen. The drawer now covers the menu in the same 248 px
+  column. Its menu button (three lines, "Show menu") slides it away to show
+  the menu, and Metrics in the menu brings it back. Every visit to Metrics
+  opens with the drawer over the menu. The covered side can't be reached by
+  keyboard or screen reader, and focus moves to the side that came forward.
+  Only the 0.28 screens (`DASHBOARD_NEW_UI`) have the drawer; the 0.27
+  screens look as before.
+
 ## [0.47.1]
 
 ### Changed
