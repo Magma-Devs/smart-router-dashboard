@@ -253,7 +253,8 @@ apps/api/                 @sr/api — Fastify 5 (:8000)
                         metrics-dashboard · configuration (values-file loader) ·
                         loki-client · router-log (parsing the router's lines) ·
                         transactions · error-requests (rows from the router's logs) ·
-                        transactions-over-time (the Transactions tab's chart)
+                        transactions-over-time (the Transactions tab's chart) ·
+                        snapshot (the metrics routes' shared answers)
     config.ts           single source of truth for env defaults
 apps/web/                 @sr/web — Next.js 16 App Router (:3000)
   src/
@@ -756,7 +757,9 @@ every route is public; with `AUTH_MODE=enabled` the `/api/*` routes require a
 valid Bearer JWT (health/version and `/auth/*` stay public). See [`docs/AUTH.md`](docs/AUTH.md).
 
 Every `/api/metrics/*` route also accepts **`router?`** — the router scope
-(see "Router scope" above); omitted = cluster-wide.
+(see "Router scope" above); omitted = cluster-wide. Every one but `/query` and
+`/reads` answers from a per-process snapshot and says how old the answer is in
+`Age` (see "Response snapshot" below).
 
 | Endpoint | Params | Returns |
 |---|---|---|
@@ -821,6 +824,60 @@ Every `/api/metrics/*` route also accepts **`router?`** — the router scope
 | `POST /api/audit/tokens` | body `{ name }` | **admin only**. Mints a read-only pull token and returns `{ token, secret }` — the **only** time the value exists. Stored as SHA-256; lost means revoke and re-issue |
 | `DELETE /api/audit/tokens/:id` | — | **admin only**. Revokes; the token stops working on the next request. 404 when already revoked or unknown — the two are one answer so an id can't be confirmed by guessing |
 
+### Response snapshot
+
+Every `/api/metrics/*` route that reads the store answers from a snapshot: one
+answer per route and query, shared by every caller of the process
+(`services/snapshot.ts`; the TTLs are `snapshotTtlMs` in `routes/metrics.ts`).
+Without it every viewer re-runs its page's whole read set on every poll: one
+Metrics Overview tab of the 0.27 screens costs 149–177 store reads a minute,
+N viewers N times that, and neither Mimir (its results cache covers range
+queries only) nor the client's 10 s answer cache, which sits under the 15 s
+poll, shares them. `/api/metrics/query` (the caller's own PromQL) and
+`/api/metrics/reads` (process state) always answer live.
+
+- The key is the route and the parameters it reads, as parsed: the window
+  after `toMetricWindow` (`24h` and `1d` share an answer), `spec`, `router`,
+  `routerId`, `endpointId`. Parameter order, and parameters the route doesn't
+  read, change nothing.
+- Younger than its TTL, an answer is served as is. Up to twice its TTL old it
+  is still served while one refresh runs in the background, so no request
+  waits on a refresh; older, or never read, the request waits for the read,
+  and every request that arrives meanwhile shares it. A viewer alone on a page
+  whose polls are as far apart as the TTL (15 s on the short windows)
+  therefore sees the answer its previous poll read.
+- A refresh that throws keeps the last good answer, still served while it is
+  under twice its TTL, and the key is read again 5 s later at the earliest,
+  never on every request. A failed store read is not a throw: the services
+  answer it with empty fields (the honesty contract), and the snapshot keeps
+  that answer for its TTL like any other.
+- At most 256 answers; a new key past that evicts the least recently
+  refreshed one. Per process: each replica keeps its own, so a key costs each
+  replica one read set per TTL. A values-file edit reaches the answers within
+  twice their TTL.
+- `Age` says how old an answer is, in seconds since its read started, and
+  `Access-Control-Expose-Headers` lets the browser read it. The payloads are
+  unchanged.
+- No answer depends on the caller: no metrics route reads the session, and
+  under `AUTH_MODE=enabled` the gate is an `onRequest` hook, so a snapshot is
+  only served past it.
+
+| Answer | Routes (`/api/metrics/…`) | 5m–1h | 3h–12h | 1d–3d | 7d–30d |
+|---|---|---|---|---|---|
+| Figures over the window | `rps` · `traffic` · `methods` · `chain-series` · `upstream-peers` · `cross-validation` | 15 s | 60 s | 5 min | 15 min |
+| Figures about now too (health, latest block, in-flight, a current rate), and the Errors tab | `dashboard-summary` · `overview` · `dashboard` · `routers-rollup` · `chains` · `upstreams` · `upstream-detail` · `websocket` · `errors` · `retries` | 15 s | 60 s | 60 s | 60 s |
+| No window | `routers` · `specs` · `block-heights` · `unavailable` | 15 s | | | |
+| The topbar's pulse, polled every 30 s | `pulse` | 30 s | | | |
+
+The 15 s is `METRICS_SNAPSHOT_TTL_MS`. No TTL is shorter, so a larger value
+raises the others to it, and `0` turns the snapshot off. A window's answer is
+kept at most one chart point of the window (`chartSampling`: 15 s up to 1h,
+1–5 min from 3h, 5–15 min from 1d, an hour and more from 7d), and from 3h the
+window reads recorded series that move once a minute. A figure about now is
+kept a minute at most. The Errors tab is read during an incident, beside the
+request list, which reads the logs live. `websocket` ignores its window: its
+figures are lifetime totals and the live connection gauge.
+
 ## Environment variables
 
 API (`apps/api/src/config.ts` is the source of truth):
@@ -834,6 +891,7 @@ API (`apps/api/src/config.ts` is the source of truth):
 | `METRICS_RECORDED_FROM` | `3h` | the narrowest window read from the store's recorded series (`promql/recorded.ts`: the fleet Mimir ruler's two-minute rates, summed per chain and router) instead of the raw histograms and counters; narrower windows stay raw and exact; chart series switch only from 12h (`RECORDED_CHART_FLOOR`). `never` holds every window on raw. Only while the series are fresh — see the next row |
 | `METRICS_RECORDED_STALE_MS` | `300000` | the api asks the store once a minute (`METRICS_RECORDED_PROBE_MS`) how old the newest recorded sample is, how far back the oldest one reaches, and how far apart the raw router samples are (the rules' 2m15s window is exact for a 15-second scrape only); older than this, absent, on another scrape interval, or with less history than the window asked for, and the builder reads raw — slow, never wrong. `GET /api/metrics/reads` reports the state; the Metrics page's notice reads it. Transitions are logged once |
 | `PROMETHEUS_CACHE_TTL_MS` | `10000` | how long a successful answer is reused for an identical read (same path, params, scope and credential) — under the 15 s panel poll, so two tabs or two panels asking the same instant read in an interval cost the store one query (the store is per process, each replica keeps its own). A range read ends on a step boundary (see "Time windows"), so it asks for the same window until the next one. An answer read while the window's end is under three minutes old (`RANGE_SETTLE_MS`: raw samples land late, and the ruler writes recorded series a minute or two after their timestamps) is reused for this value only, so a chart's newest point and a just-closed error bar are read again until they settle; once settled, for the read's step, five minutes at most and never less than this value. `0` keeps every read live, range reads included. Identical reads in flight at the same moment share one request whatever the value. A refused refresh (429, timeout, error) is answered from the last good read for up to 60 s (60 s past its reuse, for a range read) and retried next time; failures themselves and the readiness probe are never kept |
+| `METRICS_SNAPSHOT_TTL_MS` | `15000` | the base TTL of the metrics routes' response snapshot (see "Response snapshot"): windows up to 1h and the window-less routes keep an answer this long, and no answer is kept shorter. `0` turns the snapshot off: every request reads live and carries no `Age`. Read at boot |
 | `PROMETHEUS_USERNAME` / `PROMETHEUS_PASSWORD` | unset | Basic auth on every Prometheus call — for a per-tenant read proxy or Mimir behind an auth gateway. Both or neither: one half alone sends no header |
 | `PROMETHEUS_ORG_ID` | unset | Sent as `X-Scope-OrgID`, for a multi-tenant store that takes the org from the client. The fleet's read proxy pins the org from the credential and ignores this |
 | `ROUTER_SCOPE_LABEL` | unset | Target label carrying the router identity for `?router=`. Unset: resolved on first use — `router` (the fleet's collector and the chart's ServiceMonitor from 6.20.0 stamp it from the pod label `app.smart-router-id`), else `service` (the Prometheus Operator's automatic label, the router's Service name); never probed at boot, remembered once found. Set `job` for a scrape config that names jobs per router. Parsed at import — a change needs a restart |
