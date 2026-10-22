@@ -26,6 +26,9 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 - **A row whose chain the logs don't name lists up to three candidates** and
   otherwise reads "One of N chains", the full list on hover, instead of every
   chain its upstreams serve - about thirty behind a shared upstream.
+- **A transaction every node refused isn't linked to an explorer.** The chain
+  never saw it, so the explorer's page was always "not found"; the hash stays
+  to copy, and the opened row says why.
 
 ## [0.47.1]
 

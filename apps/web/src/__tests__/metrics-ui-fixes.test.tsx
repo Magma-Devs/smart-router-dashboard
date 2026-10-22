@@ -6,7 +6,7 @@ import { RouterOverview } from "@/components/metrics/RouterOverview";
 import { RouterOverview as LegacyRouterOverview } from "@/legacy/components/metrics/RouterOverview";
 import { HeroPanel } from "@/components/metrics/HeroPanel";
 import { HeroPanel as LegacyHeroPanel } from "@/legacy/components/metrics/HeroPanel";
-import { chainsTitle, chainWords, fmtWhen } from "@/components/metrics/request-log";
+import { chainsTitle, chainWords, fmtWhen, TxHash } from "@/components/metrics/request-log";
 
 /** What `useApi` answers per path: SWR's fields as a window change leaves them. */
 const fixture = vi.hoisted(() => ({
@@ -110,5 +110,14 @@ describe("log rows", () => {
     expect(chainWords(many)).toBe("One of 5 chains");
     expect(chainsTitle(many)).toContain("Ethereum, Base");
     expect(chainsTitle({ spec: "ETH1" })).toBeUndefined();
+  });
+
+  it("links a transaction's hash to the explorer unless every node refused it", () => {
+    const hash = `0x${"ab".repeat(32)}`;
+    const linked = renderToStaticMarkup(createElement(TxHash, { hash, spec: "ETH1" }));
+    const refused = renderToStaticMarkup(createElement(TxHash, { hash, spec: "ETH1", refused: true }));
+    expect(linked).toContain("<a ");
+    expect(refused).not.toContain("<a ");
+    expect(refused).toContain("never saw it");
   });
 });

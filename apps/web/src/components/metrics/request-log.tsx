@@ -367,18 +367,19 @@ export const shortHash = (h: string) => (h.length > 16 ? `${h.slice(0, h.startsW
 
 /**
  * A transaction's hash, to copy, linked to the chain's explorer where a
- * transaction page is known (explorerTxUrl) - plain text where it isn't.
- * `full` writes it out whole, for the details.
+ * transaction page is known (explorerTxUrl) - plain text where it isn't, and
+ * where every node `refused` it: an explorer has no page for a transaction
+ * the chain never saw. `full` writes it out whole, for the details.
  */
-export function TxHash({ hash, spec, full = false }: { hash: string; spec: string | null; full?: boolean }) {
-  const url = spec ? explorerTxUrl(spec, hash) : null;
+export function TxHash({ hash, spec, full = false, refused = false }: { hash: string; spec: string | null; full?: boolean; refused?: boolean }) {
+  const url = spec && !refused ? explorerTxUrl(spec, hash) : null;
   const text = full ? hash : shortHash(hash);
   const style: React.CSSProperties = { fontSize: full ? 11.5 : 10.5, wordBreak: full ? "break-all" : undefined, whiteSpace: full ? undefined : "nowrap" };
   return (
     <span onClick={keepClick} style={{ display: "inline-flex", alignItems: "center", gap: 6, minWidth: 0, maxWidth: "100%" }}>
       {url
         ? <a className="gw-mono" href={url} target="_blank" rel="noopener noreferrer" title={`${hash} - on the chain's explorer`} style={{ ...style, color: "var(--brand)", textDecoration: "none" }}>{text}{full ? "" : " ↗"}</a>
-        : <span className="gw-mono" title={hash} style={{ ...style, color: "var(--text-3)" }}>{text}</span>}
+        : <span className="gw-mono" title={refused ? `${hash} - every node refused this transaction, so the chain most likely never saw it and no explorer has it` : hash} style={{ ...style, color: "var(--text-3)" }}>{text}</span>}
       <CopyButton text={hash} />
     </span>
   );

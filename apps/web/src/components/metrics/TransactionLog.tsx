@@ -121,8 +121,9 @@ function Details({ row }: { row: TxLogRow }) {
       {row.txHash && (
         <DetailLine>
           <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11.5, color: "var(--text-4)", flexWrap: "wrap" }}>
-            Transaction hash <TxHash hash={row.txHash} spec={row.spec} full />
+            Transaction hash <TxHash hash={row.txHash} spec={row.spec} refused={row.outcome === "rejected"} full />
             {row.txStatus === "success" && <span>· the chain ran it</span>}
+            {row.outcome === "rejected" && <span>· refused by every node, so the chain most likely never saw it</span>}
           </div>
         </DetailLine>
       )}
@@ -379,7 +380,7 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
                             {r.method === "unknown"
                               ? <div style={{ fontSize: 10.5, color: "var(--text-4)", fontStyle: "italic" }}>method not in the logs</div>
                               : <div className="gw-mono" title={r.method} style={{ fontSize: 10.5, color: "var(--text-3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.method}</div>}
-                            {r.txHash && <div style={{ marginTop: 3 }}><TxHash hash={r.txHash} spec={r.spec} /></div>}
+                            {r.txHash && <div style={{ marginTop: 3 }}><TxHash hash={r.txHash} spec={r.spec} refused={r.outcome === "rejected"} /></div>}
                           </div>
                         </div>
                       </td>
