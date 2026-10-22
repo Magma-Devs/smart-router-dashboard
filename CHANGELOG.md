@@ -17,6 +17,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   visit to Metrics starts folded. Other pages keep the full menu. Only the
   0.28 screens (`DASHBOARD_NEW_UI`) have the drawer; the 0.27 screens look as
   before.
+- **The chains drawer's footer says only the window** ("Last 30 minutes").
+  "· problems first" is gone; the rows are still sorted that way.
 
 ## [0.48.0]
 

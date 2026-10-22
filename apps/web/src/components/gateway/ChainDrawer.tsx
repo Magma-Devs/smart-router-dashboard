@@ -197,7 +197,7 @@ export function ChainDrawer() {
         ))}
         {q && shown.length === 0 && <div className="gw-chains__empty">No chain matches &ldquo;{query}&rdquo;.</div>}
       </nav>
-      <div className="gw-chains__foot">Last {WINDOWS[timeWindow].label} · problems first</div>
+      <div className="gw-chains__foot">Last {WINDOWS[timeWindow].label}</div>
     </aside>
   );
 }
