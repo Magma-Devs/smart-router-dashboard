@@ -38,6 +38,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 - **Stellar's transactions link to stellar.expert**, mainnet and testnet,
   each watched rendering a real transaction. The router writes no `tx_hash`
   for Stellar's `sendTransaction` yet; its rows link once it does.
+- **A row with no customer says why**: the caller sent no `project-id`
+  header.
 
 ## [0.47.1]
 

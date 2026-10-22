@@ -342,11 +342,11 @@ export function TimeRangeControl({ range, onChange, windowLabel, windowMs }: {
 /** Clicks inside an opened row's own controls stay there: a copy or a link doesn't fold the row. */
 const keepClick = (e: React.MouseEvent) => e.stopPropagation();
 
-/** A row's caller, under its time: their project, or "—" when the request carried none. */
+/** A row's caller, under its time: their project, or "—" when the request carried no project-id header. */
 export function CustomerCell({ customer }: { customer?: string }) {
   const style: React.CSSProperties = { display: "block", marginTop: 4, fontSize: 10.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
-  if (!customer) return <span title="The request named no customer" style={{ ...style, color: "var(--text-4)" }}>—</span>;
-  return <span className="gw-mono" title={`Customer: ${customer}`} style={{ ...style, color: "var(--text-3)" }}>{customer}</span>;
+  if (!customer) return <span title="No customer: the caller sent no project-id header" style={{ ...style, color: "var(--text-4)" }}>—</span>;
+  return <span className="gw-mono" title={`Customer - the project-id header the caller sent: ${customer}`} style={{ ...style, color: "var(--text-3)" }}>{customer}</span>;
 }
 
 /** The customer filter's key for requests that carried none. */

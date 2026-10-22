@@ -6,7 +6,7 @@ import { RouterOverview } from "@/components/metrics/RouterOverview";
 import { RouterOverview as LegacyRouterOverview } from "@/legacy/components/metrics/RouterOverview";
 import { HeroPanel } from "@/components/metrics/HeroPanel";
 import { HeroPanel as LegacyHeroPanel } from "@/legacy/components/metrics/HeroPanel";
-import { CallFactsLine, chainsTitle, chainWords, fmtWhen, RequestIdLine, TxHash } from "@/components/metrics/request-log";
+import { CallFactsLine, chainsTitle, chainWords, CustomerCell, fmtWhen, RequestIdLine, TxHash } from "@/components/metrics/request-log";
 
 /** What `useApi` answers per path: SWR's fields as a window change leaves them. */
 const fixture = vi.hoisted(() => ({
@@ -132,5 +132,9 @@ describe("log rows", () => {
   it("links the router's latest block to a chain's explorer where one has a block page", () => {
     const html = renderToStaticMarkup(createElement(CallFactsLine, { row: { seenBlock: 5_329_484 }, spec: "XLMT" }));
     expect(html).toContain("stellar.expert/explorer/testnet");
+  });
+
+  it("says why a row has no customer", () => {
+    expect(renderToStaticMarkup(createElement(CustomerCell, {}))).toContain("no project-id header");
   });
 });
