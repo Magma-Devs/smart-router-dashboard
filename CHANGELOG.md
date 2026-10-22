@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.46.0]
+
 ### Changed
 
 - **A request looked up by an ID from smart-router v1.6.1 or later is read
