@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { HeroSummary, RelayAttempt, RouterMetrics } from "@sr/shared";
 import { RouterOverview } from "@/components/metrics/RouterOverview";
 import { HeroPanel } from "@/components/metrics/HeroPanel";
-import { chainsTitle, chainWords, everyNodeRefused, fmtWhen, openRowShown, TxHash } from "@/components/metrics/request-log";
+import { chainsTitle, chainWords, CustomerCell, everyNodeRefused, fmtWhen, openRowShown, TxHash } from "@/components/metrics/request-log";
 import { RequestBreakdown, type BreakdownProps } from "@/components/metrics/request-breakdown";
 
 /** What `useApi` answers per path: SWR's fields as a window change leaves them. */
@@ -178,5 +178,9 @@ describe("log rows", () => {
     const unnamed = renderToStaticMarkup(createElement(RequestBreakdown, breakdown({ seenBlock: 5_329_484 })));
     expect(unnamed).toContain("5,329,484");
     expect(unnamed).not.toContain("stellar.expert");
+  });
+
+  it("says why a row has no customer", () => {
+    expect(renderToStaticMarkup(createElement(CustomerCell, {}))).toContain("no project-id header");
   });
 });
