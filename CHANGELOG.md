@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.45.0]
+
 ### Changed
 
 - **Chart range reads end on a step boundary, so a cache can answer a
