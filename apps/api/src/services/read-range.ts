@@ -13,9 +13,21 @@ export interface ReadRange {
   endMs: number;
 }
 
+/** The page window each range `windowRange` made follows. */
+const windows = new WeakMap<ReadRange, MetricWindow>();
+
 export function windowRange(window: MetricWindow, now = Date.now()): ReadRange {
-  return { startMs: now - WINDOWS[window].rangeSeconds * 1000, endMs: now };
+  const range = { startMs: now - WINDOWS[window].rangeSeconds * 1000, endMs: now };
+  windows.set(range, window);
+  return range;
 }
+
+/**
+ * The page window a range was made for: it ends now and moves with the
+ * clock, so its reads are kept by the window rather than by their times.
+ * Undefined for exact times.
+ */
+export const liveWindow = (range: ReadRange): MetricWindow | undefined => windows.get(range);
 
 /** The longest exact range a read may ask for - the widest page window. */
 const MAX_RANGE_MS = WINDOWS["30d"].rangeSeconds * 1000;

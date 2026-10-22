@@ -486,7 +486,10 @@ export interface GuidLines {
  * Every line of these requests whose message matches one of `messages`, from
  * `fromMs` to `toMs` (now by default). The GUIDs go out in batches; a batch
  * Loki didn't answer leaves its GUIDs in `unread` while the others' lines are
- * kept. Null only when no batch answered.
+ * kept. Null only when no batch answered. Every batch may return a full
+ * batch's lines, `perGuid` per request on average: a request with many tries
+ * fits beside light ones however few GUIDs its batch holds, so a poll that
+ * reads three requests reads them as whole as a read of a hundred.
  */
 export async function linesForGuids(
   loki: LokiClient,
@@ -508,7 +511,7 @@ export async function linesForGuids(
         `${selector} |~ \`"GUID":"(${batch.join("|")})"\` |~ \`${pattern}\``,
         fromMs,
         toMs,
-        batch.length * perGuid,
+        GUID_BATCH * perGuid,
         "forward",
       ),
     ),
