@@ -5,6 +5,18 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Changed
+
+- **A panel polls as often as its window can show a change** (MAG-4573).
+  Every panel re-read every 15 s whatever the window, so a week-long view
+  re-read its whole week four times a minute for a chart that draws a point
+  an hour, and one Metrics Overview tab cost 149-177 store reads a minute at
+  any window. A metrics read now polls every 15 s up to 1h, every minute at
+  3h, 6h and 12h, every 5 minutes at 1d and 3d, and every 15 minutes from 7d
+  (`pollMsFor` in `lib/poll.ts`), never further apart than its chart's step;
+  a caller's longer interval still wins. Reads without a window and the log
+  lists keep their own pace.
+
 ## [0.46.1]
 
 ### Changed
