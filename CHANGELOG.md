@@ -14,14 +14,19 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   api's read cache never matched one, and Mimir's results cache, which keeps
   a range read only when both ends are multiples of its step, stored none.
   Each read now ends on the last step boundary at or before now
-  (`alignedBounds`), and its answer is reused for its step, five minutes at
-  most, rather than for the 10-second `PROMETHEUS_CACHE_TTL_MS`; a refused
-  refresh is answered from it for 60 s past that. Mimir recomputes only an
-  aligned read's newest 10 minutes: about 67% of a 30-minute read comes from
-  its cache, 94% at 3 hours, 97% at 6 hours. The cost is that a chart's
-  newest point is up to one step old: 15 s on the 30-minute default,
-  10 minutes at a day, 4 hours at 30 days. Instant reads are unchanged, and
-  `PROMETHEUS_CACHE_TTL_MS=0` still keeps every read live.
+  (`alignedBounds`). Once its newest point has settled (its end three
+  minutes old: raw samples land late, and the ruler writes recorded series a
+  minute or two behind), its answer is reused for its step, five minutes at
+  most, rather than for the 10-second `PROMETHEUS_CACHE_TTL_MS`; before that
+  it keeps the 10 seconds, so a chart's newest point and a just-closed error
+  bar are read again until their samples are in. A refused refresh is
+  answered from the last good read for 60 s past its reuse. Mimir
+  recomputes only an aligned read's newest 10 minutes: about 67% of a
+  30-minute read comes from its cache, 94% at 3 hours, 97% at 6 hours. The
+  cost is that a chart's newest point is up to one step old: 15 s on the
+  30-minute default, 10 minutes at a day, 4 hours at 30 days. Instant reads
+  are unchanged, and `PROMETHEUS_CACHE_TTL_MS=0` still keeps every read
+  live.
 
 ## [0.44.1]
 

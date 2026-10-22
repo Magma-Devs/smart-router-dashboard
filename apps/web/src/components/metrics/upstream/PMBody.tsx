@@ -234,7 +234,7 @@ export function PMBody({ pm, detail, name, timeWindow, onOpenErrors }: {
   const barFrom = (i: number) => (errTimes[i]! - barSec) * 1000;
   const barTo = (i: number) => Math.min(errTimes[i]!, eot?.asOf ?? Infinity) * 1000;
   const barFilling = (i: number) => eot != null && errTimes[i]! > eot.asOf;
-  /* One time axis for all four: the window, ending when it was read. The
+  /* One time axis for all four: the window, ending at its newest point. The
      errors' first bar starts before it and the last is still filling, so
      both are cut at the edges - their tooltips give the whole bar. */
   const domEnd = grid?.end ?? eot?.asOf;

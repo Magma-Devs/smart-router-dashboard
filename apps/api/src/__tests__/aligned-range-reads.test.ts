@@ -3,7 +3,7 @@ import { WINDOWS, durationSeconds, type MetricWindow } from "@sr/shared";
 import { MetricsService } from "../services/metrics.js";
 import { MetricsDetailService } from "../services/metrics-detail.js";
 import { MetricsDashboardService } from "../services/metrics-dashboard.js";
-import type { PrometheusClient } from "../services/prometheus-client.js";
+import { PrometheusClient, RANGE_REUSE_MAX_MS, RANGE_SETTLE_MS } from "../services/prometheus-client.js";
 
 interface RangeRead {
   expr: string;
@@ -56,6 +56,7 @@ async function everyChart(prom: PrometheusClient, w: MetricWindow): Promise<void
 const WINDOW_KEYS = Object.keys(WINDOWS) as MetricWindow[];
 
 afterEach(() => {
+  vi.unstubAllGlobals();
   vi.useRealTimers();
 });
 
@@ -102,5 +103,37 @@ describe("chart range reads end on a step boundary (MAG-4571)", () => {
     const moved = after.filter((r, i) => r.end !== before[i]!.end);
     expect(moved.length).toBeGreaterThan(0);
     for (const r of moved) expect(r.step === "15s" && r.end === boundary / 1000 + 15, r.expr).toBe(true);
+  });
+});
+
+// The error bars' whole-bar read ends where the last bar closed. Read seconds
+// after it closes, that bar can be short of its last scrapes, so the answer
+// keeps the instant TTL until the bar is three minutes old.
+describe("a bar that has just closed is read again until it has settled (MAG-4571)", () => {
+  it("the 6-hour window's 10-minute bars, through the real client", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const closed = Date.UTC(2026, 9, 22, 16, 0);
+    const barReads: string[] = [];
+    vi.stubGlobal("fetch", async (input: URL | string) => {
+      const url = new URL(String(input));
+      const range = url.pathname.endsWith("/query_range");
+      if (range && url.searchParams.get("step") === "600s") barReads.push(url.searchParams.get("end")!);
+      return Response.json({ status: "success", data: { resultType: range ? "matrix" : "vector", result: [] } });
+    });
+    const detail = new MetricsDetailService(new PrometheusClient("http://prom.test", 1000, null, {}, { cacheTtlMs: 10_000 }));
+    const poll = async (sinceClosed: number) => {
+      vi.setSystemTime(closed + sinceClosed);
+      await detail.upstreamDetail({ endpointId: "eth-lava", spec: "ETH1" }, "6h");
+    };
+    await poll(5_000);
+    await poll(20_000); // the next poll reads the closed bar again
+    expect(barReads).toHaveLength(2);
+    await poll(RANGE_SETTLE_MS + 5_000); // settled: one more read...
+    await poll(RANGE_SETTLE_MS + 200_000); // ...that is kept
+    expect(barReads).toHaveLength(3);
+    await poll(RANGE_SETTLE_MS + 5_000 + RANGE_REUSE_MAX_MS); // for five minutes
+    expect(barReads).toHaveLength(4);
+    // Every one of them is the window ending where the bar closed.
+    expect(new Set(barReads)).toEqual(new Set([String(closed / 1000)]));
   });
 });
