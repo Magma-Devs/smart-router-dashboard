@@ -32,7 +32,7 @@ import {
   type Kpi,
   type MetricWindow,
 } from "@sr/shared";
-import { WINDOWS, stepSeconds } from "@sr/shared/constants";
+import { WINDOWS, alignedBounds, stepSeconds } from "@sr/shared/constants";
 import type { PromMatrixSample, PrometheusClient } from "./prometheus-client.js";
 import { health, toGridPoints } from "./metrics.js";
 
@@ -79,10 +79,9 @@ export class MetricsDashboardService {
 
   async dashboard(window: MetricWindow, spec?: string): Promise<DashboardData> {
     const win = WINDOWS[window];
-    const end = Math.floor(Date.now() / 1000);
-    const start = end - win.rangeSeconds;
     const step = win.step; // Prometheus duration string (e.g. "5m") for queryRange
     const stepSec = stepSeconds(window); // numeric seconds for grid alignment
+    const { start, end } = alignedBounds(win.rangeSeconds, stepSec, Date.now() / 1000);
     const grid = { start, end, step: stepSec };
     const r = rangeFor(window);
     const sel = selector({ spec });

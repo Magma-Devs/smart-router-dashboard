@@ -71,7 +71,7 @@ import {
   type ScoreType,
   type TimeSeries,
 } from "@sr/shared";
-import { WINDOWS } from "@sr/shared/constants";
+import { WINDOWS, alignedBounds, stepSeconds } from "@sr/shared/constants";
 import type { PrometheusClient, PromVectorSample } from "./prometheus-client.js";
 import type { ConfigurationService } from "./configuration.js";
 import { readUpstreamHealth } from "./upstream-health.js";
@@ -314,8 +314,7 @@ export class MetricsService {
   ): Promise<import("@sr/shared").OverviewData> {
     const win = WINDOWS[window];
     const sel = selector({ spec });
-    const end = Math.floor(Date.now() / 1000);
-    const start = end - win.rangeSeconds;
+    const { start, end } = alignedBounds(win.rangeSeconds, stepSeconds(window), Date.now() / 1000);
     const r = rangeFor(window);
 
     // KPI value + its prior-window counterpart (offset PromQL range).
@@ -1166,8 +1165,7 @@ export class MetricsService {
     }[];
   }> {
     const win = WINDOWS[window];
-    const end = Math.floor(Date.now() / 1000);
-    const start = end - win.rangeSeconds;
+    const { start, end } = alignedBounds(win.rangeSeconds, stepSeconds(window), Date.now() / 1000);
     const specs = await this.listSpecs();
 
     const [aggMatrix, totalAll] = await Promise.all([
@@ -1292,8 +1290,7 @@ export class MetricsService {
   /** RPS time-series for the Traffic chart (client-scoped). */
   async rpsSeries(spec: string | undefined, window: MetricWindow): Promise<TimeSeries> {
     const win = WINDOWS[window];
-    const end = Math.floor(Date.now() / 1000);
-    const start = end - win.rangeSeconds;
+    const { start, end } = alignedBounds(win.rangeSeconds, stepSeconds(window), Date.now() / 1000);
     const expr = qClientRpsSeriesExpr(win.step, spec, window);
     const matrix = await this.prom.queryRange(expr, start, end, win.step);
     const first = matrix[0];
