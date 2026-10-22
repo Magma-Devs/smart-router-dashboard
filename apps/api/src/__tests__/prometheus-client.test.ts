@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { PrometheusClient, RANGE_REUSE_MAX_MS, buildAuthHeaders, type PromLogger } from "../services/prometheus-client.js";
+import { PrometheusClient, RANGE_REUSE_MAX_MS, RANGE_SETTLE_MS, buildAuthHeaders, type PromLogger } from "../services/prometheus-client.js";
 
 /**
  * Records every fetch the client makes so a test can assert on the exact
@@ -404,8 +404,9 @@ describe("PrometheusClient read coalescing + cache (MAG-4297)", () => {
 });
 
 // MAG-4571: range reads now end on a step boundary, so the same chart read
-// asks for the same window until the next one, and its answer is reused for
-// that long rather than for the instant reads' TTL.
+// asks for the same window until the next one. Once its newest point has
+// settled, its answer is reused for that long rather than for the instant
+// reads' TTL. (Most cases below read windows that ended long ago.)
 describe("PrometheusClient range-read reuse (MAG-4571)", () => {
   const T0 = Date.UTC(2026, 9, 22, 12, 0);
   const fresh = (ttl: number, opts = {}) => new PrometheusClient(BASE, 1000, null, {}, { cacheTtlMs: ttl, ...opts });
@@ -460,6 +461,50 @@ describe("PrometheusClient range-read reuse (MAG-4571)", () => {
     await off.queryRange("up", 0, 1800, "15s");
     expect(await off.queryRangeOrNull("up", 0, 1800, "15s")).not.toBeNull();
     expect(calls).toHaveLength(4);
+  });
+
+  it("keeps the instant TTL until its end is three minutes old, then is reused for its step", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const calls = countingFetch();
+    const client = fresh(10_000);
+    const end = T0 / 1000; // a 4-hour boundary
+    const read = () => client.queryRange("up", end - 2_592_000, end, "4h");
+    at(30_000); // the end is 30 s old: the newest point may still change
+    await read();
+    at(39_999);
+    await read();
+    expect(calls).toHaveLength(1);
+    at(40_000);
+    await read();
+    expect(calls).toHaveLength(2);
+    // Three minutes on, the answer read 40 s in is too young to keep: read once more.
+    at(RANGE_SETTLE_MS);
+    await read();
+    expect(calls).toHaveLength(3);
+    // That one had settled: reused for its step, five minutes at most.
+    at(RANGE_SETTLE_MS + RANGE_REUSE_MAX_MS - 1);
+    await read();
+    expect(calls).toHaveLength(3);
+    at(RANGE_SETTLE_MS + RANGE_REUSE_MAX_MS);
+    await read();
+    expect(calls).toHaveLength(4);
+  });
+
+  it("a refused refresh of a read that had not settled is still answered from it, for 60 s past its reuse", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    let n = 0;
+    const calls = countingFetch(() => (n++ === 0 ? answer("5") : new Response("busy", { status: 503 })));
+    const client = fresh(10_000);
+    const end = T0 / 1000;
+    const read = () => client.queryRangeOrNull("up", end - 2_592_000, end, "4h");
+    at(5_000);
+    const first = await read();
+    expect(first).toEqual([{ metric: {}, values: [[1, "5"]] }]);
+    at(5_000 + 10_000 + 59_999);
+    expect(await read()).toEqual(first);
+    at(5_000 + 10_000 + 60_000);
+    expect(await read()).toBeNull();
+    expect(calls).toHaveLength(3);
   });
 
   it("a refused refresh is answered from the last good read for staleMaxMs past its reuse", async () => {
