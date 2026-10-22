@@ -61,7 +61,7 @@ export function HeroPanel({ tw, spec }: { tw: MetricWindow; spec?: string | null
   }[] = [
     { label: "Success rate", value: sr != null ? (sr * 100).toFixed(2) + "%" : "—", color: sr != null ? "var(--ok)" : "var(--text-4)",
       sub: <>&nbsp;</>, tipKey: "effectiveSR" },
-    { label: "successful retries", value: retries != null ? fmtNum(retries) : "—", color: retries != null ? "var(--ok)" : "var(--text-4)",
+    { label: "Successful retries", value: retries != null ? fmtNum(retries) : "—", color: retries != null ? "var(--ok)" : "var(--text-4)",
       sub: retries != null ? <>recovered on retry - same or another endpoint</> : <>no retries recorded yet</>, tipKey: "successfulRetries" },
     { label: "Cache offload", value: cachePct != null ? <>{Math.round(cachePct * 100)}%</> : "—", color: cachePct != null ? "#38bdf8" : "var(--text-4)",
       sub: cachePct != null ? <>of reads served from cache · {(cachePct * 100).toFixed(0)}% hit rate</> : <>cache not enabled on this build</>, tipKey: "cacheOffload" },
@@ -90,7 +90,7 @@ export function HeroPanel({ tw, spec }: { tw: MetricWindow; spec?: string | null
         : failedN === 0 ? "none in this window"
         : failedPct != null ? `${failedPct < 0.00001 ? "under 0.001" : (failedPct * 100).toFixed(failedPct < 0.001 ? 3 : 2)}% of client requests`
         : "router errors returned to clients" },
-    { display: stale != null ? fmtNum(stale) : "—", label: "stale responses caught", tipKey: "staleDetected", color: "var(--warn)",
+    { display: stale != null ? fmtNum(stale) : "—", label: "Stale responses caught", tipKey: "staleDetected", color: "var(--warn)",
       note: stale === 0 ? "no stale responses - all consistency checks passed" : "consistency check failed - response behind seen head" },
   ];
 

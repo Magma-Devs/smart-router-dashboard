@@ -111,6 +111,15 @@ describe("window change on the Metrics page", () => {
     expect(html).toContain("99.99%");
     expect(skelCount(html)).toBe(0);
   });
+
+  it("capitalises every KPI card's label", () => {
+    fixture.answer = (p) => p.includes("dashboard-summary")
+      ? { data: summary, isLoading: false, isValidating: false }
+      : { data: { available: true, value: 3 }, isLoading: false, isValidating: false };
+    const html = renderToStaticMarkup(createElement(HeroPanel, { tw: "1h" }));
+    expect(html).toContain("Successful retries");
+    expect(html).toContain("Stale responses caught");
+  });
 });
 
 describe("an open row holds a live list still", () => {
