@@ -858,6 +858,13 @@ describe("which chain a request was on", () => {
     expect(onChain(row!, "BASE") && onChain(row!, "ETH1")).toBe(true);
   });
 
+  it("the router's stream settles it: the log agent labels it with the router's chain", () => {
+    const labelled = failedAt("9", "publicnode").map((l) => ({ ...l, labels: { chain: "eth1" } }));
+    const [row] = buildErrorRows(parse(labelled), index);
+    expect(row).toMatchObject({ spec: "ETH1" });
+    expect(row!.specs).toBeUndefined();
+  });
+
   it("a chain_id on a line is the chain, whatever the names say", () => {
     const lines = [...failedAt("9", "publicnode"), at(5, { GUID: "9", provider: "publicnode", chain_id: "ETH1", error_name: "X", message: "received node error reply from provider" })];
     expect(buildErrorRows(parse(lines), index)[0]).toMatchObject({ spec: "ETH1" });

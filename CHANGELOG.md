@@ -49,6 +49,12 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   header.
 - **The KPI cards' labels are capitalised alike:** "Successful
   retries" and "Stale responses caught" read lowercase beside the others.
+- **A request still in flight names its chain.** No line of a request names
+  its chain until its last one lands, and a list read meanwhile guessed it
+  from the request's upstreams - every chain a shared upstream serves. The
+  log agent labels each router's stream with its chain (its pod's
+  `app.smart-router-chain`, the spec lower-cased); the api now keeps a
+  stream's labels and takes the chain from them before guessing.
 
 ## [0.50.1]
 
