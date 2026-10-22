@@ -40,6 +40,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   for Stellar's `sendTransaction` yet; its rows link once it does.
 - **A row with no customer says why**: the caller sent no `project-id`
   header.
+- **The KPI cards' labels are capitalised alike** on both UIs: "Successful
+  retries" and "Stale responses caught" read lowercase beside the others.
 
 ## [0.47.1]
 
