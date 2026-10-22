@@ -19,6 +19,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   poll every 30 s moved an open row down or paged it out of view; the list
   now stops reading newer rows while one is open, says so in its header, and
   reads again when it closes.
+- **Log rows carry their date.** Today's rows showed a time alone, so a list
+  that spans midnight couldn't say which day a row was on.
 
 ## [0.47.1]
 

@@ -6,6 +6,7 @@ import { RouterOverview } from "@/components/metrics/RouterOverview";
 import { RouterOverview as LegacyRouterOverview } from "@/legacy/components/metrics/RouterOverview";
 import { HeroPanel } from "@/components/metrics/HeroPanel";
 import { HeroPanel as LegacyHeroPanel } from "@/legacy/components/metrics/HeroPanel";
+import { fmtWhen } from "@/components/metrics/request-log";
 
 /** What `useApi` answers per path: SWR's fields as a window change leaves them. */
 const fixture = vi.hoisted(() => ({
@@ -93,5 +94,13 @@ describe.each([
     const html = renderToStaticMarkup(createElement(Hero, { tw: "21d" }));
     expect(html).toContain("99.99%");
     expect(skelCount(html)).toBe(0);
+  });
+});
+
+describe("log rows", () => {
+  it("dates every row, today's included", () => {
+    const now = new Date();
+    const month = now.toLocaleString("en-US", { month: "short" });
+    expect(fmtWhen(now.getTime())).toContain(`${month} ${now.getDate()},`);
   });
 });

@@ -86,11 +86,9 @@ export function hasErrorType(r: ErrorTyped, key: string): boolean {
   return errorTypesOf(r).has(key);
 }
 
+/** A row's time, always with its date: a list can span midnight, and a time alone doesn't say which day. */
 export function fmtWhen(ms: number): string {
-  const d = new Date(ms);
-  return d.toDateString() === new Date().toDateString()
-    ? d.toLocaleTimeString("en-US", { hour12: false })
-    : d.toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+  return new Date(ms).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
 }
 
 export function fmtTook(ms: number | null): string {
