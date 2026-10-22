@@ -173,7 +173,7 @@ function Details({ row }: { row: ErrorRequestRow }) {
       {row.result === "unknown" && (
         <DetailLine><div style={{ fontSize: 12, color: "var(--text-3)" }}>No end logged: the request may still be in flight, the client may have disconnected, or log lines are missing. Before smart-router v1.6.1, a router logs its tries and its end only at info level.</div></DetailLine>
       )}
-      <CallFactsLine row={row} />
+      <CallFactsLine row={row} spec={row.spec} />
       <RequestIdLine id={row.guid} startMs={row.time} tookMs={row.totalMs} />
     </div>
   );

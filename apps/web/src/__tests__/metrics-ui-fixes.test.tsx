@@ -122,10 +122,15 @@ describe("log rows", () => {
   });
 
   it("names the caller's ids by their header and the router's as Smart Router's", () => {
-    const facts = renderToStaticMarkup(createElement(CallFactsLine, { row: { requestId: "e7f0", txId: "t-1" } }));
+    const facts = renderToStaticMarkup(createElement(CallFactsLine, { row: { requestId: "e7f0", txId: "t-1" }, spec: null }));
     expect(facts).toContain("Caller&#x27;s X-Request-Id");
     expect(facts).toContain("Caller&#x27;s X-Tx-Id");
     const foot = renderToStaticMarkup(createElement(RequestIdLine, { id: "7699463364114495303", startMs: 0, tookMs: null }));
     expect(foot).toContain("Smart Router request ID");
+  });
+
+  it("links the router's latest block to a chain's explorer where one has a block page", () => {
+    const html = renderToStaticMarkup(createElement(CallFactsLine, { row: { seenBlock: 5_329_484 }, spec: "XLMT" }));
+    expect(html).toContain("stellar.expert/explorer/testnet");
   });
 });

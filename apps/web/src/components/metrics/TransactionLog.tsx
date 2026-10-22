@@ -127,7 +127,7 @@ function Details({ row }: { row: TxLogRow }) {
           </div>
         </DetailLine>
       )}
-      <CallFactsLine row={row} />
+      <CallFactsLine row={row} spec={row.spec} />
       <RequestIdLine id={row.guid} startMs={row.time} tookMs={row.replyMs} />
     </div>
   );

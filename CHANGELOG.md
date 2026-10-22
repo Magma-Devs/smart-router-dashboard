@@ -33,6 +33,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   request ID" for the router's own, and the caller's `X-Request-Id`,
   `X-Task-Id` and `X-Tx-Id` by their header, so none reads as the other or as
   a transaction's hash.
+- **An opened row's block numbers link to the chain's explorer** where one has
+  a proven block page, as the Routers table's do.
 
 ## [0.47.1]
 

@@ -13,6 +13,7 @@ import { Fragment, useState } from "react";
 import { buildChainMetaByIndex, explorerTxUrl, guidMintedSecond, type CallFacts, type LogUnavailable, type RelayAttempt } from "@sr/shared";
 import { SkelRows, type SkelCol } from "@/components/gateway/Skel";
 import { CopyButton } from "@/components/gateway/CopyButton";
+import { ExplorerBlockLink } from "@/components/gateway/ExplorerLink";
 import { useGrafanaUrl } from "@/hooks/use-grafana-url";
 import { errorDocsUrl } from "@/lib/error-docs";
 import { fmtComma } from "@/lib/format";
@@ -392,9 +393,11 @@ const fmtBytes = (n: number) => (n < 1024 ? `${fmtComma(n)} B` : n < 1024 * 1024
  * caller's project and ids, the request's and the reply's size, the block it
  * named and the one the router had. Only what the router wrote; nothing when
  * it wrote none. The caller's ids are named by the header they came in, so
- * none reads as the router's own ID or as a transaction's.
+ * none reads as the router's own ID or as a transaction's; a block links to
+ * the chain's explorer where one has a proven block page.
  */
-export function CallFactsLine({ row }: { row: CallFacts }) {
+export function CallFactsLine({ row, spec }: { row: CallFacts; spec: string | null }) {
+  const block = (n: number) => (spec ? <ExplorerBlockLink spec={spec} block={n}>{fmtComma(n)}</ExplorerBlockLink> : fmtComma(n));
   const items: [string, React.ReactNode, string][] = [];
   if (row.customer) items.push(["Customer", row.customer, "The project-id header the caller sent"]);
   if (row.requestId) items.push(["Caller's X-Request-Id", row.requestId, "The X-Request-Id header the caller sent - the caller's own ID, not the router's"]);
@@ -402,8 +405,8 @@ export function CallFactsLine({ row }: { row: CallFacts }) {
   if (row.txId) items.push(["Caller's X-Tx-Id", row.txId, "The X-Tx-Id header the caller sent - the caller's own ID, not the transaction's hash on the chain"]);
   if (row.requestBytes != null) items.push(["Request", fmtBytes(row.requestBytes), "The request's size"]);
   if (row.replyBytes != null) items.push(["Reply", fmtBytes(row.replyBytes), "The size of the reply the client got"]);
-  if (row.requestedBlock != null) items.push(["Block asked for", fmtComma(row.requestedBlock), "The block the request names"]);
-  if (row.seenBlock != null) items.push(["Router's latest block", fmtComma(row.seenBlock), "The chain's latest block as the router knew it when the request came in"]);
+  if (row.requestedBlock != null) items.push(["Block asked for", block(row.requestedBlock), "The block the request names"]);
+  if (row.seenBlock != null) items.push(["Router's latest block", block(row.seenBlock), "The chain's latest block as the router knew it when the request came in"]);
   if (!items.length) return null;
   return (
     <DetailLine>
