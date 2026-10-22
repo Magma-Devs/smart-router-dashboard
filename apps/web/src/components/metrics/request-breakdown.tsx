@@ -3,16 +3,16 @@
 /* An opened row of either request list - the Errors tab's and the
  * Transactions tab's - as one breakdown in three parts:
  *
- *   Request                    what was asked, and the facts the router wrote about it
- *   Tries                      one box per try at a provider, in order
- *   Response to the client     what the client received, in plain words, then what
- *                              its error means, whose it is, what to do
+ *   Request    the facts the router wrote about the call
+ *   Tries      one line per try at a provider: result, time, the error by
+ *              name and its source
+ *   Response   what the client received: returned by, status, retries, next step
  *
- * Orange marks the one thing that reached the client: the try whose reply
- * went back, or - when no provider answered - the router's own error. Each
- * error is named by the router's code, in plain words from @sr/shared's
- * table (explainRouterError), with whose error it is beside it; a code the
- * table doesn't know shows the provider's own words, never a guess. */
+ * One statement per error, on the try it happened on: its name (from @sr/shared's
+ * table, explainRouterError) and its source. The router's code, the node's code and
+ * the provider's own words sit behind it on hover, except where the source is
+ * undetermined and the provider's words are the only explanation. Orange marks
+ * the one thing that reached the client. */
 
 import {
   ERROR_SOURCE_LABELS,
@@ -23,70 +23,54 @@ import {
   type RouterErrorCode,
 } from "@sr/shared";
 import { CopyButton } from "@/components/gateway/CopyButton";
-import { errorDocsUrl } from "@/lib/error-docs";
 import { fmtComma } from "@/lib/format";
 import { codeWords, fmtTook, fmtWhen, realCode, RequestLogsLink } from "./request-log";
 
-/** Whose error, in one line each: what the tag means on hover. */
+/** What each source means, on hover. */
 export const SOURCE_HINTS: Record<ErrorSource, string> = {
   request: "The request itself: how it was built or sent. Any provider would answer the same.",
-  chain: "The chain's rules or state said no. Every healthy, up-to-date provider would answer the same.",
+  chain: "The chain's rules or state. Every healthy, up-to-date provider would answer the same.",
   provider: "One provider, or the path to it. Another provider may answer differently.",
-  router: "The router itself failed, or had no provider to send the request to.",
-  unclear: "The code alone doesn't say whose error it is. The provider's message decides.",
+  router: "The router itself, or no provider available for the request.",
+  unclear: "The code doesn't determine the source. The provider's message does.",
 };
 
-/** The error's name in plain words, as a sentence: NODE_DATA_NOT_HELD → "Data not held". */
+/** The error's name as a label: NODE_DATA_NOT_HELD → "Data not held". */
 export function errorName(code: string): string {
   const w = codeWords(code);
   return w.charAt(0).toUpperCase() + w.slice(1);
 }
 
-/** Whose error it is: the table's one word, said as such - "Unclear" alone beside an error's name reads as a
- *  word about the error. What the word means on hover. */
+/** "Source: Provider". */
 export function SourceTag({ source }: { source: ErrorSource }) {
   return (
-    <span title={SOURCE_HINTS[source]}
-      style={{ display: "inline-block", fontSize: 10.5, padding: "1px 7px", borderRadius: 4, border: "1px solid var(--line-2)", color: "var(--text-3)", whiteSpace: "nowrap" }}>
-      Whose error: <span style={{ color: "var(--text)", fontWeight: 600 }}>{ERROR_SOURCE_LABELS[source]}</span>
+    <span title={SOURCE_HINTS[source]} style={{ fontSize: 11, color: "var(--text-3)", whiteSpace: "nowrap" }}>
+      Source: <span style={{ color: "var(--text)", fontWeight: 500 }}>{ERROR_SOURCE_LABELS[source]}</span>
     </span>
   );
 }
 
-/** An error, by its name, in red: what it means on hover. */
-export function ErrorChip({ code, entry }: { code: string; entry: RouterErrorCode | null }) {
+/** The error by name, in red. The router's code, the node's code, the meaning and the provider's words on hover. */
+function ErrorChip({ code, entry, nodeCode, message }: { code: string; entry: RouterErrorCode | null; nodeCode?: number; message?: string | null }) {
+  const title = [
+    `${code}${nodeCode != null ? ` · node ${nodeCode}` : ""}`,
+    entry?.meaning,
+    message,
+  ].filter(Boolean).join("\n\n");
   return (
-    <span title={entry ? `${code}: ${entry.meaning}` : code}
-      style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 999, background: "color-mix(in srgb, var(--err) 12%, transparent)", color: "var(--err)", whiteSpace: "nowrap" }}>
+    <span title={title}
+      style={{ fontSize: 11, fontWeight: 600, padding: "1px 8px", borderRadius: 999, background: "color-mix(in srgb, var(--err) 12%, transparent)", color: "var(--err)", whiteSpace: "nowrap" }}>
       {errorName(code)}
     </span>
   );
 }
 
-/** "May have gone through": a transaction may be on chain despite its error. Blue, so orange keeps one meaning. */
-function GoneThroughChip() {
-  return (
-    <span title="The transaction may be on chain despite this error. Check the chain before sending it again."
-      style={{ display: "inline-block", fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 999, background: "color-mix(in srgb, var(--info) 14%, transparent)", color: "var(--info)", whiteSpace: "nowrap" }}>
-      May have gone through
-    </span>
-  );
-}
-
-/** "Returned to the client", in orange: the one thing that reached it. */
-function ReturnedChip() {
-  return (
-    <span style={{ fontSize: 10.5, fontWeight: 700, color: "var(--warn)", whiteSpace: "nowrap" }}>→ Returned to the client</span>
-  );
-}
-
 const fmtBytes = (n: number) => (n < 1024 ? `${fmtComma(n)} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
 
-/** A part of the breakdown: its name above, its content in a box. */
 function Part({ title, aside, children }: { title: string; aside?: React.ReactNode; children: React.ReactNode }) {
   return (
     <section style={{ display: "grid", gap: 6 }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
         <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--text-4)" }}>{title}</span>
         {aside && <span style={{ fontSize: 11, color: "var(--text-4)" }}>{aside}</span>}
       </div>
@@ -100,13 +84,10 @@ const box = (returned = false): React.CSSProperties => ({
   boxShadow: returned ? "inset 3px 0 0 var(--warn)" : undefined,
   borderRadius: 8,
   background: "var(--surface)",
-  padding: "10px 12px",
-  display: "grid",
-  gap: 6,
+  padding: "8px 12px",
   minWidth: 0,
 });
 
-/** A label and its value, in a row of facts. */
 function Fact({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <span style={{ fontSize: 11.5, color: "var(--text-4)", whiteSpace: "nowrap" }}>
@@ -115,43 +96,41 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
   );
 }
 
-const OUTCOME: Record<RelayAttempt["outcome"], { mark: string; words: string; color: string }> = {
-  ok: { mark: "✓", words: "Answered", color: "var(--ok)" },
+const RESULT: Record<RelayAttempt["outcome"], { mark: string; words: string; color: string }> = {
+  ok: { mark: "✓", words: "Succeeded", color: "var(--ok)" },
   failed: { mark: "✗", words: "Failed", color: "var(--err)" },
   skipped: { mark: "↷", words: "Skipped", color: "var(--text-3)" },
-  cancelled: { mark: "⊘", words: "Called off", color: "var(--text-3)" },
-  "no-result": { mark: "…", words: "No answer logged", color: "var(--text-3)" },
+  cancelled: { mark: "⊘", words: "Cancelled", color: "var(--text-3)" },
+  "no-result": { mark: "…", words: "No response", color: "var(--text-3)" },
 };
 
-/** One try at one provider: how it went, its error by name and whose it is, the provider's own words. */
-function TryBox({ a, n, together }: { a: RelayAttempt; n: number; together: boolean }) {
+/** One try, on one line: provider, result, time, the error and its source. */
+function TryRow({ a, n, together }: { a: RelayAttempt; n: number; together: boolean }) {
   const code = a.outcome === "failed" ? realCode(a) : null;
   const entry = code ? explainRouterError(code) : null;
-  const o = OUTCOME[a.outcome];
-  const took = a.endMs != null && a.outcome !== "skipped" ? ` after ${fmtTook(a.endMs - a.atMs)}` : "";
-  const words = a.outcome === "no-result" && a.replied ? "Answered" : o.words;
+  const r = RESULT[a.outcome];
+  const words = a.outcome === "no-result" && a.replied ? "Succeeded" : r.words;
+  // The provider's words, shown only where nothing else explains the error - no code, or an undetermined
+  // source - and only when they say more than the error's name.
+  const ownWords = a.outcome === "failed" && a.message && (!code || entry?.source === "unclear")
+    && !(code && a.message.toLowerCase().includes(codeWords(code))) ? a.message : null;
   return (
     <div style={box(a.replied)}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", minWidth: 0 }}>
-        <span className="gw-mono gw-tnum" style={{ fontSize: 11, color: "var(--text-4)", minWidth: 14 }}>{n}</span>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", minWidth: 0 }}>
+        <span className="gw-mono gw-tnum" style={{ fontSize: 11, color: "var(--text-4)", minWidth: 12 }}>{n}</span>
         <span className="gw-mono" style={{ fontSize: 12.5, color: "var(--text)" }}>{a.upstream}</span>
-        <span style={{ fontSize: 12, color: o.color, whiteSpace: "nowrap" }}>
-          <b>{o.mark}</b> {words}<span style={{ color: "var(--text-3)" }}>{took}</span>
-        </span>
-        {together && <span style={{ fontSize: 11, color: "var(--text-4)" }}>sent with the others at once</span>}
-        {code && <ErrorChip code={code} entry={entry} />}
+        <span style={{ fontSize: 12, color: r.color, whiteSpace: "nowrap" }}>{r.mark} {words}</span>
+        {a.endMs != null && a.outcome !== "skipped" && <span className="gw-mono gw-tnum" style={{ fontSize: 11.5, color: "var(--text-3)" }}>{fmtTook(a.endMs - a.atMs)}</span>}
+        {together && <span style={{ fontSize: 11, color: "var(--text-4)" }}>parallel</span>}
+        {code && <ErrorChip code={code} entry={entry} nodeCode={a.nodeCode} message={a.message} />}
         {entry && <SourceTag source={entry.source} />}
         <span style={{ flex: 1 }} />
-        {a.replied && <ReturnedChip />}
+        {a.replied && <span style={{ fontSize: 11, fontWeight: 600, color: "var(--warn)", whiteSpace: "nowrap" }}>Returned to client</span>}
       </div>
-      {a.message && <div className="gw-mono" style={{ fontSize: 11.5, color: "var(--text-2)", lineHeight: 1.5, wordBreak: "break-word" }}>{a.message}</div>}
-      {a.note && <div style={{ fontSize: 12, color: "var(--text-3)", lineHeight: 1.5 }}>{a.note}</div>}
-      {(a.code || a.nodeCode != null || (a.outcome === "failed" && a.retryable != null)) && (
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", fontSize: 11, color: "var(--text-4)" }}>
-          {a.code && <a className="gw-mono" href={errorDocsUrl(a.code)} target="_blank" rel="noopener noreferrer" style={{ color: "var(--text-4)" }} title="The router's own name for this error">{a.code}</a>}
-          {a.nodeCode != null && <span className="gw-mono" title="The node's own JSON-RPC error code">node {a.nodeCode}</span>}
-          {a.outcome === "failed" && a.retryable != null && <span>{a.retryable ? "The router can try another provider on this error" : "Another provider would give the same answer"}</span>}
-          <span className="gw-mono gw-tnum">sent at +{fmtComma(a.atMs)} ms</span>
+      {(ownWords || a.note) && (
+        <div className={ownWords ? "gw-mono" : undefined} title={ownWords ?? undefined}
+          style={{ marginTop: 4, marginLeft: 22, fontSize: 11.5, color: "var(--text-3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {ownWords ?? a.note}
         </div>
       )}
     </div>
@@ -162,11 +141,10 @@ function TryBox({ a, n, together }: { a: RelayAttempt; n: number; together: bool
 export type FinalAnswer =
   /** `code`: the reply's own code, where the tab has it and the try doesn't (a transaction's refusal). */
   | { from: "provider"; attempt: RelayAttempt; code?: string | null }
-  | { from: "router"; code: string | null; message: string | null }
+  | { from: "router"; code: string | null }
   | null;
 
 export interface BreakdownProps {
-  /** Chain and method, as the row names them. */
   chain: string;
   method: string;
   time: number;
@@ -175,23 +153,26 @@ export interface BreakdownProps {
   facts: CallFacts;
   attempts: RelayAttempt[];
   final: FinalAnswer;
-  /** What the client received, in one or two plain sentences. */
-  headline: string;
+  /** The response's status: a word in its colour, and an optional detail ("after 1 failed try"). */
+  status: { label: string; color: string; detail?: string | null };
+  /** Why the router stopped retrying, when it stopped short of an answer. */
+  retries?: string | null;
   /** A transaction: an error that may have gone through says so. */
   isWrite: boolean;
-  /** Anything the tab adds under the end: a transaction's hash, why a result is unknown. */
-  extra?: React.ReactNode;
+  /** More rows for the response: a transaction's hash, an on-chain error, why a result is unknown. */
+  extra?: { label: string; value: React.ReactNode }[];
 }
 
-/** "1 try at one provider", "3 tries at 2 providers", "none logged". */
-function triesWords(attempts: RelayAttempt[]): string {
-  if (!attempts.length) return "none logged";
-  const providers = new Set(attempts.map((a) => a.upstream)).size;
-  return `${attempts.length} ${attempts.length === 1 ? "try" : "tries"} at ${providers === 1 ? "one provider" : `${providers} providers`}`;
+function Row({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <>
+      <span style={{ fontSize: 11.5, color: "var(--text-4)", whiteSpace: "nowrap" }}>{label}</span>
+      <div style={{ fontSize: 12.5, color: "var(--text-2)", minWidth: 0, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>{children}</div>
+    </>
+  );
 }
 
 export function RequestBreakdown(p: BreakdownProps) {
-  // Tries in order, each its own number; tries that went out together (a broadcast) say so.
   const together = (a: RelayAttempt) => p.attempts.filter((x) => x.batch === a.batch).length > 1;
   const finalCode =
     p.final?.from === "provider" ? (p.final.attempt.outcome === "failed" ? realCode(p.final.attempt) : null) ?? p.final.code ?? null
@@ -200,67 +181,55 @@ export function RequestBreakdown(p: BreakdownProps) {
   const entry = finalCode ? explainRouterError(finalCode) : null;
   const routerAnswered = p.final?.from === "router";
   const facts = p.facts;
+  const providers = new Set(p.attempts.map((a) => a.upstream)).size;
+  const blockAhead = finalCode && facts.requestedBlock != null && facts.seenBlock != null && facts.requestedBlock > facts.seenBlock;
   return (
-    <div style={{ display: "grid", gap: 14, padding: "6px 4px 10px" }}>
+    <div style={{ display: "grid", gap: 12, padding: "6px 4px 10px" }}>
       <Part title="Request">
-        <div style={box()}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-            <span className="gw-mono" style={{ fontSize: 12.5, color: "var(--text)" }}>{p.method}</span>
-            <span style={{ fontSize: 12, color: "var(--text-3)" }}>on {p.chain}</span>
-            <span className="gw-mono gw-tnum" style={{ fontSize: 11.5, color: "var(--text-4)" }}>{fmtWhen(p.time)} · took {fmtTook(p.tookMs)}</span>
-          </div>
-          <div style={{ display: "flex", flexWrap: "wrap", columnGap: 18, rowGap: 4, alignItems: "center" }}>
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11.5, color: "var(--text-4)" }}>
-              ID <span className="gw-mono" style={{ color: "var(--text-2)" }}>{p.guid}</span> <CopyButton text={p.guid} />
-              <RequestLogsLink id={p.guid} startMs={p.time} tookMs={p.tookMs} />
-            </span>
-            {facts.customer && <Fact label="Customer">{facts.customer}</Fact>}
-            {facts.requestId && <Fact label="Caller's request ID">{facts.requestId}</Fact>}
-            {facts.taskId && <Fact label="Task ID">{facts.taskId}</Fact>}
-            {facts.txId && <Fact label="Tx ID">{facts.txId}</Fact>}
-            {facts.requestBytes != null && <Fact label="Request size">{fmtBytes(facts.requestBytes)}</Fact>}
-            {facts.requestedBlock != null && <Fact label="Block asked for">{fmtComma(facts.requestedBlock)}</Fact>}
-            {facts.seenBlock != null && <Fact label="Router's latest block">{fmtComma(facts.seenBlock)}</Fact>}
-          </div>
+        <div style={{ ...box(), display: "flex", flexWrap: "wrap", columnGap: 16, rowGap: 4, alignItems: "center" }}>
+          <span className="gw-mono" style={{ fontSize: 12.5, color: "var(--text)" }}>{p.method}</span>
+          <span style={{ fontSize: 12, color: "var(--text-3)" }}>{p.chain}</span>
+          <Fact label="At">{fmtWhen(p.time)}</Fact>
+          <Fact label="Duration">{fmtTook(p.tookMs)}</Fact>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11.5, color: "var(--text-4)" }}>
+            ID <span className="gw-mono" style={{ color: "var(--text-2)" }}>{p.guid}</span> <CopyButton text={p.guid} />
+            <RequestLogsLink id={p.guid} startMs={p.time} tookMs={p.tookMs} />
+          </span>
+          {facts.customer && <Fact label="Customer">{facts.customer}</Fact>}
+          {facts.requestId && <Fact label="Caller request ID">{facts.requestId}</Fact>}
+          {facts.taskId && <Fact label="Task ID">{facts.taskId}</Fact>}
+          {facts.txId && <Fact label="Tx ID">{facts.txId}</Fact>}
+          {facts.requestBytes != null && <Fact label="Size">{fmtBytes(facts.requestBytes)}</Fact>}
+          {facts.requestedBlock != null && <Fact label="Requested block">{fmtComma(facts.requestedBlock)}</Fact>}
+          {facts.seenBlock != null && <Fact label="Router's latest block">{fmtComma(facts.seenBlock)}</Fact>}
         </div>
       </Part>
 
-      <Part title="Tries" aside={triesWords(p.attempts)}>
-        {p.attempts.length === 0
-          ? <div style={{ ...box(), fontSize: 12, color: "var(--text-3)" }}>The logs show no try at a provider.</div>
-          : p.attempts.map((a, i) => <TryBox key={i} a={a} n={i + 1} together={together(a)} />)}
+      <Part title="Tries" aside={p.attempts.length ? `${p.attempts.length} · ${providers} ${providers === 1 ? "provider" : "providers"}` : "none logged"}>
+        {p.attempts.map((a, i) => <TryRow key={i} a={a} n={i + 1} together={together(a)} />)}
       </Part>
 
-      <Part title="Response to the client">
-        <div style={box(routerAnswered)}>
-          {/* A provider's answer carries its error's name in its own orange box above; only the router's own needs it here. */}
-          {(routerAnswered || (p.isWrite && entry?.mayHaveGoneThrough)) && (
-            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-              {routerAnswered && finalCode && <ErrorChip code={finalCode} entry={entry} />}
-              {routerAnswered && entry && <SourceTag source={entry.source} />}
-              {p.isWrite && entry?.mayHaveGoneThrough && <GoneThroughChip />}
-              <span style={{ flex: 1 }} />
-              {routerAnswered && <ReturnedChip />}
-            </div>
-          )}
-          <div style={{ fontSize: 13, color: "var(--text)", lineHeight: 1.55 }}>
-            {p.headline}
-            {/* What the router's own facts say about an error: a block newer than its latest may not exist yet. */}
-            {finalCode && facts.requestedBlock != null && facts.seenBlock != null && facts.requestedBlock > facts.seenBlock && (
-              <> The request asked for block {fmtComma(facts.requestedBlock)}, newer than the router&apos;s latest block ({fmtComma(facts.seenBlock)}), so it may not exist yet.</>
+      <Part title="Response">
+        <div style={{ ...box(routerAnswered), display: "grid", gridTemplateColumns: "max-content 1fr", columnGap: 16, rowGap: 6, alignItems: "center" }}>
+          <Row label="Returned by">
+            <span className="gw-mono" style={{ color: "var(--text)" }}>{routerAnswered ? "Router" : p.final?.from === "provider" ? p.final.attempt.upstream : "—"}</span>
+            {facts.replyBytes != null && <Fact label="Size">{fmtBytes(facts.replyBytes)}</Fact>}
+            {routerAnswered && <span style={{ fontSize: 11, fontWeight: 600, color: "var(--warn)", marginLeft: "auto" }}>Returned to client</span>}
+          </Row>
+          <Row label="Status">
+            <span style={{ color: p.status.color, fontWeight: 600 }}>{p.status.label}</span>
+            {/* A provider's answer names its error on its own try, outlined above; only the router's own needs it here. */}
+            {routerAnswered && finalCode && <ErrorChip code={finalCode} entry={entry} />}
+            {routerAnswered && entry && <SourceTag source={entry.source} />}
+            {p.status.detail && <span style={{ color: "var(--text-3)" }}>{p.status.detail}</span>}
+            {p.isWrite && entry?.mayHaveGoneThrough && (
+              <span title="The transaction may be on chain despite this error." style={{ fontSize: 11, fontWeight: 600, padding: "1px 8px", borderRadius: 999, background: "color-mix(in srgb, var(--info) 14%, transparent)", color: "var(--info)" }}>May already be on chain</span>
             )}
-          </div>
-          {routerAnswered && p.final?.from === "router" && p.final.message && (
-            <div className="gw-mono" style={{ fontSize: 11.5, color: "var(--text-2)", lineHeight: 1.5, wordBreak: "break-word" }}>{p.final.message}</div>
-          )}
-          {entry && (
-            <div style={{ display: "grid", gap: 3, fontSize: 12.5, lineHeight: 1.55 }}>
-              <div style={{ color: "var(--text-2)" }}><span style={{ color: "var(--text-4)" }}>What it means: </span>{entry.meaning}</div>
-              <div style={{ color: "var(--text-2)" }}><span style={{ color: "var(--text-4)" }}>What to do: </span>{entry.action}</div>
-            </div>
-          )}
-          {p.extra}
-          {facts.replyBytes != null && <div><Fact label="Reply size">{fmtBytes(facts.replyBytes)}</Fact></div>}
+          </Row>
+          {p.retries && <Row label="Retries">{p.retries}</Row>}
+          {blockAhead && <Row label="Note">Requested block is ahead of the router&apos;s latest block.</Row>}
+          {p.extra?.map((x) => <Row key={x.label} label={x.label}>{x.value}</Row>)}
+          {entry && <Row label="Next step"><span style={{ color: "var(--text)" }}>{entry.action}</span></Row>}
         </div>
       </Part>
     </div>

@@ -16,20 +16,17 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   [`docs/ERROR-CODES.md`](./docs/ERROR-CODES.md).
 - **An opened request reads as a breakdown, on the Errors and Transactions tabs.** Three
   parts:
-  - **Request:** method, chain, time, ID, sizes, the block asked for and the router's latest
-    block.
-  - **Tries:** one box per try at a provider, with its error by name in plain words, whose
-    error it is (the request, the chain, a provider, the router, or unclear) and the
-    provider's own words.
-  - **Response to the client:** what the client received, in plain sentences, then what
-    its error means and what to do. A failure the router got past is not the client's: the
-    client only saw the answer.
+  - **Request:** method, chain, time, duration, ID, sizes, the requested block and the
+    router's latest block.
+  - **Tries:** one line per try at a provider: result, time, the error by name and its
+    source (Request, Chain, Provider, Router or Undetermined). The router's code and the
+    provider's message are on hover, shown inline only when the source is undetermined.
+  - **Response:** returned by, status, retries and the next step.
 
-  Orange marks the one thing that reached the client. A transaction whose error may have
-  gone through says so. A request for a block newer than the router's latest says it may
-  not exist yet. A row's Result column now says whose error it is. The Errors tab no longer
-  names the returned error twice, once on its try's chip and once as the Result. A look-up no
-  longer repeats the request's ID above its breakdown.
+  Each error is stated once, on the try it happened on. Orange marks what was returned to
+  the client. A transaction whose error may have gone through says "May already be on
+  chain". A requested block ahead of the router's latest gets a note. The Errors tab no
+  longer names the returned error twice, and a look-up no longer repeats the request's ID.
 
 ## [0.48.0]
 

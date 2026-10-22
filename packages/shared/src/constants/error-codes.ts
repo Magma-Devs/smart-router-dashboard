@@ -35,7 +35,7 @@ export const ERROR_SOURCE_LABELS: Record<ErrorSource, string> = {
   chain: "Chain",
   provider: "Provider",
   router: "Router",
-  unclear: "Unclear",
+  unclear: "Undetermined",
 };
 
 export interface RouterErrorCode {

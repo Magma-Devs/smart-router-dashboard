@@ -16,7 +16,7 @@
  * and finality needs the chain. */
 
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { WINDOWS, WRITE_UNKNOWN_NOTE, explainRouterError, type ErrorSource, type MetricWindow, type TransactionLookup, type TransactionsReport, type TxLogRow } from "@sr/shared";
+import { WINDOWS, explainRouterError, type MetricWindow, type TransactionLookup, type TransactionsReport, type TxLogRow } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { useLogReads } from "@/hooks/use-log-reads";
 import { useRouterFilter } from "@/hooks/use-router-options";
@@ -59,7 +59,7 @@ import {
   ResponseSource,
 } from "./request-log";
 import { TransactionsChart, TX_RESULT } from "./TransactionsChart";
-import { RequestBreakdown, SourceTag, type FinalAnswer } from "./request-breakdown";
+import { RequestBreakdown, type BreakdownProps, type FinalAnswer } from "./request-breakdown";
 
 const PER_PAGE = 25;
 const ALL = "all";
@@ -86,50 +86,34 @@ const OUTCOME_ORDER: TxLogRow["outcome"][] = ["accepted", "rejected", "failed-on
 
 /** Every upstream's answer in full, when a row is opened. A rejection is the
  *  answering upstream's own error, so it shows on that upstream's line. */
-/** What the client received for a transaction, in one or two plain sentences: the top of a breakdown's response. */
-export function txHeadlineOf(r: TxLogRow): string {
-  const by = r.answeredBy ?? "a provider";
+/** The response's status for a transaction: the word, its colour, and a detail where the code doesn't carry one. */
+export function txStatusOf(r: TxLogRow): BreakdownProps["status"] {
   switch (r.outcome) {
-    case "accepted":
-      return `The client got ${by}'s answer: the transaction was accepted.`;
-    case "rejected":
-      return `The client got ${by}'s refusal of the transaction.`;
-    case "failed-on-chain":
-      return `The client got ${by}'s answer: the chain ran the transaction, and it failed.`;
-    case "failed":
-      return "The client got an error from the router itself: no provider gave a usable answer.";
-    case "unknown":
-      return r.note ?? WRITE_UNKNOWN_NOTE;
+    case "accepted": return { label: "Accepted", color: "var(--ok)" };
+    case "rejected": return { label: "Rejected", color: "var(--err)" };
+    case "failed-on-chain": return { label: "Failed on chain", color: "var(--err)" };
+    case "failed": return { label: "Error", color: "var(--err)", detail: r.error?.code ? null : "No usable response from any provider" };
+    case "unknown": return { label: "Unknown", color: "var(--text-3)", detail: "Outcome not confirmed" };
   }
-}
-
-/** Whose error the client got, by the reply's code: none for an accepted transaction, or a code the table doesn't know. */
-export function txSource(r: TxLogRow): ErrorSource | null {
-  return r.error ? explainRouterError(r.error.code)?.source ?? null : null;
 }
 
 /** An opened row: the transaction, every provider it went to, and the response to the client, in plain words. */
 function Details({ row }: { row: TxLogRow }) {
   const replied = row.attempts.find((a) => a.replied);
   const final: FinalAnswer =
-    row.outcome === "failed" ? { from: "router", code: row.error?.code ?? null, message: row.error?.message ?? null }
+    row.outcome === "failed" ? { from: "router", code: row.error?.code ?? null }
       : replied ? { from: "provider", attempt: replied, code: row.error?.code ?? null }
         : null;
-  const extra = (row.txHash || (row.outcome === "failed-on-chain" && row.txError)) && (
-    <div style={{ display: "grid", gap: 4 }}>
-      {row.outcome === "failed-on-chain" && row.txError && <div className="gw-mono" style={{ fontSize: 11.5, color: "var(--text-2)", wordBreak: "break-word" }}>{row.txError}</div>}
-      {row.txHash && (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11.5, color: "var(--text-4)", flexWrap: "wrap" }}>
-          Transaction hash <TxHash hash={row.txHash} spec={row.spec} full />
-          {row.txStatus === "success" && <span>· the chain ran it</span>}
-        </div>
-      )}
-    </div>
-  );
+  const known = row.error ? explainRouterError(row.error.code) : null;
+  const extra: { label: string; value: React.ReactNode }[] = [];
+  if (row.outcome === "failed-on-chain" && row.txError) extra.push({ label: "Chain error", value: <span className="gw-mono" style={{ wordBreak: "break-word" }}>{row.txError}</span> });
+  if (row.note) extra.push({ label: "Note", value: row.note });
+  if (row.txHash) extra.push({ label: "Hash", value: <TxHash hash={row.txHash} spec={row.spec} full /> });
+  if (row.outcome === "unknown" && !known) extra.push({ label: "Next step", value: "Check the chain before sending it again." });
   return (
     <RequestBreakdown chain={chainWords(row)} method={row.method === "unknown" ? "method not in the logs" : row.method}
       time={row.time} guid={row.guid} tookMs={row.replyMs} facts={row} attempts={row.attempts}
-      final={final} headline={txHeadlineOf(row)} isWrite extra={extra || undefined} />
+      final={final} status={txStatusOf(row)} isWrite extra={extra} />
   );
 }
 
@@ -381,7 +365,6 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
                         {r.answeredBy && r.outcome !== "failed" && (
                           <ResponseSource label={r.outcome === "accepted" || r.outcome === "failed-on-chain" ? "served by" : "returned by"} name={r.answeredBy} />
                         )}
-                        {txSource(r) && <div style={{ marginTop: 5 }}><SourceTag source={txSource(r)!} /></div>}
                       </td>
                       <td style={{ textAlign: "right", verticalAlign: "top" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{fmtTook(r.replyMs)}</span></td>
                     </tr>

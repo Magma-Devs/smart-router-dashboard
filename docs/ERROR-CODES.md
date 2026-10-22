@@ -25,13 +25,13 @@ three parts:
 
 | Part | What it holds |
 | --- | --- |
-| Request | The method and chain, when, how long it took, the request ID (copy, logs), the caller's IDs, the request's size, the block asked for and the router's latest block |
-| Tries | One box per try at a provider, in order: how it went and how fast, the error by name in plain words, whose error it is, and the provider's own words |
-| Response to the client | What the client received, in plain sentences, then its error's meaning and what to do. A failure the router got past is the router's: the client only saw the answer. A transaction whose error may have gone through says so. |
+| Request | Method, chain, time, duration, request ID (copy, logs), the caller's IDs, size, the requested block and the router's latest block |
+| Tries | One line per try at a provider, in order: result, time, the error by name and its source. The router's code and the provider's message are on hover, inline only when the source is undetermined |
+| Response | Returned by, status, retries and the next step (the code's `action`) |
 
-Orange marks the one thing that reached the client: the try whose reply went back, or the
-router's own error when no provider answered. A row's Result column adds whose error it is. A
-code the table doesn't know shows the provider's own words and no tag.
+Each error is stated once, on the try it happened on; the Response names it only when the
+router answered itself. Orange marks what was returned to the client. A code the table
+doesn't know shows its name from the code and no source.
 
 ## How a source is decided
 
@@ -41,7 +41,7 @@ code the table doesn't know shows the provider's own words and no tag.
 | Chain | The chain's rules or state said no: a nonce, funds, gas, a contract that reverted. Every healthy, up-to-date provider would answer the same. |
 | Provider | One provider, or the network path to it: down, slow, busy, behind, a method switched off, data it doesn't keep, access refused. Another provider may answer differently. |
 | Router | The router itself failed, or had no provider to send the request to. |
-| Unclear | The code alone doesn't say which side. The provider's message decides. |
+| Undetermined | The code alone doesn't say which side. The provider's message decides. |
 
 **Chain or provider?** Ask whether a second healthy, up-to-date provider would give the same
 answer. Yes: chain. Maybe not: provider. The router draws the same line when it decides

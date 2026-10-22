@@ -10,7 +10,7 @@
  * and details are shared with the Transactions tab (request-log.tsx). */
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { WINDOWS, WRITE_UNKNOWN_NOTE, explainRouterError, type ErrorRequestRow, type ErrorRequestsReport, type ErrorSource, type MetricWindow, type RequestLookup } from "@sr/shared";
+import { WINDOWS, WRITE_UNKNOWN_NOTE, explainRouterError, type ErrorRequestRow, type ErrorRequestsReport, type MetricWindow, type RequestLookup } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { useLogReads } from "@/hooks/use-log-reads";
 import { useRouterFilter } from "@/hooks/use-router-options";
@@ -43,7 +43,6 @@ import {
   NotFound,
   OlderRowsLoading,
   onRowKey,
-  realCode,
   Pager,
   ReadingStrip,
   rangeIsLive,
@@ -54,7 +53,7 @@ import {
   UnreadStrip,
   type ExactRange,
 } from "./request-log";
-import { RequestBreakdown, SourceTag, type FinalAnswer } from "./request-breakdown";
+import { RequestBreakdown, type BreakdownProps, type FinalAnswer } from "./request-breakdown";
 
 const PER_PAGE = 25;
 export const ALL = "all";
@@ -124,17 +123,6 @@ export function resultBadge(r: ErrorRequestRow): { text: string; from: { label: 
   return { text: RESULT[r.result].label, from: r.resolvedBy && (r.result === "recovered" || r.result === "ok") ? { label: "served by", name: r.resolvedBy } : null };
 }
 
-/** Whose error the client got, by the router's code: none for an answer, or a code the table doesn't know. */
-export function rowSource(r: ErrorRequestRow): ErrorSource | null {
-  if (r.result === "error-reply") {
-    const a = r.attempts.find((x) => x.replied);
-    const code = a ? realCode(a) : null;
-    return code ? explainRouterError(code)?.source ?? null : null;
-  }
-  if (r.result === "failed" || r.result === "write-unknown") return r.errorCode ? explainRouterError(r.errorCode)?.source ?? null : null;
-  return null;
-}
-
 /** The tag itself: the error's name in its category's colour, the category and its meaning on hover. */
 function ResultTag({ row }: { row: ErrorRequestRow }) {
   const res = RESULT[row.result];
@@ -149,35 +137,24 @@ function ResultTag({ row }: { row: ErrorRequestRow }) {
 
 type RetryFilter = typeof ALL | "retryable" | "not-retryable";
 
-/** Names in a sentence: "a", "a and b", "a, b and c". */
-const listWords = (names: string[]) =>
-  names.length <= 1 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
-
-/** Why the router stopped, in plain words, when it stopped short of an answer. */
-function stopWords(r: ErrorRequestRow): string {
-  if (r.exhausted) return " The router wanted to try another provider, but none was left.";
-  if (r.stopReason === "NonRetryableNodeError") return " The router didn't try another provider: it would give the same answer.";
-  if (r.stopReason === "ProcessingTimeout") return " The request ran past the router's time limit.";
-  return "";
+/** Why the router stopped retrying, when it stopped short of an answer. */
+function retriesWords(r: ErrorRequestRow): string | null {
+  if (r.exhausted) return "All providers tried";
+  if (r.stopReason === "NonRetryableNodeError") return "Not retried: another provider would return the same error";
+  if (r.stopReason === "ProcessingTimeout") return "Stopped at the router's time limit";
+  return null;
 }
 
-/** What the client received, in one or two plain sentences: the top of a breakdown's response. A failure
- *  the router got past is the router's, not the client's: the client only ever saw the answer. */
-export function headlineOf(r: ErrorRequestRow): string {
-  const failedAt = [...new Set(r.attempts.filter((a) => a.outcome === "failed").map((a) => a.upstream))];
+/** The response's status: the word, its colour, and a detail where the code doesn't carry one. */
+export function statusOf(r: ErrorRequestRow): BreakdownProps["status"] {
+  const failed = r.attempts.filter((a) => a.outcome === "failed").length;
   switch (r.result) {
-    case "ok":
-      return `The client got ${r.resolvedBy ?? "a provider"}'s answer. No try failed.`;
-    case "recovered":
-      return `The client got ${r.resolvedBy ?? "a provider"}'s answer.${failedAt.length ? ` It never saw the failure: ${listWords(failedAt)} failed first, and the router tried again.` : ""}`;
-    case "error-reply":
-      return `The client got ${r.resolvedBy ?? "the provider"}'s error response, unchanged.${stopWords(r)}`;
-    case "failed":
-      return `The client got an error from the router itself: no provider gave a usable answer.${stopWords(r)}`;
-    case "write-unknown":
-      return `The client got an error from the router. ${WRITE_UNKNOWN_NOTE}`;
-    case "unknown":
-      return "No response to the client is logged. The request may still be running, the client may have disconnected, or log lines are missing. Before smart-router v1.6.1, a router logs its tries and its end only at info level.";
+    case "ok": return { label: "Success", color: "var(--ok)" };
+    case "recovered": return { label: "Success", color: "var(--ok)", detail: failed ? `after ${failed} failed ${failed === 1 ? "try" : "tries"}` : null };
+    case "error-reply": return { label: "Error", color: "var(--err)" };
+    case "failed": return { label: "Error", color: "var(--err)", detail: r.errorCode ? null : "No usable response from any provider" };
+    case "write-unknown": return { label: "Unknown", color: "var(--text-3)", detail: "Write not confirmed" };
+    case "unknown": return { label: "Not logged", color: "var(--text-3)" };
   }
 }
 
@@ -185,13 +162,18 @@ export function headlineOf(r: ErrorRequestRow): string {
 function Details({ row }: { row: ErrorRequestRow }) {
   const replied = row.attempts.find((a) => a.replied);
   const final: FinalAnswer =
-    row.result === "failed" || row.result === "write-unknown" ? { from: "router", code: row.errorCode, message: row.error }
+    row.result === "failed" || row.result === "write-unknown" ? { from: "router", code: row.errorCode }
       : replied ? { from: "provider", attempt: replied }
         : null;
+  const known = row.errorCode ? explainRouterError(row.errorCode) : null;
+  const extra =
+    row.result === "write-unknown" && !known ? [{ label: "Next step", value: "Check the chain before sending it again." }]
+      : row.result === "unknown" ? [{ label: "Note", value: "Still running, or log lines are missing." }]
+        : undefined;
   return (
     <RequestBreakdown chain={chainWords(row)} method={row.method === "unknown" ? "method not in the logs" : row.method}
       time={row.time} guid={row.guid} tookMs={row.totalMs} facts={row} attempts={row.attempts}
-      final={final} headline={headlineOf(row)} isWrite={row.result === "write-unknown"} />
+      final={final} status={statusOf(row)} retries={retriesWords(row)} isWrite={row.result === "write-unknown"} extra={extra} />
   );
 }
 
@@ -485,7 +467,6 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
                     <td style={{ verticalAlign: "top" }}>
                       <ResultTag row={r} />
                       {resultBadge(r).from && <ResponseSource {...resultBadge(r).from!} />}
-                      {rowSource(r) && <div style={{ marginTop: 5 }}><SourceTag source={rowSource(r)!} /></div>}
                     </td>
                     <td style={{ textAlign: "right", verticalAlign: "top" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{fmtTook(r.totalMs)}</span></td>
                   </tr>
