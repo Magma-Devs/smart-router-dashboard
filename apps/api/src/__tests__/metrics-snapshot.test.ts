@@ -146,6 +146,49 @@ describe("the metrics routes' snapshot (MAG-4572)", () => {
     expect(reads()).toBe(2 * cost);
   });
 
+  it("a refresh during which the store refuses a read keeps the previous good answer and its Age", async () => {
+    let refusing = false;
+    let specs = ["ETH1"];
+    const specReads = () => sent.filter((q) => q.startsWith("count by (spec)")).length;
+    vi.stubGlobal("fetch", async (input: URL | string) => {
+      const query = new URL(input.toString()).searchParams.get("query") ?? "";
+      sent.push(query);
+      if (!query.startsWith("count by (spec)")) {
+        return Response.json({ status: "success", data: { resultType: "vector", result: [] } });
+      }
+      if (refusing) return new Response("too many outstanding requests", { status: 429 });
+      const result = specs.map((spec) => ({ metric: { spec }, value: [1, "1"] }));
+      return Response.json({ status: "success", data: { resultType: "vector", result } });
+    });
+    const api = await build(15_000);
+    const url = "/api/metrics/specs";
+    expect((await get(api, url)).json()).toEqual({ specs: ["ETH1"] });
+
+    refusing = true;
+    vi.setSystemTime(T0 + 16_000);
+    const stale = await get(api, url);
+    expect(stale.json()).toEqual({ specs: ["ETH1"] });
+    expect(stale.headers.age).toBe("16");
+    await vi.waitFor(() => expect(specReads()).toBe(2));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    // The refused refresh came back empty and is not kept: the good answer
+    // stays with its Age running on, and the cool-down starts no read.
+    vi.setSystemTime(T0 + 17_000);
+    const kept = await get(api, url);
+    expect(kept.json()).toEqual({ specs: ["ETH1"] });
+    expect(kept.headers.age).toBe("17");
+    expect(specReads()).toBe(2);
+
+    // Past the cool-down a clean refresh replaces it.
+    refusing = false;
+    specs = ["ETH1", "BASE"];
+    vi.setSystemTime(T0 + 25_000);
+    expect((await get(api, url)).headers.age).toBe("25");
+    await vi.waitFor(async () => expect((await get(api, url)).json()).toEqual({ specs: ["BASE", "ETH1"] }));
+    expect(specReads()).toBe(3);
+  });
+
   it("keeps a long window longer, and a figure about now a minute at most", async () => {
     const api = await build(15_000);
     await get(api, "/api/metrics/chain-series?spec=ETH1&window=7d");
