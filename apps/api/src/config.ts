@@ -105,6 +105,14 @@ export const config = {
      */
     cacheTtlMs: envInt("PROMETHEUS_CACHE_TTL_MS", 10000),
     /**
+     * The base TTL of the metrics routes' response snapshot (`routes/metrics.ts`):
+     * one answer per route and query, shared by every caller of the process.
+     * Windows up to 1h and the window-less routes keep their answer this long;
+     * longer windows keep theirs longer, never shorter than this. 0 turns the
+     * snapshot off: every request reads live.
+     */
+    snapshotTtlMs: envInt("METRICS_SNAPSHOT_TTL_MS", 15000),
+    /**
      * Target label that identifies ONE router deployment, used by the
      * `?router=` scope (see `promql/scope.ts`). The router labels its series
      * with the chain, not with itself, so telling two routers on one chain
