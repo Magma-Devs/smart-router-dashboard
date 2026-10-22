@@ -5,6 +5,30 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Changed
+
+- **The Transactions and Errors lists read only what is new when they poll,
+  and the viewers of one list on an api process share its read** (MAG-4574).
+  A read of the router's logs costs Loki the whole stretch it covers, whatever
+  its filters match: on the largest tenant, which writes 6.7 GB of router
+  lines an hour, a 30-minute Transactions poll scanned about 10 GB, up to
+  27 GB with the reads of each request's other lines, for every viewer every
+  15 s. A list on the page window now keeps its last read on the api, and
+  the next poll runs the line filters only from a minute before where that
+  read ended, merges what they find by request, and reads the rest of a
+  request's lines only when it is new or its lines can still come: rows,
+  `more` and `nextBefore` are what a read of the whole window gives. The
+  window is still read whole on first use, every 10 minutes, and when the
+  values file changes. One read per list runs at a time on a process, and its
+  answer is kept 15 s, a range that ended over a minute ago 5 minutes, a read
+  Loki didn't answer 30 s. The lists poll every 30 s instead of 15 s; after a
+  read the logs couldn't answer they wait 60 s, then twice as long each time
+  up to 5 minutes. The Errors tab's "Still failed" note counts the list's own
+  rows rather than reading the logs a second time, so it stops when the list
+  does, and on exact times, which the cards don't cover, it is left out. The
+  read of a few requests' other lines may return as many lines as a read of a
+  hundred, so a request with many tries isn't cut short.
+
 ## [0.47.0]
 
 ### Changed
