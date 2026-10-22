@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SnapshotStore, type SnapshotLogger } from "../services/snapshot.js";
+import { noteRefusedRead } from "../services/read-health.js";
 
 const T0 = Date.UTC(2026, 9, 22, 12, 0, 0);
 const TTL = 15_000;
@@ -186,6 +187,89 @@ describe("SnapshotStore", () => {
     vi.setSystemTime(T0 + 1_000);
     await expect(store.get("k", 1_000, run)).rejects.toThrow("boom");
     expect(runs).toBe(2);
+  });
+
+  /** A run answering 1, 2, 3, …, noting a refused read while `refusing` says so. */
+  function refusable() {
+    const state = { refusing: false, runs: 0 };
+    const run = async () => {
+      state.runs++;
+      if (state.refusing) noteRefusedRead();
+      return state.runs;
+    };
+    return { state, run };
+  }
+
+  it("a run the store refused a read in never replaces a servable good answer, and the key cools down", async () => {
+    const { logger, lines } = capture();
+    const store = new SnapshotStore({ retryAfterMs: 5_000, logger });
+    const { state, run } = refusable();
+    expect(await store.get("k", TTL, run)).toEqual({ value: 1, at: T0 });
+
+    state.refusing = true;
+    vi.setSystemTime(T0 + 16_000);
+    expect(await store.get("k", TTL, run)).toEqual({ value: 1, at: T0 });
+    await store.idle();
+    expect(state.runs).toBe(2);
+    // The good answer stays, with its own time, and no run starts in the cool-down.
+    for (const at of [16_500, 20_999]) {
+      vi.setSystemTime(T0 + at);
+      expect(await store.get("k", TTL, run)).toEqual({ value: 1, at: T0 });
+    }
+    await store.idle();
+    expect(state.runs).toBe(2);
+    // Past it, one more try, refused again: still the good answer.
+    vi.setSystemTime(T0 + 21_000);
+    expect(await store.get("k", TTL, run)).toEqual({ value: 1, at: T0 });
+    await store.idle();
+    expect(state.runs).toBe(3);
+
+    state.refusing = false;
+    vi.setSystemTime(T0 + 26_000);
+    expect(await store.get("k", TTL, run)).toEqual({ value: 1, at: T0 });
+    await store.idle();
+    expect(await store.get("k", TTL, run)).toEqual({ value: 4, at: T0 + 26_000 });
+    // One line for the run of degraded answers.
+    expect(lines).toHaveLength(1);
+    expect(lines[0]!.obj).toMatchObject({ key: "k", refused: 1, keptAgeMs: 16_000 });
+  });
+
+  it("with nothing servable, a degraded answer reaches its run's callers, is kept only for the cool-down, and a clean run replaces it", async () => {
+    const store = new SnapshotStore({ retryAfterMs: 5_000 });
+    const { state, run } = refusable();
+    state.refusing = true;
+    const both = await Promise.all([store.get("k", TTL, run), store.get("k", TTL, run)]);
+    expect(both).toEqual([{ value: 1, at: T0 }, { value: 1, at: T0 }]);
+    expect(state.runs).toBe(1);
+    // In the cool-down, the same answer and no run.
+    vi.setSystemTime(T0 + 4_999);
+    expect(await store.get("k", TTL, run)).toEqual({ value: 1, at: T0 });
+    expect(state.runs).toBe(1);
+    // After it, the next caller starts a fresh run.
+    vi.setSystemTime(T0 + 5_000);
+    expect(await store.get("k", TTL, run)).toEqual({ value: 2, at: T0 + 5_000 });
+    expect(state.runs).toBe(2);
+
+    // A clean run replaces it, and is kept for the TTL.
+    state.refusing = false;
+    vi.setSystemTime(T0 + 10_000);
+    expect(await store.get("k", TTL, run)).toEqual({ value: 3, at: T0 + 10_000 });
+    vi.setSystemTime(T0 + 10_000 + TTL - 1);
+    expect(await store.get("k", TTL, run)).toEqual({ value: 3, at: T0 + 10_000 });
+    expect(state.runs).toBe(3);
+  });
+
+  it("once the good answer is twice its TTL old, a caller in the cool-down gets the newer degraded one", async () => {
+    const store = new SnapshotStore({ retryAfterMs: 5_000 });
+    const { state, run } = refusable();
+    await store.get("k", TTL, run);
+    state.refusing = true;
+    vi.setSystemTime(T0 + 26_000);
+    expect(await store.get("k", TTL, run)).toEqual({ value: 1, at: T0 });
+    await store.idle();
+    vi.setSystemTime(T0 + 2 * TTL);
+    expect(await store.get("k", TTL, run)).toEqual({ value: 2, at: T0 + 26_000 });
+    expect(state.runs).toBe(2);
   });
 
   it("past the cap the least recently refreshed key goes first", async () => {

@@ -9,6 +9,7 @@
 import { createHash } from "node:crypto";
 import { applyScope, durationSeconds, isValidScope, type MetricScope } from "@sr/shared";
 import { config } from "../config.js";
+import { noteRefusedRead } from "./read-health.js";
 
 export interface PromMetric {
   [label: string]: string;
@@ -286,11 +287,15 @@ export class PrometheusClient {
   }
 
   private async fetchOnce<T>(url: URL, query: string): Promise<PromResponse<T>> {
+    // Each failure is noted (`noteRefusedRead`) against the work that issued
+    // the read, so a snapshot run can tell it saw one. A caller that joined
+    // this read in flight from other work is not counted: only the issuer runs this.
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
       const res = await fetch(url, { signal: controller.signal, headers: this.headers });
       if (!res.ok) {
+        noteRefusedRead();
         // Prometheus puts the PromQL error in the body; keep enough to read it.
         const body = (await res.text().catch(() => "")).slice(0, 300);
         this.warn(`http:${res.status}:${body}`, { status: res.status, body, query, url: url.origin + url.pathname }, "prometheus call failed");
@@ -298,10 +303,12 @@ export class PrometheusClient {
       }
       const parsed = (await res.json()) as PromResponse<T>;
       if (parsed.status === "error") {
+        noteRefusedRead();
         this.warn(`promql:${parsed.error ?? ""}`, { error: parsed.error, query }, "prometheus returned an error");
       }
       return parsed;
     } catch (err) {
+      noteRefusedRead();
       const message = err instanceof Error ? err.message : String(err);
       this.warn(`fetch:${message}`, { error: message, query, url: url.origin + url.pathname }, "prometheus unreachable");
       return { status: "error", error: message };
