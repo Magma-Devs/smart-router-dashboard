@@ -467,10 +467,21 @@ export function UnreadStrip({ count, noun, bound, covers }: { count: number; nou
   );
 }
 
+/** The most candidate chains a row names; past this it says how many, and `chainsTitle` lists them. */
+const CHAIN_WORDS_MAX = 3;
+
 /** A row's chain - or the chains it could be on, when its upstreams serve several. */
 export function chainWords(row: { spec: string | null; specs?: string[] }): string {
   if (row.spec) return buildChainMetaByIndex(row.spec).name;
-  return row.specs?.length ? row.specs.map((s) => buildChainMetaByIndex(s).name).join(" or ") : "—";
+  if (!row.specs?.length) return "—";
+  if (row.specs.length > CHAIN_WORDS_MAX) return `One of ${row.specs.length} chains`;
+  return row.specs.map((s) => buildChainMetaByIndex(s).name).join(" or ");
+}
+
+/** The hover text of a row whose chain the logs don't name: every chain its upstreams serve. */
+export function chainsTitle(row: { spec: string | null; specs?: string[] }): string | undefined {
+  if (row.spec || !row.specs?.length) return undefined;
+  return `The logs don't name this request's chain. Its upstreams serve ${row.specs.length === 1 ? "one" : `these ${row.specs.length}`}: ${row.specs.map((s) => buildChainMetaByIndex(s).name).join(", ")}`;
 }
 
 /**

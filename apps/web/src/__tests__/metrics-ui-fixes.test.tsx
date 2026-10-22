@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { HeroSummary, RouterMetrics } from "@sr/shared";
 import { RouterOverview } from "@/components/metrics/RouterOverview";
 import { HeroPanel } from "@/components/metrics/HeroPanel";
-import { fmtWhen, openRowShown } from "@/components/metrics/request-log";
+import { chainsTitle, chainWords, fmtWhen, openRowShown } from "@/components/metrics/request-log";
 
 /** What `useApi` answers per path: SWR's fields as a window change leaves them. */
 const fixture = vi.hoisted(() => ({
@@ -123,5 +123,13 @@ describe("log rows", () => {
     const now = new Date();
     const month = now.toLocaleString("en-US", { month: "short" });
     expect(fmtWhen(now.getTime())).toContain(`${month} ${now.getDate()},`);
+  });
+
+  it("names a few candidate chains and counts many, listing them on hover", () => {
+    expect(chainWords({ spec: null, specs: ["ETH1", "BASE"] })).toBe("Ethereum or Base");
+    const many = { spec: null, specs: ["ETH1", "BASE", "ARBITRUM", "OPTM", "POLYGON"] };
+    expect(chainWords(many)).toBe("One of 5 chains");
+    expect(chainsTitle(many)).toContain("Ethereum, Base");
+    expect(chainsTitle({ spec: "ETH1" })).toBeUndefined();
   });
 });

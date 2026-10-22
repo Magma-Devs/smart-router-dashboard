@@ -146,6 +146,8 @@ export type FinalAnswer =
 
 export interface BreakdownProps {
   chain: string;
+  /** On hover: every chain the request could be on, when the logs don't name it. */
+  chainTitle?: string;
   method: string;
   time: number;
   guid: string;
@@ -188,7 +190,7 @@ export function RequestBreakdown(p: BreakdownProps) {
       <Part title="Request">
         <div style={{ ...box(), display: "flex", flexWrap: "wrap", columnGap: 16, rowGap: 4, alignItems: "center" }}>
           <span className="gw-mono" style={{ fontSize: 12.5, color: "var(--text)" }}>{p.method}</span>
-          <span style={{ fontSize: 12, color: "var(--text-3)" }}>{p.chain}</span>
+          <span title={p.chainTitle} style={{ fontSize: 12, color: "var(--text-3)" }}>{p.chain}</span>
           <Fact label="At">{fmtWhen(p.time)}</Fact>
           <Fact label="Duration">{fmtTook(p.tookMs)}</Fact>
           <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11.5, color: "var(--text-4)" }}>

@@ -51,6 +51,7 @@ import {
   ReadingStrip,
   TimeRangeControl,
   chainWords,
+  chainsTitle,
   onRowKey,
   openRowShown,
   rangeIsLive,
@@ -112,7 +113,7 @@ function Details({ row }: { row: TxLogRow }) {
   if (row.txHash) extra.push({ label: "Hash", value: <TxHash hash={row.txHash} spec={row.spec} full /> });
   if (row.outcome === "unknown" && !known) extra.push({ label: "Next step", value: "Check the chain before sending it again." });
   return (
-    <RequestBreakdown chain={chainWords(row)} method={row.method === "unknown" ? "method not in the logs" : row.method}
+    <RequestBreakdown chain={chainWords(row)} chainTitle={chainsTitle(row)} method={row.method === "unknown" ? "method not in the logs" : row.method}
       time={row.time} guid={row.guid} tookMs={row.replyMs} facts={row} attempts={row.attempts}
       final={final} status={txStatusOf(row)} isWrite extra={extra} />
   );
@@ -355,7 +356,7 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
                         <div style={{ display: "flex", alignItems: "flex-start", gap: 8, minWidth: 0 }}>
                           {r.spec && <span style={{ display: "flex", flexShrink: 0, marginTop: 1 }}><ChainBadge spec={r.spec} size={16} /></span>}
                           <div style={{ minWidth: 0 }}>
-                            <div style={{ fontSize: 12 }}>{chainWords(r)}</div>
+                            <div style={{ fontSize: 12 }} title={chainsTitle(r)}>{chainWords(r)}</div>
                             {r.method === "unknown"
                               ? <div style={{ fontSize: 10.5, color: "var(--text-4)", fontStyle: "italic" }}>method not in the logs</div>
                               : <div className="gw-mono" title={r.method} style={{ fontSize: 10.5, color: "var(--text-3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.method}</div>}
