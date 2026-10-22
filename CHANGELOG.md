@@ -24,7 +24,7 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   - **Response:** returned by, status, retries and the next step.
 
   Each error is stated once, on the try it happened on. Orange marks what was returned to
-  the client. A transaction whose error may have gone through says "May already be on
+  the client. A failed transaction that may still have gone through says "May already be on
   chain". A requested block ahead of the router's latest gets a note. The Errors tab no
   longer names the returned error twice, and a look-up no longer repeats the request's ID.
 
