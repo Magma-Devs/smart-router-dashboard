@@ -62,7 +62,7 @@ import {
   type UnavailableChain,
   type WebSocketReport,
 } from "@sr/shared";
-import { WINDOWS, bucketGrid, chartSampling, errorBuckets } from "@sr/shared/constants";
+import { WINDOWS, alignedBounds, bucketGrid, chartSampling, errorBuckets, stepSeconds } from "@sr/shared/constants";
 import type { PrometheusClient, PromVectorSample } from "./prometheus-client.js";
 import type { ConfigurationService } from "./configuration.js";
 import { health, toPoints } from "./metrics.js";
@@ -81,10 +81,10 @@ export class MetricsDetailService {
     return router ? router.nodes.some((n) => n.name === upstream) : false;
   }
 
+  /** The window at its own step, ending on a step boundary (`alignedBounds`). */
   private windowBounds(window: MetricWindow): { start: number; end: number; step: string } {
     const win = WINDOWS[window];
-    const end = Math.floor(Date.now() / 1000);
-    return { start: end - win.rangeSeconds, end, step: win.step };
+    return { ...alignedBounds(win.rangeSeconds, stepSeconds(window), Date.now() / 1000), step: win.step };
   }
 
   private async familyPresent(metricName: string): Promise<boolean> {
@@ -92,10 +92,9 @@ export class MetricsDetailService {
     return v !== null && v > 0;
   }
 
-  /** The grid a window is sampled on at `stepSec`: the same start and end every series of one read shares. */
+  /** The grid a window is sampled on at `stepSec`: the same start and end every series of one read shares, on that step's boundaries. */
   private grid(window: MetricWindow, stepSec: number): ChartGrid {
-    const { start, end } = this.windowBounds(window);
-    return { start, end, stepSec };
+    return { ...alignedBounds(WINDOWS[window].rangeSeconds, stepSec, Date.now() / 1000), stepSec };
   }
 
   private async seriesOn(expr: string, grid: ChartGrid): Promise<TimePoint[]> {
