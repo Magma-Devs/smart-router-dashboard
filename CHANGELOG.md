@@ -5,6 +5,27 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Changed
+
+- **The metrics routes answer every viewer from one snapshot per route and
+  query** (MAG-4572). Each request ran its route's whole read set: one
+  Metrics Overview tab of the 0.27 screens costs 149-177 store reads a
+  minute, and N viewers N times that. Mimir caches no instant query, and the
+  client's 10 s answer cache sits under the 15 s poll, so a lone viewer never
+  reused it and two viewers shared a read only when their polls landed
+  within 10 s of each other on the same pod. Now every `/api/metrics/*`
+  route but `/query` and `/reads` keeps its answer for a TTL set by its
+  window: 15 s up to 1h, 60 s for 3h-12h, 5 minutes for 1d-3d and 15 minutes
+  from 7d, never more than a chart point of the window. An answer carrying
+  health, a latest block or another figure about now, and the Errors tab,
+  is kept a minute at most; routes without a window 15 s, and the topbar's
+  pulse 30 s. Past its TTL an answer is still served, up to twice that age,
+  while one background refresh runs, and every caller of a query shares one
+  read. `Age` says how old an answer is; the payloads are unchanged. The
+  snapshot is per process and holds at most 256 answers.
+  `METRICS_SNAPSHOT_TTL_MS` (default `15000`) sets the shortest TTL, and `0`
+  turns the snapshot off.
+
 ## [0.46.0]
 
 ### Changed
