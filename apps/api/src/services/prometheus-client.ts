@@ -7,7 +7,7 @@
  * read exactly like a quiet router.
  */
 import { createHash } from "node:crypto";
-import { applyScope, isValidScope, type MetricScope } from "@sr/shared";
+import { applyScope, durationSeconds, isValidScope, type MetricScope } from "@sr/shared";
 import { config } from "../config.js";
 
 export interface PromMetric {
@@ -73,25 +73,27 @@ export interface PromClientOptions {
   warnedAt?: Map<string, number>;
   /**
    * How long a successful answer is reused for an identical read (same path,
-   * params, scope and credential). Default `PROMETHEUS_CACHE_TTL_MS`; 0 keeps
+   * params, scope and credential); a range read is reused for its step
+   * instead (`rangeReuseMs`). Default `PROMETHEUS_CACHE_TTL_MS`; 0 keeps
    * every read live and remembers nothing. Identical reads in flight at the
    * same moment share one request whatever the TTL.
    */
   cacheTtlMs?: number;
   /**
    * How long a remembered answer may still stand in for a refused refresh
-   * (429, timeout, error envelope), and so how long one is kept. Default
-   * 60 s. Internal — tests shorten it.
+   * (429, timeout, error envelope) — counted from when it was read, or from
+   * the end of its reuse for a range read — and so how long one is kept.
+   * Default 60 s. Internal — tests shorten it.
    */
   staleMaxMs?: number;
   /** In-flight and remembered answers, shared across scoped copies. Internal. */
   reads?: ReadStore;
 }
 
-/** The answers a client holds: one promise per read in flight, one value per read remembered. */
+/** The answers a client holds: one promise per read in flight, one value per read remembered (read `at`, kept `until`). */
 export interface ReadStore {
   inflight: Map<string, Promise<PromResponse<unknown>>>;
-  remembered: Map<string, { at: number; value: PromResponse<unknown> }>;
+  remembered: Map<string, { at: number; until: number; value: PromResponse<unknown> }>;
 }
 
 /** One warn line per distinct failure per interval — a dead store must not
@@ -103,6 +105,18 @@ const MAX_REMEMBERED_READS = 4096;
 
 /** How long the last good answer may stand in for a refused refresh. */
 const STALE_MAX_MS = 60_000;
+
+/**
+ * The longest a range read's answer is reused. Its window ends on a step
+ * boundary, so the answer only goes out of date when samples land late
+ * (remote-write retries, recorded series written after their timestamp),
+ * which Mimir allows for by recomputing its newest 10 minutes on every read.
+ * Five minutes, the age recorded series may reach before the api stops
+ * reading them (`METRICS_RECORDED_STALE_MS`), keeps a late sample off a chart
+ * for at most that long and turns a 30-day chart's 240 polls an hour (4-hour
+ * step) into 12 reads.
+ */
+export const RANGE_REUSE_MAX_MS = 300_000;
 
 export class PrometheusClient {
   private readonly headers: Record<string, string>;
@@ -173,13 +187,27 @@ export class PrometheusClient {
   }
 
   /**
+   * How long a range read's answer is reused: its step, at most
+   * RANGE_REUSE_MAX_MS, never less than `cacheTtlMs`; 0 with the cache off.
+   * Range reads end on a step boundary (`alignedBounds`), so every poll
+   * until the next boundary asks for the same window.
+   */
+  private rangeReuseMs(step: string): number {
+    if (this.cacheTtlMs <= 0) return 0;
+    const stepMs = durationSeconds(step) * 1000;
+    return Number.isFinite(stepMs) ? Math.max(this.cacheTtlMs, Math.min(stepMs, RANGE_REUSE_MAX_MS)) : this.cacheTtlMs;
+  }
+
+  /**
    * One read. Identical reads (same URL — so same path, params and scope —
    * under the same credential) in flight together share one request, and a
-   * successful answer is reused for `cacheTtlMs`. Failures are never kept:
-   * a refused refresh (429, timeout, error envelope) is answered from the
-   * last good answer while that is under `staleMaxMs` old, and retried by
-   * the next caller either way — one refused read must not blank every row
-   * a grouped read feeds. `live` reads (the readiness probe) bypass all of it.
+   * successful answer is reused for `cacheTtlMs`, a range read's (one with
+   * a `step`) for `rangeReuseMs`. Failures are never kept: a refused refresh
+   * (429, timeout, error envelope) is answered from the last good answer
+   * while that is under `staleMaxMs` old (`staleMaxMs` past its reuse for a
+   * range read), and retried by the next caller either way — one refused
+   * read must not blank every row a grouped read feeds. `live` reads (the
+   * readiness probe) bypass all of it.
    */
   private async get<T>(
     path: string,
@@ -197,10 +225,12 @@ export class PrometheusClient {
     const query = params.query ?? "";
     if (opts.live) return this.fetchOnce<T>(url, query);
 
+    const reuseMs = params.step === undefined ? this.cacheTtlMs : this.rangeReuseMs(params.step);
+    const standInMs = params.step === undefined ? this.staleMaxMs : reuseMs + this.staleMaxMs;
     const key = `${this.authKey}\n${url.toString()}`;
     const kept = this.reads.remembered.get(key);
     const age = kept ? Date.now() - kept.at : Infinity;
-    if (kept && age < this.cacheTtlMs) return kept.value as PromResponse<T>;
+    if (kept && age < reuseMs) return kept.value as PromResponse<T>;
     const pending = this.reads.inflight.get(key);
     if (pending) return pending as Promise<PromResponse<T>>;
 
@@ -209,10 +239,10 @@ export class PrometheusClient {
     try {
       const response = await request;
       if (response.status === "success") {
-        if (this.cacheTtlMs > 0) this.remember(key, response);
+        if (reuseMs > 0) this.remember(key, response, Math.max(reuseMs, standInMs));
         return response;
       }
-      if (kept && age < this.staleMaxMs) {
+      if (kept && age < standInMs) {
         // One line a minute for the whole store, not one per query.
         this.warn("stale", { query, ageMs: age, error: response.error }, "prometheus refused a refresh — answered from the last good read");
         return kept.value as PromResponse<T>;
@@ -223,27 +253,22 @@ export class PrometheusClient {
     }
   }
 
-  /** Keep `value` under `key`; drop what no refresh could use any more. */
-  private remember(key: string, value: PromResponse<unknown>): void {
+  /** Keep `value` under `key` for `keepMs`; drop what no refresh could use any more. */
+  private remember(key: string, value: PromResponse<unknown>, keepMs: number): void {
     const { remembered } = this.reads;
     const now = Date.now();
-    // Entries are in insertion order and every one is kept for the same
-    // span, so the expired ones are the leading ones — stop at the first
-    // that is not. Range reads stamp their window with the current second,
-    // so each poll mints new keys and this is what bounds the store.
-    const keepMs = Math.max(this.cacheTtlMs, this.staleMaxMs);
-    for (const [k, v] of remembered) {
-      if (now - v.at < keepMs) break;
-      remembered.delete(k);
-    }
-    // Re-insert so the order stays oldest-first for the sweep above and the
-    // cap below.
+    // Spans differ (a range read is kept for its step), so an expired answer
+    // can sit behind a live one: check them all, MAX_REMEMBERED_READS at most.
+    // A range read's window moves on at every step boundary, so this is what
+    // clears the windows no poll asks for any more.
+    for (const [k, v] of remembered) if (v.until <= now) remembered.delete(k);
+    // Re-insert so the order stays oldest-first for the cap below.
     remembered.delete(key);
     if (remembered.size >= MAX_REMEMBERED_READS) {
       const oldest = remembered.keys().next().value;
       if (oldest !== undefined) remembered.delete(oldest);
     }
-    remembered.set(key, { at: now, value });
+    remembered.set(key, { at: now, until: now + keepMs, value });
   }
 
   private async fetchOnce<T>(url: URL, query: string): Promise<PromResponse<T>> {
