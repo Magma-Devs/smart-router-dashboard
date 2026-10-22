@@ -45,7 +45,8 @@ import {
   RELAY_END,
   startMs as startOf,
 } from "./relay-end.js";
-import { readEnd, readOnFrom, readStart, type ReadRange } from "./read-range.js";
+import { readEnd, readStart, type ReadRange } from "./read-range.js";
+import { ListReads, readList } from "./log-list.js";
 import type { LokiClient } from "./loki-client.js";
 import type { ConfigurationService } from "./configuration.js";
 import {
@@ -55,14 +56,12 @@ import {
   inRawString,
   LABEL_TOKEN,
   lastWhere,
-  linesForGuids,
   linesOfLookup,
   LOOKUP_ID,
   methodOf,
   namesOf,
   onChain,
   ownRow,
-  parseAll,
   providerOf,
   scrubUrls,
   str,
@@ -160,6 +159,9 @@ export const TX_READ_CAP = 500;
 
 /** A transaction's reply can land this long after the line that found it. */
 const REPLY_SPAN_MS = 60_000;
+
+/** A transaction's first lines come this long at most before the line that found it. */
+const LEAD_MS = 5_000;
 
 /**
  * One row per transaction - a request the spec marks `stateful:"1"`, or one
@@ -353,6 +355,8 @@ export class TransactionsService {
     private readonly cap: number = TX_READ_CAP,
   ) {}
 
+  private readonly reads = new ListReads<TxLogRow, TransactionsReport>();
+
   private routers(): RouterTopology[] {
     return this.configSvc?.getRouters() ?? [];
   }
@@ -388,7 +392,9 @@ export class TransactionsService {
    * previous read's `nextBefore`). One on the seam between two reads can come
    * back in both; the client keeps it once, by GUID. One read scans at most
    * LOG_READ_BUDGET_BYTES of logs (`readStart`): on a busy deployment a long
-   * range is read in parts, newest first, one per "Load older".
+   * range is read in parts, newest first, one per "Load older". One read per
+   * list at a time on this process, its answer kept (`ListReads`); a poll of a
+   * page window reads only what is new since the last (`readList`).
    */
   async report(range: ReadRange, spec?: string, routerId?: string, before?: number): Promise<TransactionsReport> {
     const loki = this.loki;
@@ -396,74 +402,58 @@ export class TransactionsService {
     const read = { startMs: range.startMs, endMs: range.endMs };
     const endMs = readEnd(range, before);
     if (endMs <= range.startMs) return { ...emptyReport(true), range: read };
-    // At most LOG_READ_BUDGET_BYTES of logs per read: the older part of the range is the next read's.
-    const startMs = await readStart(loki, this.selector, range, endMs);
-    const unreadCut = startMs > range.startMs ? [startMs] : [];
 
-    // Candidates, two ways. Writes by the spec: narrowed inside the query to
-    // the chain's upstreams (a name inside `chosenProviders`, bounded by a
-    // comma or the quote), so the cap applies to the chain asked for. And
-    // transaction methods by name - those lines name no upstream, so they
-    // are narrowed after the rows are built.
-    const names = this.upstreamsFor(spec, routerId);
-    const safe = names?.filter(inRawString);
-    const narrow = safe?.length
-      ? ` |~ \`"chosenProviders":"([^"]*,)?(${safe.map(escapeRe).join("|")})[,"]\``
-      : "";
-    // A relay_end names its chain: a write by the spec, or a transaction
-    // method by name - unlisted (`Default-`) or inside a batch (`&`) too.
-    const chain = routerId ? this.routers().find((r) => r.id === routerId)?.spec : spec;
-    const eventNarrow = chain && LABEL_TOKEN.test(chain) ? ` |= \`"chain":"${chain}"\`` : "";
-    const [byFlag, byMethod, byEvent] = await Promise.all([
-      loki.queryRange(`${this.selector} |= "${MSG.choosing}" |= \`"stateful":"1"\`${narrow}`, startMs, endMs, this.cap, "backward"),
-      loki.queryRange(`${this.selector} |= "${MSG.received}" |~ \`(${TX_METHODS.join("|")})\``, startMs, endMs, this.cap, "backward"),
-      loki.queryRange(`${this.selector} ${TX_EVENT_FILTER}${eventNarrow}`, startMs, endMs, this.cap, "backward"),
-    ]);
-    if (byFlag === null || byMethod === null || byEvent === null) return emptyReport(false, "unreachable");
+    return this.reads.get(range, before, [spec, routerId], async (last) => {
+      // Candidates, two ways. Writes by the spec: narrowed inside the query to
+      // the chain's upstreams (a name inside `chosenProviders`, bounded by a
+      // comma or the quote), so the cap applies to the chain asked for. And
+      // transaction methods by name - those lines name no upstream, so they
+      // are narrowed after the rows are built.
+      const routers = this.routers();
+      const names = this.upstreamsFor(spec, routerId);
+      const safe = names?.filter(inRawString);
+      const narrow = safe?.length
+        ? ` |~ \`"chosenProviders":"([^"]*,)?(${safe.map(escapeRe).join("|")})[,"]\``
+        : "";
+      // A relay_end names its chain: a write by the spec, or a transaction
+      // method by name - unlisted (`Default-`) or inside a batch (`&`) too.
+      const chain = routerId ? routers.find((r) => r.id === routerId)?.spec : spec;
+      const eventNarrow = chain && LABEL_TOKEN.test(chain) ? ` |= \`"chain":"${chain}"\`` : "";
+      const index = new UpstreamIndex(routers);
+      const got = await readList(loki, this.selector, {
+        finders: [
+          { query: `${this.selector} |= "${MSG.choosing}" |= \`"stateful":"1"\`${narrow}`, limit: this.cap },
+          { query: `${this.selector} |= "${MSG.received}" |~ \`(${TX_METHODS.join("|")})\``, limit: this.cap },
+          { query: `${this.selector} ${TX_EVENT_FILTER}${eventNarrow}`, limit: this.cap },
+        ],
+        // A transaction found by its relay_end needs nothing more. One found by
+        // its lines needs the rest of them, and its relay_end when it has one:
+        // the received line comes a few ms before the choice, and the reply can
+        // land after the range closed.
+        follow: { messages: [...Object.values(MSG), RELAY_END], perGuid: 30, beforeMs: LEAD_MS, afterMs: REPLY_SPAN_MS },
+        cap: this.cap,
+        rowsOf: (lines) => buildTxRows(lines, index),
+        basis: JSON.stringify(routers),
+        // At most LOG_READ_BUDGET_BYTES of logs per whole read: the older part of the range is the next read's.
+        wholeFrom: (r) => readStart(loki, this.selector, r, r.endMs),
+      }, { startMs: range.startMs, endMs }, last);
+      if (got === null) return { report: emptyReport(false, "unreachable") };
+      const { nextBefore } = got.read;
+      if (!got.read.found) {
+        return { report: { ...emptyReport(true), ...(nextBefore === null ? {} : { more: true, nextBefore }), range: read }, head: got.head };
+      }
 
-    const found = parseAll([...byFlag, ...byMethod, ...byEvent]);
-    const newest = new Map<string, number>();
-    for (const l of found) newest.set(l.guid, Math.max(newest.get(l.guid) ?? 0, l.tsMs));
-    const ranked = [...newest].sort((a, b) => b[1] - a[1]);
-    const picked = ranked.slice(0, this.cap);
-    if (!picked.length) {
-      return unreadCut.length
-        ? { ...emptyReport(true), more: true, nextBefore: readOnFrom([], this.cap, unreadCut, endMs), range: read }
-        : { ...emptyReport(true), range: read };
-    }
-    const kept = new Set(picked.map(([g]) => g));
-    const cutOf = (read: { tsMs: number }[]) => (read.length >= this.cap ? [Math.min(...read.map((l) => l.tsMs))] : []);
-    const nextBefore = readOnFrom(ranked, this.cap, [...cutOf(byFlag), ...cutOf(byMethod), ...cutOf(byEvent), ...unreadCut], endMs);
-
-    // A transaction found by its relay_end needs nothing more. One found by
-    // its lines needs the rest of them, and its relay_end when it has one:
-    // the received line comes a few ms before the choice, and the reply can
-    // land after the range closed.
-    const ends = found.filter((l) => isRelayEnd(l) && kept.has(l.guid));
-    const inHand = new Set(ends.map((l) => l.guid));
-    const toRead = new Set([...kept].filter((g) => !inHand.has(g)));
-    const toReadTimes = found.filter((l) => toRead.has(l.guid)).map((l) => l.tsMs);
-    const guidLines = toRead.size
-      ? await linesForGuids(
-          loki,
-          this.selector,
-          [...toRead],
-          Math.min(...toReadTimes) - 5_000,
-          [...Object.values(MSG), RELAY_END],
-          30,
-          Math.min(Date.now(), Math.max(...toReadTimes) + REPLY_SPAN_MS),
-        )
-      : { lines: [], unread: [] };
-    if (guidLines === null) return emptyReport(false, "unreachable");
-
-    const routers = this.routers();
-    let rows = buildTxRows([...guidLines.lines, ...ends], new UpstreamIndex(routers));
-    if (spec) rows = rows.filter((r) => onChain(r, spec));
-    if (routerId) {
-      const router = routers.find((r) => r.id === routerId);
-      rows = router ? rows.filter((r) => ownRow(r, router, routers)) : [];
-    }
-    const unread = guidLines.unread.length ? { unread: guidLines.unread.length } : {};
-    return { available: true, ...summarize(rows), rows, ...unread, more: nextBefore !== null, nextBefore, range: read };
+      let rows = got.read.rows;
+      if (spec) rows = rows.filter((r) => onChain(r, spec));
+      if (routerId) {
+        const router = routers.find((r) => r.id === routerId);
+        rows = router ? rows.filter((r) => ownRow(r, router, routers)) : [];
+      }
+      const unread = got.read.unread ? { unread: got.read.unread } : {};
+      return {
+        report: { available: true, ...summarize(rows), rows, ...unread, more: nextBefore !== null, nextBefore, range: read },
+        head: got.head,
+      };
+    });
   }
 }

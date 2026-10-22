@@ -61,7 +61,8 @@ import {
   startMs,
   WRONG_OUTCOMES,
 } from "./relay-end.js";
-import { LOG_READ_BUDGET_BYTES, readEnd, readOnFrom, readStart, type ReadRange } from "./read-range.js";
+import { LOG_READ_BUDGET_BYTES, readEnd, readStart, type ReadRange } from "./read-range.js";
+import { ListReads, readList } from "./log-list.js";
 import type { LokiClient } from "./loki-client.js";
 import type { PrometheusClient } from "./prometheus-client.js";
 import type { ConfigurationService } from "./configuration.js";
@@ -73,14 +74,12 @@ import {
   LABEL_TOKEN,
   lastWhere,
   listenerPattern,
-  linesForGuids,
   linesOfLookup,
   LOOKUP_ID,
   methodOf,
   namesOf,
   onChain,
   ownRow,
-  parseAll,
   scrubUrls,
   str,
   TRY_MSG,
@@ -326,6 +325,7 @@ export class ErrorRequestsService {
     return [...new Set(routers.flatMap((r) => r.nodes.map((n) => n.name)))];
   }
 
+  private readonly reads = new ListReads<ErrorRequestRow, ErrorRequestsReport>();
   private readonly counted = new Map<string, { at: number; result: FailedRequests }>();
   private readonly counting = new Map<string, Promise<FailedRequests>>();
 
@@ -466,7 +466,9 @@ export class ErrorRequestsService {
    * an errors-over-time bar counts - and narrows the read to it, so the cap
    * applies to what was asked for. One read scans at most
    * LOG_READ_BUDGET_BYTES of logs (`readStart`): on a busy deployment a long
-   * range is read in parts, newest first, one per "Load older".
+   * range is read in parts, newest first, one per "Load older". One read per
+   * list at a time on this process, its answer kept (`ListReads`); a poll of a
+   * page window reads only what is new since the last (`readList`).
    */
   async report(range: ReadRange, spec?: string, routerId?: string, before?: number, upstream?: string): Promise<ErrorRequestsReport> {
     const read = { startMs: range.startMs, endMs: range.endMs };
@@ -476,85 +478,60 @@ export class ErrorRequestsService {
     if (!loki) return none(false, "unconfigured");
     const endMs = readEnd(range, before);
     if (endMs <= range.startMs) return none(true);
-    const startMs = await readStart(loki, this.selector, range, endMs);
-    // The part of the range older than this read is the next one's.
-    const unreadCut = startMs > range.startMs ? [startMs] : [];
 
-    // A request writes several of these lines, so read a few per request.
-    // Called-off tries are left out here: they alone don't make an error.
-    // A chain, router or upstream narrows the read to those names, so the
-    // cap applies to what was asked for.
-    const routers = this.routers();
-    const router = routerId ? routers.find((r) => r.id === routerId) : undefined;
-    const names = upstream ? [upstream] : this.upstreamsFor(spec, routerId);
-    // A request no upstream could be chosen for names none: its end line names the chain's listener.
-    const chain = upstream ? undefined : (router?.spec ?? spec);
-    const alts = [
-      ...(names?.filter(inRawString).map(escapeRe) ?? []),
-      ...(names && chain && LABEL_TOKEN.test(chain) ? [listenerPattern(chain)] : []),
-    ];
-    const narrow = alts.length ? ` |~ \`${alts.join("|")}\`` : "";
-    // A relay_end is one line per request and names its chain and its tries' upstreams.
-    const eventNarrow = upstream
-      ? inRawString(upstream) ? ` |= \`"upstream":"${upstream}"\`` : ""
-      : chain && LABEL_TOKEN.test(chain) ? ` |= \`"chain":"${chain}"\`` : "";
-    const limit = this.cap * 4;
-    const [found, events] = await Promise.all([
-      loki.queryRange(
-        `${this.selector} |~ \`${FOUND_BY.map(escapeRe).join("|")}\` !~ \`PROTOCOL_CONTEXT_CANCELED|context canceled\`${narrow}`,
-        startMs,
-        endMs,
-        limit,
-        "backward",
-      ),
-      loki.queryRange(
-        `${this.selector} |= \`${RELAY_END}\` != \`"selection":"subscription"\` |~ \`"outcome":"(${WRONG_OUTCOMES.join("|")})"\`${eventNarrow} ${PARSED_PIPELINE}`,
-        startMs,
-        endMs,
-        this.cap,
-        "backward",
-      ),
-    ]);
-    if (found === null || events === null) return none(false, "unreachable");
+    return this.reads.get(range, before, [spec, routerId, upstream], async (last) => {
+      // A request writes several of these lines, so read a few per request.
+      // Called-off tries are left out here: they alone don't make an error.
+      // A chain, router or upstream narrows the read to those names, so the
+      // cap applies to what was asked for.
+      const routers = this.routers();
+      const router = routerId ? routers.find((r) => r.id === routerId) : undefined;
+      const names = upstream ? [upstream] : this.upstreamsFor(spec, routerId);
+      // A request no upstream could be chosen for names none: its end line names the chain's listener.
+      const chain = upstream ? undefined : (router?.spec ?? spec);
+      const alts = [
+        ...(names?.filter(inRawString).map(escapeRe) ?? []),
+        ...(names && chain && LABEL_TOKEN.test(chain) ? [listenerPattern(chain)] : []),
+      ];
+      const narrow = alts.length ? ` |~ \`${alts.join("|")}\`` : "";
+      // A relay_end is one line per request and names its chain and its tries' upstreams.
+      const eventNarrow = upstream
+        ? inRawString(upstream) ? ` |= \`"upstream":"${upstream}"\`` : ""
+        : chain && LABEL_TOKEN.test(chain) ? ` |= \`"chain":"${chain}"\`` : "";
+      const index = new UpstreamIndex(routers);
+      const got = await readList(loki, this.selector, {
+        finders: [
+          {
+            query: `${this.selector} |~ \`${FOUND_BY.map(escapeRe).join("|")}\` !~ \`PROTOCOL_CONTEXT_CANCELED|context canceled\`${narrow}`,
+            limit: this.cap * 4,
+          },
+          {
+            query: `${this.selector} |= \`${RELAY_END}\` != \`"selection":"subscription"\` |~ \`"outcome":"(${WRONG_OUTCOMES.join("|")})"\`${eventNarrow} ${PARSED_PIPELINE}`,
+            limit: this.cap,
+          },
+        ],
+        // A request found by its relay_end needs nothing more; one found by its
+        // lines needs the rest of them - and its relay_end, when it has one.
+        follow: { messages: [...Object.values(ERROR_MSG), RELAY_END], perGuid: 40, beforeMs: REQUEST_SPAN_MS, afterMs: REQUEST_SPAN_MS },
+        cap: this.cap,
+        rowsOf: (lines) => buildErrorRows(lines, index),
+        basis: JSON.stringify(routers),
+        // At most LOG_READ_BUDGET_BYTES of logs per whole read: the older part of the range is the next read's.
+        wholeFrom: (r) => readStart(loki, this.selector, r, r.endMs),
+      }, { startMs: range.startMs, endMs }, last);
+      if (got === null) return { report: none(false, "unreachable") };
+      const { nextBefore } = got.read;
+      if (!got.read.found) {
+        const report = nextBefore === null ? none(true) : { available: true, rows: [], more: true, nextBefore, range: read };
+        return { report, head: got.head };
+      }
 
-    const newestFirst = parseAll([...found, ...events]).sort((a, b) => b.tsMs - a.tsMs);
-    const newestOf = new Map<string, number>();
-    for (const l of newestFirst) if (!newestOf.has(l.guid)) newestOf.set(l.guid, l.tsMs);
-    if (!newestOf.size) {
-      return unreadCut.length
-        ? { available: true, rows: [], more: true, nextBefore: readOnFrom([], this.cap, unreadCut, endMs), range: read }
-        : none(true);
-    }
-    const ranked = [...newestOf];
-    const kept = new Set(ranked.slice(0, this.cap).map(([g]) => g));
-    const cutOf = (read: { tsMs: number }[], cap: number) => (read.length >= cap ? [Math.min(...read.map((l) => l.tsMs))] : []);
-    const nextBefore = readOnFrom(ranked, this.cap, [...cutOf(found, limit), ...cutOf(events, this.cap), ...unreadCut], endMs);
-
-    // A request found by its relay_end needs nothing more; one found by its
-    // lines needs the rest of them - and its relay_end, when it has one.
-    const ends = newestFirst.filter((l) => isRelayEnd(l) && kept.has(l.guid));
-    const inHand = new Set(ends.map((l) => l.guid));
-    const toRead = [...kept].filter((g) => !inHand.has(g));
-    const reading = new Set(toRead);
-    const toReadTimes = newestFirst.filter((l) => reading.has(l.guid)).map((l) => l.tsMs);
-    const guidLines = toRead.length
-      ? await linesForGuids(
-          loki,
-          this.selector,
-          toRead,
-          Math.min(...toReadTimes) - REQUEST_SPAN_MS,
-          [...Object.values(ERROR_MSG), RELAY_END],
-          40,
-          Math.min(Date.now(), Math.max(...toReadTimes) + REQUEST_SPAN_MS),
-        )
-      : { lines: [], unread: [] };
-    if (guidLines === null) return none(false, "unreachable");
-
-    let rows = buildErrorRows([...guidLines.lines, ...ends], new UpstreamIndex(routers));
-    if (spec) rows = rows.filter((r) => onChain(r, spec));
-    if (routerId) rows = router ? rows.filter((r) => ownRow(r, router, routers)) : [];
-    if (upstream) rows = rows.filter((r) => r.attempts.some((a) => a.upstream === upstream && a.outcome === "failed"));
-    const unread = guidLines.unread.length ? { unread: guidLines.unread.length } : {};
-    return { available: true, rows, ...unread, more: nextBefore !== null, nextBefore, range: read };
+      let rows = got.read.rows;
+      if (spec) rows = rows.filter((r) => onChain(r, spec));
+      if (routerId) rows = router ? rows.filter((r) => ownRow(r, router, routers)) : [];
+      if (upstream) rows = rows.filter((r) => r.attempts.some((a) => a.upstream === upstream && a.outcome === "failed"));
+      const unread = got.read.unread ? { unread: got.read.unread } : {};
+      return { report: { available: true, rows, ...unread, more: nextBefore !== null, nextBefore, range: read }, head: got.head };
+    });
   }
 }
