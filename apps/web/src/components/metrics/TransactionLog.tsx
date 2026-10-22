@@ -86,29 +86,29 @@ const OUTCOME_ORDER: TxLogRow["outcome"][] = ["accepted", "rejected", "failed-on
 
 /** Every upstream's answer in full, when a row is opened. A rejection is the
  *  answering upstream's own error, so it shows on that upstream's line. */
-/** How a transaction ended, in one or two plain sentences: the top of its breakdown. */
+/** What the client received for a transaction, in one or two plain sentences: the top of a breakdown's response. */
 export function txHeadlineOf(r: TxLogRow): string {
-  const by = r.answeredBy ?? "A provider";
+  const by = r.answeredBy ?? "a provider";
   switch (r.outcome) {
     case "accepted":
-      return `${by} accepted the transaction, and its answer went to the customer.`;
+      return `The client got ${by}'s answer: the transaction was accepted.`;
     case "rejected":
-      return `${by} refused the transaction, and its answer went to the customer.`;
+      return `The client got ${by}'s refusal of the transaction.`;
     case "failed-on-chain":
-      return "The chain ran the transaction, and it failed.";
+      return `The client got ${by}'s answer: the chain ran the transaction, and it failed.`;
     case "failed":
-      return "No provider gave a usable answer, so the router sent its own error to the customer.";
+      return "The client got an error from the router itself: no provider gave a usable answer.";
     case "unknown":
       return r.note ?? WRITE_UNKNOWN_NOTE;
   }
 }
 
-/** Whose error the customer got, by the reply's code: none for an accepted transaction, or a code the table doesn't know. */
+/** Whose error the client got, by the reply's code: none for an accepted transaction, or a code the table doesn't know. */
 export function txSource(r: TxLogRow): ErrorSource | null {
   return r.error ? explainRouterError(r.error.code)?.source ?? null : null;
 }
 
-/** An opened row: the transaction, every provider it went to, and what the customer got, in plain words. */
+/** An opened row: the transaction, every provider it went to, and the response to the client, in plain words. */
 function Details({ row }: { row: TxLogRow }) {
   const replied = row.attempts.find((a) => a.replied);
   const final: FinalAnswer =

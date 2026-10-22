@@ -124,7 +124,7 @@ export function resultBadge(r: ErrorRequestRow): { text: string; from: { label: 
   return { text: RESULT[r.result].label, from: r.resolvedBy && (r.result === "recovered" || r.result === "ok") ? { label: "served by", name: r.resolvedBy } : null };
 }
 
-/** Whose error the customer got, by the router's code: none for an answer, or a code the table doesn't know. */
+/** Whose error the client got, by the router's code: none for an answer, or a code the table doesn't know. */
 export function rowSource(r: ErrorRequestRow): ErrorSource | null {
   if (r.result === "error-reply") {
     const a = r.attempts.find((x) => x.replied);
@@ -161,26 +161,27 @@ function stopWords(r: ErrorRequestRow): string {
   return "";
 }
 
-/** How a request ended, in one or two plain sentences: the top of its breakdown. */
+/** What the client received, in one or two plain sentences: the top of a breakdown's response. A failure
+ *  the router got past is the router's, not the client's: the client only ever saw the answer. */
 export function headlineOf(r: ErrorRequestRow): string {
   const failedAt = [...new Set(r.attempts.filter((a) => a.outcome === "failed").map((a) => a.upstream))];
   switch (r.result) {
     case "ok":
-      return `${r.resolvedBy ?? "A provider"} answered, and nothing failed on the way.`;
+      return `The client got ${r.resolvedBy ?? "a provider"}'s answer. No try failed.`;
     case "recovered":
-      return `${failedAt.length ? `${listWords(failedAt)} failed. ` : ""}The router tried ${r.resolvedBy ?? "another provider"}, which answered, and that answer went to the customer.`;
+      return `The client got ${r.resolvedBy ?? "a provider"}'s answer.${failedAt.length ? ` It never saw the failure: ${listWords(failedAt)} failed first, and the router tried again.` : ""}`;
     case "error-reply":
-      return `${r.resolvedBy ?? "The provider"} answered with an error, and the router passed it to the customer unchanged.${stopWords(r)}`;
+      return `The client got ${r.resolvedBy ?? "the provider"}'s error response, unchanged.${stopWords(r)}`;
     case "failed":
-      return `No provider gave a usable answer, so the router sent its own error to the customer.${stopWords(r)}`;
+      return `The client got an error from the router itself: no provider gave a usable answer.${stopWords(r)}`;
     case "write-unknown":
-      return WRITE_UNKNOWN_NOTE;
+      return `The client got an error from the router. ${WRITE_UNKNOWN_NOTE}`;
     case "unknown":
-      return "The logs show no end for this request. It may still be running, the customer may have disconnected, or log lines are missing. Before smart-router v1.6.1, a router logs its tries and its end only at info level.";
+      return "No response to the client is logged. The request may still be running, the client may have disconnected, or log lines are missing. Before smart-router v1.6.1, a router logs its tries and its end only at info level.";
   }
 }
 
-/** An opened row: the request, every try, and what the customer got, in plain words. */
+/** An opened row: the request, every try, and the response to the client, in plain words. */
 function Details({ row }: { row: ErrorRequestRow }) {
   const replied = row.attempts.find((a) => a.replied);
   const final: FinalAnswer =

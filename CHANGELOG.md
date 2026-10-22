@@ -21,10 +21,11 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   - **Tries:** one box per try at a provider, with its error by name in plain words, whose
     error it is (the request, the chain, a provider, the router, or unclear) and the
     provider's own words.
-  - **What the customer got:** how it ended in plain sentences, what the error means and
-    what to do.
+  - **Response to the client:** what the client received, in plain sentences, then what
+    its error means and what to do. A failure the router got past is not the client's: the
+    client only saw the answer.
 
-  Orange marks the one thing that reached the customer. A transaction whose error may have
+  Orange marks the one thing that reached the client. A transaction whose error may have
   gone through says so. A request for a block newer than the router's latest says it may
   not exist yet. A row's Result column now says whose error it is. The Errors tab no longer
   names the returned error twice, once on its try's chip and once as the Result. A look-up no

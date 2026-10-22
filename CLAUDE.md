@@ -300,7 +300,7 @@ apps/web/                 @sr/web — Next.js 16 App Router (:3000)
                         TransactionLog · TransactionsChart (its bars over
                         time) · request-log (the two log tables'
                         shared chips) · request-breakdown (an opened row:
-                        request, tries, what the customer got, each error
+                        request, tries, response to the client, each error
                         explained from constants/error-codes.ts) · upstream/ (the
                         Upstreams tab: PMRoster · PMBody - errors over time
                         (a bar opens the Errors tab on the requests

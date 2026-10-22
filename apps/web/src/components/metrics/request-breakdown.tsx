@@ -5,10 +5,10 @@
  *
  *   Request                    what was asked, and the facts the router wrote about it
  *   Tries                      one box per try at a provider, in order
- *   What the customer got      the end, in plain words: what happened, what the
- *                              error means, whose it is, what to do
+ *   Response to the client     what the client received, in plain words, then what
+ *                              its error means, whose it is, what to do
  *
- * Orange marks the one thing that reached the customer: the try whose reply
+ * Orange marks the one thing that reached the client: the try whose reply
  * went back, or - when no provider answered - the router's own error. Each
  * error is named by the router's code, in plain words from @sr/shared's
  * table (explainRouterError), with whose error it is beside it; a code the
@@ -73,10 +73,10 @@ function GoneThroughChip() {
   );
 }
 
-/** "Returned to the customer", in orange: the one thing that reached them. */
+/** "Returned to the client", in orange: the one thing that reached it. */
 function ReturnedChip() {
   return (
-    <span style={{ fontSize: 10.5, fontWeight: 700, color: "var(--warn)", whiteSpace: "nowrap" }}>→ Returned to the customer</span>
+    <span style={{ fontSize: 10.5, fontWeight: 700, color: "var(--warn)", whiteSpace: "nowrap" }}>→ Returned to the client</span>
   );
 }
 
@@ -158,7 +158,7 @@ function TryBox({ a, n, together }: { a: RelayAttempt; n: number; together: bool
   );
 }
 
-/** What reached the customer: the try whose reply went back, or the router's own answer. */
+/** What reached the client: the try whose reply went back, or the router's own answer. */
 export type FinalAnswer =
   /** `code`: the reply's own code, where the tab has it and the try doesn't (a transaction's refusal). */
   | { from: "provider"; attempt: RelayAttempt; code?: string | null }
@@ -175,7 +175,7 @@ export interface BreakdownProps {
   facts: CallFacts;
   attempts: RelayAttempt[];
   final: FinalAnswer;
-  /** The end, in one or two plain sentences. */
+  /** What the client received, in one or two plain sentences. */
   headline: string;
   /** A transaction: an error that may have gone through says so. */
   isWrite: boolean;
@@ -231,7 +231,7 @@ export function RequestBreakdown(p: BreakdownProps) {
           : p.attempts.map((a, i) => <TryBox key={i} a={a} n={i + 1} together={together(a)} />)}
       </Part>
 
-      <Part title="What the customer got">
+      <Part title="Response to the client">
         <div style={box(routerAnswered)}>
           {/* A provider's answer carries its error's name in its own orange box above; only the router's own needs it here. */}
           {(routerAnswered || (p.isWrite && entry?.mayHaveGoneThrough)) && (
@@ -239,7 +239,6 @@ export function RequestBreakdown(p: BreakdownProps) {
               {routerAnswered && finalCode && <ErrorChip code={finalCode} entry={entry} />}
               {routerAnswered && entry && <SourceTag source={entry.source} />}
               {p.isWrite && entry?.mayHaveGoneThrough && <GoneThroughChip />}
-              {routerAnswered && <span style={{ fontSize: 11.5, color: "var(--text-3)" }}>from the router</span>}
               <span style={{ flex: 1 }} />
               {routerAnswered && <ReturnedChip />}
             </div>
