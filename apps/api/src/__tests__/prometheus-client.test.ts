@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { PrometheusClient, buildAuthHeaders, type PromLogger } from "../services/prometheus-client.js";
+import { PrometheusClient, RANGE_REUSE_MAX_MS, buildAuthHeaders, type PromLogger } from "../services/prometheus-client.js";
 
 /**
  * Records every fetch the client makes so a test can assert on the exact
@@ -400,5 +400,100 @@ describe("PrometheusClient read coalescing + cache (MAG-4297)", () => {
     await client.query('up{i="0"}');
     await client.query('up{i="4096"}');
     expect(calls).toHaveLength(4098);
+  });
+});
+
+// MAG-4571: range reads now end on a step boundary, so the same chart read
+// asks for the same window until the next one, and its answer is reused for
+// that long rather than for the instant reads' TTL.
+describe("PrometheusClient range-read reuse (MAG-4571)", () => {
+  const T0 = Date.UTC(2026, 9, 22, 12, 0);
+  const fresh = (ttl: number, opts = {}) => new PrometheusClient(BASE, 1000, null, {}, { cacheTtlMs: ttl, ...opts });
+  /** Fake only the clock the cache reads: the fetch stub's own timers stay real. */
+  const at = (ms: number) => vi.setSystemTime(T0 + ms);
+  const answer = (v: string) => Response.json({ status: "success", data: { resultType: "matrix", result: [{ metric: {}, values: [[1, v]] }] } });
+
+  it("is reused for its step, longer than the instant TTL, and read again at the step", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    at(0);
+    const calls = countingFetch();
+    const client = fresh(10_000);
+    await client.queryRange("up", 0, 1800, "15s");
+    await client.query("up");
+    at(14_999);
+    await client.queryRange("up", 0, 1800, "15s");
+    expect(calls).toHaveLength(2);
+    // The instant read keeps its 10 s; the range read is still current.
+    await client.query("up");
+    expect(calls).toHaveLength(3);
+    at(15_000);
+    await client.queryRange("up", 0, 1800, "15s");
+    expect(calls).toHaveLength(4);
+  });
+
+  it("a step past five minutes is reused for five minutes", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    at(0);
+    const calls = countingFetch();
+    const client = fresh(10_000);
+    await client.queryRange("up", 0, 2_592_000, "4h");
+    at(RANGE_REUSE_MAX_MS - 1);
+    await client.queryRange("up", 0, 2_592_000, "4h");
+    expect(calls).toHaveLength(1);
+    at(RANGE_REUSE_MAX_MS);
+    await client.queryRange("up", 0, 2_592_000, "4h");
+    expect(calls).toHaveLength(2);
+  });
+
+  it("never less than the instant TTL, and live with the cache off", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    at(0);
+    const calls = countingFetch();
+    const slow = fresh(30_000);
+    await slow.queryRange("up", 0, 1800, "15s");
+    at(29_999);
+    await slow.queryRange("up", 0, 1800, "15s");
+    expect(calls).toHaveLength(1);
+    // PROMETHEUS_CACHE_TTL_MS=0 keeps range reads live too: the route tests rely on it.
+    const off = fresh(0);
+    await off.queryRange("up", 0, 1800, "15s");
+    await off.queryRange("up", 0, 1800, "15s");
+    expect(await off.queryRangeOrNull("up", 0, 1800, "15s")).not.toBeNull();
+    expect(calls).toHaveLength(4);
+  });
+
+  it("a refused refresh is answered from the last good read for staleMaxMs past its reuse", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    at(0);
+    let n = 0;
+    const calls = countingFetch(() => (n++ === 0 ? answer("7") : new Response("busy", { status: 503 })));
+    const client = fresh(10_000);
+    const first = await client.queryRangeOrNull("up", 0, 2_592_000, "4h");
+    expect(first).toEqual([{ metric: {}, values: [[1, "7"]] }]);
+    // Reused for five minutes; then a refused refresh still gets the answer for a minute more.
+    at(RANGE_REUSE_MAX_MS + 59_999);
+    expect(await client.queryRangeOrNull("up", 0, 2_592_000, "4h")).toEqual(first);
+    at(RANGE_REUSE_MAX_MS + 60_000);
+    expect(await client.queryRangeOrNull("up", 0, 2_592_000, "4h")).toBeNull();
+    expect(calls).toHaveLength(3);
+  });
+
+  it("forgets each answer when its own span ends, wherever it sits in the store", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    at(0);
+    countingFetch();
+    const reads = { inflight: new Map(), remembered: new Map() };
+    const client = fresh(10_000, { reads });
+    const queryOf = (k: string) => new URL(k.split("\n")[1]!).searchParams.get("query");
+    await client.queryRange("long", 0, 2_592_000, "4h"); // kept 5 min + 1 min
+    await client.queryRange("short", 0, 1800, "15s"); // kept 15 s + 1 min
+    await client.query("a"); // kept 1 min
+    at(60_000);
+    await client.query("b");
+    // "a" went although an answer kept longer sits in front of it.
+    expect([...reads.remembered.keys()].map(queryOf)).toEqual(["long", "short", "b"]);
+    at(75_000);
+    await client.query("c");
+    expect([...reads.remembered.keys()].map(queryOf)).toEqual(["long", "b", "c"]);
   });
 });
