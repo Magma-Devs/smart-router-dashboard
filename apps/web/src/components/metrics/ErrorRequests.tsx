@@ -193,7 +193,7 @@ function LookupPanel({ id, rangeQ, rangeWords, onClose }: { id: string; rangeQ: 
       ) : data && !data.available ? (
         <div style={{ color: "var(--text-4)" }}>{unreadableWords(data.reason)}</div>
       ) : !row ? (
-        <NotFound rangeWords={rangeWords} wide={wide} onWiden={() => setWide(true)} />
+        <NotFound id={id} rangeWords={rangeWords} wide={wide} onWiden={() => setWide(true)} />
       ) : (
         <div style={{ display: "grid", gap: 8 }}>
           <MatchesNote matches={data?.matches} />
