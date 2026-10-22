@@ -16,6 +16,28 @@ export interface LogRead<R> {
   range?: { startMs: number; endMs: number };
 }
 
+/** How often a live list reads again. */
+export const LIVE_READ_MS = 30_000;
+/** After a read the logs couldn't answer: the first wait, doubled after each one more, up to the last. */
+const RETRY_FIRST_MS = 60_000;
+const RETRY_LAST_MS = 300_000;
+
+/**
+ * The wait before a list's next read: none when it isn't live; every 30 s;
+ * after `misses` reads in a row the logs couldn't answer, 60 s, then twice
+ * as long each time up to 5 minutes, until one answers.
+ */
+export function nextReadMs(live: boolean, misses: number): number {
+  if (!live) return 0;
+  return misses > 0 ? Math.min(RETRY_LAST_MS, RETRY_FIRST_MS * 2 ** (misses - 1)) : LIVE_READ_MS;
+}
+
+/** Reads in a row the logs couldn't answer, after one more read ended. An API error is SWR's to retry. */
+export function missesAfter(misses: number, ended: { data?: { available: boolean }; error?: unknown }): number {
+  if (ended.error || !ended.data) return misses;
+  return ended.data.available ? 0 : misses + 1;
+}
+
 /** The query with its window pinned to the times the first read covered. */
 function pinned(base: string, range: { startMs: number; endMs: number } | undefined): string {
   if (!range) return base;
@@ -31,26 +53,37 @@ interface Older<T> {
   failed: boolean;
 }
 
+/** Whether a read is running, and how many ended in a row with the logs not answering. */
+const IDLE = { running: false, misses: 0 };
+
 /**
  * A log list read one piece at a time - the Errors tab's requests and the
- * Transactions tab. The first read polls every `refreshMs` (0 = never);
- * "Load older" appends the next. Older reads belong to the query that made
- * them, so a new query starts over, and it shows nothing until its own first
- * read lands. Once an older read is asked for, the list continues from the
- * first read as it was then: another panel polling the same key must not
- * move the seam between them. A row on the seam comes back in both reads and
- * is kept once, by GUID.
+ * Transactions tab. A `live` list reads its first piece again every 30 s,
+ * less often while the logs don't answer (`nextReadMs`); "Load older"
+ * appends the next. Older reads belong to the query that made them, so a new
+ * query starts over, and it shows nothing until its own first read lands.
+ * Once an older read is asked for, the list continues from the first read as
+ * it was then and stops reading it again: another panel polling the same key
+ * must not move the seam between them. A row on the seam comes back in both
+ * reads and is kept once, by GUID.
  */
-export function useLogReads<R extends { guid: string }, T extends LogRead<R>>(base: string, refreshMs = 15000) {
+export function useLogReads<R extends { guid: string }, T extends LogRead<R>>(base: string, live: boolean) {
   const [older, setOlder] = useState<Older<T> | null>(null);
+  const [polls, setPolls] = useState(IDLE);
   // A new query drops the last one's older reads, so coming back to it starts fresh.
   const [readsFor, setReadsFor] = useState(base);
-  if (readsFor !== base) {
+  const fresh = readsFor !== base;
+  if (fresh) {
     setReadsFor(base);
     setOlder(null);
+    setPolls(IDLE);
   }
   const mine = older?.key === base ? older : null;
-  const first = useApi<T>(base, mine ? 0 : refreshMs, { keepPreviousData: false });
+  const first = useApi<T>(base, mine ? 0 : nextReadMs(live, polls.misses), { keepPreviousData: false });
+  // Each read that ends is counted once: a failure's answer can equal the last one's.
+  if (!fresh && first.isValidating !== polls.running) {
+    setPolls({ running: first.isValidating, misses: polls.running ? missesAfter(polls.misses, first) : polls.misses });
+  }
   const head = mine ? mine.head : (first.data ?? null);
   const reads = mine?.reads;
   const last = reads?.[reads.length - 1] ?? head;
@@ -87,3 +120,6 @@ export function useLogReads<R extends { guid: string }, T extends LogRead<R>>(ba
 
   return { first, head, rows, unread, refreshing, more: last?.more ?? false, loadOlder, loadingOlder: mine?.loading ?? false, olderFailed: mine?.failed ?? false };
 }
+
+/** What a list hook gives its table: the reads on screen and how to read on. */
+export type LogReads<R extends { guid: string }, T extends LogRead<R>> = ReturnType<typeof useLogReads<R, T>>;

@@ -12,11 +12,11 @@
  * requests (ErrorsJump). */
 
 import { useState } from "react";
-import type { ErrorRequestsReport, ErrorsReport, MetricWindow, RetriesReport } from "@sr/shared";
+import type { ErrorsReport, MetricWindow, RetriesReport } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { fmtComma, fmtNum, fmtPct } from "@/lib/format";
 import { TT } from "@/lib/tooltips";
-import { ALL, ErrorRequests } from "./ErrorRequests";
+import { ALL, ErrorRequests, useErrorList } from "./ErrorRequests";
 import { useFilters } from "@/components/gateway/FiltersProvider";
 import { useRouterFilter } from "@/hooks/use-router-options";
 import { SkelLine, SkelValue } from "@/components/gateway/Skel";
@@ -38,6 +38,9 @@ export function ErrorsBreakdown({ chainFilter, win, focus = null }: {
   focus?: ErrorsJump | null;
 }) {
   const [upstream, setUpstream] = useState(focus?.upstream ?? ALL);
+  const initialRange = focus ? { from: focus.from, to: focus.to } : null;
+  // The request list's reads, held here: the "Still failed" card counts its rows.
+  const list = useErrorList({ chainFilter, win, upstream, initialRange });
 
   const specQ = chainFilter ? `&spec=${encodeURIComponent(chainFilter)}` : "";
   const { scopeQ } = useFilters();
@@ -48,9 +51,6 @@ export function ErrorsBreakdown({ chainFilter, win, focus = null }: {
   const { data, isLoading } = useApi<ErrorsReport>(`/api/metrics/errors?window=${win}${specQ}${routerIdQ}${scopeQ}`);
   // Once a minute: each read counts retries back to their counters' births.
   const counts = useApi<RetriesReport>(`/api/metrics/retries?window=${win}${specQ}${scopeQ}`, 60_000);
-  // The page window's request list - the same read the list below makes
-  // until someone picks exact times, so it costs nothing twice.
-  const logs = useApi<ErrorRequestsReport>(`/api/error-requests?window=${win}${specQ}${routerIdQ}`);
 
   const failing = (data?.hotspots ?? []).filter((h) => h.errors > 0);
   const total = data?.total ?? 0;
@@ -59,11 +59,13 @@ export function ErrorsBreakdown({ chainFilter, win, focus = null }: {
   const emitted = c?.emitted ?? false;
   // The router counts a retry only once two tries have come back, so a
   // request it couldn't retry (no upstream left, a try that never answered)
-  // is only in the logs. When they show more, the card says so.
+  // is only in the logs. When the list below shows more, the card says so -
+  // while the list covers the cards' window: the rows it has loaded.
   // Only the ones it meant to retry: a transaction is never retried by design.
-  const logFailed = (logs.data?.rows ?? []).filter((r) => r.result === "failed" && (r.retried || r.exhausted)).length;
-  const failedNote = logs.data?.available && logFailed > (c?.failed ?? 0)
-    ? <span style={{ color: "var(--warn)" }}>{fmtComma(logFailed - (c?.failed ?? 0))}{logs.data.more ? "+" : ""} more in the list below that the retry counter misses: only one attempt returned</span>
+  const logs = list.range === null && list.log.head?.available ? list.log : null;
+  const logFailed = (logs?.rows ?? []).filter((r) => r.result === "failed" && (r.retried || r.exhausted)).length;
+  const failedNote = logs && logFailed > (c?.failed ?? 0)
+    ? <span style={{ color: "var(--warn)" }}>{fmtComma(logFailed - (c?.failed ?? 0))}{logs.more ? "+" : ""} more in the list below that the retry counter misses: only one attempt returned</span>
     : null;
   const kpis: { label: string; tipKey: string; value: string; color: string; sub: React.ReactNode; loading: boolean }[] = [
     { label: "Failed attempts", tipKey: "failedTries", value: fmtComma(total), color: total ? "var(--text)" : "var(--ok)", loading: isLoading,
@@ -97,7 +99,7 @@ export function ErrorsBreakdown({ chainFilter, win, focus = null }: {
       </div>
 
       <ErrorRequests chainFilter={chainFilter} win={win} upstream={upstream} onUpstream={setUpstream}
-        initialRange={focus ? { from: focus.from, to: focus.to } : null} />
+        initialRange={initialRange} list={list} />
     </div>
   );
 }
