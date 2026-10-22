@@ -1070,7 +1070,8 @@ Compose / Makefile knobs:
   `.github/workflows/build-and-push.yml` publishes the api as
   `ghcr.io/magma-devs/smart-router-dashboard/backend` and the web as
   `…/frontend` (tags: `VERSION`, `major.minor`, `latest` on main; other
-  branches get a `-<branch>` suffix). Each image is pushed by digest and
+  branches get a `-<branch>` suffix, with any character a tag can't hold,
+  `/` among them, replaced by `-`). Each image is pushed by digest and
   tagged only after `smoke-arm64` boots it (the `publish` job); on main,
   `tag-release` then cuts the git tag and points `latest` and `major.minor`
   at the highest `v*` release tag, so overlapping main runs cannot move

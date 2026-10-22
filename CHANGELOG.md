@@ -20,6 +20,16 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   reached. New route `GET /api/metrics/upstream-mix`: one range read, the
   per-upstream read the Overview already makes, scoped to the chain.
 
+### Fixed
+
+- **A branch whose name has a `/` gets its images tagged.** The branch
+  suffix on the image tags was the raw branch name, so `feat/x` made
+  `<version>-feat/x`, which is not a valid reference: the `publish` job failed
+  after both arm64 smokes had passed, and the branch's images were left
+  untagged. Any character a tag can't hold now becomes `-` (`<version>-feat-x`),
+  the way the branch's layer-cache tag already did; the suffix is cut at 100
+  characters. Branch names that were already valid tags keep the same tags.
+
 ## [0.47.1]
 
 ### Changed
