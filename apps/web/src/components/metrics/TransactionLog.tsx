@@ -149,7 +149,7 @@ function TxLookupPanel({ id, rangeQ, rangeWords, onClose }: { id: string; rangeQ
       ) : data?.found && !row ? (
         <div style={{ color: "var(--text-4)" }}>This request is in the router&apos;s logs, but it isn&apos;t a transaction - look it up on the Errors tab.</div>
       ) : !row ? (
-        <NotFound rangeWords={rangeWords} wide={wide} onWiden={() => setWide(true)} />
+        <NotFound id={id} rangeWords={rangeWords} wide={wide} onWiden={() => setWide(true)} />
       ) : (
         <div style={{ display: "grid", gap: 8 }}>
           <MatchesNote matches={data?.matches} />

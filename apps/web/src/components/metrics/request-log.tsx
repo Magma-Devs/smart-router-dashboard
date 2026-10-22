@@ -10,7 +10,7 @@
  * classify shows the node's own words - there is no "unknown error" here. */
 
 import { Fragment, useState } from "react";
-import { buildChainMetaByIndex, explorerTxUrl, type CallFacts, type LogUnavailable, type RelayAttempt } from "@sr/shared";
+import { buildChainMetaByIndex, explorerTxUrl, guidMintedSecond, type CallFacts, type LogUnavailable, type RelayAttempt } from "@sr/shared";
 import { SkelRows, type SkelCol } from "@/components/gateway/Skel";
 import { CopyButton } from "@/components/gateway/CopyButton";
 import { useGrafanaUrl } from "@/hooks/use-grafana-url";
@@ -479,12 +479,20 @@ export function MatchesNote({ matches }: { matches?: number }) {
   return <div style={{ fontSize: 11.5, color: "var(--text-4)" }}>{fmtComma(matches)} requests carry this value in the range read; this is the newest.</div>;
 }
 
-/** A look-up that found nothing in the range it read - the month is one click, never the default: it reads every line in it. */
-export function NotFound({ rangeWords, wide, onWiden }: { rangeWords: string; wide: boolean; onWiden: () => void }) {
+/**
+ * A look-up that found nothing in the range it read - the month is one click,
+ * never the default: it reads every line in it. An ID from smart-router
+ * v1.6.1 on carries the second it was minted, and the look-up has read the
+ * logs around it already, so it gets no month.
+ */
+export function NotFound({ id, rangeWords, wide, onWiden }: { id: string; rangeWords: string; wide: boolean; onWiden: () => void }) {
+  const [minted] = useState(() => guidMintedSecond(id, Date.now() / 1000));
   return (
     <div style={{ color: "var(--text-4)", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
       No request with this ID or hash in the router&apos;s logs {wide ? "of the last 30 days" : rangeWords}.
-      {!wide && (
+      {minted !== null ? (
+        <span>Its ID dates it to {fmtWhen(minted * 1000)}, and the logs around then don&apos;t have it either.</span>
+      ) : !wide && (
         <button onClick={onWiden} style={{ border: "none", background: "none", color: "var(--brand)", cursor: "pointer", padding: 0, fontSize: 12, fontWeight: 600, fontFamily: "inherit" }}>
           Search the last 30 days
         </button>
