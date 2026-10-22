@@ -21,10 +21,12 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   hour** (MAG-4573). A tab left open on a screen nobody touched re-read
   every panel for as long as it stayed open. Now ten minutes with no
   pointer, key, wheel, touch or focus on the page make every poll four
-  times slower, and an hour stops them, with "Polling paused · move the
-  mouse to resume" beside the Refresh button. The first activity after
-  either re-reads every polling panel once, keeping the numbers on screen
-  while they reload, and resumes the normal pace. A hidden tab still polls
+  times slower, and an hour stops them: the Refresh icon turns amber, with a
+  "Paused" pill beside it wherever the header has room for the whole word,
+  its tooltip saying why and how to resume. The first activity after either
+  re-reads every polling panel once, keeping the numbers on screen while
+  they reload, and resumes the normal pace. The standalone page, made for
+  shared and wall screens, never slows or pauses. A hidden tab still polls
   nothing.
 
 ## [0.46.1]

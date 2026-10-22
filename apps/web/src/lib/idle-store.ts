@@ -1,13 +1,14 @@
 import { mutate } from "swr";
-import { idlePhase, idleStart, msToNextPhase, onActivity, onPhaseTimer, type IdlePhase, type IdleState } from "./poll";
+import { idleGateApplies, idlePhase, idleStart, msToNextPhase, onActivity, onPhaseTimer, type IdlePhase, type IdleState } from "./poll";
 
 /* The idle gate's clock: when someone last did something on the page, held
  * against the rules in poll.ts. Module-level, so SWR's `isPaused` and every
  * poll's interval read it without a render. It watches the page only while
- * something subscribes - every `useApi` does - and starts its clock there. */
+ * something subscribes - every `useApi` does - and starts its clock there.
+ * An exempt page (`idleGateApplies`) always reads as active. */
 
 /** What counts as someone at the page. A tab coming back into view does; one going away doesn't. */
-export const ACTIVITY_EVENTS = ["pointermove", "pointerdown", "keydown", "wheel", "touchstart", "focus", "visibilitychange"] as const;
+export const ACTIVITY_EVENTS = ["pointermove", "pointerdown", "keydown", "wheel", "touchstart", "focus", "visibilitychange", "popstate"] as const;
 
 export interface IdleEnv {
   /** Where the events land: the window, listened to in the capture phase. */
@@ -16,13 +17,15 @@ export interface IdleEnv {
   visible: () => boolean;
   /** Re-reads these keys now. */
   refresh: (keys: ReadonlySet<string>) => void;
+  /** Whether the page showing is one the gate leaves alone. */
+  exempt: () => boolean;
 }
 
 export interface IdleStore {
   subscribe(listener: () => void): () => void;
-  /** The phase last announced: what the paused pill draws. Active while nothing watches the page. */
+  /** The phase last announced: what the paused pill draws. Active while nothing watches the page, and on an exempt one. */
   phase(): IdlePhase;
-  /** The phase by the clock: what the polls obey. Active while nothing watches the page. */
+  /** The phase by the clock: what the polls obey. Active while nothing watches the page, and on an exempt one. */
   phaseNow(): IdlePhase;
   /** Returns from idle so far. */
   resumes(): number;
@@ -40,6 +43,7 @@ export function createIdleStore(env: IdleEnv): IdleStore {
   const emit = () => {
     for (const l of listeners) l();
   };
+  const gated = () => listeners.size > 0 && !env.exempt();
 
   // One timer, set for the next phase boundary. Activity doesn't move it: it
   // fires, reads the clock, and sets itself again.
@@ -66,6 +70,8 @@ export function createIdleStore(env: IdleEnv): IdleStore {
     state = next;
     if (!resumed) return;
     arm();
+    // An exempt page never slowed: its clock moves on, nothing else does.
+    if (env.exempt()) return;
     emit();
     env.refresh(new Set(polls.keys()));
   }
@@ -87,8 +93,8 @@ export function createIdleStore(env: IdleEnv): IdleStore {
         timer = undefined;
       };
     },
-    phase: () => (listeners.size === 0 ? "active" : state.phase),
-    phaseNow: () => (listeners.size === 0 ? "active" : idlePhase(Date.now() - state.lastActivityAt)),
+    phase: () => (gated() ? state.phase : "active"),
+    phaseNow: () => (gated() ? idlePhase(Date.now() - state.lastActivityAt) : "active"),
     resumes: () => state.resumes,
     watchPoll(key) {
       polls.set(key, (polls.get(key) ?? 0) + 1);
@@ -112,6 +118,7 @@ function idle(): IdleStore {
     // stay on screen while they reload; and only keys that poll, never a
     // one-off look-up (a 30-day request search scans every log line in it).
     refresh: (keys) => void mutate((key) => typeof key === "string" && keys.has(key)),
+    exempt: () => !idleGateApplies(window.location.pathname),
   });
   return store;
 }

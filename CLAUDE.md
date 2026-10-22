@@ -778,18 +778,24 @@ caller's interval.
 
 **The idle gate** (`lib/idle-store.ts`; its rules are pure functions in
 `lib/poll.ts`) holds every `useApi` poll to whether someone is at the page:
-a pointer move or press, a key, the wheel, a touch, focus, or the tab coming
-back into view. Ten minutes with none of these make every interval four
-times longer; an hour pauses every poll through SWR's `isPaused`, so nothing
-revalidates, a `mutate()` included, and a "Polling paused · move the mouse to
-resume" pill sits beside the Refresh button. The first activity after either
-re-reads every key that polls, once (a global SWR `mutate` that leaves the
-numbers on screen while they reload, never a look-up, which doesn't poll),
-and re-arms each poll's timer at its normal cadence. The phases run on the
-wall clock, so a laptop that slept through the hour wakes up paused instead
-of polling first. A hidden tab doesn't poll at all (SWR's default). The Team
-page's member list and the Account page's sessions call `useSWR` directly,
-outside the gate.
+a pointer move or press, a key, the wheel, a touch, focus, Back or Forward,
+or the tab coming back into view. Ten minutes with none of these make every
+interval four times longer; an hour pauses every poll through SWR's
+`isPaused`, so nothing revalidates, a `mutate()` included. While paused, the
+Refresh icon turns amber and a "● Paused" pill sits beside it wherever the
+header has room for the whole word; its tooltip and screen-reader text say
+"Polling paused after an hour without activity · move the mouse to resume".
+The pill is never cut: it takes only the header's free space, and where the
+word doesn't fit (the 0.27 Upstreams header at 1280 px) it isn't drawn and
+the amber icon says it alone. The first activity after either phase re-reads
+every key that polls, once (a global SWR `mutate` that leaves the numbers on
+screen while they reload, never a look-up, which doesn't poll), and re-arms
+each poll's timer at its normal cadence. The phases run on the wall clock,
+so a laptop that slept through the hour wakes up paused instead of polling
+first. A hidden tab doesn't poll at all (SWR's default). **The standalone
+page is exempt** (`idleGateApplies`): it is for shared and wall screens that
+nobody touches, so it never slows or pauses. The Team page's member list and
+the Account page's sessions call `useSWR` directly, outside the gate.
 
 ## API endpoints
 

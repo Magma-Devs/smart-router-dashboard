@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { stepSeconds, WINDOWS, type MetricWindow } from "@sr/shared";
 import {
-  ACTIVITY_THROTTLE_MS, gatedPollMs, IDLE_PAUSE_AFTER_MS, IDLE_SLOW_AFTER_MS, idlePhase, idleStart, msToNextPhase,
+  ACTIVITY_THROTTLE_MS, gatedPollMs, IDLE_PAUSE_AFTER_MS, IDLE_SLOW_AFTER_MS, idleGateApplies, idlePhase, idleStart, msToNextPhase,
   onActivity, onPhaseTimer, pollMsFor, pollMsForKey,
 } from "../poll";
 
@@ -137,5 +137,19 @@ describe("the idle gate", () => {
   it("re-anchors on a clock that went backwards rather than never slowing", () => {
     const s = idleStart(T0);
     expect(onActivity(s, T0 - 5 * MIN).lastActivityAt).toBe(T0 - 5 * MIN);
+  });
+});
+
+describe("idleGateApplies", () => {
+  it("leaves the standalone page alone: it is for screens nobody touches", () => {
+    expect(idleGateApplies("/standalone")).toBe(false);
+    expect(idleGateApplies("/standalone/")).toBe(false);
+    expect(idleGateApplies("/standalone/anything")).toBe(false);
+  });
+
+  it("holds every other page, including one whose name only starts the same", () => {
+    for (const path of ["/", "/metrics", "/overview", "/upstreams", "/team", "/account", "/standalones", "/metrics/standalone"]) {
+      expect(idleGateApplies(path)).toBe(true);
+    }
   });
 });
