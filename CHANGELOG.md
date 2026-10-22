@@ -21,6 +21,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   reads again when it closes.
 - **Log rows carry their date.** Today's rows showed a time alone, so a list
   that spans midnight couldn't say which day a row was on.
+- **A log row's chain icon sits on the chain's line**, not halfway down a cell
+  that also holds the method and the transaction hash.
 
 ## [0.47.1]
 

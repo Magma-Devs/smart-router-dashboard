@@ -370,8 +370,9 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
                         <CustomerCell customer={r.customer} />
                       </td>
                       <td style={{ maxWidth: 0, verticalAlign: "top" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-                          {r.spec && <ChainBadge spec={r.spec} size={16} />}
+                        {/* The icon sits on the chain's line, not halfway down the cell. */}
+                        <div style={{ display: "flex", alignItems: "flex-start", gap: 8, minWidth: 0 }}>
+                          {r.spec && <span style={{ display: "flex", flexShrink: 0, marginTop: 1 }}><ChainBadge spec={r.spec} size={16} /></span>}
                           <div style={{ minWidth: 0 }}>
                             <div style={{ fontSize: 12 }}>{chainWords(r)}</div>
                             {r.method === "unknown"
