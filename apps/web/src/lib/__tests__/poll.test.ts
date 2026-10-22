@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { stepSeconds, WINDOWS, type MetricWindow } from "@sr/shared";
-import { pollMsFor, pollMsForKey } from "../poll";
+import {
+  ACTIVITY_THROTTLE_MS, gatedPollMs, IDLE_PAUSE_AFTER_MS, IDLE_SLOW_AFTER_MS, idlePhase, idleStart, msToNextPhase,
+  onActivity, onPhaseTimer, pollMsFor, pollMsForKey,
+} from "../poll";
 
 const S = 1_000;
 const MIN = 60_000;
@@ -65,5 +68,74 @@ describe("pollMsForKey", () => {
     expect(pollMsForKey("/api/transactions/over-time?window=30d", 15 * S)).toBe(15 * S);
     expect(pollMsForKey("/api/requests/abc?window=30d", 0)).toBe(0);
     expect(pollMsForKey("/api/config/routers", MIN)).toBe(MIN);
+  });
+});
+
+describe("the idle gate", () => {
+  const T0 = 1_700_000_000_000;
+
+  it("slows after 10 minutes without activity and pauses after an hour", () => {
+    expect(idlePhase(0)).toBe("active");
+    expect(idlePhase(IDLE_SLOW_AFTER_MS - 1)).toBe("active");
+    expect(idlePhase(IDLE_SLOW_AFTER_MS)).toBe("slow");
+    expect(idlePhase(IDLE_PAUSE_AFTER_MS - 1)).toBe("slow");
+    expect(idlePhase(IDLE_PAUSE_AFTER_MS)).toBe("paused");
+    expect([IDLE_SLOW_AFTER_MS, IDLE_PAUSE_AFTER_MS]).toEqual([10 * MIN, 60 * MIN]);
+  });
+
+  it("says when the phase next moves on its own, and nothing once paused", () => {
+    expect(msToNextPhase(0)).toBe(10 * MIN);
+    expect(msToNextPhase(3 * MIN)).toBe(7 * MIN);
+    expect(msToNextPhase(10 * MIN)).toBe(50 * MIN);
+    expect(msToNextPhase(60 * MIN)).toBeNull();
+  });
+
+  it("multiplies an interval by 4 once idle and never makes 0 poll", () => {
+    expect(gatedPollMs(15 * S, "active")).toBe(15 * S);
+    expect(gatedPollMs(15 * S, "slow")).toBe(MIN);
+    expect(gatedPollMs(15 * MIN, "slow")).toBe(60 * MIN);
+    // Paused ticks are SWR no-ops (`isPaused`); the timer keeps the slowed pace.
+    expect(gatedPollMs(15 * S, "paused")).toBe(MIN);
+    for (const phase of ["active", "slow", "paused"] as const) expect(gatedPollMs(0, phase)).toBe(0);
+  });
+
+  it("counts activity at most once a throttle interval while active", () => {
+    const s = idleStart(T0);
+    expect(onActivity(s, T0 + ACTIVITY_THROTTLE_MS - 1)).toBe(s);
+    const later = onActivity(s, T0 + ACTIVITY_THROTTLE_MS);
+    expect(later).toEqual({ lastActivityAt: T0 + ACTIVITY_THROTTLE_MS, phase: "active", resumes: 0 });
+  });
+
+  it("walks active, slow, paused, and back on the first activity", () => {
+    let s = idleStart(T0);
+    expect(onPhaseTimer(s, T0 + 5 * MIN)).toBe(s);
+    s = onPhaseTimer(s, T0 + 10 * MIN);
+    expect(s.phase).toBe("slow");
+    expect(onPhaseTimer(s, T0 + 30 * MIN)).toBe(s);
+    s = onPhaseTimer(s, T0 + 60 * MIN);
+    expect(s.phase).toBe("paused");
+    s = onActivity(s, T0 + 90 * MIN);
+    expect(s).toEqual({ lastActivityAt: T0 + 90 * MIN, phase: "active", resumes: 1 });
+  });
+
+  it("resumes from a slowdown too, not only from a pause", () => {
+    const slow = onPhaseTimer(idleStart(T0, 2), T0 + 20 * MIN);
+    expect(onActivity(slow, T0 + 20 * MIN + 1)).toEqual(idleStart(T0 + 20 * MIN + 1, 3));
+  });
+
+  it("resumes by the clock when the phase timer is late (a laptop waking up)", () => {
+    const s = idleStart(T0);
+    expect(onActivity(s, T0 + 2 * 60 * MIN).resumes).toBe(1);
+  });
+
+  it("keeps a timer that fires after activity from slowing anything", () => {
+    const s = onActivity(idleStart(T0), T0 + 8 * MIN);
+    expect(onPhaseTimer(s, T0 + 10 * MIN)).toBe(s);
+    expect(msToNextPhase(T0 + 10 * MIN - s.lastActivityAt)).toBe(8 * MIN);
+  });
+
+  it("re-anchors on a clock that went backwards rather than never slowing", () => {
+    const s = idleStart(T0);
+    expect(onActivity(s, T0 - 5 * MIN).lastActivityAt).toBe(T0 - 5 * MIN);
   });
 });
