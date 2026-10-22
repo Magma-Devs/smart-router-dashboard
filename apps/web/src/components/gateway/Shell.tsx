@@ -2,14 +2,14 @@
 
 import { usePathname } from "next/navigation";
 import Link from "next/link";
-import { useEffect, useRef, useState, useSyncExternalStore, type ComponentType } from "react";
+import { useEffect, useState, useSyncExternalStore, type ComponentType } from "react";
 import { signOut } from "next-auth/react";
 import { buildChainMetaByIndex } from "@sr/shared";
 import { NAV_SECTIONS, visibleNavSections } from "./nav";
 import { useAuthMode } from "./auth-mode";
 import { useNewUi } from "./new-ui";
 import { CHAIN_DRAWER_PATH, ChainDrawer, ChainDrawerProvider, useChainDrawer } from "./ChainDrawer";
-import { IconMoon, IconSun, type IconProps } from "./icons";
+import { IconMenuCollapse, IconMenuExpand, IconMoon, IconSun, type IconProps } from "./icons";
 import { useFilters } from "@/components/gateway/FiltersProvider";
 import { DeploymentHealthBadge, useDeploymentPulse } from "./DeploymentHealth";
 import { fmtNum } from "@/lib/format";
@@ -46,30 +46,23 @@ export function ThemeToggle() {
 function Sidebar({ grafanaDashboardUrl }: { grafanaDashboardUrl?: string | null }) {
   const pathname = usePathname();
   const sections = visibleNavSections(useAuthMode(), grafanaDashboardUrl);
-  const { visible: drawerOpen, covering, setCovering } = useChainDrawer();
+  const { visible: drawerOpen, menuCollapsed: compact, setMenuCollapsed } = useChainDrawer();
   const { setChain, setRouterId, setRouter } = useFilters();
   // Home or Metrics while on Metrics: back to every chain, as the drawer's
-  // first row does, with the drawer over the menu again. Navigating would
-  // land on the same page with the chain kept.
+  // first row does, with the menu folded again. Navigating would land on the
+  // same page with the chain kept.
   const toAllChains = drawerOpen ? (e: React.MouseEvent) => {
     if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     e.preventDefault();
     setRouterId(null);
     setRouter(null);
     setChain(null);
-    setCovering(true);
+    setMenuCollapsed(true);
   } : undefined;
-  // The drawer's menu button hid it: focus lands on Metrics, the way back.
-  const metricsLink = useRef<HTMLAnchorElement>(null);
-  const wasCovered = useRef(covering);
-  useEffect(() => {
-    if (drawerOpen && wasCovered.current && !covering) metricsLink.current?.focus({ preventScroll: true });
-    wasCovered.current = covering;
-  }, [drawerOpen, covering]);
   return (
-    // Under the chains drawer while it covers the menu: out of reach of the
-    // keyboard and screen readers, as it is out of sight.
-    <aside className="gw-side" inert={covering}>
+    // Beside the chains drawer the menu folds to its icons, each naming itself
+    // on hover, so the page doesn't carry two lists side by side.
+    <aside className={`gw-side${compact ? " gw-side--compact" : ""}`}>
       {/* The brand is the way home, as it is on every product: `/` redirects to
           whatever the default surface is (Metrics), so home stays defined in one
           place rather than being restated here. */}
@@ -78,6 +71,7 @@ function Sidebar({ grafanaDashboardUrl }: { grafanaDashboardUrl?: string | null 
         className="gw-side__brand"
         style={{ textDecoration: "none", color: "inherit" }}
         onClick={toAllChains}
+        title={compact ? "Smart Router" : undefined}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
@@ -93,6 +87,21 @@ function Sidebar({ grafanaDashboardUrl }: { grafanaDashboardUrl?: string | null 
         </div>
       </Link>
       <nav className="gw-side__nav">
+        {drawerOpen && (
+          <button
+            type="button"
+            className="gw-nav-item gw-side__toggle"
+            onClick={() => setMenuCollapsed(!compact)}
+            aria-label={compact ? "Expand menu" : "Collapse menu"}
+            aria-expanded={!compact}
+            title={compact ? "Expand menu" : undefined}
+          >
+            {compact
+              ? <IconMenuExpand size={16} className="ic" strokeWidth={1.75} />
+              : <IconMenuCollapse size={16} className="ic" strokeWidth={1.75} />}
+            <span>Collapse menu</span>
+          </button>
+        )}
         {sections.map((section, i) => (
           <div key={i}>
             {section.label && <div className="gw-side__section-label">{section.label}</div>}
@@ -107,6 +116,7 @@ function Sidebar({ grafanaDashboardUrl }: { grafanaDashboardUrl?: string | null 
                     target="_blank"
                     rel="noopener noreferrer"
                     aria-label={`${item.label} (opens in a new tab)`}
+                    title={compact ? item.label : undefined}
                   >
                     <Icon size={16} className="ic" strokeWidth={1.75} />
                     <span>{item.label}</span>
@@ -117,10 +127,12 @@ function Sidebar({ grafanaDashboardUrl }: { grafanaDashboardUrl?: string | null 
               return (
                 <Link
                   key={item.href}
-                  ref={item.href === CHAIN_DRAWER_PATH ? metricsLink : undefined}
                   href={item.href}
                   className={`gw-nav-item${active ? " active" : ""}`}
                   onClick={item.href === CHAIN_DRAWER_PATH ? toAllChains : undefined}
+                  // The label is hidden while folded, and a hidden label names nothing.
+                  aria-label={compact ? item.label : undefined}
+                  title={compact ? item.label : undefined}
                 >
                   <Icon
                     size={16}
@@ -295,11 +307,8 @@ export function Shell({ children, grafanaDashboardUrl, incidentsEnabled = false 
     <TwoFactorGate>
       <ChainDrawerProvider>
         <div className="gw-app">
-          {/* One column on the left: the menu, and on Metrics the chains drawer over it. */}
-          <div className="gw-rail">
-            <Sidebar grafanaDashboardUrl={grafanaDashboardUrl} />
-            <ChainDrawerSlot />
-          </div>
+          <Sidebar grafanaDashboardUrl={grafanaDashboardUrl} />
+          <ChainDrawerSlot />
           <div className="gw-main">
             <Topbar here={here} sub={sub} incidentsEnabled={incidentsEnabled} />
             <div className="fade-in" key={pathname}>

@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useContext, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import { buildChainMetaByIndex, WINDOWS, type ChainMetrics, type HeroSummary } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
@@ -9,16 +9,16 @@ import { useRouterFilter, useRouterOptions, type RouterOptionRow } from "@/hooks
 import { useFilters } from "./FiltersProvider";
 import { useNewUi } from "./new-ui";
 import { ChainBadge } from "./ChainBadge";
-import { IconMenu, IconSearch } from "./icons";
+import { IconSearch } from "./icons";
 import { HEALTH_COLOR, HEALTH_LABEL, HEALTH_UNKNOWN_HINT } from "@/lib/health";
 import { errRateColor } from "@/lib/colors";
 import { fmtNum } from "@/lib/format";
 import { byAttention, chainHref, type DrawerChain } from "@/lib/chain-drawer";
 
-/* The chains drawer: on the Metrics page it is drawn over the sidebar, in the
- * same column, so the screen never shows two lists side by side. Its menu
- * button shows the menu again; the menu's Metrics brings the drawer back. One
- * row per chain with its health, requests and error rate, problems first.
+/* The chains drawer: a second column beside the sidebar on the Metrics page,
+ * which folds the sidebar to its icons so the page doesn't carry two lists
+ * side by side (the sidebar's "Expand menu" opens it again, for that visit).
+ * One row per chain with its health, requests and error rate, problems first.
  * Picking a row IS the page's chain filter (`useChainFilter`), so every tab
  * follows it, and the page writes it into its URL (`useScopeInUrl`). A chain
  * that two or more routers serve lists them under it once picked - the only
@@ -32,15 +32,13 @@ export interface ChainDrawerState {
   /** On its page, inside the Shell, under DASHBOARD_NEW_UI (then the page
    *  drops its chain and router dropdowns); the standalone page has no drawer. */
   visible: boolean;
-  /** Drawn over the menu. False while the menu shows, and off its page. */
-  covering: boolean;
-  /** The Shell was already on screen, so a drawer arriving now slides in. */
-  settled: boolean;
-  setCovering: (covering: boolean) => void;
+  /** The sidebar is folded to its icons beside the drawer. Always false off its page. */
+  menuCollapsed: boolean;
+  setMenuCollapsed: (collapsed: boolean) => void;
 }
 
 const ChainDrawerContext = createContext<ChainDrawerState>({
-  visible: false, covering: false, settled: false, setCovering: () => {},
+  visible: false, menuCollapsed: false, setMenuCollapsed: () => {},
 });
 
 export function ChainDrawerProvider({ children }: { children: React.ReactNode }) {
@@ -48,23 +46,16 @@ export function ChainDrawerProvider({ children }: { children: React.ReactNode })
   // Without the flag the page is 0.27's, which picks its chain from a dropdown.
   const newUi = useNewUi();
   const onPage = newUi && (pathname === CHAIN_DRAWER_PATH || pathname.startsWith(`${CHAIN_DRAWER_PATH}/`));
-  // Over the menu each time the page is reached, whatever it was when you left.
-  const [covering, setCovering] = useState(true);
+  // Folded each time the page is reached; opening it lasts for that visit.
+  const [collapsed, setCollapsed] = useState(true);
   const [wasOnPage, setWasOnPage] = useState(onPage);
   if (wasOnPage !== onPage) {
     setWasOnPage(onPage);
-    if (onPage) setCovering(true);
+    if (onPage) setCollapsed(true);
   }
-  // A page that loads on Metrics has the drawer in place from its first frame;
-  // only one reached by a later navigation slides in.
-  const [settled, setSettled] = useState(false);
-  useEffect(() => {
-    const frame = requestAnimationFrame(() => setSettled(true));
-    return () => cancelAnimationFrame(frame);
-  }, []);
   const value = useMemo(
-    () => ({ visible: onPage, covering: onPage && covering, settled, setCovering }),
-    [onPage, covering, settled],
+    () => ({ visible: onPage, menuCollapsed: onPage && collapsed, setMenuCollapsed: setCollapsed }),
+    [onPage, collapsed],
   );
   return <ChainDrawerContext.Provider value={value}>{children}</ChainDrawerContext.Provider>;
 }
@@ -74,17 +65,6 @@ export function useChainDrawer(): ChainDrawerState {
 }
 
 export function ChainDrawer() {
-  const { covering, settled, setCovering } = useChainDrawer();
-  // Decided once, when the drawer appears: a later change is a transition.
-  const [enter] = useState(settled);
-  // Focus goes with the panel on screen: to the menu button when the drawer
-  // comes over the menu (the Metrics link just used is under it now).
-  const menu = useRef<HTMLButtonElement>(null);
-  const wasCovering = useRef(enter ? false : covering);
-  useEffect(() => {
-    if (covering && !wasCovering.current) menu.current?.focus({ preventScroll: true });
-    wasCovering.current = covering;
-  }, [covering]);
   const { timeWindow } = useFilters();
   const { chain, select } = useChainFilter();
   const { routerId, select: selectRouter } = useRouterFilter();
@@ -156,13 +136,8 @@ export function ChainDrawer() {
   };
 
   return (
-    <aside className={`gw-chains${covering ? " gw-chains--covering" : ""}${enter ? " gw-chains--enter" : ""}`} inert={!covering}>
+    <aside className="gw-chains">
       <div className="gw-chains__head">
-        {/* The menu icon, not a back arrow: "‹ Chains" reads as a way back to Chains. */}
-        <button ref={menu} type="button" className="gw-chains__menu" onClick={() => setCovering(false)}
-          aria-label="Show menu" title="Show menu">
-          <IconMenu size={16} />
-        </button>
         <span className="title">Chains</span>
       </div>
       {/* By name or spec index; Escape or the x clears it. */}

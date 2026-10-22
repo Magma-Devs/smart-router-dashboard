@@ -108,10 +108,23 @@ html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); f
 .gw-standalone-top .brand { display: flex; align-items: center; gap: 11px; }
 
 /* ── Sidebar ── */
-/* The left column. It holds the menu, and on Metrics the chains drawer drawn
-   over it (Shell.tsx), so the page never shows two lists side by side. */
-.gw-rail { width: 248px; flex-shrink: 0; position: sticky; top: 0; height: 100vh; overflow: hidden; background: var(--bg); border-right: 1px solid var(--line); }
-.gw-side { height: 100%; background: var(--bg); display: flex; flex-direction: column; }
+.gw-side { width: 248px; flex-shrink: 0; background: var(--bg); border-right: 1px solid var(--line); display: flex; flex-direction: column; height: 100vh; position: sticky; top: 0; overflow-x: hidden; transition: width 0.16s ease; }
+/* Beside the chains drawer (Metrics) the menu folds to its icons (Shell.tsx).
+   Each icon names itself on hover; "Expand menu" opens it for that visit. */
+.gw-side--compact { width: 64px; }
+.gw-side--compact .gw-side__brand { justify-content: center; padding: 18px 0 14px; }
+.gw-side--compact .gw-side__brand > div,
+.gw-side--compact .gw-side__section-label,
+.gw-side--compact .gw-nav-item > span,
+.gw-side--compact .gw-side__user .meta { display: none; }
+.gw-side--compact .gw-side__nav > div + div { border-top: 1px solid var(--line); margin-top: 8px; padding-top: 8px; }
+.gw-side--compact .gw-nav-item { justify-content: center; padding: 9px 0; }
+.gw-side--compact .gw-side__foot { padding: 12px 0; }
+.gw-side--compact .gw-side__user { flex-direction: column; gap: 6px; }
+.gw-side__toggle { color: var(--text-3); margin-bottom: 4px; }
+.gw-side__toggle:hover { color: var(--text); }
+/* Labels stay on one line while the menu opens, rather than wrapping as it widens. */
+.gw-nav-item > span { white-space: nowrap; }
 .gw-side__brand { display: flex; align-items: center; gap: 10px; padding: 18px 18px 14px; }
 /* It is a link home — give it the same hover feedback the nav items have, so
    it reads as clickable rather than as a header that happens to navigate. */
@@ -140,17 +153,9 @@ a.gw-side__brand:hover { opacity: 0.82; }
 
 
 /* ── Chains drawer (Metrics): one row per chain, the page's chain filter ── */
-/* Over the menu, in the rail. Off the menu it slides out to the left and is
-   hidden once there; a drawer reached by a navigation slides in (--enter). */
-.gw-chains { position: absolute; inset: 0; z-index: 1; background: var(--bg); display: flex; flex-direction: column; transform: translateX(-100%); visibility: hidden; transition: transform 0.18s ease, visibility 0s linear 0.18s; }
-.gw-chains--covering { transform: none; visibility: visible; transition: transform 0.18s ease; }
-.gw-chains--enter { animation: gwChainsIn 0.18s ease; }
-@keyframes gwChainsIn { from { transform: translateX(-100%); } to { transform: none; } }
-.gw-chains__head { height: 56px; flex-shrink: 0; display: flex; align-items: center; gap: 6px; padding: 0 10px; border-bottom: 1px solid var(--line); }
+.gw-chains { width: 244px; flex-shrink: 0; background: var(--bg); border-right: 1px solid var(--line); display: flex; flex-direction: column; height: 100vh; position: sticky; top: 0; }
+.gw-chains__head { height: 56px; flex-shrink: 0; display: flex; align-items: center; gap: 8px; padding: 0 10px 0 18px; border-bottom: 1px solid var(--line); }
 .gw-chains__head .title { font-size: 13px; font-weight: 600; color: var(--text); }
-.gw-chains__menu { width: 28px; height: 28px; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; border: none; border-radius: 6px; background: transparent; color: var(--text-3); cursor: pointer; transition: background 0.1s, color 0.1s; }
-.gw-chains__menu:hover { background: var(--hover); color: var(--text); }
-.gw-chains__menu:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
 .gw-chains__search { display: flex; align-items: center; gap: 7px; margin: 10px 10px 0; padding: 0 9px; height: 30px; border-radius: 7px; border: 1px solid var(--line-2); background: var(--surface); color: var(--text-4); }
 .gw-chains__search input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; color: var(--text); font-size: 12px; font-family: inherit; }
 .gw-chains__search:focus-within { border-color: var(--text-4); }
@@ -305,8 +310,8 @@ table.gw-table tbody tr:hover td { background: var(--hover); }
 @keyframes gwBreathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 
 @media (prefers-reduced-motion: reduce) {
-  .gw-skel, .gw-refreshing, .gw-chains--enter { animation: none; }
-  .gw-chains, .gw-chains--covering { transition: none; }
+  .gw-skel, .gw-refreshing { animation: none; }
+  .gw-side { transition: none; }
 }
 
 /* ── Side-sheet ── */
