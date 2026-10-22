@@ -34,6 +34,13 @@ function mockPrometheus(): void {
         { metric: { provider_address: "eth-lava" }, values: [[1, "0.5"], [2, "0.25"]] },
       ]);
     }
+    // Traffic by provider: one chain's requests per second, per upstream.
+    if (new URL(url).pathname.endsWith("/query_range") && query.startsWith('sum by (provider_address) (rate(smartrouter_requests_total{spec="ETH1"}')) {
+      return matrix([
+        { metric: { provider_address: "eth-lava" }, values: [[1, "0.5"], [2, "0.25"]] },
+        { metric: { provider_address: "Cached" }, values: [[1, "2"], [2, "2"]] },
+      ]);
+    }
     if (new URL(url).pathname.endsWith("/query_range") && query.startsWith("max by (endpoint_id) (max_over_time(rpc_endpoint_latest_block")) {
       return matrix([
         { metric: { endpoint_id: "eth-lava" }, values: [[1, "100"], [2, "101"]] },
@@ -270,6 +277,21 @@ describe("api routes", () => {
     expect(body.qos).toBeNull();
     // No backup-marked config ⇒ null, not a synthetic 0%.
     expect(body.backupShare).toBeNull();
+  });
+
+  it("GET /api/metrics/upstream-mix requires spec; one series per upstream, biggest first", async () => {
+    const missing = await app.inject({ method: "GET", url: "/api/metrics/upstream-mix?window=1d" });
+    expect(missing.statusCode).toBe(400);
+
+    const res = await app.inject({ method: "GET", url: "/api/metrics/upstream-mix?spec=ETH1&window=1d" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      spec: "ETH1",
+      upstreams: [
+        { upstream: "Cached", points: [{ t: 1, v: 2 }, { t: 2, v: 2 }] },
+        { upstream: "eth-lava", points: [{ t: 1, v: 0.5 }, { t: 2, v: 0.25 }] },
+      ],
+    });
   });
 
   it("GET /api/metrics/upstream-detail requires endpointId + spec; errors stay empty until emitted", async () => {

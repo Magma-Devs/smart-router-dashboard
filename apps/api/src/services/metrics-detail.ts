@@ -29,6 +29,7 @@ import {
   qErrorsByUpstream,
   qLatencySeriesExpr,
   qOptimizerScore,
+  qPerUpstreamRpsExpr,
   qPresence,
   qRetriesByMethod,
   qRetryAvgExtraAttempts,
@@ -56,6 +57,7 @@ import {
   type UpstreamDetail,
   type UpstreamRef,
   type UpstreamPeers,
+  type UpstreamMix,
   type ChartGrid,
   type ScoreType,
   type TimePoint,
@@ -193,6 +195,25 @@ export class MetricsDetailService {
       backupProbe && backupProbe.some((p) => p.v !== null) ? backupProbe : null;
 
     return { spec, availability, p95Ms, errorRate, rps, qos, backupShare };
+  }
+
+  /**
+   * Which upstream took one chain's traffic: requests per second per upstream,
+   * the relay cache's included, biggest first. One range read - the Overview's
+   * per-upstream read (`qPerUpstreamRpsExpr`, recorded series on long windows)
+   * scoped to the chain. Its own route rather than part of the chain-series
+   * bundle: the card shows whenever a chain is picked, and the bundle's other
+   * reads are only wanted once a row is expanded.
+   */
+  async upstreamMix(spec: string, window: MetricWindow): Promise<UpstreamMix> {
+    const { start, end, step } = this.windowBounds(window);
+    const matrix = await this.prom.queryRange(qPerUpstreamRpsExpr(step, spec, window), start, end, step);
+    const volume = (points: TimePoint[]) => points.reduce((a, p) => a + (p.v ?? 0), 0);
+    const upstreams = matrix
+      .filter((m) => m.metric.provider_address)
+      .map((m) => ({ upstream: m.metric.provider_address!, points: toPoints(m.values) }))
+      .sort((a, b) => volume(b.points) - volume(a.points));
+    return { spec, upstreams };
   }
 
   /**

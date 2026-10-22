@@ -356,6 +356,20 @@ export interface ChainSeries {
   backupShare: TimePoint[] | null;
 }
 
+/* ── Traffic by provider (Metrics · Overview tab, a chain picked) ────────── */
+
+/** Which upstream took one chain's traffic over the window. */
+export interface UpstreamMix {
+  spec: string;
+  /**
+   * Requests per second each upstream took on this chain (`provider_address`
+   * on the request counter), biggest first. Relay-scoped: a retried request
+   * counts at every upstream it reached. `Cached` is the relay cache answering
+   * with no upstream at all.
+   */
+  upstreams: { upstream: string; points: TimePoint[] }[];
+}
+
 /* ── Upstream deep-dive (Metrics · Upstreams tab, PMBody) ────────────────── */
 
 export interface UpstreamErrorCode {

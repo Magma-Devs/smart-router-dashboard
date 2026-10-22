@@ -18,6 +18,31 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   Only the 0.28 screens (`DASHBOARD_NEW_UI`) have the drawer; the 0.27
   screens look as before.
 
+## [0.48.0]
+
+### Added
+
+- **Metrics (0.28 page): which provider took a chain's traffic.** With a
+  chain or a router picked, a "Traffic by provider" chart shows each
+  upstream's part of that chain's traffic over the window - its share at
+  every moment, or its requests per second - drawn like the Overview's
+  "Requests per chain". A failover shows as one upstream's band handing over
+  to another's. The relay cache's part is its own layer, and past the five
+  biggest upstreams the rest are summed into "Other". The counts are the
+  requests the router sent, so a retried request counts at every upstream it
+  reached. New route `GET /api/metrics/upstream-mix`: one range read, the
+  per-upstream read the Overview already makes, scoped to the chain.
+
+### Fixed
+
+- **A branch whose name has a `/` gets its images tagged.** The branch
+  suffix on the image tags was the raw branch name, so `feat/x` made
+  `<version>-feat/x`, which is not a valid reference: the `publish` job failed
+  after both arm64 smokes had passed, and the branch's images were left
+  untagged. Any character a tag can't hold now becomes `-` (`<version>-feat-x`),
+  the way the branch's layer-cache tag already did; the suffix is cut at 100
+  characters. Branch names that were already valid tags keep the same tags.
+
 ## [0.47.1]
 
 ### Changed
