@@ -195,7 +195,7 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
   // Rows are matched to a config router by the upstreams they went to.
   const { routerIdQ } = useRouterFilter();
   const rangeQ = range ? `from=${Math.round(range.from)}&to=${Math.round(range.to)}` : `window=${win}`;
-  const log = useLogReads<TxLogRow, TransactionsReport>(`/api/transactions?${rangeQ}${specQ}${routerIdQ}`, live ? 15_000 : 0);
+  const log = useLogReads<TxLogRow, TransactionsReport>(`/api/transactions?${rangeQ}${specQ}${routerIdQ}`, live);
   const data = log.head;
   const isLoading = log.first.isLoading;
   const allRows = log.rows;

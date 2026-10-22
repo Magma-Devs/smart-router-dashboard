@@ -233,7 +233,35 @@ function Seg<T extends string>({ value, onChange, options }: {
 /** The filter row's dropdowns: capped, so a long error name can't push the row onto two lines. */
 const narrowSelect: React.CSSProperties = { ...filterSelectStyle, maxWidth: 200 };
 
-export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialRange = null }: {
+/**
+ * The list's times - the page window, or exact ones picked here or a bar's -
+ * and its reads of them. Held by the tab, so the cards above count the rows
+ * the list shows rather than reading the logs again.
+ */
+export function useErrorList({ chainFilter, win, upstream, initialRange = null }: {
+  chainFilter: string | null;
+  win: MetricWindow;
+  upstream: string;
+  initialRange?: ExactRange | null;
+}) {
+  const [range, setRange] = useState<ExactRange | null>(initialRange);
+  // A picked range that has closed can't change: read it once, don't poll it.
+  const [live, setLive] = useState(() => rangeIsLive(initialRange));
+  const specQ = chainFilter ? `&spec=${encodeURIComponent(chainFilter)}` : "";
+  const { routerIdQ } = useRouterFilter();
+  const rangeQ = range ? `from=${Math.round(range.from)}&to=${Math.round(range.to)}` : `window=${win}`;
+  // On a bar's times with an upstream picked, the read itself is narrowed to
+  // that upstream, so the cap applies to the requests the bar counts.
+  const onBarRange = initialRange != null && range != null && range.from === initialRange.from && range.to === initialRange.to;
+  const barQ = onBarRange && upstream !== ALL ? `&upstream=${encodeURIComponent(upstream)}` : "";
+  const log = useLogReads<ErrorRequestRow, ErrorRequestsReport>(`/api/error-requests?${rangeQ}${specQ}${routerIdQ}${barQ}`, live);
+  const pick = (r: ExactRange | null) => { setRange(r); setLive(rangeIsLive(r)); };
+  return { log, range, pick, rangeQ, routerIdQ, onBarRange, barQ };
+}
+
+export type ErrorList = ReturnType<typeof useErrorList>;
+
+export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialRange = null, list }: {
   chainFilter: string | null;
   win: MetricWindow;
   /** Controlled from the tab, so a bar on the Upstreams tab can open its own requests. */
@@ -241,15 +269,14 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
   onUpstream: (u: string) => void;
   /** Exact times to open on - a bar's - instead of the page window. */
   initialRange?: ExactRange | null;
+  /** The list's reads, held by the tab (`useErrorList`). */
+  list: ErrorList;
 }) {
   const [result, setResult] = useState<ErrorRequestRow["result"] | typeof ALL>(ALL);
   const [retry, setRetry] = useState<RetryFilter>(ALL);
   const [errType, setErrType] = useState(ALL);
   const [customer, setCustomer] = useState(ALL);
   const [method, setMethod] = useState(ALL);
-  const [range, setRange] = useState<ExactRange | null>(initialRange);
-  // A picked range that has closed can't change: read it once, don't poll it.
-  const [live, setLive] = useState(() => rangeIsLive(initialRange));
   const [open, setOpen] = useState<string | null>(null);
   // A request named in the URL opens looked up.
   const [lookupId, setLookupId] = useState<string | null>(requestFromUrl);
@@ -264,15 +291,7 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
   const find = (id: string | null) => { setLookupId(id); linkRequest(id ?? open); };
   const toggleRow = (guid: string) => { const next = open === guid ? null : guid; setOpen(next); linkRequest(next ?? lookupId); };
 
-  const specQ = chainFilter ? `&spec=${encodeURIComponent(chainFilter)}` : "";
-  const { routerIdQ } = useRouterFilter();
-  const rangeQ = range ? `from=${Math.round(range.from)}&to=${Math.round(range.to)}` : `window=${win}`;
-  // On a bar's times with an upstream picked, the read itself is narrowed to
-  // that upstream, so the cap applies to the requests the bar counts.
-  const onBarRange = initialRange != null && range != null && range.from === initialRange.from && range.to === initialRange.to;
-  const barQ = onBarRange && upstream !== ALL ? `&upstream=${encodeURIComponent(upstream)}` : "";
-  const base = `/api/error-requests?${rangeQ}${specQ}${routerIdQ}${barQ}`;
-  const log = useLogReads<ErrorRequestRow, ErrorRequestsReport>(base, live ? 15_000 : 0);
+  const { log, range, rangeQ, routerIdQ, onBarRange, barQ } = list;
   const { first, head, rows: allRows } = log;
 
   const methods = useMemo(() => [...new Set(allRows.map((r) => r.method))].sort(), [allRows]);
@@ -363,7 +382,7 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
           <span style={{ flex: 1 }} />
           <TimeRangeControl
             range={range}
-            onChange={(r) => { setRange(r); setLive(rangeIsLive(r)); setPage(0); }}
+            onChange={(r) => { list.pick(r); setPage(0); }}
             windowLabel={WINDOWS[win].label}
             windowMs={WINDOWS[win].rangeSeconds * 1000}
           />
