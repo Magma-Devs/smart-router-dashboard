@@ -21,8 +21,12 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   is kept a minute at most; routes without a window 15 s, and the topbar's
   pulse 30 s. Past its TTL an answer is still served, up to twice that age,
   while one background refresh runs, and every caller of a query shares one
-  read. `Age` says how old an answer is; the payloads are unchanged. The
-  snapshot is per process and holds at most 256 answers.
+  read. A refresh during which the store refused a read comes back with
+  empty fields, so it never replaces a good answer still within twice its
+  TTL; the key waits 5 s before the next read, and with no good answer left
+  the degraded one is kept only that long. `Age` says how old an answer is;
+  the payloads are unchanged. The snapshot is per process and holds at most
+  256 answers.
   `METRICS_SNAPSHOT_TTL_MS` (default `15000`) sets the shortest TTL, and `0`
   turns the snapshot off.
 
