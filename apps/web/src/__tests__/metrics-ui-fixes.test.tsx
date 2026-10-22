@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { HeroSummary, RouterMetrics } from "@sr/shared";
 import { RouterOverview } from "@/components/metrics/RouterOverview";
 import { HeroPanel } from "@/components/metrics/HeroPanel";
-import { openRowShown } from "@/components/metrics/request-log";
+import { fmtWhen, openRowShown } from "@/components/metrics/request-log";
 
 /** What `useApi` answers per path: SWR's fields as a window change leaves them. */
 const fixture = vi.hoisted(() => ({
@@ -115,5 +115,13 @@ describe("an open row holds a live list still", () => {
     expect(openRowShown("gone", shown)).toBe(false);
     expect(openRowShown("a", [])).toBe(false);
     expect(openRowShown(null, shown)).toBe(false);
+  });
+});
+
+describe("log rows", () => {
+  it("dates every row, today's included", () => {
+    const now = new Date();
+    const month = now.toLocaleString("en-US", { month: "short" });
+    expect(fmtWhen(now.getTime())).toContain(`${month} ${now.getDate()},`);
   });
 });

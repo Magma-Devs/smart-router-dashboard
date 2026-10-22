@@ -21,6 +21,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   now stops reading newer rows while an open row is on screen, says so in its
   header, and reads again once the row closes or a filter, page or window
   takes it out of view.
+- **Log rows carry their date.** Today's rows showed a time alone, so a list
+  that spans midnight couldn't say which day a row was on.
 
 ## [0.50.1]
 
