@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.47.2]
+
 ### Fixed
 
 - **The new Metrics page keeps the previous window up while the next one
