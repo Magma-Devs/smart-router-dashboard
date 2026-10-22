@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.46.1]
+
 ### Changed
 
 - **The metrics routes answer every viewer from one snapshot per route and
