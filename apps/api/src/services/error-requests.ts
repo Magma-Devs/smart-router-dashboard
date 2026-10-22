@@ -74,7 +74,7 @@ import {
   lastWhere,
   listenerPattern,
   linesForGuids,
-  linesOfRequest,
+  linesOfLookup,
   LOOKUP_ID,
   methodOf,
   namesOf,
@@ -441,17 +441,18 @@ export class ErrorRequestsService {
 
   /**
    * One request by its ID, its transaction hash or the caller's request id,
-   * whatever happened to it: every line the router wrote for it in `range`,
-   * as the same row the list shows. A value several requests carry answers
-   * with the newest and how many there are. Reads every line in the range
-   * for the value - a month is a heavy read, so the caller widens the range
-   * on purpose rather than by default.
+   * whatever happened to it: every line the router wrote for it, as the same
+   * row the list shows. A value several requests carry answers with the
+   * newest and how many there are. A request ID that carries its second
+   * (v1.6.1 on) is read in its own minutes first; any other value reads every
+   * line in `range` - a month is a heavy read, so the caller widens the range
+   * on purpose rather than by default (`linesOfLookup`).
    */
   async lookup(id: string, range: ReadRange): Promise<RequestLookup> {
     const loki = this.loki;
     if (!loki) return { ...unavailable("unconfigured"), row: null };
     if (!LOOKUP_ID.test(id)) return { available: true, row: null };
-    const lines = await linesOfRequest(loki, this.selector, id, range.startMs, range.endMs);
+    const lines = await linesOfLookup(loki, this.selector, id, range);
     if (lines === null) return { ...unavailable("unreachable"), row: null };
     const rows = buildErrorRows(lines, new UpstreamIndex(this.routers()), true);
     return { available: true, row: rows[0] ?? null, ...(rows.length > 1 ? { matches: rows.length } : {}) };

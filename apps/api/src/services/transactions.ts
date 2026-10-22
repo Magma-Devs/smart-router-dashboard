@@ -56,7 +56,7 @@ import {
   LABEL_TOKEN,
   lastWhere,
   linesForGuids,
-  linesOfRequest,
+  linesOfLookup,
   LOOKUP_ID,
   methodOf,
   namesOf,
@@ -366,16 +366,18 @@ export class TransactionsService {
 
   /**
    * One transaction by its request ID, its hash or the caller's request id:
-   * every line the router wrote for it in `range`, as the same row the log
-   * shows. `found` without a row: the value names a request that isn't a
-   * transaction. A value several requests carry - a transaction sent again
-   * keeps its hash - answers with the newest and how many there are.
+   * every line the router wrote for it, as the same row the log shows - in
+   * the ID's own minutes when it carries its second (v1.6.1 on), else in
+   * `range` (`linesOfLookup`). `found` without a row: the value names a
+   * request that isn't a transaction. A value several requests carry - a
+   * transaction sent again keeps its hash - answers with the newest and how
+   * many there are.
    */
   async lookup(id: string, range: ReadRange): Promise<TransactionLookup> {
     const loki = this.loki;
     if (!loki) return { available: false, reason: "unconfigured", found: false, row: null };
     if (!LOOKUP_ID.test(id)) return { available: true, found: false, row: null };
-    const lines = await linesOfRequest(loki, this.selector, id, range.startMs, range.endMs);
+    const lines = await linesOfLookup(loki, this.selector, id, range);
     if (lines === null) return { available: false, reason: "unreachable", found: false, row: null };
     const rows = buildTxRows(lines, new UpstreamIndex(this.routers()));
     return { available: true, found: lines.length > 0, row: rows[0] ?? null, ...(rows.length > 1 ? { matches: rows.length } : {}) };
