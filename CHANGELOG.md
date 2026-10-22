@@ -29,6 +29,10 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 - **A transaction every node refused isn't linked to an explorer.** The chain
   never saw it, so the explorer's page was always "not found"; the hash stays
   to copy, and the opened row says why.
+- **An opened row names each ID by where it comes from**: "Smart Router
+  request ID" for the router's own, and the caller's `X-Request-Id`,
+  `X-Task-Id` and `X-Tx-Id` by their header, so none reads as the other or as
+  a transaction's hash.
 
 ## [0.47.1]
 

@@ -391,24 +391,25 @@ const fmtBytes = (n: number) => (n < 1024 ? `${fmtComma(n)} B` : n < 1024 * 1024
  * What the router wrote about the call itself, in an opened row: the
  * caller's project and ids, the request's and the reply's size, the block it
  * named and the one the router had. Only what the router wrote; nothing when
- * it wrote none.
+ * it wrote none. The caller's ids are named by the header they came in, so
+ * none reads as the router's own ID or as a transaction's.
  */
 export function CallFactsLine({ row }: { row: CallFacts }) {
-  const items: [string, React.ReactNode][] = [];
-  if (row.customer) items.push(["Customer", row.customer]);
-  if (row.requestId) items.push(["Caller's request ID", row.requestId]);
-  if (row.taskId) items.push(["Task ID", row.taskId]);
-  if (row.txId) items.push(["Tx ID", row.txId]);
-  if (row.requestBytes != null) items.push(["Request", fmtBytes(row.requestBytes)]);
-  if (row.replyBytes != null) items.push(["Reply", fmtBytes(row.replyBytes)]);
-  if (row.requestedBlock != null) items.push(["Block asked for", fmtComma(row.requestedBlock)]);
-  if (row.seenBlock != null) items.push(["Router's latest block", fmtComma(row.seenBlock)]);
+  const items: [string, React.ReactNode, string][] = [];
+  if (row.customer) items.push(["Customer", row.customer, "The project-id header the caller sent"]);
+  if (row.requestId) items.push(["Caller's X-Request-Id", row.requestId, "The X-Request-Id header the caller sent - the caller's own ID, not the router's"]);
+  if (row.taskId) items.push(["Caller's X-Task-Id", row.taskId, "The X-Task-Id header the caller sent"]);
+  if (row.txId) items.push(["Caller's X-Tx-Id", row.txId, "The X-Tx-Id header the caller sent - the caller's own ID, not the transaction's hash on the chain"]);
+  if (row.requestBytes != null) items.push(["Request", fmtBytes(row.requestBytes), "The request's size"]);
+  if (row.replyBytes != null) items.push(["Reply", fmtBytes(row.replyBytes), "The size of the reply the client got"]);
+  if (row.requestedBlock != null) items.push(["Block asked for", fmtComma(row.requestedBlock), "The block the request names"]);
+  if (row.seenBlock != null) items.push(["Router's latest block", fmtComma(row.seenBlock), "The chain's latest block as the router knew it when the request came in"]);
   if (!items.length) return null;
   return (
     <DetailLine>
       <div style={{ display: "flex", flexWrap: "wrap", columnGap: 18, rowGap: 4, fontSize: 11.5 }}>
-        {items.map(([k, v]) => (
-          <span key={k} style={{ color: "var(--text-4)", whiteSpace: "nowrap" }}>
+        {items.map(([k, v, title]) => (
+          <span key={k} title={title} style={{ color: "var(--text-4)", whiteSpace: "nowrap" }}>
             {k} <span className="gw-mono" style={{ color: "var(--text-2)" }}>{v}</span>
           </span>
         ))}
@@ -430,11 +431,11 @@ export function RequestLogsLink({ id, startMs, tookMs }: { id: string; startMs: 
   );
 }
 
-/** The foot of an opened row: the request's ID to copy, and its lines in the logs. */
+/** The foot of an opened row: the router's ID for the request to copy, and its lines in the logs. */
 export function RequestIdLine({ id, startMs, tookMs }: { id: string; startMs: number; tookMs: number | null }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11.5, color: "var(--text-4)" }}>
-      Request ID <span className="gw-mono" style={{ color: "var(--text-3)" }}>{id}</span> <CopyButton text={id} />
+      <span title="The ID Smart Router gives every request: its GUID in the router's logs, and the Lava-Guid header on the reply">Smart Router request ID</span> <span className="gw-mono" style={{ color: "var(--text-3)" }}>{id}</span> <CopyButton text={id} />
       <RequestLogsLink id={id} startMs={startMs} tookMs={tookMs} />
     </div>
   );

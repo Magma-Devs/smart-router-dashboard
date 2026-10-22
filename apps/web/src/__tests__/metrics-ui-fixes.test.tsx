@@ -6,7 +6,7 @@ import { RouterOverview } from "@/components/metrics/RouterOverview";
 import { RouterOverview as LegacyRouterOverview } from "@/legacy/components/metrics/RouterOverview";
 import { HeroPanel } from "@/components/metrics/HeroPanel";
 import { HeroPanel as LegacyHeroPanel } from "@/legacy/components/metrics/HeroPanel";
-import { chainsTitle, chainWords, fmtWhen, TxHash } from "@/components/metrics/request-log";
+import { CallFactsLine, chainsTitle, chainWords, fmtWhen, RequestIdLine, TxHash } from "@/components/metrics/request-log";
 
 /** What `useApi` answers per path: SWR's fields as a window change leaves them. */
 const fixture = vi.hoisted(() => ({
@@ -119,5 +119,13 @@ describe("log rows", () => {
     expect(linked).toContain("<a ");
     expect(refused).not.toContain("<a ");
     expect(refused).toContain("never saw it");
+  });
+
+  it("names the caller's ids by their header and the router's as Smart Router's", () => {
+    const facts = renderToStaticMarkup(createElement(CallFactsLine, { row: { requestId: "e7f0", txId: "t-1" } }));
+    expect(facts).toContain("Caller&#x27;s X-Request-Id");
+    expect(facts).toContain("Caller&#x27;s X-Tx-Id");
+    const foot = renderToStaticMarkup(createElement(RequestIdLine, { id: "7699463364114495303", startMs: 0, tookMs: null }));
+    expect(foot).toContain("Smart Router request ID");
   });
 });
