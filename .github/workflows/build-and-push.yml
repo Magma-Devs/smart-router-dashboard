@@ -110,7 +110,10 @@ jobs:
             VERSION="${{ steps.read-version.outputs.version }}"
           fi
 
-          BRANCH_NAME="${{ github.ref_name }}"
+          # The suffix carries the branch name with anything a tag can't hold
+          # replaced by `-`: `feat/x` gives `0.48.0-feat-x`. A raw `/` made the
+          # reference invalid, and `publish` failed after the smoke had passed.
+          BRANCH_NAME=$(printf '%s' "$GITHUB_REF_NAME" | sed -E 's/[^A-Za-z0-9._-]+/-/g' | cut -c1-100)
 
           # Extract major.minor BEFORE the suffix is appended. The suffix lands
           # on the patch component (0.16.1-my-branch), so cutting fields 1,2
