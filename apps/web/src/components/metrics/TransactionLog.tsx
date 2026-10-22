@@ -16,7 +16,7 @@
  * and finality needs the chain. */
 
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { WINDOWS, type MetricWindow, type TransactionLookup, type TransactionsReport, type TxLogRow } from "@sr/shared";
+import { WINDOWS, WRITE_UNKNOWN_NOTE, explainRouterError, type ErrorSource, type MetricWindow, type TransactionLookup, type TransactionsReport, type TxLogRow } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { useLogReads } from "@/hooks/use-log-reads";
 import { useRouterFilter } from "@/hooks/use-router-options";
@@ -24,22 +24,17 @@ import { Refreshing, SkelLine, SkelRows, SkelValue } from "@/components/gateway/
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { Tip } from "@/components/gateway/Tip";
 import { TT } from "@/lib/tooltips";
-import { errorDocsUrl } from "@/lib/error-docs";
 import { fmtComma, fmtPct } from "@/lib/format";
 import { linkRequest, requestFromUrl } from "@/lib/request-in-url";
 import {
   AppGot,
   appGot,
-  AttemptList,
-  CallFactsLine,
   CustomerCell,
   customerOptions,
   hasCustomer,
   LOOKUP_REFUSED,
   MatchesNote,
   TxHash,
-  DetailLine,
-  detailText,
   errorTypeOptions,
   filterSelectStyle,
   Flow,
@@ -54,7 +49,6 @@ import {
   OlderRowsLoading,
   Pager,
   ReadingStrip,
-  RequestIdLine,
   TimeRangeControl,
   chainWords,
   onRowKey,
@@ -65,6 +59,7 @@ import {
   ResponseSource,
 } from "./request-log";
 import { TransactionsChart, TX_RESULT } from "./TransactionsChart";
+import { RequestBreakdown, SourceTag, type FinalAnswer } from "./request-breakdown";
 
 const PER_PAGE = 25;
 const ALL = "all";
@@ -91,43 +86,50 @@ const OUTCOME_ORDER: TxLogRow["outcome"][] = ["accepted", "rejected", "failed-on
 
 /** Every upstream's answer in full, when a row is opened. A rejection is the
  *  answering upstream's own error, so it shows on that upstream's line. */
+/** How a transaction ended, in one or two plain sentences: the top of its breakdown. */
+export function txHeadlineOf(r: TxLogRow): string {
+  const by = r.answeredBy ?? "A provider";
+  switch (r.outcome) {
+    case "accepted":
+      return `${by} accepted the transaction, and its answer went to the customer.`;
+    case "rejected":
+      return `${by} refused the transaction, and its answer went to the customer.`;
+    case "failed-on-chain":
+      return "The chain ran the transaction, and it failed.";
+    case "failed":
+      return "No provider gave a usable answer, so the router sent its own error to the customer.";
+    case "unknown":
+      return r.note ?? WRITE_UNKNOWN_NOTE;
+  }
+}
+
+/** Whose error the customer got, by the reply's code: none for an accepted transaction, or a code the table doesn't know. */
+export function txSource(r: TxLogRow): ErrorSource | null {
+  return r.error ? explainRouterError(r.error.code)?.source ?? null : null;
+}
+
+/** An opened row: the transaction, every provider it went to, and what the customer got, in plain words. */
 function Details({ row }: { row: TxLogRow }) {
-  return (
-    <div style={{ display: "grid", gap: 10, padding: "4px 4px 8px" }}>
-      <AttemptList attempts={row.attempts} />
-      {row.note && (
-        <DetailLine>
-          <div style={{ fontSize: 12, color: "var(--text-3)", lineHeight: 1.5 }}>
-            <span style={{ color: "var(--text-2)" }}>Why the result is unknown: </span>{row.note}
-          </div>
-        </DetailLine>
-      )}
-      {row.outcome === "failed" && row.error && (
-        <DetailLine at={row.replyMs != null ? `+${fmtComma(row.replyMs)} ms` : ""}>
-          <div style={{ fontSize: 12, color: "var(--err)" }}>
-            Router error returned to the client ·{" "}
-            <a className="gw-mono" href={errorDocsUrl(row.error.code)} target="_blank" rel="noopener noreferrer" style={{ color: "var(--text-3)" }}>{row.error.code}</a>
-          </div>
-          <div className="gw-mono" style={detailText}>{row.error.message}</div>
-        </DetailLine>
-      )}
-      {row.outcome === "failed-on-chain" && (
-        <DetailLine at={row.replyMs != null ? `+${fmtComma(row.replyMs)} ms` : ""}>
-          <div style={{ fontSize: 12, color: "var(--err)" }}>Failed on chain: the chain ran the transaction and it failed</div>
-          {row.txError && <div className="gw-mono" style={detailText}>{row.txError}</div>}
-        </DetailLine>
-      )}
+  const replied = row.attempts.find((a) => a.replied);
+  const final: FinalAnswer =
+    row.outcome === "failed" ? { from: "router", code: row.error?.code ?? null, message: row.error?.message ?? null }
+      : replied ? { from: "provider", attempt: replied, code: row.error?.code ?? null }
+        : null;
+  const extra = (row.txHash || (row.outcome === "failed-on-chain" && row.txError)) && (
+    <div style={{ display: "grid", gap: 4 }}>
+      {row.outcome === "failed-on-chain" && row.txError && <div className="gw-mono" style={{ fontSize: 11.5, color: "var(--text-2)", wordBreak: "break-word" }}>{row.txError}</div>}
       {row.txHash && (
-        <DetailLine>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11.5, color: "var(--text-4)", flexWrap: "wrap" }}>
-            Transaction hash <TxHash hash={row.txHash} spec={row.spec} full />
-            {row.txStatus === "success" && <span>· the chain ran it</span>}
-          </div>
-        </DetailLine>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11.5, color: "var(--text-4)", flexWrap: "wrap" }}>
+          Transaction hash <TxHash hash={row.txHash} spec={row.spec} full />
+          {row.txStatus === "success" && <span>· the chain ran it</span>}
+        </div>
       )}
-      <CallFactsLine row={row} />
-      <RequestIdLine id={row.guid} startMs={row.time} tookMs={row.replyMs} />
     </div>
+  );
+  return (
+    <RequestBreakdown chain={chainWords(row)} method={row.method === "unknown" ? "method not in the logs" : row.method}
+      time={row.time} guid={row.guid} tookMs={row.replyMs} facts={row} attempts={row.attempts}
+      final={final} headline={txHeadlineOf(row)} isWrite extra={extra || undefined} />
   );
 }
 
@@ -138,7 +140,7 @@ function TxLookupPanel({ id, rangeQ, rangeWords, onClose }: { id: string; rangeQ
   const row = data?.row ?? null;
   const o = row ? OUTCOME[row.outcome] : null;
   return (
-    <LookupFrame id={id} onClose={onClose}
+    <LookupFrame id={id} found={row?.guid} onClose={onClose}
       tag={o && <span className="gw-tag" style={{ fontSize: 10, color: o.color, borderColor: "currentColor" }}>{o.label}</span>}>
       {isLoading ? (
         <SkelLine w="50%" />
@@ -153,14 +155,6 @@ function TxLookupPanel({ id, rangeQ, rangeWords, onClose }: { id: string; rangeQ
       ) : (
         <div style={{ display: "grid", gap: 8 }}>
           <MatchesNote matches={data?.matches} />
-          <div style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--text-2)", flexWrap: "wrap" }}>
-            <span className="gw-mono gw-tnum">{fmtWhen(row.time)}</span>
-            {row.spec ? <><ChainBadge spec={row.spec} size={14} /><span>{chainWords(row)}</span></> : row.specs && <span>{chainWords(row)}</span>}
-            <span className="gw-mono" style={{ color: "var(--text-3)" }}>{row.method === "unknown" ? "method not in the logs" : row.method}</span>
-            <span style={{ color: "var(--text-4)" }}>responded in {fmtTook(row.replyMs)}</span>
-          </div>
-          <Flow attempts={row.attempts} replyColor={OUTCOME[row.outcome].color} />
-          <AppGot text={appGot({ result: row.outcome, attempts: row.attempts, error: row.error?.message ?? null })} />
           <Details row={row} />
         </div>
       )}
@@ -387,6 +381,7 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
                         {r.answeredBy && r.outcome !== "failed" && (
                           <ResponseSource label={r.outcome === "accepted" || r.outcome === "failed-on-chain" ? "served by" : "returned by"} name={r.answeredBy} />
                         )}
+                        {txSource(r) && <div style={{ marginTop: 5 }}><SourceTag source={txSource(r)!} /></div>}
                       </td>
                       <td style={{ textAlign: "right", verticalAlign: "top" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{fmtTook(r.replyMs)}</span></td>
                     </tr>

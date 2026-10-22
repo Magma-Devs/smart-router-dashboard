@@ -12,8 +12,23 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   Each one says where the error comes from (the request, the chain, a provider, the router,
   or unclear), what it means, and what the customer can do, and carries two tags: whether the
   router tries another provider, and whether a transaction may have gone through anyway.
-  `explainRouterError(name)` looks one up. Nothing draws it yet. The rules, and what R&D still
-  has to confirm, are in [`docs/ERROR-CODES.md`](./docs/ERROR-CODES.md).
+  `explainRouterError(name)` looks one up. The rules, and what R&D still has to confirm, are in
+  [`docs/ERROR-CODES.md`](./docs/ERROR-CODES.md).
+- **An opened request reads as a breakdown, on the Errors and Transactions tabs.** Three
+  parts:
+  - **Request:** method, chain, time, ID, sizes, the block asked for and the router's latest
+    block.
+  - **Tries:** one box per try at a provider, with its error by name in plain words, whose
+    error it is (the request, the chain, a provider, the router, or unclear) and the
+    provider's own words.
+  - **What the customer got:** how it ended in plain sentences, what the error means and
+    what to do.
+
+  Orange marks the one thing that reached the customer. A transaction whose error may have
+  gone through says so. A request for a block newer than the router's latest says it may
+  not exist yet. A row's Result column now says whose error it is. The Errors tab no longer
+  names the returned error twice, once on its try's chip and once as the Result. A look-up no
+  longer repeats the request's ID above its breakdown.
 
 ## [0.48.0]
 

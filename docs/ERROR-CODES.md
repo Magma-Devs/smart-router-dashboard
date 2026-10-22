@@ -17,7 +17,21 @@ Errors page needs to say about it.
 (`NODE_DATA_NOT_HELD`) and returns `null` for a name the table doesn't know, so a screen can
 fall back to the raw code. `ERROR_SOURCE_LABELS` is the one word each source is shown as.
 
-No screen draws any of this yet. Showing it on the Errors tab is the next change.
+## Where it shows
+
+The Errors tab's request list and the Transactions tab draw it
+(`apps/web/src/components/metrics/request-breakdown.tsx`). An opened row is a breakdown in
+three parts:
+
+| Part | What it holds |
+| --- | --- |
+| Request | The method and chain, when, how long it took, the request ID (copy, logs), the caller's IDs, the request's size, the block asked for and the router's latest block |
+| Tries | One box per try at a provider, in order: how it went and how fast, the error by name in plain words, whose error it is, and the provider's own words |
+| What the customer got | How the request ended, in plain sentences, then the error's meaning and what to do. A transaction whose error may have gone through says so. |
+
+Orange marks the one thing that reached the customer: the try whose reply went back, or the
+router's own error when no provider answered. A row's Result column adds whose error it is. A
+code the table doesn't know shows the provider's own words and no tag.
 
 ## How a source is decided
 

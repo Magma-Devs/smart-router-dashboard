@@ -10,7 +10,7 @@
  * and details are shared with the Transactions tab (request-log.tsx). */
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { WINDOWS, WRITE_UNKNOWN_NOTE, type ErrorRequestRow, type ErrorRequestsReport, type MetricWindow, type RequestLookup } from "@sr/shared";
+import { WINDOWS, WRITE_UNKNOWN_NOTE, explainRouterError, type ErrorRequestRow, type ErrorRequestsReport, type ErrorSource, type MetricWindow, type RequestLookup } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { useLogReads } from "@/hooks/use-log-reads";
 import { useRouterFilter } from "@/hooks/use-router-options";
@@ -18,21 +18,16 @@ import { Refreshing, SkelLine, SkelRows } from "@/components/gateway/Skel";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { Tip } from "@/components/gateway/Tip";
 import { TT } from "@/lib/tooltips";
-import { errorDocsUrl } from "@/lib/error-docs";
 import { fmtComma } from "@/lib/format";
 import { linkRequest, requestFromUrl } from "@/lib/request-in-url";
 import {
   AppGot,
   appGot,
-  AttemptList,
-  CallFactsLine,
   CustomerCell,
   customerOptions,
-  DetailLine,
   hasCustomer,
   LOOKUP_REFUSED,
   MatchesNote,
-  detailText,
   errorLabel,
   errorTypeOptions,
   filterSelectStyle,
@@ -48,10 +43,10 @@ import {
   NotFound,
   OlderRowsLoading,
   onRowKey,
+  realCode,
   Pager,
   ReadingStrip,
   rangeIsLive,
-  RequestIdLine,
   retryKinds,
   stopMarker,
   TimeRangeControl,
@@ -59,6 +54,7 @@ import {
   UnreadStrip,
   type ExactRange,
 } from "./request-log";
+import { RequestBreakdown, SourceTag, type FinalAnswer } from "./request-breakdown";
 
 const PER_PAGE = 25;
 export const ALL = "all";
@@ -128,6 +124,17 @@ export function resultBadge(r: ErrorRequestRow): { text: string; from: { label: 
   return { text: RESULT[r.result].label, from: r.resolvedBy && (r.result === "recovered" || r.result === "ok") ? { label: "served by", name: r.resolvedBy } : null };
 }
 
+/** Whose error the customer got, by the router's code: none for an answer, or a code the table doesn't know. */
+export function rowSource(r: ErrorRequestRow): ErrorSource | null {
+  if (r.result === "error-reply") {
+    const a = r.attempts.find((x) => x.replied);
+    const code = a ? realCode(a) : null;
+    return code ? explainRouterError(code)?.source ?? null : null;
+  }
+  if (r.result === "failed" || r.result === "write-unknown") return r.errorCode ? explainRouterError(r.errorCode)?.source ?? null : null;
+  return null;
+}
+
 /** The tag itself: the error's name in its category's colour, the category and its meaning on hover. */
 function ResultTag({ row }: { row: ErrorRequestRow }) {
   const res = RESULT[row.result];
@@ -142,39 +149,48 @@ function ResultTag({ row }: { row: ErrorRequestRow }) {
 
 type RetryFilter = typeof ALL | "retryable" | "not-retryable";
 
-/** Every try in full, when a row is opened: the words, not just the type. */
+/** Names in a sentence: "a", "a and b", "a, b and c". */
+const listWords = (names: string[]) =>
+  names.length <= 1 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+
+/** Why the router stopped, in plain words, when it stopped short of an answer. */
+function stopWords(r: ErrorRequestRow): string {
+  if (r.exhausted) return " The router wanted to try another provider, but none was left.";
+  if (r.stopReason === "NonRetryableNodeError") return " The router didn't try another provider: it would give the same answer.";
+  if (r.stopReason === "ProcessingTimeout") return " The request ran past the router's time limit.";
+  return "";
+}
+
+/** How a request ended, in one or two plain sentences: the top of its breakdown. */
+export function headlineOf(r: ErrorRequestRow): string {
+  const failedAt = [...new Set(r.attempts.filter((a) => a.outcome === "failed").map((a) => a.upstream))];
+  switch (r.result) {
+    case "ok":
+      return `${r.resolvedBy ?? "A provider"} answered, and nothing failed on the way.`;
+    case "recovered":
+      return `${failedAt.length ? `${listWords(failedAt)} failed. ` : ""}The router tried ${r.resolvedBy ?? "another provider"}, which answered, and that answer went to the customer.`;
+    case "error-reply":
+      return `${r.resolvedBy ?? "The provider"} answered with an error, and the router passed it to the customer unchanged.${stopWords(r)}`;
+    case "failed":
+      return `No provider gave a usable answer, so the router sent its own error to the customer.${stopWords(r)}`;
+    case "write-unknown":
+      return WRITE_UNKNOWN_NOTE;
+    case "unknown":
+      return "The logs show no end for this request. It may still be running, the customer may have disconnected, or log lines are missing. Before smart-router v1.6.1, a router logs its tries and its end only at info level.";
+  }
+}
+
+/** An opened row: the request, every try, and what the customer got, in plain words. */
 function Details({ row }: { row: ErrorRequestRow }) {
-  const end = stopMarker(row);
+  const replied = row.attempts.find((a) => a.replied);
+  const final: FinalAnswer =
+    row.result === "failed" || row.result === "write-unknown" ? { from: "router", code: row.errorCode, message: row.error }
+      : replied ? { from: "provider", attempt: replied }
+        : null;
   return (
-    <div style={{ display: "grid", gap: 10, padding: "4px 4px 8px" }}>
-      <AttemptList attempts={row.attempts} />
-      {end && (
-        <DetailLine><div style={{ fontSize: 12, color: "var(--text-3)" }}>{end.title}.</div></DetailLine>
-      )}
-      {row.result === "write-unknown" && (
-        <DetailLine>
-          <div style={{ fontSize: 12, color: "var(--text-3)", lineHeight: 1.5 }}>
-            <span style={{ color: "var(--text-2)" }}>Why the result is unknown: </span>{WRITE_UNKNOWN_NOTE}
-          </div>
-        </DetailLine>
-      )}
-      {row.error && (
-        <DetailLine at={row.totalMs != null ? `+${fmtComma(row.totalMs)} ms` : ""}>
-          <div style={{ fontSize: 12, color: row.result === "failed" ? "var(--err)" : "var(--text-3)" }}>
-            {row.result === "failed" ? "Router error returned to the client" : "Returned to the client"}
-            {row.errorCode && (
-              <> · <a className="gw-mono" href={errorDocsUrl(row.errorCode)} target="_blank" rel="noopener noreferrer" style={{ color: "var(--text-3)" }}>{row.errorCode}</a></>
-            )}
-          </div>
-          <div className="gw-mono" style={detailText}>{row.error}</div>
-        </DetailLine>
-      )}
-      {row.result === "unknown" && (
-        <DetailLine><div style={{ fontSize: 12, color: "var(--text-3)" }}>No end logged: the request may still be in flight, the client may have disconnected, or log lines are missing. Before smart-router v1.6.1, a router logs its tries and its end only at info level.</div></DetailLine>
-      )}
-      <CallFactsLine row={row} />
-      <RequestIdLine id={row.guid} startMs={row.time} tookMs={row.totalMs} />
-    </div>
+    <RequestBreakdown chain={chainWords(row)} method={row.method === "unknown" ? "method not in the logs" : row.method}
+      time={row.time} guid={row.guid} tookMs={row.totalMs} facts={row} attempts={row.attempts}
+      final={final} headline={headlineOf(row)} isWrite={row.result === "write-unknown"} />
   );
 }
 
@@ -184,7 +200,7 @@ function LookupPanel({ id, rangeQ, rangeWords, onClose }: { id: string; rangeQ: 
   const { data, error, isLoading } = useApi<RequestLookup>(`/api/requests/${encodeURIComponent(id)}?${wide ? "window=30d" : rangeQ}`, 0);
   const row = data?.row ?? null;
   return (
-    <LookupFrame id={id} onClose={onClose}
+    <LookupFrame id={id} found={row?.guid} onClose={onClose}
       tag={row && <ResultTag row={row} />}>
       {isLoading ? (
         <SkelLine w="50%" />
@@ -197,14 +213,6 @@ function LookupPanel({ id, rangeQ, rangeWords, onClose }: { id: string; rangeQ: 
       ) : (
         <div style={{ display: "grid", gap: 8 }}>
           <MatchesNote matches={data?.matches} />
-          <div style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--text-2)", flexWrap: "wrap" }}>
-            <span className="gw-mono gw-tnum">{fmtWhen(row.time)}</span>
-            {row.spec ? <><ChainBadge spec={row.spec} size={14} /><span>{chainWords(row)}</span></> : row.specs && <span>{chainWords(row)}</span>}
-            <span className="gw-mono" style={{ color: "var(--text-3)" }}>{row.method === "unknown" ? "method not in the logs" : row.method}</span>
-            <span style={{ color: "var(--text-4)" }}>took {fmtTook(row.totalMs)}</span>
-          </div>
-          <Flow attempts={row.attempts} end={stopMarker(row)} replyColor={RESULT[row.result].color} />
-          <AppGot text={appGot(row)} />
           <Details row={row} />
         </div>
       )}
@@ -470,12 +478,13 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
                       </div>
                     </td>
                     <td style={{ maxWidth: 0 }}>
-                      <Flow attempts={r.attempts} end={stopMarker(r)} replyColor={RESULT[r.result].color} />
+                      <Flow attempts={r.attempts} end={stopMarker(r)} replyColor={RESULT[r.result].color} quietReplied={r.result === "error-reply"} />
                       <AppGot text={appGot(r)} />
                     </td>
                     <td style={{ verticalAlign: "top" }}>
                       <ResultTag row={r} />
                       {resultBadge(r).from && <ResponseSource {...resultBadge(r).from!} />}
+                      {rowSource(r) && <div style={{ marginTop: 5 }}><SourceTag source={rowSource(r)!} /></div>}
                     </td>
                     <td style={{ textAlign: "right", verticalAlign: "top" }}><span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{fmtTook(r.totalMs)}</span></td>
                   </tr>

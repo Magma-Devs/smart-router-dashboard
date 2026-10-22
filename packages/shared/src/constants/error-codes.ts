@@ -20,7 +20,8 @@
  * Yes, chain. Maybe not, provider. A "not found" answer is tagged provider: the provider
  * says it doesn't hold the data, and the meaning lists what that can mean.
  *
- * No screen draws this yet. docs/ERROR-CODES.md has the rules, the points R&D still has to
+ * The Errors and Transactions tabs draw it when a row is opened (the web's
+ * request-breakdown.tsx). docs/ERROR-CODES.md has the rules, the points R&D still has to
  * confirm, and how to add a code when the router adds one.
  */
 
