@@ -41,6 +41,7 @@ import {
   fmtWhen,
   hasErrorType,
   chainWords,
+  chainsTitle,
   IdSearch,
   LOG_SKEL_COLS,
   ResponseSource,
@@ -199,7 +200,7 @@ function LookupPanel({ id, rangeQ, rangeWords, onClose }: { id: string; rangeQ: 
           <MatchesNote matches={data?.matches} />
           <div style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--text-2)", flexWrap: "wrap" }}>
             <span className="gw-mono gw-tnum">{fmtWhen(row.time)}</span>
-            {row.spec ? <><ChainBadge spec={row.spec} size={14} /><span>{chainWords(row)}</span></> : row.specs && <span>{chainWords(row)}</span>}
+            {row.spec ? <><ChainBadge spec={row.spec} size={14} /><span>{chainWords(row)}</span></> : row.specs && <span title={chainsTitle(row)}>{chainWords(row)}</span>}
             <span className="gw-mono" style={{ color: "var(--text-3)" }}>{row.method === "unknown" ? "method not in the logs" : row.method}</span>
             <span style={{ color: "var(--text-4)" }}>took {fmtTook(row.totalMs)}</span>
           </div>
@@ -467,7 +468,7 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
                       <div style={{ display: "flex", alignItems: "flex-start", gap: 8, minWidth: 0 }}>
                         {r.spec && <span style={{ display: "flex", flexShrink: 0, marginTop: 1 }}><ChainBadge spec={r.spec} size={16} /></span>}
                         <div style={{ minWidth: 0 }}>
-                          <div style={{ fontSize: 12 }}>{chainWords(r)}</div>
+                          <div style={{ fontSize: 12 }} title={chainsTitle(r)}>{chainWords(r)}</div>
                           {r.method === "unknown"
                             ? <div style={{ fontSize: 10.5, color: "var(--text-4)", fontStyle: "italic" }}>method not in the logs</div>
                             : <div className="gw-mono" title={r.method} style={{ fontSize: 10.5, color: "var(--text-3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.method}</div>}

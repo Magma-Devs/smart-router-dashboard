@@ -23,6 +23,9 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   that spans midnight couldn't say which day a row was on.
 - **A log row's chain icon sits on the chain's line**, not halfway down a cell
   that also holds the method and the transaction hash.
+- **A row whose chain the logs don't name lists up to three candidates** and
+  otherwise reads "One of N chains", the full list on hover, instead of every
+  chain its upstreams serve - about thirty behind a shared upstream.
 
 ## [0.47.1]
 
