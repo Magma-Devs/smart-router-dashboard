@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.47.1]
+
 ### Changed
 
 - **The Transactions and Errors lists read only what is new when they poll,
