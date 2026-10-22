@@ -5,6 +5,16 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Added
+
+- **Every router error code in plain words, ready for the Errors page.** `@sr/shared` now
+  holds a table of all the error codes Smart Router v1.6.0 knows (133, plus `UNKNOWN_ERROR`).
+  Each one says where the error comes from (the request, the chain, a provider, the router,
+  or unclear), what it means, and what the customer can do, and carries two tags: whether the
+  router tries another provider, and whether a transaction may have gone through anyway.
+  `explainRouterError(name)` looks one up. Nothing draws it yet. The rules, and what R&D still
+  has to confirm, are in [`docs/ERROR-CODES.md`](./docs/ERROR-CODES.md).
+
 ## [0.48.0]
 
 ### Added

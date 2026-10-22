@@ -253,6 +253,8 @@ packages/shared/          @sr/shared — domain types, metric catalog, PromQL bu
     promql/builders.ts      typed query builders shared by api (+ docs)
     constants/roles.ts      ROLES + roleAtLeast — four cumulative roles
     constants/audit-events.ts  the audit log's verb set (see "Audit log")
+    constants/error-codes.ts   every router error code → source, meaning, what to do,
+                            retries, may have gone through (docs/ERROR-CODES.md)
     audit/format.ts         how a value is written into an audit row —
                             redaction, (none)/(new)/(deleted), yes/no, lists
     types/domain.ts         OverviewData, DashboardData, HeroSummary, ChainSeries,
