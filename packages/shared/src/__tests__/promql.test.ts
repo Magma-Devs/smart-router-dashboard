@@ -80,6 +80,7 @@ import {
   toMetricWindow,
   DEFAULT_WINDOW,
   stepSeconds,
+  alignedBounds,
   bucketGrid,
   chartSampling,
   durationSeconds,
@@ -727,6 +728,49 @@ describe("how a chart samples a window", () => {
     expect(partialSec).toBe(0);
     expect(grid.end).toBe(lastFull);
     expect((grid.end - grid.start) / grid.stepSec + 1).toBe(36);
+  });
+});
+
+// MAG-4571: range reads ended on the current second, so no two polls asked
+// for the same window and no cache (ours or Mimir's) could answer one.
+describe("range reads end on a step boundary", () => {
+  const nows = [
+    Date.UTC(2026, 8, 28, 15, 23, 32) / 1000,
+    Date.UTC(2026, 8, 28, 15, 23, 32, 750) / 1000, // a fraction of a second
+    Date.UTC(2026, 8, 28, 16, 0) / 1000, // exactly on a boundary
+  ];
+
+  it("every window, at its own step and at its chart step: both ends on the step, the end no later than now", () => {
+    for (const w of Object.keys(WINDOWS) as (keyof typeof WINDOWS)[]) {
+      for (const stepSec of [stepSeconds(w), chartSampling(w).stepSec]) {
+        for (const now of nows) {
+          const { start, end } = alignedBounds(WINDOWS[w].rangeSeconds, stepSec, now);
+          const at = `${w} @ ${stepSec}s, now ${now}`;
+          expect(start % stepSec, at).toBe(0);
+          expect(end % stepSec, at).toBe(0);
+          expect(end, at).toBeLessThanOrEqual(now);
+          expect(now, at).toBeLessThan(end + stepSec);
+          // Every window is a whole number of both its steps.
+          expect(end - start, at).toBe(WINDOWS[w].rangeSeconds);
+        }
+      }
+    }
+  });
+
+  it("stays the same for a whole step, then moves by one", () => {
+    const at = Date.UTC(2026, 8, 28, 15, 0) / 1000;
+    const first = alignedBounds(1800, 15, at);
+    expect(alignedBounds(1800, 15, at + 14.999)).toEqual(first);
+    expect(alignedBounds(1800, 15, at + 15)).toEqual({ start: first.start + 15, end: first.end + 15 });
+    expect(first).toEqual({ start: at - 1800, end: at });
+  });
+
+  it("a range that is not a whole number of steps starts at the boundary before it", () => {
+    // 100 s at a 30 s step ends at 13:30:00 and starts at 13:28:00, not 13:28:20.
+    const now = Date.UTC(2026, 8, 28, 13, 30, 10) / 1000;
+    const { start, end } = alignedBounds(100, 30, now);
+    expect(end).toBe(Date.UTC(2026, 8, 28, 13, 30) / 1000);
+    expect(start).toBe(Date.UTC(2026, 8, 28, 13, 28) / 1000);
   });
 });
 
