@@ -5,6 +5,28 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Changed
+
+- **A request looked up by an ID from smart-router v1.6.1 or later is read
+  in its own minutes, not across the page's window** (MAG-4575). Such an ID
+  carries the unix second it was minted in its top 32 bits, so `GET
+  /api/requests/:guid` and `GET /api/transactions/:guid` read from a minute
+  before that second to 5 minutes after, whatever range they are asked for,
+  and answer from that read once it holds the request's `relay_end`. Before,
+  every look-up read the whole range, because a request's 5 to 40 lines
+  never fill the read's limit, and "Search the last 30 days" read a month:
+  720 hour-long splits in Loki, about 1.6 TB of logs on the largest tenant,
+  from one click and again on every load of a `?request=` link. The 5
+  minutes hold the router's longest default processing budget, 3 minutes.
+  A link to a request now finds it whatever the page's window. When its
+  minutes don't hold the request, the range is read as before, except a
+  30-day one: about 0.06% of an older router's random GUIDs decode to a
+  plausible second, and the range still finds those. For a v1.6.1 ID the
+  look-up no longer offers "Search the last 30 days"; it says which second
+  the ID dates the request to and that the logs around then don't have it
+  either. Other IDs keep the button, and a transaction hash or a caller's request id
+  reads the range as before.
+
 ## [0.45.0]
 
 ### Changed
