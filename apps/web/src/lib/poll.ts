@@ -43,3 +43,72 @@ export function pollMsForKey(key: string, ms: number): number {
   const win = q < 0 ? null : new URLSearchParams(key.slice(q + 1)).get("window");
   return win === null ? ms : Math.max(ms, pollMsFor(toMetricWindow(win)));
 }
+
+/* The idle gate: nobody at the page for 10 minutes slows every poll, an hour
+ * stops them. `idle-store.ts` runs these rules against the page's events. */
+
+/** Polling as asked, slowed, or stopped. */
+export type IdlePhase = "active" | "slow" | "paused";
+
+/** No activity for this long multiplies every interval by `IDLE_SLOWDOWN`. */
+export const IDLE_SLOW_AFTER_MS = 10 * 60_000;
+/** No activity for this long pauses every poll. */
+export const IDLE_PAUSE_AFTER_MS = 60 * 60_000;
+export const IDLE_SLOWDOWN = 4;
+/** Activity this close to the last counted is not counted again. */
+export const ACTIVITY_THROTTLE_MS = 1_000;
+
+/** The phase `idleMs` after the last activity. */
+export function idlePhase(idleMs: number): IdlePhase {
+  if (idleMs >= IDLE_PAUSE_AFTER_MS) return "paused";
+  if (idleMs >= IDLE_SLOW_AFTER_MS) return "slow";
+  return "active";
+}
+
+/** How long until the phase moves on its own; null once paused, which only activity ends. */
+export function msToNextPhase(idleMs: number): number | null {
+  if (idleMs < IDLE_SLOW_AFTER_MS) return IDLE_SLOW_AFTER_MS - idleMs;
+  if (idleMs < IDLE_PAUSE_AFTER_MS) return IDLE_PAUSE_AFTER_MS - idleMs;
+  return null;
+}
+
+/**
+ * An interval under the gate; 0 (never) stays 0. Paused keeps the slowed
+ * timer: SWR's `isPaused` turns each tick into a no-op, and a timer that
+ * somehow missed the resume still comes back on its own.
+ */
+export function gatedPollMs(ms: number, phase: IdlePhase): number {
+  return phase === "active" ? ms : ms * IDLE_SLOWDOWN;
+}
+
+export interface IdleState {
+  /** When activity was last counted (ms since the epoch). */
+  lastActivityAt: number;
+  /** The phase last announced to subscribers. */
+  phase: IdlePhase;
+  /** Returns from idle so far: each one re-reads and re-arms every poll. */
+  resumes: number;
+}
+
+export function idleStart(now: number, resumes = 0): IdleState {
+  return { lastActivityAt: now, phase: "active", resumes };
+}
+
+/**
+ * Activity at `now`. The same object back when there's nothing to record
+ * (throttled). Idle by the clock is a return from idle even before the phase
+ * timer has said so - the polls read the clock, not the announcement.
+ */
+export function onActivity(s: IdleState, now: number): IdleState {
+  const idleMs = now - s.lastActivityAt;
+  if (s.phase === "active" && idlePhase(idleMs) === "active") {
+    return idleMs >= 0 && idleMs < ACTIVITY_THROTTLE_MS ? s : { ...s, lastActivityAt: now };
+  }
+  return idleStart(now, s.resumes + 1);
+}
+
+/** The phase timer firing at `now`: the same object back while the phase holds. */
+export function onPhaseTimer(s: IdleState, now: number): IdleState {
+  const phase = idlePhase(now - s.lastActivityAt);
+  return phase === s.phase ? s : { ...s, phase };
+}

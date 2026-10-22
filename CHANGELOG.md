@@ -14,8 +14,18 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   any window. A metrics read now polls every 15 s up to 1h, every minute at
   3h, 6h and 12h, every 5 minutes at 1d and 3d, and every 15 minutes from 7d
   (`pollMsFor` in `lib/poll.ts`), never further apart than its chart's step;
-  a caller's longer interval still wins. Reads without a window and the log
-  lists keep their own pace.
+  a caller's longer interval still wins. The same tab now costs about half
+  as many reads at 3h and a third from 1d up; the rest are reads without a
+  window, which keep their own pace, as do the log lists.
+- **A page nobody uses polls slower after 10 minutes and stops after an
+  hour** (MAG-4573). A tab left open on a screen nobody touched re-read
+  every panel for as long as it stayed open. Now ten minutes with no
+  pointer, key, wheel, touch or focus on the page make every poll four
+  times slower, and an hour stops them, with "Polling paused · move the
+  mouse to resume" beside the Refresh button. The first activity after
+  either re-reads every polling panel once, keeping the numbers on screen
+  while they reload, and resumes the normal pace. A hidden tab still polls
+  nothing.
 
 ## [0.46.1]
 

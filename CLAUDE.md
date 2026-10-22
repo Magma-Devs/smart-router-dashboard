@@ -285,9 +285,11 @@ apps/web/                 @sr/web — Next.js 16 App Router (:3000)
       endpoints/        endpoint row model + IfaceTag + detail sheet — the
                         bits the "By router" grouping renders
       team/             InviteModal · ChangeRoleModal · bits
-    hooks/use-api.ts    SWR wrapper: each window polls at its own pace (see "Polling")
+    hooks/use-api.ts    SWR wrapper: each window polls at its own pace, every
+                        poll through the idle gate (see "Polling")
     hooks/use-log-reads.ts  the two log lists' "Load older" paging
-    lib/poll.ts         the poll cadence per window (pure)
+    lib/poll.ts         the poll cadence per window + the idle gate's rules (pure)
+    lib/idle-store.ts   the idle gate's clock: page activity → SWR's isPaused
     lib/api-client.ts   base URL resolved ONCE per session from /api/config
     styles/globals.css  design tokens + gw-* classes, 1:1 from the prototype
 ```
@@ -772,7 +774,22 @@ it slides the window by under 1% of its length; from 3h the api reads the
 store's recorded series where it has them, which move once a minute. Keys
 without a window (the topbar pulse, block heights, specs) and the log routes
 (`/api/error-requests`, `/api/transactions`, `/api/requests`) poll at the
-caller's interval. A hidden tab doesn't poll at all (SWR's default).
+caller's interval.
+
+**The idle gate** (`lib/idle-store.ts`; its rules are pure functions in
+`lib/poll.ts`) holds every `useApi` poll to whether someone is at the page:
+a pointer move or press, a key, the wheel, a touch, focus, or the tab coming
+back into view. Ten minutes with none of these make every interval four
+times longer; an hour pauses every poll through SWR's `isPaused`, so nothing
+revalidates, a `mutate()` included, and a "Polling paused · move the mouse to
+resume" pill sits beside the Refresh button. The first activity after either
+re-reads every key that polls, once (a global SWR `mutate` that leaves the
+numbers on screen while they reload, never a look-up, which doesn't poll),
+and re-arms each poll's timer at its normal cadence. The phases run on the
+wall clock, so a laptop that slept through the hour wakes up paused instead
+of polling first. A hidden tab doesn't poll at all (SWR's default). The Team
+page's member list and the Account page's sessions call `useSWR` directly,
+outside the gate.
 
 ## API endpoints
 
@@ -1061,6 +1078,7 @@ Compose / Makefile knobs:
 | ESM `.js` suffixes | `apps/api` + `packages/shared` use Node16 resolution — relative imports need `.js` suffixes even though source is `.ts`. `apps/web` uses bundler resolution (no suffixes). |
 | shared `dist` | api/web read `@sr/shared` from `dist/` — run `pnpm --filter @sr/shared build` after editing it (the docker dev `builder` service does this on a `tsc --watch`). |
 | Metric names | NOT `lava_rpcsmartrouter_*` — see Metrics above. The `../SR_Dashboard/` prototype is authoritative for **pixels**, not for metric names. |
+| Polling | A poll belongs in `useApi`: the per-window cadence and the idle gate live there, and a direct `useSWR` poll gets neither. While the gate has polling paused, `isPaused` refuses every revalidation, a `mutate()` included. A click or a key resumes polling before its handler runs, so a refresh a person asks for works; one fired by a timer does nothing until someone comes back. See "Polling" |
 | Window params | `24h` is a wire alias of `1d`; unknown values silently fall back to `DEFAULT_WINDOW` = `30m` (never a 400). The web opens on the same constant, and a window the user picks persists to `localStorage` under `sr:window` — so a changed default only reaches someone who has never picked one. `1h` is in the catalog but not in the page-level select. |
 | Provider `role` | Only the helm values format marks backups (`is_backup`); with a raw SR_CONFIG mount, `role` is null and backup-share panels stay empty — that's honest, not a bug. |
 | Endpoint URLs | `localhost:<port>` comes from SR_CONFIG's listen ports, gateway hostnames from helm values' `publicUrls` — a mount never has both. Anything that renders or dials an endpoint address must resolve public → local → `—` (`epHttpUrl` / `epWsUrl` in `components/endpoints/bits.tsx`), never hardcode `localhost`. |
