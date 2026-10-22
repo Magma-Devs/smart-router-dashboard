@@ -13,6 +13,7 @@ import { Fragment, useState } from "react";
 import { buildChainMetaByIndex, explorerTxUrl, guidMintedSecond, type CallFacts, type LogUnavailable, type RelayAttempt } from "@sr/shared";
 import { SkelRows, type SkelCol } from "@/components/gateway/Skel";
 import { CopyButton } from "@/components/gateway/CopyButton";
+import { ExplorerBlockLink } from "@/components/gateway/ExplorerLink";
 import { useGrafanaUrl } from "@/hooks/use-grafana-url";
 import { errorDocsUrl } from "@/lib/error-docs";
 import { fmtComma } from "@/lib/format";
@@ -86,11 +87,9 @@ export function hasErrorType(r: ErrorTyped, key: string): boolean {
   return errorTypesOf(r).has(key);
 }
 
+/** A row's time, always with its date: a list can span midnight, and a time alone doesn't say which day. */
 export function fmtWhen(ms: number): string {
-  const d = new Date(ms);
-  return d.toDateString() === new Date().toDateString()
-    ? d.toLocaleTimeString("en-US", { hour12: false })
-    : d.toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+  return new Date(ms).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
 }
 
 export function fmtTook(ms: number | null): string {
@@ -343,11 +342,11 @@ export function TimeRangeControl({ range, onChange, windowLabel, windowMs }: {
 /** Clicks inside an opened row's own controls stay there: a copy or a link doesn't fold the row. */
 const keepClick = (e: React.MouseEvent) => e.stopPropagation();
 
-/** A row's caller, under its time: their project, or "—" when the request carried none. */
+/** A row's caller, under its time: their project, or "—" when the request carried no project-id header. */
 export function CustomerCell({ customer }: { customer?: string }) {
   const style: React.CSSProperties = { display: "block", marginTop: 4, fontSize: 10.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
-  if (!customer) return <span title="The request named no customer" style={{ ...style, color: "var(--text-4)" }}>—</span>;
-  return <span className="gw-mono" title={`Customer: ${customer}`} style={{ ...style, color: "var(--text-3)" }}>{customer}</span>;
+  if (!customer) return <span title="No customer: the caller sent no project-id header" style={{ ...style, color: "var(--text-4)" }}>—</span>;
+  return <span className="gw-mono" title={`Customer - the project-id header the caller sent: ${customer}`} style={{ ...style, color: "var(--text-3)" }}>{customer}</span>;
 }
 
 /** The customer filter's key for requests that carried none. */
@@ -369,18 +368,19 @@ export const shortHash = (h: string) => (h.length > 16 ? `${h.slice(0, h.startsW
 
 /**
  * A transaction's hash, to copy, linked to the chain's explorer where a
- * transaction page is known (explorerTxUrl) - plain text where it isn't.
- * `full` writes it out whole, for the details.
+ * transaction page is known (explorerTxUrl) - plain text where it isn't, and
+ * where every node `refused` it: an explorer has no page for a transaction
+ * the chain never saw. `full` writes it out whole, for the details.
  */
-export function TxHash({ hash, spec, full = false }: { hash: string; spec: string | null; full?: boolean }) {
-  const url = spec ? explorerTxUrl(spec, hash) : null;
+export function TxHash({ hash, spec, full = false, refused = false }: { hash: string; spec: string | null; full?: boolean; refused?: boolean }) {
+  const url = spec && !refused ? explorerTxUrl(spec, hash) : null;
   const text = full ? hash : shortHash(hash);
   const style: React.CSSProperties = { fontSize: full ? 11.5 : 10.5, wordBreak: full ? "break-all" : undefined, whiteSpace: full ? undefined : "nowrap" };
   return (
     <span onClick={keepClick} style={{ display: "inline-flex", alignItems: "center", gap: 6, minWidth: 0, maxWidth: "100%" }}>
       {url
         ? <a className="gw-mono" href={url} target="_blank" rel="noopener noreferrer" title={`${hash} - on the chain's explorer`} style={{ ...style, color: "var(--brand)", textDecoration: "none" }}>{text}{full ? "" : " ↗"}</a>
-        : <span className="gw-mono" title={hash} style={{ ...style, color: "var(--text-3)" }}>{text}</span>}
+        : <span className="gw-mono" title={refused ? `${hash} - every node refused this transaction, so the chain most likely never saw it and no explorer has it` : hash} style={{ ...style, color: "var(--text-3)" }}>{text}</span>}
       <CopyButton text={hash} />
     </span>
   );
@@ -392,24 +392,27 @@ const fmtBytes = (n: number) => (n < 1024 ? `${fmtComma(n)} B` : n < 1024 * 1024
  * What the router wrote about the call itself, in an opened row: the
  * caller's project and ids, the request's and the reply's size, the block it
  * named and the one the router had. Only what the router wrote; nothing when
- * it wrote none.
+ * it wrote none. The caller's ids are named by the header they came in, so
+ * none reads as the router's own ID or as a transaction's; a block links to
+ * the chain's explorer where one has a proven block page.
  */
-export function CallFactsLine({ row }: { row: CallFacts }) {
-  const items: [string, React.ReactNode][] = [];
-  if (row.customer) items.push(["Customer", row.customer]);
-  if (row.requestId) items.push(["Caller's request ID", row.requestId]);
-  if (row.taskId) items.push(["Task ID", row.taskId]);
-  if (row.txId) items.push(["Tx ID", row.txId]);
-  if (row.requestBytes != null) items.push(["Request", fmtBytes(row.requestBytes)]);
-  if (row.replyBytes != null) items.push(["Reply", fmtBytes(row.replyBytes)]);
-  if (row.requestedBlock != null) items.push(["Block asked for", fmtComma(row.requestedBlock)]);
-  if (row.seenBlock != null) items.push(["Router's latest block", fmtComma(row.seenBlock)]);
+export function CallFactsLine({ row, spec }: { row: CallFacts; spec: string | null }) {
+  const block = (n: number) => (spec ? <ExplorerBlockLink spec={spec} block={n}>{fmtComma(n)}</ExplorerBlockLink> : fmtComma(n));
+  const items: [string, React.ReactNode, string][] = [];
+  if (row.customer) items.push(["Customer", row.customer, "The project-id header the caller sent"]);
+  if (row.requestId) items.push(["Caller's X-Request-Id", row.requestId, "The X-Request-Id header the caller sent - the caller's own ID, not the router's"]);
+  if (row.taskId) items.push(["Caller's X-Task-Id", row.taskId, "The X-Task-Id header the caller sent"]);
+  if (row.txId) items.push(["Caller's X-Tx-Id", row.txId, "The X-Tx-Id header the caller sent - the caller's own ID, not the transaction's hash on the chain"]);
+  if (row.requestBytes != null) items.push(["Request", fmtBytes(row.requestBytes), "The request's size"]);
+  if (row.replyBytes != null) items.push(["Reply", fmtBytes(row.replyBytes), "The size of the reply the client got"]);
+  if (row.requestedBlock != null) items.push(["Block asked for", block(row.requestedBlock), "The block the request names"]);
+  if (row.seenBlock != null) items.push(["Router's latest block", block(row.seenBlock), "The chain's latest block as the router knew it when the request came in"]);
   if (!items.length) return null;
   return (
     <DetailLine>
       <div style={{ display: "flex", flexWrap: "wrap", columnGap: 18, rowGap: 4, fontSize: 11.5 }}>
-        {items.map(([k, v]) => (
-          <span key={k} style={{ color: "var(--text-4)", whiteSpace: "nowrap" }}>
+        {items.map(([k, v, title]) => (
+          <span key={k} title={title} style={{ color: "var(--text-4)", whiteSpace: "nowrap" }}>
             {k} <span className="gw-mono" style={{ color: "var(--text-2)" }}>{v}</span>
           </span>
         ))}
@@ -431,11 +434,11 @@ export function RequestLogsLink({ id, startMs, tookMs }: { id: string; startMs: 
   );
 }
 
-/** The foot of an opened row: the request's ID to copy, and its lines in the logs. */
+/** The foot of an opened row: the router's ID for the request to copy, and its lines in the logs. */
 export function RequestIdLine({ id, startMs, tookMs }: { id: string; startMs: number; tookMs: number | null }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11.5, color: "var(--text-4)" }}>
-      Request ID <span className="gw-mono" style={{ color: "var(--text-3)" }}>{id}</span> <CopyButton text={id} />
+      <span title="The ID Smart Router gives every request: its GUID in the router's logs, and the Lava-Guid header on the reply">Smart Router request ID</span> <span className="gw-mono" style={{ color: "var(--text-3)" }}>{id}</span> <CopyButton text={id} />
       <RequestLogsLink id={id} startMs={startMs} tookMs={tookMs} />
     </div>
   );
@@ -554,10 +557,21 @@ export function UnreadStrip({ count, noun, bound, covers }: { count: number; nou
   );
 }
 
+/** The most candidate chains a row names; past this it says how many, and `chainsTitle` lists them. */
+const CHAIN_WORDS_MAX = 3;
+
 /** A row's chain - or the chains it could be on, when its upstreams serve several. */
 export function chainWords(row: { spec: string | null; specs?: string[] }): string {
   if (row.spec) return buildChainMetaByIndex(row.spec).name;
-  return row.specs?.length ? row.specs.map((s) => buildChainMetaByIndex(s).name).join(" or ") : "—";
+  if (!row.specs?.length) return "—";
+  if (row.specs.length > CHAIN_WORDS_MAX) return `One of ${row.specs.length} chains`;
+  return row.specs.map((s) => buildChainMetaByIndex(s).name).join(" or ");
+}
+
+/** The hover text of a row whose chain the logs don't name: every chain its upstreams serve. */
+export function chainsTitle(row: { spec: string | null; specs?: string[] }): string | undefined {
+  if (row.spec || !row.specs?.length) return undefined;
+  return `The logs don't name this request's chain. Its upstreams serve ${row.specs.length === 1 ? "one" : `these ${row.specs.length}`}: ${row.specs.map((s) => buildChainMetaByIndex(s).name).join(", ")}`;
 }
 
 /** Enter and Space open a row, as a click does. */

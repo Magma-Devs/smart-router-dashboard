@@ -57,6 +57,7 @@ import {
   RequestIdLine,
   TimeRangeControl,
   chainWords,
+  chainsTitle,
   onRowKey,
   rangeIsLive,
   unreadableWords,
@@ -120,12 +121,13 @@ function Details({ row }: { row: TxLogRow }) {
       {row.txHash && (
         <DetailLine>
           <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11.5, color: "var(--text-4)", flexWrap: "wrap" }}>
-            Transaction hash <TxHash hash={row.txHash} spec={row.spec} full />
+            Transaction hash <TxHash hash={row.txHash} spec={row.spec} refused={row.outcome === "rejected"} full />
             {row.txStatus === "success" && <span>· the chain ran it</span>}
+            {row.outcome === "rejected" && <span>· refused by every node, so the chain most likely never saw it</span>}
           </div>
         </DetailLine>
       )}
-      <CallFactsLine row={row} />
+      <CallFactsLine row={row} spec={row.spec} />
       <RequestIdLine id={row.guid} startMs={row.time} tookMs={row.replyMs} />
     </div>
   );
@@ -155,7 +157,7 @@ function TxLookupPanel({ id, rangeQ, rangeWords, onClose }: { id: string; rangeQ
           <MatchesNote matches={data?.matches} />
           <div style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--text-2)", flexWrap: "wrap" }}>
             <span className="gw-mono gw-tnum">{fmtWhen(row.time)}</span>
-            {row.spec ? <><ChainBadge spec={row.spec} size={14} /><span>{chainWords(row)}</span></> : row.specs && <span>{chainWords(row)}</span>}
+            {row.spec ? <><ChainBadge spec={row.spec} size={14} /><span>{chainWords(row)}</span></> : row.specs && <span title={chainsTitle(row)}>{chainWords(row)}</span>}
             <span className="gw-mono" style={{ color: "var(--text-3)" }}>{row.method === "unknown" ? "method not in the logs" : row.method}</span>
             <span style={{ color: "var(--text-4)" }}>responded in {fmtTook(row.replyMs)}</span>
           </div>
@@ -195,7 +197,9 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
   // Rows are matched to a config router by the upstreams they went to.
   const { routerIdQ } = useRouterFilter();
   const rangeQ = range ? `from=${Math.round(range.from)}&to=${Math.round(range.to)}` : `window=${win}`;
-  const log = useLogReads<TxLogRow, TransactionsReport>(`/api/transactions?${rangeQ}${specQ}${routerIdQ}`, live);
+  // An open row holds the list still: a newer read would move it, or page it out of view.
+  const held = live && open !== null;
+  const log = useLogReads<TxLogRow, TransactionsReport>(`/api/transactions?${rangeQ}${specQ}${routerIdQ}`, live && !held);
   const data = log.head;
   const isLoading = log.first.isLoading;
   const allRows = log.rows;
@@ -294,6 +298,7 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
             Transactions<Tip text={TT.txLog!} />
             {data && <span style={{ fontWeight: 400, color: "var(--text-4)", marginLeft: 8 }}>{fmtComma(rows.length)}{rows.length !== allRows.length ? ` of ${fmtComma(allRows.length)}` : ""}</span>}
             <span style={{ marginLeft: 8, display: "inline-flex" }}><Refreshing show={log.refreshing} label="Reading newer transactions" /></span>
+            {held && <span style={{ fontWeight: 400, color: "var(--text-4)", marginLeft: 8 }}>· paused while a row is open</span>}
           </span>
           {/* Narrowing it down, and finding one transaction. */}
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -367,14 +372,15 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
                         <CustomerCell customer={r.customer} />
                       </td>
                       <td style={{ maxWidth: 0, verticalAlign: "top" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-                          {r.spec && <ChainBadge spec={r.spec} size={16} />}
+                        {/* The icon sits on the chain's line, not halfway down the cell. */}
+                        <div style={{ display: "flex", alignItems: "flex-start", gap: 8, minWidth: 0 }}>
+                          {r.spec && <span style={{ display: "flex", flexShrink: 0, marginTop: 1 }}><ChainBadge spec={r.spec} size={16} /></span>}
                           <div style={{ minWidth: 0 }}>
-                            <div style={{ fontSize: 12 }}>{chainWords(r)}</div>
+                            <div style={{ fontSize: 12 }} title={chainsTitle(r)}>{chainWords(r)}</div>
                             {r.method === "unknown"
                               ? <div style={{ fontSize: 10.5, color: "var(--text-4)", fontStyle: "italic" }}>method not in the logs</div>
                               : <div className="gw-mono" title={r.method} style={{ fontSize: 10.5, color: "var(--text-3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.method}</div>}
-                            {r.txHash && <div style={{ marginTop: 3 }}><TxHash hash={r.txHash} spec={r.spec} /></div>}
+                            {r.txHash && <div style={{ marginTop: 3 }}><TxHash hash={r.txHash} spec={r.spec} refused={r.outcome === "rejected"} /></div>}
                           </div>
                         </div>
                       </td>
