@@ -41,6 +41,7 @@ describe("runnable defaults", () => {
       ["XLM", "rest"],
       ["TON", "rest"],
       ["VECHAIN", "rest"],
+      ["POLYMESH", "rest"],
       ["TEZOS", "rest"],
       ["STACKS", "rest"],
       ["ARWEAVE", "rest"],
@@ -140,6 +141,31 @@ describe("runnable defaults", () => {
     // The ones that DO answer bare keep their place.
     expect(byName("/getMasterchainInfo")?.ready).toBe(true);
     expect(byName("/getConsensusBlock")?.ready).toBe(true);
+  });
+
+  it("sends Polymesh's Sidecar routes with the query and the arguments they need", () => {
+    // `/blocks` and `/accounts/compare` look complete, but Sidecar answers 400
+    // without `?range=` / `?addresses=`. Both were "ready" and both failed.
+    const cfg = getInterfaceConfig("POLYMESH", "rest", []);
+    const byName = (name: string) => cfg?.regular.find((c) => c.label === name);
+    expect(byName("/blocks")?.params).toBe("/blocks?range=1-2");
+    expect(byName("/accounts/compare")?.params).toMatch(/^\/accounts\/compare\?addresses=\w+,\w+$/);
+    // Every GET with a path template ships a filled-in example.
+    for (const cmd of cfg!.regular.filter((c) => c.method === "GET" && /\{/.test(c.label))) {
+      expect(cmd.params, cmd.label).not.toMatch(/\{[^}"]+\}/);
+    }
+    // A metadata version is `v14`; a bare `14` answers 500.
+    expect(byName("/runtime/metadata/{metadataVersion}")?.params).toMatch(/\/v\d+$/);
+    // Block traces need an unsafe RPC the node refuses: no ready mark, no "needs params".
+    const traces = byName("/experimental/blocks/{blockId}/traces");
+    expect(traces?.ready).toBeUndefined();
+    expect(traces?.needsInput).toBeUndefined();
+    expect(traces?.desc).toMatch(/unsafe/);
+    // The account examples are a mainnet stash, so the testnet keeps its placeholders.
+    const testnet = getInterfaceConfig("POLYMESHT", "rest", []);
+    const stakingInfo = testnet?.regular.find((c) => c.label === "/accounts/{accountId}/staking-info");
+    expect(stakingInfo?.needsInput).toBe(true);
+    expect(testnet?.regular.find((c) => c.label === "/blocks")?.params).toBe("/blocks?range=1-2");
   });
 
   it("keeps endpoints that were checked and still cannot be sent out of the head", () => {

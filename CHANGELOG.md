@@ -5,6 +5,20 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Fixed
+
+- **Polymesh REST commands in Try now send working requests** (MAG-4623).
+  Polymesh's REST surface had no examples. `/blocks` and `/accounts/compare` were
+  marked ready but answer 400 without their query string, and the 22 commands
+  that take an argument opened on a bare `{placeholder}` path. Now 35 of the 39
+  GET commands open on a path that answers 200 through the router: a block
+  number, a pallet item with `?metadata=true`, `v15` for a metadata version, an
+  account to look up. Each also says what it returns. The other four, the
+  `/experimental/.../traces` routes, are marked as not served, because the node
+  refuses the unsafe RPC that block traces need. The examples were checked
+  through a production router. The account examples are a mainnet validator
+  stash, so the testnet keeps its placeholders for those three.
+
 ## [0.49.1]
 
 ### Security
