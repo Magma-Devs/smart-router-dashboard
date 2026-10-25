@@ -7,14 +7,14 @@
  * Attempts sent together sit side by side (a transaction's broadcast); one
  * batch after another is joined by arrows (a retry). The attempt whose
  * response was returned to the client is marked "→ client". An error the router didn't
- * classify shows the node's own words - there is no "unknown error" here. */
+ * classify shows the node's own words - there is no "unknown error" here.
+ * An opened row is drawn by request-breakdown.tsx. */
 
 import { Fragment, useState } from "react";
-import { buildChainMetaByIndex, explorerTxUrl, guidMintedSecond, type CallFacts, type LogUnavailable, type RelayAttempt } from "@sr/shared";
+import { buildChainMetaByIndex, explorerTxUrl, guidMintedSecond, type LogUnavailable, type RelayAttempt } from "@sr/shared";
 import { SkelRows, type SkelCol } from "@/components/gateway/Skel";
 import { CopyButton } from "@/components/gateway/CopyButton";
 import { useGrafanaUrl } from "@/hooks/use-grafana-url";
-import { errorDocsUrl } from "@/lib/error-docs";
 import { fmtComma } from "@/lib/format";
 import { requestLogsHref } from "@/lib/grafana-logs";
 
@@ -108,12 +108,13 @@ const MARK: Record<RelayAttempt["outcome"], string> = { ok: "✓", failed: "✗"
  * anyone who hadn't read the tooltip, and a red one beside an orange "Node
  * error" read as two different things.
  */
-function Step({ a, replyColor }: { a: RelayAttempt; replyColor?: string }) {
+function Step({ a, replyColor, quiet = false }: { a: RelayAttempt; replyColor?: string; quiet?: boolean }) {
   const mark = MARK[a.outcome];
   const markColor = a.outcome === "ok" ? "var(--ok)" : a.outcome === "failed" ? "var(--err)" : "var(--text-4)";
   const appColor = replyColor ?? (a.outcome === "ok" ? "var(--ok)" : a.outcome === "failed" ? "var(--warn)" : "var(--text-3)");
   const note =
-    a.outcome === "failed" ? errorLabel(a)
+    quiet ? ""
+    : a.outcome === "failed" ? errorLabel(a)
       : a.outcome === "skipped" ? "skipped"
         : a.outcome === "cancelled" ? "cancelled"
           : a.outcome === "no-result" ? (a.replied ? "responded" : "no response")
@@ -140,11 +141,13 @@ export function stopMarker(row: { exhausted: boolean; stopReason: string | null;
 }
 
 /** Every try as a chip: side by side within a batch, arrows between batches. */
-export function Flow({ attempts, end = null, replyColor }: {
+export function Flow({ attempts, end = null, replyColor, quietReplied = false }: {
   attempts: RelayAttempt[];
   end?: { text: string; title: string } | null;
   /** The row's result colour - the attempt whose response was returned is outlined in it. */
   replyColor?: string;
+  /** The row's Result column already names the returned error: its chip doesn't say it again. */
+  quietReplied?: boolean;
 }) {
   const batches: RelayAttempt[][] = [];
   for (const a of attempts) {
@@ -158,7 +161,7 @@ export function Flow({ attempts, end = null, replyColor }: {
       {batches.map((b, i) => (
         <Fragment key={i}>
           {i > 0 && arrow}
-          {b.map((a, j) => <Step key={j} a={a} replyColor={replyColor} />)}
+          {b.map((a, j) => <Step key={j} a={a} replyColor={replyColor} quiet={quietReplied && a.replied} />)}
         </Fragment>
       ))}
       {end && (
@@ -168,55 +171,6 @@ export function Flow({ attempts, end = null, replyColor }: {
         </>
       )}
     </div>
-  );
-}
-
-const OUTCOME_WORDS: Record<RelayAttempt["outcome"], string> = {
-  ok: "succeeded",
-  failed: "failed",
-  skipped: "skipped",
-  cancelled: "cancelled",
-  "no-result": "no response logged",
-};
-
-/** A row of the details: a time on the left, anything on the right. */
-export function DetailLine({ at, children }: { at?: string; children: React.ReactNode }) {
-  return (
-    <div style={{ display: "grid", gridTemplateColumns: "64px 1fr", gap: 10, alignItems: "baseline" }}>
-      <span className="gw-mono gw-tnum" style={{ fontSize: 11, color: "var(--text-4)" }}>{at ?? ""}</span>
-      <div style={{ minWidth: 0 }}>{children}</div>
-    </div>
-  );
-}
-
-export const detailText: React.CSSProperties = { fontSize: 11.5, color: "var(--text-2)", marginTop: 3, lineHeight: 1.55, wordBreak: "break-word" };
-
-/** Every try in full, when a row is opened: when it went out, what came back
- *  and how long that took, the router's reasoning, and the words themselves. */
-export function AttemptList({ attempts }: { attempts: RelayAttempt[] }) {
-  return (
-    <>
-      {attempts.map((a, i) => (
-        <DetailLine key={i} at={`+${fmtComma(a.atMs)} ms`}>
-          <div style={{ fontSize: 12, color: "var(--text-2)" }}>
-            <span className="gw-mono" style={{ color: "var(--text)" }}>{a.upstream}</span>
-            {" - "}
-            {a.outcome === "no-result" && a.replied ? "responded" : OUTCOME_WORDS[a.outcome]}
-            {a.endMs != null && a.outcome !== "skipped" && <span style={{ color: "var(--text-3)" }}> after {fmtTook(a.endMs - a.atMs)}</span>}
-            {a.replied && <span style={{ color: "var(--text-3)" }}> · response returned to the client</span>}
-            {realCode(a) && (
-              <> · <a className="gw-mono" href={errorDocsUrl(a.code!)} target="_blank" rel="noopener noreferrer" style={{ color: "var(--text-3)" }}>{a.code}</a></>
-            )}
-            {a.nodeCode != null && <span className="gw-mono" style={{ color: "var(--text-3)" }} title="The node's own JSON-RPC error code"> · node {a.nodeCode}</span>}
-            {a.outcome === "failed" && a.retryable != null && (
-              <span style={{ color: "var(--text-4)" }}> · {a.retryable ? "retryable" : "not retryable"}</span>
-            )}
-          </div>
-          {a.note && <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 3, lineHeight: 1.5 }}>{a.note}</div>}
-          {a.message && <div className="gw-mono" style={detailText}>{a.message}</div>}
-        </DetailLine>
-      ))}
-    </>
   );
 }
 
@@ -386,38 +340,6 @@ export function TxHash({ hash, spec, full = false }: { hash: string; spec: strin
   );
 }
 
-const fmtBytes = (n: number) => (n < 1024 ? `${fmtComma(n)} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
-
-/**
- * What the router wrote about the call itself, in an opened row: the
- * caller's project and ids, the request's and the reply's size, the block it
- * named and the one the router had. Only what the router wrote; nothing when
- * it wrote none.
- */
-export function CallFactsLine({ row }: { row: CallFacts }) {
-  const items: [string, React.ReactNode][] = [];
-  if (row.customer) items.push(["Customer", row.customer]);
-  if (row.requestId) items.push(["Caller's request ID", row.requestId]);
-  if (row.taskId) items.push(["Task ID", row.taskId]);
-  if (row.txId) items.push(["Tx ID", row.txId]);
-  if (row.requestBytes != null) items.push(["Request", fmtBytes(row.requestBytes)]);
-  if (row.replyBytes != null) items.push(["Reply", fmtBytes(row.replyBytes)]);
-  if (row.requestedBlock != null) items.push(["Block asked for", fmtComma(row.requestedBlock)]);
-  if (row.seenBlock != null) items.push(["Router's latest block", fmtComma(row.seenBlock)]);
-  if (!items.length) return null;
-  return (
-    <DetailLine>
-      <div style={{ display: "flex", flexWrap: "wrap", columnGap: 18, rowGap: 4, fontSize: 11.5 }}>
-        {items.map(([k, v]) => (
-          <span key={k} style={{ color: "var(--text-4)", whiteSpace: "nowrap" }}>
-            {k} <span className="gw-mono" style={{ color: "var(--text-2)" }}>{v}</span>
-          </span>
-        ))}
-      </div>
-    </DetailLine>
-  );
-}
-
 /** "Logs ↗": the request's own lines on the Grafana logs board, a minute either side of it. Nothing without a Grafana. */
 export function RequestLogsLink({ id, startMs, tookMs }: { id: string; startMs: number; tookMs: number | null }) {
   const grafana = useGrafanaUrl();
@@ -428,16 +350,6 @@ export function RequestLogsLink({ id, startMs, tookMs }: { id: string; startMs: 
       style={{ color: "var(--brand)", fontWeight: 600, textDecoration: "none", whiteSpace: "nowrap" }}>
       Logs ↗
     </a>
-  );
-}
-
-/** The foot of an opened row: the request's ID to copy, and its lines in the logs. */
-export function RequestIdLine({ id, startMs, tookMs }: { id: string; startMs: number; tookMs: number | null }) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11.5, color: "var(--text-4)" }}>
-      Request ID <span className="gw-mono" style={{ color: "var(--text-3)" }}>{id}</span> <CopyButton text={id} />
-      <RequestLogsLink id={id} startMs={startMs} tookMs={tookMs} />
-    </div>
   );
 }
 
@@ -455,12 +367,15 @@ export function IdSearch({ onFind }: { onFind: (id: string) => void }) {
   );
 }
 
-/** Where a looked-up request sits, above the list: its ID, its result, a way out. The body is the tab's own. */
-export function LookupFrame({ id, tag, onClose, children }: { id: string; tag?: React.ReactNode; onClose: () => void; children: React.ReactNode }) {
+/** Where a looked-up request sits, above the list: what was looked up, its result, a way out. The body is the tab's own.
+ *  `found`: the request's own ID, once read - the body names it, so the header doesn't repeat it. */
+export function LookupFrame({ id, found, tag, onClose, children }: { id: string; found?: string; tag?: React.ReactNode; onClose: () => void; children: React.ReactNode }) {
   return (
     <div style={{ borderBottom: "1px solid var(--line)", background: "var(--bg-2)" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px" }}>
-        <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-2)" }}>Request <span className="gw-mono">{id}</span></span>
+        <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-2)" }}>
+          {found === id ? "Request found" : <>Looked up <span className="gw-mono">{id}</span></>}
+        </span>
         {tag}
         <span style={{ flex: 1 }} />
         <button onClick={onClose} aria-label="Close" style={{ border: "none", background: "none", color: "var(--text-3)", cursor: "pointer", fontSize: 14, padding: 0, fontFamily: "inherit" }}>✕</button>

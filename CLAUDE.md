@@ -253,6 +253,8 @@ packages/shared/          @sr/shared — domain types, metric catalog, PromQL bu
     promql/builders.ts      typed query builders shared by api (+ docs)
     constants/roles.ts      ROLES + roleAtLeast — four cumulative roles
     constants/audit-events.ts  the audit log's verb set (see "Audit log")
+    constants/error-codes.ts   every router error code → source, meaning, what to do,
+                            retries, may have gone through (docs/ERROR-CODES.md)
     audit/format.ts         how a value is written into an audit row —
                             redaction, (none)/(new)/(deleted), yes/no, lists
     types/domain.ts         OverviewData, DashboardData, HeroSummary, ChainSeries,
@@ -297,7 +299,9 @@ apps/web/                 @sr/web — Next.js 16 App Router (:3000)
                         cards + ErrorRequests, the request list) ·
                         TransactionLog · TransactionsChart (its bars over
                         time) · request-log (the two log tables'
-                        shared chips + details) · upstream/ (the
+                        shared chips) · request-breakdown (an opened row:
+                        request, tries, response, each error
+                        explained from constants/error-codes.ts) · upstream/ (the
                         Upstreams tab: PMRoster · PMBody - errors over time
                         (a bar opens the Errors tab on the requests
                         that failed at its upstream),

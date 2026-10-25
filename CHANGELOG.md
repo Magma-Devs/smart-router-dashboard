@@ -5,6 +5,29 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Added
+
+- **Every router error code in plain words, ready for the Errors page.** `@sr/shared` now
+  holds a table of all the error codes Smart Router v1.6.0 knows (133, plus `UNKNOWN_ERROR`).
+  Each one says where the error comes from (the request, the chain, a provider, the router,
+  or unclear), what it means, and what the customer can do, and carries two tags: whether the
+  router tries another provider, and whether a transaction may have gone through anyway.
+  `explainRouterError(name)` looks one up. The rules, and what R&D still has to confirm, are in
+  [`docs/ERROR-CODES.md`](./docs/ERROR-CODES.md).
+- **An opened request reads as a breakdown, on the Errors and Transactions tabs.** Three
+  parts:
+  - **Request:** method, chain, time, duration, ID, sizes, the requested block and the
+    router's latest block.
+  - **Tries:** one line per try at a provider: result, time, the error by name and its
+    source (Request, Chain, Provider, Router or Undetermined). The router's code and the
+    provider's message are on hover, shown inline only when the source is undetermined.
+  - **Response:** returned by, status, retries and the next step.
+
+  Each error is stated once, on the try it happened on. Orange marks what was returned to
+  the client. A failed transaction that may still have gone through says "May already be on
+  chain". A requested block ahead of the router's latest gets a note. The Errors tab no
+  longer names the returned error twice, and a look-up no longer repeats the request's ID.
+
 ### Changed
 
 - **On Metrics, the menu folds to its icons beside the chains drawer.** The

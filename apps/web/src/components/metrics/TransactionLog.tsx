@@ -16,7 +16,7 @@
  * and finality needs the chain. */
 
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { WINDOWS, type MetricWindow, type TransactionLookup, type TransactionsReport, type TxLogRow } from "@sr/shared";
+import { WINDOWS, explainRouterError, type MetricWindow, type TransactionLookup, type TransactionsReport, type TxLogRow } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { useLogReads } from "@/hooks/use-log-reads";
 import { useRouterFilter } from "@/hooks/use-router-options";
@@ -24,22 +24,17 @@ import { Refreshing, SkelLine, SkelRows, SkelValue } from "@/components/gateway/
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { Tip } from "@/components/gateway/Tip";
 import { TT } from "@/lib/tooltips";
-import { errorDocsUrl } from "@/lib/error-docs";
 import { fmtComma, fmtPct } from "@/lib/format";
 import { linkRequest, requestFromUrl } from "@/lib/request-in-url";
 import {
   AppGot,
   appGot,
-  AttemptList,
-  CallFactsLine,
   CustomerCell,
   customerOptions,
   hasCustomer,
   LOOKUP_REFUSED,
   MatchesNote,
   TxHash,
-  DetailLine,
-  detailText,
   errorTypeOptions,
   filterSelectStyle,
   Flow,
@@ -54,7 +49,6 @@ import {
   OlderRowsLoading,
   Pager,
   ReadingStrip,
-  RequestIdLine,
   TimeRangeControl,
   chainWords,
   onRowKey,
@@ -65,6 +59,7 @@ import {
   ResponseSource,
 } from "./request-log";
 import { TransactionsChart, TX_RESULT } from "./TransactionsChart";
+import { RequestBreakdown, type BreakdownProps, type FinalAnswer } from "./request-breakdown";
 
 const PER_PAGE = 25;
 const ALL = "all";
@@ -91,43 +86,34 @@ const OUTCOME_ORDER: TxLogRow["outcome"][] = ["accepted", "rejected", "failed-on
 
 /** Every upstream's answer in full, when a row is opened. A rejection is the
  *  answering upstream's own error, so it shows on that upstream's line. */
+/** The response's status for a transaction: the word, its colour, and a detail where the code doesn't carry one. */
+export function txStatusOf(r: TxLogRow): BreakdownProps["status"] {
+  switch (r.outcome) {
+    case "accepted": return { label: "Accepted", color: "var(--ok)" };
+    case "rejected": return { label: "Rejected", color: "var(--err)" };
+    case "failed-on-chain": return { label: "Failed on chain", color: "var(--err)" };
+    case "failed": return { label: "Error", color: "var(--err)", detail: r.error?.code ? null : "No usable response from any provider" };
+    case "unknown": return { label: "Unknown", color: "var(--text-3)", detail: "Outcome not confirmed" };
+  }
+}
+
+/** An opened row: the transaction, every provider it went to, and the response to the client, in plain words. */
 function Details({ row }: { row: TxLogRow }) {
+  const replied = row.attempts.find((a) => a.replied);
+  const final: FinalAnswer =
+    row.outcome === "failed" ? { from: "router", code: row.error?.code ?? null }
+      : replied ? { from: "provider", attempt: replied, code: row.error?.code ?? null }
+        : null;
+  const known = row.error ? explainRouterError(row.error.code) : null;
+  const extra: { label: string; value: React.ReactNode }[] = [];
+  if (row.outcome === "failed-on-chain" && row.txError) extra.push({ label: "Chain error", value: <span className="gw-mono" style={{ wordBreak: "break-word" }}>{row.txError}</span> });
+  if (row.note) extra.push({ label: "Note", value: row.note });
+  if (row.txHash) extra.push({ label: "Hash", value: <TxHash hash={row.txHash} spec={row.spec} full /> });
+  if (row.outcome === "unknown" && !known) extra.push({ label: "Next step", value: "Check the chain before sending it again." });
   return (
-    <div style={{ display: "grid", gap: 10, padding: "4px 4px 8px" }}>
-      <AttemptList attempts={row.attempts} />
-      {row.note && (
-        <DetailLine>
-          <div style={{ fontSize: 12, color: "var(--text-3)", lineHeight: 1.5 }}>
-            <span style={{ color: "var(--text-2)" }}>Why the result is unknown: </span>{row.note}
-          </div>
-        </DetailLine>
-      )}
-      {row.outcome === "failed" && row.error && (
-        <DetailLine at={row.replyMs != null ? `+${fmtComma(row.replyMs)} ms` : ""}>
-          <div style={{ fontSize: 12, color: "var(--err)" }}>
-            Router error returned to the client ·{" "}
-            <a className="gw-mono" href={errorDocsUrl(row.error.code)} target="_blank" rel="noopener noreferrer" style={{ color: "var(--text-3)" }}>{row.error.code}</a>
-          </div>
-          <div className="gw-mono" style={detailText}>{row.error.message}</div>
-        </DetailLine>
-      )}
-      {row.outcome === "failed-on-chain" && (
-        <DetailLine at={row.replyMs != null ? `+${fmtComma(row.replyMs)} ms` : ""}>
-          <div style={{ fontSize: 12, color: "var(--err)" }}>Failed on chain: the chain ran the transaction and it failed</div>
-          {row.txError && <div className="gw-mono" style={detailText}>{row.txError}</div>}
-        </DetailLine>
-      )}
-      {row.txHash && (
-        <DetailLine>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11.5, color: "var(--text-4)", flexWrap: "wrap" }}>
-            Transaction hash <TxHash hash={row.txHash} spec={row.spec} full />
-            {row.txStatus === "success" && <span>· the chain ran it</span>}
-          </div>
-        </DetailLine>
-      )}
-      <CallFactsLine row={row} />
-      <RequestIdLine id={row.guid} startMs={row.time} tookMs={row.replyMs} />
-    </div>
+    <RequestBreakdown chain={chainWords(row)} method={row.method === "unknown" ? "method not in the logs" : row.method}
+      time={row.time} guid={row.guid} tookMs={row.replyMs} facts={row} attempts={row.attempts}
+      final={final} status={txStatusOf(row)} isWrite extra={extra} />
   );
 }
 
@@ -138,7 +124,7 @@ function TxLookupPanel({ id, rangeQ, rangeWords, onClose }: { id: string; rangeQ
   const row = data?.row ?? null;
   const o = row ? OUTCOME[row.outcome] : null;
   return (
-    <LookupFrame id={id} onClose={onClose}
+    <LookupFrame id={id} found={row?.guid} onClose={onClose}
       tag={o && <span className="gw-tag" style={{ fontSize: 10, color: o.color, borderColor: "currentColor" }}>{o.label}</span>}>
       {isLoading ? (
         <SkelLine w="50%" />
@@ -153,14 +139,6 @@ function TxLookupPanel({ id, rangeQ, rangeWords, onClose }: { id: string; rangeQ
       ) : (
         <div style={{ display: "grid", gap: 8 }}>
           <MatchesNote matches={data?.matches} />
-          <div style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--text-2)", flexWrap: "wrap" }}>
-            <span className="gw-mono gw-tnum">{fmtWhen(row.time)}</span>
-            {row.spec ? <><ChainBadge spec={row.spec} size={14} /><span>{chainWords(row)}</span></> : row.specs && <span>{chainWords(row)}</span>}
-            <span className="gw-mono" style={{ color: "var(--text-3)" }}>{row.method === "unknown" ? "method not in the logs" : row.method}</span>
-            <span style={{ color: "var(--text-4)" }}>responded in {fmtTook(row.replyMs)}</span>
-          </div>
-          <Flow attempts={row.attempts} replyColor={OUTCOME[row.outcome].color} />
-          <AppGot text={appGot({ result: row.outcome, attempts: row.attempts, error: row.error?.message ?? null })} />
           <Details row={row} />
         </div>
       )}
