@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.49.2]
+
 ### Fixed
 
 - **Polymesh REST commands in Try now send working requests** (MAG-4623).
