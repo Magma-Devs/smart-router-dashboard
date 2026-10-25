@@ -5,6 +5,18 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.49.1]
+
+### Security
+
+- **Next.js 16.3.8 → 16.4.1** (the frontend image). 16.4.1 fixes two critical
+  unauthenticated remote-code-execution advisories
+  ([GHSA-673q-mjm6-r5xr](https://github.com/vercel/next.js/security/advisories/GHSA-673q-mjm6-r5xr):
+  `use cache` functions returning typed arrays;
+  [GHSA-2464-fhr4-w9xw](https://github.com/vercel/next.js/security/advisories/GHSA-2464-fhr4-w9xw):
+  the Image Optimization API with SVG files) and a high-severity denial of
+  service in App Router Server Actions.
+
 ## [0.49.0]
 
 ### Added
