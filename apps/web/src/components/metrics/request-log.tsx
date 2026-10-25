@@ -488,6 +488,19 @@ export const rangeIsLive = (r: ExactRange | null) => !r || r.to > Date.now() - 6
 
 export const filterSelectStyle: React.CSSProperties = { height: 32, padding: "0 10px", borderRadius: 8, border: "1px solid var(--line-2)", background: "var(--surface)", color: "var(--text)", fontSize: 12, fontFamily: "inherit", maxWidth: 320 };
 
+/** A filter dropdown with the page's own chevron, 10 px in from the right as
+ *  the text is from the left. The browser's arrow sat against the border, a
+ *  different distance in each browser. */
+export function FilterSelect({ style, disabled, ...props }: React.SelectHTMLAttributes<HTMLSelectElement>) {
+  return (
+    <span style={{ position: "relative", display: "inline-flex", alignItems: "center", maxWidth: style?.maxWidth }}>
+      <select {...props} disabled={disabled} style={{ ...style, appearance: "none", WebkitAppearance: "none", paddingRight: 28, minWidth: 0 }} />
+      <svg aria-hidden width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+        style={{ position: "absolute", right: 10, pointerEvents: "none", opacity: disabled ? 0.5 : 1 }}><polyline points="6 9 12 15 18 9" /></svg>
+    </span>
+  );
+}
+
 export function Pager({ page, pageCount, total, perPage, noun, onPage, more }: {
   page: number; pageCount: number; total: number; perPage: number; noun: string; onPage: (p: number) => void;
   /** Older rows the list hasn't read yet: a button to read them. */

@@ -5,6 +5,16 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.49.2]
+
+### Fixed
+
+- **Errors and Transactions tabs: the filter dropdowns' arrows.** Each filter
+  drew the browser's own arrow, pressed against its right border while the
+  text sat 10 px in from the left. They now draw the page's line chevron, the
+  one the window picker uses, 10 px in from the right and centred, and dimmed
+  while a filter has nothing to pick.
+
 ## [0.49.1]
 
 ### Security

@@ -30,6 +30,7 @@ import {
   MatchesNote,
   errorLabel,
   errorTypeOptions,
+  FilterSelect,
   filterSelectStyle,
   Flow,
   fmtTook,
@@ -380,28 +381,28 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
         </div>
         {/* Narrowing it down, and finding one request. */}
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <select aria-label="Retryable" value={retry} onChange={(e) => reset(setRetry)(e.target.value as RetryFilter)} style={narrowSelect}>
+          <FilterSelect aria-label="Retryable" value={retry} onChange={(e) => reset(setRetry)(e.target.value as RetryFilter)} style={narrowSelect}>
             <option value={ALL}>Retryable or not</option>
             <option value="retryable">Retryable ({fmtComma(kinds.filter((k) => k.retryable).length)})</option>
             <option value="not-retryable">Not retryable ({fmtComma(kinds.filter((k) => k.notRetryable).length)})</option>
-          </select>
-          <select aria-label="Error type" value={errType} onChange={(e) => reset(setErrType)(e.target.value)} style={narrowSelect} disabled={!errTypes.length}>
+          </FilterSelect>
+          <FilterSelect aria-label="Error type" value={errType} onChange={(e) => reset(setErrType)(e.target.value)} style={narrowSelect} disabled={!errTypes.length}>
             <option value={ALL}>All error types</option>
             {errTypes.map((t) => <option key={t.key} value={t.key}>{t.label} ({fmtComma(t.count)})</option>)}
-          </select>
-          <select aria-label="Customer" value={customer} onChange={(e) => reset(setCustomer)(e.target.value)} style={narrowSelect} disabled={!customers.length && customer === ALL}>
+          </FilterSelect>
+          <FilterSelect aria-label="Customer" value={customer} onChange={(e) => reset(setCustomer)(e.target.value)} style={narrowSelect} disabled={!customers.length && customer === ALL}>
             <option value={ALL}>All customers</option>
             {customers.map((c) => <option key={c.key} value={c.key}>{c.label} ({fmtComma(c.count)})</option>)}
-          </select>
-          <select aria-label="Method" value={method} onChange={(e) => reset(setMethod)(e.target.value)} style={narrowSelect} disabled={!methods.length}>
+          </FilterSelect>
+          <FilterSelect aria-label="Method" value={method} onChange={(e) => reset(setMethod)(e.target.value)} style={narrowSelect} disabled={!methods.length}>
             <option value={ALL}>All methods</option>
             {methods.map((m) => <option key={m} value={m}>{m === "unknown" ? "method not in the logs" : m}</option>)}
-          </select>
-          <select aria-label="Upstream" value={upstream} onChange={(e) => { onUpstream(e.target.value); setPage(0); }} style={narrowSelect} disabled={!upstreams.length && upstream === ALL}>
+          </FilterSelect>
+          <FilterSelect aria-label="Upstream" value={upstream} onChange={(e) => { onUpstream(e.target.value); setPage(0); }} style={narrowSelect} disabled={!upstreams.length && upstream === ALL}>
             <option value={ALL}>All upstreams</option>
             {upstream !== ALL && !upstreams.some((u) => u.name === upstream) && <option value={upstream}>{upstream}</option>}
             {upstreams.map((u) => <option key={u.name} value={u.name}>{u.name} ({fmtComma(u.count)})</option>)}
-          </select>
+          </FilterSelect>
           <span style={{ flex: 1 }} />
           <IdSearch onFind={find} />
         </div>
