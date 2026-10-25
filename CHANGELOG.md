@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.49.0]
+
 ### Added
 
 - **Every router error code in plain words, ready for the Errors page.** `@sr/shared` now
