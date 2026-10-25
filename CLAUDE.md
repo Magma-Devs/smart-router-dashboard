@@ -558,6 +558,11 @@ boot. Set `job` for a scrape config that names jobs per router.
 - The Metrics page picks them in its **chains drawer** (`ChainDrawer`, beside
   the sidebar): one row per chain with its health,
   requests and error rate for the page's window, problems first, and a search.
+  Beside it the sidebar folds to a 64 px strip of icons (`gw-side--compact`),
+  so the page doesn't carry two lists side by side: each icon names itself on
+  hover, "Expand menu" at the top opens the full menu for that visit, and
+  every arrival on the page starts folded (`menuCollapsed` on
+  `ChainDrawerProvider`). Other pages keep the full menu.
   A row IS the chain filter (`useChainFilter`), so every tab follows it; a
   chain two or more routers serve lists them under it once picked. The page
   also writes both into its URL with the tab
@@ -573,7 +578,7 @@ boot. Set `job` for a scrape config that names jobs per router.
   row also links to its own lines on the Grafana logs board (the GUID as the
   search, a minute either side of the request). The drawer reads the whole deployment, never the router scope (the
   one exception `router-scope.test.ts` allows). Clicking Metrics, or the logo,
-  while on it goes back to every chain.
+  while on it goes back to every chain, with the menu folded again.
 
 #### The deployment scope
 

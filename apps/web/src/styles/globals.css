@@ -108,7 +108,23 @@ html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); f
 .gw-standalone-top .brand { display: flex; align-items: center; gap: 11px; }
 
 /* ── Sidebar ── */
-.gw-side { width: 248px; flex-shrink: 0; background: var(--bg); border-right: 1px solid var(--line); display: flex; flex-direction: column; height: 100vh; position: sticky; top: 0; }
+.gw-side { width: 248px; flex-shrink: 0; background: var(--bg); border-right: 1px solid var(--line); display: flex; flex-direction: column; height: 100vh; position: sticky; top: 0; overflow-x: hidden; transition: width 0.16s ease; }
+/* Beside the chains drawer (Metrics) the menu folds to its icons (Shell.tsx).
+   Each icon names itself on hover; "Expand menu" opens it for that visit. */
+.gw-side--compact { width: 64px; }
+.gw-side--compact .gw-side__brand { justify-content: center; padding: 18px 0 14px; }
+.gw-side--compact .gw-side__brand > div,
+.gw-side--compact .gw-side__section-label,
+.gw-side--compact .gw-nav-item > span,
+.gw-side--compact .gw-side__user .meta { display: none; }
+.gw-side--compact .gw-side__nav > div + div { border-top: 1px solid var(--line); margin-top: 8px; padding-top: 8px; }
+.gw-side--compact .gw-nav-item { justify-content: center; padding: 9px 0; }
+.gw-side--compact .gw-side__foot { padding: 12px 0; }
+.gw-side--compact .gw-side__user { flex-direction: column; gap: 6px; }
+.gw-side__toggle { color: var(--text-3); margin-bottom: 4px; }
+.gw-side__toggle:hover { color: var(--text); }
+/* Labels stay on one line while the menu opens, rather than wrapping as it widens. */
+.gw-nav-item > span { white-space: nowrap; }
 .gw-side__brand { display: flex; align-items: center; gap: 10px; padding: 18px 18px 14px; }
 /* It is a link home — give it the same hover feedback the nav items have, so
    it reads as clickable rather than as a header that happens to navigate. */
@@ -295,6 +311,7 @@ table.gw-table tbody tr:hover td { background: var(--hover); }
 
 @media (prefers-reduced-motion: reduce) {
   .gw-skel, .gw-refreshing { animation: none; }
+  .gw-side { transition: none; }
 }
 
 /* ── Side-sheet ── */

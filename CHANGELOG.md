@@ -28,6 +28,21 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   chain". A requested block ahead of the router's latest gets a note. The Errors tab no
   longer names the returned error twice, and a look-up no longer repeats the request's ID.
 
+### Changed
+
+- **On Metrics, the menu folds to its icons beside the chains drawer.** The
+  menu and the chains list used to sit side by side and take 492 px
+  together, which pushed the Routers table's Error rate and Status columns
+  off a 1440 px screen. Now the menu is a 64 px strip of icons there (308 px
+  with the drawer), and each icon shows its name on hover. "Expand menu" at
+  the top of the strip opens the full menu for that visit, and "Collapse
+  menu" folds it again. Clicking Metrics or the logo also folds it, and every
+  visit to Metrics starts folded. Other pages keep the full menu. Only the
+  0.28 screens (`DASHBOARD_NEW_UI`) have the drawer; the 0.27 screens look as
+  before.
+- **The chains drawer's footer says only the window** ("Last 30 minutes").
+  "· problems first" is gone; the rows are still sorted that way.
+
 ## [0.48.0]
 
 ### Added

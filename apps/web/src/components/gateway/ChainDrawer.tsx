@@ -16,7 +16,9 @@ import { fmtNum } from "@/lib/format";
 import { byAttention, chainHref, type DrawerChain } from "@/lib/chain-drawer";
 
 /* The chains drawer: a second column beside the sidebar on the Metrics page,
- * one row per chain with its health, requests and error rate, problems first.
+ * which folds the sidebar to its icons so the page doesn't carry two lists
+ * side by side (the sidebar's "Expand menu" opens it again, for that visit).
+ * One row per chain with its health, requests and error rate, problems first.
  * Picking a row IS the page's chain filter (`useChainFilter`), so every tab
  * follows it, and the page writes it into its URL (`useScopeInUrl`). A chain
  * that two or more routers serve lists them under it once picked - the only
@@ -26,20 +28,40 @@ import { byAttention, chainHref, type DrawerChain } from "@/lib/chain-drawer";
 /** The page the drawer belongs to. */
 export const CHAIN_DRAWER_PATH = "/metrics";
 
-/** On its page, inside the Shell, under DASHBOARD_NEW_UI; the standalone page has no drawer. */
-const ChainDrawerContext = createContext(false);
+export interface ChainDrawerState {
+  /** On its page, inside the Shell, under DASHBOARD_NEW_UI (then the page
+   *  drops its chain and router dropdowns); the standalone page has no drawer. */
+  visible: boolean;
+  /** The sidebar is folded to its icons beside the drawer. Always false off its page. */
+  menuCollapsed: boolean;
+  setMenuCollapsed: (collapsed: boolean) => void;
+}
+
+const ChainDrawerContext = createContext<ChainDrawerState>({
+  visible: false, menuCollapsed: false, setMenuCollapsed: () => {},
+});
 
 export function ChainDrawerProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   // Without the flag the page is 0.27's, which picks its chain from a dropdown.
   const newUi = useNewUi();
   const onPage = newUi && (pathname === CHAIN_DRAWER_PATH || pathname.startsWith(`${CHAIN_DRAWER_PATH}/`));
-  return <ChainDrawerContext.Provider value={onPage}>{children}</ChainDrawerContext.Provider>;
+  // Folded each time the page is reached; opening it lasts for that visit.
+  const [collapsed, setCollapsed] = useState(true);
+  const [wasOnPage, setWasOnPage] = useState(onPage);
+  if (wasOnPage !== onPage) {
+    setWasOnPage(onPage);
+    if (onPage) setCollapsed(true);
+  }
+  const value = useMemo(
+    () => ({ visible: onPage, menuCollapsed: onPage && collapsed, setMenuCollapsed: setCollapsed }),
+    [onPage, collapsed],
+  );
+  return <ChainDrawerContext.Provider value={value}>{children}</ChainDrawerContext.Provider>;
 }
 
-/** Whether the chains drawer is on screen (then the page drops its chain and router dropdowns). */
-export function useChainDrawer(): { visible: boolean } {
-  return { visible: useContext(ChainDrawerContext) };
+export function useChainDrawer(): ChainDrawerState {
+  return useContext(ChainDrawerContext);
 }
 
 export function ChainDrawer() {
@@ -175,7 +197,7 @@ export function ChainDrawer() {
         ))}
         {q && shown.length === 0 && <div className="gw-chains__empty">No chain matches &ldquo;{query}&rdquo;.</div>}
       </nav>
-      <div className="gw-chains__foot">Last {WINDOWS[timeWindow].label} · problems first</div>
+      <div className="gw-chains__foot">Last {WINDOWS[timeWindow].label}</div>
     </aside>
   );
 }
