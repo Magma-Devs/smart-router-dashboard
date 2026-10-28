@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.50.0]
+
 ### Changed
 
 - **One UI: the screens `DASHBOARD_NEW_UI=true` drew are the only ones**
