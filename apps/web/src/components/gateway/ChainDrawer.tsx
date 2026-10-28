@@ -7,7 +7,6 @@ import { useApi } from "@/hooks/use-api";
 import { useChainFilter, useChainOptions } from "@/hooks/use-chain-options";
 import { useRouterFilter, useRouterOptions, type RouterOptionRow } from "@/hooks/use-router-options";
 import { useFilters } from "./FiltersProvider";
-import { useNewUi } from "./new-ui";
 import { ChainBadge } from "./ChainBadge";
 import { IconSearch } from "./icons";
 import { HEALTH_COLOR, HEALTH_LABEL, HEALTH_UNKNOWN_HINT } from "@/lib/health";
@@ -29,8 +28,8 @@ import { byAttention, chainHref, type DrawerChain } from "@/lib/chain-drawer";
 export const CHAIN_DRAWER_PATH = "/metrics";
 
 export interface ChainDrawerState {
-  /** On its page, inside the Shell, under DASHBOARD_NEW_UI (then the page
-   *  drops its chain and router dropdowns); the standalone page has no drawer. */
+  /** On its page, inside the Shell (then the page drops its chain and router
+   *  dropdowns); the standalone page has no drawer. */
   visible: boolean;
   /** The sidebar is folded to its icons beside the drawer. Always false off its page. */
   menuCollapsed: boolean;
@@ -43,9 +42,7 @@ const ChainDrawerContext = createContext<ChainDrawerState>({
 
 export function ChainDrawerProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  // Without the flag the page is 0.27's, which picks its chain from a dropdown.
-  const newUi = useNewUi();
-  const onPage = newUi && (pathname === CHAIN_DRAWER_PATH || pathname.startsWith(`${CHAIN_DRAWER_PATH}/`));
+  const onPage = pathname === CHAIN_DRAWER_PATH || pathname.startsWith(`${CHAIN_DRAWER_PATH}/`);
   // Folded each time the page is reached; opening it lasts for that visit.
   const [collapsed, setCollapsed] = useState(true);
   const [wasOnPage, setWasOnPage] = useState(onPage);
