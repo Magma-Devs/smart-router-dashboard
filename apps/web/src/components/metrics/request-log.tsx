@@ -11,7 +11,7 @@
  * An opened row is drawn by request-breakdown.tsx. */
 
 import { Fragment, useState } from "react";
-import { buildChainMetaByIndex, explorerTxUrl, guidMintedSecond, type LogUnavailable, type RelayAttempt } from "@sr/shared";
+import { buildChainMetaByIndex, explainRouterError, explorerTxUrl, guidMintedSecond, type LogUnavailable, type RelayAttempt, type TxOutcome } from "@sr/shared";
 import { SkelRows, type SkelCol } from "@/components/gateway/Skel";
 import { CopyButton } from "@/components/gateway/CopyButton";
 import { useGrafanaUrl } from "@/hooks/use-grafana-url";
@@ -320,19 +320,35 @@ export const hasCustomer = (r: { customer?: string }, key: string) => (r.custome
 export const shortHash = (h: string) => (h.length > 16 ? `${h.slice(0, h.startsWith("0x") ? 8 : 6)}…${h.slice(-6)}` : h);
 
 /**
- * A transaction's hash, to copy, linked to the chain's explorer where a
- * transaction page is known (explorerTxUrl) - plain text where it isn't.
- * `full` writes it out whole, for the details.
+ * A transaction every node it went to refused outright, so the chain most
+ * likely never saw it and no explorer has a page for it. A row is "rejected"
+ * when the node that answered refused it; that alone says nothing of the
+ * others. So: every try it was sent on failed, and no refusal says it may be
+ * on chain anyway - already known, nonce too low, already in the chain
+ * (`mayHaveGoneThrough` in @sr/shared's error table).
  */
-export function TxHash({ hash, spec, full = false }: { hash: string; spec: string | null; full?: boolean }) {
-  const url = spec ? explorerTxUrl(spec, hash) : null;
+export function everyNodeRefused(row: { outcome: TxOutcome; attempts: RelayAttempt[]; error: { code: string } | null }): boolean {
+  if (row.outcome !== "rejected") return false;
+  const sent = row.attempts.filter((a) => a.outcome !== "skipped");
+  if (!sent.length || !sent.every((a) => a.outcome === "failed")) return false;
+  return ![row.error?.code, ...sent.map((a) => a.code)].some((c) => explainRouterError(c)?.mayHaveGoneThrough);
+}
+
+/**
+ * A transaction's hash, to copy, linked to the chain's explorer where a
+ * transaction page is known (explorerTxUrl) - plain text where it isn't, and
+ * where every node `refused` it: an explorer has no page for a transaction
+ * the chain never saw. `full` writes it out whole, for the details.
+ */
+export function TxHash({ hash, spec, full = false, refused = false }: { hash: string; spec: string | null; full?: boolean; refused?: boolean }) {
+  const url = spec && !refused ? explorerTxUrl(spec, hash) : null;
   const text = full ? hash : shortHash(hash);
   const style: React.CSSProperties = { fontSize: full ? 11.5 : 10.5, wordBreak: full ? "break-all" : undefined, whiteSpace: full ? undefined : "nowrap" };
   return (
     <span onClick={keepClick} style={{ display: "inline-flex", alignItems: "center", gap: 6, minWidth: 0, maxWidth: "100%" }}>
       {url
         ? <a className="gw-mono" href={url} target="_blank" rel="noopener noreferrer" title={`${hash} - on the chain's explorer`} style={{ ...style, color: "var(--brand)", textDecoration: "none" }}>{text}{full ? "" : " ↗"}</a>
-        : <span className="gw-mono" title={hash} style={{ ...style, color: "var(--text-3)" }}>{text}</span>}
+        : <span className="gw-mono" title={refused ? `${hash} - every node refused this transaction, so the chain most likely never saw it and no explorer has it` : hash} style={{ ...style, color: "var(--text-3)" }}>{text}</span>}
       <CopyButton text={hash} />
     </span>
   );

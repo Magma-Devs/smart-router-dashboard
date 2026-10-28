@@ -36,6 +36,7 @@ import {
   MatchesNote,
   TxHash,
   errorTypeOptions,
+  everyNodeRefused,
   filterSelectStyle,
   Flow,
   fmtTook,
@@ -110,7 +111,11 @@ function Details({ row }: { row: TxLogRow }) {
   const extra: { label: string; value: React.ReactNode }[] = [];
   if (row.outcome === "failed-on-chain" && row.txError) extra.push({ label: "Chain error", value: <span className="gw-mono" style={{ wordBreak: "break-word" }}>{row.txError}</span> });
   if (row.note) extra.push({ label: "Note", value: row.note });
-  if (row.txHash) extra.push({ label: "Hash", value: <TxHash hash={row.txHash} spec={row.spec} full /> });
+  if (row.txHash) {
+    // A transaction every node refused keeps its hash to copy, unlinked: the chain most likely never saw it.
+    const refused = everyNodeRefused(row);
+    extra.push({ label: "Hash", value: <><TxHash hash={row.txHash} spec={row.spec} refused={refused} full />{refused && <span style={{ color: "var(--text-4)" }}>refused by every node, so the chain most likely never saw it</span>}</> });
+  }
   if (row.outcome === "unknown" && !known) extra.push({ label: "Next step", value: "Check the chain before sending it again." });
   return (
     <RequestBreakdown chain={chainWords(row)} chainTitle={chainsTitle(row)} method={row.method === "unknown" ? "method not in the logs" : row.method}
@@ -360,7 +365,7 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
                             {r.method === "unknown"
                               ? <div style={{ fontSize: 10.5, color: "var(--text-4)", fontStyle: "italic" }}>method not in the logs</div>
                               : <div className="gw-mono" title={r.method} style={{ fontSize: 10.5, color: "var(--text-3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.method}</div>}
-                            {r.txHash && <div style={{ marginTop: 3 }}><TxHash hash={r.txHash} spec={r.spec} /></div>}
+                            {r.txHash && <div style={{ marginTop: 3 }}><TxHash hash={r.txHash} spec={r.spec} refused={everyNodeRefused(r)} /></div>}
                           </div>
                         </div>
                       </td>

@@ -1,10 +1,10 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { HeroSummary, RouterMetrics } from "@sr/shared";
+import type { HeroSummary, RelayAttempt, RouterMetrics } from "@sr/shared";
 import { RouterOverview } from "@/components/metrics/RouterOverview";
 import { HeroPanel } from "@/components/metrics/HeroPanel";
-import { chainsTitle, chainWords, fmtWhen, openRowShown } from "@/components/metrics/request-log";
+import { chainsTitle, chainWords, everyNodeRefused, fmtWhen, openRowShown, TxHash } from "@/components/metrics/request-log";
 
 /** What `useApi` answers per path: SWR's fields as a window change leaves them. */
 const fixture = vi.hoisted(() => ({
@@ -131,5 +131,29 @@ describe("log rows", () => {
     expect(chainWords(many)).toBe("One of 5 chains");
     expect(chainsTitle(many)).toContain("Ethereum, Base");
     expect(chainsTitle({ spec: "ETH1" })).toBeUndefined();
+  });
+
+  it("calls a transaction refused only when every node it went to refused it, and none says it may be on chain", () => {
+    const tried = (outcome: RelayAttempt["outcome"], code: string | null = null): RelayAttempt =>
+      ({ upstream: `node-${outcome}`, batch: 0, atMs: 0, endMs: 5, outcome, replied: false, code } as RelayAttempt);
+    const tx = (attempts: RelayAttempt[], code = "CHAIN_INSUFFICIENT_FUNDS") => ({ outcome: "rejected" as const, attempts, error: { code } });
+    expect(everyNodeRefused(tx([tried("failed"), tried("failed"), tried("skipped")]))).toBe(true);
+    // The answering node refused it, another took it: it may well be on chain.
+    expect(everyNodeRefused(tx([tried("failed"), tried("ok")]))).toBe(false);
+    expect(everyNodeRefused(tx([tried("failed"), tried("no-result")]))).toBe(false);
+    // The refusal itself says the chain has it.
+    expect(everyNodeRefused(tx([tried("failed")], "CHAIN_TX_ALREADY_KNOWN"))).toBe(false);
+    expect(everyNodeRefused(tx([tried("failed", "CHAIN_NONCE_TOO_LOW"), tried("failed")]))).toBe(false);
+    expect(everyNodeRefused({ ...tx([tried("failed")]), outcome: "accepted" })).toBe(false);
+    expect(everyNodeRefused(tx([]))).toBe(false);
+  });
+
+  it("links a transaction's hash to the explorer unless every node refused it", () => {
+    const hash = `0x${"ab".repeat(32)}`;
+    const linked = renderToStaticMarkup(createElement(TxHash, { hash, spec: "ETH1" }));
+    const refused = renderToStaticMarkup(createElement(TxHash, { hash, spec: "ETH1", refused: true }));
+    expect(linked).toContain("<a ");
+    expect(refused).not.toContain("<a ");
+    expect(refused).toContain("never saw it");
   });
 });
