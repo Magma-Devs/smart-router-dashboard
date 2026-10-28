@@ -1,8 +1,6 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import { AuthProvider } from "@/components/auth/auth-provider";
-import { NewUiProvider } from "@/components/gateway/new-ui";
-import { newUiEnabled } from "@/lib/new-ui";
 import "@/styles/globals.css";
 
 // The same two families the prototype uses — without them every metric number
@@ -61,11 +59,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       className={`${inter.variable} ${jbMono.variable}`}
     >
       <body>
-        {/* Which screens to draw (DASHBOARD_NEW_UI): read here, per request,
-            so the first paint is already the right one. */}
-        <NewUiProvider enabled={newUiEnabled()}>
-          {authEnabled ? <AuthProvider>{children}</AuthProvider> : children}
-        </NewUiProvider>
+        {authEnabled ? <AuthProvider>{children}</AuthProvider> : children}
       </body>
     </html>
   );

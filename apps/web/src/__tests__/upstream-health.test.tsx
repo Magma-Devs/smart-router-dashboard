@@ -3,9 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { UpstreamDetail, UpstreamMetrics } from "@sr/shared";
 import { PMRoster } from "@/components/metrics/upstream/PMRoster";
-import { PMRoster as LegacyRoster } from "@/legacy/components/metrics/upstream/PMRoster";
 import { UpstreamMetricsTab } from "@/components/metrics/upstream/UpstreamMetricsTab";
-import { UpstreamMetricsTab as LegacyTab } from "@/legacy/components/metrics/upstream/UpstreamMetricsTab";
 import { DeploymentHealthBadge } from "@/components/gateway/DeploymentHealth";
 
 const fixture = vi.hoisted(() => ({
@@ -23,14 +21,8 @@ vi.mock("@/components/gateway/FiltersProvider", () => ({
   useFilters: () => ({ scopeQ: "", routerId: null }),
 }));
 vi.mock("@/hooks/use-router-options", () => ({ useRouterFilter: () => ({ routerId: null }) }));
-vi.mock("@/legacy/hooks/use-router-options", () => ({
-  useRouterFilter: () => ({ routerId: null }),
-}));
 // Check when diagnostics remain accessible without coupling to chart geometry.
 vi.mock("@/components/metrics/upstream/PMBody", () => ({
-  PMBody: () => createElement("div", null, "Request diagnostics"),
-}));
-vi.mock("@/legacy/components/metrics/upstream/PMBody", () => ({
   PMBody: () => createElement("div", null, "Request diagnostics"),
 }));
 
@@ -61,13 +53,10 @@ beforeEach(() => {
   fixture.detail = undefined;
 });
 
-describe.each([
-  { name: "new UI", Roster: PMRoster, Tab: UpstreamMetricsTab },
-  { name: "default UI", Roster: LegacyRoster, Tab: LegacyTab },
-])("MAG-4226: $name", ({ Roster, Tab }) => {
+describe("MAG-4226", () => {
   it("replaces uptime with a visible unhealthy status even with almost 100% success", () => {
     const html = renderToStaticMarkup(
-      createElement(Roster, {
+      createElement(PMRoster, {
         rows: fixture.rows,
         activeKey: null,
         onSelect: () => {},
@@ -84,7 +73,7 @@ describe.each([
 
   it("keeps the historical percentage and error rate neutral while surfacing current failure", () => {
     const html = renderToStaticMarkup(
-      createElement(Tab, { timeWindow: "5m", chainFilter: "ETH1" }),
+      createElement(UpstreamMetricsTab, { timeWindow: "5m", chainFilter: "ETH1" }),
     );
     expect(html).toContain("This upstream is unhealthy");
     expect(html).toContain("Request success rate");
@@ -108,7 +97,7 @@ describe.each([
       }),
     ];
     const html = renderToStaticMarkup(
-      createElement(Tab, { timeWindow: "5m", chainFilter: "ETH1" }),
+      createElement(UpstreamMetricsTab, { timeWindow: "5m", chainFilter: "ETH1" }),
     );
     expect(html).toContain("Unknown");
     expect(html).toContain("health is unknown");
@@ -131,7 +120,7 @@ describe.each([
       }),
     ];
     const html = renderToStaticMarkup(
-      createElement(Tab, { timeWindow: "5m", chainFilter: "ETH1" }),
+      createElement(UpstreamMetricsTab, { timeWindow: "5m", chainFilter: "ETH1" }),
     );
     expect(html).toContain("Operational");
     expect(html).not.toContain("This upstream is unhealthy");
@@ -143,7 +132,7 @@ describe.each([
       upstream({ requests: 0, uptime: null, errorRate: null, polls: { ok: 10, failed: 0 } }),
     ];
     const html = renderToStaticMarkup(
-      createElement(Tab, { timeWindow: "5m", chainFilter: "ETH1" }),
+      createElement(UpstreamMetricsTab, { timeWindow: "5m", chainFilter: "ETH1" }),
     );
     expect(html).toContain("10 answered");
     expect(html).toContain("Unhealthy");
@@ -153,7 +142,7 @@ describe.each([
   it("keeps diagnostics accessible when every routed request failed", () => {
     fixture.rows = [upstream({ requests: 0, uptime: 0, errorRate: 1 })];
     const html = renderToStaticMarkup(
-      createElement(Tab, { timeWindow: "5m", chainFilter: "ETH1" }),
+      createElement(UpstreamMetricsTab, { timeWindow: "5m", chainFilter: "ETH1" }),
     );
     expect(html).toContain("Request diagnostics");
     expect(html).toContain("0.00%");
@@ -169,7 +158,7 @@ describe.each([
       availabilityWindows: { last1h: 0.5, last24h: 0.5, last7d: 0.5 },
     } as UpstreamDetail;
     const html = renderToStaticMarkup(
-      createElement(Tab, { timeWindow: "5m", chainFilter: "ETH1" }),
+      createElement(UpstreamMetricsTab, { timeWindow: "5m", chainFilter: "ETH1" }),
     );
     expect(html).not.toContain("50.00%");
   });

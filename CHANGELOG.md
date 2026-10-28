@@ -5,6 +5,29 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.50.0]
+
+### Changed
+
+- **One UI: the screens `DASHBOARD_NEW_UI=true` drew are the only ones**
+  (MAG-4689). The flag is gone and the web no longer reads the variable. A
+  deployment that left it unset gets these screens on upgrade:
+  - the Errors and Transactions tabs from the router's logs (they need
+    `LOKI_URL` on the api), and the Failed requests card
+  - the upstream deep-dive on one time axis
+  - the chains drawer, with chain and router in the URL
+  - Upstreams grouped by chain, and the tooltips with an arrow
+  - no subtitles under the Team, Audit log and Account titles
+
+  The 0.27 screens are removed, and with them the Metrics page's Traffic tab,
+  the Effective read p95 card, the Errors tab's Upstreams and Error types
+  views, the deep-dive's QoS and selection scores, and the chain and router
+  dropdowns on Metrics. `apps/web/src/legacy/` is deleted, and compose no
+  longer passes `DASHBOARD_NEW_UI`. The api is unchanged:
+  `/api/metrics/methods`, `/api/metrics/websocket` and
+  `/api/metrics/cross-validation` have no web caller now and stay as
+  documented read surfaces.
+
 ## [0.49.2]
 
 ### Fixed

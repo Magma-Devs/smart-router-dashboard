@@ -7,7 +7,6 @@ import { signOut } from "next-auth/react";
 import { buildChainMetaByIndex } from "@sr/shared";
 import { NAV_SECTIONS, visibleNavSections } from "./nav";
 import { useAuthMode } from "./auth-mode";
-import { useNewUi } from "./new-ui";
 import { CHAIN_DRAWER_PATH, ChainDrawer, ChainDrawerProvider, useChainDrawer } from "./ChainDrawer";
 import { IconMenuCollapse, IconMenuExpand, IconMoon, IconSun, type IconProps } from "./icons";
 import { useFilters } from "@/components/gateway/FiltersProvider";
@@ -289,15 +288,13 @@ export function Shell({ children, grafanaDashboardUrl, incidentsEnabled = false 
 }) {
   const pathname = usePathname();
   const { chain } = useFilters();
-  const newUi = useNewUi();
 
   const here =
     NAV_SECTIONS.flatMap((s) => s.items).find(
       (i) => pathname === i.href || pathname.startsWith(`${i.href}/`),
     )?.label ?? "Overview";
-  // Metrics on one chain: the chain is the last crumb (with the chains drawer,
-  // DASHBOARD_NEW_UI; the 0.27 page names it in its own banner).
-  const sub = newUi && pathname === CHAIN_DRAWER_PATH && chain ? buildChainMetaByIndex(chain).name : null;
+  // Metrics on one chain: the chain is the last crumb (the chains drawer picks it).
+  const sub = pathname === CHAIN_DRAWER_PATH && chain ? buildChainMetaByIndex(chain).name : null;
 
   return (
     // Outside the chrome, not inside it: a blocked dashboard should not render a
