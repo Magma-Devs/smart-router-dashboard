@@ -5,6 +5,7 @@ import type { HeroSummary, RelayAttempt, RouterMetrics } from "@sr/shared";
 import { RouterOverview } from "@/components/metrics/RouterOverview";
 import { HeroPanel } from "@/components/metrics/HeroPanel";
 import { chainsTitle, chainWords, everyNodeRefused, fmtWhen, openRowShown, TxHash } from "@/components/metrics/request-log";
+import { RequestBreakdown, type BreakdownProps } from "@/components/metrics/request-breakdown";
 
 /** What `useApi` answers per path: SWR's fields as a window change leaves them. */
 const fixture = vi.hoisted(() => ({
@@ -51,6 +52,12 @@ const summary: HeroSummary = {
 };
 
 const skelCount = (html: string) => (html.match(/gw-skel/g) ?? []).length;
+
+/** An opened row's breakdown with the given facts: a read that succeeded, no tries logged. */
+const breakdown = (facts: BreakdownProps["facts"], over: Partial<BreakdownProps> = {}): BreakdownProps => ({
+  chain: "Ethereum", method: "eth_call", time: 0, guid: "7699463364114495303", tookMs: 12,
+  facts, attempts: [], final: null, status: { label: "Success", color: "var(--ok)" }, isWrite: false, ...over,
+});
 
 beforeEach(() => {
   fixture.answer = () => ({ data: undefined, isLoading: false, isValidating: false });
@@ -155,5 +162,13 @@ describe("log rows", () => {
     expect(linked).toContain("<a ");
     expect(refused).not.toContain("<a ");
     expect(refused).toContain("never saw it");
+  });
+
+  it("shows one request ID, Smart Router's, and none of the headers the router got", () => {
+    const html = renderToStaticMarkup(createElement(RequestBreakdown, breakdown({ requestId: "req-e7f0", taskId: "task-k1", txId: "txid-t1", requestBytes: 10 })));
+    expect(html).toContain("Smart Router request ID");
+    expect(html).toContain("7699463364114495303");
+    expect(html).not.toMatch(/X-Request-Id|Caller request ID|Task ID|Tx ID|req-e7f0|task-k1|txid-t1/);
+    expect(html).toContain("10 B");
   });
 });

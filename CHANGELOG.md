@@ -33,6 +33,13 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   to copy, and the opened row says why. A rejection still links when another
   node took the transaction or left no answer, or when the refusal says the
   chain may have it (already known, nonce too low, already in the chain).
+- **An opened row shows one request ID: Smart Router's.** It was "ID" beside
+  "Caller request ID", "Task ID" and "Tx ID" - the `X-Request-Id`,
+  `X-Task-Id` and `X-Tx-Id` headers the router got. Behind the gateway the
+  `X-Request-Id` is the gateway's own ID for every request, not the caller's,
+  and "Tx ID" read like the chain's transaction id. The row now names the
+  router's GUID "Smart Router request ID" and leaves the headers out, and
+  Find a request no longer suggests them.
 
 ## [0.50.1]
 

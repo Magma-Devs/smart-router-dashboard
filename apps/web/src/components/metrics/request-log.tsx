@@ -367,14 +367,14 @@ export function RequestLogsLink({ id, startMs, tookMs }: { id: string; startMs: 
   );
 }
 
-/** "Find a request" - the box both log lists carry: by its ID, its transaction hash, or the caller's own request ID. */
+/** "Find a request" - the box both log lists carry: by Smart Router's ID for it, or its transaction hash. */
 export function IdSearch({ onFind }: { onFind: (id: string) => void }) {
   const [draft, setDraft] = useState("");
   const id = draft.trim();
   return (
     <form onSubmit={(e) => { e.preventDefault(); if (id) onFind(id); }} style={{ display: "flex", gap: 6 }}>
-      <input aria-label="Request ID" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Request ID, tx hash or caller's ID"
-        title="The router's request ID, a transaction's hash, or the caller's X-Request-Id"
+      <input aria-label="Request ID" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Request ID or tx hash"
+        title="Smart Router's request ID, or a transaction's hash"
         className="gw-mono" style={{ ...filterSelectStyle, width: 240, fontSize: 11.5 }} />
       <button type="submit" disabled={!id} style={{ ...filterSelectStyle, cursor: id ? "pointer" : "default", color: id ? "var(--text)" : "var(--text-4)" }}>Find</button>
     </form>

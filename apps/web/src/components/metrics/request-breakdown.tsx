@@ -193,14 +193,14 @@ export function RequestBreakdown(p: BreakdownProps) {
           <span title={p.chainTitle} style={{ fontSize: 12, color: "var(--text-3)" }}>{p.chain}</span>
           <Fact label="At">{fmtWhen(p.time)}</Fact>
           <Fact label="Duration">{fmtTook(p.tookMs)}</Fact>
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11.5, color: "var(--text-4)" }}>
-            ID <span className="gw-mono" style={{ color: "var(--text-2)" }}>{p.guid}</span> <CopyButton text={p.guid} />
+          {/* The request's one ID is Smart Router's. The X-Request-Id, X-Task-Id and X-Tx-Id headers the
+              router also logs aren't shown: behind the gateway the first is the gateway's own ID for every request. */}
+          <span title="The ID Smart Router gives every request: its GUID in the router's logs, and the Lava-Guid header on the reply"
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11.5, color: "var(--text-4)" }}>
+            Smart Router request ID <span className="gw-mono" style={{ color: "var(--text-2)" }}>{p.guid}</span> <CopyButton text={p.guid} />
             <RequestLogsLink id={p.guid} startMs={p.time} tookMs={p.tookMs} />
           </span>
           {facts.customer && <Fact label="Customer">{facts.customer}</Fact>}
-          {facts.requestId && <Fact label="Caller request ID">{facts.requestId}</Fact>}
-          {facts.taskId && <Fact label="Task ID">{facts.taskId}</Fact>}
-          {facts.txId && <Fact label="Tx ID">{facts.txId}</Fact>}
           {facts.requestBytes != null && <Fact label="Size">{fmtBytes(facts.requestBytes)}</Fact>}
           {facts.requestedBlock != null && <Fact label="Requested block">{fmtComma(facts.requestedBlock)}</Fact>}
           {facts.seenBlock != null && <Fact label="Router's latest block">{fmtComma(facts.seenBlock)}</Fact>}
