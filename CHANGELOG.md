@@ -40,6 +40,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   and "Tx ID" read like the chain's transaction id. The row now names the
   router's GUID "Smart Router request ID" and leaves the headers out, and
   Find a request no longer suggests them.
+- **An opened row's block numbers link to the chain's explorer** where one has
+  a proven block page, as the Routers table's do.
 
 ## [0.50.1]
 

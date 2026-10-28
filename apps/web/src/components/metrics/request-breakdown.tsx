@@ -23,6 +23,7 @@ import {
   type RouterErrorCode,
 } from "@sr/shared";
 import { CopyButton } from "@/components/gateway/CopyButton";
+import { ExplorerBlockLink } from "@/components/gateway/ExplorerLink";
 import { fmtComma } from "@/lib/format";
 import { codeWords, fmtTook, fmtWhen, realCode, RequestLogsLink } from "./request-log";
 
@@ -145,6 +146,8 @@ export type FinalAnswer =
   | null;
 
 export interface BreakdownProps {
+  /** The request's chain, where the logs name one: its block numbers link to that chain's explorer. */
+  spec: string | null;
   chain: string;
   /** On hover: every chain the request could be on, when the logs don't name it. */
   chainTitle?: string;
@@ -183,6 +186,8 @@ export function RequestBreakdown(p: BreakdownProps) {
   const entry = finalCode ? explainRouterError(finalCode) : null;
   const routerAnswered = p.final?.from === "router";
   const facts = p.facts;
+  // A block number links to the chain's explorer where the catalog has a proven block page, as the Routers table's heights do.
+  const block = (n: number) => (p.spec ? <ExplorerBlockLink spec={p.spec} block={n}>{fmtComma(n)}</ExplorerBlockLink> : fmtComma(n));
   const providers = new Set(p.attempts.map((a) => a.upstream)).size;
   const blockAhead = finalCode && facts.requestedBlock != null && facts.seenBlock != null && facts.requestedBlock > facts.seenBlock;
   return (
@@ -202,8 +207,8 @@ export function RequestBreakdown(p: BreakdownProps) {
           </span>
           {facts.customer && <Fact label="Customer">{facts.customer}</Fact>}
           {facts.requestBytes != null && <Fact label="Size">{fmtBytes(facts.requestBytes)}</Fact>}
-          {facts.requestedBlock != null && <Fact label="Requested block">{fmtComma(facts.requestedBlock)}</Fact>}
-          {facts.seenBlock != null && <Fact label="Router's latest block">{fmtComma(facts.seenBlock)}</Fact>}
+          {facts.requestedBlock != null && <Fact label="Requested block">{block(facts.requestedBlock)}</Fact>}
+          {facts.seenBlock != null && <Fact label="Router's latest block">{block(facts.seenBlock)}</Fact>}
         </div>
       </Part>
 

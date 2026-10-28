@@ -173,7 +173,7 @@ function Details({ row }: { row: ErrorRequestRow }) {
       : row.result === "unknown" ? [{ label: "Note", value: "Still running, or log lines are missing." }]
         : undefined;
   return (
-    <RequestBreakdown chain={chainWords(row)} chainTitle={chainsTitle(row)} method={row.method === "unknown" ? "method not in the logs" : row.method}
+    <RequestBreakdown spec={row.spec} chain={chainWords(row)} chainTitle={chainsTitle(row)} method={row.method === "unknown" ? "method not in the logs" : row.method}
       time={row.time} guid={row.guid} tookMs={row.totalMs} facts={row} attempts={row.attempts}
       final={final} status={statusOf(row)} retries={retriesWords(row)} isWrite={row.result === "write-unknown"} extra={extra} />
   );

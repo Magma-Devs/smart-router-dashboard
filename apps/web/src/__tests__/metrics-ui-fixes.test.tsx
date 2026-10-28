@@ -55,7 +55,7 @@ const skelCount = (html: string) => (html.match(/gw-skel/g) ?? []).length;
 
 /** An opened row's breakdown with the given facts: a read that succeeded, no tries logged. */
 const breakdown = (facts: BreakdownProps["facts"], over: Partial<BreakdownProps> = {}): BreakdownProps => ({
-  chain: "Ethereum", method: "eth_call", time: 0, guid: "7699463364114495303", tookMs: 12,
+  spec: null, chain: "Ethereum", method: "eth_call", time: 0, guid: "7699463364114495303", tookMs: 12,
   facts, attempts: [], final: null, status: { label: "Success", color: "var(--ok)" }, isWrite: false, ...over,
 });
 
@@ -170,5 +170,13 @@ describe("log rows", () => {
     expect(html).toContain("7699463364114495303");
     expect(html).not.toMatch(/X-Request-Id|Caller request ID|Task ID|Tx ID|req-e7f0|task-k1|txid-t1/);
     expect(html).toContain("10 B");
+  });
+
+  it("links an opened row's block numbers to a chain's explorer where one has a block page", () => {
+    const linked = renderToStaticMarkup(createElement(RequestBreakdown, breakdown({ requestedBlock: 5_329_480, seenBlock: 5_329_484 }, { spec: "XLMT" })));
+    expect(linked.match(/stellar\.expert\/explorer\/testnet/g)).toHaveLength(2);
+    const unnamed = renderToStaticMarkup(createElement(RequestBreakdown, breakdown({ seenBlock: 5_329_484 })));
+    expect(unnamed).toContain("5,329,484");
+    expect(unnamed).not.toContain("stellar.expert");
   });
 });
