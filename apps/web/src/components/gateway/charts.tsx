@@ -499,6 +499,7 @@ export function StackedAreaChart({
   xLabels,
   normalized = false,
   id = "sa",
+  hover,
 }: {
   layers: Layer[];
   height?: number;
@@ -508,12 +509,15 @@ export function StackedAreaChart({
   xLabels?: string[] | null;
   normalized?: boolean;
   id?: string;
+  /** A crosshair and a box with every layer's value at the point under the cursor, as LineChart's. */
+  hover?: { title: (i: number) => string; fmt: (v: number) => string; total?: boolean };
 }) {
   const [ref, w, oh] = useChartDims(600, height || 200);
   const h = height || oh;
   const prog = useAnimProg(id + (layers?.[0]?.values?.length ?? 0));
+  const [hovI, setHovI] = useState<number | null>(null);
 
-  const containerStyle: React.CSSProperties = { width: "100%", height: height ? height : "100%", overflow: "hidden" };
+  const containerStyle: React.CSSProperties = { width: "100%", height: height ? height : "100%", overflow: hover ? "visible" : "hidden", position: "relative" };
   if (!layers?.length || !layers[0]!.values?.length) return <div ref={ref} style={containerStyle} />;
 
   const n = layers[0]!.values.length;
@@ -561,7 +565,43 @@ export function StackedAreaChart({
         {xLabels !== null && (xLabels || X_DEFAULT).map((lab, _i, _a) => (
           <text key={"x" + _i} x={padX + (_a.length > 1 ? (_i / (_a.length - 1)) * iW : iW / 2)} y={padY + iH + 13} fontSize="9" fill="var(--text-4)" fontFamily="var(--font-mono)" textAnchor={_i === 0 ? "start" : _i === _a.length - 1 ? "end" : "middle"}>{lab}</text>
         ))}
+        {hover && hovI != null && (
+          <line x1={cx(hovI)} x2={cx(hovI)} y1={padY} y2={padY + iH} stroke="var(--text-3)" strokeWidth="1" strokeDasharray="3 3" opacity="0.7" pointerEvents="none" />
+        )}
+        {hover && (
+          <rect x={padX} y={padY} width={Math.max(0, iW)} height={Math.max(0, iH)} fill="transparent"
+            onMouseMove={(e) => {
+              const r = e.currentTarget.getBoundingClientRect();
+              const f = r.width ? (e.clientX - r.left) / r.width : 0;
+              setHovI(Math.min(n - 1, Math.max(0, Math.round(f * (n - 1)))));
+            }}
+            onMouseLeave={() => setHovI(null)} />
+        )}
       </svg>
+      {hover && hovI != null && (
+        <div style={{
+          position: "absolute", top: padY, zIndex: 5, pointerEvents: "none",
+          ...(cx(hovI) > w / 2 ? { right: w - cx(hovI) + 12 } : { left: cx(hovI) + 12 }),
+          background: "var(--surface)", border: "1px solid var(--line-2)", borderRadius: 8, padding: "8px 10px",
+          boxShadow: "0 6px 18px rgba(0,0,0,0.35)", fontSize: 11, minWidth: 160, maxWidth: 320,
+        }}>
+          <div className="gw-mono" style={{ color: "var(--text-3)", marginBottom: 6 }}>{hover.title(hovI)}</div>
+          {/* Top layer first, as the stack reads. */}
+          {[...layers].reverse().map((l) => (
+            <div key={l.name} style={{ display: "flex", alignItems: "center", gap: 7, padding: "2px 0" }}>
+              <span style={{ width: 9, height: 9, background: l.color, borderRadius: 2, flexShrink: 0 }} />
+              <span className="gw-mono" style={{ flex: 1, color: "var(--text-2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.name}</span>
+              <span className="gw-mono gw-tnum" style={{ color: "var(--text)", fontWeight: 600 }}>{hover.fmt(l.values[hovI] ?? 0)}</span>
+            </div>
+          ))}
+          {hover.total && (
+            <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "4px 0 0", marginTop: 4, borderTop: "1px solid var(--line)" }}>
+              <span className="gw-mono" style={{ flex: 1, color: "var(--text-3)" }}>Total</span>
+              <span className="gw-mono gw-tnum" style={{ color: "var(--text)", fontWeight: 600 }}>{hover.fmt(cumV[cumV.length - 1]![hovI] ?? 0)}</span>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -25,6 +25,11 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   message that reached the client shows there too, unless its try above already
   shows it, so each error is still stated once.
 
+- **Traffic by provider: hover shows the values.** Hovering the chart shows
+  the time and each upstream's share (or requests per second, with the total)
+  at that moment, as the other charts do. The legend lists the upstreams only:
+  its window-average percentages are gone.
+
 ### Fixed
 
 - **Errors and Transactions tabs: an opened request stays open.** Every 30 s
