@@ -36,6 +36,7 @@ import { HeroPanel } from "./HeroPanel";
 import { CurrentlyUnavailable } from "./CurrentlyUnavailable";
 import { RouterOverview } from "./RouterOverview";
 import { ChainTrafficByProvider } from "./ChainTrafficByProvider";
+import { ChainAvailability } from "./ChainAvailability";
 import { ErrorsBreakdown, type ErrorsFocus, type ErrorsJump } from "./ErrorsBreakdown";
 import { TransactionLog } from "./TransactionLog";
 import { UpstreamMetricsTab } from "./upstream/UpstreamMetricsTab";
@@ -214,6 +215,7 @@ export function MetricsView() {
           <HeroPanel tw={timeWindow} spec={activeChain} />
           <CurrentlyUnavailable />
           {activeChain && <ChainTrafficByProvider spec={activeChain} timeWindow={timeWindow} />}
+          {activeChain && <ChainAvailability spec={activeChain} timeWindow={timeWindow} />}
           <RouterOverview chainFilter={activeChain} timeWindow={timeWindow} onChainClick={(ch) => { setChainFilter(ch); pickTab("upstreams"); }}
             drill={{ row: focus.expand, tile: focus.tile }} linked={linked}
             onDrill={(d) => byHand((f) => ({ ...f, expand: d.row, tile: d.tile }))} />

@@ -3,11 +3,10 @@ import { MetricsDetailService } from "../services/metrics-detail.js";
 import type { PrometheusClient } from "../services/prometheus-client.js";
 
 /**
- * `upstreamTimeline` - the ChainDetail Availability view: one chain in bars
- * on the clock, its tries per bar split into succeeded and failed, and every
- * upstream of it with a cell per bar.
+ * `upstreamTimeline` - the Availability view: every upstream of one chain,
+ * a cell per stretch of the clock.
  */
-describe("MetricsDetailService.upstreamTimeline · a chain and its upstreams in bars on the clock", () => {
+describe("MetricsDetailService.upstreamTimeline · every upstream of a chain on the clock", () => {
   const NOW = 1_800_000_000; // a multiple of 600 s: no bar filling
   const STEP = 600; // an hour in 10-minute bars
   const START = NOW - 3000;
@@ -66,22 +65,11 @@ describe("MetricsDetailService.upstreamTimeline · a chain and its upstreams in 
         if (expr.includes("fetch_latest_fails")) return [series("endpoint_id", "eth-backup", () => "0")];
         return [];
       },
-      // The chain's counts per bar.
-      async queryRange(expr: string) {
-        queries.push(`bars ${expr}`);
-        if (expr.startsWith("round(sum(")) return [series("spec", "ETH1", (k) => (k === 5 ? null : "30"))];
-        if (expr.startsWith("round(clamp_min(")) return [series("spec", "ETH1", (k) => (k === 2 ? "6" : "0"))];
-        return [];
-      },
-      async scalar(expr: string) {
-        queries.push(`now ${expr}`);
-        return expr.startsWith("round(sum(") ? 3 : 1;
-      },
     } as unknown as PrometheusClient;
     return { svc: new MetricsDetailService(prom, config as never), queries };
   }
 
-  it("primaries, then backups, then what only the metrics name; a cell per bar", async () => {
+  it("primaries, then backups, then what only the metrics name; a cell per stretch", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(NOW * 1000);
     try {
@@ -89,12 +77,10 @@ describe("MetricsDetailService.upstreamTimeline · a chain and its upstreams in 
       const body = await svc.upstreamTimeline("ETH1", "1h");
       expect(body.available).toBe(true);
       expect(body.grid).toEqual({ start: START, end: NOW, stepSec: STEP });
-      // Four range reads on the bars' own step, and the chain's two counts.
-      const ranges = queries.filter((q) => /^\d/.test(q));
-      expect(ranges).toHaveLength(4);
-      for (const q of ranges) expect(q.startsWith(`${START} ${NOW} 10m `)).toBe(true);
-      for (const q of ranges) expect(q).toContain('{spec="ETH1"}');
-      expect(queries.filter((q) => q.startsWith("bars "))).toHaveLength(2);
+      // Four range reads on the cells' own step.
+      expect(queries).toHaveLength(4);
+      for (const q of queries) expect(q.startsWith(`${START} ${NOW} 10m `)).toBe(true);
+      for (const q of queries) expect(q).toContain('{spec="ETH1"}');
       expect(body.upstreams.map((u) => [u.upstream, u.role, u.inConfig])).toEqual([
         ["eth-primary", "primary", true],
         ["eth-stage-node", "primary", true],
@@ -113,16 +99,12 @@ describe("MetricsDetailService.upstreamTimeline · a chain and its upstreams in 
       expect(backup!.cells[5]).toMatchObject({ state: "operational", rps: 1, share: 0.25 });
       expect(orphan!.cells[0]!.state).toBe("operational");
       expect(orphan!.cells[3]!.state).toBeNull();
-      // The chain's tries per bar, split; a bar the store didn't return is no bar, never a 0.
-      expect(body.bars[0]).toEqual({ t: START, ok: 30, failed: 0 });
-      expect(body.bars[2]).toEqual({ t: START + 2 * STEP, ok: 24, failed: 6 });
-      expect(body.bars[5]).toEqual({ t: NOW, ok: null, failed: null });
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it("the bar still filling is read at now and laid at its end", async () => {
+  it("the stretch still filling is read at now and laid at its end", async () => {
     vi.useFakeTimers();
     vi.setSystemTime((NOW + 125) * 1000);
     try {
@@ -134,7 +116,6 @@ describe("MetricsDetailService.upstreamTimeline · a chain and its upstreams in 
       expect(queries.filter((q) => q.startsWith(`${NOW + 125} ${NOW + 125} `))).toHaveLength(4);
       const last = body.upstreams[0]!.cells.at(-1)!;
       expect(last).toMatchObject({ t: NOW + STEP, rps: 5 });
-      expect(body.bars.at(-1)).toEqual({ t: NOW + STEP, ok: 2, failed: 1 });
     } finally {
       vi.useRealTimers();
     }

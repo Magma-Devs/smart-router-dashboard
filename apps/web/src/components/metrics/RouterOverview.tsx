@@ -127,7 +127,7 @@ export function RouterOverview({ onChainClick, chainFilter, timeWindow, drill, l
       otherCount: Math.max(0, c.upstreamCount - 1),
       availPct, p95Ms: c.p95Ms, errPct, reqCount: c.requests, statusKind,
       tipBlock: tipBlock ?? c.latestBlock,
-      detail: { spec: c.spec, routerId: t ? c.routerId : null, availPct, p95Ms: c.p95Ms, errPct, requests: c.requests, hasBackup: (nBackup ?? 0) > 0 },
+      detail: { spec: c.spec, routerId: t ? c.routerId : null, availPct, p95Ms: c.p95Ms, errPct, requests: c.requests },
       natural: 0,
       router: c.routerId.toLowerCase(),
       upstreams: c.upstreamCount,

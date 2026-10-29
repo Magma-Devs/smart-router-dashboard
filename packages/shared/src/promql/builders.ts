@@ -815,26 +815,6 @@ export function qUpstreamFailedSeriesExpr(ref: UpstreamRef, step: string, window
   return roundWhole(`clamp_min(${tot} - (${ok} or ${tot} * 0), 0)`, step, single);
 }
 
-/** One chain's tries per bucket (relay-scoped: the availability's denominator), whole. `single` reads the bar still filling. */
-export function qChainTriesCountSeriesExpr(spec: string, step: string, window?: MetricWindow, single = false): string {
-  const sel = selector({ spec });
-  if (recordedSeriesFor(window)) return `round(sum(${sot(`${RECORDED.requests}${sel}`, step)}) * ${K})`;
-  return roundWhole(`sum(${countOverStep(`${ROUTER_METRICS.requestsTotal}${sel}`, step, single)})`, step, single);
-}
-
-/** One chain's failed tries per bucket: tries minus successes, never negative. `single` as above. */
-export function qChainFailedCountSeriesExpr(spec: string, step: string, window?: MetricWindow, single = false): string {
-  const sel = selector({ spec });
-  if (recordedSeriesFor(window)) {
-    const tot = `sum(${sot(`${RECORDED.requests}${sel}`, step)})`;
-    const ok = `sum(${sot(`${RECORDED.success}${sel}`, step)})`;
-    return `round(clamp_min((${tot} - (${ok} or ${tot} * 0)) * ${K}, 0))`;
-  }
-  const tot = `sum(${countOverStep(`${ROUTER_METRICS.requestsTotal}${sel}`, step, single)})`;
-  const ok = `sum(${countOverStep(`${ROUTER_METRICS.requestsSuccessTotal}${sel}`, step, single)})`;
-  return roundWhole(`clamp_min(${tot} - (${ok} or ${tot} * 0), 0)`, step, single);
-}
-
 /** One upstream's JSON-RPC error replies per bucket - absent until the family fires. `single` as above. */
 export function qUpstreamNodeErrorSeriesExpr(ref: UpstreamRef, step: string, single = false): string {
   return roundWhole(`sum(${countOverStep(`${OPTIONAL_METRICS.nodeErrorsTotal}${upstreamProviderSelector(ref)}`, step, single)})`, step, single);

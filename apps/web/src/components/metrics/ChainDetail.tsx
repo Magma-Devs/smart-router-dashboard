@@ -6,8 +6,7 @@
  * fetched only while the row is expanded (this component only mounts then).
  * The design's QoS option is gone: a selection score isn't something to act
  * on here. The "Primary vs backup" tile is gone too: the Availability view
- * (AvailabilityBreakdown) marks the bars where a backup took traffic, under
- * the chain's tries per bar. */
+ * (AvailabilityBreakdown) has a row per provider, backups marked. */
 
 import { WINDOWS, type ChainSeries, type MetricWindow, type TimePoint } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
@@ -30,8 +29,6 @@ export interface ChainDetailRow {
   errPct: number | null;
   /** Requests over the selected window. */
   requests: number;
-  /** True when the mounted config marks at least one backup for this chain. */
-  hasBackup: boolean;
 }
 
 interface Metric {
@@ -137,8 +134,8 @@ export function ChainDetail({ r, onChainClick, win, tile: selKey, onTile: setSel
             <span style={{ fontSize: 10.5, color: "var(--text-4)", fontFamily: "var(--font-mono)" }}>{from} → now</span>
           </div>
           {m.key === "avail" ? (
-            // The chain's tries in bars, succeeded and failed, and its upstreams under the same bars.
-            <AvailabilityBreakdown spec={r.spec} routerId={r.routerId} win={win} hasBackup={r.hasBackup} />
+            // The router's availability in blocks, all its providers and each one.
+            <AvailabilityBreakdown spec={r.spec} routerId={r.routerId} win={win} />
           ) : m.values.length ? (
             <InteractiveChart key={m.key} values={m.values} color={m.color} yFmt={m.yFmt} target={m.target} yDomain={m.yDomain} yMaxCap={m.yMaxCap} times={m.times} win={win} />
           ) : (

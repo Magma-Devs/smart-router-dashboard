@@ -53,8 +53,6 @@ import {
   qUpstreamErrorRate,
   qUpstreamFailedCount,
   qUpstreamFailedSeriesExpr,
-  qChainTriesCountSeriesExpr,
-  qChainFailedCountSeriesExpr,
   qUpstreamRelays,
   qUpstreamRequestsTotal,
   qUpstreamRpsByUpstreamSeriesExpr,
@@ -119,8 +117,6 @@ const SERIES: Array<[string, (w: "1h" | "6h" | "1d") => string]> = [
   ["qUpstreamRpsByUpstreamSeriesExpr", (w) => qUpstreamRpsByUpstreamSeriesExpr("ETH1", "10m", "2m", "1m", w)],
   ["qUpstreamVolumeSeriesExpr", (w) => qUpstreamVolumeSeriesExpr(REF, "2m", w)],
   ["qUpstreamFailedSeriesExpr", (w) => qUpstreamFailedSeriesExpr(REF, "2m", w)],
-  ["qChainTriesCountSeriesExpr", (w) => qChainTriesCountSeriesExpr("ETH1", "2m", w)],
-  ["qChainFailedCountSeriesExpr", (w) => qChainFailedCountSeriesExpr("ETH1", "2m", w)],
 ];
 
 /** Builders that read a family the rules record under a label they do not keep, or one they do not record at all. */

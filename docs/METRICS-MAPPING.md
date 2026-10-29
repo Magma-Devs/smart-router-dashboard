@@ -60,13 +60,13 @@ until the selected scope answers, a warning on fetch errors, and warning
 counts for missing upstream health. Background refresh retains the same
 scope's last measurement; changing scope does not reuse another scope's data.
 
-## Upstream history in bars (`/api/metrics/upstream-timeline`)
+## Upstream history in blocks (`/api/metrics/upstream-timeline`)
 
-The ChainDetail Availability view draws the chain's tries in bars on the clock
-(`bucketGrid`, the errors-over-time bars' grid), succeeded and failed
-(`qChainTriesCountSeriesExpr`, `qChainFailedCountSeriesExpr`), and a row per
-upstream under them, a cell per bar. Bars, not a line: on a quiet chain one
-failed try in a point is a 50% availability. No series records an
+The Availability view draws a row per upstream, and one for all of them
+together, a block per stretch of the clock (`bucketGrid`, the errors-over-time
+bars' grid) coloured by the share of its tries that succeeded. Stretches, not
+points: on a quiet chain one failed try in a 15-second point is a 50%
+availability. A block an upstream took no tries in is "No traffic". No series records an
 upstream's health over time, so each cell is read from the two signals that
 do exist per upstream over time:
 
@@ -223,7 +223,7 @@ client requests) against the live router:
 | `/api/metrics/traffic` | aggregate + per-spec `rate` series; per-chain totals + shares from `qRequestsTotal` |
 | `/api/metrics/methods` | `qRequestsBy("method")`; read-set from `sum by (method) (increase(requests_read_total[$w]))`; `qErrorsBy("method")`; class totals + `qPresence` probes for write/batch |
 | `/api/metrics/chain-series` | `qAvailabilitySeriesExpr`, `qLatencySeriesExpr(0.95)`, `qErrorRateSeriesExpr`, `qRpsSeriesExpr`; QoS = `qOptimizerScore("composite")`, falling back to `qScoreExpr` (endpoint scope), null when both empty; `qBackupShareExpr` only when the config marks backups |
-| `/api/metrics/upstream-timeline` | four range reads on the bars' grid (`bucketGrid`), grouped by upstream, plus the chain's tries and failed tries per bar: `qPerUpstreamRpsExpr`, `qPerUpstreamFailedRpsExpr`, `qPerEndpointPollsSeriesExpr("ok"/"failed")`; rows from the config (one router's with `routerId`), joined case-insensitively; see "Upstream history in bars" |
+| `/api/metrics/upstream-timeline` | four range reads on the errors-over-time bars' grid (`bucketGrid`), grouped by upstream: `qPerUpstreamRpsExpr`, `qPerUpstreamFailedRpsExpr`, `qPerEndpointPollsSeriesExpr("ok"/"failed")`; rows from the config (one router's with `routerId`), joined case-insensitively; see "Upstream history in blocks" |
 | `/api/metrics/upstream-detail` | every selector is `{spec, provider_address}` / `{spec, endpoint_id}` — an upstream is a name ON A CHAIN. Router counters (requests, 5m RPS, availability, `qUpstreamErrorRate`); `qEndpointLatencyQuantile` + per-quantile series; `qUpstreamVolumeSeriesExpr` + read variant; `selection_score` gauge + a series per **emitted** score type; `qEndpointBlockLagSeriesExpr`; `qPresence` on node/protocol error counters (gates the errors-by-code panel) |
 | `/api/metrics/errors` | `qErrorCount` + `qErrorCountSeriesExpr`; pivots via `qErrorsBy("spec"/"method")`; hotspots = `clamp_min(total − success, 0)` grouped by `(spec, provider_address)` (with the `or … * 0` guard); per-hotspot trend series for the top 5 only (bounded fan-out); `qPresence` on the three error families |
 | `/api/metrics/retries` | `qPresence` for the retry family; `qRetriesByMethod("recovered"/"failed")` by `(spec, method)`, summed into the three count cards; `qRetryAvgExtraAttempts`; the retry rate divides by `qClientRequestsTotal` plus the still-failed retries (the latency histogram counts only requests that got a reply). Window counts use `increaseFromBirth`: a counter born inside the window starts at its first value, which plain `increase()` drops (a first burst of 11 retries read as 0); a day-long look-back tells a birth from a gap in scraping, and a birth counts only where the store holds `smartrouter_overall_health` from the day before the window - past the store's first sample every counter would look newborn. The Errors tab's request list below the cards is not Prometheus at all - `GET /api/error-requests` rebuilds it from the router's logs |

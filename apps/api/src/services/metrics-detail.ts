@@ -32,8 +32,6 @@ import {
   qPerUpstreamRpsExpr,
   qPerUpstreamFailedRpsExpr,
   qPerEndpointPollsSeriesExpr,
-  qChainTriesCountSeriesExpr,
-  qChainFailedCountSeriesExpr,
   upstreamCellState,
   qPresence,
   qRetriesByMethod,
@@ -205,15 +203,13 @@ export class MetricsDetailService {
   }
 
   /**
-   * One chain over the window in bars on the clock (`bucketGrid`, the
-   * errors-over-time bars' grid): the chain's tries per bar, succeeded and
-   * failed, and every upstream of it with a cell per bar - its tries, failed
+   * Every upstream of one chain over the window, a cell per stretch of the
+   * clock (`bucketGrid`, the errors-over-time bars' grid): its tries, failed
    * tries and share of the chain's tries, its latest-block polls, and the
-   * state those read as (`upstreamCellState`). Bars, not a line: on a quiet
-   * chain one failed try in a point is a 50% availability, and a line of
-   * those reads as an outage. Four range reads grouped by upstream, whatever
-   * the count, plus the chain's two counts; the bar still filling is one
-   * more read of each at now. There is no health-over-time series per
+   * state those read as (`upstreamCellState`). Stretches, not points: on a
+   * quiet chain one failed try in a 15-second point is a 50% availability.
+   * Four range reads grouped by upstream, whatever the count; the stretch
+   * still filling is one more read of each at now. There is no health-over-time series per
    * upstream, so this is the honest one: what the router sent it and what
    * came back, plus the chain tracker's polls for an upstream that took
    * nothing. `rpc_endpoint_overall_health` is not read - it starts
@@ -256,18 +252,6 @@ export class MetricsDetailService {
       range((st) => qPerEndpointPollsSeriesExpr("failed", spec, st)),
     ]);
     const kinds = ["rps", "failedRps", "pollsOk", "pollsFailed"] as const;
-    const [triesBars, failedBars] = await Promise.all([
-      this.barsOf((st, single) => qChainTriesCountSeriesExpr(spec, st, window, single), step, { grid, lastFull, partialSec }).catch(() => null),
-      this.barsOf((st, single) => qChainFailedCountSeriesExpr(spec, st, window, single), step, { grid, lastFull, partialSec }).catch(() => null),
-    ]);
-    const triesAt = new Map((triesBars ?? []).map((p) => [p.t, p.v]));
-    const failedAt = new Map((failedBars ?? []).map((p) => [p.t, p.v]));
-    const bars = Array.from({ length: Math.floor((end - start) / grid.stepSec) + 1 }, (_, k) => {
-      const t = start + k * grid.stepSec;
-      const tries = triesAt.get(t) ?? null;
-      const failed = tries === null ? null : Math.min(tries, failedAt.get(t) ?? 0);
-      return { t, ok: tries === null || failed === null ? null : tries - failed, failed };
-    });
 
     // name (lower-cased) → t → value, per read.
     const byName = reads.map((matrix, i) => {
@@ -313,7 +297,7 @@ export class MetricsDetailService {
     if (!routerId) for (const key of seriesName.keys()) if (key !== CACHED_UPSTREAM.toLowerCase()) keys.add(key);
 
     const at = (i: number, key: string, t: number): number | null => byName[i]!.get(key)?.get(t) ?? null;
-    const points = bars.length;
+    const points = Math.floor((end - start) / grid.stepSec) + 1;
     const rank = { primary: 0, backup: 1 } as const;
     const upstreams = [...keys]
       .map((key) => {
@@ -333,14 +317,12 @@ export class MetricsDetailService {
         Number(b.inConfig) - Number(a.inConfig) ||
         a.upstream.localeCompare(b.upstream));
 
-    const barsRead = triesBars !== null && failedBars !== null;
     return {
       spec,
-      available: reads.every((r) => r !== null) && barsRead,
-      failed: [...kinds.filter((_, i) => reads[i] === null), ...(barsRead ? [] : ["bars" as const])],
+      available: reads.every((r) => r !== null),
+      failed: kinds.filter((_, i) => reads[i] === null),
       grid,
       asOf,
-      bars,
       upstreams,
     };
   }

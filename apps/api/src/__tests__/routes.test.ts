@@ -341,7 +341,7 @@ describe("api routes", () => {
     }
   });
 
-  it("GET /api/metrics/upstream-timeline requires spec; a row per upstream, a cell per bar on the clock", async () => {
+  it("GET /api/metrics/upstream-timeline requires spec; a row per upstream, a cell per stretch of the clock", async () => {
     const missing = await app.inject({ method: "GET", url: "/api/metrics/upstream-timeline?window=30m" });
     expect(missing.statusCode).toBe(400);
 
@@ -360,8 +360,6 @@ describe("api routes", () => {
     expect(body.asOf).toBe(1800);
     expect(body.spec).toBe("ETH1");
     expect(body.available).toBe(true);
-    // A bar per grid point, whatever the store returned.
-    expect(body.bars.map((b: { t: number }) => b.t)).toEqual([600, 1200, 1800]);
     // The relay cache counts in the chain's tries and gets no row.
     expect(body.upstreams.map((u: { upstream: string }) => u.upstream)).toEqual(["eth-lava"]);
     const cells = body.upstreams[0].cells;
