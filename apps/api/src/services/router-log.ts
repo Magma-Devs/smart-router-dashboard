@@ -16,13 +16,15 @@ export interface RouterLine {
   message: string;
   guid: string;
   f: Record<string, unknown>;
+  /** The spec of the router that wrote it: its stream's `chain` label (the spec lower-cased), where the log agent sets one. */
+  streamSpec?: string;
 }
 
 export function str(v: unknown): string {
   return typeof v === "string" ? v : "";
 }
 
-export function parseRouterLine({ tsMs, line }: LokiLine): RouterLine | null {
+export function parseRouterLine({ tsMs, line, labels }: LokiLine): RouterLine | null {
   let f: Record<string, unknown>;
   try {
     f = JSON.parse(line) as Record<string, unknown>;
@@ -31,7 +33,9 @@ export function parseRouterLine({ tsMs, line }: LokiLine): RouterLine | null {
   }
   const message = str(f.message);
   const guid = str(f.GUID);
-  return message && guid ? { tsMs, message, guid, f } : null;
+  if (!message || !guid) return null;
+  const chain = labels?.chain?.trim();
+  return chain ? { tsMs, message, guid, f, streamSpec: chain.toUpperCase() } : { tsMs, message, guid, f };
 }
 
 export const parseAll = (lines: LokiLine[]): RouterLine[] =>
@@ -431,8 +435,9 @@ export const listenerPattern = (spec: string) => `"endpoint":"${escapeRe(spec)}(
 
 /**
  * A request's chain: the one its lines name (`chain_id`, or the listener on
- * the line that ends it), else the only chain serving every upstream it used.
- * `specs` lists the candidates when several do.
+ * the line that ends it), else its router's - the `chain` label the log agent
+ * puts on a router's stream - else the only chain serving every upstream it
+ * used. `specs` lists the candidates when several do.
  */
 export function chainOf(ordered: RouterLine[], names: string[], index: UpstreamIndex): { spec: string | null; specs?: string[] } {
   const named = str(ordered.find((l) => str(l.f.chain_id))?.f.chain_id);
@@ -441,6 +446,9 @@ export function chainOf(ordered: RouterLine[], names: string[], index: UpstreamI
   const end = ordered.find((l) => END_LINES.has(l.message) && str(l.f.endpoint));
   const listened = end ? LISTENER.exec(str(end.f.endpoint))?.[1] : undefined;
   if (listened) return { spec: listened };
+  // A router serves one chain, and its stream carries it: a request still in flight names it too.
+  const labelled = ordered.find((l) => l.streamSpec)?.streamSpec;
+  if (labelled) return { spec: labelled };
   const chains = index.chainsOf(names);
   if (chains.length === 1) return { spec: chains[0]! };
   return chains.length > 1 ? { spec: null, specs: chains } : { spec: null };

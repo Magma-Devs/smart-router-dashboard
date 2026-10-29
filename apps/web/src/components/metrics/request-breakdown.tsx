@@ -25,8 +25,9 @@ import {
   type RouterErrorCode,
 } from "@sr/shared";
 import { CopyButton } from "@/components/gateway/CopyButton";
+import { ExplorerBlockLink } from "@/components/gateway/ExplorerLink";
 import { fmtComma } from "@/lib/format";
-import { codeWords, fmtDateTime, fmtTook, realCode, RequestLogsLink } from "./request-log";
+import { codeWords, fmtTook, fmtWhen, realCode, RequestLogsLink } from "./request-log";
 
 /** What each source means, on hover. */
 export const SOURCE_HINTS: Record<ErrorSource, string> = {
@@ -181,7 +182,11 @@ export type FinalAnswer =
   | null;
 
 export interface BreakdownProps {
+  /** The request's chain, where the logs name one: its block numbers link to that chain's explorer. */
+  spec: string | null;
   chain: string;
+  /** On hover: every chain the request could be on, when the logs don't name it. */
+  chainTitle?: string;
   method: string;
   time: number;
   guid: string;
@@ -219,6 +224,8 @@ function Id({ value }: { value: string }) {
   );
 }
 
+const fmtBytes = (n: number) => (n < 1024 ? `${fmtComma(n)} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
+
 const kvGrid: React.CSSProperties = { display: "grid", gridTemplateColumns: "max-content minmax(0, 1fr)", columnGap: 16, rowGap: 8, alignItems: "start" };
 
 export function RequestBreakdown(p: BreakdownProps) {
@@ -229,6 +236,8 @@ export function RequestBreakdown(p: BreakdownProps) {
   const entry = finalCode ? explainRouterError(finalCode) : null;
   const routerAnswered = p.final?.from === "router";
   const facts = p.facts;
+  // A block number links to the chain's explorer where the catalog has a proven block page, as the Routers table's heights do.
+  const block = (n: number) => (p.spec ? <ExplorerBlockLink spec={p.spec} block={n}>{fmtComma(n)}</ExplorerBlockLink> : fmtComma(n));
   const providers = new Set(p.attempts.map((a) => a.upstream)).size;
   const blockAhead = finalCode && facts.requestedBlock != null && facts.seenBlock != null && facts.requestedBlock > facts.seenBlock;
   // The provider's words that reached the client, unless its try already prints them.
@@ -293,16 +302,17 @@ export function RequestBreakdown(p: BreakdownProps) {
         <div style={{ flex: "1 1 280px", minWidth: 0 }}>
           <Section title="Details">
             <div style={kvGrid}>
-              <KV label="Request ID"><Id value={p.guid} /><RequestLogsLink id={p.guid} startMs={p.time} tookMs={p.tookMs} /></KV>
+              {/* The request's one ID is Smart Router's. The X-Request-Id, X-Task-Id and X-Tx-Id headers the
+                  router also logs aren't shown: behind the gateway the first is the gateway's own ID for every request. */}
+              <KV label="Smart Router request ID"><span title="The ID Smart Router gives every request: its GUID in the router's logs, and the Lava-Guid header on the reply" style={{ display: "contents" }}><Id value={p.guid} /></span><RequestLogsLink id={p.guid} startMs={p.time} tookMs={p.tookMs} /></KV>
               <KV label="Method"><span className="gw-mono">{p.method}</span></KV>
-              <KV label="Chain">{p.chain}</KV>
-              <KV label="Time"><span className="gw-mono gw-tnum">{fmtDateTime(p.time)}</span></KV>
+              <KV label="Chain"><span title={p.chainTitle}>{p.chain}</span></KV>
+              <KV label="Time"><span className="gw-mono gw-tnum">{fmtWhen(p.time)}</span></KV>
               {facts.customer && <KV label="Customer"><Id value={facts.customer} /></KV>}
-              {facts.requestId && <KV label="Caller request ID"><Id value={facts.requestId} /></KV>}
-              {facts.taskId && <KV label="Task ID"><Id value={facts.taskId} /></KV>}
-              {facts.txId && <KV label="Tx ID"><Id value={facts.txId} /></KV>}
-              {facts.requestedBlock != null && <KV label="Requested block"><span className="gw-mono gw-tnum">{fmtComma(facts.requestedBlock)}</span></KV>}
-              {facts.requestedBlock != null && facts.seenBlock != null && <KV label="Router's latest block"><span className="gw-mono gw-tnum">{fmtComma(facts.seenBlock)}</span></KV>}
+              {facts.requestBytes != null && <KV label="Request size"><span className="gw-mono gw-tnum">{fmtBytes(facts.requestBytes)}</span></KV>}
+              {facts.replyBytes != null && <KV label="Reply size"><span className="gw-mono gw-tnum">{fmtBytes(facts.replyBytes)}</span></KV>}
+              {facts.requestedBlock != null && <KV label="Requested block"><span className="gw-mono gw-tnum">{block(facts.requestedBlock)}</span></KV>}
+              {facts.requestedBlock != null && facts.seenBlock != null && <KV label="Router's latest block"><span className="gw-mono gw-tnum">{block(facts.seenBlock)}</span></KV>}
             </div>
           </Section>
         </div>

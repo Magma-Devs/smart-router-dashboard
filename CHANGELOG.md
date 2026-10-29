@@ -121,6 +121,59 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   one the window picker uses, 10 px in from the right and centred, and dimmed
   while a filter has nothing to pick.
 
+## [0.50.2]
+
+### Fixed
+
+- **The Metrics page keeps the previous window up while the next one
+  loads.** On a window change the Routers table drew four skeleton rows above
+  the previous window's rows, with a ninth skeleton column the header doesn't
+  have, and the KPI cards went blank. Skeletons now appear only when there is
+  nothing to show; otherwise the previous rows and values stay up, dimmed with
+  the refresh dot, until the next ones land. The Failed requests card, which
+  reads the logs and can land well after the others, dims on its own. A poll
+  of the same window shows only the dot, so the Routers table no longer dims
+  every 15 seconds.
+- **The Transactions and Errors lists hold still while a row is open.** A
+  poll every 30 s moved an open row down or paged it out of view; the list
+  now stops reading newer rows while an open row is on screen, says so in its
+  header, and reads again once the row closes or a filter, page or window
+  takes it out of view.
+- **Log rows carry their date.** Today's rows showed a time alone, so a list
+  that spans midnight couldn't say which day a row was on.
+- **A log row's chain icon sits on the chain's line**, not halfway down a cell
+  that also holds the method and the transaction hash.
+- **A row whose chain the logs don't name lists up to three candidates** and
+  otherwise reads "One of N chains", the full list on hover, instead of every
+  chain its upstreams serve - about thirty behind a shared upstream.
+- **A transaction every node refused isn't linked to an explorer.** The chain
+  never saw it, so the explorer's page was always "not found"; the hash stays
+  to copy, and the opened row says why. A rejection still links when another
+  node took the transaction or left no answer, or when the refusal says the
+  chain may have it (already known, nonce too low, already in the chain).
+- **An opened row shows one request ID: Smart Router's.** It was "ID" beside
+  "Caller request ID", "Task ID" and "Tx ID" - the `X-Request-Id`,
+  `X-Task-Id` and `X-Tx-Id` headers the router got. Behind the gateway the
+  `X-Request-Id` is the gateway's own ID for every request, not the caller's,
+  and "Tx ID" read like the chain's transaction id. The row now names the
+  router's GUID "Smart Router request ID" and leaves the headers out, and
+  Find a request no longer suggests them.
+- **An opened row's block numbers link to the chain's explorer** where one has
+  a proven block page, as the Routers table's do.
+- **Stellar's transactions link to stellar.expert**, mainnet and testnet,
+  each watched rendering a real transaction. The router writes no `tx_hash`
+  for Stellar's `sendTransaction` yet; its rows link once it does.
+- **A row with no customer says why**: the caller sent no `project-id`
+  header.
+- **The KPI cards' labels are capitalised alike:** "Successful
+  retries" and "Stale responses caught" read lowercase beside the others.
+- **A request still in flight names its chain.** No line of a request names
+  its chain until its last one lands, and a list read meanwhile guessed it
+  from the request's upstreams - every chain a shared upstream serves. The
+  log agent labels each router's stream with its chain (its pod's
+  `app.smart-router-chain`, the spec lower-cased); the api now keeps a
+  stream's labels and takes the chain from them before guessing.
+
 ## [0.50.1]
 
 ### Fixed

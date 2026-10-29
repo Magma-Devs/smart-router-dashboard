@@ -25,7 +25,7 @@ three parts:
 
 | Part | What it holds |
 | --- | --- |
-| Request | Method, chain, time, duration, request ID (copy, logs), the caller's IDs, size, the requested block and the router's latest block |
+| Request | Method, chain, time, duration, Smart Router's request ID (copy, logs), size, the requested block and the router's latest block |
 | Tries | One line per try at a provider, in order: result, time, the error by name and its source. The router's code and the provider's message are on hover, inline only when the source is undetermined |
 | Response | Returned by, status, retries, the meaning, the provider's message and the next step (the code's `action`, left out when it is empty) |
 
