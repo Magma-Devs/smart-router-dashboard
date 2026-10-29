@@ -64,6 +64,7 @@ import {
 import { LOG_READ_BUDGET_BYTES, readEnd, readStart, type ReadRange } from "./read-range.js";
 import { ListReads, readList } from "./log-list.js";
 import type { LokiClient } from "./loki-client.js";
+import { StreamScope } from "./stream-scope.js";
 import type { PrometheusClient } from "./prometheus-client.js";
 import type { ConfigurationService } from "./configuration.js";
 import {
@@ -294,6 +295,12 @@ export class ErrorRequestsService {
     return this.configSvc?.getRouters() ?? [];
   }
 
+  private streams?: StreamScope;
+  /** The router's streams narrowed by their own labels (`StreamScope`), made on first use. */
+  private scope(loki: LokiClient): StreamScope {
+    return (this.streams ??= new StreamScope(loki, this.selector));
+  }
+
   private probed: { at: number; state: Promise<RecordedState> } | null = null;
 
   /**
@@ -486,9 +493,13 @@ export class ErrorRequestsService {
       // cap applies to what was asked for.
       const routers = this.routers();
       const router = routerId ? routers.find((r) => r.id === routerId) : undefined;
-      const names = upstream ? [upstream] : this.upstreamsFor(spec, routerId);
+      // Where the streams carry the chain or the router as a label, read only theirs: exact, and
+      // Loki opens no other chain's chunks. Else narrow by the upstreams' names, as before.
+      const scoped = await this.scope(loki).narrow(router?.spec ?? spec, routerId);
+      const selector = scoped ?? this.selector;
+      const names = upstream ? [upstream] : scoped ? undefined : this.upstreamsFor(spec, routerId);
       // A request no upstream could be chosen for names none: its end line names the chain's listener.
-      const chain = upstream ? undefined : (router?.spec ?? spec);
+      const chain = upstream || scoped ? undefined : (router?.spec ?? spec);
       const alts = [
         ...(names?.filter(inRawString).map(escapeRe) ?? []),
         ...(names && chain && LABEL_TOKEN.test(chain) ? [listenerPattern(chain)] : []),
@@ -499,14 +510,14 @@ export class ErrorRequestsService {
         ? inRawString(upstream) ? ` |= \`"upstream":"${upstream}"\`` : ""
         : chain && LABEL_TOKEN.test(chain) ? ` |= \`"chain":"${chain}"\`` : "";
       const index = new UpstreamIndex(routers);
-      const got = await readList(loki, this.selector, {
+      const got = await readList(loki, selector, {
         finders: [
           {
-            query: `${this.selector} |~ \`${FOUND_BY.map(escapeRe).join("|")}\` !~ \`PROTOCOL_CONTEXT_CANCELED|context canceled\`${narrow}`,
+            query: `${selector} |~ \`${FOUND_BY.map(escapeRe).join("|")}\` !~ \`PROTOCOL_CONTEXT_CANCELED|context canceled\`${narrow}`,
             limit: this.cap * 4,
           },
           {
-            query: `${this.selector} |= \`${RELAY_END}\` != \`"selection":"subscription"\` |~ \`"outcome":"(${WRONG_OUTCOMES.join("|")})"\`${eventNarrow} ${PARSED_PIPELINE}`,
+            query: `${selector} |= \`${RELAY_END}\` != \`"selection":"subscription"\` |~ \`"outcome":"(${WRONG_OUTCOMES.join("|")})"\`${eventNarrow} ${PARSED_PIPELINE}`,
             limit: this.cap,
           },
         ],
@@ -517,7 +528,7 @@ export class ErrorRequestsService {
         rowsOf: (lines) => buildErrorRows(lines, index),
         basis: JSON.stringify(routers),
         // At most LOG_READ_BUDGET_BYTES of logs per whole read: the older part of the range is the next read's.
-        wholeFrom: (r) => readStart(loki, this.selector, r, r.endMs),
+        wholeFrom: (r) => readStart(loki, selector, r, r.endMs),
       }, { startMs: range.startMs, endMs }, last);
       if (got === null) return { report: none(false, "unreachable") };
       const { nextBefore } = got.read;

@@ -174,6 +174,19 @@ missing or stale, and only within the budget. A 14-day read of the raw lines
 pinned the shared Loki for five minutes and timed out every tenant's alert
 rules (2026-10-20).
 
+**Reading one chain or one router.** Where the log agent labels the
+router's streams by `chain` (the spec lower-cased) and `service_name`
+(`<tenant>-<router id lower-cased>`) - the fleet's does, the labels the ruler's recorded
+counts carry - both lists narrow their read to those streams
+(`services/stream-scope.ts`: the values come from Loki's label index, kept 10
+minutes; a router by the one `service_name` ending in `-<id>`, else its chain).
+It is exact, and Loki opens no other chain's chunks, so the same budget covers
+far more of the window. Narrowing by the upstreams' names, the fallback where
+the streams carry no such label, fails on a busy deployment: a vendor's name is
+on every chain it serves, and one chain's errors at it filled the read's line
+limit in two seconds, leaving another chain's list empty for 12 hours
+(2026-10-29).
+
 A request's chain is the one its lines name (`chain_id` on an error line, or
 the listener on the line that ends it), else its router's: the log agent
 labels a router's stream `chain` (its pod's `app.smart-router-chain`, the

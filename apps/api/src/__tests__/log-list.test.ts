@@ -49,7 +49,7 @@ function lokiOf(logs: Logged[], down: () => boolean = () => false, weigh: (start
   const reads: Read[] = [];
   const weighed: Read[] = [];
   const loki = {
-    async volume(selector: string, startMs: number, endMs: number) {
+    async labelValues() { return null; }, async volume(selector: string, startMs: number, endMs: number) {
       weighed.push({ query: selector, startMs, endMs });
       return weigh(startMs, endMs);
     },
@@ -410,6 +410,7 @@ describe("what a poll can't see", () => {
     let refuse = false;
     const { loki } = lokiOf(logs);
     const flaky = {
+      labelValues: async () => null,
       volume: (...args: [string, number, number]) => loki.volume(...args),
       queryRange: (query: string, ...rest: [number, number, number, "forward" | "backward"]) =>
         refuse && query.includes('"GUID":"(') ? Promise.resolve(null) : loki.queryRange(query, ...rest),
