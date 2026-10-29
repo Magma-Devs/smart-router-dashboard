@@ -188,6 +188,20 @@ describe("runnable defaults", () => {
     expect(evm.regular.find((c) => c.method === "eth_blockNumber")?.ready).toBe(true);
     expect(evm.regular.find((c) => c.method === "eth_getTransactionByHash")?.needsInput).toBe(true);
   });
+
+  it("sends Starknet a block id as the bare tag", () => {
+    // Juno and Pathfinder both answer `[{"block_id":"latest"}]` with "Invalid
+    // block id" — two "ready" commands failed on every node.
+    const cfg = getInterfaceConfig("STRK", "jsonrpc", ["trace"])!;
+    for (const cmd of [...cfg.regular, ...cfg.trace!]) {
+      expect(cmd.params, cmd.method).not.toContain('{"block_id"');
+    }
+    expect(cfg.regular.find((c) => c.method === "starknet_getBlockWithTxs")?.params).toBe('["latest"]');
+    expect(FAMILY_METHODS.starknet.jsonrpc!.regular
+      .find((c) => c.method === "starknet_getBlockWithTxs")?.params).toBe('["latest"]');
+    // The Trace tier gets a command that runs as-is.
+    expect(cfg.trace!.find((c) => c.method === "starknet_traceBlockTransactions")?.ready).toBe(true);
+  });
 });
 
 describe("transport twins", () => {

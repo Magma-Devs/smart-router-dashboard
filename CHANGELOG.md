@@ -5,6 +5,16 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Fixed
+
+- **Starknet commands in Try now that failed on every node.**
+  `starknet_getBlockWithTxs` and `starknet_getStateUpdate` sent
+  `[{"block_id":"latest"}]`, which Juno and Pathfinder reject with "Invalid
+  block id". They now send `["latest"]`. The Trace tier gets a ready command,
+  `starknet_traceBlockTransactions ["latest"]`. The archive
+  `starknet_getStorageAt` example reads the ETH token's name slot, which
+  answers "Ether"; the old address was not a contract (MAG-4724).
+
 ## [0.50.0]
 
 ### Changed
