@@ -189,7 +189,7 @@ A hash not in that form gets no link. An entry whose explorer leaves the
 catalog on a regeneration links nothing until it is watched again.
 
 Every entry was watched rendering a real transaction, fetched from a public
-node of the chain, in a browser on 2026-10-21:
+node of the chain, in a browser on 2026-10-21 (Stellar's on 2026-10-22):
 
 | Spec | Explorer | Transaction page | Hash |
 |---|---|---|---|
@@ -208,6 +208,8 @@ node of the chain, in a browser on 2026-10-21:
 | `SUIT` | Suiscan | `https://suiscan.xyz/testnet/tx/<digest>` | base58 |
 | `COSMOSHUB` | mintscan | `https://www.mintscan.io/cosmos/tx/<hash>` | 64 hex |
 | `OSMOSIS` | mintscan | `https://www.mintscan.io/osmosis/tx/<hash>` | 64 hex |
+| `XLM` | Stellar Expert | `https://stellar.expert/explorer/public/tx/<hash>` | 64 hex |
+| `XLMT` | Stellar Expert | `https://stellar.expert/explorer/testnet/tx/<hash>` | 64 hex |
 
 Not linked, because a headless browser met a Cloudflare challenge instead of
 the page, so it could not be watched: `BASES` (sepolia.basescan.org), `BSC`
