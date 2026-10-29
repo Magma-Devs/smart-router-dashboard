@@ -1,6 +1,9 @@
 import { beforeAll, describe, expect, it } from "vitest";
+import noRunnable from "../../../../scripts/data/no-runnable-defaults.generated.json";
+import generated from "../chain-methods.generated.json";
 import {
   catalogReady,
+  defaultCommand,
   groupByInternalPath,
   headCommands,
   httpVariantOf,
@@ -201,6 +204,54 @@ describe("runnable defaults", () => {
       .find((c) => c.method === "starknet_getBlockWithTxs")?.params).toBe('["latest"]');
     // The Trace tier gets a command that runs as-is.
     expect(cfg.trace!.find((c) => c.method === "starknet_traceBlockTransactions")?.ready).toBe(true);
+  });
+});
+
+describe("defaultCommand", () => {
+  it("opens a tier on its first command that runs as-is", () => {
+    // The screenshot case: the EVM debug tier leads with debug_traceTransaction,
+    // which wants a hash.
+    const eth = getInterfaceConfig("ETH1", "jsonrpc", ["archive", "debug", "trace"])!;
+    expect(eth.debug![0]?.method).toBe("debug_traceTransaction");
+    expect(defaultCommand(eth.debug!)?.method).toBe("debug_traceBlockByNumber");
+    expect(defaultCommand(eth.trace!)?.method).toBe("trace_block");
+    expect(defaultCommand(getInterfaceConfig("STRK", "jsonrpc", ["trace"])!.trace!)?.method)
+      .toBe("starknet_traceBlockTransactions");
+  });
+
+  it("keeps a tier's first command when it already runs", () => {
+    const eth = getInterfaceConfig("ETH1", "jsonrpc", ["archive"])!;
+    expect(defaultCommand(eth.regular)).toBe(eth.regular[0]);
+    expect(defaultCommand(eth.archive!)).toBe(eth.archive![0]);
+  });
+
+  it("falls back to an unverified command before one that needs input", () => {
+    const needs = { method: "a", label: "a", params: '["0x..."]', needsInput: true };
+    const unverified = { method: "b", label: "b", params: "[]" };
+    expect(defaultCommand([needs, unverified])).toBe(unverified);
+    expect(defaultCommand([needs])).toBe(needs);
+    expect(defaultCommand([])).toBeNull();
+  });
+
+  it("opens every tier on a runnable command, but the roll-call's gaps", () => {
+    // Every chain, interface and add-on in the catalog, filtered the way the
+    // drawer filters a plain-HTTP transport. A tier with nothing runnable has
+    // to be written down in the roll-call the drift check diffs.
+    const gaps = new Set<string>(noRunnable);
+    const notRunnable: string[] = [];
+    for (const [spec, entry] of Object.entries(generated as Record<string, unknown>)) {
+      if (typeof entry === "string") continue;
+      for (const iface of Object.keys(entry as object)) {
+        const cfg = getInterfaceConfig(spec, iface, ["archive", "debug", "trace"]);
+        for (const tier of TIER_ORDER) {
+          const list = cfg?.[tier]?.filter((c) => !/(un)?subscribe$/i.test(c.method));
+          if (!list?.length) continue;
+          const id = tier === "regular" ? `${spec}/${iface}` : `${spec}/${iface}/${tier}`;
+          if (!defaultCommand(list)?.ready && !gaps.has(id)) notRunnable.push(id);
+        }
+      }
+    }
+    expect(notRunnable).toEqual([]);
   });
 });
 

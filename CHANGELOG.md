@@ -14,6 +14,22 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   `starknet_traceBlockTransactions ["latest"]`. The archive
   `starknet_getStorageAt` example reads the ETH token's name slot, which
   answers "Ether"; the old address was not a contract (MAG-4724).
+- **Try now opens every tier on a command that runs as-is** (MAG-4725).
+  Picking a Request Type (Regular, Archive, Debug, Trace) used to select the
+  tier's first catalog entry, so every EVM Debug tier opened on
+  `debug_traceTransaction`, which wants a transaction hash. The drawer now
+  opens each tier on its first command marked ready to send:
+  `debug_traceBlockByNumber` on Debug, `trace_block` on Trace,
+  `starknet_traceBlockTransactions` on Starknet's Trace. A tier whose first
+  command already ran keeps it. Changed: all 61 Debug tiers, 2 Trace tiers,
+  and 9 REST Regular tiers (Arweave, Canton, Cardano, Kaspa, Moralis,
+  MultiversX, Stacks, Tezos, Stellar Horizon).
+- **The no-runnable roll-call covers add-on tiers** (MAG-4725).
+  `no-runnable-defaults.generated.json` now lists add-on tiers with nothing
+  runnable as `SPEC/iface/tier`, so the spec-drift check fails on a new one.
+  Three are accepted, each with its testnet: EOS trace and VeChain REST debug
+  (POST with a body, which the REST drawer cannot send), and Quai debug
+  (every method takes a block argument).
 
 ## [0.50.0]
 

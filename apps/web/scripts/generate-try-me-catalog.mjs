@@ -100,10 +100,13 @@ const OUT_PATH =
   process.env.TRY_ME_OUT ??
   path.resolve(__dirname, "../src/components/try-me/chain-methods.generated.json");
 /**
- * Committed roll-call of (spec × interface) pairs whose regular tier has NO
- * command that can be sent as-is. It exists to be diffed: a chain family
- * nobody has curated hints for lands as a line in this file, which the drift
- * check turns into a failure instead of a silent gap in the drawer. See
+ * Committed roll-call of the method lists with NO command that can be sent
+ * as-is: `INDEX/iface` for a regular tier, `INDEX/iface/tier` for an add-on
+ * tier (archive, debug, trace). The drawer opens each tier on its first
+ * runnable command, so every line here is a tier it opens on one that needs
+ * typing into first. It exists to be diffed: a chain family nobody has
+ * curated hints for lands as a line in this file, which the drift check turns
+ * into a failure instead of a silent gap in the drawer. See
  * `.claude/rules/chain-resync.md`.
  */
 const NO_RUNNABLE_PATH =
@@ -1191,9 +1194,9 @@ writeFileSync(OUT_PATH, `${json}\n`);
 
 /* ── Runnable-defaults roll-call ─────────────────────────────────────────── */
 
-/* Which (spec × interface) pairs ended up with nothing the drawer can offer
-   as a working default. Aliases resolve to their canonical entry, so a chain
-   that aliases a covered one is covered too. */
+/* Which method lists ended up with nothing the drawer can offer as a working
+   default. Aliases resolve to their canonical entry, so a chain that aliases a
+   covered one is covered too. */
 const noRunnable = [];
 let readyTotal = 0;
 for (const index of Object.keys(out).sort()) {
@@ -1201,10 +1204,14 @@ for (const index of Object.keys(out).sort()) {
   for (let hops = 0; typeof entry === "string" && hops < 4; hops++) entry = out[entry];
   if (typeof entry !== "object") continue;
   for (const iface of Object.keys(entry).sort()) {
-    const regular = entry[iface].regular ?? [];
-    const ready = regular.filter((c) => c.r).length;
-    readyTotal += ready;
-    if (ready === 0) noRunnable.push(`${index}/${iface}`);
+    for (const tier of TIERS) {
+      const cmds = entry[iface][tier];
+      // An empty regular tier is a gap too; an absent add-on tier is not one.
+      if (tier !== "regular" && !cmds?.length) continue;
+      const ready = (cmds ?? []).filter((c) => c.r).length;
+      readyTotal += ready;
+      if (ready === 0) noRunnable.push(tier === "regular" ? `${index}/${iface}` : `${index}/${iface}/${tier}`);
+    }
   }
 }
 writeFileSync(NO_RUNNABLE_PATH, `${JSON.stringify(noRunnable, null, 2)}\n`);
@@ -1219,7 +1226,7 @@ console.log(`iface entries    ${ifaceEntries} (canonical, aliases excluded)`);
 console.log(`methods by tier  regular=${tierTotals.regular} archive=${tierTotals.archive} debug=${tierTotals.debug} trace=${tierTotals.trace}`);
 console.log(`runnable         ${readyTotal} commands can be sent as-is`);
 console.log(`output           ${OUT_PATH} (${kb(Buffer.byteLength(json))})`);
-console.log(`no runnable      ${noRunnable.length} (spec × iface) pairs → ${NO_RUNNABLE_PATH}`);
+console.log(`no runnable      ${noRunnable.length} method lists → ${NO_RUNNABLE_PATH}`);
 for (const pair of noRunnable) console.log(`  - ${pair}: no command runs without caller input`);
 if (skipped.length > 0) {
   console.log(`skipped          ${skipped.length}`);
