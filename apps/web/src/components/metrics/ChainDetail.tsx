@@ -4,13 +4,16 @@
  * Ported verbatim from the design prototype (page-metrics.jsx ChainDetail);
  * the mock's synthetic series are replaced by /api/metrics/chain-series,
  * fetched only while the row is expanded (this component only mounts then).
- * backupShare = null ⇒ the design's own no-data option state. The design's
- * QoS option is gone: a selection score isn't something to act on here. */
+ * The design's QoS option is gone: a selection score isn't something to act
+ * on here. The "Primary vs backup" tile is gone too: its series is part 2 of
+ * the Availability view (AvailabilityBreakdown), beside the chain's line and
+ * its upstreams on one time axis. */
 
 import { useState } from "react";
 import { WINDOWS, type ChainSeries, type MetricWindow, type TimePoint } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { InteractiveChart, roFmtTime, roTimes } from "@/components/metrics/InteractiveChart";
+import { AvailabilityBreakdown } from "./AvailabilityBreakdown";
 import { fmtNum } from "@/lib/format";
 import { seriesXY } from "./bits";
 import { useFilters } from "@/components/gateway/FiltersProvider";
@@ -19,6 +22,8 @@ import { Skel } from "@/components/gateway/Skel";
 /** The already-loaded roster row backing the expanded chain. */
 export interface ChainDetailRow {
   spec: string;
+  /** The config router the row is; null when no values file names it. */
+  routerId: string | null;
   /** Availability over the window, percent 0–100 (null = no traffic). */
   availPct: number | null;
   p95Ms: number | null;
@@ -50,22 +55,6 @@ const pct = (pts: TimePoint[] | null | undefined) => {
   return { values: values.map((v) => v * 100), times };
 };
 
-/** Shared shape of the routing switcher tile across its three data states. */
-const ROUTING = {
-  key: "routing",
-  label: "Primary vs backup",
-  color: "#fb923c",
-  yFmt: (v: number) => v.toFixed(0) + "%",
-  yDomain: [0, 100] as [number, number],
-};
-
-/**
- * Primary share for the tile. A real failover must never round away to a flat
- * "100%" — that is the one number here an operator would act on.
- */
-const fmtPrimaryShare = (v: number): string =>
-  v >= 100 ? "100" : v > 99.9 ? "99.9+" : v.toFixed(1);
-
 export function ChainDetail({ r, onChainClick, win }: { r: ChainDetailRow; onChainClick: (spec: string) => void; win: MetricWindow }) {
   const [selKey, setSelKey] = useState<string | null>(null);
   const { scopeQ } = useFilters();
@@ -91,20 +80,7 @@ export function ChainDetail({ r, onChainClick, win }: { r: ChainDetailRow; onCha
   const p95 = seriesXY(data.p95Ms);
   const err = pct(data.errorRate);
   const rps = seriesXY(data.rps);
-  // `[]` is TRUTHY — the old guard let an empty result render a fabricated
-  // "0% backup" over an empty chart. Length-check both series, and state the
-  // routing metric as PRIMARY share (MAG-2537): that's the number an operator
-  // watches, and 100% reads as "nothing failed over".
-  const buShare = data.backupShare?.length ? pct(data.backupShare) : null;
-  const primaryShare = buShare
-    ? { values: buShare.values.map((v) => 100 - v), times: buShare.times }
-    : null;
-  const curPrimary =
-    primaryShare && primaryShare.values.length
-      ? primaryShare.values[primaryShare.values.length - 1]!
-      : null;
   const avgRps = r.requests / WINDOWS[win].rangeSeconds;
-  const zeroTimes = rps.times.length ? rps.times : roTimes(win, 24);
 
   // Percentage charts cap the auto y-domain at 100 — padding above the data
   // must never fabricate a ">100%" axis. Sub-1 RPS keeps decimals.
@@ -114,15 +90,6 @@ export function ChainDetail({ r, onChainClick, win }: { r: ChainDetailRow; onCha
     ...(r.p95Ms != null ? [{ key: "p95", label: "P95 latency", cur: Math.round(r.p95Ms) + " ms", color: "#3b82f6", values: p95.values, times: p95.times, yFmt: (v: number) => Math.round(v) + " ms" }] : []),
     ...(r.errPct != null ? [{ key: "err", label: "Error rate", cur: r.errPct.toFixed(2) + "%", color: "#f97316", values: err.values, times: err.times, yFmt: (v: number) => v.toFixed(2) + "%", yMaxCap: 100 }] : []),
     { key: "rps", label: "Requests / sec", cur: avgRps > 0 && avgRps < 1 ? avgRps.toFixed(2) : fmtNum(Math.round(avgRps)), color: "var(--brand)", values: rps.values, times: rps.times, yFmt: rpsFmt },
-    primaryShare && curPrimary !== null
-      ? { ...ROUTING, cur: fmtPrimaryShare(curPrimary) + "% primary", values: primaryShare.values, times: primaryShare.times, caption: "share of traffic served by primary upstreams - 100% = nothing failed over" }
-      : r.hasBackup
-        // Backups ARE configured but nothing came back: honest "—", not a
-        // flat 100% line that would claim they never took traffic.
-        ? { ...ROUTING, cur: "—", note: "no data", values: [], times: [], caption: "backups are configured, but no traffic was attributed to primary or backup in this window" }
-        // No backup node in the config ⇒ 100% primary is a CONFIG fact, not a
-        // measurement, and safe to state.
-        : { ...ROUTING, cur: "100% primary", note: "no backup", values: zeroTimes.map(() => 100), times: zeroTimes, caption: "no backup upstream configured for this chain" },
   ];
 
   const m = metrics.find((x) => x.key === selKey) || metrics[0]!;
@@ -157,7 +124,11 @@ export function ChainDetail({ r, onChainClick, win }: { r: ChainDetailRow; onCha
             <span style={{ fontSize: 11.5, fontWeight: 600, color: "var(--text-2)" }}>{m.label}{m.caption && <span style={{ fontWeight: 400, color: "var(--text-4)", marginLeft: 7 }}>{m.caption}</span>}</span>
             <span style={{ fontSize: 10.5, color: "var(--text-4)", fontFamily: "var(--font-mono)" }}>{from} → now</span>
           </div>
-          {m.values.length ? (
+          {m.key === "avail" ? (
+            // Availability, backup share and the upstreams, on one time axis.
+            // backupShare null with backups configured is "no data", never 0%.
+            <AvailabilityBreakdown spec={r.spec} routerId={r.routerId} win={win} color={m.color} availability={data.availability} backupShare={data.backupShare?.length ? data.backupShare : null} hasBackup={r.hasBackup} />
+          ) : m.values.length ? (
             <InteractiveChart key={m.key} values={m.values} color={m.color} yFmt={m.yFmt} target={m.target} yDomain={m.yDomain} yMaxCap={m.yMaxCap} times={m.times} win={win} />
           ) : (
             <div style={{ height: 180, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "var(--text-4)" }}>No samples in this window.</div>

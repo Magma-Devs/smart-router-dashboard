@@ -665,6 +665,41 @@ export function qBackupShareExpr(
   return `sum(rate(${ROUTER_METRICS.requestsTotal}${backupSel}[${rateRange(step)}])) / sum(rate(${ROUTER_METRICS.requestsTotal}${sel}[${rateRange(step)}]))`;
 }
 
+/**
+ * Failed tries per second for every upstream of one chain, one series per
+ * `provider_address`: its relays minus its successes, on the same step and
+ * range as `qAvailabilitySeriesExpr` so a point lines up with the chain's
+ * availability at that time. An upstream whose success counter was never born
+ * failed every try (`or … * 0`). Recorded series from the chart floor up.
+ */
+export function qPerUpstreamFailedRpsExpr(step: string, spec: string, window?: MetricWindow): string {
+  const sel = selector({ spec });
+  const [tot, ok] = recordedSeriesFor(window)
+    ? [
+        `sum by (provider_address) (${aot(`${RECORDED.requestsByProvider}${sel}`, step)})`,
+        `sum by (provider_address) (${aot(`${RECORDED.successByProvider}${sel}`, step)})`,
+      ]
+    : [
+        `sum by (provider_address) (rate(${ROUTER_METRICS.requestsTotal}${sel}[${rateRange(step)}]))`,
+        `sum by (provider_address) (rate(${ROUTER_METRICS.requestsSuccessTotal}${sel}[${rateRange(step)}]))`,
+      ];
+  return `clamp_min(${tot} - (${ok} or ${tot} * 0), 0)`;
+}
+
+/**
+ * Latest-block polls per step for every upstream of one chain, one series per
+ * `endpoint_id` - the chain tracker polls every configured upstream, backups
+ * included, whatever the traffic. `kind` picks successes or failures. No
+ * recorded series exists for this family; it is one counter per upstream ×
+ * interface × router pod, so a long window reads a few series, not a
+ * histogram's thousands. ⚠ Zero on both is "not polled", never "healthy"
+ * (see `qEndpointPolls`).
+ */
+export function qPerEndpointPollsSeriesExpr(kind: "ok" | "failed", spec: string, step: string): string {
+  const metric = kind === "ok" ? ENDPOINT_METRICS.fetchLatestSuccess : ENDPOINT_METRICS.fetchLatestFails;
+  return `sum by (endpoint_id) (increase(${metric}${selector({ spec })}[${rateRange(step)}]))`;
+}
+
 /* ── Per-upstream (one name on one chain) latency + volume ─────────────── */
 
 /*

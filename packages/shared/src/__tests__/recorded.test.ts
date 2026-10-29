@@ -41,6 +41,8 @@ import {
   qPerSpecLatencySeriesExpr,
   qPerSpecRpsExpr,
   qPerUpstreamRpsExpr,
+  qPerUpstreamFailedRpsExpr,
+  qPerEndpointPollsSeriesExpr,
   qReadRequestsByMethod,
   qRequestsBy,
   qRequestsByUpstream,
@@ -108,6 +110,7 @@ const SERIES: Array<[string, (w: "1h" | "6h" | "1d") => string]> = [
   ["qPerSpecClientRpsSeriesExpr", (w) => qPerSpecClientRpsSeriesExpr("2m", undefined, w)],
   ["qPerUpstreamRpsExpr", (w) => qPerUpstreamRpsExpr("2m", "ETH1", w)],
   ["qPerSpecRpsExpr", (w) => qPerSpecRpsExpr("2m", w)],
+  ["qPerUpstreamFailedRpsExpr", (w) => qPerUpstreamFailedRpsExpr("2m", "ETH1", w)],
   ["qBackupShareExpr", (w) => qBackupShareExpr("ETH1", ["Blockdaemon"], "2m", w)],
   ["qEndpointLatencySeriesExpr", (w) => qEndpointLatencySeriesExpr(0.95, REF, "2m", w)],
   ["qEndpointLatencyByEndpointSeriesExpr", (w) => qEndpointLatencyByEndpointSeriesExpr(0.95, "ETH1", "10m", "2m", w)],
@@ -121,6 +124,7 @@ const STAYS_RAW: Array<[string, (w: "6h") => string]> = [
   ["qClientRequestsBy function", (w) => qClientRequestsBy("function", w)],
   ["qMethodLatencyQuantile", (w) => qMethodLatencyQuantile(0.95, w, "ETH1")],
   ["qRetriesTotal", (w) => qRetriesTotal("recovered", w)],
+  ["qPerEndpointPollsSeriesExpr", () => qPerEndpointPollsSeriesExpr("ok", "ETH1", "2m")],
 ];
 
 afterEach(() => setRecordedReads({ from: null, available: false }));
