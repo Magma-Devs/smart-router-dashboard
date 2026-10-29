@@ -200,14 +200,17 @@ const JSONRPC_HINTS = [
   { m: "gas_price", p: "[null]", d: "Returns the gas price for a specific block.", only: ["NEAR"] },
   { m: "network_info", p: "[]", d: "Returns network info such as active peers.", only: ["NEAR"] },
   { m: "validators", p: "[null]", d: "Returns the current validator set.", only: ["NEAR"] },
-  // Starknet
+  // Starknet. A block id goes positionally as the bare tag (`["latest"]`) or
+  // by name (`{"block_id":"latest"}`); Juno and Pathfinder both answer
+  // `[{"block_id":"latest"}]` with "Invalid block id".
   { m: "starknet_blockNumber", p: "[]", d: "Get the most recent accepted block number." },
   { m: "starknet_blockHashAndNumber", p: "[]", d: "Get the most recent accepted block hash and number." },
   { m: "starknet_chainId", p: "[]", d: "Return the currently configured StarkNet chain id." },
-  { m: "starknet_getBlockWithTxs", p: '[{"block_id":"latest"}]', d: "Get block information with full transactions." },
+  { m: "starknet_getBlockWithTxs", p: '["latest"]', d: "Get block information with full transactions." },
   { m: "starknet_syncing", p: "[]", d: "Returns sync status, or false if not syncing." },
-  { m: "starknet_getStateUpdate", p: '[{"block_id":"latest"}]', d: "Get the state changes in a given block." },
+  { m: "starknet_getStateUpdate", p: '["latest"]', d: "Get the state changes in a given block." },
   { m: "starknet_traceTransaction", p: '["0x..."]', d: "Returns the execution trace of a transaction." },
+  { m: "starknet_traceBlockTransactions", p: '["latest"]', d: "Returns the execution traces of every transaction in a block." },
   // Bitcoin-family (btc / bch / doge / litecoin)
   { m: "getblockchaininfo", p: "[]", d: "Returns blockchain state info." },
   { m: "getblockcount", p: "[]", d: "Returns the current block height." },
@@ -657,7 +660,8 @@ const ARCHIVE_HINTS = {
     { m: "eth_getCode", l: "Get Code (Archive)", p: '["0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", "0x2C2A2"]', d: "Bytecode at a historical block — requires an archive node." },
     { m: "eth_call", l: "Call (Archive)", p: '[{"to":"0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48","data":"0x18160ddd"}, "0x2C2A2"]', d: "Read-only call against a historical block — requires an archive node." },
     { m: "query", l: "Query (Archive)", p: '{"request_type":"view_account","account_id":"example.near","block_id":10000000}', d: "View account state at a historical block — requires an archive node.", only: ["NEAR"] },
-    { m: "starknet_getStorageAt", l: "Get Storage At (Archive)", p: '["0x0123", "0x0", {"block_number":123456}]', d: "Storage value at a historical block — requires an archive node." },
+    // The ETH token's `ERC20_name` slot, which reads back "Ether".
+    { m: "starknet_getStorageAt", l: "Get Storage At (Archive)", p: '["0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7", "0x0341c1bdfd89f69748aa00b5742b03adbffd79b8e80cab5c50d91cd8c2a79be1", {"block_number":123456}]', d: "Storage value at a historical block — requires an archive node." },
     { m: "getblockhash", l: "Get Block Hash (Archive)", p: "[800000]", d: "Hash of a historical block." },
   ],
   rest: [

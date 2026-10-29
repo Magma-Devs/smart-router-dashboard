@@ -391,7 +391,7 @@ const STARKNET_JSONRPC: InterfaceConfig = {
     {
       method: "starknet_getBlockWithTxs",
       label: "starknet_getBlockWithTxs",
-      params: '[{"block_id":"latest"}]',
+      params: '["latest"]',
       desc: "Get block information with full transactions.",
     },
     { method: "starknet_syncing", label: "starknet_syncing", params: "[]", desc: "Returns sync status, or false if not syncing." },
@@ -401,7 +401,7 @@ const STARKNET_JSONRPC: InterfaceConfig = {
     {
       method: "starknet_getStorageAt",
       label: "Get Storage At",
-      params: '{"contract_address":"0x0123","key":"0x0","block_id":{"block_number":123456}}',
+      params: '{"contract_address":"0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7","key":"0x0341c1bdfd89f69748aa00b5742b03adbffd79b8e80cab5c50d91cd8c2a79be1","block_id":{"block_number":123456}}',
     },
   ],
   debug: null,
