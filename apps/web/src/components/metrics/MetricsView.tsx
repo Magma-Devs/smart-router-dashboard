@@ -216,9 +216,13 @@ export function MetricsView() {
           <CurrentlyUnavailable />
           {activeChain && <ChainTrafficByProvider spec={activeChain} timeWindow={timeWindow} />}
           {activeChain && <ChainAvailability spec={activeChain} timeWindow={timeWindow} />}
-          <RouterOverview chainFilter={activeChain} timeWindow={timeWindow} onChainClick={(ch) => { setChainFilter(ch); pickTab("upstreams"); }}
-            drill={{ row: focus.expand, tile: focus.tile }} linked={linked}
-            onDrill={(d) => byHand((f) => ({ ...f, expand: d.row, tile: d.tile }))} />
+          {/* The Routers table compares routers: with one chain picked, its cards above say it, and the
+              chains list on the left picks between a chain's routers. */}
+          {!activeChain && (
+            <RouterOverview chainFilter={activeChain} timeWindow={timeWindow} onChainClick={(ch) => { setChainFilter(ch); pickTab("upstreams"); }}
+              drill={{ row: focus.expand, tile: focus.tile }} linked={linked}
+              onDrill={(d) => byHand((f) => ({ ...f, expand: d.row, tile: d.tile }))} />
+          )}
         </>
       )}
       {tab === "upstreams" && (

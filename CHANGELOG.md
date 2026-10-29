@@ -16,6 +16,9 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   no traffic (a standby backup wasn't asked, which isn't the same as
   available). Each row ends in its availability over the window. Hovering a
   column lists every row's availability for that half hour.
+- **Metrics tab: a picked chain shows no Routers table.** The table compares
+  routers; with one chain picked, its cards say it, and the chains list on the
+  left picks between a chain's routers.
 - **Metrics tab: an Availability card for a picked chain.** The same blocks
   under Traffic by provider. It follows the router picked in the chains
   list; with none picked, a chain two routers serve shows all its providers.
