@@ -15,6 +15,33 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   `starknet_getStorageAt` example reads the ETH token's name slot, which
   answers "Ether"; the old address was not a contract (MAG-4724).
 
+## [0.52.0]
+
+### Added
+
+- **A Metrics page link opens exactly what you were looking at.** Copy the
+  browser's URL and send it: the person who opens it sees the same chain,
+  router, tab, time window and focus. New URL keys, beside `chain`, `router`,
+  `tab` and `request`, which work as before:
+  - `window` - the time window, always in the URL. A link opens with the
+    sender's window and does not change the window the viewer has saved.
+  - `upstream` on the Upstreams tab - the upstream in the deep-dive. Clicking
+    a roster row writes it. `upstreamChain` names its chain when no chain is
+    picked.
+  - `upstream`, `from`, `to` on the Errors tab - the request list's upstream
+    filter and exact times (unix ms). Clicking an errors-over-time bar writes
+    all three, so a link shows the same failed requests, not the last 30
+    minutes of whoever opens it.
+  - `expand`, `tile` on Overview - the router row open in the Routers table
+    and the chart picked in it.
+
+  A change of chain or router is still a new history entry; a change of tab,
+  window or focus rewrites the current one, and picking another tab drops the
+  old tab's focus. A link to something that is gone opens the nearest view
+  with one plain line saying why: an upstream or router no longer in the
+  config, times older than the 30 days the logs keep, a window the page
+  doesn't offer. Only names go in the URL, never node URLs.
+
 ## [0.50.0]
 
 ### Changed

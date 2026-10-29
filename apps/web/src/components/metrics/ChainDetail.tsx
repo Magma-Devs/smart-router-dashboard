@@ -7,7 +7,6 @@
  * backupShare = null ⇒ the design's own no-data option state. The design's
  * QoS option is gone: a selection score isn't something to act on here. */
 
-import { useState } from "react";
 import { WINDOWS, type ChainSeries, type MetricWindow, type TimePoint } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { InteractiveChart, roFmtTime, roTimes } from "@/components/metrics/InteractiveChart";
@@ -66,8 +65,14 @@ const ROUTING = {
 const fmtPrimaryShare = (v: number): string =>
   v >= 100 ? "100" : v > 99.9 ? "99.9+" : v.toFixed(1);
 
-export function ChainDetail({ r, onChainClick, win }: { r: ChainDetailRow; onChainClick: (spec: string) => void; win: MetricWindow }) {
-  const [selKey, setSelKey] = useState<string | null>(null);
+/** `tile` is the picked tile's key (null = the first), held in the page's URL (`?tile=`). */
+export function ChainDetail({ r, onChainClick, win, tile: selKey, onTile: setSelKey }: {
+  r: ChainDetailRow;
+  onChainClick: (spec: string) => void;
+  win: MetricWindow;
+  tile: string | null;
+  onTile: (key: string) => void;
+}) {
   const { scopeQ } = useFilters();
   const { data } = useApi<ChainSeries>(`/api/metrics/chain-series?spec=${encodeURIComponent(r.spec)}&window=${win}${scopeQ}`);
 
@@ -126,11 +131,16 @@ export function ChainDetail({ r, onChainClick, win }: { r: ChainDetailRow; onCha
   ];
 
   const m = metrics.find((x) => x.key === selKey) || metrics[0]!;
+  // A link's tile this row doesn't draw in this window.
+  const tileGone = selKey !== null && m.key !== selKey;
   const from = m.times.length ? roFmtTime(m.times[0]!, win) : roFmtTime(roTimes(win, 2)[0]!, win);
 
   return (
     <td colSpan={8} style={{ padding: 0, background: "var(--bg-2)", borderBottom: "1px solid var(--line)" }}>
       <div style={{ padding: "14px 16px" }}>
+        {tileGone && (
+          <div style={{ fontSize: 12, color: "var(--text-3)", marginBottom: 10 }}>The chart in this link isn&apos;t available for this router in this window. Showing {m.label}.</div>
+        )}
         {/* metric switcher */}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
           {metrics.map((x) => {

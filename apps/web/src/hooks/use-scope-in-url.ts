@@ -15,12 +15,31 @@ export interface PageTabs<T extends string> {
   tab: T;
   setTab: (tab: T) => void;
   tabs: readonly [T, ...T[]];
+  /**
+   * The rest of the view as URL params, null for a key to leave out and
+   * undefined for one to leave as it is: the window, and what is in focus
+   * inside the tab (`lib/view-in-url.ts`). They are written with the tab, so a
+   * change to them rewrites the entry it is on.
+   */
+  params?: Record<string, string | null | undefined>;
+  /**
+   * Shows what a URL's params ask for - on arrival and on Back/Forward, with
+   * the tab that URL opens - and returns them as they will be shown.
+   */
+  adoptParams?: (search: string, tab: T) => Record<string, string | null | undefined>;
+  /**
+   * The chain or router was changed by hand, on `tab`: drops whatever focus
+   * belonged to the old one and returns the params as they become, so the new
+   * history entry doesn't carry it.
+   */
+  onNewScope?: (tab: T) => Record<string, string | null | undefined>;
 }
 
 /**
  * The page's chain, router and tab in its URL
  * (`?chain=ETH1&router=eth-prod&tab=upstreams`), both ways. A link opens the
- * page on them. A change of chain or router - the drawer, a dropdown, a
+ * page on them, and so do the view's other params (`view.params`: the window
+ * and the tab's focus). A change of chain or router - the drawer, a dropdown, a
  * drill-in - becomes a history entry, so Back returns to the one before, tab
  * included; a change of tab alone rewrites the entry it is on, since the tabs
  * are one screen. A URL that already means the current scope but spells it
@@ -60,10 +79,19 @@ export function useScopeInUrl<T extends string>(
     const tab = v.tab === v.tabs[0] ? null : v.tab;
     const url = new URL(window.location.href);
     const q = url.searchParams;
-    if (q.get("chain") === now.chain && q.get("router") === now.router && q.get("tab") === tab) return;
+    const settled = (p: Record<string, string | null | undefined>) =>
+      Object.entries(p).filter((e): e is [string, string | null] => e[1] !== undefined);
+    let params = settled(v.params ?? {});
+    if (q.get("chain") === now.chain && q.get("router") === now.router && q.get("tab") === tab
+      && params.every(([key, value]) => q.get(key) === value)) return;
     const meant = resolveScope(scopeFromSearch(url.search), known);
     const same = meant.chain === now.chain && meant.router === now.router;
-    for (const [key, value] of [["chain", now.chain], ["router", now.router], ["tab", tab]] as const) {
+    if (!same && v.onNewScope) {
+      const next = v.onNewScope(v.tab);
+      latest.current = { ...latest.current, view: { ...v, params: next } };
+      params = settled(next);
+    }
+    for (const [key, value] of [["chain", now.chain], ["router", now.router], ["tab", tab], ...params] as const) {
       if (value) q.set(key, value);
       else q.delete(key);
     }
@@ -81,6 +109,10 @@ export function useScopeInUrl<T extends string>(
       v.setTab(tab);
       // Shown from the next render; a write before then must carry it already.
       latest.current = { ...latest.current, view: { ...v, tab } };
+    }
+    if (withTab && v.adoptParams) {
+      const params = v.adoptParams(window.location.search, tab);
+      latest.current = { ...latest.current, view: { ...latest.current.view, params } };
     }
     const want = resolveScope(scopeFromSearch(window.location.search), known);
     if (want.chain === now.chain && want.router === now.router) {
@@ -100,10 +132,16 @@ export function useScopeInUrl<T extends string>(
     act.selectChain(want.chain);
   }, [write]);
 
-  // URL → filters: on arrival, and on Back/Forward.
+  // URL → filters: on arrival, and on Back/Forward. Arrival once: the URL
+  // written after it is this page's own, not a link to read again (Strict
+  // Mode runs this twice on mount).
+  const arrived = useRef(false);
   useEffect(() => {
     const onPop = () => adopt(true);
-    onPop();
+    if (!arrived.current) {
+      arrived.current = true;
+      onPop();
+    }
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, [adopt]);
@@ -125,6 +163,7 @@ export function useScopeInUrl<T extends string>(
   }, [loaded, adopt, write]);
 
   // Filters → URL: every change, wherever it came from.
+  const paramsKey = JSON.stringify(view.params ?? {});
   useEffect(() => {
     const want = pending.current;
     if (want !== undefined) {
@@ -133,5 +172,5 @@ export function useScopeInUrl<T extends string>(
       pending.current = undefined;
     }
     write();
-  }, [scope.chain, scope.router, view.tab, write]);
+  }, [scope.chain, scope.router, view.tab, paramsKey, write]);
 }

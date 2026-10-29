@@ -550,7 +550,8 @@ boot. Set `job` for a scrape config that names jobs per router.
   one.
 - Web side: the scope lives in `FiltersProvider` next to the chain and the time
   window, in two lifetimes — **the window persists** (`sr:window`, a viewing
-  preference), **the chain and the router belong to the page** that set them
+  preference; a window from a link, `linkWindow`, is shown on that page only
+  and never saved), **the chain and the router belong to the page** that set them
   (in-memory, stamped with the pathname, gone when you navigate — a narrowing
   that outlives its screen is a trap). Every metrics URL appends `scopeQ` /
   `withScope(url)`. A selection that disappears from the list resets to "All
@@ -570,7 +571,23 @@ boot. Set `job` for a scrape config that names jobs per router.
   them, a chain or router change is a history entry (Back returns to the
   previous one, tab included) while a tab change alone rewrites the current
   entry, and another page's URL has none, so the per-page rule above still
-  holds. The two log tabs add `request=<id>` (`lib/request-in-url.ts`): opening
+  holds. The rest of the view rides with them (`lib/view-in-url.ts`, written by
+  the same hook, so a copied URL or a reload opens the same view): `window`
+  always (the sender's, not the viewer's saved one - opening a link never
+  saves it); on Overview `expand=<router id>` and `tile=<tile key>` (the
+  Routers table's open row and its chart, `ChainDetail`'s own tile keys); on
+  Upstreams `upstream=<node name>` (the deep-dive; `upstreamChain=<spec>` only
+  when no chain is picked); on Errors `upstream` (the list's filter) and
+  `from` / `to` (unix ms - an errors-over-time bar writes all three). A change
+  to them rewrites the current entry, picking another tab drops the old tab's,
+  and a new chain or router drops the Upstreams tab's upstream. What a link
+  asks for that no longer exists opens the nearest view with a one-line notice
+  (`LinkNotice`): an upstream or router the config no longer has (the first
+  upstream / no open row), a tile the row doesn't draw, times that ended over
+  30 days ago (the page window), started before then (cut to 30 days ago) or
+  can't be read, an unknown window. A malformed value reads as none; an
+  upstream name with `://` is refused, so no node URL reaches the URL.
+  The two log tabs add `request=<id>` (`lib/request-in-url.ts`): opening
   a row or finding a request by ID writes it, closing clears it, picking
   another tab drops it, and a link with it opens that tab's look-up on the
   request (a v1.6.1 ID is read in its own minutes, whatever the page's
@@ -1117,7 +1134,7 @@ Compose / Makefile knobs:
 | shared `dist` | api/web read `@sr/shared` from `dist/` — run `pnpm --filter @sr/shared build` after editing it (the docker dev `builder` service does this on a `tsc --watch`). |
 | Metric names | NOT `lava_rpcsmartrouter_*` — see Metrics above. The `../SR_Dashboard/` prototype is authoritative for **pixels**, not for metric names. |
 | Polling | A poll belongs in `useApi`: the per-window cadence and the idle gate live there, and a direct `useSWR` poll gets neither. While the gate has polling paused, `isPaused` refuses every revalidation, a `mutate()` included. A click or a key resumes polling before its handler runs, so a refresh a person asks for works; one fired by a timer does nothing until someone comes back. See "Polling" |
-| Window params | `24h` is a wire alias of `1d`; unknown values silently fall back to `DEFAULT_WINDOW` = `30m` (never a 400). The web opens on the same constant, and a window the user picks persists to `localStorage` under `sr:window` — so a changed default only reaches someone who has never picked one. `1h` is in the catalog but not in the page-level select. |
+| Window params | `24h` is a wire alias of `1d`; unknown values silently fall back to `DEFAULT_WINDOW` = `30m` (never a 400). The web opens on the same constant, and a window the user picks persists to `localStorage` under `sr:window` — so a changed default only reaches someone who has never picked one. The Metrics page's `?window=` beats both and is never saved. `1h` is in the catalog but not in the page-level select. |
 | Provider `role` | Only the helm values format marks backups (`is_backup`); with a raw SR_CONFIG mount, `role` is null and backup-share panels stay empty — that's honest, not a bug. |
 | Endpoint URLs | `localhost:<port>` comes from SR_CONFIG's listen ports, gateway hostnames from helm values' `publicUrls` — a mount never has both. Anything that renders or dials an endpoint address must resolve public → local → `—` (`epHttpUrl` / `epWsUrl` in `components/endpoints/bits.tsx`), never hardcode `localhost`. |
 | Health words | `HealthState` has exactly three states and exactly one wording — `lib/health.ts` / `<HealthTag>`. A panel that maps health to its own labels/colours is a bug, even when the words look nicer locally: the same upstream is read across panels. |
