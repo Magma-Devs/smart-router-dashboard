@@ -356,6 +356,55 @@ export interface ChainSeries {
   backupShare: TimePoint[] | null;
 }
 
+/**
+ * One upstream at one point of the chain's availability grid. `t` is the
+ * point's end, as on the availability series: each figure covers the rate
+ * range before it (`rateRange(step)`).
+ */
+export interface UpstreamTimelineCell {
+  t: number;
+  /**
+   * What the evidence at this point says (`upstreamCellState`): `null` when
+   * nothing about this upstream was scraped at all (a gap, never a health),
+   * `unknown` when it was scraped but neither tried nor polled.
+   */
+  state: HealthState | null;
+  /** Tries per second the router sent it (relay-scoped); null = no series. */
+  rps: number | null;
+  /** Failed tries per second; null = no series. */
+  failedRps: number | null;
+  /** Its share of the chain's tries, 0–1; null when the chain had none. */
+  share: number | null;
+  /** Latest-block polls that answered / failed; null = no series. */
+  pollsOk: number | null;
+  pollsFailed: number | null;
+}
+
+/** One upstream of the chain, a cell per grid point from `grid.start` to `grid.end`. */
+export interface UpstreamTimelineRow {
+  /** The values file's name where it declares the upstream (series matched case-insensitively), else the series'. */
+  upstream: string;
+  /** From helm `is_backup`; null when the values don't say (SR_CONFIG, or not in the config). */
+  role: "primary" | "backup" | null;
+  /** Declared by the mounted values file. False: seen only in the metrics. */
+  inConfig: boolean;
+  cells: UpstreamTimelineCell[];
+}
+
+/**
+ * Every upstream of one chain over the window, on the same grid as the
+ * chain's availability series (`chain-series`): primaries first, then backups,
+ * then upstreams the config doesn't mark.
+ */
+export interface UpstreamTimeline {
+  spec: string;
+  /** Every read answered. False: one failed, so a missing figure means nothing. */
+  available: boolean;
+  failed: ("rps" | "failedRps" | "pollsOk" | "pollsFailed")[];
+  grid: ChartGrid;
+  upstreams: UpstreamTimelineRow[];
+}
+
 /* ── Traffic by provider (Metrics · Overview tab, a chain picked) ────────── */
 
 /** Which upstream took one chain's traffic over the window. */

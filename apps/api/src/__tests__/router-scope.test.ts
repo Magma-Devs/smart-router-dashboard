@@ -123,6 +123,7 @@ describe("?router= scoping", () => {
     "/api/metrics/chain-series?spec=ETH1",
     "/api/metrics/upstream-mix?spec=ETH1",
     "/api/metrics/upstream-detail?endpointId=eth-lava&spec=ETH1",
+    "/api/metrics/upstream-timeline?spec=ETH1",
     "/api/metrics/upstream-peers?spec=ETH1",
   ];
 

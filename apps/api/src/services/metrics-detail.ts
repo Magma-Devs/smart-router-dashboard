@@ -30,6 +30,9 @@ import {
   qLatencySeriesExpr,
   qOptimizerScore,
   qPerUpstreamRpsExpr,
+  qPerUpstreamFailedRpsExpr,
+  qPerEndpointPollsSeriesExpr,
+  upstreamCellState,
   qPresence,
   qRetriesByMethod,
   qRetryAvgExtraAttempts,
@@ -57,6 +60,7 @@ import {
   type UpstreamDetail,
   type UpstreamRef,
   type UpstreamPeers,
+  type UpstreamTimeline,
   type UpstreamMix,
   type ChartGrid,
   type ScoreType,
@@ -68,6 +72,7 @@ import { WINDOWS, alignedBounds, bucketGrid, chartSampling, errorBuckets, stepSe
 import type { PrometheusClient, PromVectorSample } from "./prometheus-client.js";
 import type { ConfigurationService } from "./configuration.js";
 import { health, toPoints } from "./metrics.js";
+import { CACHED as CACHED_UPSTREAM } from "./router-log.js";
 
 export class MetricsDetailService {
   constructor(
@@ -195,6 +200,109 @@ export class MetricsDetailService {
       backupProbe && backupProbe.some((p) => p.v !== null) ? backupProbe : null;
 
     return { spec, availability, p95Ms, errorRate, rps, qos, backupShare };
+  }
+
+  /**
+   * Every upstream of one chain over the window, a cell per point of the
+   * chain's availability grid (`chainSeries` reads the same bounds and step):
+   * its tries, failed tries and share of the chain's tries, its latest-block
+   * polls, and the state those read as (`upstreamCellState`). Four range reads
+   * grouped by upstream, whatever the count. There is no health-over-time
+   * series per upstream, so this is the honest one: what the router sent it
+   * and what came back, plus the chain tracker's polls for an upstream that
+   * took nothing. `rpc_endpoint_overall_health` is not read - it starts
+   * optimistic and moves only on relay outcomes.
+   *
+   * Rows are the config's nodes on this chain (one router's with `routerId`,
+   * since the series can't say which router sent a try), matched to the
+   * series case-insensitively as `qBackupShareExpr` matches them, plus, with
+   * no `routerId`, any upstream the metrics name that the config doesn't.
+   * The relay cache (`Cached`) is no upstream: it counts in the chain's tries
+   * and gets no row.
+   */
+  async upstreamTimeline(spec: string, window: MetricWindow, routerId?: string): Promise<UpstreamTimeline> {
+    const { start, end, step } = this.windowBounds(window);
+    const grid: ChartGrid = { start, end, stepSec: stepSeconds(window) };
+    const range = (expr: string) => this.prom.queryRangeOrNull(expr, start, end, step);
+    const reads = await Promise.all([
+      range(qPerUpstreamRpsExpr(step, spec, window)),
+      range(qPerUpstreamFailedRpsExpr(step, spec, window)),
+      range(qPerEndpointPollsSeriesExpr("ok", spec, step)),
+      range(qPerEndpointPollsSeriesExpr("failed", spec, step)),
+    ]);
+    const kinds = ["rps", "failedRps", "pollsOk", "pollsFailed"] as const;
+
+    // name (lower-cased) → t → value, per read.
+    const byName = reads.map((matrix, i) => {
+      const label = i < 2 ? "provider_address" : "endpoint_id";
+      const out = new Map<string, Map<number, number | null>>();
+      for (const s of matrix ?? []) {
+        const name = s.metric[label];
+        if (!name) continue;
+        const key = name.toLowerCase();
+        const at = out.get(key) ?? new Map<number, number | null>();
+        for (const p of toPoints(s.values)) at.set(p.t, p.v);
+        out.set(key, at);
+      }
+      return out;
+    });
+    const seriesName = new Map<string, string>();
+    reads.forEach((matrix, i) => {
+      for (const s of matrix ?? []) {
+        const name = s.metric[i < 2 ? "provider_address" : "endpoint_id"];
+        if (name && !seriesName.has(name.toLowerCase())) seriesName.set(name.toLowerCase(), name);
+      }
+    });
+
+    // The chain's tries at each point, the relay cache's included: the
+    // denominator `qBackupShareExpr` divides by.
+    const chainTries = new Map<number, number>();
+    for (const at of byName[0]!.values())
+      for (const [t, v] of at) if (v !== null) chainTries.set(t, (chainTries.get(t) ?? 0) + v);
+
+    const all = this.configSvc?.getRouters() ?? [];
+    const isHelm = all.some((rt) => rt.localPort === null && rt.nodes.length > 0);
+    const declared = new Map<string, { name: string; backup: boolean }>();
+    for (const router of all) {
+      if (router.spec !== spec || (routerId && router.id !== routerId)) continue;
+      for (const node of router.nodes) {
+        const key = node.name.toLowerCase();
+        const seen = declared.get(key);
+        // A node one router marks primary is a primary.
+        declared.set(key, { name: seen?.name ?? node.name, backup: (seen?.backup ?? true) && node.isBackup });
+      }
+    }
+    const keys = new Set(declared.keys());
+    if (!routerId) for (const key of seriesName.keys()) if (key !== CACHED_UPSTREAM.toLowerCase()) keys.add(key);
+
+    const at = (i: number, key: string, t: number): number | null => byName[i]!.get(key)?.get(t) ?? null;
+    const points = Math.floor((end - start) / grid.stepSec) + 1;
+    const rank = { primary: 0, backup: 1 } as const;
+    const upstreams = [...keys]
+      .map((key) => {
+        const cfg = declared.get(key);
+        const role: "primary" | "backup" | null = cfg && isHelm ? (cfg.backup ? "backup" : "primary") : null;
+        const cells = Array.from({ length: points }, (_, k) => {
+          const t = start + k * grid.stepSec;
+          const [rps, failedRps, pollsOk, pollsFailed] = kinds.map((_, i) => at(i, key, t)) as [number | null, number | null, number | null, number | null];
+          const total = chainTries.get(t);
+          const share = rps !== null && total !== undefined && total > 0 ? Math.min(1, rps / total) : null;
+          return { t, state: upstreamCellState({ rps, failedRps, pollsOk, pollsFailed }), rps, failedRps, share, pollsOk, pollsFailed };
+        });
+        return { upstream: cfg?.name ?? seriesName.get(key) ?? key, role, inConfig: !!cfg, cells };
+      })
+      .sort((a, b) =>
+        (a.role ? rank[a.role] : 2) - (b.role ? rank[b.role] : 2) ||
+        Number(b.inConfig) - Number(a.inConfig) ||
+        a.upstream.localeCompare(b.upstream));
+
+    return {
+      spec,
+      available: reads.every((r) => r !== null),
+      failed: kinds.filter((_, i) => reads[i] === null),
+      grid,
+      upstreams,
+    };
   }
 
   /**

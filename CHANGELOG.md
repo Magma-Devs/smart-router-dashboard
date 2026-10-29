@@ -5,6 +5,31 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.51.0]
+
+### Added
+
+- **Availability breakdown in the chain drill-down.** Expanding a router on
+  the Metrics page with Availability selected now shows three parts on one
+  time axis: the availability line with its 99.9% target, the share of
+  requests backups served, and a row per upstream with a cell per point,
+  coloured Operational / Unhealthy / Unknown, blank where there is no data.
+  Spans under 99.9% are shaded across all three, and one hover reads them
+  together: availability, the unhealthy upstreams, and how much the backups
+  served and which. Each row ends in a short status ("Unhealthy
+  12:20-12:50", "served up to 44%", "standby"). A chain with no backup in
+  the config says "no backup upstream configured"; backups with no data in
+  the window say "no data".
+- `GET /api/metrics/upstream-timeline` - every upstream of one chain on the
+  availability grid: tries, failed tries, share of the chain's tries,
+  latest-block polls, and the state they read as. Four range reads whatever
+  the count; the tries read the recorded series from 12h.
+
+### Removed
+
+- The chain drill-down's "Primary vs backup" tile: its series is the
+  Availability view's "Served by backups" part.
+
 ### Fixed
 
 - **Starknet commands in Try now that failed on every node.**
