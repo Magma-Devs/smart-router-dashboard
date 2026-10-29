@@ -31,6 +31,8 @@ import {
   errorLabel,
   errorTypeOptions,
   FilterSelect,
+  NewRowsStrip,
+  useHeldRows,
   filterSelectStyle,
   Flow,
   fmtTook,
@@ -284,7 +286,9 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
   const toggleRow = (guid: string) => { const next = open === guid ? null : guid; setOpen(next); linkRequest(next ?? lookupId); };
 
   const { log, range, rangeQ, routerIdQ, onBarRange, barQ } = list;
-  const { first, head, rows: allRows } = log;
+  const { first, head } = log;
+  const held = useHeldRows(log.rows, open);
+  const allRows = held.rows;
 
   const methods = useMemo(() => [...new Set(allRows.map((r) => r.method))].sort(), [allRows]);
   // The upstreams an attempt failed at, each with its count of requests.
@@ -419,6 +423,7 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
           onClose={() => find(null)} />
       )}
 
+      <NewRowsStrip count={held.newCount} noun="request" onShow={held.showNew} />
       {/* Below 860px the columns would overlap: scroll sideways instead. */}
       <div style={{ overflowX: "auto" }}>
         <table className="gw-table" style={{ tableLayout: "fixed", width: "100%", minWidth: 860 }}>

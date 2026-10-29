@@ -37,6 +37,8 @@ import {
   TxHash,
   errorTypeOptions,
   FilterSelect,
+  NewRowsStrip,
+  useHeldRows,
   filterSelectStyle,
   Flow,
   fmtTook,
@@ -177,7 +179,8 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
   const log = useLogReads<TxLogRow, TransactionsReport>(`/api/transactions?${rangeQ}${specQ}${routerIdQ}`, live);
   const data = log.head;
   const isLoading = log.first.isLoading;
-  const allRows = log.rows;
+  const held = useHeldRows(log.rows, open);
+  const allRows = held.rows;
   const sum = useMemo(() => summarize(allRows), [allRows]);
   const when = range ? "in the times you picked" : `in the last ${WINDOWS[win].label}`;
   const methods = useMemo(() => [...new Set(allRows.map((r) => r.method))].sort(), [allRows]);
@@ -313,6 +316,7 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
             The latest {fmtComma(allRows.length)} transactions {when} - the numbers above cover these. Load older ones at the bottom.
           </LogStrip>
         )}
+        <NewRowsStrip count={held.newCount} noun="transaction" onShow={held.showNew} />
         {/* Below 860px the columns would overlap: scroll sideways instead. */}
         <div style={{ overflowX: "auto" }}>
           <table className="gw-table" style={{ tableLayout: "fixed", width: "100%", minWidth: 860 }}>

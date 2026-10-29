@@ -434,6 +434,42 @@ export function OlderRowsLoading({ show }: { show: boolean }) {
 }
 
 /** A line across a log table, under its header - what the list holds, or why it holds less. */
+/** While a row is open the list holds still: it keeps the rows it showed when the row was opened
+ *  (each updated while a read still has it), adds older ones as they load, and counts the newer ones
+ *  instead of showing them. A poll used to shift the open row down the page, and off it - on a busy
+ *  chain the newest 300 are all new within a minute. Closing it lets the list catch up. */
+export function useHeldRows<T extends { guid: string; time: number }>(rows: T[], open: string | null) {
+  const [snap, setSnap] = useState<T[] | null>(null);
+  if (!open && snap) setSnap(null);
+  // Not on an empty list: opening a row writes the URL, and the list reads afresh, empty for a moment.
+  if (open && !snap && rows.length) setSnap(rows);
+  if (!snap) return { rows, newCount: 0, showNew: () => {} };
+  const live = new Map(rows.map((r) => [r.guid, r]));
+  const inSnap = new Set(snap.map((r) => r.guid));
+  const newestHeld = snap.reduce((m, r) => Math.max(m, r.time), 0);
+  const oldestHeld = snap.reduce((m, r) => Math.min(m, r.time), Infinity);
+  const held = [
+    ...snap.map((r) => live.get(r.guid) ?? r),
+    ...rows.filter((r) => !inSnap.has(r.guid) && r.time < oldestHeld),
+  ];
+  const showNew = () => {
+    const openRow = held.find((r) => r.guid === open);
+    setSnap(openRow && !live.has(openRow.guid) ? [...rows, openRow].sort((a, b) => b.time - a.time) : rows);
+  };
+  return { rows: held, newCount: rows.filter((r) => !inSnap.has(r.guid) && r.time > newestHeld).length, showNew };
+}
+
+/** Above a held list: how many arrived since a row was opened, and a way to show them. */
+export function NewRowsStrip({ count, noun, onShow }: { count: number; noun: string; onShow: () => void }) {
+  if (!count) return null;
+  return (
+    <LogStrip>
+      {fmtComma(count)} new {count === 1 ? noun : `${noun}s`} ·{" "}
+      <button type="button" onClick={onShow} style={{ border: "none", background: "none", padding: 0, color: "var(--brand)", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Show</button>
+    </LogStrip>
+  );
+}
+
 export function LogStrip({ tone = "quiet", children }: { tone?: "quiet" | "warn"; children: React.ReactNode }) {
   return (
     <div role={tone === "warn" ? "status" : undefined} style={{

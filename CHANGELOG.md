@@ -27,6 +27,10 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ### Fixed
 
+- **Errors and Transactions tabs: an opened request stays open.** Every 30 s
+  read put newer requests on top, so the one being read slid down the page and
+  off it. While a row is open the list now holds still, and a strip above it
+  counts what arrived since ("12 new requests · Show").
 - **Errors and Transactions tabs: the filter dropdowns' arrows.** Each filter
   drew the browser's own arrow, pressed against its right border while the
   text sat 10 px in from the left. They now draw the page's line chevron, the
