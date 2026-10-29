@@ -48,6 +48,7 @@ import {
 import { readEnd, readStart, type ReadRange } from "./read-range.js";
 import { ListReads, readList } from "./log-list.js";
 import type { LokiClient } from "./loki-client.js";
+import { StreamScope } from "./stream-scope.js";
 import type { ConfigurationService } from "./configuration.js";
 import {
   chainOf,
@@ -361,6 +362,12 @@ export class TransactionsService {
     return this.configSvc?.getRouters() ?? [];
   }
 
+  private streams?: StreamScope;
+  /** The router's streams narrowed by their own labels (`StreamScope`), made on first use. */
+  private scope(loki: LokiClient): StreamScope {
+    return (this.streams ??= new StreamScope(loki, this.selector));
+  }
+
   /** Upstreams the chain / config router declares; null when neither is asked for. */
   private upstreamsFor(spec?: string, routerId?: string): string[] | null {
     if (!spec && !routerId) return null;
@@ -410,21 +417,25 @@ export class TransactionsService {
       // transaction methods by name - those lines name no upstream, so they
       // are narrowed after the rows are built.
       const routers = this.routers();
-      const names = this.upstreamsFor(spec, routerId);
+      // Where the streams carry the chain or the router as a label, read only theirs: exact, and the
+      // transaction methods' lines - which name no upstream - stop filling the cap with other chains'.
+      const chain = routerId ? routers.find((r) => r.id === routerId)?.spec : spec;
+      const scoped = await this.scope(loki).narrow(chain, routerId);
+      const selector = scoped ?? this.selector;
+      const names = scoped ? undefined : this.upstreamsFor(spec, routerId);
       const safe = names?.filter(inRawString);
       const narrow = safe?.length
         ? ` |~ \`"chosenProviders":"([^"]*,)?(${safe.map(escapeRe).join("|")})[,"]\``
         : "";
       // A relay_end names its chain: a write by the spec, or a transaction
       // method by name - unlisted (`Default-`) or inside a batch (`&`) too.
-      const chain = routerId ? routers.find((r) => r.id === routerId)?.spec : spec;
-      const eventNarrow = chain && LABEL_TOKEN.test(chain) ? ` |= \`"chain":"${chain}"\`` : "";
+      const eventNarrow = !scoped && chain && LABEL_TOKEN.test(chain) ? ` |= \`"chain":"${chain}"\`` : "";
       const index = new UpstreamIndex(routers);
-      const got = await readList(loki, this.selector, {
+      const got = await readList(loki, selector, {
         finders: [
-          { query: `${this.selector} |= "${MSG.choosing}" |= \`"stateful":"1"\`${narrow}`, limit: this.cap },
-          { query: `${this.selector} |= "${MSG.received}" |~ \`(${TX_METHODS.join("|")})\``, limit: this.cap },
-          { query: `${this.selector} ${TX_EVENT_FILTER}${eventNarrow}`, limit: this.cap },
+          { query: `${selector} |= "${MSG.choosing}" |= \`"stateful":"1"\`${narrow}`, limit: this.cap },
+          { query: `${selector} |= "${MSG.received}" |~ \`(${TX_METHODS.join("|")})\``, limit: this.cap },
+          { query: `${selector} ${TX_EVENT_FILTER}${eventNarrow}`, limit: this.cap },
         ],
         // A transaction found by its relay_end needs nothing more. One found by
         // its lines needs the rest of them, and its relay_end when it has one:
@@ -435,7 +446,7 @@ export class TransactionsService {
         rowsOf: (lines) => buildTxRows(lines, index),
         basis: JSON.stringify(routers),
         // At most LOG_READ_BUDGET_BYTES of logs per whole read: the older part of the range is the next read's.
-        wholeFrom: (r) => readStart(loki, this.selector, r, r.endMs),
+        wholeFrom: (r) => readStart(loki, selector, r, r.endMs),
       }, { startMs: range.startMs, endMs }, last);
       if (got === null) return { report: emptyReport(false, "unreachable") };
       const { nextBefore } = got.read;
