@@ -3,11 +3,11 @@
 /* An opened row of either request list - the Errors tab's and the
  * Transactions tab's - as one breakdown in three parts:
  *
- *   Outcome    what the client received: status, the error by name and its
- *              source, returned by, the error's meaning and next step from
- *              the table
+ *   Outcome    what the client received: status, what happened in one
+ *              plain sentence (storyOf), the error's meaning and next step
+ *              from the table
  *   Tries      one row per try at a provider: result, error and how long it
- *              took, and whether they went out together or one after another
+ *              took (the story above says whether they went out together)
  *   Details    the facts the router wrote about the call, as a key-value list
  *
  * One statement per error: the outcome names the one that reached the client,
@@ -135,6 +135,44 @@ function TryRow({ a, n }: { a: RelayAttempt; n: number }) {
   );
 }
 
+/** What one try did, as the story says it: "answered", "failed (Nonce too low)", "was called off". */
+function tryVerb(a: RelayAttempt): string {
+  if (a.outcome === "ok" || (a.outcome === "no-result" && a.replied)) return "answered";
+  if (a.outcome === "failed") { const code = realCode(a); return code ? `failed (${errorName(code)})` : "failed"; }
+  if (a.outcome === "skipped") return "was skipped";
+  if (a.outcome === "cancelled") return "was called off";
+  return "didn't answer";
+}
+
+const andList = (xs: string[]) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
+
+/** What happened, in one or two plain sentences: where the router sent it, what each answered, what went back. */
+export function storyOf(attempts: RelayAttempt[], final: FinalAnswer): string | null {
+  if (!attempts.length) return final?.from === "router" ? "No provider was tried: the router answered the client itself." : null;
+  // Batches in the order the router sent them; the tries of one batch went out together.
+  const order: number[] = [];
+  const byBatch = new Map<number, RelayAttempt[]>();
+  for (const a of attempts) {
+    if (!byBatch.has(a.batch)) { byBatch.set(a.batch, []); order.push(a.batch); }
+    byBatch.get(a.batch)!.push(a);
+  }
+  const phrase = (group: RelayAttempt[]) => {
+    const verbs = group.map(tryVerb);
+    if (group.length > 1 && verbs.every((v) => v === verbs[0])) {
+      return `${andList(group.map((a) => a.upstream))} ${group.length === 2 ? "both" : "all"} ${verbs[0]}`;
+    }
+    return andList(group.map((a, i) => `${a.upstream} ${verbs[i]}`));
+  };
+  const groups = order.map((b) => byBatch.get(b)!);
+  const sent = groups.length === 1 && groups[0]!.length > 1 ? "Sent to all at the same time: " : "";
+  const what = sent + groups.map(phrase).join(", then ");
+  const back = final?.from === "provider"
+    ? (attempts.length > 1 ? ` ${final.attempt.upstream}'s answer went to the client.` : "")
+    : final?.from === "router" ? " No provider gave a usable answer, so the router answered the client itself." : "";
+  // A provider's name keeps its own spelling, even first in the sentence.
+  return `${what}.${back}`;
+}
+
 /** What reached the client: the try whose reply went back, or the router's own answer. */
 export type FinalAnswer =
   /** `code`: the reply's own code, where the tab has it and the try doesn't (a transaction's refusal). */
@@ -196,10 +234,7 @@ export function RequestBreakdown(p: BreakdownProps) {
   // The provider's words that reached the client, unless its try already prints them.
   const finalTry = p.final?.from === "provider" && p.final.attempt.outcome === "failed" ? p.final.attempt : null;
   const providerWords = finalTry?.message && !triesOwnWords(finalTry) ? finalTry.message : null;
-  // Tries the router sent together share a batch: a write goes to every provider at once.
-  const batches = new Set(p.attempts.map((a) => a.batch)).size;
-  const together = p.attempts.length > 1 ? (batches === 1 ? " · sent at the same time" : batches === p.attempts.length ? " · one after another" : "") : "";
-  const returnedBy = routerAnswered ? "Router" : p.final?.from === "provider" ? p.final.attempt.upstream : null;
+  const story = storyOf(p.attempts, p.final);
   return (
     <div style={{ display: "grid", gap: 16, padding: "8px 4px 12px" }}>
       {/* Outcome: what the client received, and what it means. */}
@@ -219,13 +254,10 @@ export function RequestBreakdown(p: BreakdownProps) {
             <span title="The transaction may be on chain despite this error." style={{ fontSize: 11, fontWeight: 600, color: "var(--info)", border: "1px solid color-mix(in srgb, var(--info) 40%, transparent)", borderRadius: 4, padding: "0 6px" }}>May already be on chain</span>
           )}
           <span style={{ flex: 1 }} />
-          <span style={{ fontSize: 12, color: "var(--text-3)", whiteSpace: "nowrap" }}>
-            Returned by <span className="gw-mono" style={{ color: routerAnswered ? "var(--warn)" : "var(--text)" }}>{returnedBy ?? "—"}</span>
-            <span style={{ margin: "0 8px", color: "var(--text-4)" }}>·</span>
-            <span className="gw-mono gw-tnum" style={{ color: "var(--text)" }}>{fmtTook(p.tookMs)}</span>
-          </span>
+          <span className="gw-mono gw-tnum" title="How long the request took, start to answer" style={{ fontSize: 12, color: "var(--text-2)", whiteSpace: "nowrap" }}>{fmtTook(p.tookMs)}</span>
         </div>
-        {entry && <div style={{ fontSize: 13, color: "var(--text)", lineHeight: 1.45 }}>{entry.meaning}</div>}
+        {story && <div style={{ fontSize: 13, color: "var(--text)", lineHeight: 1.45 }}>{story}</div>}
+        {entry && <div style={{ fontSize: 13, color: "var(--text-2)", lineHeight: 1.45 }}>{entry.meaning}</div>}
         {providerWords && (
           <div className="gw-mono" title={providerWords} style={{ fontSize: 11.5, color: "var(--text-2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{providerWords}</div>
         )}
@@ -242,7 +274,7 @@ export function RequestBreakdown(p: BreakdownProps) {
       <div style={{ display: "flex", flexWrap: "wrap", gap: 24, alignItems: "flex-start" }}>
         {/* Tries: one row each, in the order the router sent them. */}
         <div style={{ flex: "2 1 560px", minWidth: 0 }}>
-          <Section title="Tries" aside={p.attempts.length ? `${p.attempts.length} on ${providers} ${providers === 1 ? "provider" : "providers"}${together}` : "none logged"}>
+          <Section title="Tries" aside={p.attempts.length ? `${p.attempts.length} on ${providers} ${providers === 1 ? "provider" : "providers"}` : "none logged"}>
             {p.attempts.length > 0 && (
               <div style={{ border: "1px solid var(--line)", borderRadius: 8, overflow: "hidden", background: "var(--surface)" }}>
                 <div style={{ display: "grid", gridTemplateColumns: TRY_COLUMNS, columnGap: 12, padding: "6px 12px", fontSize: 11, color: "var(--text-4)" }}>
@@ -270,7 +302,7 @@ export function RequestBreakdown(p: BreakdownProps) {
               {facts.taskId && <KV label="Task ID"><Id value={facts.taskId} /></KV>}
               {facts.txId && <KV label="Tx ID"><Id value={facts.txId} /></KV>}
               {facts.requestedBlock != null && <KV label="Requested block"><span className="gw-mono gw-tnum">{fmtComma(facts.requestedBlock)}</span></KV>}
-              {facts.seenBlock != null && <KV label="Router's latest block"><span className="gw-mono gw-tnum">{fmtComma(facts.seenBlock)}</span></KV>}
+              {facts.requestedBlock != null && facts.seenBlock != null && <KV label="Router's latest block"><span className="gw-mono gw-tnum">{fmtComma(facts.seenBlock)}</span></KV>}
             </div>
           </Section>
         </div>

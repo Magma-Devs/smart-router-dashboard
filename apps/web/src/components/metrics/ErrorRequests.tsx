@@ -152,9 +152,9 @@ export function statusOf(r: ErrorRequestRow): BreakdownProps["status"] {
   const failed = r.attempts.filter((a) => a.outcome === "failed").length;
   switch (r.result) {
     case "ok": return { label: "Success", color: "var(--ok)" };
-    case "recovered": return { label: "Success", color: "var(--ok)", detail: failed ? `after ${failed} failed ${failed === 1 ? "try" : "tries"}` : null };
+    case "recovered": return { label: "Success", color: "var(--ok)", detail: null };
     case "error-reply": return { label: "Error", color: "var(--err)" };
-    case "failed": return { label: "Error", color: "var(--err)", detail: r.errorCode ? null : "No usable response from any provider" };
+    case "failed": return { label: "Error", color: "var(--err)", detail: null };
     case "write-unknown": return { label: "Unknown", color: "var(--text-3)", detail: "Write not confirmed" };
     case "unknown": return { label: "Not logged", color: "var(--text-3)" };
   }

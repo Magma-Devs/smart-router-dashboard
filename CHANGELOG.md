@@ -49,15 +49,17 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 ### Changed
 
 - **Errors and Transactions tabs: an opened request, redrawn.** It opens on
-  what the client got: the status, who returned it and how long it took, the
-  error's **meaning** from the error-code table (it was only a tooltip on the
-  error's name) and its **next step**. The tries follow as a table, with how
-  long each took and whether they went out at the same time or one after
-  another; the one that reached the client is marked "→ client". The request's
-  details sit beside them as a list, and every ID there has a copy button, the
-  caller's request ID included. Request and response sizes are gone. The
-  status is a dot and a word on a plain card, without a coloured stroke down
-  the left.
+  what happened, in one plain sentence ("Sent to all at the same time:
+  tatum and quicknode both failed (Nonce too low). quicknode's answer went
+  to the client."), then the status, the error's **meaning** from the
+  error-code table (it was only a tooltip on the error's name) and its
+  **next step**. The tries follow as a table with how long each took; the
+  one that reached the client is marked "→ client". The request's details
+  sit beside them as a list, and every ID there has a copy button, the
+  caller's request ID included. Request and response sizes are gone, and the
+  router's latest block shows only beside the block the request asked for.
+  The status is a dot and a word on a plain card, without a coloured stroke
+  down the left.
 - **Errors and Transactions tabs: each row shows its date.** Under the time,
   where a request with no customer showed "-", the row now shows the date,
   then the customer when the request named one.

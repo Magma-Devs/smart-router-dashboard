@@ -94,7 +94,7 @@ export function txStatusOf(r: TxLogRow): BreakdownProps["status"] {
     case "accepted": return { label: "Accepted", color: "var(--ok)" };
     case "rejected": return { label: "Rejected", color: "var(--err)" };
     case "failed-on-chain": return { label: "Failed on chain", color: "var(--err)" };
-    case "failed": return { label: "Error", color: "var(--err)", detail: r.error?.code ? null : "No usable response from any provider" };
+    case "failed": return { label: "Error", color: "var(--err)", detail: null };
     case "unknown": return { label: "Unknown", color: "var(--text-3)", detail: "Outcome not confirmed" };
   }
 }
