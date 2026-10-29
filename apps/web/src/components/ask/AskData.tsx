@@ -3,10 +3,11 @@
 /* Ask your data - a PREVIEW of the chat panel a client will use to ask about
  * their own router in plain words. It draws the whole flow - the top-bar
  * button, a side panel that minimizes to a pill, a week of chats, one
- * question at a time, the steps while it works, and a numbered answer with
- * its sources - but answers from sample-answers.ts and reads no store. The
- * backend it stands in for (Bedrock, the client's own MCP scoped to their
- * data, a monthly budget per client, prompt logs kept 90 days) is
+ * question at a time, "Processing" while it works, and a numbered answer
+ * with the day and time it came - but answers from
+ * sample-answers.ts and reads no store. The backend it stands in for
+ * (Bedrock over our customer MCP server, scoped to the client's data, a
+ * monthly budget per client, prompt logs kept 90 days) is
  * docs/ASK-YOUR-DATA.md. Shown only where ASK_DATA_PREVIEW=true; the panel
  * says on screen that its answers are samples.
  *
@@ -192,7 +193,6 @@ function AskDataPanel() {
       </button>
     );
   }
-  const pct = Math.min(100, (s.spent / SAMPLE_BUDGET.limit) * 100);
   return (
     <aside className="ask-panel" aria-label="Ask your data">
       <header className="ask-head">
@@ -221,14 +221,6 @@ function AskDataPanel() {
 
       <Composer />
 
-      <footer className="ask-foot">
-        <div className="ask-budget" title="What this month's questions have cost, against your monthly limit">
-          <span>This month</span>
-          <span className="ask-budget__bar"><span style={{ width: `${pct}%` }} /></span>
-          <span className="gw-mono gw-tnum">${s.spent.toFixed(2)} of ${SAMPLE_BUDGET.limit}</span>
-        </div>
-        <span>Kept 7 days</span>
-      </footer>
     </aside>
   );
 }
@@ -306,7 +298,7 @@ function Conversation() {
       {turns.map((t, i) => (
         <div key={t.id} className="ask-turn">
           <div className="ask-q">{t.question}</div>
-          {t.answer ? <Answer a={t.answer} tookMs={t.tookMs} /> : i === turns.length - 1 && phase && <Working question={t.question} step={phase.step} />}
+          {t.answer ? <Answer a={t.answer} at={t.at + (t.tookMs ?? 0)} /> : i === turns.length - 1 && phase && <Working />}
         </div>
       ))}
       <div ref={end} />
@@ -314,26 +306,19 @@ function Conversation() {
   );
 }
 
-/** The steps it works through, the one in progress shimmering. */
-function Working({ question, step }: { question: string; step: number }) {
-  const steps = sampleAnswer(question).steps;
+/** While it works: one status, shimmering. */
+function Working() {
   return (
-    <div className="ask-steps" aria-live="polite">
-      {steps.map((s, i) => (
-        <div key={i} className={`ask-step ${i < step ? "done" : i === step ? "now" : "next"}`}>
-          <span className="ask-step__mark">{i < step ? "✓" : i === step ? <span className="ask-spin" /> : ""}</span>
-          <span className="ask-step__label">{s.label}</span>
-          <span className="ask-step__detail">{s.detail}</span>
-        </div>
-      ))}
+    <div className="ask-working" aria-live="polite">
+      <span className="ask-spin" />
+      <span className="ask-working__label">Processing</span>
     </div>
   );
 }
 
-/** A numbered answer: the one-line summary, then a numbered part each, then what it read. */
-function Answer({ a, tookMs }: { a: SampleAnswer; tookMs?: number }) {
+/** A numbered answer: the one-line summary, then a numbered part each. */
+function Answer({ a, at }: { a: SampleAnswer; at: number }) {
   const [copied, setCopied] = useState(false);
-  const [vote, setVote] = useState<"up" | "down" | null>(null);
   const text = [a.summary, ...a.sections.map((s, i) => `${i + 1}. ${s.title}\n${s.body}${s.points ? "\n" + s.points.map((p) => `- ${p}`).join("\n") : ""}`)].join("\n\n");
   return (
     <div className="ask-a">
@@ -353,20 +338,24 @@ function Answer({ a, tookMs }: { a: SampleAnswer; tookMs?: number }) {
           </li>
         ))}
       </ol>
-      <div className="ask-a__sources">
-        <span>Read</span>
-        {a.sources.map((x) => <span key={x} className="ask-chip">{x}</span>)}
-      </div>
       <div className="ask-a__actions">
-        <button type="button" className="ask-mini" onClick={() => { void navigator.clipboard?.writeText(text); setCopied(true); window.setTimeout(() => setCopied(false), 1400); }}>{copied ? "Copied" : "Copy"}</button>
-        <button type="button" className={`ask-mini${vote === "up" ? " on" : ""}`} onClick={() => setVote("up")} aria-label="Helpful">▲</button>
-        <button type="button" className={`ask-mini${vote === "down" ? " on" : ""}`} onClick={() => setVote("down")} aria-label="Not helpful">▼</button>
-        <span style={{ flex: 1 }} />
-        <span className="gw-mono gw-tnum">{tookMs ? `${(tookMs / 1000).toFixed(1)} s · ` : ""}${a.cost.toFixed(3)}</span>
+        <span className="ask-time">{clock(at)}</span>
+        <button type="button" className="ask-icon ask-icon--sm" title={copied ? "Copied" : "Copy"} aria-label="Copy answer"
+          onClick={() => { void navigator.clipboard?.writeText(text); setCopied(true); window.setTimeout(() => setCopied(false), 1400); }}>
+          {copied
+            ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12l5 5L20 7" /></svg>
+            : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V5a2 2 0 0 1 2-2h10" /></svg>}
+        </button>
       </div>
     </div>
   );
 }
+
+/** When an answer came: "Oct 29, 14:32". */
+const clock = (at: number) => {
+  const d = new Date(at);
+  return `${d.toLocaleDateString("en-US", { month: "short", day: "numeric" })}, ${d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false })}`;
+};
 
 /** `code` in a sentence, as the router writes method names. */
 function renderInline(s: string): React.ReactNode {
@@ -415,7 +404,6 @@ function Composer() {
           </button>
         )}
       </div>
-      <div className="ask-compose__note">Enter to send · Shift+Enter for a new line · Answers can be wrong: check the figures on the dashboard.</div>
     </div>
   );
 }

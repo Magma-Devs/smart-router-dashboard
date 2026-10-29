@@ -59,6 +59,27 @@ const ANSWERS: { match: RegExp; answer: SampleAnswer }[] = [
     },
   },
   {
+    match: /incident|outage|status|down|provider.*(problem|issue)/i,
+    answer: {
+      summary: "One provider reported an incident on one of your chains in the last 24 hours. It is resolved.",
+      sections: [
+        {
+          title: "Solana: provider-b, degraded RPC",
+          body: "The provider's status page reported slow responses from 09:40 to 10:15. Your router sent less traffic to it during that time, and no request went unserved.",
+          stat: { value: "Resolved", label: "10:15", tone: "ok" },
+        },
+        {
+          title: "Ethereum: a protocol change is scheduled",
+          body: "A network upgrade is announced for next week. Providers are expected to upgrade before it; nothing to do on your side now.",
+        },
+        { title: "Your other chains", body: "No incidents reported on any of them." },
+      ],
+      sources: ["Provider status, 24 h"],
+      steps: STEPS(["Provider incidents and protocol changes · your chains"]),
+      cost: 0.008,
+    },
+  },
+  {
     match: /latenc|slow|fast|p95|speed/i,
     answer: {
       summary: "Latency is normal on every chain. One provider on Polygon is twice as slow as its peers since this morning.",
@@ -122,7 +143,7 @@ export const SUGGESTIONS = [
   { title: "Did any requests fail today?", hint: "Errors by chain and provider" },
   { title: "Which provider served the most traffic?", hint: "Last hour, all chains" },
   { title: "Is latency normal right now?", hint: "Compared with last week" },
-  { title: "Summarise the last 24 hours", hint: "Requests, failures, health" },
+  { title: "Any provider incidents on my chains?", hint: "Provider status pages" },
 ];
 
 /** The preview's monthly budget, and what it has "spent" so far. */

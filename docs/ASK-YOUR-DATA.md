@@ -13,28 +13,30 @@ screen that its answers are samples. Everything below is the backend it stands i
 - An **Ask your data** button in the top bar (`⌘J` opens and closes it).
 - A side panel that can be **minimized** to a pill and brought back; it keeps working
   while minimized ("Answering…").
-- **One question at a time.** While an answer is being made, the box is locked and a
-  Stop button replaces Send.
-- The **steps** while it works: understanding the question, each read of the client's
-  data (which store, what for), writing the answer.
+- **One question at a time.** While an answer is being made, the box is locked, the
+  panel shows **Processing**, and a Stop button replaces Send.
 - A **numbered answer**: a one-line summary first, then numbered parts, each with a
-  title, a short body, optional points and one figure, then what it **read**, then
-  copy, thumbs up/down, how long it took and what it cost.
+  title, a short body, optional points and one figure. A copy button.
+- The **day and time** under every answer.
 - **History**: chats grouped Today / Yesterday / Earlier this week, kept **7 days**,
   with "Show earlier chats" for the rest.
-- The month's **budget** at the bottom: spent of the limit. At the limit the box
-  says so and refuses new questions.
+- At the month's budget the box says the limit is reached and refuses new questions.
+  The budget itself is not shown.
 
 ## What to build
 
 1. **Model: Claude on Amazon Bedrock**, called by the api, never the browser. The
    identity setup in the closed #200 (SigV4 from the default credential chain, or the
    provisioned bearer key) is a starting point.
-2. **Data: the client's own MCP server, scoped to that client.** The tools the model
-   may call read only that client's data: the same per-tenant credentials the api
-   already uses for Prometheus and Loki, which pin the tenant on the store's side.
-   The separation is enforced by the credential, server-side, never by a filter in a
-   prompt or in the web.
+2. **Data: our customer MCP server (`Magma-Devs/smart-router-mcp`), as it is.** It
+   already gives each client a worker that reads only that client's Grafana, Mimir
+   and Loki, checks the tenant itself, and takes no tenant, header or URL from tool
+   arguments. Its tools: `whoami`, `list_sources`, `search_operations`,
+   `execute_operation`, `query_metrics`, `query_logs`, and `chain_events` (provider
+   status pages, provider incidents and protocol changes for the client's own chains
+   only). The api calls it with the signed-in client's MCP credential; Bedrock never
+   sees a credential. The separation stays where it is: in the MCP server's
+   per-client worker, never in a prompt or in the web.
 3. **Budget per client per month.** Start at **$10 / month**. Count each answer's
    cost from Bedrock's token usage, refuse a question once the month's spend reaches
    the limit, and return the spend and limit to the panel.
@@ -44,8 +46,8 @@ screen that its answers are samples. Everything below is the backend it stands i
    called, tokens and cost, and the answer. Product needs to read them: say where
    (a table plus an admin export, or Loki) and how access is granted.
 6. **One question at a time per person**, enforced by the api, not only the web.
-7. **Progress events** while an answer is made (understanding → each read → writing),
-   streamed to the panel, so the steps it shows are the real ones.
+7. **Status while it works**: one "Processing" state from question to answer is
+   enough; no per-step events.
 8. **Answer format**: a contract, not free text, so the panel draws it numbered:
 
    ```json
@@ -53,8 +55,7 @@ screen that its answers are samples. Everything below is the backend it stands i
      "summary": "One line that answers the question.",
      "sections": [
        { "title": "…", "body": "…", "points": ["…"], "stat": { "value": "99.97%", "label": "served", "tone": "warn" } }
-     ],
-     "sources": ["Failed requests, 24 h", "Router logs, 47 requests"]
+     ]
    }
    ```
 
