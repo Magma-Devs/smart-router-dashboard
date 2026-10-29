@@ -608,6 +608,9 @@ export function StackedAreaChart({
 
 /* ── ColumnChart ─────────────────────────────────────────────────────── */
 /* stacks: [{name, values, color}] — bottom to top */
+/** The least height a bar's part that isn't zero is drawn at, in px. */
+const MIN_PART_PX = 3;
+
 export function ColumnChart({
   stacks,
   height,
@@ -752,16 +755,17 @@ export function ColumnChart({
               onMouseEnter={() => { if (!controlled) setHov(i); report(timed ? (timed.xs[i] ?? 0) - barSpan / 2 : i); }}
               onMouseLeave={() => { if (!controlled) setHov(null); report(null); }}
               onClick={onBarClick ? () => onBarClick(i) : undefined} style={onBarClick ? { cursor: "pointer" } : undefined}>
-              {/* a full-height hit area, so a short bar is still easy to click */}
-              {onBarClick && <rect x={bx - 1} y={padY} width={barW + 2} height={iH} fill="transparent" />}
+              {/* a full-height hit area, so a short bar is as easy to hover or click as a tall one */}
+              <rect x={bx - 1} y={padY} width={barW + 2} height={iH} fill="transparent" />
               {stacks.map((s, si) => {
                 const v = s.values[i] || 0;
-                if (v === 0) { cum += v; return null; }
-                const bh = (v / maxV) * iH;
-                const y = padY + iH - ((cum + v) / maxV) * iH;
-                cum += v;
+                if (v === 0) return null;
+                // Every part that isn't zero stays visible: one rejected on top of hundreds accepted is a sliver, not nothing.
+                const bh = Math.max((v / maxV) * iH, MIN_PART_PX);
+                const y = padY + iH - cum - bh;
+                cum += bh;
                 return (
-                  <rect key={si} x={bx} y={y} width={barW} height={Math.max(bh, 0.5)}
+                  <rect key={si} x={bx} y={y} width={barW} height={bh}
                     fill={isSpike ? "var(--warn)" : s.hatch ? `url(#${id}-hatch-${si})` : s.color} opacity={isSpike ? 0.88 : s.opacity ?? 0.7}
                     rx={si === stacks.length - 1 ? 1.5 : 0} />
                 );

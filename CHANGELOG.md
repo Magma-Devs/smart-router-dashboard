@@ -71,6 +71,11 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   setup problem (a provider's URL or credentials, a chain with no provider) has
   no next step either: one message has to hold for every deployment.
 - **Metrics page: "Requests served" no longer says "across N upstreams".**
+- **Bar charts: a short bar is as easy to hover as a tall one.** Transactions
+  over time and an upstream's errors over time open a bar's counts anywhere
+  in its column, not only on the bar itself. A part of a bar that isn't zero
+  is drawn at least 3 px tall, so one rejected transaction on top of hundreds
+  accepted shows as a sliver instead of nothing.
 - **Traffic by provider: hover shows the values.** Hovering the chart shows
   the time and each upstream's share (or requests per second, with the total)
   at that moment, as the other charts do. The legend lists the upstreams only:
