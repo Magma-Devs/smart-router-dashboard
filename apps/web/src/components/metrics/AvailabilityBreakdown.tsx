@@ -256,7 +256,7 @@ export function AvailabilityBreakdown({
                 <text x={LEFT + plotW / 2} y={bTop + BACKUP_H / 2 + 4} textAnchor="middle" fontSize="11" fill="var(--text-4)">no data</text>
               )}
               {share.length > 0 && RIGHT > 0 && (
-                <text x={LEFT + plotW + 10} y={bTop + 12} fontSize="10.5" fill="var(--text-3)">up to {fmtShare(Math.max(...share.map((p) => p.v)) / 100)}</text>
+                <text x={LEFT + plotW + 10} y={bTop + 12} fontSize="10.5" fill="var(--text-3)">{Math.max(...share.map((p) => p.v)) > 0 ? `up to ${fmtShare(Math.max(...share.map((p) => p.v)) / 100)}` : "none"}</text>
               )}
             </>
           )}
