@@ -4,7 +4,7 @@
    Ported 1:1 from the design prototype (SR_Dashboard/magma/page-metrics.jsx). */
 
 import { useState } from "react";
-import { useChartDims } from "@/components/gateway/charts";
+import { niceScale, useChartDims } from "@/components/gateway/charts";
 
 export const RO_WIN_MS = {
   "5m": 3e5, "15m": 9e5, "30m": 18e5, "1h": 36e5, "3h": 108e5, "6h": 216e5,
@@ -65,12 +65,18 @@ export function InteractiveChart({
   let minV = Math.min(...values), maxV = Math.max(...values);
   if (target && !yDomain) { minV = Math.min(minV, target.value); maxV = Math.max(maxV, target.value); }
   const pad = (maxV - minV) * 0.14 || 1;
-  const dlo = yDomain ? yDomain[0] : minV - pad;
+  // A magnitude - latency, an error rate, a rate - starts at 0 on round steps: padding below
+  // the data must never draw a negative tick. A line read against a target (availability) zooms.
+  const zeroBased = !yDomain && !target && minV >= 0;
+  const nice = zeroBased ? niceScale(0, Math.max(maxV, Number.EPSILON)) : null;
+  const dlo = yDomain ? yDomain[0] : zeroBased ? 0 : minV - pad;
   const dhi = yDomain
     ? yDomain[1]
-    : yMaxCap != null
-      ? Math.min(maxV + pad, yMaxCap)
-      : maxV + pad;
+    : nice
+      ? yMaxCap != null ? Math.min(nice.hi, yMaxCap) : nice.hi
+      : yMaxCap != null
+        ? Math.min(maxV + pad, yMaxCap)
+        : maxV + pad;
   const range = dhi - dlo || 1;
   const cx = (i: number) => padL + (n > 1 ? (i / (n - 1)) * iW : iW / 2);
   const cy = (v: number) => padTop + iH - ((v - dlo) / range) * iH;
@@ -78,7 +84,7 @@ export function InteractiveChart({
   // on a low-traffic router as "0".
   const fmt =
     yFmt || ((v: number) => (Math.abs(v) > 0 && Math.abs(v) < 1 ? v.toFixed(2) : Math.round(v)));
-  const gVals = Array.from({ length: 5 }, (_, i) => dlo + (range * i) / 4);
+  const gVals = nice ? nice.ticks.filter((t) => t <= dhi) : Array.from({ length: 5 }, (_, i) => dlo + (range * i) / 4);
   const linePts = values.map((v, i) => `${cx(i).toFixed(1)},${cy(v).toFixed(1)}`).join(" ");
   const areaD = `M ${cx(0).toFixed(1)},${(padTop + iH).toFixed(1)} ` + values.map((v, i) => `L ${cx(i).toFixed(1)},${cy(v).toFixed(1)}`).join(" ") + ` L ${cx(n - 1).toFixed(1)},${(padTop + iH).toFixed(1)} Z`;
   const xticks = [0, Math.round((n - 1) * 0.25), Math.round((n - 1) * 0.5), Math.round((n - 1) * 0.75), n - 1];

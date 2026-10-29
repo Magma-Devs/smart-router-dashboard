@@ -76,6 +76,11 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   in its column, not only on the bar itself. A part of a bar that isn't zero
   is drawn at least 3 px tall, so one rejected transaction on top of hundreds
   accepted shows as a sliver instead of nothing.
+- **Router row charts: P95 latency, error rate and requests start at 0.**
+  Their axis padded below the data, so it drew negative ticks ("-7.00%",
+  "-28 ms"); it now starts at 0 and steps on round numbers. Percentages drop
+  the zeros that say nothing ("0%", "57%"), and a rate above 0 too small to
+  show reads "<0.01%", never "0%".
 - **Traffic by provider: hover shows the values.** Hovering the chart shows
   the time and each upstream's share (or requests per second, with the total)
   at that moment, as the other charts do. The legend lists the upstreams only:

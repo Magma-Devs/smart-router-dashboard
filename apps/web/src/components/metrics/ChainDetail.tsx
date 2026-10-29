@@ -90,10 +90,12 @@ export function ChainDetail({ r, onChainClick, win, tile: selKey, onTile: setSel
   // Percentage charts cap the auto y-domain at 100 — padding above the data
   // must never fabricate a ">100%" axis. Sub-1 RPS keeps decimals.
   const rpsFmt = (v: number) => (v > 0 && v < 1 ? v.toFixed(2) : fmtNum(Math.round(v)));
+  // Two decimals, without the zeros that say nothing: 0%, 57%, 99.94%. A rate above 0 never reads as 0.
+  const pctFmt = (v: number) => (v > 0 && v < 0.005 ? "<0.01%" : v.toFixed(2).replace(/\.?0+$/, "") + "%");
   const metrics: Metric[] = [
-    ...(r.availPct != null ? [{ key: "avail", label: "Availability", cur: r.availPct.toFixed(2) + "%", color: "#22c55e", values: avail.values, times: avail.times, yFmt: (v: number) => v.toFixed(2) + "%", target: { value: 99.9, label: "99.9%" }, yMaxCap: 100 }] : []),
+    ...(r.availPct != null ? [{ key: "avail", label: "Availability", cur: pctFmt(r.availPct), color: "#22c55e", values: avail.values, times: avail.times, yFmt: pctFmt, target: { value: 99.9, label: "99.9%" }, yMaxCap: 100 }] : []),
     ...(r.p95Ms != null ? [{ key: "p95", label: "P95 latency", cur: Math.round(r.p95Ms) + " ms", color: "#3b82f6", values: p95.values, times: p95.times, yFmt: (v: number) => Math.round(v) + " ms" }] : []),
-    ...(r.errPct != null ? [{ key: "err", label: "Error rate", cur: r.errPct.toFixed(2) + "%", color: "#f97316", values: err.values, times: err.times, yFmt: (v: number) => v.toFixed(2) + "%", yMaxCap: 100 }] : []),
+    ...(r.errPct != null ? [{ key: "err", label: "Error rate", cur: pctFmt(r.errPct), color: "#f97316", values: err.values, times: err.times, yFmt: pctFmt, yMaxCap: 100 }] : []),
     { key: "rps", label: "Requests / sec", cur: avgRps > 0 && avgRps < 1 ? avgRps.toFixed(2) : fmtNum(Math.round(avgRps)), color: "var(--brand)", values: rps.values, times: rps.times, yFmt: rpsFmt },
   ];
 
