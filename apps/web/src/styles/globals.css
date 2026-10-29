@@ -407,7 +407,6 @@ a { text-decoration: none; }
 .ask-launch:hover { border-color: color-mix(in srgb, var(--brand) 55%, var(--line-2)); background: color-mix(in srgb, var(--brand) 6%, var(--surface)); }
 .ask-launch__glyph, .ask-badge { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 999px; color: #fff; background: linear-gradient(135deg, var(--brand) 0%, #ff7a1a 55%, var(--brand-2) 100%); box-shadow: 0 0 0 1px rgba(255,255,255,.08) inset, 0 2px 10px -2px color-mix(in srgb, var(--brand) 60%, transparent); }
 .ask-badge { width: 30px; height: 30px; border-radius: 9px; }
-.ask-kbd { font: 500 10.5px var(--font-mono); color: var(--text-3); border: 1px solid var(--line-2); border-radius: 5px; padding: 1px 5px; }
 .ask-dot { width: 7px; height: 7px; border-radius: 999px; background: var(--brand); animation: ask-pulse 1.2s ease-in-out infinite; }
 @keyframes ask-pulse { 50% { opacity: .3; transform: scale(.8); } }
 
@@ -491,6 +490,11 @@ a { text-decoration: none; }
 .ask-full__search:focus { border-color: color-mix(in srgb, var(--brand) 55%, var(--line-2)); }
 .ask-full__main { min-width: 0; min-height: 0; display: flex; justify-content: center; }
 .ask-full__col { width: min(820px, 100%); display: flex; flex-direction: column; min-height: 0; padding: 16px 24px 12px; }
+.ask-full__bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+.ask-full__title { display: inline-flex; align-items: center; gap: 8px; font: 600 14px var(--font-ui); color: var(--text); }
+.ask-full__title svg { color: var(--brand); }
+.ask-full__back { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--line-2); background: transparent; color: var(--text-2); font: 500 12px var(--font-ui); cursor: pointer; }
+.ask-full__back:hover { background: var(--hover-2); color: var(--text); }
 .ask-full__col .ask-a__summary { font-size: 15.5px; }
 .ask-full__col .ask-a__body, .ask-full__col .ask-a__points { font-size: 13.5px; }
 .ask-full__col .ask-q { font-size: 14px; }

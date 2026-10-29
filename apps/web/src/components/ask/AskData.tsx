@@ -2,7 +2,7 @@
 
 /* Ask your data - a PREVIEW of the chat panel a client will use to ask about
  * their own router in plain words. It draws the whole flow - the top-bar
- * button, a side panel that minimizes to a pill, a week of chats, one
+ * button, a side panel that minimizes to a pill, 90 days of chats, one
  * question at a time, "Processing" while it works, and a numbered answer
  * with the day and time it came - but answers from
  * sample-answers.ts and reads no store. The backend it stands in for
@@ -13,17 +13,24 @@
  *
  * The same chats open full screen at /ask (AskFullView), from the panel's
  * Expand button; there is no menu item. A chat opens by link there
- * (`?chat=<id>`), so the two views always show the same one.
+ * (`?chat=<id>`), so the two views always show the same one. "Back to side
+ * panel" returns to the page the full view was opened from, on the same chat,
+ * and the top-bar button reopens whichever view was used last.
  *
- * History is kept in this browser for 7 days, as the real one will be kept on
- * the server for each person. */
+ * History is kept in this browser for 90 days, as long as the client's data is
+ * kept; the real one will be kept on the server for each person. */
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { SAMPLE_BUDGET, SUGGESTIONS, sampleAnswer, type SampleAnswer } from "./sample-answers";
 
-const KEEP_MS = 7 * 24 * 3600_000;
+const KEEP_DAYS = 90;
+const KEEP_MS = KEEP_DAYS * 24 * 3600_000;
 const STORE_KEY = "sr:ask:threads";
+/** The view the top-bar button reopens: the one used last. */
+const VIEW_KEY = "sr:ask:view";
+const FULL_PATH = "/ask";
+const fullUrl = (chatId: string | null) => (chatId ? `${FULL_PATH}?chat=${chatId}` : FULL_PATH);
 /** Chats shown before "Show earlier" in the history list. */
 const HISTORY_PAGE = 6;
 
@@ -44,6 +51,7 @@ interface Thread {
 }
 
 type Phase = { step: number; startedAt: number } | null;
+type View = "panel" | "full";
 
 interface AskState {
   open: boolean;
@@ -52,7 +60,13 @@ interface AskState {
   active: Thread | null;
   phase: Phase;
   spent: number;
+  /** Opens the view used last: the panel, or the full view. */
+  openAsk: () => void;
   openPanel: () => void;
+  /** Panel → full view, on the same chat. */
+  expand: () => void;
+  /** Full view → the page it was opened from, with the panel on the same chat. */
+  collapse: () => void;
   close: () => void;
   minimize: () => void;
   newChat: () => void;
@@ -81,6 +95,7 @@ function load(): Thread[] {
   return [
     { id: uid(), title: "Did any requests fail today?", at: Date.now() - day, turns: [{ id: uid(), question: "Did any requests fail today?", at: Date.now() - day, answer: sampleAnswer("fail"), tookMs: 3400 }] },
     { id: uid(), title: "Is latency normal right now?", at: Date.now() - 3 * day, turns: [{ id: uid(), question: "Is latency normal right now?", at: Date.now() - 3 * day, answer: sampleAnswer("latency"), tookMs: 2900 }] },
+    { id: uid(), title: "Which provider served the most traffic?", at: Date.now() - 20 * day, turns: [{ id: uid(), question: "Which provider served the most traffic?", at: Date.now() - 20 * day, answer: sampleAnswer("provider"), tookMs: 2600 }] },
   ];
 }
 
@@ -92,24 +107,52 @@ export function AskDataProvider({ children }: { children: React.ReactNode }) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [phase, setPhase] = useState<Phase>(null);
   const [spent, setSpent] = useState(SAMPLE_BUDGET.spent);
+  const [view, setView] = useState<View>(() => {
+    try { return localStorage.getItem(VIEW_KEY) === "full" ? "full" : "panel"; } catch { return "panel"; }
+  });
+  // Where "Back to side panel" goes: the page the full view was opened from.
+  const returnTo = useRef("/metrics");
   const timers = useRef<number[]>([]);
+  const router = useRouter();
+  const pathname = usePathname();
 
   useEffect(() => {
     try { localStorage.setItem(STORE_KEY, JSON.stringify(threads)); } catch { /* private window */ }
   }, [threads]);
+  useEffect(() => {
+    try { localStorage.setItem(VIEW_KEY, view); } catch { /* private window */ }
+  }, [view]);
 
-  // ⌘J / Ctrl+J opens and closes it.
+  const expand = useCallback(() => {
+    if (window.location.pathname !== FULL_PATH) returnTo.current = window.location.pathname + window.location.search;
+    setView("full");
+    setOpen(false);
+    setMinimized(false);
+    router.push(fullUrl(activeId));
+  }, [activeId, router]);
+  const collapse = useCallback(() => {
+    setView("panel");
+    setOpen(true);
+    setMinimized(false);
+    router.push(returnTo.current);
+  }, [router]);
+  const openAsk = useCallback(() => {
+    if (view === "full") expand();
+    else { setOpen(true); setMinimized(false); }
+  }, [view, expand]);
+
+  // ⌘J / Ctrl+J opens it where it was used last, and closes it; on the full view it goes back to the panel.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "j") {
-        e.preventDefault();
-        setOpen((o) => !o);
-        setMinimized(false);
-      }
+      if (!((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "j")) return;
+      e.preventDefault();
+      if (pathname === FULL_PATH) collapse();
+      else if (open && !minimized) setOpen(false);
+      else openAsk();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [pathname, open, minimized, collapse, openAsk]);
 
   const clear = () => { timers.current.forEach((t) => window.clearTimeout(t)); timers.current = []; };
 
@@ -146,6 +189,9 @@ export function AskDataProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo<AskState>(() => ({
     open, minimized, threads, phase, spent,
     active: threads.find((t) => t.id === activeId) ?? null,
+    openAsk,
+    expand,
+    collapse,
     openPanel: () => { setOpen(true); setMinimized(false); },
     close: () => { setOpen(false); setMinimized(false); },
     minimize: () => setMinimized(true),
@@ -153,7 +199,7 @@ export function AskDataProvider({ children }: { children: React.ReactNode }) {
     pick: (id) => { if (!phase) setActiveId(id); },
     ask,
     stop,
-  }), [open, minimized, threads, activeId, phase, spent, ask]); // eslint-disable-line react-hooks/exhaustive-deps
+  }), [open, minimized, threads, activeId, phase, spent, ask, openAsk, expand, collapse]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return <Ctx.Provider value={value}>{children}<AskDataPanel /></Ctx.Provider>;
 }
@@ -174,27 +220,24 @@ function Spark({ size = 16 }: { size?: number }) {
 /* ── Top-bar button ────────────────────────────────────────────────── */
 
 export function AskDataButton() {
-  const { openPanel, phase } = useAsk();
+  const { openAsk, phase } = useAsk();
   // On the full view the chat is already the page.
   if (usePathname() === FULL_PATH) return null;
   return (
-    <button type="button" onClick={openPanel} className="ask-launch" title="Ask your data (⌘J)">
+    <button type="button" onClick={openAsk} className="ask-launch" title="Ask your data (⌘J)">
       <span className="ask-launch__glyph"><Spark size={14} /></span>
       <span>Ask your data</span>
-      {phase ? <span className="ask-dot" aria-label="Answering" /> : <kbd className="ask-kbd">⌘J</kbd>}
+      {phase && <span className="ask-dot" aria-label="Answering" />}
     </button>
   );
 }
 
 /* ── The panel ─────────────────────────────────────────────────────── */
 
-const FULL_PATH = "/ask";
-
 function AskDataPanel() {
   const s = useAsk();
   const [showHistory, setShowHistory] = useState(false);
   const pathname = usePathname();
-  const router = useRouter();
   if (!s.open || pathname === FULL_PATH) return null;
   if (s.minimized) {
     return (
@@ -217,7 +260,7 @@ function AskDataPanel() {
         <div className="ask-head__actions">
           <IconBtn label="History" on={showHistory} onClick={() => setShowHistory((h) => !h)} d="M12 8v4l2.5 2.5M3.05 11a9 9 0 1 1 .5 4M3 4v5h5" />
           <IconBtn label="New chat" onClick={() => { s.newChat(); setShowHistory(false); }} d="M12 5v14M5 12h14" disabled={!!s.phase} />
-          <IconBtn label="Open full view" onClick={() => { router.push(s.active ? `${FULL_PATH}?chat=${s.active.id}` : FULL_PATH); s.close(); }} d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+          <IconBtn label="Open full view" onClick={s.expand} d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
           <IconBtn label="Minimize" onClick={s.minimize} d="M5 12h14" />
           <IconBtn label="Close" onClick={s.close} d="M6 6l12 12M18 6L6 18" />
         </div>
@@ -245,14 +288,14 @@ function IconBtn({ label, d, onClick, on, disabled }: { label: string; d: string
   );
 }
 
-/* ── History: a week of chats ──────────────────────────────────────── */
+/* ── History: 90 days of chats ─────────────────────────────────────── */
 
 function History({ onPick, query = "", full = false }: { onPick: (id: string) => void; query?: string; full?: boolean }) {
   const { threads, active } = useAsk();
   const [shown, setShown] = useState(full ? 50 : HISTORY_PAGE);
   const dayOf = (at: number) => {
     const days = Math.floor((new Date().setHours(0, 0, 0, 0) - new Date(at).setHours(0, 0, 0, 0)) / 86_400_000);
-    return days <= 0 ? "Today" : days === 1 ? "Yesterday" : "Earlier this week";
+    return days <= 0 ? "Today" : days === 1 ? "Yesterday" : days < 7 ? "Last 7 days" : days < 30 ? "Last 30 days" : "Older";
   };
   const q = query.trim().toLowerCase();
   const list = [...threads]
@@ -262,7 +305,7 @@ function History({ onPick, query = "", full = false }: { onPick: (id: string) =>
   const rows = list.slice(0, shown).map((t, i, arr) => ({ t, head: i === 0 || dayOf(arr[i - 1]!.at) !== dayOf(t.at) ? dayOf(t.at) : null }));
   return (
     <div className="ask-scroll" style={{ padding: "8px 12px" }}>
-      {!list.length && <div className="ask-empty-note">{q ? "No chat matches." : "No chats in the last 7 days."}</div>}
+      {!list.length && <div className="ask-empty-note">{q ? "No chat matches." : `No chats in the last ${KEEP_DAYS} days.`}</div>}
       {rows.map(({ t, head }) => {
         return (
           <div key={t.id}>
@@ -277,7 +320,7 @@ function History({ onPick, query = "", full = false }: { onPick: (id: string) =>
       {shown < list.length && (
         <button type="button" className="ask-more" onClick={() => setShown((n) => n + HISTORY_PAGE)}>Show earlier chats</button>
       )}
-      <div className="ask-empty-note">Chats are kept for 7 days.</div>
+      <div className="ask-empty-note">Chats are kept for {KEEP_DAYS} days.</div>
     </div>
   );
 }
@@ -286,7 +329,7 @@ function History({ onPick, query = "", full = false }: { onPick: (id: string) =>
 
 const noSubscribe = () => () => {};
 
-/** Ask your data full screen: the week's chats on the left, the conversation in the middle. */
+/** Ask your data full screen: the chats on the left, the conversation in the middle. */
 export function AskFullView() {
   const s = useAsk();
   const [query, setQuery] = useState("");
@@ -322,6 +365,13 @@ export function AskFullView() {
       </aside>
       <section className="ask-full__main">
         <div className="ask-full__col">
+          <div className="ask-full__bar">
+            <span className="ask-full__title"><Spark size={15} /> Ask your data</span>
+            <button type="button" className="ask-full__back" onClick={s.collapse} title="Back to side panel (⌘J)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7" /></svg>
+              Back to side panel
+            </button>
+          </div>
           <div className="ask-preview" style={{ margin: "0 0 8px" }}>Preview · sample answers, not your data</div>
           <Conversation />
           <Composer />

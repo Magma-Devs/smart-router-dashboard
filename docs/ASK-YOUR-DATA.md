@@ -14,7 +14,8 @@ their role.
 
 ## What the client sees (built, in the preview)
 
-- An **Ask your data** button in the top bar (`⌘J` opens and closes it).
+- An **Ask your data** button in the top bar. It reopens the view used last: the
+  panel, or the full view. `⌘J` does the same.
 - A side panel that can be **minimized** to a pill and brought back; it keeps working
   while minimized ("Answering…").
 - **One question at a time.** While an answer is being made, the box is locked, the
@@ -22,11 +23,13 @@ their role.
 - A **numbered answer**: a one-line summary first, then numbered parts, each with a
   title, a short body, optional points and one figure. A copy button.
 - The **day and time** under every answer.
-- **History**: chats grouped Today / Yesterday / Earlier this week, kept **7 days**,
-  with "Show earlier chats" for the rest.
+- **History**: chats grouped Today / Yesterday / Last 7 days / Last 30 days / Older,
+  kept **90 days**, with "Show earlier chats" for the rest.
 - **A full view** at `/ask`, opened from the panel's Expand button (no menu item): the
-  week's chats down the left with a search, the conversation in a wide reading column.
+  chats down the left with a search, the conversation in a wide reading column.
   It is the same chats as the panel; a chat opens by link (`/ask?chat=<id>`).
+  **Back to side panel** returns to the page it was opened from, with the panel open
+  on the same chat.
 - At the month's budget the box says the limit is reached and refuses new questions.
   The budget itself is not shown.
 
@@ -47,8 +50,9 @@ their role.
 3. **Budget per client per month**, shared by all of the client's users. Start at **$10 / month**. Count each answer's
    cost from Bedrock's token usage, refuse a question once the month's spend reaches
    the limit, and return the spend and limit to the panel.
-4. **History per person, 7 days**, on the server (Postgres, as the rest of the
-   account data), so it follows the person across browsers. Older chats are deleted.
+4. **History per person, 90 days**: as long as we keep the client's data. On the
+   server (Postgres, as the rest of the account data), so it follows the person
+   across browsers, and remembers the view used last. Older chats are deleted.
    A chat opens by its id, so the panel and the full view show the same one.
 5. **Prompt logs, 90 days**: every question, who asked, the client, when, the tools
    called, tokens and cost, and the answer. Everyone at Magma can read them: say where
