@@ -5,6 +5,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.50.1]
+
 ### Fixed
 
 - **Starknet commands in Try now that failed on every node.**
