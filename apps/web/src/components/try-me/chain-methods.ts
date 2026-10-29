@@ -713,6 +713,20 @@ export function headCommands(
   return [...leading, ...rest].slice(0, HEAD_LIMIT);
 }
 
+/**
+ * The command a tier preselects: its first one that can be sent as-is, in
+ * catalog order (curated hints lead it). The catalog's first entry is no
+ * guide on its own: every EVM debug tier leads with `debug_traceTransaction`,
+ * which wants a hash.
+ *
+ * A tier with nothing runnable opens on its first command, which is a
+ * roll-call gap (`no-runnable-defaults.generated.json`). Null for an empty
+ * tier.
+ */
+export function defaultCommand(commands: AddonCommand[]): AddonCommand | null {
+  return commands.find((cmd) => cmd.ready) ?? commands[0] ?? null;
+}
+
 /** Flatten the InterfaceConfig into `[tier, command, indexInTier]` triples in
  *  the order the drawer should render. Used to power the method dropdown. */
 export function listMethods(

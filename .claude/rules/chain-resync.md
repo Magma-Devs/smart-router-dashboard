@@ -196,12 +196,14 @@ resync, not a follow-up.**
 The generator classifies every command as **runnable** (what it ships with is
 already a complete request), **needs params** (a placeholder, a hint that
 documents the argument instead of curating one, or the spec's own
-`block_parsing` naming a positional argument), or unknown. The drawer opens on
-the runnable ones, so a chain with none opens on a list where nothing works.
+`block_parsing` naming a positional argument), or unknown. The drawer opens
+every tier (regular, archive, debug, trace) on its first runnable command, so
+a tier with none opens on a command that needs typing into first.
 
 1. **Read the generator's tail.** It prints `runnable N commands` and then every
-   `(spec × iface)` pair with none. New entries there are the whole point of
-   the roll-call file.
+   method list with none: `SPEC/iface` for a regular tier,
+   `SPEC/iface/tier` for an add-on tier. New entries there are the whole point
+   of the roll-call file.
 2. **A new chain in a known family needs nothing.** Hints are keyed by METHOD
    NAME, not by chain, so a new EVM chain inherits the `eth_*` hints and a new
    Cosmos chain the cosmos ones — TSC arrived with 57 JSON-RPC and 242 REST
