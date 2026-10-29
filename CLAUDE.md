@@ -1040,6 +1040,7 @@ Web — build-time vs. **runtime**:
 | `DASHBOARD_LOCAL_MODE` | (unset) | runtime override of `localMode`, same mechanism |
 | `DASHBOARD_GRAFANA_URL` | (unset) | Grafana base URL the "View full logs" button links to — runtime override via `/api/config`, same mechanism (falls back to `NEXT_PUBLIC_GRAFANA_URL`). Unset hides the button; the `logs` compose profile's Grafana is `http://localhost:3001` |
 | `INCIDENTS_ENABLED` | (unset) | `true` (any case) shows the top bar's **Report incident** button. Read per request by the `(app)` layout, not asked of the api, so the button still shows when the api is down. Set it with the api's |
+| `ASK_DATA_PREVIEW` | (unset) | `true` (any case) shows the top bar's **Ask your data** button and its panel, a preview that answers from sample answers only (`components/ask/`, `docs/ASK-YOUR-DATA.md`). Read per request by the `(app)` layout |
 | `AUTH_MODE` / `AUTH_SECRET` | `disabled` / (unset) | must match the api; `enabled` renders the login page + edge gate |
 | `DEPLOYMENT_MODE` | `onprem` | must match the api. Surfaced to the browser by `GET /api/config`, so one image serves both shapes |
 | `INTERNAL_AUTH_SECRET` | (unset) | must match the api (which requires it under `AUTH_MODE=enabled`); lets the web forward the browser's real IP / User-Agent on sign-in and on the server-rendered previews |

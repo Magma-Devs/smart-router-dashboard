@@ -16,6 +16,7 @@ import { getAuthVersion, subscribeAuth } from "@/lib/auth-store";
 import { useMe } from "@/hooks/use-me";
 import { TwoFactorCountdown, TwoFactorGate } from "@/components/auth/two-factor-gate";
 import { ReportIncidentButton } from "@/components/incidents/ReportIncident";
+import { AskDataButton, AskDataProvider } from "@/components/ask/AskData";
 
 export function ThemeToggle() {
   const [theme, setTheme] = useState<"dark" | "light">("dark");
@@ -230,7 +231,7 @@ function SidebarUser() {
   );
 }
 
-function Topbar({ here, sub, incidentsEnabled }: { here: string; sub: string | null; incidentsEnabled: boolean }) {
+function Topbar({ here, sub, incidentsEnabled, askPreview }: { here: string; sub: string | null; incidentsEnabled: boolean; askPreview: boolean }) {
   // Live throughput + health for the top-bar stats (real data; CU/mo is a
   // Lava-consumer concept the router doesn't emit, so it's omitted here).
   // Scoped like every other panel, so the pills describe the selected router.
@@ -274,6 +275,7 @@ function Topbar({ here, sub, incidentsEnabled }: { here: string; sub: string | n
         {/* Shows only for the one account that may still defer 2FA. Not
             dismissible: what it counts down to is the dashboard closing. */}
         <TwoFactorCountdown />
+        {askPreview && <AskDataButton />}
         <ReportIncidentButton enabled={incidentsEnabled} />
         <ThemeToggle />
       </div>
@@ -281,10 +283,12 @@ function Topbar({ here, sub, incidentsEnabled }: { here: string; sub: string | n
   );
 }
 
-export function Shell({ children, grafanaDashboardUrl, incidentsEnabled = false }: {
+export function Shell({ children, grafanaDashboardUrl, incidentsEnabled = false, askPreview = false }: {
   children: React.ReactNode;
   grafanaDashboardUrl?: string | null;
   incidentsEnabled?: boolean;
+  /** The Ask your data preview (ASK_DATA_PREVIEW): its button, panel and sample answers. */
+  askPreview?: boolean;
 }) {
   const pathname = usePathname();
   const { chain } = useFilters();
@@ -303,19 +307,26 @@ export function Shell({ children, grafanaDashboardUrl, incidentsEnabled = false 
     // watching forty panels fail one by one.
     <TwoFactorGate>
       <ChainDrawerProvider>
-        <div className="gw-app">
-          <Sidebar grafanaDashboardUrl={grafanaDashboardUrl} />
-          <ChainDrawerSlot />
-          <div className="gw-main">
-            <Topbar here={here} sub={sub} incidentsEnabled={incidentsEnabled} />
-            <div className="fade-in" key={pathname}>
-              {children}
+        <AskSlot on={askPreview}>
+          <div className="gw-app">
+            <Sidebar grafanaDashboardUrl={grafanaDashboardUrl} />
+            <ChainDrawerSlot />
+            <div className="gw-main">
+              <Topbar here={here} sub={sub} incidentsEnabled={incidentsEnabled} askPreview={askPreview} />
+              <div className="fade-in" key={pathname}>
+                {children}
+              </div>
             </div>
           </div>
-        </div>
+        </AskSlot>
       </ChainDrawerProvider>
     </TwoFactorGate>
   );
+}
+
+/** The Ask your data preview's state and panel, only where it is turned on. */
+function AskSlot({ on, children }: { on: boolean; children: React.ReactNode }) {
+  return on ? <AskDataProvider>{children}</AskDataProvider> : <>{children}</>;
 }
 
 function ChainDrawerSlot() {

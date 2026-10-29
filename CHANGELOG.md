@@ -5,6 +5,19 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.52.0]
+
+### Added
+
+- **Ask your data (preview).** A top-bar button (`⌘J`) opens a side panel
+  where a client asks about their router in plain words: one question at a
+  time, the steps while it works, a numbered answer with what it read, a week
+  of chats, and the month's budget. It answers from sample answers only and
+  says so on screen; it shows only where `ASK_DATA_PREVIEW=true`. The backend
+  it stands in for (Bedrock, the client's own MCP scoped to their data, a
+  monthly budget per client, prompt logs kept 90 days) is
+  [`docs/ASK-YOUR-DATA.md`](docs/ASK-YOUR-DATA.md).
+
 ## [0.50.1]
 
 ### Fixed
