@@ -3,8 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ChainBadge } from "@/components/gateway/ChainBadge";
 import { useRouterFilter } from "@/hooks/use-router-options";
-import { RouterFilterSelect as LegacyRouterFilterSelect } from "@/legacy/components/gateway/RouterFilterSelect";
-import { useNewUi } from "./new-ui";
 
 /**
  * "All routers" — the config-router filter, styled as ChainSelect's sibling
@@ -22,7 +20,7 @@ import { useNewUi } from "./new-ui";
  * that can't change anything is worse than no filter. (Beside the chains
  * drawer it isn't drawn at all: those routers are rows under their chain.)
  */
-function NewRouterFilterSelect() {
+export function RouterFilterSelect() {
   const { routerId, routers, scopeUnavailable, select: selectRouter } = useRouterFilter();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -110,10 +108,4 @@ function IconRouter() {
       <rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6.5" y1="18" x2="6.51" y2="18"/><line x1="10.5" y1="18" x2="10.51" y2="18"/><path d="M12 10V2"/><path d="M8 6l4-4 4 4"/>
     </svg>
   );
-}
-
-/** The 0.28 control under DASHBOARD_NEW_UI, else the 0.27 one (src/legacy):
- *  every router whenever the deployment has two or more. */
-export function RouterFilterSelect() {
-  return useNewUi() ? <NewRouterFilterSelect /> : <LegacyRouterFilterSelect />;
 }

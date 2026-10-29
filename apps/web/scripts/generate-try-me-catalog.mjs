@@ -200,14 +200,17 @@ const JSONRPC_HINTS = [
   { m: "gas_price", p: "[null]", d: "Returns the gas price for a specific block.", only: ["NEAR"] },
   { m: "network_info", p: "[]", d: "Returns network info such as active peers.", only: ["NEAR"] },
   { m: "validators", p: "[null]", d: "Returns the current validator set.", only: ["NEAR"] },
-  // Starknet
+  // Starknet. A block id goes positionally as the bare tag (`["latest"]`) or
+  // by name (`{"block_id":"latest"}`); Juno and Pathfinder both answer
+  // `[{"block_id":"latest"}]` with "Invalid block id".
   { m: "starknet_blockNumber", p: "[]", d: "Get the most recent accepted block number." },
   { m: "starknet_blockHashAndNumber", p: "[]", d: "Get the most recent accepted block hash and number." },
   { m: "starknet_chainId", p: "[]", d: "Return the currently configured StarkNet chain id." },
-  { m: "starknet_getBlockWithTxs", p: '[{"block_id":"latest"}]', d: "Get block information with full transactions." },
+  { m: "starknet_getBlockWithTxs", p: '["latest"]', d: "Get block information with full transactions." },
   { m: "starknet_syncing", p: "[]", d: "Returns sync status, or false if not syncing." },
-  { m: "starknet_getStateUpdate", p: '[{"block_id":"latest"}]', d: "Get the state changes in a given block." },
+  { m: "starknet_getStateUpdate", p: '["latest"]', d: "Get the state changes in a given block." },
   { m: "starknet_traceTransaction", p: '["0x..."]', d: "Returns the execution trace of a transaction." },
+  { m: "starknet_traceBlockTransactions", p: '["latest"]', d: "Returns the execution traces of every transaction in a block." },
   // Bitcoin-family (btc / bch / doge / litecoin)
   { m: "getblockchaininfo", p: "[]", d: "Returns blockchain state info." },
   { m: "getblockcount", p: "[]", d: "Returns the current block height." },
@@ -450,6 +453,54 @@ const REST_HINTS = [
   { m: "/blocks", needs: true, d: "Lists blocks after a hash — append ?lowHash=<block hash> (from /info/blockdag).", only: ["KASPA"] },
   { m: "/blocks-from-bluescore", needs: true, d: "Returns blocks by blue score — append exactly one of ?blueScore=, ?blueScoreGte= or ?blueScoreLt= (see /info/virtual-chain-blue-score).", only: ["KASPA"] },
   { m: "/virtual-chain", needs: true, d: "Returns the virtual chain from a blue score — append ?blueScoreGte=<n>, divisible by the page limit (10 by default).", only: ["KASPA"] },
+  // Polymesh (Substrate API Sidecar). `/blocks` and `/accounts/compare` look
+  // complete but answer 400 without their query string. A `{metadataVersion}`
+  // is spelled `v14`; a bare `14` answers 500. Item routes under `/pallets`
+  // echo the item's name unless asked for `?metadata=true`, and the dispatchable
+  // example sits on `system` because Sidecar resolves `balances` calls to the
+  // wrong entry on this runtime (`transferKeepAlive` comes back as
+  // `transfer_all`, `transferWithMemo` answers 500). The account examples are a
+  // mainnet validator stash, so they are pinned to POLYMESH and POLYMESHT keeps
+  // its placeholders. Every path checked through a production router on 2026-10-25.
+  { m: "/node/version", d: "Returns the node's client name, version and chain.", only: ["POLYMESH"] },
+  { m: "/runtime/spec", d: "Returns the runtime spec: spec name, spec and transaction versions, chain properties.", only: ["POLYMESH"] },
+  { m: "/blocks/head", d: "Returns the latest block with its decoded extrinsics and events.", only: ["POLYMESH"] },
+  { m: "/blocks/head/header", d: "Returns the header of the latest block.", only: ["POLYMESH"] },
+  { m: "/blocks", p: "/blocks?range=1-2", d: "Returns the blocks in ?range=<from>-<to> (inclusive). Without the range the node answers 400.", only: ["POLYMESH"] },
+  { m: "/blocks/{blockId}", p: "/blocks/1", d: "Returns a block by number or hash, with its decoded extrinsics and events. Old blocks need an archive node.", only: ["POLYMESH"] },
+  { m: "/blocks/{blockId}/header", p: "/blocks/1/header", d: "Returns a block's header by number or hash.", only: ["POLYMESH"] },
+  { m: "/blocks/{blockId}/extrinsics-raw", p: "/blocks/1/extrinsics-raw", d: "Returns a block's header and its extrinsics as raw SCALE hex.", only: ["POLYMESH"] },
+  { m: "/blocks/{blockId}/extrinsics/{extrinsicIndex}", p: "/blocks/1/extrinsics/0", d: "Returns one decoded extrinsic of a block, by index, with its events.", only: ["POLYMESH"] },
+  { m: "/node/network", d: "Returns the peer count, sync state and roles of the node.", only: ["POLYMESH"] },
+  { m: "/node/transaction-pool", d: "Returns the extrinsics pending in the node's pool.", only: ["POLYMESH"] },
+  { m: "/pallets/staking/progress", d: "Returns the active era, the next session estimate and the validator set.", only: ["POLYMESH"] },
+  { m: "/pallets/staking/validators", d: "Returns every validator with its status and commission.", only: ["POLYMESH"] },
+  { m: "/accounts/{accountId}/balance-info", p: "/accounts/2HW34bz2Ue9RicxMGfPH6HaFRQKM416cJivXdciXTYsNz3Dz/balance-info", d: "Returns an account's POLYX balance: free, reserved, locks and nonce.", only: ["POLYMESH"], exact: true },
+  { m: "/accounts/{accountId}/staking-info", p: "/accounts/2HW34bz2Ue9RicxMGfPH6HaFRQKM416cJivXdciXTYsNz3Dz/staking-info", d: "Returns a stash's staking ledger: controller, bonded amount, reward destination. The account must be a stash.", only: ["POLYMESH"], exact: true },
+  { m: "/accounts/{accountId}/staking-payouts", p: "/accounts/2HW34bz2Ue9RicxMGfPH6HaFRQKM416cJivXdciXTYsNz3Dz/staking-payouts", d: "Returns a stash's payouts for the last completed era (?depth=<n> for more eras).", only: ["POLYMESH"], exact: true },
+  { m: "/accounts/{address}/validate", p: "/accounts/2HW34bz2Ue9RicxMGfPH6HaFRQKM416cJivXdciXTYsNz3Dz/validate", d: "Checks an SS58 address and returns its network, prefix and account id.", only: ["POLYMESH"] },
+  { m: "/accounts/{accountId}/convert", p: "/accounts/0xdf8e557f44acbff666eb2825b877ee8bbd5fc87e3eba94714c0639f9aa325185/convert?prefix=12", d: "Converts a hex account id to an SS58 address. ?prefix=12 is Polymesh; without it the address comes back in the generic 42 format.", only: ["POLYMESH"] },
+  { m: "/accounts/compare", p: "/accounts/compare?addresses=2HW34bz2Ue9RicxMGfPH6HaFRQKM416cJivXdciXTYsNz3Dz,5H7ppNE81NPEQP6GSdmzRKYzoxcAhVzDxwYU681ZMCi1Rdqk", d: "Checks whether the SS58 addresses in ?addresses=<a>,<b> share one public key. Without the list the node answers 400.", only: ["POLYMESH"] },
+  { m: "/pallets/{palletId}/consts", p: "/pallets/balances/consts", d: "Lists a pallet's constants with their values.", only: ["POLYMESH"] },
+  { m: "/pallets/{palletId}/consts/{constantItemId}", p: "/pallets/balances/consts/ExistentialDeposit?metadata=true", d: "Returns one constant of a pallet; ?metadata=true adds its value and docs.", only: ["POLYMESH"] },
+  { m: "/pallets/{palletId}/storage", p: "/pallets/balances/storage", d: "Lists a pallet's storage items.", only: ["POLYMESH"] },
+  { m: "/pallets/{palletId}/storage/{storageItemId}", p: "/pallets/balances/storage/TotalIssuance", d: "Reads a storage item of a pallet at the chain head.", only: ["POLYMESH"] },
+  { m: "/pallets/{palletId}/dispatchables", p: "/pallets/balances/dispatchables", d: "Lists the calls a pallet exposes, with their arguments.", only: ["POLYMESH"] },
+  { m: "/pallets/{palletId}/dispatchables/{dispatchableItemId}", p: "/pallets/system/dispatchables/remark?metadata=true", d: "Returns one call of a pallet; ?metadata=true adds its arguments and docs.", only: ["POLYMESH"] },
+  { m: "/pallets/{palletId}/events", p: "/pallets/balances/events", d: "Lists the events a pallet emits.", only: ["POLYMESH"] },
+  { m: "/pallets/{palletId}/events/{eventItemId}", p: "/pallets/balances/events/Transfer?metadata=true", d: "Returns one event of a pallet; ?metadata=true adds its fields and docs.", only: ["POLYMESH"] },
+  { m: "/pallets/{palletId}/errors", p: "/pallets/balances/errors", d: "Lists the errors a pallet can raise.", only: ["POLYMESH"] },
+  { m: "/pallets/{palletId}/errors/{errorItemId}", p: "/pallets/balances/errors/InsufficientBalance?metadata=true", d: "Returns one error of a pallet; ?metadata=true adds its docs.", only: ["POLYMESH"] },
+  { m: "/runtime/metadata/versions", d: "Lists the metadata versions the runtime serves.", only: ["POLYMESH"] },
+  { m: "/runtime/metadata", d: "Returns the full runtime metadata, about 0.8 MB.", only: ["POLYMESH"] },
+  { m: "/runtime/metadata/{metadataVersion}", p: "/runtime/metadata/v15", d: "Returns the runtime metadata at one version, spelled vX (see /runtime/metadata/versions). A bare number answers 500.", only: ["POLYMESH"] },
+  { m: "/runtime/code", d: "Returns the runtime Wasm blob as hex, about 3.8 MB.", only: ["POLYMESH"] },
+  { m: "/transaction/material", d: "Returns what an offline signer needs: genesis hash, spec and transaction versions. ?metadata=json or ?metadata=scale adds the metadata.", only: ["POLYMESH"] },
+  { m: "/transaction/material/{metadataVersion}", p: "/transaction/material/v14", d: "Returns the signing material with the metadata at one version, spelled vX. A bare number answers 500.", only: ["POLYMESH"] },
+  { m: "/experimental/blocks/head/traces", unserved: true, d: "Not served — the node refuses the unsafe RPC that block traces run on (500 \"RPC call is unsafe to be called externally\").", only: ["POLYMESH"] },
+  { m: "/experimental/blocks/head/traces/operations", unserved: true, d: "Not served — the node answers 400 to \"head\" here, and refuses the unsafe RPC that block traces run on for a block number.", only: ["POLYMESH"] },
+  { m: "/experimental/blocks/{blockId}/traces", p: "/experimental/blocks/1/traces", unserved: true, d: "Not served — the node refuses the unsafe RPC that block traces run on (500 \"RPC call is unsafe to be called externally\").", only: ["POLYMESH"] },
+  { m: "/experimental/blocks/{blockId}/traces/operations", p: "/experimental/blocks/1/traces/operations", unserved: true, d: "Not served — the node refuses the unsafe RPC that block traces run on (500 \"RPC call is unsafe to be called externally\").", only: ["POLYMESH"] },
   // Concordium (node REST proxy — {…} segments are placeholders to replace)
   { m: "/v0/consensusInfo", d: "Returns consensus state: best block, epoch and finalization info." },
   { m: "/v0/chainParameters", d: "Returns the current chain parameters." },
@@ -609,7 +660,8 @@ const ARCHIVE_HINTS = {
     { m: "eth_getCode", l: "Get Code (Archive)", p: '["0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", "0x2C2A2"]', d: "Bytecode at a historical block — requires an archive node." },
     { m: "eth_call", l: "Call (Archive)", p: '[{"to":"0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48","data":"0x18160ddd"}, "0x2C2A2"]', d: "Read-only call against a historical block — requires an archive node." },
     { m: "query", l: "Query (Archive)", p: '{"request_type":"view_account","account_id":"example.near","block_id":10000000}', d: "View account state at a historical block — requires an archive node.", only: ["NEAR"] },
-    { m: "starknet_getStorageAt", l: "Get Storage At (Archive)", p: '["0x0123", "0x0", {"block_number":123456}]', d: "Storage value at a historical block — requires an archive node." },
+    // The ETH token's `ERC20_name` slot, which reads back "Ether".
+    { m: "starknet_getStorageAt", l: "Get Storage At (Archive)", p: '["0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7", "0x0341c1bdfd89f69748aa00b5742b03adbffd79b8e80cab5c50d91cd8c2a79be1", {"block_number":123456}]', d: "Storage value at a historical block — requires an archive node." },
     { m: "getblockhash", l: "Get Block Hash (Archive)", p: "[800000]", d: "Hash of a historical block." },
   ],
   rest: [
