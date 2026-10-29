@@ -17,8 +17,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   available). Each row ends in its availability over the window. Hovering a
   column lists every row's availability for that half hour.
 - **Metrics tab: an Availability card for a picked chain.** The same blocks
-  under Traffic by provider. A chain two or more routers serve gets a router
-  picker beside the title; a chain with one router doesn't.
+  under Traffic by provider. It follows the router picked in the chains
+  list; with none picked, a chain two routers serve shows all its providers.
 - `GET /api/metrics/upstream-timeline` - every upstream of one chain, a cell
   per stretch of the clock (the errors-over-time bars' grid): tries, failed
   tries, share of the chain's tries, latest-block polls, and the state they
@@ -51,9 +51,9 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 - **Errors and Transactions tabs: an opened request, redrawn.** It opens on
   what the client got: the status, who returned it and how long it took, the
   error's **meaning** from the error-code table (it was only a tooltip on the
-  error's name) and its **next step**. The tries follow as a table, each with a
-  bar on the request's own timeline, so tries sent together or late show at a
-  glance; the one that reached the client is marked "→ client". The request's
+  error's name) and its **next step**. The tries follow as a table, with how
+  long each took and whether they went out at the same time or one after
+  another; the one that reached the client is marked "→ client". The request's
   details sit beside them as a list, and every ID there has a copy button, the
   caller's request ID included. Request and response sizes are gone. The
   status is a dot and a word on a plain card, without a coloured stroke down

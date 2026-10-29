@@ -6,8 +6,8 @@
  *   Outcome    what the client received: status, the error by name and its
  *              source, returned by, the error's meaning and next step from
  *              the table
- *   Tries      one row per try at a provider: result, error, and a bar on
- *              the request's own timeline, so parallel and late tries show
+ *   Tries      one row per try at a provider: result, error and how long it
+ *              took, and whether they went out together or one after another
  *   Details    the facts the router wrote about the call, as a key-value list
  *
  * One statement per error: the outcome names the one that reached the client,
@@ -95,10 +95,10 @@ function triesOwnWords(a: RelayAttempt): string | null {
     && !(code && a.message.toLowerCase().includes(codeWords(code))) ? a.message : null;
 }
 
-const TRY_COLUMNS = "20px minmax(110px, 1.1fr) minmax(150px, 1.4fr) minmax(120px, 2fr) 64px";
+const TRY_COLUMNS = "20px minmax(110px, 1fr) minmax(150px, 2fr) 64px";
 
-/** One try: provider, result and error, and its bar on the request's timeline. */
-function TryRow({ a, n, spanMs }: { a: RelayAttempt; n: number; spanMs: number }) {
+/** One try: provider, result and error, and how long it took. */
+function TryRow({ a, n }: { a: RelayAttempt; n: number }) {
   const code = a.outcome === "failed" ? realCode(a) : null;
   const entry = code ? explainRouterError(code) : null;
   const r = RESULT[a.outcome];
@@ -107,8 +107,6 @@ function TryRow({ a, n, spanMs }: { a: RelayAttempt; n: number; spanMs: number }
   const color = ok ? "var(--ok)" : r.color;
   const ownWords = triesOwnWords(a);
   const ran = a.endMs != null && a.outcome !== "skipped";
-  const left = spanMs > 0 ? Math.min(100, (a.atMs / spanMs) * 100) : 0;
-  const width = ran && spanMs > 0 ? Math.max(0.8, ((a.endMs! - a.atMs) / spanMs) * 100) : 0;
   return (
     <div style={{
       display: "grid", gridTemplateColumns: TRY_COLUMNS, columnGap: 12, alignItems: "center",
@@ -125,11 +123,6 @@ function TryRow({ a, n, spanMs }: { a: RelayAttempt; n: number; spanMs: number }
           ? <ErrorName code={code} entry={entry} nodeCode={a.nodeCode} message={a.message} />
           : <span style={{ fontSize: 12, color, whiteSpace: "nowrap" }}>{words}</span>}
         {entry && <SourceTag source={entry.source} />}
-      </span>
-      <span style={{ position: "relative", height: 8, borderRadius: 2, background: "var(--line)" }}>
-        {ran
-          ? <span style={{ position: "absolute", top: 0, bottom: 0, left: `${left}%`, width: `${Math.min(width, 100 - left)}%`, minWidth: 2, borderRadius: 2, background: color, opacity: ok || a.outcome === "failed" ? 0.85 : 0.5 }} />
-          : <span style={{ position: "absolute", top: -2, bottom: -2, left: `${left}%`, width: 2, background: "var(--text-4)" }} />}
       </span>
       <span className="gw-mono gw-tnum" style={{ fontSize: 11.5, color: "var(--text-2)", textAlign: "right" }}>{ran ? fmtTook(a.endMs! - a.atMs) : "—"}</span>
       {(ownWords || a.note) && (
@@ -203,8 +196,9 @@ export function RequestBreakdown(p: BreakdownProps) {
   // The provider's words that reached the client, unless its try already prints them.
   const finalTry = p.final?.from === "provider" && p.final.attempt.outcome === "failed" ? p.final.attempt : null;
   const providerWords = finalTry?.message && !triesOwnWords(finalTry) ? finalTry.message : null;
-  // The timeline every try's bar sits on: the request's own duration, or the latest try end when that's longer.
-  const spanMs = Math.max(p.tookMs ?? 0, ...p.attempts.map((a) => a.endMs ?? a.atMs), 1);
+  // Tries the router sent together share a batch: a write goes to every provider at once.
+  const batches = new Set(p.attempts.map((a) => a.batch)).size;
+  const together = p.attempts.length > 1 ? (batches === 1 ? " · sent at the same time" : batches === p.attempts.length ? " · one after another" : "") : "";
   const returnedBy = routerAnswered ? "Router" : p.final?.from === "provider" ? p.final.attempt.upstream : null;
   return (
     <div style={{ display: "grid", gap: 16, padding: "8px 4px 12px" }}>
@@ -246,22 +240,18 @@ export function RequestBreakdown(p: BreakdownProps) {
       </div>
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 24, alignItems: "flex-start" }}>
-        {/* Tries: one row each, on the request's timeline. */}
+        {/* Tries: one row each, in the order the router sent them. */}
         <div style={{ flex: "2 1 560px", minWidth: 0 }}>
-          <Section title="Tries" aside={p.attempts.length ? `${p.attempts.length} on ${providers} ${providers === 1 ? "provider" : "providers"}` : "none logged"}>
+          <Section title="Tries" aside={p.attempts.length ? `${p.attempts.length} on ${providers} ${providers === 1 ? "provider" : "providers"}${together}` : "none logged"}>
             {p.attempts.length > 0 && (
               <div style={{ border: "1px solid var(--line)", borderRadius: 8, overflow: "hidden", background: "var(--surface)" }}>
                 <div style={{ display: "grid", gridTemplateColumns: TRY_COLUMNS, columnGap: 12, padding: "6px 12px", fontSize: 11, color: "var(--text-4)" }}>
                   <span />
                   <span>Provider</span>
                   <span>Result</span>
-                  <span style={{ display: "flex", justifyContent: "space-between" }}>
-                    <span className="gw-mono gw-tnum">0</span>
-                    <span className="gw-mono gw-tnum">{fmtTook(spanMs)}</span>
-                  </span>
                   <span style={{ textAlign: "right" }}>Took</span>
                 </div>
-                {p.attempts.map((a, i) => <TryRow key={i} a={a} n={i + 1} spanMs={spanMs} />)}
+                {p.attempts.map((a, i) => <TryRow key={i} a={a} n={i + 1} />)}
               </div>
             )}
           </Section>
