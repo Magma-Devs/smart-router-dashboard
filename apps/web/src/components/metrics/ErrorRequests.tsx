@@ -149,7 +149,6 @@ function retriesWords(r: ErrorRequestRow): string | null {
 
 /** The response's status: the word, its colour, and a detail where the code doesn't carry one. */
 export function statusOf(r: ErrorRequestRow): BreakdownProps["status"] {
-  const failed = r.attempts.filter((a) => a.outcome === "failed").length;
   switch (r.result) {
     case "ok": return { label: "Success", color: "var(--ok)" };
     case "recovered": return { label: "Success", color: "var(--ok)", detail: null };
