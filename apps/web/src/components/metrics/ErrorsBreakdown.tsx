@@ -63,7 +63,6 @@ export function ErrorsBreakdown({ chainFilter, win, focus = null, onFocus }: {
   // Once a minute: each read counts retries back to their counters' births.
   const counts = useApi<RetriesReport>(`/api/metrics/retries?window=${win}${specQ}${scopeQ}`, 60_000);
 
-  const failing = (data?.hotspots ?? []).filter((h) => h.errors > 0);
   const total = data?.total ?? 0;
 
   const c = counts.data;
@@ -80,10 +79,10 @@ export function ErrorsBreakdown({ chainFilter, win, focus = null, onFocus }: {
     : null;
   const kpis: { label: string; tipKey: string; value: string; color: string; sub: React.ReactNode; loading: boolean }[] = [
     { label: "Failed attempts", tipKey: "failedTries", value: fmtComma(total), color: total ? "var(--text)" : "var(--ok)", loading: isLoading,
-      sub: <>across {fmtComma(failing.length)} chain · upstream pair{failing.length === 1 ? "" : "s"}</> },
+      sub: <>&nbsp;</> },
     { label: "Retried requests", tipKey: "retriedRequests", value: fmtNum(c?.retried), color: emitted ? "var(--text)" : "var(--text-4)", loading: counts.isLoading,
       sub: !emitted ? "no retries recorded yet"
-        : <>{fmtPct(c?.retryRate)} of all requests{c?.avgExtraAttempts != null && <> · {c.avgExtraAttempts.toFixed(1)} extra attempts each</>}</> },
+        : <>{fmtPct(c?.retryRate)} of all requests</> },
     { label: "Recovered", tipKey: "retryRecovered", value: fmtNum(c?.recovered), color: emitted ? "var(--ok)" : "var(--text-4)", loading: counts.isLoading,
       sub: emitted && c?.recoveryRate != null ? <>{fmtPct(c.recoveryRate, 1)} of retried requests received a response</> : <>&nbsp;</> },
     { label: "Still failed", tipKey: "retryFailed", value: fmtNum(c?.failed), loading: counts.isLoading,

@@ -76,7 +76,9 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   through" tails are gone, since the "May already be on chain" tag says it. A
   setup problem (a provider's URL or credentials, a chain with no provider) has
   no next step either: one message has to hold for every deployment.
-- **Metrics page: "Requests served" no longer says "across N upstreams".**
+- **Metrics page: "Requests served" no longer says "across N upstreams";
+  "Retried requests" no longer says how many extra attempts each took, and
+  "Failed attempts" no longer counts its chain · upstream pairs.**
 - **Bar charts: a short bar is as easy to hover as a tall one.** Transactions
   over time and an upstream's errors over time open a bar's counts anywhere
   in its column, not only on the bar itself. A part of a bar that isn't zero
