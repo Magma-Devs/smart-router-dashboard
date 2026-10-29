@@ -167,16 +167,19 @@ const JSONRPC_HINTS = [
   { m: "eth_subscribe", p: '["newHeads"]', d: "Subscribe to new block headers over WebSocket." },
   { m: "eth_unsubscribe", p: '["<subscription id>"]', d: "Cancel a WebSocket subscription by id." },
   // EVM debug add-on
+  // The drawer opens a tier on its first ready command, so the one-call
+  // traces lead: a whole block's trace is megabytes on a busy chain (2.3 MB
+  // on Ethereum), past the direct leg's body cap.
   { m: "debug_traceTransaction", p: '["0x...", {"tracer":"callTracer"}]', d: "Traces a transaction's execution with the given tracer." },
+  { m: "debug_traceCall", p: '[{"to":"0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48","data":"0x18160ddd"}, "latest", {"tracer":"callTracer"}]', d: "Traces an eth_call without creating a transaction." },
   { m: "debug_traceBlockByNumber", p: '["latest", {"tracer":"callTracer"}]', d: "Traces every transaction in a block by number." },
   { m: "debug_traceBlockByHash", p: '["0x...", {"tracer":"callTracer"}]', d: "Traces every transaction in a block by hash." },
-  { m: "debug_traceCall", p: '[{"to":"0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48","data":"0x18160ddd"}, "latest", {"tracer":"callTracer"}]', d: "Traces an eth_call without creating a transaction." },
   // EVM trace add-on (OpenEthereum-style)
+  { m: "trace_call", p: '[{"to":"0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48","data":"0x18160ddd"}, ["trace"], "latest"]', d: "Executes a call and returns the requested traces." },
   { m: "trace_block", p: '["latest"]', d: "Returns traces created at the given block." },
   { m: "trace_transaction", p: '["0x..."]', d: "Returns all traces of the given transaction." },
   { m: "trace_replayBlockTransactions", p: '["latest", ["trace"]]', d: "Replays all transactions in a block, returning the requested traces." },
   { m: "trace_filter", p: '[{"fromBlock":"latest","toBlock":"latest"}]', d: "Returns traces matching the given filter." },
-  { m: "trace_call", p: '[{"to":"0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48","data":"0x18160ddd"}, ["trace"], "latest"]', d: "Executes a call and returns the requested traces." },
   // Arbitrum classic trace add-on
   { m: "arbtrace_block", p: '["latest"]', d: "Arbitrum classic: traces created at the given block." },
   { m: "arbtrace_transaction", p: '["0x..."]', d: "Arbitrum classic: all traces of the given transaction." },
@@ -519,6 +522,10 @@ const REST_HINTS = [
   { m: "/eth/v1/beacon/headers", d: "Returns the latest block headers." },
   { m: "/eth/v1/beacon/states/{state_id}/root", p: "/eth/v1/beacon/states/head/root", d: "Returns the state root for the given state." },
   { m: "/eth/v1/beacon/states/{state_id}/finality_checkpoints", p: "/eth/v1/beacon/states/head/finality_checkpoints", d: "Returns finality checkpoints for the given state." },
+  // Debug add-on. The fork-choice dump is the whole store (45 MB on mainnet,
+  // lodestar-mainnet.chainsafe.io, 2026-10-29), so the heads (5 KB) lead.
+  { m: "/eth/v2/debug/beacon/heads", d: "Returns the chain heads in the node's fork choice." },
+  { m: "/eth/v1/debug/fork_choice", d: "Dumps the node's whole fork-choice store — tens of MB on mainnet." },
   // Tron
   { m: "/wallet/getnowblock", v: "POST", d: "Returns the latest block." },
   { m: "/wallet/getnodeinfo", d: "Returns node runtime info." },
@@ -868,13 +875,15 @@ const OBJECT_PARAM_JSONRPC = ["XLM"];
  * Aptos — and is false here: `/getAddressBalance` has no slot to fill and
  * means nothing without `?address=`, so toncenter answers 422. Structurally
  * every path on these specs looks complete, which made 25 of TON's 41
- * "ready" commands unsendable.
+ * "ready" commands unsendable. Moralis is the same shape (`/dateToBlock`
+ * wants `?chain=&date=`, `/erc20/metadata` wants `?addresses=`), and its
+ * API key keeps a hint from being checked here, so all of it stays unmarked.
  *
  * For a spec in this list a bare, uncurated GET claims nothing. Curate the
  * ones that are checked: a hint with `d` says it runs, `needs: true` says it
  * wants a query argument.
  */
-const QUERY_STRING_REST = ["TON", "ION"];
+const QUERY_STRING_REST = ["TON", "ION", "MORALIS"];
 
 const specMatches = (list, specIndex) =>
   list.some((prefix) => specIndex.startsWith(prefix));

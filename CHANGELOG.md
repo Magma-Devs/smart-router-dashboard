@@ -20,12 +20,20 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   Picking a Request Type (Regular, Archive, Debug, Trace) used to select the
   tier's first catalog entry, so every EVM Debug tier opened on
   `debug_traceTransaction`, which wants a transaction hash. The drawer now
-  opens each tier on its first command marked ready to send:
-  `debug_traceBlockByNumber` on Debug, `trace_block` on Trace,
-  `starknet_traceBlockTransactions` on Starknet's Trace. A tier whose first
-  command already ran keeps it. Changed: all 61 Debug tiers, 2 Trace tiers,
-  and 9 REST Regular tiers (Arweave, Canton, Cardano, Kaspa, Moralis,
-  MultiversX, Stacks, Tezos, Stellar Horizon).
+  opens each tier on its first command marked ready to send, and a tier whose
+  first command already ran keeps it. Changed: 59 Debug tiers, 48 Trace tiers
+  and 8 REST Regular tiers (Arweave, Canton, Cardano, Kaspa, MultiversX,
+  Stacks, Tezos, Stellar Horizon).
+- **Add-on tiers open on one call, not a whole block** (MAG-4725). The EVM
+  Debug and Trace tiers lead with `debug_traceCall` and `trace_call`, a few
+  hundred bytes each. A block's trace is 2.3 MB on Ethereum, past the direct
+  leg's body cap. The beacon Debug tier opens on `/eth/v2/debug/beacon/heads`
+  (5 KB) rather than `/eth/v1/debug/fork_choice`, which dumps the whole
+  fork-choice store (45 MB on mainnet) and now says so.
+- **Moralis claims no ready commands** (MAG-4725). It takes its arguments in
+  the query string, like toncenter (`/dateToBlock` wants `?chain=&date=`), so
+  its bare GETs no longer count as complete requests. It joins the roll-call
+  as a gap: its API key keeps any hint from being checked here.
 - **The no-runnable roll-call covers add-on tiers** (MAG-4725).
   `no-runnable-defaults.generated.json` now lists add-on tiers with nothing
   runnable as `SPEC/iface/tier`, so the spec-drift check fails on a new one.

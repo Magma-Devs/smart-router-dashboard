@@ -7,6 +7,7 @@
   "IONT/rest",
   "MINA/rest",
   "MINAT/rest",
+  "MORALIS/rest",
   "QUAI/jsonrpc/debug",
   "QUAIT/jsonrpc/debug",
   "SQDSUBGRAPH/rest",

@@ -146,6 +146,15 @@ describe("runnable defaults", () => {
     expect(byName("/getConsensusBlock")?.ready).toBe(true);
   });
 
+  it("claims nothing for Moralis, whose arguments are all query parameters", () => {
+    // `/dateToBlock` was the "ready" default, and it takes `chain` and `date`
+    // as required query parameters. Without an API key no hint can be fired,
+    // so the surface is a written-down gap instead.
+    const cfg = getInterfaceConfig("MORALIS", "rest", [])!;
+    expect(headCommands(cfg.regular)).toEqual([]);
+    expect(cfg.regular.find((c) => c.label === "/dateToBlock")?.ready).toBeUndefined();
+  });
+
   it("sends Polymesh's Sidecar routes with the query and the arguments they need", () => {
     // `/blocks` and `/accounts/compare` look complete, but Sidecar answers 400
     // without `?range=` / `?addresses=`. Both were "ready" and both failed.
@@ -209,14 +218,25 @@ describe("runnable defaults", () => {
 
 describe("defaultCommand", () => {
   it("opens a tier on its first command that runs as-is", () => {
-    // The screenshot case: the EVM debug tier leads with debug_traceTransaction,
-    // which wants a hash.
+    // The EVM debug tier leads with debug_traceTransaction, which wants a hash.
     const eth = getInterfaceConfig("ETH1", "jsonrpc", ["archive", "debug", "trace"])!;
     expect(eth.debug![0]?.method).toBe("debug_traceTransaction");
-    expect(defaultCommand(eth.debug!)?.method).toBe("debug_traceBlockByNumber");
-    expect(defaultCommand(eth.trace!)?.method).toBe("trace_block");
+    expect(defaultCommand(eth.debug!)?.method).toBe("debug_traceCall");
+    expect(defaultCommand(eth.trace!)?.method).toBe("trace_call");
     expect(defaultCommand(getInterfaceConfig("STRK", "jsonrpc", ["trace"])!.trace!)?.method)
       .toBe("starknet_traceBlockTransactions");
+  });
+
+  it("opens on one call's answer, not a whole block or store", () => {
+    // A block's trace is 2.3 MB on Ethereum and the beacon fork-choice dump
+    // 45 MB: past the direct leg's body cap, and a stall in the browser.
+    const eth = getInterfaceConfig("ETH1", "jsonrpc", ["debug", "trace"])!;
+    for (const tier of [eth.debug!, eth.trace!]) {
+      expect(defaultCommand(tier)?.params).not.toMatch(/^\["latest"/);
+    }
+    const beacon = getInterfaceConfig("ETHBEACON", "rest", ["debug"])!.debug!;
+    expect(defaultCommand(beacon)?.label).toBe("/eth/v2/debug/beacon/heads");
+    expect(beacon.find((c) => c.label === "/eth/v1/debug/fork_choice")?.desc).toMatch(/MB/);
   });
 
   it("keeps a tier's first command when it already runs", () => {
@@ -225,11 +245,12 @@ describe("defaultCommand", () => {
     expect(defaultCommand(eth.archive!)).toBe(eth.archive![0]);
   });
 
-  it("falls back to an unverified command before one that needs input", () => {
+  it("falls back to the tier's first command when nothing in it is ready", () => {
     const needs = { method: "a", label: "a", params: '["0x..."]', needsInput: true };
     const unverified = { method: "b", label: "b", params: "[]" };
-    expect(defaultCommand([needs, unverified])).toBe(unverified);
-    expect(defaultCommand([needs])).toBe(needs);
+    const ready = { method: "c", label: "c", params: "[]", ready: true };
+    expect(defaultCommand([needs, unverified, ready])).toBe(ready);
+    expect(defaultCommand([needs, unverified])).toBe(needs);
     expect(defaultCommand([])).toBeNull();
   });
 
