@@ -1,6 +1,9 @@
 import { beforeAll, describe, expect, it } from "vitest";
+import noRunnable from "../../../../scripts/data/no-runnable-defaults.generated.json";
+import generated from "../chain-methods.generated.json";
 import {
   catalogReady,
+  defaultCommand,
   groupByInternalPath,
   headCommands,
   httpVariantOf,
@@ -143,6 +146,15 @@ describe("runnable defaults", () => {
     expect(byName("/getConsensusBlock")?.ready).toBe(true);
   });
 
+  it("claims nothing for Moralis, whose arguments are all query parameters", () => {
+    // `/dateToBlock` was the "ready" default, and it takes `chain` and `date`
+    // as required query parameters. Without an API key no hint can be fired,
+    // so the surface is a written-down gap instead.
+    const cfg = getInterfaceConfig("MORALIS", "rest", [])!;
+    expect(headCommands(cfg.regular)).toEqual([]);
+    expect(cfg.regular.find((c) => c.label === "/dateToBlock")?.ready).toBeUndefined();
+  });
+
   it("sends Polymesh's Sidecar routes with the query and the arguments they need", () => {
     // `/blocks` and `/accounts/compare` look complete, but Sidecar answers 400
     // without `?range=` / `?addresses=`. Both were "ready" and both failed.
@@ -201,6 +213,66 @@ describe("runnable defaults", () => {
       .find((c) => c.method === "starknet_getBlockWithTxs")?.params).toBe('["latest"]');
     // The Trace tier gets a command that runs as-is.
     expect(cfg.trace!.find((c) => c.method === "starknet_traceBlockTransactions")?.ready).toBe(true);
+  });
+});
+
+describe("defaultCommand", () => {
+  it("opens a tier on its first command that runs as-is", () => {
+    // The EVM debug tier leads with debug_traceTransaction, which wants a hash.
+    const eth = getInterfaceConfig("ETH1", "jsonrpc", ["archive", "debug", "trace"])!;
+    expect(eth.debug![0]?.method).toBe("debug_traceTransaction");
+    expect(defaultCommand(eth.debug!)?.method).toBe("debug_traceCall");
+    expect(defaultCommand(eth.trace!)?.method).toBe("trace_call");
+    expect(defaultCommand(getInterfaceConfig("STRK", "jsonrpc", ["trace"])!.trace!)?.method)
+      .toBe("starknet_traceBlockTransactions");
+  });
+
+  it("opens on one call's answer, not a whole block or store", () => {
+    // A block's trace is 2.3 MB on Ethereum and the beacon fork-choice dump
+    // 45 MB: past the direct leg's body cap, and a stall in the browser.
+    const eth = getInterfaceConfig("ETH1", "jsonrpc", ["debug", "trace"])!;
+    for (const tier of [eth.debug!, eth.trace!]) {
+      expect(defaultCommand(tier)?.params).not.toMatch(/^\["latest"/);
+    }
+    const beacon = getInterfaceConfig("ETHBEACON", "rest", ["debug"])!.debug!;
+    expect(defaultCommand(beacon)?.label).toBe("/eth/v2/debug/beacon/heads");
+    expect(beacon.find((c) => c.label === "/eth/v1/debug/fork_choice")?.desc).toMatch(/MB/);
+  });
+
+  it("keeps a tier's first command when it already runs", () => {
+    const eth = getInterfaceConfig("ETH1", "jsonrpc", ["archive"])!;
+    expect(defaultCommand(eth.regular)).toBe(eth.regular[0]);
+    expect(defaultCommand(eth.archive!)).toBe(eth.archive![0]);
+  });
+
+  it("falls back to the tier's first command when nothing in it is ready", () => {
+    const needs = { method: "a", label: "a", params: '["0x..."]', needsInput: true };
+    const unverified = { method: "b", label: "b", params: "[]" };
+    const ready = { method: "c", label: "c", params: "[]", ready: true };
+    expect(defaultCommand([needs, unverified, ready])).toBe(ready);
+    expect(defaultCommand([needs, unverified])).toBe(needs);
+    expect(defaultCommand([])).toBeNull();
+  });
+
+  it("opens every tier on a runnable command, but the roll-call's gaps", () => {
+    // Every chain, interface and add-on in the catalog, filtered the way the
+    // drawer filters a plain-HTTP transport. A tier with nothing runnable has
+    // to be written down in the roll-call the drift check diffs.
+    const gaps = new Set<string>(noRunnable);
+    const notRunnable: string[] = [];
+    for (const [spec, entry] of Object.entries(generated as Record<string, unknown>)) {
+      if (typeof entry === "string") continue;
+      for (const iface of Object.keys(entry as object)) {
+        const cfg = getInterfaceConfig(spec, iface, ["archive", "debug", "trace"]);
+        for (const tier of TIER_ORDER) {
+          const list = cfg?.[tier]?.filter((c) => !/(un)?subscribe$/i.test(c.method));
+          if (!list?.length) continue;
+          const id = tier === "regular" ? `${spec}/${iface}` : `${spec}/${iface}/${tier}`;
+          if (!defaultCommand(list)?.ready && !gaps.has(id)) notRunnable.push(id);
+        }
+      }
+    }
+    expect(notRunnable).toEqual([]);
   });
 });
 

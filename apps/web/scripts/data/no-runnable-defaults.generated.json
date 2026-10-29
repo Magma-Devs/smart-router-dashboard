@@ -1,9 +1,16 @@
 [
+  "EOS/rest/trace",
+  "EOST/rest/trace",
   "FUELNETWORK/rest",
   "ICP/rest",
   "ION/rest",
   "IONT/rest",
   "MINA/rest",
   "MINAT/rest",
-  "SQDSUBGRAPH/rest"
+  "MORALIS/rest",
+  "QUAI/jsonrpc/debug",
+  "QUAIT/jsonrpc/debug",
+  "SQDSUBGRAPH/rest",
+  "VECHAIN/rest/debug",
+  "VECHAINT/rest/debug"
 ]
