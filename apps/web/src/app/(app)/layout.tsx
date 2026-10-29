@@ -13,10 +13,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   // render when the api is the thing that broke. The api has its own
   // INCIDENTS_ENABLED and refuses reports while it is off.
   const incidentsEnabled = process.env.INCIDENTS_ENABLED?.trim().toLowerCase() === "true";
+  // The Ask your data preview: sample answers only, so off unless asked for.
+  const askPreview = process.env.ASK_DATA_PREVIEW?.trim().toLowerCase() === "true";
   return (
     <AuthModeProvider enabled={authEnabled}>
       <FiltersProvider>
-        <Shell grafanaDashboardUrl={grafanaDashboardUrl} incidentsEnabled={incidentsEnabled}>{children}</Shell>
+        <Shell grafanaDashboardUrl={grafanaDashboardUrl} incidentsEnabled={incidentsEnabled} askPreview={askPreview}>{children}</Shell>
       </FiltersProvider>
     </AuthModeProvider>
   );
