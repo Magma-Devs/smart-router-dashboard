@@ -95,7 +95,7 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: true,
     mayHaveGoneThrough: false,
     meaning: "The router couldn't look up the provider's address. The request never reached it.",
-    action: "On a self-hosted router, check this provider's URL in its config.",
+    action: "",
   },
   PROTOCOL_TLS_MISMATCH: {
     code: 1004,
@@ -104,7 +104,7 @@ const ENTRIES: Record<string, Entry> = {
     mayHaveGoneThrough: false,
     meaning:
       "The provider's address uses the wrong protocol (HTTP or HTTPS). The request never reached it.",
-    action: "On a self-hosted router, check this provider's URL in its config.",
+    action: "",
   },
   PROTOCOL_CONNECTION_RESET: {
     code: 1005,
@@ -154,8 +154,7 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: false,
     mayHaveGoneThrough: false,
     meaning: "The router had no provider for this request.",
-    action:
-      "On a self-hosted router, check that this chain and interface have a provider in its config.",
+    action: "",
   },
   PROTOCOL_ALL_ENDPOINTS_DISABLED: {
     code: 1011,
@@ -513,7 +512,7 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: true,
     mayHaveGoneThrough: false,
     meaning: "The provider rejected the router's credentials for it.",
-    action: "On a self-hosted router, check this provider's credentials in its config.",
+    action: "",
   },
   NODE_DATA_NOT_HELD: {
     code: 2017,
@@ -530,7 +529,7 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: true,
     mayHaveGoneThrough: false,
     meaning: "The provider refused the router access.",
-    action: "On a self-hosted router, check this provider's credentials and plan in its config.",
+    action: "",
   },
   NODE_ABORTED: {
     code: 2019,

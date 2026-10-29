@@ -86,8 +86,8 @@ An action is a real, specific step: "Check the ID, address or block number.", "A
 lower the amount.", "Raise the fee.", "Get the account's current nonce, sign again and send.",
 "Reconnect, and keep the connection active.", "Slow down." (the router's own rate limit).
 "Retry shortly" stays only where waiting is the fix and the router can't do it: "If the block
-is new, retry shortly." Setup problems only an operator can fix (a provider's URL or
-credentials) say what to check on a self-hosted router.
+is new, retry shortly." A setup problem (a provider's URL or credentials, a chain with no
+provider) has none: one message has to hold for every deployment.
 
 **No duplicates.** A transaction that may be on chain gets the "May already be on chain" tag
 from `mayHaveGoneThrough`, so no action ends in "it may have gone through". Where checking

@@ -19,17 +19,23 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ### Changed
 
-- **Errors and Transactions tabs: an opened request explains its error.** The
-  Response part now shows the error's **Meaning** from the error-code table, above
-  its **Next step**; it was only a tooltip on the error's name. The provider's
-  message that reached the client shows there too, unless its try above already
-  shows it, so each error is still stated once.
+- **Errors and Transactions tabs: an opened request, redrawn.** It opens on
+  what the client got: the status, who returned it and how long it took, the
+  error's **meaning** from the error-code table (it was only a tooltip on the
+  error's name) and its **next step**. The tries follow as a table, each with a
+  bar on the request's own timeline, so tries sent together or late show at a
+  glance; the one that reached the client is marked "→ client". The request's
+  details sit beside them as a list, and every ID there has a copy button, the
+  caller's request ID included. Request and response sizes are gone.
 - **Every error code explained in plain words.** All 134 entries of the
   error-code table were rewritten: the meaning is one short sentence, without
   hedging or lists of possibilities. A next step shows only when the client
   can act on it: 48 entries have none, for example a provider's server error or
   rate limit, which the router already retries elsewhere. The "it may have gone
-  through" tails are gone, since the "May already be on chain" tag says it.
+  through" tails are gone, since the "May already be on chain" tag says it. A
+  setup problem (a provider's URL or credentials, a chain with no provider) has
+  no next step either: one message has to hold for every deployment.
+- **Metrics page: "Requests served" no longer says "across N upstreams".**
 
 - **Traffic by provider: hover shows the values.** Hovering the chart shows
   the time and each upstream's share (or requests per second, with the total)
