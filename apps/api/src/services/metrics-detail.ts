@@ -72,7 +72,8 @@ import { WINDOWS, alignedBounds, bucketGrid, chartSampling, errorBuckets, stepSe
 import type { PrometheusClient, PromMatrixSample, PromVectorSample } from "./prometheus-client.js";
 import type { ConfigurationService } from "./configuration.js";
 import { health, toPoints } from "./metrics.js";
-import { CACHED as CACHED_UPSTREAM } from "./router-log.js";
+import { CACHED as CACHED_UPSTREAM, LABEL_TOKEN } from "./router-log.js";
+import { RECORDED_OUTCOMES } from "./error-requests.js";
 
 export class MetricsDetailService {
   constructor(
@@ -253,6 +254,30 @@ export class MetricsDetailService {
     ]);
     const kinds = ["rps", "failedRps", "pollsOk", "pollsFailed"] as const;
 
+    // What clients got, per stretch: requests and the ones the router couldn't serve - the counts the
+    // fleet Loki's ruler records once a minute (RECORDED_OUTCOMES, the Failed requests card's). A router
+    // is its `service_name` (<tenant>-<id>, the id matched as its end), unless another router id of the
+    // chain ends in its: then it can't be split, and nothing is said rather than the chain's figure.
+    const router = routerId ? (this.configSvc?.getRouters() ?? []).find((r) => r.id === routerId) : undefined;
+    const siblings = (this.configSvc?.getRouters() ?? []).filter((r) => r.spec === spec && r.id !== routerId);
+    const splittable = !router || (LABEL_TOKEN.test(router.id) && !siblings.some((r) => r.id.endsWith(`-${router.id}`)));
+    const outcomeSel = `{chain="${spec.toLowerCase()}"${router ? `, service_name=~".+-${router.id}"` : ""}}`;
+    const [requested, unserved] = LABEL_TOKEN.test(spec) && splittable
+      ? await Promise.all([RECORDED_OUTCOMES.requests, RECORDED_OUTCOMES.failures].map((m) => range((st) => `sum(sum_over_time(${m}${outcomeSel}[${st}]))`)))
+      : [null, null];
+    const byTime = (m: typeof requested) => new Map(toPoints(m?.[0]?.values).map((p) => [p.t, p.v]));
+    const reqAt = byTime(requested);
+    const failAt = byTime(unserved);
+    // No recorded requests in the window at all: a store without the ruler, not an idle chain.
+    const served = requested && unserved && requested.length
+      ? Array.from({ length: Math.floor((end - start) / grid.stepSec) + 1 }, (_, k) => {
+        const t = start + k * grid.stepSec;
+        const requests = reqAt.get(t) ?? null;
+        const failed = requests === null ? null : Math.min(requests, Math.round(failAt.get(t) ?? 0));
+        return { t, requests: requests === null ? null : Math.round(requests), failed };
+      })
+      : null;
+
     // name (lower-cased) → t → value, per read.
     const byName = reads.map((matrix, i) => {
       const label = i < 2 ? "provider_address" : "endpoint_id";
@@ -323,6 +348,7 @@ export class MetricsDetailService {
       failed: kinds.filter((_, i) => reads[i] === null),
       grid,
       asOf,
+      served,
       upstreams,
     };
   }

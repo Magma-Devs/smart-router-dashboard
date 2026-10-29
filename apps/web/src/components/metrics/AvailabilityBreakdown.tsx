@@ -1,7 +1,7 @@
 "use client";
 
-/* AvailabilityBreakdown — availability in blocks: a row for all of the
- * router's providers together, then a row per provider, a block per stretch
+/* AvailabilityBreakdown — availability in blocks: a row for the requests the
+ * router served, then a row per provider, a block per stretch
  * of the clock (`bucketGrid`: 30 minutes on 12 hours) coloured by that
  * stretch's availability - the share of its tries that succeeded - and the
  * row's availability over the window at its end. Drawn in a router's row of
@@ -11,8 +11,10 @@
  * provider per stretch). Honest-state notes:
  *  - a block a provider took no tries in is "No traffic", grey: a standby
  *    backup is not 100% available, it was not asked;
- *  - the top row adds up the providers' rows, so it is this router's, not
- *    the chain's: the relay cache is no provider and is left out;
+ *  - the top row is what clients got: the share of their requests the router
+ *    served (the Failed requests card's recorded counts), so a try that failed
+ *    and was served by another provider doesn't count against it. Where the
+ *    store has no such counts it adds up the providers' tries, and says so;
  *  - a read the store refused says so above the rows. */
 
 import { useState } from "react";
@@ -27,6 +29,7 @@ const ROW_H = 16;
 const ROW_GAP = 6;
 const AXIS_H = 18;
 const ALL = "All providers";
+const SERVED = "Requests served";
 
 /** A block's colour by its availability: at the target, under it, under 99%. */
 const LEVELS = [
@@ -72,13 +75,25 @@ export function AvailabilityBreakdown({ spec, routerId, win }: {
     inConfig: u.inConfig,
     blocks: times.map((t) => triesOf(u.cells.find((c) => c.t === t))),
   }));
-  const all: Row = {
-    name: ALL, backup: false, inConfig: true,
-    blocks: times.map((t, k) => {
-      const sum = total(providers.map((p) => p.blocks[k] ?? null));
-      return sum.tries > 0 ? { t, ...sum } : null;
-    }),
-  };
+  // The top row is what clients got: the share of their requests the router served, from the Failed
+  // requests card's counts. A try that failed and was then served elsewhere doesn't count against it.
+  // Where the store has no such counts, it adds up the providers' tries instead, and says so.
+  const served = tl?.served ?? null;
+  const all: Row = served
+    ? {
+      name: SERVED, backup: false, inConfig: true,
+      blocks: times.map((t) => {
+        const c = served.find((x) => x.t === t);
+        return c && c.requests ? { t, tries: c.requests, failed: c.failed ?? 0 } : null;
+      }),
+    }
+    : {
+      name: ALL, backup: false, inConfig: true,
+      blocks: times.map((t, k) => {
+        const sum = total(providers.map((p) => p.blocks[k] ?? null));
+        return sum.tries > 0 ? { t, ...sum } : null;
+      }),
+    };
   const rows = tl ? [all, ...providers] : [];
   const rowCount = tl ? rows.length : 4;
   const height = rowCount * (ROW_H + ROW_GAP) + 8 + AXIS_H;
@@ -110,7 +125,11 @@ export function AvailabilityBreakdown({ spec, routerId, win }: {
   return (
     <div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginBottom: 8, fontSize: 11, color: "var(--text-4)" }}>
-        {stepSec > 0 && <span>a block per {barSpanWords(stepSec)} · coloured by the share of tries that succeeded</span>}
+        {stepSec > 0 && (
+          <span>
+            a block per {barSpanWords(stepSec)} · {served ? "the top row: requests the router served; each provider: its tries that succeeded" : "coloured by the share of tries that succeeded"}
+          </span>
+        )}
         {tl && !tl.available && <span style={{ color: "var(--warn)" }}>incomplete: the metrics store did not answer every read</span>}
       </div>
       <div ref={wrapRef} style={{ position: "relative", width: "100%", height }} onMouseMove={onMove} onMouseLeave={() => setHovI(null)}>

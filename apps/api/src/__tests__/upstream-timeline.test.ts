@@ -63,6 +63,9 @@ describe("MetricsDetailService.upstreamTimeline · every upstream of a chain on 
           ];
         }
         if (expr.includes("fetch_latest_fails")) return [series("endpoint_id", "eth-backup", () => "0")];
+        // What clients got: requests, and the ones the router couldn't serve.
+        if (expr.includes("smartrouter_final_requests:count1m")) return [series("chain", "eth1", (k) => (k === 5 ? null : "40"))];
+        if (expr.includes("smartrouter_final_failures:count1m")) return [series("chain", "eth1", (k) => (k === 2 ? "3" : "0"))];
         return [];
       },
     } as unknown as PrometheusClient;
@@ -77,10 +80,11 @@ describe("MetricsDetailService.upstreamTimeline · every upstream of a chain on 
       const body = await svc.upstreamTimeline("ETH1", "1h");
       expect(body.available).toBe(true);
       expect(body.grid).toEqual({ start: START, end: NOW, stepSec: STEP });
-      // Four range reads on the cells' own step.
-      expect(queries).toHaveLength(4);
+      // Four range reads on the cells' own step, and the two counts of what clients got.
+      expect(queries).toHaveLength(6);
       for (const q of queries) expect(q.startsWith(`${START} ${NOW} 10m `)).toBe(true);
-      for (const q of queries) expect(q).toContain('{spec="ETH1"}');
+      expect(queries.filter((q) => q.includes('{spec="ETH1"}'))).toHaveLength(4);
+      expect(queries.filter((q) => q.includes('{chain="eth1"}'))).toHaveLength(2);
       expect(body.upstreams.map((u) => [u.upstream, u.role, u.inConfig])).toEqual([
         ["eth-primary", "primary", true],
         ["eth-stage-node", "primary", true],
@@ -99,6 +103,10 @@ describe("MetricsDetailService.upstreamTimeline · every upstream of a chain on 
       expect(backup!.cells[5]).toMatchObject({ state: "operational", rps: 1, share: 0.25 });
       expect(orphan!.cells[0]!.state).toBe("operational");
       expect(orphan!.cells[3]!.state).toBeNull();
+      // Requests and the ones the router couldn't serve, per cell; a stretch with none recorded says so.
+      expect(body.served![0]).toEqual({ t: START, requests: 40, failed: 0 });
+      expect(body.served![2]).toEqual({ t: START + 2 * STEP, requests: 40, failed: 3 });
+      expect(body.served![5]).toEqual({ t: NOW, requests: null, failed: null });
     } finally {
       vi.useRealTimers();
     }
@@ -112,8 +120,8 @@ describe("MetricsDetailService.upstreamTimeline · every upstream of a chain on 
       const body = await svc.upstreamTimeline("ETH1", "1h");
       expect(body.asOf).toBe(NOW + 125);
       expect(body.grid.end).toBe(NOW + STEP);
-      // Each per-upstream read once more, at now only.
-      expect(queries.filter((q) => q.startsWith(`${NOW + 125} ${NOW + 125} `))).toHaveLength(4);
+      // Each read once more, at now only.
+      expect(queries.filter((q) => q.startsWith(`${NOW + 125} ${NOW + 125} `))).toHaveLength(6);
       const last = body.upstreams[0]!.cells.at(-1)!;
       expect(last).toMatchObject({ t: NOW + STEP, rps: 5 });
     } finally {
@@ -121,10 +129,18 @@ describe("MetricsDetailService.upstreamTimeline · every upstream of a chain on 
     }
   });
 
-  it("one config router keeps only its own nodes", async () => {
-    const { svc } = service();
+  it("one config router keeps only its own nodes, and reads what its clients got by its service_name", async () => {
+    const { svc, queries } = service();
     const body = await svc.upstreamTimeline("ETH1", "1h", "eth-stage");
     expect(body.upstreams.map((u) => u.upstream)).toEqual(["eth-stage-node"]);
+    const outcomes = queries.filter((q) => q.includes("smartrouter_final_"));
+    expect(outcomes.length).toBeGreaterThan(0);
+    for (const q of outcomes) expect(q).toContain('{chain="eth1", service_name=~".+-eth-stage"}');
+  });
+
+  it("a store without the recorded counts says nothing of what clients got, never 100%", async () => {
+    const { svc } = service("smartrouter_final_");
+    expect((await svc.upstreamTimeline("ETH1", "1h")).served).toBeNull();
   });
 
   it("a read the store refused says so instead of reading as quiet", async () => {

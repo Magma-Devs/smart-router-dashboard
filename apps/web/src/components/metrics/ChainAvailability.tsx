@@ -17,7 +17,7 @@ export function ChainAvailability({ spec, timeWindow }: { spec: string; timeWind
     <div className="gw-card" style={{ marginBottom: 14 }}>
       <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-2)", display: "flex", alignItems: "center", marginBottom: 10 }}>
         Availability · {chain}{routerId && <span style={{ fontWeight: 400, color: "var(--text-4)", marginLeft: 6 }}>· {routerId}</span>}
-        <Tip text={"**The share of tries that succeeded**, a block per stretch of the window. The top row is all the providers together; each row under it is one provider.\n\n**No traffic** is a block a provider took no tries in: a standby backup wasn't asked, which is not the same as available."} />
+        <Tip text={"**Requests served** is the share of clients' requests the router answered: only a request it couldn't serve counts against it, not a try that failed and was then served by another provider. Each row under it is one provider: the share of its tries that succeeded.\n\n**No traffic** is a block a provider took no tries in: a standby backup wasn't asked, which is not the same as available."} />
       </div>
       <AvailabilityBreakdown key={routerId ?? "all"} spec={spec} routerId={routerId} win={timeWindow} />
     </div>

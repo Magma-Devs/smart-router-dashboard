@@ -405,6 +405,13 @@ export interface UpstreamTimeline {
   grid: ChartGrid;
   /** Unix seconds the read was made at: where the last cell stops. */
   asOf: number;
+  /**
+   * What clients got, per cell: their requests and the ones the router couldn't
+   * serve (the Failed requests card's recorded counts). Null when the store has
+   * no such counts in the window, or the router can't be told from another on
+   * its chain; a cell's `requests` null when that stretch has none recorded.
+   */
+  served: { t: number; requests: number | null; failed: number | null }[] | null;
   upstreams: UpstreamTimelineRow[];
 }
 

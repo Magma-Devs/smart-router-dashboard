@@ -10,12 +10,16 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 ### Added
 
 - **Availability in blocks.** Expanding a router on the Metrics page with
-  Availability selected shows a row for all its providers together and a
-  row per provider, a block per 30 minutes on 12 hours, coloured by the
-  share of tries that succeeded: 99.9% or more, 99% to 99.9%, under 99%, or
-  no traffic (a standby backup wasn't asked, which isn't the same as
-  available). Each row ends in its availability over the window. Hovering a
-  column lists every row's availability for that half hour.
+  Availability selected shows a block per 30 minutes on 12 hours. The top
+  row, **Requests served**, is what clients got: the share of their requests
+  the router answered, from the Failed requests card's counts, so a try that
+  failed and was then served by another provider doesn't count against it.
+  Under it, a row per provider: the share of its tries that succeeded. A
+  block is 99.9% or more, 99% to 99.9%, under 99%, or no traffic (a standby
+  backup wasn't asked, which isn't the same as available). Each row ends in
+  its figure over the window; hovering a column lists every row for that
+  half hour. Where the store has no recorded counts, the top row adds up the
+  providers' tries and says so.
 - **Metrics tab: a picked chain shows no Routers table.** The table compares
   routers; with one chain picked, its cards say it, and the chains list on the
   left picks between a chain's routers.
@@ -25,7 +29,9 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 - `GET /api/metrics/upstream-timeline` - every upstream of one chain, a cell
   per stretch of the clock (the errors-over-time bars' grid): tries, failed
   tries, share of the chain's tries, latest-block polls, and the state they
-  read as. Four range reads whatever the count.
+  read as; and `served`, per cell, the clients' requests and the ones the
+  router couldn't serve (`smartrouter_final_{requests,failures}:count1m`, by
+  `chain` and a router's `service_name`). Six range reads whatever the count.
 - **A Metrics page link opens exactly what you were looking at.** Copy the
   browser's URL and send it: the person who opens it sees the same chain,
   router, tab, time window and focus. New URL keys, beside `chain`, `router`,
