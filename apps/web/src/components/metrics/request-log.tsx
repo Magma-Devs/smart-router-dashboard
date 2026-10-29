@@ -535,6 +535,13 @@ export const onRowKey = (toggle: () => void) => (e: React.KeyboardEvent) => {
 /** A picked range still growing (it ends within the last minute): worth polling. */
 export const rangeIsLive = (r: ExactRange | null) => !r || r.to > Date.now() - 60_000;
 
+/** A log list's header - its title, counts and filters - held under the page's top bar (`.gw-top`, 56 px) while the rows scroll.
+ *  Its card must clip with `overflow: clip`, not `hidden`: `hidden` makes the card the scroll container and the header never sticks. */
+export const stickyListHeader: React.CSSProperties = {
+  position: "sticky", top: 56, zIndex: 4, background: "var(--surface)",
+  padding: "12px 16px", borderBottom: "1px solid var(--line)", display: "grid", gap: 10,
+};
+
 export const filterSelectStyle: React.CSSProperties = { height: 32, padding: "0 10px", borderRadius: 8, border: "1px solid var(--line-2)", background: "var(--surface)", color: "var(--text)", fontSize: 12, fontFamily: "inherit", maxWidth: 320 };
 
 /** A filter dropdown with the page's own chevron, 10 px in from the right as

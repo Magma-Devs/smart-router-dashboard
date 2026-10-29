@@ -39,6 +39,7 @@ import {
   NewRowsStrip,
   useHeldRows,
   WhenCell,
+  stickyListHeader,
   filterSelectStyle,
   Flow,
   fmtTook,
@@ -275,8 +276,8 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
 
       <TransactionsChart win={win} specQ={specQ} routerIdQ={routerIdQ} exactRange={range !== null} />
 
-      <div className="gw-card" style={{ padding: 0, overflow: "hidden" }}>
-        <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--line)", display: "grid", gap: 10 }}>
+      <div className="gw-card" style={{ padding: 0, overflow: "clip" }}>
+        <div style={stickyListHeader}>
           <span style={{ display: "inline-flex", alignItems: "center", fontSize: 12, fontWeight: 600, color: "var(--text-2)" }}>
             Transactions<Tip text={TT.txLog!} />
             {data && <span style={{ fontWeight: 400, color: "var(--text-4)", marginLeft: 8 }}>{fmtComma(rows.length)}{rows.length !== allRows.length ? ` of ${fmtComma(allRows.length)}` : ""}</span>}

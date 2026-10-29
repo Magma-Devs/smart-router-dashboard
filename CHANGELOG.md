@@ -60,6 +60,9 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   router's latest block shows only beside the block the request asked for.
   The status is a dot and a word on a plain card, without a coloured stroke
   down the left.
+- **Errors and Transactions tabs: the filters stay in view.** The list's
+  header - its title, counts, filters and the ID search - sticks under the
+  top bar while the rows scroll under it.
 - **Errors and Transactions tabs: each row shows its date.** Under the time,
   where a request with no customer showed "-", the row now shows the date,
   then the customer when the request named one.

@@ -33,6 +33,7 @@ import {
   NewRowsStrip,
   useHeldRows,
   WhenCell,
+  stickyListHeader,
   filterSelectStyle,
   Flow,
   fmtTook,
@@ -362,8 +363,8 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
   }
 
   return (
-    <div ref={listRef} className="gw-card" style={{ padding: 0, overflow: "hidden", scrollMarginTop: 16 }}>
-      <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--line)", display: "grid", gap: 10 }}>
+    <div ref={listRef} className="gw-card" style={{ padding: 0, overflow: "clip", scrollMarginTop: 72 }}>
+      <div style={stickyListHeader}>
         {/* What the list holds: how many, what came of them, and the times it covers. */}
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <span style={{ display: "inline-flex", alignItems: "center", fontSize: 12, fontWeight: 600, color: "var(--text-2)" }}>
