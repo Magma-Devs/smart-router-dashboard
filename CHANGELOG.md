@@ -5,7 +5,7 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
-## [0.50.1]
+## [0.50.2]
 
 ### Fixed
 
@@ -21,6 +21,10 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 - **Transactions tab: no more "0+".** When the list hasn't read the whole
   window yet, the count says how much it covers ("in the newest 13 minutes of
   the window - load older ones below") instead of adding a "+".
+
+## [0.50.1]
+
+### Fixed
 
 - **Starknet commands in Try now that failed on every node.**
   `starknet_getBlockWithTxs` and `starknet_getStateUpdate` sent
