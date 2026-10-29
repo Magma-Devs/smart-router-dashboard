@@ -5,7 +5,22 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.50.1]
+
 ### Fixed
+
+- **Errors and Transactions tabs: a picked chain's list shows its own
+  requests.** With a chain or a router picked, the list narrowed its log read
+  by the chain's provider names. A provider serves many chains, so another
+  chain's errors or transactions at the same provider filled each read in
+  seconds, and the chain asked for showed none: a 12-hour Errors list read
+  2 seconds, a Transactions list 13 minutes. Where the router's log streams are
+  labelled by chain and router, the list now reads only that chain's or that
+  router's streams, which is exact and lets one read cover far more of the
+  window; elsewhere it reads as before.
+- **Transactions tab: no more "0+".** When the list hasn't read the whole
+  window yet, the count says how much it covers ("in the newest 13 minutes of
+  the window - load older ones below") instead of adding a "+".
 
 - **Starknet commands in Try now that failed on every node.**
   `starknet_getBlockWithTxs` and `starknet_getStateUpdate` sent

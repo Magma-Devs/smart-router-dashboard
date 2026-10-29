@@ -146,6 +146,13 @@ function TxLookupPanel({ id, rangeQ, rangeWords, onClose }: { id: string; rangeQ
   );
 }
 
+/** How much of the window the reads on screen cover, in words: "12 minutes", "3 hours". */
+function readSpan(endMs: number | undefined, fromMs: number | null): string {
+  if (endMs == null || fromMs == null) return "part";
+  const min = Math.max(1, Math.round((endMs - fromMs) / 60_000));
+  return min < 120 ? `${min} minute${min === 1 ? "" : "s"}` : `${Math.round(min / 60)} hours`;
+}
+
 export function TransactionLog({ chainFilter, win }: { chainFilter: string | null; win: MetricWindow }) {
   const [outcome, setOutcome] = useState<TxLogRow["outcome"] | typeof ALL>(ALL);
   const [customer, setCustomer] = useState(ALL);
@@ -234,9 +241,10 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
   }
 
   const kpis: { label: string; tipKey: string; value: string; sub: React.ReactNode }[] = [
-    { label: "Transactions", tipKey: "txTotal", value: fmtComma(sum.total) + (log.more ? "+" : ""),
+    { label: "Transactions", tipKey: "txTotal", value: fmtComma(sum.total),
+      // Not the whole window yet: say how much of it the count covers, never a bare "0+".
       sub: log.more
-        ? sum.total ? <>the latest {fmtComma(sum.total)} {when} - load older ones below</> : <>none in the part read so far - load older ones below</>
+        ? <>in the newest {readSpan(data?.range?.endMs, log.readFrom)} of the window - load older ones below</>
         : <>sent through the router {when}</> },
     { label: "Success rate", tipKey: "txSuccessRate", value: fmtPct(sum.successRate, 1),
       sub: <>{fmtComma(sum.accepted)} accepted by an upstream</> },
