@@ -20,11 +20,13 @@ export interface LokiLine {
    */
   tsMs: number;
   line: string;
+  /** Its stream's labels, as the log agent set them: a router's carry its `chain`. */
+  labels?: Record<string, string>;
 }
 
 interface LokiStreamsResponse {
   status: string;
-  data?: { result: { values: [string, string][] }[] };
+  data?: { result: { stream?: Record<string, string>; values: [string, string][] }[] };
 }
 
 interface LokiVectorResponse {
@@ -116,7 +118,7 @@ export class LokiClient {
         return null;
       }
       return parsed.data.result.flatMap((s) =>
-        s.values.map(([ns, line]) => ({ tsMs: Number(ns) / 1e6, line })),
+        s.values.map(([ns, line]) => ({ tsMs: Number(ns) / 1e6, line, ...(s.stream ? { labels: s.stream } : {}) })),
       );
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

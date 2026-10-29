@@ -36,6 +36,7 @@ import {
   MatchesNote,
   TxHash,
   errorTypeOptions,
+  everyNodeRefused,
   filterSelectStyle,
   Flow,
   fmtTook,
@@ -51,7 +52,9 @@ import {
   ReadingStrip,
   TimeRangeControl,
   chainWords,
+  chainsTitle,
   onRowKey,
+  openRowShown,
   rangeIsLive,
   unreadableWords,
   UnreadStrip,
@@ -108,10 +111,14 @@ function Details({ row }: { row: TxLogRow }) {
   const extra: { label: string; value: React.ReactNode }[] = [];
   if (row.outcome === "failed-on-chain" && row.txError) extra.push({ label: "Chain error", value: <span className="gw-mono" style={{ wordBreak: "break-word" }}>{row.txError}</span> });
   if (row.note) extra.push({ label: "Note", value: row.note });
-  if (row.txHash) extra.push({ label: "Hash", value: <TxHash hash={row.txHash} spec={row.spec} full /> });
+  if (row.txHash) {
+    // A transaction every node refused keeps its hash to copy, unlinked: the chain most likely never saw it.
+    const refused = everyNodeRefused(row);
+    extra.push({ label: "Hash", value: <><TxHash hash={row.txHash} spec={row.spec} refused={refused} full />{refused && <span style={{ color: "var(--text-4)" }}>refused by every node, so the chain most likely never saw it</span>}</> });
+  }
   if (row.outcome === "unknown" && !known) extra.push({ label: "Next step", value: "Check the chain before sending it again." });
   return (
-    <RequestBreakdown chain={chainWords(row)} method={row.method === "unknown" ? "method not in the logs" : row.method}
+    <RequestBreakdown spec={row.spec} chain={chainWords(row)} chainTitle={chainsTitle(row)} method={row.method === "unknown" ? "method not in the logs" : row.method}
       time={row.time} guid={row.guid} tookMs={row.replyMs} facts={row} attempts={row.attempts}
       final={final} status={txStatusOf(row)} isWrite extra={extra} />
   );
@@ -180,7 +187,9 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
   // Rows are matched to a config router by the upstreams they went to.
   const { routerIdQ } = useRouterFilter();
   const rangeQ = range ? `from=${Math.round(range.from)}&to=${Math.round(range.to)}` : `window=${win}`;
-  const log = useLogReads<TxLogRow, TransactionsReport>(`/api/transactions?${rangeQ}${specQ}${routerIdQ}`, live);
+  // An open row on screen holds the list still (`openRowShown`); set below, once the rows on screen are known.
+  const [held, setHeld] = useState(false);
+  const log = useLogReads<TxLogRow, TransactionsReport>(`/api/transactions?${rangeQ}${specQ}${routerIdQ}`, live && !held);
   const data = log.head;
   const isLoading = log.first.isLoading;
   const allRows = log.rows;
@@ -206,6 +215,8 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
   const pageCount = Math.max(1, Math.ceil(rows.length / PER_PAGE));
   const curPage = Math.min(page, pageCount - 1);
   const pageRows = rows.slice(curPage * PER_PAGE, (curPage + 1) * PER_PAGE);
+  const holds = live && openRowShown(open, pageRows);
+  if (holds !== held) setHeld(holds);
 
   const header = (
     <div style={{ marginBottom: 16, display: "flex", justifyContent: "flex-end" }}>
@@ -280,6 +291,7 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
             Transactions<Tip text={TT.txLog!} />
             {data && <span style={{ fontWeight: 400, color: "var(--text-4)", marginLeft: 8 }}>{fmtComma(rows.length)}{rows.length !== allRows.length ? ` of ${fmtComma(allRows.length)}` : ""}</span>}
             <span style={{ marginLeft: 8, display: "inline-flex" }}><Refreshing show={log.refreshing} label="Reading newer transactions" /></span>
+            {held && <span style={{ fontWeight: 400, color: "var(--text-4)", marginLeft: 8 }}>· paused while a row is open</span>}
           </span>
           {/* Narrowing it down, and finding one transaction. */}
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -353,14 +365,15 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
                         <CustomerCell customer={r.customer} />
                       </td>
                       <td style={{ maxWidth: 0, verticalAlign: "top" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-                          {r.spec && <ChainBadge spec={r.spec} size={16} />}
+                        {/* The icon sits on the chain's line, not halfway down the cell. */}
+                        <div style={{ display: "flex", alignItems: "flex-start", gap: 8, minWidth: 0 }}>
+                          {r.spec && <span style={{ display: "flex", flexShrink: 0, marginTop: 1 }}><ChainBadge spec={r.spec} size={16} /></span>}
                           <div style={{ minWidth: 0 }}>
-                            <div style={{ fontSize: 12 }}>{chainWords(r)}</div>
+                            <div style={{ fontSize: 12 }} title={chainsTitle(r)}>{chainWords(r)}</div>
                             {r.method === "unknown"
                               ? <div style={{ fontSize: 10.5, color: "var(--text-4)", fontStyle: "italic" }}>method not in the logs</div>
                               : <div className="gw-mono" title={r.method} style={{ fontSize: 10.5, color: "var(--text-3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.method}</div>}
-                            {r.txHash && <div style={{ marginTop: 3 }}><TxHash hash={r.txHash} spec={r.spec} /></div>}
+                            {r.txHash && <div style={{ marginTop: 3 }}><TxHash hash={r.txHash} spec={r.spec} refused={everyNodeRefused(r)} /></div>}
                           </div>
                         </div>
                       </td>

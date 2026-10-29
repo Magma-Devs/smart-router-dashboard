@@ -187,8 +187,12 @@ on every chain it serves, and one chain's errors at it filled the read's line
 limit in two seconds, leaving another chain's list empty for 12 hours
 (2026-10-29).
 
-A request's chain is the one its lines name (`chain_id` on an error line),
-else the only chain serving every upstream it used - its tries and the pool
+A request's chain is the one its lines name (`chain_id` on an error line, or
+the listener on the line that ends it), else its router's: the log agent
+labels a router's stream `chain` (its pod's `app.smart-router-chain`, the
+spec lower-cased), and the Loki client keeps a stream's labels on its lines,
+so a request still in flight names its chain too. Only without that label is
+it the only chain serving every upstream it used - its tries and the pool
 the router chose from (`validAddresses`). One node name serves many chains,
 so a name alone never decides it; with several candidates `spec` is null and
 `specs` lists them, and the row shows under each.

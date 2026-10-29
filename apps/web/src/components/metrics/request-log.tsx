@@ -11,7 +11,7 @@
  * An opened row is drawn by request-breakdown.tsx. */
 
 import { Fragment, useState } from "react";
-import { buildChainMetaByIndex, explorerTxUrl, guidMintedSecond, type LogUnavailable, type RelayAttempt } from "@sr/shared";
+import { buildChainMetaByIndex, explainRouterError, explorerTxUrl, guidMintedSecond, type LogUnavailable, type RelayAttempt, type TxOutcome } from "@sr/shared";
 import { SkelRows, type SkelCol } from "@/components/gateway/Skel";
 import { CopyButton } from "@/components/gateway/CopyButton";
 import { useGrafanaUrl } from "@/hooks/use-grafana-url";
@@ -86,11 +86,9 @@ export function hasErrorType(r: ErrorTyped, key: string): boolean {
   return errorTypesOf(r).has(key);
 }
 
+/** A row's time, always with its date: a list can span midnight, and a time alone doesn't say which day. */
 export function fmtWhen(ms: number): string {
-  const d = new Date(ms);
-  return d.toDateString() === new Date().toDateString()
-    ? d.toLocaleTimeString("en-US", { hour12: false })
-    : d.toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+  return new Date(ms).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
 }
 
 export function fmtTook(ms: number | null): string {
@@ -297,11 +295,11 @@ export function TimeRangeControl({ range, onChange, windowLabel, windowMs }: {
 /** Clicks inside an opened row's own controls stay there: a copy or a link doesn't fold the row. */
 const keepClick = (e: React.MouseEvent) => e.stopPropagation();
 
-/** A row's caller, under its time: their project, or "—" when the request carried none. */
+/** A row's caller, under its time: their project, or "—" when the request carried no project-id header. */
 export function CustomerCell({ customer }: { customer?: string }) {
   const style: React.CSSProperties = { display: "block", marginTop: 4, fontSize: 10.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
-  if (!customer) return <span title="The request named no customer" style={{ ...style, color: "var(--text-4)" }}>—</span>;
-  return <span className="gw-mono" title={`Customer: ${customer}`} style={{ ...style, color: "var(--text-3)" }}>{customer}</span>;
+  if (!customer) return <span title="No customer: the caller sent no project-id header" style={{ ...style, color: "var(--text-4)" }}>—</span>;
+  return <span className="gw-mono" title={`Customer - the project-id header the caller sent: ${customer}`} style={{ ...style, color: "var(--text-3)" }}>{customer}</span>;
 }
 
 /** The customer filter's key for requests that carried none. */
@@ -322,19 +320,35 @@ export const hasCustomer = (r: { customer?: string }, key: string) => (r.custome
 export const shortHash = (h: string) => (h.length > 16 ? `${h.slice(0, h.startsWith("0x") ? 8 : 6)}…${h.slice(-6)}` : h);
 
 /**
- * A transaction's hash, to copy, linked to the chain's explorer where a
- * transaction page is known (explorerTxUrl) - plain text where it isn't.
- * `full` writes it out whole, for the details.
+ * A transaction every node it went to refused outright, so the chain most
+ * likely never saw it and no explorer has a page for it. A row is "rejected"
+ * when the node that answered refused it; that alone says nothing of the
+ * others. So: every try it was sent on failed, and no refusal says it may be
+ * on chain anyway - already known, nonce too low, already in the chain
+ * (`mayHaveGoneThrough` in @sr/shared's error table).
  */
-export function TxHash({ hash, spec, full = false }: { hash: string; spec: string | null; full?: boolean }) {
-  const url = spec ? explorerTxUrl(spec, hash) : null;
+export function everyNodeRefused(row: { outcome: TxOutcome; attempts: RelayAttempt[]; error: { code: string } | null }): boolean {
+  if (row.outcome !== "rejected") return false;
+  const sent = row.attempts.filter((a) => a.outcome !== "skipped");
+  if (!sent.length || !sent.every((a) => a.outcome === "failed")) return false;
+  return ![row.error?.code, ...sent.map((a) => a.code)].some((c) => explainRouterError(c)?.mayHaveGoneThrough);
+}
+
+/**
+ * A transaction's hash, to copy, linked to the chain's explorer where a
+ * transaction page is known (explorerTxUrl) - plain text where it isn't, and
+ * where every node `refused` it: an explorer has no page for a transaction
+ * the chain never saw. `full` writes it out whole, for the details.
+ */
+export function TxHash({ hash, spec, full = false, refused = false }: { hash: string; spec: string | null; full?: boolean; refused?: boolean }) {
+  const url = spec && !refused ? explorerTxUrl(spec, hash) : null;
   const text = full ? hash : shortHash(hash);
   const style: React.CSSProperties = { fontSize: full ? 11.5 : 10.5, wordBreak: full ? "break-all" : undefined, whiteSpace: full ? undefined : "nowrap" };
   return (
     <span onClick={keepClick} style={{ display: "inline-flex", alignItems: "center", gap: 6, minWidth: 0, maxWidth: "100%" }}>
       {url
         ? <a className="gw-mono" href={url} target="_blank" rel="noopener noreferrer" title={`${hash} - on the chain's explorer`} style={{ ...style, color: "var(--brand)", textDecoration: "none" }}>{text}{full ? "" : " ↗"}</a>
-        : <span className="gw-mono" title={hash} style={{ ...style, color: "var(--text-3)" }}>{text}</span>}
+        : <span className="gw-mono" title={refused ? `${hash} - every node refused this transaction, so the chain most likely never saw it and no explorer has it` : hash} style={{ ...style, color: "var(--text-3)" }}>{text}</span>}
       <CopyButton text={hash} />
     </span>
   );
@@ -353,14 +367,14 @@ export function RequestLogsLink({ id, startMs, tookMs }: { id: string; startMs: 
   );
 }
 
-/** "Find a request" - the box both log lists carry: by its ID, its transaction hash, or the caller's own request ID. */
+/** "Find a request" - the box both log lists carry: by Smart Router's ID for it, or its transaction hash. */
 export function IdSearch({ onFind }: { onFind: (id: string) => void }) {
   const [draft, setDraft] = useState("");
   const id = draft.trim();
   return (
     <form onSubmit={(e) => { e.preventDefault(); if (id) onFind(id); }} style={{ display: "flex", gap: 6 }}>
-      <input aria-label="Request ID" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Request ID, tx hash or caller's ID"
-        title="The router's request ID, a transaction's hash, or the caller's X-Request-Id"
+      <input aria-label="Request ID" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Request ID or tx hash"
+        title="Smart Router's request ID, or a transaction's hash"
         className="gw-mono" style={{ ...filterSelectStyle, width: 240, fontSize: 11.5 }} />
       <button type="submit" disabled={!id} style={{ ...filterSelectStyle, cursor: id ? "pointer" : "default", color: id ? "var(--text)" : "var(--text-4)" }}>Find</button>
     </form>
@@ -469,10 +483,31 @@ export function UnreadStrip({ count, noun, bound, covers }: { count: number; nou
   );
 }
 
+/** The most candidate chains a row names; past this it says how many, and `chainsTitle` lists them. */
+const CHAIN_WORDS_MAX = 3;
+
 /** A row's chain - or the chains it could be on, when its upstreams serve several. */
 export function chainWords(row: { spec: string | null; specs?: string[] }): string {
   if (row.spec) return buildChainMetaByIndex(row.spec).name;
-  return row.specs?.length ? row.specs.map((s) => buildChainMetaByIndex(s).name).join(" or ") : "—";
+  if (!row.specs?.length) return "—";
+  if (row.specs.length > CHAIN_WORDS_MAX) return `One of ${row.specs.length} chains`;
+  return row.specs.map((s) => buildChainMetaByIndex(s).name).join(" or ");
+}
+
+/** The hover text of a row whose chain the logs don't name: every chain its upstreams serve. */
+export function chainsTitle(row: { spec: string | null; specs?: string[] }): string | undefined {
+  if (row.spec || !row.specs?.length) return undefined;
+  return `The logs don't name this request's chain. Its upstreams serve ${row.specs.length === 1 ? "one" : `these ${row.specs.length}`}: ${row.specs.map((s) => buildChainMetaByIndex(s).name).join(", ")}`;
+}
+
+/**
+ * Whether the open row is on screen - what holds a live list still. A newer
+ * read would move that row or page it out of view; once a filter, a page or a
+ * window change has taken it out of view, nothing is being read and the list
+ * reads on.
+ */
+export function openRowShown(open: string | null, shown: readonly { guid: string }[]): boolean {
+  return open !== null && shown.some((r) => r.guid === open);
 }
 
 /** Enter and Space open a row, as a click does. */

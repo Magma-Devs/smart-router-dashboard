@@ -168,6 +168,13 @@ describe("explorerTxUrl", () => {
     expect(explorerTxUrl("COSMOSHUB", COSMOS)).toBe(`https://www.mintscan.io/cosmos/tx/${COSMOS}`);
   });
 
+  it("Stellar: stellar.expert, on the network's own path", () => {
+    const XLM_TX = "d70bf3c3aec3dd39fa8c33e38306b65581fb1e058fcba7cfd70c7f2aa3359a77";
+    expect(explorerTxUrl("XLM", XLM_TX)).toBe(`https://stellar.expert/explorer/public/tx/${XLM_TX}`);
+    expect(explorerTxUrl("XLMT", XLM_TX)).toBe(`https://stellar.expert/explorer/testnet/tx/${XLM_TX}`);
+    expect(explorerTxUrl("XLM", EVM)).toBeNull();
+  });
+
   it("null for a chain with no watched page, and for a hash not in the chain's form", () => {
     expect(explorerTxUrl("BSC", EVM)).toBeNull(); // its page sits behind a challenge no one has watched past
     expect(explorerTxUrl("NOT_A_CHAIN", EVM)).toBeNull();

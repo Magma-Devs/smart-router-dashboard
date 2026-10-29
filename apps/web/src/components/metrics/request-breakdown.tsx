@@ -23,6 +23,7 @@ import {
   type RouterErrorCode,
 } from "@sr/shared";
 import { CopyButton } from "@/components/gateway/CopyButton";
+import { ExplorerBlockLink } from "@/components/gateway/ExplorerLink";
 import { fmtComma } from "@/lib/format";
 import { codeWords, fmtTook, fmtWhen, realCode, RequestLogsLink } from "./request-log";
 
@@ -145,7 +146,11 @@ export type FinalAnswer =
   | null;
 
 export interface BreakdownProps {
+  /** The request's chain, where the logs name one: its block numbers link to that chain's explorer. */
+  spec: string | null;
   chain: string;
+  /** On hover: every chain the request could be on, when the logs don't name it. */
+  chainTitle?: string;
   method: string;
   time: number;
   guid: string;
@@ -181,6 +186,8 @@ export function RequestBreakdown(p: BreakdownProps) {
   const entry = finalCode ? explainRouterError(finalCode) : null;
   const routerAnswered = p.final?.from === "router";
   const facts = p.facts;
+  // A block number links to the chain's explorer where the catalog has a proven block page, as the Routers table's heights do.
+  const block = (n: number) => (p.spec ? <ExplorerBlockLink spec={p.spec} block={n}>{fmtComma(n)}</ExplorerBlockLink> : fmtComma(n));
   const providers = new Set(p.attempts.map((a) => a.upstream)).size;
   const blockAhead = finalCode && facts.requestedBlock != null && facts.seenBlock != null && facts.requestedBlock > facts.seenBlock;
   return (
@@ -188,20 +195,20 @@ export function RequestBreakdown(p: BreakdownProps) {
       <Part title="Request">
         <div style={{ ...box(), display: "flex", flexWrap: "wrap", columnGap: 16, rowGap: 4, alignItems: "center" }}>
           <span className="gw-mono" style={{ fontSize: 12.5, color: "var(--text)" }}>{p.method}</span>
-          <span style={{ fontSize: 12, color: "var(--text-3)" }}>{p.chain}</span>
+          <span title={p.chainTitle} style={{ fontSize: 12, color: "var(--text-3)" }}>{p.chain}</span>
           <Fact label="At">{fmtWhen(p.time)}</Fact>
           <Fact label="Duration">{fmtTook(p.tookMs)}</Fact>
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11.5, color: "var(--text-4)" }}>
-            ID <span className="gw-mono" style={{ color: "var(--text-2)" }}>{p.guid}</span> <CopyButton text={p.guid} />
+          {/* The request's one ID is Smart Router's. The X-Request-Id, X-Task-Id and X-Tx-Id headers the
+              router also logs aren't shown: behind the gateway the first is the gateway's own ID for every request. */}
+          <span title="The ID Smart Router gives every request: its GUID in the router's logs, and the Lava-Guid header on the reply"
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11.5, color: "var(--text-4)" }}>
+            Smart Router request ID <span className="gw-mono" style={{ color: "var(--text-2)" }}>{p.guid}</span> <CopyButton text={p.guid} />
             <RequestLogsLink id={p.guid} startMs={p.time} tookMs={p.tookMs} />
           </span>
           {facts.customer && <Fact label="Customer">{facts.customer}</Fact>}
-          {facts.requestId && <Fact label="Caller request ID">{facts.requestId}</Fact>}
-          {facts.taskId && <Fact label="Task ID">{facts.taskId}</Fact>}
-          {facts.txId && <Fact label="Tx ID">{facts.txId}</Fact>}
           {facts.requestBytes != null && <Fact label="Size">{fmtBytes(facts.requestBytes)}</Fact>}
-          {facts.requestedBlock != null && <Fact label="Requested block">{fmtComma(facts.requestedBlock)}</Fact>}
-          {facts.seenBlock != null && <Fact label="Router's latest block">{fmtComma(facts.seenBlock)}</Fact>}
+          {facts.requestedBlock != null && <Fact label="Requested block">{block(facts.requestedBlock)}</Fact>}
+          {facts.seenBlock != null && <Fact label="Router's latest block">{block(facts.seenBlock)}</Fact>}
         </div>
       </Part>
 

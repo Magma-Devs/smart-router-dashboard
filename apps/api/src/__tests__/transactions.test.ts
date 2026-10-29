@@ -436,6 +436,13 @@ describe("LokiClient", () => {
     expect(await client.queryRange("bad", 0, 1, 1, "forward")).toBeNull();
   });
 
+  it("keeps each line's stream labels: a router's name its chain", async () => {
+    vi.stubGlobal("fetch", async () =>
+      Response.json({ status: "success", data: { result: [{ stream: { chain: "xlmt", service_name: "t-stellar-testnet" }, values: [["1790539228476571721", "a line"]] }] } }));
+    const lines = await new LokiClient("http://loki:3100", 1000).queryRange("q", 0, 1, 10, "forward");
+    expect(lines?.[0]?.labels).toEqual({ chain: "xlmt", service_name: "t-stellar-testnet" });
+  });
+
   it("sends Loki exact nanoseconds, fraction kept, so a read can end at a line's own time", () => {
     expect(msToNs(1790539228476)).toBe("1790539228476000000");
     expect(msToNs(1000.5)).toBe("1000500000");
@@ -565,6 +572,14 @@ describe("the chain of a transaction through a shared node name", () => {
     const [row] = buildTxRows(parse(accepted("506", "publicnode")), new UpstreamIndex(routers as unknown as RouterTopology[]));
     expect(row).toMatchObject({ spec: null, specs: ["BASE", "ETH1"] });
     expect(onChain(row!, "BASE") && onChain(row!, "ETH1")).toBe(true);
+  });
+
+  it("a write still in flight names its chain from its router's stream, not from its node", () => {
+    // Received and sent, no end yet: no line names the chain; the stream's label does.
+    const inFlight = accepted("507", "publicnode").slice(0, 2).map((l) => ({ ...l, labels: { chain: "base" } }));
+    const [row] = buildTxRows(parse(inFlight), new UpstreamIndex(routers as unknown as RouterTopology[]));
+    expect(row).toMatchObject({ spec: "BASE", outcome: "unknown", note: NOTE.noEnd });
+    expect(row!.specs).toBeUndefined();
   });
 });
 
