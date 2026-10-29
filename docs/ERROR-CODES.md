@@ -8,8 +8,8 @@ Errors page needs to say about it.
 | Field | What it is |
 | --- | --- |
 | `source` | Where the error comes from: `request`, `chain`, `provider`, `router` or `unclear` |
-| `meaning` | What happened, stating only what the code proves |
-| `action` | What the customer can do on their side |
+| `meaning` | What happened, in one short sentence, stating only what the code proves |
+| `action` | What the client can do, or `""` when there is nothing useful for it to do |
 | `routerRetries` | The router tries another provider on this error |
 | `mayHaveGoneThrough` | A transaction may be on chain despite this error |
 
@@ -27,7 +27,7 @@ three parts:
 | --- | --- |
 | Request | Method, chain, time, duration, request ID (copy, logs), the caller's IDs, size, the requested block and the router's latest block |
 | Tries | One line per try at a provider, in order: result, time, the error by name and its source. The router's code and the provider's message are on hover, inline only when the source is undetermined |
-| Response | Returned by, status, retries and the next step (the code's `action`) |
+| Response | Returned by, status, retries, the meaning, the provider's message and the next step (the code's `action`, left out when it is empty) |
 
 Each error is stated once, on the try it happened on; the Response names it only when the
 router answered itself. Orange marks what was returned to the client. A code the table
@@ -50,8 +50,8 @@ request answers.
 
 **"Not found" is tagged provider.** A provider that answers "not found" is saying it doesn't
 hold the data. That can be a wrong ID, an account never created, a block not produced yet, or
-data older than that provider keeps. The meaning lists those, and the tag doesn't guess
-between them.
+data older than that provider keeps. The meaning says it in short ("It may not exist yet, or
+be older than the provider keeps."), and the tag doesn't guess between them.
 
 ## The two tags
 
@@ -60,15 +60,48 @@ between them.
 - `mayHaveGoneThrough` is the router's MayHaveReachedNode flag (a connection that broke or
   timed out after the request went out, and `UNKNOWN_ERROR`), plus the answers that say the
   transaction is already there or queued: already known, already in chain, duplicate, nonce
-  too low, and XRP Ledger results that may still apply in a later ledger. Each of these tells
-  the customer to check the chain before sending again.
+  too low, and XRP Ledger results that may still apply in a later ledger. On a transaction the
+  screen shows it as a "May already be on chain" tag, so the action doesn't repeat it.
 
-## What the action may say
+## How the texts are written
 
-Only what the customer can do: retry, fix the request, wait, or nothing. It never promises
-work from us and never sells a feature. Setup problems that only an operator can fix (a
-provider's URL or credentials) say "no action on your side", plus a line for customers who run
-the router and manage its providers themselves.
+The app that sends requests is "the client"; the RPC provider is "the provider". Plain,
+common words, no idioms, no em dashes, no narration.
+
+**Meaning: one short sentence a person understands.** It says what happened, not what the
+code can't tell, and never lists every possibility. A second short sentence only when it
+really helps, usually a fact the client acts on ("On XRP Ledger, this one may then apply by
+itself").
+
+**Action: only when the client can do something.** Otherwise it is `""` and the "Next step"
+row isn't drawn. It is empty for:
+
+- provider failures the router already retries at another provider: timeouts, rate limits,
+  server errors, unavailable, refused, reset or closed connections, gateway errors. Telling
+  the client to "retry later" adds nothing;
+- "no action on your side" and "read the provider's message" (the screen shows the message);
+- old Lava-network codes that no longer apply.
+
+An action is a real, specific step: "Check the ID, address or block number.", "Add funds or
+lower the amount.", "Raise the fee.", "Get the account's current nonce, sign again and send.",
+"Reconnect, and keep the connection active.", "Slow down." (the router's own rate limit).
+"Retry shortly" stays only where waiting is the fix and the router can't do it: "If the block
+is new, retry shortly." Setup problems only an operator can fix (a provider's URL or
+credentials) say what to check on a self-hosted router.
+
+**No duplicates.** A transaction that may be on chain gets the "May already be on chain" tag
+from `mayHaveGoneThrough`, so no action ends in "it may have gone through". Where checking
+before resending is the step itself (nonce too low, a refusal that may not be final), the
+action says "Check the chain before sending again." The action never promises work from us
+and never sells a feature.
+
+| Error | Meaning | Action |
+| --- | --- | --- |
+| `NODE_SERVER_ERROR` | The provider's server failed while handling the request. | (none) |
+| `PROTOCOL_CONNECTION_TIMEOUT` | The provider didn't answer in time. | (none) |
+| `NODE_DATA_NOT_HELD` | The provider doesn't have this data. It may not exist yet, or be older than the provider keeps. | Check the ID, address or block number. |
+| `CHAIN_INSUFFICIENT_FUNDS` | Not enough funds for the amount and the fee. | Add funds or lower the amount. |
+| `CHAIN_NONCE_TOO_LOW` | This nonce was already used. | Check the chain before sending again. |
 
 ## Coverage
 
@@ -96,6 +129,8 @@ unexpected one still gets a line.
 ## When the router adds or changes a code
 
 Add or change its row in `error-codes.ts`. The tests check that every name sits in its
-prefix's number range, that every row has a source, a meaning and an action written as full
-sentences, and how many codes there are, so the count in
+prefix's number range, that every row has a source and a meaning (and any action) written as
+full sentences, that a meaning is two short sentences at most, that an action is empty rather
+than "no action" or "read the message", that no action repeats the may-have-gone-through
+warning, and how many codes there are, so the count in
 `packages/shared/src/__tests__/error-codes.test.ts` changes with it, on purpose.

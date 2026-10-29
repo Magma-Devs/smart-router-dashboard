@@ -1,5 +1,5 @@
 /**
- * Every error code Smart Router v1.6.0 knows, in words a customer can act on.
+ * Every error code Smart Router v1.6.0 knows, in words a client can act on.
  *
  * The router names each failure with a code from its registry (smart-router
  * `protocol/common/error_codes.go`: 133 codes, plus `UNKNOWN_ERROR` when no rule matched).
@@ -7,8 +7,13 @@
  *
  * - `source`: where the error comes from. The request, the chain, a provider, the router,
  *   or unclear when the code alone doesn't say.
- * - `meaning`: what happened, stating only what the code proves.
- * - `action`: what the customer can do on their side. It never promises work from us.
+ * - `meaning`: what happened, in one short sentence (two at most), stating only what the
+ *   code proves.
+ * - `action`: what the client can do, or `""` when there is nothing useful for it to do.
+ *   It never promises work from us and never says to read the provider's message (the
+ *   screen shows it). It says to retry only where waiting is the fix (a block not produced
+ *   yet), never for a provider failure the router already retries elsewhere.
+ *   The "may already be on chain" warning comes from `mayHaveGoneThrough`, not from here.
  * - `routerRetries`: the router tries another provider on this error (its Retryable flag).
  *   Transactions are the exception: the router sends them to every provider at once and
  *   never sends them again.
@@ -18,7 +23,7 @@
  *
  * Chain or provider: would a second healthy, up-to-date provider give the same answer?
  * Yes, chain. Maybe not, provider. A "not found" answer is tagged provider: the provider
- * says it doesn't hold the data, and the meaning lists what that can mean.
+ * says it doesn't hold the data.
  *
  * The Errors and Transactions tabs draw it when a row is opened (the web's
  * request-breakdown.tsx). docs/ERROR-CODES.md has the rules, the points R&D still has to
@@ -44,9 +49,9 @@ export interface RouterErrorCode {
   /** The router's name for the code, as its logs write it: `NODE_DATA_NOT_HELD`. */
   name: string;
   source: ErrorSource;
-  /** What happened, in plain words. */
+  /** What happened, in one short plain sentence. */
   meaning: string;
-  /** What the customer can do on their side. */
+  /** What the client can do. Empty when there is nothing useful for the client to do. */
   action: string;
   /** The router tries another provider on this error. Never true of a transaction resend. */
   routerRetries: boolean;
@@ -63,9 +68,8 @@ const ENTRIES: Record<string, Entry> = {
     source: "unclear",
     routerRetries: true,
     mayHaveGoneThrough: true,
-    meaning: "The router didn't recognize this error.",
-    action:
-      "Read the error message. For a transaction: check the chain before sending it again. It may have gone through.",
+    meaning: "The router got an error it doesn't recognize.",
+    action: "",
   },
 
   // PROTOCOL_: raised inside the router, mostly about reaching a provider (1000-1999).
@@ -74,27 +78,24 @@ const ENTRIES: Record<string, Entry> = {
     source: "provider",
     routerRetries: true,
     mayHaveGoneThrough: true,
-    meaning: "The router timed out connecting to the provider or waiting for its answer.",
-    action:
-      "Retry later. For a transaction: check the chain before sending it again. It may have gone through.",
+    meaning: "The provider didn't answer in time.",
+    action: "",
   },
   PROTOCOL_CONNECTION_REFUSED: {
     code: 1002,
     source: "provider",
     routerRetries: true,
     mayHaveGoneThrough: false,
-    meaning: "The provider's server refused the connection. The request never reached it.",
-    action: "Retry later.",
+    meaning: "The provider refused the connection. The request never reached it.",
+    action: "",
   },
   PROTOCOL_DNS_FAILURE: {
     code: 1003,
     source: "provider",
     routerRetries: true,
     mayHaveGoneThrough: false,
-    meaning:
-      "The router couldn't look up the provider's address (DNS). The request never reached it.",
-    action:
-      "Retry later. If you run the router and manage its providers yourself, check this provider's URL in your router config.",
+    meaning: "The router couldn't look up the provider's address. The request never reached it.",
+    action: "On a self-hosted router, check this provider's URL in its config.",
   },
   PROTOCOL_TLS_MISMATCH: {
     code: 1004,
@@ -102,27 +103,24 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: true,
     mayHaveGoneThrough: false,
     meaning:
-      "The provider's address is set up with the wrong protocol (HTTP vs HTTPS). The request never reached it.",
-    action:
-      "No action on your side. If you run the router and manage its providers yourself, check this provider's URL in your router config.",
+      "The provider's address uses the wrong protocol (HTTP or HTTPS). The request never reached it.",
+    action: "On a self-hosted router, check this provider's URL in its config.",
   },
   PROTOCOL_CONNECTION_RESET: {
     code: 1005,
     source: "provider",
     routerRetries: true,
     mayHaveGoneThrough: true,
-    meaning: "The connection to the provider broke in the middle of the request.",
-    action:
-      "Retry later. For a transaction: check the chain before sending it again. It may have gone through.",
+    meaning: "The connection to the provider broke during the request.",
+    action: "",
   },
   PROTOCOL_CONNECTION_CLOSED: {
     code: 1006,
     source: "provider",
     routerRetries: true,
     mayHaveGoneThrough: true,
-    meaning: "The provider closed the connection before sending a full answer.",
-    action:
-      "Retry later. For a transaction: check the chain before sending it again. It may have gone through.",
+    meaning: "The provider closed the connection before it sent a full answer.",
+    action: "",
   },
   PROTOCOL_CONTEXT_DEADLINE: {
     code: 1007,
@@ -130,9 +128,8 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: true,
     mayHaveGoneThrough: true,
     meaning:
-      "Time ran out before the request finished. It can be a timeout in your app, the router's time limit, or a slow provider.",
-    action:
-      "Retry. For a transaction: check the chain before sending it again. It may have gone through.",
+      "Time ran out before the request finished. The time limit may be the client's, the router's or the provider's.",
+    action: "If the client's timeout is too short, raise it.",
   },
   PROTOCOL_CONTEXT_CANCELED: {
     code: 1008,
@@ -140,34 +137,32 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: false,
     mayHaveGoneThrough: true,
     meaning:
-      "The request was stopped before it finished because the app closed the connection. On a single try it can also mean another provider answered first.",
-    action:
-      "Nothing, unless your app gives up too early. Then raise its timeout. For a transaction: check the chain before sending it again. It may have gone through.",
+      "The client closed the connection before the request finished. On one try, it can also mean another provider answered first.",
+    action: "If the client gives up too early, raise its timeout.",
   },
   PROTOCOL_NETWORK_UNREACHABLE: {
     code: 1009,
     source: "provider",
     routerRetries: true,
     mayHaveGoneThrough: false,
-    meaning: "The router had no network route to the provider. The request never reached it.",
-    action: "Retry later.",
+    meaning: "The router had no network path to the provider. The request never reached it.",
+    action: "",
   },
   PROTOCOL_NO_PROVIDERS: {
     code: 1010,
     source: "router",
     routerRetries: false,
     mayHaveGoneThrough: false,
-    meaning: "The router had no provider available for this request.",
+    meaning: "The router had no provider for this request.",
     action:
-      "No action on your side. If you run the router yourself, check that this chain and interface have a provider in your router config.",
+      "On a self-hosted router, check that this chain and interface have a provider in its config.",
   },
   PROTOCOL_ALL_ENDPOINTS_DISABLED: {
     code: 1011,
     source: "provider",
     routerRetries: false,
     mayHaveGoneThrough: false,
-    meaning:
-      "The router had switched off the providers' endpoints after repeated failures, so none could take this request.",
+    meaning: "After repeated failures, the router had turned off every provider for this request.",
     action: "Retry later.",
   },
   PROTOCOL_PROVIDER_UNAVAILABLE: {
@@ -175,35 +170,32 @@ const ENTRIES: Record<string, Entry> = {
     source: "unclear",
     routerRetries: true,
     mayHaveGoneThrough: false,
-    meaning:
-      "The request pinned one provider and the router couldn't use it. The name was unknown or ambiguous, or the provider was blocked, didn't serve this request, or had already failed.",
-    action: "Check the provider name in the header, or let the router pick.",
+    meaning: "The request asked for one provider, and the router couldn't use it.",
+    action: "Check the provider name in the header, or let the router choose.",
   },
   PROTOCOL_PROVIDER_ABORTED: {
     code: 1013,
     source: "provider",
     routerRetries: true,
     mayHaveGoneThrough: false,
-    meaning: "The provider aborted the request (gRPC ABORTED).",
-    action: "Retry later.",
+    meaning: "The provider stopped handling the request.",
+    action: "",
   },
   PROTOCOL_PROVIDER_DATA_LOSS: {
     code: 1014,
     source: "provider",
     routerRetries: true,
     mayHaveGoneThrough: false,
-    meaning: "The provider reported data loss (gRPC DATA_LOSS).",
-    action: "Retry later.",
+    meaning: "The provider reported that data was lost.",
+    action: "",
   },
   PROTOCOL_INSUFFICIENT_PROVIDERS: {
     code: 1015,
     source: "unclear",
     routerRetries: false,
     mayHaveGoneThrough: false,
-    meaning:
-      "Cross-validation couldn't start: there were too few providers or provider groups for what it needed.",
-    action:
-      "If you send cross-validation headers, ask for fewer providers. Otherwise, no action on your side.",
+    meaning: "There weren't enough providers or provider groups to start cross-validation.",
+    action: "If the client sends cross-validation headers, ask for fewer providers.",
   },
   PROTOCOL_RATE_LIMITED: {
     code: 1020,
@@ -211,7 +203,7 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: false,
     mayHaveGoneThrough: false,
     meaning: "The router's own rate limit was reached.",
-    action: "Slow down and retry.",
+    action: "Slow down.",
   },
   PROTOCOL_MAX_CU_EXCEEDED: {
     code: 1021,
@@ -219,7 +211,7 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: false,
     mayHaveGoneThrough: false,
     meaning: "An old Lava-network limit on compute units was reached.",
-    action: "No action on your side.",
+    action: "",
   },
   PROTOCOL_BATCH_SIZE_EXCEEDED: {
     code: 1022,
@@ -234,8 +226,8 @@ const ENTRIES: Record<string, Entry> = {
     source: "router",
     routerRetries: false,
     mayHaveGoneThrough: false,
-    meaning: "An old Lava-network compute-unit accounting error.",
-    action: "No action on your side.",
+    meaning: "An old Lava-network error about compute units.",
+    action: "",
   },
   PROTOCOL_SESSION_NOT_FOUND: {
     code: 1030,
@@ -243,7 +235,7 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: false,
     mayHaveGoneThrough: false,
     meaning: "An old Lava-network session error.",
-    action: "No action on your side.",
+    action: "",
   },
   PROTOCOL_EPOCH_MISMATCH: {
     code: 1031,
@@ -251,15 +243,15 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: false,
     mayHaveGoneThrough: false,
     meaning: "An old Lava-network epoch error.",
-    action: "No action on your side.",
+    action: "",
   },
   PROTOCOL_CONSUMER_BLOCKED: {
     code: 1032,
     source: "router",
     routerRetries: false,
     mayHaveGoneThrough: false,
-    meaning: "An old Lava-network error: the consumer was blocklisted.",
-    action: "No action on your side.",
+    meaning: "An old Lava-network error: the consumer was blocked.",
+    action: "",
   },
   PROTOCOL_CONSUMER_NOT_REGISTERED: {
     code: 1033,
@@ -267,7 +259,7 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: false,
     mayHaveGoneThrough: false,
     meaning: "An old Lava-network error: the consumer wasn't registered.",
-    action: "No action on your side.",
+    action: "",
   },
   PROTOCOL_RELAY_NUMBER_MISMATCH: {
     code: 1034,
@@ -275,7 +267,7 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: false,
     mayHaveGoneThrough: false,
     meaning: "An old Lava-network session error.",
-    action: "No action on your side.",
+    action: "",
   },
   PROTOCOL_SESSION_OUT_OF_SYNC: {
     code: 1035,
@@ -283,15 +275,15 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: false,
     mayHaveGoneThrough: false,
     meaning: "An old Lava-network session error.",
-    action: "No action on your side.",
+    action: "",
   },
   PROTOCOL_INVALID_RELAY_REQUEST: {
     code: 1036,
     source: "router",
     routerRetries: false,
     mayHaveGoneThrough: false,
-    meaning: "An old Lava-network check on the relay failed.",
-    action: "No action on your side.",
+    meaning: "An old Lava-network check on the request failed.",
+    action: "",
   },
   PROTOCOL_REQUEST_BLOCK_MISMATCH: {
     code: 1037,
@@ -299,7 +291,7 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: true,
     mayHaveGoneThrough: false,
     meaning: "The provider's block height didn't match what the request needed.",
-    action: "Retry shortly.",
+    action: "",
   },
   PROTOCOL_SESSION_ACCOUNTING_FAILED: {
     code: 1038,
@@ -307,15 +299,15 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: false,
     mayHaveGoneThrough: false,
     meaning: "An old Lava-network session accounting error.",
-    action: "No action on your side.",
+    action: "",
   },
   PROTOCOL_SUBSCRIPTION_CLEANUP_FAILED: {
     code: 1039,
     source: "router",
     routerRetries: false,
     mayHaveGoneThrough: false,
-    meaning: "The router failed to close the app's subscriptions.",
-    action: "No action on your side.",
+    meaning: "The router failed to close the client's subscriptions.",
+    action: "",
   },
   PROTOCOL_FINALIZATION_ERROR: {
     code: 1040,
@@ -323,7 +315,7 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: true,
     mayHaveGoneThrough: false,
     meaning: "The provider's finality data was wrong.",
-    action: "Retry later.",
+    action: "",
   },
   PROTOCOL_CONSISTENCY_ERROR: {
     code: 1041,
@@ -331,7 +323,7 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: true,
     mayHaveGoneThrough: false,
     meaning: "The provider's answer failed the router's consistency check.",
-    action: "Retry later.",
+    action: "",
   },
   PROTOCOL_HASH_CONSENSUS_ERROR: {
     code: 1042,
@@ -339,8 +331,8 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: true,
     mayHaveGoneThrough: false,
     meaning:
-      "Cross-validation couldn't confirm an answer. The providers didn't agree enough, or the ones that agreed weren't from enough separate groups.",
-    action: "Retry later.",
+      "Cross-validation couldn't confirm an answer. Not enough separate providers gave the same answer.",
+    action: "",
   },
   PROTOCOL_NO_RESPONSE_TIMEOUT: {
     code: 1043,
@@ -348,7 +340,7 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: true,
     mayHaveGoneThrough: false,
     meaning: "No provider answered within the router's time limit.",
-    action: "Retry later.",
+    action: "",
   },
   PROTOCOL_RELAY_PROCESSING_FAILED: {
     code: 1044,
@@ -356,14 +348,14 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: true,
     mayHaveGoneThrough: false,
     meaning: "The router failed while handling this request.",
-    action: "Retry later.",
+    action: "",
   },
   PROTOCOL_SUBSCRIPTION_NOT_FOUND: {
     code: 1050,
     source: "request",
     routerRetries: false,
     mayHaveGoneThrough: false,
-    meaning: "The app tried to unsubscribe from a subscription it doesn't hold.",
+    meaning: "The client tried to end a subscription it doesn't have.",
     action: "Check the subscription ID.",
   },
   PROTOCOL_SUBSCRIPTION_INIT_FAILED: {
@@ -372,7 +364,7 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: false,
     mayHaveGoneThrough: false,
     meaning: "The provider answered, but the router failed to set up the subscription.",
-    action: "Retry later.",
+    action: "Subscribe again.",
   },
   PROTOCOL_WEBSOCKET_IDLE_TIMEOUT: {
     code: 1052,
@@ -397,51 +389,48 @@ const ENTRIES: Record<string, Entry> = {
     source: "provider",
     routerRetries: true,
     mayHaveGoneThrough: false,
-    meaning:
-      "This provider says the method doesn't exist on its node. Another provider may offer it.",
-    action: "Check the method name. If it's right, no action on your side.",
+    meaning: "This provider says the method doesn't exist. Another provider may have it.",
+    action: "Check the method name.",
   },
   NODE_METHOD_NOT_SUPPORTED: {
     code: 2002,
     source: "provider",
     routerRetries: true,
     mayHaveGoneThrough: false,
-    meaning:
-      "This provider says it doesn't support this method. It may be off on its plan, or not built in. Another provider may offer it.",
-    action: "No action on your side.",
+    meaning: "This provider doesn't support this method.",
+    action: "",
   },
   NODE_INTERNAL_ERROR: {
     code: 2003,
     source: "provider",
     routerRetries: true,
     mayHaveGoneThrough: false,
-    meaning: "The provider's node hit an internal error on this request.",
-    action: "Retry later. If it keeps failing, read the provider's message.",
+    meaning: "The provider's node had an internal error on this request.",
+    action: "",
   },
   NODE_SERVER_ERROR: {
     code: 2004,
     source: "unclear",
     routerRetries: true,
     mayHaveGoneThrough: false,
-    meaning:
-      "The provider returned a general server error. The code alone doesn't say why. The provider's message does.",
-    action: "Read the provider's message.",
+    meaning: "The provider's server failed while handling the request.",
+    action: "",
   },
   NODE_RATE_LIMITED: {
     code: 2005,
     source: "provider",
     routerRetries: true,
     mayHaveGoneThrough: false,
-    meaning: "The provider is limiting how many requests it takes right now.",
-    action: "Retry later.",
+    meaning: "The provider is limiting our requests right now.",
+    action: "",
   },
   NODE_SERVICE_UNAVAILABLE: {
     code: 2006,
     source: "provider",
     routerRetries: true,
     mayHaveGoneThrough: false,
-    meaning: "The provider's service is temporarily unavailable.",
-    action: "Retry later.",
+    meaning: "The provider's service isn't available right now.",
+    action: "",
   },
   NODE_SYNCING: {
     code: 2007,
@@ -449,15 +438,15 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: true,
     mayHaveGoneThrough: false,
     meaning: "The provider's node is still catching up with the chain.",
-    action: "Retry later.",
+    action: "",
   },
   NODE_UNIMPLEMENTED: {
     code: 2008,
     source: "provider",
     routerRetries: true,
     mayHaveGoneThrough: false,
-    meaning: "This provider doesn't implement this method or route.",
-    action: "Check the method name. If it's right, no action on your side.",
+    meaning: "This provider doesn't support this method or path.",
+    action: "Check the method name.",
   },
   NODE_ENDPOINT_NOT_FOUND: {
     code: 2009,
@@ -465,8 +454,8 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: true,
     mayHaveGoneThrough: false,
     meaning:
-      "This path wasn't served. Either the provider doesn't route it, or, on REST, the router doesn't have the path in its list for this chain and answered 501 itself without asking any provider.",
-    action: "On a REST call, check the path. If it's right, no action on your side.",
+      "This path wasn't served. The provider doesn't have it, or on REST, the router doesn't know it for this chain.",
+    action: "On a REST call, check the path.",
   },
   NODE_METHOD_NOT_ALLOWED: {
     code: 2010,
@@ -474,7 +463,7 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: true,
     mayHaveGoneThrough: false,
     meaning: "This provider doesn't accept this HTTP method (like GET or POST) on this path.",
-    action: "On a REST call, check the HTTP method. Otherwise, no action on your side.",
+    action: "On a REST call, check the HTTP method.",
   },
   NODE_LIMIT_EXCEEDED: {
     code: 2011,
@@ -482,9 +471,8 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: false,
     mayHaveGoneThrough: false,
     meaning:
-      "The provider says a limit was exceeded. It can be the size of the query (like an eth_getLogs block range) or a limit on how many requests it takes.",
-    action:
-      "If it's a range query, narrow the range. If it's a rate limit, slow down and retry later.",
+      "The provider says a limit was exceeded. It can be the query's size or the number of requests.",
+    action: "If it's a range query, narrow the range. If it's a rate limit, slow down.",
   },
   NODE_RESOURCE_NOT_FOUND: {
     code: 2012,
@@ -492,7 +480,7 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: true,
     mayHaveGoneThrough: false,
     meaning:
-      "The provider says it doesn't have what the request asked for. It may not exist, may not exist yet, or may be older than this provider keeps.",
+      "The provider doesn't have what the request asked for. It may not exist yet, or be older than the provider keeps.",
     action: "Check the ID or number. If it's new, retry shortly.",
   },
   NODE_RESOURCE_UNAVAILABLE: {
@@ -501,7 +489,7 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: true,
     mayHaveGoneThrough: false,
     meaning: "The provider says what the request asked for isn't available on its node right now.",
-    action: "Retry shortly.",
+    action: "",
   },
   NODE_GATEWAY_TIMEOUT: {
     code: 2014,
@@ -509,8 +497,7 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: true,
     mayHaveGoneThrough: true,
     meaning: "The provider's gateway gave up waiting for its own node.",
-    action:
-      "Retry later. For a transaction: check the chain before sending it again. It may have gone through.",
+    action: "",
   },
   NODE_BAD_GATEWAY: {
     code: 2015,
@@ -518,17 +505,15 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: true,
     mayHaveGoneThrough: true,
     meaning: "The provider's gateway got a bad answer from its own node.",
-    action:
-      "Retry later. For a transaction: check the chain before sending it again. It may have gone through.",
+    action: "",
   },
   NODE_UNAUTHORIZED: {
     code: 2016,
     source: "provider",
     routerRetries: true,
     mayHaveGoneThrough: false,
-    meaning: "The provider rejected the credentials the router uses for it.",
-    action:
-      "No action on your side. If you run the router and manage its providers yourself, check this provider's credentials in your router config.",
+    meaning: "The provider rejected the router's credentials for it.",
+    action: "On a self-hosted router, check this provider's credentials in its config.",
   },
   NODE_DATA_NOT_HELD: {
     code: 2017,
@@ -536,26 +521,24 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: true,
     mayHaveGoneThrough: false,
     meaning:
-      "The provider says it doesn't hold this data. It may not exist (a wrong ID, an account that was never created, a block that isn't produced yet), or it may be older than this provider keeps. On REST, a 404 can also mean the path doesn't exist.",
-    action: "Check the path, ID, address or block number. If it's new, retry shortly.",
+      "The provider doesn't have this data. It may not exist yet, or be older than the provider keeps.",
+    action: "Check the ID, address or block number.",
   },
   NODE_ACCESS_DENIED: {
     code: 2018,
     source: "provider",
     routerRetries: true,
     mayHaveGoneThrough: false,
-    meaning: "The provider refused the router's access: credentials, plan, firewall or region.",
-    action:
-      "No action on your side. If you run the router and manage its providers yourself, check this provider's credentials and plan in your router config.",
+    meaning: "The provider refused the router access.",
+    action: "On a self-hosted router, check this provider's credentials and plan in its config.",
   },
   NODE_ABORTED: {
     code: 2019,
     source: "chain",
     routerRetries: false,
     mayHaveGoneThrough: true,
-    meaning:
-      "Sui's validators aborted processing this transaction. It may still be on chain. Sui says a new submission can succeed.",
-    action: "Check whether the transaction is on chain. If it isn't, submit it again.",
+    meaning: "Sui's validators stopped processing this transaction. A new send can succeed.",
+    action: "Check the chain. If the transaction isn't there, send it again.",
   },
   NODE_BITCOIN_WARMUP: {
     code: 2101,
@@ -563,7 +546,7 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: true,
     mayHaveGoneThrough: false,
     meaning: "The provider's Bitcoin node is still starting up.",
-    action: "Retry later.",
+    action: "",
   },
   NODE_BITCOIN_INITIAL_DOWNLOAD: {
     code: 2102,
@@ -571,7 +554,7 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: true,
     mayHaveGoneThrough: false,
     meaning: "The provider's Bitcoin node is still downloading the chain.",
-    action: "Retry later.",
+    action: "",
   },
   NODE_BITCOIN_NOT_CONNECTED: {
     code: 2103,
@@ -579,7 +562,7 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: true,
     mayHaveGoneThrough: false,
     meaning: "The provider's Bitcoin node isn't connected to the network, or is shutting down.",
-    action: "Retry later.",
+    action: "",
   },
   NODE_SOLANA_UNHEALTHY: {
     code: 2150,
@@ -587,7 +570,7 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: true,
     mayHaveGoneThrough: false,
     meaning: "The provider's Solana node is behind or unhealthy.",
-    action: "Retry later.",
+    action: "",
   },
 
   // CHAIN_: the chain's rules or data (3000-3999).
@@ -596,35 +579,32 @@ const ENTRIES: Record<string, Entry> = {
     source: "chain",
     routerRetries: false,
     mayHaveGoneThrough: true,
-    meaning:
-      "The transaction's nonce (the account's transaction counter) is already used. The same transaction may have gone through already, or another one used this nonce.",
-    action:
-      "Check whether a transaction with this nonce already went through before sending again.",
+    meaning: "This nonce was already used.",
+    action: "Check the chain before sending again.",
   },
   CHAIN_NONCE_TOO_HIGH: {
     code: 3002,
     source: "chain",
     routerRetries: false,
     mayHaveGoneThrough: true,
-    meaning:
-      "The nonce skips ahead: an earlier transaction from this account hasn't been applied yet.",
+    meaning: "The nonce skips ahead: an earlier transaction from this account isn't applied yet.",
     action:
-      "Send the missing earlier transaction first. On XRP Ledger this one may then apply by itself, so check before sending it again.",
+      "Send the earlier transaction first. On XRP Ledger, this one may then apply by itself, so check the chain before sending it again.",
   },
   CHAIN_INSUFFICIENT_FUNDS: {
     code: 3003,
     source: "chain",
     routerRetries: false,
     mayHaveGoneThrough: false,
-    meaning: "The account doesn't have enough to cover the amount plus the fee.",
-    action: "Add funds or lower the amount, then send again.",
+    meaning: "Not enough funds for the amount and the fee.",
+    action: "Add funds or lower the amount.",
   },
   CHAIN_GAS_TOO_LOW: {
     code: 3004,
     source: "chain",
     routerRetries: false,
     mayHaveGoneThrough: false,
-    meaning: "The gas limit is below the minimum this transaction needs.",
+    meaning: "The gas limit is below what this transaction needs.",
     action: "Raise the gas limit.",
   },
   CHAIN_GAS_LIMIT_EXCEEDED: {
@@ -640,8 +620,7 @@ const ENTRIES: Record<string, Entry> = {
     source: "unclear",
     routerRetries: false,
     mayHaveGoneThrough: false,
-    meaning:
-      "The fee is too low for this node: below its minimum, or below what its full pending pool holds.",
+    meaning: "The fee is below this node's minimum, or too low for its full pending pool.",
     action: "Raise the fee.",
   },
   CHAIN_TX_ALREADY_KNOWN: {
@@ -650,7 +629,7 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: false,
     mayHaveGoneThrough: true,
     meaning: "The network already has this exact transaction.",
-    action: "Nothing. Don't send it again.",
+    action: "Don't send it again.",
   },
   CHAIN_TX_REPLACEMENT_UNDERPRICED: {
     code: 3008,
@@ -674,7 +653,7 @@ const ENTRIES: Record<string, Entry> = {
     source: "request",
     routerRetries: false,
     mayHaveGoneThrough: false,
-    meaning: "The transaction is bigger than the size nodes accept.",
+    meaning: "The transaction is bigger than nodes accept.",
     action: "Make the transaction smaller.",
   },
   CHAIN_MAX_FEE_BELOW_BASE: {
@@ -690,7 +669,7 @@ const ENTRIES: Record<string, Entry> = {
     source: "chain",
     routerRetries: false,
     mayHaveGoneThrough: false,
-    meaning: "The account sequence (Cosmos's version of a nonce) doesn't match.",
+    meaning: "The account sequence (the Cosmos nonce) doesn't match.",
     action: "Get the account's current sequence, sign again and send.",
   },
   CHAIN_INSUFFICIENT_FEE: {
@@ -698,7 +677,7 @@ const ENTRIES: Record<string, Entry> = {
     source: "unclear",
     routerRetries: false,
     mayHaveGoneThrough: false,
-    meaning: "The fee is below this node's minimum, which can be its own setting or a chain rule.",
+    meaning: "The fee is below this node's minimum.",
     action: "Raise the fee.",
   },
   CHAIN_TX_REJECTED: {
@@ -707,8 +686,8 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: false,
     mayHaveGoneThrough: true,
     meaning:
-      "The node refused the transaction. On XRP Ledger the refusal may come from this server only, or be provisional: the transaction may still apply in a later ledger.",
-    action: "Check whether it was applied before sending again.",
+      "The node refused the transaction. On XRP Ledger the refusal may not be final: the transaction may still apply later.",
+    action: "Check the chain before sending again.",
   },
   CHAIN_DOUBLE_SPEND: {
     code: 3015,
@@ -723,7 +702,7 @@ const ENTRIES: Record<string, Entry> = {
     source: "chain",
     routerRetries: false,
     mayHaveGoneThrough: false,
-    meaning: "The transaction's signature doesn't verify.",
+    meaning: "The transaction's signature isn't valid.",
     action: "Sign again with the right key.",
   },
   CHAIN_EXECUTION_REVERTED: {
@@ -732,8 +711,7 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: false,
     mayHaveGoneThrough: false,
     meaning: "The smart contract rejected the call (reverted).",
-    action:
-      "Check the call's inputs against the contract. The reason, if the contract gives one, is in the message.",
+    action: "Check the call's inputs against the contract.",
   },
   CHAIN_OUT_OF_GAS: {
     code: 3102,
@@ -781,7 +759,7 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: false,
     mayHaveGoneThrough: false,
     meaning:
-      "No account found at this address. It may never have been funded, or this provider hasn't reached the block that created it.",
+      "No account at this address. It may never have been funded, or this provider is behind.",
     action: "Check the address. If it was just funded, retry shortly.",
   },
   CHAIN_ZKEVM_OUT_OF_COUNTERS: {
@@ -798,8 +776,8 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: true,
     mayHaveGoneThrough: false,
     meaning:
-      "The provider doesn't have this block. It may not be produced yet, or it may be older than this provider keeps.",
-    action: "Check the block number. If it's new, retry shortly.",
+      "The provider doesn't have this block. It may not exist yet, or be older than the provider keeps.",
+    action: "Check the block number. If the block is new, retry shortly.",
   },
   CHAIN_TX_NOT_FOUND: {
     code: 3202,
@@ -807,8 +785,8 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: true,
     mayHaveGoneThrough: false,
     meaning:
-      "The provider doesn't have this transaction. It may still be pending, the hash may be wrong, or it may be older than this provider keeps.",
-    action: "Check the hash. If you just sent it, retry shortly.",
+      "The provider doesn't have this transaction. It may still be pending, or be older than the provider keeps.",
+    action: "Check the hash. If the transaction was just sent, retry shortly.",
   },
   CHAIN_RECEIPT_NOT_FOUND: {
     code: 3203,
@@ -816,16 +794,16 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: true,
     mayHaveGoneThrough: false,
     meaning:
-      "The provider has no receipt for this transaction. It may still be pending, the hash may be wrong, or it may be older than this provider keeps.",
-    action: "Check the hash. If you just sent it, retry shortly.",
+      "The provider has no receipt for this transaction. It may still be pending, or be older than the provider keeps.",
+    action: "Check the hash. If the transaction was just sent, retry shortly.",
   },
   CHAIN_STATE_PRUNED: {
     code: 3204,
     source: "provider",
     routerRetries: true,
     mayHaveGoneThrough: false,
-    meaning: "The provider no longer keeps the state for that block (pruned).",
-    action: "No action on your side.",
+    meaning: "The provider no longer keeps the state for that block.",
+    action: "",
   },
   CHAIN_DATA_NOT_AVAILABLE: {
     code: 3205,
@@ -833,7 +811,7 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: true,
     mayHaveGoneThrough: false,
     meaning: "The provider doesn't have this historical data.",
-    action: "No action on your side.",
+    action: "",
   },
   CHAIN_BLOCK_TOO_OLD: {
     code: 3206,
@@ -841,7 +819,7 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: true,
     mayHaveGoneThrough: false,
     meaning: "The provider serves this only for recent blocks.",
-    action: "No action on your side.",
+    action: "",
   },
   CHAIN_LOG_RESPONSE_TOO_LARGE: {
     code: 3207,
@@ -857,7 +835,7 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: false,
     mayHaveGoneThrough: false,
     meaning:
-      "This provider has no block for this slot: Solana skipped the slot, or it's missing from long-term storage.",
+      "This provider has no block for this slot. Solana skipped the slot, or it's missing from long-term storage.",
     action: "Check the slot number.",
   },
   CHAIN_SOLANA_LEDGER_JUMP: {
@@ -866,7 +844,7 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: true,
     mayHaveGoneThrough: false,
     meaning:
-      "This provider has no data for this slot: its node started from a later snapshot, or the slot was skipped.",
+      "This provider has no data for this slot. Its node started from a later snapshot, or the slot was skipped.",
     action: "Check the slot number.",
   },
   CHAIN_SOLANA_BLOCKHASH_NOT_FOUND: {
@@ -875,7 +853,7 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: false,
     mayHaveGoneThrough: false,
     meaning:
-      "The node doesn't recognize the transaction's recent blockhash: it expired, or this node hasn't seen it yet.",
+      "The node doesn't know the transaction's recent blockhash. It expired, or this node hasn't seen it yet.",
     action: "Get a fresh blockhash, sign again and send.",
   },
   CHAIN_SOLANA_SIMULATION_FAILED: {
@@ -884,16 +862,16 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: false,
     mayHaveGoneThrough: false,
     meaning:
-      "The transaction failed when the node simulated it, so it wasn't sent. One reason is an expired blockhash.",
+      "The transaction failed when the node simulated it, so it wasn't sent. An expired blockhash is one cause.",
     action:
-      "If the message says the blockhash wasn't found, get a fresh one, sign again and send. Otherwise fix what the program logs show.",
+      "If the blockhash wasn't found, get a fresh one, sign again and send. Otherwise, fix what the program logs show.",
   },
   CHAIN_SOLANA_SIGNATURE_VERIFY_FAILED: {
     code: 3306,
     source: "chain",
     routerRetries: false,
     mayHaveGoneThrough: false,
-    meaning: "A signature on the transaction doesn't verify.",
+    meaning: "A signature on the transaction isn't valid.",
     action: "Sign again with the right keys.",
   },
   CHAIN_SOLANA_EXCLUDED_FROM_INDEX: {
@@ -902,15 +880,14 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: false,
     mayHaveGoneThrough: false,
     meaning: "This provider's node doesn't index this account, so it can't run this query.",
-    action: "No action on your side.",
+    action: "",
   },
   CHAIN_SOLANA_SIGNATURE_LENGTH_MISMATCH: {
     code: 3308,
     source: "request",
     routerRetries: false,
     mayHaveGoneThrough: false,
-    meaning:
-      "The transaction has a different number of signatures than its signers require, for example an extra one.",
+    meaning: "The transaction has a different number of signatures than its signers need.",
     action: "Sign with exactly the required signers, then send again.",
   },
   CHAIN_SOLANA_BLOCK_STATUS_UNAVAILABLE: {
@@ -919,7 +896,7 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: true,
     mayHaveGoneThrough: false,
     meaning: "The provider doesn't have this block's status yet.",
-    action: "Retry shortly.",
+    action: "",
   },
   CHAIN_SOLANA_TX_VERSION_UNSUPPORTED: {
     code: 3310,
@@ -927,7 +904,7 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: false,
     mayHaveGoneThrough: false,
     meaning:
-      "The answer contains a newer transaction version, and the request didn't say it can read it.",
+      "The answer has a newer transaction version, and the request didn't say it can read it.",
     action: "Add maxSupportedTransactionVersion to the request.",
   },
   CHAIN_SOLANA_MIN_CONTEXT_SLOT_NOT_REACHED: {
@@ -936,15 +913,15 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: true,
     mayHaveGoneThrough: false,
     meaning: "The provider's node hasn't reached the minimum slot the request asked for.",
-    action: "Retry shortly.",
+    action: "",
   },
   CHAIN_STARKNET_FAILED_TO_RECEIVE_TX: {
     code: 3320,
     source: "unclear",
     routerRetries: false,
     mayHaveGoneThrough: true,
-    meaning: "The node couldn't take the transaction. The code doesn't say why.",
-    action: "Check by hash whether it went through. If it didn't, send it again.",
+    meaning: "The node couldn't take the transaction.",
+    action: "Check the chain by hash. If the transaction isn't there, send it again.",
   },
   CHAIN_STARKNET_CLASS_NOT_FOUND: {
     code: 3321,
@@ -952,7 +929,7 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: false,
     mayHaveGoneThrough: false,
     meaning:
-      "No contract class found with this hash. It may never have been declared, or this provider hasn't reached the block that declared it.",
+      "No contract class with this hash. It may never have been declared, or this provider is behind.",
     action: "Check the class hash. If it was just declared, retry shortly.",
   },
   CHAIN_STARKNET_COMPILATION_FAILED: {
@@ -969,7 +946,7 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: false,
     mayHaveGoneThrough: true,
     meaning: "This contract class is already declared.",
-    action: "Nothing. Use the existing class.",
+    action: "Use the existing class.",
   },
   CHAIN_STARKNET_CONTRACT_ERROR: {
     code: 3324,
@@ -984,8 +961,8 @@ const ENTRIES: Record<string, Entry> = {
     source: "chain",
     routerRetries: false,
     mayHaveGoneThrough: false,
-    meaning: "The transaction failed while executing.",
-    action: "Read the message and fix the transaction.",
+    meaning: "The transaction failed while it ran.",
+    action: "Fix the transaction.",
   },
   CHAIN_STARKNET_INVALID_NONCE: {
     code: 3326,
@@ -1008,7 +985,7 @@ const ENTRIES: Record<string, Entry> = {
     source: "chain",
     routerRetries: false,
     mayHaveGoneThrough: false,
-    meaning: "The account can't cover the max fee.",
+    meaning: "The account can't pay the max fee.",
     action: "Add funds.",
   },
   CHAIN_STARKNET_VALIDATION_FAILURE: {
@@ -1016,7 +993,7 @@ const ENTRIES: Record<string, Entry> = {
     source: "chain",
     routerRetries: false,
     mayHaveGoneThrough: false,
-    meaning: "The account contract rejected the transaction when validating it.",
+    meaning: "The account contract rejected the transaction when it checked it.",
     action: "Check the signature and the account.",
   },
   CHAIN_STARKNET_CONTRACT_NOT_FOUND: {
@@ -1025,7 +1002,7 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: false,
     mayHaveGoneThrough: false,
     meaning:
-      "No contract found at this address. It may never have been deployed, or this provider hasn't reached the block that deployed it.",
+      "No contract at this address. It may never have been deployed, or this provider is behind.",
     action: "Check the address. If it was just deployed, retry shortly.",
   },
   CHAIN_STARKNET_BLOCK_NOT_FOUND: {
@@ -1034,7 +1011,7 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: true,
     mayHaveGoneThrough: false,
     meaning: "The provider doesn't have this block.",
-    action: "Check the block number. If it's new, retry shortly.",
+    action: "Check the block number. If the block is new, retry shortly.",
   },
   CHAIN_STARKNET_TX_HASH_NOT_FOUND: {
     code: 3332,
@@ -1042,8 +1019,8 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: true,
     mayHaveGoneThrough: false,
     meaning:
-      "The provider doesn't have this transaction. It may still be pending, the hash may be wrong, or it may be older than this provider keeps.",
-    action: "Check the hash. If you just sent it, retry shortly.",
+      "The provider doesn't have this transaction. It may still be pending, or be older than the provider keeps.",
+    action: "Check the hash. If the transaction was just sent, retry shortly.",
   },
   CHAIN_STARKNET_DUPLICATE_TX: {
     code: 3333,
@@ -1051,7 +1028,7 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: false,
     mayHaveGoneThrough: true,
     meaning: "This transaction is already pending.",
-    action: "Nothing. Don't send it again.",
+    action: "Don't send it again.",
   },
   CHAIN_STARKNET_TX_VERSION_UNSUPPORTED: {
     code: 3334,
@@ -1066,17 +1043,16 @@ const ENTRIES: Record<string, Entry> = {
     source: "provider",
     routerRetries: true,
     mayHaveGoneThrough: false,
-    meaning: "The provider's Starknet node hit an unexpected error.",
-    action: "Retry later.",
+    meaning: "The provider's Starknet node had an unexpected error.",
+    action: "",
   },
   CHAIN_BITCOIN_VERIFY_ERROR: {
     code: 3341,
     source: "chain",
     routerRetries: false,
     mayHaveGoneThrough: false,
-    meaning:
-      "The transaction failed Bitcoin's checks, for example missing or already spent inputs.",
-    action: "Read the message and fix the transaction.",
+    meaning: "The transaction failed Bitcoin's checks, for example missing or spent inputs.",
+    action: "Fix the transaction.",
   },
   CHAIN_BITCOIN_VERIFY_REJECTED: {
     code: 3342,
@@ -1084,8 +1060,8 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: false,
     mayHaveGoneThrough: false,
     meaning:
-      "The node refused the transaction under its rules. Some are network rules, some (like the minimum fee) are this node's own policy.",
-    action: "Read the message, fix the transaction and send again.",
+      "The node refused the transaction under the network's rules or its own, like a minimum fee.",
+    action: "Fix the transaction and send again.",
   },
   CHAIN_BITCOIN_ALREADY_IN_CHAIN: {
     code: 3343,
@@ -1093,7 +1069,7 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: false,
     mayHaveGoneThrough: true,
     meaning: "This transaction is already confirmed.",
-    action: "Nothing. It's done.",
+    action: "",
   },
   CHAIN_BITCOIN_WALLET_INSUFFICIENT_FUNDS: {
     code: 3344,
@@ -1101,8 +1077,8 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: false,
     mayHaveGoneThrough: false,
     meaning:
-      "That node's wallet can't fund this wallet call. It says nothing about your own balance.",
-    action: "Build and sign the transaction yourself, then send it with sendrawtransaction.",
+      "The node's own wallet can't fund this wallet call. It says nothing about the client's balance.",
+    action: "Build and sign the transaction in the client, then send it with sendrawtransaction.",
   },
   CHAIN_NEAR_UNKNOWN_BLOCK: {
     code: 3360,
@@ -1110,8 +1086,8 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: true,
     mayHaveGoneThrough: false,
     meaning:
-      "The provider doesn't have this block: it doesn't exist yet, or the node already dropped it.",
-    action: "Check the block. If it's new, retry shortly.",
+      "The provider doesn't have this block. It doesn't exist yet, or the node already dropped it.",
+    action: "Check the block. If the block is new, retry shortly.",
   },
   CHAIN_NEAR_UNKNOWN_CHUNK: {
     code: 3361,
@@ -1119,7 +1095,7 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: true,
     mayHaveGoneThrough: false,
     meaning:
-      "The provider doesn't have this chunk. It may not exist, or it may be older than this provider keeps.",
+      "The provider doesn't have this chunk. It may not exist, or be older than the provider keeps.",
     action: "Check the chunk ID.",
   },
   CHAIN_NEAR_INVALID_SHARD_ID: {
@@ -1136,7 +1112,7 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: true,
     mayHaveGoneThrough: false,
     meaning: "The provider's NEAR node is still syncing.",
-    action: "Retry later.",
+    action: "",
   },
 
   // USER_: the request itself (4000-4999).
@@ -1145,9 +1121,8 @@ const ENTRIES: Record<string, Entry> = {
     source: "unclear",
     routerRetries: false,
     mayHaveGoneThrough: false,
-    meaning:
-      "The provider couldn't parse the request, though the router had read it as valid JSON.",
-    action: "Retry. If one request keeps failing, check it for unusual characters.",
+    meaning: "The provider couldn't read the request, though the router read it as valid JSON.",
+    action: "If the same request keeps failing, check it for unusual characters.",
   },
   USER_INVALID_REQUEST: {
     code: 4002,
@@ -1155,9 +1130,8 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: false,
     mayHaveGoneThrough: false,
     meaning:
-      "The provider rejected the request as invalid. On some REST chains (Stellar), a 400 also means the chain refused a transaction.",
-    action:
-      "Read the provider's message. It says what's wrong, or why the transaction was refused.",
+      "The provider rejected the request as invalid. On some REST chains (Stellar), this also means the chain refused a transaction.",
+    action: "",
   },
   USER_INVALID_PARAMS: {
     code: 4003,
@@ -1180,7 +1154,7 @@ const ENTRIES: Record<string, Entry> = {
     source: "request",
     routerRetries: false,
     mayHaveGoneThrough: false,
-    meaning: "The address is invalid: wrong format or checksum.",
+    meaning: "The address isn't valid: wrong format or checksum.",
     action: "Fix the address.",
   },
   USER_REQUEST_TOO_LARGE: {
@@ -1196,7 +1170,7 @@ const ENTRIES: Record<string, Entry> = {
     source: "request",
     routerRetries: false,
     mayHaveGoneThrough: false,
-    meaning: "A hex value in the request is malformed.",
+    meaning: "A hex value in the request isn't valid.",
     action: "Fix the hex value.",
   },
 };

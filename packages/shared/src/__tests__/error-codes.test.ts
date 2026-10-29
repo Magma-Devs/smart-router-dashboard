@@ -39,10 +39,10 @@ describe("router error codes", () => {
     }
   });
 
-  it("gives every code a known source, a meaning and an action, as full sentences", () => {
+  it("gives every code a known source and a meaning, and any action, as full sentences", () => {
     for (const e of all) {
       expect(ERROR_SOURCES, e.name).toContain(e.source);
-      for (const text of [e.meaning, e.action]) {
+      for (const text of e.action ? [e.meaning, e.action] : [e.meaning]) {
         expect(text.trim(), e.name).toBe(text);
         expect(text, e.name).toMatch(/^[A-Z].*[.]$/s);
         expect(text, e.name).not.toMatch(/[–—]/);
@@ -50,16 +50,66 @@ describe("router error codes", () => {
     }
   });
 
+  it("keeps a meaning to two short sentences at most, with no hedging about the code", () => {
+    for (const e of all) {
+      expect(e.meaning.split(/(?<=[.])\s+/).length, e.name).toBeLessThanOrEqual(2);
+      expect(e.meaning.length, e.name).toBeLessThanOrEqual(130);
+      expect(e.meaning, e.name).not.toMatch(/\bthe code (alone )?doesn't say\b/i);
+      expect(e.meaning, e.name).not.toMatch(/\bthe provider's message does\b/i);
+    }
+  });
+
   it("labels every source", () => {
     expect(Object.keys(ERROR_SOURCE_LABELS).sort()).toEqual([...ERROR_SOURCES].sort());
   });
 
-  it("never tells the customer to ask us for work", () => {
+  it("never tells the client to ask us for work", () => {
     for (const e of all)
       expect(e.action, e.name).not.toMatch(/\b(contact us|ask us|we will|we'll)\b/i);
   });
 
-  it("warns that a transaction may have gone through after a broken or timed-out connection", () => {
+  it("calls the sender the client, never the customer", () => {
+    for (const e of all)
+      for (const text of [e.meaning, e.action]) expect(text, e.name).not.toMatch(/\bcustomer/i);
+  });
+
+  it("leaves the action empty rather than saying there is nothing to do", () => {
+    for (const e of all) {
+      expect(e.action, e.name).not.toMatch(/\bno action\b/i);
+      expect(e.action, e.name).not.toMatch(/^nothing\b/i);
+      // The screen already shows the provider's message.
+      expect(e.action, e.name).not.toMatch(/\bread the (provider's |error )?message\b/i);
+    }
+  });
+
+  it("doesn't tell the client to retry a provider failure the router already retries", () => {
+    for (const name of [
+      "PROTOCOL_CONNECTION_TIMEOUT",
+      "PROTOCOL_CONNECTION_REFUSED",
+      "PROTOCOL_CONNECTION_RESET",
+      "PROTOCOL_CONNECTION_CLOSED",
+      "PROTOCOL_NO_RESPONSE_TIMEOUT",
+      "NODE_INTERNAL_ERROR",
+      "NODE_SERVER_ERROR",
+      "NODE_RATE_LIMITED",
+      "NODE_SERVICE_UNAVAILABLE",
+      "NODE_GATEWAY_TIMEOUT",
+      "NODE_BAD_GATEWAY",
+      "NODE_SYNCING",
+      "UNKNOWN_ERROR",
+    ]) {
+      expect(ROUTER_ERROR_CODES[name]?.routerRetries, name).toBe(true);
+      expect(ROUTER_ERROR_CODES[name]?.action, name).toBe("");
+    }
+    for (const e of all) {
+      if (e.source === "provider" && e.routerRetries)
+        expect(e.action, e.name).not.toMatch(/^retry (later|shortly)\.$/i);
+    }
+  });
+
+  it("leaves the may-have-gone-through warning to its tag, not the action", () => {
+    for (const e of all) expect(e.action, e.name).not.toMatch(/it may have gone through/i);
+    // A broken or timed-out connection still carries the tag.
     for (const name of [
       "PROTOCOL_CONNECTION_TIMEOUT",
       "PROTOCOL_CONNECTION_RESET",
@@ -68,13 +118,45 @@ describe("router error codes", () => {
       "NODE_GATEWAY_TIMEOUT",
       "NODE_BAD_GATEWAY",
       "UNKNOWN_ERROR",
-    ]) {
-      const e = ROUTER_ERROR_CODES[name];
-      expect(e?.mayHaveGoneThrough, name).toBe(true);
-      expect(e?.action, name).toContain("check the chain before sending it again");
-    }
+    ])
+      expect(ROUTER_ERROR_CODES[name]?.mayHaveGoneThrough, name).toBe(true);
     // Refused before it was sent: nothing reached a node.
     expect(ROUTER_ERROR_CODES.PROTOCOL_CONNECTION_REFUSED?.mayHaveGoneThrough).toBe(false);
+  });
+
+  it("keeps the check before resending where it is the main step", () => {
+    expect(ROUTER_ERROR_CODES.CHAIN_NONCE_TOO_LOW?.action).toBe(
+      "Check the chain before sending again.",
+    );
+    expect(ROUTER_ERROR_CODES.CHAIN_TX_REJECTED?.action).toBe(
+      "Check the chain before sending again.",
+    );
+  });
+
+  it("uses the approved wording", () => {
+    const approved: Record<string, [meaning: string, action: string]> = {
+      NODE_SERVER_ERROR: ["The provider's server failed while handling the request.", ""],
+      UNKNOWN_ERROR: ["The router got an error it doesn't recognize.", ""],
+      PROTOCOL_CONNECTION_TIMEOUT: ["The provider didn't answer in time.", ""],
+      NODE_RATE_LIMITED: ["The provider is limiting our requests right now.", ""],
+      NODE_METHOD_NOT_SUPPORTED: ["This provider doesn't support this method.", ""],
+      NODE_DATA_NOT_HELD: [
+        "The provider doesn't have this data. It may not exist yet, or be older than the provider keeps.",
+        "Check the ID, address or block number.",
+      ],
+      CHAIN_INSUFFICIENT_FUNDS: [
+        "Not enough funds for the amount and the fee.",
+        "Add funds or lower the amount.",
+      ],
+      CHAIN_NONCE_TOO_LOW: [
+        "This nonce was already used.",
+        "Check the chain before sending again.",
+      ],
+    };
+    for (const [name, [meaning, action]] of Object.entries(approved)) {
+      expect(ROUTER_ERROR_CODES[name]?.meaning, name).toBe(meaning);
+      expect(ROUTER_ERROR_CODES[name]?.action, name).toBe(action);
+    }
   });
 
   it("tags a not-found answer as the provider's", () => {

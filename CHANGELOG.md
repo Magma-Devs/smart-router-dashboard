@@ -24,6 +24,12 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   its **Next step**; it was only a tooltip on the error's name. The provider's
   message that reached the client shows there too, unless its try above already
   shows it, so each error is still stated once.
+- **Every error code explained in plain words.** All 134 entries of the
+  error-code table were rewritten: the meaning is one short sentence, without
+  hedging or lists of possibilities. A next step shows only when the client
+  can act on it: 48 entries have none, for example a provider's server error or
+  rate limit, which the router already retries elsewhere. The "it may have gone
+  through" tails are gone, since the "May already be on chain" tag says it.
 
 - **Traffic by provider: hover shows the values.** Hovering the chart shows
   the time and each upstream's share (or requests per second, with the total)

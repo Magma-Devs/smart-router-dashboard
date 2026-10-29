@@ -245,7 +245,7 @@ export function RequestBreakdown(p: BreakdownProps) {
               <span className="gw-mono" title={providerWords} style={{ fontSize: 11.5, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{providerWords}</span>
             </Row>
           )}
-          {entry && <Row label="Next step"><span style={{ color: "var(--text)" }}>{entry.action}</span></Row>}
+          {entry?.action && <Row label="Next step"><span style={{ color: "var(--text)" }}>{entry.action}</span></Row>}
         </div>
       </Part>
     </div>
