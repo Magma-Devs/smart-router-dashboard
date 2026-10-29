@@ -29,7 +29,6 @@ import { linkRequest, requestFromUrl } from "@/lib/request-in-url";
 import {
   AppGot,
   appGot,
-  CustomerCell,
   customerOptions,
   hasCustomer,
   LOOKUP_REFUSED,
@@ -39,10 +38,10 @@ import {
   FilterSelect,
   NewRowsStrip,
   useHeldRows,
+  WhenCell,
   filterSelectStyle,
   Flow,
   fmtTook,
-  fmtWhen,
   hasErrorType,
   IdSearch,
   LOG_SKEL_COLS,
@@ -175,6 +174,12 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
   const specQ = chainFilter ? `&spec=${encodeURIComponent(chainFilter)}` : "";
   // Rows are matched to a config router by the upstreams they went to.
   const { routerIdQ } = useRouterFilter();
+
+  // Another chain or router is another list: what was open on the last one closes.
+  const scopeKey = `${chainFilter ?? ""}|${routerIdQ}`;
+  const [shownScope, setShownScope] = useState(scopeKey);
+  if (shownScope !== scopeKey) { setShownScope(scopeKey); setOpen(null); setLookupId(null); setPage(0); }
+  useEffect(() => { if (!open && !lookupId) linkRequest(null); }, [scopeKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const rangeQ = range ? `from=${Math.round(range.from)}&to=${Math.round(range.to)}` : `window=${win}`;
   const log = useLogReads<TxLogRow, TransactionsReport>(`/api/transactions?${rangeQ}${specQ}${routerIdQ}`, live);
   const data = log.head;
@@ -346,8 +351,7 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
                   <Fragment key={r.guid}>
                     <tr tabIndex={0} aria-expanded={isOpen} style={{ cursor: "pointer" }} onClick={toggle} onKeyDown={onRowKey(toggle)}>
                       <td style={{ maxWidth: 0, verticalAlign: "top" }}>
-                        <span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{fmtWhen(r.time)}</span>
-                        <CustomerCell customer={r.customer} />
+                        <WhenCell time={r.time} customer={r.customer} />
                       </td>
                       <td style={{ maxWidth: 0, verticalAlign: "top" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>

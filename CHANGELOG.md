@@ -56,7 +56,12 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   bar on the request's own timeline, so tries sent together or late show at a
   glance; the one that reached the client is marked "→ client". The request's
   details sit beside them as a list, and every ID there has a copy button, the
-  caller's request ID included. Request and response sizes are gone.
+  caller's request ID included. Request and response sizes are gone. The
+  status is a dot and a word on a plain card, without a coloured stroke down
+  the left.
+- **Errors and Transactions tabs: each row shows its date.** Under the time,
+  where a request with no customer showed "-", the row now shows the date,
+  then the customer when the request named one.
 - **Every error code explained in plain words.** All 134 entries of the
   error-code table were rewritten: the meaning is one short sentence, without
   hedging or lists of possibilities. A next step shows only when the client
@@ -81,7 +86,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 - **Errors and Transactions tabs: an opened request stays open.** Every 30 s
   read put newer requests on top, so the one being read slid down the page and
   off it. While a row is open the list now holds still, and a strip above it
-  counts what arrived since ("12 new requests · Show").
+  counts what arrived since ("12 new requests · Show"). Picking another chain
+  or router closes it, since it belongs to the list it was opened in.
 - **Errors and Transactions tabs: the filter dropdowns' arrows.** Each filter
   drew the browser's own arrow, pressed against its right border while the
   text sat 10 px in from the left. They now draw the page's line chevron, the

@@ -69,9 +69,9 @@ The app that sends requests is "the client"; the RPC provider is "the provider".
 common words, no idioms, no em dashes, no narration.
 
 **Meaning: one short sentence a person understands.** It says what happened, not what the
-code can't tell, and never lists every possibility. A second short sentence only when it
-really helps, usually a fact the client acts on ("On XRP Ledger, this one may then apply by
-itself").
+code can't tell, and never lists every possibility. One code serves every chain, so a text
+never names one: a chain-specific fact ("on XRP Ledger the refusal may not be final") reads
+as wrong on every other chain, and the "May already be on chain" tag already says it.
 
 **Action: only when the client can do something.** Otherwise it is `""` and the "Next step"
 row isn't drawn. It is empty for:

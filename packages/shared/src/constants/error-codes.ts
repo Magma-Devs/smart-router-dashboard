@@ -587,8 +587,7 @@ const ENTRIES: Record<string, Entry> = {
     routerRetries: false,
     mayHaveGoneThrough: true,
     meaning: "The nonce skips ahead: an earlier transaction from this account isn't applied yet.",
-    action:
-      "Send the earlier transaction first. On XRP Ledger, this one may then apply by itself, so check the chain before sending it again.",
+    action: "Send the earlier transaction first, then check the chain before sending this one again.",
   },
   CHAIN_INSUFFICIENT_FUNDS: {
     code: 3003,
@@ -684,8 +683,7 @@ const ENTRIES: Record<string, Entry> = {
     source: "unclear",
     routerRetries: false,
     mayHaveGoneThrough: true,
-    meaning:
-      "The node refused the transaction. On XRP Ledger the refusal may not be final: the transaction may still apply later.",
+    meaning: "The node refused the transaction.",
     action: "Check the chain before sending again.",
   },
   CHAIN_DOUBLE_SPEND: {

@@ -13,8 +13,8 @@
  * One statement per error: the outcome names the one that reached the client,
  * each try names its own. The router's code, the node's code and the
  * provider's own words sit behind a name on hover, except where the source is
- * undetermined and the provider's words are the only explanation. Orange marks
- * the one try that reached the client. */
+ * undetermined and the provider's words are the only explanation. "→ client"
+ * marks the one try that reached the client. */
 
 import {
   ERROR_SOURCE_LABELS,
@@ -26,7 +26,7 @@ import {
 } from "@sr/shared";
 import { CopyButton } from "@/components/gateway/CopyButton";
 import { fmtComma } from "@/lib/format";
-import { codeWords, fmtTook, fmtWhen, realCode, RequestLogsLink } from "./request-log";
+import { codeWords, fmtDateTime, fmtTook, realCode, RequestLogsLink } from "./request-log";
 
 /** What each source means, on hover. */
 export const SOURCE_HINTS: Record<ErrorSource, string> = {
@@ -113,8 +113,7 @@ function TryRow({ a, n, spanMs }: { a: RelayAttempt; n: number; spanMs: number }
     <div style={{
       display: "grid", gridTemplateColumns: TRY_COLUMNS, columnGap: 12, alignItems: "center",
       padding: "8px 12px", borderTop: "1px solid var(--line)",
-      boxShadow: a.replied ? "inset 2px 0 0 var(--warn)" : undefined,
-      background: a.replied ? "color-mix(in srgb, var(--warn) 5%, transparent)" : undefined,
+      background: a.replied ? "var(--surface-2)" : undefined,
     }}>
       <span className="gw-mono gw-tnum" style={{ fontSize: 11, color: "var(--text-4)" }}>{n}</span>
       <span style={{ display: "inline-flex", alignItems: "center", gap: 8, minWidth: 0 }}>
@@ -211,11 +210,13 @@ export function RequestBreakdown(p: BreakdownProps) {
     <div style={{ display: "grid", gap: 16, padding: "8px 4px 12px" }}>
       {/* Outcome: what the client received, and what it means. */}
       <div style={{
-        borderRadius: 8, border: "1px solid var(--line)", boxShadow: `inset 2px 0 0 ${p.status.color}`,
-        background: `color-mix(in srgb, ${p.status.color} 4%, var(--surface))`, padding: "12px 16px", display: "grid", gap: 8,
+        borderRadius: 8, border: "1px solid var(--line)", background: "var(--surface)", padding: "12px 16px", display: "grid", gap: 8,
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          <span style={{ fontSize: 14, fontWeight: 600, color: p.status.color }}>{p.status.label}</span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 14, fontWeight: 600, color: p.status.color }}>
+            <span aria-hidden style={{ width: 8, height: 8, borderRadius: 999, background: p.status.color }} />
+            {p.status.label}
+          </span>
           {/* A provider's answer names its error on its own try, below; only the router's own needs it here. */}
           {routerAnswered && finalCode && <ErrorName code={finalCode} entry={entry} />}
           {routerAnswered && entry && <SourceTag source={entry.source} />}
@@ -273,7 +274,7 @@ export function RequestBreakdown(p: BreakdownProps) {
               <KV label="Request ID"><Id value={p.guid} /><RequestLogsLink id={p.guid} startMs={p.time} tookMs={p.tookMs} /></KV>
               <KV label="Method"><span className="gw-mono">{p.method}</span></KV>
               <KV label="Chain">{p.chain}</KV>
-              <KV label="Time"><span className="gw-mono gw-tnum">{fmtWhen(p.time)}</span></KV>
+              <KV label="Time"><span className="gw-mono gw-tnum">{fmtDateTime(p.time)}</span></KV>
               {facts.customer && <KV label="Customer"><Id value={facts.customer} /></KV>}
               {facts.requestId && <KV label="Caller request ID"><Id value={facts.requestId} /></KV>}
               {facts.taskId && <KV label="Task ID"><Id value={facts.taskId} /></KV>}

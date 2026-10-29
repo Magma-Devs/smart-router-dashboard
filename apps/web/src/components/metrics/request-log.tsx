@@ -86,6 +86,11 @@ export function hasErrorType(r: ErrorTyped, key: string): boolean {
   return errorTypesOf(r).has(key);
 }
 
+/** Date and time, the date always: "Oct 29, 17:57:08". */
+export function fmtDateTime(ms: number): string {
+  return new Date(ms).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+}
+
 export function fmtWhen(ms: number): string {
   const d = new Date(ms);
   return d.toDateString() === new Date().toDateString()
@@ -297,11 +302,19 @@ export function TimeRangeControl({ range, onChange, windowLabel, windowMs }: {
 /** Clicks inside an opened row's own controls stay there: a copy or a link doesn't fold the row. */
 const keepClick = (e: React.MouseEvent) => e.stopPropagation();
 
-/** A row's caller, under its time: their project, or "—" when the request carried none. */
-export function CustomerCell({ customer }: { customer?: string }) {
-  const style: React.CSSProperties = { display: "block", marginTop: 4, fontSize: 10.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
-  if (!customer) return <span title="The request named no customer" style={{ ...style, color: "var(--text-4)" }}>—</span>;
-  return <span className="gw-mono" title={`Customer: ${customer}`} style={{ ...style, color: "var(--text-3)" }}>{customer}</span>;
+/** A row's time: the hour, and under it the date and the caller's project when the request named one. */
+export function WhenCell({ time, customer }: { time: number; customer?: string }) {
+  const d = new Date(time);
+  const date = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return (
+    <>
+      <span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{d.toLocaleTimeString("en-US", { hour12: false })}</span>
+      <span style={{ display: "block", marginTop: 4, fontSize: 10.5, color: "var(--text-3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        {date}
+        {customer && <span className="gw-mono" title={`Customer: ${customer}`}> · {customer}</span>}
+      </span>
+    </>
+  );
 }
 
 /** The customer filter's key for requests that carried none. */
