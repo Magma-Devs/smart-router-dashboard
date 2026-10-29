@@ -17,6 +17,14 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [0.50.1]
 
+### Changed
+
+- **Errors and Transactions tabs: an opened request explains its error.** The
+  Response part now shows the error's **Meaning** from the error-code table, above
+  its **Next step**; it was only a tooltip on the error's name. The provider's
+  message that reached the client shows there too, unless its try above already
+  shows it, so each error is still stated once.
+
 ### Fixed
 
 - **Errors and Transactions tabs: the filter dropdowns' arrows.** Each filter

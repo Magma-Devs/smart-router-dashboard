@@ -6,7 +6,8 @@
  *   Request    the facts the router wrote about the call
  *   Tries      one line per try at a provider: result, time, the error by
  *              name and its source
- *   Response   what the client received: returned by, status, retries, next step
+ *   Response   what the client received: returned by, status, retries, and the
+ *              error's meaning and next step from the table
  *
  * One statement per error, on the try it happened on: its name (from @sr/shared's
  * table, explainRouterError) and its source. The router's code, the node's code and
@@ -104,16 +105,22 @@ const RESULT: Record<RelayAttempt["outcome"], { mark: string; words: string; col
   "no-result": { mark: "…", words: "No response", color: "var(--text-3)" },
 };
 
+/** The provider's words a try prints under its line: only where nothing else explains the error - no code,
+ *  or an undetermined source - and only when they say more than the error's name. */
+function triesOwnWords(a: RelayAttempt): string | null {
+  const code = a.outcome === "failed" ? realCode(a) : null;
+  const entry = code ? explainRouterError(code) : null;
+  return a.outcome === "failed" && a.message && (!code || entry?.source === "unclear")
+    && !(code && a.message.toLowerCase().includes(codeWords(code))) ? a.message : null;
+}
+
 /** One try, on one line: provider, result, time, the error and its source. */
 function TryRow({ a, n, together }: { a: RelayAttempt; n: number; together: boolean }) {
   const code = a.outcome === "failed" ? realCode(a) : null;
   const entry = code ? explainRouterError(code) : null;
   const r = RESULT[a.outcome];
   const words = a.outcome === "no-result" && a.replied ? "Succeeded" : r.words;
-  // The provider's words, shown only where nothing else explains the error - no code, or an undetermined
-  // source - and only when they say more than the error's name.
-  const ownWords = a.outcome === "failed" && a.message && (!code || entry?.source === "unclear")
-    && !(code && a.message.toLowerCase().includes(codeWords(code))) ? a.message : null;
+  const ownWords = triesOwnWords(a);
   return (
     <div style={box(a.replied)}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", minWidth: 0 }}>
@@ -183,6 +190,9 @@ export function RequestBreakdown(p: BreakdownProps) {
   const facts = p.facts;
   const providers = new Set(p.attempts.map((a) => a.upstream)).size;
   const blockAhead = finalCode && facts.requestedBlock != null && facts.seenBlock != null && facts.requestedBlock > facts.seenBlock;
+  // The provider's words that reached the client, unless its try above already prints them.
+  const finalTry = p.final?.from === "provider" && p.final.attempt.outcome === "failed" ? p.final.attempt : null;
+  const providerWords = finalTry?.message && !triesOwnWords(finalTry) ? finalTry.message : null;
   return (
     <div style={{ display: "grid", gap: 12, padding: "6px 4px 10px" }}>
       <Part title="Request">
@@ -229,6 +239,12 @@ export function RequestBreakdown(p: BreakdownProps) {
           {p.retries && <Row label="Retries">{p.retries}</Row>}
           {blockAhead && <Row label="Note">Requested block is ahead of the router&apos;s latest block.</Row>}
           {p.extra?.map((x) => <Row key={x.label} label={x.label}>{x.value}</Row>)}
+          {entry && <Row label="Meaning"><span style={{ color: "var(--text)" }}>{entry.meaning}</span></Row>}
+          {providerWords && (
+            <Row label="Provider's message">
+              <span className="gw-mono" title={providerWords} style={{ fontSize: 11.5, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{providerWords}</span>
+            </Row>
+          )}
           {entry && <Row label="Next step"><span style={{ color: "var(--text)" }}>{entry.action}</span></Row>}
         </div>
       </Part>
