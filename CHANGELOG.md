@@ -10,20 +10,20 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 ### Added
 
 - **Availability breakdown in the chain drill-down.** Expanding a router on
-  the Metrics page with Availability selected now shows three parts on one
-  time axis: the availability line with its 99.9% target, the share of
-  requests backups served, and a row per upstream with a cell per point,
-  coloured Operational / Unhealthy / Unknown, blank where there is no data.
-  Spans under 99.9% are shaded across all three, and one hover reads them
-  together: availability, the unhealthy upstreams, and how much the backups
-  served and which. Each row ends in a short status ("Unhealthy
-  12:20-12:50", "served up to 44%", "standby"). A chain with no backup in
-  the config says "no backup upstream configured"; backups with no data in
-  the window say "no data".
-- `GET /api/metrics/upstream-timeline` - every upstream of one chain on the
-  availability grid: tries, failed tries, share of the chain's tries,
-  latest-block polls, and the state they read as. Four range reads whatever
-  the count; the tries read the recorded series from 12h.
+  the Metrics page with Availability selected shows the chain's tries in
+  bars (30 minutes each on 12 hours), from 0, split into succeeded and
+  failed, and a row per upstream under the same bars, each cell coloured
+  Operational / Unhealthy / Unknown, blank where there is no data. Bars, not
+  a line: on a quiet chain one failed try in a point read as a drop to 50%.
+  Hovering anywhere in a bar's column shows its succeeded and failed counts,
+  its availability, the unhealthy upstreams and the backups that took
+  traffic. Each row ends in a short status ("Unhealthy 12:20-12:50",
+  "served up to 44%", "standby").
+- `GET /api/metrics/upstream-timeline` - one chain in bars on the clock: its
+  tries per bar, succeeded and failed, and every upstream of it with a cell
+  per bar (tries, failed tries, share of the chain's tries, latest-block
+  polls, and the state they read as). Four range reads whatever the count,
+  plus the chain's two counts.
 - **A Metrics page link opens exactly what you were looking at.** Copy the
   browser's URL and send it: the person who opens it sees the same chain,
   router, tab, time window and focus. New URL keys, beside `chain`, `router`,
@@ -88,8 +88,8 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ### Removed
 
-- The chain drill-down's "Primary vs backup" tile: its series is the
-  Availability view's "Served by backups" part.
+- The chain drill-down's "Primary vs backup" tile: the Availability view
+  marks the bars where a backup took traffic.
 
 ### Fixed
 

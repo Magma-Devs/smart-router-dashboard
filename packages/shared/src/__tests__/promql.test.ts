@@ -72,6 +72,8 @@ import {
   qEndpointTipsSeriesExpr,
   qUpstreamFailedSeriesExpr,
   qUpstreamNodeErrorSeriesExpr,
+  qChainTriesCountSeriesExpr,
+  qChainFailedCountSeriesExpr,
   qUpstreamRpsByUpstreamSeriesExpr,
 } from "../promql/builders.js";
 import { buildChainMetaByIndex } from "../constants/chains.js";
@@ -682,6 +684,23 @@ describe("an upstream against its peers", () => {
     expect(q).toContain('spec="ETH1"');
     expect(q).toContain('provider_address="eth-tenderly"');
     expect(q).toMatch(/^round\(clamp_min\(sum\(\(rate\(smartrouter_requests_total\{.*\}\[615s\]\) \* 600\)\) - \(sum\(\(rate\(smartrouter_requests_success_total\{.*\}\[615s\]\) \* 600\)\) or .* \* 0\), 0\)\)$/);
+  });
+
+  it("one chain's tries per bucket are whole counts of the request counter, on that chain only", () => {
+    expect(qChainTriesCountSeriesExpr("HEDERA", "30m")).toBe(
+      'round(sum((rate(smartrouter_requests_total{spec="HEDERA"}[1815s]) * 1800)))',
+    );
+  });
+
+  it("one chain's failed tries per bucket are tries minus successes, never negative, and every try when none succeeded", () => {
+    const q = qChainFailedCountSeriesExpr("HEDERA", "30m");
+    const tot = 'sum((rate(smartrouter_requests_total{spec="HEDERA"}[1815s]) * 1800))';
+    expect(q).toBe(`round(clamp_min(${tot} - (sum((rate(smartrouter_requests_success_total{spec="HEDERA"}[1815s]) * 1800)) or ${tot} * 0), 0))`);
+  });
+
+  it("the chain's bar still filling counts over the seconds it has run, one scrape wider", () => {
+    expect(qChainFailedCountSeriesExpr("HEDERA", "37s", undefined, true)).toContain("[52s]) * 37)");
+    expect(qChainTriesCountSeriesExpr("HEDERA", "37s", undefined, true)).toContain("[52s]) * 37)");
   });
 
   it("an upstream that never succeeded still has failed tries: no success series is no successes", () => {

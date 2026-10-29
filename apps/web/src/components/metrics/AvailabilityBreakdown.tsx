@@ -1,59 +1,44 @@
 "use client";
 
-/* AvailabilityBreakdown — the ChainDetail Availability view: three parts on
- * ONE time axis, so a drop in availability, the upstreams that went unhealthy
- * and the backups that took traffic read off one vertical line.
+/* AvailabilityBreakdown — the ChainDetail Availability view: the chain in bars
+ * on the clock, and its upstreams under the same bars, so a bad stretch and
+ * the upstreams that went unhealthy read off one column.
  *
- *  1. Availability — the chain's line and its 99.9% target (`chain-series`).
- *  2. Served by backups — the backups' share of the chain's tries
- *     (`chain-series` backupShare), 0-100%.
- *  3. Providers — a row per upstream, a cell per point of the same grid
+ *  1. Tries — a bar per stretch of the clock (`bucketGrid`, 30 minutes on
+ *     12 hours), from 0: the chain's tries that succeeded and that failed.
+ *     Bars, not an availability line: on a quiet chain one failed try in a
+ *     point is a 50% availability, and a line of those reads as an outage.
+ *  2. Providers — a row per upstream, a cell per bar
  *     (`/api/metrics/upstream-timeline`), coloured by `HealthState` through
  *     lib/health.ts; a backup that took traffic gets a bar under the cell.
  *
- * Every part lays points out by TIME on the grid, never by index: a point the
- * store didn't return is a gap in the line and a blank cell, not a squeezed
- * axis, a 0% or a green cell. Spans under the target are shaded red across
- * all three, and one hover reads all three at that time. */
+ * A bar or cell the store didn't return is left blank, never a 0 or a green
+ * cell. Hovering anywhere in a bar's column reads both parts at that bar. */
 
 import { useState } from "react";
-import type { HealthState, MetricWindow, TimePoint, UpstreamTimeline, UpstreamTimelineRow } from "@sr/shared";
+import type { HealthState, MetricWindow, UpstreamTimeline, UpstreamTimelineRow } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
-import { useChartDims } from "@/components/gateway/charts";
+import { niceScale, useChartDims } from "@/components/gateway/charts";
 import { useFilters } from "@/components/gateway/FiltersProvider";
 import { HEALTH_LABEL, healthColor } from "@/lib/health";
+import { barSpanWords, barWords, timeTicks } from "@/lib/chart-time";
+import { fmtComma } from "@/lib/format";
 import { roFmtTime } from "./InteractiveChart";
 
-/** The backups' colour: their share line and the "took traffic" bar under a backup's cell. */
+/** The backups' colour: the "took traffic" bar under a backup's cell. */
 export const BACKUP_COLOR = "#fb923c";
 
 const TARGET = 99.9;
-const AVAIL_H = 150;
-const BACKUP_H = 70;
+const BARS_H = 140;
 const ROW_H = 14;
 const ROW_GAP = 6;
 const TITLE_H = 30;
 const AXIS_H = 18;
+/** The least height a bar's part that isn't zero is drawn at, as the other bar charts. */
+const MIN_PART_PX = 3;
 
-interface Pt {
-  t: number;
-  v: number;
-}
-
-const kept = (pts: TimePoint[] | null | undefined, scale = 1): Pt[] =>
-  (pts ?? []).filter((p): p is TimePoint & { v: number } => p.v !== null).map((p) => ({ t: p.t, v: p.v * scale }));
-
-/** Runs of points no further apart than 1.5 steps: a longer stretch is a gap. */
-function segments(pts: Pt[], stepSec: number): Pt[][] {
-  const out: Pt[][] = [];
-  for (const p of pts) {
-    const last = out[out.length - 1];
-    const prev = last?.[last.length - 1];
-    if (last && prev && p.t - prev.t <= stepSec * 1.5) last.push(p);
-    else out.push([p]);
-  }
-  return out;
-}
+/** Two decimals, without the zeros that say nothing; above 0 never reads as 0. */
+const pct = (v: number) => (v > 0 && v < 0.005 ? "<0.01%" : v.toFixed(2).replace(/\.?0+$/, "") + "%");
 
 /** Consecutive cells matching `pick`, as [first t, last t] pairs. */
 function runs(row: UpstreamTimelineRow, pick: (s: HealthState | null) => boolean): [number, number][] {
@@ -89,7 +74,7 @@ function rowStatus(row: UpstreamTimelineRow, stepSec: number, win: string): { te
   const anyData = row.cells.some((c) => c.state !== null);
   const anyOk = row.cells.some((c) => c.state === "operational");
   if (row.role === "backup") {
-    const served = maxShare >= 0 ? `served up to ${fmtShare(maxShare)}` : null;
+    const served = maxShare > 0 ? `served up to ${fmtShare(maxShare)}` : null;
     if (unhealthy) return { text: served ? `${unhealthy} · ${served}` : unhealthy, color: "var(--err)" };
     if (served) return { text: served, color: BACKUP_COLOR };
     if (!anyData) return { text: "no data", color: "var(--text-4)" };
@@ -102,170 +87,116 @@ function rowStatus(row: UpstreamTimelineRow, stepSec: number, win: string): { te
     : { text: HEALTH_LABEL.unknown, color: healthColor("unknown") };
 }
 
-export function AvailabilityBreakdown({
-  spec,
-  routerId,
-  win,
-  color,
-  availability,
-  backupShare,
-  hasBackup,
-}: {
+export function AvailabilityBreakdown({ spec, routerId, win, hasBackup }: {
   spec: string;
   /** The config router the row is; null when no values file names it. */
   routerId: string | null;
   win: MetricWindow;
-  color: string;
-  availability: TimePoint[];
-  backupShare: TimePoint[] | null;
   /** The mounted config marks at least one backup for this router. */
   hasBackup: boolean;
 }) {
   const { scopeQ } = useFilters();
   const rid = routerId ? `&routerId=${encodeURIComponent(routerId)}` : "";
   const { data: tl } = useApi<UpstreamTimeline>(`/api/metrics/upstream-timeline?spec=${encodeURIComponent(spec)}&window=${win}${rid}${scopeQ}`);
-  const [hovT, setHovT] = useState<number | null>(null);
+  const [hovI, setHovI] = useState<number | null>(null);
 
-  const avail = kept(availability, 100);
-  const share = kept(backupShare, 100);
-  const stepSec = tl?.grid.stepSec ?? (avail.length > 1 ? avail[1]!.t - avail[0]!.t : 15);
-  const x0 = Math.min(tl?.grid.start ?? Infinity, avail[0]?.t ?? Infinity);
-  const x1 = Math.max(tl?.grid.end ?? -Infinity, avail[avail.length - 1]?.t ?? -Infinity);
-  const hasAxis = Number.isFinite(x0) && Number.isFinite(x1) && x1 > x0;
-
+  const bars = tl?.bars ?? [];
+  const stepSec = tl?.grid.stepSec ?? 0;
   const rows = tl?.upstreams ?? [];
   const rowCount = tl ? Math.max(rows.length, 1) : 3;
-  const backupPartH = hasBackup ? TITLE_H + BACKUP_H : TITLE_H;
-  const providersH = TITLE_H + rowCount * (ROW_H + ROW_GAP);
-  const height = 8 + AVAIL_H + backupPartH + providersH + AXIS_H;
+  const height = 8 + BARS_H + TITLE_H + rowCount * (ROW_H + ROW_GAP) + AXIS_H;
   const [wrapRef, w] = useChartDims(600, height);
 
   const narrow = w < 640;
   const LEFT = narrow ? 104 : 150;
   const RIGHT = narrow ? 0 : 200;
   const plotW = Math.max(60, w - LEFT - RIGHT);
-  const x = (t: number) => LEFT + (hasAxis ? ((t - x0) / (x1 - x0)) * plotW : plotW / 2);
-  const cellW = hasAxis ? Math.max(1, (stepSec / (x1 - x0)) * plotW) : plotW;
+  // The axis runs from the first bar's start to now; the bar still filling is cut at now.
+  const x0 = tl ? tl.grid.start - stepSec : 0;
+  const x1 = tl ? tl.asOf : 1;
+  const x = (t: number) => LEFT + ((Math.min(Math.max(t, x0), x1) - x0) / (x1 - x0 || 1)) * plotW;
+  const colOf = (t: number) => { const a = x(t - stepSec), b = x(t); return { x: a + 0.5, w: Math.max(1, b - a - 1) }; };
 
-  // Part 1: the same y-domain rule as InteractiveChart, the target always in view, capped at 100%.
-  const aTop = 8;
-  let minV = Math.min(TARGET, ...avail.map((p) => p.v));
-  let maxV = Math.max(TARGET, ...avail.map((p) => p.v));
-  const pad = (maxV - minV) * 0.14 || 1;
-  minV -= pad;
-  maxV = Math.min(maxV + pad, 100);
-  const yA = (v: number) => aTop + AVAIL_H - ((v - minV) / (maxV - minV || 1)) * AVAIL_H;
-  const aTicks = Array.from({ length: 5 }, (_, i) => minV + ((maxV - minV) * i) / 4);
+  // Part 1: tries per bar, from 0 on round steps.
+  const top = 8;
+  const totals = bars.map((b) => (b.ok ?? 0) + (b.failed ?? 0));
+  const scale = niceScale(0, Math.max(4, ...totals));
+  const yMax = scale.hi;
+  const yB = (v: number) => top + BARS_H - (v / yMax) * BARS_H;
 
   // Part 2.
-  const bTop = aTop + AVAIL_H + TITLE_H;
-  const yB = (v: number) => bTop + BACKUP_H - (Math.max(0, Math.min(100, v)) / 100) * BACKUP_H;
-
-  // Part 3.
-  const pTop = aTop + AVAIL_H + backupPartH + TITLE_H;
+  const pTop = top + BARS_H + TITLE_H;
   const rowY = (i: number) => pTop + i * (ROW_H + ROW_GAP);
   const bottom = pTop + rowCount * (ROW_H + ROW_GAP) - ROW_GAP;
 
-  // Incident shading: runs of availability points under the target.
-  const bands: [number, number][] = [];
-  for (const p of avail) {
-    if (p.v >= TARGET) continue;
-    const last = bands[bands.length - 1];
-    if (last && p.t - last[1] <= stepSec * 1.5) last[1] = p.t;
-    else bands.push([p.t, p.t]);
-  }
-
-  const line = (seg: Pt[], y: (v: number) => string | number) => seg.map((p) => `${x(p.t).toFixed(1)},${y(p.v)}`).join(" ");
-  const area = (seg: Pt[], y: (v: number) => number, base: number) =>
-    `M ${x(seg[0]!.t).toFixed(1)},${base} ` + seg.map((p) => `L ${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`).join(" ") + ` L ${x(seg[seg.length - 1]!.t).toFixed(1)},${base} Z`;
-
-  const near = (pts: Pt[], t: number) => pts.find((p) => Math.abs(p.t - t) <= stepSec / 2) ?? null;
   function onMove(e: React.MouseEvent<HTMLDivElement>) {
-    if (!hasAxis) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const px = e.clientX - rect.left;
-    if (px < LEFT || px > LEFT + plotW) return setHovT(null);
+    if (!tl || !bars.length) return;
+    const px = e.clientX - e.currentTarget.getBoundingClientRect().left;
+    if (px < LEFT || px > LEFT + plotW) return setHovI(null);
     const t = x0 + ((px - LEFT) / plotW) * (x1 - x0);
-    setHovT(x0 + Math.round((t - x0) / stepSec) * stepSec);
+    const i = bars.findIndex((b) => t > b.t - stepSec && t <= b.t);
+    setHovI(i >= 0 ? i : null);
   }
 
-  const hov = hovT === null ? null : (() => {
-    const a = near(avail, hovT);
-    const cellAt = (r: UpstreamTimelineRow) => r.cells.find((c) => Math.abs(c.t - hovT) <= stepSec / 2);
+  const hov = hovI === null || !bars[hovI] ? null : (() => {
+    const b = bars[hovI]!;
+    const cellAt = (r: UpstreamTimelineRow) => r.cells.find((c) => c.t === b.t);
     const unhealthy = rows.filter((r) => cellAt(r)?.state === "unhealthy").map((r) => r.upstream);
-    const serving = rows.filter((r) => r.role === "backup" && (cellAt(r)?.rps ?? 0) > 0).map((r) => r.upstream);
-    const b = near(share, hovT);
-    return { a, unhealthy, serving, b };
+    const serving = rows.filter((r) => r.role === "backup" && (cellAt(r)?.rps ?? 0) > 0);
+    const backupShare = serving.reduce((a, r) => a + (cellAt(r)?.share ?? 0), 0);
+    const total = (b.ok ?? 0) + (b.failed ?? 0);
+    return { b, unhealthy, serving: serving.map((r) => r.upstream), backupShare, avail: b.ok === null ? null : total > 0 ? (b.ok / total) * 100 : null };
   })();
-  const tipRight = hovT !== null && x(hovT) > LEFT + plotW * 0.6;
+  const hovCol = hov ? colOf(hov.b.t) : null;
+  const tipRight = hovCol !== null && hovCol.x > LEFT + plotW * 0.6;
   const clip = `ab-clip-${spec}`;
 
   return (
     <div>
-      <div ref={wrapRef} style={{ position: "relative", width: "100%", height }} onMouseMove={onMove} onMouseLeave={() => setHovT(null)}>
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: 12, marginBottom: 6, paddingLeft: LEFT, fontSize: 11, color: "var(--text-4)" }}>
+        {stepSec > 0 && <span>a bar per {barSpanWords(stepSec)}</span>}
+        <span>target {TARGET}%</span>
+        {tl && !tl.available && <span style={{ color: "var(--warn)" }}>incomplete: the metrics store did not answer every read</span>}
+      </div>
+      <div ref={wrapRef} style={{ position: "relative", width: "100%", height }} onMouseMove={onMove} onMouseLeave={() => setHovI(null)}>
         <svg width={w} height={height} style={{ display: "block" }}>
           <defs>
             <clipPath id={clip}><rect x={LEFT} y={0} width={plotW} height={height} /></clipPath>
           </defs>
 
-          {/* Incident shading, across all three parts. */}
+          {/* The hovered bar's column, across both parts. */}
+          {hovCol && <rect x={hovCol.x - 1} y={top} width={hovCol.w + 2} height={bottom - top} fill="var(--text)" opacity="0.06" rx="2" />}
+
+          {/* 1 · Tries, succeeded and failed */}
+          {scale.ticks.filter((v) => v <= yMax).map((v) => (
+            <g key={v}>
+              <line x1={LEFT} x2={LEFT + plotW} y1={yB(v)} y2={yB(v)} stroke="var(--line)" strokeWidth="1" opacity="0.6" />
+              <text x={LEFT - 6} y={yB(v) + 3} textAnchor="end" fontSize="9.5" fill="var(--text-3)" fontFamily="var(--font-mono)">{v >= 1000 ? (v / 1000).toFixed(1).replace(/\.0$/, "") + "k" : v}</text>
+            </g>
+          ))}
           <g clipPath={`url(#${clip})`}>
-            {bands.map(([a, b], i) => (
-              <rect key={i} x={x(a) - cellW / 2} width={x(b) - x(a) + cellW} y={aTop} height={bottom - aTop} fill="var(--err)" opacity="0.09" />
-            ))}
+            {bars.map((b) => {
+              if (b.ok === null) return null;
+              const { x: bx, w: bw } = colOf(b.t);
+              // Every part that isn't zero stays visible: one failed try beside hundreds is a sliver, not nothing.
+              const okH = b.ok > 0 ? Math.max((b.ok / yMax) * BARS_H, MIN_PART_PX) : 0;
+              const failH = (b.failed ?? 0) > 0 ? Math.max(((b.failed ?? 0) / yMax) * BARS_H, MIN_PART_PX) : 0;
+              const base = top + BARS_H;
+              return (
+                <g key={b.t}>
+                  {okH > 0 && <rect x={bx} y={base - okH} width={bw} height={okH} fill="var(--ok)" opacity="0.75" />}
+                  {failH > 0 && <rect x={bx} y={base - okH - failH} width={bw} height={failH} fill="var(--err)" opacity="0.85" />}
+                </g>
+              );
+            })}
           </g>
-
-          {/* 1 · Availability */}
-          {aTicks.map((v, i) => (
-            <g key={i}>
-              <line x1={LEFT} x2={LEFT + plotW} y1={yA(v)} y2={yA(v)} stroke="var(--line)" strokeWidth="1" opacity="0.6" />
-              <text x={LEFT - 6} y={yA(v) + 3} textAnchor="end" fontSize="9.5" fill="var(--text-3)" fontFamily="var(--font-mono)">{v.toFixed(2)}%</text>
-            </g>
-          ))}
-          <line x1={LEFT} x2={LEFT + plotW} y1={yA(TARGET)} y2={yA(TARGET)} stroke="var(--text-4)" strokeWidth="1" strokeDasharray="4 3" opacity="0.8" />
-          <text x={LEFT + plotW} y={yA(TARGET) - 4} textAnchor="end" fontSize="9" fill="var(--text-4)" fontFamily="var(--font-mono)">99.9%</text>
-          {segments(avail, stepSec).map((seg, i) => (
-            <g key={i}>
-              <path d={area(seg, yA, aTop + AVAIL_H)} fill={color} opacity="0.10" />
-              <polyline points={line(seg, (v) => yA(v).toFixed(1))} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
-            </g>
-          ))}
-          {!avail.length && (
-            <text x={LEFT + plotW / 2} y={aTop + AVAIL_H / 2} textAnchor="middle" fontSize="12" fill="var(--text-4)">No samples in this window.</text>
+          {tl && !bars.some((b) => b.ok !== null && b.ok + (b.failed ?? 0) > 0) && (
+            <text x={LEFT + plotW / 2} y={top + BARS_H / 2} textAnchor="middle" fontSize="12" fill="var(--text-4)">No requests in this window.</text>
           )}
+          {!tl && <rect x={LEFT} y={top} width={plotW} height={BARS_H} rx="4" fill="var(--line)" opacity="0.25" />}
 
-          {/* 2 · Served by backups */}
-          <text x={LEFT} y={aTop + AVAIL_H + 22} fontSize="11" fontWeight="600" fill="var(--text-2)">
-            Served by backups
-            {!hasBackup && <tspan fontWeight="400" fill="var(--text-4)" dx="8">no backup upstream configured</tspan>}
-          </text>
-          {hasBackup && (
-            <>
-              <line x1={LEFT} x2={LEFT + plotW} y1={yB(0)} y2={yB(0)} stroke="var(--line)" strokeWidth="1" opacity="0.6" />
-              <line x1={LEFT} x2={LEFT + plotW} y1={yB(100)} y2={yB(100)} stroke="var(--line)" strokeWidth="1" opacity="0.6" />
-              <text x={LEFT - 6} y={yB(100) + 3} textAnchor="end" fontSize="9.5" fill="var(--text-3)" fontFamily="var(--font-mono)">100%</text>
-              <text x={LEFT - 6} y={yB(0) + 3} textAnchor="end" fontSize="9.5" fill="var(--text-3)" fontFamily="var(--font-mono)">0%</text>
-              {share.length ? (
-                segments(share, stepSec).map((seg, i) => (
-                  <g key={i}>
-                    <path d={area(seg, yB, yB(0))} fill={BACKUP_COLOR} opacity="0.22" />
-                    <polyline points={line(seg, (v) => yB(v).toFixed(1))} fill="none" stroke={BACKUP_COLOR} strokeWidth="1.5" strokeLinejoin="round" />
-                  </g>
-                ))
-              ) : (
-                <text x={LEFT + plotW / 2} y={bTop + BACKUP_H / 2 + 4} textAnchor="middle" fontSize="11" fill="var(--text-4)">no data</text>
-              )}
-              {share.length > 0 && RIGHT > 0 && (
-                <text x={LEFT + plotW + 10} y={bTop + 12} fontSize="10.5" fill="var(--text-3)">{Math.max(...share.map((p) => p.v)) > 0 ? `up to ${fmtShare(Math.max(...share.map((p) => p.v)) / 100)}` : "none"}</text>
-              )}
-            </>
-          )}
-
-          {/* 3 · Providers */}
-          <text x={LEFT} y={pTop - 9} fontSize="11" fontWeight="600" fill="var(--text-2)">
-            Providers
-            {tl && !tl.available && <tspan fontWeight="400" fill="var(--warn)" dx="8">incomplete: the metrics store did not answer every read</tspan>}
-          </text>
+          {/* 2 · Providers */}
+          <text x={LEFT} y={pTop - 9} fontSize="11" fontWeight="600" fill="var(--text-2)">Providers</text>
           {!tl && Array.from({ length: 3 }, (_, i) => (
             <rect key={i} x={LEFT} y={rowY(i)} width={plotW} height={ROW_H} rx="2" fill="var(--line)" opacity="0.35" />
           ))}
@@ -285,16 +216,15 @@ export function AvailabilityBreakdown({
                 </text>
                 <rect x={LEFT} y={y} width={plotW} height={ROW_H} fill="var(--line)" opacity="0.18" />
                 <g clipPath={`url(#${clip})`}>
-                  {r.cells.map((c) => (
-                    <g key={c.t}>
-                      {c.state && (
-                        <rect x={x(c.t) - cellW / 2 + (cellW > 3 ? 0.5 : 0)} y={y} width={Math.max(1, cellW - (cellW > 3 ? 1 : 0))} height={r.role === "backup" ? ROW_H - 4 : ROW_H} fill={healthColor(c.state)} opacity="0.85" />
-                      )}
-                      {r.role === "backup" && (c.rps ?? 0) > 0 && (
-                        <rect x={x(c.t) - cellW / 2} y={y + ROW_H - 3} width={cellW} height={3} fill={BACKUP_COLOR} />
-                      )}
-                    </g>
-                  ))}
+                  {r.cells.map((c) => {
+                    const { x: cx, w: cw } = colOf(c.t);
+                    return (
+                      <g key={c.t}>
+                        {c.state && <rect x={cx} y={y} width={cw} height={r.role === "backup" ? ROW_H - 4 : ROW_H} rx="1.5" fill={healthColor(c.state)} opacity="0.85" />}
+                        {r.role === "backup" && (c.rps ?? 0) > 0 && <rect x={cx} y={y + ROW_H - 3} width={cw} height={3} fill={BACKUP_COLOR} />}
+                      </g>
+                    );
+                  })}
                 </g>
                 {RIGHT > 0 && (
                   <text x={LEFT + plotW + 10} y={y + 11} fontSize="10.5" fill={st.color}>
@@ -306,45 +236,39 @@ export function AvailabilityBreakdown({
             );
           })}
 
-          {/* The one time axis. */}
-          {hasAxis && [0, 0.25, 0.5, 0.75, 1].map((f, k) => (
-            <text key={k} x={LEFT + f * plotW} y={bottom + AXIS_H - 2} fontSize="9" fill="var(--text-4)" fontFamily="var(--font-mono)" textAnchor={k === 0 ? "start" : k === 4 ? "end" : "middle"}>
-              {roFmtTime(new Date((x0 + f * (x1 - x0)) * 1000), win)}
-            </text>
+          {/* The one time axis, on round times. */}
+          {tl && (timeTicks([x0, x1]) ?? []).map((tk, k) => (
+            <text key={k} x={x(tk.at)} y={bottom + AXIS_H - 2} fontSize="9" fill="var(--text-4)" fontFamily="var(--font-mono)" textAnchor="middle">{tk.label}</text>
           ))}
-
-          {hovT !== null && hov && (
-            <>
-              <line x1={x(hovT)} x2={x(hovT)} y1={aTop} y2={bottom} stroke="var(--text-3)" strokeWidth="1" strokeDasharray="3 3" />
-              {hov.a && <circle cx={x(hovT)} cy={yA(hov.a.v)} r="3.5" fill={color} stroke="var(--surface)" strokeWidth="1.5" />}
-            </>
-          )}
         </svg>
-        {hovT !== null && hov && (
-          <div style={{ position: "absolute", top: 6, left: x(hovT), transform: `translateX(${tipRight ? "-104%" : "10px"})`, pointerEvents: "none", background: "var(--surface)", border: "1px solid var(--line-2)", borderRadius: 6, padding: "6px 10px", whiteSpace: "nowrap", boxShadow: "0 6px 18px rgba(0,0,0,0.35)", fontSize: 11.5, display: "grid", gap: 2 }}>
-            <div style={{ color: "var(--text-4)", fontSize: 10, fontFamily: "var(--font-mono)" }}>{roFmtTime(new Date(hovT * 1000), win)}</div>
-            <div style={{ color: "var(--text)" }}>
-              Availability <b className="gw-mono gw-tnum">{hov.a ? hov.a.v.toFixed(2) + "%" : "no data"}</b>
-            </div>
-            {hov.unhealthy.length > 0 && (
-              <div style={{ color: "var(--err)" }}>Unhealthy: {hov.unhealthy.join(", ")}</div>
+        {hov && hovCol && tl && (
+          <div style={{ position: "absolute", top: 6, ...(tipRight ? { right: w - hovCol.x + 8 } : { left: hovCol.x + hovCol.w + 8 }), pointerEvents: "none", background: "var(--surface)", border: "1px solid var(--line-2)", borderRadius: 8, padding: "8px 10px", whiteSpace: "nowrap", boxShadow: "0 6px 18px rgba(0,0,0,0.35)", fontSize: 11.5, display: "grid", gap: 3, minWidth: 180 }}>
+            <div className="gw-mono" style={{ color: "var(--text-3)", fontSize: 10.5, marginBottom: 3 }}>{barWords(hov.b.t, stepSec, tl.asOf)}</div>
+            {hov.b.ok === null ? (
+              <div style={{ color: "var(--text-4)" }}>No data</div>
+            ) : (
+              <>
+                <TipRow color="var(--ok)" label="Succeeded" value={fmtComma(hov.b.ok)} />
+                <TipRow color="var(--err)" label="Failed" value={fmtComma(hov.b.failed ?? 0)} />
+                <div style={{ display: "flex", gap: 8, marginTop: 2, color: "var(--text-2)" }}>
+                  <span style={{ flex: 1 }}>Availability</span>
+                  <b className="gw-mono gw-tnum" style={{ color: hov.avail !== null && hov.avail < TARGET ? "var(--err)" : "var(--text)" }}>{hov.avail === null ? "—" : pct(hov.avail)}</b>
+                </div>
+              </>
             )}
-            {hasBackup && (
-              <div style={{ color: hov.b && hov.b.v > 0 ? BACKUP_COLOR : "var(--text-3)" }}>
-                Backups served {hov.b ? fmtShare(hov.b.v / 100) : "no data"}
-                {hov.serving.length > 0 && ` (${hov.serving.join(", ")})`}
-              </div>
+            {hov.unhealthy.length > 0 && <div style={{ color: "var(--err)", marginTop: 2 }}>Unhealthy: {hov.unhealthy.join(", ")}</div>}
+            {hasBackup && hov.serving.length > 0 && (
+              <div style={{ color: BACKUP_COLOR }}>Backups served {fmtShare(hov.backupShare)} ({hov.serving.join(", ")})</div>
             )}
           </div>
         )}
       </div>
-      {/* Legend: the health words and colours of lib/health.ts, nothing new. */}
+      {/* Legend: the bars, then the health words and colours of lib/health.ts, nothing new. */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 6, paddingLeft: LEFT, fontSize: 10.5, color: "var(--text-3)" }}>
-        {(["operational", "unhealthy", "unknown"] as const).map((s) => (
-          <span key={s} style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-            <span style={{ width: 9, height: 9, borderRadius: 2, background: healthColor(s), opacity: 0.85 }} />{HEALTH_LABEL[s]}
-          </span>
-        ))}
+        <Key color="var(--ok)" label="Succeeded" />
+        <Key color="var(--err)" label="Failed" />
+        <span style={{ width: 1, background: "var(--line-2)" }} />
+        {(["operational", "unhealthy", "unknown"] as const).map((s) => <Key key={s} color={healthColor(s)} label={HEALTH_LABEL[s]} />)}
         <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
           <span style={{ width: 9, height: 9, borderRadius: 2, border: "1px solid var(--line-2)" }} />No data
         </span>
@@ -353,12 +277,25 @@ export function AvailabilityBreakdown({
             <span style={{ width: 11, height: 3, background: BACKUP_COLOR }} />Backup took traffic
           </span>
         )}
-        {bands.length > 0 && (
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-            <span style={{ width: 11, height: 9, background: "var(--err)", opacity: 0.18 }} />Under 99.9%
-          </span>
-        )}
       </div>
+    </div>
+  );
+}
+
+function Key({ color, label }: { color: string; label: string }) {
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+      <span style={{ width: 9, height: 9, borderRadius: 2, background: color, opacity: 0.85 }} />{label}
+    </span>
+  );
+}
+
+function TipRow({ color, label, value }: { color: string; label: string; value: string }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <span style={{ width: 9, height: 9, borderRadius: 2, background: color, opacity: 0.85 }} />
+      <span style={{ flex: 1, color: "var(--text-2)" }}>{label}</span>
+      <b className="gw-mono gw-tnum" style={{ color: "var(--text)" }}>{value}</b>
     </div>
   );
 }

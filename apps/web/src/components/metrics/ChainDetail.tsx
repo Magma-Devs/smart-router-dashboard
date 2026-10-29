@@ -5,9 +5,9 @@
  * the mock's synthetic series are replaced by /api/metrics/chain-series,
  * fetched only while the row is expanded (this component only mounts then).
  * The design's QoS option is gone: a selection score isn't something to act
- * on here. The "Primary vs backup" tile is gone too: its series is part 2 of
- * the Availability view (AvailabilityBreakdown), beside the chain's line and
- * its upstreams on one time axis. */
+ * on here. The "Primary vs backup" tile is gone too: the Availability view
+ * (AvailabilityBreakdown) marks the bars where a backup took traffic, under
+ * the chain's tries per bar. */
 
 import { WINDOWS, type ChainSeries, type MetricWindow, type TimePoint } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
@@ -137,9 +137,8 @@ export function ChainDetail({ r, onChainClick, win, tile: selKey, onTile: setSel
             <span style={{ fontSize: 10.5, color: "var(--text-4)", fontFamily: "var(--font-mono)" }}>{from} → now</span>
           </div>
           {m.key === "avail" ? (
-            // Availability, backup share and the upstreams, on one time axis.
-            // backupShare null with backups configured is "no data", never 0%.
-            <AvailabilityBreakdown spec={r.spec} routerId={r.routerId} win={win} color={m.color} availability={data.availability} backupShare={data.backupShare?.length ? data.backupShare : null} hasBackup={r.hasBackup} />
+            // The chain's tries in bars, succeeded and failed, and its upstreams under the same bars.
+            <AvailabilityBreakdown spec={r.spec} routerId={r.routerId} win={win} hasBackup={r.hasBackup} />
           ) : m.values.length ? (
             <InteractiveChart key={m.key} values={m.values} color={m.color} yFmt={m.yFmt} target={m.target} yDomain={m.yDomain} yMaxCap={m.yMaxCap} times={m.times} win={win} />
           ) : (

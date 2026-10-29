@@ -380,7 +380,7 @@ export interface UpstreamTimelineCell {
   pollsFailed: number | null;
 }
 
-/** One upstream of the chain, a cell per grid point from `grid.start` to `grid.end`. */
+/** One upstream of the chain, a cell per bar from `grid.start` to `grid.end`. */
 export interface UpstreamTimelineRow {
   /** The values file's name where it declares the upstream (series matched case-insensitively), else the series'. */
   upstream: string;
@@ -392,16 +392,22 @@ export interface UpstreamTimelineRow {
 }
 
 /**
- * Every upstream of one chain over the window, on the same grid as the
- * chain's availability series (`chain-series`): primaries first, then backups,
- * then upstreams the config doesn't mark.
+ * One chain over the window in bars on the clock (`bucketGrid`, the
+ * errors-over-time bars' grid): the chain's tries per bar, split into
+ * succeeded and failed, and every upstream of it with a cell per bar -
+ * primaries first, then backups, then upstreams the config doesn't mark.
  */
 export interface UpstreamTimeline {
   spec: string;
   /** Every read answered. False: one failed, so a missing figure means nothing. */
   available: boolean;
-  failed: ("rps" | "failedRps" | "pollsOk" | "pollsFailed")[];
+  failed: ("rps" | "failedRps" | "pollsOk" | "pollsFailed" | "bars")[];
+  /** The bars' END times: a bar at `t` covers the `stepSec` before it; the last one is still filling, up to `asOf`. */
   grid: ChartGrid;
+  /** Unix seconds the read was made at: where the last bar stops. */
+  asOf: number;
+  /** The chain's tries per bar (relay-scoped, the availability's denominator): `ok` succeeded, `failed` didn't. null = not read. */
+  bars: { t: number; ok: number | null; failed: number | null }[];
   upstreams: UpstreamTimelineRow[];
 }
 
