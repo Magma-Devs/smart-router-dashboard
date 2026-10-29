@@ -29,18 +29,22 @@ import { linkRequest, requestFromUrl } from "@/lib/request-in-url";
 import {
   AppGot,
   appGot,
-  CustomerCell,
   customerOptions,
   hasCustomer,
   LOOKUP_REFUSED,
   MatchesNote,
   TxHash,
   errorTypeOptions,
+  FilterSelect,
+  NewRowsStrip,
+  useHeldRows,
+  WhenCell,
+  stickyListHeader,
+  useListHeadHeight,
   everyNodeRefused,
   filterSelectStyle,
   Flow,
   fmtTook,
-  fmtWhen,
   hasErrorType,
   IdSearch,
   LOG_SKEL_COLS,
@@ -95,7 +99,7 @@ export function txStatusOf(r: TxLogRow): BreakdownProps["status"] {
     case "accepted": return { label: "Accepted", color: "var(--ok)" };
     case "rejected": return { label: "Rejected", color: "var(--err)" };
     case "failed-on-chain": return { label: "Failed on chain", color: "var(--err)" };
-    case "failed": return { label: "Error", color: "var(--err)", detail: r.error?.code ? null : "No usable response from any provider" };
+    case "failed": return { label: "Error", color: "var(--err)", detail: null };
     case "unknown": return { label: "Unknown", color: "var(--text-3)", detail: "Outcome not confirmed" };
   }
 }
@@ -179,13 +183,21 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
   const specQ = chainFilter ? `&spec=${encodeURIComponent(chainFilter)}` : "";
   // Rows are matched to a config router by the upstreams they went to.
   const { routerIdQ } = useRouterFilter();
+
+  // Another chain or router is another list: what was open on the last one closes.
+  const scopeKey = `${chainFilter ?? ""}|${routerIdQ}`;
+  const [shownScope, setShownScope] = useState(scopeKey);
+  if (shownScope !== scopeKey) { setShownScope(scopeKey); setOpen(null); setLookupId(null); setPage(0); }
+  useEffect(() => { if (!open && !lookupId) linkRequest(null); }, [scopeKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const rangeQ = range ? `from=${Math.round(range.from)}&to=${Math.round(range.to)}` : `window=${win}`;
   // An open row on screen holds the list still (`openRowShown`); set below, once the rows on screen are known.
-  const [held, setHeld] = useState(false);
-  const log = useLogReads<TxLogRow, TransactionsReport>(`/api/transactions?${rangeQ}${specQ}${routerIdQ}`, live && !held);
+  const [paused, setPaused] = useState(false);
+  const log = useLogReads<TxLogRow, TransactionsReport>(`/api/transactions?${rangeQ}${specQ}${routerIdQ}`, live && !paused);
   const data = log.head;
   const isLoading = log.first.isLoading;
-  const allRows = log.rows;
+  const held = useHeldRows(log.rows, open);
+  const [headRef, headVar] = useListHeadHeight();
+  const allRows = held.rows;
   const sum = useMemo(() => summarize(allRows), [allRows]);
   const when = range ? "in the times you picked" : `in the last ${WINDOWS[win].label}`;
   const methods = useMemo(() => [...new Set(allRows.map((r) => r.method))].sort(), [allRows]);
@@ -209,7 +221,7 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
   const curPage = Math.min(page, pageCount - 1);
   const pageRows = rows.slice(curPage * PER_PAGE, (curPage + 1) * PER_PAGE);
   const holds = live && openRowShown(open, pageRows);
-  if (holds !== held) setHeld(holds);
+  if (holds !== paused) setPaused(holds);
 
   const header = (
     <div style={{ marginBottom: 16, display: "flex", justifyContent: "flex-end" }}>
@@ -277,38 +289,38 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
 
       <TransactionsChart win={win} specQ={specQ} routerIdQ={routerIdQ} exactRange={range !== null} />
 
-      <div className="gw-card" style={{ padding: 0, overflow: "hidden" }}>
-        <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--line)", display: "grid", gap: 10 }}>
+      <div className="gw-card gw-log-card" style={{ padding: 0, overflow: "clip", ...headVar }}>
+        <div ref={headRef} style={stickyListHeader}>
           <span style={{ display: "inline-flex", alignItems: "center", fontSize: 12, fontWeight: 600, color: "var(--text-2)" }}>
             Transactions<Tip text={TT.txLog!} />
             {data && <span style={{ fontWeight: 400, color: "var(--text-4)", marginLeft: 8 }}>{fmtComma(rows.length)}{rows.length !== allRows.length ? ` of ${fmtComma(allRows.length)}` : ""}</span>}
             <span style={{ marginLeft: 8, display: "inline-flex" }}><Refreshing show={log.refreshing} label="Reading newer transactions" /></span>
-            {held && <span style={{ fontWeight: 400, color: "var(--text-4)", marginLeft: 8 }}>· paused while a row is open</span>}
+            {paused && <span style={{ fontWeight: 400, color: "var(--text-4)", marginLeft: 8 }}>· paused while a row is open</span>}
           </span>
           {/* Narrowing it down, and finding one transaction. */}
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            <select aria-label="Result" value={outcome} onChange={(e) => reset(setOutcome)(e.target.value as TxLogRow["outcome"] | typeof ALL)} style={narrowSelect} disabled={!allRows.length && outcome === ALL}>
+            <FilterSelect aria-label="Result" value={outcome} onChange={(e) => reset(setOutcome)(e.target.value as TxLogRow["outcome"] | typeof ALL)} style={narrowSelect} disabled={!allRows.length && outcome === ALL}>
               <option value={ALL}>All results</option>
               {/* No counts before the first read lands: a 0 there would be a claim. */}
               {OUTCOME_ORDER.map((o) => <option key={o} value={o}>{OUTCOME[o].label}{data ? ` (${fmtComma(byOthers.filter((r) => r.outcome === o).length)})` : ""}</option>)}
-            </select>
-            <select aria-label="Customer" value={customer} onChange={(e) => reset(setCustomer)(e.target.value)} style={narrowSelect} disabled={!customers.length && customer === ALL}>
+            </FilterSelect>
+            <FilterSelect aria-label="Customer" value={customer} onChange={(e) => reset(setCustomer)(e.target.value)} style={narrowSelect} disabled={!customers.length && customer === ALL}>
               <option value={ALL}>All customers</option>
               {customers.map((c) => <option key={c.key} value={c.key}>{c.label} ({fmtComma(c.count)})</option>)}
-            </select>
-            <select aria-label="Method" value={method} onChange={(e) => reset(setMethod)(e.target.value)} style={narrowSelect} disabled={!methods.length}>
+            </FilterSelect>
+            <FilterSelect aria-label="Method" value={method} onChange={(e) => reset(setMethod)(e.target.value)} style={narrowSelect} disabled={!methods.length}>
               <option value={ALL}>All methods</option>
               {methods.map((m) => <option key={m} value={m}>{m === "unknown" ? "method not in the logs" : m}</option>)}
-            </select>
-            <select aria-label="Error type" value={errType} onChange={(e) => reset(setErrType)(e.target.value)} style={narrowSelect} disabled={!errTypes.length}>
+            </FilterSelect>
+            <FilterSelect aria-label="Error type" value={errType} onChange={(e) => reset(setErrType)(e.target.value)} style={narrowSelect} disabled={!errTypes.length}>
               <option value={ALL}>All error types</option>
               {errTypes.map((t) => <option key={t.key} value={t.key}>{t.label} ({fmtComma(t.count)})</option>)}
-            </select>
-            <select aria-label="Upstream" value={upstream} onChange={(e) => reset(setUpstream)(e.target.value)} style={narrowSelect} disabled={!upstreams.length && upstream === ALL}>
+            </FilterSelect>
+            <FilterSelect aria-label="Upstream" value={upstream} onChange={(e) => reset(setUpstream)(e.target.value)} style={narrowSelect} disabled={!upstreams.length && upstream === ALL}>
               <option value={ALL}>All upstreams</option>
               {upstream !== ALL && !upstreams.some((u) => u.name === upstream) && <option value={upstream}>{upstream}</option>}
               {upstreams.map((u) => <option key={u.name} value={u.name}>{u.name} ({fmtComma(u.count)})</option>)}
-            </select>
+            </FilterSelect>
             <span style={{ flex: 1 }} />
             <IdSearch onFind={find} />
           </div>
@@ -324,8 +336,9 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
             The latest {fmtComma(allRows.length)} transactions {when} - the numbers above cover these. Load older ones at the bottom.
           </LogStrip>
         )}
+        <NewRowsStrip count={held.newCount} noun="transaction" onShow={held.showNew} />
         {/* Below 860px the columns would overlap: scroll sideways instead. */}
-        <div style={{ overflowX: "auto" }}>
+        <div className="gw-log-scroll">
           <table className="gw-table" style={{ tableLayout: "fixed", width: "100%", minWidth: 860 }}>
             <colgroup>
               <col style={{ width: 150 }} />
@@ -353,8 +366,7 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
                   <Fragment key={r.guid}>
                     <tr tabIndex={0} aria-expanded={isOpen} style={{ cursor: "pointer" }} onClick={toggle} onKeyDown={onRowKey(toggle)}>
                       <td style={{ maxWidth: 0, verticalAlign: "top" }}>
-                        <span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{fmtWhen(r.time)}</span>
-                        <CustomerCell customer={r.customer} />
+                        <WhenCell time={r.time} customer={r.customer} />
                       </td>
                       <td style={{ maxWidth: 0, verticalAlign: "top" }}>
                         {/* The icon sits on the chain's line, not halfway down the cell. */}

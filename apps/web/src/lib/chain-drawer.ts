@@ -35,9 +35,9 @@ export function byAttention(rows: DrawerChain[]): DrawerChain[] {
 }
 
 /** A spec index as the api takes it (`?spec=`): a plain token. */
-const SPEC_TOKEN = /^[A-Za-z0-9_-]{1,64}$/;
+export const SPEC_TOKEN = /^[A-Za-z0-9_-]{1,64}$/;
 /** A config router id (`eth-prod`, `ETH1`): the values file's own name for it. */
-const ROUTER_TOKEN = /^[A-Za-z0-9_.:-]{1,128}$/;
+export const ROUTER_TOKEN = /^[A-Za-z0-9_.:-]{1,128}$/;
 
 /** What a page URL narrows to: `?chain=ETH1&router=eth-prod`. */
 export interface PageScope {

@@ -23,17 +23,21 @@ import { linkRequest, requestFromUrl } from "@/lib/request-in-url";
 import {
   AppGot,
   appGot,
-  CustomerCell,
   customerOptions,
   hasCustomer,
   LOOKUP_REFUSED,
   MatchesNote,
   errorLabel,
   errorTypeOptions,
+  FilterSelect,
+  NewRowsStrip,
+  useHeldRows,
+  WhenCell,
+  stickyListHeader,
+  useListHeadHeight,
   filterSelectStyle,
   Flow,
   fmtTook,
-  fmtWhen,
   hasErrorType,
   chainWords,
   chainsTitle,
@@ -149,12 +153,11 @@ function retriesWords(r: ErrorRequestRow): string | null {
 
 /** The response's status: the word, its colour, and a detail where the code doesn't carry one. */
 export function statusOf(r: ErrorRequestRow): BreakdownProps["status"] {
-  const failed = r.attempts.filter((a) => a.outcome === "failed").length;
   switch (r.result) {
     case "ok": return { label: "Success", color: "var(--ok)" };
-    case "recovered": return { label: "Success", color: "var(--ok)", detail: failed ? `after ${failed} failed ${failed === 1 ? "try" : "tries"}` : null };
+    case "recovered": return { label: "Success", color: "var(--ok)", detail: null };
     case "error-reply": return { label: "Error", color: "var(--err)" };
-    case "failed": return { label: "Error", color: "var(--err)", detail: r.errorCode ? null : "No usable response from any provider" };
+    case "failed": return { label: "Error", color: "var(--err)", detail: null };
     case "write-unknown": return { label: "Unknown", color: "var(--text-3)", detail: "Write not confirmed" };
     case "unknown": return { label: "Not logged", color: "var(--text-3)" };
   }
@@ -231,18 +234,20 @@ const narrowSelect: React.CSSProperties = { ...filterSelectStyle, maxWidth: 200 
  * and its reads of them. Held by the tab, so the cards above count the rows
  * the list shows rather than reading the logs again.
  */
-export function useErrorList({ chainFilter, win, upstream, initialRange = null }: {
+export function useErrorList({ chainFilter, win, upstream, initialRange = null, onPick }: {
   chainFilter: string | null;
   win: MetricWindow;
   upstream: string;
   initialRange?: ExactRange | null;
+  /** Told when the list's times are picked or cleared - the page keeps them in its URL. */
+  onPick?: (r: ExactRange | null) => void;
 }) {
   const [range, setRange] = useState<ExactRange | null>(initialRange);
   // A picked range that has closed can't change: read it once, don't poll it.
   const [live, setLive] = useState(() => rangeIsLive(initialRange));
   // An open row on screen holds the list still (`openRowShown`); the table says when one is.
   const [openShown, setOpenShown] = useState(false);
-  const held = live && openShown;
+  const paused = live && openShown;
   const specQ = chainFilter ? `&spec=${encodeURIComponent(chainFilter)}` : "";
   const { routerIdQ } = useRouterFilter();
   const rangeQ = range ? `from=${Math.round(range.from)}&to=${Math.round(range.to)}` : `window=${win}`;
@@ -250,9 +255,9 @@ export function useErrorList({ chainFilter, win, upstream, initialRange = null }
   // that upstream, so the cap applies to the requests the bar counts.
   const onBarRange = initialRange != null && range != null && range.from === initialRange.from && range.to === initialRange.to;
   const barQ = onBarRange && upstream !== ALL ? `&upstream=${encodeURIComponent(upstream)}` : "";
-  const log = useLogReads<ErrorRequestRow, ErrorRequestsReport>(`/api/error-requests?${rangeQ}${specQ}${routerIdQ}${barQ}`, live && !held);
-  const pick = (r: ExactRange | null) => { setRange(r); setLive(rangeIsLive(r)); };
-  return { log, range, pick, rangeQ, routerIdQ, onBarRange, barQ, held, setOpenShown };
+  const log = useLogReads<ErrorRequestRow, ErrorRequestsReport>(`/api/error-requests?${rangeQ}${specQ}${routerIdQ}${barQ}`, live && !paused);
+  const pick = (r: ExactRange | null) => { setRange(r); setLive(rangeIsLive(r)); onPick?.(r); };
+  return { log, range, pick, rangeQ, routerIdQ, onBarRange, barQ, paused, setOpenShown };
 }
 
 export type ErrorList = ReturnType<typeof useErrorList>;
@@ -287,8 +292,17 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
   const find = (id: string | null) => { setLookupId(id); linkRequest(id ?? open); };
   const toggleRow = (guid: string) => { const next = open === guid ? null : guid; setOpen(next); linkRequest(next ?? lookupId); };
 
-  const { log, range, rangeQ, routerIdQ, onBarRange, barQ, held } = list;
-  const { first, head, rows: allRows } = log;
+  const { log, range, rangeQ, routerIdQ, onBarRange, barQ, paused } = list;
+
+  // Another chain or router is another list: what was open on the last one closes.
+  const scopeKey = `${chainFilter ?? ""}|${routerIdQ}`;
+  const [shownScope, setShownScope] = useState(scopeKey);
+  if (shownScope !== scopeKey) { setShownScope(scopeKey); setOpen(null); setLookupId(null); setPage(0); }
+  useEffect(() => { if (!open && !lookupId) linkRequest(null); }, [scopeKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const { first, head } = log;
+  const held = useHeldRows(log.rows, open);
+  const [headRef, headVar] = useListHeadHeight();
+  const allRows = held.rows;
 
   const methods = useMemo(() => [...new Set(allRows.map((r) => r.method))].sort(), [allRows]);
   // The upstreams an attempt failed at, each with its count of requests.
@@ -360,15 +374,15 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
   }
 
   return (
-    <div ref={listRef} className="gw-card" style={{ padding: 0, overflow: "hidden", scrollMarginTop: 16 }}>
-      <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--line)", display: "grid", gap: 10 }}>
+    <div ref={listRef} className="gw-card gw-log-card" style={{ padding: 0, overflow: "clip", scrollMarginTop: 72, ...headVar }}>
+      <div ref={headRef} style={stickyListHeader}>
         {/* What the list holds: how many, what came of them, and the times it covers. */}
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <span style={{ display: "inline-flex", alignItems: "center", fontSize: 12, fontWeight: 600, color: "var(--text-2)" }}>
             Requests with an error<Tip text={TT.errorRequests!} />
             {head && <span style={{ fontWeight: 400, color: "var(--text-4)", marginLeft: 8 }}>{fmtComma(rows.length)}{rows.length !== allRows.length ? ` of ${fmtComma(allRows.length)}` : ""}</span>}
             <span style={{ marginLeft: 8, display: "inline-flex" }}><Refreshing show={log.refreshing} label="Reading newer requests" /></span>
-            {held && <span style={{ fontWeight: 400, color: "var(--text-4)", marginLeft: 8 }}>· paused while a row is open</span>}
+            {paused && <span style={{ fontWeight: 400, color: "var(--text-4)", marginLeft: 8 }}>· paused while a row is open</span>}
           </span>
           <Seg
             value={result}
@@ -390,28 +404,28 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
         </div>
         {/* Narrowing it down, and finding one request. */}
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <select aria-label="Retryable" value={retry} onChange={(e) => reset(setRetry)(e.target.value as RetryFilter)} style={narrowSelect}>
+          <FilterSelect aria-label="Retryable" value={retry} onChange={(e) => reset(setRetry)(e.target.value as RetryFilter)} style={narrowSelect}>
             <option value={ALL}>Retryable or not</option>
             <option value="retryable">Retryable ({fmtComma(kinds.filter((k) => k.retryable).length)})</option>
             <option value="not-retryable">Not retryable ({fmtComma(kinds.filter((k) => k.notRetryable).length)})</option>
-          </select>
-          <select aria-label="Error type" value={errType} onChange={(e) => reset(setErrType)(e.target.value)} style={narrowSelect} disabled={!errTypes.length}>
+          </FilterSelect>
+          <FilterSelect aria-label="Error type" value={errType} onChange={(e) => reset(setErrType)(e.target.value)} style={narrowSelect} disabled={!errTypes.length}>
             <option value={ALL}>All error types</option>
             {errTypes.map((t) => <option key={t.key} value={t.key}>{t.label} ({fmtComma(t.count)})</option>)}
-          </select>
-          <select aria-label="Customer" value={customer} onChange={(e) => reset(setCustomer)(e.target.value)} style={narrowSelect} disabled={!customers.length && customer === ALL}>
+          </FilterSelect>
+          <FilterSelect aria-label="Customer" value={customer} onChange={(e) => reset(setCustomer)(e.target.value)} style={narrowSelect} disabled={!customers.length && customer === ALL}>
             <option value={ALL}>All customers</option>
             {customers.map((c) => <option key={c.key} value={c.key}>{c.label} ({fmtComma(c.count)})</option>)}
-          </select>
-          <select aria-label="Method" value={method} onChange={(e) => reset(setMethod)(e.target.value)} style={narrowSelect} disabled={!methods.length}>
+          </FilterSelect>
+          <FilterSelect aria-label="Method" value={method} onChange={(e) => reset(setMethod)(e.target.value)} style={narrowSelect} disabled={!methods.length}>
             <option value={ALL}>All methods</option>
             {methods.map((m) => <option key={m} value={m}>{m === "unknown" ? "method not in the logs" : m}</option>)}
-          </select>
-          <select aria-label="Upstream" value={upstream} onChange={(e) => { onUpstream(e.target.value); setPage(0); }} style={narrowSelect} disabled={!upstreams.length && upstream === ALL}>
+          </FilterSelect>
+          <FilterSelect aria-label="Upstream" value={upstream} onChange={(e) => { onUpstream(e.target.value); setPage(0); }} style={narrowSelect} disabled={!upstreams.length && upstream === ALL}>
             <option value={ALL}>All upstreams</option>
             {upstream !== ALL && !upstreams.some((u) => u.name === upstream) && <option value={upstream}>{upstream}</option>}
             {upstreams.map((u) => <option key={u.name} value={u.name}>{u.name} ({fmtComma(u.count)})</option>)}
-          </select>
+          </FilterSelect>
           <span style={{ flex: 1 }} />
           <IdSearch onFind={find} />
         </div>
@@ -428,8 +442,9 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
           onClose={() => find(null)} />
       )}
 
+      <NewRowsStrip count={held.newCount} noun="request" onShow={held.showNew} />
       {/* Below 860px the columns would overlap: scroll sideways instead. */}
-      <div style={{ overflowX: "auto" }}>
+      <div className="gw-log-scroll">
         <table className="gw-table" style={{ tableLayout: "fixed", width: "100%", minWidth: 860 }}>
           <colgroup>
             <col style={{ width: 150 }} />
@@ -456,8 +471,7 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
                 <Fragment key={r.guid}>
                   <tr tabIndex={0} aria-expanded={isOpen} style={{ cursor: "pointer" }} onClick={toggle} onKeyDown={onRowKey(toggle)}>
                     <td style={{ maxWidth: 0, verticalAlign: "top" }}>
-                      <span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{fmtWhen(r.time)}</span>
-                      <CustomerCell customer={r.customer} />
+                      <WhenCell time={r.time} customer={r.customer} />
                     </td>
                     <td style={{ maxWidth: 0, verticalAlign: "top" }}>
                       {/* The icon sits on the chain's line, not halfway down the cell. */}

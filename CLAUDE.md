@@ -298,8 +298,13 @@ apps/web/                 @sr/web — Next.js 16 App Router (:3000)
                         SideSheet · icons
       overview/         OverviewView (KPI strip + 2×2 chart grid)
       metrics/          MetricsView (4 tabs) · HeroPanel · RouterOverview ·
-                        ChainDetail · ChainTrafficByProvider (which upstream
-                        took a picked chain's traffic) · ErrorsBreakdown (the Errors tab: count
+                        ChainDetail (its Availability view is
+                        AvailabilityBreakdown: availability in blocks, all
+                        the router's providers and each one) ·
+                        ChainTrafficByProvider (which upstream
+                        took a picked chain's traffic) · ChainAvailability
+                        (the same blocks for a picked chain, a router picker
+                        when two or more serve it) · ErrorsBreakdown (the Errors tab: count
                         cards + ErrorRequests, the request list) ·
                         TransactionLog · TransactionsChart (its bars over
                         time) · request-log (the two log tables'
@@ -554,7 +559,8 @@ boot. Set `job` for a scrape config that names jobs per router.
   one.
 - Web side: the scope lives in `FiltersProvider` next to the chain and the time
   window, in two lifetimes — **the window persists** (`sr:window`, a viewing
-  preference), **the chain and the router belong to the page** that set them
+  preference; a window from a link, `linkWindow`, is shown on that page only
+  and never saved), **the chain and the router belong to the page** that set them
   (in-memory, stamped with the pathname, gone when you navigate — a narrowing
   that outlives its screen is a trap). Every metrics URL appends `scopeQ` /
   `withScope(url)`. A selection that disappears from the list resets to "All
@@ -574,7 +580,23 @@ boot. Set `job` for a scrape config that names jobs per router.
   them, a chain or router change is a history entry (Back returns to the
   previous one, tab included) while a tab change alone rewrites the current
   entry, and another page's URL has none, so the per-page rule above still
-  holds. The two log tabs add `request=<id>` (`lib/request-in-url.ts`): opening
+  holds. The rest of the view rides with them (`lib/view-in-url.ts`, written by
+  the same hook, so a copied URL or a reload opens the same view): `window`
+  always (the sender's, not the viewer's saved one - opening a link never
+  saves it); on Overview `expand=<router id>` and `tile=<tile key>` (the
+  Routers table's open row and its chart, `ChainDetail`'s own tile keys); on
+  Upstreams `upstream=<node name>` (the deep-dive; `upstreamChain=<spec>` only
+  when no chain is picked); on Errors `upstream` (the list's filter) and
+  `from` / `to` (unix ms - an errors-over-time bar writes all three). A change
+  to them rewrites the current entry, picking another tab drops the old tab's,
+  and a new chain or router drops the Upstreams tab's upstream. What a link
+  asks for that no longer exists opens the nearest view with a one-line notice
+  (`LinkNotice`): an upstream or router the config no longer has (the first
+  upstream / no open row), a tile the row doesn't draw, times that ended over
+  30 days ago (the page window), started before then (cut to 30 days ago) or
+  can't be read, an unknown window. A malformed value reads as none; an
+  upstream name with `://` is refused, so no node URL reaches the URL.
+  The two log tabs add `request=<id>` (`lib/request-in-url.ts`): opening
   a row or finding a request by ID writes it, closing clears it, picking
   another tab drops it, and a link with it opens that tab's look-up on the
   request (a v1.6.1 ID is read in its own minutes, whatever the page's
@@ -879,8 +901,9 @@ Every `/api/metrics/*` route also accepts **`router?`** — the router scope
 | `GET /api/metrics/rps` | `window`, `spec?` | `TimeSeries` — `{ label, points: {t, v}[] }` |
 | `GET /api/metrics/traffic` | `window` | Aggregate `rpsNow` + series + per-chain rows (`rpsNow`, `requests`, `share`, `trend` sparkline). **No web consumer**; kept as a documented read surface |
 | `GET /api/metrics/methods` | `window`, `spec?` | `{ methods: MethodUsage[], classTotals: MethodClassTotals }` — per-method CLIENT requests/class/errorRate + **real `p95Ms`** (the histogram's method label is named `function`); classTotals: `read` real, `write`/`batch` null + `emitted` flags, `unclassified` remainder. **No web consumer**; kept as a documented read surface |
-| `GET /api/metrics/chain-series` | **`spec`** (required), `window` | `ChainSeries` — the ChainDetail metric-switcher bundle: availability / p95 / errorRate / rps series + `qos` (optimizer-scope score, endpoint-scope fallback; null when never emitted) + `backupShare` (only when the config marks backups **and** the selector actually matched — an unmatched selector is `null`, never a 0% series; the UI states it as **primary** share). 400 without `spec` |
+| `GET /api/metrics/chain-series` | **`spec`** (required), `window` | `ChainSeries` — the ChainDetail metric-switcher bundle: availability / p95 / errorRate / rps series + `qos` (optimizer-scope score, endpoint-scope fallback; null when never emitted) + `backupShare` (only when the config marks backups **and** the selector actually matched — an unmatched selector is `null`, never a 0% series). 400 without `spec` |
 | `GET /api/metrics/upstream-mix` | **`spec`** (required), `window` | `UpstreamMix` — `{ spec, upstreams: { upstream, points }[] }`: requests per second each upstream took on the chain, biggest first - relay-scoped, so a retried request counts at every upstream it reached; `Cached` is the relay cache answering with no upstream. One range read through `qPerUpstreamRpsExpr` (the Overview's per-upstream read, recorded series on long windows), kept apart from `chain-series` so the Metrics tab's "Traffic by provider" card, shown whenever a chain is picked, doesn't pull the row bundle's other reads. 400 without `spec` |
+| `GET /api/metrics/upstream-timeline` | **`spec`** (required), `window`, `router?`, **`routerId?`** | `UpstreamTimeline` - the Availability blocks (a router row's Availability view and the Metrics tab's Availability card): every upstream of one chain, a cell per stretch of the clock (`bucketGrid`, the errors-over-time bars' grid - 30 minutes on 12 hours; `grid` holds the cells' ends, the last still filling up to `asOf`): `rps` and `failedRps` (tries by `provider_address`), `share` of the chain's tries (the relay cache's counted in, as `qBackupShareExpr` divides), `pollsOk` / `pollsFailed` (`rpc_endpoint_fetch_latest_*` by `endpoint_id`), and `state` (`upstreamCellState`: unhealthy at half the tries failed or every poll failed, `unknown` when scraped but neither tried nor polled, `null` when nothing was scraped - a gap, never a health). No health-over-time series exists per upstream; `rpc_endpoint_overall_health` is not read (optimistic at start, moved only by relays). Four range reads whatever the count; the stretch still filling is one more read of each at now. Recorded series for the tries from 12h. `served`: per cell, the clients' requests and the ones the router couldn't serve - the Failed requests card's recorded counts (`RECORDED_OUTCOMES`, `chain` and a router's `service_name=~".+-<id>"`), null where the store has none or the router can't be split; the top row, Requests served, reads it. Rows: the config's nodes on the chain (one router's with `routerId`), matched to series case-insensitively, `role` from helm `is_backup`, primaries then backups; without `routerId`, upstreams only the metrics name too (`inConfig: false`); `Cached` gets no row. `available:false` + `failed` when a read was refused. 400 without `spec`. See docs/METRICS-MAPPING.md |
 | `GET /api/metrics/upstream-detail` | **`endpointId`** + **`spec`** (both required), `window` | `UpstreamDetail` - the Upstreams deep-dive for ONE upstream on ONE chain (vendors reuse a node name across chains, so every selector carries `spec` too: `upstreamEndpointSelector` / `upstreamProviderSelector`): health, availability, requests, rpsNow, p50/95/99, errorRate, blockLag, inFlight, score gauges + per-score-type series (not shown), latency/volume/block-lag series (`volume.read` real; write/batch null), **`errorsOverTime`** (`failed` tries + `node` error replies per bar, on the clock (`bucketGrid`) - a bar at `t` covers the `stepSec` before it, the last one still filling up to `asOf`; clicking a bar opens the Errors tab on the requests whose attempt at that upstream failed over exactly that span, the list's upstream filter); `errorsByCode`/`recentErrors` empty + `emitted` flags. 400 without `endpointId` or `spec` |
 | `GET /api/metrics/upstream-peers` | **`spec`** (required), `window` | `UpstreamPeers` - every upstream of one chain side by side: `latencyP95`, `rps` and `latestBlock` series per upstream, from three range queries whatever the count, sampled on `grid` (`chartSampling`: ~300 points, each averaging a 24th of the window - volume as an average of short rates over what is there, see "Time windows"). The deep-dive draws the selected upstream bold against these and lays points out by time on the grid; latency and volume are cut where the upstream wasn't scraped, so missing data is a gap. No requests at a point ⇒ no latency there (`v: null`), never a zero. 400 without `spec` |
 | `GET /api/metrics/errors` | `window`, `spec?` | `ErrorsReport` — derived `total` + `trend`, (chain × provider) **hotspots** (trend sparklines for the top 5), chain/method **pivots**; `category`/`code`/`retryability` pivots stay `[]` until labelled error counters exist (**`families`** presence flags) |
@@ -954,7 +977,7 @@ poll, shares them. `/api/metrics/query` (the caller's own PromQL) and
 
 | Answer | Routes (`/api/metrics/…`) | 5m–1h | 3h–12h | 1d–3d | 7d–30d |
 |---|---|---|---|---|---|
-| Figures over the window | `rps` · `traffic` · `methods` · `chain-series` · `upstream-peers` · `cross-validation` | 15 s | 60 s | 5 min | 15 min |
+| Figures over the window | `rps` · `traffic` · `methods` · `chain-series` · `upstream-timeline` · `upstream-peers` · `cross-validation` | 15 s | 60 s | 5 min | 15 min |
 | Figures about now too (health, latest block, in-flight, a current rate), and the Errors tab | `dashboard-summary` · `overview` · `dashboard` · `routers-rollup` · `chains` · `upstreams` · `upstream-detail` · `websocket` · `errors` · `retries` | 15 s | 60 s | 60 s | 60 s |
 | No window | `routers` · `specs` · `block-heights` · `unavailable` | 15 s | | | |
 | The topbar's pulse, polled every 30 s | `pulse` | 30 s | | | |
@@ -1121,7 +1144,7 @@ Compose / Makefile knobs:
 | shared `dist` | api/web read `@sr/shared` from `dist/` — run `pnpm --filter @sr/shared build` after editing it (the docker dev `builder` service does this on a `tsc --watch`). |
 | Metric names | NOT `lava_rpcsmartrouter_*` — see Metrics above. The `../SR_Dashboard/` prototype is authoritative for **pixels**, not for metric names. |
 | Polling | A poll belongs in `useApi`: the per-window cadence and the idle gate live there, and a direct `useSWR` poll gets neither. While the gate has polling paused, `isPaused` refuses every revalidation, a `mutate()` included. A click or a key resumes polling before its handler runs, so a refresh a person asks for works; one fired by a timer does nothing until someone comes back. See "Polling" |
-| Window params | `24h` is a wire alias of `1d`; unknown values silently fall back to `DEFAULT_WINDOW` = `30m` (never a 400). The web opens on the same constant, and a window the user picks persists to `localStorage` under `sr:window` — so a changed default only reaches someone who has never picked one. `1h` is in the catalog but not in the page-level select. |
+| Window params | `24h` is a wire alias of `1d`; unknown values silently fall back to `DEFAULT_WINDOW` = `30m` (never a 400). The web opens on the same constant, and a window the user picks persists to `localStorage` under `sr:window` — so a changed default only reaches someone who has never picked one. The Metrics page's `?window=` beats both and is never saved. `1h` is in the catalog but not in the page-level select. |
 | Provider `role` | Only the helm values format marks backups (`is_backup`); with a raw SR_CONFIG mount, `role` is null and backup-share panels stay empty — that's honest, not a bug. |
 | Endpoint URLs | `localhost:<port>` comes from SR_CONFIG's listen ports, gateway hostnames from helm values' `publicUrls` — a mount never has both. Anything that renders or dials an endpoint address must resolve public → local → `—` (`epHttpUrl` / `epWsUrl` in `components/endpoints/bits.tsx`), never hardcode `localhost`. |
 | Health words | `HealthState` has exactly three states and exactly one wording — `lib/health.ts` / `<HealthTag>`. A panel that maps health to its own labels/colours is a bug, even when the words look nicer locally: the same upstream is read across panels. |

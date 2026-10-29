@@ -5,6 +5,122 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+## [0.51.0]
+
+### Added
+
+- **Availability in blocks.** Expanding a router on the Metrics page with
+  Availability selected shows a block per 30 minutes on 12 hours. The top
+  row, **Requests served**, is what clients got: the share of their requests
+  the router answered, from the Failed requests card's counts, so a try that
+  failed and was then served by another provider doesn't count against it.
+  Under it, a row per provider: the share of its tries that succeeded. A
+  block is 99.9% or more, 99% to 99.9%, under 99%, or no traffic (a standby
+  backup wasn't asked, which isn't the same as available). Each row ends in
+  its figure over the window; hovering a column lists every row for that
+  half hour. Where the store has no recorded counts, the top row adds up the
+  providers' tries and says so.
+- **Metrics tab: a picked chain shows no Routers table.** The table compares
+  routers; with one chain picked, its cards say it, and the chains list on the
+  left picks between a chain's routers.
+- **Metrics tab: an Availability card for a picked chain.** The same blocks
+  under Traffic by provider. It follows the router picked in the chains
+  list; with none picked, a chain two routers serve shows all its providers.
+- `GET /api/metrics/upstream-timeline` - every upstream of one chain, a cell
+  per stretch of the clock (the errors-over-time bars' grid): tries, failed
+  tries, share of the chain's tries, latest-block polls, and the state they
+  read as; and `served`, per cell, the clients' requests and the ones the
+  router couldn't serve (`smartrouter_final_{requests,failures}:count1m`, by
+  `chain` and a router's `service_name`). Six range reads whatever the count.
+- **A Metrics page link opens exactly what you were looking at.** Copy the
+  browser's URL and send it: the person who opens it sees the same chain,
+  router, tab, time window and focus. New URL keys, beside `chain`, `router`,
+  `tab` and `request`, which work as before:
+  - `window` - the time window, always in the URL. A link opens with the
+    sender's window and does not change the window the viewer has saved.
+  - `upstream` on the Upstreams tab - the upstream in the deep-dive. Clicking
+    a roster row writes it. `upstreamChain` names its chain when no chain is
+    picked.
+  - `upstream`, `from`, `to` on the Errors tab - the request list's upstream
+    filter and exact times (unix ms). Clicking an errors-over-time bar writes
+    all three, so a link shows the same failed requests, not the last 30
+    minutes of whoever opens it.
+  - `expand`, `tile` on Overview - the router row open in the Routers table
+    and the chart picked in it.
+
+  A change of chain or router is still a new history entry; a change of tab,
+  window or focus rewrites the current one, and picking another tab drops the
+  old tab's focus. A link to something that is gone opens the nearest view
+  with one plain line saying why: an upstream or router no longer in the
+  config, times older than the 30 days the logs keep, a window the page
+  doesn't offer. Only names go in the URL, never node URLs.
+
+### Changed
+
+- **Errors and Transactions tabs: an opened request, redrawn.** It opens on
+  what happened, in one plain sentence ("Sent to all at the same time:
+  tatum and quicknode both failed (Nonce too low). quicknode's answer went
+  to the client."), then the status, the error's **meaning** from the
+  error-code table (it was only a tooltip on the error's name) and its
+  **next step**. The tries follow as a table with how long each took; the
+  one that reached the client is marked "→ client". The request's details
+  sit beside them as a list, and every ID there has a copy button, the
+  caller's request ID included. Request and response sizes are gone, and the
+  router's latest block shows only beside the block the request asked for.
+  The status is a dot and a word on a plain card, without a coloured stroke
+  down the left.
+- **Errors and Transactions tabs: the filters stay in view.** The list's
+  header - its title, counts, filters and the ID search - sticks under the
+  top bar while the rows scroll under it, and the column headers stick under
+  it. Where the card is narrower than the table, the table still scrolls
+  sideways and its column headers scroll with it.
+- **Errors and Transactions tabs: each row shows its date.** Under the time,
+  where a request with no customer showed "-", the row now shows the date,
+  then the customer when the request named one.
+- **Every error code explained in plain words.** All 134 entries of the
+  error-code table were rewritten: the meaning is one short sentence, without
+  hedging or lists of possibilities. A next step shows only when the client
+  can act on it: 53 entries have none, for example a provider's server error or
+  rate limit, which the router already retries elsewhere. The "it may have gone
+  through" tails are gone, since the "May already be on chain" tag says it. A
+  setup problem (a provider's URL or credentials, a chain with no provider) has
+  no next step either: one message has to hold for every deployment.
+- **Metrics page: "Requests served" no longer says "across N upstreams";
+  "Retried requests" no longer says how many extra attempts each took, and
+  "Failed attempts" no longer counts its chain · upstream pairs.**
+- **Bar charts: a short bar is as easy to hover as a tall one.** Transactions
+  over time and an upstream's errors over time open a bar's counts anywhere
+  in its column, not only on the bar itself. A part of a bar that isn't zero
+  is drawn at least 3 px tall, so one rejected transaction on top of hundreds
+  accepted shows as a sliver instead of nothing.
+- **Router row charts: P95 latency, error rate and requests start at 0.**
+  Their axis padded below the data, so it drew negative ticks ("-7.00%",
+  "-28 ms"); it now starts at 0 and steps on round numbers. Percentages drop
+  the zeros that say nothing ("0%", "57%"), and a rate above 0 too small to
+  show reads "<0.01%", never "0%".
+- **Traffic by provider: hover shows the values.** Hovering the chart shows
+  the time and each upstream's share (or requests per second, with the total)
+  at that moment, as the other charts do. The legend lists the upstreams only:
+  its window-average percentages are gone.
+
+### Removed
+
+- The chain drill-down's "Primary vs backup" tile: the Availability view
+  has a row per provider, backups marked.
+
+### Fixed
+
+- **Errors and Transactions tabs: an opened request stays open.** Every 30 s
+  read put newer requests on top, so the one being read slid down the page and
+  off it. While a row is open the list now holds still, and a strip above it
+  counts what arrived since ("12 new requests · Show"). Picking another chain
+  or router closes it, since it belongs to the list it was opened in.
+- **Errors and Transactions tabs: the filter dropdowns' arrows.** Each filter
+  drew the browser's own arrow, pressed against its right border while the
+  text sat 10 px in from the left. They now draw the page's line chevron, the
+  one the window picker uses, 10 px in from the right and centred, and dimmed
+  while a filter has nothing to pick.
+
 ## [0.50.2]
 
 ### Fixed

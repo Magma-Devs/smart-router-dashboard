@@ -30,6 +30,9 @@ import {
   qLatencySeriesExpr,
   qOptimizerScore,
   qPerUpstreamRpsExpr,
+  qPerUpstreamFailedRpsExpr,
+  qPerEndpointPollsSeriesExpr,
+  upstreamCellState,
   qPresence,
   qRetriesByMethod,
   qRetryAvgExtraAttempts,
@@ -57,6 +60,7 @@ import {
   type UpstreamDetail,
   type UpstreamRef,
   type UpstreamPeers,
+  type UpstreamTimeline,
   type UpstreamMix,
   type ChartGrid,
   type ScoreType,
@@ -65,9 +69,11 @@ import {
   type WebSocketReport,
 } from "@sr/shared";
 import { WINDOWS, alignedBounds, bucketGrid, chartSampling, errorBuckets, stepSeconds } from "@sr/shared/constants";
-import type { PrometheusClient, PromVectorSample } from "./prometheus-client.js";
+import type { PrometheusClient, PromMatrixSample, PromVectorSample } from "./prometheus-client.js";
 import type { ConfigurationService } from "./configuration.js";
 import { health, toPoints } from "./metrics.js";
+import { CACHED as CACHED_UPSTREAM, LABEL_TOKEN } from "./router-log.js";
+import { RECORDED_OUTCOMES } from "./error-requests.js";
 
 export class MetricsDetailService {
   constructor(
@@ -195,6 +201,156 @@ export class MetricsDetailService {
       backupProbe && backupProbe.some((p) => p.v !== null) ? backupProbe : null;
 
     return { spec, availability, p95Ms, errorRate, rps, qos, backupShare };
+  }
+
+  /**
+   * Every upstream of one chain over the window, a cell per stretch of the
+   * clock (`bucketGrid`, the errors-over-time bars' grid): its tries, failed
+   * tries and share of the chain's tries, its latest-block polls, and the
+   * state those read as (`upstreamCellState`). Stretches, not points: on a
+   * quiet chain one failed try in a 15-second point is a 50% availability.
+   * Four range reads grouped by upstream, whatever the count; the stretch
+   * still filling is one more read of each at now. There is no health-over-time series per
+   * upstream, so this is the honest one: what the router sent it and what
+   * came back, plus the chain tracker's polls for an upstream that took
+   * nothing. `rpc_endpoint_overall_health` is not read - it starts
+   * optimistic and moves only on relay outcomes.
+   *
+   * Rows are the config's nodes on this chain (one router's with `routerId`,
+   * since the series can't say which router sent a try), matched to the
+   * series case-insensitively as `qBackupShareExpr` matches them, plus, with
+   * no `routerId`, any upstream the metrics name that the config doesn't.
+   * The relay cache (`Cached`) is no upstream: it counts in the chain's tries
+   * and gets no row.
+   */
+  async upstreamTimeline(spec: string, window: MetricWindow, routerId?: string): Promise<UpstreamTimeline> {
+    const asOf = Math.floor(Date.now() / 1000);
+    const { grid, lastFull, partialSec } = bucketGrid(window, asOf);
+    const { start, end } = grid;
+    const step = errorBuckets(window).step;
+    // The whole bars from a range read, then the bar still filling from one read at now over the
+    // seconds it has run, laid at its end - as `barsOf` reads the errors-over-time bars.
+    const range = async (exprFor: (step: string) => string): Promise<PromMatrixSample[] | null> => {
+      const [whole, filling] = await Promise.all([
+        lastFull >= start ? this.prom.queryRangeOrNull(exprFor(step), start, lastFull, step) : Promise.resolve([] as PromMatrixSample[]),
+        partialSec > 0 ? this.prom.queryRangeOrNull(exprFor(`${partialSec}s`), asOf, asOf, step) : Promise.resolve([] as PromMatrixSample[]),
+      ]);
+      if (whole === null || filling === null) return null;
+      const out = new Map<string, PromMatrixSample>();
+      const key = (m: Record<string, string>) => JSON.stringify(m);
+      for (const s of whole) out.set(key(s.metric), { metric: s.metric, values: [...s.values] });
+      for (const s of filling) {
+        const e = out.get(key(s.metric)) ?? { metric: s.metric, values: [] };
+        for (const [, v] of s.values) e.values.push([end, v]);
+        out.set(key(s.metric), e);
+      }
+      return [...out.values()];
+    };
+    const reads = await Promise.all([
+      range((st) => qPerUpstreamRpsExpr(st, spec, window)),
+      range((st) => qPerUpstreamFailedRpsExpr(st, spec, window)),
+      range((st) => qPerEndpointPollsSeriesExpr("ok", spec, st)),
+      range((st) => qPerEndpointPollsSeriesExpr("failed", spec, st)),
+    ]);
+    const kinds = ["rps", "failedRps", "pollsOk", "pollsFailed"] as const;
+
+    // What clients got, per stretch: requests and the ones the router couldn't serve - the counts the
+    // fleet Loki's ruler records once a minute (RECORDED_OUTCOMES, the Failed requests card's). A router
+    // is its `service_name` (<tenant>-<id>, the id matched as its end), unless another router id of the
+    // chain ends in its: then it can't be split, and nothing is said rather than the chain's figure.
+    const router = routerId ? (this.configSvc?.getRouters() ?? []).find((r) => r.id === routerId) : undefined;
+    const siblings = (this.configSvc?.getRouters() ?? []).filter((r) => r.spec === spec && r.id !== routerId);
+    const splittable = !router || (LABEL_TOKEN.test(router.id) && !siblings.some((r) => r.id.endsWith(`-${router.id}`)));
+    const outcomeSel = `{chain="${spec.toLowerCase()}"${router ? `, service_name=~".+-${router.id}"` : ""}}`;
+    const [requested, unserved] = LABEL_TOKEN.test(spec) && splittable
+      ? await Promise.all([RECORDED_OUTCOMES.requests, RECORDED_OUTCOMES.failures].map((m) => range((st) => `sum(sum_over_time(${m}${outcomeSel}[${st}]))`)))
+      : [null, null];
+    const byTime = (m: typeof requested) => new Map(toPoints(m?.[0]?.values).map((p) => [p.t, p.v]));
+    const reqAt = byTime(requested);
+    const failAt = byTime(unserved);
+    // No recorded requests in the window at all: a store without the ruler, not an idle chain.
+    const served = requested && unserved && requested.length
+      ? Array.from({ length: Math.floor((end - start) / grid.stepSec) + 1 }, (_, k) => {
+        const t = start + k * grid.stepSec;
+        const requests = reqAt.get(t) ?? null;
+        const failed = requests === null ? null : Math.min(requests, Math.round(failAt.get(t) ?? 0));
+        return { t, requests: requests === null ? null : Math.round(requests), failed };
+      })
+      : null;
+
+    // name (lower-cased) → t → value, per read.
+    const byName = reads.map((matrix, i) => {
+      const label = i < 2 ? "provider_address" : "endpoint_id";
+      const out = new Map<string, Map<number, number | null>>();
+      for (const s of matrix ?? []) {
+        const name = s.metric[label];
+        if (!name) continue;
+        const key = name.toLowerCase();
+        const at = out.get(key) ?? new Map<number, number | null>();
+        for (const p of toPoints(s.values)) at.set(p.t, p.v);
+        out.set(key, at);
+      }
+      return out;
+    });
+    const seriesName = new Map<string, string>();
+    reads.forEach((matrix, i) => {
+      for (const s of matrix ?? []) {
+        const name = s.metric[i < 2 ? "provider_address" : "endpoint_id"];
+        if (name && !seriesName.has(name.toLowerCase())) seriesName.set(name.toLowerCase(), name);
+      }
+    });
+
+    // The chain's tries at each point, the relay cache's included: the
+    // denominator `qBackupShareExpr` divides by.
+    const chainTries = new Map<number, number>();
+    for (const at of byName[0]!.values())
+      for (const [t, v] of at) if (v !== null) chainTries.set(t, (chainTries.get(t) ?? 0) + v);
+
+    const all = this.configSvc?.getRouters() ?? [];
+    const isHelm = all.some((rt) => rt.localPort === null && rt.nodes.length > 0);
+    const declared = new Map<string, { name: string; backup: boolean }>();
+    for (const router of all) {
+      if (router.spec !== spec || (routerId && router.id !== routerId)) continue;
+      for (const node of router.nodes) {
+        const key = node.name.toLowerCase();
+        const seen = declared.get(key);
+        // A node one router marks primary is a primary.
+        declared.set(key, { name: seen?.name ?? node.name, backup: (seen?.backup ?? true) && node.isBackup });
+      }
+    }
+    const keys = new Set(declared.keys());
+    if (!routerId) for (const key of seriesName.keys()) if (key !== CACHED_UPSTREAM.toLowerCase()) keys.add(key);
+
+    const at = (i: number, key: string, t: number): number | null => byName[i]!.get(key)?.get(t) ?? null;
+    const points = Math.floor((end - start) / grid.stepSec) + 1;
+    const rank = { primary: 0, backup: 1 } as const;
+    const upstreams = [...keys]
+      .map((key) => {
+        const cfg = declared.get(key);
+        const role: "primary" | "backup" | null = cfg && isHelm ? (cfg.backup ? "backup" : "primary") : null;
+        const cells = Array.from({ length: points }, (_, k) => {
+          const t = start + k * grid.stepSec;
+          const [rps, failedRps, pollsOk, pollsFailed] = kinds.map((_, i) => at(i, key, t)) as [number | null, number | null, number | null, number | null];
+          const total = chainTries.get(t);
+          const share = rps !== null && total !== undefined && total > 0 ? Math.min(1, rps / total) : null;
+          return { t, state: upstreamCellState({ rps, failedRps, pollsOk, pollsFailed }), rps, failedRps, share, pollsOk, pollsFailed };
+        });
+        return { upstream: cfg?.name ?? seriesName.get(key) ?? key, role, inConfig: !!cfg, cells };
+      })
+      .sort((a, b) =>
+        (a.role ? rank[a.role] : 2) - (b.role ? rank[b.role] : 2) ||
+        Number(b.inConfig) - Number(a.inConfig) ||
+        a.upstream.localeCompare(b.upstream));
+
+    return {
+      spec,
+      available: reads.every((r) => r !== null),
+      failed: kinds.filter((_, i) => reads[i] === null),
+      grid,
+      asOf,
+      served,
+      upstreams,
+    };
   }
 
   /**

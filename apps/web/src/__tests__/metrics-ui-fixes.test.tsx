@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { HeroSummary, RelayAttempt, RouterMetrics } from "@sr/shared";
 import { RouterOverview } from "@/components/metrics/RouterOverview";
 import { HeroPanel } from "@/components/metrics/HeroPanel";
-import { chainsTitle, chainWords, CustomerCell, everyNodeRefused, fmtWhen, openRowShown, TxHash } from "@/components/metrics/request-log";
+import { chainsTitle, chainWords, everyNodeRefused, fmtWhen, openRowShown, TxHash, WhenCell } from "@/components/metrics/request-log";
 import { RequestBreakdown, type BreakdownProps } from "@/components/metrics/request-breakdown";
 
 /** What `useApi` answers per path: SWR's fields as a window change leaves them. */
@@ -64,7 +64,7 @@ beforeEach(() => {
 });
 
 describe("window change on the Metrics page", () => {
-  const table = () => renderToStaticMarkup(createElement(RouterOverview, { onChainClick: () => {}, chainFilter: null, timeWindow: "21d" }));
+  const table = () => renderToStaticMarkup(createElement(RouterOverview, { onChainClick: () => {}, chainFilter: null, timeWindow: "21d", drill: { row: null, tile: null }, linked: false, onDrill: () => {} }));
 
   it("keeps the previous window's routers up, without skeleton rows beside them", () => {
     // SWR on a new key with `keepPreviousData`: loading, and the old rows still in `data`.
@@ -184,12 +184,13 @@ describe("log rows", () => {
   it("links an opened row's block numbers to a chain's explorer where one has a block page", () => {
     const linked = renderToStaticMarkup(createElement(RequestBreakdown, breakdown({ requestedBlock: 5_329_480, seenBlock: 5_329_484 }, { spec: "XLMT" })));
     expect(linked.match(/stellar\.expert\/explorer\/testnet/g)).toHaveLength(2);
-    const unnamed = renderToStaticMarkup(createElement(RequestBreakdown, breakdown({ seenBlock: 5_329_484 })));
+    // The router's latest block shows beside the requested block it is compared with.
+    const unnamed = renderToStaticMarkup(createElement(RequestBreakdown, breakdown({ requestedBlock: 5_329_480, seenBlock: 5_329_484 })));
     expect(unnamed).toContain("5,329,484");
     expect(unnamed).not.toContain("stellar.expert");
   });
 
   it("says why a row has no customer", () => {
-    expect(renderToStaticMarkup(createElement(CustomerCell, {}))).toContain("no project-id header");
+    expect(renderToStaticMarkup(createElement(WhenCell, { time: 0 }))).toContain("no project-id header");
   });
 });
