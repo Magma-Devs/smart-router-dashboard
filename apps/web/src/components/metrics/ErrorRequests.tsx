@@ -34,6 +34,7 @@ import {
   useHeldRows,
   WhenCell,
   stickyListHeader,
+  useListHeadHeight,
   filterSelectStyle,
   Flow,
   fmtTook,
@@ -295,6 +296,7 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
   useEffect(() => { if (!open && !lookupId) linkRequest(null); }, [scopeKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const { first, head } = log;
   const held = useHeldRows(log.rows, open);
+  const [headRef, headVar] = useListHeadHeight();
   const allRows = held.rows;
 
   const methods = useMemo(() => [...new Set(allRows.map((r) => r.method))].sort(), [allRows]);
@@ -363,8 +365,8 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
   }
 
   return (
-    <div ref={listRef} className="gw-card" style={{ padding: 0, overflow: "clip", scrollMarginTop: 72 }}>
-      <div style={stickyListHeader}>
+    <div ref={listRef} className="gw-card gw-log-card" style={{ padding: 0, overflow: "clip", scrollMarginTop: 72, ...headVar }}>
+      <div ref={headRef} style={stickyListHeader}>
         {/* What the list holds: how many, what came of them, and the times it covers. */}
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <span style={{ display: "inline-flex", alignItems: "center", fontSize: 12, fontWeight: 600, color: "var(--text-2)" }}>
@@ -432,7 +434,7 @@ export function ErrorRequests({ chainFilter, win, upstream, onUpstream, initialR
 
       <NewRowsStrip count={held.newCount} noun="request" onShow={held.showNew} />
       {/* Below 860px the columns would overlap: scroll sideways instead. */}
-      <div style={{ overflowX: "auto" }}>
+      <div className="gw-log-scroll">
         <table className="gw-table" style={{ tableLayout: "fixed", width: "100%", minWidth: 860 }}>
           <colgroup>
             <col style={{ width: 150 }} />

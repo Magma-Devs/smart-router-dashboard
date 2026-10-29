@@ -10,7 +10,7 @@
  * classify shows the node's own words - there is no "unknown error" here.
  * An opened row is drawn by request-breakdown.tsx. */
 
-import { Fragment, useState } from "react";
+import { Fragment, useCallback, useState } from "react";
 import { buildChainMetaByIndex, explorerTxUrl, guidMintedSecond, type LogUnavailable, type RelayAttempt } from "@sr/shared";
 import { SkelRows, type SkelCol } from "@/components/gateway/Skel";
 import { CopyButton } from "@/components/gateway/CopyButton";
@@ -534,6 +534,18 @@ export const onRowKey = (toggle: () => void) => (e: React.KeyboardEvent) => {
 
 /** A picked range still growing (it ends within the last minute): worth polling. */
 export const rangeIsLive = (r: ExactRange | null) => !r || r.to > Date.now() - 60_000;
+
+/** The sticky list header's height, as the card's `--list-head`, for the column headers stuck under it. */
+export function useListHeadHeight(): [React.RefCallback<HTMLDivElement>, React.CSSProperties] {
+  const [h, setH] = useState(0);
+  const ref = useCallback((el: HTMLDivElement | null) => {
+    if (!el) return;
+    const ro = new ResizeObserver(() => setH(Math.floor(el.getBoundingClientRect().height)));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return [ref, { ["--list-head" as string]: `${h}px` }];
+}
 
 /** A log list's header - its title, counts and filters - held under the page's top bar (`.gw-top`, 56 px) while the rows scroll.
  *  Its card must clip with `overflow: clip`, not `hidden`: `hidden` makes the card the scroll container and the header never sticks. */

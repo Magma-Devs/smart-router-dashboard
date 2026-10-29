@@ -40,6 +40,7 @@ import {
   useHeldRows,
   WhenCell,
   stickyListHeader,
+  useListHeadHeight,
   filterSelectStyle,
   Flow,
   fmtTook,
@@ -186,6 +187,7 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
   const data = log.head;
   const isLoading = log.first.isLoading;
   const held = useHeldRows(log.rows, open);
+  const [headRef, headVar] = useListHeadHeight();
   const allRows = held.rows;
   const sum = useMemo(() => summarize(allRows), [allRows]);
   const when = range ? "in the times you picked" : `in the last ${WINDOWS[win].label}`;
@@ -276,8 +278,8 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
 
       <TransactionsChart win={win} specQ={specQ} routerIdQ={routerIdQ} exactRange={range !== null} />
 
-      <div className="gw-card" style={{ padding: 0, overflow: "clip" }}>
-        <div style={stickyListHeader}>
+      <div className="gw-card gw-log-card" style={{ padding: 0, overflow: "clip", ...headVar }}>
+        <div ref={headRef} style={stickyListHeader}>
           <span style={{ display: "inline-flex", alignItems: "center", fontSize: 12, fontWeight: 600, color: "var(--text-2)" }}>
             Transactions<Tip text={TT.txLog!} />
             {data && <span style={{ fontWeight: 400, color: "var(--text-4)", marginLeft: 8 }}>{fmtComma(rows.length)}{rows.length !== allRows.length ? ` of ${fmtComma(allRows.length)}` : ""}</span>}
@@ -324,7 +326,7 @@ export function TransactionLog({ chainFilter, win }: { chainFilter: string | nul
         )}
         <NewRowsStrip count={held.newCount} noun="transaction" onShow={held.showNew} />
         {/* Below 860px the columns would overlap: scroll sideways instead. */}
-        <div style={{ overflowX: "auto" }}>
+        <div className="gw-log-scroll">
           <table className="gw-table" style={{ tableLayout: "fixed", width: "100%", minWidth: 860 }}>
             <colgroup>
               <col style={{ width: 150 }} />

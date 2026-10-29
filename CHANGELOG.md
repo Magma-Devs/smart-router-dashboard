@@ -62,7 +62,9 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
   down the left.
 - **Errors and Transactions tabs: the filters stay in view.** The list's
   header - its title, counts, filters and the ID search - sticks under the
-  top bar while the rows scroll under it.
+  top bar while the rows scroll under it, and the column headers stick under
+  it. Where the card is narrower than the table, the table still scrolls
+  sideways and its column headers scroll with it.
 - **Errors and Transactions tabs: each row shows its date.** Under the time,
   where a request with no customer showed "-", the row now shows the date,
   then the customer when the request named one.
