@@ -17,6 +17,7 @@ import { useApi } from "@/hooks/use-api";
 import { fmtComma, fmtNum, fmtPct } from "@/lib/format";
 import { TT } from "@/lib/tooltips";
 import { ALL, ErrorRequests, useErrorList } from "./ErrorRequests";
+import type { ExactRange } from "./request-log";
 import { useFilters } from "@/components/gateway/FiltersProvider";
 import { useRouterFilter } from "@/hooks/use-router-options";
 import { SkelLine, SkelValue } from "@/components/gateway/Skel";
@@ -31,16 +32,26 @@ export interface ErrorsJump {
   to: number;
 }
 
-export function ErrorsBreakdown({ chainFilter, win, focus = null }: {
+/** The list's upstream filter (null = all) and exact times (null = the window). */
+export interface ErrorsFocus {
+  upstream: string | null;
+  range: ExactRange | null;
+}
+
+export function ErrorsBreakdown({ chainFilter, win, focus = null, onFocus }: {
   chainFilter: string | null;
   win: MetricWindow;
-  /** Open on one upstream's requests over a stretch of time instead of the window. */
-  focus?: ErrorsJump | null;
+  /** Open on an upstream's requests, or exact times, instead of the window - a bar's, or a link's. */
+  focus?: ErrorsFocus | null;
+  /** Told when either changes here - the page keeps them in its URL. */
+  onFocus?: (f: ErrorsFocus) => void;
 }) {
   const [upstream, setUpstream] = useState(focus?.upstream ?? ALL);
-  const initialRange = focus ? { from: focus.from, to: focus.to } : null;
+  const initialRange = focus?.range ?? null;
+  const report = (u: string, range: ExactRange | null) => onFocus?.({ upstream: u === ALL ? null : u, range });
   // The request list's reads, held here: the "Still failed" card counts its rows.
-  const list = useErrorList({ chainFilter, win, upstream, initialRange });
+  const list = useErrorList({ chainFilter, win, upstream, initialRange, onPick: (r) => report(upstream, r) });
+  const pickUpstream = (u: string) => { setUpstream(u); report(u, list.range); };
 
   const specQ = chainFilter ? `&spec=${encodeURIComponent(chainFilter)}` : "";
   const { scopeQ } = useFilters();
@@ -98,7 +109,7 @@ export function ErrorsBreakdown({ chainFilter, win, focus = null }: {
         ))}
       </div>
 
-      <ErrorRequests chainFilter={chainFilter} win={win} upstream={upstream} onUpstream={setUpstream}
+      <ErrorRequests chainFilter={chainFilter} win={win} upstream={upstream} onUpstream={pickUpstream}
         initialRange={initialRange} list={list} />
     </div>
   );

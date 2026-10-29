@@ -232,11 +232,13 @@ const narrowSelect: React.CSSProperties = { ...filterSelectStyle, maxWidth: 200 
  * and its reads of them. Held by the tab, so the cards above count the rows
  * the list shows rather than reading the logs again.
  */
-export function useErrorList({ chainFilter, win, upstream, initialRange = null }: {
+export function useErrorList({ chainFilter, win, upstream, initialRange = null, onPick }: {
   chainFilter: string | null;
   win: MetricWindow;
   upstream: string;
   initialRange?: ExactRange | null;
+  /** Told when the list's times are picked or cleared - the page keeps them in its URL. */
+  onPick?: (r: ExactRange | null) => void;
 }) {
   const [range, setRange] = useState<ExactRange | null>(initialRange);
   // A picked range that has closed can't change: read it once, don't poll it.
@@ -249,7 +251,7 @@ export function useErrorList({ chainFilter, win, upstream, initialRange = null }
   const onBarRange = initialRange != null && range != null && range.from === initialRange.from && range.to === initialRange.to;
   const barQ = onBarRange && upstream !== ALL ? `&upstream=${encodeURIComponent(upstream)}` : "";
   const log = useLogReads<ErrorRequestRow, ErrorRequestsReport>(`/api/error-requests?${rangeQ}${specQ}${routerIdQ}${barQ}`, live);
-  const pick = (r: ExactRange | null) => { setRange(r); setLive(rangeIsLive(r)); };
+  const pick = (r: ExactRange | null) => { setRange(r); setLive(rangeIsLive(r)); onPick?.(r); };
   return { log, range, pick, rangeQ, routerIdQ, onBarRange, barQ };
 }
 
