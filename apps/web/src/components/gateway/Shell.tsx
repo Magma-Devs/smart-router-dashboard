@@ -294,7 +294,8 @@ export function Shell({ children, grafanaDashboardUrl, incidentsEnabled = false,
   const { chain } = useFilters();
 
   const here =
-    NAV_SECTIONS.flatMap((s) => s.items).find(
+    // The Ask your data full view has no menu item: it opens from the panel's Expand.
+    pathname === "/ask" ? "Ask your data" : NAV_SECTIONS.flatMap((s) => s.items).find(
       (i) => pathname === i.href || pathname.startsWith(`${i.href}/`),
     )?.label ?? "Overview";
   // Metrics on one chain: the chain is the last crumb (the chains drawer picks it).

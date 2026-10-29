@@ -480,3 +480,18 @@ a { text-decoration: none; }
 .ask-pill { position: fixed; right: 16px; bottom: 16px; z-index: 40; display: inline-flex; align-items: center; gap: 8px; max-width: 320px; height: 40px; padding: 0 16px 0 9px; border-radius: 999px; border: 1px solid var(--line-2); background: color-mix(in srgb, var(--surface) 92%, transparent); backdrop-filter: blur(14px); box-shadow: 0 12px 32px -10px rgba(0,0,0,.5); color: var(--text); font: 500 12.5px var(--font-ui); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; animation: ask-fade .2s ease; }
 .ask-ellipsis::after { content: "…"; animation: ask-pulse 1.2s infinite; }
 @media (prefers-reduced-motion: reduce) { .ask-panel, .ask-a, .ask-pill { animation: none; } .ask-working__label { animation: none; color: var(--text); } }
+
+/* Ask your data, full screen: the week's chats on the left, the conversation in a reading column. */
+.ask-full { display: grid; grid-template-columns: 280px minmax(0, 1fr); height: calc(100vh - 56px); }
+.ask-full__side { display: flex; flex-direction: column; gap: 10px; min-height: 0; padding: 16px 12px; border-right: 1px solid var(--line); background: var(--bg-2); }
+.ask-full__side .ask-scroll { padding: 0 !important; }
+.ask-full__new { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 36px; border-radius: 10px; border: 0; color: #fff; font: 600 13px var(--font-ui); background: linear-gradient(135deg, var(--brand), #ff7a1a); cursor: pointer; }
+.ask-full__new:disabled { opacity: .4; cursor: default; }
+.ask-full__search { height: 34px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--surface); color: var(--text); font: 13px var(--font-ui); outline: 0; }
+.ask-full__search:focus { border-color: color-mix(in srgb, var(--brand) 55%, var(--line-2)); }
+.ask-full__main { min-width: 0; min-height: 0; display: flex; justify-content: center; }
+.ask-full__col { width: min(820px, 100%); display: flex; flex-direction: column; min-height: 0; padding: 16px 24px 12px; }
+.ask-full__col .ask-a__summary { font-size: 15.5px; }
+.ask-full__col .ask-a__body, .ask-full__col .ask-a__points { font-size: 13.5px; }
+.ask-full__col .ask-q { font-size: 14px; }
+@media (max-width: 860px) { .ask-full { grid-template-columns: 1fr; } .ask-full__side { display: none; } }

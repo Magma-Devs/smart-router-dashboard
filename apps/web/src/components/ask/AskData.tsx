@@ -11,10 +11,15 @@
  * docs/ASK-YOUR-DATA.md. Shown only where ASK_DATA_PREVIEW=true; the panel
  * says on screen that its answers are samples.
  *
+ * The same chats open full screen at /ask (AskFullView), from the panel's
+ * Expand button; there is no menu item. A chat opens by link there
+ * (`?chat=<id>`), so the two views always show the same one.
+ *
  * History is kept in this browser for 7 days, as the real one will be kept on
  * the server for each person. */
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { SAMPLE_BUDGET, SUGGESTIONS, sampleAnswer, type SampleAnswer } from "./sample-answers";
 
 const KEEP_MS = 7 * 24 * 3600_000;
@@ -170,6 +175,8 @@ function Spark({ size = 16 }: { size?: number }) {
 
 export function AskDataButton() {
   const { openPanel, phase } = useAsk();
+  // On the full view the chat is already the page.
+  if (usePathname() === FULL_PATH) return null;
   return (
     <button type="button" onClick={openPanel} className="ask-launch" title="Ask your data (⌘J)">
       <span className="ask-launch__glyph"><Spark size={14} /></span>
@@ -181,10 +188,14 @@ export function AskDataButton() {
 
 /* ── The panel ─────────────────────────────────────────────────────── */
 
+const FULL_PATH = "/ask";
+
 function AskDataPanel() {
   const s = useAsk();
   const [showHistory, setShowHistory] = useState(false);
-  if (!s.open) return null;
+  const pathname = usePathname();
+  const router = useRouter();
+  if (!s.open || pathname === FULL_PATH) return null;
   if (s.minimized) {
     return (
       <button type="button" className="ask-pill" onClick={s.openPanel}>
@@ -206,6 +217,7 @@ function AskDataPanel() {
         <div className="ask-head__actions">
           <IconBtn label="History" on={showHistory} onClick={() => setShowHistory((h) => !h)} d="M12 8v4l2.5 2.5M3.05 11a9 9 0 1 1 .5 4M3 4v5h5" />
           <IconBtn label="New chat" onClick={() => { s.newChat(); setShowHistory(false); }} d="M12 5v14M5 12h14" disabled={!!s.phase} />
+          <IconBtn label="Open full view" onClick={() => { router.push(s.active ? `${FULL_PATH}?chat=${s.active.id}` : FULL_PATH); s.close(); }} d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
           <IconBtn label="Minimize" onClick={s.minimize} d="M5 12h14" />
           <IconBtn label="Close" onClick={s.close} d="M6 6l12 12M18 6L6 18" />
         </div>
@@ -235,19 +247,22 @@ function IconBtn({ label, d, onClick, on, disabled }: { label: string; d: string
 
 /* ── History: a week of chats ──────────────────────────────────────── */
 
-function History({ onPick }: { onPick: (id: string) => void }) {
+function History({ onPick, query = "", full = false }: { onPick: (id: string) => void; query?: string; full?: boolean }) {
   const { threads, active } = useAsk();
-  const [shown, setShown] = useState(HISTORY_PAGE);
+  const [shown, setShown] = useState(full ? 50 : HISTORY_PAGE);
   const dayOf = (at: number) => {
     const days = Math.floor((new Date().setHours(0, 0, 0, 0) - new Date(at).setHours(0, 0, 0, 0)) / 86_400_000);
     return days <= 0 ? "Today" : days === 1 ? "Yesterday" : "Earlier this week";
   };
-  const list = [...threads].sort((a, b) => b.at - a.at);
+  const q = query.trim().toLowerCase();
+  const list = [...threads]
+    .filter((t) => !q || t.title.toLowerCase().includes(q) || t.turns.some((u) => u.question.toLowerCase().includes(q)))
+    .sort((a, b) => b.at - a.at);
   // A heading wherever the day changes.
   const rows = list.slice(0, shown).map((t, i, arr) => ({ t, head: i === 0 || dayOf(arr[i - 1]!.at) !== dayOf(t.at) ? dayOf(t.at) : null }));
   return (
     <div className="ask-scroll" style={{ padding: "8px 12px" }}>
-      {!list.length && <div className="ask-empty-note">No chats in the last 7 days.</div>}
+      {!list.length && <div className="ask-empty-note">{q ? "No chat matches." : "No chats in the last 7 days."}</div>}
       {rows.map(({ t, head }) => {
         return (
           <div key={t.id}>
@@ -263,6 +278,55 @@ function History({ onPick }: { onPick: (id: string) => void }) {
         <button type="button" className="ask-more" onClick={() => setShown((n) => n + HISTORY_PAGE)}>Show earlier chats</button>
       )}
       <div className="ask-empty-note">Chats are kept for 7 days.</div>
+    </div>
+  );
+}
+
+/* ── The full view ─────────────────────────────────────────────────── */
+
+const noSubscribe = () => () => {};
+
+/** Ask your data full screen: the week's chats on the left, the conversation in the middle. */
+export function AskFullView() {
+  const s = useAsk();
+  const [query, setQuery] = useState("");
+  // A link names a chat: open it, once, on arrival.
+  const { pick } = s;
+  const arrived = useRef(false);
+  useEffect(() => {
+    if (arrived.current) return;
+    arrived.current = true;
+    const id = new URLSearchParams(window.location.search).get("chat");
+    if (id) pick(id);
+  }, [pick]);
+  // The chat on screen is in the address, so it can be reopened or shared.
+  const activeId = s.active?.id ?? null;
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (activeId) url.searchParams.set("chat", activeId);
+    else url.searchParams.delete("chat");
+    if (url.href !== window.location.href) window.history.replaceState(null, "", url);
+  }, [activeId]);
+  // The chats are kept in this browser: drawn once the page runs here, so the server's empty list never mismatches.
+  const inBrowser = useSyncExternalStore(noSubscribe, () => true, () => false);
+  if (!inBrowser) return <div className="ask-full" />;
+  return (
+    <div className="ask-full">
+      <aside className="ask-full__side">
+        <button type="button" className="ask-full__new" onClick={s.newChat} disabled={!!s.phase}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
+          New chat
+        </button>
+        <input className="ask-full__search" placeholder="Search chats" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search chats" />
+        <History onPick={s.pick} query={query} full />
+      </aside>
+      <section className="ask-full__main">
+        <div className="ask-full__col">
+          <div className="ask-preview" style={{ margin: "0 0 8px" }}>Preview · sample answers, not your data</div>
+          <Conversation />
+          <Composer />
+        </div>
+      </section>
     </div>
   );
 }
