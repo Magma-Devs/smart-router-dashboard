@@ -160,6 +160,6 @@ describe("log rows", () => {
   });
 
   it("says why a row has no customer", () => {
-    expect(renderToStaticMarkup(createElement(WhenCell, { time: 0 }))).toContain("no project-id header");
+    expect(renderToStaticMarkup(createElement(WhenCell, { time: 0 }))).toContain("no customer-id header");
   });
 });
