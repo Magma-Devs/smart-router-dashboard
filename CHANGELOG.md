@@ -5,6 +5,13 @@ driven by the root [`VERSION`](./VERSION) file (see README → Releases & images
 
 ## [Unreleased]
 
+### Fixed
+
+- **Request log: the customer tooltips name the `customer-id` header.** The
+  router reads the customer a request is counted under from the `customer-id`
+  header (smart-router MAG-4727; `project-id` on v1.6.5 and earlier), and the
+  "No customer" and customer tooltips under a row's time now say so.
+
 ## [0.51.1]
 
 ### Fixed

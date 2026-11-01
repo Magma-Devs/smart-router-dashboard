@@ -295,17 +295,17 @@ export function TimeRangeControl({ range, onChange, windowLabel, windowMs }: {
 /** Clicks inside an opened row's own controls stay there: a copy or a link doesn't fold the row. */
 const keepClick = (e: React.MouseEvent) => e.stopPropagation();
 
-/** A row's time: the hour, and under it the date and the caller's project when the request named one. */
+/** A row's time: the hour, and under it the date and the caller's customer when the request named one. */
 export function WhenCell({ time, customer }: { time: number; customer?: string }) {
   const d = new Date(time);
   const date = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
   return (
     <>
       <span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{d.toLocaleTimeString("en-US", { hour12: false })}</span>
-      <span title={customer ? undefined : "No customer: the caller sent no project-id header"}
+      <span title={customer ? undefined : "No customer: the caller sent no customer-id header"}
         style={{ display: "block", marginTop: 4, fontSize: 10.5, color: "var(--text-3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
         {date}
-        {customer && <span className="gw-mono" title={`Customer - the project-id header the caller sent: ${customer}`}> · {customer}</span>}
+        {customer && <span className="gw-mono" title={`Customer - the customer-id header the caller sent: ${customer}`}> · {customer}</span>}
       </span>
     </>
   );
