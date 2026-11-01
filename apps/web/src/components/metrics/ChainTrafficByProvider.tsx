@@ -54,19 +54,18 @@ export function ChainTrafficByProvider({ spec, timeWindow }: { spec: string; tim
       ...(rest.length ? [{ name: `Other (${rest.length})`, values: sumOf(rest), color: OTHER_COLOR }] : []),
       ...(cache.length ? [{ name: "Cache", values: sumOf(cache), color: CACHE_COLOR }] : []),
     ];
-    const volume = (l: Layer) => l.values.reduce((a, v) => a + v, 0);
-    const total = layers.reduce((a, l) => a + volume(l), 0);
-    const shareOf = (l: Layer) => (total > 0 ? (volume(l) / total) * 100 : 0);
+    const total = layers.reduce((a, l) => a + l.values.reduce((s, v) => s + v, 0), 0);
     // Shares per point for the "Share" view: every point adds up to 100%.
     const perPoint = times.map((_, i) => layers.reduce((a, l) => a + (l.values[i] ?? 0), 0));
     const shareLayers = layers.map((l) => ({ ...l, values: l.values.map((v, i) => (perPoint[i] ? (v / perPoint[i]!) * 100 : 0)) }));
     const labels = times.length > 1
       ? [0, 0.25, 0.5, 0.75, 1].map((f) => roFmtTime(new Date(times[Math.round(f * (times.length - 1))]! * 1000), timeWindow))
       : null;
-    return { layers, shareLayers, total, shareOf, labels };
+    return { layers, shareLayers, total, labels, times };
   }, [data, timeWindow]);
 
   const pct = (v: number) => (v > 0 && v < 0.1 ? "<0.1" : v.toFixed(1));
+  const fmtRate = (v: number) => `${v >= 100 ? Math.round(v).toLocaleString() : v >= 10 ? v.toFixed(1) : v.toFixed(2)} req/s`;
 
   return (
     <div className="gw-card" style={{ marginBottom: 14 }}>
@@ -86,9 +85,14 @@ export function ChainTrafficByProvider({ spec, timeWindow }: { spec: string; tim
       ) : view.total > 0 ? (
         <>
           <StackedAreaChart key={mode} layers={mode === "share" ? view.shareLayers : view.layers} normalized={mode === "share"}
-            height={HEIGHT} xLabels={view.labels} id={`mix-${spec}-${mode}`} />
+            height={HEIGHT} xLabels={view.labels} id={`mix-${spec}-${mode}`}
+            hover={{
+              title: (i) => roFmtTime(new Date((view.times[i] ?? 0) * 1000), timeWindow),
+              fmt: mode === "share" ? (v) => `${pct(v)}%` : fmtRate,
+              total: mode === "rate",
+            }} />
           <ChartLegend style={{ marginTop: 8 }}
-            items={view.layers.map((l) => ({ label: `${l.name} · ${pct(view.shareOf(l))}%`, color: l.color, square: true }))} />
+            items={view.layers.map((l) => ({ label: l.name, color: l.color, square: true }))} />
         </>
       ) : (
         <div style={{ height: HEIGHT, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "var(--text-4)" }}>

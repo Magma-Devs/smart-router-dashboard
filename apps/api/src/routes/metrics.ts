@@ -318,6 +318,34 @@ export async function metricRoutes(app: FastifyInstance, opts: MetricRoutesOptio
       app.scoped(router).metricsDetail.chainSeries(spec, window));
   });
 
+  // Every upstream of one chain on the availability grid - the ChainDetail
+  // Availability view's provider rows.
+  app.get<{ Querystring: WindowQuery }>("/api/metrics/upstream-timeline", {
+    schema: {
+      tags: ["Metrics"],
+      summary: "Every upstream of one chain over the window, a cell per point of the chain's availability grid: tries, failed tries, share of the chain's tries, latest-block polls, and the state they read as",
+      querystring: {
+        type: "object" as const,
+        required: ["spec"],
+        properties: {
+          window: windowQuerySchema.properties.window,
+          router: windowQuerySchema.properties.router,
+          routerId: windowQuerySchema.properties.routerId,
+          spec: { type: "string" as const, description: "Chain spec label, e.g. ETH1" },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const { spec, router, routerId } = request.query;
+    if (!spec) {
+      sendApiError(reply, 400, "spec is required");
+      return reply;
+    }
+    const window = parseWindow(request.query.window);
+    return snapshot(reply, "window", window, ["upstream-timeline", window, spec, routerId ?? null, scopeKey(router)], () =>
+      app.scoped(router).metricsDetail.upstreamTimeline(spec, window, routerId || undefined));
+  });
+
   // Which upstream took one chain's traffic - the "Traffic by provider" card.
   app.get<{ Querystring: { window?: string; spec?: string; router?: string } }>("/api/metrics/upstream-mix", {
     schema: {

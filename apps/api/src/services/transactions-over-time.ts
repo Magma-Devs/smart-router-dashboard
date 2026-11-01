@@ -35,6 +35,7 @@ import type { MetricWindow, RouterTopology, TransactionsOverTime, TxResult } fro
 import { bucketGrid, WINDOWS } from "@sr/shared";
 import type { PrometheusClient } from "./prometheus-client.js";
 import type { LokiClient, LokiSeries } from "./loki-client.js";
+import { withMatcher } from "./stream-scope.js";
 import type { ConfigurationService } from "./configuration.js";
 import { LABEL_TOKEN } from "./router-log.js";
 import { TX_EVENT_FILTER, txResultOf } from "./transactions.js";
@@ -87,15 +88,6 @@ interface Sample {
 /** A series' result, by the list's own mapping. An empty label (Loki's label_format writes one) is an absent one. */
 const resultOf = (m: Record<string, string>): TxResult =>
   txResultOf({ outcome: m.outcome ?? "", txRefused: m.tx_refused === "true", apiInterface: m.api_interface ?? "", txStatus: m.tx_status ?? "" });
-
-/** A label value spliced into a selector: a plain token only. */
-const SAFE_VALUE = /^[A-Za-z0-9_.:-]{1,128}$/;
-
-/** The router's selector with one more label matcher; null when it isn't a plain `{…}` selector. */
-function withMatcher(selector: string, label: string, value: string): string | null {
-  if (!SAFE_VALUE.test(value) || !/\}\s*$/.test(selector)) return null;
-  return selector.replace(/\}\s*$/, `, ${label}="${value}"}`);
-}
 
 export class TransactionsOverTimeService {
   private readonly kept = new Map<string, { at: number; result: TransactionsOverTime }>();

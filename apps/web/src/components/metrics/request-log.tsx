@@ -10,8 +10,8 @@
  * classify shows the node's own words - there is no "unknown error" here.
  * An opened row is drawn by request-breakdown.tsx. */
 
-import { Fragment, useState } from "react";
-import { buildChainMetaByIndex, explainRouterError, explorerTxUrl, guidMintedSecond, type LogUnavailable, type RelayAttempt, type TxOutcome } from "@sr/shared";
+import { Fragment, useCallback, useState } from "react";
+import { buildChainMetaByIndex, explorerTxUrl, guidMintedSecond, type LogUnavailable, type RelayAttempt } from "@sr/shared";
 import { SkelRows, type SkelCol } from "@/components/gateway/Skel";
 import { CopyButton } from "@/components/gateway/CopyButton";
 import { useGrafanaUrl } from "@/hooks/use-grafana-url";
@@ -295,11 +295,20 @@ export function TimeRangeControl({ range, onChange, windowLabel, windowMs }: {
 /** Clicks inside an opened row's own controls stay there: a copy or a link doesn't fold the row. */
 const keepClick = (e: React.MouseEvent) => e.stopPropagation();
 
-/** A row's caller, under its time: their project, or "—" when the request carried no project-id header. */
-export function CustomerCell({ customer }: { customer?: string }) {
-  const style: React.CSSProperties = { display: "block", marginTop: 4, fontSize: 10.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
-  if (!customer) return <span title="No customer: the caller sent no project-id header" style={{ ...style, color: "var(--text-4)" }}>—</span>;
-  return <span className="gw-mono" title={`Customer - the project-id header the caller sent: ${customer}`} style={{ ...style, color: "var(--text-3)" }}>{customer}</span>;
+/** A row's time: the hour, and under it the date and the caller's project when the request named one. */
+export function WhenCell({ time, customer }: { time: number; customer?: string }) {
+  const d = new Date(time);
+  const date = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return (
+    <>
+      <span className="gw-mono gw-tnum" style={{ fontSize: 12 }}>{d.toLocaleTimeString("en-US", { hour12: false })}</span>
+      <span title={customer ? undefined : "No customer: the caller sent no project-id header"}
+        style={{ display: "block", marginTop: 4, fontSize: 10.5, color: "var(--text-3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        {date}
+        {customer && <span className="gw-mono" title={`Customer - the project-id header the caller sent: ${customer}`}> · {customer}</span>}
+      </span>
+    </>
+  );
 }
 
 /** The customer filter's key for requests that carried none. */
@@ -320,35 +329,19 @@ export const hasCustomer = (r: { customer?: string }, key: string) => (r.custome
 export const shortHash = (h: string) => (h.length > 16 ? `${h.slice(0, h.startsWith("0x") ? 8 : 6)}…${h.slice(-6)}` : h);
 
 /**
- * A transaction every node it went to refused outright, so the chain most
- * likely never saw it and no explorer has a page for it. A row is "rejected"
- * when the node that answered refused it; that alone says nothing of the
- * others. So: every try it was sent on failed, and no refusal says it may be
- * on chain anyway - already known, nonce too low, already in the chain
- * (`mayHaveGoneThrough` in @sr/shared's error table).
- */
-export function everyNodeRefused(row: { outcome: TxOutcome; attempts: RelayAttempt[]; error: { code: string } | null }): boolean {
-  if (row.outcome !== "rejected") return false;
-  const sent = row.attempts.filter((a) => a.outcome !== "skipped");
-  if (!sent.length || !sent.every((a) => a.outcome === "failed")) return false;
-  return ![row.error?.code, ...sent.map((a) => a.code)].some((c) => explainRouterError(c)?.mayHaveGoneThrough);
-}
-
-/**
  * A transaction's hash, to copy, linked to the chain's explorer where a
- * transaction page is known (explorerTxUrl) - plain text where it isn't, and
- * where every node `refused` it: an explorer has no page for a transaction
- * the chain never saw. `full` writes it out whole, for the details.
+ * transaction page is known (explorerTxUrl) - plain text where it isn't.
+ * `full` writes it out whole, for the details.
  */
-export function TxHash({ hash, spec, full = false, refused = false }: { hash: string; spec: string | null; full?: boolean; refused?: boolean }) {
-  const url = spec && !refused ? explorerTxUrl(spec, hash) : null;
+export function TxHash({ hash, spec, full = false }: { hash: string; spec: string | null; full?: boolean }) {
+  const url = spec ? explorerTxUrl(spec, hash) : null;
   const text = full ? hash : shortHash(hash);
   const style: React.CSSProperties = { fontSize: full ? 11.5 : 10.5, wordBreak: full ? "break-all" : undefined, whiteSpace: full ? undefined : "nowrap" };
   return (
     <span onClick={keepClick} style={{ display: "inline-flex", alignItems: "center", gap: 6, minWidth: 0, maxWidth: "100%" }}>
       {url
         ? <a className="gw-mono" href={url} target="_blank" rel="noopener noreferrer" title={`${hash} - on the chain's explorer`} style={{ ...style, color: "var(--brand)", textDecoration: "none" }}>{text}{full ? "" : " ↗"}</a>
-        : <span className="gw-mono" title={refused ? `${hash} - every node refused this transaction, so the chain most likely never saw it and no explorer has it` : hash} style={{ ...style, color: "var(--text-3)" }}>{text}</span>}
+        : <span className="gw-mono" title={hash} style={{ ...style, color: "var(--text-3)" }}>{text}</span>}
       <CopyButton text={hash} />
     </span>
   );
@@ -448,6 +441,42 @@ export function OlderRowsLoading({ show }: { show: boolean }) {
 }
 
 /** A line across a log table, under its header - what the list holds, or why it holds less. */
+/** While a row is open the list holds still: it keeps the rows it showed when the row was opened
+ *  (each updated while a read still has it), adds older ones as they load, and counts the newer ones
+ *  instead of showing them. A poll used to shift the open row down the page, and off it - on a busy
+ *  chain the newest 300 are all new within a minute. Closing it lets the list catch up. */
+export function useHeldRows<T extends { guid: string; time: number }>(rows: T[], open: string | null) {
+  const [snap, setSnap] = useState<T[] | null>(null);
+  if (!open && snap) setSnap(null);
+  // Not on an empty list: opening a row writes the URL, and the list reads afresh, empty for a moment.
+  if (open && !snap && rows.length) setSnap(rows);
+  if (!snap) return { rows, newCount: 0, showNew: () => {} };
+  const live = new Map(rows.map((r) => [r.guid, r]));
+  const inSnap = new Set(snap.map((r) => r.guid));
+  const newestHeld = snap.reduce((m, r) => Math.max(m, r.time), 0);
+  const oldestHeld = snap.reduce((m, r) => Math.min(m, r.time), Infinity);
+  const held = [
+    ...snap.map((r) => live.get(r.guid) ?? r),
+    ...rows.filter((r) => !inSnap.has(r.guid) && r.time < oldestHeld),
+  ];
+  const showNew = () => {
+    const openRow = held.find((r) => r.guid === open);
+    setSnap(openRow && !live.has(openRow.guid) ? [...rows, openRow].sort((a, b) => b.time - a.time) : rows);
+  };
+  return { rows: held, newCount: rows.filter((r) => !inSnap.has(r.guid) && r.time > newestHeld).length, showNew };
+}
+
+/** Above a held list: how many arrived since a row was opened, and a way to show them. */
+export function NewRowsStrip({ count, noun, onShow }: { count: number; noun: string; onShow: () => void }) {
+  if (!count) return null;
+  return (
+    <LogStrip>
+      {fmtComma(count)} new {count === 1 ? noun : `${noun}s`} ·{" "}
+      <button type="button" onClick={onShow} style={{ border: "none", background: "none", padding: 0, color: "var(--brand)", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Show</button>
+    </LogStrip>
+  );
+}
+
 export function LogStrip({ tone = "quiet", children }: { tone?: "quiet" | "warn"; children: React.ReactNode }) {
   return (
     <div role={tone === "warn" ? "status" : undefined} style={{
@@ -500,16 +529,6 @@ export function chainsTitle(row: { spec: string | null; specs?: string[] }): str
   return `The logs don't name this request's chain. Its upstreams serve ${row.specs.length === 1 ? "one" : `these ${row.specs.length}`}: ${row.specs.map((s) => buildChainMetaByIndex(s).name).join(", ")}`;
 }
 
-/**
- * Whether the open row is on screen - what holds a live list still. A newer
- * read would move that row or page it out of view; once a filter, a page or a
- * window change has taken it out of view, nothing is being read and the list
- * reads on.
- */
-export function openRowShown(open: string | null, shown: readonly { guid: string }[]): boolean {
-  return open !== null && shown.some((r) => r.guid === open);
-}
-
 /** Enter and Space open a row, as a click does. */
 export const onRowKey = (toggle: () => void) => (e: React.KeyboardEvent) => {
   if (e.key === "Enter" || e.key === " ") {
@@ -521,7 +540,39 @@ export const onRowKey = (toggle: () => void) => (e: React.KeyboardEvent) => {
 /** A picked range still growing (it ends within the last minute): worth polling. */
 export const rangeIsLive = (r: ExactRange | null) => !r || r.to > Date.now() - 60_000;
 
+/** The sticky list header's height, as the card's `--list-head`, for the column headers stuck under it. */
+export function useListHeadHeight(): [React.RefCallback<HTMLDivElement>, React.CSSProperties] {
+  const [h, setH] = useState(0);
+  const ref = useCallback((el: HTMLDivElement | null) => {
+    if (!el) return;
+    const ro = new ResizeObserver(() => setH(Math.floor(el.getBoundingClientRect().height)));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return [ref, { ["--list-head" as string]: `${h}px` }];
+}
+
+/** A log list's header - its title, counts and filters - held under the page's top bar (`.gw-top`, 56 px) while the rows scroll.
+ *  Its card must clip with `overflow: clip`, not `hidden`: `hidden` makes the card the scroll container and the header never sticks. */
+export const stickyListHeader: React.CSSProperties = {
+  position: "sticky", top: 56, zIndex: 4, background: "var(--surface)",
+  padding: "12px 16px", borderBottom: "1px solid var(--line)", display: "grid", gap: 10,
+};
+
 export const filterSelectStyle: React.CSSProperties = { height: 32, padding: "0 10px", borderRadius: 8, border: "1px solid var(--line-2)", background: "var(--surface)", color: "var(--text)", fontSize: 12, fontFamily: "inherit", maxWidth: 320 };
+
+/** A filter dropdown with the page's own chevron, 10 px in from the right as
+ *  the text is from the left. The browser's arrow sat against the border, a
+ *  different distance in each browser. */
+export function FilterSelect({ style, disabled, ...props }: React.SelectHTMLAttributes<HTMLSelectElement>) {
+  return (
+    <span style={{ position: "relative", display: "inline-flex", alignItems: "center", maxWidth: style?.maxWidth }}>
+      <select {...props} disabled={disabled} style={{ ...style, appearance: "none", WebkitAppearance: "none", paddingRight: 28, minWidth: 0 }} />
+      <svg aria-hidden width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+        style={{ position: "absolute", right: 10, pointerEvents: "none", opacity: disabled ? 0.5 : 1 }}><polyline points="6 9 12 15 18 9" /></svg>
+    </span>
+  );
+}
 
 export function Pager({ page, pageCount, total, perPage, noun, onPage, more }: {
   page: number; pageCount: number; total: number; perPage: number; noun: string; onPage: (p: number) => void;
