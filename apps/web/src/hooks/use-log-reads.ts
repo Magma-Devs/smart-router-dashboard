@@ -118,7 +118,10 @@ export function useLogReads<R extends { guid: string }, T extends LogRead<R>>(ba
   // A poll of a list already on screen - the rows stay up while it runs.
   const refreshing = !mine && first.isValidating && !!first.data;
 
-  return { first, head, rows, unread, refreshing, more: last?.more ?? false, loadOlder, loadingOlder: mine?.loading ?? false, olderFailed: mine?.failed ?? false };
+  // Where the reads on screen begin, while older ones are still to load (unix ms).
+  const readFrom = last?.more ? last.nextBefore : null;
+
+  return { first, head, rows, unread, refreshing, more: last?.more ?? false, readFrom, loadOlder, loadingOlder: mine?.loading ?? false, olderFailed: mine?.failed ?? false };
 }
 
 /** What a list hook gives its table: the reads on screen and how to read on. */
