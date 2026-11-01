@@ -356,6 +356,65 @@ export interface ChainSeries {
   backupShare: TimePoint[] | null;
 }
 
+/**
+ * One upstream at one point of the chain's availability grid. `t` is the
+ * point's end, as on the availability series: each figure covers the rate
+ * range before it (`rateRange(step)`).
+ */
+export interface UpstreamTimelineCell {
+  t: number;
+  /**
+   * What the evidence at this point says (`upstreamCellState`): `null` when
+   * nothing about this upstream was scraped at all (a gap, never a health),
+   * `unknown` when it was scraped but neither tried nor polled.
+   */
+  state: HealthState | null;
+  /** Tries per second the router sent it (relay-scoped); null = no series. */
+  rps: number | null;
+  /** Failed tries per second; null = no series. */
+  failedRps: number | null;
+  /** Its share of the chain's tries, 0–1; null when the chain had none. */
+  share: number | null;
+  /** Latest-block polls that answered / failed; null = no series. */
+  pollsOk: number | null;
+  pollsFailed: number | null;
+}
+
+/** One upstream of the chain, a cell per stretch from `grid.start` to `grid.end`. */
+export interface UpstreamTimelineRow {
+  /** The values file's name where it declares the upstream (series matched case-insensitively), else the series'. */
+  upstream: string;
+  /** From helm `is_backup`; null when the values don't say (SR_CONFIG, or not in the config). */
+  role: "primary" | "backup" | null;
+  /** Declared by the mounted values file. False: seen only in the metrics. */
+  inConfig: boolean;
+  cells: UpstreamTimelineCell[];
+}
+
+/**
+ * Every upstream of one chain over the window, a cell per stretch of the
+ * clock (`bucketGrid`, the errors-over-time bars' grid): primaries first,
+ * then backups, then upstreams the config doesn't mark.
+ */
+export interface UpstreamTimeline {
+  spec: string;
+  /** Every read answered. False: one failed, so a missing figure means nothing. */
+  available: boolean;
+  failed: ("rps" | "failedRps" | "pollsOk" | "pollsFailed")[];
+  /** The cells' END times: a cell at `t` covers the `stepSec` before it; the last one is still filling, up to `asOf`. */
+  grid: ChartGrid;
+  /** Unix seconds the read was made at: where the last cell stops. */
+  asOf: number;
+  /**
+   * What clients got, per cell: their requests and the ones the router couldn't
+   * serve (the Failed requests card's recorded counts). Null when the store has
+   * no such counts in the window, or the router can't be told from another on
+   * its chain; a cell's `requests` null when that stretch has none recorded.
+   */
+  served: { t: number; requests: number | null; failed: number | null }[] | null;
+  upstreams: UpstreamTimelineRow[];
+}
+
 /* ── Traffic by provider (Metrics · Overview tab, a chain picked) ────────── */
 
 /** Which upstream took one chain's traffic over the window. */

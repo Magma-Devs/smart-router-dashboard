@@ -41,6 +41,13 @@ function mockPrometheus(): void {
         { metric: { provider_address: "Cached" }, values: [[1, "2"], [2, "2"]] },
       ]);
     }
+    // Upstream timeline: failed tries and latest-block polls per upstream.
+    if (new URL(url).pathname.endsWith("/query_range") && query.startsWith("clamp_min(sum by (provider_address)")) {
+      return matrix([{ metric: { provider_address: "eth-lava" }, values: [[600, "0.5"], [1200, "0"]] }]);
+    }
+    if (new URL(url).pathname.endsWith("/query_range") && query.startsWith("sum by (endpoint_id) (increase(rpc_endpoint_fetch_latest_success")) {
+      return matrix([{ metric: { endpoint_id: "eth-lava" }, values: [[600, "0"], [1200, "1"]] }]);
+    }
     if (new URL(url).pathname.endsWith("/query_range") && query.startsWith("max by (endpoint_id) (max_over_time(rpc_endpoint_latest_block")) {
       return matrix([
         { metric: { endpoint_id: "eth-lava" }, values: [[1, "100"], [2, "101"]] },
@@ -332,6 +339,36 @@ describe("api routes", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("GET /api/metrics/upstream-timeline requires spec; a row per upstream, a cell per stretch of the clock", async () => {
+    const missing = await app.inject({ method: "GET", url: "/api/metrics/upstream-timeline?window=30m" });
+    expect(missing.statusCode).toBe(400);
+
+    // The clock at 1800 s: half an hour in 10-minute bars, ending at 600, 1200 and 1800.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(1_800_000);
+    let res;
+    try {
+      res = await app.inject({ method: "GET", url: "/api/metrics/upstream-timeline?spec=ETH1&window=30m" });
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.grid).toEqual({ start: 600, end: 1800, stepSec: 600 });
+    expect(body.asOf).toBe(1800);
+    expect(body.spec).toBe("ETH1");
+    expect(body.available).toBe(true);
+    // The relay cache counts in the chain's tries and gets no row.
+    expect(body.upstreams.map((u: { upstream: string }) => u.upstream)).toEqual(["eth-lava"]);
+    const cells = body.upstreams[0].cells;
+    expect(cells).toHaveLength(3);
+    // Scraped but neither tried nor polled: unknown. A poll that answered: operational.
+    expect(cells[0].state).toBe("unknown");
+    expect(cells[1]).toMatchObject({ t: 1200, state: "operational", pollsOk: 1 });
+    // Bars the store didn't return are gaps, never a health.
+    expect(cells[2].state).toBeNull();
   });
 
   it("GET /api/metrics/upstream-peers requires spec; one latency and one tip series per upstream", async () => {

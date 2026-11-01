@@ -59,6 +59,8 @@ import {
   qOptimizerScore,
   qOptimizerScoresByEndpoint,
   qEndpointPolls,
+  qPerEndpointPollsSeriesExpr,
+  qPerUpstreamFailedRpsExpr,
   qClientRequestsBy,
   qClientRequestsTotal,
   qConsistencyCaught,
@@ -476,6 +478,19 @@ describe("health / lag / score / gauge builders", () => {
     expect(qEndpointPolls("ok", undefined, "1d")).not.toBe(
       qEndpointPolls("failed", undefined, "1d"),
     );
+  });
+  it("polls per step per endpoint, on the availability line's rate range", () => {
+    expect(qPerEndpointPollsSeriesExpr("ok", "ETH1", "15s")).toBe(
+      'sum by (endpoint_id) (increase(rpc_endpoint_fetch_latest_success{spec="ETH1"}[1m]))',
+    );
+    expect(qPerEndpointPollsSeriesExpr("failed", "ETH1", "4h")).toBe(
+      'sum by (endpoint_id) (increase(rpc_endpoint_fetch_latest_fails{spec="ETH1"}[4h]))',
+    );
+  });
+  it("failed tries per upstream: relays minus successes, every try failed where no success was ever counted", () => {
+    const tot = 'sum by (provider_address) (rate(smartrouter_requests_total{spec="ETH1"}[1m]))';
+    const ok = 'sum by (provider_address) (rate(smartrouter_requests_success_total{spec="ETH1"}[1m]))';
+    expect(qPerUpstreamFailedRpsExpr("15s", "ETH1", "30m")).toBe(`clamp_min(${tot} - (${ok} or ${tot} * 0), 0)`);
   });
   it("consistency caught reads the FAILED counter — success = checks that passed", () => {
     expect(qConsistencyCaught("1d")).toBe(
