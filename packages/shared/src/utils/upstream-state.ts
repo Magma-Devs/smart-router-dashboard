@@ -24,8 +24,9 @@ export interface UpstreamCellEvidence {
  * signals that exist per upstream over time: the router's tries (requests and
  * successes by `provider_address`) and the chain tracker's latest-block polls
  * (`rpc_endpoint_fetch_latest_*`, every configured upstream, backups included).
- * `rpc_endpoint_overall_health` is NOT read: it starts optimistic and moves
- * only on relay outcomes, so as history it says nothing about an idle backup.
+ * `smartrouter_csm_provider_blocked` is NOT read: it says only whether the
+ * router took the provider out, not whether an idle url answers, so as
+ * history it says nothing about an idle backup.
  *
  * - `unhealthy`: at least `UNHEALTHY_FAILED_SHARE` of its tries failed, or
  *   every poll failed - the same rule current health applies to polls.

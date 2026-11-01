@@ -213,8 +213,8 @@ export class MetricsDetailService {
    * still filling is one more read of each at now. There is no health-over-time series per
    * upstream, so this is the honest one: what the router sent it and what
    * came back, plus the chain tracker's polls for an upstream that took
-   * nothing. `rpc_endpoint_overall_health` is not read - it starts
-   * optimistic and moves only on relay outcomes.
+   * nothing. `smartrouter_csm_provider_blocked` is not read - it says only
+   * whether the router took the provider out, not whether a url answers.
    *
    * Rows are the config's nodes on this chain (one router's with `routerId`,
    * since the series can't say which router sent a try), matched to the
@@ -385,8 +385,8 @@ export class MetricsDetailService {
     const epSel = upstreamEndpointSelector(ref);
     const provSel = upstreamProviderSelector(ref);
 
-    // One gauge per api interface; the worst of them is the upstream's health.
-    const healthVal = await this.prom.scalar(`min(${ENDPOINT_METRICS.overallHealth}${epSel})`);
+    // One blocked gauge per api interface; blocked on any of them is the upstream's health.
+    const healthVal = await this.prom.scalar(`1 - max(${ROUTER_METRICS.csmProviderBlocked}${provSel})`);
 
     const [
       requests,

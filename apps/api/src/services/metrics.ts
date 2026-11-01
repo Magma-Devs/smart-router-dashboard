@@ -42,6 +42,7 @@ import {
   qMethodLatencyQuantile,
   qPerSpecClientRpsSeriesExpr,
   qPerSpecHealth,
+  qProviderBlockedByEndpoint,
   qPerSpecLatencyQuantile,
   qPresence,
   qRequestsBy,
@@ -269,15 +270,13 @@ export class MetricsService {
       kpi(qRetriesTotal("recovered", window, spec), qRetriesTotal("recovered", window, spec, r)),
       kpi(cacheOffload(), cacheOffload(r)),
       this.listSpecs(),
-      // `rpc_endpoint_overall_health` carries {spec, apiInterface, endpoint_id}
-      // (smartrouter_metrics_manager.go endpointLabels), so it scopes exactly
-      // like the KPIs above — `selector` yields "" with no chain selected,
-      // which is the account-wide count. Unfiltered, this tile paired a
-      // chain-scoped request count with an account-wide upstream count and
-      // read "50.0K across 4 upstreams" on a chain that had one (MAG-2710).
-      this.prom.query(
-        `count by (endpoint_id) (${ENDPOINT_METRICS.overallHealth}${selector({ spec })})`,
-      ),
+      // The blocked gauge carries {spec, apiInterface, provider_address} for
+      // every configured provider, so it scopes exactly like the KPIs above —
+      // `selector` yields "" with no chain selected, which is the account-wide
+      // count. Unfiltered, this tile paired a chain-scoped request count with
+      // an account-wide upstream count and read "50.0K across 4 upstreams" on
+      // a chain that had one (MAG-2710).
+      this.prom.query(`count by (endpoint_id) (${qProviderBlockedByEndpoint(spec)})`),
       // Same reasoning for health: the ROUTER gauge is label-less, so under a
       // chain filter it reports the whole deployment. chainHealth() reads the
       // spec-labelled endpoint gauge — see chains()/chainFigures(), which has
@@ -718,7 +717,7 @@ export class MetricsService {
         this.prom.query(qRouterTipChanges(label ?? undefined, spec)),
         this.prom.query(qUpstreamTips(spec)),
         this.prom.query(qTipChanges(spec)),
-        this.prom.query(`${ENDPOINT_METRICS.overallHealth}${selector({ spec })}`),
+        this.prom.query(qProviderBlockedByEndpoint(spec)),
       ]);
 
     const num = (v: string): number | null => {
@@ -736,7 +735,7 @@ export class MetricsService {
       // A negative deriv is a chain reset or a re-adopted tip, not a rate.
       if (r.metric.spec && v !== null && v > 0) rate.set(r.metric.spec, v);
     }
-    // changes() and the health gauge key on (endpoint_id, apiInterface), the
+    // changes() and the blocked gauge key on (endpoint_id, apiInterface), the
     // same identity the tip rows carry — an endpoint serving two interfaces is
     // two independent tips and must not collapse.
     const key = (id: string, iface: string) => `${id}\u0000${iface}`;
@@ -747,11 +746,13 @@ export class MetricsService {
         changes.set(key(r.metric.endpoint_id, r.metric.apiInterface ?? ""), v);
       }
     }
+    // The gauge is 1 while the router sends the provider no traffic; the row's
+    // health is the opposite.
     const healthByKey = new Map<string, number>();
     for (const r of healthRows) {
       const v = num(r.value[1]);
       if (r.metric.endpoint_id && v !== null) {
-        healthByKey.set(key(r.metric.endpoint_id, r.metric.apiInterface ?? ""), v);
+        healthByKey.set(key(r.metric.endpoint_id, r.metric.apiInterface ?? ""), 1 - v);
       }
     }
 

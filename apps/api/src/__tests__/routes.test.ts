@@ -59,7 +59,7 @@ function mockPrometheus(): void {
       result = []; // presence probes: every optional family is absent
     } else if (query.startsWith("count by (spec)")) {
       result = [{ metric: { spec: "ETH1" }, value: [1, "1"] }];
-    } else if (query.includes("== bool 0")) {
+    } else if (query.includes("== bool 1")) {
       result = []; // no chain is fully down
     } else if (query.includes("clamp_min") && query.includes("sum by (spec, provider_address)")) {
       result = [{ metric: { spec: "ETH1", provider_address: "eth-lava" }, value: [1, "3"] }];
@@ -92,8 +92,12 @@ function mockPrometheus(): void {
           value: [1, "0.9"],
         },
       ];
-    } else if (query.includes("rpc_endpoint_overall_health")) {
-      result = [{ metric: { spec: "ETH1", endpoint_id: "eth-lava" }, value: [1, "1"] }];
+    } else if (query.startsWith("1 - ") && query.includes("smartrouter_csm_provider_blocked")) {
+      // The health form of the blocked gauge: 1 while a provider is in rotation.
+      result = [{ metric: { spec: "ETH1" }, value: [1, "1"] }];
+    } else if (query.includes("smartrouter_csm_provider_blocked")) {
+      // The gauge itself, keyed by endpoint_id: 0 = serving.
+      result = [{ metric: { spec: "ETH1", endpoint_id: "eth-lava" }, value: [1, "0"] }];
     } else if (query.includes("deriv(rpc_endpoint_latest_block")) {
       result = [{ metric: { spec: "ETH1" }, value: [1, "0.1"] }]; // 0.1 blocks/sec
     } else if (query.includes("changes(rpc_endpoint_latest_block")) {

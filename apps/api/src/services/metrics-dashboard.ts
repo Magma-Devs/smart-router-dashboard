@@ -17,6 +17,7 @@ import {
   qErrorRateSeriesExpr,
   qLatencyQuantile,
   qLatencySeriesExpr,
+  qPerSpecHealth,
   qPerSpecLatencySeriesExpr,
   qPerUpstreamRpsExpr,
   qPerSpecRpsExpr,
@@ -149,7 +150,7 @@ export class MetricsDashboardService {
       range(qPerUpstreamRpsExpr(step, spec)),
       range(perUpstreamLatencyExpr),
       this.prom.query(`count by (spec) (${ROUTER_METRICS.requestsTotal})`),
-      this.prom.query(`max by (spec) (${ENDPOINT_METRICS.overallHealth})`),
+      this.prom.query(qPerSpecHealth()),
     ]);
 
     const healthBySpec = new Map<string, number>();

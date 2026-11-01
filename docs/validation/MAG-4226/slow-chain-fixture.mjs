@@ -11,6 +11,7 @@ for (const spec of specs) {
   const interval = spec === "ETH1" || spec === "A.B" ? 12 : 600;
   for (const endpoint of ["fixture-peer", "fixture-switchable"]) {
     const labels = `endpoint_id="${endpoint}",spec="${spec}",apiInterface="jsonrpc",instance="fixture:7779"`;
+    const providerLabels = labels.replace("endpoint_id=", "provider_address=");
     for (let t = -4200; t <= 7200; t += 15) {
       const healthy = endpoint === "fixture-peer";
       const ok = healthy
@@ -25,7 +26,7 @@ for (const spec of specs) {
       const failed = healthy || t >= 2700 ? 0 : t < 0 ? 0 : Math.min(4, Math.floor(t / 600) + 1);
       const tip =
         healthy && spec !== "UNRATED" ? 100000 + Math.floor((t + 4200) / interval) : 100000;
-      lines.push(`rpc_endpoint_overall_health{${labels}} 1 ${origin + t}`);
+      lines.push(`smartrouter_csm_provider_blocked{${providerLabels}} 0 ${origin + t}`);
       lines.push(`rpc_endpoint_fetch_latest_success{${labels}} ${ok} ${origin + t}`);
       lines.push(`rpc_endpoint_fetch_latest_fails{${labels}} ${failed} ${origin + t}`);
       lines.push(`rpc_endpoint_latest_block{${labels}} ${tip} ${origin + t}`);
