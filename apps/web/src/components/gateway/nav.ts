@@ -55,17 +55,20 @@ export const NAV_SECTIONS: NavSection[] = [
  *
  * Exported and pure so the rule is testable without rendering the shell.
  */
-export function visibleNavSections(authEnabled: boolean, grafanaDashboardUrl?: string | null): NavSection[] {
+export function visibleNavSections(
+  authEnabled: boolean,
+  grafanaDashboardUrl?: string | null,
+  grafanaCustomerUsageDashboardUrl?: string | null,
+): NavSection[] {
   const sections = NAV_SECTIONS.map((section) => ({
     ...section,
     items: section.items.filter((item) => authEnabled || !item.requiresAuth),
   })).filter((section) => section.items.length > 0);
   const url = normalizeGrafanaDashboardUrl(grafanaDashboardUrl);
-  if (url) {
-    sections.push({
-      label: "Advanced",
-      items: [{ href: url, label: "Grafana", icon: IconReport, external: true }],
-    });
-  }
+  const usageUrl = normalizeGrafanaDashboardUrl(grafanaCustomerUsageDashboardUrl);
+  const items: NavItem[] = [];
+  if (url) items.push({ href: url, label: "Logs & Metrics", icon: IconReport, external: true });
+  if (usageUrl) items.push({ href: usageUrl, label: "Customer Usage", icon: IconReport, external: true });
+  if (items.length) sections.push({ label: "Advanced", items });
   return sections;
 }

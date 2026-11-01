@@ -86,3 +86,79 @@ describe("GET /api/config grafanaDashboardUrl", () => {
     expect(await GET().json()).toHaveProperty("grafanaDashboardUrl", null);
   });
 });
+
+describe("GET /api/config grafanaCustomerUsageDashboardUrl", () => {
+  const reportsUrl = "https://magmadevs.grafana.net/d/sr-gk8-customer-usage/gk8-customer-usage?from=now-5m&to=now&timezone=browser&var-chain=$__all&var-interface=$__all&refresh=5m";
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it.each([undefined, "", " \t\n "])("hides the link when configured as %j", async (value) => {
+    vi.stubEnv("DASHBOARD_GRAFANA_CUSTOMER_USAGE_DASHBOARD_URL", value);
+    expect(await GET().json()).toHaveProperty("grafanaCustomerUsageDashboardUrl", null);
+  });
+
+  it("keeps the exact reports URL, including Grafana variables and time parameters", async () => {
+    vi.stubEnv("DASHBOARD_GRAFANA_CUSTOMER_USAGE_DASHBOARD_URL", reportsUrl);
+    expect(await GET().json()).toHaveProperty("grafanaCustomerUsageDashboardUrl", reportsUrl);
+  });
+
+  it("trims surrounding whitespace", async () => {
+    vi.stubEnv("DASHBOARD_GRAFANA_CUSTOMER_USAGE_DASHBOARD_URL", `  ${reportsUrl}  `);
+    expect(await GET().json()).toHaveProperty("grafanaCustomerUsageDashboardUrl", reportsUrl);
+  });
+
+  it("keeps reports and logs independent, including when reports are unset", async () => {
+    vi.stubEnv("DASHBOARD_GRAFANA_CUSTOMER_USAGE_DASHBOARD_URL", reportsUrl);
+    vi.stubEnv("DASHBOARD_GRAFANA_URL", "https://logs.example.com");
+    expect(await GET().json()).toMatchObject({
+      grafanaCustomerUsageDashboardUrl: reportsUrl,
+      grafanaUrl: "https://logs.example.com",
+    });
+    vi.stubEnv("DASHBOARD_GRAFANA_CUSTOMER_USAGE_DASHBOARD_URL", "");
+    expect(await GET().json()).toMatchObject({
+      grafanaCustomerUsageDashboardUrl: null,
+      grafanaUrl: "https://logs.example.com",
+    });
+  });
+
+  it.each([
+    "javascript:alert(1)",
+    "data:text/html,<h1>Grafana</h1>",
+    "/d/customer/reports",
+    "https:grafana.example.com/d/reports",
+    "https:/grafana.example.com/d/reports",
+    "//grafana.example.com/d/reports",
+    "https://",
+    "https://user:password@grafana.example.com/d/reports",
+  ])("hides an invalid external URL: %s", async (value) => {
+    vi.stubEnv("DASHBOARD_GRAFANA_CUSTOMER_USAGE_DASHBOARD_URL", value);
+    expect(await GET().json()).toHaveProperty("grafanaCustomerUsageDashboardUrl", null);
+  });
+});
+
+
+describe("independent runtime Grafana links", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("clearing either link leaves the other intact", async () => {
+    vi.stubEnv("DASHBOARD_GRAFANA_DASHBOARD_URL", "https://grafana.example.com/d/reports");
+    vi.stubEnv("DASHBOARD_GRAFANA_CUSTOMER_USAGE_DASHBOARD_URL", "https://grafana.example.com/d/usage");
+    expect(await GET().json()).toMatchObject({
+      grafanaDashboardUrl: "https://grafana.example.com/d/reports",
+      grafanaCustomerUsageDashboardUrl: "https://grafana.example.com/d/usage",
+    });
+    vi.stubEnv("DASHBOARD_GRAFANA_DASHBOARD_URL", "");
+    expect(await GET().json()).toMatchObject({
+      grafanaDashboardUrl: null,
+      grafanaCustomerUsageDashboardUrl: "https://grafana.example.com/d/usage",
+    });
+    vi.stubEnv("DASHBOARD_GRAFANA_DASHBOARD_URL", "https://grafana.example.com/d/reports");
+    vi.stubEnv("DASHBOARD_GRAFANA_CUSTOMER_USAGE_DASHBOARD_URL", "");
+    expect(await GET().json()).toMatchObject({
+      grafanaDashboardUrl: "https://grafana.example.com/d/reports",
+      grafanaCustomerUsageDashboardUrl: null,
+    });
+  });
+});

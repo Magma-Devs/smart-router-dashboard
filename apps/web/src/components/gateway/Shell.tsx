@@ -42,9 +42,12 @@ export function ThemeToggle() {
   );
 }
 
-function Sidebar({ grafanaDashboardUrl }: { grafanaDashboardUrl?: string | null }) {
+function Sidebar({ grafanaDashboardUrl, grafanaCustomerUsageDashboardUrl }: {
+  grafanaDashboardUrl?: string | null;
+  grafanaCustomerUsageDashboardUrl?: string | null;
+}) {
   const pathname = usePathname();
-  const sections = visibleNavSections(useAuthMode(), grafanaDashboardUrl);
+  const sections = visibleNavSections(useAuthMode(), grafanaDashboardUrl, grafanaCustomerUsageDashboardUrl);
   const { visible: drawerOpen, menuCollapsed: compact, setMenuCollapsed } = useChainDrawer();
   const { setChain, setRouterId, setRouter } = useFilters();
   // Home or Metrics while on Metrics: back to every chain, as the drawer's
@@ -109,7 +112,7 @@ function Sidebar({ grafanaDashboardUrl }: { grafanaDashboardUrl?: string | null 
               if (item.external) {
                 return (
                   <a
-                    key={item.href}
+                    key={item.label}
                     href={item.href}
                     className="gw-nav-item"
                     target="_blank"
@@ -281,9 +284,10 @@ function Topbar({ here, sub, incidentsEnabled }: { here: string; sub: string | n
   );
 }
 
-export function Shell({ children, grafanaDashboardUrl, incidentsEnabled = false }: {
+export function Shell({ children, grafanaDashboardUrl, grafanaCustomerUsageDashboardUrl, incidentsEnabled = false }: {
   children: React.ReactNode;
   grafanaDashboardUrl?: string | null;
+  grafanaCustomerUsageDashboardUrl?: string | null;
   incidentsEnabled?: boolean;
 }) {
   const pathname = usePathname();
@@ -304,7 +308,7 @@ export function Shell({ children, grafanaDashboardUrl, incidentsEnabled = false 
     <TwoFactorGate>
       <ChainDrawerProvider>
         <div className="gw-app">
-          <Sidebar grafanaDashboardUrl={grafanaDashboardUrl} />
+          <Sidebar grafanaDashboardUrl={grafanaDashboardUrl} grafanaCustomerUsageDashboardUrl={grafanaCustomerUsageDashboardUrl} />
           <ChainDrawerSlot />
           <div className="gw-main">
             <Topbar here={here} sub={sub} incidentsEnabled={incidentsEnabled} />

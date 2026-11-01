@@ -36,5 +36,6 @@ export function GET() {
     // Exact customer reports link for the sidebar, independent of the logs board.
     // Runtime only: an unset value must not fall back to another tenant's URL.
     grafanaDashboardUrl: normalizeGrafanaDashboardUrl(process.env.DASHBOARD_GRAFANA_DASHBOARD_URL),
+    grafanaCustomerUsageDashboardUrl: normalizeGrafanaDashboardUrl(process.env.DASHBOARD_GRAFANA_CUSTOMER_USAGE_DASHBOARD_URL),
   });
 }

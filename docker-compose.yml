@@ -317,6 +317,7 @@ services:
       - DASHBOARD_GRAFANA_URL=${DASHBOARD_GRAFANA_URL:-}
       # Exact customer reports link in the sidebar; empty hides Advanced → Grafana.
       - DASHBOARD_GRAFANA_DASHBOARD_URL=${DASHBOARD_GRAFANA_DASHBOARD_URL:-}
+      - DASHBOARD_GRAFANA_CUSTOMER_USAGE_DASHBOARD_URL=${DASHBOARD_GRAFANA_CUSTOMER_USAGE_DASHBOARD_URL:-}
       # The "Report incident" button — read by the web itself, so it still
       # shows when the api is down. Set the same INCIDENTS_ENABLED as the api.
       - INCIDENTS_ENABLED=${INCIDENTS_ENABLED:-}
