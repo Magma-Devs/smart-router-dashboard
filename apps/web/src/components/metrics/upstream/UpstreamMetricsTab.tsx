@@ -11,7 +11,6 @@
  *    currently-selected window; the other boxes render "—" (no refetch fan-out);
  *  - the mock's "last probe 12s ago" has no backing metric and is dropped. */
 
-import { useEffect, useState } from "react";
 import { buildChainMetaByIndex, WINDOWS, type MetricWindow, type UpstreamDetail } from "@sr/shared";
 import { useApi } from "@/hooks/use-api";
 import { useFilters } from "@/components/gateway/FiltersProvider";
@@ -26,24 +25,41 @@ import { PMStat, PMNoVal } from "./PMPanel";
 import { PMEmpty } from "./PMEmpty";
 import { PMBody } from "./PMBody";
 import type { ErrorsJump } from "../ErrorsBreakdown";
+import { LinkNotice } from "../LinkNotice";
+import type { UpstreamPick } from "@/lib/view-in-url";
 
-export function UpstreamMetricsTab({ timeWindow, chainFilter, onOpenErrors }: {
+export function UpstreamMetricsTab({ timeWindow, chainFilter, selected = null, linked = false, onSelect, onOpenErrors }: {
   timeWindow: MetricWindow;
   chainFilter: string | null;
+  /** The upstream in the deep-dive, held in the page's URL (`?upstream=`); null = the first. */
+  selected?: UpstreamPick | null;
+  /** The pick came from a link: one the roster no longer has is said. */
+  linked?: boolean;
+  onSelect?: (pick: UpstreamPick) => void;
   /** Where a click on an errors bar goes - the Errors tab, on its requests. */
   onOpenErrors?: (jump: ErrorsJump) => void;
 }) {
-  const { scopeQ, routerId } = useFilters();
+  const { scopeQ } = useFilters();
   const rosterRes = usePMRosterData(timeWindow, chainFilter);
   const entries = rosterRes.data?.upstreams ?? [];
 
-  const [selKey, setSelKey] = useState<string | null>(null);
-  // jump the deep-dive to the first upstream on the filtered chain / router
-  useEffect(() => { setSelKey(null); }, [chainFilter, routerId]);
-
   const visible = entries;
-  const pm = visible.find((e) => upstreamKey(e) === selKey) ?? visible[0] ?? null;
+  // A pick on another chain than the page's is not this view's - for the one
+  // render before the page drops it when the chain changes by hand, and while
+  // a link's chain is still being applied.
+  const applies = !!selected && (!selected.spec || !chainFilter || selected.spec === chainFilter);
+  const match = applies
+    ? visible.find((e) => e.endpointId === selected.name && (!selected.spec || e.spec === selected.spec))
+    : undefined;
+  const pm = match ?? visible[0] ?? null;
   const activeName = pm?.endpointId ?? null;
+  // Judged on this scope's own roster, never the last one still on screen.
+  const settled = !!rosterRes.data && !rosterRes.isLoading && !rosterRes.error;
+  const gone = linked && applies && settled && !match ? selected.name : null;
+  const pick = (key: string) => {
+    const row = visible.find((e) => upstreamKey(e) === key);
+    if (row) onSelect?.({ name: row.endpointId, spec: row.spec });
+  };
 
   // The chain is part of the address: the same name on another chain is
   // another upstream, and the api refuses a name alone.
@@ -68,8 +84,14 @@ export function UpstreamMetricsTab({ timeWindow, chainFilter, onOpenErrors }: {
 
   return (
     <div>
+      {gone && (
+        <LinkNotice>
+          The upstream in this link, <strong className="gw-mono">{gone}</strong>, is no longer in the config.
+          {activeName ? <> Showing <strong className="gw-mono">{activeName}</strong> instead.</> : null}
+        </LinkNotice>
+      )}
       {/* ── roster of every upstream — click a row to drill in below ── */}
-      <PMRoster rows={visible} activeKey={pm ? upstreamKey(pm) : null} onSelect={setSelKey} timeWindow={timeWindow} loading={rosterRes.isLoading} refreshing={rosterRes.isValidating} />
+      <PMRoster rows={visible} activeKey={pm ? upstreamKey(pm) : null} onSelect={pick} timeWindow={timeWindow} loading={rosterRes.isLoading} refreshing={rosterRes.isValidating} />
 
       {pm && activeName && (
         <>
